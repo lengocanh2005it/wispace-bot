@@ -1,4 +1,4 @@
-name: Deploy Messenger Bot to VPS
+name: Deploy Zalo Bot to VPS
 
 on:
   push:
@@ -12,7 +12,7 @@ on:
         default: false
 
 concurrency:
-  group: production-deploy
+  group: production-deploy-zalo
   cancel-in-progress: true
 
 permissions:
@@ -38,21 +38,21 @@ jobs:
         with:
           filters: |
             app:
-              - 'apps/messenger-bot/src/**'
-              - 'apps/messenger-bot/test/**'
-              - 'apps/messenger-bot/Dockerfile'
-              - 'apps/messenger-bot/package.json'
-              - 'apps/messenger-bot/nest-cli.json'
-              - 'apps/messenger-bot/tsconfig*.json'
+              - 'apps/zalo-bot/src/**'
+              - 'apps/zalo-bot/test/**'
+              - 'apps/zalo-bot/Dockerfile'
+              - 'apps/zalo-bot/package.json'
+              - 'apps/zalo-bot/nest-cli.json'
+              - 'apps/zalo-bot/tsconfig*.json'
               - 'packages/llm-agent/**'
+              - 'packages/chat-history/**'
               - 'package.json'
               - 'package-lock.json'
               - 'turbo.json'
             deploy:
-              - 'apps/messenger-bot/docker-compose.prod.yml'
-              - '.github/workflows/deploy.yml'
-              - '.github/workflows/sync-env.yml'
-              - '.github/scripts/**'
+              - 'apps/zalo-bot/docker-compose.prod.yml'
+              - '.github/workflows/deploy-zalo-bot.yml'
+              - '.github/scripts/vps-deploy-zalo.sh'
 
   quality:
     needs: changes
@@ -75,19 +75,19 @@ jobs:
         run: npm ci
 
       - name: Format check
-        run: npx turbo run format:check --filter=@wispace/messenger-bot...
+        run: npx turbo run format:check --filter=@wispace/zalo-bot...
 
       - name: Lint
-        run: npx turbo run lint --filter=@wispace/messenger-bot...
+        run: npx turbo run lint --filter=@wispace/zalo-bot...
 
       - name: Typecheck
-        run: npx turbo run typecheck --filter=@wispace/messenger-bot...
+        run: npx turbo run typecheck --filter=@wispace/zalo-bot...
 
       - name: Test
-        run: npx turbo run test --filter=@wispace/messenger-bot...
+        run: npx turbo run test --filter=@wispace/zalo-bot...
 
       - name: Build application
-        run: npx turbo run build --filter=@wispace/messenger-bot...
+        run: npx turbo run build --filter=@wispace/zalo-bot...
 
   build-image:
     needs: [changes, quality]
@@ -119,16 +119,16 @@ jobs:
         id: prep
         run: |
           REPO_LC=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE="${{ env.REGISTRY }}/${REPO_LC}/messenger-bot:${{ github.sha }}"
+          IMAGE="${{ env.REGISTRY }}/${REPO_LC}/zalo-bot:${{ github.sha }}"
           echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
-          echo "IMAGE_LATEST=${{ env.REGISTRY }}/${REPO_LC}/messenger-bot:latest" >> "$GITHUB_ENV"
+          echo "IMAGE_LATEST=${{ env.REGISTRY }}/${REPO_LC}/zalo-bot:latest" >> "$GITHUB_ENV"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/messenger-bot/Dockerfile
+          file: apps/zalo-bot/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE }}
@@ -161,10 +161,10 @@ jobs:
         run: |
           REPO_LC=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           if [ "${{ needs.build-image.result }}" = "success" ]; then
-            echo "IMAGE=${{ env.REGISTRY }}/${REPO_LC}/messenger-bot:${{ github.sha }}" >> "$GITHUB_ENV"
+            echo "IMAGE=${{ env.REGISTRY }}/${REPO_LC}/zalo-bot:${{ github.sha }}" >> "$GITHUB_ENV"
             echo "DEPLOY_MODE=new-build" >> "$GITHUB_ENV"
           else
-            echo "IMAGE=${{ env.REGISTRY }}/${REPO_LC}/messenger-bot:latest" >> "$GITHUB_ENV"
+            echo "IMAGE=${{ env.REGISTRY }}/${REPO_LC}/zalo-bot:latest" >> "$GITHUB_ENV"
             echo "DEPLOY_MODE=reuse-latest" >> "$GITHUB_ENV"
           fi
 
@@ -173,10 +173,10 @@ jobs:
 
       - name: Download production env from Doppler
         env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_MESSENGER }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_ZALO }}
         run: |
           if [ -z "${DOPPLER_TOKEN:-}" ]; then
-            echo "DOPPLER_TOKEN_MESSENGER not set — VPS will keep existing .env"
+            echo "DOPPLER_TOKEN_ZALO not set — VPS will keep existing .env"
             exit 0
           fi
           doppler secrets download --no-file --format env > production.env
@@ -186,14 +186,16 @@ jobs:
       - name: Prepare VPS upload bundle
         run: |
           mkdir -p upload-bundle
-          cp apps/messenger-bot/docker-compose.prod.yml upload-bundle/
-          cp .github/scripts/vps-deploy.sh upload-bundle/
+          cp apps/zalo-bot/docker-compose.prod.yml upload-bundle/
+          cp .github/scripts/vps-deploy-zalo.sh upload-bundle/vps-deploy.sh
           if [ -f production.env ]; then
             cp production.env upload-bundle/
           fi
           ls -la upload-bundle/
 
       - name: Upload bundle to VPS (retry)
+        env:
+          VPS_TARGET_DIR: /home/ngoc_anh/zalo-bot
         run: bash .github/scripts/upload-to-vps.sh upload-bundle
 
       - name: Deploy on VPS (retry)
@@ -203,6 +205,7 @@ jobs:
           FORCE_RECREATE: 'false'
           GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
           GHCR_USER: ${{ github.repository_owner }}
+          VPS_TARGET_DIR: /home/ngoc_anh/zalo-bot
         run: |
           export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER
-          bash .github/scripts/ssh-deploy-vps.sh /home/ngoc_anh/messenger-bot/vps-deploy.sh
+          bash .github/scripts/ssh-deploy-vps.sh /home/ngoc_anh/zalo-bot/vps-deploy.sh
