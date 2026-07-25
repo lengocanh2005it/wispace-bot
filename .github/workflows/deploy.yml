@@ -173,10 +173,10 @@ jobs:
 
       - name: Download production env from Doppler
         env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_MESSENGER }}
         run: |
           if [ -z "${DOPPLER_TOKEN:-}" ]; then
-            echo "DOPPLER_TOKEN not set — VPS will keep existing .env"
+            echo "DOPPLER_TOKEN_MESSENGER not set — VPS will keep existing .env"
             exit 0
           fi
           doppler secrets download --no-file --format env > production.env
