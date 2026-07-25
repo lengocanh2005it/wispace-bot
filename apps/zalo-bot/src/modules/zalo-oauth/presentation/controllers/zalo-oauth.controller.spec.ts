@@ -2,7 +2,6 @@ import { ConfigService } from '@nestjs/config';
 import { ZaloOauthController } from './zalo-oauth.controller';
 import { ZaloAccountLinkService } from '../../application/services/zalo-account-link.service';
 import { ZaloOauthStateService } from '../../application/services/zalo-oauth-state.service';
-import { WispaceZaloTokenVerifyService } from '../../infrastructure/wispace/wispace-zalo-token-verify.service';
 import { ZaloOutboundService } from '../../../zalo-chat/application/services/zalo-outbound.service';
 
 function buildConfig(): ConfigService {
@@ -37,7 +36,7 @@ describe('ZaloOauthController', () => {
         findUserIdByZaloId: jest.fn(),
       } as unknown as ZaloAccountLinkService,
       { create, consume: jest.fn() } as unknown as ZaloOauthStateService,
-      { verifyToken: jest.fn() } as unknown as WispaceZaloTokenVerifyService,
+      { verifyToken: jest.fn() },
       { sendText: jest.fn() } as unknown as ZaloOutboundService,
     );
 
@@ -73,7 +72,7 @@ describe('ZaloOauthController', () => {
         findUserIdByZaloId: jest.fn(),
       } as unknown as ZaloAccountLinkService,
       { create: jest.fn(), consume } as unknown as ZaloOauthStateService,
-      { verifyToken } as unknown as WispaceZaloTokenVerifyService,
+      { verifyToken },
       { sendText } as unknown as ZaloOutboundService,
     );
 
@@ -114,7 +113,7 @@ describe('ZaloOauthController', () => {
         findUserIdByZaloId: jest.fn(),
       } as unknown as ZaloAccountLinkService,
       { create: jest.fn(), consume } as unknown as ZaloOauthStateService,
-      { verifyToken: jest.fn() } as unknown as WispaceZaloTokenVerifyService,
+      { verifyToken: jest.fn() },
       { sendText: jest.fn() } as unknown as ZaloOutboundService,
     );
 

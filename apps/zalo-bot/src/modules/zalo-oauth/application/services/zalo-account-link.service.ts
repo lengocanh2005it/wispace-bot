@@ -4,20 +4,13 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
 import { ZaloAccountLinkEntity } from '../../../../infrastructure/database/entities/zalo-account-link.entity';
+import { base64url } from '../../../../shared/utils/base64url';
 
 const PLATFORM = 'zalo' as const;
 const ZALO_TOKEN_ENDPOINT = 'https://oauth.zaloapp.com/v4/access_token';
 const ZALO_ME_ENDPOINT = 'https://graph.zalo.me/v2.0/me';
 
 class ZaloOauthError extends Error {}
-
-function base64url(input: Buffer): string {
-  return input
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
 
 /**
  * Zalo Login OAuth (PKCE) + account-linking to WISPACE userId — Zalo
@@ -94,19 +87,31 @@ export class ZaloAccountLinkService {
 
   async upsertLink(userId: number, zaloUserId: string): Promise<void> {
     await this.repo.manager.transaction(async (em) => {
-      await em.query(
-        `DELETE FROM zalo_account_links WHERE platform = $1 AND user_id = $2 AND external_user_id != $3`,
-        [PLATFORM, userId, zaloUserId],
-      );
-      await em.query(
-        `
-          INSERT INTO zalo_account_links (platform, external_user_id, user_id)
-          VALUES ($1, $2, $3)
-          ON CONFLICT (platform, external_user_id)
-          DO UPDATE SET user_id = EXCLUDED.user_id, linked_at = now()
-        `,
-        [PLATFORM, zaloUserId, userId],
-      );
+      await em
+        .createQueryBuilder()
+        .delete()
+        .from(ZaloAccountLinkEntity)
+        .where(
+          'platform = :platform AND userId = :userId AND externalUserId != :externalUserId',
+          {
+            platform: PLATFORM,
+            userId,
+            externalUserId: zaloUserId,
+          },
+        )
+        .execute();
+
+      await em
+        .createQueryBuilder()
+        .insert()
+        .into(ZaloAccountLinkEntity)
+        .values({
+          platform: PLATFORM,
+          externalUserId: zaloUserId,
+          userId,
+        })
+        .orUpdate(['userId', 'linkedAt'], ['platform', 'externalUserId'])
+        .execute();
     });
 
     this.logger.log(

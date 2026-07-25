@@ -4,23 +4,17 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type {
+  ZaloLinkVerifyResult,
+  ZaloTokenVerifyPort,
+} from '../../domain/ports/zalo-token-verify.port';
 
-export type ZaloLinkVerifyFailureReason =
-  | 'NOT_FOUND'
-  | 'EXPIRED'
-  | 'USED'
-  | 'INVALID_FORMAT';
-
-export type ZaloLinkVerifyResult =
-  | { valid: true; userId: number }
-  | { valid: false; reason: ZaloLinkVerifyFailureReason };
-
-const VERIFY_FAILURE_REASONS: ZaloLinkVerifyFailureReason[] = [
+const VERIFY_FAILURE_REASONS = [
   'NOT_FOUND',
   'EXPIRED',
   'USED',
   'INVALID_FORMAT',
-];
+] as const;
 
 /**
  * Calls WISPACE's shared account-link verify API — same
@@ -29,7 +23,7 @@ const VERIFY_FAILURE_REASONS: ZaloLinkVerifyFailureReason[] = [
  * apps/discord-bot's WispaceDiscordTokenVerifyService.
  */
 @Injectable()
-export class WispaceZaloTokenVerifyService {
+export class WispaceZaloTokenVerifyService implements ZaloTokenVerifyPort {
   private readonly logger = new Logger(WispaceZaloTokenVerifyService.name);
 
   constructor(

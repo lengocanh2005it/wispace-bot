@@ -1,7 +1,19 @@
+import type { ConfigService } from '@nestjs/config';
 import { ZaloChatService } from './zalo-chat.service';
 import { ZaloAgentService } from '../agent/zalo-agent.service';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '../../../zalo-oauth/application/services/zalo-account-link.service';
+
+function buildConfig(): ConfigService {
+  return {
+    get: (key: string) =>
+      ({
+        ZALO_APP_ID: 'app-1',
+        ZALO_OAUTH_REDIRECT_URI:
+          'https://zalo-bot.example.com/zalo/oauth/callback',
+      })[key],
+  } as unknown as ConfigService;
+}
 
 describe('ZaloChatService', () => {
   it('resolves userId, calls the agent, and sends the reply back', async () => {
@@ -10,6 +22,7 @@ describe('ZaloChatService', () => {
     const sendText = jest.fn().mockResolvedValue(undefined);
 
     const service = new ZaloChatService(
+      buildConfig(),
       { reply } as unknown as ZaloAgentService,
       { sendText } as unknown as ZaloOutboundService,
       { findUserIdByZaloId } as unknown as ZaloAccountLinkService,
@@ -32,6 +45,7 @@ describe('ZaloChatService', () => {
     const sendText = jest.fn().mockResolvedValue(undefined);
 
     const service = new ZaloChatService(
+      buildConfig(),
       { reply } as unknown as ZaloAgentService,
       { sendText } as unknown as ZaloOutboundService,
       { findUserIdByZaloId } as unknown as ZaloAccountLinkService,
@@ -48,6 +62,7 @@ describe('ZaloChatService', () => {
   it('sends a welcome message on follow', async () => {
     const sendText = jest.fn().mockResolvedValue(undefined);
     const service = new ZaloChatService(
+      buildConfig(),
       {} as unknown as ZaloAgentService,
       { sendText } as unknown as ZaloOutboundService,
       {} as unknown as ZaloAccountLinkService,
@@ -64,6 +79,7 @@ describe('ZaloChatService', () => {
   it('sends a text-only fallback message for unsupported message types', async () => {
     const sendText = jest.fn().mockResolvedValue(undefined);
     const service = new ZaloChatService(
+      buildConfig(),
       {} as unknown as ZaloAgentService,
       { sendText } as unknown as ZaloOutboundService,
       {} as unknown as ZaloAccountLinkService,

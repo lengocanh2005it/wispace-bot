@@ -8,7 +8,6 @@ import {
   type LlmProviderAdapter,
   loadSystemPromptFile,
 } from '@wispace/llm-agent';
-import { join } from 'path';
 import type {
   ZaloAgentInput,
   ZaloAgentReply,
@@ -33,7 +32,7 @@ function sleep(ms: number): Promise<void> {
 @Injectable()
 export class ZaloAgentService {
   private readonly logger = new Logger(ZaloAgentService.name);
-  private readonly promptDir = join(__dirname, '../../../../shared/prompts');
+  private readonly promptDir = `${process.cwd()}/src/shared/prompts`;
   private agent?: LlmAgentService<ZaloAgentToolContext>;
 
   constructor(
@@ -85,8 +84,20 @@ export class ZaloAgentService {
 
     const ports: LlmAgentPorts<ZaloAgentToolContext> = {
       llmExecution: { run: (fn) => this.runWithRetry(fn) },
-      usageRecorder: { recordFromCompletion: () => undefined },
-      safetyEvents: { recordGroundingWarning: () => undefined },
+      usageRecorder: {
+        recordFromCompletion: (event) => {
+          this.logger.log(
+            `LLM usage: feature=${event.feature} model=${event.model} toolRound=${event.toolRound} user=${event.externalUserId}`,
+          );
+        },
+      },
+      safetyEvents: {
+        recordGroundingWarning: (event) => {
+          this.logger.warn(
+            `LLM safety grounding warning: user=${event.externalUserId} reason=${event.reason}`,
+          );
+        },
+      },
       metrics: NOOP_METRICS_PORT,
       toolExecutor,
       adapter: this.adapter,

@@ -1,14 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { ZaloWebhookHandler } from '../../../zalo-webhook/presentation/controllers/zalo-webhook.controller';
+import { ConfigService } from '@nestjs/config';
+import type { ZaloWebhookHandler } from '../../../zalo-webhook/domain/ports/zalo-webhook-handler.port';
 import { ZaloAgentService } from '../agent/zalo-agent.service';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '../../../zalo-oauth/application/services/zalo-account-link.service';
 
 const FALLBACK_ERROR_MESSAGE =
   'Xin lỗi, mình gặp sự cố khi xử lý tin nhắn. Bạn thử lại sau ít phút nhé.';
-
-const WELCOME_MESSAGE =
-  'Chào bạn! Mình là trợ lý học tập WISPACE. Bạn có thể hỏi mình bất cứ điều gì. Để xem lịch học, tiến độ và các tính năng cá nhân hoá, vào WISPACE và chọn "Kết nối Zalo" để liên kết tài khoản nhé 🎓';
 
 const UNSUPPORTED_MESSAGE_TYPE_MESSAGE =
   'Hiện mình chỉ hỗ trợ tin nhắn văn bản thôi nhé. Bạn gõ câu hỏi bằng chữ giúp mình nha!';
@@ -21,12 +19,23 @@ const UNSUPPORTED_MESSAGE_TYPE_MESSAGE =
 @Injectable()
 export class ZaloChatService implements ZaloWebhookHandler {
   private readonly logger = new Logger(ZaloChatService.name);
+  private readonly oauthAuthorizeUrl: string;
 
   constructor(
+    private readonly configService: ConfigService,
     private readonly agentService: ZaloAgentService,
     private readonly outboundService: ZaloOutboundService,
     private readonly accountLinkService: ZaloAccountLinkService,
-  ) {}
+  ) {
+    const appId = this.configService.get<string>('ZALO_APP_ID');
+    const redirectUri = this.configService.get<string>(
+      'ZALO_OAUTH_REDIRECT_URI',
+    );
+    this.oauthAuthorizeUrl =
+      appId && redirectUri
+        ? `https://oauth.zaloapp.com/v4/permission?app_id=${appId}&redirect_uri=${encodeURIComponent(redirectUri)}`
+        : '';
+  }
 
   async handleIncomingMessage(zaloUserId: string, text: string): Promise<void> {
     try {
@@ -49,7 +58,11 @@ export class ZaloChatService implements ZaloWebhookHandler {
   }
 
   async handleFollow(zaloUserId: string): Promise<void> {
-    await this.outboundService.sendText(zaloUserId, WELCOME_MESSAGE);
+    const linkPart = this.oauthAuthorizeUrl
+      ? `\n\nLiên kết tài khoản tại đây: ${this.oauthAuthorizeUrl}`
+      : '';
+    const message = `Chào bạn! Mình là trợ lý học tập WISPACE. Bạn có thể hỏi mình bất cứ điều gì. Để xem lịch học, tiến độ và các tính năng cá nhân hoá, hãy liên kết tài khoản WISPACE${linkPart}`;
+    await this.outboundService.sendText(zaloUserId, message);
   }
 
   async handleUnsupportedMessage(zaloUserId: string): Promise<void> {

@@ -15,11 +15,11 @@ import { ZaloAccountLinkEntity } from './entities/zalo-account-link.entity';
 function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
   return {
     type: 'postgres',
-    host: config.get<string>('DB_HOST'),
-    port: Number(config.get<string>('DB_PORT') ?? 5432),
-    username: config.get<string>('DB_USER'),
-    password: config.get<string>('DB_PASSWORD'),
-    database: config.get<string>('DB_NAME'),
+    host: config.getOrThrow<string>('DB_HOST'),
+    port: Number(config.getOrThrow<string>('DB_PORT')),
+    username: config.getOrThrow<string>('DB_USER'),
+    password: config.getOrThrow<string>('DB_PASSWORD'),
+    database: config.getOrThrow<string>('DB_NAME'),
     ssl:
       config.get<string>('DB_SSL') === 'true'
         ? { rejectUnauthorized: false }

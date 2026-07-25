@@ -3,14 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
 import { ZaloAccountLinkService } from './zalo-account-link.service';
 import { ZaloAccountLinkEntity } from '../../../../infrastructure/database/entities/zalo-account-link.entity';
-
-function base64url(input: Buffer): string {
-  return input
-    .toString('base64')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
+import { base64url } from '../../../../shared/utils/base64url';
 
 function buildConfig(): ConfigService {
   return {
@@ -75,10 +68,24 @@ describe('ZaloAccountLinkService', () => {
   });
 
   it('upserts a link and looks it up by zaloUserId', async () => {
-    const manager = { query: jest.fn().mockResolvedValue(undefined) };
+    const executeFn = jest.fn().mockResolvedValue(undefined);
+    const queryBuilder = {
+      delete: jest.fn().mockReturnThis(),
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      insert: jest.fn().mockReturnThis(),
+      into: jest.fn().mockReturnThis(),
+      values: jest.fn().mockReturnThis(),
+      orUpdate: jest.fn().mockReturnThis(),
+      execute: executeFn,
+    };
+    const em = {
+      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+      execute: executeFn,
+    };
     const repo = {
       manager: {
-        transaction: (fn: (em: typeof manager) => unknown) => fn(manager),
+        transaction: (fn: (em: typeof em) => unknown) => fn(em),
       },
       findOne: jest.fn().mockResolvedValue({ userId: 42 }),
     } as unknown as Repository<ZaloAccountLinkEntity>;
@@ -86,7 +93,7 @@ describe('ZaloAccountLinkService', () => {
     const service = new ZaloAccountLinkService(buildConfig(), repo, jest.fn());
 
     await service.upsertLink(42, 'zalo-user-1');
-    expect(manager.query).toHaveBeenCalledTimes(2);
+    expect(executeFn).toHaveBeenCalledTimes(2);
 
     const userId = await service.findUserIdByZaloId('zalo-user-1');
     expect(userId).toBe(42);

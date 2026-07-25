@@ -14,15 +14,10 @@ import type { Request } from 'express';
 type ZaloWebhookRequest = Request & { rawBody?: Buffer };
 import { verifyZaloWebhookSignature } from '../../application/utils/zalo-webhook-signature.utils';
 import type { ZaloWebhookEvent } from '../../domain/entities/zalo-webhook-event.types';
-
-export const ZALO_WEBHOOK_HANDLER = 'ZALO_WEBHOOK_HANDLER';
-
-export interface ZaloWebhookHandler {
-  handleIncomingMessage(senderId: string, text: string): Promise<void>;
-  handleFollow(senderId: string): Promise<void>;
-  /** Called for user_send_* events other than user_send_text (image, sticker, file...) — not supported in this MVP. */
-  handleUnsupportedMessage(senderId: string): Promise<void>;
-}
+import {
+  ZALO_WEBHOOK_HANDLER,
+  type ZaloWebhookHandler,
+} from '../../domain/ports/zalo-webhook-handler.port';
 
 @Controller('zalo/webhook')
 export class ZaloWebhookController {
