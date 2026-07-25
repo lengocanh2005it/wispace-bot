@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloOutboundService } from '../zalo-chat/application/services/zalo-outbound.service';
 import { ZALO_MESSAGE_SENDER } from '../zalo-webhook/domain/ports/zalo-message-sender.port';
 
@@ -9,6 +10,7 @@ import { ZALO_MESSAGE_SENDER } from '../zalo-webhook/domain/ports/zalo-message-s
  */
 @Global()
 @Module({
+  imports: [ZaloChatModule],
   providers: [
     { provide: ZALO_MESSAGE_SENDER, useExisting: ZaloOutboundService },
   ],
