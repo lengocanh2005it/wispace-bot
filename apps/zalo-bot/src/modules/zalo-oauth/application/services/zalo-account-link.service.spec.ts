@@ -17,7 +17,6 @@ describe('ZaloAccountLinkService', () => {
     const service = new ZaloAccountLinkService(
       buildConfig(),
       {} as unknown as Repository<ZaloAccountLinkEntity>,
-      jest.fn(),
     );
 
     const { codeVerifier, codeChallenge } = service.buildPkcePair();
@@ -45,10 +44,11 @@ describe('ZaloAccountLinkService', () => {
           }),
       });
 
+    global.fetch = fetchMock;
+
     const service = new ZaloAccountLinkService(
       buildConfig(),
       {} as unknown as Repository<ZaloAccountLinkEntity>,
-      fetchMock,
     );
 
     const user = await service.exchangeCodeForZaloUser(
@@ -65,6 +65,8 @@ describe('ZaloAccountLinkService', () => {
     expect(calls[1]?.[0]).toContain('https://graph.zalo.me/v2.0/me');
     const meHeaders = calls[1]?.[1].headers as Record<string, string>;
     expect(meHeaders['access_token']).toBe('user-token-1');
+
+    delete global.fetch;
   });
 
   it('upserts a link and looks it up by zaloUserId', async () => {
@@ -90,7 +92,7 @@ describe('ZaloAccountLinkService', () => {
       findOne: jest.fn().mockResolvedValue({ userId: 42 }),
     } as unknown as Repository<ZaloAccountLinkEntity>;
 
-    const service = new ZaloAccountLinkService(buildConfig(), repo, jest.fn());
+    const service = new ZaloAccountLinkService(buildConfig(), repo);
 
     await service.upsertLink(42, 'zalo-user-1');
     expect(executeFn).toHaveBeenCalledTimes(2);

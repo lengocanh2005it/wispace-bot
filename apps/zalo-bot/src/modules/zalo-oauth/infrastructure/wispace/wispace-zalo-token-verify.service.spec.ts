@@ -18,7 +18,9 @@ describe('WispaceZaloTokenVerifyService', () => {
       ok: true,
       text: () => Promise.resolve(JSON.stringify({ userId: 42 })),
     });
-    const service = new WispaceZaloTokenVerifyService(buildConfig(), fetchMock);
+    global.fetch = fetchMock;
+
+    const service = new WispaceZaloTokenVerifyService(buildConfig());
 
     const result = await service.verifyToken('link-token', 'zalo-1');
 
@@ -44,6 +46,8 @@ describe('WispaceZaloTokenVerifyService', () => {
       value: 'zalo-1',
       platform: 'zalo',
     });
+
+    delete global.fetch;
   });
 
   it('returns valid:false with a reason on a known failure response', async () => {
@@ -51,10 +55,14 @@ describe('WispaceZaloTokenVerifyService', () => {
       ok: false,
       text: () => Promise.resolve(JSON.stringify({ reason: 'EXPIRED' })),
     });
-    const service = new WispaceZaloTokenVerifyService(buildConfig(), fetchMock);
+    global.fetch = fetchMock;
+
+    const service = new WispaceZaloTokenVerifyService(buildConfig());
 
     const result = await service.verifyToken('link-token', 'zalo-1');
 
     expect(result).toEqual({ valid: false, reason: 'EXPIRED' });
+
+    delete global.fetch;
   });
 });

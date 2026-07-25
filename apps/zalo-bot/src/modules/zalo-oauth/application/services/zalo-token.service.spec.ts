@@ -26,9 +26,7 @@ describe('ZaloTokenService', () => {
       update: repoUpdate,
     } as unknown as Repository<ZaloOaTokenEntity>;
 
-    const service = new ZaloTokenService(buildConfig(), repo, {
-      fetch: jest.fn(),
-    });
+    const service = new ZaloTokenService(buildConfig(), repo);
 
     await expect(service.getValidAccessToken()).resolves.toBe('valid-token');
     expect(repoUpdate).not.toHaveBeenCalled();
@@ -60,9 +58,9 @@ describe('ZaloTokenService', () => {
         }),
     });
 
-    const service = new ZaloTokenService(buildConfig(), repo, {
-      fetch: fetchMock,
-    });
+    global.fetch = fetchMock;
+
+    const service = new ZaloTokenService(buildConfig(), repo);
 
     const token = await service.getValidAccessToken();
 
@@ -78,6 +76,8 @@ describe('ZaloTokenService', () => {
         refreshToken: 'new-refresh-token',
       }),
     );
+
+    delete global.fetch;
   });
 
   it('throws when no token row exists (bootstrap not done)', async () => {
@@ -86,9 +86,7 @@ describe('ZaloTokenService', () => {
       update: jest.fn(),
     } as unknown as Repository<ZaloOaTokenEntity>;
 
-    const service = new ZaloTokenService(buildConfig(), repo, {
-      fetch: jest.fn(),
-    });
+    const service = new ZaloTokenService(buildConfig(), repo);
 
     await expect(service.getValidAccessToken()).rejects.toThrow(
       'zalo_oa_tokens is empty',

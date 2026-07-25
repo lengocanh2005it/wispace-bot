@@ -26,17 +26,14 @@ const VERIFY_FAILURE_REASONS = [
 export class WispaceZaloTokenVerifyService implements ZaloTokenVerifyPort {
   private readonly logger = new Logger(WispaceZaloTokenVerifyService.name);
 
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly httpFetch: typeof fetch = fetch,
-  ) {}
+  constructor(private readonly configService: ConfigService) {}
 
   async verifyToken(
     token: string,
     zaloUserId: string,
   ): Promise<ZaloLinkVerifyResult> {
     const url = this.getVerifyUrl();
-    const response = await this.httpFetch(url, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

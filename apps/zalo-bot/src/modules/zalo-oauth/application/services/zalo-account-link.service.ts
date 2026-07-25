@@ -25,7 +25,6 @@ export class ZaloAccountLinkService {
     private readonly configService: ConfigService,
     @InjectRepository(ZaloAccountLinkEntity)
     private readonly repo: Repository<ZaloAccountLinkEntity>,
-    private readonly httpFetch: typeof fetch = fetch,
   ) {}
 
   buildPkcePair(): { codeVerifier: string; codeChallenge: string } {
@@ -45,7 +44,7 @@ export class ZaloAccountLinkService {
       'ZALO_APP_SECRET_KEY',
     );
 
-    const tokenResponse = await this.httpFetch(ZALO_TOKEN_ENDPOINT, {
+    const tokenResponse = await fetch(ZALO_TOKEN_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -67,10 +66,9 @@ export class ZaloAccountLinkService {
 
     const tokenJson = (await tokenResponse.json()) as { access_token: string };
 
-    const userResponse = await this.httpFetch(
-      `${ZALO_ME_ENDPOINT}?fields=id,name`,
-      { headers: { access_token: tokenJson.access_token } },
-    );
+    const userResponse = await fetch(`${ZALO_ME_ENDPOINT}?fields=id,name`, {
+      headers: { access_token: tokenJson.access_token },
+    });
 
     if (!userResponse.ok) {
       throw new ZaloOauthError(

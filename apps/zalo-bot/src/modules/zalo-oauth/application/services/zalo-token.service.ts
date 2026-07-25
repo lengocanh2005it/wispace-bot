@@ -11,10 +11,6 @@ import { ZaloOaTokenEntity } from '../../../../infrastructure/database/entities/
 const ZALO_TOKEN_ENDPOINT = 'https://oauth.zaloapp.com/v4/access_token';
 const EXPIRY_BUFFER_MS = 10 * 60 * 1000;
 
-interface FetchLike {
-  fetch: typeof fetch;
-}
-
 interface ZaloAccessTokenResponse {
   access_token: string;
   refresh_token: string;
@@ -36,7 +32,6 @@ export class ZaloTokenService {
     private readonly configService: ConfigService,
     @InjectRepository(ZaloOaTokenEntity)
     private readonly repo: Repository<ZaloOaTokenEntity>,
-    private readonly http: FetchLike = { fetch },
   ) {}
 
   async getValidAccessToken(): Promise<string> {
@@ -71,7 +66,7 @@ export class ZaloTokenService {
       'ZALO_APP_SECRET_KEY',
     );
 
-    const response = await this.http.fetch(ZALO_TOKEN_ENDPOINT, {
+    const response = await fetch(ZALO_TOKEN_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
