@@ -17,6 +17,12 @@ export interface LlmAgentConfig {
   retryBaseDelayMs?: number;
   /** Cap on completion tokens per LLM call, to bound cost on runaway output. Default: 1024. */
   maxOutputTokens?: number;
+  /** Timeout for individual tool execution in ms. Default: 10_000 (10s). */
+  toolExecutionTimeoutMs?: number;
+  /** Global timeout for the entire agent loop (all rounds) in ms. Default: 60_000 (60s). */
+  globalAgentTimeoutMs?: number;
+  /** Max input tokens (system prompt + history + user text). Default: 16_000. */
+  maxInputTokens?: number;
 }
 
 export interface LlmAgentInput {

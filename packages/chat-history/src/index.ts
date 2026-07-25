@@ -4,3 +4,8 @@ export {
   MemoryChatHistoryStore,
   type MemoryChatHistoryStoreConfig,
 } from './memory-chat-history-store';
+export {
+  RedisChatHistoryStore,
+  type RedisChatHistoryStoreConfig,
+  type RedisChatHistoryClient,
+} from './redis-chat-history-store';

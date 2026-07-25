@@ -36,12 +36,14 @@ export class TaskScoreAverageApiClient {
     idHeader: WispaceIdHeader,
     externalId: string,
   ): Promise<TaskScoreAverageRecord[]> {
+    const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
     const response = await fetch(this.config.url, {
       headers: buildWispaceHeaders(
         idHeader,
         externalId,
         this.config.internalKey,
       ),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {

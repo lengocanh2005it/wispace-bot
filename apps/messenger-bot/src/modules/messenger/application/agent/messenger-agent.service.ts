@@ -237,6 +237,9 @@ export class MessengerAgentService {
         maxOutputTokens: Number(
           this.configService.get<string>('OPENAI_MAX_OUTPUT_TOKENS'),
         ),
+        // Disable agent-level retry — LlmExecutionService already handles retries
+        // with proper timeout and concurrency control. Stacking causes 9x attempts.
+        maxLlmRetries: 0,
       },
       ports,
     );

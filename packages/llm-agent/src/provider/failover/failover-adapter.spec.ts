@@ -597,7 +597,7 @@ describe('FailoverLlmProviderAdapter', () => {
   });
 
   describe('chatStream', () => {
-    it('does not failover mid-stream, but respects circuit breaker', () => {
+    it('does not failover mid-stream, but respects circuit breaker', async () => {
       const candidateA = makeCandidate({
         name: 'a',
         chatStream: () => {
@@ -621,7 +621,10 @@ describe('FailoverLlmProviderAdapter', () => {
 
       const adapter = new FailoverLlmProviderAdapter([candidateA, candidateB]);
       const stream = adapter.chatStream(makeToolChatRequest());
-      const events = Array.from(stream);
+      const events: LlmStreamEvent[] = [];
+      for await (const event of stream) {
+        events.push(event);
+      }
       expect(events[0]).toEqual({ type: 'delta', textDelta: 'hello' });
     });
   });

@@ -44,6 +44,8 @@ export interface AgentMetricsPort {
   ): Promise<T>;
   timeTool<T>(toolName: string, fn: () => Promise<T>): Promise<T>;
   llmRoundOutcomeInc(feature: string, outcome: LlmRoundOutcome): void;
+  /** Time the entire agent loop (all rounds). Optional — noop if not provided. */
+  timeAgentLoop?<T>(feature: string, fn: () => Promise<T>): Promise<T>;
 }
 
 /** Executes a single tool call against platform-specific business services. */
@@ -59,4 +61,5 @@ export const NOOP_METRICS_PORT: AgentMetricsPort = {
   timeLlmCall: (_feature, _model, _round, fn) => fn(),
   timeTool: (_toolName, fn) => fn(),
   llmRoundOutcomeInc: () => undefined,
+  timeAgentLoop: (_feature, fn) => fn(),
 };

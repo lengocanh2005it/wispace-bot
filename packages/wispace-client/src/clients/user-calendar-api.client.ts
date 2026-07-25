@@ -44,12 +44,14 @@ export class UserCalendarApiClient {
     idHeader: WispaceIdHeader,
     externalId: string,
   ): Promise<UserCalendarRecord[]> {
+    const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
     const response = await fetch(this.config.url, {
       headers: buildWispaceHeaders(
         idHeader,
         externalId,
         this.config.internalKey,
       ),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {
@@ -78,6 +80,7 @@ export class UserCalendarApiClient {
     input: CreateUserCalendarInput,
     options?: { userId?: number },
   ): Promise<UserCalendarRecord> {
+    const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
     const response = await fetch(this.config.url, {
       method: 'POST',
       headers: {
@@ -88,6 +91,7 @@ export class UserCalendarApiClient {
         eventDate: formatEventDateForApiWrite(input.eventDate),
         time: input.time,
       }),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {
@@ -124,6 +128,7 @@ export class UserCalendarApiClient {
     externalId: string,
     calendarId: number,
   ): Promise<void> {
+    const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
     const response = await fetch(`${this.config.url}/${calendarId}`, {
       method: 'DELETE',
       headers: buildWispaceHeaders(
@@ -131,6 +136,7 @@ export class UserCalendarApiClient {
         externalId,
         this.config.internalKey,
       ),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {

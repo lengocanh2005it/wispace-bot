@@ -11,3 +11,10 @@ export function buildWispaceScopeRedirectMessage(): string {
     'Bạn có thể hỏi ví dụ: tiến độ học của mình, lịch học sắp tới, cách luyện Task 1/2, hoặc đăng ký báo cáo trước ngày thi.'
   );
 }
+
+export function buildGroundingBlockedMessage(): string {
+  return (
+    'Mình cần tra cứu dữ liệu để trả lời chính xác hơn. ' +
+    'Bạn vui lòng thử lại nhé.'
+  );
+}

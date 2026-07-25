@@ -22,15 +22,41 @@ function stripUnsafeControlChars(text: string): string {
     .join('');
 }
 
+/**
+ * Unicode confusable characters that can bypass Latin-only regex patterns.
+ * Maps Cyrillic/Greek lookalikes to their Latin equivalents.
+ */
+const CONFUSABLE_MAP: Record<string, string> = {
+  '\u0430': 'a', // Cyrillic а
+  '\u0435': 'e', // Cyrillic е
+  '\u043E': 'o', // Cyrillic о
+  '\u0440': 'p', // Cyrillic р
+  '\u0441': 'c', // Cyrillic с
+  '\u0443': 'y', // Cyrillic у → approximate to y
+  '\u0445': 'x', // Cyrillic х
+  '\u0456': 'i', // Ukrainian і
+  '\u03B1': 'a', // Greek α
+  '\u03B5': 'e', // Greek ε
+  '\u03BF': 'o', // Greek ο
+  '\u03C1': 'p', // Greek ρ
+};
+
+function normalizeConfusables(text: string): string {
+  return Array.from(text)
+    .map((char) => CONFUSABLE_MAP[char] ?? char)
+    .join('');
+}
+
 function normalizeForPromptScan(text: string): string {
-  return text
+  const normalized = text
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[\u200B-\u200F\uFEFF]/g, '')
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
+    .replace(/[""]/g, '"')
+    .replace(/['']/g, "'")
     .replace(/\s+/g, ' ')
     .toLowerCase();
+  return normalizeConfusables(normalized);
 }
 
 /**
