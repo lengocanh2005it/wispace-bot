@@ -6,6 +6,8 @@ import { DatabaseModule } from './infrastructure/database/database.module';
 import { ZaloOauthModule } from './modules/zalo-oauth/zalo-oauth.module';
 import { ZaloChatModule } from './modules/zalo-chat/zalo-chat.module';
 import { ZaloWebhookModule } from './modules/zalo-webhook/zalo-webhook.module';
+import { ZaloOutboundService } from './modules/zalo-chat/application/services/zalo-outbound.service';
+import { ZALO_MESSAGE_SENDER } from './modules/zalo-webhook/domain/ports/zalo-message-sender.port';
 
 @Module({
   controllers: [HealthController],
@@ -21,6 +23,9 @@ import { ZaloWebhookModule } from './modules/zalo-webhook/zalo-webhook.module';
     ZaloOauthModule,
     ZaloChatModule,
     ZaloWebhookModule,
+  ],
+  providers: [
+    { provide: ZALO_MESSAGE_SENDER, useExisting: ZaloOutboundService },
   ],
 })
 export class AppModule {}

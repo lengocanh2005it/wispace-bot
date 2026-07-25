@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ZaloTokenService } from '../../../zalo-oauth/application/services/zalo-token.service';
+import type { ZaloMessageSenderPort } from '../../../zalo-webhook/domain/ports/zalo-message-sender.port';
 
 const SEND_TEXT_ENDPOINT = 'https://openapi.zalo.me/v3.0/oa/message/cs';
 
@@ -9,7 +10,7 @@ const SEND_TEXT_ENDPOINT = 'https://openapi.zalo.me/v3.0/oa/message/cs';
  * future work, see spec §11.4).
  */
 @Injectable()
-export class ZaloOutboundService {
+export class ZaloOutboundService implements ZaloMessageSenderPort {
   private readonly logger = new Logger(ZaloOutboundService.name);
 
   constructor(private readonly tokenService: ZaloTokenService) {}

@@ -7,7 +7,10 @@ import {
   ZALO_TOKEN_VERIFY_PORT,
   type ZaloTokenVerifyPort,
 } from '../../domain/ports/zalo-token-verify.port';
-import { ZaloOutboundService } from '../../../zalo-chat/application/services/zalo-outbound.service';
+import {
+  ZALO_MESSAGE_SENDER,
+  type ZaloMessageSenderPort,
+} from '../../../zalo-webhook/domain/ports/zalo-message-sender.port';
 
 const LINK_WELCOME_MESSAGE =
   'Tài khoản WISPACE của bạn đã liên kết thành công với Zalo! 🎉';
@@ -22,7 +25,8 @@ export class ZaloOauthController {
     private readonly oauthStateService: ZaloOauthStateService,
     @Inject(ZALO_TOKEN_VERIFY_PORT)
     private readonly tokenVerifyService: ZaloTokenVerifyPort,
-    private readonly outboundService: ZaloOutboundService,
+    @Inject(ZALO_MESSAGE_SENDER)
+    private readonly outboundService: ZaloMessageSenderPort,
   ) {}
 
   /** `token` is WISPACE's own link token, passed through as-is (WISPACE owns its expiry/usage state). */
