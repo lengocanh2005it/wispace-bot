@@ -1,0 +1,12 @@
+services:
+  zalo-bot:
+    image: ${IMAGE:?IMAGE is required}
+    container_name: zalo-bot
+    restart: unless-stopped
+    user: '${DEPLOY_UID:?DEPLOY_UID is required}:${DEPLOY_GID:?DEPLOY_GID is required}'
+    env_file:
+      - .env
+    environment:
+      HOME: /tmp
+    ports:
+      - '127.0.0.1:${PORT:-3002}:${PORT:-3002}'
