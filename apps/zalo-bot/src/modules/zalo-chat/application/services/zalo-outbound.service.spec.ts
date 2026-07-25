@@ -10,7 +10,9 @@ describe('ZaloOutboundService', () => {
       json: () => Promise.resolve({ error: 0, message: 'Success', data: {} }),
     });
 
-    const service = new ZaloOutboundService(tokenService, fetchMock);
+    global.fetch = fetchMock;
+
+    const service = new ZaloOutboundService(tokenService);
     await service.sendText('zalo-1', 'hello');
 
     expect(getValidAccessToken).toHaveBeenCalled();
@@ -30,6 +32,8 @@ describe('ZaloOutboundService', () => {
       recipient: { user_id: 'zalo-1' },
       message: { text: 'hello' },
     });
+
+    delete global.fetch;
   });
 
   it('logs and swallows errors instead of throwing (best-effort send, matches Discord pattern)', async () => {
@@ -38,8 +42,12 @@ describe('ZaloOutboundService', () => {
     } as unknown as ZaloTokenService;
     const fetchMock = jest.fn().mockRejectedValue(new Error('network down'));
 
-    const service = new ZaloOutboundService(tokenService, fetchMock);
+    global.fetch = fetchMock;
+
+    const service = new ZaloOutboundService(tokenService);
 
     await expect(service.sendText('zalo-1', 'hello')).resolves.toBeUndefined();
+
+    delete global.fetch;
   });
 });

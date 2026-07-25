@@ -12,16 +12,13 @@ const SEND_TEXT_ENDPOINT = 'https://openapi.zalo.me/v3.0/oa/message/cs';
 export class ZaloOutboundService {
   private readonly logger = new Logger(ZaloOutboundService.name);
 
-  constructor(
-    private readonly tokenService: ZaloTokenService,
-    private readonly httpFetch: typeof fetch = fetch,
-  ) {}
+  constructor(private readonly tokenService: ZaloTokenService) {}
 
   async sendText(zaloUserId: string, text: string): Promise<void> {
     try {
       const accessToken = await this.tokenService.getValidAccessToken();
 
-      const response = await this.httpFetch(SEND_TEXT_ENDPOINT, {
+      const response = await fetch(SEND_TEXT_ENDPOINT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
