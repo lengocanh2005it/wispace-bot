@@ -2,7 +2,6 @@ import { ConfigService } from '@nestjs/config';
 import { ZaloOauthController } from './zalo-oauth.controller';
 import { ZaloAccountLinkService } from '../../application/services/zalo-account-link.service';
 import { ZaloOauthStateService } from '../../application/services/zalo-oauth-state.service';
-import { ZaloOutboundService } from '../../../zalo-chat/application/services/zalo-outbound.service';
 
 function buildConfig(): ConfigService {
   return {
@@ -37,7 +36,7 @@ describe('ZaloOauthController', () => {
       } as unknown as ZaloAccountLinkService,
       { create, consume: jest.fn() } as unknown as ZaloOauthStateService,
       { verifyToken: jest.fn() },
-      { sendText: jest.fn() } as unknown as ZaloOutboundService,
+      { sendText: jest.fn() },
     );
 
     const res = buildRes();
@@ -73,7 +72,7 @@ describe('ZaloOauthController', () => {
       } as unknown as ZaloAccountLinkService,
       { create: jest.fn(), consume } as unknown as ZaloOauthStateService,
       { verifyToken },
-      { sendText } as unknown as ZaloOutboundService,
+      { sendText },
     );
 
     const res = buildRes();
@@ -114,7 +113,7 @@ describe('ZaloOauthController', () => {
       } as unknown as ZaloAccountLinkService,
       { create: jest.fn(), consume } as unknown as ZaloOauthStateService,
       { verifyToken: jest.fn() },
-      { sendText: jest.fn() } as unknown as ZaloOutboundService,
+      { sendText: jest.fn() },
     );
 
     const res = buildRes();
