@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ZaloOaTokenEntity } from '../../infrastructure/database/entities/zalo-oa-token.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
@@ -10,7 +10,6 @@ import { ZaloAccountLinkService } from './application/services/zalo-account-link
 import { WispaceZaloTokenVerifyService } from './infrastructure/wispace/wispace-zalo-token-verify.service';
 import { ZaloOauthController } from './presentation/controllers/zalo-oauth.controller';
 import { ZALO_TOKEN_VERIFY_PORT } from './domain/ports/zalo-token-verify.port';
-import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 
 @Module({
   imports: [
@@ -19,7 +18,6 @@ import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
       ZaloOauthStateEntity,
       ZaloAccountLinkEntity,
     ]),
-    forwardRef(() => ZaloChatModule),
   ],
   controllers: [ZaloOauthController],
   providers: [
