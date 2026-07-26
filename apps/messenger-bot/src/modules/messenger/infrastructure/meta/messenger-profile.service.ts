@@ -1,5 +1,6 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { getKeepAliveAgent } from '../../../../shared/http/http-agent';
 
 const PERSISTENT_MENU_ACTIONS = [
   {
@@ -60,6 +61,8 @@ export class MessengerProfileService {
       body: JSON.stringify({
         fields: ['persistent_menu'],
       }),
+      signal: AbortSignal.timeout(10_000),
+      dispatcher: getKeepAliveAgent(url),
     });
 
     if (!response.ok) {
@@ -90,6 +93,8 @@ export class MessengerProfileService {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10_000),
+      dispatcher: getKeepAliveAgent(url),
     });
 
     if (!response.ok) {
