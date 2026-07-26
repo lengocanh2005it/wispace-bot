@@ -11,7 +11,7 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
 import { MESSENGER_MAPPING_REPOSITORY } from './domain/repositories/messenger-mapping.repository.port';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from './domain/repositories/messenger-message-log.repository.port';
 import { REPORT_CLAIM_REPOSITORY } from './domain/repositories/report-claim.repository.port';
-import { MESSENGER_MAPPING_READER } from '../study-reminder/application/ports/messenger-mapping.port';
+import { MESSENGER_MAPPING_READER } from '../../shared/ports/messenger-mapping-reader.port';
 import { MessengerRepository } from './infrastructure/persistence/messenger.repository';
 import { MessengerMappingReaderAdapter } from './infrastructure/persistence/messenger-mapping-reader.adapter';
 

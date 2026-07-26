@@ -5,8 +5,8 @@ import type {
   StudyCalendarEntryView,
   StudyOutboxSettings,
   StudyReminderLlmOutput,
+  CalendarSessionTimeRange,
 } from '../../domain/ports/study-data.port';
-import type { CalendarSessionTimeRange } from '../../../study-reminder/domain/entities/study-schedule.types';
 import { StudySessionSourceService } from '../../../study-reminder/application/services/study-session-source.service';
 import { StudyReminderService } from '../../../study-reminder/application/services/study-reminder.service';
 import { StudyReminderScheduleService } from '../../../study-reminder/application/services/study-reminder-schedule.service';

@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ChatQuotaOpsService } from '../../../chat-rate-limit/application/services/chat-quota-ops.service';
-import { StudyReminderOpsService } from '../../../study-reminder/application/services/study-reminder-ops.service';
+import { STUDY_REMINDER_JOB_REPOSITORY } from '../../../study-reminder/domain/repositories/study-reminder-job.repository.port';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '../../../messenger/domain/repositories/messenger-message-log.repository.port';
 import { LlmSafetyEventService } from '../../../llm-safety/application/services/llm-safety-event.service';
 import { OpsHealthService } from './ops-health.service';
@@ -13,8 +13,12 @@ describe('OpsHealthService', () => {
     getSummary: jest.fn(),
   };
 
-  const studyReminderOpsService = {
-    getSummary: jest.fn(),
+  const studyReminderJobRepository = {
+    countJobsByStatus: jest.fn(),
+    countTerminalFailedSince: jest.fn(),
+    countStuckProcessing: jest.fn(),
+    findTerminalFailedSince: jest.fn(),
+    findStuckProcessing: jest.fn(),
   };
 
   const messageLogRepository = {
@@ -54,8 +58,8 @@ describe('OpsHealthService', () => {
           useValue: chatQuotaOpsService,
         },
         {
-          provide: StudyReminderOpsService,
-          useValue: studyReminderOpsService,
+          provide: STUDY_REMINDER_JOB_REPOSITORY,
+          useValue: studyReminderJobRepository,
         },
         {
           provide: MESSENGER_MESSAGE_LOG_REPOSITORY,
@@ -82,14 +86,13 @@ describe('OpsHealthService', () => {
       idempotencyByStatus: {},
       logGrepHints: ['CHAT_QUOTA_DENY'],
     });
-    studyReminderOpsService.getSummary.mockResolvedValue({
-      countsByStatus: { failed: 2 },
-      terminalFailedSince: 2,
-      stuckProcessing: 0,
-      failedHours: 24,
-      stuckProcessingMinutes: 10,
-      samples: { terminalFailed: [], stuckProcessing: [] },
+    studyReminderJobRepository.countJobsByStatus.mockResolvedValue({
+      failed: 2,
     });
+    studyReminderJobRepository.countTerminalFailedSince.mockResolvedValue(2);
+    studyReminderJobRepository.countStuckProcessing.mockResolvedValue(0);
+    studyReminderJobRepository.findTerminalFailedSince.mockResolvedValue([]);
+    studyReminderJobRepository.findStuckProcessing.mockResolvedValue([]);
     messageLogRepository.countMessageLogsByTypeSince.mockResolvedValue(0);
 
     const snapshot = await service.collectSnapshot();
@@ -112,14 +115,13 @@ describe('OpsHealthService', () => {
       idempotencyByStatus: { reserved: 3 },
       logGrepHints: ['CHAT_QUOTA_DENY'],
     });
-    studyReminderOpsService.getSummary.mockResolvedValue({
-      countsByStatus: { pending: 1 },
-      terminalFailedSince: 0,
-      stuckProcessing: 0,
-      failedHours: 24,
-      stuckProcessingMinutes: 10,
-      samples: { terminalFailed: [], stuckProcessing: [] },
+    studyReminderJobRepository.countJobsByStatus.mockResolvedValue({
+      pending: 1,
     });
+    studyReminderJobRepository.countTerminalFailedSince.mockResolvedValue(0);
+    studyReminderJobRepository.countStuckProcessing.mockResolvedValue(0);
+    studyReminderJobRepository.findTerminalFailedSince.mockResolvedValue([]);
+    studyReminderJobRepository.findStuckProcessing.mockResolvedValue([]);
     messageLogRepository.countMessageLogsByTypeSince.mockResolvedValue(5);
 
     const snapshot = await service.collectSnapshot();

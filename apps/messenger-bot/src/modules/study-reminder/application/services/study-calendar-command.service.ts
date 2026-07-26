@@ -9,10 +9,10 @@ import { UserCalendarRecord } from '../../domain/entities/user-calendar.types';
 import { UserCalendarApiService } from '../../infrastructure/wispace/user-calendar-api.service';
 import { UserCalendarScheduleService } from '../../infrastructure/wispace/user-calendar-schedule.service';
 import {
-  RescheduleSchedulingMode,
+  type RescheduleSchedulingMode,
   resolveRescheduleSlot,
   resolveScheduledAtFromEventDate,
-} from '../utils/study-calendar.utils';
+} from '@wispace/wispace-client';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { StudyReminderSyncService } from './study-reminder-sync.service';
 import { DEFAULT_TOPIC } from '../../../../shared/config/poc.constants';

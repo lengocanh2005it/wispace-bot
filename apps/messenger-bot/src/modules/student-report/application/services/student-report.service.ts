@@ -12,7 +12,7 @@ import { sanitizeMessengerText } from '../../../../shared/utils/messenger-text.u
 import { LlmExecutionService } from '../../../llm-execution/application/services/llm-execution.service';
 import type { LlmExecutionContext } from '../../../llm-execution/application/types/llm-execution.types';
 import { LlmUsageRecorderService } from '../../../llm-usage/application/services/llm-usage-recorder.service';
-import { StudentCapacityService } from './student-capacity.service';
+import { TaskScoreAverageApiService } from '../../infrastructure/wispace/task-score-average-api.service';
 
 /**
  * Thin NestJS adapter around the platform-agnostic `@wispace/student-report`
@@ -27,7 +27,7 @@ export class StudentReportService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly studentCapacityService: StudentCapacityService,
+    private readonly taskScoreAverageApi: TaskScoreAverageApiService,
     private readonly llmUsageRecorder: LlmUsageRecorderService,
     private readonly llmExecution: LlmExecutionService,
     @Inject('LLM_PROVIDER_ADAPTER')
@@ -65,7 +65,7 @@ export class StudentReportService {
       },
       capacityData: {
         getCapacityData: (psid) =>
-          this.studentCapacityService.getCapacityData(psid),
+          this.taskScoreAverageApi.getCapacityData(psid),
       },
       logger: {
         log: (message) => this.logger.log(message),

@@ -1,4 +1,9 @@
-import { StudyReminderJobStatus } from '../../../../infrastructure/database/entities/study-reminder-job.entity';
+export type StudyReminderJobStatus =
+  | 'pending'
+  | 'processing'
+  | 'sent'
+  | 'failed'
+  | 'cancelled';
 
 export interface StudyReminderJob {
   id: number;

@@ -10,7 +10,7 @@ import {
   buildStudentReportApiUnavailableMessage,
   buildStudentReportNoScoreDataMessage,
 } from '../messages/student-report.messages';
-import { StudentCapacityService } from './student-capacity.service';
+import { TaskScoreAverageApiService } from '../infrastructure/wispace/task-score-average-api.service';
 import { StudentReportService } from './student-report.service';
 
 const mockAdapter = {
@@ -45,11 +45,12 @@ describe('StudentReportService', () => {
   }
 
   it('returns friendly message when Wispace has no score data (R1)', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const studentCapacityService = {
       getCapacityData: jest.fn(() =>
         Promise.reject(new StudentReportNoScoreDataError('psid-1')),
       ),
-    } as unknown as StudentCapacityService;
+    } as unknown as TaskScoreAverageApiService;
 
     const service = new StudentReportService(
       { get: () => undefined } as unknown as ConfigService,
@@ -65,11 +66,12 @@ describe('StudentReportService', () => {
   });
 
   it('rethrows non-score errors', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const studentCapacityService = {
       getCapacityData: jest.fn(() =>
         Promise.reject(new InternalServerErrorException('API down')),
       ),
-    } as unknown as StudentCapacityService;
+    } as unknown as TaskScoreAverageApiService;
 
     const service = new StudentReportService(
       { get: () => undefined } as unknown as ConfigService,
@@ -85,6 +87,7 @@ describe('StudentReportService', () => {
   });
 
   it('throws StudentReportRetryableError on Wispace 5xx (R3)', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const studentCapacityService = {
       getCapacityData: jest.fn(() =>
         Promise.reject(
@@ -96,7 +99,7 @@ describe('StudentReportService', () => {
           ),
         ),
       ),
-    } as unknown as StudentCapacityService;
+    } as unknown as TaskScoreAverageApiService;
 
     const service = new StudentReportService(
       { get: () => undefined } as unknown as ConfigService,
@@ -112,13 +115,14 @@ describe('StudentReportService', () => {
   });
 
   it('returns unavailable message on Wispace 4xx (R3)', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const studentCapacityService = {
       getCapacityData: jest.fn(() =>
         Promise.reject(
           new WispaceApiError('not found', 404, 'psid-1', 'User/goals'),
         ),
       ),
-    } as unknown as StudentCapacityService;
+    } as unknown as TaskScoreAverageApiService;
 
     const service = new StudentReportService(
       { get: () => undefined } as unknown as ConfigService,
@@ -134,9 +138,10 @@ describe('StudentReportService', () => {
   });
 
   it('falls back when LLM returns invalid report JSON shape', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const studentCapacityService = {
       getCapacityData: jest.fn(() => Promise.resolve(capacityInput)),
-    } as unknown as StudentCapacityService;
+    } as unknown as TaskScoreAverageApiService;
 
     const service = new StudentReportService(
       {
