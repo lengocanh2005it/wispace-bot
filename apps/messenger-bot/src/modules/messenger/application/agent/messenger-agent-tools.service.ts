@@ -44,6 +44,29 @@ import {
 import type { MessengerAgentReply } from './messenger-agent.service';
 import { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
 
+function withToolTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  toolName: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Tool ${toolName} timed out after ${ms}ms`)),
+      ms,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
 export interface MessengerAgentToolContext {
   psid: string;
   userId?: number;
@@ -155,7 +178,11 @@ export class MessengerAgentToolsService {
   ): Promise<unknown> {
     switch (toolName) {
       case 'get_learning_progress_report': {
-        const report = await this.reportPort.generateReport(ctx.psid);
+        const report = await withToolTimeout(
+          this.reportPort.generateReport(ctx.psid),
+          30_000,
+          'get_learning_progress_report',
+        );
         return { report };
       }
       case 'get_user_goals': {

@@ -3,6 +3,8 @@ export interface WispaceApiClientConfig {
   internalKey: string;
   maxRetries?: number;
   baseDelayMs?: number;
+  /** Request timeout in ms for fetch() calls. Default: 10_000 (10s). */
+  requestTimeoutMs?: number;
 }
 
 export interface WispaceClientLogger {

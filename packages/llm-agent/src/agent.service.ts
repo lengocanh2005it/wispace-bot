@@ -1,7 +1,13 @@
 import type { LlmProviderAdapter } from './provider/llm-provider.adapter';
 import type { LlmMessage } from './provider/types';
-import type { ToolResultCachePort } from './tool-cache/tool-result-cache.port';
-import { NOOP_TOOL_RESULT_CACHE } from './tool-cache/tool-result-cache.port';
+import type {
+  ToolResultCachePort,
+  AsyncToolResultCachePort,
+} from './tool-cache/tool-result-cache.port';
+import {
+  NOOP_TOOL_RESULT_CACHE,
+  toAsyncCache,
+} from './tool-cache/tool-result-cache.port';
 import { AGENT_TOOLS } from './agent.tools';
 import { checkLlmGrounding } from './utils/llm-grounding.utils';
 import {
@@ -13,6 +19,7 @@ import { sanitizeReplyText } from './utils/text.utils';
 import {
   buildPromptInjectionBlockedMessage,
   buildWispaceScopeRedirectMessage,
+  buildGroundingBlockedMessage,
 } from './messages';
 import {
   AgentMetricsPort,
@@ -33,7 +40,22 @@ import type {
 const DEFAULT_MAX_TOOL_ROUNDS = 6;
 const DEFAULT_MAX_CONTEXT_CHARS = 24_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 1024;
+const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 10_000;
+const DEFAULT_GLOBAL_AGENT_TIMEOUT_MS = 60_000;
 const FEATURE = 'FREE_FORM_CHAT';
+
+/**
+ * Simple token estimator — Vietnamese text averages ~1.8 tokens/char due to
+ * diacritics and word segmentation. English averages ~0.75 tokens/char.
+ * We use a conservative 1.5 multiplier to stay within context windows.
+ */
+function estimateTokens(text: string): number {
+  // Count non-ASCII characters (Vietnamese diacritics, CJK, etc.)
+  // eslint-disable-next-line no-control-regex
+  const nonAscii = (text.match(/[^\x00-\x7F]/g) ?? []).length;
+  const ascii = text.length - nonAscii;
+  return Math.ceil(nonAscii * 1.5 + ascii * 0.75);
+}
 
 // Injected after the platform system prompt to guide the model's reasoning.
 const REASONING_INSTRUCTION = `
@@ -50,7 +72,7 @@ export interface LlmAgentPorts<TToolContext> {
   safetyEvents: LlmSafetyEventPort;
   toolExecutor: ToolExecutorPort<TToolContext>;
   adapter: LlmProviderAdapter;
-  toolResultCache?: ToolResultCachePort;
+  toolResultCache?: ToolResultCachePort | AsyncToolResultCachePort;
   metrics?: AgentMetricsPort;
   logger?: {
     warn: (message: string) => void;
@@ -87,6 +109,29 @@ export class LlmRetryExhaustedError extends Error {
   }
 }
 
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
 /**
  * Framework-agnostic LLM function-calling orchestration loop, shared across
  * all WISPACE bot platforms. Tool business logic (Wispace API calls, DB reads...)
@@ -101,6 +146,21 @@ export class LlmAgentService<TToolContext> {
   ) {}
 
   async reply(
+    input: LlmAgentInput,
+    toolContext: TToolContext,
+  ): Promise<LlmAgentReply> {
+    return withTimeout(
+      this.ports.metrics?.timeAgentLoop
+        ? this.ports.metrics.timeAgentLoop(FEATURE, () =>
+            this.replyInternal(input, toolContext),
+          )
+        : this.replyInternal(input, toolContext),
+      this.getGlobalAgentTimeoutMs(),
+      'Agent loop',
+    );
+  }
+
+  private async replyInternal(
     input: LlmAgentInput,
     toolContext: TToolContext,
   ): Promise<LlmAgentReply> {
@@ -186,6 +246,13 @@ export class LlmAgentService<TToolContext> {
             assistantTextPreview: text,
             toolNamesUsed: [...toolsCalledThisTurn],
           });
+          return {
+            text: buildGroundingBlockedMessage(),
+            toolSummary:
+              toolsCalledThisTurn.size > 0
+                ? `[Đã tra cứu: ${[...toolsCalledThisTurn].join('; ')}]`
+                : undefined,
+          };
         }
 
         const toolSummary =
@@ -337,6 +404,17 @@ export class LlmAgentService<TToolContext> {
               assistantTextPreview: text,
               toolNamesUsed: [...toolsCalledThisTurn],
             });
+            const blockedText = buildGroundingBlockedMessage();
+            yield { type: 'delta', textDelta: blockedText };
+            const toolSummary =
+              toolsCalledThisTurn.size > 0
+                ? `[Đã tra cứu: ${[...toolsCalledThisTurn].join('; ')}]`
+                : undefined;
+            yield {
+              type: 'done',
+              reply: { text: blockedText, toolSummary },
+            };
+            return;
           }
 
           const sanitized = sanitizeReplyText(text);
@@ -421,7 +499,7 @@ export class LlmAgentService<TToolContext> {
 
   /**
    * Fix 2 — redact history entries containing injection patterns.
-   * Fix 3 — truncate history to stay within context character budget.
+   * Fix 3 — truncate history to stay within context token budget.
    */
   private buildSafeHistory(
     history: ChatHistoryMessage[],
@@ -444,26 +522,35 @@ export class LlmAgentService<TToolContext> {
       return entry;
     });
 
-    const maxChars = this.getMaxContextChars();
-    const fixedChars = systemPrompt.length + userText.length;
-    let budget = maxChars - fixedChars;
+    const maxTokens = this.getMaxInputTokens();
+    const fixedTokens = estimateTokens(systemPrompt) + estimateTokens(userText);
+    let budget = maxTokens - fixedTokens;
 
     const result: ChatHistoryMessage[] = [];
     for (let i = redacted.length - 1; i >= 0; i--) {
       const entry = redacted[i];
       if (!entry) continue;
-      if (budget >= entry.content.length) {
+      const entryTokens = estimateTokens(entry.content);
+      if (budget >= entryTokens) {
         result.unshift(entry);
-        budget -= entry.content.length;
+        budget -= entryTokens;
       } else {
         logger.debug(
-          `History truncated at index ${i} to stay within context budget externalUserId=${externalUserId}`,
+          `History truncated at index ${i} to stay within token budget externalUserId=${externalUserId}`,
         );
         break;
       }
     }
 
     return result;
+  }
+
+  private getMaxInputTokens(): number {
+    const v = this.config.maxInputTokens;
+    if (v && Number.isFinite(v) && v > 0) return Math.floor(v);
+    // Fallback: derive from maxContextChars using token estimation
+    const chars = this.getMaxContextChars();
+    return Math.floor(chars * 0.67); // ~1.5 tokens/char → 1 char ≈ 0.67 tokens
   }
 
   private getMaxContextChars(): number {
@@ -525,6 +612,18 @@ export class LlmAgentService<TToolContext> {
     if (v === 0) return 0;
     if (v && Number.isFinite(v) && v > 0) return Math.floor(v);
     return DEFAULT_TOOL_CACHE_TTL_MS;
+  }
+
+  private getToolExecutionTimeoutMs(): number {
+    const v = this.config.toolExecutionTimeoutMs;
+    if (v && Number.isFinite(v) && v > 0) return Math.floor(v);
+    return DEFAULT_TOOL_EXECUTION_TIMEOUT_MS;
+  }
+
+  private getGlobalAgentTimeoutMs(): number {
+    const v = this.config.globalAgentTimeoutMs;
+    if (v && Number.isFinite(v) && v > 0) return Math.floor(v);
+    return DEFAULT_GLOBAL_AGENT_TIMEOUT_MS;
   }
 
   private getMaxToolRounds(): number {
@@ -622,7 +721,11 @@ export class LlmAgentService<TToolContext> {
   ): Promise<Array<{ toolCallId: string; content: string }>> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
     const metrics = this.ports.metrics ?? NOOP_METRICS_PORT;
-    const cache = this.ports.toolResultCache ?? NOOP_TOOL_RESULT_CACHE;
+    const rawCache = this.ports.toolResultCache ?? NOOP_TOOL_RESULT_CACHE;
+    const cache: AsyncToolResultCachePort =
+      'get' in rawCache && rawCache.get.length <= 1
+        ? toAsyncCache(rawCache)
+        : (rawCache as AsyncToolResultCachePort);
     const cacheTtlMs = this.getToolCacheTtlMs();
 
     return Promise.all(
@@ -634,7 +737,7 @@ export class LlmAgentService<TToolContext> {
 
         let content: string;
         try {
-          const cached = cacheTtlMs > 0 ? cache.get(cacheKey) : undefined;
+          const cached = cacheTtlMs > 0 ? await cache.get(cacheKey) : undefined;
           let result: unknown;
           if (cached !== undefined) {
             logger.debug(
@@ -642,13 +745,21 @@ export class LlmAgentService<TToolContext> {
             );
             result = cached;
           } else {
-            result = await metrics.timeTool(toolName, () =>
-              this.ports.toolExecutor.execute(toolName, argsJson, toolContext),
+            result = await withTimeout(
+              metrics.timeTool(toolName, () =>
+                this.ports.toolExecutor.execute(
+                  toolName,
+                  argsJson,
+                  toolContext,
+                ),
+              ),
+              this.getToolExecutionTimeoutMs(),
+              `Tool ${toolName}`,
             );
             if (cacheTtlMs > 0) {
-              cache.set(cacheKey, result, cacheTtlMs);
+              await cache.set(cacheKey, result, cacheTtlMs);
               if (toolName === RESCHEDULE_TOOL) {
-                cache.invalidatePrefix(
+                await cache.invalidatePrefix(
                   `${input.externalUserId}:${CALENDAR_TOOL}:`,
                 );
                 logger.debug(

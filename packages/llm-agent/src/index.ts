@@ -36,6 +36,7 @@ export type {
 export {
   buildPromptInjectionBlockedMessage,
   buildWispaceScopeRedirectMessage,
+  buildGroundingBlockedMessage,
 } from './messages';
 export {
   detectPromptInjection,
@@ -88,6 +89,13 @@ export type {
 } from './provider/factory';
 
 // --- Tool result cache ---
-export type { ToolResultCachePort } from './tool-cache/tool-result-cache.port';
+export type {
+  ToolResultCachePort,
+  AsyncToolResultCachePort,
+} from './tool-cache/tool-result-cache.port';
 export { NOOP_TOOL_RESULT_CACHE } from './tool-cache/tool-result-cache.port';
 export { InMemoryToolResultCache } from './tool-cache/in-memory-tool-result-cache';
+export {
+  RedisToolResultCache,
+  type RedisCacheClient,
+} from './tool-cache/redis-tool-result-cache';

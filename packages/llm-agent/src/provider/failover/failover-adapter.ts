@@ -21,6 +21,12 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+export interface FailoverCircuitEvent {
+  provider: string;
+  action: 'open' | 'close' | 'skip';
+  reason?: string;
+}
+
 export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
   readonly providerName = 'failover';
   private readonly circuit = new Map<string, CircuitState>();
@@ -35,6 +41,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     cooldownLongMs?: number,
     cooldownShortMs?: number,
     quickRetryDelayMs?: number,
+    private readonly onCircuitEvent?: (event: FailoverCircuitEvent) => void,
   ) {
     this.cooldownLongMs = cooldownLongMs ?? COOLDOWN_LONG_MS;
     this.cooldownShortMs = cooldownShortMs ?? COOLDOWN_SHORT_MS;
@@ -59,9 +66,36 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     return this.runFailover((c, req) => c.chatWithTools(req), request);
   }
 
-  chatStream(request: LlmToolChatRequest): AsyncIterable<LlmStreamEvent> {
+  async *chatStream(
+    request: LlmToolChatRequest,
+  ): AsyncIterable<LlmStreamEvent> {
     const ordered = this.pickHealthy();
-    return ordered[0].chatStream(request);
+    let lastError: unknown;
+
+    for (const candidate of ordered) {
+      const req = { ...request, model: candidate.getDefaultModel() };
+      try {
+        yield* candidate.chatStream(req);
+        return; // Stream completed successfully
+      } catch (err) {
+        lastError = err;
+        const { reason } = candidate.normalizeError(err);
+        const isFastFail = reason === 'quota_exceeded' || reason === 'auth';
+        this.circuit.set(candidate.providerName, {
+          healthyAgainAt:
+            this.clock() +
+            (isFastFail ? this.cooldownLongMs : this.cooldownShortMs),
+        });
+        this.logger?.warn(
+          `LLM_FAILOVER_STREAM provider=${candidate.providerName} reason=${reason} — trying next candidate`,
+        );
+      }
+    }
+
+    throw new LlmAllProvidersExhaustedError(
+      ordered.map((c) => c.providerName),
+      lastError,
+    );
   }
 
   isRetryableError(): boolean {
@@ -98,6 +132,12 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
           const result = await call(candidate, req);
+          if (this.circuit.has(candidate.providerName)) {
+            this.onCircuitEvent?.({
+              provider: candidate.providerName,
+              action: 'close',
+            });
+          }
           this.circuit.delete(candidate.providerName);
           return result;
         } catch (err) {
@@ -111,6 +151,11 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
               healthyAgainAt:
                 this.clock() +
                 (isFastFail ? this.cooldownLongMs : this.cooldownShortMs),
+            });
+            this.onCircuitEvent?.({
+              provider: candidate.providerName,
+              action: 'open',
+              reason,
             });
             this.logger?.warn(
               `LLM_FAILOVER provider=${candidate.providerName} reason=${reason} attempt=${attempt} — moving to next candidate`,
