@@ -18,6 +18,7 @@ import { ZaloChatHistoryService } from '../services/zalo-chat-history.service';
 
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_BASE_BACKOFF_MS = 500;
+const DEFAULT_MAX_CONCURRENT = 3;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -26,13 +27,15 @@ function sleep(ms: number): Promise<void> {
 /**
  * Thin NestJS adapter around @wispace/llm-agent's platform-agnostic
  * orchestration loop — Zalo counterpart to DiscordAgentService/
- * MessengerAgentService. No usage/safety recording in this MVP (no
- * packages/chat-metering wiring — see spec §1/Global Constraints).
+ * MessengerAgentService. Includes p-limit concurrency cap to prevent
+ * overwhelming the LLM provider.
  */
 @Injectable()
 export class ZaloAgentService {
   private readonly logger = new Logger(ZaloAgentService.name);
   private readonly promptDir = `${process.cwd()}/src/shared/prompts`;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private readonly limiter: (fn: () => Promise<any>) => Promise<any>;
   private agent?: LlmAgentService<ZaloAgentToolContext>;
 
   constructor(
@@ -41,9 +44,28 @@ export class ZaloAgentService {
     private readonly historyService: ZaloChatHistoryService,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
-  ) {}
+  ) {
+    const maxConcurrent = Number(
+      this.configService.get<string>('LLM_MAX_CONCURRENT') ??
+        DEFAULT_MAX_CONCURRENT,
+    );
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pLimit = require('p-limit') as (
+      concurrency: number,
+    ) => <T>(fn: () => Promise<T>) => Promise<T>;
+    this.limiter = pLimit(
+      Number.isFinite(maxConcurrent) && maxConcurrent > 0
+        ? maxConcurrent
+        : DEFAULT_MAX_CONCURRENT,
+    );
+  }
 
   async reply(input: ZaloAgentInput): Promise<ZaloAgentReply> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return this.limiter(() => this.replyInternal(input));
+  }
+
+  private async replyInternal(input: ZaloAgentInput): Promise<ZaloAgentReply> {
     if (!this.agent) {
       this.agent = this.buildAgent();
     }

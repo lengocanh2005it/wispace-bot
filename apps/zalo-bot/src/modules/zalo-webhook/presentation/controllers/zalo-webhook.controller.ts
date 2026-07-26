@@ -67,8 +67,9 @@ export class ZaloWebhookController {
       case 'user_send_text': {
         const senderId = event.sender?.id;
         const text = event.message?.text;
+        const msgId = event.message?.msg_id;
         if (senderId && text) {
-          await this.handler.handleIncomingMessage(senderId, text);
+          await this.handler.handleIncomingMessage(senderId, text, msgId);
         }
         return;
       }

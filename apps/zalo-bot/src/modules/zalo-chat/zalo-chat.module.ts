@@ -1,18 +1,27 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   createLlmProviderAdapter,
   type LlmProviderAdapter,
 } from '@wispace/llm-agent';
+import {
+  ChatDailyUsageEntity,
+  ChatIdempotencyEntity,
+} from '@wispace/chat-metering';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloAgentService } from './application/agent/zalo-agent.service';
 import { ZaloAgentToolsService } from './application/agent/zalo-agent-tools.service';
 import { ZaloChatHistoryService } from './application/services/zalo-chat-history.service';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
 import { ZaloChatService } from './application/services/zalo-chat.service';
+import { ZaloChatRateLimitService } from './application/services/zalo-chat-rate-limit.service';
 
 @Module({
-  imports: [ZaloOauthModule],
+  imports: [
+    ZaloOauthModule,
+    TypeOrmModule.forFeature([ChatDailyUsageEntity, ChatIdempotencyEntity]),
+  ],
   providers: [
     {
       provide: 'LLM_PROVIDER_ADAPTER',
@@ -30,6 +39,7 @@ import { ZaloChatService } from './application/services/zalo-chat.service';
     ZaloAgentToolsService,
     ZaloChatHistoryService,
     ZaloOutboundService,
+    ZaloChatRateLimitService,
     ZaloChatService,
   ],
   exports: [ZaloChatService, ZaloOutboundService],

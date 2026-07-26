@@ -3,6 +3,7 @@ import { ZaloChatService } from './zalo-chat.service';
 import { ZaloAgentService } from '../agent/zalo-agent.service';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '../../../zalo-oauth/application/services/zalo-account-link.service';
+import type { ZaloChatRateLimitService } from './zalo-chat-rate-limit.service';
 
 function buildConfig(): ConfigService {
   return {
@@ -13,6 +14,15 @@ function buildConfig(): ConfigService {
           'https://zalo-bot.example.com/zalo/oauth/callback',
       })[key],
   } as unknown as ConfigService;
+}
+
+function buildRateLimitService(): ZaloChatRateLimitService {
+  return {
+    isEnabled: () => false,
+    reserve: jest.fn(),
+    markCompleted: jest.fn(),
+    refund: jest.fn(),
+  } as unknown as ZaloChatRateLimitService;
 }
 
 describe('ZaloChatService', () => {
@@ -26,6 +36,7 @@ describe('ZaloChatService', () => {
       { reply } as unknown as ZaloAgentService,
       { sendText } as unknown as ZaloOutboundService,
       { findUserIdByZaloId } as unknown as ZaloAccountLinkService,
+      buildRateLimitService(),
     );
 
     await service.handleIncomingMessage('zalo-1', 'chào bạn');
@@ -49,6 +60,7 @@ describe('ZaloChatService', () => {
       { reply } as unknown as ZaloAgentService,
       { sendText } as unknown as ZaloOutboundService,
       { findUserIdByZaloId } as unknown as ZaloAccountLinkService,
+      buildRateLimitService(),
     );
 
     await service.handleIncomingMessage('zalo-1', 'chào bạn');
@@ -66,6 +78,7 @@ describe('ZaloChatService', () => {
       {} as unknown as ZaloAgentService,
       { sendText } as unknown as ZaloOutboundService,
       {} as unknown as ZaloAccountLinkService,
+      buildRateLimitService(),
     );
 
     await service.handleFollow('zalo-1');
@@ -83,6 +96,7 @@ describe('ZaloChatService', () => {
       {} as unknown as ZaloAgentService,
       { sendText } as unknown as ZaloOutboundService,
       {} as unknown as ZaloAccountLinkService,
+      buildRateLimitService(),
     );
 
     await service.handleUnsupportedMessage('zalo-1');

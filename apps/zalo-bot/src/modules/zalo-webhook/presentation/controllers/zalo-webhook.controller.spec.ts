@@ -77,7 +77,7 @@ describe('ZaloWebhookController', () => {
       body.timestamp,
     );
 
-    expect(handleIncomingMessage).toHaveBeenCalledWith('user-1', 'hello');
+    expect(handleIncomingMessage).toHaveBeenCalledWith('user-1', 'hello', 'm1');
   });
 
   it('dispatches user_send_image to handleUnsupportedMessage', async () => {

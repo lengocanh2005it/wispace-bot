@@ -23,6 +23,7 @@ const FEATURE = 'FREE_FORM_CHAT';
 
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_BASE_BACKOFF_MS = 500;
+const DEFAULT_MAX_CONCURRENT = 3;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -32,11 +33,14 @@ function sleep(ms: number): Promise<void> {
  * Thin NestJS adapter around `@wispace/llm-agent`'s platform-agnostic
  * orchestration loop — Discord counterpart to `MessengerAgentService`.
  * Usage/safety events persist via `@wispace/chat-metering` (platform='discord').
+ * Includes p-limit concurrency cap to prevent overwhelming the LLM provider.
  */
 @Injectable()
 export class DiscordAgentService {
   private readonly logger = new Logger(DiscordAgentService.name);
   private readonly promptDir = join(__dirname, '../../../../shared/prompts');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private readonly limiter: (fn: () => Promise<any>) => Promise<any>;
   private agent?: LlmAgentService<DiscordAgentToolContext>;
 
   constructor(
@@ -47,9 +51,30 @@ export class DiscordAgentService {
     private readonly safetyEventService: DiscordLlmSafetyEventService,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
-  ) {}
+  ) {
+    const maxConcurrent = Number(
+      this.configService.get<string>('LLM_MAX_CONCURRENT') ??
+        DEFAULT_MAX_CONCURRENT,
+    );
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pLimit = require('p-limit') as (
+      concurrency: number,
+    ) => <T>(fn: () => Promise<T>) => Promise<T>;
+    this.limiter = pLimit(
+      Number.isFinite(maxConcurrent) && maxConcurrent > 0
+        ? maxConcurrent
+        : DEFAULT_MAX_CONCURRENT,
+    );
+  }
 
   async reply(input: DiscordAgentInput): Promise<DiscordAgentReply> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return this.limiter(() => this.replyInternal(input));
+  }
+
+  private async replyInternal(
+    input: DiscordAgentInput,
+  ): Promise<DiscordAgentReply> {
     if (!this.agent) {
       this.agent = this.buildAgent();
     }

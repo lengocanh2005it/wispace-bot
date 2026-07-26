@@ -3,6 +3,19 @@ import { ZaloTokenService } from '../../../zalo-oauth/application/services/zalo-
 import type { ZaloMessageSenderPort } from '../../../zalo-webhook/domain/ports/zalo-message-sender.port';
 
 const SEND_TEXT_ENDPOINT = 'https://openapi.zalo.me/v3.0/oa/message/cs';
+const SEND_TIMEOUT_MS = 10_000;
+
+export class ZaloSendError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly statusText: string,
+    readonly responseBody: string,
+  ) {
+    super(message);
+    this.name = 'ZaloSendError';
+  }
+}
 
 /**
  * MessageSenderPort-equivalent for Zalo — sends a "consultation" text
@@ -16,10 +29,11 @@ export class ZaloOutboundService implements ZaloMessageSenderPort {
   constructor(private readonly tokenService: ZaloTokenService) {}
 
   async sendText(zaloUserId: string, text: string): Promise<void> {
-    try {
-      const accessToken = await this.tokenService.getValidAccessToken();
+    const accessToken = await this.tokenService.getValidAccessToken();
 
-      const response = await fetch(SEND_TEXT_ENDPOINT, {
+    let response: Response;
+    try {
+      response = await fetch(SEND_TEXT_ENDPOINT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -29,18 +43,31 @@ export class ZaloOutboundService implements ZaloMessageSenderPort {
           recipient: { user_id: zaloUserId },
           message: { text },
         }),
+        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
       });
-
-      if (!response.ok) {
-        this.logger.warn(
-          `Zalo send message failed HTTP ${response.status} for zaloUserId=${zaloUserId}`,
-        );
-      }
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
       this.logger.warn(
-        `Failed to send Zalo message to zaloUserId=${zaloUserId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Zalo send network error for zaloUserId=${zaloUserId}: ${msg}`,
+      );
+      throw new ZaloSendError(
+        `Zalo Send API network error for ${zaloUserId}: ${msg}`,
+        0,
+        'Network Error',
+        msg,
+      );
+    }
+
+    if (!response.ok) {
+      const body = await response.text();
+      this.logger.warn(
+        `Zalo send message failed HTTP ${response.status} for zaloUserId=${zaloUserId}: ${body}`,
+      );
+      throw new ZaloSendError(
+        `Zalo Send API failed for ${zaloUserId}: HTTP ${response.status} ${response.statusText} - ${body}`,
+        response.status,
+        response.statusText,
+        body,
       );
     }
   }
