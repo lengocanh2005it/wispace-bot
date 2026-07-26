@@ -11,7 +11,6 @@ import { StudyCalendarCommandService } from './application/services/study-calend
 import { StudyReminderDispatchService } from './application/services/study-reminder-dispatch.service';
 import { StudyReminderScheduleService } from './application/services/study-reminder-schedule.service';
 import { StudyReminderSyncService } from './application/services/study-reminder-sync.service';
-import { StudyReminderOpsService } from './application/services/study-reminder-ops.service';
 import { StudyReminderWorkerService } from './application/services/study-reminder-worker.service';
 import { StudyReminderService } from './application/services/study-reminder.service';
 import { StudySessionSourceService } from './application/services/study-session-source.service';
@@ -53,7 +52,6 @@ import { StudyReminderJobRepository } from './infrastructure/persistence/study-r
     StudyReminderSyncService,
     StudyReminderDispatchService,
     StudyReminderWorkerService,
-    StudyReminderOpsService,
   ],
   exports: [
     StudyReminderService,
@@ -65,7 +63,7 @@ import { StudyReminderJobRepository } from './infrastructure/persistence/study-r
     StudyCalendarCommandService,
     UserCalendarApiService,
     UserDisplayNameService,
-    StudyReminderOpsService,
+    STUDY_REMINDER_JOB_REPOSITORY,
   ],
 })
 export class StudyReminderModule {}

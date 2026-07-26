@@ -1,7 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatQuotaOpsService } from '../../../chat-rate-limit/application/services/chat-quota-ops.service';
-import { StudyReminderOpsService } from '../../../study-reminder/application/services/study-reminder-ops.service';
+import {
+  STUDY_REMINDER_JOB_REPOSITORY,
+  type StudyReminderJobRepositoryPort,
+} from '../../../study-reminder/domain/repositories/study-reminder-job.repository.port';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '../../../messenger/domain/repositories/messenger-message-log.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../../messenger/domain/repositories/messenger-message-log.repository.port';
 import { LlmSafetyEventService } from '../../../llm-safety/application/services/llm-safety-event.service';
@@ -9,6 +12,7 @@ import type {
   OpsHealthAlert,
   OpsHealthSnapshot,
 } from '../../domain/entities/ops-health.types';
+import type { StudyReminderOpsSummary } from '../../../study-reminder/domain/entities/study-reminder-ops.types';
 
 @Injectable()
 export class OpsHealthService {
@@ -17,7 +21,8 @@ export class OpsHealthService {
   constructor(
     private readonly configService: ConfigService,
     private readonly chatQuotaOpsService: ChatQuotaOpsService,
-    private readonly studyReminderOpsService: StudyReminderOpsService,
+    @Inject(STUDY_REMINDER_JOB_REPOSITORY)
+    private readonly studyReminderJobRepository: StudyReminderJobRepositoryPort,
     @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
     private readonly messageLogRepository: MessengerMessageLogRepositoryPort,
     private readonly llmSafetyEventService: LlmSafetyEventService,
@@ -59,10 +64,7 @@ export class OpsHealthService {
       llmSafetyWarnings24h,
     ] = await Promise.all([
       this.chatQuotaOpsService.getSummary(),
-      this.studyReminderOpsService.getSummary({
-        failedHours,
-        stuckProcessingMinutes,
-      }),
+      this.collectStudyReminderSummary(failedHours, stuckProcessingMinutes),
       this.messageLogRepository.countMessageLogsByTypeSince(
         'CHAT_QUOTA_DENIED',
         denySince,
@@ -187,6 +189,49 @@ export class OpsHealthService {
     }
 
     return alerts;
+  }
+
+  private async collectStudyReminderSummary(
+    failedHours: number,
+    stuckProcessingMinutes: number,
+  ): Promise<StudyReminderOpsSummary> {
+    const sampleLimit = 20;
+    const failedSince = new Date(Date.now() - failedHours * 60 * 60 * 1000);
+    const stuckBefore = new Date(
+      Date.now() - stuckProcessingMinutes * 60 * 1000,
+    );
+
+    const [
+      countsByStatus,
+      terminalFailedSince,
+      stuckProcessing,
+      terminalFailedSamples,
+      stuckProcessingSamples,
+    ] = await Promise.all([
+      this.studyReminderJobRepository.countJobsByStatus(),
+      this.studyReminderJobRepository.countTerminalFailedSince(failedSince),
+      this.studyReminderJobRepository.countStuckProcessing(stuckBefore),
+      this.studyReminderJobRepository.findTerminalFailedSince(
+        failedSince,
+        sampleLimit,
+      ),
+      this.studyReminderJobRepository.findStuckProcessing(
+        stuckBefore,
+        sampleLimit,
+      ),
+    ]);
+
+    return {
+      countsByStatus,
+      terminalFailedSince,
+      stuckProcessing,
+      failedHours,
+      stuckProcessingMinutes,
+      samples: {
+        terminalFailed: terminalFailedSamples,
+        stuckProcessing: stuckProcessingSamples,
+      },
+    };
   }
 
   private readPositiveNumber(key: string, fallback: number): number {

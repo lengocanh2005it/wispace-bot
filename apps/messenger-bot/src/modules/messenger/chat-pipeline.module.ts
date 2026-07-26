@@ -25,9 +25,9 @@ import { RedisChatHistoryStore } from './infrastructure/persistence/redis-chat-h
 import { GOALS_DATA_PORT } from './domain/ports/goals-data.port';
 import { REPORT_PORT } from './domain/ports/report.port';
 import { STUDY_DATA_PORT } from './domain/ports/study-data.port';
-import { GoalsDataAdapter } from './infrastructure/adapters/goals-data.adapter';
-import { ReportAdapter } from './infrastructure/adapters/report.adapter';
 import { StudyDataAdapter } from './infrastructure/adapters/study-data.adapter';
+import { UserGoalsApiService } from '../student-report/infrastructure/wispace/user-goals-api.service';
+import { StudentReportService } from '../student-report/application/services/student-report.service';
 
 /**
  * Self-contained module for the chat pipeline:
@@ -64,15 +64,19 @@ import { StudyDataAdapter } from './infrastructure/adapters/study-data.adapter';
       provide: CHAT_QUEUE_STORE,
       useExisting: ChatQueueStoreResolver,
     },
-    GoalsDataAdapter,
     {
       provide: GOALS_DATA_PORT,
-      useExisting: GoalsDataAdapter,
+      useFactory: (goalsApi: UserGoalsApiService) => ({
+        getUserGoals: (psid: string) => goalsApi.getUserGoals(psid),
+      }),
+      inject: [UserGoalsApiService],
     },
-    ReportAdapter,
     {
       provide: REPORT_PORT,
-      useExisting: ReportAdapter,
+      useFactory: (reportService: StudentReportService) => ({
+        generateReport: (psid: string) => reportService.generateReport(psid),
+      }),
+      inject: [StudentReportService],
     },
     StudyDataAdapter,
     {

@@ -17,7 +17,7 @@ import {
   readRequiredStringField,
 } from '../../../../shared/utils/llm-json-output.utils';
 import { sanitizeUntrustedTextForLlm } from '@wispace/llm-agent';
-import { StudentCapacityService } from '../../../student-report/application/services/student-capacity.service';
+import { TaskScoreAverageApiService } from '../../../student-report/infrastructure/wispace/task-score-average-api.service';
 import { UserGoalsApiService } from '../../../student-report/infrastructure/wispace/user-goals-api.service';
 import {
   NormalizedStudySession,
@@ -39,7 +39,7 @@ export class StudyReminderService {
     private readonly studySessionSourceService: StudySessionSourceService,
     private readonly studyReminderScheduleService: StudyReminderScheduleService,
     private readonly userGoalsApiService: UserGoalsApiService,
-    private readonly studentCapacityService: StudentCapacityService,
+    private readonly taskScoreAverageApi: TaskScoreAverageApiService,
     private readonly userDisplayNameService: UserDisplayNameService,
     private readonly llmUsageRecorder: LlmUsageRecorderService,
     private readonly llmExecution: LlmExecutionService,
@@ -134,7 +134,7 @@ export class StudyReminderService {
     }
 
     try {
-      const capacity = await this.studentCapacityService.getCapacityData(psid);
+      const capacity = await this.taskScoreAverageApi.getCapacityData(psid);
       input.task1Band = capacity.task1_band;
       input.task2Band = capacity.task2_band;
       if (!input.targetScore) {
