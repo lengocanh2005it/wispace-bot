@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { TaskScoreAverageApiService } from '../../infrastructure/wispace/task-score-average-api.service';
-import { StudentCapacityInput } from '../../domain/types/student-capacity.types';
+import type { StudentCapacityInput } from '@wispace/student-report';
 
 @Injectable()
 export class StudentCapacityService {

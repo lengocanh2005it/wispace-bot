@@ -10,7 +10,7 @@ import {
   type WispaceApiClientConfig,
 } from '@wispace/wispace-client';
 import { MetricsService } from '../../../metrics/metrics.service';
-import { UserGoalsRecord } from '../../domain/types/user-goals.types';
+import type { UserGoalsRecord } from '@wispace/wispace-client';
 import { parseExamDateToIso } from '../../../../shared/utils/exam-date.utils';
 
 const ID_HEADER = 'x-psid' as const;

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StudyCalendarCommandService } from '../../../study-reminder/application/services/study-calendar-command.service';
-import type { RescheduleSchedulingMode } from '../../../study-reminder/application/utils/study-calendar.utils';
+import type { RescheduleSchedulingMode } from '@wispace/wispace-client';
 import { buildRescheduleConfirmFollowUp } from '../formatters/messenger-rich-message.builder';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
 import {
