@@ -13,6 +13,8 @@ import { ReportCronLeaderService } from './report-cron-leader.service';
 import { ReportScheduleService } from './report-schedule.service';
 import { ReportSendScheduleService } from './report-send-schedule.service';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
+import { PgAdvisoryLockService } from '../../../../shared/common/pg-advisory-lock.service';
+import { ADVISORY_LOCK } from '../../../../shared/common/advisory-lock-ids';
 
 @Injectable()
 export class ReportSendRetryDispatchService {
@@ -27,6 +29,7 @@ export class ReportSendRetryDispatchService {
     private readonly reportSendScheduleService: ReportSendScheduleService,
     private readonly reportCronLeaderService: ReportCronLeaderService,
     private readonly reportSendOrchestrationService: ReportSendOrchestrationService,
+    private readonly pgLock: PgAdvisoryLockService,
   ) {}
 
   /** R5: poll outbox — default 15 phút (khớp REPORT_SEND_RETRY_POLL_MINUTES). */
@@ -39,7 +42,9 @@ export class ReportSendRetryDispatchService {
       return;
     }
 
-    await this.dispatchDueReportRetries();
+    await this.pgLock.withLock(ADVISORY_LOCK.REPORT_SEND_RETRY_DISPATCH, () =>
+      this.dispatchDueReportRetries(),
+    );
   }
 
   async dispatchDueReportRetries(): Promise<{
