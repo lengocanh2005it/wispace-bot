@@ -1,45 +1,45 @@
 # LLM Provider Abstraction Plan
 
-> **Trạng thái:** ✅ Phase 0–6 đã implement xong (xem PR [#32](https://github.com/lengocanh2005it/messenger-ai-for-student/pull/32)).
-> Adapter pattern: `LlmProviderAdapter` interface, OpenAI adapter, OpenAI-compatible adapter, factory. Mọi consumer (messenger-bot, discord-bot) đã migrate.
+> **Status:** ✅ Phase 0–6 fully implemented (see PR [#32](https://github.com/lengocanh2005it/messenger-ai-for-student/pull/32)).
+> Adapter pattern: `LlmProviderAdapter` interface, OpenAI adapter, OpenAI-compatible adapter, factory. All consumers (messenger-bot, discord-bot) have migrated.
 
-## 1. Mục tiêu tài liệu
+## 1. Document Purpose
 
-Tài liệu này phân tích việc codebase hiện đang phụ thuộc cứng vào OpenAI SDK và đề xuất một interface trung gian để sau này có thể đổi sang LLM provider khác với ít thay đổi nhất.
+This document analyzes the codebase's current hard dependency on the OpenAI SDK and proposes an intermediary interface to enable switching to other LLM providers later with minimal changes.
 
-Mục tiêu chính:
+Primary goals:
 
-- Giảm coupling trực tiếp giữa business services và OpenAI SDK.
-- Giữ nguyên hành vi hiện tại của chatbot, báo cáo học tập và nhắc lịch học trong phase đầu.
-- Tách phần "gọi model" khỏi phần nghiệp vụ Messenger, Student Report, Study Reminder.
-- Chuẩn bị đường để dùng OpenAI-compatible endpoint hoặc provider khác như Anthropic, Gemini, local LLM, gateway nội bộ.
-- Không phá các lớp Clean Architecture hiện có.
+- Reduce direct coupling between business services and the OpenAI SDK.
+- Preserve current chatbot, study report, and study reminder behavior in the initial phase.
+- Separate "model calling" from Messenger, Student Report, and Study Reminder business logic.
+- Prepare the path to use OpenAI-compatible endpoints or other providers like Anthropic, Gemini, local LLM, or internal gateways.
+- Don't break existing Clean Architecture layers.
 
-## 1b. Quyết định thiết kế đã chốt
+## 1b. Locked Design Decisions
 
-Ba điểm này đã được phân tích và chốt — **không cần thảo luận lại khi implement**:
+These three points have been analyzed and locked — **no need to re-discuss during implementation**:
 
-| # | Vấn đề | Quyết định |
-|---|--------|------------|
-| 1 | `LlmFeature` / `LlmUsageFeature` / `LlmExecutionFeature` — 3 type cùng giá trị | Hợp nhất trong Phase 1: canonical `LlmFeature` ở `llm-execution/domain`, hai type cũ thành alias backward-compat, xóa sau khi migrate xong |
-| 2 | `LlmExecutionService.run()` signature | Giữ nguyên `run<T>(fn, context?)` — không đổi để tránh sửa tất cả caller. Pseudo code trong tài liệu đã được sửa để khớp |
-| 3 | `OpenAiLlmClient` đọc config từ đâu | Inject `LlmExecutionConfigService`, thêm `getApiKey()` / `getModel()` / `getBaseUrl()` vào đó — single source of truth, không inject `ConfigService` riêng trong adapter |
+| # | Issue | Decision |
+|---|-------|----------|
+| 1 | `LlmFeature` / `LlmUsageFeature` / `LlmExecutionFeature` — 3 types with same values | Consolidate in Phase 1: canonical `LlmFeature` in `llm-execution/domain`, two old types become backward-compat aliases, delete after full migration |
+| 2 | `LlmExecutionService.run()` signature | Keep `run<T>(fn, context?)` unchanged — don't modify to avoid changing all callers. Pseudo code in the document has been updated to match |
+| 3 | Where `OpenAiLlmClient` reads config from | Inject `LlmExecutionConfigService`, add `getApiKey()` / `getModel()` / `getBaseUrl()` to it — single source of truth, don't inject separate `ConfigService` in adapter |
 
-## 2. Đặt vấn đề
+## 2. Problem Statement
 
-Hiện tại dự án dùng OpenAI ở nhiều điểm trong application services. Điều này chạy tốt cho POC, nhưng nếu sau này muốn đổi provider thì phải sửa nhiều nơi:
+The project currently uses OpenAI at multiple points in application services. This works well for POC, but switching providers later would require changing many places:
 
-- Sửa nơi khởi tạo SDK.
-- Sửa format messages.
-- Sửa format tool/function calling.
-- Sửa response parsing.
-- Sửa usage tracking token.
-- Sửa retry/error detection.
-- Sửa test mock vì test đang dùng OpenAI response shape.
+- Change SDK initialization.
+- Change message format.
+- Change tool/function calling format.
+- Change response parsing.
+- Change token usage tracking.
+- Change retry/error detection.
+- Change test mocks because tests use OpenAI response shapes.
 
-Nói ngắn gọn: business logic hiện biết quá nhiều về OpenAI.
+In short: business logic knows too much about OpenAI.
 
-Vấn đề lớn nhất không chỉ là `new OpenAI(...)`. Phần khó hơn là các service đang phụ thuộc vào "ngôn ngữ giao tiếp" của OpenAI:
+The biggest problem isn't just `new OpenAI(...)`. The harder part is that services depend on OpenAI's "communication language":
 
 - `chat.completions.create(...)`
 - `response_format: { type: 'json_object' }`
@@ -51,85 +51,85 @@ Vấn đề lớn nhất không chỉ là `new OpenAI(...)`. Phần khó hơn l�
 - `ChatCompletion`
 - `usage.prompt_tokens`, `usage.completion_tokens`, `usage.total_tokens`
 
-Nếu đổi sang model chỉ support text completion, hoặc provider có function calling khác format, phần agent sẽ là vùng sửa nhiều nhất.
+If switching to a model that only supports text completion, or a provider with different function calling format, the agent portion would require the most changes.
 
-## 3. Hiện trạng coupling trong codebase
+## 3. Current Coupling in Codebase
 
 ### 3.1. Student Report
 
-File chính:
+Main file:
 
 - `src/modules/student-report/application/services/student-report.service.ts`
 
-Hiện service này:
+Current service:
 
-- Import trực tiếp `OpenAI` từ package `openai`.
-- Đọc `OPENAI_API_KEY`.
-- Đọc `OPENAI_MODEL`.
-- Tự tạo client bằng `new OpenAI({ apiKey })`.
-- Gọi `client.chat.completions.create(...)`.
-- Dùng `response_format: { type: 'json_object' }`.
-- Parse `response.choices[0]?.message?.content`.
-- Gọi `llmUsageRecorder.recordFromCompletion(...)` với raw OpenAI completion.
+- Directly imports `OpenAI` from the `openai` package.
+- Reads `OPENAI_API_KEY`.
+- Reads `OPENAI_MODEL`.
+- Creates client with `new OpenAI({ apiKey })`.
+- Calls `client.chat.completions.create(...)`.
+- Uses `response_format: { type: 'json_object' }`.
+- Parses `response.choices[0]?.message?.content`.
+- Calls `llmUsageRecorder.recordFromCompletion(...)` with raw OpenAI completion.
 
-Mức coupling: trung bình.
+Coupling level: medium.
 
-Lý do: service chỉ cần JSON output. Nếu có một interface `generateJson(...)` thì phần này tách khá dễ.
+Reason: service only needs JSON output. If there were a `generateJson(...)` interface, this part would separate quite easily.
 
 ### 3.2. Study Reminder
 
-File chính:
+Main file:
 
 - `src/modules/study-reminder/application/services/study-reminder.service.ts`
 
-Hiện service này tương tự Student Report:
+Current service is similar to Student Report:
 
-- Import trực tiếp `OpenAI`.
-- Đọc `OPENAI_API_KEY`, `OPENAI_MODEL`.
-- Tự tạo OpenAI client.
-- Gọi Chat Completions với JSON mode.
-- Ghi usage từ raw completion.
-- Fallback template khi thiếu API key hoặc LLM lỗi.
+- Directly imports `OpenAI`.
+- Reads `OPENAI_API_KEY`, `OPENAI_MODEL`.
+- Creates OpenAI client.
+- Calls Chat Completions with JSON mode.
+- Logs usage from raw completion.
+- Falls back to template when API key missing or LLM errors.
 
-Mức coupling: trung bình.
+Coupling level: medium.
 
-Lý do: giống Student Report, đây là use case JSON generation, ít phức tạp hơn agent có tools.
+Reason: like Student Report, this is a JSON generation use case, less complex than an agent with tools.
 
 ### 3.3. Messenger Agent
 
-File chính:
+Main files:
 
 - `src/modules/messenger/application/agent/messenger-agent.service.ts`
 - `src/modules/messenger/application/agent/messenger-agent.tools.ts`
 
-Hiện agent:
+Current agent:
 
-- Import trực tiếp `OpenAI`.
-- Import OpenAI message types:
+- Directly imports `OpenAI`.
+- Imports OpenAI message types:
   - `ChatCompletionMessageParam`
   - `ChatCompletionToolMessageParam`
-- Tự cache `OpenAI` client trong service.
-- Build messages theo OpenAI role format.
-- Gọi `client.chat.completions.create(...)`.
-- Truyền `tools: MESSENGER_AGENT_TOOLS`.
-- Dùng `tool_choice: 'auto'`.
-- Đọc `choice.tool_calls`.
-- Đọc `toolCall.function.name`.
-- Đọc `toolCall.function.arguments`.
-- Push assistant message và tool message theo format OpenAI.
-- Ghi usage theo từng tool round bằng raw OpenAI completion.
+- Caches `OpenAI` client in service.
+- Builds messages in OpenAI role format.
+- Calls `client.chat.completions.create(...)`.
+- Passes `tools: MESSENGER_AGENT_TOOLS`.
+- Uses `tool_choice: 'auto'`.
+- Reads `choice.tool_calls`.
+- Reads `toolCall.function.name`.
+- Reads `toolCall.function.arguments`.
+- Pushes assistant message and tool message in OpenAI format.
+- Logs usage per tool round using raw OpenAI completion.
 
-Mức coupling: cao.
+Coupling level: high.
 
-Lý do: agent không chỉ gọi LLM một lần. Nó có vòng lặp tool calling nhiều round, dùng OpenAI message shape để duy trì conversation state. Đây là phần cần thiết kế kỹ nhất.
+Reason: agent doesn't just call LLM once. It has a multi-round tool calling loop, using OpenAI message shapes to maintain conversation state. This is the part requiring the most careful design.
 
-### 3.4. Tool schema
+### 3.4. Tool Schema
 
-File chính:
+Main file:
 
 - `src/modules/messenger/application/agent/messenger-agent.tools.ts`
 
-Hiện tool schema export kiểu:
+Current tool schema exports typed:
 
 ```ts
 import type { ChatCompletionTool } from 'openai/resources/chat/completions';
@@ -146,11 +146,11 @@ export const MESSENGER_AGENT_TOOLS: ChatCompletionTool[] = [
 ];
 ```
 
-Điều này làm application layer bị dính OpenAI type dù tool definition bản chất là domain/application concept.
+This causes the application layer to be tied to OpenAI types even though tool definitions are fundamentally domain/application concepts.
 
-Mức coupling: cao nhưng dễ sửa theo hướng adapter.
+Coupling level: high but easy to fix via adapter approach.
 
-Giải pháp: định nghĩa tool ở dạng provider-neutral:
+Solution: define tools in provider-neutral form:
 
 ```ts
 export interface LlmToolDefinition {
@@ -160,7 +160,7 @@ export interface LlmToolDefinition {
 }
 ```
 
-OpenAI adapter sẽ map sang:
+OpenAI adapter maps to:
 
 ```ts
 {
@@ -173,19 +173,19 @@ OpenAI adapter sẽ map sang:
 }
 ```
 
-### 3.5. LLM usage tracking
+### 3.5. LLM Usage Tracking
 
-File chính:
+Main file:
 
 - `src/modules/llm-usage/application/services/llm-usage-recorder.service.ts`
 
-Hiện service này import:
+Current service imports:
 
 ```ts
 import type { ChatCompletion } from 'openai/resources/chat/completions';
 ```
 
-Và method chính:
+And main method:
 
 ```ts
 recordFromCompletion(input: {
@@ -193,42 +193,42 @@ recordFromCompletion(input: {
 })
 ```
 
-Mức coupling: trung bình.
+Coupling level: medium.
 
-Vấn đề:
+Issues:
 
-- Usage recorder hiện biết raw OpenAI completion.
-- DB field đang có tên `openaiResponseId`.
-- Config cost đang có wording "OpenAI invoice".
+- Usage recorder currently knows raw OpenAI completion.
+- DB field is named `openaiResponseId`.
+- Cost config has wording "OpenAI invoice".
 
-Giải pháp phase đầu:
+Phase 1 solution:
 
-- Giữ `recordFromCompletion(...)` để tránh diff quá lớn.
-- Thêm method mới `recordFromLlmUsage(...)` hoặc dùng sẵn `recordUsage(...)`.
-- Adapter trả về normalized usage.
-- Các service mới gọi `recordUsage(...)` qua normalized data.
+- Keep `recordFromCompletion(...)` to avoid large diffs.
+- Add new method `recordFromLlmUsage(...)` or use existing `recordUsage(...)`.
+- Adapter returns normalized usage.
+- New services call `recordUsage(...)` with normalized data.
 
-Giải pháp phase sau:
+Later phase solution:
 
-- Rename semantic field ở domain thành `providerResponseId`.
-- Giữ DB column cũ nếu chưa muốn migration, hoặc thêm migration riêng nếu cần chuẩn hóa dữ liệu.
+- Rename semantic field in domain to `providerResponseId`.
+- Keep old DB column if migration not desired yet, or add separate migration if data normalization needed.
 
-### 3.6. Retry/error utils
+### 3.6. Retry/Error Utils
 
-File chính:
+Main files:
 
 - `src/shared/utils/openai-error.utils.ts`
 - `src/modules/llm-execution/application/services/llm-execution.service.ts`
 
-Hiện `LlmExecutionService` dùng:
+Current `LlmExecutionService` uses:
 
 ```ts
 isOpenAiRetryableError(error)
 ```
 
-Mức coupling: trung bình.
+Coupling level: medium.
 
-Nếu dùng OpenAI-compatible provider thì có thể vẫn ổn trong ngắn hạn vì lỗi HTTP thường giống nhau. Nhưng nếu đổi sang provider khác, retry logic nên dựa trên normalized error:
+If using OpenAI-compatible provider, this may still work short-term since HTTP errors are usually similar. But if switching to a different provider, retry logic should be based on normalized errors:
 
 - rate limit
 - timeout
@@ -236,36 +236,36 @@ Nếu dùng OpenAI-compatible provider thì có thể vẫn ổn trong ngắn h�
 - network error
 - provider overloaded
 
-Giải pháp phase sau:
+Later phase solution:
 
-- Đổi `openai-error.utils.ts` thành `llm-error.utils.ts`.
-- Adapter có thể expose `normalizeError(error): LlmProviderError`.
-- `LlmExecutionService` retry dựa trên `LlmProviderError.retryable`.
+- Rename `openai-error.utils.ts` to `llm-error.utils.ts`.
+- Adapter can expose `normalizeError(error): LlmProviderError`.
+- `LlmExecutionService` retries based on `LlmProviderError.retryable`.
 
-### 3.7. Metrics wording
+### 3.7. Metrics Wording
 
-File chính:
+Main file:
 
 - `src/modules/metrics/metrics.service.ts`
 
-Hiện comments/help text dùng wording OpenAI:
+Current comments/help text uses OpenAI wording:
 
 - `Raw OpenAI API call duration`
 - `OpenAI API call duration per feature, model, and tool round`
 
-Mức coupling: thấp.
+Coupling level: low.
 
-Đây chủ yếu là naming/observability. Có thể đổi sang "LLM provider API call duration" ở phase cleanup.
+This is mainly naming/observability. Can change to "LLM provider API call duration" in cleanup phase.
 
-### 3.8. Env config
+### 3.8. Env Config
 
-File chính:
+Main files:
 
 - `.env.example`
 - `AGENTS.md`
 - `docs/project-overview.md`
 
-Env hiện tại:
+Current env:
 
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
@@ -274,12 +274,12 @@ Env hiện tại:
 - `LLM_OPENAI_RETRY_MAX_ATTEMPTS`
 - `LLM_OPENAI_RETRY_BACKOFF_MS`
 
-Mức coupling: trung bình.
+Coupling level: medium.
 
-Giải pháp nên incremental:
+Solution should be incremental:
 
-- Phase đầu chưa đổi env để tránh phá deploy.
-- Phase sau thêm env generic:
+- Phase 1 doesn't change env to avoid breaking deploy.
+- Later phases add generic env:
   - `LLM_PROVIDER=openai`
   - `LLM_API_KEY=...`
   - `LLM_MODEL=...`
@@ -288,109 +288,109 @@ Giải pháp nên incremental:
   - `LLM_MAX_CONTEXT_CHARS=...`
   - `LLM_RETRY_MAX_ATTEMPTS=...`
   - `LLM_RETRY_BACKOFF_MS=...`
-- Giữ alias `OPENAI_*` trong một thời gian.
-- Precedence đề xuất: `LLM_*` ưu tiên hơn `OPENAI_*`, nhưng nếu `LLM_*` thiếu thì fallback sang `OPENAI_*`.
+- Keep `OPENAI_*` aliases for a while.
+- Proposed precedence: `LLM_*` takes priority over `OPENAI_*`, but if `LLM_*` is missing, fall back to `OPENAI_*`.
 
-## 4. Mục tiêu thiết kế
+## 4. Design Goals
 
-### 4.1. Tách application khỏi provider SDK
+### 4.1. Separate Application from Provider SDK
 
-Sau khi hoàn tất các phase chính, các service nghiệp vụ không nên import package `openai`.
+After completing the main phases, business services should not import the `openai` package.
 
-Mục tiêu:
+Goals:
 
-- `StudentReportService` chỉ gọi `LlmClientPort.generateJson(...)`.
-- `StudyReminderService` chỉ gọi `LlmClientPort.generateJson(...)`.
-- `MessengerAgentService` chỉ gọi `LlmClientPort.chatWithTools(...)`.
-- `messenger-agent.tools.ts` không import OpenAI type.
+- `StudentReportService` only calls `LlmClientPort.generateJson(...)`.
+- `StudyReminderService` only calls `LlmClientPort.generateJson(...)`.
+- `MessengerAgentService` only calls `LlmClientPort.chatWithTools(...)`.
+- `messenger-agent.tools.ts` doesn't import OpenAI types.
 
-### 4.2. Giữ behavior hiện tại
+### 4.2. Preserve Current Behavior
 
-Phase đầu nên giữ nguyên:
+Phase 1 should preserve:
 
-- Prompt hiện tại.
-- JSON parsing và validation hiện tại.
-- Fallback template hiện tại.
-- Tool execution flow hiện tại.
-- Safety checks hiện tại.
-- Rate limit/quota flow hiện tại.
-- LLM usage tracking hiện tại hoặc tương đương.
+- Current prompts.
+- Current JSON parsing and validation.
+- Current template fallback.
+- Current tool execution flow.
+- Current safety checks.
+- Current rate limit/quota flow.
+- Current LLM usage tracking or equivalent.
 
-Không nên vừa abstraction vừa đổi nội dung prompt/model behavior. Làm vậy sẽ khó debug nếu output thay đổi.
+Don't change prompt content or model behavior while doing abstraction. That would make debugging harder if output changes.
 
-### 4.3. Interface nhỏ, đúng use case
+### 4.3. Small Interface, Right Use Cases
 
-Không nên thiết kế interface quá rộng kiểu "support mọi thứ". Codebase hiện có 2 nhóm use case:
+Don't design an overly broad "support everything" interface. The codebase has 2 use case groups:
 
-1. Generate JSON cho proactive content:
+1. Generate JSON for proactive content:
    - Student Report
    - Study Reminder
 
-2. Chat agent có tool calling:
+2. Chat agent with tool calling:
    - Free-form Messenger chat
 
-Vậy interface ban đầu chỉ cần cover 2 operation:
+So the initial interface only needs to cover 2 operations:
 
 - `generateJson(request)`
 - `chatWithTools(request)`
 
-Sau này nếu cần embeddings, image, streaming, rerank, speech thì thêm interface riêng.
+If embeddings, images, streaming, reranking, or speech are needed later, add separate interfaces.
 
-### 4.4. Adapter chịu trách nhiệm mapping provider-specific
+### 4.4. Adapter Handles Provider-Specific Mapping
 
-OpenAI adapter nên là nơi duy nhất biết:
+OpenAI adapter should be the only place that knows:
 
 - OpenAI SDK object.
 - OpenAI Chat Completion request shape.
 - OpenAI tool schema shape.
 - OpenAI response shape.
 - OpenAI token usage shape.
-- OpenAI retryable error shape nếu cần.
+- OpenAI retryable error shape if needed.
 
-Application services chỉ thấy normalized types.
+Application services only see normalized types.
 
-### 4.5. Không làm mất safety boundary
+### 4.5. Don't Lose Safety Boundaries
 
-Hiện code có nhiều safety boundary quan trọng:
+Current code has important safety boundaries:
 
 - `sanitizeUntrustedTextForLlm`
 - `sanitizeToolResultContent`
 - JSON output validation
-- fallback template
-- grounding check cho free-form chat
-- prompt injection detection trước khi gọi model
+- template fallback
+- grounding check for free-form chat
+- prompt injection detection before calling model
 
-Interface mới không được bypass các bước này.
+New interface must not bypass these steps.
 
-Nguyên tắc:
+Principles:
 
-- Sanitize input vẫn nằm ở application service hoặc helper hiện tại.
-- Adapter không tự sanitize business data.
-- Adapter chỉ map request sang provider.
-- Parse/validate business JSON vẫn nằm ở service hoặc parser helper hiện tại.
+- Input sanitization stays in application service or existing helpers.
+- Adapter doesn't sanitize business data itself.
+- Adapter only maps request to provider.
+- Business JSON parse/validate stays in service or existing parser helpers.
 
-## 5. Non-goals
+## 5. Non-Goals
 
-Các việc không nên làm trong phase abstraction đầu:
+Things not to do in the initial abstraction phase:
 
-- Không đổi provider ngay.
-- Không đổi model mặc định.
-- Không đổi prompt.
-- Không đổi format Messenger reply.
-- Không đổi flow rate limit.
-- Không thêm queue mới.
-- Không refactor toàn bộ LLM usage schema ngay.
-- Không đổi DB migration nếu chưa cần.
-- Không xóa `OPENAI_*` env ngay.
-- Không build multi-provider routing phức tạp ngay từ đầu.
+- Don't change provider immediately.
+- Don't change default model.
+- Don't change prompts.
+- Don't change Messenger reply format.
+- Don't change rate limit flow.
+- Don't add new queues.
+- Don't refactor entire LLM usage schema immediately.
+- Don't change DB migration unless needed.
+- Don't delete `OPENAI_*` env immediately.
+- Don't build complex multi-provider routing from the start.
 
-## 6. Kiến trúc đề xuất
+## 6. Proposed Architecture
 
-### 6.1. Tổng quan
+### 6.1. Overview
 
-Đề xuất thêm một provider port trong module LLM hiện có, ưu tiên mở rộng `LlmExecutionModule` vì module này đã chịu trách nhiệm concurrency, timeout, retry cho LLM calls.
+Proposal adds a provider port in the existing LLM module, preferring to extend `LlmExecutionModule` since it already handles concurrency, timeout, retry for LLM calls.
 
-Sơ đồ:
+Diagram:
 
 ```mermaid
 flowchart LR
@@ -409,69 +409,69 @@ flowchart LR
   Exec --> Retry["retry / timeout / concurrency"]
 ```
 
-Có hai lựa chọn thiết kế:
+Two design options:
 
-### 6.2. Option A: Adapter chỉ gọi provider, service tự wrap execution/usage
-
-Flow:
-
-- Service build request.
-- Service gọi `llmExecution.run(...)`.
-- Trong callback, service gọi `llmClient.generateJson(...)` hoặc `llmClient.chatWithTools(...)`.
-- Service tự ghi usage từ normalized response.
-
-Ưu điểm:
-
-- Diff nhỏ.
-- Giữ control hiện tại ở service.
-- Dễ migrate từng service.
-- Ít nguy cơ vòng phụ thuộc module.
-
-Nhược điểm:
-
-- Mỗi service vẫn lặp code execution/usage một chút.
-- Adapter chưa hoàn toàn là gateway.
-
-Phù hợp cho phase đầu.
-
-### 6.3. Option B: Tạo LlmGatewayService orchestration đầy đủ
+### 6.2. Option A: Adapter Only Calls Provider, Service Wraps Execution/Usage
 
 Flow:
 
-- Service gọi `llmGateway.generateJson(...)`.
-- Gateway lo execution, retry, metrics, usage.
-- Adapter chỉ map provider.
+- Service builds request.
+- Service calls `llmExecution.run(...)`.
+- In callback, service calls `llmClient.generateJson(...)` or `llmClient.chatWithTools(...)`.
+- Service logs usage from normalized response.
 
-Ưu điểm:
+Pros:
 
-- Business service sạch hơn.
+- Small diff.
+- Keeps current control in service.
+- Easy to migrate service by service.
+- Less risk of module circular dependencies.
+
+Cons:
+
+- Each service still duplicates some execution/usage code.
+- Adapter isn't fully a gateway.
+
+Suitable for phase 1.
+
+### 6.3. Option B: Create Full LlmGatewayService Orchestration
+
+Flow:
+
+- Service calls `llmGateway.generateJson(...)`.
+- Gateway handles execution, retry, metrics, usage.
+- Adapter only maps provider.
+
+Pros:
+
+- Cleaner business services.
 - Centralized metrics/usage/error handling.
-- Dễ thêm routing provider sau này.
+- Easy to add provider routing later.
 
-Nhược điểm:
+Cons:
 
-- Diff lớn hơn.
-- Dễ tạo vòng phụ thuộc với `LlmUsageModule`, `MetricsModule`.
-- Cần thiết kế module boundary kỹ hơn.
+- Larger diff.
+- Easy to create circular dependency with `LlmUsageModule`, `MetricsModule`.
+- Requires more careful module boundary design.
 
-Phù hợp cho phase sau khi đã tách adapter thành công.
+Suitable for later phases after adapter is successfully separated.
 
-### 6.4. Khuyến nghị
+### 6.4. Recommendation
 
-Nên đi theo Option A trước, sau đó nâng cấp dần sang Option B nếu thấy lặp logic nhiều.
+Start with Option A, then gradually upgrade to Option B if logic duplication is found.
 
-Lý do:
+Reasons:
 
-- Codebase đang có `LlmExecutionService` dùng ổn.
-- `LlmUsageRecorderService` đã tồn tại và đang được inject vào từng service.
-- Phase đầu cần giảm lock-in, không cần rewrite orchestration.
-- Ít rủi ro regression.
+- Codebase already has working `LlmExecutionService`.
+- `LlmUsageRecorderService` exists and is already injected into each service.
+- Phase 1 needs to reduce lock-in, not rewrite orchestration.
+- Less regression risk.
 
-## 7. Interface đề xuất
+## 7. Proposed Interfaces
 
-### 7.1. Provider token
+### 7.1. Provider Token
 
-File đề xuất:
+Proposed file:
 
 - `src/modules/llm-execution/application/ports/llm-client.port.ts`
 
@@ -486,9 +486,9 @@ export interface LlmClientPort {
 }
 ```
 
-### 7.2. Common types
+### 7.2. Common Types
 
-File đề xuất:
+Proposed file:
 
 - `src/modules/llm-execution/domain/entities/llm.types.ts`
 
@@ -514,19 +514,19 @@ export interface LlmProviderMetadata {
 }
 ```
 
-**Quyết định về `LlmFeature` / `LlmUsageFeature` / `LlmExecutionFeature` — hợp nhất trong Phase 1:**
+**Decision on `LlmFeature` / `LlmUsageFeature` / `LlmExecutionFeature` — consolidate in Phase 1:**
 
-Codebase hiện có **3 type cùng giá trị**:
+Codebase currently has **3 types with same values**:
 
-| Type | File hiện tại |
-|------|--------------|
+| Type | Current File |
+|------|-------------|
 | `LlmExecutionFeature` | `llm-execution/application/services/llm-execution.service.ts` |
 | `LlmUsageFeature` | `llm-usage/domain/entities/llm-usage.types.ts` |
-| `LlmFeature` (mới) | `llm-execution/domain/entities/llm.types.ts` |
+| `LlmFeature` (new) | `llm-execution/domain/entities/llm.types.ts` |
 
-Để không để 3 type cùng tồn tại, **Phase 1 hợp nhất luôn**:
+To avoid having 3 types coexist, **Phase 1 consolidates immediately**:
 
-1. Định nghĩa canonical tại `src/modules/llm-execution/domain/entities/llm.types.ts`:
+1. Define canonical at `src/modules/llm-execution/domain/entities/llm.types.ts`:
 
 ```ts
 export type LlmFeature =
@@ -535,25 +535,25 @@ export type LlmFeature =
   | 'STUDY_REMINDER';
 ```
 
-2. `llm-execution.service.ts` — xóa `LlmExecutionFeature`, alias lại:
+2. `llm-execution.service.ts` — delete `LlmExecutionFeature`, alias:
 
 ```ts
 import type { LlmFeature } from '../../domain/entities/llm.types';
-export type LlmExecutionFeature = LlmFeature; // backward compat alias, xóa sau
+export type LlmExecutionFeature = LlmFeature; // backward compat alias, delete later
 ```
 
-3. `llm-usage/domain/entities/llm-usage.types.ts` — xóa `LlmUsageFeature`, alias lại:
+3. `llm-usage/domain/entities/llm-usage.types.ts` — delete `LlmUsageFeature`, alias:
 
 ```ts
 import type { LlmFeature } from '../../../llm-execution/domain/entities/llm.types';
-export type LlmUsageFeature = LlmFeature; // backward compat alias, xóa sau
+export type LlmUsageFeature = LlmFeature; // backward compat alias, delete later
 ```
 
-4. Các caller hiện tại (`llm-usage-recorder.service.ts`, `student-report.service.ts`, v.v.) không cần sửa ngay vì alias giữ type compatibility. Cleanup tên alias sau khi toàn bộ migration xong.
+4. Current callers (`llm-usage-recorder.service.ts`, `student-report.service.ts`, etc.) don't need immediate changes because aliases maintain type compatibility. Clean up alias names after full migration.
 
-Hướng phụ thuộc chấp nhận được: `llm-usage/domain` → `llm-execution/domain` (chỉ import type, không kéo NestJS DI). Nếu sau này hai module tách deployment riêng thì extract lên `src/shared/llm/`.
+Acceptable dependency direction: `llm-usage/domain` → `llm-execution/domain` (type-only import, no NestJS DI pull). If these two modules need separate deployment later, extract to `src/shared/llm/`.
 
-### 7.3. JSON generation request/response
+### 7.3. JSON Generation Request/Response
 
 ```ts
 export interface LlmJsonRequest {
@@ -572,7 +572,7 @@ export interface LlmJsonResponse {
 }
 ```
 
-Mapping OpenAI:
+OpenAI mapping:
 
 ```ts
 client.chat.completions.create({
@@ -585,13 +585,13 @@ client.chat.completions.create({
 });
 ```
 
-Provider khác có thể map khác:
+Other providers may map differently:
 
-- Anthropic: system riêng, messages riêng, JSON instruction trong prompt hoặc tool schema.
-- Gemini: response mime type JSON nếu support.
+- Anthropic: separate system, separate messages, JSON instruction in prompt or tool schema.
+- Gemini: JSON response mime type if supported.
 - Local LLM: prompt instruction + parser fallback.
 
-### 7.4. Tool chat types
+### 7.4. Tool Chat Types
 
 ```ts
 export type LlmMessageRole = 'system' | 'user' | 'assistant' | 'tool';
@@ -628,49 +628,49 @@ export interface LlmToolChatRequest {
 
 export interface LlmToolChatResponse {
   /**
-   * Full assistant message để caller push vào history cho round tiếp theo.
-   * message.toolCalls chứa danh sách tool calls nếu có.
-   * Caller không nên đọc tool calls từ hai nơi — chỉ dùng message.toolCalls.
+   * Full assistant message for caller to push into history for next round.
+   * message.toolCalls contains the tool call list if present.
+   * Caller should not read tool calls from two places — only use message.toolCalls.
    */
   message: LlmMessage;
-  /** Text reply cuối cùng của model nếu không có tool call. */
+  /** Final text reply from model if no tool call. */
   content?: string;
   metadata: LlmProviderMetadata;
 }
 ```
 
-**Lý do bỏ top-level `toolCalls`:**
+**Why top-level `toolCalls` was removed:**
 
-Response trước đây có hai field redundant: `message.toolCalls` và `toolCalls` ở top level. Caller không biết nên đọc field nào — đặc biệt trong vòng lặp nhiều round dễ gây bug im lặng. Thiết kế này chốt: tool calls chỉ đọc từ `response.message.toolCalls`. Field `message` cũng là thứ caller push vào `messages[]` cho round kế tiếp, nên không cần tách riêng.
+Previous response had two redundant fields: `message.toolCalls` and `toolCalls` at top level. Callers didn't know which to read — especially error-prone in multi-round loops. This design locks: tool calls only read from `response.message.toolCalls`. The `message` field is also what callers push into `messages[]` for the next round, so no need for separation.
 
-Pattern dùng trong agent loop:
+Usage pattern in agent loop:
 
 ```ts
-// round kết thúc bằng tool call
+// round ends with tool call
 if (response.message.toolCalls?.length) {
   messages.push(response.message);
   for (const tc of response.message.toolCalls) { ... }
 }
 
-// round kết thúc bằng text
+// round ends with text
 if (!response.message.toolCalls?.length) {
   return this.finalizeAssistantContent(response.content);
 }
 ```
 
-Mapping OpenAI:
+OpenAI mapping:
 
-- `LlmMessage.role = 'tool'` map sang OpenAI tool message.
-- `LlmToolDefinition` map sang `ChatCompletionTool`.
-- `LlmToolCall.argumentsJson` map từ `toolCall.function.arguments`.
-- `LlmToolCall.name` map từ `toolCall.function.name`.
-- `LlmToolCall.id` map từ `toolCall.id`.
+- `LlmMessage.role = 'tool'` maps to OpenAI tool message.
+- `LlmToolDefinition` maps to `ChatCompletionTool`.
+- `LlmToolCall.argumentsJson` maps from `toolCall.function.arguments`.
+- `LlmToolCall.name` maps from `toolCall.function.name`.
+- `LlmToolCall.id` maps from `toolCall.id`.
 
-### 7.5. Error model
+### 7.5. Error Model
 
-Phase đầu có thể giữ `isOpenAiRetryableError`.
+Phase 1 can keep `isOpenAiRetryableError`.
 
-Phase sau nên có:
+Later phase should have:
 
 ```ts
 export interface LlmProviderError {
@@ -689,26 +689,26 @@ export interface LlmProviderError {
 }
 ```
 
-Adapter có thể có helper:
+Adapter can have helper:
 
 ```ts
 normalizeLlmError(error: unknown): LlmProviderError;
 ```
 
-Sau đó `LlmExecutionService` retry dựa trên `retryable`.
+Then `LlmExecutionService` retries based on `retryable`.
 
-## 8. File plan chi tiết
+## 8. Detailed File Plan
 
-### 8.1. Thêm neutral LLM types
+### 8.1. Add Neutral LLM Types
 
-File mới:
+New file:
 
 - `src/modules/llm-execution/domain/entities/llm.types.ts`
 
-Nội dung:
+Contents:
 
 - `LlmProvider`
-- `LlmFeature` hoặc reuse `LlmUsageFeature`
+- `LlmFeature` or reuse `LlmUsageFeature`
 - `LlmUsage`
 - `LlmProviderMetadata`
 - `LlmJsonRequest`
@@ -719,50 +719,50 @@ Nội dung:
 - `LlmToolChatRequest`
 - `LlmToolChatResponse`
 
-Lưu ý implementation:
+Implementation notes:
 
-- Type không import OpenAI.
-- Type không import NestJS.
-- Type không chứa provider-specific field bắt buộc.
-- Nếu cần raw debug, dùng optional `raw?: unknown`, nhưng hạn chế expose ra application.
+- Types don't import OpenAI.
+- Types don't import NestJS.
+- Types don't contain mandatory provider-specific fields.
+- For raw debugging, optional `raw?: unknown` can be used, but limit exposure to application.
 
-### 8.2. Thêm LLM client port
+### 8.2. Add LLM Client Port
 
-File mới:
+New file:
 
 - `src/modules/llm-execution/application/ports/llm-client.port.ts`
 
-Nội dung:
+Contents:
 
 - `LLM_CLIENT` token.
 - `LlmClientPort` interface.
 
-Lý do đặt ở `application/ports`:
+Reason for placing in `application/ports`:
 
-- Service nghiệp vụ inject port.
-- Implementation cụ thể nằm ở infrastructure.
-- Đúng Clean Architecture: application phụ thuộc abstraction, infrastructure implement.
+- Business services inject port.
+- Concrete implementation lives in infrastructure.
+- Correct Clean Architecture: application depends on abstraction, infrastructure implements.
 
-### 8.3. Thêm OpenAI adapter
+### 8.3. Add OpenAI Adapter
 
-File mới:
+New file:
 
 - `src/modules/llm-execution/infrastructure/openai/openai-llm-client.service.ts`
 
-Nhiệm vụ:
+Responsibilities:
 
-- Đọc config từ `LlmExecutionConfigService` — **không inject `ConfigService` trực tiếp**.
-- Tạo và cache OpenAI client.
+- Read config from `LlmExecutionConfigService` — **don't inject `ConfigService` directly**.
+- Create and cache OpenAI client.
 - Implement `isConfigured()`, `getDefaultModel()`, `generateJson(...)`, `chatWithTools(...)`.
-- Map neutral tools/messages sang OpenAI request qua mapper.
-- Map OpenAI response sang neutral response.
-- Không chứa business prompt, không tự sanitize, không tự validate JSON output.
+- Map neutral tools/messages to OpenAI request via mapper.
+- Map OpenAI response to neutral response.
+- No business prompts, no self-sanitization, no self-validation of JSON output.
 
-**Tại sao dùng `LlmExecutionConfigService` thay vì `ConfigService`:**
+**Why use `LlmExecutionConfigService` instead of `ConfigService`:**
 
-`LlmExecutionConfigService` là single source of truth cho LLM config trong module này (retry, timeout, concurrency). Nếu `OpenAiLlmClient` tự inject `ConfigService` riêng thì sẽ có 2 nơi đọc cùng env, dễ drift khi thêm env mới. Thêm `getApiKey()` và `getModel()` vào `LlmExecutionConfigService` để tập trung.
+`LlmExecutionConfigService` is the single source of truth for LLM config in this module (retry, timeout, concurrency). If `OpenAiLlmClient` injects its own `ConfigService`, there would be 2 places reading the same env, prone to drift when new env is added. Adding `getApiKey()` and `getModel()` to `LlmExecutionConfigService` centralizes this.
 
-**Thêm vào `LlmExecutionConfigService`:**
+**Add to `LlmExecutionConfigService`:**
 
 ```ts
 getApiKey(): string | undefined {
@@ -786,9 +786,9 @@ getBaseUrl(): string | undefined {
 }
 ```
 
-Precedence: `LLM_*` ưu tiên hơn `OPENAI_*`, fallback về default nếu thiếu cả hai.
+Precedence: `LLM_*` takes priority over `OPENAI_*`, defaults if both missing.
 
-**Pseudo code adapter:**
+**Adapter pseudo code:**
 
 ```ts
 @Injectable()
@@ -848,32 +848,32 @@ export class OpenAiLlmClient implements LlmClientPort {
 }
 ```
 
-### 8.4. Thêm mapper cho OpenAI messages/tools
+### 8.4. Add Mapper for OpenAI Messages/Tools
 
-File mới, optional nhưng nên có để test riêng:
+New file, optional but recommended for isolated testing:
 
 - `src/modules/llm-execution/infrastructure/openai/openai-llm.mapper.ts`
 
-Nội dung:
+Contents:
 
 - `toOpenAiMessages(messages: LlmMessage[])`
 - `toOpenAiTools(tools: LlmToolDefinition[])`
 - `fromOpenAiMessage(message)`
 - `fromOpenAiUsage(usage)`
 
-Lý do tách mapper:
+Reason for separating mapper:
 
-- Tool calling mapping dễ sai.
-- Có thể unit test mà không mock OpenAI SDK.
-- Khi thêm provider khác, pattern rõ ràng.
+- Tool calling mapping is error-prone.
+- Can unit test without mocking OpenAI SDK.
+- Clear pattern when adding other providers.
 
-### 8.5. Update LlmExecutionModule provider binding
+### 8.5. Update LlmExecutionModule Provider Binding
 
-File sửa:
+Modified file:
 
 - `src/modules/llm-execution/llm-execution.module.ts`
 
-Thêm provider và export:
+Add provider and export:
 
 ```ts
 import { OpenAiLlmClient } from './infrastructure/openai/openai-llm-client.service';
@@ -894,40 +894,40 @@ import { LLM_CLIENT } from './application/ports/llm-client.port';
 export class LlmExecutionModule {}
 ```
 
-`OpenAiLlmClient` được khai báo thêm trong `providers` để NestJS DI inject `LlmExecutionConfigService` vào nó — không tạo instance thủ công trong factory.
+`OpenAiLlmClient` is declared in `providers` so NestJS DI injects `LlmExecutionConfigService` into it — no manual instance creation in factory.
 
-Phase sau nếu cần multi-provider qua config:
+Later phases for multi-provider via config:
 
 ```ts
 {
   provide: LLM_CLIENT,
   useFactory: (config: LlmExecutionConfigService, openai: OpenAiLlmClient) => {
     const provider = config.getProvider(); // 'openai' | 'openai-compatible'
-    return openai; // hiện chỉ có một adapter
+    return openai; // currently only one adapter
   },
   inject: [LlmExecutionConfigService, OpenAiLlmClient],
 }
 ```
 
-Factory inject instance đã được NestJS resolve — tránh mất DI chain. Khi thêm `AnthropicLlmClient` thì inject thêm vào factory, không sửa business code.
+Factory injects NestJS-resolved instances — preserves DI chain. When `AnthropicLlmClient` is added, inject into factory without changing business code.
 
 ### 8.6. Update StudentReportService
 
-File sửa:
+Modified file:
 
 - `src/modules/student-report/application/services/student-report.service.ts`
 
-Thay đổi:
+Changes:
 
-- Bỏ import `OpenAI`.
+- Remove `OpenAI` import.
 - Inject `@Inject(LLM_CLIENT) private readonly llmClient: LlmClientPort`.
-- Check `this.llmClient.isConfigured()` thay vì đọc `OPENAI_API_KEY` trực tiếp.
-- Lấy model từ `this.llmClient.getDefaultModel()` hoặc để adapter default.
-- Gọi `this.llmExecution.run(...)` như hiện tại.
-- Trong callback gọi `this.llmClient.generateJson(...)`.
-- Ghi usage bằng `recordUsage(...)` từ normalized response.
+- Check `this.llmClient.isConfigured()` instead of reading `OPENAI_API_KEY` directly.
+- Get model from `this.llmClient.getDefaultModel()` or let adapter default.
+- Call `this.llmExecution.run(...)` as before.
+- In callback call `this.llmClient.generateJson(...)`.
+- Log usage with `recordUsage(...)` from normalized response.
 
-Pseudo code — giữ nguyên signature `run<T>(fn, context?)` hiện tại, không đổi:
+Pseudo code — keep current `run<T>(fn, context?)` signature unchanged:
 
 ```ts
 if (!this.llmClient.isConfigured()) {
@@ -954,47 +954,47 @@ this.recordLlmUsage({
 });
 ```
 
-Test cần sửa:
+Tests to change:
 
-- Không mock OpenAI SDK trực tiếp.
+- Don't mock OpenAI SDK directly.
 - Mock `LlmClientPort`.
-- Assert service gọi `generateJson(...)`.
-- Assert fallback khi `isConfigured()` false.
-- Assert usage recorder nhận normalized usage.
+- Assert service calls `generateJson(...)`.
+- Assert fallback when `isConfigured()` is false.
+- Assert usage recorder receives normalized usage.
 
 ### 8.7. Update StudyReminderService
 
-File sửa:
+Modified file:
 
 - `src/modules/study-reminder/application/services/study-reminder.service.ts`
 
-Thay đổi tương tự Student Report.
+Changes similar to Student Report.
 
-Test cần sửa:
+Tests to change:
 
 - Mock `LlmClientPort`.
-- Giữ test fallback.
-- Giữ test parse/validate output.
-- Giữ test usage.
+- Keep fallback test.
+- Keep output parse/validate test.
+- Keep usage test.
 
-### 8.8. Update Messenger agent tools
+### 8.8. Update Messenger Agent Tools
 
-File sửa:
+Modified file:
 
 - `src/modules/messenger/application/agent/messenger-agent.tools.ts`
 
-Thay đổi:
+Changes:
 
-- Bỏ import `ChatCompletionTool`.
+- Remove `ChatCompletionTool` import.
 - Export `LlmToolDefinition[]`.
 
-Trước:
+Before:
 
 ```ts
 export const MESSENGER_AGENT_TOOLS: ChatCompletionTool[] = [...]
 ```
 
-Sau:
+After:
 
 ```ts
 export const MESSENGER_AGENT_TOOLS: LlmToolDefinition[] = [
@@ -1006,7 +1006,7 @@ export const MESSENGER_AGENT_TOOLS: LlmToolDefinition[] = [
 ];
 ```
 
-OpenAI adapter chịu trách nhiệm wrap thành:
+OpenAI adapter responsible for wrapping as:
 
 ```ts
 {
@@ -1017,24 +1017,24 @@ OpenAI adapter chịu trách nhiệm wrap thành:
 
 ### 8.9. Update MessengerAgentService
 
-File sửa:
+Modified file:
 
 - `src/modules/messenger/application/agent/messenger-agent.service.ts`
 
-Đây là phase rủi ro nhất.
+This is the highest-risk phase.
 
-Thay đổi:
+Changes:
 
-- Bỏ import `OpenAI`.
-- Bỏ OpenAI-specific message types.
+- Remove `OpenAI` import.
+- Remove OpenAI-specific message types.
 - Inject `LLM_CLIENT`.
-- Build messages theo `LlmMessage[]`.
-- Gọi `llmClient.chatWithTools(...)`.
-- Đọc `response.toolCalls`.
-- Khi tool call xong, push:
-  - assistant message từ `response.message`
+- Build messages as `LlmMessage[]`.
+- Call `llmClient.chatWithTools(...)`.
+- Read `response.toolCalls`.
+- When tool call completes, push:
+  - assistant message from `response.message`
   - tool message `{ role: 'tool', toolCallId, content }`
-- Ghi usage từ `response.metadata.usage`.
+- Log usage from `response.metadata.usage`.
 
 Pseudo flow:
 
@@ -1059,7 +1059,7 @@ for (let round = 1; round <= maxToolRounds; round += 1) {
 
   this.recordLlmUsage(response, round);
 
-  // Tool calls chỉ đọc từ response.message.toolCalls — không có top-level toolCalls.
+  // Tool calls only read from response.message.toolCalls — no top-level toolCalls.
   const toolCalls = response.message.toolCalls ?? [];
 
   if (toolCalls.length === 0) {
@@ -1079,21 +1079,21 @@ for (let round = 1; round <= maxToolRounds; round += 1) {
 }
 ```
 
-Điểm cần cẩn thận:
+Points to be careful about:
 
-- OpenAI yêu cầu assistant message chứa `tool_calls` phải xuất hiện trước tool messages tương ứng. Neutral message cũng nên giữ invariant này.
-- `toolCall.id` phải được preserve chính xác.
-- `argumentsJson` vẫn là string để giữ logic parse hiện tại.
-- Nếu provider khác trả arguments dạng object, adapter stringify thành JSON string.
-- Nếu provider không support tool calling native, cần phase riêng để emulate tool calling bằng JSON protocol. Không nên làm trong phase này.
+- OpenAI requires assistant message containing `tool_calls` to appear before corresponding tool messages. Neutral messages should also maintain this invariant.
+- `toolCall.id` must be preserved exactly.
+- `argumentsJson` stays as string to preserve current parsing logic.
+- If other provider returns arguments as object, adapter stringifies to JSON string.
+- If provider doesn't support native tool calling, needs separate phase to emulate tool calling via JSON protocol. Don't do in this phase.
 
 ### 8.10. Update LlmUsageRecorderService
 
-File sửa:
+Modified file:
 
 - `src/modules/llm-usage/application/services/llm-usage-recorder.service.ts`
 
-Phase đầu thêm method mới:
+Phase 1 adds new method:
 
 ```ts
 recordFromLlmResponse(input: {
@@ -1108,46 +1108,46 @@ recordFromLlmResponse(input: {
 }): void
 ```
 
-Method này gọi `recordUsage(...)` nội bộ.
+This method calls `recordUsage(...)` internally.
 
-Giữ `recordFromCompletion(...)` tạm thời để các phần chưa migrate vẫn pass.
+Keep `recordFromCompletion(...)` temporarily so unmigrated parts still pass.
 
-**Cleanup deadline:** `recordFromCompletion(...)` phải bị xóa **trước khi Phase 3 kết thúc**. Nếu để hai path ghi usage song song indefinitely, sẽ khó debug discrepancy usage giữa các service đã migrate và chưa migrate. Thêm `@deprecated` JSDoc vào method ngay khi thêm method mới để IDE cảnh báo.
+**Cleanup deadline:** `recordFromCompletion(...)` must be deleted **before Phase 3 ends**. If two usage-logging paths run in parallel indefinitely, debugging usage discrepancies between migrated and unmigrated services becomes difficult. Add `@deprecated` JSDoc to the method immediately when adding the new method so IDEs warn.
 
-Sau khi migrate hết:
+After full migration:
 
-- Xóa import OpenAI khỏi usage recorder.
-- Xóa `recordFromCompletion(...)`.
+- Remove OpenAI import from usage recorder.
+- Delete `recordFromCompletion(...)`.
 
-### 8.11. Update tests
+### 8.11. Update Tests
 
-Các test đang import OpenAI type cần sửa:
+Tests currently importing OpenAI types need changes:
 
 - `src/modules/student-report/application/services/student-report.service.spec.ts`
 - `src/modules/study-reminder/application/services/study-reminder.service.spec.ts`
 - `src/modules/messenger/application/agent/messenger-agent.service.spec.ts`
 - `src/modules/llm-usage/application/services/llm-usage-recorder.service.spec.ts`
 
-Test mới cần thêm:
+New tests to add:
 
 - `src/modules/llm-execution/infrastructure/openai/openai-llm.mapper.spec.ts`
 - `src/modules/llm-execution/infrastructure/openai/openai-llm-client.service.spec.ts`
 
-**Tại sao cần test `OpenAiLlmClient` riêng:**
+**Why `OpenAiLlmClient` needs isolated tests:**
 
-Service tests (student-report, study-reminder, messenger-agent) mock `LlmClientPort` — chúng không test adapter. Nếu `OpenAiLlmClient.chatWithTools(...)` thiếu `type: 'function'` wrapper trong tool schema, hoặc map sai thứ tự message, service tests vẫn pass vì đang mock port. Bug chỉ xuất hiện khi chạy thật. Cần có test ở tầng adapter để bắt sớm.
+Service tests (student-report, study-reminder, messenger-agent) mock `LlmClientPort` — they don't test the adapter. If `OpenAiLlmClient.chatWithTools(...)` is missing `type: 'function'` wrapper in tool schema, or maps message order incorrectly, service tests still pass because they're mocking the port. Bugs only appear at runtime. Need adapter-level tests to catch early.
 
-**Phân chia test:**
+**Test split:**
 
-`openai-llm.mapper.spec.ts` — test pure mapping functions, không mock SDK:
+`openai-llm.mapper.spec.ts` — tests pure mapping functions, no SDK mocking:
 
-- `toOpenAiMessages(...)` giữ đúng role/content/toolCallId
-- `toOpenAiTools(...)` wrap đúng `{ type: 'function', function: tool }`
-- `fromOpenAiMessage(...)` map đúng sang `LlmMessage`
-- `fromOpenAiUsage(...)` map đúng khi usage `null` hoặc `undefined`
-- Tool call id được preserve chính xác qua round trip
+- `toOpenAiMessages(...)` preserves correct role/content/toolCallId
+- `toOpenAiTools(...)` wraps correctly as `{ type: 'function', function: tool }`
+- `fromOpenAiMessage(...)` maps correctly to `LlmMessage`
+- `fromOpenAiUsage(...)` maps correctly when usage is `null` or `undefined`
+- Tool call id preserved exactly through round trip
 
-`openai-llm-client.service.spec.ts` — mock OpenAI SDK client (không mock `LlmClientPort`):
+`openai-llm-client.service.spec.ts` — mocks OpenAI SDK client (doesn't mock `LlmClientPort`):
 
 ```ts
 const mockCreate = jest.fn();
@@ -1158,40 +1158,40 @@ jest.mock('openai', () => ({
 }));
 ```
 
-Test cases cần cover:
+Test cases to cover:
 
-- `isConfigured()` trả false khi thiếu API key
-- `generateJson(...)` trả `LlmJsonResponse` với metadata đầy đủ
-- `generateJson(...)` throw khi content trống
-- `chatWithTools(...)` với tool call response → `message.toolCalls` có đủ field `id/name/argumentsJson`
-- `chatWithTools(...)` với text response → `message.toolCalls` là `undefined` hoặc mảng rỗng
-- Fallback model khi không set `LLM_MODEL` và `OPENAI_MODEL`
-- `fromOpenAiUsage` không crash khi SDK trả `usage: null`
+- `isConfigured()` returns false when API key missing
+- `generateJson(...)` returns `LlmJsonResponse` with complete metadata
+- `generateJson(...)` throws when content is empty
+- `chatWithTools(...)` with tool call response → `message.toolCalls` has all `id/name/argumentsJson` fields
+- `chatWithTools(...)` with text response → `message.toolCalls` is `undefined` or empty array
+- Fallback model when `LLM_MODEL` and `OPENAI_MODEL` not set
+- `fromOpenAiUsage` doesn't crash when SDK returns `usage: null`
 
-Ưu tiên test mapper trước vì không cần mock SDK. Test client spec thêm sau khi mapper đã ổn.
+Prioritize mapper tests first since they don't need SDK mocking. Add client spec tests after mapper is stable.
 
-### 8.12. Update docs/env
+### 8.12. Update Docs/Env
 
-Khi code thực sự đổi env hoặc behavior, cập nhật:
+When code actually changes env or behavior, update:
 
 - `.env.example`
 - `AGENTS.md`
 - `docs/project-overview.md`
-- Có thể cập nhật `docs/llm-usage-tracking-plan.md` nếu usage field/provider semantics đổi.
+- Possibly `docs/llm-usage-tracking-plan.md` if usage field/provider semantics change.
 
-Với phase chỉ thêm interface và vẫn dùng `OPENAI_*`, chưa cần đổi `.env.example`.
+For phases that only add interface and still use `OPENAI_*`, no need to change `.env.example` yet.
 
-## 9. Phase implement đề xuất
+## 9. Proposed Implementation Phases
 
-> **Trạng thái:** Tất cả Phase 0–6 đã implement xong. Code nằm trong `packages/llm-agent/src/provider/`.
+> **Status:** All Phase 0–6 implemented. Code in `packages/llm-agent/src/provider/`.
 
-### Phase 0: Design document ✅ DONE
+### Phase 0: Design Document ✅ DONE
 
-Mục tiêu:
+Goal:
 
-- Ghi rõ hiện trạng coupling.
-- Chốt hướng interface.
-- Chốt phase implement.
+- Document current coupling state.
+- Lock interface direction.
+- Lock implementation phases.
 
 Deliverable:
 
@@ -1199,124 +1199,124 @@ Deliverable:
 
 Risk:
 
-- Không có risk runtime vì chưa sửa code.
+- No runtime risk since no code changed.
 
-### Phase 1: Tách JSON generation cho Student Report và Study Reminder ✅ DONE
+### Phase 1: Separate JSON Generation for Student Report and Study Reminder ✅ DONE
 
-Mục tiêu:
+Goal:
 
-- Tạo `LlmClientPort`.
-- Tạo `OpenAiLlmClient`.
+- Create `LlmClientPort`.
+- Create `OpenAiLlmClient`.
 - Support `generateJson(...)`.
 - Migrate `StudentReportService`.
 - Migrate `StudyReminderService`.
 
 Files:
 
-- Thêm `src/modules/llm-execution/domain/entities/llm.types.ts`
-- Thêm `src/modules/llm-execution/application/ports/llm-client.port.ts`
-- Thêm `src/modules/llm-execution/infrastructure/openai/openai-llm-client.service.ts`
-- Sửa `src/modules/llm-execution/llm-execution.module.ts`
-- Sửa `src/modules/student-report/application/services/student-report.service.ts`
-- Sửa `src/modules/study-reminder/application/services/study-reminder.service.ts`
-- Sửa spec tương ứng.
+- Add `src/modules/llm-execution/domain/entities/llm.types.ts`
+- Add `src/modules/llm-execution/application/ports/llm-client.port.ts`
+- Add `src/modules/llm-execution/infrastructure/openai/openai-llm-client.service.ts`
+- Modify `src/modules/llm-execution/llm-execution.module.ts`
+- Modify `src/modules/student-report/application/services/student-report.service.ts`
+- Modify `src/modules/study-reminder/application/services/study-reminder.service.ts`
+- Modify corresponding specs.
 
 Acceptance criteria:
 
-- `student-report.service.ts` không import `OpenAI`.
-- `study-reminder.service.ts` không import `OpenAI`.
-- Behavior fallback vẫn như cũ.
-- JSON validation vẫn như cũ.
-- Usage tracking vẫn ghi token.
-- Test pass.
+- `student-report.service.ts` doesn't import `OpenAI`.
+- `study-reminder.service.ts` doesn't import `OpenAI`.
+- Fallback behavior unchanged.
+- JSON validation unchanged.
+- Usage tracking still logs tokens.
+- Tests pass.
 
-Rủi ro:
+Risks:
 
-- Usage tracking mất response id nếu mapping thiếu.
-- Error message test cũ có thể cần update wording từ "OpenAI" sang "LLM provider".
-- Một số test mock OpenAI SDK phải rewrite.
+- Usage tracking may lose response id if mapping is incomplete.
+- Old test error messages may need wording update from "OpenAI" to "LLM provider".
+- Some tests mocking OpenAI SDK need rewriting.
 
-Ước lượng:
+Estimate:
 
-- Nhỏ đến vừa.
-- Nên làm trước vì ít rủi ro hơn agent.
+- Small to medium.
+- Should do first because less risky than agent.
 
-### Phase 2: Tách tool schema và Messenger Agent ✅ DONE
+### Phase 2: Separate Tool Schema and Messenger Agent ✅ DONE
 
-Mục tiêu:
+Goal:
 
-- Chuyển `MESSENGER_AGENT_TOOLS` sang provider-neutral `LlmToolDefinition[]`.
-- Implement `chatWithTools(...)` trong OpenAI adapter.
-- Migrate `MessengerAgentService` sang neutral `LlmMessage[]`.
-- Không còn OpenAI type trong Messenger agent application code.
+- Convert `MESSENGER_AGENT_TOOLS` to provider-neutral `LlmToolDefinition[]`.
+- Implement `chatWithTools(...)` in OpenAI adapter.
+- Migrate `MessengerAgentService` to neutral `LlmMessage[]`.
+- No more OpenAI types in Messenger agent application code.
 
 Files:
 
-- Sửa `src/modules/messenger/application/agent/messenger-agent.tools.ts`
-- Sửa `src/modules/messenger/application/agent/messenger-agent.service.ts`
-- Thêm hoặc mở rộng OpenAI mapper.
-- Sửa `messenger-agent.service.spec.ts`.
+- Modify `src/modules/messenger/application/agent/messenger-agent.tools.ts`
+- Modify `src/modules/messenger/application/agent/messenger-agent.service.ts`
+- Add or extend OpenAI mapper.
+- Modify `messenger-agent.service.spec.ts`.
 
 Acceptance criteria:
 
-- `messenger-agent.service.ts` không import `OpenAI`.
-- `messenger-agent.tools.ts` không import `ChatCompletionTool`.
-- Tool calling nhiều round vẫn pass test.
-- Grounding warning logic vẫn hoạt động.
-- Tool result sanitization vẫn chạy.
-- Context truncation vẫn chạy.
-- Usage tracking vẫn ghi theo tool round.
+- `messenger-agent.service.ts` doesn't import `OpenAI`.
+- `messenger-agent.tools.ts` doesn't import `ChatCompletionTool`.
+- Multi-round tool calling tests still pass.
+- Grounding warning logic still works.
+- Tool result sanitization still works.
+- Context truncation still works.
+- Usage tracking still logs per tool round.
 
-Rủi ro:
+Risks:
 
-- Sai thứ tự assistant/tool messages.
-- Mất `tool_call_id`.
-- Arguments bị parse khác do adapter stringify không đúng.
-- Provider response empty handling khác wording.
-- Test agent hiện nhiều, rewrite cần cẩn thận.
+- Wrong assistant/tool message order.
+- Lost `tool_call_id`.
+- Arguments parsed differently due to incorrect adapter stringification.
+- Different provider response empty handling wording.
+- Many existing agent tests, rewrite needs care.
 
-Ước lượng:
+Estimate:
 
-- Vừa đến lớn.
-- Nên làm sau Phase 1 để giảm blast radius.
+- Medium to large.
+- Should do after Phase 1 to reduce blast radius.
 
-### Phase 3: Normalize usage, retry, metrics wording ✅ DONE
+### Phase 3: Normalize Usage, Retry, Metrics Wording ✅ DONE
 
-Mục tiêu:
+Goal:
 
-- Loại OpenAI type khỏi `LlmUsageRecorderService`.
-- Đổi retry utility từ OpenAI-specific sang LLM provider generic.
-- Đổi metrics help/comment sang provider-neutral.
-- Giữ compatibility với DB hiện tại.
+- Remove OpenAI type from `LlmUsageRecorderService`.
+- Change retry utility from OpenAI-specific to LLM provider generic.
+- Change metrics help/comment to provider-neutral.
+- Maintain compatibility with current DB.
 
 Files:
 
-- Sửa `src/modules/llm-usage/application/services/llm-usage-recorder.service.ts`
-- Sửa `src/shared/utils/openai-error.utils.ts` hoặc thêm `llm-error.utils.ts`
-- Sửa `src/modules/llm-execution/application/services/llm-execution.service.ts`
-- Sửa `src/modules/metrics/metrics.service.ts`
-- Sửa specs tương ứng.
+- Modify `src/modules/llm-usage/application/services/llm-usage-recorder.service.ts`
+- Modify `src/shared/utils/openai-error.utils.ts` or add `llm-error.utils.ts`
+- Modify `src/modules/llm-execution/application/services/llm-execution.service.ts`
+- Modify `src/modules/metrics/metrics.service.ts`
+- Modify corresponding specs.
 
 Acceptance criteria:
 
-- Không còn import OpenAI trong `llm-usage` application service.
-- Retry vẫn cover 429 và 5xx.
-- Metrics name có thể giữ để không phá dashboard, nhưng help text generic hơn.
+- No more OpenAI imports in `llm-usage` application service.
+- Retry still covers 429 and 5xx.
+- Metrics name can stay to avoid breaking dashboards, but help text is more generic.
 - Existing tests pass.
 
-Rủi ro:
+Risks:
 
-- Dashboard/alert nếu đổi metric name. Khuyến nghị không đổi metric name trong phase này, chỉ đổi description/comment.
-- DB column `openaiResponseId` vẫn là naming cũ. Nếu rename cần migration riêng, chưa nên làm vội.
+- Dashboard/alert if metric name changes. Recommend not changing metric name in this phase, only description/comment.
+- DB column `openaiResponseId` still uses old naming. Renaming needs separate migration, not urgent.
 
-### Phase 4: Thêm OpenAI-compatible provider config ✅ DONE
+### Phase 4: Add OpenAI-Compatible Provider Config ✅ DONE
 
-Mục tiêu:
+Goal:
 
-- Cho phép dùng provider có OpenAI-compatible API bằng config.
-- Không sửa business code.
+- Allow using providers with OpenAI-compatible API via config.
+- No business code changes.
 
-Env đề xuất:
+Proposed env:
 
 ```env
 LLM_PROVIDER=openai
@@ -1336,42 +1336,42 @@ LLM_BASE_URL=https://...
 
 Compatibility:
 
-- Nếu `LLM_API_KEY` thiếu thì fallback `OPENAI_API_KEY`.
-- Nếu `LLM_MODEL` thiếu thì fallback `OPENAI_MODEL`.
-- Nếu `LLM_PROVIDER` thiếu thì default `openai`.
+- If `LLM_API_KEY` missing, falls back to `OPENAI_API_KEY`.
+- If `LLM_MODEL` missing, falls back to `OPENAI_MODEL`.
+- If `LLM_PROVIDER` missing, defaults to `openai`.
 
 Acceptance criteria:
 
-- OpenAI hiện tại vẫn chạy không cần đổi env.
-- OpenAI-compatible endpoint có thể chạy khi set `LLM_BASE_URL`.
-- Docs cập nhật rõ precedence env.
+- Current OpenAI still works without changing env.
+- OpenAI-compatible endpoint can work when `LLM_BASE_URL` is set.
+- Docs clearly document env precedence.
 
-Rủi ro:
+Risks:
 
-- Một số OpenAI-compatible provider không support tool calling đúng chuẩn.
-- Một số provider không support JSON mode.
-- Usage token có thể thiếu hoặc field khác.
+- Some OpenAI-compatible providers don't support tool calling correctly.
+- Some providers don't support JSON mode.
+- Usage tokens may be missing or have different fields.
 
-Gợi ý:
+Suggestions:
 
-- Adapter nên degrade rõ ràng:
-  - Nếu provider không trả usage, log warning và ghi 0 token hoặc skip usage tùy policy hiện tại.
-  - Nếu JSON mode unsupported, có thể config `LLM_JSON_MODE=prompt` ở phase sau.
+- Adapter should degrade gracefully:
+  - If provider doesn't return usage, log warning and log 0 tokens or skip usage per current policy.
+  - If JSON mode unsupported, can configure `LLM_JSON_MODE=prompt` in later phase.
 
-### Phase 5: Thêm provider không OpenAI-compatible (future)
+### Phase 5: Add Non-OpenAI-Compatible Providers (Future)
 
-Mục tiêu:
+Goal:
 
-- Thêm adapter thật cho provider khác.
-- Không sửa business services.
+- Add real adapter for different provider.
+- No business service changes.
 
-Ví dụ:
+Examples:
 
 - `AnthropicLlmClient`
 - `GeminiLlmClient`
 - `LocalHttpLlmClient`
 
-Việc cần giải quyết:
+Issues to resolve:
 
 - Message mapping.
 - System prompt mapping.
@@ -1382,73 +1382,73 @@ Việc cần giải quyết:
 
 Acceptance criteria:
 
-- Chọn provider bằng `LLM_PROVIDER`.
-- Business services không đổi.
+- Provider selected via `LLM_PROVIDER`.
+- Business services unchanged.
 - Adapter tests cover mapping.
-- Có smoke test manual bằng env riêng.
+- Manual smoke test with separate env.
 
-Rủi ro:
+Risks:
 
-- Native tool calling mỗi provider khác nhau.
-- Local model có thể không tuân thủ JSON/tool protocol.
-- Token usage/cost estimate không comparable.
-- Model behavior khác có thể ảnh hưởng chất lượng tiếng Việt.
+- Native tool calling differs per provider.
+- Local model may not comply with JSON/tool protocol.
+- Token usage/cost estimates not comparable.
+- Different model behavior may affect Vietnamese quality.
 
-Gợi ý:
+Suggestions:
 
-- Provider không support tool native nên là phase riêng.
-- Có thể cần `ToolCallingStrategy`:
+- Providers without native tool support should be a separate phase.
+- May need `ToolCallingStrategy`:
   - `native`
   - `json-protocol`
   - `disabled`
 
-## 10. Implementation detail quan trọng
+## 10. Important Implementation Details
 
-### 10.1. Không để raw provider types rò ra application
+### 10.1. Don't Let Raw Provider Types Leak into Application
 
-Rule mong muốn sau khi migrate:
+Desired rule after migration:
 
 ```bash
 rg "from 'openai'|from \"openai\"|openai/resources" src/modules/*/application src/modules/*/domain
 ```
 
-Kết quả mong muốn:
+Desired result:
 
-- Không có import OpenAI trong application/domain, trừ khi file nằm trong adapter infrastructure.
+- No OpenAI imports in application/domain, unless file is in adapter infrastructure.
 
-Adapter infrastructure được phép:
+Adapter infrastructure allowed:
 
 ```bash
 src/modules/llm-execution/infrastructure/openai/**
 ```
 
-### 10.2. Preserve correlation id
+### 10.2. Preserve Correlation ID
 
-Các LLM calls hiện dùng correlation để log/debug usage.
+Current LLM calls use correlation for log/debug usage.
 
-Interface mới nên truyền:
+New interface should pass:
 
 ```ts
 correlationId?: string;
 ```
 
-Adapter không nhất thiết gửi correlation tới provider, nhưng response metadata/logging nên giữ correlation ở caller.
+Adapter doesn't need to send correlation to provider, but response metadata/logging should keep correlation at caller.
 
-### 10.3. Preserve model in usage
+### 10.3. Preserve Model in Usage
 
-Usage cost hiện estimate theo model.
+Usage cost currently estimated by model.
 
-Normalized response phải có:
+Normalized response must have:
 
 ```ts
 metadata.model
 ```
 
-Không nên để service tự đoán model sau khi gọi, vì adapter có thể chọn model fallback hoặc provider rewrite model name.
+Service shouldn't guess model after calling, because adapter may choose fallback model or provider may rewrite model name.
 
-### 10.4. Preserve response id
+### 10.4. Preserve Response ID
 
-OpenAI có `response.id`. Provider khác có thể có id khác hoặc không có.
+OpenAI has `response.id`. Other providers may have different id or none.
 
 Normalized metadata:
 
@@ -1456,39 +1456,39 @@ Normalized metadata:
 responseId?: string;
 ```
 
-Usage recorder phase đầu có thể map vào `openaiResponseId` DB field tạm thời.
+Phase 1 usage recorder can map to `openaiResponseId` DB field temporarily.
 
-Tên field trong DB chưa cần đổi ngay vì rename DB là scope riêng.
+DB field name doesn't need immediate change since DB renaming is a separate scope.
 
-### 10.5. JSON mode không universal
+### 10.5. JSON Mode Not Universal
 
-OpenAI support:
+OpenAI supports:
 
 ```ts
 response_format: { type: 'json_object' }
 ```
 
-Provider khác có thể:
+Other providers may:
 
-- Có JSON mode riêng.
-- Có schema mode.
-- Không có JSON mode.
+- Have their own JSON mode.
+- Have schema mode.
+- Have no JSON mode.
 
-Vì vậy interface nên nói "generateJson" ở mức contract, không nói "response_format".
+Therefore interface should say "generateJson" at contract level, not "response_format".
 
-Adapter chịu trách nhiệm dùng cách tốt nhất của provider.
+Adapter responsible for using provider's best approach.
 
-Nếu provider không đảm bảo JSON, adapter vẫn phải return text, còn service hiện tại parse/validate và fallback nếu invalid.
+If provider doesn't guarantee JSON, adapter still returns text, and current service parses/validates and falls back if invalid.
 
-**Contract về markdown fence:**
+**Markdown fence contract:**
 
-Adapter **không** strip markdown fence (` ```json ... ``` `) khỏi output trước khi trả về. Lý do: parser helper hiện tại trong application services đã xử lý fence, và việc strip ở adapter tạo ra hidden transformation khó debug. Service là nơi biết format mong đợi, nên service là nơi handle.
+Adapter does **not** strip markdown fences (` ```json ... ``` `) from output before returning. Reason: current parser helpers in application services already handle fences, and stripping at adapter creates hidden transformations hard to debug. Service knows expected format, so service handles it.
 
-Nếu một adapter cụ thể cần pre-process output (ví dụ provider luôn trả fence dù đã dùng JSON mode), xử lý trong adapter riêng đó và document rõ trong adapter class.
+If a specific adapter needs to pre-process output (e.g. provider always returns fence even when JSON mode used), handle in that adapter and document clearly in adapter class.
 
-### 10.6. Tool calling không universal
+### 10.6. Tool Calling Not Universal
 
-OpenAI tool calling có shape:
+OpenAI tool calling has shape:
 
 ```ts
 tool_calls: [
@@ -1503,14 +1503,14 @@ tool_calls: [
 ]
 ```
 
-Provider khác có thể dùng:
+Other providers may use:
 
 - `tool_use`
 - `functionCall`
 - JSON block
 - Plain text protocol
 
-Neutral `LlmToolCall` nên giữ minimum fields:
+Neutral `LlmToolCall` should keep minimum fields:
 
 ```ts
 id: string;
@@ -1518,45 +1518,45 @@ name: string;
 argumentsJson: string;
 ```
 
-Nếu provider không có id, adapter generate fallback id theo vị trí trong response hiện tại: `tool_call_${index}` với `index` đếm từ 0 trong mảng `tool_calls` của **response đó**, không phải global counter. Global counter sẽ gây id không match nếu request được retry vì adapter sẽ tiếp tục đếm trong khi agent loop đã reset messages về state trước đó.
+If provider has no id, adapter generates fallback id by position in current response: `tool_call_${index}` with `index` counting from 0 in the `tool_calls` array of **that response**, not a global counter. Global counter causes id mismatch if request is retried because adapter continues counting while agent loop has reset messages to prior state.
 
 ```ts
-// Đúng — index trong response hiện tại
+// Correct — index in current response
 const toolCalls = rawToolCalls.map((tc, index) => ({
   id: tc.id ?? `tool_call_${index}`,
   ...
 }));
 ```
 
-Caller đảm bảo tool result message dùng đúng id từ response trả về, không tự generate lại.
+Caller ensures tool result message uses correct id from returned response, doesn't regenerate.
 
-### 10.7. Fallback behavior
+### 10.7. Fallback Behavior
 
-Hiện fallback khi thiếu API key:
+Current fallback when API key missing:
 
 - Student Report: fallback report content.
 - Study Reminder: fallback reminder.
 - Messenger Agent: fallback chat reply.
 
-Sau abstraction, wording nên đổi từ:
+After abstraction, wording should change from:
 
 - `OPENAI_API_KEY missing`
 
-Sang:
+To:
 
 - `LLM provider missing`
 
-Nhưng cần cân nhắc tests đang assert message. Nếu muốn diff nhỏ, có thể giữ message cũ trong Phase 1 rồi cleanup sau.
+But need to consider tests asserting message. For small diff, can keep old message in Phase 1 then clean up later.
 
-### 10.8. Config precedence
+### 10.8. Config Precedence
 
-Khi thêm generic env, đề xuất:
+When adding generic env, proposed:
 
 1. `LLM_*`
 2. `OPENAI_*`
-3. default code
+3. code defaults
 
-Ví dụ:
+Example:
 
 ```ts
 const model =
@@ -1565,25 +1565,25 @@ const model =
   || 'gpt-5.4';
 ```
 
-Lý do:
+Reasons:
 
-- Không phá deploy hiện tại.
-- Cho phép migration dần.
-- Khi đổi provider không cần sửa service.
+- Don't break current deploy.
+- Allow gradual migration.
+- When changing provider, no need to change service.
 
-### 10.9. Module dependency
+### 10.9. Module Dependency
 
-Hiện các service đã dùng:
+Current services already use:
 
 - `LlmExecutionModule`
 - `LlmUsageModule`
 - `MetricsModule`
 
-Nên tránh để `LlmExecutionModule` import ngược `LlmUsageModule` ở phase đầu, vì dễ tạo vòng phụ thuộc.
+Should avoid `LlmExecutionModule` importing `LlmUsageModule` in phase 1, as it easily creates circular dependency.
 
-Do đó Phase 1 nên để service tự gọi usage recorder như hiện tại.
+Therefore Phase 1 should let services call usage recorder directly as before.
 
-Sau này nếu tạo `LlmGatewayService`, cần thiết kế module:
+If `LlmGatewayService` is created later, need module design:
 
 ```text
 LlmGatewayModule
@@ -1595,13 +1595,13 @@ LlmGatewayModule
     LlmGatewayService
 ```
 
-Business modules import `LlmGatewayModule` thay vì import nhiều service riêng.
+Business modules import `LlmGatewayModule` instead of importing multiple individual services.
 
-### 10.10. Test strategy
+### 10.10. Test Strategy
 
-Test nên chuyển từ "mock OpenAI completion" sang "mock LlmClientPort response".
+Tests should shift from "mock OpenAI completion" to "mock LlmClientPort response".
 
-Ví dụ response JSON:
+JSON response example:
 
 ```ts
 const llmJsonResponse = {
@@ -1619,7 +1619,7 @@ const llmJsonResponse = {
 };
 ```
 
-Test tool response (tool calls chỉ nằm trong `message.toolCalls`, không có top-level `toolCalls`):
+Tool response test (tool calls only in `message.toolCalls`, no top-level `toolCalls`):
 
 ```ts
 const toolResponse: LlmToolChatResponse = {
@@ -1647,25 +1647,25 @@ const toolResponse: LlmToolChatResponse = {
 };
 ```
 
-Mapper tests nên assert:
+Mapper tests should assert:
 
-- Neutral tool maps đúng sang OpenAI tool.
-- OpenAI tool call maps đúng sang neutral tool call.
-- Tool arguments giữ nguyên string.
-- Usage missing không crash.
-- Empty content được xử lý ở adapter hoặc service theo contract đã chọn.
+- Neutral tool maps correctly to OpenAI tool.
+- OpenAI tool call maps correctly to neutral tool call.
+- Tool arguments preserved as string.
+- Missing usage doesn't crash.
+- Empty content handled in adapter or service per chosen contract.
 
-## 11. Migration checklist
+## 11. Migration Checklist
 
-### Sau Phase 1
+### After Phase 1
 
 ```bash
 rg "import OpenAI|openai/resources" src/modules/student-report src/modules/study-reminder
 ```
 
-Kết quả mong muốn:
+Desired result:
 
-- Không còn direct OpenAI import trong hai module này.
+- No direct OpenAI imports in these two modules.
 
 Run:
 
@@ -1677,23 +1677,23 @@ npm run test
 npm run build
 ```
 
-### Sau Phase 2
+### After Phase 2
 
 ```bash
 rg "import OpenAI|openai/resources|ChatCompletion" src/modules/messenger/application
 ```
 
-Kết quả mong muốn:
+Desired result:
 
-- Không còn OpenAI import/type trong Messenger application layer.
+- No OpenAI imports/types in Messenger application layer.
 
-Run thêm chú ý:
+Run with attention:
 
 ```bash
 npm run test -- messenger-agent.service.spec.ts
 ```
 
-Rồi chạy full gate:
+Then run full gate:
 
 ```bash
 npm run format:check
@@ -1703,19 +1703,19 @@ npm run test
 npm run build
 ```
 
-### Sau Phase 3
+### After Phase 3
 
 ```bash
 rg "openai/resources|ChatCompletion" src/modules/llm-usage src/modules/llm-execution src/shared
 ```
 
-Kết quả mong muốn:
+Desired result:
 
-- Chỉ còn trong adapter OpenAI hoặc test adapter.
+- Only in OpenAI adapter or adapter tests.
 
-### Sau Phase 4
+### After Phase 4
 
-Manual smoke test cần env:
+Manual smoke test needs env:
 
 ```env
 LLM_PROVIDER=openai-compatible
@@ -1726,163 +1726,163 @@ LLM_BASE_URL=...
 
 Smoke test use cases:
 
-- Gửi free-form chat text không cần tool.
-- Gửi free-form chat text cần tool.
+- Send free-form chat text without tool.
+- Send free-form chat text requiring tool.
 - Generate student report.
 - Generate study reminder.
-- Kiểm tra usage log có record.
-- Kiểm tra fallback khi provider lỗi.
+- Check usage log has records.
+- Check fallback when provider errors.
 
-## 12. Acceptance criteria tổng thể
+## 12. Overall Acceptance Criteria
 
-Hoàn tất abstraction có thể coi là đạt khi:
+Abstraction can be considered complete when:
 
-- Không có OpenAI SDK import trong business application services.
-- OpenAI SDK chỉ nằm trong `src/modules/llm-execution/infrastructure/openai/**`.
-- Tool definitions trong Messenger agent không dùng OpenAI type.
-- Usage recorder có thể nhận normalized usage.
-- `OPENAI_*` env cũ vẫn chạy.
-- Có đường config generic `LLM_*` cho provider mới.
-- Test hiện có pass.
-- Build pass.
-- Docs cập nhật.
+- No OpenAI SDK imports in business application services.
+- OpenAI SDK only in `src/modules/llm-execution/infrastructure/openai/**`.
+- Tool definitions in Messenger agent don't use OpenAI types.
+- Usage recorder can receive normalized usage.
+- Old `OPENAI_*` env still works.
+- Generic `LLM_*` config path exists for new providers.
+- Existing tests pass.
+- Build passes.
+- Docs updated.
 
-Command kiểm tra:
+Check command:
 
 ```bash
 rg "from 'openai'|from \"openai\"|openai/resources|ChatCompletion" src
 ```
 
-Kết quả mong muốn cuối cùng:
+Final desired result:
 
-- Chỉ còn trong:
+- Only in:
   - `src/modules/llm-execution/infrastructure/openai/**`
   - adapter specs
-  - có thể còn legacy tests nếu chưa cleanup phase cuối
+  - possibly legacy tests if final cleanup phase not yet done
 
-## 13. Rủi ro chính và cách giảm rủi ro
+## 13. Key Risks and Mitigations
 
-### 13.1. Tool calling behavior đổi nhẹ
+### 13.1. Tool Calling Behavior Changes Slightly
 
-Rủi ro:
+Risk:
 
-- Agent không gọi tool khi cần.
-- Agent gọi tool nhưng arguments sai.
-- Agent loop quá số round.
-- Tool result message không match call id.
+- Agent doesn't call tool when needed.
+- Agent calls tool with wrong arguments.
+- Agent loop exceeds round count.
+- Tool result message doesn't match call id.
 
-Giảm rủi ro:
+Mitigation:
 
-- Migrate tool calling ở phase riêng.
-- Unit test nhiều round.
-- Test case missing/invalid tool arguments.
-- Test case model trả final answer sau tool.
-- Giữ `OPENAI_MAX_TOOL_ROUNDS` alias.
+- Migrate tool calling in separate phase.
+- Multi-round unit tests.
+- Test cases with missing/invalid tool arguments.
+- Test case where model gives final answer after tool.
+- Keep `OPENAI_MAX_TOOL_ROUNDS` alias.
 
-### 13.2. JSON output kém ổn định với provider khác
+### 13.2. JSON Output Less Stable with Other Providers
 
-Rủi ro:
+Risk:
 
-- Provider không support JSON mode.
-- Output có markdown fence.
-- Output thiếu field.
+- Provider doesn't support JSON mode.
+- Output has markdown fences.
+- Output missing fields.
 
-Giảm rủi ro:
+Mitigation:
 
-- Phase đầu vẫn dùng OpenAI JSON mode.
-- Parser/validator hiện tại giữ nguyên.
-- Với provider khác, thêm adapter-specific JSON strategy.
-- Không tin output nếu validate fail, dùng fallback.
+- Phase 1 still uses OpenAI JSON mode.
+- Current parser/validator preserved.
+- For other providers, add adapter-specific JSON strategy.
+- Don't trust output if validation fails, use fallback.
 
-### 13.3. Usage tracking thiếu token
+### 13.3. Usage Tracking Missing Tokens
 
-Rủi ro:
+Risk:
 
-- Provider không trả usage.
-- Field usage khác tên.
-- Cost estimate sai nếu model name khác.
+- Provider doesn't return usage.
+- Usage field has different name.
+- Cost estimate wrong if model name differs.
 
-Giảm rủi ro:
+Mitigation:
 
-- `LlmUsage` optional ở metadata.
-- Nếu missing usage, log warning.
-- Cost config theo normalized model key.
-- Không block user-facing flow vì usage tracking lỗi.
+- `LlmUsage` optional in metadata.
+- If usage missing, log warning.
+- Cost config by normalized model key.
+- Don't block user-facing flow due to usage tracking errors.
 
-### 13.4. Retry sai provider
+### 13.4. Retry Wrong Provider
 
-Rủi ro:
+Risk:
 
-- Retry auth error gây spam.
-- Không retry 429/5xx của provider mới.
+- Retrying auth errors causes spam.
+- Doesn't retry 429/5xx from new provider.
 
-Giảm rủi ro:
+Mitigation:
 
-- Normalize error theo status/code.
+- Normalize error by status/code.
 - Test 429/5xx/401/400.
-- Giữ backoff env.
+- Keep backoff env.
 
-### 13.5. Module circular dependency
+### 13.5. Module Circular Dependency
 
-Rủi ro:
+Risk:
 
-- `LlmExecutionModule` import `LlmUsageModule`, trong khi service khác import cả hai gây vòng phụ thuộc.
+- `LlmExecutionModule` imports `LlmUsageModule`, while other services import both causing circular dependency.
 
-Giảm rủi ro:
+Mitigation:
 
-- Phase đầu adapter không phụ thuộc usage.
-- Usage vẫn ở caller.
-- Nếu cần gateway, tạo module riêng.
+- Phase 1 adapter doesn't depend on usage.
+- Usage stays at caller.
+- If gateway needed, create separate module.
 
-## 14. Đề xuất thứ tự thực hiện cụ thể
+## 14. Specific Implementation Order Recommendation
 
-Thứ tự nên làm:
+Recommended order:
 
-1. Thêm neutral types và `LLM_CLIENT` port.
-2. Thêm OpenAI adapter chỉ support `generateJson(...)`.
-3. Bind `LLM_CLIENT` trong `LlmExecutionModule`.
+1. Add neutral types and `LLM_CLIENT` port.
+2. Add OpenAI adapter supporting only `generateJson(...)`.
+3. Bind `LLM_CLIENT` in `LlmExecutionModule`.
 4. Migrate `StudentReportService`.
 5. Migrate `StudyReminderService`.
-6. Sửa tests của hai service.
-7. Chạy full verify.
-8. Thêm tool/chat types và OpenAI mapper.
+6. Update tests for both services.
+7. Run full verify.
+8. Add tool/chat types and OpenAI mapper.
 9. Migrate `MESSENGER_AGENT_TOOLS`.
 10. Migrate `MessengerAgentService`.
-11. Sửa agent tests.
-12. Chạy full verify.
+11. Update agent tests.
+12. Run full verify.
 13. Normalize usage recorder.
-14. Cleanup retry/metrics naming.
-15. Thêm `LLM_*` env generic và docs.
-16. Thêm OpenAI-compatible baseURL config.
-17. Sau khi ổn định mới thêm provider khác.
+14. Clean up retry/metrics naming.
+15. Add generic `LLM_*` env and docs.
+16. Add OpenAI-compatible baseURL config.
+17. After stabilization, add other providers.
 
-## 15. Khuyến nghị implementation cho repo hiện tại
+## 15. Implementation Recommendation for Current Repo
 
-Với codebase hiện tại, hướng hợp lý nhất là:
+For the current codebase, the most reasonable approach is:
 
-- Làm Phase 1 trước vì ít rủi ro và chứng minh interface hoạt động.
-- Không động vào Messenger agent trong cùng PR với Phase 1.
-- Giữ `OPENAI_*` env ở Phase 1 để không phá deploy.
-- Thêm `recordFromLlmResponse(...)` nhưng chưa xóa `recordFromCompletion(...)`.
-- Viết mapper tests trước khi migrate agent ở Phase 2.
-- Chỉ rename wording OpenAI sang LLM sau khi application services đã hết direct OpenAI import.
+- Do Phase 1 first because it's low risk and proves the interface works.
+- Don't touch Messenger agent in same PR as Phase 1.
+- Keep `OPENAI_*` env in Phase 1 to avoid breaking deploy.
+- Add `recordFromLlmResponse(...)` but don't delete `recordFromCompletion(...)` yet.
+- Write mapper tests before migrating agent in Phase 2.
+- Only rename OpenAI wording to LLM after application services have no direct OpenAI imports.
 
-Nếu muốn tối ưu tốc độ, có thể gộp Phase 1 và Phase 3 một phần nhỏ:
+If optimizing speed, can merge Phase 1 and a small part of Phase 3:
 
-- Thêm `recordFromLlmResponse(...)`.
-- Cho Student Report/Study Reminder dùng method mới.
+- Add `recordFromLlmResponse(...)`.
+- Have Student Report/Study Reminder use new method.
 
-Nhưng không nên gộp Phase 2 vào cùng lúc vì agent tool-calling là vùng có blast radius lớn.
+But shouldn't merge Phase 2 at same time because agent tool-calling is a large blast radius area.
 
-## 16. Kết luận
+## 16. Conclusion
 
-Đúng là dự án hiện đang phụ thuộc khá cứng vào OpenAI, đặc biệt ở Messenger agent vì function calling đang dùng trực tiếp OpenAI message/tool shape.
+The project does have significant coupling to OpenAI, especially in Messenger agent because function calling directly uses OpenAI message/tool shapes.
 
-Tuy nhiên có thể giảm lock-in theo cách incremental:
+However, lock-in can be reduced incrementally:
 
-- Tách JSON generation trước.
-- Tách tool calling sau.
-- Normalize usage/retry/metrics sau cùng.
-- Giữ OpenAI adapter làm implementation đầu tiên để behavior không đổi.
+- Separate JSON generation first.
+- Separate tool calling later.
+- Normalize usage/retry/metrics last.
+- Keep OpenAI adapter as first implementation so behavior doesn't change.
 
-Cách này giúp sau này đổi sang provider khác chủ yếu bằng cách thêm adapter mới và config, thay vì sửa từng service nghiệp vụ.
+This approach enables switching to other providers later primarily by adding new adapters and config, rather than modifying each business service.

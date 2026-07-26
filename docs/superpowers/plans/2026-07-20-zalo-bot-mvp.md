@@ -283,14 +283,14 @@ export class AppModule {}
 
 ```bash
 # apps/zalo-bot/.env.example
-# Copy this to .env for local dev — platform-specific only. Biến dùng chung
-# mọi bot (WISPACE_INTERNAL_KEY, OPENAI_*, DB_*...) nằm ở root .env.shared.example.
+# Copy this to .env for local dev — platform-specific only. Shared variables
+# for all bots (WISPACE_INTERNAL_KEY, OPENAI_*, DB_*...) are in root .env.shared.example.
 PORT=3002
 
 # Zalo Official Account — app credentials (developers.zalo.me)
 ZALO_APP_ID=replace-with-zalo-app-id
 ZALO_APP_SECRET_KEY=replace-with-zalo-app-secret-key
-# Webhook signature secret from OA Admin settings (khác ZALO_APP_SECRET_KEY)
+# Webhook signature secret from OA Admin settings (different from ZALO_APP_SECRET_KEY)
 ZALO_OA_SECRET_KEY=replace-with-oa-secret-key
 
 # Zalo Login OAuth (account-linking) redirect — must match the app's configured redirect URI
@@ -305,9 +305,9 @@ ZALO_CHAT_HISTORY_MAX_MESSAGES=20
 ```markdown
 # @wispace/zalo-bot
 
-Zalo Official Account bot — chat qua `@wispace/llm-agent`, account-linking Zalo Login ↔ WISPACE userId, OA token lifecycle tự refresh.
+Zalo Official Account bot — chat via `@wispace/llm-agent`, account-linking Zalo Login ↔ WISPACE userId, auto-refreshing OA token lifecycle.
 
-Xem thiết kế đầy đủ ở [docs/superpowers/specs/2026-07-20-zalo-bot-mvp-design.md](../../docs/superpowers/specs/2026-07-20-zalo-bot-mvp-design.md) và kế hoạch triển khai ở [docs/superpowers/plans/2026-07-20-zalo-bot-mvp.md](../../docs/superpowers/plans/2026-07-20-zalo-bot-mvp.md).
+See the full design at [docs/superpowers/specs/2026-07-20-zalo-bot-mvp-design.md](../../docs/superpowers/specs/2026-07-20-zalo-bot-mvp-design.md) and the implementation plan at [docs/superpowers/plans/2026-07-20-zalo-bot-mvp.md](../../docs/superpowers/plans/2026-07-20-zalo-bot-mvp.md).
 ```
 
 - [ ] **Step 7: Install workspace deps and run the test**

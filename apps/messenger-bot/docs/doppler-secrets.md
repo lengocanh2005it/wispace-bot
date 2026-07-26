@@ -1,146 +1,146 @@
-# Doppler — quản lý secret (prod + dev)
+# Doppler — Secret Management (prod + dev)
 
-Production env trên VPS được **đồng bộ từ Doppler** mỗi lần GitHub Actions deploy (khi có `DOPPLER_TOKEN`). Local dev có thể dùng `doppler run` thay vì copy `.env` tay.
+Production env on VPS is **synced from Doppler** on every GitHub Actions deploy (when `DOPPLER_TOKEN` is present). Local dev can use `doppler run` instead of copying `.env` manually.
 
-Liên quan: [project-overview.md](./project-overview.md) § deploy, `.github/workflows/deploy.yml`, `.env.example` (chỉ tên biến, không giá trị).
+Related: [project-overview.md](./project-overview.md) § deploy, `.github/workflows/deploy.yml`, `.env.example` (variable names only, no values).
 
 ---
 
-## 0. Biến dùng chung nhiều bot — Doppler secret reference
+## 0. Variables Shared Across Bots — Doppler Secret Reference
 
-`messenger-bot` + `discord-bot` (và `zalo-bot` sau này) dùng chung một số biến (`WISPACE_INTERNAL_KEY`, `OPENAI_*`, `DB_*`, `STUDY_REMINDER_TIMEZONE`/`SYNC_HORIZON_HOURS`/`MIN_LEAD_MINUTES`, `LLM_USAGE_*`, `LLM_COST_USD_PER_1M_*`, `CHAT_USAGE_TIMEZONE` — danh sách đầy đủ + giá trị mẫu ở [`.env.shared.example`](../../../.env.shared.example) tại root repo). Local dev đọc file này qua `envFilePath: ['.env', '../../.env.shared']` (mỗi app's `.env` override nếu trùng key). Production **không** có file `.env.shared` trong container (Doppler flatten hết thành 1 file `.env` khi deploy), nên phải giải quyết trùng lặp ở tầng Doppler:
+`messenger-bot` + `discord-bot` (and `zalo-bot` later) share some variables (`WISPACE_INTERNAL_KEY`, `OPENAI_*`, `DB_*`, `STUDY_REMINDER_TIMEZONE`/`SYNC_HORIZON_HOURS`/`MIN_LEAD_MINUTES`, `LLM_USAGE_*`, `LLM_COST_USD_PER_1M_*`, `CHAT_USAGE_TIMEZONE` — full list + sample values in [`.env.shared.example`](../../../.env.shared.example) at repo root). Local dev reads this file via `envFilePath: ['.env', '../../.env.shared']` (each app's `.env` overrides if same key). Production does **not** have a `.env.shared` file in the container (Doppler flattens everything into one `.env` file on deploy), so deduplication must be handled at the Doppler layer:
 
-1. Tạo project mới **`wispace-shared`** trên Doppler (config `prd` + `dev`), nhập các biến trong `.env.shared.example` với giá trị thật.
-2. Ở project riêng của từng bot (`messenger-bot`, `discord-bot`, ...), với mỗi biến trùng, **xoá giá trị gõ tay** và thay bằng secret reference:
+1. Create a new **`wispace-shared`** project on Doppler (configs `prd` + `dev`), entering variables from `.env.shared.example` with real values.
+2. In each bot's own project (`messenger-bot`, `discord-bot`, ...), for each shared variable, **delete the manually typed value** and replace with a secret reference:
    ```
    ${{wispace-shared.prd.WISPACE_INTERNAL_KEY}}
    ```
-   (đổi `prd` → `dev` cho config dev). Doppler tự inline giá trị thật lúc `doppler secrets download`.
-3. Sửa 1 lần ở `wispace-shared`, mọi bot tham chiếu tới đều cập nhật theo — không cần sửa từng project.
+   (change `prd` → `dev` for dev config). Doppler inlines the real value at `doppler secrets download` time.
+3. Edit once in `wispace-shared`, all referencing bots update automatically — no need to edit each project.
 
-`discord-bot` hiện **chưa có** Doppler project riêng (mới chỉ dùng `.env` tay) — khi setup, làm theo mục 1 dưới đây với `project: discord-bot`, rồi áp bước 2 ở trên cho các biến chung.
+`discord-bot` currently **doesn't have** its own Doppler project (only uses manual `.env`) — when setting up, follow section 1 below with `project: discord-bot`, then apply step 2 above for shared variables.
 
 ---
 
-## 1. Tạo project trên Doppler (một lần)
+## 1. Create Project on Doppler (One-Time)
 
-1. Đăng ký [Doppler](https://dashboard.doppler.com/) → **Create Project** (vd. `messenger-bot`).
-2. Tạo **configs**:
-   - `dev` — máy dev / ngrok
+1. Sign up at [Doppler](https://dashboard.doppler.com/) → **Create Project** (e.g. `messenger-bot`).
+2. Create **configs**:
+   - `dev` — dev machine / ngrok
    - `prd` — VPS production (`PORT=5007`, `CHAT_RATE_LIMIT_ENABLED=true`, …)
-3. Import biến từ `.env` VPS hiện tại:
+3. Import variables from current VPS `.env`:
 
 ```bash
-# Trên máy có file prod (không commit)
+# On machine with prod file (not committed)
 doppler login
 doppler setup --project messenger-bot --config prd
 doppler secrets upload /path/to/production.env
 ```
 
-Hoặc paste từng key trên dashboard. **Không** commit file prod vào git.
+Or paste individual keys on the dashboard. **Don't** commit the prod file to git.
 
-**Upload từ `.env` local (đồng bộ lên Doppler):**
+**Upload from local `.env` (sync to Doppler):**
 
 ```bash
 doppler login
 npm run env:upload-doppler
-# → upload .env lên config dev (PORT=3001) + prd (PORT=5007, DOPPLER_RUNTIME_SYNC_ENABLED=true)
+# → upload .env to dev config (PORT=3001) + prd (PORT=5007, DOPPLER_RUNTIME_SYNC_ENABLED=true)
 
-# Chỉ một config:
+# Only one config:
 node scripts/upload-env-to-doppler.mjs .env prd
 ```
 
-Sau khi sửa secret trên Doppler: webhook tự sync VPS, hoặc `npm run env:sync-prod` / Re-run workflow **Sync production env**.
+After editing secrets on Doppler: webhook auto-syncs VPS, or `npm run env:sync-prod` / Re-run **Sync production env** workflow.
 
-4. Config `dev`: copy từ `prd` rồi chỉnh `PORT=3001`, URL local, tắt ops nếu cần.
+4. Dev config: copy from `prd` then adjust `PORT=3001`, local URLs, disable ops if needed.
 
 ---
 
-## 2. GitHub Actions — service token
+## 2. GitHub Actions — Service Token
 
 1. Doppler → Project **messenger-bot** → Config **prd** → **Access** → **Service Tokens** → Generate (read-only).
 2. GitHub repo → **Settings** → **Secrets and variables** → **Actions** → New secret:
    - Name: `DOPPLER_TOKEN`
-   - Value: token vừa tạo (chỉ gắn config `prd`)
+   - Value: newly created token (scoped to `prd` config only)
 
-Mỗi deploy `main` (hoặc workflow_dispatch):
+Every `main` deploy (or workflow_dispatch):
 
 ```text
-docker build → push ghcr.io/... → SCP + SSH lên VPS (Doppler env khi có DOPPLER_TOKEN)
+docker build → push ghcr.io/... → SCP + SSH to VPS (Doppler env when DOPPLER_TOKEN present)
 ```
 
-Hiện CI deploy chỉ dùng SSH/SCP (không còn endpoint `POST /messenger/ops/ci-deploy`).
+Current CI deploy uses SSH/SCP only (no more `POST /messenger/ops/ci-deploy` endpoint).
 
-Env prod đổi trên Doppler: webhook → `POST /messenger/ops/doppler-sync` (không cần GitHub).
+Prod env changed on Doppler: webhook → `POST /messenger/ops/doppler-sync` (no GitHub needed).
 
-**GitHub secrets bắt buộc cho deploy SSH:**
+**Required GitHub Secrets for SSH Deploy:**
 
-| Secret | Mục đích |
-|--------|----------|
-| `SSH_PRIVATE_KEY` | Private key khớp `~/.ssh/authorized_keys` trên VPS (`ngoc_anh`) |
-| `VPS_HOST` | IP VPS (vd. `69.62.74.196`) |
+| Secret | Purpose |
+|--------|---------|
+| `SSH_PRIVATE_KEY` | Private key matching `~/.ssh/authorized_keys` on VPS (`ngoc_anh`) |
+| `VPS_HOST` | VPS IP (e.g. `69.62.74.196`) |
 | `VPS_USER` | `ngoc_anh` |
-| `DOPPLER_TOKEN` | (khuyến nghị) Tải `production.env` mỗi deploy |
-| `GHCR_PULL_TOKEN` | (khuyến nghị) `docker pull` trên VPS |
+| `DOPPLER_TOKEN` | (recommended) Downloads `production.env` each deploy |
+| `GHCR_PULL_TOKEN` | (recommended) `docker pull` on VPS |
 
-**Repository variable (tuỳ chọn):** `VPS_SSH_PORT` — mặc định `8443` trong workflow. Port **22** trên OS (UFW) đã mở; runner GitHub Actions thường **timeout** tới `:22` do firewall Hostinger hPanel chặn IP cloud. `sshd` lắng nghe thêm **8443** (đã allow trên UFW) — CI dùng port này.
+**Repository variable (optional):** `VPS_SSH_PORT` — default `8443` in workflow. Port **22** on OS (UFW) is open; GitHub Actions runners usually **timeout** connecting to `:22` due to Hostinger hPanel firewall blocking cloud IPs. `sshd` listens on **8443** as well (allowed on UFW) — CI uses this port.
 
-**Mở port 22 cho GitHub (Hostinger hPanel):** VPS → **Security** → **Firewall** → rule **TCP 22** **Accept** từ **Anywhere** (hoặc whitelist IP Actions từ `https://api.github.com/meta` → `actions[]`). Sau đó có thể set `VPS_SSH_PORT=22`.
+**Open port 22 for GitHub (Hostinger hPanel):** VPS → **Security** → **Firewall** → rule **TCP 22** **Accept** from **Anywhere** (or whitelist Actions IPs from `https://api.github.com/meta` → `actions[]`). Then you can set `VPS_SSH_PORT=22`.
 
-Nếu **chưa** set `SSH_PRIVATE_KEY` / `VPS_*`, bước SCP/SSH fail — thêm secret rồi re-run workflow.
+If `SSH_PRIVATE_KEY` / `VPS_*` **not yet** set, SCP/SSH step fails — add secret then re-run workflow.
 
-Nếu **chưa** set `DOPPLER_TOKEN`, workflow vẫn deploy image; env trên VPS giữ nguyên (hoặc dùng webhook doppler-sync khi đổi secret).
+If `DOPPLER_TOKEN` **not yet** set, workflow still deploys image; env on VPS stays unchanged (or use doppler-sync webhook when secrets change).
 
 ---
 
-## 3. Dev local với Doppler
+## 3. Local Dev with Doppler
 
 ```bash
-# Cài CLI: https://docs.doppler.com/docs/install-cli
+# Install CLI: https://docs.doppler.com/docs/install-cli
 doppler login
 doppler setup --project messenger-bot --config dev
 
-# Chạy app (không cần file .env trên disk)
+# Run app (no .env file on disk needed)
 npm run start:dev:doppler
 
-# Script khác
+# Other scripts
 doppler run -- npm run study-reminder:jobs
 ```
 
-Vẫn có thể dùng `.env` + `npm run start:dev` nếu chưa cài Doppler.
+Still possible to use `.env` + `npm run start:dev` if Doppler isn't installed.
 
 ---
 
-## 4. Đổi secret prod — full-auto (webhook VPS)
+## 4. Change Prod Secret — Full-Auto (VPS Webhook)
 
-1. Sửa trên Doppler config **`prd`** (dashboard hoặc CLI).
-2. Doppler webhook → `POST https://aiassist.aihubproduction.com/messenger/ops/doppler-sync` (tự sync + restart).
+1. Edit on Doppler config **`prd`** (dashboard or CLI).
+2. Doppler webhook → `POST https://aiassist.aihubproduction.com/messenger/ops/doppler-sync` (auto sync + restart).
 
-Runtime sync ghi tạm `/tmp/.env.sync.tmp` rồi `copyFile` sang `/deploy/.env` (bind mount host `.env`), **merge lại** `DEPLOY_*` / `DOCKER_GID` (Doppler không chứa các key deploy). Recreate qua sidecar `docker:29-cli` mount host deploy dir (tránh `cwd` host path không tồn tại trong container).
+Runtime sync writes temp `/tmp/.env.sync.tmp` then `copyFile` to `/deploy/.env` (host `.env` bind mount), **merges back** `DEPLOY_*` / `DOCKER_GID` (Doppler doesn't contain deploy keys). Recreates via sidecar `docker:29-cli` mounting host deploy dir (avoids `cwd` host path not existing in container).
 
-**Không cần** GitHub Actions khi chỉ đổi env.
+**No GitHub Actions needed** when only changing env.
 
-**Thủ công (không webhook):** `npm run env:sync-prod` hoặc Actions → **Sync production env (no image build)**.
+**Manual (no webhook):** `npm run env:sync-prod` or Actions → **Sync production env (no image build)**.
 
-### CI deploy code (`deploy.yml`)
+### CI Deploy Code (`deploy.yml`)
 
-| Thay đổi git | CI làm gì |
-|--------------|-----------|
+| Git Change | CI Action |
+|------------|-----------|
 | `src/`, `Dockerfile`, `package*.json` | lint + test + **build image** + deploy |
-| Chỉ `docker-compose`, workflow, scripts | **Bỏ qua build** — VPS dùng image `:latest` |
-| Chỉ `docs/` | **Không chạy** workflow |
+| Only `docker-compose`, workflow, scripts | **Skip build** — VPS uses `:latest` image |
+| Only `docs/` | **Don't run** workflow |
 
-Docker build vẫn dùng **GHA layer cache** (`cache-from/to: type=gha`).
+Docker build still uses **GHA layer cache** (`cache-from/to: type=gha`).
 
-### Setup webhook (một lần)
+### Webhook Setup (One-Time)
 
 1. Doppler → **messenger-bot** → **prd** → **Webhooks** → Add.
 2. **URL:** `https://aiassist.aihubproduction.com/messenger/ops/doppler-sync`
-3. **Custom header:** `x-internal-api-key: <INTERNAL_API_KEY>` (giá trị trong config `prd`).
-4. Trên Doppler `prd`, thêm secret:
-   - `DOPPLER_RUNTIME_TOKEN` = service token read-only `prd` (cùng token GitHub secret `DOPPLER_TOKEN`).
+3. **Custom header:** `x-internal-api-key: <INTERNAL_API_KEY>` (value from `prd` config).
+4. On Doppler `prd`, add secret:
+   - `DOPPLER_RUNTIME_TOKEN` = read-only service token for `prd` (same value as GitHub secret `DOPPLER_TOKEN`).
 
-Sau deploy image có tính năng này, kiểm tra tay:
+After image with this feature is deployed, test manually:
 
 ```bash
 curl -sS -X POST https://aiassist.aihubproduction.com/messenger/ops/doppler-sync \
@@ -152,29 +152,29 @@ curl -sS -X POST https://aiassist.aihubproduction.com/messenger/ops/doppler-sync
 
 ---
 
-## 5. Rotate secret (vd. Meta App Secret)
+## 5. Rotate Secret (e.g. Meta App Secret)
 
-1. Sửa giá trị trên Doppler dashboard (config `prd`) — webhook tự sync VPS.
-2. Hoặc push `main` / Re-run Deploy — CI vẫn ghi `.env` khi deploy code.
+1. Change value on Doppler dashboard (config `prd`) — webhook auto-syncs VPS.
+2. Or push `main` / Re-run Deploy — CI still writes `.env` when deploying code.
 
-Không cần SSH sửa `.env` tay.
+No need to SSH-edit `.env` manually.
 
 ---
 
 ## 6. Checklist
 
-- [x] Project + configs `dev` / `prd` trên Doppler (`messenger-bot`)
-- [x] Secrets `prd` từ VPS; `dev` từ local (PORT=3001)
-- [x] GitHub secret `DOPPLER_TOKEN` (service token config `prd`)
-- [ ] Deploy thành công; log CI có dòng `Applied .env from Doppler` và `Deployment complete — container messenger-bot is healthy`
+- [x] Project + configs `dev` / `prd` on Doppler (`messenger-bot`)
+- [x] Secrets `prd` from VPS; `dev` from local (PORT=3001)
+- [x] GitHub secret `DOPPLER_TOKEN` (service token for `prd` config)
+- [ ] Deploy succeeds; CI log shows `Applied .env from Doppler` and `Deployment complete — container messenger-bot is healthy`
 - [x] Repo: `.doppler.yaml` + `doppler setup` (dev)
 
-- [ ] Webhook Doppler → `POST /messenger/ops/doppler-sync` + `DOPPLER_RUNTIME_TOKEN` trên `prd`
+- [ ] Doppler webhook → `POST /messenger/ops/doppler-sync` + `DOPPLER_RUNTIME_TOKEN` on `prd`
 
 ---
 
-## 7. Bảo mật
+## 7. Security
 
-- **Không** commit `.env`, không paste secret trong PR/chat.
-- Service token **chỉ read**, scope **một config** (`prd`).
-- File trên VPS: `chmod 600` (CI dùng `install -m 600`).
+- **Don't** commit `.env`, don't paste secrets in PR/chat.
+- Service token is **read-only**, scoped to **one config** (`prd`).
+- Files on VPS: `chmod 600` (CI uses `install -m 600`).

@@ -5,11 +5,11 @@
 
 ## Problem
 
-Khi `adapter.chatWithTools()` fail với lỗi retryable (429 rate limit, 5xx server error), `LlmAgentService.reply()` throw ngay — user nhận lỗi trong khi chỉ cần chờ thêm vài trăm ms. `LlmProviderAdapter.isRetryableError()` đã tồn tại nhưng chưa được dùng trong agent loop.
+When `adapter.chatWithTools()` fails with a retryable error (429 rate limit, 5xx server error), `LlmAgentService.reply()` throws immediately — the user receives an error when waiting a few hundred ms would suffice. `LlmProviderAdapter.isRetryableError()` already exists but is not used in the agent loop.
 
 ## Solution
 
-Private `withRetry<T>()` helper trong `LlmAgentService` wrap quanh mỗi `adapter.chatWithTools()` call.
+Private `withRetry<T>()` helper in `LlmAgentService` wraps each `adapter.chatWithTools()` call.
 
 ### Retry logic
 
@@ -46,11 +46,11 @@ export class LlmRetryExhaustedError extends Error {
 }
 ```
 
-Exported từ `index.ts` để upstream có thể catch riêng.
+Exported from `index.ts` so upstream can catch it specifically.
 
 ### Logging
 
-Mỗi retry: `logger.warn(LLM_RETRY attempt=${n}/${max} round=${round} reason=... delay=${ms}ms)`
+Each retry: `logger.warn(LLM_RETRY attempt=${n}/${max} round=${round} reason=... delay=${ms}ms)`
 
 ## Files Changed
 

@@ -1,64 +1,64 @@
 # wispace-bots
 
-Turborepo monorepo — bot học viên WISPACE trên nhiều nền tảng nhắn tin. Hiện có **Facebook Messenger** (đầy đủ tính năng), **Discord** và **Zalo** (placeholder, chưa triển khai), dùng chung 1 package function-calling LLM.
+Turborepo monorepo — WISPACE student bots across multiple messaging platforms. Currently features **Facebook Messenger** (fully functional), **Discord** and **Zalo** (placeholder, not yet implemented), sharing a single LLM function-calling package.
 
-## Cấu trúc
+## Structure
 
 ```
-apps/messenger-bot/    NestJS — báo cáo AI, nhắc lịch học, chat AI rate limit qua Messenger (đầy đủ tính năng)
-apps/discord-bot/      Placeholder — chưa triển khai (xem docs/turborepo-migration-plan.md Phase 3)
-apps/zalo-bot/         Placeholder — chưa triển khai (xem docs/turborepo-migration-plan.md Phase 4)
-packages/llm-agent/    Orchestration OpenAI function-calling dùng chung mọi bot (framework-agnostic)
+apps/messenger-bot/    NestJS — AI reports, study reminders, AI chat with rate limit via Messenger (fully functional)
+apps/discord-bot/      Placeholder — not yet implemented (see docs/turborepo-migration-plan.md Phase 3)
+apps/zalo-bot/         Placeholder — not yet implemented (see docs/turborepo-migration-plan.md Phase 4)
+packages/llm-agent/    OpenAI function-calling orchestration shared across all bots (framework-agnostic)
 ```
 
-## Tính năng (Messenger bot)
+## Features (Messenger bot)
 
-- Liên kết học viên WISPACE với Messenger (`m.me` + webhook)
-- Báo cáo tiến độ AI trước ngày thi (cron + menu)
-- Nhắc buổi học sắp tới (outbox jobs + LLM + cron)
-- Chat tự do có **rate limit** (quota ngày, burst, H1–H7 hardening)
-- Wispace gọi `POST /messenger/study-calendar/sync` sau khi đổi lịch `UserCalendar`
+- Link WISPACE students to Messenger (`m.me` + webhook)
+- AI progress reports before exam day (cron + menu)
+- Upcoming study session reminders (outbox jobs + LLM + cron)
+- Free-form chat with **rate limit** (daily quota, burst, H1–H7 hardening)
+- Wispace calls `POST /messenger/study-calendar/sync` after modifying `UserCalendar` schedule
 
-## Tài liệu
+## Documentation
 
-| File | Mô tả |
-|------|--------|
-| [docs/turborepo-migration-plan.md](docs/turborepo-migration-plan.md) | Lộ trình monorepo: Discord/Zalo bot, DB đa nền tảng, CI/CD độc lập |
-| [apps/messenger-bot/docs/project-overview.md](apps/messenger-bot/docs/project-overview.md) | Kiến trúc, cấu trúc code, DB, API, cron, runbook quota |
-| [apps/messenger-bot/docs/chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) | Rate limit chat V1 + H1–H7 |
-| [apps/messenger-bot/docs/edge-cases-roadmap.md](apps/messenger-bot/docs/edge-cases-roadmap.md) | Gap toàn POC + checklist QA + phase khắc phục |
-| [apps/messenger-bot/docs/study-session-reminder.md](apps/messenger-bot/docs/study-session-reminder.md) | Nhắc lịch học (chi tiết) |
-| [apps/messenger-bot/docs/README.md](apps/messenger-bot/docs/README.md) | Mục lục tài liệu Messenger bot |
-| [AGENTS.md](AGENTS.md) | Hướng dẫn cho AI agent / Cursor |
+| File | Description |
+|------|-------------|
+| [docs/turborepo-migration-plan.md](docs/turborepo-migration-plan.md) | Monorepo roadmap: Discord/Zalo bots, cross-platform DB, independent CI/CD |
+| [apps/messenger-bot/docs/project-overview.md](apps/messenger-bot/docs/project-overview.md) | Architecture, code structure, DB, API, cron, quota runbook |
+| [apps/messenger-bot/docs/chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) | Chat rate limit V1 + H1–H7 |
+| [apps/messenger-bot/docs/edge-cases-roadmap.md](apps/messenger-bot/docs/edge-cases-roadmap.md) | POC-wide gaps + QA checklist + remediation phases |
+| [apps/messenger-bot/docs/study-session-reminder.md](apps/messenger-bot/docs/study-session-reminder.md) | Study session reminders (detailed) |
+| [apps/messenger-bot/docs/README.md](apps/messenger-bot/docs/README.md) | Messenger bot documentation index |
+| [AGENTS.md](AGENTS.md) | AI agent / Cursor instructions |
 
-## Chạy nhanh (Messenger bot)
+## Quick start (Messenger bot)
 
 ```bash
-npm install                          # ở root — npm workspaces resolve apps/* + packages/*
-cp apps/messenger-bot/.env.example apps/messenger-bot/.env   # điền PAGE_ACCESS_TOKEN, DB, OPENAI_API_KEY, ...
+npm install                          # at root — npm workspaces resolve apps/* + packages/*
+cp apps/messenger-bot/.env.example apps/messenger-bot/.env   # fill in PAGE_ACCESS_TOKEN, DB, OPENAI_API_KEY, ...
 npx turbo run build --filter=@wispace/messenger-bot...
 cd apps/messenger-bot
 npm run migration:run
 npm run start:dev
 ```
 
-Webhook Meta: `GET/POST /webhook`
-Cấu hình menu bot: `POST /messenger/profile/setup`
-Wispace sync lịch: `POST /messenger/study-calendar/sync` + header `X-Internal-Api-Key` (xem `apps/messenger-bot/.env` `INTERNAL_API_KEY`)
+Meta webhook: `GET/POST /webhook`
+Bot menu configuration: `POST /messenger/profile/setup`
+Wispace schedule sync: `POST /messenger/study-calendar/sync` + header `X-Internal-Api-Key` (see `apps/messenger-bot/.env` `INTERNAL_API_KEY`)
 
-## Scripts hữu ích (chạy trong `apps/messenger-bot/`)
+## Useful scripts (run in `apps/messenger-bot/`)
 
 ```bash
-npm run study-reminder:sync      # Bootstrap + sync jobs nhắc lịch
-npm run study-reminder:jobs      # Xem study_reminder_jobs (--failed, --stuck)
+npm run study-reminder:sync      # Bootstrap + sync study reminder jobs
+npm run study-reminder:jobs      # View study_reminder_jobs (--failed, --stuck)
 npm run ops:health               # I1+S1 ops snapshot
-npm run chat-quota:status        # Tra quota chat (--ops = fleet summary)
+npm run chat-quota:status        # Query chat quota (--ops = fleet summary)
 npm run chat-quota:recover-stuck # H2: refund stuck reserved
-npm run chat-quota:cleanup       # H6: cleanup idempotency cũ
+npm run chat-quota:cleanup       # H6: cleanup old idempotency records
 npm run db:inspect
 ```
 
-## Verify toàn monorepo
+## Verify entire monorepo
 
 ```bash
 npx turbo run format:check lint typecheck test build
@@ -66,4 +66,4 @@ npx turbo run format:check lint typecheck test build
 
 ## Stack
 
-Turborepo + npm workspaces · NestJS 11 · TypeORM · PostgreSQL (dùng chung giữa các bot) · OpenAI · Facebook Graph API
+Turborepo + npm workspaces · NestJS 11 · TypeORM · PostgreSQL (shared across bots) · OpenAI · Facebook Graph API

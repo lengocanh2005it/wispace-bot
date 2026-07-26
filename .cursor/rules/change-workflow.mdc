@@ -1,14 +1,14 @@
 ---
-description: Bắt buộc cập nhật agent docs/skills và chạy verify sau khi sửa code
+description: Must update agent docs/skills and run verify after code changes
 alwaysApply: true
 ---
 
 # Change workflow
 
-Khi **sửa code** trong repo này:
+When **making code changes** in this repo:
 
-1. **Docs & skills** — cập nhật tài liệu agent nếu hành vi đổi (bảng đầy đủ trong `AGENTS.md` → *Docs & skills khi đổi code*). Sửa skill `.claude/skills/` tương ứng nếu workflow đổi.
-2. **Quality gate** — trước khi kết thúc task (khớp CI):
+1. **Docs & skills** — update agent docs if behavior changed (full table in `AGENTS.md` → *Docs & skills when changing code*). Update corresponding `.claude/skills/` skill if workflow changed.
+2. **Quality gate** — before finishing task (matches CI):
 
 ```bash
 npm ci
@@ -17,8 +17,8 @@ npm run test
 npm run build
 ```
 
-Local thêm: `npm run format` → `npm run verify`.
+Local extra: `npm run format` → `npm run verify`.
 
-3. Sửa lỗi lint/type/test/build cho đến khi pass. Không commit trừ khi user yêu cầu.
+3. Fix lint/type/test/build errors until passing. Do not commit unless user requests it.
 
-Chi tiết: `AGENTS.md`, skill `/verify`.
+Details: `AGENTS.md`, skill `/verify`.

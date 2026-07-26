@@ -1,122 +1,122 @@
-# Turborepo migration plan — Messenger + Discord + Zalo bots
+# Turborepo Migration Plan — Messenger + Discord + Zalo Bots
 
-Mục tiêu cuối: 3 bot (Messenger, Discord, Zalo) sống trong 1 Turborepo monorepo, deploy CI/CD **độc lập** từng bot, dùng chung 1 Postgres DB, và dùng chung phần **function-calling + gọi OpenAI API** qua `packages/llm-agent`, **quota/rate-limit + LLM usage/safety tracking** qua `packages/chat-metering`, cũng như **Wispace API HTTP client** (goals/scores/calendar) qua `packages/wispace-client`. Quota/rate-limit tính **riêng theo từng bot** (không gộp chung theo học viên) — engine dùng chung, số đếm tách theo `platform`.
+End goal: 3 bots (Messenger, Discord, Zalo) in one Turborepo monorepo, **independent** CI/CD deploy per bot, sharing one Postgres DB, and sharing **function-calling + OpenAI API calls** via `packages/llm-agent`, **quota/rate-limit + LLM usage/safety tracking** via `packages/chat-metering`, and **Wispace API HTTP client** (goals/scores/calendar) via `packages/wispace-client`. Quota/rate-limit is calculated **separately per bot** (not combined by student) — shared engine, counters split by `platform`.
 
-Tài liệu này mô tả các phase migrate — phase nào đã xong, phase nào còn lại.
+This document describes the migration phases — which phases are complete and which remain.
 
 ---
 
-## Phase 0 — Hiện trạng trước migration (đã xong, tham chiếu)
+## Phase 0 — Pre-migration state (completed, reference)
 
-Repo NestJS đơn lẻ, `src/` ở root, 1 app duy nhất (Messenger bot), 1 Postgres DB (`ai_chat_bot_db`), khóa user = `psid` (Facebook PSID) trong toàn bộ entity liên quan chat/quota/mapping.
+Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB (`ai_chat_bot_db`), user key = `psid` (Facebook PSID) across all chat/quota/mapping entities.
 
-## Phase 1 — Turborepo scaffold + tách `packages/llm-agent` (ĐÃ XONG)
+## Phase 1 — Turborepo scaffold + extract `packages/llm-agent` (COMPLETED)
 
-**Mục tiêu:** chuyển sang cấu trúc monorepo, tách phần orchestration LLM + function-calling schema + safety utils thành package framework-agnostic dùng chung, không đổi hành vi Messenger bot hiện tại.
+**Goal:** Migrate to monorepo structure, extract LLM orchestration + function-calling schema + safety utils into a framework-agnostic shared package, without changing current Messenger bot behavior.
 
-**Đã làm:**
+**Done:**
 - `turbo.json` + root `package.json` (`workspaces: ["apps/*", "packages/*"]`).
-- Di chuyển toàn bộ code hiện tại vào `apps/messenger-bot/` (package `@wispace/messenger-bot`) — giữ nguyên DB, entities, migrations, mọi module nghiệp vụ.
-- Tạo `packages/llm-agent/` (`@wispace/llm-agent`) chứa:
-  - `LlmAgentService` — vòng lặp tool-call OpenAI, generic theo `TToolContext`, không phụ thuộc NestJS.
-  - `AGENT_TOOLS` / `AGENT_TOOL_NAMES` — schema function-calling (đổi tên từ `MESSENGER_AGENT_TOOLS`).
-  - Ports (`ports.ts`): `LlmExecutionPort`, `LlmUsageRecorderPort`, `LlmSafetyEventPort`, `AgentMetricsPort`, `ToolExecutorPort<T>` — app implement các port này bằng service NestJS sẵn có.
-  - Safety utils: `prompt-injection.utils.ts`, `llm-grounding.utils.ts`, `openai-error.utils.ts` (nguyên trạng từ `src/shared/utils/`).
-  - `scope.utils.ts` (`isObviouslyOffTopic`), `messages.ts` (thông báo redirect/injection blocked), `text.utils.ts` (`sanitizeReplyText`) — logic domain WISPACE dùng chung, không đặc thù platform.
-  - `utils/load-system-prompt.ts` — loader `.txt` generic (cache theo path); mỗi app vẫn giữ file prompt riêng (`apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt` — nội dung có nhắc "Facebook Messenger" nên **không** tách, giữ ở app).
-- `apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent.service.ts` trở thành **adapter mỏng**: build system prompt (base + linkage), implement port bằng service Nest thật (`LlmExecutionService`, `LlmUsageRecorderService`, `LlmSafetyEventService`, `MetricsService`), gọi `LlmAgentService.reply()`, rồi ghép `richFollowUps` (tool handler vẫn tự accumulate qua `toolContext` — package không biết về khái niệm này).
-- `messenger-agent-tools.service.ts` (tool handlers gọi Wispace API, business logic) **ở nguyên trong app**, implement `ToolExecutorPort`.
-- Cập nhật `Dockerfile`, `.github/workflows/deploy.yml` (path filter + `turbo run ... --filter=@wispace/messenger-bot...`).
-- Tạo placeholder rỗng `apps/discord-bot/`, `apps/zalo-bot/` (chỉ `package.json` + README trỏ tới phase 3/4 bên dưới).
+- Moved all existing code into `apps/messenger-bot/` (package `@wispace/messenger-bot`) — kept DB, entities, migrations, all business modules.
+- Created `packages/llm-agent/` (`@wispace/llm-agent`) containing:
+  - `LlmAgentService` — OpenAI tool-call loop, generic over `TToolContext`, no NestJS dependency.
+  - `AGENT_TOOLS` / `AGENT_TOOL_NAMES` — function-calling schema (renamed from `MESSENGER_AGENT_TOOLS`).
+  - Ports (`ports.ts`): `LlmExecutionPort`, `LlmUsageRecorderPort`, `LlmSafetyEventPort`, `AgentMetricsPort`, `ToolExecutorPort<T>` — apps implement these ports with existing NestJS services.
+  - Safety utils: `prompt-injection.utils.ts`, `llm-grounding.utils.ts`, `openai-error.utils.ts` (unchanged from `src/shared/utils/`).
+  - `scope.utils.ts` (`isObviouslyOffTopic`), `messages.ts` (redirect/injection blocked notifications), `text.utils.ts` (`sanitizeReplyText`) — shared WISPACE domain logic, not platform-specific.
+  - `utils/load-system-prompt.ts` — generic `.txt` loader (cached by path); each app still keeps its own prompt file (`apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt` — content references "Facebook Messenger" so it is **not** extracted, kept in app).
+- `apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent.service.ts` becomes a **thin adapter**: builds system prompt (base + linkage), implements ports with real NestJS services (`LlmExecutionService`, `LlmUsageRecorderService`, `LlmSafetyEventService`, `MetricsService`), calls `LlmAgentService.reply()`, then assembles `richFollowUps` (tool handlers still accumulate via `toolContext` — the package is unaware of this concept).
+- `messenger-agent-tools.service.ts` (tool handlers calling Wispace API, business logic) **remains in the app**, implements `ToolExecutorPort`.
+- Updated `Dockerfile`, `.github/workflows/deploy.yml` (path filter + `turbo run ... --filter=@wispace/messenger-bot...`).
+- Created empty placeholders `apps/discord-bot/`, `apps/zalo-bot/` (only `package.json` + README pointing to phase 3/4 below).
 
-**Rủi ro đã biết / chưa xử lý ở phase này:**
-- `packages/llm-agent` build bằng `tsc` thô (không dùng NestJS CLI) — cần `npm install` ở root để workspace resolve trước khi build.
-- Chưa test end-to-end thực tế (chỉ verify qua `turbo run build/lint/typecheck/test`) — xem mục Verification trong plan gốc.
-
----
-
-## Phase 2 — Generalize khóa DB: `psid` → `(platform, external_user_id)` (ĐÃ XONG — đã chạy migration trên VPS production)
-
-**Mục tiêu:** cho phép Discord/Zalo bot dùng chung DB mà không đụng độ khóa với Messenger.
-
-**Đã làm:**
-- Migration `1751029200001-GeneralizePlatformIdentifiers.ts` — với 11 bảng: thêm cột `platform varchar(16) DEFAULT 'messenger'`, đổi cột `psid` → `external_user_id`, đổi mọi unique/partial index liên quan để bao gồm `platform`. Đổi tên 7 bảng bỏ prefix `messenger_` (vì giờ dùng chung nhiều platform): `user_messenger_mappings→user_platform_mappings`, `messenger_chat_daily_usage→chat_daily_usage`, `messenger_chat_idempotency→chat_idempotency`, `messenger_message_logs→message_logs`, `messenger_scheduled_report_claims→scheduled_report_claims`, `messenger_webhook_dead_letters→webhook_dead_letters`, `messenger_chat_events→chat_quota_events`. Giữ nguyên tên `study_reminder_jobs`, `report_send_jobs`, `llm_usage_events`, `llm_safety_events`, `users` (đã đủ generic).
-- **Không đổi public port method signature** (`MessengerRepositoryPort.findActiveMappingByPsid(psid)` vẫn giữ nguyên) — vì `apps/messenger-bot` là implementation duy nhất hiện có và luôn ghi `platform='messenger'`. Discord/Zalo (Phase 3/4) sẽ có repository implementation riêng của chính họ, không import từ `apps/messenger-bot`. Chỉ 7 file entity + 10 file repository implementation (persistence layer) bị đổi — application services/controllers/domain types hoàn toàn không đổi.
-- **Quota/rate-limit vẫn tính riêng theo từng bot** (đã chốt trước đó) — chỉ cần thêm `platform` vào index/query key, không cần bảng map xuyên platform.
-
-**Migration đã chạy trên VPS production** (qua `DB_MIGRATIONS_RUN=true` khi container khởi động, trigger tự động bởi deploy.yml) — xác nhận qua SSH: `\dt` trên `ai_chat_bot_db` cho đúng 13 bảng với tên mới (`user_platform_mappings`, `chat_daily_usage`, `chat_idempotency`, `message_logs`, `scheduled_report_claims`, `webhook_dead_letters`, `chat_quota_events` + 5 bảng giữ tên cũ có thêm cột `platform`/`external_user_id`), data cũ backfill `platform='messenger'` đúng, container `messenger-bot` boot sạch (`Nest application successfully started`, không lỗi).
-
-**Sự cố đã gặp và fix trong lúc chạy (tham khảo khi làm Phase 3/4 nếu cần sửa migration khác):**
-- `uq_chat_daily_usage_psid_date` là `CONSTRAINT` inline (tạo trong `CREATE TABLE` gốc), không phải `CREATE UNIQUE INDEX` như các unique key khác — `DROP INDEX` báo lỗi `cannot drop index ... because constraint ... requires it`. Phải dùng `ALTER TABLE ... DROP CONSTRAINT IF EXISTS`. Migration transaction của TypeORM tự rollback sạch khi lỗi, DB không bị hư giữa chừng.
-- Bug có sẵn trong `.github/scripts/vps-deploy.sh` (`set_env_var`) — `sed -i "s/^${key}=.*/${key}=${value}/"` dùng `/` làm delimiter nhưng giá trị (`DEPLOY_DIR=/deploy`...) cũng chứa `/`, phá cú pháp sed. Đổi delimiter sang `#`.
-
-**Verify đã làm:** `npx turbo run format:check lint typecheck test build --filter=@wispace/messenger-bot...` pass toàn bộ (321 test, không đổi hành vi runtime nào — chỉ đổi tầng persistence) + verify thật trên VPS qua SSH.
+**Known risks / not yet handled in this phase:**
+- `packages/llm-agent` builds with raw `tsc` (not NestJS CLI) — requires `npm install` at root so workspaces resolve before building.
+- No real end-to-end testing done (only verified via `turbo run build/lint/typecheck/test`) — see Verification section in original plan.
 
 ---
 
-## Phase 3 — Triển khai `apps/discord-bot` (chat + quota/usage/safety + account-linking + 6/7 tool handlers ĐÃ XONG; register_exam_report_notifications CHƯA LÀM)
+## Phase 2 — Generalize DB key: `psid` → `(platform, external_user_id)` (COMPLETED — migration ran on VPS production)
 
-**Mục tiêu:** Discord bot thật, dùng chung `packages/llm-agent` + `packages/chat-metering` + DB (đã generalize khóa ở Phase 2).
+**Goal:** Allow Discord/Zalo bots to use the same DB without key conflicts with Messenger.
 
-**Stack:** [Necord](https://necord.org/) — wrapper NestJS quanh `discord.js`, cung cấp decorator (`@Once`, `@On`, `@Context()`...) và tích hợp module/DI theo đúng phong cách NestJS đã dùng xuyên suốt repo (thay vì tự viết gateway thô bằng `discord.js` trần). `NecordModule.forRootAsync()` đăng ký client Discord như 1 NestJS module bình thường (`@Global`, expose `Client` từ `discord.js` làm injection token).
+**Done:**
+- Migration `1751029200001-GeneralizePlatformIdentifiers.ts` — across 11 tables: added `platform varchar(16) DEFAULT 'messenger'` column, renamed `psid` → `external_user_id`, updated all unique/partial indexes to include `platform`. Renamed 7 tables dropping `messenger_` prefix (now multi-platform): `user_messenger_mappings→user_platform_mappings`, `messenger_chat_daily_usage→chat_daily_usage`, `messenger_chat_idempotency→chat_idempotency`, `messenger_message_logs→message_logs`, `messenger_scheduled_report_claims→scheduled_report_claims`, `messenger_webhook_dead_letters→webhook_dead_letters`, `messenger_chat_events→chat_quota_events`. Kept original names for `study_reminder_jobs`, `report_send_jobs`, `llm_usage_events`, `llm_safety_events`, `users` (already generic enough).
+- **No change to public port method signatures** (`MessengerRepositoryPort.findActiveMappingByPsid(psid)` unchanged) — because `apps/messenger-bot` is the only current implementation and always writes `platform='messenger'`. Discord/Zalo (Phase 3/4) will have their own repository implementations, not importing from `apps/messenger-bot`. Only 7 entity files + 10 repository implementation files (persistence layer) changed — application services/controllers/domain types completely unchanged.
+- **Quota/rate-limit still calculated separately per bot** (decided earlier) — only need to add `platform` to index/query keys, no cross-platform mapping tables needed.
 
-**Đã làm (MVP):**
-- `apps/discord-bot` scaffold NestJS đầy đủ (package.json, nest-cli.json, tsconfig, eslint dùng chung root config) — `NestFactory.createApplicationContext` (không cần HTTP server, bot chỉ giữ kết nối gateway).
-- `NecordModule.forRootAsync()` trong `AppModule`, token từ `DISCORD_BOT_TOKEN` (.env), intents `Guilds` + `DirectMessages` + `MessageContent`, `partials: [Channel]` (bắt buộc để nhận DM trước khi channel được cache).
-- `DiscordChatGateway` (`modules/discord-chat/presentation/gateways/`) — `@Once('ready')` log bot online, `@On('messageCreate')` làm entrypoint chat (chỉ xử lý DM, bỏ qua bot/không phải DM).
-- `DiscordOutboundService` — tương đương `MessageSenderPort`, gửi DM qua `client.users.fetch(id).send(text)` (tách khỏi gateway để tái dùng cho proactive send sau này).
-- `DiscordAgentService` (`application/agent/`) — adapter mỏng quanh `LlmAgentService` từ `@wispace/llm-agent`, giống `MessengerAgentService`: retry OpenAI lỗi tạm thời (`isOpenAiRetryableError`), usage/safety events persist qua `@wispace/chat-metering` (platform='discord').
-- `DiscordAgentToolsService` — **stub**: trả `{ available: false, message: '...' }` cho mọi tool trong `AGENT_TOOLS` (chưa có account-linking Discord ↔ WISPACE userId nên chưa gọi Wispace API thật).
-- `DiscordChatHistoryService` — lịch sử hội thoại **in-memory only** (Map trong process, mất khi restart, không multi-pod) — khác `CHAT_HISTORY_STORE` của Messenger (có Redis mode).
-- Prompt riêng `apps/discord-bot/src/shared/prompts/discord-chat.system.txt` (không dùng chung file với Messenger).
-- **`packages/chat-metering`** (package framework-agnostic mới, thứ 2 sau `llm-agent`) — tách core quota/rate-limit (`ChatRateLimitCore`, atomic reserve/refund/daily-limit qua `chat_daily_usage`/`chat_idempotency`) + LLM usage/safety event recorder (`LlmUsageRecorderCore`, `LlmSafetyCore`) dùng chung Messenger + Discord, `platform` truyền qua constructor. `apps/messenger-bot`'s repository cũ (`ChatRateLimitRepository`, `LlmUsageRepository`, `LlmSafetyEventRepository`) refactor thành thin wrapper quanh package — **không đổi hành vi** (321 → 308 test do phần SQL chuyển sang 18 test riêng của package, cộng lại vẫn cover đủ). Chi tiết ranh giới: `.claude/rules/clean-architecture.md`.
-- `apps/discord-bot`'s `DiscordChatRateLimitService`/`DiscordLlmUsageRecorderService`/`DiscordLlmSafetyEventService` (`modules/chat-metering/`) — dùng `MemoryBurstCounter` + `DirectUsageWriter` (không BullMQ, không quota-event audit table, không whitelist — khác Messenger, xem rule). `DiscordChatGateway` reserve trước khi gọi agent, refund khi lỗi, complete khi gửi xong; deny thì gửi tin nhắn quota/burst tiếng Việt.
-- **Account-linking Discord ↔ WISPACE userId qua OAuth2 + WISPACE verify-token API dùng chung 3 bot** (`modules/account-link/`) — Discord không có deep-link kèm payload như `m.me/<page>?ref=` của Messenger, nên dùng OAuth2 `identify` scope để lấy Discord user id, kết hợp **`WISPACE_API_VERIFY_TOKEN_URL`** (cùng 1 URL cho cả Messenger/Discord/Zalo, body `{token, value, platform}`) để resolve `userId` — không cần tự ký/verify token, không cần thêm endpoint mới bên WISPACE. WISPACE hiển thị link "Connect Discord" trỏ tới Discord's authorize URL kèm `state` = token WISPACE tự sinh (nguyên trạng, WISPACE tự quản lý hạn dùng/one-time). `apps/discord-bot` giờ chạy như HTTP app (`NestFactory.create` thay vì `createApplicationContext`) để expose `GET /discord/oauth/callback`: đổi `code` lấy Discord user id (`/oauth2/token` + `/users/@me`) → gọi `WISPACE_API_VERIFY_TOKEN_URL` (header `X-Internal-Key`, body `{token, value: discordUserId, platform: 'discord'}`) lấy `userId` → upsert `discord_account_links` (bảng mới, migration trong `apps/messenger-bot`, chỉ discord-bot đọc/ghi) → gửi DM chào mừng. `DiscordChatGateway` resolve `userId` qua `DiscordAccountLinkService.findUserIdByDiscordId` mỗi tin nhắn, truyền vào `DiscordAgentToolContext`. Chi tiết contract phía WISPACE backend: [apps/discord-bot/docs/discord-account-linking.md](../apps/discord-bot/docs/discord-account-linking.md) (WISPACE chỉ cần hiển thị link kèm token đã có, và endpoint verify-token đã tồn tại).
-- **`packages/wispace-client`** (package framework-agnostic mới, thứ 3 sau `llm-agent`/`chat-metering`) — tách HTTP client Wispace (`UserGoalsApiClient`, `TaskScoreAverageApiClient`, `UserCalendarApiClient`, `UserCalendarScheduleClient`) + retry/error (`withRetry`, `WispaceApiError`) + toàn bộ `study-calendar.utils.ts` (date/timezone math) dùng chung Messenger + Discord. Header xác định học viên giờ tổng quát hoá thành `buildWispaceHeaders(idHeader, externalId, internalKey)` với `idHeader` ∈ `x-psid` \| `x-discordid` \| `x-zaloid` (WISPACE API đã hỗ trợ cả 3 — chỉ gửi header ứng với platform, không cần đổi gì bên WISPACE). `apps/messenger-bot`'s `UserGoalsApiService`/`TaskScoreAverageApiService`/`UserCalendarApiService`/`UserCalendarScheduleService` refactor thành thin wrapper (platform=`x-psid`) — hành vi không đổi, verify lại toàn bộ 304 test messenger-bot pass.
-- **6/7 tool WISPACE thật cho Discord** (`modules/wispace/` — `WispaceGoalsService`, `WispaceCalendarService`, `DiscordStudyCalendarCommandService`) — `get_user_goals`, `get_learning_progress_report` (trả raw goals+scores, LLM chat chính tự narrate — không port riêng `StudentReportService`'s LLM call), `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder` giờ gọi Wispace API thật (`x-discordid`) khi `ctx.userId` đã resolve; chưa link thì trả thông báo "chưa liên kết" tiếng Việt.
-- **`reschedule_study_session` (ĐÃ XONG)** — Discord counterpart của Messenger postback confirm/cancel: `DiscordAgentToolsService` stage pending qua `DiscordRescheduleConfirmationService` (Map theo `discordUserId` + TTL 10 phút, giống Messenger's `MessengerRescheduleConfirmationService`), gửi DM tóm tắt kèm 2 nút Discord button (`ActionRowBuilder`/`ButtonBuilder`, style Success/Danger) qua `DiscordOutboundService.sendRescheduleConfirmation`. Bấm nút xử lý bằng Necord `@Button(customId)` decorator trong `DiscordChatGateway` (`onRescheduleConfirm`/`onRescheduleCancel`), route theo `interaction.user.id` — đơn giản hơn Messenger vì không cần encode payload vào customId. Ghi lịch thật qua `DiscordStudyCalendarCommandService.rescheduleSession` (delete + create calendar, tái dùng `resolveRescheduleSlot`/`resolveScheduledAtFromEventDate` từ `@wispace/wispace-client` + `formatScheduledTimeLabel`/`getMinutesUntilSession` từ `@wispace/study-reminder-core`) — không có outbox sync sau khi đổi lịch (Discord chưa có hệ thống job nhắc lịch riêng).
-- **Còn stub: `register_exam_report_notifications` (quyết định: giữ nguyên, không code)** — tool này tồn tại ở Messenger để lách giới hạn 24h nhắn tin của Meta (phải opt-in "Notification Messages" mới nhắn được ngoài 24h kể từ tin cuối của user); Discord **không có** giới hạn 24h này nên bot có thể DM bất cứ lúc nào, không cần "đăng ký" gì. Quan trọng hơn: Discord chưa port `ReportCronService` (cron gửi báo cáo AI định kỳ trước ngày thi) — dù có implement "đăng ký" bây giờ (mặc định cadence=WEEKLY, khớp fallback default của Messenger ở `poc.constants.ts`) thì cũng chưa có gì đọc lại để gửi báo cáo, thành tính năng nửa vời. Chỉ làm khi port cả cron báo cáo định kỳ sang Discord.
-- Unit test cho `DiscordChatHistoryService`, `DiscordAgentToolsService` (bao gồm case đã/chưa liên kết cho tất cả tool + case reschedule hợp lệ/lỗi), `DiscordOutboundService` (bao gồm gửi confirm DM có button), `WispaceDiscordTokenVerifyService`, `DiscordAccountLinkService`, `DiscordOauthController`, và `packages/wispace-client` (`UserGoalsApiClient`, `user-calendar-record.normalizer`, `buildWispaceHeaders`).
+**Migration ran on VPS production** (via `DB_MIGRATIONS_RUN=true` when container starts, automatically triggered by deploy.yml) — verified via SSH: `\dt` on `ai_chat_bot_db` shows correct 13 tables with new names (`user_platform_mappings`, `chat_daily_usage`, `chat_idempotency`, `message_logs`, `scheduled_report_claims`, `webhook_dead_letters`, `chat_quota_events` + 5 tables keeping old names with added `platform`/`external_user_id` columns), old data backfilled with `platform='messenger'` correctly, `messenger-bot` container boots clean (`Nest application successfully started`, no errors).
 
-**Còn thiếu / ghi nợ kỹ thuật:**
-- **CI/CD deploy VPS** — `Dockerfile`, `docker-compose.prod.yml`, `deploy-discord-bot.yml`, `vps-deploy-discord.sh`, `health.controller.ts` đã viết nhưng chưa commit + chưa chạy thật trên VPS.
-- **End-to-end test chưa làm** — cần Discord Application OAuth2 client thật + redirect URI public HTTPS + WISPACE backend hiển thị link "Connect Discord" + xác nhận response shape thật của `WISPACE_API_VERIFY_TOKEN_URL`.
-- `register_exam_report_notifications` — quyết định: giữ stub, chỉ làm khi port `ReportCronService` (cron báo cáo định kỳ) sang Discord.
-- Chat history bền vững / multi-pod (Redis) nếu cần scale nhiều instance.
-- Whitelist, quota-event audit table, stuck-reserved recovery, ops CLI cho Discord (Messenger-only hiện tại).
-- `apps/messenger-bot`'s local `study-reminder/application/utils/study-calendar.utils.ts` trùng với `packages/wispace-client` — chưa dedupe (ghi nợ, để tránh mở rộng phạm vi Phase 3).
+**Incidents encountered and fixed during the run (reference for Phase 3/4 if migration changes are needed):**
+- `uq_chat_daily_usage_psid_date` was an inline `CONSTRAINT` (created in original `CREATE TABLE`), not a `CREATE UNIQUE INDEX` like other unique keys — `DROP INDEX` threw error `cannot drop index ... because constraint ... requires it`. Had to use `ALTER TABLE ... DROP CONSTRAINT IF EXISTS`. TypeORM migration transaction rolled back cleanly on error, DB was not corrupted midway.
+- Pre-existing bug in `.github/scripts/vps-deploy.sh` (`set_env_var`) — `sed -i "s/^${key}=.*/${key}=${value}/"` used `/` as delimiter but the value (`DEPLOY_DIR=/deploy`...) also contained `/`, breaking sed syntax. Changed delimiter to `#`.
 
-**Verify đã làm:** `npx turbo run format:check lint typecheck test build --filter=@wispace/messenger-bot... --filter=@wispace/discord-bot... --filter=@wispace/chat-metering... --filter=@wispace/wispace-client...` pass toàn bộ (messenger-bot 304 test + chat-metering 18 test + wispace-client 10 test + discord-bot 26 test). Chưa test thật với Discord server (cần `DISCORD_BOT_TOKEN` thật + bật `MESSAGE CONTENT INTENT` trong Developer Portal), chưa test thật kết nối DB (`DB_*` env) hoặc Wispace API thật (`WISPACE_API_*_URL` + `x-discordid`) cho Discord, và chưa test thật luồng OAuth (cần redirect URI public + WISPACE backend hiển thị link "Connect Discord").
+**Verification done:** `npx turbo run format:check lint typecheck test build --filter=@wispace/messenger-bot...` passed all (321 tests, no runtime behavior changes — only persistence layer changes) + verified on VPS via SSH.
 
 ---
 
-## Phase 4 — Triển khai `apps/zalo-bot` (CHƯA LÀM)
+## Phase 3 — Implement `apps/discord-bot` (chat + quota/usage/safety + account-linking + 6/7 tool handlers COMPLETED; register_exam_report_notifications NOT YET DONE)
 
-Tương tự Phase 3, dùng Zalo OA API thay Discord REST API. Ưu tiên làm sau khi Phase 3 đã ổn định (rút kinh nghiệm cách adapter 1 bot mới vào `@wispace/llm-agent`).
+**Goal:** Real Discord bot using shared `packages/llm-agent` + `packages/chat-metering` + DB (generalized key from Phase 2).
+
+**Stack:** [Necord](https://necord.org/) — NestJS wrapper around `discord.js`, provides decorators (`@Once`, `@On`, `@Context()`...) and module/DI integration following the NestJS style used throughout the repo (instead of writing a raw gateway with bare `discord.js`). `NecordModule.forRootAsync()` registers the Discord client as a normal NestJS module (`@Global`, exposes `Client` from `discord.js` as an injection token).
+
+**Done (MVP):**
+- `apps/discord-bot` full NestJS scaffold (package.json, nest-cli.json, tsconfig, eslint sharing root config) — `NestFactory.createApplicationContext` (no HTTP server needed, bot only maintains gateway connection).
+- `NecordModule.forRootAsync()` in `AppModule`, token from `DISCORD_BOT_TOKEN` (.env), intents `Guilds` + `DirectMessages` + `MessageContent`, `partials: [Channel]` (required to receive DMs before channel is cached).
+- `DiscordChatGateway` (`modules/discord-chat/presentation/gateways/`) — `@Once('ready')` logs bot online, `@On('messageCreate')` is the chat entrypoint (only processes DMs, ignores bots/non-DMs).
+- `DiscordOutboundService` — equivalent to `MessageSenderPort`, sends DMs via `client.users.fetch(id).send(text)` (extracted from gateway for reuse in proactive sends later).
+- `DiscordAgentService` (`application/agent/`) — thin adapter around `LlmAgentService` from `@wispace/llm-agent`, similar to `MessengerAgentService`: retries transient OpenAI errors (`isOpenAiRetryableError`), usage/safety events persisted via `@wispace/chat-metering` (platform='discord').
+- `DiscordAgentToolsService` — **stub**: returns `{ available: false, message: '...' }` for all tools in `AGENT_TOOLS` (no Discord ↔ WISPACE userId account-linking yet, so no real Wispace API calls).
+- `DiscordChatHistoryService` — **in-memory only** conversation history (Map in process, lost on restart, no multi-pod) — different from Messenger's `CHAT_HISTORY_STORE` (which has Redis mode).
+- Dedicated prompt `apps/discord-bot/src/shared/prompts/discord-chat.system.txt` (not shared with Messenger's file).
+- **`packages/chat-metering`** (new framework-agnostic package, second after `llm-agent`) — extracted core quota/rate-limit (`ChatRateLimitCore`, atomic reserve/refund/daily-limit via `chat_daily_usage`/`chat_idempotency`) + LLM usage/safety event recorder (`LlmUsageRecorderCore`, `LlmSafetyCore`) shared by Messenger + Discord, `platform` passed via constructor. `apps/messenger-bot`'s existing repositories (`ChatRateLimitRepository`, `LlmUsageRepository`, `LlmSafetyEventRepository`) refactored into thin wrappers around the package — **no behavior change** (321 → 308 tests because SQL tests moved to 18 dedicated package tests, combined coverage is complete). Boundary details: `.claude/rules/clean-architecture.md`.
+- `apps/discord-bot`'s `DiscordChatRateLimitService`/`DiscordLlmUsageRecorderService`/`DiscordLlmSafetyEventService` (`modules/chat-metering/`) — uses `MemoryBurstCounter` + `DirectUsageWriter` (no BullMQ, no quota-event audit table, no whitelist — different from Messenger, see rules). `DiscordChatGateway` reserves before calling agent, refunds on error, completes after sending; denial sends Vietnamese quota/burst message.
+- **Account-linking Discord ↔ WISPACE userId via OAuth2 + shared WISPACE verify-token API used by all 3 bots** (`modules/account-link/`) — Discord lacks deep-link with payload like Messenger's `m.me/<page>?ref=`, so uses OAuth2 `identify` scope to get Discord user id, combined with **`WISPACE_API_VERIFY_TOKEN_URL`** (same URL for Messenger/Discord/Zalo, body `{token, value, platform}`) to resolve `userId` — no self-signing/verification needed, no new endpoint required on WISPACE side. WISPACE displays "Connect Discord" link pointing to Discord's authorize URL with `state` = self-generated WISPACE token (as-is, WISPACE manages expiry/one-time use). `apps/discord-bot` now runs as HTTP app (`NestFactory.create` instead of `createApplicationContext`) to expose `GET /discord/oauth/callback`: exchanges `code` for Discord user id (`/oauth2/token` + `/users/@me`) → calls `WISPACE_API_VERIFY_TOKEN_URL` (header `X-Internal-Key`, body `{token, value: discordUserId, platform: 'discord'}`) to get `userId` → upserts `discord_account_links` (new table, migration in `apps/messenger-bot`, only discord-bot reads/writes) → sends welcome DM. `DiscordChatGateway` resolves `userId` via `DiscordAccountLinkService.findUserIdByDiscordId` on every message, passes it into `DiscordAgentToolContext`. WISPACE backend contract details: [apps/discord-bot/docs/discord-account-linking.md](../apps/discord-bot/docs/discord-account-linking.md) (WISPACE only needs to display the link with its existing token, and the verify-token endpoint already exists).
+- **`packages/wispace-client`** (new framework-agnostic package, third after `llm-agent`/`chat-metering`) — extracted Wispace HTTP client (`UserGoalsApiClient`, `TaskScoreAverageApiClient`, `UserCalendarApiClient`, `UserCalendarScheduleClient`) + retry/error handling (`withRetry`, `WispaceApiError`) + entire `study-calendar.utils.ts` (date/timezone math) shared by Messenger + Discord. Student identification header generalized to `buildWispaceHeaders(idHeader, externalId, internalKey)` with `idHeader` ∈ `x-psid` | `x-discordid` | `x-zaloid` (WISPACE API already supports all 3 — only send the header matching the platform, no changes needed on WISPACE side). `apps/messenger-bot`'s `UserGoalsApiService`/`TaskScoreAverageApiService`/`UserCalendarApiService`/`UserCalendarScheduleService` refactored into thin wrappers (platform=`x-psid`) — behavior unchanged, all 304 messenger-bot tests verified.
+- **6/7 real WISPACE tools for Discord** (`modules/wispace/` — `WispaceGoalsService`, `WispaceCalendarService`, `DiscordStudyCalendarCommandService`) — `get_user_goals`, `get_learning_progress_report` (returns raw goals+scores, main LLM chat self-narrates — no separate port of `StudentReportService`'s LLM call), `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder` now call real Wispace API (`x-discordid`) when `ctx.userId` is resolved; not yet linked returns Vietnamese "not connected" notification.
+- **`reschedule_study_session` (COMPLETED)** — Discord counterpart of Messenger postback confirm/cancel: `DiscordAgentToolsService` stages pending via `DiscordRescheduleConfirmationService` (Map keyed by `discordUserId` + TTL 10 minutes, same as Messenger's `MessengerRescheduleConfirmationService`), sends summary DM with 2 Discord button (`ActionRowBuilder`/`ButtonBuilder`, style Success/Danger) via `DiscordOutboundService.sendRescheduleConfirmation`. Button handling uses Necord `@Button(customId)` decorator in `DiscordChatGateway` (`onRescheduleConfirm`/`onRescheduleCancel`), routed by `interaction.user.id` — simpler than Messenger since no payload encoding into customId needed. Writes real calendar via `DiscordStudyCalendarCommandService.rescheduleSession` (delete + create calendar, reusing `resolveRescheduleSlot`/`resolveScheduledAtFromEventDate` from `@wispace/wispace-client` + `formatScheduledTimeLabel`/`getMinutesUntilSession` from `@wispace/study-reminder-core`) — no outbox sync after reschedule (Discord does not yet have its own job reminder system).
+- **Still a stub: `register_exam_report_notifications` (decision: keep as-is, no code)** — this tool exists in Messenger to work around Meta's 24h messaging limit (must opt-in to "Notification Messages" to message outside the 24h window from user's last message); Discord **does not have** this 24h limit so the bot can DM anytime, no "registration" needed. More importantly: Discord has not ported `ReportCronService` (cron for sending periodic AI reports before exams) — even if "registration" were implemented now (default cadence=WEEKLY, matching Messenger's fallback default in `poc.constants.ts`), there is nothing to read it back and send reports, making it a half-baked feature. Only implement when porting the periodic report cron to Discord.
+- Unit tests for `DiscordChatHistoryService`, `DiscordAgentToolsService` (including linked/not-linked cases for all tools + valid/error reschedule cases), `DiscordOutboundService` (including button confirmation DMs), `WispaceDiscordTokenVerifyService`, `DiscordAccountLinkService`, `DiscordOauthController`, and `packages/wispace-client` (`UserGoalsApiClient`, `user-calendar-record.normalizer`, `buildWispaceHeaders`).
+
+**Remaining / technical debt:**
+- **CI/CD VPS deploy** — `Dockerfile`, `docker-compose.prod.yml`, `deploy-discord-bot.yml`, `vps-deploy-discord.sh`, `health.controller.ts` written but not yet committed + not yet run on VPS.
+- **End-to-end testing not done** — needs real Discord Application OAuth2 client + public HTTPS redirect URI + WISPACE backend displaying "Connect Discord" link + confirmed real response shape from `WISPACE_API_VERIFY_TOKEN_URL`.
+- `register_exam_report_notifications` — decision: keep stub, only implement when porting `ReportCronService` (periodic report cron) to Discord.
+- Persistent / multi-pod chat history (Redis) if scaling to multiple instances is needed.
+- Whitelist, quota-event audit table, stuck-reserved recovery, ops CLI for Discord (Messenger-only currently).
+- `apps/messenger-bot`'s local `study-reminder/application/utils/study-calendar.utils.ts` duplicates `packages/wispace-client` — not yet deduplicated (deferred to avoid expanding Phase 3 scope).
+
+**Verification done:** `npx turbo run format:check lint typecheck test build --filter=@wispace/messenger-bot... --filter=@wispace/discord-bot... --filter=@wispace/chat-metering... --filter=@wispace/wispace-client...` passed all (messenger-bot 304 tests + chat-metering 18 tests + wispace-client 10 tests + discord-bot 26 tests). Not yet tested with real Discord server (needs real `DISCORD_BOT_TOKEN` + `MESSAGE CONTENT INTENT` enabled in Developer Portal), not yet tested with real DB connection (`DB_*` env) or real Wispace API (`WISPACE_API_*_URL` + `x-discordid`) for Discord, and not yet tested with real OAuth flow (needs public redirect URI + WISPACE backend displaying "Connect Discord" link).
 
 ---
 
-## Phase 5 — Tách CI/CD hoàn toàn độc lập từng bot (CHƯA LÀM)
+## Phase 4 — Implement `apps/zalo-bot` (NOT YET DONE)
 
-**Mục tiêu:** mỗi bot có pipeline build/test/deploy riêng, không phụ thuộc lẫn nhau.
-
-**Việc cần làm:**
-- 3 workflow riêng: `deploy-messenger-bot.yml`, `deploy-discord-bot.yml`, `deploy-zalo-bot.yml` — mỗi cái path-filter theo `apps/<bot>/**` + `packages/llm-agent/**` (đổi `packages/llm-agent` phải trigger rebuild+redeploy cả 3 bot, hoặc dùng Turborepo remote caching để chỉ rebuild bot nào thực sự cần).
-- **Quy ước migration DB:** chỉ 1 pipeline (Messenger bot, vì đang chạy production lâu nhất) được phép chạy `migration:run`; các bot khác chỉ đọc schema, không tự chạy migration — tránh race condition khi 3 CI chạy song song trên cùng 1 DB.
-- Secrets/env riêng theo từng bot qua Doppler (Discord bot token, Zalo OA token...).
-- Docker image + deploy target riêng cho mỗi bot trên VPS (hoặc tách host nếu cần scale riêng).
-
-**Verify:** trigger deploy độc lập từng bot (chỉ sửa 1 app, xác nhận chỉ pipeline tương ứng chạy — trừ khi sửa `packages/llm-agent` thì cả 3 đều rebuild).
+Similar to Phase 3, using Zalo OA API instead of Discord REST API. Prioritized after Phase 3 stabilizes (lessons learned from adapting a new bot into `@wispace/llm-agent`).
 
 ---
 
-## Tổng kết theo trạng thái
+## Phase 5 — Fully independent CI/CD per bot (NOT YET DONE)
 
-| Phase | Nội dung | Trạng thái |
-|-------|----------|-----------|
-| 0 | Hiện trạng ban đầu | Tham chiếu |
-| 1 | Turborepo scaffold + tách `packages/llm-agent` + placeholder discord/zalo | ✅ Đã xong |
-| 2 | Generalize khóa DB `(platform, external_user_id)` | ✅ Đã xong — đã chạy migration trên VPS production, verify qua SSH |
-| 3 | Triển khai Discord bot | 🟡 Features xong (chat + quota + account-linking OAuth2 + 6/7 tools thật + reschedule với Discord button) — CI/CD deploy VPS đang hoàn thiện (Dockerfile + compose + workflow chưa commit), chưa test end-to-end thật (cần bot token + OAuth redirect public) |
-| 4 | Triển khai Zalo bot | ⏳ Chưa làm |
-| 5 | CI/CD độc lập hoàn toàn | 🟡 Discord workflow đang làm (`deploy-discord-bot.yml`, `vps-deploy-discord.sh`) — Messenger workflow chưa tách riêng |
+**Goal:** Each bot has its own build/test/deploy pipeline, independent of each other.
+
+**Tasks:**
+- 3 separate workflows: `deploy-messenger-bot.yml`, `deploy-discord-bot.yml`, `deploy-zalo-bot.yml` — each with path-filter on `apps/<bot>/**` + `packages/llm-agent/**` (changing `packages/llm-agent` must trigger rebuild+redeploy of all 3 bots, or use Turborepo remote caching to only rebuild bots that actually need it).
+- **DB migration convention:** Only one pipeline (Messenger bot, since it has been running in production longest) is allowed to run `migration:run`; other bots only read schema, do not run migrations — prevents race conditions when 3 CI pipelines run in parallel on the same DB.
+- Separate secrets/env per bot via Doppler (Discord bot token, Zalo OA token...).
+- Separate Docker image + deploy target per bot on VPS (or separate hosts if independent scaling is needed).
+
+**Verification:** Trigger independent deploy per bot (only modify 1 app, confirm only the corresponding pipeline runs — unless `packages/llm-agent` is modified, in which case all 3 rebuild).
+
+---
+
+## Summary by status
+
+| Phase | Content | Status |
+|-------|---------|--------|
+| 0 | Initial state before migration | Reference |
+| 1 | Turborepo scaffold + extract `packages/llm-agent` + discord/zalo placeholders | ✅ Completed |
+| 2 | Generalize DB key `(platform, external_user_id)` | ✅ Completed — migration ran on VPS production, verified via SSH |
+| 3 | Implement Discord bot | 🟡 Features complete (chat + quota + account-linking OAuth2 + 6/7 real tools + reschedule with Discord buttons) — CI/CD VPS deploy in progress (Dockerfile + compose + workflow not yet committed), no real end-to-end testing yet (needs bot token + public OAuth redirect) |
+| 4 | Implement Zalo bot | ⏳ Not yet done |
+| 5 | Fully independent CI/CD | 🟡 Discord workflow in progress (`deploy-discord-bot.yml`, `vps-deploy-discord.sh`) — Messenger workflow not yet separated |

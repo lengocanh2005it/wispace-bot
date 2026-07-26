@@ -5,8 +5,8 @@
 
 ## Problem
 
-1. **Cross-turn tool redundancy** — Mỗi conversation turn, agent fetch lại dữ liệu từ tool dù user chưa làm gì thay đổi (goals, lịch học). Gây latency không cần thiết và tốn API calls.
-2. **Tool ordering errors** — LLM đôi khi gọi `reschedule_study_session` mà không có `calendarId` (phải lấy từ `list_study_calendar_entries` trước). Tool schema không có gì để LLM biết dependency này.
+1. **Cross-turn tool redundancy** — Each conversation turn, the agent re-fetches data from tools even though the user has not changed anything (goals, study schedule). Causes unnecessary latency and wastes API calls.
+2. **Tool ordering errors** — LLM sometimes calls `reschedule_study_session` without a `calendarId` (which must be obtained from `list_study_calendar_entries` first). The tool schema provides no way for the LLM to know about this dependency.
 
 ## Solution
 
@@ -22,13 +22,13 @@ export interface ToolResultCachePort {
 ```
 
 **Cache key format:** `${externalUserId}:${toolName}:${stableHash(argsJson)}`
-- `stableHash` = djb2 hash của sorted JSON string (no external dependency)
-- Phân biệt `get_upcoming_study_sessions(limit=5)` vs `limit=10`
+- `stableHash` = djb2 hash of sorted JSON string (no external dependency)
+- Distinguishes `get_upcoming_study_sessions(limit=5)` from `limit=10`
 
 **Default implementation** (`tool-cache/in-memory-tool-result-cache.ts`):
 - Plain `Map<string, { value: unknown; expiresAt: number }>`
-- Lazy eviction on `get()` — không cần setInterval
-- Default TTL: 5 phút (`300_000` ms), configurable via `LlmAgentConfig.toolCacheTtlMs`
+- Lazy eviction on `get()` — no setInterval needed
+- Default TTL: 5 minutes (`300_000` ms), configurable via `LlmAgentConfig.toolCacheTtlMs`
 
 **Agent loop integration** (`agent.service.ts`):
 ```
@@ -40,7 +40,7 @@ tool call received
 → special: after reschedule_study_session succeeds → invalidate list_study_calendar_entries keys for this user
 ```
 
-**Cache is optional:** `LlmAgentPorts.toolResultCache?: ToolResultCachePort` — nếu không inject thì agent hoạt động như cũ, không break existing code.
+**Cache is optional:** `LlmAgentPorts.toolResultCache?: ToolResultCachePort` — if not injected, agent works as before, no existing code breaks.
 
 **Config addition** (`types.ts`):
 ```ts
@@ -52,20 +52,20 @@ interface LlmAgentConfig {
 
 ### C1 — Tool Dependency Hints in Descriptions
 
-Sửa `agent.tools.ts` — chỉ 2 tool descriptions:
+Modify `agent.tools.ts` — only 2 tool descriptions:
 
 **`reschedule_study_session`:**
-> Thêm vào đầu description: *"Luôn gọi `list_study_calendar_entries` trước để lấy `calendarId`."*
+> Prepend to description: *"Always call `list_study_calendar_entries` first to obtain `calendarId`."*
 
 **`get_upcoming_study_sessions`:**
-> Thêm vào cuối description: *"Dùng để hiển thị lịch. Nếu cần `calendarId` để đổi lịch, dùng `list_study_calendar_entries` thay thế."*
+> Append to description: *"Used to display schedule. If `calendarId` is needed to reschedule, use `list_study_calendar_entries` instead."*
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `packages/llm-agent/src/tool-cache/tool-result-cache.port.ts` | New — port interface + noop impl |
-| `packages/llm-agent/src/tool-cache/in-memory-tool-result-cache.ts` | New — Map-based impl |
+| `packages/llm-agent/src/tool-cache/tool-result-cache.port.ts` | New — port interface + noop implementation |
+| `packages/llm-agent/src/tool-cache/in-memory-tool-result-cache.ts` | New — Map-based implementation |
 | `packages/llm-agent/src/ports.ts` | Add `toolResultCache?: ToolResultCachePort` to `LlmAgentPorts` |
 | `packages/llm-agent/src/types.ts` | Add `toolCacheTtlMs?: number` to `LlmAgentConfig` |
 | `packages/llm-agent/src/agent.service.ts` | Cache lookup/set/invalidate in tool execution block |
@@ -75,15 +75,15 @@ Sửa `agent.tools.ts` — chỉ 2 tool descriptions:
 
 ## Constraints
 
-- `packages/llm-agent` không import NestJS — cache implementation là plain class
-- Cache invalidation chỉ scope theo `externalUserId` — không share giữa users
-- Error responses (`{ ok: false }`) không được cache
-- `reschedule_study_session` là tool duy nhất trigger invalidation (vì nó mutate calendar data)
+- `packages/llm-agent` does not import NestJS — cache implementation is a plain class
+- Cache invalidation is scoped by `externalUserId` — not shared across users
+- Error responses (`{ ok: false }`) are not cached
+- `reschedule_study_session` is the only tool that triggers invalidation (because it mutates calendar data)
 
 ## Testing
 
-- Cache hit: tool không được gọi lần 2 trong cùng user + same args
-- Cache miss: tool được gọi khi TTL expired
-- Invalidation: sau `reschedule_study_session`, `list_study_calendar_entries` bị evict
-- No-cache path: agent hoạt động bình thường khi `toolResultCache` không inject
-- Error không cache: tool error → next call vẫn execute
+- Cache hit: tool is not called a second time for same user + same args
+- Cache miss: tool is called when TTL expired
+- Invalidation: after `reschedule_study_session`, `list_study_calendar_entries` is evicted
+- No-cache path: agent works normally when `toolResultCache` is not injected
+- Error not cached: tool error → next call still executes

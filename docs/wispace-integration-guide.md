@@ -1,22 +1,22 @@
-# Hướng dẫn tích hợp Bot WISPACE — Dành cho team WISPACE
+# WISPACE Bot Integration Guide — For WISPACE Team
 
-Tài liệu này mô tả những việc team WISPACE cần làm để tích hợp với hệ thống **Discord Bot** (và đồng nhất với Messenger Bot đã có).
-
----
-
-## Tổng quan
-
-| Bot | Trạng thái | Cách liên kết tài khoản |
-|-----|-----------|------------------------|
-| Messenger Bot | Đang chạy production | `m.me/<page>?ref=<token>` |
-| Discord Bot | Đang triển khai | Discord OAuth2 + link token |
-| Zalo Bot | Kế hoạch tương lai | TBD |
-
-Cả 3 bot dùng **chung 1 API endpoint** để verify link token — team WISPACE chỉ cần implement 1 lần.
+This document describes what the WISPACE team needs to do to integrate with the **Discord Bot** system (and align with the existing Messenger Bot).
 
 ---
 
-## Phần 1 — API verify token (chung cho cả Messenger & Discord)
+## Overview
+
+| Bot | Status | Account linking method |
+|-----|--------|----------------------|
+| Messenger Bot | Running in production | `m.me/<page>?ref=<token>` |
+| Discord Bot | Under implementation | Discord OAuth2 + link token |
+| Zalo Bot | Future plan | TBD |
+
+All 3 bots use **the same API endpoint** to verify link tokens — the WISPACE team only needs to implement it once.
+
+---
+
+## Part 1 — Token verification API (shared for Messenger & Discord)
 
 ### Endpoint
 
@@ -24,16 +24,16 @@ Cả 3 bot dùng **chung 1 API endpoint** để verify link token — team WISPA
 POST {WISPACE_API_VERIFY_TOKEN_URL}
 ```
 
-URL cụ thể do team WISPACE cung cấp, lưu ở biến môi trường `WISPACE_API_VERIFY_TOKEN_URL` phía bot.
+The specific URL is provided by the WISPACE team and stored in the environment variable `WISPACE_API_VERIFY_TOKEN_URL` on the bot side.
 
-### Header
+### Headers
 
 ```
 Content-Type: application/json
 X-Internal-Key: {WISPACE_INTERNAL_KEY}
 ```
 
-`WISPACE_INTERNAL_KEY` là shared secret giữa WISPACE backend và các bot — không thay đổi theo platform.
+`WISPACE_INTERNAL_KEY` is a shared secret between WISPACE backend and the bots — it does not change per platform.
 
 ### Request body
 
@@ -45,13 +45,13 @@ X-Internal-Key: {WISPACE_INTERNAL_KEY}
 }
 ```
 
-| Field | Mô tả |
-|-------|-------|
-| `token` | Link token WISPACE đã tạo và gửi cho user |
-| `value` | ID người dùng phía platform: PSID (Messenger), Discord User ID (Discord), Zalo User ID (Zalo) |
-| `platform` | Tên platform — để WISPACE phân biệt nguồn gọi |
+| Field | Description |
+|-------|-------------|
+| `token` | Link token created by WISPACE and sent to the user |
+| `value` | Platform-specific user ID: PSID (Messenger), Discord User ID (Discord), Zalo User ID (Zalo) |
+| `platform` | Platform name — used by WISPACE to distinguish the calling source |
 
-### Response thành công (HTTP 200)
+### Successful response (HTTP 200)
 
 ```json
 {
@@ -59,11 +59,11 @@ X-Internal-Key: {WISPACE_INTERNAL_KEY}
 }
 ```
 
-`userId` là ID học viên trong hệ thống WISPACE — bot dùng để lưu mapping `(platform, externalUserId) ↔ userId`.
+`userId` is the student ID in the WISPACE system — the bot uses this to store the mapping `(platform, externalUserId) ↔ userId`.
 
-> **Lưu ý Messenger:** ngoài `userId`, response Messenger hiện trả thêm `topic` và `cadence` để cấu hình báo cáo học tập. Discord không cần 2 field này (chưa có tính năng báo cáo định kỳ).
+> **Messenger note:** In addition to `userId`, the Messenger response currently returns `topic` and `cadence` for configuring study reports. Discord does not need these 2 fields (no periodic report feature yet).
 
-### Response thất bại (HTTP 4xx)
+### Failure response (HTTP 4xx)
 
 ```json
 {
@@ -72,24 +72,24 @@ X-Internal-Key: {WISPACE_INTERNAL_KEY}
 }
 ```
 
-| reason | Ý nghĩa |
+| reason | Meaning |
 |--------|---------|
-| `NOT_FOUND` | Token không tồn tại |
-| `EXPIRED` | Token đã hết hạn |
-| `USED` | Token đã được dùng (1 lần dùng) |
-| `INVALID_FORMAT` | Token sai định dạng |
+| `NOT_FOUND` | Token does not exist |
+| `EXPIRED` | Token has expired |
+| `USED` | Token has already been used (single-use) |
+| `INVALID_FORMAT` | Token is in the wrong format |
 
 ---
 
-## Phần 2 — Luồng liên kết Discord (WISPACE cần làm)
+## Part 2 — Discord linking flow (WISPACE needs to do)
 
-### Bước 1 — Tạo link token
+### Step 1 — Create a link token
 
-Giống hệt cơ chế hiện tại với Messenger — WISPACE tạo 1 link token ngắn hạn (ví dụ: UUID, JWT, hay bất kỳ chuỗi opaque nào), lưu server-side kèm `userId` + expiry (khuyến nghị: 10–30 phút, dùng 1 lần).
+Same mechanism as the current Messenger flow — WISPACE creates a short-lived link token (e.g., UUID, JWT, or any opaque string), stores it server-side with `userId` + expiry (recommended: 10–30 minutes, single-use).
 
-### Bước 2 — Hiển thị nút "Liên kết Discord" trong WISPACE app/web
+### Step 2 — Display "Connect Discord" button in WISPACE app/web
 
-Render một link (button hoặc `<a href>`) trỏ đến URL sau:
+Render a link (button or `<a href>`) pointing to the following URL:
 
 ```
 https://discord.com/oauth2/authorize
@@ -100,125 +100,125 @@ https://discord.com/oauth2/authorize
   &state={LINK_TOKEN}
 ```
 
-Thay thế các giá trị:
+Replace the values:
 
-| Placeholder | Giá trị thực | Ghi chú |
-|-------------|-------------|---------|
-| `{DISCORD_CLIENT_ID}` | ID của Discord Application | Lấy từ team bot |
-| `{DISCORD_OAUTH_REDIRECT_URI}` | `https://<domain-bot>/discord/oauth/callback` | Lấy từ team bot |
-| `{LINK_TOKEN}` | Token WISPACE vừa tạo ở Bước 1 | **Truyền nguyên vào `state`** |
+| Placeholder | Actual value | Notes |
+|-------------|-------------|-------|
+| `{DISCORD_CLIENT_ID}` | Discord Application ID | Get from the bot team |
+| `{DISCORD_OAUTH_REDIRECT_URI}` | `https://<domain-bot>/discord/oauth/callback` | Get from the bot team |
+| `{LINK_TOKEN}` | Token created by WISPACE in Step 1 | **Pass as-is into `state`** |
 
-> **Quan trọng:** `state` phải là link token nguyên bản (không encode thêm). Bot sẽ đọc `state` và gửi nguyên sang WISPACE API để verify.
+> **Important:** `state` must be the original link token (no additional encoding). The bot will read `state` and send it directly to the WISPACE API for verification.
 
-Ví dụ URL hoàn chỉnh:
+Example complete URL:
 
 ```
 https://discord.com/oauth2/authorize?client_id=1521508932164522095&redirect_uri=https%3A%2F%2Fbot.wispace.vn%2Fdiscord%2Foauth%2Fcallback&response_type=code&scope=identify&state=abc123xyz
 ```
 
-### Bước 3 — Bot tự xử lý phần còn lại
+### Step 3 — Bot handles the rest automatically
 
-Sau khi user bấm "Cho phép" trên trang Discord, toàn bộ luồng phía bot tự động:
+After the user clicks "Allow" on the Discord page, the entire bot-side flow is automatic:
 
-1. Discord redirect về `{DISCORD_OAUTH_REDIRECT_URI}?code=xxx&state={LINK_TOKEN}`
-2. Bot đổi `code` → Discord access token → lấy `discordUserId`
-3. Bot gọi `POST {WISPACE_API_VERIFY_TOKEN_URL}` với `{ token, value: discordUserId, platform: "discord" }`
-4. Bot lưu mapping `discordUserId ↔ userId` vào DB
-5. Bot gửi tin nhắn chào mừng vào Discord DM của học viên
-6. Bot redirect trình duyệt về trang kết quả (thành công / thất bại)
+1. Discord redirects to `{DISCORD_OAUTH_REDIRECT_URI}?code=xxx&state={LINK_TOKEN}`
+2. Bot exchanges `code` → Discord access token → retrieves `discordUserId`
+3. Bot calls `POST {WISPACE_API_VERIFY_TOKEN_URL}` with `{ token, value: discordUserId, platform: "discord" }`
+4. Bot stores mapping `discordUserId ↔ userId` in the DB
+5. Bot sends a welcome message to the student's Discord DM
+6. Bot redirects the browser to a results page (success / failure)
 
-**WISPACE không cần làm gì thêm sau Bước 2.**
+**WISPACE does not need to do anything after Step 2.**
 
 ---
 
-## Phần 3 — Luồng Messenger hiện tại (để tham khảo)
+## Part 3 — Current Messenger flow (for reference)
 
-Messenger dùng `m.me` deep link để truyền token qua tham số `ref`:
+Messenger uses `m.me` deep links to pass the token via the `ref` parameter:
 
 ```
 https://m.me/{PAGE_ID}?ref={LINK_TOKEN}
 ```
 
-Khi user click, Facebook gửi `messaging_referrals` event (hoặc `postback`) về webhook của Messenger Bot, kèm `ref = LINK_TOKEN`. Bot verify với cùng API endpoint trên (`platform: "messenger"`).
+When a user clicks, Facebook sends a `messaging_referrals` event (or `postback`) to the Messenger Bot webhook, with `ref = LINK_TOKEN`. The bot verifies with the same API endpoint above (`platform: "messenger"`).
 
-**Điểm khác biệt duy nhất** so với Discord: cơ chế truyền token (Messenger dùng `ref`, Discord dùng OAuth2 `state`) — còn API verify và response format hoàn toàn giống nhau.
-
----
-
-## Phần 4 — Thông tin cần cung cấp cho team bot
-
-Để bot chạy được trong production, team WISPACE cần cung cấp:
-
-| Biến | Mô tả |
-|------|-------|
-| `WISPACE_API_VERIFY_TOKEN_URL` | URL endpoint verify token (dùng chung Messenger + Discord) |
-| `WISPACE_INTERNAL_KEY` | Shared secret để xác thực request từ bot |
-
-Và team bot sẽ cung cấp lại cho WISPACE:
-
-| Thông tin | Mô tả |
-|-----------|-------|
-| `DISCORD_CLIENT_ID` | ID của Discord Application |
-| `DISCORD_OAUTH_REDIRECT_URI` | Callback URL đăng ký trên Discord Developer Portal |
+**The only difference** from Discord: the token delivery mechanism (Messenger uses `ref`, Discord uses OAuth2 `state`) — the verification API and response format are identical.
 
 ---
 
-## Phần 5 — Các header nhận diện học viên khi chat
+## Part 4 — Information to provide to the bot team
 
-Sau khi tài khoản đã liên kết, mỗi khi học viên nhắn tin với bot, bot sẽ gọi Wispace API với header nhận diện tương ứng theo platform:
+For the bot to run in production, the WISPACE team needs to provide:
+
+| Variable | Description |
+|----------|-------------|
+| `WISPACE_API_VERIFY_TOKEN_URL` | Token verification endpoint URL (shared for Messenger + Discord) |
+| `WISPACE_INTERNAL_KEY` | Shared secret for authenticating requests from the bot |
+
+And the bot team will provide to WISPACE:
+
+| Information | Description |
+|-------------|-------------|
+| `DISCORD_CLIENT_ID` | Discord Application ID |
+| `DISCORD_OAUTH_REDIRECT_URI` | Callback URL registered on the Discord Developer Portal |
+
+---
+
+## Part 5 — Student identification headers when chatting
+
+After accounts are linked, whenever a student messages the bot, the bot will call the Wispace API with the corresponding platform-specific identification header:
 
 | Platform | Header |
 |----------|--------|
 | Messenger | `x-psid: {PSID}` |
 | Discord | `x-discordid: {Discord User ID}` |
-| Zalo (tương lai) | `x-zaloid: {Zalo User ID}` |
+| Zalo (future) | `x-zaloid: {Zalo User ID}` |
 
-Kèm theo header chung:
+Along with the common header:
 
 ```
 X-Internal-Key: {WISPACE_INTERNAL_KEY}
 ```
 
-WISPACE API đã hỗ trợ cả 3 header — không cần thay đổi phía WISPACE.
+The WISPACE API already supports all 3 headers — no changes needed on the WISPACE side.
 
 ---
 
-## Phần 6 — Yêu cầu về server Discord
+## Part 6 — Discord server requirements
 
-Discord có giới hạn kỹ thuật: **bot chỉ có thể gửi DM cho user nếu họ có ít nhất 1 server chung**. Nếu user chưa join server nào có bot, bot sẽ không gửi được tin nhắn chào mừng sau khi liên kết.
+Discord has a technical limitation: **the bot can only send DMs to a user if they share at least one server**. If the user has not joined any server with the bot, the bot will not be able to send the welcome message after linking.
 
-### Giải pháp khuyến nghị
+### Recommended solution
 
-WISPACE cần tạo **1 server Discord chính thức** (ví dụ: "WISPACE Community") và thêm bot vào server đó. Học viên được hướng dẫn join server này trước khi liên kết tài khoản.
+WISPACE needs to create **an official Discord server** (e.g., "WISPACE Community") and add the bot to that server. Students should be instructed to join this server before linking their accounts.
 
-### Cách tích hợp vào luồng liên kết
+### How to integrate into the linking flow
 
-Trong trang liên kết Discord của WISPACE app/web, thêm bước hướng dẫn rõ ràng trước nút "Liên kết":
+On the WISPACE app/web Discord linking page, add a clear instruction step before the "Connect" button:
 
-> _"Trước khi liên kết, hãy chắc chắn bạn đã join **[server Discord WISPACE](https://discord.gg/xxx)** để nhận được tin nhắn từ bot."_
+> _"Before connecting, make sure you have joined the **[WISPACE Discord server](https://discord.gg/xxx)** to receive messages from the bot."_
 
-Hoặc cung cấp **invite link** của server để bot FE callback page có thể hiển thị nút "Join server WISPACE" khi phát hiện bot không gửi được DM.
+Or provide an **invite link** for the server so the bot FE callback page can display a "Join WISPACE server" button when it detects the bot cannot send DMs.
 
-### Thông tin cần bổ sung cho team bot
+### Additional information for the bot team
 
-| Thông tin | Mô tả |
-|-----------|-------|
-| Discord Server Invite URL | Link invite của server WISPACE (dạng `https://discord.gg/xxx`) để hiển thị trên trang kết quả liên kết khi cần |
+| Information | Description |
+|-------------|-------------|
+| Discord Server Invite URL | WISPACE server invite link (format `https://discord.gg/xxx`) to display on the linking results page when needed |
 
 ---
 
-## Tóm tắt việc cần làm
+## Summary of tasks
 
-| # | Việc | Bên thực hiện |
-|---|------|--------------|
-| 1 | Implement API `POST /verify-token` nhận `{ token, value, platform }`, trả `{ userId }` hoặc `{ valid: false, reason }` | **WISPACE** |
-| 2 | Tạo link token khi user muốn liên kết Discord, lưu server-side kèm userId + expiry | **WISPACE** |
-| 3 | Render nút/link với URL Discord OAuth2, `state` = link token | **WISPACE** |
-| 4 | Tạo server Discord chính thức, thêm bot vào server, hướng dẫn học viên join trước khi liên kết | **WISPACE** |
-| 5 | Cung cấp `WISPACE_API_VERIFY_TOKEN_URL`, `WISPACE_INTERNAL_KEY`, Discord Server Invite URL cho team bot | **WISPACE** |
-| 6 | Cung cấp `DISCORD_CLIENT_ID` và `DISCORD_OAUTH_REDIRECT_URI` cho WISPACE | **Team bot** |
-| 7 | Toàn bộ luồng OAuth2 callback, verify, lưu DB, gửi DM chào mừng | **Team bot (đã xong)** |
+| # | Task | Owner |
+|---|------|-------|
+| 1 | Implement API `POST /verify-token` accepting `{ token, value, platform }`, returning `{ userId }` or `{ valid: false, reason }` | **WISPACE** |
+| 2 | Create link token when user wants to connect Discord, store server-side with userId + expiry | **WISPACE** |
+| 3 | Render button/link with Discord OAuth2 URL, `state` = link token | **WISPACE** |
+| 4 | Create official Discord server, add bot to server, instruct students to join before linking | **WISPACE** |
+| 5 | Provide `WISPACE_API_VERIFY_TOKEN_URL`, `WISPACE_INTERNAL_KEY`, Discord Server Invite URL to the bot team | **WISPACE** |
+| 6 | Provide `DISCORD_CLIENT_ID` and `DISCORD_OAUTH_REDIRECT_URI` to WISPACE | **Bot team** |
+| 7 | Entire OAuth2 callback flow, verification, DB storage, welcome DM | **Bot team (completed)** |
 
-> Nếu API verify token (`/verify-token`) đã có cho Messenger rồi thì việc hỗ trợ Discord chỉ là thêm điều kiện `platform === "discord"` — không cần endpoint mới.
+> If the token verification API (`/verify-token`) already exists for Messenger, supporting Discord only requires adding the `platform === "discord"` condition — no new endpoint needed.
 
-> **Lưu ý giới hạn Discord:** Nếu học viên chưa join server chung với bot, bot sẽ không gửi được DM chào mừng (giới hạn của Discord, không phải lỗi). Tài khoản vẫn được liên kết thành công — học viên join server sau vẫn nhắn tin với bot bình thường.
+> **Discord limitation note:** If the student has not joined a shared server with the bot, the bot cannot send the welcome DM (Discord limitation, not an error). The account is still successfully linked — the student can still message the bot normally after joining the server later.

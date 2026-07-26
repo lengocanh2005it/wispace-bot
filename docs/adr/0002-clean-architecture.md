@@ -1,24 +1,24 @@
-# Clean Architecture 4 tầng
+# 4-layer Clean Architecture
 
-Mỗi feature module trong `apps/messenger-bot/src/modules/` tuân theo 4 tầng: `domain` → `application` ← `infrastructure` → `presentation`. Domain chỉ chứa pure types và repository interfaces, không phụ thuộc NestJS hay TypeORM.
+Each feature module in `apps/messenger-bot/src/modules/` follows 4 layers: `domain` → `application` ← `infrastructure` → `presentation`. Domain contains only pure types and repository interfaces, with no NestJS or TypeORM dependencies.
 
-## Lý do
+## Rationale
 
-- **Testability**: Domain và application services không phụ thuộc framework → unit test nhanh, không cần mock NestJS container.
-- **Cross-module DI an toàn**: Các module giao tiếp qua ports (`MESSAGE_SENDER`, `MESSENGER_REPOSITORY`) thay vì import trực tiếp service. Tránh circular dependency (đặc biệt `StudyReminderModule` → `MessengerOutboundModule`, không phải `MessengerModule`).
-- **Framework-agnostic packages**: `packages/llm-agent` là pure TypeScript, không import NestJS. Có thể dùng cho任何 bot framework (NestJS, Express, Fastify).
-- **Tách responsibility rõ ràng**: Controller mỏng (delegate xuống application), service chứa business logic, infrastructure chỉ lo persistence và external calls.
+- **Testability**: Domain and application services are framework-independent → fast unit tests, no need to mock NestJS container.
+- **Safe cross-module DI**: Modules communicate via ports (`MESSAGE_SENDER`, `MESSENGER_REPOSITORY`) instead of importing services directly. Prevents circular dependencies (especially `StudyReminderModule` → `MessengerOutboundModule`, not `MessengerModule`).
+- **Framework-agnostic packages**: `packages/llm-agent` is pure TypeScript, no NestJS imports. Can be used with any bot framework (NestJS, Express, Fastify).
+- **Clear responsibility separation**: Thin controllers (delegate to application), services contain business logic, infrastructure handles persistence and external calls only.
 
-## Phương án đã loại
+## Alternatives considered
 
-| Phương án | Lý do loại |
-|-----------|-----------|
-| NestJS default flat (tất cả trong `services/`) | Circular dependency dễ xảy ra khi modules import nhau. Khó test vì phụ thuộc NestJS container. |
-| Hexagonal architecture (ports & adapters) | Gần giống nhưng NestJS đã có DI container sẵn, không cần thêm abstraction layer. |
-| DDD full (entities, value objects, aggregates) | Quá nặng cho POC. Cần nhiều boilerplate hơn mức cần thiết. |
+| Alternative | Reason for rejection |
+|-------------|---------------------|
+| NestJS default flat (everything in `services/`) | Circular dependencies occur easily when modules import each other. Hard to test because of NestJS container dependency. |
+| Hexagonal architecture (ports & adapters) | Similar but NestJS already has a built-in DI container, no need for an additional abstraction layer. |
+| Full DDD (entities, value objects, aggregates) | Too heavy for a POC. Requires more boilerplate than necessary. |
 
-## Hậu quả
+## Consequences
 
-- Mỗi module có nhiều files hơn (4 thư mục con). Developer mới cần time làm quen.
-- Cần discipline: không import TypeORM entities trong domain layer, không dùng `@Inject()` trong domain interfaces.
-- Khi scale, các ports cross-module (`MESSAGE_SENDER` etc.) sẽ cần thêm versioning hoặc API contract khi tách microservices.
+- Each module has more files (4 subdirectories). New developers need time to familiarize themselves.
+- Discipline required: do not import TypeORM entities in the domain layer, do not use `@Inject()` in domain interfaces.
+- When scaling, cross-module ports (`MESSAGE_SENDER` etc.) will need additional versioning or API contracts when splitting into microservices.

@@ -1,51 +1,51 @@
-# Quy ước chung — wispace-bots (Turborepo monorepo)
+# General conventions — wispace-bots (Turborepo monorepo)
 
-Turborepo monorepo: `apps/messenger-bot` (NestJS, đầy đủ tính năng) + `apps/discord-bot`/`apps/zalo-bot` (placeholder) + `packages/llm-agent` (LLM function-calling dùng chung). Messenger webhook + báo cáo AI + nhắc lịch học + **chat AI có rate limit** cho WISPACE.
+Turborepo monorepo: `apps/messenger-bot` (NestJS, full-featured) + `apps/discord-bot`/`apps/zalo-bot` (placeholders) + `packages/llm-agent` (shared LLM function-calling). Messenger webhook + AI reports + study reminders + **rate-limited AI chat** for WISPACE.
 
-**Đọc thêm:** `.claude/rules/clean-architecture.md` — bắt buộc khi thêm/sửa code trong `apps/*/src/modules/` hoặc `packages/llm-agent/`.
+**Read more:** `.claude/rules/clean-architecture.md` — mandatory when adding/modifying code in `apps/*/src/modules/` or `packages/llm-agent/`.
 
-## Nguyên tắc
+## Principles
 
-- Diff nhỏ; đúng tầng Clean Architecture (domain / application / infrastructure / presentation) trong từng app.
-- Config qua `.env` + `ConfigService` — không hardcode token/số thời gian.
-- Tin nhắn user-facing: **tiếng Việt**. Log/comment: EN hoặc Việt ngắn.
-- Không thêm Redis/Bull/SQS trừ khi user yêu cầu — outbox = `study_reminder_jobs`; chat shared queue = PostgreSQL (H7).
-- `packages/llm-agent` không phụ thuộc NestJS — chỉ port interface + `openai`. Business logic (Wispace API, DB) ở lại app.
+- Small diffs; correct Clean Architecture layer (domain / application / infrastructure / presentation) within each app.
+- Config via `.env` + `ConfigService` — no hardcoded tokens/time values.
+- User-facing messages: **Vietnamese**. Logs/comments: English or short Vietnamese.
+- Do not add Redis/Bull/SQS unless the user requests it — outbox = `study_reminder_jobs`; shared chat queue = PostgreSQL (H7).
+- `packages/llm-agent` has no NestJS dependency — only port interfaces + `openai`. Business logic (Wispace API, DB) stays in the app.
 
-## Ranh giới module (trong `apps/messenger-bot`)
+## Module boundaries (in `apps/messenger-bot`)
 
-| Module | Chỉ làm |
-|--------|---------|
-| `modules/messenger/` | Webhook, Send API (outbound), menu, chat queue/agent (adapter dùng `@wispace/llm-agent`), mapping/logs |
-| `modules/chat-rate-limit/` | Quota FREE_FORM: reserve/refund/burst, idempotency DB |
-| `modules/student-report/` | Báo cáo học tập, Wispace API goals/scores |
+| Module | Responsibilities only |
+|--------|----------------------|
+| `modules/messenger/` | Webhook, Send API (outbound), menu, chat queue/agent (adapter uses `@wispace/llm-agent`), mapping/logs |
+| `modules/chat-rate-limit/` | FREE_FORM quota: reserve/refund/burst, DB idempotency |
+| `modules/student-report/` | Study reports, Wispace API goals/scores |
 | `modules/study-reminder/` | Sync/dispatch/cleanup jobs, UserCalendar API |
-| `modules/scheduler/` | Cron báo cáo thi + HTTP ops trigger |
+| `modules/scheduler/` | Report cron + HTTP ops trigger |
 
-**Không** nhét logic study reminder vào `MessengerService`. **Không** reserve quota trong webhook — chỉ tại `MessengerChatQueueService` flush.
+**Do not** put study reminder logic in `MessengerService`. **Do not** reserve quota in webhook — only in `MessengerChatQueueService` flush.
 
 ## Auth & API
 
-- Wispace API: headers `x-psid` (PSID Messenger) + `X-Internal-Key` (`WISPACE_INTERNAL_KEY`).
-- Ops HTTP: `X-Internal-Api-Key` hoặc `Authorization: Bearer` = `INTERNAL_API_KEY`.
-- Không commit `.env`.
+- Wispace API: headers `x-psid` (Messenger PSID) + `X-Internal-Key` (`WISPACE_INTERNAL_KEY`).
+- Ops HTTP: `X-Internal-Api-Key` or `Authorization: Bearer` = `INTERNAL_API_KEY`.
+- Do not commit `.env`.
 
-## Tài liệu
+## Documentation
 
-- Kiến trúc: `.claude/rules/clean-architecture.md`
-- Lộ trình monorepo (Discord/Zalo, DB đa nền tảng, CI/CD độc lập): `docs/turborepo-migration-plan.md`
-- Tổng quan Messenger bot: `apps/messenger-bot/docs/project-overview.md`
-- Rate limit chat: `apps/messenger-bot/docs/chat-rate-limit-quota.md` — rule: `.claude/rules/chat-rate-limit.md`
-- Nhắc lịch học: `apps/messenger-bot/docs/study-session-reminder.md`
-- Agent chung: `AGENTS.md`
+- Architecture: `.claude/rules/clean-architecture.md`
+- Monorepo roadmap (Discord/Zalo, multi-platform DB, independent CI/CD): `docs/turborepo-migration-plan.md`
+- Messenger bot overview: `apps/messenger-bot/docs/project-overview.md`
+- Chat rate limit: `apps/messenger-bot/docs/chat-rate-limit-quota.md` — rule: `.claude/rules/chat-rate-limit.md`
+- Study reminders: `apps/messenger-bot/docs/study-session-reminder.md`
+- General agent docs: `AGENTS.md`
 
-## Khi sửa code (bắt buộc)
+## When modifying code (mandatory)
 
-1. **Cập nhật tài liệu agent** nếu hành vi/API/env/runbook đổi — xem bảng trong `AGENTS.md` mục *Docs & skills khi đổi code*.
-2. **Cập nhật skill** trong `.claude/skills/` nếu workflow debug/verify/migration/prompt bị ảnh hưởng.
-3. **Chạy quality gate** trước khi báo xong task (cần `npm install` ở root đầy đủ dev deps):
+1. **Update agent docs** if behavior/API/env/runbook changes — see table in `AGENTS.md` section *Docs & skills when changing code*.
+2. **Update skills** in `.claude/skills/` if debug/verify/migration/prompt workflows are affected.
+3. **Run quality gate** before reporting task complete (requires full `npm install` at root with dev deps):
 
-**CI / deploy** (khớp `.github/workflows/deploy.yml`, chạy cho `apps/messenger-bot`):
+**CI / deploy** (matches `.github/workflows/deploy.yml`, runs for `apps/messenger-bot`):
 
 ```bash
 npx turbo run lint --filter=@wispace/messenger-bot...
@@ -53,16 +53,16 @@ npx turbo run test --filter=@wispace/messenger-bot...
 npx turbo run build --filter=@wispace/messenger-bot...
 ```
 
-**Local đầy đủ** (toàn bộ workspace, thêm format + typecheck):
+**Full local** (entire workspace, adds format + typecheck):
 
 ```bash
 npx turbo run format
-npx turbo run verify          # format:check + lint + typecheck + test + build, mọi app/package
+npx turbo run verify          # format:check + lint + typecheck + test + build, all apps/packages
 ```
 
-**Lưu ý:** test = Jest unit spec (`**/*.spec.ts` trong từng app/package). Fail `'jest' is not recognized` hoặc `'turbo' is not recognized` → chạy lại `npm install` ở root (không dùng `npm ci --omit=dev` trước khi test).
+**Note:** test = Jest unit specs (`**/*.spec.ts` in each app/package). `'jest' is not recognized` or `'turbo' is not recognized` errors → run `npm install` at root again (don't use `npm ci --omit=dev` before testing).
 
-## Ops nhanh (chat quota, chạy trong `apps/messenger-bot/`)
+## Quick ops (chat quota, run in `apps/messenger-bot/`)
 
 ```bash
 npm run chat-quota:status

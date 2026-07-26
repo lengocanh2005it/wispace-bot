@@ -5,50 +5,50 @@
 
 ## Problem
 
-Hiện tại mỗi app chỉ cấu hình **một** `LlmProviderAdapter` tại boot time (`LLM_PROVIDER` env → `createLlmProviderAdapter()`, xem ADR [0006](../../adr/0006-llm-provider-adapter.md)). Khi provider đó lỗi runtime (hết credit, rate limit, 5xx) thì:
+Currently each app only configures **one** `LlmProviderAdapter` at boot time (`LLM_PROVIDER` env → `createLlmProviderAdapter()`, see ADR [0006](../../adr/0006-llm-provider-adapter.md)). When that provider has a runtime failure (out of credits, rate limit, 5xx):
 
-1. `LlmAgentService.withRetry()` (packages/llm-agent) và/hoặc `LlmExecutionService.runWithRetry()` (messenger-bot) hoặc `DiscordAgentService.runWithRetry()` (discord-bot) **retry cùng 1 provider** với exponential backoff (mặc định 3–4 lần).
-2. Nếu lỗi là **hết credit / quota** thì retry chắc chắn fail lại — chỉ tốn thời gian chờ (log thực tế: `LLM call failed after 4 attempts` — user chờ ~vài giây rồi mới nhận fallback message, xem [chat fallback thread](../../../CLAUDE.md) trước đó trong phiên làm việc này).
-3. Không có provider thứ 2 nào được thử — toàn bộ tính năng chat/report/reminder chết cứng cho tới khi người vận hành nạp credit hoặc đổi `.env` + restart.
-4. **Bug phát hiện thêm**: `apps/discord-bot/src/modules/discord-chat/discord-chat.module.ts` hardcode `new OpenAiAdapter(...)` trực tiếp, **không** đi qua `createLlmProviderAdapter()` — Discord bot hiện không tôn trọng `LLM_PROVIDER` env dù Messenger bot có. Cần sửa cùng lúc.
+1. `LlmAgentService.withRetry()` (packages/llm-agent) and/or `LlmExecutionService.runWithRetry()` (messenger-bot) or `DiscordAgentService.runWithRetry()` (discord-bot) **retries the same provider** with exponential backoff (default 3–4 attempts).
+2. If the error is **out of credits / quota**, retry will definitely fail again — just wastes wait time (actual log: `LLM call failed after 4 attempts` — user waits ~several seconds before receiving fallback message, see [chat fallback thread](../../../CLAUDE.md) earlier in this session).
+3. No second provider is attempted — all chat/report/reminder features are completely dead until an operator tops up credits or changes `.env` + restarts.
+4. **Additional bug discovered**: `apps/discord-bot/src/modules/discord-chat/discord-chat.module.ts` hardcodes `new OpenAiAdapter(...)` directly, **not** going through `createLlmProviderAdapter()` — Discord bot currently does not respect the `LLM_PROVIDER` env var even though Messenger bot does. Needs to be fixed at the same time.
 
 ## Goals
 
-- Thêm 2 adapter mới: **OpenRouter**, **MiniMax** — cả hai đều expose API dạng OpenAI-compatible (chat completions), nên tái dùng `OpenAiAdapter` làm base class giống `OpenAiCompatibleAdapter` hiện có.
-- Khi nhiều provider được cấu hình, **failover tự động**: provider nào lỗi (bất kể lý do — rate limit, 5xx, hết credit, auth) → thử ngay provider tiếp theo trong danh sách, **không** chờ backoff/retry trên provider đang lỗi.
-- Không đổi hành vi khi chỉ 1 provider được cấu hình (giữ tương thích ngược 100%, không tăng độ trễ/độ phức tạp cho case hiện tại).
-- Không đổi bất kỳ consumer nào (`LlmAgentService`, `LlmExecutionService`, `StudyReminderService`, `StudentReportService`, `MessengerAgentService`, `DiscordAgentService`) — tất cả đều inject qua token `LLM_PROVIDER_ADAPTER` : interface `LlmProviderAdapter` không đổi shape, chỉ có thêm 1 implementation mới (`FailoverLlmProviderAdapter`).
-- Sửa bug Discord bot hardcode OpenAI.
+- Add 2 new adapters: **OpenRouter**, **MiniMax** — both expose OpenAI-compatible APIs (chat completions), so reuse `OpenAiAdapter` as base class like the existing `OpenAiCompatibleAdapter`.
+- When multiple providers are configured, **automatic failover**: whichever provider fails (regardless of reason — rate limit, 5xx, out of credits, auth) → immediately try the next provider in the list, **no** waiting for backoff/retry on the failing provider.
+- No behavior change when only 1 provider is configured (100% backward compatible, no latency/complexity increase for the current common case).
+- No changes to any consumer (`LlmAgentService`, `LlmExecutionService`, `StudyReminderService`, `StudentReportService`, `MessengerAgentService`, `DiscordAgentService`) — all inject via `LLM_PROVIDER_ADAPTER` token : the `LlmProviderAdapter` interface shape stays unchanged, only 1 new implementation is added (`FailoverLlmProviderAdapter`).
+- Fix the Discord bot hardcoded OpenAI bug.
 
 ## Non-goals
 
-- Không làm streaming failover giữa chừng 1 response đang stream dở (`chatStream`) — nếu stream đã bắt đầu và lỗi giữa chừng, coi là lỗi của lượt đó (failover áp dụng cho lượt *tiếp theo*, không resume stream sang provider khác giữa chừng — quá phức tạp, rủi ro trả lời nửa vời từ 2 model khác nhau ghép lại).
-- Không thêm retry nhiều "vòng" qua toàn bộ danh sách provider (thử A→B→C rồi quay lại A lần nữa). Một lượt failover chỉ đi qua danh sách **đúng 1 lần**. Nếu tất cả đều lỗi → throw, consumer hiện có (chat gateway/dispatch service) đã có fallback message sẵn.
-- Không thêm Anthropic/Gemini trong phạm vi này (ADR-0006 Phase 4 có nhắc nhưng user chỉ yêu cầu OpenRouter + MiniMax lần này).
+- No mid-stream streaming failover for a response already being streamed (`chatStream`) — if a stream has started and fails midway, it is treated as a failure for that turn (failover applies to the *next* turn, not resuming a stream on a different provider mid-way — too complex, risk of half-baked responses spliced from 2 different models).
+- No multi-"round" retry across the full provider list (try A→B→C then loop back to A again). A single failover pass goes through the list **exactly once**. If all fail → throw, existing consumers (chat gateway/dispatch service) already have fallback messages ready.
+- No Anthropic/Gemini addition in this scope (ADR-0006 Phase 4 mentions them but user only requested OpenRouter + MiniMax this time).
 
 ## Design
 
-### 1. Error classification — thêm `reason: 'quota_exceeded'` + policy retry-trước-khi-failover
+### 1. Error classification — add `reason: 'quota_exceeded'` + retry-before-failover policy
 
-`packages/llm-agent/src/provider/types.ts` — `LlmProviderError.reason` hiện có `'rate_limit' | 'server_error' | 'auth' | 'unknown'`. Thêm `'quota_exceeded'`.
+`packages/llm-agent/src/provider/types.ts` — `LlmProviderError.reason` currently has `'rate_limit' | 'server_error' | 'auth' | 'unknown'`. Add `'quota_exceeded'`.
 
-`OpenAiAdapter.normalizeError()` (base class dùng chung cho OpenAI/OpenAI-compatible/OpenRouter/MiniMax) nhận diện quota-exhausted qua:
-- HTTP status `402` (Payment Required — OpenRouter dùng mã này khi hết credit).
-- HTTP status `429` **và** body/message chứa `insufficient_quota` / `insufficient credit` / `insufficient balance` (OpenAI trả `insufficient_quota` trong `error.code`; MiniMax trả `base_resp.status_code` riêng — **cần verify khi implement**, xem Open Questions).
+`OpenAiAdapter.normalizeError()` (base class shared for OpenAI/OpenAI-compatible/OpenRouter/MiniMax) detects quota-exhausted via:
+- HTTP status `402` (Payment Required — OpenRouter uses this code when out of credits).
+- HTTP status `429` **and** body/message containing `insufficient_quota` / `insufficient credit` / `insufficient balance` (OpenAI returns `insufficient_quota` in `error.code`; MiniMax returns `base_resp.status_code` separately — **needs verification during implementation**, see Open Questions).
 
-**Policy — không phải mọi lỗi đều đối xử như nhau.** Mục tiêu là failover nhanh nhất có thể, nhưng vẫn tha cho những lỗi thoáng qua (network hiccup, burst rate-limit) một cơ hội rẻ trước khi bỏ hẳn provider đó cho lượt này:
+**Policy — not all errors are treated equally.** The goal is failover as fast as possible, but still give transient errors (network hiccup, burst rate-limit) one cheap chance before completely abandoning that provider for this turn:
 
-| `reason` | Policy | Số lần thử **trên chính provider đó** trước khi failover | Cooldown sau khi bỏ cuộc với provider này |
+| `reason` | Policy | Number of attempts **on that provider** before failover | Cooldown after giving up on this provider |
 |----------|--------|------------------------------------------------------------|---------------------------------------------|
-| `quota_exceeded` | **FAST_FAIL** — failover ngay, không retry | 1 (không retry) | Dài (`FAILOVER_COOLDOWN_LONG_MS`, mặc định 10 phút) — hết credit không tự hồi trong vài giây |
-| `auth` | **FAST_FAIL** | 1 | Dài — thường là lỗi cấu hình (sai key), cần người vận hành sửa, tự retry vô ích |
-| `rate_limit` | **QUICK_RETRY** | 2 (gốc + 1 retry, delay cố định ngắn, **không** exponential) | Ngắn (`FAILOVER_COOLDOWN_SHORT_MS`, mặc định 5 giây) — burst rate-limit thường tự hết rất nhanh |
-| `server_error` | **QUICK_RETRY** | 2 | Ngắn |
-| `unknown` | **QUICK_RETRY** | 2 | Ngắn — an toàn, không chắc bản chất lỗi nên vẫn cho 1 cơ hội trước khi bỏ qua |
+| `quota_exceeded` | **FAST_FAIL** — failover immediately, no retry | 1 (no retry) | Long (`FAILOVER_COOLDOWN_LONG_MS`, default 10 minutes) — out of credits does not self-resolve in seconds |
+| `auth` | **FAST_FAIL** | 1 | Long — usually a configuration error (wrong key), requires operator fix, retrying is pointless |
+| `rate_limit` | **QUICK_RETRY** | 2 (original + 1 retry, fixed short delay, **no** exponential) | Short (`FAILOVER_COOLDOWN_SHORT_MS`, default 5 seconds) — burst rate-limit usually resolves very quickly |
+| `server_error` | **QUICK_RETRY** | 2 | Short |
+| `unknown` | **QUICK_RETRY** | 2 | Short — safe default, error nature unclear so still give one chance before skipping |
 
-Delay cho `QUICK_RETRY` là **hằng số nhỏ cố định** (mặc định 150ms, không phải exponential backoff của `LlmAgentService.withRetry` cũ) — mục tiêu là bắt được lỗi thoáng qua trong tối đa vài trăm ms, không phải "chờ cho chắc" như retry cũ (đó chính là cái gây độ trễ lớn user đang thấy).
+Delay for `QUICK_RETRY` is a **small fixed constant** (default 150ms, not exponential backoff like the old `LlmAgentService.withRetry`) — the goal is catching transient errors within a few hundred ms, not "waiting to be sure" like the old retry approach (which was the main source of high latency users experience).
 
-`isRetryableError()` ở từng adapter con **giữ nguyên** (dùng cho các nơi gọi trực tiếp 1 adapter, không qua Failover — case chỉ có 1 provider configured). Ở `FailoverLlmProviderAdapter`, quyết định retry-nhanh-hay-fast-fail nằm trong `runFailover()`, dựa trên `candidate.normalizeError(err).reason` — **không** phụ thuộc `isRetryableError()` (vì `isRetryableError()` chỉ trả boolean, không đủ để phân biệt "đáng thử lại nhanh" và "bỏ hẳn ngay").
+`isRetryableError()` on each child adapter **stays unchanged** (used by places that call a single adapter directly, not through Failover — the case with only 1 provider configured). In `FailoverLlmProviderAdapter`, the decision between quick-retry and fast-fail lives in `runFailover()`, based on `candidate.normalizeError(err).reason` — **not** dependent on `isRetryableError()` (because `isRetryableError()` only returns a boolean, not enough to distinguish "worth a quick retry" from "abandon immediately").
 
 ### 2. `OpenRouterAdapter` / `MiniMaxAdapter`
 
@@ -67,17 +67,17 @@ export class OpenRouterAdapter extends OpenAiAdapter {
 }
 ```
 
-`packages/llm-agent/src/provider/minimax/minimax-adapter.ts` — cùng pattern, `providerName: 'minimax'`, base URL mặc định trỏ MiniMax OpenAI-compatible endpoint.
+`packages/llm-agent/src/provider/minimax/minimax-adapter.ts` — same pattern, `providerName: 'minimax'`, default base URL points to MiniMax OpenAI-compatible endpoint.
 
-Cả hai kế thừa toàn bộ logic `chatWithTools`/`chatStream`/`generateJson` từ `OpenAiAdapter` (dùng chung OpenAI SDK client trỏ `baseURL` khác) — đúng pattern `OpenAiCompatibleAdapter` đã có, chỉ khác default model/baseURL/providerName.
+Both inherit all `chatWithTools`/`chatStream`/`generateJson` logic from `OpenAiAdapter` (shared OpenAI SDK client pointing to different `baseURL`) — same pattern as existing `OpenAiCompatibleAdapter`, differing only in default model/baseURL/providerName.
 
 ### 3. `FailoverLlmProviderAdapter` — greedy pick + circuit breaker
 
-**Thuật toán chọn provider**: greedy, đi theo đúng thứ tự ưu tiên đã cấu hình (`order`), bóc **candidate khỏe đầu tiên** trong tập còn lại — đúng như yêu cầu, không có gì phức tạp hơn cần thiết (không cần load-balancing/weighted-routing vì mục tiêu là *đúng và nhanh*, không phải phân phối tải đều). Cái làm cho nó **nhanh** không phải thuật toán chọn (vốn đã O(k) với k = số provider, k rất nhỏ ~2-4), mà là **circuit breaker in-memory** để không lặp lại network round-trip tới 1 provider đã biết chắc đang chết:
+**Provider selection algorithm**: greedy, follows the configured priority order (`order`), picks the **first healthy candidate** from the remaining set — exactly as required, nothing more complex than necessary (no load-balancing/weighted-routing needed because the goal is *correct and fast*, not even traffic distribution). What makes it **fast** is not the selection algorithm (already O(k) with k = number of providers, k is very small ~2-4), but the **in-memory circuit breaker** to avoid repeated network round-trips to a provider known to be down:
 
 ```ts
 interface CircuitState {
-  healthyAgainAt: number; // epoch ms — 0 nghĩa là luôn khỏe
+  healthyAgainAt: number; // epoch ms — 0 means always healthy
 }
 
 export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
@@ -85,9 +85,9 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
   private readonly circuit = new Map<string, CircuitState>(); // key = provider.providerName
 
   constructor(
-    private readonly candidates: LlmProviderAdapter[], // đã lọc isConfigured() từ factory
+    private readonly candidates: LlmProviderAdapter[], // already filtered by isConfigured() from factory
     private readonly logger?: { warn: (msg: string) => void },
-    private readonly clock: () => number = Date.now, // inject cho test
+    private readonly clock: () => number = Date.now, // injectable for testing
   ) {}
 
   isConfigured(): boolean {
@@ -105,13 +105,13 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     return this.runFailover((c, req) => c.chatWithTools(req), request);
   }
   chatStream(request) {
-    // Không failover giữa chừng 1 stream (Non-goals) — nhưng vẫn tôn trọng circuit
-    // breaker: bỏ qua candidate đang trong cooldown, chọn candidate khỏe đầu tiên.
+    // No failover mid-stream for a single stream (Non-goals) — but still respects circuit
+    // breaker: skips candidates in cooldown, picks first healthy candidate.
     return this.pickHealthy()[0].chatStream(request);
   }
 
   isRetryableError(): boolean {
-    return false; // đã tự failover/quick-retry nội bộ — outer retry loop không cần lặp lại.
+    return false; // already does internal failover/quick-retry — outer retry loop should not repeat.
   }
   isRateLimitError(error): boolean {
     return this.candidates[0].isRateLimitError(error);
@@ -120,13 +120,13 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     return this.candidates[0].normalizeError(error);
   }
 
-  /** Candidate chưa hết cooldown, theo đúng thứ tự ưu tiên gốc. */
+  /** Candidates not yet in cooldown, in original priority order. */
   private pickHealthy(): LlmProviderAdapter[] {
     const now = this.clock();
     const healthy = this.candidates.filter(
       (c) => (this.circuit.get(c.providerName)?.healthyAgainAt ?? 0) <= now,
     );
-    return healthy.length > 0 ? healthy : this.candidates; // tất cả đang cooldown → vẫn thử lại candidate đầu, còn hơn throw ngay
+    return healthy.length > 0 ? healthy : this.candidates; // all in cooldown → still retry first candidate, better than throwing immediately
   }
 
   private async runFailover<Req, Res>(
@@ -137,12 +137,12 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     let lastError: unknown;
 
     for (const candidate of ordered) {
-      const req = { ...request, model: candidate.getDefaultModel() }; // model không portable
+      const req = { ...request, model: candidate.getDefaultModel() }; // model is not portable
 
       for (let attempt = 1; attempt <= this.maxAttemptsFor(candidate, lastError); attempt++) {
         try {
           const result = await call(candidate, req);
-          this.circuit.delete(candidate.providerName); // thành công → reset circuit
+          this.circuit.delete(candidate.providerName); // success → reset circuit
           return result;
         } catch (err) {
           lastError = err;
@@ -157,10 +157,10 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
             this.logger?.warn(
               `LLM_FAILOVER provider=${candidate.providerName} reason=${reason} attempt=${attempt} — moving to next candidate`,
             );
-            break; // bỏ provider này, sang candidate tiếp theo trong vòng for ngoài
+            break; // abandon this provider, move to next candidate in outer loop
           }
 
-          // QUICK_RETRY: delay cố định ngắn, không exponential.
+          // QUICK_RETRY: fixed short delay, no exponential.
           await sleep(QUICK_RETRY_DELAY_MS);
         }
       }
@@ -169,37 +169,37 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     throw new LlmAllProvidersExhaustedError(ordered.map((c) => c.providerName), lastError);
   }
 
-  /** rate_limit/server_error/unknown = QUICK_RETRY (2 lần); quota_exceeded/auth = 1 lần (fast-fail). */
+  /** rate_limit/server_error/unknown = QUICK_RETRY (2 attempts); quota_exceeded/auth = 1 attempt (fast-fail). */
   private maxAttemptsFor(candidate: LlmProviderAdapter, lastError: unknown): number {
-    if (!lastError) return 2; // chưa biết reason (lần thử đầu) → cho phép tối đa quick-retry
+    if (!lastError) return 2; // reason unknown (first attempt) → allow max quick-retry
     const { reason } = candidate.normalizeError(lastError);
     return reason === 'quota_exceeded' || reason === 'auth' ? 1 : 2;
   }
 }
 ```
 
-**Vì sao đây là "tối ưu" cho mục tiêu độ trễ thấp nhất, không phải phỏng đoán**:
+**Why this is "optimal" for lowest latency, not just speculation**:
 
-1. **Không network round-trip tới provider đã biết chết** — `circuit` map là in-memory, sống theo vòng đời process (NestJS singleton). Sau lần đầu 1 provider fast-fail (hết credit/sai key), mọi lượt chat *tiếp theo* trong `COOLDOWN_LONG_MS` (10 phút) bỏ qua nó hoàn toàn ở bước `pickHealthy()` — O(1) so sánh timestamp, không gọi HTTP. Đây là phần quan trọng nhất cho latency thực tế khi outage kéo dài (vd hết credit cả buổi) — không phải chỉ tối ưu 1 lượt gọi đơn lẻ.
-2. **Quick-retry có trần thời gian cứng** (150ms cố định × tối đa 1 lần) thay vì exponential backoff (cũ: có thể lên tới hàng giây/chục giây) — bắt được lỗi thoáng qua mà không cộng dồn độ trễ lớn.
-3. **Fast-fail bỏ qua quick-retry hoàn toàn** cho lỗi biết chắc không tự khỏi (quota/auth) — đúng yêu cầu "hết credit thì không cần retry, fallback sớm".
-4. **Greedy theo đúng thứ tự ưu tiên** (không round-robin/random) — đúng ý "bóc cái đầu tiên còn ổn trong tập secondary", và dễ đoán/dễ debug hơn các thuật toán cân bằng tải phức tạp mà tính năng này không cần.
+1. **No network round-trip to a known-dead provider** — the `circuit` map is in-memory, lives for the process lifetime (NestJS singleton). After the first fast-fail of a provider (out of credits/wrong key), all *subsequent* chat turns within `COOLDOWN_LONG_MS` (10 minutes) skip it entirely at the `pickHealthy()` step — O(1) timestamp comparison, no HTTP call. This is the most important part for real-world latency during extended outages (e.g. out of credits all day) — not just optimizing a single call.
+2. **Quick-retry has a hard time cap** (fixed 150ms × max 1 retry) instead of exponential backoff (old: could reach seconds/tens of seconds) — catches transient errors without accumulating high latency.
+3. **Fast-fail skips quick-retry entirely** for errors known to not self-resolve (quota/auth) — matching the requirement "out of credits, no retry needed, fallback early".
+4. **Greedy in configured priority order** (no round-robin/random) — matching the intent "pick the first healthy one from the secondary set", and easier to predict/debug than complex load-balancing algorithms this feature does not need.
 
-`COOLDOWN_LONG_MS` (10 phút), `COOLDOWN_SHORT_MS` (5 giây), `QUICK_RETRY_DELAY_MS` (150ms) đọc từ config, có default — theo đúng pattern các hằng số retry hiện có trong `LlmExecutionConfigService`.
+`COOLDOWN_LONG_MS` (10 minutes), `COOLDOWN_SHORT_MS` (5 seconds), `QUICK_RETRY_DELAY_MS` (150ms) read from config with defaults — following the existing retry constants pattern in `LlmExecutionConfigService`.
 
-**Model không portable**: mỗi provider có model id riêng (`gpt-5.4` không tồn tại trên OpenRouter/MiniMax). `runFailover` luôn override `request.model` bằng `candidate.getDefaultModel()` trước khi gọi — caller (agent loop, report service...) không cần biết model nào đang thực sự chạy, chỉ cần đọc `response.metadata.provider` + `response.metadata.model` sau khi có response (field này đã tồn tại sẵn, không cần đổi schema).
+**Model is not portable**: each provider has its own model id (`gpt-5.4` does not exist on OpenRouter/MiniMax). `runFailover` always overrides `request.model` with `candidate.getDefaultModel()` before calling — callers (agent loop, report service...) do not need to know which model is actually running, only read `response.metadata.provider` + `response.metadata.model` after receiving the response (this field already exists, no schema change needed).
 
-**`isRetryableError() = false`** là điểm mấu chốt để 3 lớp retry hiện có (`LlmAgentService.withRetry`, `LlmExecutionService.runWithRetry`, `DiscordAgentService.runWithRetry`) **dừng ngay lập tức** khi `FailoverLlmProviderAdapter` throw `LlmAllProvidersExhaustedError` — không lặp lại toàn bộ chuỗi failover+quick-retry vô ích ở tầng trên.
+**`isRetryableError() = false`** is the key design point making the 3 existing retry layers (`LlmAgentService.withRetry`, `LlmExecutionService.runWithRetry`, `DiscordAgentService.runWithRetry`) **stop immediately** when `FailoverLlmProviderAdapter` throws `LlmAllProvidersExhaustedError` — no pointless repetition of the entire failover+quick-retry chain at the upper layer.
 
-### 8. Mở rộng thêm provider mới sau này — không đổi logic core
+### 8. Adding new providers later — no core logic changes
 
-Thêm 1 provider mới (Anthropic, Gemini, DeepSeek riêng, ...) chỉ cần:
+Adding 1 new provider (Anthropic, Gemini, DeepSeek standalone, etc.) only requires:
 
-1. Tạo class adapter mới implement (hoặc extend `OpenAiAdapter` nếu API tương thích OpenAI format) `LlmProviderAdapter`, quan trọng nhất là `normalizeError()` trả đúng `reason` theo 5 giá trị enum đã có (`rate_limit` / `server_error` / `auth` / `quota_exceeded` / `unknown`) dựa trên error shape riêng của provider đó.
-2. Thêm 1 `case` mới trong `createLlmProviderAdapter()` (factory switch).
-3. Thêm entry config mới (API key/model/baseURL getters) + thêm tên provider vào `LLM_PROVIDER_FAILOVER_ORDER` khi muốn bật.
+1. Create a new adapter class implementing (or extending `OpenAiAdapter` if the API is OpenAI-compatible) `LlmProviderAdapter`, most importantly `normalizeError()` returns the correct `reason` from the 5 existing enum values (`rate_limit` / `server_error` / `auth` / `quota_exceeded` / `unknown`) based on that provider's specific error shape.
+2. Add 1 new `case` in `createLlmProviderAdapter()` (factory switch).
+3. Add new config entry (API key/model/baseURL getters) + add provider name to `LLM_PROVIDER_FAILOVER_ORDER` when you want to enable it.
 
-**Không đổi** `FailoverLlmProviderAdapter` — toàn bộ logic circuit-breaker/quick-retry/fast-fail hoạt động thuần dựa trên interface `LlmProviderAdapter` + `reason` enum chung, không biết và không cần biết provider cụ thể là gì. Đây chính là lý do `normalizeError()` phải trả `reason` chuẩn hoá thay vì để logic failover tự parse error shape riêng của từng provider.
+**No changes to** `FailoverLlmProviderAdapter` — all circuit-breaker/quick-retry/fast-fail logic works purely based on the `LlmProviderAdapter` interface + shared `reason` enum, unaware and not needing to know the specific provider. This is precisely why `normalizeError()` must return a normalized `reason` instead of having the failover logic parse each provider's specific error shape.
 
 ### 4. Factory
 
@@ -219,15 +219,15 @@ export function createLlmProviderAdapter(config: LlmProviderEntryConfig): LlmPro
     case 'openai-compatible': return new OpenAiCompatibleAdapter(...);
     case 'openrouter': return new OpenRouterAdapter(...);
     case 'minimax': return new MiniMaxAdapter(...);
-    default: return new OpenAiAdapter(..., config.provider); // giữ nguyên fallback cũ
+    default: return new OpenAiAdapter(..., config.provider); // keep old fallback
   }
 }
 
 /**
- * Xây failover chain theo thứ tự `order`. Provider không configured (thiếu API key)
- * bị loại khỏi danh sách candidate ngay tại đây — không đợi tới runtime mới biết.
- * Nếu chỉ có 0-1 provider configured → trả thẳng adapter đó (không bọc Failover),
- * giữ nguyên hành vi/độ trễ hiện tại cho case phổ biến nhất.
+ * Build failover chain in `order` sequence. Providers not configured (missing API key)
+ * are filtered out of the candidate list here — no need to wait for runtime.
+ * If only 0-1 providers are configured → return that adapter directly (no Failover wrapper),
+ * preserving current behavior/latency for the most common case.
  */
 export function createFailoverLlmProviderAdapter(
   entries: LlmProviderEntryConfig[],
@@ -251,55 +251,55 @@ export function createFailoverLlmProviderAdapter(
 }
 ```
 
-### 5. Config (env vars mới)
+### 5. Config (new env vars)
 
-| Var | App | Ghi chú |
-|-----|-----|---------|
-| `LLM_PROVIDER_FAILOVER_ORDER` | cả 2 | CSV, vd `openai,openrouter,minimax`. Rỗng/absent → hành vi cũ (`LLM_PROVIDER` đơn, không failover). |
-| `OPENROUTER_API_KEY` | cả 2 | |
-| `OPENROUTER_MODEL` | cả 2 | default TBD — xem Open Questions |
-| `OPENROUTER_BASE_URL` | cả 2 | default `https://openrouter.ai/api/v1` |
-| `MINIMAX_API_KEY` | cả 2 | |
-| `MINIMAX_MODEL` | cả 2 | default TBD |
-| `MINIMAX_BASE_URL` | cả 2 | default TBD — verify endpoint OpenAI-compatible thật của MiniMax |
-| `LLM_FAILOVER_COOLDOWN_LONG_MS` | cả 2 | default 600_000 (10 phút) — cooldown sau lỗi fast-fail (quota/auth) |
-| `LLM_FAILOVER_COOLDOWN_SHORT_MS` | cả 2 | default 5_000 — cooldown sau lỗi transient (rate_limit/server_error/unknown) |
-| `LLM_FAILOVER_QUICK_RETRY_DELAY_MS` | cả 2 | default 150 — delay cố định giữa 2 lần thử trên cùng 1 provider trước khi failover |
+| Var | App | Notes |
+|-----|-----|-------|
+| `LLM_PROVIDER_FAILOVER_ORDER` | both | CSV, e.g. `openai,openrouter,minimax`. Empty/absent → old behavior (`LLM_PROVIDER` single, no failover). |
+| `OPENROUTER_API_KEY` | both | |
+| `OPENROUTER_MODEL` | both | default TBD — see Open Questions |
+| `OPENROUTER_BASE_URL` | both | default `https://openrouter.ai/api/v1` |
+| `MINIMAX_API_KEY` | both | |
+| `MINIMAX_MODEL` | both | default TBD |
+| `MINIMAX_BASE_URL` | both | default TBD — verify actual MiniMax OpenAI-compatible endpoint |
+| `LLM_FAILOVER_COOLDOWN_LONG_MS` | both | default 600_000 (10 minutes) — cooldown after fast-fail errors (quota/auth) |
+| `LLM_FAILOVER_COOLDOWN_SHORT_MS` | both | default 5_000 — cooldown after transient errors (rate_limit/server_error/unknown) |
+| `LLM_FAILOVER_QUICK_RETRY_DELAY_MS` | both | default 150 — fixed delay between 2 retries on the same provider before failover |
 
-`LlmExecutionConfigService` (messenger-bot) thêm getters tương ứng theo pattern có sẵn (`getApiKey()`, `getModel()`, `getBaseUrl()` hiện tại) — không hardcode default number/token, theo `project-conventions.md`.
+`LlmExecutionConfigService` (messenger-bot) adds corresponding getters following the existing pattern (`getApiKey()`, `getModel()`, `getBaseUrl()` currently) — no hardcoded default numbers/tokens, per `project-conventions.md`.
 
 ### 6. Wiring
 
-- `apps/messenger-bot/.../llm-execution.module.ts`: đổi `useFactory` từ gọi `createLlmProviderAdapter(...)` đơn sang `createFailoverLlmProviderAdapter(entries, order, logger)`, `entries` build từ `LlmExecutionConfigService` (openai + openrouter + minimax).
-- `apps/discord-bot/.../discord-chat.module.ts`: **bug fix** — bỏ `new OpenAiAdapter(...)` hardcode, dùng cùng `createFailoverLlmProviderAdapter` đọc trực tiếp từ `ConfigService` (discord-bot chưa có `LlmExecutionConfigService` riêng — có thể tái dùng luôn service này từ messenger-bot? **Không** — 2 app độc lập theo Turborepo boundary, discord-bot cần class con tương đương hoặc đọc `ConfigService` inline như hiện tại đang làm, chỉ mở rộng thành nhiều entries).
+- `apps/messenger-bot/.../llm-execution.module.ts`: change `useFactory` from calling `createLlmProviderAdapter(...)` (single) to `createFailoverLlmProviderAdapter(entries, order, logger)`, `entries` built from `LlmExecutionConfigService` (openai + openrouter + minimax). When `getFailoverOrder()` is empty → use exact old behavior (`[config.getProvider() ?? 'openai']`) to **not change default behavior** for current deployments that have not set the new variables.
+- `apps/discord-bot/.../discord-chat.module.ts`: **bug fix** — remove hardcoded `new OpenAiAdapter(...)`, use same `createFailoverLlmProviderAdapter` reading directly from `ConfigService` (discord-bot has no dedicated LLM config service — inline in factory function, keeping the current file pattern, no unnecessary abstraction for 1 module).
 
-### 7. Đổi tên/log để dễ debug
+### 7. Naming/logging for easier debugging
 
-Khi failover xảy ra, log `LLM_FAILOVER provider=<X> failed, trying next` (đã có trong pseudo-code trên) — cộng với `response.metadata.provider` sẵn có trong `LlmUsageRecorder`, đủ để biết provider nào thực sự trả lời mỗi lượt chat mà không cần thêm bảng/cột DB mới.
+When failover occurs, log `LLM_FAILOVER provider=<X> failed, trying next` (already in the pseudo-code above) — combined with existing `response.metadata.provider` in `LlmUsageRecorder`, sufficient to know which provider actually responded to each chat turn without adding new DB tables/columns.
 
-## Open Questions (cần verify trước khi code phần chi tiết lỗi)
+## Open Questions (need verification before coding error handling details)
 
-1. **MiniMax base URL + error shape chính xác**: MiniMax có endpoint OpenAI-compatible (`ChatCompletion v2`) nhưng cần xác nhận base URL hiện hành (`api.minimax.io` hay `api.minimaxi.com`, khác nhau theo region/global vs China) và cấu trúc lỗi hết credit (`base_resp.status_code` hay HTTP status chuẩn) — nên tra cứu doc chính thức hoặc test thật với API key trước khi hardcode default.
-2. **OpenRouter model id mặc định**: OpenRouter dùng format `vendor/model` (vd `openai/gpt-4o-mini`, `anthropic/claude-3.5-sonnet`) — cần chọn model default phù hợp ngân sách/latency cho use case chatbot học viên, không tự quyết định thay user.
-3. Có cần retry-trong-cùng-1-provider **trước khi** failover cho lỗi rate_limit thoáng qua (429 tạm thời, không phải hết credit) không, hay luôn failover ngay lập tức như user yêu cầu? Spec này chọn **luôn failover ngay**, đơn giản hơn và đúng nguyên văn yêu cầu — nếu sau này thấy failover "quá nhạy" (đổi provider chỉ vì 1 lỗi mạng thoáng qua) thì có thể thêm 1 lần retry nhanh (không backoff) trước khi failover, nhưng đó là optimization để dành sau.
+1. **MiniMax base URL + exact error shape**: MiniMax has an OpenAI-compatible endpoint (`ChatCompletion v2`) but need to confirm the current base URL (`api.minimax.io` or `api.minimaxi.com`, differs by region/global vs China) and the out-of-credits error structure (`base_resp.status_code` or standard HTTP status) — should look up official docs or test with a real API key before hardcoding defaults.
+2. **OpenRouter default model id**: OpenRouter uses `vendor/model` format (e.g. `openai/gpt-4o-mini`, `anthropic/claude-3.5-sonnet`) — need to choose a default model appropriate for budget/latency of the student chatbot use case, not make this decision on behalf of the user.
+3. Should there be retry-within-same-provider **before** failover for transient rate_limit errors (temporary 429, not out of credits), or always failover immediately as the user requested? This spec chooses **always failover immediately**, simpler and matches the literal requirement — if failover later feels "too sensitive" (switching providers due to a single transient network error), a quick retry (no backoff) before failover can be added, but that is an optimization deferred for later.
 
 ## Files Changed
 
 | File | Change |
 |------|--------|
-| `packages/llm-agent/src/provider/types.ts` | Thêm `'quota_exceeded'` vào `LlmProviderError['reason']` |
-| `packages/llm-agent/src/provider/openai/openai-adapter.ts` | `normalizeError()`/`isServerError()` nhận diện status 402 + marker text hết credit → `reason: 'quota_exceeded'` |
-| `packages/llm-agent/src/provider/openrouter/openrouter-adapter.ts` | **Mới** — `OpenRouterAdapter extends OpenAiAdapter` |
-| `packages/llm-agent/src/provider/minimax/minimax-adapter.ts` | **Mới** — `MiniMaxAdapter extends OpenAiAdapter` |
-| `packages/llm-agent/src/provider/failover/failover-adapter.ts` | **Mới** — `FailoverLlmProviderAdapter` |
-| `packages/llm-agent/src/provider/failover/failover.errors.ts` | **Mới** — `LlmAllProvidersExhaustedError` |
-| `packages/llm-agent/src/provider/factory.ts` | Thêm case `openrouter`/`minimax`, thêm `createFailoverLlmProviderAdapter()` |
-| `packages/llm-agent/src/index.ts` | Export adapter/factory/error mới |
-| `apps/messenger-bot/src/modules/llm-execution/application/services/llm-execution-config.service.ts` | Thêm getters OpenRouter/MiniMax + `getFailoverOrder()` |
-| `apps/messenger-bot/src/modules/llm-execution/llm-execution.module.ts` | Dùng `createFailoverLlmProviderAdapter` |
-| `apps/discord-bot/src/modules/discord-chat/discord-chat.module.ts` | **Bug fix** — bỏ hardcode `OpenAiAdapter`, dùng `createFailoverLlmProviderAdapter` |
-| `apps/messenger-bot/.env.example` (nếu có) | Thêm biến mới |
-| `apps/discord-bot/.env.example` (nếu có) | Thêm biến mới |
-| `docs/adr/0006-llm-provider-adapter.md` | Đánh dấu Phase 4 (Minimax adapter + multi-provider routing) → done, trỏ tới spec này |
+| `packages/llm-agent/src/provider/types.ts` | Add `'quota_exceeded'` to `LlmProviderError['reason']` |
+| `packages/llm-agent/src/provider/openai/openai-adapter.ts` | `normalizeError()`/`isServerError()` detect status 402 + out-of-credits marker text → `reason: 'quota_exceeded'` |
+| `packages/llm-agent/src/provider/openrouter/openrouter-adapter.ts` | **New** — `OpenRouterAdapter extends OpenAiAdapter` |
+| `packages/llm-agent/src/provider/minimax/minimax-adapter.ts` | **New** — `MiniMaxAdapter extends OpenAiAdapter` |
+| `packages/llm-agent/src/provider/failover/failover-adapter.ts` | **New** — `FailoverLlmProviderAdapter` |
+| `packages/llm-agent/src/provider/failover/failover.errors.ts` | **New** — `LlmAllProvidersExhaustedError` |
+| `packages/llm-agent/src/provider/factory.ts` | Add `openrouter`/`minimax` cases, add `createFailoverLlmProviderAdapter()` |
+| `packages/llm-agent/src/index.ts` | Export new adapter/factory/error |
+| `apps/messenger-bot/src/modules/llm-execution/application/services/llm-execution-config.service.ts` | Add OpenRouter/MiniMax getters + `getFailoverOrder()` |
+| `apps/messenger-bot/src/modules/llm-execution/llm-execution.module.ts` | Use `createFailoverLlmProviderAdapter` |
+| `apps/discord-bot/src/modules/discord-chat/discord-chat.module.ts` | **Bug fix** — remove hardcoded `OpenAiAdapter`, use `createFailoverLlmProviderAdapter` |
+| `apps/messenger-bot/.env.example` (if exists) | Add new variables |
+| `apps/discord-bot/.env.example` (if exists) | Add new variables |
+| `docs/adr/0006-llm-provider-adapter.md` | Mark Phase 4 (Minimax adapter + multi-provider routing) → done, link to this spec |
 
-Chi tiết breakdown thành từng task/commit nhỏ: xem [tasks.md](./tasks.md).
+Detailed task/commit breakdown: see [tasks.md](./tasks.md).

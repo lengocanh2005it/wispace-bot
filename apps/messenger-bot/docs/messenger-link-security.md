@@ -1,121 +1,121 @@
-# Bảo mật liên kết Messenger ↔ WISPACE (`ref` / `userId`)
+# Messenger ↔ WISPACE Link Security (`ref` / `userId`)
 
-Tài liệu mô tả **lỗ hổng** khi truyền `userId` thuần qua tham số `ref` trên link `m.me`, các **giải pháp** khả thi, **trade-off**, và **lộ trình khuyến nghị** khi đưa ra dùng thật.
+Document describing the **vulnerability** when passing raw `userId` via the `ref` parameter on `m.me` links, possible **solutions**, **trade-offs**, and **recommended roadmap** for production use.
 
-Liên quan: [project-overview.md](./project-overview.md) (luồng link), [edge-cases-roadmap.md §1](./edge-cases-roadmap.md#1-liên-kết-messenger--wispace), code `src/shared/config/poc.constants.ts`, `MessengerMappingService`.
+Related: [project-overview.md](./project-overview.md) (link flow), [edge-cases-roadmap.md §1](./edge-cases-roadmap.md#1-liên-kết-messenger--wispace), code `src/shared/config/poc.constants.ts`, `MessengerMappingService`.
 
 ---
 
-## 1. Vấn đề
+## 1. Problem
 
-### 1.1 Hiện trạng POC
+### 1.1 Current POC State
 
-Link mở Messenger từ WISPACE có dạng:
+Messenger links from WISPACE have this format:
 
 ```text
 https://m.me/{pageId}?ref={userId}&topic=IELTS&cadence=WEEKLY
 ```
 
-Webhook Meta gửi `referral.ref` → POC parse số nguyên → lưu `user_messenger_mappings` (`psid` ↔ `user_id`).
+Meta webhook sends `referral.ref` → POC parses integer → saves to `user_messenger_mappings` (`psid` ↔ `user_id`).
 
 ```typescript
-// poc.constants.ts — tin ref là userId hợp lệ nếu parse được số dương
+// poc.constants.ts — treats ref as valid userId if a positive integer parses
 parseUserIdFromRef(ref) → Number.parseInt(ref, 10)
 ```
 
-**Không có bước xác minh** người mở link có quyền sở hữu `userId` đó.
+**No verification step** that the person opening the link owns that `userId`.
 
-### 1.2 Rủi ro (IDOR trên account linking)
+### 1.2 Risk (IDOR on Account Linking)
 
-| Kịch bản | Hậu quả |
-|----------|---------|
-| Sửa `ref=143` → `ref=999` trên URL `m.me` rồi mở bằng Messenger của mình | PSID của kẻ tấn công map vào **tài khoản nạn nhân** |
-| PSID đã link user A, mở link `ref` của user B | **Relink** sang user B (L3 — `MAPPING_USER_ID_RELINK`) |
-| Forward / leak link có `ref` hợp lệ | Người khác mở trước → ăn mapping |
+| Scenario | Consequence |
+|----------|-------------|
+| Change `ref=143` → `ref=999` on `m.me` URL, open in own Messenger | Attacker's PSID maps to **victim's account** |
+| PSID already linked to user A, opens link with `ref` of user B | **Relink** to user B (L3 — `MAPPING_USER_ID_RELINK`) |
+| Forward / leak link with valid `ref` | Someone else opens first → takes mapping |
 
-**Dữ liệu có thể lộ / sai chủ:**
+**Data that could be exposed or misdirected:**
 
-- **Nhắc lịch học:** sync job theo `userId`, gửi tin proactive theo `psid` đã map → lịch học viên B có thể tới Messenger của người lạ.
-- **Báo cáo AI:** cron gửi theo mapping; context `userId` sai trên toàn pipeline.
-- **Chat agent:** tool/context hiểu sai chủ tài khoản (tên, mục tiêu, thao tác lịch).
-- Một số API Wispace dùng `x-psid` — **không đủ** để coi an toàn; POC + DB shared vẫn coupling theo `user_id` ở nhiều chỗ.
+- **Study reminders:** schedule jobs synced by `userId`, proactive messages sent to mapped `psid` → student B's schedule could reach a stranger's Messenger.
+- **AI reports:** cron sends via mapping; `userId` context wrong across entire pipeline.
+- **Chat agent:** tool/context misunderstands account owner (name, goals, schedule operations).
+- Some WISPACE APIs use `x-psid` — **not sufficient** to consider safe; POC + shared DB still couples by `user_id` in many places.
 
-### 1.3 Encode / obfuscate **không** phải giải pháp
+### 1.3 Encoding / Obfuscation is **Not** a Solution
 
-| Cách | Chống đổi userId? |
-|------|-------------------|
-| `ref=143` (hiện tại) | Không |
-| Base64 / hex `userId` | Không — decode được, hoặc copy nguyên chuỗi |
-| Hash `userId` (không ký) | Không — không verify được, dễ brute số nhỏ |
+| Method | Prevents userId change? |
+|--------|------------------------|
+| `ref=143` (current) | No |
+| Base64 / hex `userId` | No — decodable, or copy entire string |
+| Hash `userId` (unsigned) | No — unverifiable, small numbers brute-forceable |
 
-Cần **bằng chứng phát hành từ WISPACE** (chữ ký hoặc token server-side), không chỉ “che” `userId`.
-
----
-
-## 2. Giải pháp & trade-off
-
-### 2.1 Giữ `ref = userId` (status quo)
-
-**Mô tả:** Không đổi; tin tưởng mọi `ref` số dương từ webhook.
-
-| Ưu | Nhược |
-|----|-------|
-| Đơn giản nhất | **Không an toàn** cho production |
-| Không cần phối hợp Wispace thêm | Enumeration `userId`, account takeover qua relink |
-| Debug dễ | Không audit/revoke link |
-
-**Verdict:** Chỉ chấp nhận được demo nội bộ; **không** go-live user thật.
+Need **proof of issuance from WISPACE** (server-side signature or token), not just "hiding" `userId`.
 
 ---
 
-### 2.2 HMAC signed ref
+## 2. Solutions & Trade-offs
 
-**Mô tả:** WISPACE (user đã login) ký payload; Messenger POC verify trước khi link.
+### 2.1 Keep `ref = userId` (Status Quo)
+
+**Description:** No change; trusts all positive `ref` numbers from webhook.
+
+| Pros | Cons |
+|------|------|
+| Simplest | **Not safe** for production |
+| No WISPACE coordination needed | userId enumeration, account takeover via relink |
+| Easy debugging | No audit/revoke for links |
+
+**Verdict:** Only acceptable for internal demos; **not** for real user go-live.
+
+---
+
+### 2.2 HMAC Signed Ref
+
+**Description:** WISPACE (logged-in user) signs payload; Messenger POC verifies before linking.
 
 ```text
 ref = {userId}.{expUnix}.{signature}
 signature = HMAC-SHA256("{userId}.{expUnix}", MESSENGER_LINK_SIGNING_SECRET)
 ```
 
-**Luồng:**
+**Flow:**
 
-1. User login WISPACE → backend tạo `ref` có `exp` (vd. 24h).
-2. User mở `m.me?ref=...`.
-3. POC verify chữ ký + chưa hết hạn → mới `upsertPsidUserLink`.
+1. User logs into WISPACE → backend creates `ref` with `exp` (e.g. 24h).
+2. User opens `m.me?ref=...`.
+3. POC verifies signature + not expired → then `upsertPsidUserLink`.
 
-| Ưu | Nhược |
-|----|-------|
-| Implement nhanh (~0.5–1 ngày) | `userId` vẫn **lộ** trên URL |
-| Không cần bảng DB token ngay | Link **share/forward** vẫn dùng được trong TTL |
-| Shared secret — 2 service đồng bộ đơn giản | Khó **revoke** từng link (chờ hết `exp`) |
-| Chống sửa `userId` nếu không có secret | Cần thêm policy **chặn relink** PSID đã map |
+| Pros | Cons |
+|------|------|
+| Fast to implement (~0.5–1 days) | `userId` still **exposed** on URL |
+| No DB token table needed immediately | Link can be **shared/forwarded** within TTL |
+| Shared secret — simple 2-service sync | Hard to **revoke** individual links (wait for `exp`) |
+| Prevents userId change without secret | Need additional **block relink** policy for already-mapped PSID |
 
-**Verdict:** **Bridge tạm** POC / pilot gấp; không nên là đích cuối production.
+**Verdict:** **Temporary bridge** for POC / urgent pilots; should not be the final production target.
 
 ---
 
-### 2.3 Opaque one-time token (khuyến nghị production)
+### 2.3 Opaque One-Time Token (Recommended for Production)
 
-**Mô tả:** `ref` là chuỗi ngẫu nhiên (UUID / CSPRNG). `userId` **không** xuất hiện trên URL. WISPACE lưu token server-side; POC verify qua API nội bộ hoặc DB shared.
+**Description:** `ref` is a random string (UUID / CSPRNG). `userId` does **not** appear on URL. WISPACE stores token server-side; POC verifies via internal API or shared DB.
 
 ```mermaid
 sequenceDiagram
-  participant U as Học viên (login WISPACE)
+  participant U as Student (logged into WISPACE)
   participant W as WISPACE backend
   participant M as Messenger POC
   participant F as Meta webhook
 
-  U->>W: Kết nối Messenger
+  U->>W: Connect Messenger
   W->>W: INSERT link_token (token, user_id, exp, used_at)
   W->>U: m.me?ref={token}
-  U->>F: Mở Messenger
+  U->>F: Open Messenger
   F->>M: referral.ref = token
   M->>W: Verify token (internal API / DB)
-  W-->>M: userId + hợp lệ
+  W-->>M: userId + valid
   M->>M: used_at = now, map psid ↔ userId
 ```
 
-**Schema gợi ý (WISPACE DB):**
+**Suggested Schema (WISPACE DB):**
 
 ```sql
 CREATE TABLE messenger_link_tokens (
@@ -128,70 +128,70 @@ CREATE TABLE messenger_link_tokens (
 CREATE INDEX idx_messenger_link_tokens_user ON messenger_link_tokens (user_id);
 ```
 
-**Quy tắc bắt buộc:**
+**Required Rules:**
 
-| Rule | Lý do |
-|------|-------|
-| Token **one-time** (`used_at` set sau link thành công) | Chống reuse / forward link |
-| TTL ngắn (15–30 phút) | Giảm cửa sổ tấn công |
-| Chỉ tạo token khi session WISPACE hợp lệ | Đảm bảo chủ tài khoản |
-| PSID đã map user A + token user B → **từ chối** | Chốn relink trái phép |
-| Ops relink qua `POST /messenger/mapping/relink` + `INTERNAL_API_KEY` | Trường hợp support |
+| Rule | Reason |
+|------|--------|
+| Token is **one-time** (`used_at` set after successful link) | Prevents reuse / forwarding |
+| Short TTL (15–30 minutes) | Reduces attack window |
+| Only create token when WISPACE session is valid | Ensures account ownership |
+| PSID already mapped to user A + token of user B → **reject** | Prevents unauthorized relink |
+| Ops relink via `POST /messenger/mapping/relink` + `INTERNAL_API_KEY` | Support cases |
 
-| Ưu | Nhược |
-|----|-------|
-| Không lộ `userId`; revoke từng token | Cần bảng + API verify (WISPACE làm) |
-| One-time + TTL — mạnh nhất cho go-live | Thêm 1 round-trip verify khi webhook link |
-| Audit rõ (`created_at`, `used_at`) | POC phụ thuộc Wispace (hoặc DB shared) |
-| Phù hợp GDPR / privacy hơn signed ref | Effort cao hơn HMAC một chút (~1–2 ngày tổng 2 team) |
+| Pros | Cons |
+|------|------|
+| No userId exposure; per-token revoke | Needs table + verify API (WISPACE implements) |
+| One-time + TTL — strongest for go-live | Adds 1 verify round-trip when webhook links |
+| Clear audit (`created_at`, `used_at`) | POC depends on Wispace (or shared DB) |
+| Better fit for GDPR / privacy than signed ref | Slightly higher effort than HMAC (~1–2 days total across 2 teams) |
 
-**Verdict:** **Đích cuối** khi đưa ra dùng thật.
-
----
-
-### 2.4 JWT ngắn hạn trong `ref` (optional, phase sau)
-
-**Mô tả:** `ref` = JWT (claims: `sub=userId`, `exp`, `jti`), ký bằng secret hoặc JWKS.
-
-| Ưu | Nhược |
-|----|-------|
-| Stateless verify (POC không cần DB token) | Meta `ref` giới hạn ~250 ký tự — JWT dài |
-| Chuẩn industry | Vẫn cần `jti` blacklist để one-time / revoke |
-| | `userId` có thể vẫn trong payload (nếu không mã hóa) |
-
-**Verdict:** Cân nhắc khi đã có JWKS infra; với POC hiện tại **token opaque + DB** đơn giản và rõ ràng hơn.
+**Verdict:** **Final target** for real user deployment.
 
 ---
 
-## 3. So sánh tổng hợp
+### 2.4 Short-Lived JWT in `ref` (Optional, Future Phase)
 
-| Tiêu chí | `userId` thuần | HMAC signed | One-time token |
-|----------|----------------|-------------|----------------|
-| Chống đổi sang user khác | ✗ | ✓ | ✓ |
-| Không lộ userId | ✗ | ✗ | ✓ |
-| One-time / chống forward | ✗ | ✗ | ✓ |
-| Revoke từng link | ✗ | △ (chờ exp) | ✓ |
-| Effort Wispace | — | Thấp | Trung bình |
-| Effort Messenger POC | — | Thấp | Trung bình |
-| Phù hợp production | ✗ | △ (tạm) | ✓ |
+**Description:** `ref` = JWT (claims: `sub=userId`, `exp`, `jti`), signed by secret or JWKS.
+
+| Pros | Cons |
+|------|------|
+| Stateless verify (POC needs no token DB) | Meta `ref` limited to ~250 chars — JWT is long |
+| Industry standard | Still needs `jti` blacklist for one-time / revoke |
+| | `userId` may still be in payload (if not encrypted) |
+
+**Verdict:** Consider when JWKS infra exists; for current POC **opaque token + DB** is simpler and clearer.
 
 ---
 
-## 4. Khuyến nghị lộ trình
+## 3. Overall Comparison
 
-### Phase L4 — Link security (chưa làm)
+| Criterion | Raw `userId` | HMAC Signed | One-Time Token |
+|-----------|-------------|-------------|----------------|
+| Prevents switching to another user | ✗ | ✓ | ✓ |
+| No userId exposure | ✗ | ✗ | ✓ |
+| One-time / anti-forward | ✗ | ✗ | ✓ |
+| Revoke individual links | ✗ | △ (wait for exp) | ✓ |
+| WISPACE effort | — | Low | Medium |
+| Messenger POC effort | — | Low | Medium |
+| Production-ready | ✗ | △ (temporary) | ✓ |
 
-| Bước | Việc làm | Owner |
-|------|----------|-------|
-| **L4.1** | Bảng `messenger_link_tokens` + API tạo token (login required) | WISPACE |
-| **L4.2** | `POST /internal/messenger/verify-link-token` hoặc query DB shared | WISPACE / POC |
-| **L4.3** | POC: thay `parseUserIdFromRef` → verify token; từ chối ref số thuần (feature flag) | POC |
-| **L4.4** | Chặn relink PSID → userId khác (trừ ops endpoint) | POC |
+---
+
+## 4. Recommended Roadmap
+
+### Phase L4 — Link Security (Not Yet Implemented)
+
+| Step | Work | Owner |
+|------|------|-------|
+| **L4.1** | `messenger_link_tokens` table + token creation API (login required) | WISPACE |
+| **L4.2** | `POST /internal/messenger/verify-link-token` or shared DB query | WISPACE / POC |
+| **L4.3** | POC: replace `parseUserIdFromRef` → verify token; reject raw numeric ref (feature flag) | POC |
+| **L4.4** | Block relink PSID → different userId (except ops endpoint) | POC |
 | **L4.5** | Log `LINK_TOKEN_OK` / `LINK_TOKEN_REJECT` / `MAPPING_RELINK_BLOCKED`; alert ops | POC |
 
-**Hotfix gấp (trước L4):** HMAC signed ref + chặn relink — tối đa 1 ngày, có kế hoạch bỏ khi L4 xong.
+**Emergency hotfix (before L4):** HMAC signed ref + block relink — max 1 day, with plan to remove when L4 is complete.
 
-### Feature flag gợi ý
+### Suggested Feature Flag
 
 ```env
 MESSENGER_LINK_MODE=token
@@ -199,21 +199,21 @@ WISPACE_API_VERIFY_TOKEN_URL=...
 WISPACE_INTERNAL_KEY=...
 ```
 
-POC **chỉ** hỗ trợ `token` — `legacy` / `signed` đã gỡ; startup fail nếu thiếu verify URL hoặc `MESSENGER_LINK_MODE` khác `token`.
+POC **only** supports `token` — `legacy` / `signed` already removed; startup fails if verify URL is missing or `MESSENGER_LINK_MODE` differs from `token`.
 
 ---
 
-## 5. Thay đổi code POC (khi implement L4)
+## 5. POC Code Changes (When Implementing L4)
 
-| File / module | Thay đổi |
-|---------------|----------|
-| `src/shared/config/poc.constants.ts` | `parseMessengerLinkContext` gọi verify token thay vì `parseInt(ref)` |
-| `MessengerMappingService` | Từ chối relink nếu PSID đã ACTIVE và `userId` khác |
-| `MessengerService.handleEvent` | Link chỉ khi verify OK; message `MISSING_USER_REF` / `LINK_TOKEN_INVALID` |
-| `.env.example` | Biến `MESSENGER_LINK_*` |
-| WISPACE app | Generate `m.me` chỉ qua API backend, không build URL client-side với `userId` |
+| File / Module | Change |
+|---------------|--------|
+| `src/shared/config/poc.constants.ts` | `parseMessengerLinkContext` calls verify token instead of `parseInt(ref)` |
+| `MessengerMappingService` | Reject relink if PSID is ACTIVE and `userId` differs |
+| `MessengerService.handleEvent` | Link only when verify OK; message `MISSING_USER_REF` / `LINK_TOKEN_INVALID` |
+| `.env.example` | `MESSENGER_LINK_*` variables |
+| WISPACE app | Generate `m.me` only via backend API, not client-side `userId` URL building |
 
-**API verify nội bộ (gợi ý):**
+**Internal verify API (suggestion):**
 
 ```http
 POST /internal/messenger/verify-link-token
@@ -233,119 +233,119 @@ Content-Type: application/json
 
 ---
 
-## 6. Checklist QA (trước go-live)
+## 6. QA Checklist (Before Go-Live)
 
-- [ ] Mở link đúng user → mapping `psid` ↔ `userId` đúng
-- [ ] Sửa `ref` / dùng token user khác → **không** link (hoặc không relink)
-- [ ] Dùng lại token đã `used_at` → từ chối
-- [ ] Token hết hạn → từ chối + hướng dẫn tạo link mới từ app
-- [ ] PSID đã link A, token của B → từ chối + log `MAPPING_RELINK_BLOCKED`
-- [ ] Ops relink qua API key vẫn hoạt động
-- [ ] Nhắc lịch / báo cáo chỉ tới đúng PSID sau link hợp lệ
-- [ ] Bấm menu 「Đăng ký báo cáo」khi đã link → dùng mapping DB, **không** gọi verify
-- [ ] Bấm Get Started sau khi đã link (không còn `referral.ref`) → dùng mapping DB
-- [ ] Token `USED` nhưng PSID đã map → chat/menu vẫn OK; chỉ từ chối nếu cố link lại bằng token cũ
+- [ ] Open correct user link → mapping `psid` ↔ `userId` correct
+- [ ] Change `ref` / use another user's token → **no** link (or no relink)
+- [ ] Reuse token with `used_at` set → rejected
+- [ ] Expired token → rejected + guidance to create new link from app
+- [ ] PSID linked to A, token of B → rejected + log `MAPPING_RELINK_BLOCKED`
+- [ ] Ops relink via API key still works
+- [ ] Reminders / reports only reach correct PSID after valid link
+- [ ] Tap menu "Register Report" when already linked → uses DB mapping, **no** verify call
+- [ ] Tap Get Started after linking (no `referral.ref` anymore) → uses DB mapping
+- [ ] Token `USED` but PSID already mapped → chat/menu still OK; only rejects if attempting to re-link with old token
 
 ---
 
-## 7. Quyết định thiết kế (bàn luận)
+## 7. Design Decisions (Discussion)
 
-Ghi chú align team sau khi review luồng link — bổ sung cho các mục trên, **chưa implement** (L4).
+Team alignment notes after reviewing link flow — supplementing sections above, **not yet implemented** (L4).
 
-### 7.1 Hai giai đoạn: binding vs hành vi hàng ngày
+### 7.1 Two Phases: Binding vs Daily Behavior
 
-| Giai đoạn | Mục đích | Gọi WISPACE verify? |
-|-----------|----------|---------------------|
-| **Binding** (lễ liên kết) | Chứng minh PSID Meta thuộc user WISPACE nào | **Có — một lần** khi webhook có `referral.ref` / token chưa dùng |
-| **Hành vi hàng ngày** | Chat, menu, cron báo cáo, nhắc lịch | **Không** — đọc `user_messenger_mappings` |
+| Phase | Purpose | Calls WISPACE Verify? |
+|-------|---------|----------------------|
+| **Binding** (linking ceremony) | Proves Meta PSID belongs to which WISPACE user | **Yes — once** when webhook has `referral.ref` / unused token |
+| **Daily behavior** | Chat, menu, report cron, reminders | **No** — reads `user_messenger_mappings` |
 
-**Không** verify mỗi tin nhắn chat: latency cao, phụ thuộc WISPACE, không thêm bảo mật nếu mapping đã đúng. Mô hình tương tự OAuth — login một lần, sau đó tin session (mapping) persisted.
+**Don't** verify every chat message: high latency, WISPACE dependency, no added security if mapping is already correct. Model similar to OAuth — login once, then trust session (mapping) persisted.
 
-API Wispace khác (vd. `UserCalendar` qua `x-psid`) là **data API**, không thay thế **link verify**.
+Other WISPACE APIs (e.g. `UserCalendar` via `x-psid`) are **data APIs**, not replacements for **link verify**.
 
-### 7.2 Khi nào trigger verify? (không chỉ Get Started)
+### 7.2 When to Trigger Verify? (Not Just Get Started)
 
-Meta có thể gửi `referral.ref` ở nhiều loại webhook — POC gọi verify tại **mọi chỗ** sắp `linkPsidFromContext` khi `ref` là token mới:
+Meta may send `referral.ref` in various webhook types — POC calls verify at **every location** that would `linkPsidFromContext` when `ref` is a new token:
 
-| Nguồn webhook | Có thể có `ref`? |
-|---------------|------------------|
-| `event.optin` | Có (`optin.ref`) |
-| `event.referral` thuần | Có |
-| `event.message` + `message.referral` | Có |
-| `event.postback` (gồm `GET_STARTED`) + `postback.referral` | Có — thường gặp lần **đầu** mở thread từ `m.me` |
+| Webhook Source | Can Have `ref`? |
+|----------------|-----------------|
+| `event.optin` | Yes (`optin.ref`) |
+| `event.referral` alone | Yes |
+| `event.message` + `message.referral` | Yes |
+| `event.postback` (including `GET_STARTED`) + `postback.referral` | Yes — commonly first thread open from `m.me` |
 
-Get Started **thường** trùng lúc binding lần đầu, nhưng ranh giới đúng là **「webhook mang token chưa consumed」**, không phải payload `GET_STARTED` riêng. Lần sau Meta thường **không** gửi lại `referral.ref` → bot fallback `findActiveMappingByPsid`.
+Get Started **usually** coincides with first-time binding, but the correct boundary is **「webhook carrying unconsumed token」**, not the `GET_STARTED` payload itself. On subsequent visits Meta typically **doesn't** send `referral.ref` again → bot falls back to `findActiveMappingByPsid`.
 
-### 7.3 Menu / postback sau khi đã link — **không** verify lại
+### 7.3 Menu / Postback After Linking — **No** Re-verification
 
-Menu persistent 「Đăng ký báo cáo」(`REGISTER_LEARNING_REPORT`) và các postback khác **không** kèm `referral.ref`. Code hiện tại: `resolveLinkContext` → nếu event không có ref thì đọc mapping DB (`MessengerService.resolveLinkContext`).
+Persistent menu "Register Report" (`REGISTER_LEARNING_REPORT`) and other postbacks **don't** carry `referral.ref`. Current code: `resolveLinkContext` → if event has no ref, reads DB mapping (`MessengerService.resolveLinkContext`).
 
-| Hành vi | Nguồn `userId` | Gọi WISPACE verify? |
-|---------|----------------|---------------------|
-| Menu đăng ký báo cáo (đã link) | Mapping DB | **Không** |
-| Menu khi chưa link | — | **Không** (không có token) → `MISSING_USER_REF`, hướng dẫn mở link app |
-| Chat tự do | Mapping DB | **Không** |
+| Behavior | `userId` Source | Calls WISPACE Verify? |
+|----------|----------------|----------------------|
+| Report registration menu (already linked) | DB mapping | **No** |
+| Menu when not linked | — | **No** (no token) → `MISSING_USER_REF`, guide to open app link |
+| Free-form chat | DB mapping | **No** |
 
-Verify lúc bấm menu **không giúp** user chưa từng link — không có token để gửi. Nếu lo mapping cũ sai chủ: xử lý bằng **chặn relink (7.4)** + **revoke/unlink** trên WISPACE, không verify per-menu.
+Verifying at menu tap **doesn't help** users who never linked — there's no token to send. If concerned about stale mapping ownership: handle via **block relink (7.4)** + **revoke/unlink** on WISPACE, not per-menu verify.
 
-*Tùy chọn phase sau:* mapping quá cũ (staleness) → nhắn mở lại link app — vẫn **không** gọi verify từ postback menu.
+*Optional future phase:* stale mapping (too old) → send message to re-open app link — still **no** verify call from postback menu.
 
-### 7.4 Policy relink — L3 hiện tại vs L4
+### 7.4 Relink Policy — Current L3 vs L4
 
-**Hiện tại (L3):** `MessengerMappingService.relinkPsidToUserId` **cho phép** đổi `userId` cùng PSID khi webhook mang `ref`/token mới → log `MAPPING_USER_ID_RELINK`. Đây là vector IDOR khi `ref=userId` thuần.
+**Current (L3):** `MessengerMappingService.relinkPsidToUserId` **allows** changing `userId` for same PSID when webhook carries `ref`/new token → logs `MAPPING_USER_ID_RELINK`. This is an IDOR vector when `ref=userId` is raw.
 
-**L4 (khuyến nghị):**
+**L4 (recommended):**
 
-| Tình huống | Hành vi |
-|------------|---------|
-| PSID chưa map + token hợp lệ | Link OK |
-| PSID đã map user A + token user A (mở lại link / cập nhật topic) | **Idempotent** — cho phép cập nhật metadata; token đã `used_at` thì bỏ qua verify, tin mapping |
-| PSID đã map user A + token user B | **Từ chối** — `PSID_ALREADY_LINKED` / `MAPPING_RELINK_BLOCKED` |
-| Đổi tài khoản thật (support) | `POST /messenger/mapping/relink` + `INTERNAL_API_KEY` (đã có) |
+| Situation | Behavior |
+|-----------|----------|
+| PSID unmapped + valid token | Link OK |
+| PSID mapped to user A + token of user A (re-open link / update topic) | **Idempotent** — allow metadata update; token with `used_at` set skips verify, trusts mapping |
+| PSID mapped to user A + token of user B | **Reject** — `PSID_ALREADY_LINKED` / `MAPPING_RELINK_BLOCKED` |
+| True account change (support) | `POST /messenger/mapping/relink` + `INTERNAL_API_KEY` (already exists) |
 
-**Ba hướng relink hợp lệ (chọn theo giai đoạn):**
+**Three valid relink approaches (choose by phase):**
 
-| Hướng | Mô tả | Khi dùng |
-|-------|-------|----------|
-| **A — Ops-only** | Support xác minh ngoài band → gọi `mapping/relink` | Pilot / POC → prod đầu |
-| **B — Self-service** | App WISPACE: 「Ngắt kết nối」→ revoke mapping → token mới → link lại | Production scale |
-| **C — Confirm trên Messenger** | Postback xác nhận trước khi relink | Hiếm cần; UX phức tạp — **không** khuyến nghị mặc định |
+| Approach | Description | When to Use |
+|----------|-------------|-------------|
+| **A — Ops-only** | Support verifies out-of-band → calls `mapping/relink` | Pilot / POC → first prod |
+| **B — Self-service** | WISPACE app: "Disconnect" → revoke mapping → new token → re-link | Production scale |
+| **C — Confirm on Messenger** | Postback confirmation before relink | Rare; complex UX — **not** default recommendation |
 
-### 7.5 Token TTL — trade-off
+### 7.5 Token TTL — Trade-offs
 
-Doc gợi ý **15–30 phút**. Cân bằng:
+Docs recommend **15–30 minutes**. Balance:
 
-| | TTL ngắn (5–15 ph) | TTL 15–30 ph (khuyến nghị) | TTL dài (HMAC bridge ~24h) |
-|--|---------------------|----------------------------|----------------------------|
-| Cửa sổ forward link chưa dùng | Nhỏ | Vừa | Lớn |
-| UX (user mở link rồi làm việc khác) | Dễ `EXPIRED` | Cân bằng | Thoải mái |
-| One-time (`used_at`) | Chặn reuse dù TTL dài | Cùng | Không có — chỉ HMAC tạm |
+| | Short TTL (5–15 min) | TTL 15–30 min (recommended) | Long TTL (HMAC bridge ~24h) |
+|--|----------------------|-----------------------------|-----------------------------|
+| Forward window for unused link | Small | Medium | Large |
+| UX (user opens link then does something else) | Easy `EXPIRED` | Balanced | Comfortable |
+| One-time (`used_at`) | Blocks reuse even with long TTL | Same | Not present — only temporary HMAC |
 
-**Lưu ý:** Meta không gửi `referral.ref` mãi mãi. Token hết hạn **trước** webhook đầu tiên → verify `EXPIRED` → user phải tạo link mới trong app; **không** sửa được chỉ bằng Get Started/menu.
+**Note:** Meta doesn't send `referral.ref` forever. Token expires **before** first webhook → verify `EXPIRED` → user must create new link in app; **can't** fix with Get Started/menu alone.
 
-Token đã `USED` nhưng user mở lại URL cũ: verify từ chối, nhưng nếu PSID đã map → chat/menu/cron **vẫn dùng mapping DB**.
+Token `USED` but user re-opens old URL: verify rejects, but if PSID is already mapped → chat/menu/cron **still uses DB mapping**.
 
-App WISPACE nên có nút **「Tạo lại link」** khi hết hạn.
+WISPACE app should have a **「Create New Link」** button on expiration.
 
-### 7.6 Ma trận quyết định webhook (POC)
+### 7.6 Webhook Decision Matrix (POC)
 
 ```text
 Webhook event
 │
-├─ Có referral.ref (token mới, chưa used)?
-│   ├─ PSID chưa map → verify WISPACE → link
-│   ├─ PSID map cùng userId → cập nhật topic/cadence nếu cần (idempotent)
-│   └─ PSID map userId khác → REJECT (trừ ops relink)
+├─ Has referral.ref (new token, unused)?
+│   ├─ PSID unmapped → verify WISPACE → link
+│   ├─ PSID mapped to same userId → update topic/cadence if needed (idempotent)
+│   └─ PSID mapped to different userId → REJECT (except ops relink)
 │
-└─ Không có ref (chat / menu / Get Started sau này)
-    ├─ Có mapping ACTIVE → userId từ DB
-    └─ Không mapping → MISSING_USER_REF / hướng dẫn mở link app
+└─ No ref (chat / menu / Get Started later)
+    ├─ Has ACTIVE mapping → userId from DB
+    └─ No mapping → MISSING_USER_REF / guide to open app link
 ```
 
-Chi tiết luồng sự kiện từng loại webhook: [messenger-link-integration.md §9](./messenger-link-integration.md#9-quyết-định-vận-hành-bàn-luận).
+Detailed event flow per webhook type: [messenger-link-integration.md §9](./messenger-link-integration.md#9-operational-decisions-discussion).
 
 ---
 
-## 8. Tóm tắt một dòng
+## 8. One-Line Summary
 
-**Production:** dùng **opaque one-time token** do WISPACE phát hành khi user đã login, POC verify trước khi map; **không** tin `ref=userId` và **không** relink tự do. **HMAC** chỉ là bước đệm nếu cần ship nhanh trước L4.
+**Production:** use **opaque one-time tokens** issued by WISPACE when user is logged in, POC verifies before mapping; **don't** trust `ref=userId` and **don't** allow free relinking. **HMAC** is only a bridge if fast shipping is needed before L4.
