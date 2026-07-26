@@ -1,7 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Cron } from '@nestjs/schedule';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
+import { ADVISORY_LOCK } from '../../../../shared/common/advisory-lock-ids';
+import { PgAdvisoryLockService } from '../../../../shared/common/pg-advisory-lock.service';
 
 const DEFAULT_RETENTION_DAYS = 90;
 
@@ -13,6 +16,7 @@ export class MessengerMessageLogCleanupService {
     private readonly configService: ConfigService,
     @Inject(MESSENGER_REPOSITORY)
     private readonly messengerRepository: MessengerRepositoryPort,
+    private readonly pgLock: PgAdvisoryLockService,
   ) {}
 
   isEnabled(): boolean {
@@ -63,5 +67,27 @@ export class MessengerMessageLogCleanupService {
     }
 
     return { deleted, cutoff: cutoff.toISOString() };
+  }
+
+  /** Purge old audit rows — 03:00 ICT every Monday. */
+  @Cron('0 0 3 * * 1', {
+    name: 'messenger-message-log-cleanup',
+    timeZone: 'Asia/Ho_Chi_Minh',
+  })
+  async handleWeeklyCleanup(): Promise<void> {
+    if (!this.isEnabled()) {
+      return;
+    }
+
+    const result = await this.pgLock.withLock(
+      ADVISORY_LOCK.MESSENGER_MESSAGE_LOG_CLEANUP,
+      () => this.purgeExpiredLogs(),
+    );
+
+    if (result === null) {
+      this.logger.debug(
+        'messenger-message-log-cleanup skipped — lock held by another pod',
+      );
+    }
   }
 }
