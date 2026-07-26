@@ -49,6 +49,7 @@ describe('StudyReminderDispatchService', () => {
     ): StudyReminderJob {
       return {
         id: 1,
+        platform: 'messenger',
         psid: 'psid-1',
         userId: 42,
         sessionKey: 'calendar:99',
@@ -75,6 +76,7 @@ describe('StudyReminderDispatchService', () => {
         findNextDueTime: jest.fn().mockResolvedValue(null),
         upsertPendingJob: jest.fn(),
         cancelStaleJobsForPsid: jest.fn(),
+        cancelJobsFromOtherPlatforms: jest.fn(),
       };
 
       scheduleService = {

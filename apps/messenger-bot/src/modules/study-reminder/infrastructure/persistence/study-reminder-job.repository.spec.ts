@@ -11,6 +11,7 @@ describe('StudyReminderJobRepository', () => {
   const baseInput = (
     overrides: Partial<UpsertStudyReminderJobInput> = {},
   ): UpsertStudyReminderJobInput => ({
+    platform: 'messenger',
     psid: 'psid-1',
     userId: 143,
     sessionKey: 'calendar:5',

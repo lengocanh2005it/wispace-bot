@@ -7,6 +7,7 @@ export type StudyReminderJobStatus =
 
 export interface StudyReminderJob {
   id: number;
+  platform: string;
   psid: string;
   userId?: number;
   sessionKey: string;
@@ -24,6 +25,7 @@ export interface StudyReminderJob {
 }
 
 export interface UpsertStudyReminderJobInput {
+  platform: string;
   psid: string;
   userId?: number;
   sessionKey: string;
