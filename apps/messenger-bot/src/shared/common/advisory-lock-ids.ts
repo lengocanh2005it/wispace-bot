@@ -29,4 +29,10 @@ export const ADVISORY_LOCK = {
 
   /** Monthly purge of llm_usage_events rows. */
   LLM_USAGE_CLEANUP: 884_200_908,
+
+  /** R5: report send retry dispatch (every 15 min). */
+  REPORT_SEND_RETRY_DISPATCH: 884_200_909,
+
+  /** Daily purge of LLM safety event rows. */
+  LLM_SAFETY_CLEANUP: 884_200_910,
 } as const;

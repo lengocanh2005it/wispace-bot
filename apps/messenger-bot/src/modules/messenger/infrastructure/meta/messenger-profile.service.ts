@@ -1,5 +1,6 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { keepAliveFetch } from '../../../../shared/http/http-agent';
 
 const PERSISTENT_MENU_ACTIONS = [
   {
@@ -52,7 +53,7 @@ export class MessengerProfileService {
     );
     url.searchParams.set('access_token', pageAccessToken);
 
-    const response = await fetch(url, {
+    const response = await keepAliveFetch(url, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
@@ -60,6 +61,7 @@ export class MessengerProfileService {
       body: JSON.stringify({
         fields: ['persistent_menu'],
       }),
+      timeoutMs: 10_000,
     });
 
     if (!response.ok) {
@@ -84,12 +86,13 @@ export class MessengerProfileService {
     );
     url.searchParams.set('access_token', pageAccessToken);
 
-    const response = await fetch(url, {
+    const response = await keepAliveFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
+      timeoutMs: 10_000,
     });
 
     if (!response.ok) {

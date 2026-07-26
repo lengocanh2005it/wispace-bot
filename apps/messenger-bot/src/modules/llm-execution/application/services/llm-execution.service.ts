@@ -1,9 +1,10 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import pLimit from 'p-limit';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { MetricsService } from '../../../metrics/metrics.service';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import type { LlmExecutionContext } from '../types/llm-execution.types';
+import { RedisConcurrencyLimiter } from '../../infrastructure/redis-concurrency-limiter';
 
 export type {
   LlmExecutionFeature,
@@ -43,6 +44,9 @@ export class LlmExecutionService {
     private readonly metrics: MetricsService,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
+    @Optional()
+    @Inject(RedisConcurrencyLimiter)
+    private readonly globalLimiter?: RedisConcurrencyLimiter,
   ) {
     this.limiter = pLimit(this.config.getMaxConcurrent());
   }
@@ -57,6 +61,16 @@ export class LlmExecutionService {
   ): Promise<T> {
     if (!this.config.isEnabled()) {
       return fn();
+    }
+
+    if (this.globalLimiter) {
+      const globalLimit = this.config.getGlobalMaxConcurrent();
+      const release = await this.globalLimiter.acquire('global', globalLimit);
+      try {
+        return await this.limiter(() => this.runWithRetry(fn, context));
+      } finally {
+        await release();
+      }
     }
 
     return this.limiter(() => this.runWithRetry(fn, context));

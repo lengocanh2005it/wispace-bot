@@ -33,6 +33,23 @@ export class LlmExecutionConfigService {
     return Math.floor(value);
   }
 
+  getGlobalMaxConcurrent(): number {
+    const raw = this.configService
+      .get<string>('LLM_GLOBAL_MAX_CONCURRENT')
+      ?.trim();
+
+    if (!raw) {
+      return 10;
+    }
+
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value <= 0) {
+      return 10;
+    }
+
+    return Math.floor(value);
+  }
+
   getRetryMaxAttempts(): number {
     const raw = this.configService
       .get<string>('LLM_OPENAI_RETRY_MAX_ATTEMPTS')

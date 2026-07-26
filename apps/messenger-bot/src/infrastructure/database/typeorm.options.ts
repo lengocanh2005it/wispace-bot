@@ -30,6 +30,14 @@ export function getTypeOrmOptions(
   source: EnvSource,
   options?: { includeUsers?: boolean },
 ): DataSourceOptions {
+  const poolSize = Number(readEnv(source, 'DB_POOL_SIZE') ?? 10);
+  const poolIdleTimeoutMs = Number(
+    readEnv(source, 'DB_POOL_IDLE_TIMEOUT_MS') ?? 30_000,
+  );
+  const poolConnectionTimeoutMs = Number(
+    readEnv(source, 'DB_POOL_CONNECTION_TIMEOUT_MS') ?? 5_000,
+  );
+
   return {
     type: 'postgres',
     host: readEnv(source, 'DB_HOST'),
@@ -41,6 +49,13 @@ export function getTypeOrmOptions(
       readEnv(source, 'DB_SSL') === 'true'
         ? { rejectUnauthorized: false }
         : false,
+    poolSize,
+    extra: {
+      pool: {
+        idleTimeoutMillis: poolIdleTimeoutMs,
+        connectionTimeoutMillis: poolConnectionTimeoutMs,
+      },
+    },
     entities: [
       UserPlatformMappingEntity,
       MessageLogEntity,

@@ -16,6 +16,7 @@ import type { MessageSenderPort } from '../ports/message-sender.port';
 import { readMessengerBubbleLimits } from '../utils/messenger-bubble-config.utils';
 import { splitMessengerBubbles } from '../../../../shared/utils/messenger-text.utils';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
+import { keepAliveFetch } from '../../../../shared/http/http-agent';
 
 export class MessengerApiError extends Error {
   constructor(
@@ -345,6 +346,8 @@ export class MessengerOutboundService implements MessageSenderPort {
     const pageAccessToken = this.configService.get<string>('PAGE_ACCESS_TOKEN');
     const graphApiVersion =
       this.configService.get<string>('GRAPH_API_VERSION') ?? 'v21.0';
+    const sendApiTimeoutMs =
+      this.configService.get<number>('MESSENGER_SEND_API_TIMEOUT_MS') ?? 10_000;
 
     if (!pageAccessToken) {
       throw new InternalServerErrorException('PAGE_ACCESS_TOKEN is missing');
@@ -355,18 +358,32 @@ export class MessengerOutboundService implements MessageSenderPort {
     );
     url.searchParams.set('access_token', pageAccessToken);
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        recipient: {
-          id: psid,
+    let response: Response;
+    try {
+      response = await keepAliveFetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        ...payload,
-      }),
-    });
+        body: JSON.stringify({
+          recipient: {
+            id: psid,
+          },
+          ...payload,
+        }),
+        timeoutMs: sendApiTimeoutMs,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'TimeoutError') {
+        throw new MessengerApiError(
+          `Messenger Send API timed out for PSID ${psid} after ${sendApiTimeoutMs}ms`,
+          408,
+          'Request Timeout',
+          '',
+        );
+      }
+      throw error;
+    }
 
     if (!response.ok) {
       const body = await response.text();
