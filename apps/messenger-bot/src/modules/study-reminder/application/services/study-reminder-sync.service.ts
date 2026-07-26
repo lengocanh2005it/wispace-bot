@@ -18,6 +18,7 @@ export interface StudyReminderSyncResult {
   mappings: number;
   upserted: number;
   cancelled: number;
+  cancelledOtherPlatforms: number;
   skipped: number;
   failures: Array<{ psid: string; error: string }>;
 }
@@ -37,38 +38,48 @@ export class StudyReminderSyncService {
 
   async syncUpcomingSessions(options?: {
     userId?: number;
+    platform?: string;
   }): Promise<StudyReminderSyncResult> {
+    const platform = options?.platform ?? 'messenger';
     const settings = this.studyReminderScheduleService.getOutboxSettings();
     const horizonEnd = new Date(
       Date.now() + settings.syncHorizonHours * 60 * 60 * 1000,
     );
 
     if (options?.userId) {
-      return this.syncForUser(options.userId, horizonEnd, settings.maxRetries);
+      return this.syncForUser(
+        options.userId,
+        platform,
+        horizonEnd,
+        settings.maxRetries,
+      );
     }
 
     const mappings =
       await this.messengerMappingReader.findActiveMappingsWithPsid();
     const totals = await this.syncMappings(
       mappings,
+      platform,
       horizonEnd,
       settings.maxRetries,
     );
 
     this.logger.log(
-      `Study reminder sync (all): mappings=${mappings.length}, upserted=${totals.upserted}, cancelled=${totals.cancelled}, skipped=${totals.skipped}, failed=${totals.failures.length}`,
+      `Study reminder sync (all, platform=${platform}): mappings=${mappings.length}, upserted=${totals.upserted}, cancelled=${totals.cancelled}, skipped=${totals.skipped}, failed=${totals.failures.length}`,
     );
 
     return {
       scope: 'all',
       linked: true,
       mappings: mappings.length,
+      cancelledOtherPlatforms: 0,
       ...totals,
     };
   }
 
   private async syncForUser(
     userId: number,
+    platform: string,
     horizonEnd: Date,
     maxRetries: number,
   ): Promise<StudyReminderSyncResult> {
@@ -77,7 +88,7 @@ export class StudyReminderSyncService {
 
     if (!mapping?.psid) {
       this.logger.log(
-        `Study reminder sync skipped: userId=${userId} has no active Messenger mapping`,
+        `Study reminder sync skipped: userId=${userId} has no active mapping for platform=${platform}`,
       );
 
       return {
@@ -87,15 +98,27 @@ export class StudyReminderSyncService {
         mappings: 0,
         upserted: 0,
         cancelled: 0,
+        cancelledOtherPlatforms: 0,
         skipped: 1,
         failures: [],
       };
     }
 
-    const totals = await this.syncMappings([mapping], horizonEnd, maxRetries);
+    const cancelledOtherPlatforms =
+      await this.studyReminderJobRepository.cancelJobsFromOtherPlatforms(
+        userId,
+        platform,
+      );
+
+    const totals = await this.syncMappings(
+      [mapping],
+      platform,
+      horizonEnd,
+      maxRetries,
+    );
 
     this.logger.log(
-      `Study reminder sync (userId=${userId}): upserted=${totals.upserted}, cancelled=${totals.cancelled}, failed=${totals.failures.length}`,
+      `Study reminder sync (userId=${userId}, platform=${platform}): upserted=${totals.upserted}, cancelled=${totals.cancelled}, cancelledOtherPlatforms=${cancelledOtherPlatforms}, failed=${totals.failures.length}`,
     );
 
     return {
@@ -103,12 +126,14 @@ export class StudyReminderSyncService {
       userId,
       linked: true,
       mappings: 1,
+      cancelledOtherPlatforms,
       ...totals,
     };
   }
 
   private async syncMappings(
     mappings: UserLink[],
+    platform: string,
     horizonEnd: Date,
     maxRetries: number,
   ): Promise<{
@@ -144,6 +169,7 @@ export class StudyReminderSyncService {
           );
 
           await this.studyReminderJobRepository.upsertPendingJob({
+            platform,
             psid: mapping.psid,
             userId: mapping.userId,
             sessionKey: session.sessionKey,
@@ -160,6 +186,7 @@ export class StudyReminderSyncService {
             mapping.psid,
             activeSessionKeys,
             horizonEnd,
+            platform,
           );
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

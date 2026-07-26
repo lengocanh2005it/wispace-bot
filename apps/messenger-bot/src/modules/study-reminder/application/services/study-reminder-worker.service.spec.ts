@@ -60,6 +60,7 @@ describe('StudyReminderWorkerService', () => {
       deleteTerminalJobsOlderThan: jest.fn().mockResolvedValue(0),
       upsertPendingJob: jest.fn(),
       cancelStaleJobsForPsid: jest.fn(),
+      cancelJobsFromOtherPlatforms: jest.fn(),
       findDueJobs: jest.fn(),
       claimJob: jest.fn(),
       markSent: jest.fn(),

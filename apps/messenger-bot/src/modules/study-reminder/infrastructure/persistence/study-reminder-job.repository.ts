@@ -8,9 +8,6 @@ import {
 } from '../../domain/entities/study-reminder-job.types';
 import { StudyReminderJobRepositoryPort } from '../../domain/repositories/study-reminder-job.repository.port';
 
-/** This repository only ever writes rows for the Messenger bot. */
-const PLATFORM = 'messenger' as const;
-
 @Injectable()
 export class StudyReminderJobRepository implements StudyReminderJobRepositoryPort {
   constructor(
@@ -38,7 +35,7 @@ export class StudyReminderJobRepository implements StudyReminderJobRepositoryPor
   ): Promise<StudyReminderJob> {
     const existing = await manager.findOne(StudyReminderJobEntity, {
       where: {
-        platform: PLATFORM,
+        platform: input.platform,
         externalUserId: input.psid,
         sessionKey: input.sessionKey,
       },
@@ -46,7 +43,7 @@ export class StudyReminderJobRepository implements StudyReminderJobRepositoryPor
 
     if (!existing) {
       const created = manager.create(StudyReminderJobEntity, {
-        platform: PLATFORM,
+        platform: input.platform,
         externalUserId: input.psid,
         userId: input.userId ?? null,
         sessionKey: input.sessionKey,
@@ -108,12 +105,13 @@ export class StudyReminderJobRepository implements StudyReminderJobRepositoryPor
     psid: string,
     activeSessionKeys: string[],
     horizonEnd: Date,
+    platform: string,
   ): Promise<number> {
     const qb = this.jobRepo
       .createQueryBuilder()
       .update(StudyReminderJobEntity)
       .set({ status: 'cancelled' })
-      .where('platform = :platform', { platform: PLATFORM })
+      .where('platform = :platform', { platform })
       .andWhere('external_user_id = :psid', { psid })
       .andWhere('status IN (:...statuses)', {
         statuses: ['pending', 'failed', 'processing'],
@@ -321,6 +319,28 @@ export class StudyReminderJobRepository implements StudyReminderJobRepositoryPor
       .getCount();
   }
 
+  async cancelJobsFromOtherPlatforms(
+    userId: number,
+    currentPlatform: string,
+  ): Promise<number> {
+    if (!userId) {
+      return 0;
+    }
+
+    const result = await this.jobRepo
+      .createQueryBuilder()
+      .update(StudyReminderJobEntity)
+      .set({ status: 'cancelled' })
+      .where('user_id = :userId', { userId })
+      .andWhere('platform != :currentPlatform', { currentPlatform })
+      .andWhere('status IN (:...statuses)', {
+        statuses: ['pending', 'failed', 'processing'],
+      })
+      .execute();
+
+    return result.affected ?? 0;
+  }
+
   private hasScheduleChanged(
     existing: StudyReminderJobEntity,
     input: UpsertStudyReminderJobInput,
@@ -358,6 +378,7 @@ export class StudyReminderJobRepository implements StudyReminderJobRepositoryPor
   private mapEntity(entity: StudyReminderJobEntity): StudyReminderJob {
     return {
       id: entity.id,
+      platform: entity.platform,
       psid: entity.externalUserId,
       userId: entity.userId ?? undefined,
       sessionKey: entity.sessionKey,

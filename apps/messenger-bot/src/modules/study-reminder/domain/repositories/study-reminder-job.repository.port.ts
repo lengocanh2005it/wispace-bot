@@ -6,6 +6,7 @@ export const STUDY_REMINDER_JOB_REPOSITORY = Symbol(
 
 export interface StudyReminderJobRepositoryPort {
   upsertPendingJob(params: {
+    platform: string;
     psid: string;
     userId?: number;
     sessionKey: string;
@@ -19,6 +20,7 @@ export interface StudyReminderJobRepositoryPort {
     psid: string,
     activeSessionKeys: string[],
     horizonEnd: Date,
+    platform: string,
   ): Promise<number>;
 
   findDueJobs(now: Date, minLeadMinutes: number): Promise<StudyReminderJob[]>;
@@ -61,4 +63,9 @@ export interface StudyReminderJobRepositoryPort {
     olderThan: Date,
     limit: number,
   ): Promise<StudyReminderJob[]>;
+
+  cancelJobsFromOtherPlatforms(
+    userId: number,
+    currentPlatform: string,
+  ): Promise<number>;
 }

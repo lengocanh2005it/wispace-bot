@@ -42,6 +42,7 @@ describe('StudyReminderSyncService', () => {
     jobRepo = {
       upsertPendingJob: jest.fn(),
       cancelStaleJobsForPsid: jest.fn().mockResolvedValue(0),
+      cancelJobsFromOtherPlatforms: jest.fn().mockResolvedValue(0),
       findDueJobs: jest.fn(),
       claimJob: jest.fn(),
       markSent: jest.fn(),
@@ -96,6 +97,7 @@ describe('StudyReminderSyncService', () => {
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.upsertPendingJob).toHaveBeenCalledWith({
+        platform: 'messenger',
         psid: 'psid-1',
         userId: 1,
         sessionKey: 'calendar:42',
@@ -110,6 +112,7 @@ describe('StudyReminderSyncService', () => {
         'psid-1',
         ['calendar:42'],
         expect.any(Date),
+        'messenger',
       );
       expect(result).toMatchObject({
         mappings: 1,
@@ -172,6 +175,11 @@ describe('StudyReminderSyncService', () => {
       const result = await service.syncUpcomingSessions({ userId: 42 });
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(jobRepo.cancelJobsFromOtherPlatforms).toHaveBeenCalledWith(
+        42,
+        'messenger',
+      );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(sessionSource.getUpcomingSessions).toHaveBeenCalledWith({
         psid: 'psid-1',
         userId: 42,
@@ -184,6 +192,7 @@ describe('StudyReminderSyncService', () => {
         linked: true,
         mappings: 1,
         upserted: 1,
+        cancelledOtherPlatforms: 0,
       });
     });
 
@@ -200,6 +209,34 @@ describe('StudyReminderSyncService', () => {
 
       expect(result.failures).toHaveLength(1);
       expect(result.failures[0]?.error).toBe('Network error');
+    });
+
+    it('cancels jobs from other platforms before syncing', async () => {
+      const session = makeSession();
+      mappingReader.findActiveMappingByUserId.mockResolvedValue({
+        psid: 'psid-1',
+        userId: 42,
+      });
+      sessionSource.getUpcomingSessions.mockResolvedValue([session]);
+      jobRepo.cancelJobsFromOtherPlatforms.mockResolvedValue(3);
+
+      const result = await service.syncUpcomingSessions({
+        userId: 42,
+        platform: 'discord',
+      });
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(jobRepo.cancelJobsFromOtherPlatforms).toHaveBeenCalledWith(
+        42,
+        'discord',
+      );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(jobRepo.upsertPendingJob).toHaveBeenCalledWith(
+        expect.objectContaining({ platform: 'discord' }),
+      );
+      expect(result).toMatchObject({
+        cancelledOtherPlatforms: 3,
+      });
     });
   });
 });
