@@ -14,6 +14,7 @@ import { MessengerWebhookDeadLetterCronService } from './application/services/me
 import { MessengerWebhookStartupService } from './application/services/messenger-webhook-startup.service';
 import { MessengerReportDeliveryService } from './application/services/messenger-report-delivery.service';
 import { MessengerReminderDeliveryService } from './application/services/messenger-reminder-delivery.service';
+import { WebhookActionExecutorService } from './application/services/webhook-action-executor.service';
 import { MessengerService } from './application/services/messenger.service';
 import { MessengerProfileService } from './infrastructure/meta/messenger-profile.service';
 import { WEBHOOK_DEDUPE_STORE } from './domain/repositories/webhook-dedupe.store.port';
@@ -65,6 +66,7 @@ import { UserLinkingModule } from './user-linking.module';
     MessengerMessageLogCleanupCronService,
     MessengerReportDeliveryService,
     MessengerReminderDeliveryService,
+    WebhookActionExecutorService,
   ],
   exports: [
     MessengerOutboundModule,
