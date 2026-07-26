@@ -18,7 +18,6 @@ export function getKeepAliveAgent(url: string | URL): Agent {
   if (existing) return existing;
 
   const agent = new Agent({
-    keepAlive: true,
     keepAliveTimeout: KEEP_ALIVE_TIMEOUT_MS,
     keepAliveMaxTimeout: KEEP_ALIVE_MAX_TIMEOUT_MS,
     connections: CONNECTIONS_PER_HOST,
@@ -26,6 +25,29 @@ export function getKeepAliveAgent(url: string | URL): Agent {
   });
   agents.set(host, agent);
   return agent;
+}
+
+/**
+ * Wrapper around fetch that attaches a keep-alive undici Agent for the target host.
+ * Uses the dispatcher option which is supported by Node.js native fetch (undici-based).
+ */
+export async function keepAliveFetch(
+  url: string | URL,
+  init?: RequestInit & { timeoutMs?: number },
+): Promise<Response> {
+  const { timeoutMs, ...rest } = init ?? {};
+  const signal = timeoutMs
+    ? AbortSignal.timeout(timeoutMs)
+    : (rest.signal as AbortSignal | undefined);
+
+  // dispatcher is an undici extension supported by Node.js native fetch
+  const opts: RequestInit & { dispatcher?: Agent } = {
+    ...rest,
+    signal,
+    dispatcher: getKeepAliveAgent(url),
+  };
+
+  return fetch(url, opts);
 }
 
 export function closeAllAgents(): Promise<void> {

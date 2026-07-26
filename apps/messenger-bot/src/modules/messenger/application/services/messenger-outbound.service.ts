@@ -16,7 +16,7 @@ import type { MessageSenderPort } from '../ports/message-sender.port';
 import { readMessengerBubbleLimits } from '../utils/messenger-bubble-config.utils';
 import { splitMessengerBubbles } from '../../../../shared/utils/messenger-text.utils';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
-import { getKeepAliveAgent } from '../../../../shared/http/http-agent';
+import { keepAliveFetch } from '../../../../shared/http/http-agent';
 
 export class MessengerApiError extends Error {
   constructor(
@@ -360,7 +360,7 @@ export class MessengerOutboundService implements MessageSenderPort {
 
     let response: Response;
     try {
-      response = await fetch(url, {
+      response = await keepAliveFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -371,8 +371,7 @@ export class MessengerOutboundService implements MessageSenderPort {
           },
           ...payload,
         }),
-        signal: AbortSignal.timeout(sendApiTimeoutMs),
-        dispatcher: getKeepAliveAgent(url),
+        timeoutMs: sendApiTimeoutMs,
       });
     } catch (error) {
       if (error instanceof DOMException && error.name === 'TimeoutError') {

@@ -15,7 +15,7 @@ import type {
   MessengerLinkVerifyFailureReason,
   MessengerLinkVerifyResult,
 } from '../../domain/types/messenger-link-verify.types';
-import { getKeepAliveAgent } from '../../../../shared/http/http-agent';
+import { keepAliveFetch } from '../../../../shared/http/http-agent';
 
 const VERIFY_FAILURE_REASONS: MessengerLinkVerifyFailureReason[] = [
   'NOT_FOUND',
@@ -35,7 +35,7 @@ export class WispaceMessengerTokenVerifyService {
     token: string,
   ): Promise<MessengerLinkVerifyResult> {
     const url = this.getVerifyUrl();
-    const response = await fetch(url, {
+    const response = await keepAliveFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -46,8 +46,7 @@ export class WispaceMessengerTokenVerifyService {
         value: psid.trim(),
         platform: 'messenger',
       }),
-      signal: AbortSignal.timeout(10_000),
-      dispatcher: getKeepAliveAgent(url),
+      timeoutMs: 10_000,
     });
 
     const payload: unknown = await this.readJsonBody(response);
