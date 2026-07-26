@@ -1,49 +1,49 @@
-# Runbook — Scale Giai đoạn B (2 instance)
+# Runbook — Phase B Scale (2 Instances)
 
-Tài liệu **chuẩn bị vận hành** khi POC tăng từ **1 instance** lên **2 instance** NestJS phía sau Nginx — **chưa triển khai** cho đến khi có trigger metric (mục 2).
+**Preparation document** for operating when POC scales from **1 instance** to **2 NestJS instances** behind Nginx — **not yet implemented** until metrics trigger (section 2).
 
-Liên quan: [project-overview.md](./project-overview.md) §10, [chat-rate-limit-quota.md](./chat-rate-limit-quota.md) §H7, [doppler-secrets.md](./doppler-secrets.md), `deploy/nginx/`.
+Related: [project-overview.md](./project-overview.md) §10, [chat-rate-limit-quota.md](./chat-rate-limit-quota.md) §H7, [doppler-secrets.md](./doppler-secrets.md), `deploy/nginx/`.
 
 ---
 
-## 1. Mục tiêu Giai đoạn B
+## 1. Phase B Goals
 
 | | |
 |---|---|
-| **Quy mô** | ~200–800 học viên active; chat dồn giờ (tối, sau thông báo) |
-| **Kiến trúc** | 2 container Nest + Nginx `upstream` + Redis + PostgreSQL dùng chung |
-| **Không đổi** | URL webhook Meta, schema DB, logic trong `src/` |
-| **VPS tham chiếu** | `69.62.74.196` — 2 vCPU, Redis đã chạy (`~/redis`) |
+| **Scale** | ~200–800 active students; peak chat hours (evenings, after announcements) |
+| **Architecture** | 2 Nest containers + Nginx `upstream` + Redis + shared PostgreSQL |
+| **No change** | Meta webhook URL, DB schema, logic in `src/` |
+| **Reference VPS** | `69.62.74.196` — 2 vCPU, Redis already running (`~/redis`) |
 
-**Chia được gì:** nhiều user nhắn **cùng lúc** → 2 pod xử lý webhook / flush chat song song.
+**What scales:** many users messaging **simultaneously** → 2 pods handle webhook / chat flush in parallel.
 
-**Vẫn nghẽn ở:** OpenAI RPM/TPM (2 pod dùng chung API key); nhắc lịch >50 job due/vòng (tuần tự LLM).
+**Still bottlenecked at:** OpenAI RPM/TPM (2 pods share API key); reminders >50 jobs due per loop (LLM sequential).
 
 ---
 
-## 2. Khi nào mới triển khai (trigger)
+## 2. When to Deploy (Trigger)
 
-**Không** bật sớm chỉ vì chuẩn bị. Bật khi **≥2** dấu hiệu sau kéo dài vài ngày:
+**Don't** enable early just because it's prepared. Enable when **≥2** of these signs persist for several days:
 
-| Metric | Ngưỡng gợi ý |
-|--------|----------------|
-| CPU process messenger | >50% trong giờ cao điểm |
-| Latency chat (webhook → reply) | p95 >25–30s (trừ user hết quota) |
-| Log OpenAI | 429 / timeout tăng rõ |
-| Dead-letter webhook | Retry / backlog tăng |
+| Metric | Suggested Threshold |
+|--------|-------------------|
+| Messenger process CPU | >50% during peak hours |
+| Chat latency (webhook → reply) | p95 >25–30s (excluding quota-exceeded users) |
+| OpenAI logs | 429 / timeouts increasing noticeably |
+| Dead-letter webhook | Retries / backlog growing |
 
-**Hiện trạng POC (tham chiếu):** 1 container ~50 MB RAM, CPU ~0% → **giữ 1 instance**; runbook này để sẵn khi cần.
+**Current POC status (reference):** 1 container ~50 MB RAM, CPU ~0% → **keep 1 instance**; this runbook is ready when needed.
 
-Monitor trước khi scale:
+Monitor before scaling:
 
 ```bash
 npm run ops:health
-docker stats messenger-bot --no-stream   # trên VPS
+docker stats messenger-bot --no-stream   # on VPS
 ```
 
 ---
 
-## 3. Sơ đồ mục tiêu
+## 3. Target Diagram
 
 ```text
 Meta webhook
@@ -57,90 +57,90 @@ Meta webhook
             OpenAI / Wispace API / Meta Send API
 ```
 
-- **Không** sticky session — mỗi webhook vào pod bất kỳ.
-- State chat phải nằm **Redis + DB**, không RAM pod đơn lẻ → bắt buộc `CHAT_QUEUE_SHARED=true`.
+- **No** sticky sessions — each webhook goes to any pod.
+- Chat state must live in **Redis + DB**, not single-pod RAM → `CHAT_QUEUE_SHARED=true` required.
 
 ---
 
-## 4. Trade-off — lợi ích vs mất mát
+## 4. Trade-offs — Benefits vs Costs
 
-Phần này trả lời: **scale 2 instance đổi lấy gì, trả giá gì** — để quyết định có đáng bật khi đạt trigger (mục 2).
+This section answers: **what does 2-instance scaling gain you, and what does it cost** — to decide if it's worth enabling when triggers are met (section 2).
 
-### 4.1. Được gì (lợi ích)
+### 4.1. Benefits
 
-| Lợi ích | Giải thích |
-|---------|------------|
-| **Xử lý song song webhook chat** | Nhiều user nhắn cùng lúc → Nginx chia request giữa 2 pod; mỗi pod flush / gọi LLM độc lập cho PSID khác nhau. |
-| **Giảm nguy cơ 1 process quá tải** | CPU / event loop của **một** Node không gánh hết peak (tối, sau thông báo). |
-| **Rolling deploy mềm hơn** | Có thể recreate từng pod; Nginx route sang pod còn sống (khi cấu hình upstream đúng). |
-| **Bật đúng kiến trúc multi-pod** | Redis store đã có — `CHAT_QUEUE_SHARED=true` là bước bắt buộc để chat không vỡ khi LB chia webhook. |
-| **Cron báo cáo có leader** | Chỉ 1 pod chạy schedule 08:00; pod còn lại tập trung webhook. |
+| Benefit | Explanation |
+|---------|-------------|
+| **Parallel webhook handling** | Many users messaging at once → Nginx splits requests between 2 pods; each pod flushes / calls LLM independently for different PSIDs. |
+| **Reduces single-process overload risk** | CPU / event loop of **one** Node doesn't shoulder all peaks (evenings, after announcements). |
+| **Smoother rolling deploys** | Can recreate pods one at a time; Nginx routes to surviving pod (when upstream config is correct). |
+| **Enables proper multi-pod architecture** | Redis store already available — `CHAT_QUEUE_SHARED=true` is required so chat doesn't break when LB splits webhooks. |
+| **Report cron has leader** | Only 1 pod runs 08:00 schedule; other pod focuses on webhooks. |
 
-Lợi ích **rõ nhất** khi **nhiều PSID chat cùng lúc** và **CPU 1 instance** là nút thắt — **không** phải khi chỉ “nhiều học viên đăng ký” mà ít nhắn.
+Benefits are **most clear** when **many PSIDs chat simultaneously** and **single-instance CPU** is the bottleneck — **not** when there are just "many registered students" who rarely message.
 
-### 4.2. Mất / trả giá gì (chi phí)
+### 4.2. Costs / Trade-offs
 
-| Trade-off | Chi tiết |
-|-----------|----------|
-| **Độ phức tạp vận hành** | 2 container, 2 port, Nginx upstream, env leader, health check đôi, rollback phức tạp hơn 1 pod. |
-| **Doppler + Compose** | `.env` chung không đủ — `INSTANCE_ID` override từng service; dễ cấu hình sai leader. |
-| **2 vCPU VPS chia sẻ** | 2 pod + Postgres + Redis + service khác **tranh CPU** — không phải “gấp đôi sức mạnh”. |
-| **RAM & connection DB** | ~2× footprint process app; ~2× connection pool TypeORM tới PostgreSQL. |
-| **Cron / loop chạy 2 lần** | Nhắc lịch dispatch adaptive: **cả 2 pod** poll DB (`claimJob` chống gửi trùng, nhưng **thêm query**). |
-| **OpenAI không nhân đôi** | Cùng API key → **cùng quota RPM/TPM**; 2 pod có thể **đụng 429 sớm hơn** khi peak LLM cao. |
-| **Latency 1 user gần như không đổi** | Vẫn debounce ~2s + LLM ~5–20s — **không** giảm thời gian chờ cá nhân. |
-| **Phụ thuộc Redis bắt buộc** | `CHAT_QUEUE_SHARED=true` — Redis down ảnh hưởng chat multi-pod nặng hơn mode 1 instance (debounce RAM local). |
-| **Debug khó hơn** | Log 2 container; webhook vào pod ngẫu nhiên — cần `INSTANCE_ID` trong log khi điều tra. |
-| **Chi phí triển khai** | PR compose + nginx + deploy script + cutover + theo dõi 48h. |
+| Trade-off | Details |
+|-----------|---------|
+| **Operational complexity** | 2 containers, 2 ports, Nginx upstream, env leader, dual health checks, more complex rollback than 1 pod. |
+| **Doppler + Compose** | Shared `.env` insufficient — `INSTANCE_ID` override per service; easy to misconfigure leader. |
+| **2 vCPU VPS shared** | 2 pods + Postgres + Redis + other services **compete for CPU** — not "double the power". |
+| **RAM & DB connections** | ~2× app process footprint; ~2× TypeORM connection pool to PostgreSQL. |
+| **Cron / loop runs twice** | Reminder adaptive dispatch: **both pods** poll DB (`claimJob` prevents duplicate sends, but **extra queries**). |
+| **OpenAI doesn't double** | Same API key → **same RPM/TPM quota**; 2 pods may hit 429 **sooner** during LLM peaks. |
+| **Single-user latency nearly unchanged** | Still debounce ~2s + LLM ~5–20s — **no** reduction in individual wait time. |
+| **Mandatory Redis dependency** | `CHAT_QUEUE_SHARED=true` — Redis down impacts multi-pod chat more heavily than single-instance mode (RAM-local debounce). |
+| **Harder debugging** | Logs across 2 containers; webhooks hit random pod — need `INSTANCE_ID` in logs when investigating. |
+| **Deployment cost** | PR compose + nginx + deploy script + cutover + 48h monitoring. |
 
-### 4.3. Vẫn không giải quyết được (dù đã 2 instance)
+### 4.3. Still Not Solved (Even with 2 Instances)
 
-| Vấn đề | Ghi chú |
-|--------|---------|
-| OpenAI chậm / 429 | Nâng tier API; **`LlmExecutionService`** (`LLM_MAX_CONCURRENT`, retry) ✓ — multi-pod cần Redis gate sau |
-| >50 nhắc lịch due cùng phút | Vẫn tuần tự LLM, `LIMIT 50`/vòng dispatch. |
-| Sync lịch cron 30 phút | Tải tăng theo số user; advisory lock — không scale bằng thêm pod chat. |
-| Meta Send API | Gần như không phải nút thắt ở quy mô học viên IELTS. |
+| Problem | Notes |
+|---------|-------|
+| OpenAI slow / 429 | Upgrade API tier; **`LlmExecutionService`** (`LLM_MAX_CONCURRENT`, retry) ✓ — multi-pod needs Redis gate later |
+| >50 reminders due in same minute | Still sequential LLM, `LIMIT 50`/dispatch loop |
+| 30-minute full-scan sync cron | Load increases with user count; advisory lock — doesn't scale by adding chat pods |
+| Meta Send API | Almost never a bottleneck at IELTS student scale |
 
-### 4.4. So sánh nhanh
+### 4.4. Quick Comparison
 
-| | 1 instance | 2 instance (Giai đoạn B) |
-|---|-------------|---------------------------|
-| Concurrent webhook | Hạn chế 1 CPU / 1 event loop | Tốt hơn (2 event loop) |
-| Latency 1 user | ~2s debounce + LLM | **Gần như giống** |
-| Độ phức tạp ops | Thấp | Cao hơn |
-| Áp lực OpenAI | 1 luồng | 2 luồng → dễ 429 hơn nếu peak |
-| Chi phí máy | Thấp | Cao hơn (~2 process) |
-| Phù hợp khi | Tải thấp (prod hiện tại) | CPU/webhook peak, chat dồn giờ |
+| | 1 Instance | 2 Instances (Phase B) |
+|---|-------------|------------------------|
+| Concurrent webhooks | Limited by 1 CPU / 1 event loop | Better (2 event loops) |
+| Single-user latency | ~2s debounce + LLM | **Nearly identical** |
+| Ops complexity | Low | Higher |
+| OpenAI pressure | 1 stream | 2 streams → easier 429 at peak |
+| Machine cost | Low | Higher (~2 processes) |
+| Best when | Low load (current prod) | CPU/webhook peak, peak chat hours |
 
-### 4.5. Kết luận thực tế
+### 4.5. Practical Conclusion
 
-**Đổi lấy:** khả năng **chia HTTP / chat concurrent** và **headroom CPU** khi peak.
+**Gains:** ability to **split concurrent HTTP / chat** and **CPU headroom** during peaks.
 
-**Trả giá:** **phức tạp vận hành**, **phụ thuộc Redis**, **~2× tài nguyên process**, **không** cải thiện latency LLM từng user hay nhân đôi quota OpenAI.
+**Pays for:** **operational complexity**, **Redis dependency**, **~2× process resources**, **no** improvement in per-user LLM latency or doubled OpenAI quota.
 
-Với VPS **2 core** và tải **~0% CPU** (tham chiếu prod) → lợi ích **gần bằng 0**, chỉ có chi phí — **giữ 1 instance** cho đến khi metric mục 2 đạt ngưỡng.
+On a **2-core** VPS with **~0% CPU** load (prod reference) → benefits are **near zero**, only costs — **keep 1 instance** until section 2 metrics hit threshold.
 
-**Thay thế nhẹ hơn trước khi scale:** nâng tier OpenAI, theo dõi `npm run ops:health`, tránh deploy giờ cao điểm — đôi khi đủ mà chưa cần pod thứ 2.
+**Lighter alternatives before scaling:** upgrade OpenAI tier, monitor `npm run ops:health`, avoid deploying during peak hours — sometimes sufficient without needing a second pod.
 
 ---
 
-## 5. Điều kiện tiên quyết (checklist trước cutover)
+## 5. Prerequisites (Pre-Cutover Checklist)
 
-- [ ] Redis chạy ổn: `curl -sf http://127.0.0.1:5007/health/redis` → `{"ok":true,...}`
-- [ ] Prod đã có: `REDIS_ENABLED=true`, `CHAT_QUEUE_STORE=redis`, `CHAT_DEDUPE_STORE=redis`, `CHAT_HISTORY_STORE=redis`
+- [ ] Redis stable: `curl -sf http://127.0.0.1:5007/health/redis` → `{"ok":true,...}`
+- [ ] Prod has: `REDIS_ENABLED=true`, `CHAT_QUEUE_STORE=redis`, `CHAT_DEDUPE_STORE=redis`, `CHAT_HISTORY_STORE=redis`
 - [ ] `CHAT_RATE_LIMIT_ENABLED=true`, `ENFORCE_PROD_CHAT_QUOTA=true`
-- [ ] Backup `.env` / Doppler config `prd` (snapshot trước đổi)
-- [ ] Cửa sổ triển khai: **ngoài giờ chat cao** (tránh tối sau thông báo)
-- [ ] Quyền `sudo` trên VPS để `nginx -t && systemctl reload nginx`
+- [ ] Backup `.env` / Doppler config `prd` (snapshot before change)
+- [ ] Deploy window: **outside peak chat hours** (avoid evenings after announcements)
+- [ ] `sudo` access on VPS for `nginx -t && systemctl reload nginx`
 
 ---
 
-## 6. Biến môi trường
+## 6. Environment Variables
 
-### 6.1. Chung (`.env` / Doppler `prd` — **cùng** trên cả 2 pod)
+### 6.1. Shared (`.env` / Doppler `prd` — **same** on both pods)
 
-Thêm hoặc đổi khi scale:
+Add or change when scaling:
 
 ```env
 CHAT_QUEUE_SHARED=true
@@ -149,7 +149,7 @@ CRON_LEADER_ENABLED=true
 CRON_LEADER_INSTANCE_ID=messenger-bot-1
 ```
 
-Giữ nguyên (prod đã có):
+Keep unchanged (already in prod):
 
 ```env
 REDIS_ENABLED=true
@@ -160,52 +160,52 @@ CHAT_HISTORY_STORE=redis
 CHAT_RATE_LIMIT_ENABLED=true
 ```
 
-**Không** đặt `INSTANCE_ID` trong Doppler nếu dùng chung một config — sẽ trùng trên cả 2 pod (xem 6.2).
+**Don't** set `INSTANCE_ID` in Doppler if using shared config — it will be identical on both pods (see 6.2).
 
-### 6.2. Riêng từng pod (override Docker Compose — **bắt buộc**)
+### 6.2. Per-Pod Override (Docker Compose — **Required**)
 
-| Pod | `INSTANCE_ID` | `PORT` (trong container) | Bind host |
+| Pod | `INSTANCE_ID` | `PORT` (inside container) | Bind Host |
 |-----|---------------|--------------------------|-----------|
 | `messenger-bot-1` | `messenger-bot-1` | `5007` | `127.0.0.1:5007` |
 | `messenger-bot-2` | `messenger-bot-2` | `5008` | `127.0.0.1:5008` |
 
-### 6.3. Cron leader — đọc đúng code
+### 6.3. Cron Leader — Reading the Code Correctly
 
-`ReportCronLeaderService` so sánh:
+`ReportCronLeaderService` compares:
 
 ```text
-INSTANCE_ID (pod hiện tại) === CRON_LEADER_INSTANCE_ID (tên leader)
+INSTANCE_ID (current pod) === CRON_LEADER_INSTANCE_ID (leader name)
 ```
 
-| Biến | Pod 1 | Pod 2 |
-|------|-------|-------|
+| Variable | Pod 1 | Pod 2 |
+|----------|-------|-------|
 | `CRON_LEADER_ENABLED` | `true` | `true` |
-| `CRON_LEADER_INSTANCE_ID` | `messenger-bot-1` | `messenger-bot-1` (**giống nhau**) |
-| `INSTANCE_ID` | `messenger-bot-1` | `messenger-bot-2` (**khác nhau**) |
+| `CRON_LEADER_INSTANCE_ID` | `messenger-bot-1` | `messenger-bot-1` (**same**) |
+| `INSTANCE_ID` | `messenger-bot-1` | `messenger-bot-2` (**different**) |
 
-→ Chỉ pod 1 chạy cron **báo cáo 08:00** và **retry dispatch `*/15`**. Pod 2 log: `Report cron skipped on non-leader instance`.
+→ Only pod 1 runs **08:00 report cron** and **`*/15` retry dispatch**. Pod 2 logs: `Report cron skipped on non-leader instance`.
 
-**Cảnh báo:** `CRON_LEADER_ENABLED=true` mà thiếu `CRON_LEADER_INSTANCE_ID` → **cả 2 pod** vẫn chạy cron (có warn log; R4 claim vẫn chống gửi trùng nhưng lãng phí).
+**Warning:** `CRON_LEADER_ENABLED=true` without `CRON_LEADER_INSTANCE_ID` → **both pods** still run cron (with warn log; R4 claim still prevents duplicates but wastes resources).
 
 ### 6.4. Doppler
 
-- Secret chung: `CHAT_QUEUE_SHARED`, `CRON_LEADER_*` — upload lên config `prd`.
-- `INSTANCE_ID` / port pod 2: **không** đưa vào Doppler chung — override trong `docker-compose` từng service.
-- Sau deploy Doppler: webhook `/messenger/ops/doppler-sync` recreate container — đảm bảo compose 2 service vẫn giữ override `INSTANCE_ID`.
+- Shared secrets: `CHAT_QUEUE_SHARED`, `CRON_LEADER_*` — upload to `prd` config.
+- `INSTANCE_ID` / pod 2 port: **don't** put in shared Doppler — override in `docker-compose` per service.
+- After Doppler deploy: webhook `/messenger/ops/doppler-sync` recreates container — ensure compose 2 services still keep `INSTANCE_ID` override.
 
 ---
 
-## 7. Hạ tầng cần thay (khi implement — tham chiếu)
+## 7. Infrastructure Changes (When Implementing — Reference)
 
-> Phần này mô tả **việc sẽ làm**; file repo **chưa** đổi cho đến khi team quyết định triển khai.
+> This section describes **what will be done**; repo files **not yet changed** until team decides to implement.
 
 ### 7.1. Docker Compose
 
-Hiện tại (`docker-compose.prod.yml`): một service, `container_name: messenger-bot` cố định → **không** scale được.
+Current (`docker-compose.prod.yml`): single service, fixed `container_name: messenger-bot` → **can't** scale.
 
-Mục tiêu: hai service `messenger-bot-1` / `messenger-bot-2`, bỏ `container_name` cố định, mỗi service một port host.
+Target: two services `messenger-bot-1` / `messenger-bot-2`, no fixed `container_name`, each service with its own host port.
 
-Khái niệm:
+Concept:
 
 ```yaml
 services:
@@ -217,7 +217,7 @@ services:
       PORT: "5007"
     ports:
       - "127.0.0.1:5007:5007"
-    # volumes, user, group_add — giống service hiện tại
+    # volumes, user, group_add — same as current service
 
   messenger-bot-2:
     image: ${IMAGE}
@@ -229,13 +229,13 @@ services:
       - "127.0.0.1:5008:5008"
 ```
 
-Deploy path VPS: `/home/ngoc_anh/messenger-bot/`.
+VPS deploy path: `/home/ngoc_anh/messenger-bot/`.
 
 ### 7.2. Nginx
 
 File: `/etc/nginx/sites-available/aiassist.aihubproduction.com` (repo: `deploy/nginx/aiassist.aihubproduction.com.conf`).
 
-Thêm `upstream` và thay `proxy_pass`:
+Add `upstream` and change `proxy_pass`:
 
 ```nginx
 upstream messenger_bot {
@@ -245,12 +245,12 @@ upstream messenger_bot {
 
 location = /webhook {
     proxy_pass http://messenger_bot;
-    # giữ client_max_body_size, limit_req, headers như cũ
+    # keep client_max_body_size, limit_req, headers as before
 }
 
 location / {
     proxy_pass http://messenger_bot;
-    # giữ headers như cũ
+    # keep headers as before
 }
 ```
 
@@ -258,112 +258,112 @@ location / {
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-### 7.3. Deploy script (`.github/scripts/vps-deploy.sh`)
+### 7.3. Deploy Script (`.github/scripts/vps-deploy.sh`)
 
-Cần mở rộng khi triển khai thật:
+Needs expansion for real implementation:
 
-- Health check **cả** `:5007` và `:5008` (`/health/db`, `/health/redis`)
-- `docker compose ps` — 2 service healthy
-- Log tail cả 2 container
-
----
-
-## 8. Hành vi từng luồng sau scale
-
-| Luồng | 2 instance |
-|-------|------------|
-| Chat text | Webhook → pod bất kỳ → buffer Redis (`CHAT_QUEUE_SHARED`) → worker poll 2s flush |
-| Dedupe `mid` | Redis — cross-pod |
-| Quota ngày | PostgreSQL atomic (H3) |
-| Báo cáo 08:00 | Chỉ leader `INSTANCE_ID=messenger-bot-1` |
-| Report retry `*/15` | Chỉ leader |
-| Nhắc lịch dispatch | **Cả 2 pod** adaptive loop; `claimJob` — không gửi trùng |
-| Sync study 30 phút | Advisory lock — 1 pod/lần |
-| Evening rollover / cleanup | Advisory lock — 1 pod/lần |
-| Dead-letter webhook 5 phút | Advisory lock — 1 pod/lần |
+- Health check **both** `:5007` and `:5008` (`/health/db`, `/health/redis`)
+- `docker compose ps` — 2 services healthy
+- Log tail both containers
 
 ---
 
-## 9. Quy trình triển khai (draft)
+## 8. Per-Flow Behavior After Scale
 
-### 9.1. Trước cutover
+| Flow | 2 Instances |
+|------|-------------|
+| Chat text | Webhook → any pod → Redis buffer (`CHAT_QUEUE_SHARED`) → worker poll 2s flush |
+| `mid` dedupe | Redis — cross-pod |
+| Daily quota | PostgreSQL atomic (H3) |
+| 08:00 reports | Only leader `INSTANCE_ID=messenger-bot-1` |
+| Report retry `*/15` | Only leader |
+| Reminder dispatch | **Both pods** adaptive loop; `claimJob` — no duplicates |
+| 30-min study sync | Advisory lock — 1 pod/run |
+| Evening rollover / cleanup | Advisory lock — 1 pod/run |
+| Dead-letter webhook 5-min | Advisory lock — 1 pod/run |
+
+---
+
+## 9. Deployment Process (Draft)
+
+### 9.1. Pre-Cutover
 
 1. Snapshot Doppler `prd` + backup `~/messenger-bot/.env`
-2. Merge PR ops (compose + nginx + deploy script) — khi sẵn sàng code
+2. Merge ops PR (compose + nginx + deploy script) — when code is ready
 3. Set Doppler: `CHAT_QUEUE_SHARED=true`, `CRON_LEADER_ENABLED=true`, `CRON_LEADER_INSTANCE_ID=messenger-bot-1`
-4. Deploy image mới + compose 2 service
-5. Cập nhật Nginx upstream → `nginx -t` → reload
+4. Deploy new image + compose 2 services
+5. Update Nginx upstream → `nginx -t` → reload
 
-### 9.2. Sau cutover (15–30 phút)
+### 9.2. Post-Cutover (15–30 minutes)
 
 ```bash
-# Health từng pod
+# Health per pod
 curl -sf http://127.0.0.1:5007/health/db
 curl -sf http://127.0.0.1:5008/health/db
 curl -sf http://127.0.0.1:5007/health/redis
 curl -sf http://127.0.0.1:5008/health/redis
 
-# Qua Nginx
+# Through Nginx
 curl -sf https://aiassist.aihubproduction.com/health/db
 
 # Leader
 docker logs messenger-bot-2 2>&1 | tail -50 | grep -i "Report cron skipped" || true
 
-# Chat thủ công: nhắn Messenger → bot reply; quota tăng
+# Manual chat: send Messenger → bot replies; quota increases
 npm run chat-quota:status -- --psid=<PSID>
 ```
 
-Theo dõi **48h**: CPU, RAM, `npm run ops:health`, log OpenAI 429, dead-letter.
+Monitor for **48h**: CPU, RAM, `npm run ops:health`, OpenAI 429 logs, dead-letter.
 
 ### 9.3. Rollback
 
-1. Nginx: `proxy_pass` lại chỉ `127.0.0.1:5007`
-2. `docker compose stop messenger-bot-2` (hoặc `up` một service)
-3. `.env`: `CHAT_QUEUE_SHARED=false` (tùy chọn nếu về 1 pod)
+1. Nginx: `proxy_pass` back to only `127.0.0.1:5007`
+2. `docker compose stop messenger-bot-2` (or `up` single service)
+3. `.env`: `CHAT_QUEUE_SHARED=false` (optional, back to 1 pod)
 4. `CRON_LEADER_ENABLED=false`
 5. Reload nginx + recreate pod 1
 
-Nếu chat lạ sau rollback: kiểm tra key Redis prefix `chat:*` (chỉ flush khi hiểu impact).
+If chat breaks after rollback: check Redis key prefix `chat:*` (only flush when impact is understood).
 
 ---
 
-## 10. Giới hạn Giai đoạn B (không kỳ vọng quá)
+## 10. Phase B Limits (Manage Expectations)
 
-| Vấn đề | Giai đoạn B | Hướng sau |
-|--------|-------------|-----------|
-| OpenAI 429 khi peak | Có thể vẫn xảy ra | Nâng tier API; tăng `LLM_MAX_CONCURRENT` hoặc Redis gate khi 2 pod |
-| >50 nhắc due cùng phút | Nhắc muộn vài phút | Delayed queue / worker song song (roadmap) |
-| Sync 30 phút full-scan | Tải tăng theo số user | Wispace wire sync API (đã có) |
-| VPS 2 core đầy | Không nên thêm pod 3 | Nâng 4 vCPU hoặc VPS riêng messenger |
+| Problem | Phase B | Future Direction |
+|---------|---------|-----------------|
+| OpenAI 429 at peak | May still occur | Upgrade API tier; increase `LLM_MAX_CONCURRENT` or Redis gate with 2 pods |
+| >50 reminders due same minute | Reminders delayed a few minutes | Delayed queue / parallel workers (roadmap) |
+| 30-min full-scan sync | Load increases with users | WISPACE wire sync API (already done) |
+| VPS 2 cores maxed out | Shouldn't add pod 3 | Upgrade to 4 vCPU or separate VPS for messenger |
 
 ---
 
-## 11. So sánh 1 vs 2 instance (prod hiện tại)
+## 11. 1 vs 2 Instances Comparison (Current Prod)
 
-| | 1 instance (hiện tại) | 2 instance (Giai đoạn B) |
-|---|----------------------|---------------------------|
+| | 1 Instance (Current) | 2 Instances (Phase B) |
+|---|----------------------|------------------------|
 | `CHAT_QUEUE_SHARED` | `false` | `true` |
 | `CRON_LEADER_ENABLED` | `false` | `true` |
 | Nginx | 1 backend `:5007` | `upstream` 5007 + 5008 |
 | Container | `messenger-bot` | `messenger-bot-1`, `messenger-bot-2` |
-| Khi nào | Tải thấp | Trigger mục 2 |
+| When | Low load | Section 2 trigger |
 
-Chi tiết trade-off: mục 4.
+Trade-off details: section 4.
 
 ---
 
-## 12. Việc implement sau (không làm trong bước runbook này)
+## 12. Post-Implementation Tasks (Not in This Runbook Step)
 
-Khi team quyết định triển khai, PR ops-only gồm:
+When team decides to implement, ops-only PR includes:
 
-1. `docker-compose.prod.yml` — 2 service + `INSTANCE_ID` override
+1. `docker-compose.prod.yml` — 2 services + `INSTANCE_ID` override
 2. `deploy/nginx/aiassist.aihubproduction.com.conf` — `upstream`
-3. `.github/scripts/vps-deploy.sh` — health 2 port
-4. `.env.example` — comment `CHAT_QUEUE_SHARED` + `CRON_LEADER_*` khi scale
-5. Tick checklist mục 5 trong runbook này
+3. `.github/scripts/vps-deploy.sh` — health check 2 ports
+4. `.env.example` — comment `CHAT_QUEUE_SHARED` + `CRON_LEADER_*` for scaling
+5. Tick checklist in section 5 of this runbook
 
-**Không** cần sửa `src/` cho scale cơ bản Giai đoạn B.
+**No** `src/` changes needed for basic Phase B scaling.
 
 ---
 
-*Runbook chuẩn bị — chưa deploy production. Cập nhật ngày ghi runbook khi thực hiện cutover thật.*
+*Preparation runbook — not yet deployed to production. Update the date when actual cutover is performed.*

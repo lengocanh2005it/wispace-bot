@@ -12,7 +12,7 @@ disable-model-invocation: true
 2. Edit entity in `apps/messenger-bot/src/infrastructure/database/entities/`.
 3. Create migration in `apps/messenger-bot/src/infrastructure/database/migrations/` with timestamp prefix (match existing files).
 4. Export entity from `apps/messenger-bot/src/infrastructure/database/entities/index.ts` if new.
-5. Run (trong `apps/messenger-bot/`, hoặc `npx turbo run build test --filter=@wispace/messenger-bot...` từ root):
+5. Run (in `apps/messenger-bot/`, or `npx turbo run build test --filter=@wispace/messenger-bot...` from root):
 
 ```bash
 npm run migration:run
@@ -22,23 +22,23 @@ npm run test
 
 ## Constraints
 
-- Migration bảng POC: mappings, logs, jobs, `users` + view `"Users"` (DB dedicated, dùng chung giữa các bot — xem `docs/turborepo-migration-plan.md` Phase 2 về generalize khóa `psid`).
-- **Không** migration bảng Wispace (`UserCalendars`, `"Users"` hub, …) — cache user qua bảng `users` local.
-- Cập nhật `apps/messenger-bot/.env.example` nếu thêm biến môi trường mới (không phải DB column).
+- POC table migrations: mappings, logs, jobs, `users` + view `"Users"` (dedicated DB, shared across bots — see `docs/turborepo-migration-plan.md` Phase 2 for generalizing `psid` key).
+- **Do not** migrate Wispace tables (`UserCalendars`, hub `"Users"`, …) — cache user data via local `users` table.
+- Update `apps/messenger-bot/.env.example` if adding new environment variables (not DB columns).
 
-## Tách DB (ops một lần)
+## DB split (one-time ops)
 
-Prod dùng `DB_NAME=ai_chat_bot_db`. Scripts (chạy trong `apps/messenger-bot/`):
+Prod uses `DB_NAME=ai_chat_bot_db`. Scripts (run in `apps/messenger-bot/`):
 
 ```bash
 DB_PASSWORD=... node scripts/migrate-hub-to-chat-bot-db.mjs
-DB_PASSWORD=... node scripts/drop-poc-tables-old-db.mjs   # sau khi verify app
+DB_PASSWORD=... node scripts/drop-poc-tables-old-db.mjs   # after verifying app
 ```
 
-## Revert (cẩn thận)
+## Revert (use with caution)
 
 ```bash
 npm run migration:revert
 ```
 
-Chỉ khi user yêu cầu rõ — trên DB prod đang dùng (`ai_chat_bot_db`).
+Only when explicitly requested — on prod DB (`ai_chat_bot_db`).

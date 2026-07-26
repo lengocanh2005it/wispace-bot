@@ -1,144 +1,144 @@
 # Zalo Bot MVP — Design Spec
 
-Ngày: 2026-07-20
+Date: 2026-07-20
 Phase: Turborepo migration plan — Phase 4 (`apps/zalo-bot`)
-Tham chiếu: `docs/turborepo-migration-plan.md`, `apps/discord-bot` (Phase 3, dùng làm khuôn mẫu adapter-vào-package-dùng-chung).
+Reference: `docs/turborepo-migration-plan.md`, `apps/discord-bot` (Phase 3, used as the adapter-into-shared-package template).
 
-## 1. Mục tiêu & phạm vi MVP
+## 1. MVP Goals & Scope
 
-Triển khai `apps/zalo-bot` (NestJS app mới trong monorepo) với scope MVP:
+Implement `apps/zalo-bot` (new NestJS app in the monorepo) with MVP scope:
 
-- Webhook nhận tin nhắn từ Zalo Official Account (OA), verify signature, trả lời qua LLM agent dùng chung (`@wispace/llm-agent`).
-- Account-linking: Zalo Login OAuth (PKCE) ↔ WISPACE `userId`, tái dùng `WISPACE_API_VERIFY_TOKEN_URL` như Messenger/Discord.
-- OA access token lifecycle: tự động refresh token (access_token 1h, refresh_token 30 ngày, dùng 1 lần).
+- Webhook receiving messages from Zalo Official Account (OA), verify signature, reply via shared LLM agent (`@wispace/llm-agent`).
+- Account-linking: Zalo Login OAuth (PKCE) ↔ WISPACE `userId`, reusing `WISPACE_API_VERIFY_TOKEN_URL` like Messenger/Discord.
+- OA access token lifecycle: automatic token refresh (access_token 1h, refresh_token 30 days, single-use).
 
-**Ngoài phạm vi MVP này** (ghi nợ kỹ thuật, làm ở phase sau khi có nhu cầu thật):
+**Out of this MVP scope** (technical debt, to be done in a later phase when there is real demand):
 
-- Quota/rate-limit (`packages/chat-metering`) — chưa áp dụng cho Zalo ở MVP.
-- Tool WISPACE thật (goals/calendar/reschedule) — MVP chỉ stub `available: false` như Discord giai đoạn đầu.
-- ZNS (Zalo Notification Service) cho tin ngoài cửa sổ 48h / báo cáo định kỳ — tương đương `register_exam_report_notifications`, cần ngân sách + duyệt template, để phase sau.
-- Debounce/merge tin nhắn liên tiếp (`packages/chat-queue-core`) — xử lý từng tin ngay, không gom.
-- Chat history bền vững/multi-pod — dùng `@wispace/chat-history` in-memory (giống Discord), không Redis.
+- Quota/rate-limit (`packages/chat-metering`) — not applicable to Zalo in MVP.
+- Real WISPACE tools (goals/calendar/reschedule) — MVP only stubs `available: false` like Discord in its initial phase.
+- ZNS (Zalo Notification Service) for messages outside the 48h window / periodic reports — equivalent to `register_exam_report_notifications`, requires budget + template approval, deferred to a later phase.
+- Debounce/merge consecutive messages (`packages/chat-queue-core`) — processes each message immediately, no batching.
+- Persistent chat history / multi-pod — uses `@wispace/chat-history` in-memory (like Discord), no Redis.
 
-## 2. Kiến trúc tổng thể
+## 2. Overall Architecture
 
-`apps/zalo-bot` là NestJS HTTP app (`NestFactory.create`, không phải `createApplicationContext`, vì cần expose cả webhook lẫn OAuth callback qua HTTP). 4 module, theo đúng 4 tầng Clean Architecture (`domain/application/infrastructure/presentation`) như quy ước chung của repo:
+`apps/zalo-bot` is a NestJS HTTP app (`NestFactory.create`, not `createApplicationContext`, because it needs to expose both webhook and OAuth callback via HTTP). 4 modules, following the 4-layer Clean Architecture convention (`domain/application/infrastructure/presentation`) as per repo conventions:
 
 ```
 apps/zalo-bot/src/modules/
-├── zalo-webhook/    # nhận + verify + dispatch webhook event
-├── zalo-chat/        # adapter LLM agent + outbound message
-├── zalo-oauth/       # token OA lifecycle + account-linking Zalo Login
+├── zalo-webhook/    # receive + verify + dispatch webhook events
+├── zalo-chat/        # LLM agent adapter + outbound messages
+├── zalo-oauth/       # OA token lifecycle + Zalo Login account-linking
 └── wispace/          # stub tool handlers (ToolExecutorPort)
 ```
 
-Không import chéo `MessengerModule`/`DiscordModule` từ app khác — mọi thứ dùng chung đi qua `packages/*` (`@wispace/llm-agent`, `@wispace/chat-history`, `@wispace/wispace-client` cho phần header `x-zaloid` đã có sẵn).
+No cross-importing `MessengerModule`/`DiscordModule` from other apps — everything shared goes through `packages/*` (`@wispace/llm-agent`, `@wispace/chat-history`, `@wispace/wispace-client` with the `x-zaloid` header already supported).
 
 ## 3. `modules/zalo-webhook/`
 
-**Trách nhiệm:** nhận HTTP POST từ Zalo, verify tính toàn vẹn, dispatch theo loại sự kiện.
+**Responsibility:** receive HTTP POST from Zalo, verify integrity, dispatch by event type.
 
 - `presentation/controllers/zalo-webhook.controller.ts`: `POST /zalo/webhook`.
-  - Verify header `X-ZEvent-Signature` = `sha256(appId + rawBody + timestamp + oaSecretKey)` trước khi parse JSON. Sai signature → HTTP 401, log cảnh báo, không xử lý tiếp.
-  - Đọc `event_name` để dispatch:
-    - `user_send_text` (và các `user_send_*` khác nếu cần sau) → gọi `ZaloChatService.handleIncomingMessage(senderId, text)`.
-    - `follow` → gửi tin chào mừng + gợi ý link tài khoản WISPACE (kèm link `GET /zalo/oauth/authorize`) qua `ZaloOutboundService`.
-    - `unfollow` → chỉ log, không hành động thêm.
-    - `oa_send_*` (echo do chính OA gửi, kể cả từ OA Admin) → bỏ qua hoàn toàn, tránh vòng lặp xử lý tin của chính mình.
-  - Luôn trả HTTP 200 nhanh sau khi nhận (theo đúng semantics webhook của Zalo — không có response body đặc biệt).
-- `domain/entities/zalo-webhook-event.entity.ts`: type thuần cho payload đã parse (`sender.id`, `user_id_by_app`, `event_name`, `message.text`, `timestamp`...). Không gắn decorator ORM.
+  - Verify header `X-ZEvent-Signature` = `sha256(appId + rawBody + timestamp + oaSecretKey)` before parsing JSON. Invalid signature → HTTP 401, log warning, no further processing.
+  - Read `event_name` for dispatch:
+    - `user_send_text` (and other `user_send_*` if needed later) → call `ZaloChatService.handleIncomingMessage(senderId, text)`.
+    - `follow` → send welcome message + prompt to link WISPACE account (with `GET /zalo/oauth/authorize` link) via `ZaloOutboundService`.
+    - `unfollow` → log only, no further action.
+    - `oa_send_*` (echo from the OA itself, including OA Admin) → skip entirely to avoid self-message processing loops.
+  - Always return HTTP 200 quickly after receiving (per Zalo's webhook semantics — no special response body).
+- `domain/entities/zalo-webhook-event.entity.ts`: plain type for parsed payload (`sender.id`, `user_id_by_app`, `event_name`, `message.text`, `timestamp`, etc.). No ORM decorators.
 
-**Không xử lý ở MVP:** `user_send_image`/`user_send_sticker`/... — log và trả lời mặc định "chỉ hỗ trợ tin nhắn văn bản" nếu nhận được loại khác `user_send_text`.
+**Not handled in MVP:** `user_send_image`/`user_send_sticker`/... — log and reply with a default "text messages only" response if received event type is not `user_send_text`.
 
 ## 4. `modules/zalo-chat/`
 
-**Trách nhiệm:** orchestration chat qua LLM, gửi tin trả lời.
+**Responsibility:** chat orchestration via LLM, send reply messages.
 
-- `application/agent/zalo-agent.service.ts`: adapter mỏng quanh `LlmAgentService` (`@wispace/llm-agent`), theo đúng pattern `MessengerAgentService`/`DiscordAgentService`:
-  - Build system prompt từ `apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt` (load qua `loadSystemPromptFile()`).
-  - Implement các port: `LlmExecutionPort`, `LlmUsageRecorderPort` (ghi nhận nhưng **không** gắn với quota — chỉ log usage để theo dõi, không enforce limit ở MVP), `LlmSafetyEventPort`, `AgentMetricsPort`, `ToolExecutorPort` (trỏ tới `modules/wispace/` stub).
-  - Retry lỗi tạm thời từ OpenAI/provider giống các app khác (`isOpenAiRetryableError`).
-- `application/services/zalo-chat-history.service.ts`: dùng `MemoryChatHistoryStore` từ `@wispace/chat-history` trực tiếp (không NestJS wrapper phức tạp, giống `DiscordChatHistoryService`), đọc TTL/maxMessages qua env riêng của app (`ZALO_CHAT_HISTORY_TTL_MS`, `ZALO_CHAT_HISTORY_MAX_MESSAGES`).
-- **Xử lý từng tin ngay khi webhook nhận được** — không debounce/merge (khác Messenger's `packages/chat-queue-core`).
-- `infrastructure/zalo-outbound.service.ts` (`ZaloOutboundService`): implement `MessageSenderPort`-tương-đương, gọi `POST https://openapi.zalo.me/v3.0/oa/message/cs` (header `access_token` lấy qua `ZaloTokenService.getValidAccessToken()`).
+- `application/agent/zalo-agent.service.ts`: thin adapter around `LlmAgentService` (`@wispace/llm-agent`), following the `MessengerAgentService`/`DiscordAgentService` pattern:
+  - Build system prompt from `apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt` (loaded via `loadSystemPromptFile()`).
+  - Implement ports: `LlmExecutionPort`, `LlmUsageRecorderPort` (logs usage but **not** tied to quota — only tracks usage for monitoring, no enforcement in MVP), `LlmSafetyEventPort`, `AgentMetricsPort`, `ToolExecutorPort` (points to `modules/wispace/` stub).
+  - Retry transient errors from OpenAI/provider like other apps (`isOpenAiRetryableError`).
+- `application/services/zalo-chat-history.service.ts`: uses `MemoryChatHistoryStore` from `@wispace/chat-history` directly (no complex NestJS wrapper, like `DiscordChatHistoryService`), reads TTL/maxMessages from app-specific env vars (`ZALO_CHAT_HISTORY_TTL_MS`, `ZALO_CHAT_HISTORY_MAX_MESSAGES`).
+- **Processes each message immediately when webhook receives it** — no debounce/merge (unlike Messenger's `packages/chat-queue-core`).
+- `infrastructure/zalo-outbound.service.ts` (`ZaloOutboundService`): implements equivalent `MessageSenderPort`, calls `POST https://openapi.zalo.me/v3.0/oa/message/cs` (header `access_token` obtained via `ZaloTokenService.getValidAccessToken()`).
 
-**Xử lý user chưa link tài khoản:** LLM agent vẫn trả lời chat tự do (không gọi được tool WISPACE vì stub trả `available: false`); tool stub tự chèn thông báo gợi ý link tài khoản kèm link OAuth khi phát hiện câu hỏi cần dữ liệu WISPACE — đúng pattern Discord.
+**Unlinked user handling:** LLM agent still replies to free-form chat (cannot call WISPACE tools since stub returns `available: false`); tool stubs automatically insert account-linking prompt with OAuth link when detecting questions that need WISPACE data — same pattern as Discord.
 
 ## 5. `modules/zalo-oauth/`
 
-Tách 2 luồng con độc lập trong cùng module, vì cùng dùng chung `secret_key`/`app_id` của Zalo app.
+Two independent sub-flows within the same module, since they share the Zalo app's `secret_key`/`app_id`.
 
-### 5.1 Token OA lifecycle (server-to-server, không liên quan user cụ thể)
+### 5.1 OA Token Lifecycle (server-to-server, no specific user involved)
 
-- **Entity mới** `zalo_oa_tokens` (migration trong `apps/messenger-bot/src/infrastructure/database/` theo quy ước DB dùng chung, hoặc trong `apps/zalo-bot` nếu app đã có migration riêng — quyết định cụ thể khi viết implementation plan): `id`, `access_token`, `refresh_token`, `access_token_expires_at`, `refresh_token_expires_at`, `updated_at`. Chỉ 1 row (đơn OA), không cần khóa theo `oa_id` ở MVP vì chỉ có 1 OA.
+- **New entity** `zalo_oa_tokens` (migration in `apps/messenger-bot/src/infrastructure/database/` per shared DB conventions, or in `apps/zalo-bot` if the app has its own migrations — specific decision deferred to implementation plan): `id`, `access_token`, `refresh_token`, `access_token_expires_at`, `refresh_token_expires_at`, `updated_at`. Single row only (single OA), no `oa_id` locking needed in MVP since there is only one OA.
 - `ZaloTokenService`:
-  - `getValidAccessToken(): Promise<string>` — đọc row, trả `access_token` nếu còn hạn.
-  - Cron (`@Cron`, mỗi 45 phút, `ZaloTokenRefreshService`): nếu `access_token_expires_at` còn dưới buffer 10 phút → gọi `POST https://oauth.zaloapp.com/v4/access_token` (header `secret_key`, body `grant_type=refresh_token` + `refresh_token` hiện tại + `app_id`) → ghi đè **cả** `access_token` và `refresh_token` mới (refresh_token chỉ dùng được 1 lần — bắt buộc lưu cặp mới mỗi lần refresh, nếu quên sẽ mất khả năng refresh tiếp).
-  - Nếu refresh thất bại (refresh_token hết hạn quá 30 ngày, ví dụ downtime dài) → log lỗi nghiêm trọng (không có tự phục hồi, cần cấp lại token thủ công qua bootstrap).
-- **Bootstrap ban đầu:** lấy `access_token`/`refresh_token` lần đầu là thao tác thủ công 1 lần (chạy OAuth code flow qua Zalo OA admin, hoặc script CLI ad-hoc), ghi vào bảng qua migration data hoặc ops script — **không** tự động hoá vì chỉ chạy đúng 1 lần lúc setup. Ghi rõ trong runbook (`apps/zalo-bot/docs/`).
+  - `getValidAccessToken(): Promise<string>` — reads the row, returns `access_token` if still valid.
+  - Cron (`@Cron`, every 45 minutes, `ZaloTokenRefreshService`): if `access_token_expires_at` has less than 10-minute buffer remaining → call `POST https://oauth.zaloapp.com/v4/access_token` (header `secret_key`, body `grant_type=refresh_token` + current `refresh_token` + `app_id`) → overwrite **both** `access_token` and `refresh_token` with new values (refresh_token is single-use — must save the new pair on every refresh, otherwise you lose the ability to refresh again).
+  - If refresh fails (refresh_token expired for more than 30 days, e.g. long downtime) → log critical error (no automatic recovery, requires manual token re-issuance via bootstrap).
+- **Initial bootstrap:** obtaining `access_token`/`refresh_token` for the first time is a one-time manual operation (run OAuth code flow via Zalo OA admin, or ad-hoc CLI script), written to the table via migration data or ops script — **not** automated since it only runs once during setup. Document in runbook (`apps/zalo-bot/docs/`).
 
-### 5.2 Account-linking Zalo Login OAuth (PKCE, theo user cụ thể)
+### 5.2 Account-linking Zalo Login OAuth (PKCE, per specific user)
 
-- **Entity mới** `zalo_oauth_states`: `state` (PK, string random), `code_verifier`, `created_at`. TTL 10 phút — kiểm tra bằng điều kiện `created_at < now() - interval '10 minutes'` khi query lấy state ở callback (row hết hạn coi như không tồn tại, có thể dọn định kỳ bằng cron riêng hoặc để tồn tại vô hại — quyết định cụ thể ở implementation plan).
-- **Entity mới** `zalo_account_links` (tương đương `discord_account_links`): `zalo_user_id`, `wispace_user_id`, `linked_at`.
+- **New entity** `zalo_oauth_states`: `state` (PK, random string), `code_verifier`, `created_at`. TTL 10 minutes — checked via `created_at < now() - interval '10 minutes'` condition when querying state at callback (expired rows treated as non-existent, can be periodically cleaned via a separate cron or left harmlessly — specific decision in implementation plan).
+- **New entity** `zalo_account_links` (equivalent to `discord_account_links`): `zalo_user_id`, `wispace_user_id`, `linked_at`.
 - `presentation/controllers/zalo-oauth.controller.ts`:
-  - `GET /zalo/oauth/authorize`: sinh `code_verifier` (random string) + `code_challenge` = `base64url(sha256(code_verifier))` (không padding), lưu `{state, code_verifier}` vào `zalo_oauth_states`, redirect user sang Zalo Login authorize URL kèm `code_challenge` + `state`.
-  - `GET /zalo/oauth/callback`: nhận `code` + `state` → tra `zalo_oauth_states` lấy `code_verifier` (báo lỗi nếu không tìm thấy/hết hạn) → `POST https://oauth.zaloapp.com/v4/access_token` (`grant_type=authorization_code`, `code`, `code_verifier`, header `secret_key`) lấy user access_token → `GET https://graph.zalo.me/v2.0/me?fields=id,name` lấy Zalo user `id` → gọi `WISPACE_API_VERIFY_TOKEN_URL` (header `X-Internal-Key`, body `{token: state (hoặc token WISPACE tự sinh, theo đúng contract 3 bot hiện có), value: zaloUserId, platform: 'zalo'}`) lấy `userId` → upsert `zalo_account_links` → xoá `zalo_oauth_states` row đã dùng → gửi tin chào mừng qua `ZaloOutboundService`.
+  - `GET /zalo/oauth/authorize`: generate `code_verifier` (random string) + `code_challenge` = `base64url(sha256(code_verifier))` (no padding), save `{state, code_verifier}` to `zalo_oauth_states`, redirect user to Zalo Login authorize URL with `code_challenge` + `state`.
+  - `GET /zalo/oauth/callback`: receive `code` + `state` → look up `zalo_oauth_states` to get `code_verifier` (error if not found/expired) → `POST https://oauth.zaloapp.com/v4/access_token` (`grant_type=authorization_code`, `code`, `code_verifier`, header `secret_key`) to get user access_token → `GET https://graph.zalo.me/v2.0/me?fields=id,name` to get Zalo user `id` → call `WISPACE_API_VERIFY_TOKEN_URL` (header `X-Internal-Key`, body `{token: state (or self-generated WISPACE token, per the existing 3-bot contract), value: zaloUserId, platform: 'zalo'}`) to get `userId` → upsert `zalo_account_links` → delete used `zalo_oauth_states` row → send welcome message via `ZaloOutboundService`.
 
-**Lưu ý khác Discord:** Zalo Login bắt buộc PKCE (Discord OAuth2 không cần) — đây là lý do cần bảng `zalo_oauth_states` riêng thay vì tái dùng thẳng pattern Discord's OAuth controller.
+**Difference from Discord:** Zalo Login requires PKCE (Discord OAuth2 does not) — this is why a separate `zalo_oauth_states` table is needed instead of directly reusing Discord's OAuth controller pattern.
 
 ## 6. `modules/wispace/`
 
-Stub `ZaloAgentToolsService` implement `ToolExecutorPort` từ `@wispace/llm-agent` — mọi tool trong `AGENT_TOOLS` trả `{ available: false, message: '<thông báo tiếng Việt gợi ý link tài khoản kèm link OAuth>' }` khi `ctx.userId` chưa resolve (chưa link), giống hệt `DiscordAgentToolsService` giai đoạn đầu (trước khi có `modules/wispace/` thật). Khi `ctx.userId` đã có (đã link qua `zalo_account_links`) — **vẫn stub** ở MVP này (làm tool thật là phase sau), nhưng message trả về nên khác đi (ví dụ: "tính năng đang được phát triển" thay vì "chưa liên kết") để phân biệt 2 trạng thái.
+Stub `ZaloAgentToolsService` implementing `ToolExecutorPort` from `@wispace/llm-agent` — all tools in `AGENT_TOOLS` return `{ available: false, message: '<Vietnamese notification prompting account link with OAuth link>' }` when `ctx.userId` is not yet resolved (not linked), identical to `DiscordAgentToolsService` in its initial phase (before `modules/wispace/` was real). When `ctx.userId` is present (linked via `zalo_account_links`) — **still a stub** in this MVP (real tools are for a later phase), but the returned message should differ (e.g. "feature under development" instead of "not yet linked") to distinguish the two states.
 
-## 7. Data flow tóm tắt
+## 7. Data Flow Summary
 
 ```
-User gửi tin → Zalo → POST /zalo/webhook (verify signature)
+User sends message → Zalo → POST /zalo/webhook (verify signature)
   → event_name=user_send_text → ZaloChatService
-    → ZaloAccountLinkService.findUserIdByZaloId(senderId) (có thể null)
-    → LlmAgentService.reply() (ToolExecutorPort = stub, trả available:false nếu chưa link)
-    → ZaloOutboundService.send() (dùng ZaloTokenService.getValidAccessToken())
+    → ZaloAccountLinkService.findUserIdByZaloId(senderId) (may be null)
+    → LlmAgentService.reply() (ToolExecutorPort = stub, returns available:false if not linked)
+    → ZaloOutboundService.send() (uses ZaloTokenService.getValidAccessToken())
 
-User bấm link "Liên kết tài khoản" → GET /zalo/oauth/authorize
-  → redirect Zalo Login → GET /zalo/oauth/callback
-  → verify PKCE, đổi code, lấy zaloUserId, gọi WISPACE verify-token
-  → upsert zalo_account_links → gửi DM chào mừng
+User clicks "Link Account" link → GET /zalo/oauth/authorize
+  → redirect to Zalo Login → GET /zalo/oauth/callback
+  → verify PKCE, exchange code, get zaloUserId, call WISPACE verify-token
+  → upsert zalo_account_links → send DM welcome message
 
-Cron (mỗi 45 phút) → ZaloTokenRefreshService
+Cron (every 45 minutes) → ZaloTokenRefreshService
   → check zalo_oa_tokens.access_token_expires_at
-  → nếu sắp hết hạn: refresh, ghi đè access_token + refresh_token mới
+  → if about to expire: refresh, overwrite access_token + refresh_token with new values
 ```
 
 ## 8. Testing
 
-- Unit test cho: `ZaloWebhookController` (verify signature đúng/sai, dispatch đúng theo `event_name`, bỏ qua `oa_send_*`), `ZaloTokenService`/`ZaloTokenRefreshService` (refresh thành công, refresh thất bại khi refresh_token hết hạn), `ZaloOauthController` (PKCE flow đúng/sai state, verify-token gọi đúng payload), `ZaloAgentToolsService` (2 trạng thái message stub), `ZaloChatService` (gọi LLM agent, dùng chat history đúng TTL).
-- Không có test end-to-end thật ở giai đoạn spec này (cần Zalo OA thật + webhook URL public HTTPS + `WISPACE_API_VERIFY_TOKEN_URL` phản hồi thật) — ghi nợ giống Discord Phase 3.
+- Unit tests for: `ZaloWebhookController` (verify signature correct/incorrect, dispatch correct per `event_name`, skip `oa_send_*`), `ZaloTokenService`/`ZaloTokenRefreshService` (refresh success, refresh failure when refresh_token expired), `ZaloOauthController` (PKCE flow correct/incorrect state, verify-token called with correct payload), `ZaloAgentToolsService` (2 stub message states), `ZaloChatService` (calls LLM agent, uses chat history with correct TTL).
+- No real end-to-end tests at this spec stage (requires real Zalo OA + public HTTPS webhook URL + real `WISPACE_API_VERIFY_TOKEN_URL` response) — deferred like Discord Phase 3.
 
 ## 9. Migration / DB
 
-3 bảng mới (tên cụ thể, migration viết theo `/typeorm-migration` skill khi implement):
+3 new tables (specific names, migration written per the `/typeorm-migration` skill during implementation):
 - `zalo_oa_tokens`
 - `zalo_oauth_states`
 - `zalo_account_links`
 
-Không đổi bảng nào đã có (DB dùng chung, khóa `(platform, external_user_id)` đã generalize từ Phase 2 — Zalo chỉ cần `platform='zalo'` khi có nhu cầu dùng `packages/chat-metering`/`packages/wispace-client` ở phase sau).
+No changes to existing tables (shared DB, the `(platform, external_user_id)` key was already generalized in Phase 2 — Zalo only needs `platform='zalo'` when `packages/chat-metering`/`packages/wispace-client` are needed in a later phase).
 
-## 10. Env mới cần thêm
+## 10. New Env Variables
 
-`ZALO_APP_ID`, `ZALO_APP_SECRET_KEY`, `ZALO_OA_SECRET_KEY` (dùng verify webhook signature, khác `APP_SECRET_KEY` dùng cho OAuth token), `ZALO_CHAT_HISTORY_TTL_MS`, `ZALO_CHAT_HISTORY_MAX_MESSAGES`, `WISPACE_API_VERIFY_TOKEN_URL` (đã có, dùng chung 3 bot).
+`ZALO_APP_ID`, `ZALO_APP_SECRET_KEY`, `ZALO_OA_SECRET_KEY` (used to verify webhook signature, different from `APP_SECRET_KEY` used for OAuth token), `ZALO_CHAT_HISTORY_TTL_MS`, `ZALO_CHAT_HISTORY_MAX_MESSAGES`, `WISPACE_API_VERIFY_TOKEN_URL` (already exists, shared across 3 bots).
 
-## 11. Cải thiện tương lai (ngoài phạm vi MVP này, sắp theo thứ tự ưu tiên đề xuất)
+## 11. Future Improvements (Out of MVP Scope, Prioritized by Suggestion)
 
-Danh sách này mở rộng mục 1 ("ngoài phạm vi MVP") thành lộ trình cụ thể hơn — mỗi mục nên là 1 spec/plan riêng khi thực sự bắt tay làm, không gộp vào MVP hiện tại để tránh phình scope.
+This list expands item 1 ("out of MVP scope") into a more concrete roadmap — each item should be a separate spec/plan when actually starting work, not bundled into the current MVP to avoid scope creep.
 
-1. **Tool WISPACE thật** (`modules/wispace/` từ stub → thật) — `get_user_goals`, `get_learning_progress_report`, `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder` gọi `@wispace/wispace-client` với `idHeader='x-zaloid'` (đã hỗ trợ sẵn từ Phase 3). Làm ngay sau khi MVP account-linking đã chạy ổn định — đây là giá trị lớn nhất mang lại cho user, nên ưu tiên cao nhất trong danh sách này.
-2. **`reschedule_study_session`** — tương đương Discord button confirm/cancel; Zalo OA hỗ trợ nút bấm trong tin nhắn dạng list/template, cần khảo sát API "gửi tin kèm nút" của Zalo (chưa tra trong spec này) trước khi thiết kế chi tiết.
-3. **Quota/rate-limit** (`packages/chat-metering`, `platform='zalo'`) — áp dụng khi lưu lượng chat thật tăng, tái dùng `ChatRateLimitCore`/`LlmUsageRecorderCore`/`LlmSafetyCore` như Discord, cấu hình `MemoryBurstCounter` + `DirectUsageWriter` (bản rút gọn, không BullMQ) làm điểm khởi đầu.
-4. **ZNS (Zalo Notification Service)** — thay thế `register_exam_report_notifications`: tạo + xin duyệt template trước, cân nhắc ngân sách (tính phí theo `price_sdt`/`price_uid` mỗi tin) trước khi cam kết tính năng báo cáo định kỳ ngoài cửa sổ 48h. Phụ thuộc quyết định ngân sách phía WISPACE, không chỉ là việc kỹ thuật.
-5. **Cron báo cáo định kỳ trước ngày thi** (port `ReportCronService` sang Zalo) — chỉ có ý nghĩa sau khi có ZNS (mục 4), nếu không sẽ là tính năng nửa vời giống lý do Discord chưa làm `register_exam_report_notifications`.
-6. **Debounce/merge tin nhắn** (`packages/chat-queue-core`) — nếu người dùng thực tế hay gửi nhiều tin liên tiếp (rời rạc từng câu) gây trải nghiệm reply rời rạc, thêm `DebounceChatQueue` như Messenger.
-7. **Chat history bền vững / multi-pod** — nếu cần scale nhiều instance `apps/zalo-bot`, thay `MemoryChatHistoryStore` bằng backend Redis (đã có sẵn `ChatHistoryStoreResolver` pattern bên Messenger để tham khảo).
-8. **Dọn dẹp `zalo_oauth_states` hết hạn** — hiện MVP chỉ lọc bằng điều kiện thời gian khi query; nếu bảng phình to theo thời gian (nhiều lượt authorize bỏ dở), thêm cron xoá row quá TTL, tương tự stuck-reserved recovery bên `packages/chat-metering`.
-9. **Multi-OA support** — MVP giả định chỉ 1 Official Account (bảng `zalo_oa_tokens` không khóa theo `oa_id`). Nếu WISPACE cần vận hành nhiều OA (ví dụ theo trung tâm/chi nhánh), phải thêm `oa_id` làm khóa và refactor `ZaloTokenService` từ single-row sang lookup theo OA.
-10. **Whitelist / audit table cho quota event** — nếu áp dụng mục 3, cân nhắc thêm các phần Messenger-only hiện có (whitelist UX, `chat_quota_events` audit) nếu Zalo cần độ quan sát tương đương — không bắt buộc, chỉ làm khi có nhu cầu vận hành thực tế.
+1. **Real WISPACE tools** (`modules/wispace/` from stub → real) — `get_user_goals`, `get_learning_progress_report`, `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder` calling `@wispace/wispace-client` with `idHeader='x-zaloid'` (supported since Phase 3). Implement right after MVP account-linking is stable — this is the highest value for users, top priority in this list.
+2. **`reschedule_study_session`** — equivalent to Discord button confirm/cancel; Zalo OA supports list/template-style buttons in messages, requires researching Zalo's "message with button" API (not yet investigated in this spec) before detailed design.
+3. **Quota/rate-limit** (`packages/chat-metering`, `platform='zalo'`) — apply when real chat volume increases, reuse `ChatRateLimitCore`/`LlmUsageRecorderCore`/`LlmSafetyCore` like Discord, start with `MemoryBurstCounter` + `DirectUsageWriter` (lightweight version, no BullMQ).
+4. **ZNS (Zalo Notification Service)** — replaces `register_exam_report_notifications`: create + get template approval first, consider billing (per-message pricing via `price_sdt`/`price_uid`) before committing to periodic report feature outside the 48h window. Depends on WISPACE budget decisions, not just technical implementation.
+5. **Pre-exam periodic report cron** (port `ReportCronService` to Zalo) — only meaningful after ZNS (item 4) exists, otherwise it would be a half-baked feature like why Discord hasn't implemented `register_exam_report_notifications`.
+6. **Debounce/merge messages** (`packages/chat-queue-core`) — if real users frequently send many consecutive messages (discrete sentences) causing disjointed reply experience, add `DebounceChatQueue` like Messenger.
+7. **Persistent chat history / multi-pod** — if scaling to multiple `apps/zalo-bot` instances is needed, replace `MemoryChatHistoryStore` with Redis backend (the `ChatHistoryStoreResolver` pattern already exists in Messenger for reference).
+8. **Clean up expired `zalo_oauth_states`** — currently MVP only filters by time condition on query; if the table grows over time (many abandoned authorize flows), add cron to delete rows past TTL, similar to stuck-reserved recovery in `packages/chat-metering`.
+9. **Multi-OA support** — MVP assumes only one Official Account (the `zalo_oa_tokens` table has no `oa_id` key). If WISPACE needs to operate multiple OAs (e.g. by center/branch), must add `oa_id` as a key and refactor `ZaloTokenService` from single-row to per-OA lookup.
+10. **Whitelist / audit table for quota events** — if item 3 is implemented, consider adding the Messenger-only equivalents (whitelist UX, `chat_quota_events` audit) if Zalo needs equivalent observability — not required, only implement when real operational need arises.

@@ -1,24 +1,24 @@
-# Turborepo monorepo thay vì multi-repo
+# Turborepo monorepo instead of multi-repo
 
-Các bot (Messenger, Discord, Zalo) và shared packages (`llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `study-reminder-core`) sống trong cùng một repo với npm workspaces + Turborepo, thay vì tách thành nhiều repo riêng.
+The bots (Messenger, Discord, Zalo) and shared packages (`llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `study-reminder-core`) live in the same repo with npm workspaces + Turborepo, instead of being split into separate repos.
 
-## Lý do
+## Rationale
 
-- **Shared code tightly coupled**: `llm-agent` và `chat-metering` thay đổi theo cả ba bot. Multi-repo sẽ yêu cầu publish version + bump liên tục, tạo friction cho POC.
-- **Single source of truth cho DB schema**: Một `ai_chat_bot_db` dùng chung. Multi-repo sẽ cần schema registry hoặc cross-repo migrations.
-- **CI/CD đơn giản**: Turborepo cache + filter (`--filter=@wispace/messenger-bot...`) build nhanh chỉ phần liên quan. Không cần monorepo tool khác.
-- **POC stage**: Chưa cần tách team hay独立 deploy pipeline. Khi scale sang production multi-tenant có thể reconsider.
+- **Shared code tightly coupled**: `llm-agent` and `chat-metering` change across all three bots. Multi-repo would require continuous version publishing + bumping, creating friction for the POC.
+- **Single source of truth for DB schema**: One shared `ai_chat_bot_db`. Multi-repo would need a schema registry or cross-repo migrations.
+- **Simple CI/CD**: Turborepo cache + filter (`--filter=@wispace/messenger-bot...`) builds only the relevant parts quickly. No need for another monorepo tool.
+- **POC stage**: No need to split teams or have independent deploy pipelines yet. Can reconsider when scaling to production multi-tenant.
 
-## Phương án đã loại
+## Alternatives considered
 
-| Phương án | Lý do loại |
-|-----------|-----------|
-| Multi-repo (mỗi bot một repo) | Shared packages sẽ cần versioning + publish workflow. Phức tạp quá mức cho POC. |
-| Nx monorepo | Tốt nhưng Turborepo nhẹ hơn, caching nhanh hơn, ecosystem npm-native hơn. |
-| Lerna monorepo | Đã deprecated, Turborepo là successor. |
+| Alternative | Reason for rejection |
+|-------------|---------------------|
+| Multi-repo (one repo per bot) | Shared packages would need versioning + publish workflow. Too complex for the POC. |
+| Nx monorepo | Good but Turborepo is lighter, faster caching, more npm-native ecosystem. |
+| Lerna monorepo | Deprecated, Turborepo is the successor. |
 
-## Hậu quả
+## Consequences
 
-- Tất cả apps và packages build chung một pipeline. CI time tăng nếu repo lớn nhưng hiện tại chấp nhận được.
-- Releases耦tight — một PR có thể ảnh hưởng cả ba bot. Cần careful testing trước khi merge.
-- Khi tách team hoặc cần deploy độc lập, sẽ cần chuyển sang multi-repo hoặc добави independent pipelines.
+- All apps and packages build in a single pipeline. CI time increases if the repo grows large but is acceptable for now.
+- Releases are tightly coupled — one PR can affect all three bots. Careful testing is needed before merging.
+- When teams split or independent deploys are needed, will need to move to multi-repo or add independent pipelines.

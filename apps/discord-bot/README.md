@@ -1,40 +1,40 @@
 # @wispace/discord-bot
 
-Discord bot cho WISPACE — dùng [Necord](https://necord.org/) (wrapper NestJS quanh `discord.js`) + `@wispace/llm-agent` (orchestration LLM function-calling dùng chung mọi bot).
+Discord bot for WISPACE — uses [Necord](https://necord.org/) (NestJS wrapper around `discord.js`) + `@wispace/llm-agent` (shared LLM function-calling orchestration used by all bots).
 
-Xem kế hoạch đầy đủ ở [docs/turborepo-migration-plan.md](../../docs/turborepo-migration-plan.md) — Phase 3.
+See the full plan at [docs/turborepo-migration-plan.md](../../docs/turborepo-migration-plan.md) — Phase 3.
 
-## Trạng thái hiện tại
+## Current status
 
-**Đã có:**
-- Bot online qua Necord, nhận DM + @mention trong server channel (reply qua DM), chống prompt-injection, redirect ngoài phạm vi WISPACE, lịch sử hội thoại in-memory theo process.
-- Quota/rate-limit + LLM usage/safety event persistence dùng chung `@wispace/chat-metering` (platform='discord') — xem `modules/chat-metering/`.
-- Account-linking Discord ↔ WISPACE userId qua OAuth2 (`GET /discord/oauth/callback`) — xem [docs/discord-account-linking.md](docs/discord-account-linking.md).
-- 6/7 tool WISPACE gọi Wispace API thật qua `@wispace/wispace-client` (header `x-discordid`): `get_user_goals`, `get_learning_progress_report`, `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder`, `reschedule_study_session` (confirm/cancel qua Discord button).
-- `GET /health` cho health check deploy.
-- Prompt riêng: `src/shared/prompts/discord-chat.system.txt`.
+**Already done:**
+- Bot online via Necord, receives DMs + @mentions in server channels (replies via DM), prompt-injection protection, redirects out-of-scope WISPACE requests, in-memory conversation history per process.
+- Quota/rate-limit + LLM usage/safety event persistence shared via `@wispace/chat-metering` (platform='discord') — see `modules/chat-metering/`.
+- Account-linking Discord ↔ WISPACE userId via OAuth2 (`GET /discord/oauth/callback`) — see [docs/discord-account-linking.md](docs/discord-account-linking.md).
+- 6/7 WISPACE tools call real Wispace API via `@wispace/wispace-client` (header `x-discordid`): `get_user_goals`, `get_learning_progress_report`, `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder`, `reschedule_study_session` (confirm/cancel via Discord button).
+- `GET /health` for deploy health check.
+- Custom prompt: `src/shared/prompts/discord-chat.system.txt`.
 
-**Chưa có / ghi nợ:**
-- `register_exam_report_notifications` — vẫn stub; chỉ làm khi port cron báo cáo định kỳ sang Discord (không cần opt-in như Messenger vì không có giới hạn 24h).
-- CI/CD deploy VPS — workflow + script + Dockerfile đã viết, chưa chạy thật.
-- Chat history bền vững (Redis/multi-pod) — hiện chỉ Map trong process, mất khi restart.
-- Whitelist, quota-event audit table, stuck-reserved recovery, ops CLI (Messenger-only hiện tại).
+**Not yet done / TODO:**
+- `register_exam_report_notifications` — still a stub; only implement when porting periodic report cron to Discord (no opt-in needed unlike Messenger since there is no 24h messaging limit).
+- CI/CD deploy VPS — workflow + scripts + Dockerfile written, not yet running in production.
+- Persistent chat history (Redis/multi-pod) — currently only a Map in process, lost on restart.
+- Whitelist, quota-event audit table, stuck-reserved recovery, ops CLI (Messenger-only for now).
 
-## Chạy dev
+## Run dev
 
 ```bash
-cp .env.example .env   # điền DISCORD_BOT_TOKEN + OPENAI_API_KEY
-npx turbo run build --filter=@wispace/discord-bot...   # build trước (llm-agent là dependency)
+cp .env.example .env   # fill in DISCORD_BOT_TOKEN + OPENAI_API_KEY
+npx turbo run build --filter=@wispace/discord-bot...   # build first (llm-agent is a dependency)
 npm run start:dev --workspace=apps/discord-bot
 ```
 
-Bot cần các intent sau bật trong Discord Developer Portal (Bot settings):
-- `MESSAGE CONTENT INTENT` — đọc nội dung DM và tin nhắn có @mention ✅
-- `SERVER MEMBERS INTENT` — nhận event `guildMemberAdd` để auto-complete account link ✅
+The bot needs the following intents enabled in the Discord Developer Portal (Bot settings):
+- `MESSAGE CONTENT INTENT` — read DM content and messages with @mentions ✅
+- `SERVER MEMBERS INTENT` — receive `guildMemberAdd` event for auto-complete account link ✅
 
-App giờ chạy như HTTP server (`PORT`, mặc định `3001`) để expose `GET /discord/oauth/callback` cho account-linking.
+The app runs as an HTTP server (`PORT`, default `3001`) to expose `GET /discord/oauth/callback` for account-linking.
 
-## Lệnh thường dùng (trong `apps/discord-bot/`)
+## Common commands (in `apps/discord-bot/`)
 
 ```bash
 npm run start:dev

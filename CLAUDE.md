@@ -1,23 +1,23 @@
 # wispace-bots (Turborepo monorepo)
 
-POC NestJS — bot học viên WISPACE (Messenger nay, Discord/Zalo sắp tới): báo cáo AI + nhắc lịch học + chat AI có rate limit. Turborepo monorepo — xem `docs/turborepo-migration-plan.md` cho lộ trình đầy đủ.
+NestJS POC — WISPACE student bots (Messenger now, Discord/Zalo coming soon): AI reports + study reminders + rate-limited AI chat. Turborepo monorepo — see `docs/turborepo-migration-plan.md` for the full roadmap.
 
-## Cấu trúc
+## Structure
 
 ```
-apps/messenger-bot/    @wispace/messenger-bot — NestJS app hiện tại (đầy đủ tính năng)
-apps/discord-bot/      @wispace/discord-bot — placeholder, chưa triển khai (Phase 3)
-apps/zalo-bot/         @wispace/zalo-bot — placeholder, chưa triển khai (Phase 4)
-packages/llm-agent/    @wispace/llm-agent — orchestration LLM function-calling dùng chung, framework-agnostic
+apps/messenger-bot/    @wispace/messenger-bot — current NestJS app (fully functional)
+apps/discord-bot/      @wispace/discord-bot — placeholder, not yet implemented (Phase 3)
+apps/zalo-bot/         @wispace/zalo-bot — placeholder, not yet implemented (Phase 4)
+packages/llm-agent/    @wispace/llm-agent — shared LLM function-calling orchestration, framework-agnostic
 ```
 
 ## Stack
 
-NestJS 11 · TypeScript · TypeORM · PostgreSQL (`ai_chat_bot_db`, dùng chung giữa các bot) · Redis (optional R0–R4) · LLM Provider Abstraction (adapter pattern) · Meta Graph API · Turborepo + npm workspaces
+NestJS 11 · TypeScript · TypeORM · PostgreSQL (`ai_chat_bot_db`, shared across bots) · Redis (optional R0–R4) · LLM Provider Abstraction (adapter pattern) · Meta Graph API · Turborepo + npm workspaces
 
-## Lệnh thường dùng
+## Common commands
 
-Từ root (chạy qua Turborepo, filter theo app khi cần):
+From root (runs via Turborepo, filter by app when needed):
 
 ```bash
 npx turbo run build
@@ -25,7 +25,7 @@ npx turbo run test --filter=@wispace/messenger-bot...
 npm install --workspace=apps/messenger-bot <pkg>
 ```
 
-Từ `apps/messenger-bot/` (giống lệnh cũ trước migration):
+From `apps/messenger-bot/` (same as pre-migration commands):
 
 ```bash
 npm run start:dev
@@ -36,36 +36,36 @@ npm run study-reminder:jobs
 npm run chat-quota:status
 ```
 
-## Tài liệu đầy đủ
+## Full documentation
 
-- **[AGENTS.md](./AGENTS.md)** — chuẩn cross-agent (Codex, Cursor, Claude)
-- `docs/turborepo-migration-plan.md` — lộ trình monorepo + Discord/Zalo bot, DB đa nền tảng, CI/CD độc lập
-- `apps/messenger-bot/docs/project-overview.md` — kiến trúc, API, cron, runbook quota (nội dung chủ yếu về `apps/messenger-bot`)
+- **[AGENTS.md](./AGENTS.md)** — cross-agent standard (Codex, Cursor, Claude)
+- `docs/turborepo-migration-plan.md` — monorepo roadmap + Discord/Zalo bots, cross-platform DB, independent CI/CD
+- `apps/messenger-bot/docs/project-overview.md` — architecture, API, cron, quota runbook (primarily about `apps/messenger-bot`)
 - `apps/messenger-bot/docs/chat-rate-limit-quota.md` — rate limit V1 + H1–H7
-- `apps/messenger-bot/docs/edge-cases-roadmap.md` — gap toàn POC + phase khắc phục
-- `apps/messenger-bot/docs/study-session-reminder.md` — nhắc lịch học chi tiết
+- `apps/messenger-bot/docs/edge-cases-roadmap.md` — POC-wide gaps + remediation phases
+- `apps/messenger-bot/docs/study-session-reminder.md` — detailed study session reminders
 
-| Path | Mục đích |
-|------|----------|
+| Path | Purpose |
+|------|---------|
 | `.claude/settings.json` | Permissions (allow npm/git; deny `.env`, destructive git) |
-| `.claude/rules/` | Conventions theo module — lazy-load khi sửa file matching |
-| `.claude/skills/` | Workflows gọi bằng `/tên-skill` hoặc auto khi relevant |
+| `.claude/rules/` | Per-module conventions — lazy-load when editing matching files |
+| `.claude/skills/` | Workflows invoked via `/skill-name` or auto-triggered when relevant |
 
-### Skills có sẵn
+### Available skills
 
-| Skill | Khi dùng |
-|-------|----------|
-| `/study-reminder-debug` | Debug jobs nhắc lịch, sync, dispatch |
-| `/typeorm-migration` | Thêm/sửa entity + migration |
-| `/edit-llm-prompt` | Sửa `apps/messenger-bot/src/shared/prompts/*.system.txt` |
-| `/verify` | `format` + `verify` (lint, typecheck, test, build) trước khi xong task |
+| Skill | When to use |
+|-------|-------------|
+| `/study-reminder-debug` | Debug study reminder jobs, sync, dispatch |
+| `/typeorm-migration` | Add/modify entities + migrations |
+| `/edit-llm-prompt` | Edit `apps/messenger-bot/src/shared/prompts/*.system.txt` |
+| `/verify` | `format` + `verify` (lint, typecheck, test, build) before finishing a task |
 
-Rule path-scoped tự load khi sửa file matching — xem bảng Rules bên dưới.
+Path-scoped rules auto-load when editing matching files — see Rules table below.
 
 ### Rules
 
-- `project-conventions.md` — luôn load (quy ước chung)
-- `clean-architecture.md` — **đọc khi sửa `apps/*/src/modules/`** (4 tầng, ports, DI) — bao gồm ranh giới `packages/llm-agent` (framework-agnostic, không import Nest)
+- `project-conventions.md` — always loaded (general conventions)
+- `clean-architecture.md` — **read when editing `apps/*/src/modules/`** (4 layers, ports, DI) — includes `packages/llm-agent` boundaries (framework-agnostic, no Nest imports)
 - `chat-rate-limit.md` — `apps/messenger-bot/src/modules/chat-rate-limit/**`
 - `messenger-chat.md` — `apps/messenger-bot/src/modules/messenger/application/services/messenger-chat*`
 - `study-reminder.md` — `apps/messenger-bot/src/modules/study-reminder/**`
@@ -86,6 +86,6 @@ Five canonical roles mapped to default label names. See `docs/agents/triage-labe
 
 Single-context — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
-## Không làm trừ khi user yêu cầu
+## Do not do unless explicitly requested by user
 
-Commit/push · thêm queue (Redis/Bull) · sửa `.env` · force push
+Commit/push · add queue (Redis/Bull) · modify `.env` · force push

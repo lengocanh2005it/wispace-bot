@@ -1,27 +1,27 @@
-# Outbox pattern cho study_reminder_jobs và report_send_jobs
+# Outbox pattern for study_reminder_jobs and report_send_jobs
 
-Study reminders và report sends dùng outbox pattern: ghi job row vào `study_reminder_jobs` / `report_send_jobs` trước, rồi xử lý bất đồng bộ bằng dispatch loop. Không dùng message queue (Bull, Redis, SQS).
+Study reminders and report sends use the outbox pattern: write a job row to `study_reminder_jobs` / `report_send_jobs` first, then process asynchronously via a dispatch loop. No message queue (Bull, Redis, SQS) is used.
 
-## Lý do
+## Rationale
 
-- **Durability**: Job được ghi vào PostgreSQL trước khi xử lý. Nếu server crash giữa chừng, job vẫn còn trong DB và được retry khi server restart.
-- **Đơn giản cho POC**: Single-instance, không cần distributed queue. Outbox trong DB đủ dùng.
-- **Idempotency tự nhiên**: `sessionKey` unique constraint trên `study_reminder_jobs` đảm bảo sync nhiều lần không tạo duplicate jobs.
-- **Debug dễ**: Query trực tiếp DB để xem jobs, trạng thái, lịch sử. Scripts debug (`npm run study-reminder:jobs`) đọc trực tiếp từ DB.
-- **Không cần thêm infrastructure**: Không cần Redis hay message broker cho POC stage.
+- **Durability**: Jobs are written to PostgreSQL before processing. If the server crashes mid-way, jobs remain in the DB and are retried when the server restarts.
+- **Simple for POC**: Single-instance, no distributed queue needed. Outbox in the DB is sufficient.
+- **Natural idempotency**: `sessionKey` unique constraint on `study_reminder_jobs` ensures syncing multiple times does not create duplicate jobs.
+- **Easy debugging**: Query the DB directly to view jobs, states, and history. Debug scripts (`npm run study-reminder:jobs`) read directly from the DB.
+- **No additional infrastructure needed**: No Redis or message broker required for the POC stage.
 
-## Phương án đã loại
+## Alternatives considered
 
-| Phương án | Lý do loại |
-|-----------|-----------|
-| Bull queue (Redis) | Cần Redis infrastructure. Phức tạp hơn POC cần. Có thể reconsider khi scale. |
-| SQS (AWS) | Vendor lock-in, thêm chi phí, cần AWS account. |
-| In-memory queue | Không durable — server crash mất hết jobs. |
-| Cron polling DB trực tiếp | Không có transaction safety — có thể poll cùng lúc 2 instances. Outbox + claim table giải quyết. |
+| Alternative | Reason for rejection |
+|-------------|---------------------|
+| Bull queue (Redis) | Requires Redis infrastructure. More complex than the POC needs. Can reconsider when scaling. |
+| SQS (AWS) | Vendor lock-in, additional cost, requires AWS account. |
+| In-memory queue | Not durable — server crash loses all jobs. |
+| Direct DB polling via cron | No transaction safety — two instances could poll simultaneously. Outbox + claim table solves this. |
 
-## Hậu quả
+## Consequences
 
-- Dispatch loop phải poll DB địnhinterval (adaptive poll S2). Không real-time như push-based queue.
-- Cần careful transaction: outbox row và business state phải ghi trong cùng transaction.
-- Khi scale multi-pod, cần leader election (`scheduled_report_claims` + advisory lock) để chỉ một pod dispatch. Hiện tại đã implement.
-- Nếu throughput cao (>1000 jobs/giờ), sẽ cần chuyển sang dedicated message queue.
+- The dispatch loop must poll the DB at a set interval (adaptive poll S2). Not as real-time as push-based queue.
+- Requires careful transactions: outbox row and business state must be written in the same transaction.
+- When scaling to multi-pod, leader election is needed (`scheduled_report_claims` + advisory lock) so only one pod dispatches. This is already implemented.
+- If throughput is high (>1000 jobs/hour), will need to migrate to a dedicated message queue.

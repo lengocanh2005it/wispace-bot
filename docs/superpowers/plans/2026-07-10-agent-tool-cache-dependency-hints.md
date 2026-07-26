@@ -2,20 +2,20 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Thêm TTL-based in-memory tool result cache vào `LlmAgentService` và cập nhật tool descriptions với dependency hints.
+**Goal:** Add TTL-based in-memory tool result cache to `LlmAgentService` and update tool descriptions with dependency hints.
 
-**Architecture:** `ToolResultCachePort` interface (optional) được inject vào `LlmAgentPorts`. `InMemoryToolResultCache` là plain Map-based implementation trong package. Agent loop check cache trước khi execute tool, set sau khi success, invalidate `list_study_calendar_entries` sau khi `reschedule_study_session` thành công.
+**Architecture:** `ToolResultCachePort` interface (optional) is injected into `LlmAgentPorts`. `InMemoryToolResultCache` is a plain Map-based implementation in the package. Agent loop checks cache before executing a tool, sets after success, invalidates `list_study_calendar_entries` after `reschedule_study_session` succeeds.
 
 **Tech Stack:** TypeScript, plain Map (no external deps), Jest
 
 ## Global Constraints
 
-- `packages/llm-agent` không import NestJS hoặc TypeORM — chỉ dùng built-in JS
-- Cache là optional — nếu không inject `toolResultCache` thì agent hoạt động như cũ
-- Error results (`{ ok: false }`) không được cache
-- Cache invalidation chỉ scope theo `externalUserId`
-- Chạy tests: `npx turbo run test --filter=@wispace/llm-agent`
-- Chạy full verify: `npx turbo run lint build test --filter=@wispace/messenger-bot... --filter=@wispace/llm-agent`
+- `packages/llm-agent` does not import NestJS or TypeORM — uses built-in JS only
+- Cache is optional — if `toolResultCache` is not injected, the agent works as before
+- Error results (`{ ok: false }`) are not cached
+- Cache invalidation is scoped by `externalUserId`
+- Run tests: `npx turbo run test --filter=@wispace/llm-agent`
+- Run full verify: `npx turbo run lint build test --filter=@wispace/messenger-bot... --filter=@wispace/llm-agent`
 
 ---
 
@@ -28,13 +28,13 @@
 
 **Interfaces:**
 - Produces:
-  - `ToolResultCachePort` interface với `get(key: string): unknown | undefined`, `set(key: string, value: unknown, ttlMs: number): void`, `invalidate(key: string): void`, `invalidatePrefix(prefix: string): void`
+  - `ToolResultCachePort` interface with `get(key: string): unknown | undefined`, `set(key: string, value: unknown, ttlMs: number): void`, `invalidate(key: string): void`, `invalidatePrefix(prefix: string): void`
   - `InMemoryToolResultCache` class implementing `ToolResultCachePort`
-  - `NOOP_TOOL_RESULT_CACHE: ToolResultCachePort` (no-op cho khi không inject)
+  - `NOOP_TOOL_RESULT_CACHE: ToolResultCachePort` (no-op for when not injected)
 
-- [ ] **Step 1: Viết failing tests**
+- [ ] **Step 1: Write failing tests**
 
-Tạo file `packages/llm-agent/src/tool-cache/in-memory-tool-result-cache.spec.ts`:
+Create file `packages/llm-agent/src/tool-cache/in-memory-tool-result-cache.spec.ts`:
 
 ```ts
 import { InMemoryToolResultCache } from './in-memory-tool-result-cache';
@@ -79,7 +79,7 @@ describe('InMemoryToolResultCache', () => {
 });
 ```
 
-- [ ] **Step 2: Chạy test để xác nhận fail**
+- [ ] **Step 2: Run test to confirm it fails**
 
 ```bash
 npx turbo run test --filter=@wispace/llm-agent
@@ -87,9 +87,9 @@ npx turbo run test --filter=@wispace/llm-agent
 
 Expected: FAIL — `Cannot find module './in-memory-tool-result-cache'`
 
-- [ ] **Step 3: Tạo port interface**
+- [ ] **Step 3: Create port interface**
 
-Tạo `packages/llm-agent/src/tool-cache/tool-result-cache.port.ts`:
+Create `packages/llm-agent/src/tool-cache/tool-result-cache.port.ts`:
 
 ```ts
 export interface ToolResultCachePort {
@@ -110,7 +110,7 @@ export const NOOP_TOOL_RESULT_CACHE: ToolResultCachePort = {
 
 - [ ] **Step 4: Implement InMemoryToolResultCache**
 
-Tạo `packages/llm-agent/src/tool-cache/in-memory-tool-result-cache.ts`:
+Create `packages/llm-agent/src/tool-cache/in-memory-tool-result-cache.ts`:
 
 ```ts
 import type { ToolResultCachePort } from './tool-result-cache.port';
@@ -151,13 +151,13 @@ export class InMemoryToolResultCache implements ToolResultCachePort {
 }
 ```
 
-- [ ] **Step 5: Chạy test để xác nhận pass**
+- [ ] **Step 5: Run test to confirm it passes**
 
 ```bash
 npx turbo run test --filter=@wispace/llm-agent
 ```
 
-Expected: tất cả tests PASS
+Expected: all tests PASS
 
 - [ ] **Step 6: Commit**
 
@@ -168,7 +168,7 @@ git commit -m "feat(llm-agent): add ToolResultCachePort + InMemoryToolResultCach
 
 ---
 
-### Task 2: Wire cache vào LlmAgentConfig, LlmAgentPorts, agent.service.ts
+### Task 2: Wire cache into LlmAgentConfig, LlmAgentPorts, agent.service.ts
 
 **Files:**
 - Modify: `packages/llm-agent/src/types.ts`
@@ -177,17 +177,17 @@ git commit -m "feat(llm-agent): add ToolResultCachePort + InMemoryToolResultCach
 
 **Interfaces:**
 - Consumes:
-  - `ToolResultCachePort` từ `./tool-cache/tool-result-cache.port`
-  - `NOOP_TOOL_RESULT_CACHE` từ `./tool-cache/tool-result-cache.port`
+  - `ToolResultCachePort` from `./tool-cache/tool-result-cache.port`
+  - `NOOP_TOOL_RESULT_CACHE` from `./tool-cache/tool-result-cache.port`
 - Produces:
   - `LlmAgentConfig.toolCacheTtlMs?: number`
   - `LlmAgentPorts.toolResultCache?: ToolResultCachePort`
   - Cache key format: `${externalUserId}:${toolName}:${stableHash(argsJson)}`
-  - Invalidation sau `reschedule_study_session` thành công
+  - Invalidation after `reschedule_study_session` succeeds
 
-- [ ] **Step 1: Thêm `toolCacheTtlMs` vào `LlmAgentConfig`**
+- [ ] **Step 1: Add `toolCacheTtlMs` to `LlmAgentConfig`**
 
-Sửa `packages/llm-agent/src/types.ts`:
+Modify `packages/llm-agent/src/types.ts`:
 
 ```ts
 export interface LlmAgentConfig {
@@ -201,16 +201,16 @@ export interface LlmAgentConfig {
 }
 ```
 
-- [ ] **Step 2: Thêm `toolResultCache` vào `LlmAgentPorts` trong `agent.service.ts`**
+- [ ] **Step 2: Add `toolResultCache` to `LlmAgentPorts` in `agent.service.ts`**
 
-Thêm import vào đầu `packages/llm-agent/src/agent.service.ts`:
+Add import at the top of `packages/llm-agent/src/agent.service.ts`:
 
 ```ts
 import type { ToolResultCachePort } from './tool-cache/tool-result-cache.port';
 import { NOOP_TOOL_RESULT_CACHE } from './tool-cache/tool-result-cache.port';
 ```
 
-Sửa `LlmAgentPorts` interface trong cùng file:
+Modify the `LlmAgentPorts` interface in the same file:
 
 ```ts
 export interface LlmAgentPorts<TToolContext> {
@@ -228,12 +228,12 @@ export interface LlmAgentPorts<TToolContext> {
 }
 ```
 
-- [ ] **Step 3: Thêm `stableHash` helper vào `agent.service.ts`**
+- [ ] **Step 3: Add `stableHash` helper to `agent.service.ts`**
 
-Thêm function sau các `const` khai báo ở đầu file (sau `NOOP_LOGGER`):
+Add the following function after the `const` declarations at the top of the file (after `NOOP_LOGGER`):
 
 ```ts
-/** djb2 hash của argsJson string — đủ để phân biệt tool args khác nhau. */
+/** djb2 hash of the argsJson string — sufficient for distinguishing different tool args. */
 function stableHash(str: string): string {
   let hash = 5381;
   for (let i = 0; i < str.length; i++) {
@@ -248,9 +248,9 @@ const RESCHEDULE_TOOL = 'reschedule_study_session';
 const CALENDAR_TOOL = 'list_study_calendar_entries';
 ```
 
-- [ ] **Step 4: Thêm cache logic vào tool execution block trong `reply()`**
+- [ ] **Step 4: Add cache logic to the tool execution block in `reply()`**
 
-Trong method `reply()`, tìm đoạn `const toolResults = await Promise.all(` và thay thế toàn bộ block đó:
+In the `reply()` method, find the line `const toolResults = await Promise.all(` and replace that entire block:
 
 ```ts
       const cache = this.ports.toolResultCache ?? NOOP_TOOL_RESULT_CACHE;
@@ -313,9 +313,9 @@ Trong method `reply()`, tìm đoạn `const toolResults = await Promise.all(` v�
       );
 ```
 
-- [ ] **Step 5: Thêm `getToolCacheTtlMs()` private method vào class**
+- [ ] **Step 5: Add `getToolCacheTtlMs()` private method to the class**
 
-Thêm sau `getMaxToolRounds()`:
+Add after `getMaxToolRounds()`:
 
 ```ts
   private getToolCacheTtlMs(): number {
@@ -326,9 +326,9 @@ Thêm sau `getMaxToolRounds()`:
   }
 ```
 
-- [ ] **Step 6: Viết tests cho cache behavior**
+- [ ] **Step 6: Write tests for cache behavior**
 
-Thêm vào cuối `packages/llm-agent/src/agent.service.spec.ts`:
+Add to the end of `packages/llm-agent/src/agent.service.spec.ts`:
 
 ```ts
   describe('reply() — tool result cache', () => {
@@ -458,13 +458,13 @@ Thêm vào cuối `packages/llm-agent/src/agent.service.spec.ts`:
   });
 ```
 
-- [ ] **Step 7: Chạy tests**
+- [ ] **Step 7: Run tests**
 
 ```bash
 npx turbo run test --filter=@wispace/llm-agent
 ```
 
-Expected: tất cả tests PASS
+Expected: all tests PASS
 
 - [ ] **Step 8: Commit**
 
@@ -475,18 +475,18 @@ git commit -m "feat(llm-agent): wire tool result cache into agent loop"
 
 ---
 
-### Task 3: Export cache types từ index.ts
+### Task 3: Export cache types from index.ts
 
 **Files:**
 - Modify: `packages/llm-agent/src/index.ts`
 
 **Interfaces:**
-- Consumes: `ToolResultCachePort`, `NOOP_TOOL_RESULT_CACHE`, `InMemoryToolResultCache` từ Task 1
-- Produces: public API của package export các types trên
+- Consumes: `ToolResultCachePort`, `NOOP_TOOL_RESULT_CACHE`, `InMemoryToolResultCache` from Task 1
+- Produces: public API of the package exports the above types
 
-- [ ] **Step 1: Thêm exports vào `packages/llm-agent/src/index.ts`**
+- [ ] **Step 1: Add exports to `packages/llm-agent/src/index.ts`**
 
-Thêm vào cuối file (sau block `// --- Provider abstraction (new) ---`):
+Add at the end of the file (after the `// --- Provider abstraction (new) ---` block):
 
 ```ts
 // --- Tool result cache ---
@@ -495,13 +495,13 @@ export { NOOP_TOOL_RESULT_CACHE } from './tool-cache/tool-result-cache.port';
 export { InMemoryToolResultCache } from './tool-cache/in-memory-tool-result-cache';
 ```
 
-- [ ] **Step 2: Build để verify exports compile**
+- [ ] **Step 2: Build to verify exports compile**
 
 ```bash
 npx turbo run build --filter=@wispace/llm-agent
 ```
 
-Expected: build thành công, không có type errors
+Expected: build succeeds, no type errors
 
 - [ ] **Step 3: Commit**
 
@@ -518,37 +518,37 @@ git commit -m "feat(llm-agent): export ToolResultCachePort and InMemoryToolResul
 - Modify: `packages/llm-agent/src/agent.tools.ts`
 
 **Interfaces:**
-- Không thay đổi interface — chỉ update `description` string của 2 tools
+- No interface changes — only update the `description` string of 2 tools
 
-- [ ] **Step 1: Update description của `reschedule_study_session`**
+- [ ] **Step 1: Update description of `reschedule_study_session`**
 
-Trong `packages/llm-agent/src/agent.tools.ts`, tìm tool `reschedule_study_session` và sửa `description`:
+In `packages/llm-agent/src/agent.tools.ts`, find the tool `reschedule_study_session` and modify its `description`:
 
 ```ts
   {
     name: 'reschedule_study_session',
     description:
-      'Luôn gọi `list_study_calendar_entries` trước để lấy `calendarId`. Sau đó chuẩn bị dời buổi học (gửi nút xác nhận cho học viên; chỉ thực hiện sau khi bấm Xác nhận). default_next_day_same_time = cùng giờ, +1 ngày so với buổi đang dời (buổi ngày mai → ngày kia). explicit khi học viên nêu rõ ngày/giờ mới.',
+      'Always call `list_study_calendar_entries` first to get the `calendarId`. Then prepare to reschedule the study session (send a confirmation button to the student; only execute after the student clicks Confirm). default_next_day_same_time = same time, +1 day from the session being rescheduled (tomorrow\'s session → day after tomorrow). explicit when the student specifies a new date/time.',
 ```
 
-- [ ] **Step 2: Update description của `get_upcoming_study_sessions`**
+- [ ] **Step 2: Update description of `get_upcoming_study_sessions`**
 
-Tìm tool `get_upcoming_study_sessions` và sửa `description`:
+Find the tool `get_upcoming_study_sessions` and modify its `description`:
 
 ```ts
   {
     name: 'get_upcoming_study_sessions',
     description:
-      'Danh sách buổi học IELTS Writing sắp tới từ lịch UserCalendar của học viên. Dùng để hiển thị lịch. Nếu cần calendarId để đổi lịch, dùng list_study_calendar_entries thay thế.',
+      'List upcoming IELTS Writing study sessions from the student\'s UserCalendar schedule. Use to display the schedule. If a calendarId is needed for rescheduling, use list_study_calendar_entries instead.',
 ```
 
-- [ ] **Step 3: Chạy full verify**
+- [ ] **Step 3: Run full verify**
 
 ```bash
 npx turbo run lint build test --filter=@wispace/messenger-bot... --filter=@wispace/llm-agent
 ```
 
-Expected: tất cả tasks PASS
+Expected: all tasks PASS
 
 - [ ] **Step 4: Commit**
 
@@ -562,15 +562,15 @@ git commit -m "feat(llm-agent): add dependency hints to tool descriptions (C1)"
 ## Self-Review
 
 **Spec coverage:**
-- ✅ `ToolResultCachePort` interface với `get/set/invalidate/invalidatePrefix` — Task 1
+- ✅ `ToolResultCachePort` interface with `get/set/invalidate/invalidatePrefix` — Task 1
 - ✅ `InMemoryToolResultCache` Map-based implementation — Task 1
 - ✅ `NOOP_TOOL_RESULT_CACHE` no-op — Task 1
 - ✅ Cache key format `${externalUserId}:${toolName}:${stableHash(argsJson)}` — Task 2
 - ✅ `toolCacheTtlMs` configurable, default 5 min — Task 2
-- ✅ Cache check trước execute, set sau success — Task 2
-- ✅ Error results không cache — Task 2 + test
-- ✅ Invalidate `list_study_calendar_entries` sau `reschedule_study_session` — Task 2
+- ✅ Cache check before execute, set after success — Task 2
+- ✅ Error results not cached — Task 2 + test
+- ✅ Invalidate `list_study_calendar_entries` after `reschedule_study_session` — Task 2
 - ✅ Cache optional (agent works without it) — `NOOP_TOOL_RESULT_CACHE` fallback
 - ✅ Export public API — Task 3
 - ✅ Dependency hints `reschedule_study_session` + `get_upcoming_study_sessions` — Task 4
-- ✅ Full verify cuối cùng — Task 4 Step 3
+- ✅ Full final verify — Task 4 Step 3

@@ -1,74 +1,74 @@
-# Thiết kế: Quy ước đặt tên & ownership cho TypeORM migration (multi-bot)
+# Design: TypeORM Migration Naming Convention & Ownership (multi-bot)
 
-**Ngày:** 2026-07-10
-**Phạm vi:** `apps/messenger-bot/src/infrastructure/database/migrations/`, `.claude/rules/database.md`
+**Date:** 2026-07-10
+**Scope:** `apps/messenger-bot/src/infrastructure/database/migrations/`, `.claude/rules/database.md`
 
-## Bối cảnh
+## Context
 
-Repo hiện có 18 migration file trong `apps/messenger-bot/src/infrastructure/database/migrations/`, chạy qua 1 pipeline duy nhất (`messenger-bot` — `docs/turborepo-migration-plan.md` Phase 5 quy định discord-bot **không** tự chạy `migration:run` để tránh race condition). Entity dùng chung giữa các bot (chat-metering: `chat_daily_usage`, `chat_idempotency`, `llm_usage_events`, `llm_safety_events`) đã tách sang `packages/chat-metering/src/entities/` — không trùng lặp.
+The repo currently has 18 migration files in `apps/messenger-bot/src/infrastructure/database/migrations/`, running through a single pipeline (`messenger-bot` — `docs/turborepo-migration-plan.md` Phase 5 specifies discord-bot does **not** run `migration:run` independently to avoid race conditions). Entities shared across bots (chat-metering: `chat_daily_usage`, `chat_idempotency`, `llm_usage_events`, `llm_safety_events`) have already been moved to `packages/chat-metering/src/entities/` — no duplication.
 
-Pain point: tên file/class migration hiện không phản ánh nhất quán platform sở hữu. Đa số có tiền tố `Messenger...` dù một số migration về sau (`CreateC2QuotaAndLlmUsageTables`, `GeneralizePlatformIdentifiers`) đã là bảng cross-platform; `CreateDiscordAccountLinksTable` thì có tiền tố `Discord` nhưng nằm trong cùng folder phẳng, không có gì phân biệt trực quan. Khi Zalo bot triển khai (Phase 4) và team thêm migration mới, tình trạng này sẽ khó lần vết hơn.
+Pain point: migration file/class names do not consistently reflect platform ownership. Most have a `Messenger...` prefix even though some later migrations (`CreateC2QuotaAndLlmUsageTables`, `GeneralizePlatformIdentifiers`) are cross-platform tables; `CreateDiscordAccountLinksTable` has a `Discord` prefix but lives in the same flat folder with no visual distinction. When the Zalo bot is deployed (Phase 4) and the team adds new migrations, this will become harder to trace.
 
-## Ràng buộc quan trọng
+## Key Constraints
 
-TypeORM lưu migration đã chạy trong bảng `migrations` ở prod DB (`ai_chat_bot_db`) theo **tên class**, không theo đường dẫn file. Đổi tên/class của migration đã chạy ở production sẽ khiến TypeORM không nhận diện được là đã chạy → cố chạy lại → lỗi hoặc trùng lặp schema. Do đó **không sửa/đổi tên 18 migration hiện có**.
+TypeORM stores executed migrations in the `migrations` table in the prod DB (`ai_chat_bot_db`) by **class name**, not by file path. Renaming a migration class that has already run in production will cause TypeORM to not recognize it as executed → attempt to re-run → error or schema duplication. Therefore **do not rename/modify any of the 18 existing migrations**.
 
-## Quyết định đã chốt (qua thảo luận)
+## Decisions Made (via discussion)
 
-- Giữ nguyên pipeline tập trung — chỉ `messenger-bot` chạy `migration:run` cho mọi bot.
-- Không tạo package `@wispace/migrations` hay bất kỳ package mới nào — vấn đề là naming/tổ chức, không phải kiến trúc.
-- Không tạo subfolder vật lý (`migrations/shared/`, `migrations/discord/`...) — giữ `data-source.ts` glob đơn giản, tránh rủi ro/độ phức tạp không cần thiết cho lợi ích nhỏ.
+- Keep the centralized pipeline — only `messenger-bot` runs `migration:run` for all bots.
+- Do not create a `@wispace/migrations` package or any new package — the issue is naming/organization, not architecture.
+- Do not create physical subfolders (`migrations/shared/`, `migrations/discord/`...) — keep the `data-source.ts` glob simple, avoid unnecessary risk/complexity for minimal benefit.
 
-## Thiết kế
+## Design
 
-### 1. Quy ước đặt tên cho migration mới (áp dụng từ nay, không hồi tố)
+### 1. Naming Convention for New Migrations (applied from now, not retroactively)
 
-Khi thêm migration mới (Discord, Zalo, hoặc bảng shared mới):
+When adding a new migration (Discord, Zalo, or new shared table):
 
-- **Bảng đặc thù 1 platform** → tiền tố platform trong tên class/file: `Create<Platform><Feature>Table`, ví dụ `CreateZaloAccountLinksTable` (nhất quán với `CreateDiscordAccountLinksTable` đã có).
-- **Bảng cross-platform thật sự** (entity sống trong `packages/*`, theo pattern `chat-metering`) → tên phản ánh domain, **không** gắn tiền tố platform gây hiểu nhầm (không đặt `CreateMessenger...` cho bảng dùng chung). Ví dụ tên miêu tả chức năng thuần: `CreateXyzTable`.
-- Không migrate/đổi tên các file cũ để khớp quy ước — chỉ áp dụng cho file mới.
+- **Platform-specific table** → platform prefix in class/file name: `Create<Platform><Feature>Table`, e.g. `CreateZaloAccountLinksTable` (consistent with existing `CreateDiscordAccountLinksTable`).
+- **Truly cross-platform table** (entity lives in `packages/*`, following the `chat-metering` pattern) → name reflects the domain, **no** misleading platform prefix (do not name `CreateMessenger...` for a shared table). Example: a functionally descriptive name like `CreateXyzTable`.
+- Do not rename/migrate old files to match convention — only applies to new files.
 
-### 2. Bảng tra cứu ownership cho 18 migration hiện có
+### 2. Ownership Lookup Table for 18 Existing Migrations
 
-Thêm một bảng ngắn vào `.claude/rules/database.md` (mục mới, dưới "Thêm migration"), liệt kê từng trong 18 file hiện có thuộc nhóm nào: **Messenger-only** / **Discord** / **Shared (packages/chat-metering)** / **Cross-platform (generalize)**. Đây là tài liệu tra cứu tĩnh, không sửa code.
+Add a short table to `.claude/rules/database.md` (new section, under "Adding migrations"), listing which of the 18 current files belong to which group: **Messenger-only** / **Discord** / **Shared (packages/chat-metering)** / **Cross-platform (generalize)**. This is a static reference document, no code changes.
 
-Phân loại đã verify (đọc `CREATE TABLE`/`ALTER TABLE`/`DROP TABLE` thật trong từng file):
+Classification verified (read actual `CREATE TABLE`/`ALTER TABLE`/`DROP TABLE` in each file):
 
-| Nhóm | File | Bảng chạm tới |
-|------|------|---------------|
+| Group | File | Tables Affected |
+|-------|------|-----------------|
 | Messenger-only | `1717747200000-CreateMessengerTables` | `user_messenger_mappings`, `messenger_message_logs` |
 | Messenger-only | `1717747200001-CreateStudyReminderJobs` | `study_reminder_jobs` |
-| Messenger-only | `1717747200002-CreateMessengerChatRateLimitTables` | `messenger_chat_daily_usage`, `messenger_chat_idempotency` (tiền thân trước khi đổi tên generic ở `chat-metering`) |
+| Messenger-only | `1717747200002-CreateMessengerChatRateLimitTables` | `messenger_chat_daily_usage`, `messenger_chat_idempotency` (predecessors before generic rename in `chat-metering`) |
 | Messenger-only | `1717747200003-CreateMessengerChatSharedQueueTables` | `messenger_chat_queue_buffer`, `messenger_chat_history`, `messenger_chat_webhook_seen` |
 | Messenger-only | `1717747200004-CreateMessengerScheduledReportClaims` | `messenger_scheduled_report_claims` |
 | Messenger-only | `1717747200005-CreateMessengerWebhookDeadLetterTable` | `messenger_webhook_dead_letters` |
 | Messenger-only | `1717747200006-CreateReportSendJobs` | `report_send_jobs` |
-| Messenger-only | `1717747200007-AddMessengerIndexes` | index-only, không tạo bảng mới |
+| Messenger-only | `1717747200007-AddMessengerIndexes` | index-only, no new tables |
 | Messenger-only | `1717747200008-CreateMessengerUsersCacheTable` | `users` (+ view `"Users"`) |
 | Messenger-only | `1717747200009-DropMessengerChatWebhookSeenTable` | drop `messenger_chat_webhook_seen` |
 | Messenger-only | `1717747200010-DropMessengerChatQueueBufferAndHistoryTables` | drop `messenger_chat_queue_buffer`, `messenger_chat_history` |
-| Messenger-only | `1717747200011-TrimUsersCacheToMessengerMappings` | alter `users` (index-only, không tạo bảng) |
-| Messenger-only | `1717747200012-AddUniqueActiveMessengerMappingIndexes` | index-only trên `user_messenger_mappings` |
-| Shared (packages/chat-metering) | `1717747200013-CreateC2QuotaAndLlmUsageTables` | `messenger_chat_events` (tiền thân `chat_quota_events`), `llm_usage_events` |
+| Messenger-only | `1717747200011-TrimUsersCacheToMessengerMappings` | alter `users` (index-only, no new table) |
+| Messenger-only | `1717747200012-AddUniqueActiveMessengerMappingIndexes` | index-only on `user_messenger_mappings` |
+| Shared (packages/chat-metering) | `1717747200013-CreateC2QuotaAndLlmUsageTables` | `messenger_chat_events` (predecessor `chat_quota_events`), `llm_usage_events` |
 | Shared (packages/chat-metering) | `1751029200000-CreateLlmSafetyEventsTable` | `llm_safety_events` |
 | Shared (packages/chat-metering) | `1751029200003-AddLlmUsageEventsCachedTokens` | alter `llm_usage_events` |
-| Cross-platform (generalize) | `1751029200001-GeneralizePlatformIdentifiers` | alter `user_messenger_mappings` → `user_platform_mappings`, đổi tên các bảng chat-metering sang generic (`chat_daily_usage`, `chat_idempotency`, `chat_quota_events`) |
+| Cross-platform (generalize) | `1751029200001-GeneralizePlatformIdentifiers` | alter `user_messenger_mappings` → `user_platform_mappings`, rename chat-metering tables to generic (`chat_daily_usage`, `chat_idempotency`, `chat_quota_events`) |
 | Discord | `1751029200002-CreateDiscordAccountLinksTable` | `discord_account_links` |
 
-### 3. Ghi chú bổ sung trong `database.md`
+### 3. Additional Note in `database.md`
 
-Thêm 1 câu ngắn giải thích lý do không đổi tên migration cũ (ràng buộc TypeORM tracking theo class name) để tránh agent/dev tương lai tự ý rename khi "dọn dẹp".
+Add a short sentence explaining why old migrations are not renamed (TypeORM tracking constraint by class name) to prevent future agents/developers from spontaneously renaming when "cleaning up".
 
-## Ngoài phạm vi
+## Out of Scope
 
-- Không tạo package migration mới.
-- Không tách subfolder vật lý trong `migrations/`.
-- Không đổi cơ chế pipeline (vẫn 1 app chạy migration).
-- Không migrate lại 18 file cũ.
+- No new migration package.
+- No physical subfolders in `migrations/`.
+- No pipeline mechanism changes (still a single app running migrations).
+- No re-migration of 18 old files.
 
-## Kiểm thử / Verify
+## Testing / Verification
 
-Đây là thay đổi tài liệu + quy ước (không đổi code chạy được), nên không cần chạy test. Verify bằng cách:
-- Đọc lại `.claude/rules/database.md` sau khi sửa — đảm bảo không mâu thuẫn với nội dung hiện có.
-- Xác nhận bảng phân loại 18 migration khớp đúng nội dung từng file (đọc file, không đoán) trước khi viết vào doc.
+This is a documentation + convention change (no runtime code changes), so no tests need to be run. Verify by:
+- Re-reading `.claude/rules/database.md` after modification — ensure no contradictions with existing content.
+- Confirming the 18-migration classification table matches actual file contents (read the files, do not guess) before writing to the doc.

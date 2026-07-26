@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Hướng dẫn cho AI coding agents làm việc trong repo **wispace-bots** — Turborepo monorepo cho các bot học viên WISPACE (báo cáo AI + nhắc lịch học + chat AI rate limit). Hiện có `apps/messenger-bot` (đầy đủ tính năng), `apps/discord-bot` (chat + quota/usage/safety qua `packages/chat-metering` + account-linking OAuth2 + 6/7 tool handlers thật qua `packages/wispace-client` xong, kể cả `reschedule_study_session` qua Discord button confirm/cancel — còn `register_exam_report_notifications` stub — Messenger cần nó để lách giới hạn 24h nhắn tin của Meta (Discord không có giới hạn này) và Discord chưa port cron báo cáo định kỳ để dùng tới, xem `docs/turborepo-migration-plan.md` Phase 3), `apps/zalo-bot` (placeholder, chưa triển khai), `packages/llm-agent` (LLM function-calling + provider abstraction dùng chung mọi bot), `packages/chat-metering` (quota/rate-limit + LLM usage/safety event tracking dùng chung mọi bot), `packages/wispace-client` (Wispace API HTTP client goals/scores/calendar dùng chung mọi bot), `packages/chat-history` (in-memory chat history store TTL + turn cap dùng chung mọi bot), `packages/student-report` (sinh báo cáo năng lực học viên — fetch capacity + gọi LLM + fallback + format — dùng chung mọi bot), `packages/chat-queue-core` (debounce/merge state machine theo user, dùng chung mọi bot — idempotency key do từng platform tự resolve ở tầng ingestion), và `packages/study-reminder-core` (hàm thuần tính lịch nhắc học: remind_at, session-started, time label).
+Instructions for AI coding agents working in the **wispace-bots** repo — Turborepo monorepo for WISPACE student bots (AI reports + study reminders + rate-limited AI chat). Currently includes `apps/messenger-bot` (fully functional), `apps/discord-bot` (chat + quota/usage/safety via `packages/chat-metering` + account-linking OAuth2 + 6/7 real tool handlers via `packages/wispace-client`, including `reschedule_study_session` via Discord button confirm/cancel — only `register_exam_report_notifications` is a stub — Messenger needs it to work around Meta's 24h messaging limit (Discord has no such limit) and Discord has not yet ported the periodic report cron to use it, see `docs/turborepo-migration-plan.md` Phase 3), `apps/zalo-bot` (placeholder, not yet implemented), `packages/llm-agent` (LLM function-calling + provider abstraction shared across all bots), `packages/chat-metering` (quota/rate-limit + LLM usage/safety event tracking shared across all bots), `packages/wispace-client` (Wispace API HTTP client for goals/scores/calendar shared across all bots), `packages/chat-history` (in-memory chat history store with TTL + turn cap shared across all bots), `packages/student-report` (student capability report generation — fetch capacity + call LLM + fallback + format — shared across all bots), `packages/chat-queue-core` (per-user debounce/merge state machine shared across all bots — idempotency key resolved by each platform at the ingestion layer), and `packages/study-reminder-core` (pure functions for calculating study reminder schedule: remind_at, session-started, time label).
 
-Đọc file này trước khi sửa code. Chi tiết sâu nằm trong `docs/` — chỉ đọc khi task liên quan. Lộ trình monorepo đầy đủ (Discord/Zalo, DB đa nền tảng, CI/CD độc lập): [docs/turborepo-migration-plan.md](docs/turborepo-migration-plan.md).
+Read this file before modifying code. In-depth details are in `docs/` — only read when relevant to the task. Full monorepo roadmap (Discord/Zalo, cross-platform DB, independent CI/CD): [docs/turborepo-migration-plan.md](docs/turborepo-migration-plan.md).
 
-**Lưu ý đường dẫn:** phần lớn nội dung dưới đây (module, lệnh `npm run ...`, đường dẫn `src/...`) mô tả `apps/messenger-bot/` — chạy các lệnh đó **trong thư mục `apps/messenger-bot/`**, hoặc dùng `npx turbo run <script> --filter=@wispace/messenger-bot...` từ root.
+**Path note:** most of the content below (modules, `npm run ...` commands, `src/...` paths) describes `apps/messenger-bot/` — run those commands **inside `apps/messenger-bot/`**, or use `npx turbo run <script> --filter=@wispace/messenger-bot...` from root.
 
 ---
 
@@ -13,45 +13,45 @@ Hướng dẫn cho AI coding agents làm việc trong repo **wispace-bots** — 
 | | |
 |---|---|
 | **Stack** | NestJS 11, TypeScript, TypeORM, PostgreSQL, LLM Provider Abstraction (adapter pattern) |
-| **Mục tiêu** | Học viên IELTS liên kết `m.me` ↔ WISPACE, nhận báo cáo tiến độ và nhắc buổi học qua Messenger |
-| **Phạm vi** | Backend service nhỏ — **không** full-stack, **không** microservice riêng |
-| **DB** | PostgreSQL **`ai_chat_bot_db`** (dedicated POC); Wispace data qua **HTTP API**; cache tên user: bảng `users` + view `"Users"` |
-| **Nguyên tắc** | Diff nhỏ, tái dùng module hiện có, config qua `.env`; Redis optional (R0–R4) khi scale / VPS |
+| **Goal** | Link IELTS students `m.me` ↔ WISPACE, deliver progress reports and study session reminders via Messenger |
+| **Scope** | Small backend service — **not** full-stack, **not** a standalone microservice |
+| **DB** | PostgreSQL **`ai_chat_bot_db`** (dedicated POC); Wispace data via **HTTP API**; user name cache: `users` table + `"Users"` view |
+| **Principles** | Small diffs, reuse existing modules, config via `.env`; Redis optional (R0–R4) for scale / VPS |
 
 ---
 
 ## Dev environment tips
 
-- Copy `.env.example` → `.env` và điền token thật trước khi chạy sync/cron — hoặc [Doppler](apps/messenger-bot/docs/doppler-secrets.md): `doppler setup` + `npm run start:dev:doppler`.
-- **DB prod:** `DB_NAME=ai_chat_bot_db` (không còn `writing_ai_hub_db`).
-- Webhook Meta cần URL public (ngrok/tunnel) trỏ tới `POST /webhook`.
-- Sau lần deploy đầu: gọi `POST /messenger/profile/setup` (header `X-Internal-Api-Key`) — menu prod chỉ **Đăng ký báo cáo** (báo cáo/nhắc lịch bot gửi tự động).
-- Sửa file trong `apps/messenger-bot/src/shared/prompts/*.system.txt` → **bắt buộc** `npm run build` (Nest copy assets sang `dist/shared/prompts/`).
-- Study reminder: biến `STUDY_REMINDER_*` **bắt buộc** — dùng `readRequiredPositiveNumber`, không hardcode fallback trong code.
-- Wispace API auth: header **`x-psid`** (PSID Messenger) + **`X-Internal-Key`** (`WISPACE_INTERNAL_KEY`); liên kết mapping **bắt buộc** verify token qua **`POST WISPACE_API_VERIFY_TOKEN_URL`** (chung 3 bot, body `{token, value, platform}`; `MESSENGER_LINK_MODE=token`; startup fail nếu thiếu config).
-- Ops HTTP (`/messenger/study-calendar/sync`, `send-reports`, …) cần header **`X-Internal-Api-Key`** hoặc `Authorization: Bearer …` khớp `INTERNAL_API_KEY`.
-- Cron nội bộ (sync 30 phút, dispatch adaptive S2) chạy trong process — không qua API key.
-- Debug jobs nhắc lịch: `npm run study-reminder:jobs` (`--failed`, `--stuck`, `--summary`).
-- Tra quota chat: `npm run chat-quota:status` (`--psid`, `--user-id`, `--date`, `--ops`); rebuild counter: `chat-quota:rebuild` (`--dry-run`).
-- Tra token LLM: `npm run llm-usage:status` (`--psid`, `--feature`, `--ops`); HTTP ops `GET /messenger/ops/llm-usage/summary` (`psid` \| `userId`, `from`, `to`) và `GET /messenger/ops/llm-usage/fleet` (`date`); USD: `LLM_COST_USD_PER_1M_*_GPT_5_4` = `2.50` / `15.00` (OpenAI Standard gpt-5.4); persist qua BullMQ queue `llm-usage-write` khi `REDIS_ENABLED=true`.
-- Cap concurrent LLM calls (1 instance): `LLM_EXECUTION_ENABLED=true`, `LLM_MAX_CONCURRENT` (mặc định `3`) — `LlmExecutionModule`; tắt nhanh: `LLM_EXECUTION_ENABLED=false`.
-- LLM safety: chat free-form chặn prompt-injection trước khi gọi LLM, sanitize history/tool results; dữ liệu ngoài cho reminder/report phải đi qua `prompt-injection.utils` / validate JSON output (`llm-json-output.utils`) trước khi format/gửi.
-- Ops health I1+S1: `npm run ops:health` (cron 09:00 ICT trong app khi `OPS_HEALTH_ALERT_ENABLED=true`).
-- Doppler webhook prod: sửa secret `prd` → `POST /messenger/ops/doppler-sync` tự sync `.env` + restart container ([doppler-secrets.md](apps/messenger-bot/docs/doppler-secrets.md) §4).
-- Audit log cleanup: cron `messenger-message-log-cleanup` — 03:00 ICT mỗi thứ Hai hàng tuần; `MESSENGER_MESSAGE_LOG_RETENTION_DAYS=90` (tắt: `MESSENGER_MESSAGE_LOG_CLEANUP_ENABLED=false`).
-- Redis R0: `REDIS_ENABLED=true` + `REDIS_*` → startup log PING; `GET /health/redis` (503 khi bật mà không kết nối được).
-- Redis R5: `USER_DISPLAY_NAME_CACHE_*` — cache `cache:user:display:{userId}` trước bảng `users` / view `"Users"`.
-- Chat history R1: `CHAT_HISTORY_STORE=redis` (cần `REDIS_ENABLED=true`) \| `memory` (postgres table removed).
-- Webhook dedupe R2: `CHAT_DEDUPE_STORE=redis` \| `memory` (không còn postgres / bảng `messenger_chat_webhook_seen`).
-- Burst counter R3: `CHAT_BURST_STORE=redis` \| `memory` \| `postgres` (mặc định `postgres`).
-- Chat queue R4: `CHAT_QUEUE_STORE=redis` \| `memory` — debounce buffer; `CHAT_QUEUE_SHARED=true` map `redis` (H7 legacy).
-- Bootstrap jobs lần đầu: `npm run study-reminder:sync`.
+- Copy `.env.example` → `.env` and fill in real tokens before running sync/cron — or use [Doppler](apps/messenger-bot/docs/doppler-secrets.md): `doppler setup` + `npm run start:dev:doppler`.
+- **Prod DB:** `DB_NAME=ai_chat_bot_db` (no longer `writing_ai_hub_db`).
+- Meta webhook needs a public URL (ngrok/tunnel) pointing to `POST /webhook`.
+- After first deploy: call `POST /messenger/profile/setup` (header `X-Internal-Api-Key`) — prod menu only has **Register Report** (bot sends reports/reminders automatically).
+- Editing files in `apps/messenger-bot/src/shared/prompts/*.system.txt` → **requires** `npm run build` (Nest copies assets to `dist/shared/prompts/`).
+- Study reminder: `STUDY_REMINDER_*` variables are **required** — use `readRequiredPositiveNumber`, do not hardcode fallbacks in code.
+- Wispace API auth: header **`x-psid`** (Messenger PSID) + **`X-Internal-Key`** (`WISPACE_INTERNAL_KEY`); mapping linkage **requires** token verification via **`POST WISPACE_API_VERIFY_TOKEN_URL`** (shared across 3 bots, body `{token, value, platform}`; `MESSENGER_LINK_MODE=token`; startup fails if config is missing).
+- Ops HTTP (`/messenger/study-calendar/sync`, `send-reports`, …) require header **`X-Internal-Api-Key`** or `Authorization: Bearer …` matching `INTERNAL_API_KEY`.
+- Internal cron (30-minute sync, adaptive S2 dispatch) runs in-process — no API key required.
+- Debug study reminder jobs: `npm run study-reminder:jobs` (`--failed`, `--stuck`, `--summary`).
+- Query chat quota: `npm run chat-quota:status` (`--psid`, `--user-id`, `--date`, `--ops`); rebuild counter: `chat-quota:rebuild` (`--dry-run`).
+- Query LLM tokens: `npm run llm-usage:status` (`--psid`, `--feature`, `--ops`); HTTP ops `GET /messenger/ops/llm-usage/summary` (`psid` \| `userId`, `from`, `to`) and `GET /messenger/ops/llm-usage/fleet` (`date`); USD: `LLM_COST_USD_PER_1M_*_GPT_5_4` = `2.50` / `15.00` (OpenAI Standard gpt-5.4); persisted via BullMQ queue `llm-usage-write` when `REDIS_ENABLED=true`.
+- Cap concurrent LLM calls (single instance): `LLM_EXECUTION_ENABLED=true`, `LLM_MAX_CONCURRENT` (default `3`) — `LlmExecutionModule`; quick disable: `LLM_EXECUTION_ENABLED=false`.
+- LLM safety: free-form chat blocks prompt injection before calling LLM, sanitizes history/tool results; external data for reminders/reports must go through `prompt-injection.utils` / validate JSON output (`llm-json-output.utils`) before formatting/sending.
+- Ops health I1+S1: `npm run ops:health` (cron 09:00 ICT in-app when `OPS_HEALTH_ALERT_ENABLED=true`).
+- Doppler webhook prod: update secret `prd` → `POST /messenger/ops/doppler-sync` auto-syncs `.env` + restarts container ([doppler-secrets.md](apps/messenger-bot/docs/doppler-secrets.md) §4).
+- Audit log cleanup: cron `messenger-message-log-cleanup` — 03:00 ICT every Monday; `MESSENGER_MESSAGE_LOG_RETENTION_DAYS=90` (disable: `MESSENGER_MESSAGE_LOG_CLEANUP_ENABLED=false`).
+- Redis R0: `REDIS_ENABLED=true` + `REDIS_*` → startup logs PING; `GET /health/redis` (503 when enabled but unreachable).
+- Redis R5: `USER_DISPLAY_NAME_CACHE_*` — caches `cache:user:display:{userId}` before querying `users` table / `"Users"` view.
+- Chat history R1: `CHAT_HISTORY_STORE=redis` (requires `REDIS_ENABLED=true`) \| `memory` (postgres table removed).
+- Webhook dedupe R2: `CHAT_DEDUPE_STORE=redis` \| `memory` (no longer using postgres / `messenger_chat_webhook_seen` table).
+- Burst counter R3: `CHAT_BURST_STORE=redis` \| `memory` \| `postgres` (default `postgres`).
+- Chat queue R4: `CHAT_QUEUE_STORE=redis` \| `memory` — debounce buffer; `CHAT_QUEUE_SHARED=true` maps to `redis` (H7 legacy).
+- Bootstrap jobs on first run: `npm run study-reminder:sync`.
 
 ---
 
 ## Build commands
 
-Từ root (Turborepo, build cả `packages/llm-agent` trước theo dependsOn `^build`):
+From root (Turborepo, builds `packages/llm-agent` first via dependsOn `^build`):
 
 ```bash
 npm install
@@ -59,15 +59,15 @@ npx turbo run build --filter=@wispace/messenger-bot...
 npx turbo run test --filter=@wispace/messenger-bot...
 ```
 
-Từ `apps/messenger-bot/` (lệnh dưới đây, giống trước migration):
+From `apps/messenger-bot/` (same as pre-migration commands):
 
 ```bash
 npm run start:dev          # dev server (watch)
 npm run build              # compile + copy prompts → dist/
 npm run start:prod         # node dist/main
-npm run migration:run      # build + chạy TypeORM migrations
-npm run migration:revert   # revert migration cuối
-npm run migration:show     # xem trạng thái migrations
+npm run migration:run      # build + run TypeORM migrations
+npm run migration:revert   # revert last migration
+npm run migration:show     # view migration status
 npm run lint               # eslint --fix
 npm run format             # prettier --write
 npm run format:check       # prettier --check (CI / verify)
@@ -75,23 +75,23 @@ npm run typecheck          # tsc --noEmit
 npm run verify             # format:check + lint + typecheck + test + build
 ```
 
-### Scripts tiện ích (cần `.env` + DB)
+### Utility scripts (require `.env` + DB)
 
 ```bash
 npm run db:inspect
 npm run db:explore-study-schedule
-npm run study-reminder:sync-only    # sync jobs, không migrate
+npm run study-reminder:sync-only    # sync jobs, no migration
 npm run study-reminder:sync         # build + migrate + sync + dispatch
-npm run study-reminder:jobs         # in jobs trong DB (--failed, --stuck, --summary)
+npm run study-reminder:jobs         # print jobs in DB (--failed, --stuck, --summary)
 npm run ops:health                  # I1+S1 combined ops snapshot
-npm run chat-quota:status           # tra quota chat (psid / userId / ngày / --ops)
-npm run chat-quota:rebuild            # rebuild counter từ messenger_chat_events (--dry-run)
-npm run llm-usage:status              # tra token LLM theo feature/psid (--ops)
+npm run chat-quota:status           # query chat quota (psid / userId / date / --ops)
+npm run chat-quota:rebuild            # rebuild counter from messenger_chat_events (--dry-run)
+npm run llm-usage:status              # query LLM tokens by feature/psid (--ops)
 npm run chat-quota:recover-stuck    # H2: refund stuck reserved (optional --dry-run)
-npm run chat-quota:cleanup          # H6: xóa idempotency completed/refunded cũ (optional --dry-run)
-# Ops DB migrate (một lần, cần DB_HOST + DB_USER + DB_PASSWORD):
+npm run chat-quota:cleanup          # H6: delete old completed/refunded idempotency records (optional --dry-run)
+# Ops DB migrate (one-time, requires DB_HOST + DB_USER + DB_PASSWORD):
 node scripts/migrate-hub-to-chat-bot-db.mjs   # writing_ai_hub_db → ai_chat_bot_db
-node scripts/drop-poc-tables-old-db.mjs       # xóa bảng POC + migrations trên DB cũ
+node scripts/drop-poc-tables-old-db.mjs       # drop POC tables + migrations on old DB
 ```
 
 ---
@@ -99,53 +99,53 @@ node scripts/drop-poc-tables-old-db.mjs       # xóa bảng POC + migrations tr�
 ## Testing instructions
 
 ```bash
-npm run test                # Jest, spec trong src/**/*.spec.ts
+npm run test                # Jest, specs in src/**/*.spec.ts
 npm run test:watch
 npm run test:cov
 npm run test:e2e            # test/app.e2e-spec.ts
 ```
 
-**Khi nào thêm/sửa test:**
+**When to add/update tests:**
 
-- Sửa logic tính `remind_at` → cập nhật `study-reminder-schedule.service.spec.ts`
-- Sửa upsert job khi đổi lịch → `study-reminder-job.repository.spec.ts`
-- Sửa guard ops API → `internal-api-key.guard.spec.ts`
-- Sửa parse `ref`/link `m.me` → `poc.constants.spec.ts`
-- Sửa webhook event routing → `messenger-webhook.router.spec.ts`
+- Changing `remind_at` calculation logic → update `study-reminder-schedule.service.spec.ts`
+- Changing job upsert when schedule changes → `study-reminder-job.repository.spec.ts`
+- Changing ops API guard → `internal-api-key.guard.spec.ts`
+- Changing `ref` parsing / `m.me` link → `poc.constants.spec.ts`
+- Changing webhook event routing → `messenger-webhook.router.spec.ts`
 
-Trước khi kết thúc task (sửa code): **bắt buộc** cập nhật agent docs/skills liên quan (mục *Docs & skills khi đổi code*) và chạy test/build.
+Before finishing a task (code changes): **required** to update related agent docs/skills (see *Docs & skills when changing code*) and run tests/build.
 
-**Bắt buộc sau mỗi lần sửa code — khớp CI deploy (theo đúng thứ tự):**
+**Required after every code change — matches CI deploy (in exact order):**
 
 ```bash
-npm ci                     # bắt buộc nếu vừa npm ci --omit=dev
-npm run format:check       # prettier --check — CI fail nếu sai format
+npm ci                     # required if you just ran npm ci --omit=dev
+npm run format:check       # prettier --check — CI fails on format errors
 npm run lint               # eslint --fix
 npm run typecheck          # tsc --noEmit
 npm run test               # Jest — 377 specs
 npm run build              # nest build + copy assets → dist/
 ```
 
-> Chạy thiếu bước nào cũng có thể fail CI. Thứ tự trên khớp jobs `quality` trong `.github/workflows/deploy.yml`.
+> Missing any step may cause CI failure. The order above matches the `quality` jobs in `.github/workflows/deploy.yml`.
 
-**Local đầy đủ (khuyến nghị):** `npm run format` rồi `npm run verify`.
+**Full local verification (recommended):** `npm run format` then `npm run verify`.
 
-Sửa lỗi lint/test/build cho đến khi pass. `npm run test:e2e` cần PostgreSQL thật — không nằm trong gate CI.
+Fix lint/test/build errors until they pass. `npm run test:e2e` requires a real PostgreSQL instance — not included in the CI gate.
 
-### Bẫy thường gặp khi chạy CI
+### Common CI Pitfalls
 
-| Triệu chứng | Nguyên nhân | Fix |
-|-------------|-------------|-----|
-| Jest pass local nhưng CI treo rồi fail sau ~30s | Service có `setInterval` / `setTimeout` chưa clear → open handle | Thêm `OnModuleDestroy` + `clearInterval`; `npm run test` chạy `jest --runInBand` và không dùng `forceExit` |
-| `prettier --check` fail dù local không báo lỗi | File có CRLF (Windows) nhưng Prettier config expect LF | Chạy `npm run format` trước khi commit |
-| `eslint` báo `no-useless-escape` | Regex dùng `\/` hoặc `\-` trong character class | Bỏ backslash: `[/-]` thay `[\/\-]` |
-| Test pass local nhưng fail CI do date/time | CI chạy UTC, local chạy UTC+7 | Không hardcode ngày — dùng `new Date()` hoặc mock `Date.now` |
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Jest passes locally but CI hangs then fails after ~30s | Service has `setInterval` / `setTimeout` not cleared → open handle | Add `OnModuleDestroy` + `clearInterval`; `npm run test` runs `jest --runInBand` and does not use `forceExit` |
+| `prettier --check` fails even though local reports no errors | File has CRLF (Windows) but Prettier config expects LF | Run `npm run format` before committing |
+| `eslint` reports `no-useless-escape` | Regex uses `\/` or `\-` in character class | Remove backslash: `[/-]` instead of `[\/\-]` |
+| Tests pass locally but fail CI due to date/time | CI runs UTC, local runs UTC+7 | Do not hardcode dates — use `new Date()` or mock `Date.now` |
 
-**Quy tắc khi thêm service mới có timer/interval:**
-- `collectDefaultMetrics()` của `prom-client`, `setInterval`, `setTimeout` dài → **bắt buộc** implement `OnModuleDestroy` và clear trong `onModuleDestroy()`
-- Registry `prom-client`: gọi `this.registry.clear()` khi destroy để dọn collectors
+**Rule for adding new services with timer/interval:**
+- `collectDefaultMetrics()` from `prom-client`, `setInterval`, long `setTimeout` → **required** to implement `OnModuleDestroy` and clear in `onModuleDestroy()`
+- `prom-client` Registry: call `this.registry.clear()` on destroy to clean up collectors
 
-Spec hiện có:
+Existing specs:
 
 - `apps/messenger-bot/src/modules/messenger/application/messenger-webhook.router.spec.ts` (37 tests — pure function router)
 - `apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-rate-limit.service.spec.ts`
@@ -165,53 +165,53 @@ Spec hiện có:
 
 ---
 
-## Docs & skills khi đổi code
+## Docs & skills when changing code
 
-Cùng PR/task với code — cập nhật hàng **agent** (không chỉ `docs/` dài) để lần sau AI không làm sai.
+Same PR/task as code — update **agent-facing** docs (not just lengthy `docs/`) so the AI does not make mistakes next time.
 
-| Thay đổi | Cập nhật tối thiểu |
-|----------|-------------------|
-| API ops / webhook / menu Messenger | `apps/messenger-bot/docs/project-overview.md`, `AGENTS.md` (API/cron), `application/messenger-webhook.router.ts` nếu đổi event routing, rule `messenger-chat.md` nếu chat queue |
-| Persistent menu / `profile/setup` | `apps/messenger-bot/docs/project-overview.md`, mục menu trong `AGENTS.md` dev tips |
-| Rate limit / quota / idempotency | `apps/messenger-bot/docs/chat-rate-limit-quota.md`, `.claude/rules/chat-rate-limit.md`, skill `/verify` nếu thêm bước ops |
-| Study reminder / sync / dispatch | `apps/messenger-bot/docs/study-session-reminder.md`, `.claude/rules/study-reminder.md`, skill `/study-reminder-debug` |
-| Entity / migration / tách DB | `.claude/rules/database.md`, skill `/typeorm-migration`, `.env.example` nếu thêm biến |
-| Bỏ fallback DB UserCalendars (I3) | `user-calendar-schedule.service.ts`, `apps/messenger-bot/docs/study-session-reminder.md`, `apps/messenger-bot/docs/edge-cases-roadmap.md` |
-| System prompt LLM | `apps/messenger-bot/src/shared/prompts/*.system.txt`, skill `/edit-llm-prompt` |
+| Change | Minimum update |
+|--------|----------------|
+| Ops API / webhook / Messenger menu | `apps/messenger-bot/docs/project-overview.md`, `AGENTS.md` (API/cron), `application/messenger-webhook.router.ts` if changing event routing, `messenger-chat.md` rule if chat queue |
+| Persistent menu / `profile/setup` | `apps/messenger-bot/docs/project-overview.md`, menu section in `AGENTS.md` dev tips |
+| Rate limit / quota / idempotency | `apps/messenger-bot/docs/chat-rate-limit-quota.md`, `.claude/rules/chat-rate-limit.md`, `/verify` skill if adding ops steps |
+| Study reminder / sync / dispatch | `apps/messenger-bot/docs/study-session-reminder.md`, `.claude/rules/study-reminder.md`, `/study-reminder-debug` skill |
+| Entity / migration / DB split | `.claude/rules/database.md`, `/typeorm-migration` skill, `.env.example` if adding variables |
+| Remove DB UserCalendars fallback (I3) | `user-calendar-schedule.service.ts`, `apps/messenger-bot/docs/study-session-reminder.md`, `apps/messenger-bot/docs/edge-cases-roadmap.md` |
+| LLM system prompt | `apps/messenger-bot/src/shared/prompts/*.system.txt`, `/edit-llm-prompt` skill |
 | Deploy / CI / VPS path | `.github/workflows/deploy.yml`, `apps/messenger-bot/docs/c2-master-implementation-plan.md`, `apps/messenger-bot/docs/doppler-secrets.md`, `apps/messenger-bot/docs/scale-phase-b-runbook.md`, `deploy/nginx/` |
-| Env mới | `.env.example` + dòng tương ứng trong `apps/messenger-bot/docs/project-overview.md` hoặc `AGENTS.md` |
-| Webhook Meta signature / `MESSENGER_APP_SECRET` | `apps/messenger-bot/docs/project-overview.md`, `apps/messenger-bot/docs/edge-cases-roadmap.md` §1, `AGENTS.md` Security |
-| Gap / roadmap đã đóng | `apps/messenger-bot/docs/edge-cases-roadmap.md`, bảng Integration gaps trong `AGENTS.md` |
+| New env variable | `.env.example` + corresponding line in `apps/messenger-bot/docs/project-overview.md` or `AGENTS.md` |
+| Meta webhook signature / `MESSENGER_APP_SECRET` | `apps/messenger-bot/docs/project-overview.md`, `apps/messenger-bot/docs/edge-cases-roadmap.md` §1, `AGENTS.md` Security |
+| Closed gaps / roadmap | `apps/messenger-bot/docs/edge-cases-roadmap.md`, Integration gaps table in `AGENTS.md` |
 
-Skill `/verify` — chạy cuối mọi task có sửa code.
+`/verify` skill — run at the end of every task involving code changes.
 
 ---
 
 ## Clean Architecture
 
-Repo dùng **feature modules + 4 tầng** (presentation → application → domain ← infrastructure). Chi tiết: `.claude/rules/clean-architecture.md`.
+Repo uses **feature modules + 4 layers** (presentation → application → domain ← infrastructure). Details: `.claude/rules/clean-architecture.md`.
 
-### Luồng phụ thuộc
+### Dependency flow
 
-- **Domain** — types thuần, repository interfaces (không NestJS/TypeORM).
-- **Application** — services / use cases, ports cross-module (`Symbol` + `@Inject`).
-- **Infrastructure** — TypeORM repo impl, Wispace/Meta HTTP, LLM provider adapters.
-- **Presentation** — controllers (mỏng, delegate xuống application).
+- **Domain** — pure types, repository interfaces (no NestJS/TypeORM).
+- **Application** — services / use cases, cross-module ports (`Symbol` + `@Inject`).
+- **Infrastructure** — TypeORM repo implementations, Wispace/Meta HTTP, LLM provider adapters.
+- **Presentation** — controllers (thin, delegate down to application).
 
-### Ports cross-module
+### Cross-module ports
 
-| Token | Dùng khi |
+| Token | Used for |
 |-------|----------|
-| `MESSENGER_REPOSITORY` | Đọc/ghi mapping, logs |
+| `MESSENGER_REPOSITORY` | Read/write mapping, logs |
 | `MESSENGER_MAPPING_READER` | Study reminder sync / display name |
-| `MESSAGE_SENDER` | Gửi tin Messenger (dispatch, không import `MessengerService`) |
-| `GOALS_DATA_PORT` | Lấy dữ liệu goals từ WISPACE API (thay `UserGoalsApiService`) |
-| `REPORT_PORT` | Tạo báo cáo học tập qua LLM (thay `StudentReportService`) |
-| `STUDY_DATA_PORT` | Truy xuất dữ liệu lịch học/nhắc lịch (thay 4 services từ study-reminder) |
+| `MESSAGE_SENDER` | Send Messenger messages (dispatch, do not import `MessengerService`) |
+| `GOALS_DATA_PORT` | Fetch goals data from WISPACE API (replaces `UserGoalsApiService`) |
+| `REPORT_PORT` | Generate study reports via LLM (replaces `StudentReportService`) |
+| `STUDY_DATA_PORT` | Retrieve study schedule/reminder data (replaces 4 study-reminder services) |
 
-`StudyReminderModule` import `MessengerOutboundModule` — **không** `forwardRef` với `MessengerModule`.
+`StudyReminderModule` imports `MessengerOutboundModule` — **no** `forwardRef` with `MessengerModule`.
 
-`ChatPipelineModule` và `UserLinkingModule` tách từ `MessengerModule` — mỗi module self-contained, import trực tiếp các module cần thiết.
+`ChatPipelineModule` and `UserLinkingModule` are split from `MessengerModule` — each module is self-contained, importing the modules it needs directly.
 
 ---
 
@@ -230,90 +230,90 @@ src/
     ├── messenger/           # domain | application | infrastructure | presentation
     │   ├── domain/ports/    # GoalsDataPort, ReportPort, StudyDataPort
     │   ├── infrastructure/adapters/  # GoalsDataAdapter, ReportAdapter, StudyDataAdapter
-    │   └── messenger-outbound.module.ts   # Send API + mapping (tách cycle)
-    ├── chat-rate-limit/    # quota ngày + idempotency (H2–H7)
+    │   └── messenger-outbound.module.ts   # Send API + mapping (breaks cycle)
+    ├── chat-rate-limit/    # daily quota + idempotency (H2–H7)
     ├── student-report/
     ├── study-reminder/
     └── scheduler/           # cron + ops HTTP /messenger/*
-docs/                        # Tài liệu chi tiết — đọc theo task
-scripts/                     # CLI debug (không chạy trong app runtime)
+docs/                        # Detailed documentation — read per task
+scripts/                     # CLI debug scripts (not run in app runtime)
 ```
 
-Mỗi feature trong `modules/<name>/`:
+Each feature in `modules/<name>/`:
 
 ```
 domain/entities|repositories/ → application/services|ports/ → infrastructure/ → presentation/controllers/
 ```
 
-### Module → trách nhiệm
+### Module → responsibility
 
-| Module | Vai trò |
-|--------|---------|
-| `ChatRateLimitModule` | Quota FREE_FORM: reserve/refund/burst, hard cap H3, ops recover H2 |
-| `ChatPipelineModule` | Chat queue debounce + agent LLM + tools + store resolvers (tách từ MessengerModule) |
-| `UserLinkingModule` | Link flow + mapping + token verify (tách từ MessengerModule) |
+| Module | Responsibility |
+|--------|---------------|
+| `ChatRateLimitModule` | FREE_FORM quota: reserve/refund/burst, hard cap H3, ops recover H2 |
+| `ChatPipelineModule` | Chat queue debounce + agent LLM + tools + store resolvers (split from MessengerModule) |
+| `UserLinkingModule` | Link flow + mapping + token verify (split from MessengerModule) |
 | `MessengerModule` | Webhook routing, profile menu, report/reminder delivery, dead letter, cleanup |
 | `MessengerOutboundModule` | Send API, `MessengerRepository`, ports |
-| `StudentReportModule` | Wispace goals/scores → LLM báo cáo |
-| `StudyReminderModule` | Sync/dispatch/cleanup jobs, LLM nhắc học |
+| `StudentReportModule` | Wispace goals/scores → LLM report |
+| `StudyReminderModule` | Sync/dispatch/cleanup jobs, LLM study reminders |
 | `SchedulerModule` | `ReportCronService` + HTTP ops endpoints |
 | `DatabaseModule` | TypeORM + PostgreSQL |
 
-`AppModule` import trực tiếp `StudyReminderModule` (không chỉ transitive).
+`AppModule` imports `StudyReminderModule` directly (not just transitively).
 
 ---
 
 ## Code style & conventions
 
-- **Ngôn ngữ:** TypeScript, NestJS 11, TypeORM.
-- **Tin nhắn user-facing:** tiếng Việt.
-- **Log / comment:** tiếng Anh hoặc Việt ngắn — chỉ khi logic không hiển nhiên.
-- **Config:** `ConfigService` + `.env`; thêm biến mới → cập nhật `.env.example`.
-- **Migration:** `apps/messenger-bot/src/infrastructure/database/migrations/`, entity trong `apps/messenger-bot/src/infrastructure/database/entities/`.
-- **Prompts:** `apps/messenger-bot/src/shared/prompts/` — không inline system prompt dài trong service.
-- **Cross-module:** inject port (`@Inject(TOKEN)`), `import type` cho interface.
+- **Language:** TypeScript, NestJS 11, TypeORM.
+- **User-facing messages:** Vietnamese.
+- **Logs / comments:** English or short Vietnamese — only when logic is not self-evident.
+- **Config:** `ConfigService` + `.env`; add new variable → update `.env.example`.
+- **Migrations:** `apps/messenger-bot/src/infrastructure/database/migrations/`, entities in `apps/messenger-bot/src/infrastructure/database/entities/`.
+- **Prompts:** `apps/messenger-bot/src/shared/prompts/` — do not inline long system prompts in services.
+- **Cross-module:** inject port (`@Inject(TOKEN)`), `import type` for interfaces.
 
-### Anti-patterns (tránh)
+### Anti-patterns (avoid)
 
-| Đừng | Thay bằng |
-|------|-----------|
-| Nhét logic study reminder vào `MessengerService` | `StudyReminderService` / worker |
-| `StudyReminderModule` import `MessengerModule` | `MessengerOutboundModule` + ports |
-| `@Entity()` trong `domain/` | ORM entity ở `infrastructure/database/entities/` |
-| Hardcode lead time nhắc lịch | `StudyReminderScheduleService` + `.env` |
-| Thêm Bull/SQS/Redis queue | Bảng `study_reminder_jobs` (outbox POC) |
-| Hardcode token/API key | `.env` + `ConfigService` |
-| Commit `.env` | Chỉ `.env.example` |
+| Don't | Instead |
+|-------|---------|
+| Stuffing study reminder logic into `MessengerService` | `StudyReminderService` / worker |
+| `StudyReminderModule` importing `MessengerModule` | `MessengerOutboundModule` + ports |
+| `@Entity()` in `domain/` | ORM entity in `infrastructure/database/entities/` |
+| Hardcoding study reminder lead time | `StudyReminderScheduleService` + `.env` |
+| Adding Bull/SQS/Redis queue | `study_reminder_jobs` table (outbox POC) |
+| Hardcoding tokens/API keys | `.env` + `ConfigService` |
+| Committing `.env` | Only `.env.example` |
 
 ---
 
-## Task → file (routing nhanh)
+## Task → file (quick routing)
 
-| Task | File chính |
-|------|------------|
-| Thêm menu postback | `infrastructure/meta/messenger-profile.service.ts`, `application/messenger-webhook.router.ts` (postback routing), `application/services/messenger.service.ts` (executor) |
-| Đổi nội dung báo cáo AI | `shared/prompts/student-report.system.txt`, `student-report/.../student-report.service.ts` |
-| Đổi nội dung nhắc học | `shared/prompts/study-reminder.system.txt`, `study-reminder/.../study-reminder.service.ts` |
-| Đổi lead time / horizon / retention | `.env`, `study-reminder-schedule.service.ts` |
-| Thêm migration bảng | `infrastructure/database/migrations/`, `entities/` |
-| Wispace đổi lịch → sync | `scheduler/.../scheduler.controller.ts` → `StudyReminderSyncService` |
+| Task | Primary file |
+|------|-------------|
+| Add menu postback | `infrastructure/meta/messenger-profile.service.ts`, `application/messenger-webhook.router.ts` (postback routing), `application/services/messenger.service.ts` (executor) |
+| Change AI report content | `shared/prompts/student-report.system.txt`, `student-report/.../student-report.service.ts` |
+| Change study reminder content | `shared/prompts/study-reminder.system.txt`, `study-reminder/.../study-reminder.service.ts` |
+| Change lead time / horizon / retention | `.env`, `study-reminder-schedule.service.ts` |
+| Add table migration | `infrastructure/database/migrations/`, `entities/` |
+| Wispace schedule change → sync | `scheduler/.../scheduler.controller.ts` → `StudyReminderSyncService` |
 | UserCalendar API client | `study-reminder/infrastructure/wispace/user-calendar-api.service.ts` |
-| Gửi tin từ module khác | Inject `MESSAGE_SENDER`, không `MessengerService` |
-| Sync toàn bộ (ops) | `POST /messenger/sync-study-reminders`, `scripts/sync-study-reminder-jobs.mjs` |
-| Rate limit chat | `ChatRateLimitService`, `MessengerChatQueueService`, [chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) |
+| Send message from another module | Inject `MESSAGE_SENDER`, not `MessengerService` |
+| Full sync (ops) | `POST /messenger/sync-study-reminders`, `scripts/sync-study-reminder-jobs.mjs` |
+| Chat rate limit | `ChatRateLimitService`, `MessengerChatQueueService`, [chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) |
 | Shared queue multi-pod (H7/R4) | `CHAT_QUEUE_STORE` / `CHAT_QUEUE_SHARED`, `CHAT_QUEUE_STORE` port, `MessengerChatQueueWorkerService` |
 | Ops quota scripts | `scripts/chat-quota-status.mjs`, `chat-quota-recover-stuck.mjs`, `chat-quota-cleanup-idempotency.mjs` |
 | Agent tools / cross-module ports | `domain/ports/goals-data.port.ts`, `domain/ports/report.port.ts`, `domain/ports/study-data.port.ts`, `infrastructure/adapters/*.adapter.ts` |
 
 ---
 
-## Data flows (tóm tắt)
+## Data flows (summary)
 
-### Liên kết user
+### User linking
 
-`ref` query param = `userId` WISPACE → lưu `user_messenger_mappings` (`psid` + `user_id`).
+`ref` query param = WISPACE `userId` → saved to `user_messenger_mappings` (`psid` + `user_id`).
 
-### Báo cáo học tập
+### Study reports
 
 ```
 UserGoalsApiService + TaskScoreAverageApiService
@@ -321,106 +321,106 @@ UserGoalsApiService + TaskScoreAverageApiService
   → MessengerService.sendTextViaPsid
 ```
 
-Trigger: cron 08:00, menu postback, hoặc `POST /messenger/send-reports`.
+Trigger: 08:00 cron, menu postback, or `POST /messenger/send-reports`.
 
-### Nhắc lịch học
+### Study reminders
 
 ```
-Wispace đổi lịch → POST /messenger/study-calendar/sync { userId }
+Wispace schedule change → POST /messenger/study-calendar/sync { userId }
   → StudyReminderSyncService (GET UserCalendar, x-psid)
   → study_reminder_jobs
   → StudyReminderDispatchService (adaptive poll S2)
   → StudyReminderService (LLM) + MESSAGE_SENDER (MessengerOutbound)
 ```
 
-### Chat tự do (FREE_FORM)
+### Free-form chat (FREE_FORM)
 
 ```
 Webhook text → dedupe mid (`CHAT_DEDUPE_STORE` memory/postgres/redis)
   → MessengerChatQueueService.enqueue → debounce flush
   → ChatRateLimitService.reserve (DB idempotency + daily usage, hard cap H3)
   → MessengerAgentService (LLM) → Send API
-  → markCompleted; lỗi trước bubble → refund (H4)
+  → markCompleted; error before bubble → refund (H4)
 ```
 
-Postback menu và tin proactive **không** qua `ChatRateLimitService`. Enforcement: `CHAT_RATE_LIMIT_ENABLED=true`.
+Menu postback and proactive messages do **not** go through `ChatRateLimitService`. Enforcement: `CHAT_RATE_LIMIT_ENABLED=true`.
 
-Wispace **phải** gọi sync API sau POST/DELETE `/api/UserCalendar`. Cron 30 phút chỉ là dự phòng — không thay webhook/event bus.
+Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30-minute cron is only a fallback — it does not replace the webhook/event bus.
 
 ---
 
 ## Security
 
-- **Không** commit secrets: `.env`, token Meta/OpenAI/LLM provider, `INTERNAL_API_KEY`, DB password.
-- Ops endpoints bảo vệ bởi `InternalApiKeyGuard` — không bỏ guard khi thêm endpoint vận hành.
-- Wispace API: chỉ header `x-psid`, không lưu/log full access token user.
-- Meta webhook: xác thực qua `VERIFY_TOKEN` (GET `/webhook`); POST `/webhook` verify `X-Hub-Signature-256` với `MESSENGER_APP_SECRET` (tắt: `MESSENGER_WEBHOOK_SIGNATURE_VERIFY=false`). `ENFORCE_PROD_CHAT_QUOTA=true` hoặc `NODE_ENV=production` → startup fail nếu thiếu secret / verify tắt / `CHAT_RATE_LIMIT_ENABLED=false`.
-- LLM prompt-injection: không đưa user/Wispace string thẳng vào prompt hoặc tool result. Dùng `sanitizeUntrustedTextForLlm` / `sanitizeToolResultContent`; output JSON từ LLM provider phải parse + validate shape, lỗi thì fallback template.
+- **Never** commit secrets: `.env`, Meta/OpenAI/LLM provider tokens, `INTERNAL_API_KEY`, DB password.
+- Ops endpoints are protected by `InternalApiKeyGuard` — do not remove the guard when adding operational endpoints.
+- Wispace API: only the `x-psid` header, do not store/log the user's full access token.
+- Meta webhook: verified via `VERIFY_TOKEN` (GET `/webhook`); POST `/webhook` verifies `X-Hub-Signature-256` with `MESSENGER_APP_SECRET` (disable: `MESSENGER_WEBHOOK_SIGNATURE_VERIFY=false`). `ENFORCE_PROD_CHAT_QUOTA=true` or `NODE_ENV=production` → startup fails if secret is missing / verify is disabled / `CHAT_RATE_LIMIT_ENABLED=false`.
+- LLM prompt injection: do not pass user/Wispace strings directly into prompts or tool results. Use `sanitizeUntrustedTextForLlm` / `sanitizeToolResultContent`; JSON output from LLM providers must be parsed + shape-validated, with template fallback on error.
 
 ---
 
-## Documentation index (đọc theo task)
+## Documentation index (read per task)
 
-| Ưu tiên | File | Khi nào đọc |
-|---------|------|-------------|
-| 1 | [apps/messenger-bot/docs/project-overview.md](apps/messenger-bot/docs/project-overview.md) | Lần đầu vào repo — kiến trúc, API, cron |
-| 2 | [apps/messenger-bot/docs/study-session-reminder.md](apps/messenger-bot/docs/study-session-reminder.md) | Sửa nhắc lịch, jobs, sync, dispatch, rollover |
-| 3 | [apps/messenger-bot/docs/chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) | Chatbot hai chiều, rate limit, quota |
-| 4 | [apps/messenger-bot/docs/edge-cases-roadmap.md](apps/messenger-bot/docs/edge-cases-roadmap.md) | Gap & phase khắc phục toàn POC (ngoài chat H1–H7) |
-| 5 | `.env.example` | Biến môi trường bắt buộc |
-| 6 | `apps/messenger-bot/src/shared/config/poc.constants.ts` | Link `m.me`, parse `userId` từ `ref` |
-| — | `.claude/rules/clean-architecture.md` | Sửa/thêm code trong `apps/messenger-bot/src/modules/` |
-| — | `.claude/rules/chat-rate-limit.md` | Sửa `apps/messenger-bot/src/modules/chat-rate-limit/**` |
-| — | `.claude/rules/messenger-chat.md` | Sửa chat queue/history/worker |
+| Priority | File | When to read |
+|----------|------|-------------|
+| 1 | [apps/messenger-bot/docs/project-overview.md](apps/messenger-bot/docs/project-overview.md) | First time in the repo — architecture, API, cron |
+| 2 | [apps/messenger-bot/docs/study-session-reminder.md](apps/messenger-bot/docs/study-session-reminder.md) | Editing reminders, jobs, sync, dispatch, rollover |
+| 3 | [apps/messenger-bot/docs/chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) | Two-way chatbot, rate limit, quota |
+| 4 | [apps/messenger-bot/docs/edge-cases-roadmap.md](apps/messenger-bot/docs/edge-cases-roadmap.md) | POC-wide gaps & remediation phases (beyond chat H1–H7) |
+| 5 | `.env.example` | Required environment variables |
+| 6 | `apps/messenger-bot/src/shared/config/poc.constants.ts` | `m.me` links, parse `userId` from `ref` |
+| — | `.claude/rules/clean-architecture.md` | Editing/adding code in `apps/messenger-bot/src/modules/` |
+| — | `.claude/rules/chat-rate-limit.md` | Editing `apps/messenger-bot/src/modules/chat-rate-limit/**` |
+| — | `.claude/rules/messenger-chat.md` | Editing chat queue/history/worker |
 
 ### Claude Code (`.claude/`)
 
-| Path | Mục đích |
-|------|----------|
-| `CLAUDE.md` | Context load mỗi session |
+| Path | Purpose |
+|------|---------|
+| `CLAUDE.md` | Context loaded each session |
 | `.claude/settings.json` | Permissions (npm/git allow; `.env` deny) |
 | `.claude/rules/` | `project-conventions`, `clean-architecture`, `chat-rate-limit`, `messenger-chat`, `study-reminder`, `database`, `prompts` |
 | `.claude/skills/` | `/study-reminder-debug`, `/typeorm-migration`, `/edit-llm-prompt`, `/verify` |
 
-Cursor dùng `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + skills global `~/.cursor/skills-cursor/` + `.claude/skills/`.
+Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global skills `~/.cursor/skills-cursor/` + `.claude/skills/`.
 
 ---
 
-## Integration gaps (đừng giả định đã xong)
+## Integration gaps (do not assume these are done)
 
-| Gap | Trạng thái POC |
-|-----|----------------|
-| `POST /messenger/study-calendar/sync` | ✓ Endpoint + sync theo `userId` |
-| Auth ops (`INTERNAL_API_KEY`) | ✓ Header `X-Internal-Api-Key` hoặc Bearer |
-| Wispace wire sync sau đổi lịch | ✓ Gọi `POST /messenger/study-calendar/sync` + `X-Internal-Api-Key` |
-| Tên học viên cho LLM | ✓ Bảng `users` + view `"Users"` trên `ai_chat_bot_db` (`DisplayName` → `'Chào bạn nha'`) |
-| DB POC tách khỏi `writing_ai_hub_db` | ✓ `ai_chat_bot_db` + scripts migrate/drop trên hub cũ |
-| Upsert job đã `sent` khi đổi giờ cùng `session_key` | ✓ `StudyReminderJobRepository.upsertPendingJob` reopen → `pending` |
-| Mapping đổi `user_id` cùng PSID (L3) | ✓ Chặn webhook; ops `POST /messenger/mapping/relink` + `allowRelink` |
-| Mapping 1:1 `userId` ↔ `psid` (L4) | ✓ Token-only link + chặn relink webhook; unique index ACTIVE trên DB |
-| Multi-pod cron báo cáo 08:00 (R4) | ✓ Claim table + advisory lock + `CRON_LEADER_ENABLED` |
-| Chat hai chiều + rate limit V1 | ✓ Reserve/refund/burst/whitelist/hint |
-| Rate limit hardening H1–H7 | ✓ H2–H7 code; H1 = bật `CHAT_RATE_LIMIT_ENABLED` trên env prod |
+| Gap | POC status |
+|-----|------------|
+| `POST /messenger/study-calendar/sync` | ✓ Endpoint + sync by `userId` |
+| Auth ops (`INTERNAL_API_KEY`) | ✓ Header `X-Internal-Api-Key` or Bearer |
+| Wispace wire sync after schedule change | ✓ Calls `POST /messenger/study-calendar/sync` + `X-Internal-Api-Key` |
+| Student name for LLM | ✓ `users` table + `"Users"` view on `ai_chat_bot_db` (`DisplayName` → `'Chào bạn nha'`) |
+| POC DB separated from `writing_ai_hub_db` | ✓ `ai_chat_bot_db` + migrate/drop scripts on old hub |
+| Upsert `sent` job when rescheduling same `session_key` | ✓ `StudyReminderJobRepository.upsertPendingJob` reopens → `pending` |
+| Mapping changes `user_id` for same PSID (L3) | ✓ Webhook blocked; ops `POST /messenger/mapping/relink` + `allowRelink` |
+| 1:1 `userId` ↔ `psid` mapping (L4) | ✓ Token-only link + relink webhook blocked; ACTIVE unique index on DB |
+| Multi-pod 08:00 report cron (R4) | ✓ Claim table + advisory lock + `CRON_LEADER_ENABLED` |
+| Two-way chat + rate limit V1 | ✓ Reserve/refund/burst/whitelist/hint |
+| Rate limit hardening H1–H7 | ✓ H2–H7 code; H1 = enable `CHAT_RATE_LIMIT_ENABLED` on prod env |
 | LLM Provider Abstraction | ✓ Adapter pattern (`LlmProviderAdapter`), OpenAI adapter, OpenAI-compatible adapter, factory — PR #32 |
 | Tier / event store (Phase 7–8) | ✗ Optional — master plan [c2-master-implementation-plan.md](apps/messenger-bot/docs/c2-master-implementation-plan.md); full §5.8 [chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) |
-| Gap toàn dự án (link, báo cáo, nhắc, ops) | Roadmap — [edge-cases-roadmap.md](apps/messenger-bot/docs/edge-cases-roadmap.md) |
+| Project-wide gaps (link, reports, reminders, ops) | Roadmap — [edge-cases-roadmap.md](apps/messenger-bot/docs/edge-cases-roadmap.md) |
 
-Khi đóng gap: cập nhật `apps/messenger-bot/docs/study-session-reminder.md` và bảng trên.
+When closing a gap: update `apps/messenger-bot/docs/study-session-reminder.md` and the table above.
 
 ---
 
-## Boundaries — không làm trừ khi user yêu cầu
+## Boundaries — do not do unless explicitly requested by user
 
 - Commit / push git
-- Tạo file markdown ngoài `docs/` hoặc sửa README dài dòng không cần thiết
-- Thêm message queue (Bull, SQS, Redis)
-- Force push, sửa git config
+- Create markdown files outside `docs/` or write unnecessary lengthy READMEs
+- Add message queues (Bull, SQS, Redis)
+- Force push, modify git config
 
 ---
 
 ## PR / commit guidelines
 
-- Chỉ commit khi user yêu cầu rõ ràng.
-- Không commit `.env` hoặc file chứa secrets.
-- Message commit: ngắn, mô tả **why** hơn **what**.
-- Trước PR: chạy đủ 5 lệnh CI theo thứ tự `format:check → lint → typecheck → test → build`; local khuyến nghị `npm run verify`.
+- Only commit when explicitly requested by user.
+- Do not commit `.env` or files containing secrets.
+- Commit messages: short, describe **why** more than **what**.
+- Before PR: run all 5 CI commands in order `format:check → lint → typecheck → test → build`; local verification recommended: `npm run verify`.

@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 # Verify POC (Turborepo)
 
-Chạy **sau khi sửa code** và **sau khi cập nhật agent docs/skills** liên quan (xem `AGENTS.md` → *Docs & skills khi đổi code*).
+Run **after code changes** and **after updating agent docs/skills** (see `AGENTS.md` → *Docs & skills when changing code*).
 
 ## Prerequisites
 
@@ -17,11 +17,11 @@ Chạy **sau khi sửa code** và **sau khi cập nhật agent docs/skills** li�
 npm install
 ```
 
-Chạy ở **root** — npm workspaces resolve cả `apps/*` và `packages/*`. Bắt buộc nếu gặp `'turbo' is not recognized` hoặc thiếu deps sau khi vừa đổi `package.json` của 1 workspace.
+Run at **root** — npm workspaces resolves both `apps/*` and `packages/*`. Required if you encounter `'turbo' is not recognized` or missing deps after changing `package.json` of a workspace.
 
 ## Quality gate
 
-**CI / deploy** (`.github/workflows/deploy.yml`, chỉ chạy cho `apps/messenger-bot`):
+**CI / deploy** (`.github/workflows/deploy.yml`, runs only for `apps/messenger-bot`):
 
 ```bash
 npx turbo run lint --filter=@wispace/messenger-bot...
@@ -29,22 +29,22 @@ npx turbo run test --filter=@wispace/messenger-bot...
 npx turbo run build --filter=@wispace/messenger-bot...
 ```
 
-**Local đầy đủ (toàn bộ workspace):**
+**Full local (all workspaces):**
 
 ```bash
 npx turbo run format
 npx turbo run verify
 ```
 
-Nếu chỉ sửa `packages/llm-agent`: chạy riêng `npx turbo run test --filter=@wispace/llm-agent` trước (test mock ports, không cần DB/Nest), rồi chạy lại gate của `@wispace/messenger-bot...` (dùng `...` để rebuild dependent app).
+If only editing `packages/llm-agent`: run `npx turbo run test --filter=@wispace/llm-agent` first (mock port tests, no DB/Nest needed), then re-run the `@wispace/messenger-bot...` gate (use `...` to rebuild dependent apps).
 
-`apps/discord-bot` và `apps/zalo-bot` hiện là placeholder (script no-op) — không cần chạy verify riêng cho tới khi có code thật (xem `docs/turborepo-migration-plan.md`).
+`apps/discord-bot` and `apps/zalo-bot` are currently placeholders (no-op scripts) — no need to run verify separately until real code exists (see `docs/turborepo-migration-plan.md`).
 
 ## Checks
 
-- Sửa prompt Messenger (`apps/messenger-bot/src/shared/prompts/*.system.txt`) → sau `build`, kiểm tra `apps/messenger-bot/dist/shared/prompts/` có file mới.
-- Sửa `remind_at` / schedule → `study-reminder-schedule.service.spec.ts` phải pass.
-- Sửa `packages/llm-agent` → `agent.service.spec.ts` (trong package) phải pass, và app `@wispace/messenger-bot` build/test lại thành công (dependency).
-- **Không** dùng `test:e2e` trong gate mặc định (cần PostgreSQL; e2e đang lỗi thời).
+- Edit Messenger prompt (`apps/messenger-bot/src/shared/prompts/*.system.txt`) → after `build`, verify new files in `apps/messenger-bot/dist/shared/prompts/`.
+- Edit `remind_at` / schedule → `study-reminder-schedule.service.spec.ts` must pass.
+- Edit `packages/llm-agent` → `agent.service.spec.ts` (in package) must pass, and `@wispace/messenger-bot` app must build/test successfully (dependency).
+- **Do not** use `test:e2e` in default gate (requires PostgreSQL; e2e is outdated).
 
-Sửa mọi lỗi format/lint/type/test/build trước khi báo task xong. Không commit trừ khi user yêu cầu.
+Fix all format/lint/type/test/build errors before marking task complete. Do not commit unless user requests it.
