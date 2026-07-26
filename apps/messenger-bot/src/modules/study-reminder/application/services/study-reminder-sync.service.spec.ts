@@ -1,4 +1,4 @@
-import type { MessengerMappingReaderPort } from '../ports/messenger-mapping.port';
+import type { MessengerMappingReaderPort } from '../../../../shared/ports/messenger-mapping-reader.port';
 import type { StudyReminderJobRepositoryPort } from '../../domain/repositories/study-reminder-job.repository.port';
 import type { StudySessionSourceService } from './study-session-source.service';
 import type { StudyReminderScheduleService } from './study-reminder-schedule.service';

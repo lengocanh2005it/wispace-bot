@@ -9,8 +9,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { UserEntity } from '../../../../infrastructure/database/entities/user.entity';
 import { FALLBACK_DISPLAY_NAME } from '../../../../shared/config/poc.constants';
-import { MESSENGER_MAPPING_READER } from '../ports/messenger-mapping.port';
-import type { MessengerMappingReaderPort } from '../ports/messenger-mapping.port';
+import {
+  MESSENGER_MAPPING_READER,
+  type MessengerMappingReaderPort,
+} from '../../../../shared/ports/messenger-mapping-reader.port';
 import {
   USER_DISPLAY_NAME_CACHE,
   type UserDisplayNameCachePort,

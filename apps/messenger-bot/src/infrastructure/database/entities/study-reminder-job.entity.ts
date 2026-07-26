@@ -6,13 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-
-export type StudyReminderJobStatus =
-  | 'pending'
-  | 'processing'
-  | 'sent'
-  | 'failed'
-  | 'cancelled';
+import type { StudyReminderJobStatus } from '../../../modules/study-reminder/domain/entities/study-reminder-job.types';
 
 @Entity('study_reminder_jobs')
 @Index(

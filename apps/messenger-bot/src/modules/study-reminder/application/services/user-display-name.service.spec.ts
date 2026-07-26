@@ -1,5 +1,5 @@
 import { UserDisplayNameService } from './user-display-name.service';
-import type { MessengerMappingReaderPort } from '../ports/messenger-mapping.port';
+import type { MessengerMappingReaderPort } from '../../../../shared/ports/messenger-mapping-reader.port';
 import type { UserDisplayNameCachePort } from '../../domain/repositories/user-display-name-cache.port';
 
 describe('UserDisplayNameService', () => {

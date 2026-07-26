@@ -1,7 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { UserLink } from '../../domain/entities/user-link';
-import { MESSENGER_MAPPING_READER } from '../ports/messenger-mapping.port';
-import type { MessengerMappingReaderPort } from '../ports/messenger-mapping.port';
+import {
+  MESSENGER_MAPPING_READER,
+  type MessengerMappingReaderPort,
+  type UserLink,
+} from '../../../../shared/ports/messenger-mapping-reader.port';
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,

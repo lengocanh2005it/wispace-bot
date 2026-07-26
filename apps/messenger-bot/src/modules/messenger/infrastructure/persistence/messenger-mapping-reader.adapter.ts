@@ -2,8 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { Inject } from '@nestjs/common';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
-import type { MessengerMappingReaderPort } from '../../../study-reminder/application/ports/messenger-mapping.port';
-import type { UserLink } from '../../../study-reminder/domain/entities/user-link';
+import type {
+  MessengerMappingReaderPort,
+  UserLink,
+} from '../../../../shared/ports/messenger-mapping-reader.port';
 
 /**
  * Adapts MessengerRepositoryPort (returns full UserMessengerMapping)

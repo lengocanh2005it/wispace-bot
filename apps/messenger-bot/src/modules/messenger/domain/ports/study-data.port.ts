@@ -1,4 +1,4 @@
-import type { CalendarSessionTimeRange } from '../../../study-reminder/domain/entities/study-schedule.types';
+export type CalendarSessionTimeRange = 'upcoming' | 'past' | 'all';
 
 export interface StudySessionView {
   sessionKey: string;

@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { MESSENGER_MAPPING_READER } from '../../../study-reminder/application/ports/messenger-mapping.port';
+import { MESSENGER_MAPPING_READER } from '../../../../shared/ports/messenger-mapping-reader.port';
 import { LLM_USAGE_REPOSITORY } from '../../domain/repositories/llm-usage.repository.port';
 import { LlmUsageConfigService } from './llm-usage-config.service';
 import { LlmUsageQueryService } from './llm-usage-query.service';
