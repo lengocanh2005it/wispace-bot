@@ -61,6 +61,7 @@
     "@wispace/chat-metering": "*",
     "@wispace/chat-queue-core": "*",
     "@wispace/llm-agent": "*",
+    "@wispace/scheduler-core": "*",
     "@wispace/student-report": "*",
     "@wispace/study-reminder-core": "*",
     "@wispace/wispace-client": "*",

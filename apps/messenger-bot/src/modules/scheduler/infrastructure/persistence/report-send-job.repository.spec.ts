@@ -116,7 +116,7 @@ describe('ReportSendJobRepository (R5)', () => {
     });
 
     const job = await repository.recordRetryableFailure({
-      psid: 'psid-1',
+      externalUserId: 'psid-1',
       examDate: '2026-06-15',
       firstAttemptDate: '2026-06-12',
       maxRetries: 3,

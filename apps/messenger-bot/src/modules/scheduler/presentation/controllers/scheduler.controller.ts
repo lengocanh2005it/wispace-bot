@@ -59,7 +59,7 @@ export class SchedulerController {
   sendReports(@Body() body?: SendReportsBody) {
     return this.reportCronService.sendScheduledReports({
       forceSend: true,
-      psid: body?.psid?.trim(),
+      externalUserId: body?.psid?.trim(),
       allowDuplicate: body?.allowDuplicate === true,
     });
   }

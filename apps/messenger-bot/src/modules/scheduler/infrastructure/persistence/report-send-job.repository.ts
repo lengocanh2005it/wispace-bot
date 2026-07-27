@@ -1,9 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import type {
+  ReportSendJobRepositoryPort,
+  ReportSendJob,
+  ReportSendJobCreateParams,
+  ReportSendJobUpdateParams,
+} from '@wispace/scheduler-core';
 import { ReportSendJobEntity } from '../../../../infrastructure/database/entities/report-send-job.entity';
-import { ReportSendJob } from '../../domain/entities/report-send-job.types';
-import { ReportSendJobRepositoryPort } from '../../domain/repositories/report-send-job.repository.port';
 
 /** This repository only ever writes rows for the Messenger bot. */
 const PLATFORM = 'messenger' as const;
@@ -15,19 +19,13 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
     private readonly jobRepo: Repository<ReportSendJobEntity>,
   ) {}
 
-  async recordRetryableFailure(params: {
-    psid: string;
-    userId?: number;
-    examDate: string;
-    firstAttemptDate: string;
-    maxRetries: number;
-    nextRetryAt: Date;
-    errorMessage: string;
-  }): Promise<ReportSendJob> {
+  async recordRetryableFailure(
+    params: ReportSendJobCreateParams,
+  ): Promise<ReportSendJob> {
     const existing = await this.jobRepo.findOne({
       where: {
         platform: PLATFORM,
-        externalUserId: params.psid,
+        externalUserId: params.externalUserId,
         examDate: params.examDate,
       },
     });
@@ -55,7 +53,7 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
 
     const created = this.jobRepo.create({
       platform: PLATFORM,
-      externalUserId: params.psid,
+      externalUserId: params.externalUserId,
       userId: params.userId ?? null,
       examDate: params.examDate,
       firstAttemptDate: params.firstAttemptDate,
@@ -111,13 +109,7 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
     });
   }
 
-  async markFailed(params: {
-    jobId: number;
-    errorMessage: string;
-    retryCount: number;
-    nextRetryAt?: Date;
-    terminal: boolean;
-  }): Promise<void> {
+  async markFailed(params: ReportSendJobUpdateParams): Promise<void> {
     await this.jobRepo.update(params.jobId, {
       status: 'failed',
       retryCount: params.retryCount,
@@ -131,6 +123,26 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
       {
         platform: PLATFORM,
         externalUserId: psid,
+        examDate,
+        status: In(['failed', 'processing', 'pending']),
+      },
+      {
+        status: 'sent',
+        sentAt: new Date(),
+        nextRetryAt: null,
+        lastError: null,
+      },
+    );
+  }
+
+  async markSentByExternalUserExamDate(
+    externalUserId: string,
+    examDate: string,
+  ): Promise<void> {
+    await this.jobRepo.update(
+      {
+        platform: PLATFORM,
+        externalUserId,
         examDate,
         status: In(['failed', 'processing', 'pending']),
       },
@@ -167,7 +179,8 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
   private mapEntity(entity: ReportSendJobEntity): ReportSendJob {
     return {
       id: entity.id,
-      psid: entity.externalUserId,
+      platform: entity.platform,
+      externalUserId: entity.externalUserId,
       userId: entity.userId ?? undefined,
       examDate: entity.examDate,
       firstAttemptDate: entity.firstAttemptDate,

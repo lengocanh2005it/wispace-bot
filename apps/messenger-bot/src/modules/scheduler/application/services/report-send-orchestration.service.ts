@@ -20,7 +20,7 @@ export interface ClaimAndSendResult {
   windowClosed: number;
   claimSkipped: number;
   retryQueued: number;
-  failures: Array<{ token: string; error: string }>;
+  failures: Array<{ externalUserId: string; error: string }>;
 }
 
 const ZERO: ClaimAndSendResult = {
@@ -180,14 +180,12 @@ export class ReportSendOrchestrationService {
 
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(
-        `Failed to send report for token ${mapping.notificationMessagesToken}`,
+        `Failed to send report for PSID ${mapping.psid}`,
         error,
       );
       return {
         ...ZERO,
-        failures: [
-          { token: mapping.notificationMessagesToken, error: message },
-        ],
+        failures: [{ externalUserId: mapping.psid, error: message }],
       };
     }
   }
