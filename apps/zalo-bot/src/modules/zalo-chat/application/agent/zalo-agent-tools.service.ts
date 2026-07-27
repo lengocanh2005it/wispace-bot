@@ -6,10 +6,16 @@ import {
   readPositiveLimit,
   readPastDays,
   readCalendarTimeRange,
+  readPositiveInteger,
+  readSchedulingMode,
+  readValidatedDate,
+  readValidatedTime,
 } from '@wispace/llm-agent';
 import type { ZaloAgentToolContext } from '../../domain/entities/zalo-chat.types';
 import { ZaloWispaceGoalsService } from '../../../wispace/application/services/zalo-wispace-goals.service';
 import { ZaloWispaceCalendarService } from '../../../wispace/application/services/zalo-wispace-calendar.service';
+import { ZaloRescheduleConfirmationService } from '../services/zalo-reschedule-confirmation.service';
+import { ZaloOutboundService } from '../services/zalo-outbound.service';
 
 const NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Zalo. Liên kết tài khoản để sử dụng tính năng này nhé.';
@@ -30,6 +36,8 @@ export class ZaloAgentToolsService {
     private readonly configService: ConfigService,
     private readonly goalsService: ZaloWispaceGoalsService,
     private readonly calendarService: ZaloWispaceCalendarService,
+    private readonly rescheduleConfirmationService: ZaloRescheduleConfirmationService,
+    private readonly outboundService: ZaloOutboundService,
   ) {
     const appId = this.configService.get<string>('ZALO_APP_ID');
     const redirectUri = this.configService.get<string>(
@@ -128,7 +136,9 @@ export class ZaloAgentToolsService {
             : { hasSession: false };
         });
       case 'reschedule_study_session':
-        return { available: false, message: NOT_AVAILABLE_MESSAGE };
+        return this.withLinkedAccount(ctx, () =>
+          this.rescheduleStudySession(ctx, args),
+        );
       case 'register_exam_report_notifications':
         return { available: false, message: NOT_AVAILABLE_MESSAGE };
       default: {
@@ -196,5 +206,43 @@ export class ZaloAgentToolsService {
     }
 
     return lines.join('\n');
+  }
+
+  private async rescheduleStudySession(
+    ctx: ZaloAgentToolContext,
+    args: Record<string, unknown>,
+  ): Promise<unknown> {
+    const calendarId = readPositiveInteger(args.calendarId);
+    if (!calendarId) {
+      return { error: 'calendarId (số nguyên dương) là bắt buộc.' };
+    }
+
+    const schedulingMode = readSchedulingMode(args.schedulingMode);
+    if (!schedulingMode) {
+      return {
+        error:
+          'schedulingMode (default_next_day_same_time hoặc explicit) là bắt buộc.',
+      };
+    }
+
+    const result = await this.rescheduleConfirmationService.stage({
+      zaloUserId: ctx.zaloUserId,
+      userId: ctx.userId!,
+      calendarId,
+      schedulingMode,
+      newLocalDate: readValidatedDate(args.newLocalDate),
+      newTime: readValidatedTime(args.newTime),
+    });
+
+    if ('error' in result) {
+      return { error: result.error };
+    }
+
+    await this.outboundService.sendText(
+      ctx.zaloUserId,
+      `${result.summary}\n\nReply "xác nhận" để đồng ý, hoặc "hủy" để hủy.`,
+    );
+
+    return { pendingConfirmation: true, sessionLabel: result.sessionLabel };
   }
 }

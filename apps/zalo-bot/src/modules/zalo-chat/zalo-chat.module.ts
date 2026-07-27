@@ -12,6 +12,7 @@ import {
   LlmSafetyEventEntity,
 } from '@wispace/chat-metering';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
+import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloAgentService } from './application/agent/zalo-agent.service';
 import { ZaloAgentToolsService } from './application/agent/zalo-agent-tools.service';
 import { ZaloChatHistoryService } from './application/services/zalo-chat-history.service';
@@ -21,10 +22,13 @@ import { ZaloChatRateLimitService } from './application/services/zalo-chat-rate-
 import { ZaloLlmUsageConfigService } from './application/services/zalo-llm-usage-config.service';
 import { ZaloLlmUsageRecorderService } from './application/services/zalo-llm-usage-recorder.service';
 import { ZaloLlmSafetyEventService } from './application/services/zalo-llm-safety-event.service';
+import { ZaloRescheduleConfirmationService } from './application/services/zalo-reschedule-confirmation.service';
+import { ZaloStudyCalendarCommandService } from './application/services/zalo-study-calendar-command.service';
 
 @Module({
   imports: [
     ZaloOauthModule,
+    ZaloWispaceModule,
     TypeOrmModule.forFeature([
       ChatDailyUsageEntity,
       ChatIdempotencyEntity,
@@ -48,6 +52,8 @@ import { ZaloLlmSafetyEventService } from './application/services/zalo-llm-safet
     ZaloLlmUsageConfigService,
     ZaloLlmUsageRecorderService,
     ZaloLlmSafetyEventService,
+    ZaloStudyCalendarCommandService,
+    ZaloRescheduleConfirmationService,
     ZaloAgentService,
     ZaloAgentToolsService,
     ZaloChatHistoryService,
