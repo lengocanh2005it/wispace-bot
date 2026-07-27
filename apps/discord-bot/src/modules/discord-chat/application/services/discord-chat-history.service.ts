@@ -1,23 +1,31 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   MemoryChatHistoryStore,
+  RedisChatHistoryStore,
   type ChatHistoryMessage,
+  type ChatHistoryStorePort,
+  type RedisChatHistoryClient,
 } from '@wispace/chat-history';
+import { REDIS_CLIENT } from '../../../../infrastructure/redis/domain/redis.client.port';
+import type Redis from 'ioredis';
 
 const DEFAULT_MAX_MESSAGES = 20; // 10 turns (user + assistant)
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
 
 /**
- * In-memory only (MVP) — lost on process restart, not shared across pods.
- * Messenger's equivalent (`CHAT_HISTORY_STORE`) supports a Redis-backed mode
- * for multi-pod deployments; add that here if/when discord-bot needs to scale.
+ * Chat history for Discord — supports memory (default) or Redis backend.
+ * Set CHAT_HISTORY_STORE=redis + REDIS_ENABLED=true for multi-pod mode.
  */
 @Injectable()
 export class DiscordChatHistoryService {
-  private readonly store: MemoryChatHistoryStore;
+  private readonly logger = new Logger(DiscordChatHistoryService.name);
+  private readonly store: ChatHistoryStorePort;
 
-  constructor(configService: ConfigService) {
+  constructor(
+    configService: ConfigService,
+    @Optional() @Inject(REDIS_CLIENT) redisClient?: Redis | null,
+  ) {
     const ttlMs =
       Number(configService.get<string>('CHAT_HISTORY_TTL_MS')) ||
       DEFAULT_TTL_MS;
@@ -25,7 +33,26 @@ export class DiscordChatHistoryService {
       Number(configService.get<string>('CHAT_HISTORY_MAX_MESSAGES')) ||
       DEFAULT_MAX_MESSAGES;
 
-    this.store = new MemoryChatHistoryStore({ ttlMs, maxMessages });
+    const storeType =
+      configService.get<string>('CHAT_HISTORY_STORE')?.trim() ?? 'memory';
+
+    if (storeType === 'redis' && redisClient) {
+      this.store = new RedisChatHistoryStore(
+        redisClient as unknown as RedisChatHistoryClient,
+        {
+          ttlSec: Math.floor(ttlMs / 1000),
+          maxMessages,
+        },
+      );
+      this.logger.log('Chat history: Redis backend');
+    } else {
+      this.store = new MemoryChatHistoryStore({ ttlMs, maxMessages });
+      if (storeType === 'redis') {
+        this.logger.warn(
+          'CHAT_HISTORY_STORE=redis but Redis unavailable — falling back to memory',
+        );
+      }
+    }
   }
 
   getHistory(discordUserId: string): Promise<ChatHistoryMessage[]> {

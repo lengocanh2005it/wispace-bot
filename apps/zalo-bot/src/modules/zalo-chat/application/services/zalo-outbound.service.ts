@@ -4,6 +4,8 @@ import type { ZaloMessageSenderPort } from '../../../zalo-webhook/domain/ports/z
 
 const SEND_TEXT_ENDPOINT = 'https://openapi.zalo.me/v3.0/oa/message/cs';
 const SEND_TIMEOUT_MS = 10_000;
+const RETRY_MAX_ATTEMPTS = 2;
+const RETRY_BASE_DELAY_MS = 1_000;
 
 export class ZaloSendError extends Error {
   constructor(
@@ -37,6 +39,10 @@ export class ZaloSendError extends Error {
       body.includes('consultation window')
     );
   }
+
+  isRetryable(): boolean {
+    return this.status === 0 || this.status >= 500;
+  }
 }
 
 /**
@@ -51,6 +57,31 @@ export class ZaloOutboundService implements ZaloMessageSenderPort {
   constructor(private readonly tokenService: ZaloTokenService) {}
 
   async sendText(zaloUserId: string, text: string): Promise<void> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
+      try {
+        await this.sendTextOnce(zaloUserId, text);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (error instanceof ZaloSendError && !error.isRetryable()) {
+          throw error;
+        }
+        if (attempt < RETRY_MAX_ATTEMPTS) {
+          const delayMs = RETRY_BASE_DELAY_MS * attempt;
+          this.logger.warn(
+            `Zalo send attempt ${attempt}/${RETRY_MAX_ATTEMPTS} failed for zaloUserId=${zaloUserId}, retrying in ${delayMs}ms`,
+          );
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
+  private async sendTextOnce(zaloUserId: string, text: string): Promise<void> {
     const accessToken = await this.tokenService.getValidAccessToken();
 
     let response: Response;

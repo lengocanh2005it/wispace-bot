@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -14,6 +14,10 @@ import {
   MENU_LEARNING_PROGRESS_CUSTOM_ID,
   MENU_UPCOMING_SESSIONS_CUSTOM_ID,
 } from '../constants/discord-menu.constants';
+import { DiscordDeliveryLogService } from './discord-delivery-log.service';
+
+const RETRY_MAX_ATTEMPTS = 2;
+const RETRY_BASE_DELAY_MS = 1_000;
 
 /**
  * Discord counterpart to Messenger's `MessageSenderPort` — sends by fetching
@@ -25,7 +29,12 @@ import {
 export class DiscordOutboundService {
   private readonly logger = new Logger(DiscordOutboundService.name);
 
-  constructor(private readonly client: Client) {}
+  constructor(
+    private readonly client: Client,
+    @Optional()
+    @Inject(DiscordDeliveryLogService)
+    private readonly deliveryLog?: DiscordDeliveryLogService,
+  ) {}
 
   async sendText(discordUserId: string, text: string): Promise<void> {
     await this.sendTextAndGetChannelId(discordUserId, text);
@@ -36,18 +45,44 @@ export class DiscordOutboundService {
     discordUserId: string,
     text: string,
   ): Promise<string | undefined> {
-    try {
-      const user = await this.client.users.fetch(discordUserId);
-      const msg = await user.send(text);
-      return msg.channelId;
-    } catch (error) {
-      this.logger.warn(
-        `Failed to send DM to discordUserId=${discordUserId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return undefined;
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
+      try {
+        const user = await this.client.users.fetch(discordUserId);
+        const msg = await user.send(text);
+        await this.deliveryLog?.logDelivery({
+          externalUserId: discordUserId,
+          status: 'SENT',
+          messageType: 'chat',
+        });
+        return msg.channelId;
+      } catch (error) {
+        lastError = error;
+        const errorMsg = error instanceof Error ? error.message : String(error);
+
+        if (attempt < RETRY_MAX_ATTEMPTS) {
+          const delayMs = RETRY_BASE_DELAY_MS * attempt;
+          this.logger.warn(
+            `DM send attempt ${attempt}/${RETRY_MAX_ATTEMPTS} failed for discordUserId=${discordUserId}, retrying in ${delayMs}ms: ${errorMsg}`,
+          );
+          await new Promise((r) => setTimeout(r, delayMs));
+        }
+      }
     }
+
+    const errorMsg =
+      lastError instanceof Error ? lastError.message : String(lastError);
+    this.logger.warn(
+      `Failed to send DM to discordUserId=${discordUserId} after ${RETRY_MAX_ATTEMPTS} attempts: ${errorMsg}`,
+    );
+    await this.deliveryLog?.logDelivery({
+      externalUserId: discordUserId,
+      status: 'FAILED',
+      error: errorMsg,
+      messageType: 'chat',
+    });
+    return undefined;
   }
 
   /** Sends a persistent quick-action menu with 3 buttons. Safe to click after bot restarts. */

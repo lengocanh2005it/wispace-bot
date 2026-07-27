@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { IntentsBitField, Partials } from 'discord.js';
 import { NecordModule } from 'necord';
 import { DatabaseModule } from './infrastructure/database/database.module';
+import { RedisModule } from './infrastructure/redis/redis.module';
 import { DiscordChatModule } from './modules/discord-chat/discord-chat.module';
 import { HealthController } from './health.controller';
 
@@ -32,6 +33,7 @@ import { HealthController } from './health.controller';
       }),
     }),
     DatabaseModule,
+    RedisModule,
     DiscordChatModule,
   ],
 })

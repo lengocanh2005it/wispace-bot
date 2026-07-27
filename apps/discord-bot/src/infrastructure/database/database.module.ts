@@ -9,6 +9,7 @@ import {
   LlmUsageEventEntity,
 } from '@wispace/chat-metering';
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
+import { WebhookDeadLetterEntity } from './entities/webhook-dead-letter.entity';
 
 /**
  * Connects to the same Postgres DB as `apps/messenger-bot` (Phase 2: shared
@@ -35,6 +36,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       DiscordAccountLinkEntity,
+      WebhookDeadLetterEntity,
     ],
     synchronize: false,
     logging: config.get<string>('DB_LOGGING') === 'true',
@@ -53,6 +55,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       ChatIdempotencyEntity,
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
+      WebhookDeadLetterEntity,
     ]),
   ],
   exports: [TypeOrmModule],
