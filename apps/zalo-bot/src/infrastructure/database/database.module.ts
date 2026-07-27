@@ -8,7 +8,10 @@ import { ZaloAccountLinkEntity } from './entities/zalo-account-link.entity';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
+  LlmUsageEventEntity,
+  LlmSafetyEventEntity,
 } from '@wispace/chat-metering';
+import { StudyReminderJobEntity } from './entities/study-reminder-job.entity';
 
 /**
  * Connects to the same Postgres DB as `apps/messenger-bot` (Phase 2: shared
@@ -34,6 +37,9 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       ZaloAccountLinkEntity,
       ChatDailyUsageEntity,
       ChatIdempotencyEntity,
+      LlmUsageEventEntity,
+      LlmSafetyEventEntity,
+      StudyReminderJobEntity,
     ],
     synchronize: false,
     logging: config.get<string>('DB_LOGGING') === 'true',
@@ -53,6 +59,9 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       ZaloAccountLinkEntity,
       ChatDailyUsageEntity,
       ChatIdempotencyEntity,
+      LlmUsageEventEntity,
+      LlmSafetyEventEntity,
+      StudyReminderJobEntity,
     ]),
   ],
   exports: [TypeOrmModule],
