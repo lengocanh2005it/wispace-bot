@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   isAgentToolName,
   type AgentToolName,
@@ -15,6 +15,10 @@ import { WispaceGoalsService } from '../../../wispace/application/services/wispa
 import { WispaceCalendarService } from '../../../wispace/application/services/wispace-calendar.service';
 import { DiscordRescheduleConfirmationService } from '../services/discord-reschedule-confirmation.service';
 import { DiscordOutboundService } from '../services/discord-outbound.service';
+import {
+  REPORT_DELIVERY_PORT,
+  type ReportDeliveryPort,
+} from '@wispace/scheduler-core';
 
 const NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';
@@ -43,6 +47,8 @@ export class DiscordAgentToolsService {
     private readonly calendarService: WispaceCalendarService,
     private readonly rescheduleConfirmationService: DiscordRescheduleConfirmationService,
     private readonly outboundService: DiscordOutboundService,
+    @Inject(REPORT_DELIVERY_PORT)
+    private readonly reportDeliveryPort: ReportDeliveryPort,
   ) {}
 
   async execute(
@@ -95,7 +101,7 @@ export class DiscordAgentToolsService {
             this.goalsService.getUserGoals(ctx.discordUserId),
             this.goalsService.getTaskScoreAverages(ctx.discordUserId),
           ]);
-          return { goals, taskScores };
+          return this.formatReport(goals, taskScores);
         });
       case 'get_upcoming_study_sessions':
         return this.withLinkedAccount(ctx, async () => {
@@ -171,6 +177,39 @@ export class DiscordAgentToolsService {
       topic: session.topic,
       scheduledAtIso: session.scheduledAt.toISOString(),
     }));
+  }
+
+  private formatReport(
+    goals: {
+      targetBand?: string;
+      examDate?: string;
+      task1Band?: string;
+      task2Band?: string;
+    },
+    taskScores: Array<{ task1Count?: number; task2Count?: number }> | null,
+  ): string {
+    const lines: string[] = ['📊 **Báo cáo tiến độ IELTS Writing**\n'];
+
+    if (goals.targetBand) {
+      lines.push(`🎯 Target band: ${goals.targetBand}`);
+    }
+    if (goals.examDate) {
+      lines.push(`📅 Ngày thi: ${goals.examDate}`);
+    }
+    if (goals.task1Band) {
+      lines.push(`📝 Task 1 band: ${goals.task1Band}`);
+    }
+    if (goals.task2Band) {
+      lines.push(`📝 Task 2 band: ${goals.task2Band}`);
+    }
+    if (taskScores && taskScores.length > 0) {
+      const score = taskScores[0];
+      lines.push('');
+      lines.push(`📝 Số bài Task 1: ${score.task1Count ?? 0}`);
+      lines.push(`📝 Số bài Task 2: ${score.task2Count ?? 0}`);
+    }
+
+    return lines.join('\n');
   }
 
   private async rescheduleStudySession(

@@ -87,10 +87,8 @@ describe('DiscordAgentToolsService', () => {
       userId: 143,
     });
 
-    expect(result).toEqual({
-      goals: { targetScore: 7, examDate: '2026-08-01' },
-      taskScores: [],
-    });
+    expect(result).toContain('Báo cáo tiến độ');
+    expect(result).toContain('2026-08-01');
   });
 
   it('get_upcoming_study_sessions maps calendar sessions when linked', async () => {
