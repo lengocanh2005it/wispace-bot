@@ -22,6 +22,10 @@ import { DiscordReportRetryDispatchService } from './application/services/discor
 import { DiscordGoalsDataAdapter } from './infrastructure/adapters/discord-goals-data.adapter';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { AccountLinkModule } from '../account-link/account-link.module';
+import { WispaceModule } from '../wispace/wispace.module';
+import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
+import { DiscordStudentReportService } from './application/services/discord-student-report.service';
+import { DISCORD_REPORT_PORT } from './domain/ports/discord-report.port';
 
 @Module({
   imports: [
@@ -32,6 +36,8 @@ import { AccountLinkModule } from '../account-link/account-link.module';
     ]),
     DiscordOutboundModule,
     AccountLinkModule,
+    WispaceModule,
+    ChatMeteringModule,
   ],
   providers: [
     {
@@ -52,6 +58,10 @@ import { AccountLinkModule } from '../account-link/account-link.module';
       provide: REPORT_CLAIM_REPOSITORY,
       useExisting: DiscordReportClaimRepository,
     },
+    {
+      provide: DISCORD_REPORT_PORT,
+      useExisting: DiscordStudentReportService,
+    },
     ReportScheduleService,
     ReportSendScheduleService,
     ReportCronLeaderService,
@@ -61,6 +71,7 @@ import { AccountLinkModule } from '../account-link/account-link.module';
     DiscordReportClaimRepository,
     DiscordReportCronService,
     DiscordReportRetryDispatchService,
+    DiscordStudentReportService,
   ],
   exports: [DiscordReportCronService, DiscordReportRetryDispatchService],
 })

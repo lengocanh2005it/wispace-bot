@@ -14,6 +14,10 @@ import {
   ReportScheduleService,
   ReportSendScheduleService,
 } from '@wispace/scheduler-core';
+import {
+  DISCORD_REPORT_PORT,
+  type DiscordReportPort,
+} from '../../domain/ports/discord-report.port';
 
 export interface ClaimAndSendResult {
   sent: number;
@@ -48,6 +52,8 @@ export class DiscordReportOrchestrationService {
     private readonly jobRepository: ReportSendJobRepositoryPort,
     @Inject(GOALS_DATA_PORT)
     private readonly goalsDataPort: GoalsDataPort,
+    @Inject(DISCORD_REPORT_PORT)
+    private readonly reportPort: DiscordReportPort,
     private readonly reportScheduleService: ReportScheduleService,
     private readonly reportSendScheduleService: ReportSendScheduleService,
   ) {}
@@ -96,7 +102,9 @@ export class DiscordReportOrchestrationService {
         mapping.externalUserId,
       );
       const examDate = this.goalsDataPort.parseExamDate(goals.examDate);
-      const reportText = `Report for ${mapping.externalUserId}`;
+      const reportText = await this.reportPort.generateReport(
+        mapping.externalUserId,
+      );
 
       const result = await this.deliveryService.sendReport({
         mapping,
