@@ -37,6 +37,7 @@
     "@wispace/student-report": "*",
     "@wispace/study-reminder-core": "*",
     "@wispace/wispace-client": "*",
+    "@opentelemetry/api": "^1.9.1",
     "discord.js": "^14.26.4",
     "necord": "^6.14.0",
     "openai": "^6.42.0",
