@@ -1,8 +1,8 @@
 # Edge Cases & Gaps — Remediation Roadmap
 
-Document recording **weaknesses / unhandled items** in the `demo_send_message_fb` POC (all functionality, not just rate limit) and **how to fix them** in **small phases** — independent PR merges.
+Document recording **weaknesses / unhandled items** in the WISPACE bots POC (all functionality, not just rate limit) and **how to fix them** in **small phases** — independent PR merges.
 
-**Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. POC DB **separated** to `ai_chat_bot_db` (✓). Items below are remaining gaps or scale-dependent improvements.
+**Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. POC DB **separated** to `ai_chat_bot_db` (✓). LLM Provider Abstraction **done** (PR #32). Shared packages **extracted** (12 packages). Discord bot **functional** (chat + quota + 6/7 tool handlers). Items below are remaining gaps or scale-dependent improvements.
 
 Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](./study-session-reminder.md), [chat-rate-limit-quota.md](./chat-rate-limit-quota.md), [AGENTS.md](../AGENTS.md) (Integration gaps table).
 
@@ -26,11 +26,18 @@ Related: [project-overview.md](./project-overview.md), [study-session-reminder.m
 | **S1** ✓ | Alert ops on `failed` / stuck reminder jobs | 0.5 days | Medium |
 | **S2** ✓ | Adaptive dispatch poll (scale) | 1–2 days | When outbox grows |
 | **C1** | Tier quota per WISPACE package | 2+ days | Post-product |
-| **C2** | Event store / LLM billing | ✓ MVP (hybrid Q0 + `llm_usage_events`) — [c2-master-implementation-plan.md](./c2-master-implementation-plan.md) |
+| **C2** ✓ | Event store / LLM billing | ✓ MVP (hybrid Q0 + `chat_quota_events` + `llm_usage_events`) — [c2-master-implementation-plan.md](./c2-master-implementation-plan.md) |
 | **I1** ✓ | Alert / grep `CHAT_QUOTA_*` + runbook | 0.5 days | Medium |
 | **DL** ✓ | Dead-letter webhook + auto-retry cron | 1.5 days | Multi-pod / production |
 | **I2** | Aggregated monitoring (Slack/webhook ops) | 1 day | When real users exist |
 | **I3** ✓ | Remove `UserCalendars` DB fallback | 1 day | API-only via `x-psid` |
+| **LLM-AB** ✓ | LLM Provider Abstraction (adapter + failover) | 2–3 days | OpenAI + OpenRouter + MiniMax (PR #32) |
+| **SAFETY** ✓ | LLM safety event tracking + cleanup | 1 day | Hallucination detection, daily alert |
+| **METRICS** ✓ | Prometheus `/metrics` endpoint | 0.5 days | `MetricsModule` |
+| **DOPPLER** ✓ | Doppler runtime sync | 1 day | `POST /messenger/ops/doppler-sync` |
+| **PKG** ✓ | Shared packages extraction | 3–5 days | 12 packages in `packages/` |
+| **DISCORD** ✓ | Discord bot (functional) | 3–5 days | Chat + quota + 6/7 tool handlers |
+| **ZALO** | Zalo bot (placeholder) | TBD | Chat + account linking, tools pending |
 
 **Recommended order:** ~~Q1/S0/I1/S1/L1/R1/L2/R2/R3/L3/R4/R5/S2~~ (✓) → `CHAT_QUEUE_SHARED` at scale → remaining items per user feedback.
 
@@ -52,7 +59,7 @@ flowchart LR
 
 | Behavior | Code / Notes |
 |----------|--------------|
-| Opt-in / `referral.ref` | `MessengerService` → `user_messenger_mappings` |
+| Opt-in / `referral.ref` | `MessengerService` → `user_platform_mappings` |
 | **Change `user_id` same PSID** | **L3** ✓ — `MessengerMappingService`, `MAPPING_USER_ID_UPDATED`, ops relink |
 | Duplicate report registration (topic/cadence) | `SUBSCRIPTION_ALREADY_ACTIVE` |
 | Postback dedupe 15s | `isDuplicatePostback` |
@@ -192,15 +199,23 @@ Details: [study-session-reminder.md §11.6](./study-session-reminder.md#116-work
 
 ### Already Done ✓
 
-Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4.
+Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4, LLM Provider Abstraction (adapter + failover), LLM safety event tracking, Prometheus metrics.
+
+- **LLM Provider Abstraction** — `LlmProviderAdapter` pattern with OpenAI + OpenRouter + MiniMax failover (PR #32). Env: `LLM_PROVIDER_FAILOVER_ORDER`.
+- **LLM Safety** — `LlmSafetyModule` tracks hallucination/safety events, cleanup cron, daily threshold alert.
+- **Metrics** — `MetricsModule` exposes `GET /metrics` for Prometheus scraping.
+- **Shared packages** — `@wispace/llm-agent`, `@wispace/chat-metering`, `@wispace/wispace-client`, etc.
+- **Discord bot** — chat + quota + 6/7 tool handlers (reschedule via button confirm/cancel). `register_exam_report_notifications` stubbed (no Discord ref-link equivalent).
+- **Zalo bot** — chat + account linking + tools wired (reschedule/register not yet available).
 
 ### Gaps & Remediation
 
 | Gap | Impact | Fix | Phase |
 |-----|--------|-----|-------|
 | Tier per WISPACE package | All users same `CHAT_FREE_FORM_DAILY_LIMIT` | Phase 7: limit by `user_id` / package API — [§5.8](./chat-rate-limit-quota.md) | **C1** |
-| Event store / billing | Hard to audit monthly LLM costs | [c2-master-implementation-plan.md](./c2-master-implementation-plan.md) | **C2** ✓ MVP |
-| Schedule change tool via chat | **Confirm postback** — `reschedule_study_session` only stages; WISPACE API runs on "Confirm Reschedule" tap | Done |
+| Event store / billing | Hard to audit monthly LLM costs | `chat_quota_events` + `llm_usage_events` tables ✓ | **C2** ✓ MVP |
+| Schedule change tool via chat | **Confirm postback** — `reschedule_study_session` only stages; WISPACE API runs on "Confirm Reschedule" tap | Done (Messenger + Discord button confirm/cancel) |
+| `register_exam_report_notifications` | Not available on Discord/Zalo | Needs product decision — no ref-link equivalent on Discord | TBD |
 
 ---
 
@@ -214,8 +229,12 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4.
 | **≥2 reminder cron pods** | `claimJob` ✓ + **cron pg_advisory_lock** ✓ | `upsertPendingJob` TOCTOU fixed ✓ (`pg_advisory_xact_lock`) | Done |
 | Multi-pod webhook dedupe cleanup cron | N×DELETE | **pg_advisory_lock** ✓ — only 1 pod runs every 15 minutes | Done |
 | Monitor / alert | Logs + scripts | **I1** ✓ runbook + `ops:health`; **S1** ✓ failed/stuck jobs; **DL** ✓ dead-letter cron; **I2** Slack alert | **I2** |
-| **Manual VPS prod env sync** | local/prod drift; secret rotation requires SSH | **Doppler** + `DOPPLER_TOKEN` on CI — [doppler-secrets.md](./doppler-secrets.md) | Done (code) — needs dashboard setup |
+| **Manual VPS prod env sync** | local/prod drift; secret rotation requires SSH | **Doppler** + `DOPPLER_TOKEN` on CI — [doppler-secrets.md](./doppler-secrets.md) | Done (code) |
 | WISPACE **schema** change | ~~`UserCalendars` DB fallback~~ | **I3** ✓ — API-only `UserCalendar` via `x-psid` | **I3** ✓ |
+| **LLM provider down** | Single provider failure | **LLM-AB** ✓ — adapter failover across OpenAI/OpenRouter/MiniMax |
+| **LLM safety events** | No tracking | **SAFETY** ✓ — `llm_safety_events` + cleanup cron + daily threshold alert |
+| **LLM usage audit** | No token tracking | `llm_usage_events` + BullMQ persist + cleanup ✓ |
+| **DB table rename** | `user_messenger_mappings` → `user_platform_mappings` | Migration ✓ (`1751029200001-GeneralizePlatformIdentifiers`) |
 
 ### I1 — Light Ops Alert (No Prometheus Required) ✓
 
@@ -242,7 +261,7 @@ Ran manual tests before go-live (Messenger + prod `.env`).
 ### Q1.1 Link
 
 - [x] Open `m.me` with `ref={userId}` from WISPACE
-- [x] Verify `user_messenger_mappings` has `psid` + `user_id`
+- [x] Verify `user_platform_mappings` has `external_user_id` + `user_id` + `platform`
 - [x] Persistent menu displayed (ran `profile/setup`)
 
 ### Q1.2 Reports
@@ -279,6 +298,9 @@ npm run study-reminder:jobs
 | S0 | `AGENTS.md` Integration gaps, `study-session-reminder.md` |
 | S2 | `study-session-reminder.md` §11.6, `project-overview.md` §6 |
 | R4, H7 scale | `project-overview.md` §10 |
+| LLM-AB, SAFETY, METRICS | `project-overview.md` §3 (modules), §6 (cron), §8 (env) |
+| PKG | `project-overview.md` §3 (code structure), AGENTS.md |
+| DISCORD, ZALO | `project-overview.md` §1 (features), AGENTS.md Integration gaps |
 | L1, R1, L2, R2, R3, … | Corresponding section in this file → move to "Already Done" ✓ |
 
 ---

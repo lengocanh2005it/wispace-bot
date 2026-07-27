@@ -16,7 +16,7 @@ Messenger links from WISPACE have this format:
 https://m.me/{pageId}?ref={userId}&topic=IELTS&cadence=WEEKLY
 ```
 
-Meta webhook sends `referral.ref` → POC parses integer → saves to `user_messenger_mappings` (`psid` ↔ `user_id`).
+Meta webhook sends `referral.ref` → POC parses integer → saves to `user_platform_mappings` (`external_user_id` ↔ `user_id`).
 
 ```typescript
 // poc.constants.ts — treats ref as valid userId if a positive integer parses
@@ -257,7 +257,7 @@ Team alignment notes after reviewing link flow — supplementing sections above,
 | Phase | Purpose | Calls WISPACE Verify? |
 |-------|---------|----------------------|
 | **Binding** (linking ceremony) | Proves Meta PSID belongs to which WISPACE user | **Yes — once** when webhook has `referral.ref` / unused token |
-| **Daily behavior** | Chat, menu, report cron, reminders | **No** — reads `user_messenger_mappings` |
+| **Daily behavior** | Chat, menu, report cron, reminders | **No** — reads `user_platform_mappings` |
 
 **Don't** verify every chat message: high latency, WISPACE dependency, no added security if mapping is already correct. Model similar to OAuth — login once, then trust session (mapping) persisted.
 

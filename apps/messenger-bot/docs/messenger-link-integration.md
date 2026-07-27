@@ -44,7 +44,7 @@ parseUserIdFromRef("143") → 143  // only parses number
 
 // src/modules/messenger/application/services/messenger.service.ts
 linkPsidFromContext("PSID_LAN", { userId: 143, ... })
-// → INSERT user_messenger_mappings: PSID_LAN ↔ 143
+// → INSERT user_platform_mappings: PSID_LAN ↔ 143
 ```
 
 ### Problem
@@ -134,7 +134,7 @@ Return: { "valid": true, "userId": 143, "topic": "IELTS", "cadence": "WEEKLY" }
     │
     ▼
 Bot: linkPsidFromContext("PSID_LAN", { userId: 143, ... })
-     → save user_messenger_mappings
+     → save user_platform_mappings
 ```
 
 **POC code idea** (not yet implemented — phase L4):
@@ -451,7 +451,7 @@ flowchart LR
   subgraph ceremony ["Linking Ceremony"]
     A[m.me?ref=token] --> B[webhook has referral.ref]
     B --> C[POST verify token + psid]
-    C --> D[save user_messenger_mappings]
+    C --> D[save user_platform_mappings]
   end
 
   subgraph daily ["Daily Usage"]

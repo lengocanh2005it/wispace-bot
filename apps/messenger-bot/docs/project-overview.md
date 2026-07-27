@@ -1,6 +1,14 @@
-# POC Overview — WISPACE Messenger Bot
+# POC Overview — WISPACE Bots (Turborepo Monorepo)
 
-NestJS service connecting **WISPACE** (IELTS Writing learning platform) with **Facebook Messenger**: students link accounts via `m.me`, receive AI progress reports and upcoming study session reminders.
+Turborepo monorepo connecting **WISPACE** (IELTS Writing learning platform) with **Facebook Messenger**, **Discord**, and **Zalo**: students link accounts, receive AI progress reports and upcoming study session reminders.
+
+| App | Status |
+|-----|--------|
+| `apps/messenger-bot` | Fully functional — chat, reports, reminders, rate limit |
+| `apps/discord-bot` | Fully functional — chat, quota, 6/7 tool handlers, report cron |
+| `apps/zalo-bot` | Placeholder — chat + account linking, tools not yet wired |
+
+Shared packages (`packages/`): `llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `study-reminder-core`, `study-reminder-shared`, `scheduler-core`, `ops-health`, `bot-metrics`, `cleanup-cron`.
 
 This is a **POC** — prioritizing fast shipping, with a **dedicated** PostgreSQL DB (`ai_chat_bot_db`) + WISPACE HTTP API, not yet separated into a standalone microservice.
 
@@ -8,11 +16,11 @@ This is a **POC** — prioritizing fast shipping, with a **dedicated** PostgreSQ
 
 ## 1. Existing Features
 
-### 1.1. Messenger ↔ WISPACE Linking
+### 1.1. Platform ↔ WISPACE Linking
 
-- Students open `m.me/{page}?ref={userId}&topic=...&cadence=...` links from WISPACE.
-- Messenger webhook receives the event → saves `user_id` ↔ `psid` to `user_messenger_mappings`.
-- Bot menu (persistent menu): register reports, view progress, preview study reminders.
+- Students open `m.me/{page}?ref={userId}&topic=...&cadence=...` links from WISPACE (Messenger), Discord OAuth2, or Zalo OAuth.
+- Webhook/OAuth receives the event → saves `user_id` ↔ `external_user_id` + `platform` to `user_platform_mappings`.
+- Bot menu (Messenger persistent menu, Discord slash commands): register reports, view progress, preview study reminders.
 
 ### 1.2. Study Reports (Exam Reminder Report)
 
@@ -45,30 +53,62 @@ This is a **POC** — prioritizing fast shipping, with a **dedicated** PostgreSQ
 flowchart TB
   subgraph External
     FB["Facebook Messenger\nWebhook + Send API"]
+    DISC["Discord Bot Gateway"]
+    ZALO["Zalo OA Webhook"]
     WISPACE["WISPACE Backend"]
-    WAPI["WISPACE API\nUserCalendar, goals, scores\nx-psid"]
-    OAI["LLM Provider\n(OpenAI adapter)"]
+    WAPI["WISPACE API\nUserCalendar, goals, scores"]
+    LLM["LLM Provider\nOpenAI / OpenRouter / MiniMax\n(adapter + failover)"]
   end
 
-  subgraph App["demo_send_message_fb (NestJS)"]
-    WH["MessengerController\n/webhook"]
-    MS["MessengerService\nwebhook orchestration"]
-    OUT["MessengerOutbound\nSend API + mapping"]
-    SR["StudentReportService"]
-    ST["StudyReminderModule\nsync / dispatch / cleanup"]
-    CRON["SchedulerModule\ncron + HTTP triggers"]
+  subgraph App["wispace-bot (Turborepo)"]
+    subgraph Messenger["apps/messenger-bot"]
+      WH["MessengerController\n/webhook"]
+      MS["MessengerService\nwebhook orchestration"]
+      OUT["MessengerOutbound\nSend API + mapping"]
+      SR["StudentReportService"]
+      ST["StudyReminderModule\nsync / dispatch / cleanup"]
+      CRON["SchedulerModule\ncron + HTTP triggers"]
+      AGENT["MessengerAgentService\nLLM agent + tools"]
+      PIPELINE["ChatPipelineModule\ndebounce + queue"]
+      RATE["ChatRateLimitModule\nquota + idempotency"]
+    end
+    subgraph Discord["apps/discord-bot"]
+      DGW["DiscordGateway\nslash commands + events"]
+      DOUT["DiscordOutboundService"]
+      DAGENT["DiscordAgentService\nLLM agent + tools"]
+    end
+    subgraph ZaloApp["apps/zalo-bot"]
+      ZWH["ZaloWebhookController"]
+      ZCHAT["ZaloChatService"]
+    end
+    subgraph Shared["packages/"]
+      LLMAG["llm-agent\nadapter + function calling"]
+      METER["chat-metering\nquota + usage + safety"]
+      WCLIENT["wispace-client\nHTTP API clients"]
+      CHATCORE["chat-queue-core\ndebounce state machine"]
+      REPORT["student-report\nLLM report generation"]
+      SCHED["scheduler-core\ncron leader + report schedule"]
+    end
   end
 
   subgraph DB["PostgreSQL ai_chat_bot_db"]
-    MAP["user_messenger_mappings"]
-    LOG["messenger_message_logs"]
-    USAGE["messenger_chat_daily_usage"]
-    IDEM["messenger_chat_idempotency"]
+    MAP["user_platform_mappings"]
+    LOG["message_logs"]
+    USAGE["chat_daily_usage"]
+    IDEM["chat_idempotency"]
     JOBS["study_reminder_jobs"]
+    DL["webhook_dead_letters"]
+    RSJ["report_send_jobs"]
+    CLM["scheduled_report_claims"]
+    QEVT["chat_quota_events"]
+    LLMU["llm_usage_events"]
+    LLMS["llm_safety_events"]
     USR["users + view Users"]
   end
 
   FB <-->|events / messages| WH
+  DISC <-->|gateway| DGW
+  ZALO <-->|webhook| ZWH
   WH --> MS
   MS --> SR
   MS --> ST
@@ -77,17 +117,15 @@ flowchart TB
   CRON --> MS
   CRON --> ST
   SR --> WAPI
-  SR --> OAI
+  SR --> LLM
   WISPACE -->|study-calendar/sync| CRON
   ST --> WAPI
-  ST --> OAI
-  ST --> CAL
+  ST --> LLM
   OUT --> MAP
   OUT --> LOG
   MS --> USAGE
   MS --> IDEM
   ST --> JOBS
-  ST -.->|MESSENGER_MAPPING_READER| MAP
 ```
 
 ### Main Flows
@@ -119,31 +157,51 @@ flowchart TB
 Repo uses **Clean Architecture** — each feature in `src/modules/<name>/` has 4 layers: `domain` → `application` → `infrastructure` → `presentation`. Rule details: [AGENTS.md § Clean Architecture](../AGENTS.md#clean-architecture) and `.claude/rules/clean-architecture.md`.
 
 ```
-demo_send_message_fb/
-├── AGENTS.md                 # Instructions for AI agents (Cursor, Claude, Codex)
-├── docs/
-├── scripts/                  # CLI utilities (not run in app)
-├── src/
-│   ├── main.ts, app.module.ts
-│   ├── shared/
-│   │   ├── config/poc.constants.ts     # m.me links, parse ref/userId
-│   │   ├── common/                     # InternalApiKeyGuard
-│   │   └── prompts/                    # *.system.txt, load-system-prompt.ts
-│   ├── infrastructure/database/
-│   │   ├── database.module.ts
-│   │   ├── data-source.ts              # TypeORM CLI → dist/infrastructure/database/
-│   │   ├── typeorm.options.ts
-│   │   ├── entities/
-│   │   └── migrations/
-│   └── modules/
-│       ├── messenger/          # domain | application | infrastructure | presentation
-│       │   └── messenger-outbound.module.ts   # Send API + mapping (breaks cycle)
-│       ├── chat-rate-limit/    # daily quota + idempotency mid
-│       ├── student-report/
-│       ├── study-reminder/
-│       └── scheduler/          # report cron + HTTP ops /messenger/*
-├── .env.example
-└── package.json
+wispace-bot/                          # Turborepo root
+├── apps/
+│   ├── messenger-bot/                # This POC (NestJS)
+│   │   ├── src/
+│   │   │   ├── main.ts, app.module.ts
+│   │   │   ├── shared/
+│   │   │   │   ├── config/poc.constants.ts
+│   │   │   │   ├── common/           # InternalApiKeyGuard
+│   │   │   │   └── prompts/          # *.system.txt
+│   │   │   ├── infrastructure/
+│   │   │   │   ├── database/         # TypeORM entities, migrations
+│   │   │   │   └── redis/            # Redis client, health
+│   │   │   └── modules/
+│   │   │       ├── messenger/        # domain | application | infrastructure | presentation
+│   │   │       │   ├── chat-pipeline.module.ts
+│   │   │       │   ├── user-linking.module.ts
+│   │   │       │   └── messenger-outbound.module.ts
+│   │   │       ├── chat-rate-limit/  # quota + idempotency (H2–H7)
+│   │   │       ├── llm-execution/    # LLM provider adapter + concurrency gate
+│   │   │       ├── llm-usage/        # LLM token usage tracking
+│   │   │       ├── llm-safety/       # LLM hallucination event tracking
+│   │   │       ├── student-report/   # Wispace goals/scores → LLM report
+│   │   │       ├── study-reminder/   # sync / dispatch / cleanup
+│   │   │       ├── scheduler/        # cron + HTTP ops endpoints
+│   │   │       └── metrics/          # Prometheus /metrics
+│   │   ├── docs/
+│   │   ├── scripts/                  # CLI utilities (not run in app)
+│   │   └── .env.example
+│   ├── discord-bot/                  # Discord bot (NestJS)
+│   └── zalo-bot/                     # Zalo bot (placeholder)
+├── packages/                         # Shared packages
+│   ├── llm-agent/                    # LLM adapter + function calling
+│   ├── chat-metering/                # quota + usage + safety
+│   ├── wispace-client/               # HTTP API clients
+│   ├── chat-history/                 # in-memory chat history store
+│   ├── student-report/               # LLM report generation
+│   ├── chat-queue-core/              # debounce state machine
+│   ├── study-reminder-core/          # pure reminder schedule functions
+│   ├── study-reminder-shared/        # shared types
+│   ├── scheduler-core/               # cron leader + report schedule
+│   ├── ops-health/                   # ops health snapshot
+│   ├── bot-metrics/                  # Prometheus metrics
+│   └── cleanup-cron/                 # shared cleanup utilities
+├── .env.shared.example               # Cross-bot shared env vars
+└── turbo.json
 ```
 
 ### NestJS Modules
@@ -151,12 +209,19 @@ demo_send_message_fb/
 | Module | Role |
 |--------|------|
 | `DatabaseModule` | TypeORM + PostgreSQL, auto migration on start |
+| `RedisModule` | Redis client lifecycle + health check |
 | `MessengerOutboundModule` | Send API, `MessengerRepository`, ports `MESSAGE_SENDER`, `MESSENGER_MAPPING_READER` |
-| `MessengerModule` | Webhook orchestration, profile menu, chat queue + agent |
-| `ChatRateLimitModule` | FREE_FORM quota: `checkQuota`, `reserve`, `refund`, `.env` config |
+| `MessengerModule` | Webhook orchestration, profile menu, message log, dead letter |
+| `ChatPipelineModule` | Chat queue debounce + agent LLM + tools + store resolvers (split from MessengerModule) |
+| `UserLinkingModule` | Link flow + mapping + token verify (split from MessengerModule) |
+| `ChatRateLimitModule` | FREE_FORM quota: `checkQuota`, `reserve`, `refund`, burst counter, idempotency |
+| `LlmExecutionModule` | LLM provider adapter (OpenAI/OpenRouter/MiniMax failover) + concurrency gate |
+| `LlmUsageModule` | LLM token usage tracking + BullMQ persist + cleanup cron |
+| `LlmSafetyModule` | LLM hallucination/safety event tracking + cleanup |
 | `StudentReportModule` | WISPACE goals/scores → `StudentReportService` (LLM report) |
 | `StudyReminderModule` | Schedule sync, job dispatch, cleanup, LLM study reminders |
 | `SchedulerModule` | `ReportCronService`, operational HTTP endpoints |
+| `MetricsModule` | Prometheus `/metrics` endpoint |
 
 `AppModule` imports `StudyReminderModule` directly. `StudyReminderModule` imports `MessengerOutboundModule` (no `forwardRef` with `MessengerModule`). Reminder dispatch sends messages via port `MESSAGE_SENDER`, not by calling `MessengerService` directly.
 
@@ -168,12 +233,18 @@ demo_send_message_fb/
 
 | Table | Purpose |
 |-------|---------|
-| `user_messenger_mappings` | `user_id`, `psid`, `cadence`, `topic`, `status` |
-| `messenger_message_logs` | Audit of sent / failed messages |
-| `messenger_chat_daily_usage` | FREE_FORM chat quota counter per `(psid, usage_date)` |
-| `messenger_chat_idempotency` | Idempotency `message.mid` when reserving quota |
+| `user_platform_mappings` | `user_id`, `external_user_id`, `platform` (messenger/discord/zalo), `cadence`, `topic`, `status` |
+| `message_logs` | Audit of sent / failed messages |
+| `chat_daily_usage` | FREE_FORM chat quota counter per `(external_user_id, usage_date)` (from `@wispace/chat-metering`) |
+| `chat_idempotency` | Idempotency `message.mid` when reserving quota (from `@wispace/chat-metering`) |
 | `study_reminder_jobs` | Reminder queue (`pending` → `sent` / …) |
-| `users` + view `"Users"` | Display name / exam date cache — only `user_id` with Messenger mapping; Redis `cache:user:display:{userId}` when R5 enabled |
+| `scheduled_report_claims` | Multi-pod 08:00 report cron claim + advisory lock |
+| `report_send_jobs` | Outbox retry for report cron 5xx (R5) |
+| `webhook_dead_letters` | Dead-letter webhook entries + auto-retry |
+| `chat_quota_events` | Dual-write quota audit events (C2 hybrid) |
+| `llm_usage_events` | LLM token usage tracking (from `@wispace/chat-metering`) |
+| `llm_safety_events` | LLM hallucination/safety event tracking (from `@wispace/chat-metering`) |
+| `users` + view `"Users"` | Display name / exam date cache — Redis `cache:user:display:{userId}` when R5 enabled |
 
 Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 
@@ -209,9 +280,15 @@ All endpoints below require header **`X-Internal-Api-Key`** (or `Authorization: 
 | POST | `/messenger/send-reports/retry-dispatch` | — | Manually dispatch outbox R5 |
 | POST | `/messenger/sync-study-reminders` | — | Sync all users (ops / fallback cron) |
 | POST | `/messenger/send-study-reminders` | — | Sync + dispatch due jobs |
+| POST | `/messenger/study-reminder/evening-rollover` | — | Trigger evening rollover job state transitions |
 | POST | `/messenger/profile/setup` | — | Configure bot menu (ops) |
+| POST | `/messenger/mapping/relink` | `{ "psid": string, "userId": number, "allowRelink"?: boolean }` | Ops relink PSID to userId |
+| POST | `/messenger/ops/doppler-sync` | — | Doppler webhook runtime sync + container restart |
 | GET | `/messenger/ops/llm-usage/summary` | Query: `psid` **or** `userId`; `from`/`to` (YYYY-MM-DD, default today) | Total tokens + estimated USD per feature for one student |
 | GET | `/messenger/ops/llm-usage/fleet` | Query: `date` (YYYY-MM-DD, default today) | Total tokens + estimated USD fleet-wide by feature |
+| GET | `/health/db` | — | DB health check |
+| GET | `/health/redis` | — | Redis health check (503 when enabled but unreachable) |
+| GET | `/metrics` | — | Prometheus metrics scrape |
 
 Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP — no API key needed.
 
@@ -221,12 +298,19 @@ Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP �
 
 | Name | Schedule | Service |
 |------|----------|---------|
-| `exam-reminder-report` | `0 8 * * *` (08:00) | `ReportCronService` |
-| `study-reminder-sync` | Every 30 minutes | `StudyReminderWorkerService` |
-| `study-reminder-dispatch` | Adaptive 30s–3.5min (`STUDY_REMINDER_POLL_*`) | `StudyReminderWorkerService` — S2 ✓ |
-| `study-reminder-cleanup` | `0 0 3 * * *` (03:00) | Delete old terminal jobs |
-| `messenger-message-log-cleanup` | `0 0 3 1 * *` (03:00 on the 1st of each month, ICT) | Delete `messenger_message_logs` older than `MESSENGER_MESSAGE_LOG_RETENTION_DAYS` (default 90) |
-| `messenger-chat-queue-flush` | Every 2 seconds (when `CHAT_QUEUE_STORE` ≠ memory) | Poll redis buffer → flush |
+| `exam-reminder-report` | `0 8 * * *` (08:00 ICT) | `ReportCronService` — daily student reports |
+| `report-send-retry` | `*/15 * * * *` | `ReportSendRetryDispatchService` — outbox R5 retry |
+| `ops-health-daily` | `0 0 9 * * *` (09:00 ICT) | `OpsHealthCronService` — ops health alert |
+| `study-reminder-sync` | `0 */30 * * * *` (every 30 min) | `StudyReminderWorkerService` — sync upcoming sessions |
+| `study-reminder-dispatch` | Adaptive 30s–3.5min (`STUDY_REMINDER_POLL_*`) | `StudyReminderWorkerService` — S2 adaptive dispatch |
+| `study-reminder-cleanup` | `0 0 3 * * *` (03:00) | `StudyReminderWorkerService` — purge old terminal jobs |
+| `study-reminder-evening-rollover` | Dynamic (config hour, ICT) | `StudyReminderWorkerService` — rollover job states |
+| `messenger-message-log-cleanup` | `0 0 3 * * 1` (Monday 03:00 ICT) | `MessengerMessageLogCleanupService` — purge old message_logs |
+| `messenger-chat-queue-flush` | `*/2 * * * * *` (every 2 sec) | `MessengerChatQueueWorkerService` — flush debounced queue (distributed mode) |
+| `webhook-dead-letter-retry` | `0 */5 * * * *` (every 5 min) | `MessengerWebhookDeadLetterCronService` — retry dead-letter webhooks |
+| `chat-quota-events-cleanup` | `0 30 3 1 * *` (1st of month 03:30 ICT) | `ChatQuotaEventCleanupCronService` — purge old chat_quota_events |
+| `llm-usage-cleanup` | `0 0 4 1 * *` (1st of month 04:00 ICT) | `LlmUsageCleanupCronService` — purge old llm_usage_events |
+| `llm-safety-cleanup` | `0 3 * * *` (daily 03:00 ICT) | `LlmSafetyCleanupService` — purge old llm_safety_events |
 
 Study reminder sync also runs **on server start** (`onModuleInit`).
 
@@ -256,20 +340,25 @@ LLM safety:
 
 ## 8. `.env` Configuration
 
-See `.env.example`. Main groups:
+See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared config at repo root). Main groups:
 
 - **Meta:** `PAGE_ACCESS_TOKEN`, `VERIFY_TOKEN`, `MESSENGER_APP_SECRET`, `MESSENGER_WEBHOOK_SIGNATURE_VERIFY`, `MESSENGER_PAGE_ID`, `GRAPH_API_VERSION`
-- **OpenAI:** `OPENAI_API_KEY`, `OPENAI_MODEL`
-- **LLM failover (`.env.shared.example`):** `LLM_PROVIDER_FAILOVER_ORDER` (CSV: `openai,openrouter,minimax`; empty = no failover), `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, `MINIMAX_API_KEY`, `MINIMAX_MODEL`, `MINIMAX_BASE_URL`, `LLM_FAILOVER_COOLDOWN_LONG_MS`, `LLM_FAILOVER_COOLDOWN_SHORT_MS`, `LLM_FAILOVER_QUICK_RETRY_DELAY_MS`
+- **OpenAI (shared):** `OPENAI_API_KEY`, `OPENAI_MODEL`
+- **LLM failover (shared):** `LLM_PROVIDER_FAILOVER_ORDER` (CSV: `openai,openrouter,minimax`; empty = no failover), `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, `MINIMAX_API_KEY`, `MINIMAX_MODEL`, `MINIMAX_BASE_URL`, `LLM_FAILOVER_COOLDOWN_LONG_MS`, `LLM_FAILOVER_COOLDOWN_SHORT_MS`, `LLM_FAILOVER_QUICK_RETRY_DELAY_MS`
 - **LLM execution gate:** `LLM_EXECUTION_ENABLED`, `LLM_MAX_CONCURRENT`, `LLM_OPENAI_RETRY_MAX_ATTEMPTS`, `LLM_OPENAI_RETRY_BACKOFF_MS`
+- **LLM global concurrency:** `LLM_GLOBAL_CONCURRENCY_ENABLED`, `LLM_GLOBAL_MAX_CONCURRENT`
 - **LLM usage (C2):** `LLM_USAGE_*`, `LLM_USAGE_BULLMQ_*`; USD estimate: `LLM_COST_USD_PER_1M_INPUT_TOKENS_<MODEL>` / `LLM_COST_USD_PER_1M_OUTPUT_TOKENS_<MODEL>` (e.g. `gpt-5.4` → `GPT_5_4`: input `2.50`, output `15.00` per [OpenAI pricing](https://developers.openai.com/api/docs/pricing); ≠ actual invoice)
-- **WISPACE API:** `WISPACE_API_USER_CALENDAR_URL`, `WISPACE_API_USER_GOALS_URL`, `WISPACE_API_TASK_SCORE_URL`, `WISPACE_INTERNAL_KEY` — auth: `x-psid` + `X-Internal-Key`
-- **Study reminder:** `STUDY_REMINDER_*` — **required**, no hardcoded fallbacks in code
-- **Chat rate limit:** `CHAT_RATE_LIMIT_ENABLED`, `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_BURST_STORE` (R3), `CHAT_USAGE_TIMEZONE`, `CHAT_RATE_LIMIT_WHITELIST_PSIDS`, `CHAT_QUOTA_REMAINING_HINT_THRESHOLD`, `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS` (H2), `CHAT_MERGED_TEXT_MAX_CHARS` / `CHAT_BURST_COUNT_REFUNDED` (H5), `CHAT_IDEMPOTENCY_RETENTION_DAYS` (H6)
-- **Chat queue:** `CHAT_DEBOUNCE_MS`, `CHAT_MAX_BUBBLES`, `CHAT_BUBBLE_MAX_CHARS`, `CHAT_QUEUE_STORE` (R4), `CHAT_QUEUE_SHARED` (H7 legacy), `CHAT_HISTORY_STORE` (R1), `CHAT_DEDUPE_STORE` (R2), `CHAT_QUEUE_PROCESSING_STUCK_MS`, `CHAT_WEBHOOK_DEDUPE_RETENTION_MS`, `CHAT_HISTORY_TTL_MS`, `CHAT_HISTORY_MAX_MESSAGES`
+- **LLM safety:** `LLM_SAFETY_EVENTS_ENABLED`, `LLM_SAFETY_WARNING_DAILY_THRESHOLD`, `LLM_SAFETY_EVENT_RETENTION_DAYS`
+- **WISPACE API (shared):** `WISPACE_API_USER_CALENDAR_URL`, `WISPACE_API_USER_GOALS_URL`, `WISPACE_API_TASK_SCORE_URL`, `WISPACE_INTERNAL_KEY` — auth: `x-psid` + `X-Internal-Key`
+- **Study reminder (shared):** `STUDY_REMINDER_*` — **required**, no hardcoded fallbacks in code; `STUDY_REMINDER_STUCK_PROCESSING_MS`
+- **Chat rate limit:** `CHAT_RATE_LIMIT_ENABLED`, `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_BURST_STORE` (R3: `postgres` | `memory` | `redis`), `CHAT_USAGE_TIMEZONE` (shared), `CHAT_RATE_LIMIT_WHITELIST_PSIDS`, `CHAT_QUOTA_REMAINING_HINT_THRESHOLD`, `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS` (H2), `CHAT_MERGED_TEXT_MAX_CHARS` / `CHAT_BURST_COUNT_REFUNDED` (H5), `CHAT_IDEMPOTENCY_RETENTION_DAYS` (H6)
+- **Chat quota events:** `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`, `CHAT_QUOTA_EVENTS_CLEANUP_ENABLED`
+- **Chat queue:** `CHAT_DEBOUNCE_MS`, `CHAT_MAX_BUBBLES`, `CHAT_BUBBLE_MAX_CHARS`, `CHAT_QUEUE_STORE` (R4), `CHAT_QUEUE_SHARED` (H7 legacy), `CHAT_HISTORY_STORE` (R1), `CHAT_DEDUPE_STORE` (R2), `CHAT_QUEUE_PROCESSING_STUCK_MS`, `CHAT_QUEUE_STALE_TTL_MS`, `CHAT_QUEUE_CLEANUP_INTERVAL_MS`, `CHAT_WEBHOOK_DEDUPE_RETENTION_MS`, `CHAT_HISTORY_TTL_MS`, `CHAT_HISTORY_MAX_MESSAGES`
 - **Ops API:** `INTERNAL_API_KEY` — header `X-Internal-Api-Key` for sync / send-reports / profile setup
-- **Exam reports:** `WISPACE_REPORT_DAYS_BEFORE_EXAM_MIN/MAX`
-- **DB:** `DB_HOST`, `DB_PORT`, `DB_NAME` (`ai_chat_bot_db`), `DB_USER`, `DB_PASSWORD`, `DB_MIGRATIONS_RUN`
+- **Doppler runtime sync:** `DOPPLER_RUNTIME_SYNC_ENABLED`, `DOPPLER_RUNTIME_TOKEN`, `DOPPLER_PROJECT`, `DOPPLER_CONFIG`, `DOPPLER_RUNTIME_SYNC_DEBOUNCE_SECONDS`
+- **Deploy:** `DEPLOY_DIR`, `DEPLOY_ENV_FILE`, `DEPLOY_COMPOSE_FILE`, `DEPLOY_CONTAINER_NAME`, `GHCR_PULL_TOKEN`, `GHCR_USER`, `DEPLOY_UID`, `DEPLOY_GID`, `DOCKER_GID`
+- **Exam reports:** `WISPACE_REPORT_DAYS_BEFORE_EXAM_MIN/MAX`, `REPORT_SEND_CONCURRENCY`
+- **DB:** `DB_HOST`, `DB_PORT`, `DB_NAME` (`ai_chat_bot_db`), `DB_USER`, `DB_PASSWORD`, `DB_MIGRATIONS_RUN`, `DB_POOL_SIZE`, `DB_POOL_IDLE_TIMEOUT_MS`, `DB_POOL_CONNECTION_TIMEOUT_MS`
 - **Redis (optional, VPS):** `REDIS_ENABLED`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` — R0–R4 stores + R5 user display cache; `GET /health/redis` when enabled
   - Redis runs **standalone on VPS** (folder `~/redis`, Docker publish `6379`) — not in the app repo. Local + prod share `REDIS_HOST` = VPS IP.
 - **User display cache (R5):** `USER_DISPLAY_NAME_CACHE_ENABLED`, `USER_DISPLAY_NAME_CACHE_TTL_SECONDS`
@@ -307,11 +396,12 @@ node scripts/drop-poc-tables-old-db.mjs       # drop POC + migrations on writing
 ## 10. POC Scope & Limitations
 
 - **Single instance** — `CRON_LEADER_ENABLED=false` (default); enable `CHAT_RATE_LIMIT_ENABLED=true` on prod.
-- **Scaling ≥2 instances** — chat: `CHAT_QUEUE_SHARED=true` (H7); 08:00 reports: `CRON_LEADER_ENABLED` + `messenger_scheduled_report_claims` table (R4 ✓). Preparation runbook: [scale-phase-b-runbook.md](./scale-phase-b-runbook.md).
-- **Messenger only** — users without mapped `psid` don't receive messages.
+- **Scaling ≥2 instances** — chat: `CHAT_QUEUE_SHARED=true` (H7); 08:00 reports: `CRON_LEADER_ENABLED` + `scheduled_report_claims` table (R4 ✓). Preparation runbook: [scale-phase-b-runbook.md](./scale-phase-b-runbook.md).
+- **Multi-platform** — Messenger (fully functional), Discord (fully functional), Zalo (placeholder). Shared packages in `packages/`.
 - **Schedule integration** — WISPACE calls `POST /messenger/study-calendar/sync` on schedule change (S0 ✓); 30-minute cron is a fallback.
 - **UserCalendar API** — requires `WISPACE_API_USER_CALENDAR_URL`; no more DB fallback.
 - **Chat rate limit** — V1 + H1–H7 ✓; remaining project-wide gaps: [edge-cases-roadmap.md](./edge-cases-roadmap.md)
+- **LLM Provider Abstraction** — adapter pattern with OpenAI + OpenRouter + MiniMax failover (PR #32).
 
 Detailed study reminder trade-offs: section 11 in [study-session-reminder.md](./study-session-reminder.md).
 

@@ -21,7 +21,7 @@ Idea: **write reminder jobs to DB first**, then when the time comes, **send mess
 flowchart LR
   subgraph Sync["Step 1 — Sync schedule"]
     Cal["GET UserCalendar\nx-psid"]
-    Map["user_messenger_mappings"]
+    Map["user_platform_mappings"]
     Jobs["study_reminder_jobs"]
     Map --> Cal
     Cal --> Jobs
@@ -29,8 +29,8 @@ flowchart LR
 
   subgraph Dispatch["Step 2 — Dispatch"]
     Worker["Adaptive poll loop"]
-    LLM["LLM Provider\n(OpenAI adapter)"]
-    FB["Messenger"]
+    LLM["LLM Provider\n(adapter + failover)"]
+    FB["Messenger / Discord"]
     Worker --> Jobs
     Worker --> LLM
     Worker --> FB
@@ -56,7 +56,7 @@ There are **two sync modes** (same internal logic):
 | Mode | Trigger | Scope |
 |------|---------|-------|
 | **Per-user** | `POST /messenger/study-calendar/sync` `{ userId }` | One user — WISPACE calls after schedule change |
-| **All users** | 30-min cron, server start, `POST /messenger/sync-study-reminders` | All ACTIVE mappings with `psid` |
+| **All users** | 30-min cron, server start, `POST /messenger/sync-study-reminders` | All ACTIVE mappings with `external_user_id` |
 
 For each synced user:
 
@@ -265,7 +265,7 @@ DELETE /api/UserCalendar/{id}
 x-psid: {messenger_psid}
 ```
 
-POC code: `UserCalendarApiService` (GET/POST/DELETE) + `UserCalendarScheduleService` (normalize → `session_key: calendar:{id}`, combine `eventDate` + `time` per `STUDY_REMINDER_TIMEZONE`).
+POC code: `UserCalendarApiClient` + `UserCalendarScheduleClient` from `@wispace/wispace-client` package (normalize → `session_key: calendar:{id}`, combine `eventDate` + `time` per `STUDY_REMINDER_TIMEZONE`).
 
 All schedule changes (POST/DELETE) **must call** `POST /messenger/study-calendar/sync` — see section [3.6](#36-api-sync-on-schedule-change).
 
@@ -280,13 +280,13 @@ All schedule changes (POST/DELETE) **must call** `POST /messenger/study-calendar
 
 ```mermaid
 flowchart LR
-  Map["user_messenger_mappings\nuser_id ↔ psid"] --> Cal["GET UserCalendar\nx-psid"]
-  Map --> Messenger["Messenger Send API"]
+  Map["user_platform_mappings\nuser_id ↔ external_user_id + platform"] --> Cal["GET UserCalendar\nx-psid"]
+  Map --> Messenger["Messenger / Discord / Zalo Send API"]
   Wispace["Wispace backend"] -->|POST study-calendar/sync| MS["Messenger service"]
   Wispace --> Cal
 ```
 
-Both Messenger and WISPACE API need **`psid`**. The `user_messenger_mappings` table is the bridge.
+Both Messenger and WISPACE API need **`external_user_id`** (was `psid`). The `user_platform_mappings` table is the bridge.
 
 ---
 

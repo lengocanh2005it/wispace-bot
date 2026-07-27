@@ -113,7 +113,7 @@ CREATE INDEX idx_chat_daily_usage_user_date
 | Column | Meaning |
 |--------|---------|
 | `psid` | Primary key — always available from Messenger webhook |
-| `user_id` | Copied from `user_messenger_mappings` when linked (reports, ops) |
+| `user_id` | Copied from `user_platform_mappings` when linked (reports, ops) |
 | `usage_date` | ICT date as `2026-06-15` — do **not** use UTC arbitrarily |
 | `free_form_count` | Number of FREE_FORM turns consumed today |
 
@@ -201,12 +201,14 @@ User `psid=27291166300574332` (user 143), limit 15:
 #### Suggested Module Code
 
 ```
-src/chat-rate-limit/
+src/modules/chat-rate-limit/
   chat-rate-limit.module.ts
   chat-rate-limit.service.ts       # check(), reserve(), refund()
   chat-daily-usage.repository.ts
   chat-daily-usage.entity.ts
 ```
+
+> **Note:** Core rate-limit logic (`ChatRateLimitCore`, `ChatRateLimitRepository`, `MemoryBurstCounter`, `PostgresBurstCounter`) now lives in `@wispace/chat-metering` package, shared across Messenger, Discord, and Zalo bots.
 
 Hook: **`MessengerChatQueueService.flush()`** — before LLM; webhook keeps RAM dedupe. Postback does **not** go through rate limit.
 
@@ -626,8 +628,10 @@ class ChatRateLimitService {
 |-------|------|--------|
 | **V2 UX** | Hint "X remaining" when `remaining ≤ threshold` | ✓ Phase 6 (code) |
 | **V3 Tier** | Limit by `user_id` / WISPACE package | Not yet |
-| **V4 Event store** | `messenger_chat_events` + replay / billing | ✓ Q0 hybrid + `chat-quota:rebuild` |
+| **V4 Event store** | `chat_quota_events` + replay / billing | ✓ `chat_quota_events` table + `ChatQuotaEventRecorderService` dual-write + cleanup cron |
 | **H1–H7** | Operational edge case hardening (§5.10, after §5.9) | H1 ✓; H2 ✓; H4 ✓; H5 ✓; **H3 ✓**; **H6 ✓**; **H7 ✓** |
+
+**V4 details:** `chat_quota_events` entity (from `@wispace/chat-metering`) dual-writes events alongside the counter. `ChatQuotaEventCleanupCronService` runs monthly cleanup (`CHAT_QUOTA_EVENTS_CLEANUP_ENABLED`). Env: `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`.
 
 ### 5.9. Phased Implementation Plan (full rate limit)
 

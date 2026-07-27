@@ -311,7 +311,7 @@ domain/entities|repositories/ → application/services|ports/ → infrastructure
 
 ### User linking
 
-`ref` query param = WISPACE `userId` → saved to `user_messenger_mappings` (`psid` + `user_id`).
+`ref` query param = WISPACE `userId` → saved to `user_platform_mappings` (`external_user_id` + `platform` + `user_id`).
 
 ### Study reports
 

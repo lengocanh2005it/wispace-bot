@@ -40,7 +40,7 @@ POST /messenger/send-study-reminders
 
 ## 4. Common issues checklist
 
-- [ ] User has `psid` in `user_messenger_mappings` (status ACTIVE)?
+- [ ] User has `external_user_id` in `user_platform_mappings` (status ACTIVE)?
 - [ ] `STUDY_REMINDER_*` set in `.env`?
 - [ ] `remind_at` has passed but `scheduled_at` is still in the future?
 - [ ] Wispace called sync after changing schedule? (common integration gap)
