@@ -24,11 +24,10 @@ packages/llm-agent/    OpenAI function-calling orchestration shared across all b
 | File | Description |
 |------|-------------|
 | [docs/turborepo-migration-plan.md](docs/turborepo-migration-plan.md) | Monorepo roadmap: Discord/Zalo bots, cross-platform DB, independent CI/CD |
-| [apps/messenger-bot/docs/project-overview.md](apps/messenger-bot/docs/project-overview.md) | Architecture, code structure, DB, API, cron, quota runbook |
+| [docs/project-overview.md](docs/project-overview.md) | Architecture, code structure, DB, API, cron, quota runbook |
 | [apps/messenger-bot/docs/chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) | Chat rate limit V1 + H1–H7 |
-| [apps/messenger-bot/docs/edge-cases-roadmap.md](apps/messenger-bot/docs/edge-cases-roadmap.md) | POC-wide gaps + QA checklist + remediation phases |
+| [docs/edge-cases-roadmap.md](docs/edge-cases-roadmap.md) | POC-wide gaps + QA checklist + remediation phases |
 | [apps/messenger-bot/docs/study-session-reminder.md](apps/messenger-bot/docs/study-session-reminder.md) | Study session reminders (detailed) |
-| [apps/messenger-bot/docs/README.md](apps/messenger-bot/docs/README.md) | Messenger bot documentation index |
 | [AGENTS.md](AGENTS.md) | AI agent / Cursor instructions |
 
 ## Quick start (Messenger bot)

@@ -2,7 +2,7 @@
 
 **Preparation document** for operating when POC scales from **1 instance** to **2 NestJS instances** behind Nginx — **not yet implemented** until metrics trigger (section 2).
 
-Related: [project-overview.md](./project-overview.md) §10, [chat-rate-limit-quota.md](./chat-rate-limit-quota.md) §H7, [doppler-secrets.md](./doppler-secrets.md), `deploy/nginx/`.
+Related: [project-overview.md](../../docs/project-overview.md) §10, [chat-rate-limit-quota.md](./chat-rate-limit-quota.md) §H7, [doppler-secrets.md](./doppler-secrets.md), `deploy/nginx/`.
 
 ---
 

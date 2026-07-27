@@ -34,7 +34,7 @@ Turborepo monorepo: `apps/messenger-bot` (NestJS, full-featured) + `apps/discord
 
 - Architecture: `.claude/rules/clean-architecture.md`
 - Monorepo roadmap (Discord/Zalo, multi-platform DB, independent CI/CD): `docs/turborepo-migration-plan.md`
-- Messenger bot overview: `apps/messenger-bot/docs/project-overview.md`
+- Messenger bot overview: `docs/project-overview.md`
 - Chat rate limit: `apps/messenger-bot/docs/chat-rate-limit-quota.md` — rule: `.claude/rules/chat-rate-limit.md`
 - Study reminders: `apps/messenger-bot/docs/study-session-reminder.md`
 - General agent docs: `AGENTS.md`

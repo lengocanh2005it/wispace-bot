@@ -2,7 +2,7 @@
 
 Research document covering **3 quota storage approaches** for enabling two-way chatbot (user messages ↔ bot replies via LLM), analyzing trade-offs and **proposed implementation** for the WISPACE POC.
 
-Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](./study-session-reminder.md) (similar outbox pattern to `study_reminder_jobs`).
+Related: [project-overview.md](../../docs/project-overview.md), [study-session-reminder.md](./study-session-reminder.md) (similar outbox pattern to `study_reminder_jobs`).
 
 ---
 
@@ -620,7 +620,7 @@ class ChatRateLimitService {
 - [x] Env: `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_USAGE_TIMEZONE`
 - [x] Ops scripts: `npm run chat-quota:status` — query usage + idempotency by `psid` / `user_id` / date
 - [x] Tests: retry webhook with same `mid` → count doesn't increase; LLM fail → refund
-- [x] Update [project-overview.md](./project-overview.md) on merge
+- [x] Update [project-overview.md](../../docs/project-overview.md) on merge
 
 ### 5.8. Post-V1 Roadmap (optional — after V1 production)
 
@@ -744,7 +744,7 @@ flowchart LR
 | Task | Done when |
 |------|-----------|
 | Script `npm run chat-quota:status` (psid / userId / date) | Ops query usage |
-| Update [project-overview.md](./project-overview.md), gap `AGENTS.md` | Docs match code |
+| Update [project-overview.md](../../docs/project-overview.md), gap `AGENTS.md` | Docs match code |
 | Checklist §5.7 all V1 items ticked | Review merge |
 | Document recommended prod limits (15–20/day, burst 3) in runbook | Wispace knows the numbers |
 

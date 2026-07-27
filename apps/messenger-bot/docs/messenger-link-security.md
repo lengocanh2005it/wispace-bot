@@ -2,7 +2,7 @@
 
 Document describing the **vulnerability** when passing raw `userId` via the `ref` parameter on `m.me` links, possible **solutions**, **trade-offs**, and **recommended roadmap** for production use.
 
-Related: [project-overview.md](./project-overview.md) (link flow), [edge-cases-roadmap.md §1](./edge-cases-roadmap.md#1-liên-kết-messenger--wispace), code `src/shared/config/poc.constants.ts`, `MessengerMappingService`.
+Related: [project-overview.md](../../docs/project-overview.md) (link flow), [edge-cases-roadmap.md §1](../../docs/edge-cases-roadmap.md#1-messenger--wispace-linking), code `src/shared/config/poc.constants.ts`, `MessengerMappingService`.
 
 ---
 

@@ -40,9 +40,9 @@ npm run chat-quota:status
 
 - **[AGENTS.md](./AGENTS.md)** — cross-agent standard (Codex, Cursor, Claude)
 - `docs/turborepo-migration-plan.md` — monorepo roadmap + Discord/Zalo bots, cross-platform DB, independent CI/CD
-- `apps/messenger-bot/docs/project-overview.md` — architecture, API, cron, quota runbook (primarily about `apps/messenger-bot`)
+- `docs/project-overview.md` — architecture, API, cron, quota runbook (primarily about `apps/messenger-bot`)
 - `apps/messenger-bot/docs/chat-rate-limit-quota.md` — rate limit V1 + H1–H7
-- `apps/messenger-bot/docs/edge-cases-roadmap.md` — POC-wide gaps + remediation phases
+- `docs/edge-cases-roadmap.md` — POC-wide gaps + remediation phases
 - `apps/messenger-bot/docs/study-session-reminder.md` — detailed study session reminders
 
 | Path | Purpose |

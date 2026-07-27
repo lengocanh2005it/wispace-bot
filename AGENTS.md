@@ -171,17 +171,17 @@ Same PR/task as code — update **agent-facing** docs (not just lengthy `docs/`)
 
 | Change | Minimum update |
 |--------|----------------|
-| Ops API / webhook / Messenger menu | `apps/messenger-bot/docs/project-overview.md`, `AGENTS.md` (API/cron), `application/messenger-webhook.router.ts` if changing event routing, `messenger-chat.md` rule if chat queue |
-| Persistent menu / `profile/setup` | `apps/messenger-bot/docs/project-overview.md`, menu section in `AGENTS.md` dev tips |
+| Ops API / webhook / Messenger menu | `docs/project-overview.md`, `AGENTS.md` (API/cron), `application/messenger-webhook.router.ts` if changing event routing, `messenger-chat.md` rule if chat queue |
+| Persistent menu / `profile/setup` | `docs/project-overview.md`, menu section in `AGENTS.md` dev tips |
 | Rate limit / quota / idempotency | `apps/messenger-bot/docs/chat-rate-limit-quota.md`, `.claude/rules/chat-rate-limit.md`, `/verify` skill if adding ops steps |
 | Study reminder / sync / dispatch | `apps/messenger-bot/docs/study-session-reminder.md`, `.claude/rules/study-reminder.md`, `/study-reminder-debug` skill |
 | Entity / migration / DB split | `.claude/rules/database.md`, `/typeorm-migration` skill, `.env.example` if adding variables |
-| Remove DB UserCalendars fallback (I3) | `user-calendar-schedule.service.ts`, `apps/messenger-bot/docs/study-session-reminder.md`, `apps/messenger-bot/docs/edge-cases-roadmap.md` |
+| Remove DB UserCalendars fallback (I3) | `user-calendar-schedule.service.ts`, `apps/messenger-bot/docs/study-session-reminder.md`, `docs/edge-cases-roadmap.md` |
 | LLM system prompt | `apps/messenger-bot/src/shared/prompts/*.system.txt`, `/edit-llm-prompt` skill |
-| Deploy / CI / VPS path | `.github/workflows/deploy.yml`, `apps/messenger-bot/docs/c2-master-implementation-plan.md`, `apps/messenger-bot/docs/doppler-secrets.md`, `apps/messenger-bot/docs/scale-phase-b-runbook.md`, `deploy/nginx/` |
-| New env variable | `.env.example` + corresponding line in `apps/messenger-bot/docs/project-overview.md` or `AGENTS.md` |
-| Meta webhook signature / `MESSENGER_APP_SECRET` | `apps/messenger-bot/docs/project-overview.md`, `apps/messenger-bot/docs/edge-cases-roadmap.md` §1, `AGENTS.md` Security |
-| Closed gaps / roadmap | `apps/messenger-bot/docs/edge-cases-roadmap.md`, Integration gaps table in `AGENTS.md` |
+| Deploy / CI / VPS path | `.github/workflows/deploy.yml`, `apps/messenger-bot/docs/doppler-secrets.md`, `apps/messenger-bot/docs/scale-phase-b-runbook.md`, `deploy/nginx/` |
+| New env variable | `.env.example` + corresponding line in `docs/project-overview.md` or `AGENTS.md` |
+| Meta webhook signature / `MESSENGER_APP_SECRET` | `docs/project-overview.md`, `docs/edge-cases-roadmap.md` §1, `AGENTS.md` Security |
+| Closed gaps / roadmap | `docs/edge-cases-roadmap.md`, Integration gaps table in `AGENTS.md` |
 
 `/verify` skill — run at the end of every task involving code changes.
 
@@ -363,10 +363,10 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 
 | Priority | File | When to read |
 |----------|------|-------------|
-| 1 | [apps/messenger-bot/docs/project-overview.md](apps/messenger-bot/docs/project-overview.md) | First time in the repo — architecture, API, cron |
+| 1 | [docs/project-overview.md](docs/project-overview.md) | First time in the repo — architecture, API, cron |
 | 2 | [apps/messenger-bot/docs/study-session-reminder.md](apps/messenger-bot/docs/study-session-reminder.md) | Editing reminders, jobs, sync, dispatch, rollover |
 | 3 | [apps/messenger-bot/docs/chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) | Two-way chatbot, rate limit, quota |
-| 4 | [apps/messenger-bot/docs/edge-cases-roadmap.md](apps/messenger-bot/docs/edge-cases-roadmap.md) | POC-wide gaps & remediation phases (beyond chat H1–H7) |
+| 4 | [docs/edge-cases-roadmap.md](docs/edge-cases-roadmap.md) | POC-wide gaps & remediation phases (beyond chat H1–H7) |
 | 5 | `.env.example` | Required environment variables |
 | 6 | `apps/messenger-bot/src/shared/config/poc.constants.ts` | `m.me` links, parse `userId` from `ref` |
 | — | `.claude/rules/clean-architecture.md` | Editing/adding code in `apps/messenger-bot/src/modules/` |
@@ -402,8 +402,8 @@ Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global ski
 | Two-way chat + rate limit V1 | ✓ Reserve/refund/burst/whitelist/hint |
 | Rate limit hardening H1–H7 | ✓ H2–H7 code; H1 = enable `CHAT_RATE_LIMIT_ENABLED` on prod env |
 | LLM Provider Abstraction | ✓ Adapter pattern (`LlmProviderAdapter`), OpenAI adapter, OpenAI-compatible adapter, factory — PR #32 |
-| Tier / event store (Phase 7–8) | ✗ Optional — master plan [c2-master-implementation-plan.md](apps/messenger-bot/docs/c2-master-implementation-plan.md); full §5.8 [chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) |
-| Project-wide gaps (link, reports, reminders, ops) | Roadmap — [edge-cases-roadmap.md](apps/messenger-bot/docs/edge-cases-roadmap.md) |
+| Tier / event store (Phase 7–8) | ✓ MVP — `chat_quota_events` + `llm_usage_events` tables; full §5.8 [chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) |
+| Project-wide gaps (link, reports, reminders, ops) | Roadmap — [edge-cases-roadmap.md](docs/edge-cases-roadmap.md) |
 
 When closing a gap: update `apps/messenger-bot/docs/study-session-reminder.md` and the table above.
 

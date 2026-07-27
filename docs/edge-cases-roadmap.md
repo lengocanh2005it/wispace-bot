@@ -4,7 +4,7 @@ Document recording **weaknesses / unhandled items** in the WISPACE bots POC (all
 
 **Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. POC DB **separated** to `ai_chat_bot_db` (✓). LLM Provider Abstraction **done** (PR #32). Shared packages **extracted** (12 packages). Discord bot **functional** (chat + quota + 6/7 tool handlers). Items below are remaining gaps or scale-dependent improvements.
 
-Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](./study-session-reminder.md), [chat-rate-limit-quota.md](./chat-rate-limit-quota.md), [AGENTS.md](../AGENTS.md) (Integration gaps table).
+Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md), [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), [AGENTS.md](../AGENTS.md) (Integration gaps table).
 
 ---
 
@@ -26,7 +26,7 @@ Related: [project-overview.md](./project-overview.md), [study-session-reminder.m
 | **S1** ✓ | Alert ops on `failed` / stuck reminder jobs | 0.5 days | Medium |
 | **S2** ✓ | Adaptive dispatch poll (scale) | 1–2 days | When outbox grows |
 | **C1** | Tier quota per WISPACE package | 2+ days | Post-product |
-| **C2** ✓ | Event store / LLM billing | ✓ MVP (hybrid Q0 + `chat_quota_events` + `llm_usage_events`) — [c2-master-implementation-plan.md](./c2-master-implementation-plan.md) |
+| **C2** ✓ | Event store / LLM billing | ✓ MVP (hybrid Q0 + `chat_quota_events` + `llm_usage_events`) |
 | **I1** ✓ | Alert / grep `CHAT_QUOTA_*` + runbook | 0.5 days | Medium |
 | **DL** ✓ | Dead-letter webhook + auto-retry cron | 1.5 days | Multi-pod / production |
 | **I2** | Aggregated monitoring (Slack/webhook ops) | 1 day | When real users exist |

@@ -2,7 +2,7 @@
 
 Document explaining **what's currently happening**, **what happens after L4**, who is responsible for each part, and the **API contract** the WISPACE team needs to implement.
 
-Related: [messenger-link-security.md](./messenger-link-security.md) (solution trade-offs), [edge-cases-roadmap.md §1](./edge-cases-roadmap.md#1-liên-kết-messenger--wispace) (phase **L4**).
+Related: [messenger-link-security.md](./messenger-link-security.md) (solution trade-offs), [edge-cases-roadmap.md §1](../../docs/edge-cases-roadmap.md#1-messenger--wispace-linking) (phase **L4**).
 
 ---
 
