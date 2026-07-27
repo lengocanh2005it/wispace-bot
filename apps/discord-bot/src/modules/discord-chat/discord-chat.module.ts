@@ -7,6 +7,8 @@ import {
   type LlmProviderAdapter,
   type LlmProviderEntryConfig,
 } from '@wispace/llm-agent';
+import { CleanupCronService } from '@wispace/cleanup-cron';
+import { OpsHealthService, OPS_HEALTH_REPOSITORY } from '@wispace/ops-health';
 import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
 import { AccountLinkModule } from '../account-link/account-link.module';
 import { WispaceModule } from '../wispace/wispace.module';
@@ -17,10 +19,14 @@ import { DiscordRescheduleConfirmationService } from './application/services/dis
 import { DiscordMenuService } from './application/services/discord-menu.service';
 import { DiscordDeadLetterService } from './application/services/discord-dead-letter.service';
 import { DiscordDeadLetterCronService } from './application/services/discord-dead-letter-cron.service';
+import { DiscordCleanupCronService } from './application/services/discord-cleanup-cron.service';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordReportModule } from './discord-report.module';
 import { DiscordChatGateway } from './presentation/gateways/discord-chat.gateway';
 import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities/webhook-dead-letter.entity';
+import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
+import { DiscordOpsHealthRepository } from './infrastructure/persistence/discord-ops-health.repository';
+import { ReportSendJobEntity } from '../../infrastructure/database/entities/report-send-job.entity';
 
 @Module({
   imports: [
@@ -29,7 +35,11 @@ import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities/
     AccountLinkModule,
     WispaceModule,
     DiscordReportModule,
-    TypeOrmModule.forFeature([WebhookDeadLetterEntity]),
+    TypeOrmModule.forFeature([
+      WebhookDeadLetterEntity,
+      DiscordMessageLogEntity,
+      ReportSendJobEntity,
+    ]),
   ],
   providers: [
     DiscordChatGateway,
@@ -125,6 +135,14 @@ import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities/
     DiscordMenuService,
     DiscordDeadLetterService,
     DiscordDeadLetterCronService,
+    CleanupCronService,
+    DiscordCleanupCronService,
+    {
+      provide: OPS_HEALTH_REPOSITORY,
+      useExisting: DiscordOpsHealthRepository,
+    },
+    DiscordOpsHealthRepository,
+    OpsHealthService,
   ],
 })
 export class DiscordChatModule {}

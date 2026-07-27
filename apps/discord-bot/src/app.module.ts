@@ -5,6 +5,7 @@ import { NecordModule } from 'necord';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { DiscordChatModule } from './modules/discord-chat/discord-chat.module';
+import { DiscordMetricsModule } from './modules/metrics/discord-metrics.module';
 import { HealthController } from './health.controller';
 
 @Module({
@@ -35,6 +36,7 @@ import { HealthController } from './health.controller';
     DatabaseModule,
     RedisModule,
     DiscordChatModule,
+    DiscordMetricsModule,
   ],
 })
 export class AppModule {}
