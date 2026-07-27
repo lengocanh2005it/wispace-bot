@@ -3,6 +3,7 @@ import type { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 import { ZaloWebhookController } from './zalo-webhook.controller';
 import type { ZaloWebhookEvent } from '../../domain/entities/zalo-webhook-event.types';
+import { ZaloWebhookDedupeService } from '../../application/zalo-webhook-dedupe.service';
 
 function buildRequest(rawBody: string): Request {
   return { rawBody: Buffer.from(rawBody, 'utf8') } as unknown as Request;
@@ -19,6 +20,10 @@ function sign(
     .digest('hex');
 }
 
+function buildDedupe(): ZaloWebhookDedupeService {
+  return new ZaloWebhookDedupeService();
+}
+
 describe('ZaloWebhookController', () => {
   const appId = 'app-1';
   const appSecretKey = 'app-secret';
@@ -30,11 +35,15 @@ describe('ZaloWebhookController', () => {
   it('rejects a request with an invalid signature', async () => {
     const handleIncomingMessage = jest.fn();
     const handleFollow = jest.fn();
-    const controller = new ZaloWebhookController(config, {
-      handleIncomingMessage,
-      handleFollow,
-      handleUnsupportedMessage: jest.fn(),
-    });
+    const controller = new ZaloWebhookController(
+      config,
+      {
+        handleIncomingMessage,
+        handleFollow,
+        handleUnsupportedMessage: jest.fn(),
+      },
+      buildDedupe(),
+    );
 
     const body = { event_name: 'user_send_text' };
     const rawBody = JSON.stringify(body);
@@ -54,11 +63,15 @@ describe('ZaloWebhookController', () => {
   it('dispatches user_send_text to handleIncomingMessage', async () => {
     const handleIncomingMessage = jest.fn().mockResolvedValue(undefined);
     const handleFollow = jest.fn();
-    const controller = new ZaloWebhookController(config, {
-      handleIncomingMessage,
-      handleFollow,
-      handleUnsupportedMessage: jest.fn(),
-    });
+    const controller = new ZaloWebhookController(
+      config,
+      {
+        handleIncomingMessage,
+        handleFollow,
+        handleUnsupportedMessage: jest.fn(),
+      },
+      buildDedupe(),
+    );
 
     const body = {
       app_id: appId,
@@ -77,18 +90,22 @@ describe('ZaloWebhookController', () => {
       body.timestamp,
     );
 
-    expect(handleIncomingMessage).toHaveBeenCalledWith('user-1', 'hello');
+    expect(handleIncomingMessage).toHaveBeenCalledWith('user-1', 'hello', 'm1');
   });
 
   it('dispatches user_send_image to handleUnsupportedMessage', async () => {
     const handleIncomingMessage = jest.fn();
     const handleFollow = jest.fn();
     const handleUnsupportedMessage = jest.fn().mockResolvedValue(undefined);
-    const controller = new ZaloWebhookController(config, {
-      handleIncomingMessage,
-      handleFollow,
-      handleUnsupportedMessage,
-    });
+    const controller = new ZaloWebhookController(
+      config,
+      {
+        handleIncomingMessage,
+        handleFollow,
+        handleUnsupportedMessage,
+      },
+      buildDedupe(),
+    );
 
     const body = {
       app_id: appId,
@@ -113,11 +130,15 @@ describe('ZaloWebhookController', () => {
   it('dispatches follow to handleFollow', async () => {
     const handleIncomingMessage = jest.fn();
     const handleFollow = jest.fn().mockResolvedValue(undefined);
-    const controller = new ZaloWebhookController(config, {
-      handleIncomingMessage,
-      handleFollow,
-      handleUnsupportedMessage: jest.fn(),
-    });
+    const controller = new ZaloWebhookController(
+      config,
+      {
+        handleIncomingMessage,
+        handleFollow,
+        handleUnsupportedMessage: jest.fn(),
+      },
+      buildDedupe(),
+    );
 
     const body = {
       app_id: appId,
@@ -141,11 +162,15 @@ describe('ZaloWebhookController', () => {
   it('ignores oa_send_* echo events', async () => {
     const handleIncomingMessage = jest.fn();
     const handleFollow = jest.fn();
-    const controller = new ZaloWebhookController(config, {
-      handleIncomingMessage,
-      handleFollow,
-      handleUnsupportedMessage: jest.fn(),
-    });
+    const controller = new ZaloWebhookController(
+      config,
+      {
+        handleIncomingMessage,
+        handleFollow,
+        handleUnsupportedMessage: jest.fn(),
+      },
+      buildDedupe(),
+    );
 
     const body = {
       app_id: appId,

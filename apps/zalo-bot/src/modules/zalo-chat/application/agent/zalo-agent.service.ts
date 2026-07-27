@@ -15,9 +15,13 @@ import type {
 } from '../../domain/entities/zalo-chat.types';
 import { ZaloAgentToolsService } from './zalo-agent-tools.service';
 import { ZaloChatHistoryService } from '../services/zalo-chat-history.service';
+import { ZaloLlmUsageRecorderService } from '../services/zalo-llm-usage-recorder.service';
+import { ZaloLlmSafetyEventService } from '../services/zalo-llm-safety-event.service';
 
+const FEATURE = 'FREE_FORM_CHAT';
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_BASE_BACKOFF_MS = 500;
+const DEFAULT_MAX_CONCURRENT = 3;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -26,24 +30,47 @@ function sleep(ms: number): Promise<void> {
 /**
  * Thin NestJS adapter around @wispace/llm-agent's platform-agnostic
  * orchestration loop — Zalo counterpart to DiscordAgentService/
- * MessengerAgentService. No usage/safety recording in this MVP (no
- * packages/chat-metering wiring — see spec §1/Global Constraints).
+ * MessengerAgentService. Includes p-limit concurrency cap to prevent
+ * overwhelming the LLM provider.
  */
 @Injectable()
 export class ZaloAgentService {
   private readonly logger = new Logger(ZaloAgentService.name);
   private readonly promptDir = `${process.cwd()}/src/shared/prompts`;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private readonly limiter: (fn: () => Promise<any>) => Promise<any>;
   private agent?: LlmAgentService<ZaloAgentToolContext>;
 
   constructor(
     private readonly configService: ConfigService,
     private readonly toolsService: ZaloAgentToolsService,
     private readonly historyService: ZaloChatHistoryService,
+    private readonly usageRecorder: ZaloLlmUsageRecorderService,
+    private readonly safetyEventService: ZaloLlmSafetyEventService,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
-  ) {}
+  ) {
+    const maxConcurrent = Number(
+      this.configService.get<string>('LLM_MAX_CONCURRENT') ??
+        DEFAULT_MAX_CONCURRENT,
+    );
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const pLimit = require('p-limit') as (
+      concurrency: number,
+    ) => <T>(fn: () => Promise<T>) => Promise<T>;
+    this.limiter = pLimit(
+      Number.isFinite(maxConcurrent) && maxConcurrent > 0
+        ? maxConcurrent
+        : DEFAULT_MAX_CONCURRENT,
+    );
+  }
 
   async reply(input: ZaloAgentInput): Promise<ZaloAgentReply> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return this.limiter(() => this.replyInternal(input));
+  }
+
+  private async replyInternal(input: ZaloAgentInput): Promise<ZaloAgentReply> {
     if (!this.agent) {
       this.agent = this.buildAgent();
     }
@@ -85,18 +112,30 @@ export class ZaloAgentService {
     const ports: LlmAgentPorts<ZaloAgentToolContext> = {
       llmExecution: { run: (fn) => this.runWithRetry(fn) },
       usageRecorder: {
-        recordFromCompletion: (event) => {
-          this.logger.log(
-            `LLM usage: feature=${event.feature} model=${event.model} toolRound=${event.toolRound} user=${event.externalUserId}`,
-          );
-        },
+        recordFromCompletion: (params) =>
+          this.usageRecorder.recordFromCompletion({
+            feature: FEATURE,
+            zaloUserId: params.externalUserId,
+            userId: params.userId,
+            model: params.model,
+            response: params.response as Parameters<
+              ZaloLlmUsageRecorderService['recordFromCompletion']
+            >[0]['response'],
+            correlationId: params.correlationId,
+            toolRound: params.toolRound,
+          }),
       },
       safetyEvents: {
-        recordGroundingWarning: (event) => {
-          this.logger.warn(
-            `LLM safety grounding warning: user=${event.externalUserId} reason=${event.reason}`,
-          );
-        },
+        recordGroundingWarning: (params) =>
+          this.safetyEventService.recordGroundingWarning({
+            externalUserId: params.externalUserId,
+            userId: params.userId,
+            correlationId: params.correlationId,
+            reason: params.reason,
+            userTextPreview: params.userTextPreview,
+            assistantTextPreview: params.assistantTextPreview,
+            toolNamesUsed: params.toolNamesUsed,
+          }),
       },
       metrics: NOOP_METRICS_PORT,
       toolExecutor,

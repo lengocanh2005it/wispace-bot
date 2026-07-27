@@ -36,7 +36,7 @@ describe('ZaloOutboundService', () => {
     delete global.fetch;
   });
 
-  it('logs and swallows errors instead of throwing (best-effort send, matches Discord pattern)', async () => {
+  it('throws ZaloSendError on network failure instead of swallowing', async () => {
     const tokenService = {
       getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
     } as unknown as ZaloTokenService;
@@ -46,7 +46,9 @@ describe('ZaloOutboundService', () => {
 
     const service = new ZaloOutboundService(tokenService);
 
-    await expect(service.sendText('zalo-1', 'hello')).resolves.toBeUndefined();
+    await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow(
+      'Zalo Send API network error',
+    );
 
     delete global.fetch;
   });

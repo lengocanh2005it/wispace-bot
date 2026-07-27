@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { DiscordOutboundService } from './application/services/discord-outbound.service';
+import { DiscordDeliveryLogService } from './application/services/discord-delivery-log.service';
+import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 
 /**
  * Split out from `DiscordChatModule` so `AccountLinkModule` (OAuth callback,
@@ -8,7 +11,8 @@ import { DiscordOutboundService } from './application/services/discord-outbound.
  * resolve `discordUserId -> WISPACE userId` per message).
  */
 @Module({
-  providers: [DiscordOutboundService],
+  imports: [TypeOrmModule.forFeature([DiscordMessageLogEntity])],
+  providers: [DiscordDeliveryLogService, DiscordOutboundService],
   exports: [DiscordOutboundService],
 })
 export class DiscordOutboundModule {}

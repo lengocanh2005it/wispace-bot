@@ -5,6 +5,10 @@ import { DataSourceOptions } from 'typeorm';
 import { ZaloOaTokenEntity } from './entities/zalo-oa-token.entity';
 import { ZaloOauthStateEntity } from './entities/zalo-oauth-state.entity';
 import { ZaloAccountLinkEntity } from './entities/zalo-account-link.entity';
+import {
+  ChatDailyUsageEntity,
+  ChatIdempotencyEntity,
+} from '@wispace/chat-metering';
 
 /**
  * Connects to the same Postgres DB as `apps/messenger-bot` (Phase 2: shared
@@ -24,7 +28,13 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       config.get<string>('DB_SSL') === 'true'
         ? { rejectUnauthorized: false }
         : false,
-    entities: [ZaloOaTokenEntity, ZaloOauthStateEntity, ZaloAccountLinkEntity],
+    entities: [
+      ZaloOaTokenEntity,
+      ZaloOauthStateEntity,
+      ZaloAccountLinkEntity,
+      ChatDailyUsageEntity,
+      ChatIdempotencyEntity,
+    ],
     synchronize: false,
     logging: config.get<string>('DB_LOGGING') === 'true',
   };
@@ -41,6 +51,8 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       ZaloOaTokenEntity,
       ZaloOauthStateEntity,
       ZaloAccountLinkEntity,
+      ChatDailyUsageEntity,
+      ChatIdempotencyEntity,
     ]),
   ],
   exports: [TypeOrmModule],

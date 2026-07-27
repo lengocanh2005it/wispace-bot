@@ -10,6 +10,8 @@ import { ZaloOaTokenEntity } from '../../../../infrastructure/database/entities/
 
 const ZALO_TOKEN_ENDPOINT = 'https://oauth.zaloapp.com/v4/access_token';
 const EXPIRY_BUFFER_MS = 10 * 60 * 1000;
+const REFRESH_MAX_ATTEMPTS = 3;
+const REFRESH_BASE_BACKOFF_MS = 1_000;
 
 interface ZaloAccessTokenResponse {
   access_token: string;
@@ -66,39 +68,65 @@ export class ZaloTokenService {
       'ZALO_APP_SECRET_KEY',
     );
 
-    const response = await fetch(ZALO_TOKEN_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        secret_key: secretKey,
-      },
-      body: new URLSearchParams({
-        refresh_token: row.refreshToken,
-        app_id: appId,
-        grant_type: 'refresh_token',
-      }),
-    });
+    let lastError: unknown;
 
-    if (!response.ok) {
-      throw new InternalServerErrorException(
-        `Zalo OA token refresh failed: HTTP ${response.status}`,
-      );
+    for (let attempt = 1; attempt <= REFRESH_MAX_ATTEMPTS; attempt++) {
+      try {
+        const response = await fetch(ZALO_TOKEN_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            secret_key: secretKey,
+          },
+          body: new URLSearchParams({
+            refresh_token: row.refreshToken,
+            app_id: appId,
+            grant_type: 'refresh_token',
+          }),
+          signal: AbortSignal.timeout(10_000),
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `Zalo OA token refresh failed: HTTP ${response.status}`,
+          );
+        }
+
+        const payload = (await response.json()) as ZaloAccessTokenResponse;
+        const now = Date.now();
+
+        await this.repo.update(row.id, {
+          accessToken: payload.access_token,
+          refreshToken: payload.refresh_token,
+          accessTokenExpiresAt: new Date(
+            now + Number(payload.expires_in) * 1000,
+          ),
+          refreshTokenExpiresAt: new Date(
+            now + Number(payload.refresh_token_expires_in) * 1000,
+          ),
+          updatedAt: new Date(now),
+        });
+
+        this.logger.log('Zalo OA access_token refreshed');
+        return payload.access_token;
+      } catch (error) {
+        lastError = error;
+        if (attempt < REFRESH_MAX_ATTEMPTS) {
+          const backoffMs = REFRESH_BASE_BACKOFF_MS * Math.pow(2, attempt - 1);
+          this.logger.warn(
+            `Zalo OA token refresh attempt ${attempt}/${REFRESH_MAX_ATTEMPTS} failed, retrying in ${backoffMs}ms: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+          await new Promise((r) => setTimeout(r, backoffMs));
+        }
+      }
     }
 
-    const payload = (await response.json()) as ZaloAccessTokenResponse;
-    const now = Date.now();
-
-    await this.repo.update(row.id, {
-      accessToken: payload.access_token,
-      refreshToken: payload.refresh_token,
-      accessTokenExpiresAt: new Date(now + Number(payload.expires_in) * 1000),
-      refreshTokenExpiresAt: new Date(
-        now + Number(payload.refresh_token_expires_in) * 1000,
-      ),
-      updatedAt: new Date(now),
-    });
-
-    this.logger.log('Zalo OA access_token refreshed');
-    return payload.access_token;
+    throw new InternalServerErrorException(
+      `Zalo OA token refresh failed after ${REFRESH_MAX_ATTEMPTS} attempts: ${
+        lastError instanceof Error ? lastError.message : String(lastError)
+      }`,
+    );
   }
 }
