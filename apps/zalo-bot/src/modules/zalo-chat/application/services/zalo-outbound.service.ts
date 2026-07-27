@@ -15,6 +15,28 @@ export class ZaloSendError extends Error {
     super(message);
     this.name = 'ZaloSendError';
   }
+
+  /**
+   * Detects 48h consultation window errors from Zalo API.
+   * Zalo returns HTTP 400 with error codes like:
+   * - 4001: "Invalid user id" (not a window error)
+   * - 4020: "OA has been sent the maximum number of messages" (rate limit)
+   * - 4021: "User not interacted with OA in the last 48h" (48h window)
+   * - 4022: "Cannot send message to user" (general failure)
+   * We detect by checking for 400 status + body containing window-related markers.
+   */
+  is48hWindowError(): boolean {
+    if (this.status !== 400) return false;
+    const body = this.responseBody.toLowerCase();
+    return (
+      body.includes('4021') ||
+      body.includes('not interacted') ||
+      body.includes('48h') ||
+      body.includes('48 hour') ||
+      body.includes('outside') ||
+      body.includes('consultation window')
+    );
+  }
 }
 
 /**

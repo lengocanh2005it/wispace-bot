@@ -2,12 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { ZaloWebhookHandler } from '../../../zalo-webhook/domain/ports/zalo-webhook-handler.port';
 import { ZaloAgentService } from '../agent/zalo-agent.service';
-import { ZaloOutboundService } from './zalo-outbound.service';
+import { ZaloOutboundService, ZaloSendError } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '../../../zalo-oauth/application/services/zalo-account-link.service';
 import { ZaloChatRateLimitService } from './zalo-chat-rate-limit.service';
 
 const FALLBACK_ERROR_MESSAGE =
   'Xin lỗi, mình gặp sự cố khi xử lý tin nhắn. Bạn thử lại sau ít phút nhé.';
+
+const WINDOW_48H_MESSAGE =
+  'Bạn cần nhắn tin cho OA trước để mình có thể phản hồi nhé. Hãy gửi một tin nhắn bất kỳ và mình sẽ trả lời ngay!';
 
 const UNSUPPORTED_MESSAGE_TYPE_MESSAGE =
   'Hiện mình chỉ hỗ trợ tin nhắn văn bản thôi nhé. Bạn gõ câu hỏi bằng chữ giúp mình nha!';
@@ -89,7 +92,11 @@ export class ZaloChatService implements ZaloWebhookHandler {
         }`,
       );
       try {
-        await this.outboundService.sendText(zaloUserId, FALLBACK_ERROR_MESSAGE);
+        const errorMsg =
+          error instanceof ZaloSendError && error.is48hWindowError()
+            ? WINDOW_48H_MESSAGE
+            : FALLBACK_ERROR_MESSAGE;
+        await this.outboundService.sendText(zaloUserId, errorMsg);
       } catch (sendError) {
         this.logger.error(
           `Fallback message also failed for zaloUserId=${zaloUserId}: ${

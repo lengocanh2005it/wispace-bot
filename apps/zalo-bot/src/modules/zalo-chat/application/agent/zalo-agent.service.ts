@@ -15,7 +15,10 @@ import type {
 } from '../../domain/entities/zalo-chat.types';
 import { ZaloAgentToolsService } from './zalo-agent-tools.service';
 import { ZaloChatHistoryService } from '../services/zalo-chat-history.service';
+import { ZaloLlmUsageRecorderService } from '../services/zalo-llm-usage-recorder.service';
+import { ZaloLlmSafetyEventService } from '../services/zalo-llm-safety-event.service';
 
+const FEATURE = 'FREE_FORM_CHAT';
 const RETRY_MAX_ATTEMPTS = 3;
 const RETRY_BASE_BACKOFF_MS = 500;
 const DEFAULT_MAX_CONCURRENT = 3;
@@ -42,6 +45,8 @@ export class ZaloAgentService {
     private readonly configService: ConfigService,
     private readonly toolsService: ZaloAgentToolsService,
     private readonly historyService: ZaloChatHistoryService,
+    private readonly usageRecorder: ZaloLlmUsageRecorderService,
+    private readonly safetyEventService: ZaloLlmSafetyEventService,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
   ) {
@@ -107,18 +112,30 @@ export class ZaloAgentService {
     const ports: LlmAgentPorts<ZaloAgentToolContext> = {
       llmExecution: { run: (fn) => this.runWithRetry(fn) },
       usageRecorder: {
-        recordFromCompletion: (event) => {
-          this.logger.log(
-            `LLM usage: feature=${event.feature} model=${event.model} toolRound=${event.toolRound} user=${event.externalUserId}`,
-          );
-        },
+        recordFromCompletion: (params) =>
+          this.usageRecorder.recordFromCompletion({
+            feature: FEATURE,
+            zaloUserId: params.externalUserId,
+            userId: params.userId,
+            model: params.model,
+            response: params.response as Parameters<
+              ZaloLlmUsageRecorderService['recordFromCompletion']
+            >[0]['response'],
+            correlationId: params.correlationId,
+            toolRound: params.toolRound,
+          }),
       },
       safetyEvents: {
-        recordGroundingWarning: (event) => {
-          this.logger.warn(
-            `LLM safety grounding warning: user=${event.externalUserId} reason=${event.reason}`,
-          );
-        },
+        recordGroundingWarning: (params) =>
+          this.safetyEventService.recordGroundingWarning({
+            externalUserId: params.externalUserId,
+            userId: params.userId,
+            correlationId: params.correlationId,
+            reason: params.reason,
+            userTextPreview: params.userTextPreview,
+            assistantTextPreview: params.assistantTextPreview,
+            toolNamesUsed: params.toolNamesUsed,
+          }),
       },
       metrics: NOOP_METRICS_PORT,
       toolExecutor,
