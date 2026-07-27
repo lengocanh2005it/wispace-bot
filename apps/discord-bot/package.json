@@ -30,6 +30,8 @@
     "@wispace/chat-history": "*",
     "@wispace/chat-metering": "*",
     "@wispace/llm-agent": "*",
+    "@wispace/scheduler-core": "*",
+    "@wispace/student-report": "*",
     "@wispace/study-reminder-core": "*",
     "@wispace/wispace-client": "*",
     "discord.js": "^14.26.4",

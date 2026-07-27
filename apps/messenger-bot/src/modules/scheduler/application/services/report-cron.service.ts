@@ -7,17 +7,17 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import {
+  ReportCronLeaderService,
+  ReportCronLockService,
+  ReportScheduleService,
+  todayReportDate,
+  type SendScheduledReportsOptions,
+  type SendScheduledReportsResult,
+} from '@wispace/scheduler-core';
+import {
   MESSENGER_REPOSITORY,
   type MessengerRepositoryPort,
 } from '../../../messenger/domain/repositories/messenger.repository.port';
-import { todayReportDate } from '../../../../shared/utils/report-date.utils';
-import type {
-  SendScheduledReportsOptions,
-  SendScheduledReportsResult,
-} from '../../domain/entities/send-scheduled-reports.types';
-import { ReportCronLeaderService } from './report-cron-leader.service';
-import { ReportCronLockService } from './report-cron-lock.service';
-import { ReportScheduleService } from './report-schedule.service';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
 import type { UserMessengerMapping } from '../../../messenger/domain/entities/messenger.types';
 import type { ClaimAndSendResult } from './report-send-orchestration.service';
@@ -73,7 +73,7 @@ export class ReportCronService {
     const forceSend = options?.forceSend === true;
     const allowDuplicate = options?.allowDuplicate === true;
     const skipAlreadySentToday = !allowDuplicate;
-    const psidFilter = options?.psid?.trim();
+    const psidFilter = options?.externalUserId?.trim();
 
     const schedule = this.reportScheduleService.getExamReminderWindow();
     const reportDate = todayReportDate(

@@ -1,17 +1,17 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import {
+  REPORT_SEND_JOB_REPOSITORY,
+  type ReportSendJobRepositoryPort,
+  ReportCronLeaderService,
+  ReportScheduleService,
+  ReportSendScheduleService,
+  todayReportDate,
+} from '@wispace/scheduler-core';
+import {
   MESSENGER_REPOSITORY,
   type MessengerRepositoryPort,
 } from '../../../messenger/domain/repositories/messenger.repository.port';
-import { todayReportDate } from '../../../../shared/utils/report-date.utils';
-import {
-  REPORT_SEND_JOB_REPOSITORY,
-  type ReportSendJobRepositoryPort,
-} from '../../domain/repositories/report-send-job.repository.port';
-import { ReportCronLeaderService } from './report-cron-leader.service';
-import { ReportScheduleService } from './report-schedule.service';
-import { ReportSendScheduleService } from './report-send-schedule.service';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
 import { PgAdvisoryLockService } from '../../../../shared/common/pg-advisory-lock.service';
 import { ADVISORY_LOCK } from '../../../../shared/common/advisory-lock-ids';
@@ -90,7 +90,7 @@ export class ReportSendRetryDispatchService {
         });
         expired += 1;
         this.logger.warn(
-          `Report send job expired jobId=${job.id} psid=${job.psid} examDate=${job.examDate}`,
+          `Report send job expired jobId=${job.id} psid=${job.externalUserId} examDate=${job.examDate}`,
         );
         continue;
       }
@@ -103,7 +103,7 @@ export class ReportSendRetryDispatchService {
       claimed += 1;
 
       const mapping = await this.messengerRepository.findActiveMappingByPsid(
-        claimedJob.psid,
+        claimedJob.externalUserId,
       );
 
       if (!mapping?.psid) {
@@ -161,7 +161,7 @@ export class ReportSendRetryDispatchService {
           failed += 1;
           failures.push({
             jobId: claimedJob.id,
-            psid: claimedJob.psid,
+            psid: claimedJob.externalUserId,
             error: 'Wispace API retryable (R3/R5)',
           });
         } else {
@@ -169,7 +169,7 @@ export class ReportSendRetryDispatchService {
         }
 
         this.logger.warn(
-          `Report send retry Wispace 5xx jobId=${claimedJob.id} psid=${claimedJob.psid} retry=${nextRetryCount}/${claimedJob.maxRetries}`,
+          `Report send retry Wispace 5xx jobId=${claimedJob.id} psid=${claimedJob.externalUserId} retry=${nextRetryCount}/${claimedJob.maxRetries}`,
         );
       } else if (orchestrationResult.windowClosed > 0) {
         await this.reportSendJobRepository.markFailed({
@@ -190,11 +190,11 @@ export class ReportSendRetryDispatchService {
         failed += 1;
         failures.push({
           jobId: claimedJob.id,
-          psid: claimedJob.psid,
+          psid: claimedJob.externalUserId,
           error,
         });
         this.logger.error(
-          `Report send retry failed jobId=${claimedJob.id} psid=${claimedJob.psid}`,
+          `Report send retry failed jobId=${claimedJob.id} psid=${claimedJob.externalUserId}`,
         );
       }
     }

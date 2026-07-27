@@ -9,11 +9,10 @@ import type {
 } from '@wispace/scheduler-core';
 import { ReportSendJobEntity } from '../../../../infrastructure/database/entities/report-send-job.entity';
 
-/** This repository only ever writes rows for the Messenger bot. */
-const PLATFORM = 'messenger' as const;
+const PLATFORM = 'discord' as const;
 
 @Injectable()
-export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
+export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPort {
   constructor(
     @InjectRepository(ReportSendJobEntity)
     private readonly jobRepo: Repository<ReportSendJobEntity>,
@@ -42,7 +41,7 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
       existing.maxRetries = params.maxRetries;
       existing.lastError = params.errorMessage;
       existing.nextRetryAt = terminal ? null : params.nextRetryAt;
-      existing.status = terminal ? 'failed' : 'failed';
+      existing.status = 'failed';
       if (params.userId != null) {
         existing.userId = params.userId;
       }
@@ -57,11 +56,10 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
       userId: params.userId ?? null,
       examDate: params.examDate,
       firstAttemptDate: params.firstAttemptDate,
-      status: nextRetryCount >= params.maxRetries ? 'failed' : 'failed',
+      status: 'failed',
       retryCount: nextRetryCount,
       maxRetries: params.maxRetries,
-      nextRetryAt:
-        nextRetryCount >= params.maxRetries ? null : params.nextRetryAt,
+      nextRetryAt: terminal ? null : params.nextRetryAt,
       lastError: params.errorMessage,
     });
 
@@ -72,7 +70,8 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
   async findDueJobs(now: Date, limit = 50): Promise<ReportSendJob[]> {
     const rows = await this.jobRepo
       .createQueryBuilder('job')
-      .where('job.status = :status', { status: 'failed' })
+      .where('job.platform = :platform', { platform: PLATFORM })
+      .andWhere('job.status = :status', { status: 'failed' })
       .andWhere('job.retry_count < job.max_retries')
       .andWhere('job.next_retry_at IS NOT NULL')
       .andWhere('job.next_retry_at <= :now', { now })
@@ -85,16 +84,11 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
 
   async claimJob(jobId: number): Promise<ReportSendJob | null> {
     const result = await this.jobRepo.update(
-      {
-        id: jobId,
-        status: 'failed',
-      },
+      { id: jobId, platform: PLATFORM, status: 'failed' },
       { status: 'processing' },
     );
 
-    if (!result.affected) {
-      return null;
-    }
+    if (!result.affected) return null;
 
     const row = await this.jobRepo.findOne({ where: { id: jobId } });
     return row ? this.mapEntity(row) : null;
@@ -116,23 +110,6 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
       lastError: params.errorMessage,
       nextRetryAt: params.terminal ? null : (params.nextRetryAt ?? null),
     });
-  }
-
-  async markSentByPsidExamDate(psid: string, examDate: string): Promise<void> {
-    await this.jobRepo.update(
-      {
-        platform: PLATFORM,
-        externalUserId: psid,
-        examDate,
-        status: In(['failed', 'processing', 'pending']),
-      },
-      {
-        status: 'sent',
-        sentAt: new Date(),
-        nextRetryAt: null,
-        lastError: null,
-      },
-    );
   }
 
   async markSentByExternalUserExamDate(
@@ -160,7 +137,8 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
       .createQueryBuilder()
       .update(ReportSendJobEntity)
       .set({ status: 'failed' })
-      .where('status = :status', { status: 'processing' })
+      .where('platform = :platform', { platform: PLATFORM })
+      .andWhere('status = :status', { status: 'processing' })
       .andWhere('updated_at < :olderThan', { olderThan })
       .execute();
 
@@ -170,7 +148,8 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
   async countTerminalFailedSince(since: Date): Promise<number> {
     return this.jobRepo
       .createQueryBuilder('job')
-      .where('job.status = :status', { status: 'failed' })
+      .where('job.platform = :platform', { platform: PLATFORM })
+      .andWhere('job.status = :status', { status: 'failed' })
       .andWhere('job.retry_count >= job.max_retries')
       .andWhere('job.updated_at >= :since', { since })
       .getCount();

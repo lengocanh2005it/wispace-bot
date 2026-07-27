@@ -18,6 +18,7 @@ import { DiscordMenuService } from './application/services/discord-menu.service'
 import { DiscordDeadLetterService } from './application/services/discord-dead-letter.service';
 import { DiscordDeadLetterCronService } from './application/services/discord-dead-letter-cron.service';
 import { DiscordOutboundModule } from './discord-outbound.module';
+import { DiscordReportModule } from './discord-report.module';
 import { DiscordChatGateway } from './presentation/gateways/discord-chat.gateway';
 import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities/webhook-dead-letter.entity';
 
@@ -27,6 +28,7 @@ import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities/
     DiscordOutboundModule,
     AccountLinkModule,
     WispaceModule,
+    DiscordReportModule,
     TypeOrmModule.forFeature([WebhookDeadLetterEntity]),
   ],
   providers: [

@@ -206,7 +206,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
 
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0]).toEqual({
-      token: 'tok-1',
+      externalUserId: 'psid-1',
       error: 'unexpected',
     });
     expect(
