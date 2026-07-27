@@ -6,6 +6,8 @@ import { DiscordAccountLinkEntity } from '../../../../infrastructure/database/en
 
 const PLATFORM = 'discord' as const;
 
+const OAUTH_TIMEOUT_MS = 10_000;
+
 class DiscordOauthError extends Error {}
 
 @Injectable()
@@ -40,6 +42,7 @@ export class DiscordAccountLinkService {
         code,
         redirect_uri: redirectUri,
       }),
+      signal: AbortSignal.timeout(OAUTH_TIMEOUT_MS),
     });
 
     if (!tokenResponse.ok) {
@@ -52,6 +55,7 @@ export class DiscordAccountLinkService {
 
     const userResponse = await fetch('https://discord.com/api/users/@me', {
       headers: { Authorization: `Bearer ${tokenJson.access_token}` },
+      signal: AbortSignal.timeout(OAUTH_TIMEOUT_MS),
     });
 
     if (!userResponse.ok) {

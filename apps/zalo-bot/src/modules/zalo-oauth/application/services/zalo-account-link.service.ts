@@ -9,6 +9,7 @@ import { base64url } from '../../../../shared/utils/base64url';
 const PLATFORM = 'zalo' as const;
 const ZALO_TOKEN_ENDPOINT = 'https://oauth.zaloapp.com/v4/access_token';
 const ZALO_ME_ENDPOINT = 'https://graph.zalo.me/v2.0/me';
+const OAUTH_TIMEOUT_MS = 10_000;
 
 class ZaloOauthError extends Error {}
 
@@ -56,6 +57,7 @@ export class ZaloAccountLinkService {
         grant_type: 'authorization_code',
         code_verifier: codeVerifier,
       }),
+      signal: AbortSignal.timeout(OAUTH_TIMEOUT_MS),
     });
 
     if (!tokenResponse.ok) {
@@ -68,6 +70,7 @@ export class ZaloAccountLinkService {
 
     const userResponse = await fetch(`${ZALO_ME_ENDPOINT}?fields=id,name`, {
       headers: { access_token: tokenJson.access_token },
+      signal: AbortSignal.timeout(OAUTH_TIMEOUT_MS),
     });
 
     if (!userResponse.ok) {

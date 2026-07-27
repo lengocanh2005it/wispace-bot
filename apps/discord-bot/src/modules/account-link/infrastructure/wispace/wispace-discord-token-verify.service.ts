@@ -44,6 +44,7 @@ export class WispaceDiscordTokenVerifyService {
         value: discordUserId.trim(),
         platform: 'discord',
       }),
+      signal: AbortSignal.timeout(10_000),
     });
 
     const payload: unknown = await this.readJsonBody(response);

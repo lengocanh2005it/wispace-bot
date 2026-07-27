@@ -18,6 +18,7 @@ import {
   ZALO_WEBHOOK_HANDLER,
   type ZaloWebhookHandler,
 } from '../../domain/ports/zalo-webhook-handler.port';
+import { ZaloWebhookDedupeService } from '../../application/zalo-webhook-dedupe.service';
 
 @Controller('zalo/webhook')
 export class ZaloWebhookController {
@@ -27,6 +28,7 @@ export class ZaloWebhookController {
     private readonly configService: ConfigService,
     @Inject(ZALO_WEBHOOK_HANDLER)
     private readonly handler: ZaloWebhookHandler,
+    private readonly dedupeService: ZaloWebhookDedupeService,
   ) {}
 
   @Post()
@@ -69,6 +71,10 @@ export class ZaloWebhookController {
         const text = event.message?.text;
         const msgId = event.message?.msg_id;
         if (senderId && text) {
+          if (msgId && this.dedupeService.isDuplicate(msgId)) {
+            this.logger.debug(`Skipping duplicate webhook msg_id=${msgId}`);
+            return;
+          }
           await this.handler.handleIncomingMessage(senderId, text, msgId);
         }
         return;

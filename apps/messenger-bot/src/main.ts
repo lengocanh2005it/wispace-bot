@@ -7,6 +7,18 @@ import { AppModule } from './app.module';
 const SHUTDOWN_LOGGER = new Logger('Shutdown');
 const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 10_000;
 
+process.on('unhandledRejection', (reason) => {
+  SHUTDOWN_LOGGER.error(
+    `Unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`,
+    reason instanceof Error ? reason.stack : undefined,
+  );
+});
+
+process.on('uncaughtException', (error) => {
+  SHUTDOWN_LOGGER.error(`Uncaught exception: ${error.message}`, error.stack);
+  process.exit(1);
+});
+
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
