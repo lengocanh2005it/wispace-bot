@@ -36,7 +36,7 @@ describe('StudyReminderDispatchService', () => {
       >
     >;
     let messageSender: jest.Mocked<MessageSenderPort>;
-    let metrics: { reminderDispatch: { inc: jest.Mock } };
+    let metrics: { incReminderDispatch: jest.Mock };
 
     const defaultSettings = {
       stuckProcessingMs: 600_000,
@@ -95,7 +95,7 @@ describe('StudyReminderDispatchService', () => {
         sendTextViaPsid: jest.fn().mockResolvedValue(undefined),
       };
 
-      metrics = { reminderDispatch: { inc: jest.fn() } };
+      metrics = { incReminderDispatch: jest.fn() };
 
       service = new StudyReminderDispatchService(
         jobRepo,
@@ -340,10 +340,8 @@ describe('StudyReminderDispatchService', () => {
 
         await service.dispatchDueReminders();
 
-        expect(metrics.reminderDispatch.inc).toHaveBeenCalledWith({
-          status: 'sent',
-        });
-        expect(metrics.reminderDispatch.inc).toHaveBeenCalledTimes(1);
+        expect(metrics.incReminderDispatch).toHaveBeenCalledWith('sent');
+        expect(metrics.incReminderDispatch).toHaveBeenCalledTimes(1);
       });
 
       it('increments status=cancelled when session already started', async () => {
@@ -354,9 +352,7 @@ describe('StudyReminderDispatchService', () => {
 
         await service.dispatchDueReminders();
 
-        expect(metrics.reminderDispatch.inc).toHaveBeenCalledWith({
-          status: 'cancelled',
-        });
+        expect(metrics.incReminderDispatch).toHaveBeenCalledWith('cancelled');
       });
 
       it('increments status=failed on terminal error', async () => {
@@ -369,9 +365,7 @@ describe('StudyReminderDispatchService', () => {
 
         await service.dispatchDueReminders();
 
-        expect(metrics.reminderDispatch.inc).toHaveBeenCalledWith({
-          status: 'failed',
-        });
+        expect(metrics.incReminderDispatch).toHaveBeenCalledWith('failed');
       });
 
       it('increments status=retried on transient error with retries remaining', async () => {
@@ -384,9 +378,7 @@ describe('StudyReminderDispatchService', () => {
 
         await service.dispatchDueReminders();
 
-        expect(metrics.reminderDispatch.inc).toHaveBeenCalledWith({
-          status: 'retried',
-        });
+        expect(metrics.incReminderDispatch).toHaveBeenCalledWith('retried');
       });
 
       it('does not increment when no jobs are claimed', async () => {
@@ -395,7 +387,7 @@ describe('StudyReminderDispatchService', () => {
 
         await service.dispatchDueReminders();
 
-        expect(metrics.reminderDispatch.inc).not.toHaveBeenCalled();
+        expect(metrics.incReminderDispatch).not.toHaveBeenCalled();
       });
     });
   });

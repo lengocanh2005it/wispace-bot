@@ -93,7 +93,7 @@ export class StudyReminderDispatchService {
           'session already started',
         );
         cancelled += 1;
-        this.metrics.reminderDispatch.inc({ status: 'cancelled' });
+        this.metrics.incReminderDispatch('cancelled');
         continue;
       }
 
@@ -114,7 +114,7 @@ export class StudyReminderDispatchService {
         });
         await this.studyReminderJobRepository.markSent(job.id);
         sent += 1;
-        this.metrics.reminderDispatch.inc({ status: 'sent' });
+        this.metrics.incReminderDispatch('sent');
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const nextRetryCount = job.retryCount + 1;
@@ -149,7 +149,7 @@ export class StudyReminderDispatchService {
             terminal: true,
           });
           failed += 1;
-          this.metrics.reminderDispatch.inc({ status: 'failed' });
+          this.metrics.incReminderDispatch('failed');
         } else {
           const nextRetryAt = new Date(
             now.getTime() + settings.retryBackoffMinutes * 60 * 1000,
@@ -162,7 +162,7 @@ export class StudyReminderDispatchService {
             terminal: false,
           });
           retried += 1;
-          this.metrics.reminderDispatch.inc({ status: 'retried' });
+          this.metrics.incReminderDispatch('retried');
         }
 
         failures.push({

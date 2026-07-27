@@ -84,7 +84,7 @@ function buildService(
     ),
     timeStep: jest.fn((_step: string, fn: () => Promise<unknown>) => fn()),
     timeTool: jest.fn((_name: string, fn: () => Promise<unknown>) => fn()),
-    llmRoundOutcome: { inc: jest.fn() },
+    incRoundOutcome: jest.fn(),
   } as unknown as MetricsService;
 
   const adapter = {

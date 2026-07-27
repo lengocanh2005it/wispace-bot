@@ -11,16 +11,49 @@ export interface MetricsConfig {
   prefix: string;
   /** Whether to collect default Node.js metrics */
   collectDefaults?: boolean;
+  /** Optional OTel tracer for distributed tracing (pass trace.getTracer('service-name')) */
+  tracer?: {
+    startSpan: (name: string) => {
+      setAttributes: (attrs: Record<string, unknown>) => void;
+      setAttribute: (key: string, value: unknown) => void;
+      setStatus: (status: { code: number; message?: string }) => void;
+      recordException: (error: Error) => void;
+      end: () => void;
+    };
+  };
+  /** OTel SpanStatusCode values (pass SpanStatusCode from @opentelemetry/api) */
+  spanStatusCode?: {
+    OK: number;
+    ERROR: number;
+  };
+  /** OTel context API (pass context from @opentelemetry/api) */
+  contextApi?: {
+    active: () => unknown;
+    with: <T>(ctx: unknown, fn: () => Promise<T>) => Promise<T>;
+  };
+  /** OTel trace API (pass trace from @opentelemetry/api) */
+  traceApi?: {
+    setSpan: (ctx: unknown, span: unknown) => unknown;
+  };
 }
 
+/**
+ * Platform-agnostic Prometheus metrics with optional OpenTelemetry tracing.
+ * When `tracer` is provided in config, all timing methods also emit OTel spans.
+ */
 @Injectable()
 export class BotMetricsService implements OnModuleDestroy {
   private readonly logger = new Logger(BotMetricsService.name);
   readonly registry: Registry;
   private readonly prefix: string;
+  private readonly tracer: MetricsConfig['tracer'];
+  private readonly spanStatusCode: MetricsConfig['spanStatusCode'];
+  private readonly contextApi: MetricsConfig['contextApi'];
+  private readonly traceApi: MetricsConfig['traceApi'];
 
   private chatStepDuration: Histogram;
   private llmCallDuration: Histogram;
+  private llmExecutionDuration: Histogram;
   private llmToolDuration: Histogram;
   private llmToolCalls: Counter;
   private llmRoundOutcome: Counter;
@@ -29,10 +62,18 @@ export class BotMetricsService implements OnModuleDestroy {
 
   constructor(config: MetricsConfig) {
     this.prefix = config.prefix;
+    this.tracer = config.tracer;
+    this.spanStatusCode = config.spanStatusCode;
+    this.contextApi = config.contextApi;
+    this.traceApi = config.traceApi;
     this.registry = new Registry();
 
     if (config.collectDefaults !== false) {
       collectDefaultMetrics({ register: this.registry });
+    }
+
+    if (this.tracer) {
+      this.logger.log('BotMetricsService: OTel tracing enabled');
     }
 
     this.chatStepDuration = new Histogram({
@@ -47,6 +88,14 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_llm_call_duration_seconds`,
       help: 'Duration of LLM API calls',
       labelNames: ['feature', 'model', 'round', 'status'],
+      buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60],
+      registers: [this.registry],
+    });
+
+    this.llmExecutionDuration = new Histogram({
+      name: `${this.prefix}_llm_execution_duration_seconds`,
+      help: 'Duration of LLM requests at execution-service layer',
+      labelNames: ['feature', 'status'],
       buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 30, 60],
       registers: [this.registry],
     });
@@ -89,15 +138,11 @@ export class BotMetricsService implements OnModuleDestroy {
   }
 
   async timeStep<T>(step: string, fn: () => Promise<T>): Promise<T> {
+    const span = this.tracer?.startSpan(`chat.${step}`);
     const end = this.chatStepDuration.startTimer({ step });
-    try {
-      const result = await fn();
-      end({ status: 'ok' });
-      return result;
-    } catch (error) {
-      end({ status: 'error' });
-      throw error;
-    }
+    return this.withSpan(span, fn, (status) => {
+      end({ status });
+    });
   }
 
   async timeLlmCall<T>(
@@ -106,49 +151,54 @@ export class BotMetricsService implements OnModuleDestroy {
     round: number,
     fn: () => Promise<T>,
   ): Promise<T> {
+    const span = this.tracer?.startSpan(`llm.call.round_${round}`);
+    span?.setAttributes({
+      'llm.feature': feature,
+      'llm.model': model,
+      'llm.round': round,
+    });
     const end = this.llmCallDuration.startTimer({
       feature,
       model,
       round: String(round),
     });
-    try {
-      const result = await fn();
-      end({ status: 'ok' });
-      return result;
-    } catch (error) {
-      end({ status: 'error' });
-      throw error;
-    }
+    return this.withSpan(span, fn, (status) => {
+      end({ status });
+    });
   }
 
   async timeLlmExecution<T>(feature: string, fn: () => Promise<T>): Promise<T> {
-    const end = this.llmCallDuration.startTimer({
-      feature,
-      model: '',
-      round: '0',
+    const span = this.tracer?.startSpan('llm.execution');
+    span?.setAttribute('llm.feature', feature);
+    const end = this.llmExecutionDuration.startTimer({ feature });
+    return this.withSpan(span, fn, (status) => {
+      end({ status });
     });
-    try {
-      const result = await fn();
-      end({ status: 'ok' });
-      return result;
-    } catch (error) {
-      end({ status: 'error' });
-      throw error;
-    }
+  }
+
+  async timeWispaceCall<T>(
+    service: string,
+    operation: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const span = this.tracer?.startSpan(`wispace.${service}.${operation}`);
+    span?.setAttributes({
+      'wispace.service': service,
+      'wispace.operation': operation,
+    });
+    return this.withSpan(span, fn, () => {
+      // No Prometheus metric for Wispace calls — OTel only
+    });
   }
 
   async timeTool<T>(toolName: string, fn: () => Promise<T>): Promise<T> {
+    const span = this.tracer?.startSpan(`llm.tool.${toolName}`);
+    span?.setAttribute('llm.tool_name', toolName);
     const end = this.llmToolDuration.startTimer({ tool_name: toolName });
-    try {
-      const result = await fn();
-      this.llmToolCalls.inc({ tool_name: toolName, status: 'ok' });
-      end({ status: 'ok' });
-      return result;
-    } catch (error) {
-      this.llmToolCalls.inc({ tool_name: toolName, status: 'error' });
-      end({ status: 'error' });
-      throw error;
-    }
+    return this.withSpan(span, fn, (status) => {
+      end({ status });
+      this.llmToolCalls.inc({ tool_name: toolName, status });
+    });
   }
 
   incQuotaDenied(reason: string): void {
@@ -167,7 +217,56 @@ export class BotMetricsService implements OnModuleDestroy {
     return this.registry.metrics();
   }
 
+  contentType(): string {
+    return this.registry.contentType;
+  }
+
   onModuleDestroy(): void {
     this.registry.clear();
+  }
+
+  /**
+   * Execute fn within an OTel span context, recording status and exceptions.
+   * Falls back to direct execution when OTel is not configured.
+   */
+  private async withSpan<T>(
+    span:
+      | ReturnType<NonNullable<MetricsConfig['tracer']>['startSpan']>
+      | undefined,
+    fn: () => Promise<T>,
+    onResult: (status: string) => void,
+  ): Promise<T> {
+    if (!span || !this.contextApi || !this.traceApi || !this.spanStatusCode) {
+      try {
+        const result = await fn();
+        onResult('ok');
+        return result;
+      } catch (error) {
+        onResult('error');
+        throw error;
+      }
+    }
+
+    return this.contextApi.with(
+      this.traceApi.setSpan(this.contextApi.active(), span),
+      async () => {
+        try {
+          const result = await fn();
+          onResult('ok');
+          span.setStatus({ code: this.spanStatusCode!.OK });
+          return result;
+        } catch (err) {
+          onResult('error');
+          span.setStatus({
+            code: this.spanStatusCode!.ERROR,
+            message: String(err),
+          });
+          span.recordException(err as Error);
+          throw err;
+        } finally {
+          span.end();
+        }
+      },
+    );
   }
 }

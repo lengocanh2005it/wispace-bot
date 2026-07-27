@@ -216,7 +216,7 @@ export class MessengerAgentService {
           this.metrics.timeLlmCall(feature, model, round, fn),
         timeTool: (toolName, fn) => this.metrics.timeTool(toolName, fn),
         llmRoundOutcomeInc: (feature, outcome) =>
-          this.metrics.llmRoundOutcome.inc({ feature, outcome }),
+          this.metrics.incRoundOutcome(feature, outcome),
       },
       toolExecutor,
       adapter: this.adapter,

@@ -93,7 +93,7 @@ export class ChatRateLimitService {
       burstPerMinute,
     );
     if (!burstResult.allowed) {
-      this.metrics.quotaDenied.inc({ reason: 'BURST_LIMIT' });
+      this.metrics.incQuotaDenied('BURST_LIMIT');
       this.logQuotaDeny(
         'BURST_LIMIT',
         psid,
@@ -152,7 +152,7 @@ export class ChatRateLimitService {
       await this.burstCounter.releaseReservation(psid);
       // Count is known to be >= dailyLimit — no need for a second DB read.
       const used = params.dailyLimit;
-      this.metrics.quotaDenied.inc({ reason: 'DAILY_LIMIT' });
+      this.metrics.incQuotaDenied('DAILY_LIMIT');
       this.logQuotaDeny(
         'DAILY_LIMIT',
         psid,

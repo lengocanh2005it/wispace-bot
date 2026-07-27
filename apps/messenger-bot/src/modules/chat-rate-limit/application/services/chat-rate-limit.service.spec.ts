@@ -115,7 +115,7 @@ describe('ChatRateLimitService', () => {
     } as unknown as ChatQuotaEventRecorderService;
 
     const metrics = {
-      quotaDenied: { inc: jest.fn() },
+      incQuotaDenied: jest.fn(),
     } as unknown as MetricsService;
 
     const service = new ChatRateLimitService(
@@ -418,9 +418,7 @@ describe('ChatRateLimitService', () => {
 
       await service.reserveFreeFormSlot('psid-1', { idempotencyKey: 'mid-1' });
 
-      expect((metrics.quotaDenied.inc as jest.Mock).mock.calls).toContainEqual([
-        { reason: 'DAILY_LIMIT' },
-      ]);
+      expect(metrics.incQuotaDenied).toHaveBeenCalledWith('DAILY_LIMIT');
     });
 
     it('increments quotaDenied{reason=BURST_LIMIT} when burst window is full', async () => {
@@ -428,9 +426,7 @@ describe('ChatRateLimitService', () => {
 
       await service.reserveFreeFormSlot('psid-1', { idempotencyKey: 'mid-2' });
 
-      expect((metrics.quotaDenied.inc as jest.Mock).mock.calls).toContainEqual([
-        { reason: 'BURST_LIMIT' },
-      ]);
+      expect(metrics.incQuotaDenied).toHaveBeenCalledWith('BURST_LIMIT');
     });
 
     it('does not increment quotaDenied when reserve succeeds', async () => {
@@ -438,7 +434,7 @@ describe('ChatRateLimitService', () => {
 
       await service.reserveFreeFormSlot('psid-1', { idempotencyKey: 'mid-3' });
 
-      expect(metrics.quotaDenied.inc as jest.Mock).not.toHaveBeenCalled();
+      expect(metrics.incQuotaDenied).not.toHaveBeenCalled();
     });
 
     it('increments quotaDenied{reason=DAILY_LIMIT} on H3 transaction hard cap', async () => {
@@ -449,9 +445,7 @@ describe('ChatRateLimitService', () => {
 
       await service.reserveFreeFormSlot('psid-1', { idempotencyKey: 'mid-4' });
 
-      expect((metrics.quotaDenied.inc as jest.Mock).mock.calls).toContainEqual([
-        { reason: 'DAILY_LIMIT' },
-      ]);
+      expect(metrics.incQuotaDenied).toHaveBeenCalledWith('DAILY_LIMIT');
     });
   });
 });
