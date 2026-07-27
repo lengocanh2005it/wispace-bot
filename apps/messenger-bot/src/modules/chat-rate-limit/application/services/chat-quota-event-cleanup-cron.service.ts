@@ -1,37 +1,65 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { ADVISORY_LOCK } from '../../../../shared/common/advisory-lock-ids';
-import { PgAdvisoryLockService } from '../../../../shared/common/pg-advisory-lock.service';
-import { ChatQuotaEventCleanupService } from './chat-quota-event-cleanup.service';
+import {
+  CleanupCronService,
+  type CleanupCronConfig,
+} from '@wispace/cleanup-cron';
+import { CHAT_QUOTA_EVENT_REPOSITORY } from '../../domain/repositories/chat-quota-event.repository.port';
+import type { ChatQuotaEventRepositoryPort } from '../../domain/repositories/chat-quota-event.repository.port';
+import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
+
+const CLEANUP_CONFIG: CleanupCronConfig = {
+  name: 'chat-quota-events-cleanup',
+  advisoryLockId: 200,
+  cronExpression: '0 30 3 1 * *',
+  timeZone: 'Asia/Ho_Chi_Minh',
+  enabledConfigKey: 'CHAT_QUOTA_EVENTS_CLEANUP_ENABLED',
+  retentionDaysConfigKey: 'CHAT_QUOTA_EVENTS_RETENTION_DAYS',
+  defaultRetentionDays: 90,
+};
 
 @Injectable()
 export class ChatQuotaEventCleanupCronService {
   private readonly logger = new Logger(ChatQuotaEventCleanupCronService.name);
 
   constructor(
-    private readonly cleanupService: ChatQuotaEventCleanupService,
-    private readonly pgLock: PgAdvisoryLockService,
+    private readonly configService: {
+      get: (key: string) => string | undefined;
+    },
+    private readonly chatConfig: ChatRateLimitConfigService,
+    @Inject(CHAT_QUOTA_EVENT_REPOSITORY)
+    private readonly eventRepository: ChatQuotaEventRepositoryPort,
+    private readonly cleanupCron: CleanupCronService,
   ) {}
 
+  isEnabled(): boolean {
+    const raw = this.configService
+      .get(CLEANUP_CONFIG.enabledConfigKey)
+      ?.trim()
+      .toLowerCase();
+
+    if (!raw) {
+      return this.chatConfig.isQuotaEventsEnabled();
+    }
+
+    return raw === 'true' || raw === '1' || raw === 'yes';
+  }
+
+  getRetentionDays(): number {
+    return this.chatConfig.getQuotaEventsRetentionDays();
+  }
+
   /** Purge old quota audit events — 03:30 ICT on the 1st of each month. */
-  @Cron('0 30 3 1 * *', {
-    name: 'chat-quota-events-cleanup',
-    timeZone: 'Asia/Ho_Chi_Minh',
+  @Cron(CLEANUP_CONFIG.cronExpression, {
+    name: CLEANUP_CONFIG.name,
+    timeZone: CLEANUP_CONFIG.timeZone,
   })
   async handleMonthlyCleanup(): Promise<void> {
-    if (!this.cleanupService.isEnabled()) {
-      return;
-    }
-
-    const result = await this.pgLock.withLock(
-      ADVISORY_LOCK.CHAT_QUOTA_EVENTS_CLEANUP,
-      () => this.cleanupService.purgeExpiredEvents(),
+    await this.cleanupCron.execute(
+      CLEANUP_CONFIG,
+      (cutoff) => this.eventRepository.deleteOlderThan(cutoff),
+      () => this.isEnabled(),
+      () => this.getRetentionDays(),
     );
-
-    if (result === null) {
-      this.logger.debug(
-        'chat-quota-events-cleanup skipped — lock held by another pod',
-      );
-    }
   }
 }

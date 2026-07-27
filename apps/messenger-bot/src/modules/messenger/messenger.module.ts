@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CleanupCronService } from '@wispace/cleanup-cron';
 import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities';
 import { MESSENGER_WEBHOOK_DEAD_LETTER_REPOSITORY } from './domain/repositories/messenger-webhook-dead-letter.repository.port';
 import { MessengerWebhookDeadLetterRepository } from './infrastructure/persistence/messenger-webhook-dead-letter.repository';
@@ -60,6 +61,7 @@ import { UserLinkingModule } from './user-linking.module';
       provide: MESSENGER_WEBHOOK_DEAD_LETTER_REPOSITORY,
       useExisting: MessengerWebhookDeadLetterRepository,
     },
+    CleanupCronService,
     MessengerWebhookDeadLetterCronService,
     MessengerMessageLogCleanupService,
     MessengerReportDeliveryService,

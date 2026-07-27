@@ -1,12 +1,24 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
+import {
+  CleanupCronService,
+  type CleanupCronConfig,
+} from '@wispace/cleanup-cron';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
-import { ADVISORY_LOCK } from '../../../../shared/common/advisory-lock-ids';
-import { PgAdvisoryLockService } from '../../../../shared/common/pg-advisory-lock.service';
 
 const DEFAULT_RETENTION_DAYS = 90;
+
+const CLEANUP_CONFIG: CleanupCronConfig = {
+  name: 'messenger-message-log-cleanup',
+  advisoryLockId: 100,
+  cronExpression: '0 0 3 * * 1',
+  timeZone: 'Asia/Ho_Chi_Minh',
+  enabledConfigKey: 'MESSENGER_MESSAGE_LOG_CLEANUP_ENABLED',
+  retentionDaysConfigKey: 'MESSENGER_MESSAGE_LOG_RETENTION_DAYS',
+  defaultRetentionDays: DEFAULT_RETENTION_DAYS,
+};
 
 @Injectable()
 export class MessengerMessageLogCleanupService {
@@ -16,12 +28,12 @@ export class MessengerMessageLogCleanupService {
     private readonly configService: ConfigService,
     @Inject(MESSENGER_REPOSITORY)
     private readonly messengerRepository: MessengerRepositoryPort,
-    private readonly pgLock: PgAdvisoryLockService,
+    private readonly cleanupCron: CleanupCronService,
   ) {}
 
   isEnabled(): boolean {
     const raw = this.configService
-      .get<string>('MESSENGER_MESSAGE_LOG_CLEANUP_ENABLED')
+      .get<string>(CLEANUP_CONFIG.enabledConfigKey)
       ?.trim()
       .toLowerCase();
 
@@ -34,16 +46,16 @@ export class MessengerMessageLogCleanupService {
 
   getRetentionDays(): number {
     const raw = this.configService
-      .get<string>('MESSENGER_MESSAGE_LOG_RETENTION_DAYS')
+      .get<string>(CLEANUP_CONFIG.retentionDaysConfigKey)
       ?.trim();
 
     if (!raw) {
-      return DEFAULT_RETENTION_DAYS;
+      return CLEANUP_CONFIG.defaultRetentionDays;
     }
 
     const value = Number(raw);
     if (!Number.isFinite(value) || value <= 0) {
-      return DEFAULT_RETENTION_DAYS;
+      return CLEANUP_CONFIG.defaultRetentionDays;
     }
 
     return Math.floor(value);
@@ -70,24 +82,16 @@ export class MessengerMessageLogCleanupService {
   }
 
   /** Purge old audit rows — 03:00 ICT every Monday. */
-  @Cron('0 0 3 * * 1', {
-    name: 'messenger-message-log-cleanup',
-    timeZone: 'Asia/Ho_Chi_Minh',
+  @Cron(CLEANUP_CONFIG.cronExpression, {
+    name: CLEANUP_CONFIG.name,
+    timeZone: CLEANUP_CONFIG.timeZone,
   })
   async handleWeeklyCleanup(): Promise<void> {
-    if (!this.isEnabled()) {
-      return;
-    }
-
-    const result = await this.pgLock.withLock(
-      ADVISORY_LOCK.MESSENGER_MESSAGE_LOG_CLEANUP,
-      () => this.purgeExpiredLogs(),
+    await this.cleanupCron.execute(
+      CLEANUP_CONFIG,
+      (cutoff) => this.messengerRepository.deleteMessageLogsOlderThan(cutoff),
+      () => this.isEnabled(),
+      () => this.getRetentionDays(),
     );
-
-    if (result === null) {
-      this.logger.debug(
-        'messenger-message-log-cleanup skipped — lock held by another pod',
-      );
-    }
   }
 }

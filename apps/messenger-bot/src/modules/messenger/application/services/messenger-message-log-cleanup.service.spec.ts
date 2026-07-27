@@ -1,5 +1,6 @@
 import { MessengerMessageLogCleanupService } from './messenger-message-log-cleanup.service';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
+import { CleanupCronService } from '@wispace/cleanup-cron';
 
 describe('MessengerMessageLogCleanupService', () => {
   const deleteMessageLogsOlderThan = jest.fn<Promise<number>, [Date]>();
@@ -7,6 +8,10 @@ describe('MessengerMessageLogCleanupService', () => {
   const messengerRepository = {
     deleteMessageLogsOlderThan,
   } as unknown as MessengerRepositoryPort;
+
+  const cleanupCron = {
+    execute: jest.fn(),
+  } as unknown as CleanupCronService;
 
   const createService = (env: Record<string, string | undefined> = {}) => {
     const configService = {
@@ -16,6 +21,7 @@ describe('MessengerMessageLogCleanupService', () => {
     return new MessengerMessageLogCleanupService(
       configService as never,
       messengerRepository,
+      cleanupCron,
     );
   };
 

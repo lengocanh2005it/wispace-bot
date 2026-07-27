@@ -7,6 +7,7 @@ import {
   MemoryBurstCounter,
   PostgresBurstCounter,
 } from '@wispace/chat-metering';
+import { CleanupCronService } from '@wispace/cleanup-cron';
 import { ChatQuotaEventEntity } from '../../infrastructure/database/entities/chat-quota-event.entity';
 import { ChatQuotaEventCleanupCronService } from './application/services/chat-quota-event-cleanup-cron.service';
 import { ChatQuotaEventCleanupService } from './application/services/chat-quota-event-cleanup.service';
@@ -94,6 +95,7 @@ import { Logger } from '@nestjs/common';
     },
     ChatQuotaEventRecorderService,
     ChatQuotaEventCleanupService,
+    CleanupCronService,
     ChatQuotaEventCleanupCronService,
     ChatRateLimitService,
     ChatQuotaOpsService,
