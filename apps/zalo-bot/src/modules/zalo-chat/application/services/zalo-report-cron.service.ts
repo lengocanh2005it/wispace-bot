@@ -91,7 +91,7 @@ export class ZaloReportCronService {
     try {
       const [goals, taskScores] = await Promise.all([
         this.goalsService.getUserGoals(link.externalUserId),
-        this.goalsService.getTaskScoreAverages(zaloUserId),
+        this.goalsService.getTaskScoreAverages(link.externalUserId),
       ]);
 
       const report = formatReport(goals, taskScores);
