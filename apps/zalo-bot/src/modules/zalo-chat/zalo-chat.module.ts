@@ -2,8 +2,9 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
-  createLlmProviderAdapter,
+  createFailoverLlmProviderAdapter,
   type LlmProviderAdapter,
+  type LlmProviderEntryConfig,
 } from '@wispace/llm-agent';
 import {
   ChatDailyUsageEntity,
@@ -41,14 +42,89 @@ import { ZaloReschedulePort } from './infrastructure/adapters/zalo-reschedule.po
   providers: [
     {
       provide: 'LLM_PROVIDER_ADAPTER',
-      useFactory: (configService: ConfigService): LlmProviderAdapter =>
-        createLlmProviderAdapter({
-          getApiKey: () =>
-            configService.get<string>('OPENAI_API_KEY')?.trim() || undefined,
-          getModel: () =>
-            configService.get<string>('OPENAI_MODEL')?.trim() || 'gpt-5.4',
-          provider: 'openai',
-        }),
+      useFactory: (configService: ConfigService): LlmProviderAdapter => {
+        const order =
+          configService
+            .get<string>('LLM_PROVIDER_FAILOVER_ORDER')
+            ?.trim()
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean) ?? [];
+
+        if (order.length === 0) {
+          return createFailoverLlmProviderAdapter(
+            [
+              {
+                provider: 'openai',
+                getApiKey: () =>
+                  configService.get<string>('OPENAI_API_KEY')?.trim() ||
+                  undefined,
+                getModel: () =>
+                  configService.get<string>('OPENAI_MODEL')?.trim() ||
+                  'gpt-5.4',
+              },
+            ],
+            ['openai'],
+            { warn: (m) => console.warn(m) },
+          );
+        }
+
+        const entries: LlmProviderEntryConfig[] = [
+          {
+            provider: 'openai',
+            getApiKey: () =>
+              configService.get<string>('OPENAI_API_KEY')?.trim() || undefined,
+            getModel: () =>
+              configService.get<string>('OPENAI_MODEL')?.trim() || 'gpt-5.4',
+          },
+          {
+            provider: 'openrouter',
+            getApiKey: () =>
+              configService.get<string>('OPENROUTER_API_KEY')?.trim() ||
+              undefined,
+            getModel: () =>
+              configService.get<string>('OPENROUTER_MODEL')?.trim() ||
+              'openai/gpt-4o-mini',
+            getBaseUrl: () =>
+              configService.get<string>('OPENROUTER_BASE_URL')?.trim() ||
+              'https://openrouter.ai/api/v1',
+          },
+          {
+            provider: 'minimax',
+            getApiKey: () =>
+              configService.get<string>('MINIMAX_API_KEY')?.trim() || undefined,
+            getModel: () =>
+              configService.get<string>('MINIMAX_MODEL')?.trim() ||
+              'MiniMax-Text-01',
+            getBaseUrl: () =>
+              configService.get<string>('MINIMAX_BASE_URL')?.trim() ||
+              'https://api.minimax.chat/v1',
+          },
+        ];
+
+        return createFailoverLlmProviderAdapter(
+          entries,
+          order,
+          { warn: (m) => console.warn(m) },
+          {
+            cooldownLongMs: Number(
+              configService
+                .get<string>('LLM_FAILOVER_COOLDOWN_LONG_MS')
+                ?.trim() ?? 600_000,
+            ),
+            cooldownShortMs: Number(
+              configService
+                .get<string>('LLM_FAILOVER_COOLDOWN_SHORT_MS')
+                ?.trim() ?? 5_000,
+            ),
+            quickRetryDelayMs: Number(
+              configService
+                .get<string>('LLM_FAILOVER_QUICK_RETRY_DELAY_MS')
+                ?.trim() ?? 150,
+            ),
+          },
+        );
+      },
       inject: [ConfigService],
     },
     ZaloLlmUsageConfigService,

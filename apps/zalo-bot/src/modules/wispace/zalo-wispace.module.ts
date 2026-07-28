@@ -9,6 +9,10 @@ import { ZaloWispaceCalendarService } from './application/services/zalo-wispace-
     ZaloWispaceGoalsService,
     ZaloWispaceCalendarService,
   ],
-  exports: [ZaloWispaceGoalsService, ZaloWispaceCalendarService],
+  exports: [
+    ZaloWispaceConfigService,
+    ZaloWispaceGoalsService,
+    ZaloWispaceCalendarService,
+  ],
 })
 export class ZaloWispaceModule {}
