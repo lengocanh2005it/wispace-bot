@@ -149,5 +149,5 @@ Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 6/7 real WISPA
 | 1 | Turborepo scaffold + extract `packages/llm-agent` + discord/zalo placeholders | ✅ Completed |
 | 2 | Generalize DB key `(platform, external_user_id)` | ✅ Completed — migration ran on VPS production, verified via SSH |
 | 3 | Implement Discord bot | ✅ Features complete (chat + quota + account-linking OAuth2 + 6/7 real tools + reschedule + 08:00 report cron + leader-election + retry dispatch + study reminders + dead letter + message log + CI/CD workflow + deploy scripts) — no real end-to-end testing yet |
-| 4 | Implement Zalo bot | 🟡 Functional (chat + quota + account-linking + 6/7 tools + 08:00 report cron + LLM report enrichment + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD + real ops health + Postgres burst counter + Redis chat history) — missing: chat queue, Doppler webhook, health/redis endpoint |
-| 5 | Fully independent CI/CD | 🟡 Discord + Zalo workflows committed (`deploy-discord-bot.yml`, `deploy-zalo-bot.yml`) — Messenger workflow not yet separated |
+| 4 | Implement Zalo bot | ✅ Features complete (chat + quota + account-linking + 6/7 tools + LLM report + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD + Doppler webhook + health/redis + Redis dedupe + chat queue) |
+| 5 | Fully independent CI/CD | ✅ All 3 bots have independent workflows (`deploy-messenger-bot.yml`, `deploy-discord-bot.yml`, `deploy-zalo-bot.yml`) |
