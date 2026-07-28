@@ -147,11 +147,21 @@ describe('DiscordAgentToolsService', () => {
     expect(result).toEqual({ hasSession: false });
   });
 
-  it('register_exam_report_notifications stays stubbed (no Discord ref-link equivalent)', async () => {
+  it('register_exam_report_notifications returns success when linked', async () => {
     const result = await service.execute(
       'register_exam_report_notifications',
       '{}',
       { discordUserId: 'discord-1', userId: 143 },
+    );
+
+    expect(result).toMatchObject({ registered: true });
+  });
+
+  it('register_exam_report_notifications returns not-linked message when unlinked', async () => {
+    const result = await service.execute(
+      'register_exam_report_notifications',
+      '{}',
+      { discordUserId: 'discord-1' },
     );
 
     expect(result).toMatchObject({ available: false });

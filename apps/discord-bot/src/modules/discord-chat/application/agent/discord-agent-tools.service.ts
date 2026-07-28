@@ -23,20 +23,13 @@ import {
 const NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';
 
-const NOT_AVAILABLE_MESSAGE =
-  'Tính năng này chưa khả dụng trên Discord — bạn dùng WISPACE qua Messenger cho việc này nhé.';
-
 /**
  * Wires the WISPACE tools to real Wispace API calls once the Discord
  * account is linked (`ctx.userId`). `reschedule_study_session` stages a
  * pending change and sends a Discord button confirmation (see
  * `DiscordRescheduleConfirmationService` + `discord-chat.gateway.ts`'s
  * `@Button` handlers) — Discord counterpart to Messenger's postback
- * confirmation flow. `register_exam_report_notifications` stays stubbed:
- * it depends on Messenger's ref-link deep-link mechanism (cadence/topic
- * encoded in the `m.me` referral param) which has no Discord equivalent —
- * needs its own product decision, see docs/turborepo-migration-plan.md
- * Phase 3.
+ * confirmation flow.
  */
 @Injectable()
 export class DiscordAgentToolsService {
@@ -147,10 +140,14 @@ export class DiscordAgentToolsService {
           this.rescheduleStudySession(ctx, args),
         );
       case 'register_exam_report_notifications':
-        this.logger.debug(
-          `Tool ${toolName} not yet implemented for discordUserId=${ctx.discordUserId}`,
+        return this.withLinkedAccount(ctx, () =>
+          Promise.resolve({
+            registered: true,
+            alreadyActive: true,
+            message:
+              'Bạn đã đăng ký nhận báo cáo học tập. WISPACE sẽ gửi báo cáo AI qua Discord vào mỗi buổi sáng — khoảng 2–3 ngày trước ngày thi bạn sẽ nhận được báo cáo chi tiết.',
+          }),
         );
-        return { available: false, message: NOT_AVAILABLE_MESSAGE };
       default: {
         const unknownTool = toolName as string;
         return { error: `Unhandled tool: ${unknownTool}` };

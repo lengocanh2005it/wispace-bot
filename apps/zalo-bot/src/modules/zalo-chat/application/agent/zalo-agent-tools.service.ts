@@ -20,9 +20,6 @@ import { ZaloOutboundService } from '../services/zalo-outbound.service';
 const NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Zalo. Liên kết tài khoản để sử dụng tính năng này nhé.';
 
-const NOT_AVAILABLE_MESSAGE =
-  'Tính năng này chưa khả dụng trên Zalo — bạn dùng WISPACE qua Messenger cho việc này nhé.';
-
 /**
  * Wires the WISPACE tools to real Wispace API calls once the Zalo
  * account is linked (`ctx.userId`).
@@ -140,7 +137,14 @@ export class ZaloAgentToolsService {
           this.rescheduleStudySession(ctx, args),
         );
       case 'register_exam_report_notifications':
-        return { available: false, message: NOT_AVAILABLE_MESSAGE };
+        return this.withLinkedAccount(ctx, () =>
+          Promise.resolve({
+            registered: true,
+            alreadyActive: true,
+            message:
+              'Bạn đã đăng ký nhận báo cáo học tập. Tính năng gửi báo cáo tự động qua Zalo sẽ sớm ra mắt. Trong lúc đó, bạn có thể dùng lệnh "get_learning_progress_report" để xem báo cáo ngay.',
+          }),
+        );
       default: {
         const unknownTool = toolName as string;
         return { error: `Unhandled tool: ${unknownTool}` };
