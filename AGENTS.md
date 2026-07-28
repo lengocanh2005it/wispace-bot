@@ -410,7 +410,7 @@ Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global ski
 | Zalo CI/CD | ✓ `deploy-zalo-bot.yml` + `vps-deploy-zalo.sh` + Dockerfile |
 | Zalo chat queue / debounce | ❌ Each message goes directly to LLM, no `CHAT_QUEUE_STORE` |
 | Zalo Redis burst counter | ❌ Memory only, no `CHAT_BURST_STORE=redis\|postgres` |
-| Zalo LLM report enrichment | ❌ Report cron + `get_learning_progress_report` return raw data, not LLM narrative |
+| Zalo LLM report enrichment | ✓ Report cron uses `ZaloStudentReportService` (LLM); tool still raw |
 | Discord/Zalo chat queue (H7) | ❌ No debounce/merge — Messenger-only via `CHAT_QUEUE_STORE` |
 | Discord/Zalo multi-pod chat history | ❌ In-memory only (Redis optional for Messenger) |
 | Project-wide gaps (link, reports, reminders, ops) | Roadmap — [edge-cases-roadmap.md](docs/edge-cases-roadmap.md) |

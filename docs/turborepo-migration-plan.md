@@ -110,18 +110,20 @@ Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 6/7 real WISPA
 
 **Still missing vs Discord/Messenger:**
 - **Chat queue** (debounce/merge) — Zalo handles each message immediately, no `CHAT_QUEUE_STORE` config
-- **Redis/postgres burst counter** — currently `MemoryBurstCounter` only (no `CHAT_BURST_STORE`)
-- **LLM report enrichment** — report cron and `get_learning_progress_report` tool return raw API data, not LLM-generated narrative (Messenger uses `StudentReportCore` from `@wispace/student-report`)
-- **Chat history** — in-memory only (no Redis `CHAT_HISTORY_STORE=redis` option)
+- **LLM report enrichment** — report cron uses `ZaloStudentReportService` (LLM); `get_learning_progress_report` tool still returns raw API data
 - **Webhook dedupe** — in-memory only (no Redis option)
-- **Ops health** — `ZaloOpsHealthRepository` returns hardcoded zeros
+- **Chat history** — supports `CHAT_HISTORY_STORE=memory|redis` via `@wispace/chat-history` core
 - **No health/redis endpoint** (`GET /health/redis`)
 - **No Doppler webhook endpoint** (`POST /zalo/ops/doppler-sync`)
 
-**Recently added (commit 9b9ff9a):**
+**Recently added (commits 9b9ff9a, 66352b7, ad8a196):**
 - Study reminder sync fixed: `getSessions` callback wired via `ZaloWispaceCalendarService`
 - Ops HTTP endpoints (`POST /zalo/send-reports`, `/zalo/study-calendar/sync`, `/zalo/sync-study-reminders`) with `InternalApiKeyGuard`
-- CI/CD: `deploy-zalo-bot.yml` workflow + `vps-deploy-zalo.sh` + Dockerfile updated with all @wispace packages
+- CI/CD: `deploy-zalo-bot.yml` workflow + `vps-deploy-zalo.sh` + Dockerfile updated
+- LLM report enrichment: `ZaloStudentReportService` using `@wispace/student-report` `StudentReportCore`
+- Ops health: real queries on `chat_idempotency`, `chat_daily_usage`, `study_reminder_jobs`, `llm_safety_events`
+- Burst counter: `PostgresBurstCounter` (was `MemoryBurstCounter`)
+- Chat history: `CHAT_HISTORY_STORE=redis` support with fallback to memory
 
 ---
 
@@ -147,5 +149,5 @@ Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 6/7 real WISPA
 | 1 | Turborepo scaffold + extract `packages/llm-agent` + discord/zalo placeholders | ✅ Completed |
 | 2 | Generalize DB key `(platform, external_user_id)` | ✅ Completed — migration ran on VPS production, verified via SSH |
 | 3 | Implement Discord bot | ✅ Features complete (chat + quota + account-linking OAuth2 + 6/7 real tools + reschedule + 08:00 report cron + leader-election + retry dispatch + study reminders + dead letter + message log + CI/CD workflow + deploy scripts) — no real end-to-end testing yet |
-| 4 | Implement Zalo bot | 🟡 Functional (chat + quota + account-linking + 6/7 tools + 08:00 report cron + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD) — missing: chat queue, Redis burst counter, LLM report enrichment, Doppler webhook |
+| 4 | Implement Zalo bot | 🟡 Functional (chat + quota + account-linking + 6/7 tools + 08:00 report cron + LLM report enrichment + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD + real ops health + Postgres burst counter + Redis chat history) — missing: chat queue, Doppler webhook, health/redis endpoint |
 | 5 | Fully independent CI/CD | 🟡 Discord + Zalo workflows committed (`deploy-discord-bot.yml`, `deploy-zalo-bot.yml`) — Messenger workflow not yet separated |
