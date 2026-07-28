@@ -1,42 +1,90 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   MemoryChatHistoryStore,
   type ChatHistoryMessage,
 } from '@wispace/chat-history';
 
+import { REDIS_CLIENT } from '../../../../infrastructure/redis/redis.client.port';
+import type { Redis } from 'ioredis';
+
 const DEFAULT_MAX_MESSAGES = 20;
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
+const KEY_PREFIX = 'chat-history:';
 
-/**
- * In-memory only (MVP) — lost on process restart, not shared across pods.
- * Same trade-off as apps/discord-bot's DiscordChatHistoryService — see spec
- * §11.7 for the Redis-backed future work.
- */
 @Injectable()
 export class ZaloChatHistoryService {
   private readonly store: MemoryChatHistoryStore;
+  private readonly redisNative: Redis | null;
+  private readonly redisTtlSec: number;
+  private readonly maxMessages: number;
 
-  constructor(configService: ConfigService) {
+  constructor(
+    configService: ConfigService,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+    @Inject(REDIS_CLIENT) redis: any,
+  ) {
     const ttlMs =
       Number(configService.get<string>('ZALO_CHAT_HISTORY_TTL_MS')) ||
       DEFAULT_TTL_MS;
-    const maxMessages =
+    this.maxMessages =
       Number(configService.get<string>('ZALO_CHAT_HISTORY_MAX_MESSAGES')) ||
       DEFAULT_MAX_MESSAGES;
-
-    this.store = new MemoryChatHistoryStore({ ttlMs, maxMessages });
+    this.redisTtlSec = Math.floor(ttlMs / 1000);
+    const storeKind = configService
+      .get<string>('CHAT_HISTORY_STORE')
+      ?.trim()
+      ?.toLowerCase();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
+    const isEnabled = redis?.isEnabled?.() ?? false;
+    this.redisNative =
+      storeKind === 'redis' && isEnabled
+        ? // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
+          (redis.getNativeClient() as Redis | null)
+        : null;
+    this.store = new MemoryChatHistoryStore({
+      ttlMs,
+      maxMessages: this.maxMessages,
+    });
   }
 
-  getHistory(zaloUserId: string): Promise<ChatHistoryMessage[]> {
+  async getHistory(zaloUserId: string): Promise<ChatHistoryMessage[]> {
+    if (this.redisNative) {
+      try {
+        const raw = await this.redisNative.get(`${KEY_PREFIX}${zaloUserId}`);
+        if (!raw) return [];
+        return JSON.parse(raw) as ChatHistoryMessage[];
+      } catch {
+        return [];
+      }
+    }
     return this.store.getHistory(zaloUserId);
   }
 
-  appendTurn(
+  async appendTurn(
     zaloUserId: string,
     userText: string,
     assistantText: string,
   ): Promise<void> {
+    if (this.redisNative) {
+      try {
+        const existing = await this.getHistory(zaloUserId);
+        const messages = [
+          ...existing,
+          { role: 'user' as const, content: userText.trim() },
+          { role: 'assistant' as const, content: assistantText.trim() },
+        ].slice(-this.maxMessages);
+        await this.redisNative.set(
+          `${KEY_PREFIX}${zaloUserId}`,
+          JSON.stringify(messages),
+          'EX',
+          this.redisTtlSec,
+        );
+      } catch {
+        // swallow
+      }
+      return;
+    }
     return this.store.appendTurn(zaloUserId, userText, assistantText);
   }
 }

@@ -7,7 +7,7 @@ import {
   ChatIdempotencyEntity,
   ChatRateLimitCore,
   ChatRateLimitRepository,
-  MemoryBurstCounter,
+  PostgresBurstCounter,
 } from '@wispace/chat-metering';
 
 const PLATFORM = 'zalo';
@@ -54,9 +54,14 @@ export class ZaloChatRateLimitService {
       PLATFORM,
     );
 
+    const burstCounter = new PostgresBurstCounter(
+      repository,
+      burstCountsRefunded,
+    );
+
     this.core = new ChatRateLimitCore(
       repository,
-      new MemoryBurstCounter(),
+      burstCounter,
       { freeFormDailyLimit, burstPerMinute, timezone, burstCountsRefunded },
       {
         warn: (msg) => this.logger.warn(msg),
