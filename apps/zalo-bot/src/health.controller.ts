@@ -1,10 +1,21 @@
-import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Inject,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
+import { REDIS_CLIENT } from './infrastructure/redis/redis.client.port';
+import type { RedisClientPort } from './infrastructure/redis/redis.client.port';
 
 @Controller('health')
 export class HealthController {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    @Inject(REDIS_CLIENT)
+    private readonly redisClient: RedisClientPort,
+  ) {}
 
   @Get()
   async check(): Promise<{ status: string; database: string }> {
@@ -18,5 +29,21 @@ export class HealthController {
         message: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  @Get('redis')
+  async checkRedis() {
+    const result = await this.redisClient.ping();
+    if (result === 'NO_REDIS') {
+      return { ok: true, redis: 'disabled' };
+    }
+    if (result === 'PONG') {
+      return { ok: true, redis: 'connected' };
+    }
+    throw new ServiceUnavailableException({
+      ok: false,
+      redis: 'error',
+      message: result,
+    });
   }
 }

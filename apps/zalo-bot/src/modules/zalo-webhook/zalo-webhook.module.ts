@@ -4,6 +4,7 @@ import { ZaloChatService } from '../zalo-chat/application/services/zalo-chat.ser
 import { ZALO_WEBHOOK_HANDLER } from './domain/ports/zalo-webhook-handler.port';
 import { ZaloWebhookController } from './presentation/controllers/zalo-webhook.controller';
 import { ZaloWebhookDedupeService } from './application/zalo-webhook-dedupe.service';
+import { RedisWebhookDedupeStore } from './application/redis-webhook-dedupe.store';
 
 @Module({
   imports: [ZaloChatModule],
@@ -11,6 +12,7 @@ import { ZaloWebhookDedupeService } from './application/zalo-webhook-dedupe.serv
   providers: [
     { provide: ZALO_WEBHOOK_HANDLER, useExisting: ZaloChatService },
     ZaloWebhookDedupeService,
+    RedisWebhookDedupeStore,
   ],
 })
 export class ZaloWebhookModule {}

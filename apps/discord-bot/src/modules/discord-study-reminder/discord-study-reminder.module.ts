@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { SchedulerRegistry } from '@nestjs/schedule';
+import { DataSource } from 'typeorm';
 import {
   StudyReminderScheduleService,
   StudyReminderSyncService,
@@ -13,6 +15,8 @@ import {
 import { StudyReminderJobEntity } from '../../infrastructure/database/entities/study-reminder-job.entity';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordChatModule } from '../discord-chat/discord-chat.module';
+import { WispaceModule } from '../wispace/wispace.module';
+import { WispaceCalendarService } from '../wispace/application/services/wispace-calendar.service';
 import { DiscordStudyReminderMessageSenderService } from '../discord-chat/application/services/discord-study-reminder-message-sender.service';
 import { DiscordMappingReaderAdapter } from '../discord-chat/infrastructure/persistence/discord-mapping-reader.adapter';
 import { DiscordStudyReminderJobRepository } from '../discord-chat/infrastructure/persistence/discord-study-reminder-job.repository';
@@ -25,6 +29,7 @@ import { DiscordRedisUserDisplayNameCache } from './discord-redis-user-display-n
       DiscordAccountLinkEntity,
     ]),
     DiscordChatModule,
+    WispaceModule,
   ],
   providers: [
     {
@@ -46,7 +51,43 @@ import { DiscordRedisUserDisplayNameCache } from './discord-redis-user-display-n
     StudyReminderScheduleService,
     StudyReminderSyncService,
     StudyReminderDispatchService,
-    StudyReminderWorkerService,
+    {
+      provide: StudyReminderWorkerService,
+      useFactory: (...deps: unknown[]) =>
+        new (StudyReminderWorkerService as never as new (
+          ...args: unknown[]
+        ) => StudyReminderWorkerService)(
+          deps[0],
+          deps[1],
+          deps[2],
+          deps[3],
+          deps[4],
+          'discord',
+          deps[5] && typeof deps[5] === 'object'
+            ? (externalUserId: string) =>
+                (deps[5] as WispaceCalendarService)
+                  .getCalendarSessions(externalUserId, {
+                    timeRange: 'upcoming',
+                  })
+                  .then((sessions) =>
+                    sessions.map((s) => ({
+                      calendarId: s.sessionKey,
+                      sessionKey: s.sessionKey,
+                      scheduledAt: s.scheduledAt,
+                      topic: s.topic,
+                    })),
+                  )
+            : undefined,
+        ),
+      inject: [
+        StudyReminderSyncService,
+        StudyReminderDispatchService,
+        StudyReminderScheduleService,
+        { token: SchedulerRegistry, optional: false },
+        { token: DataSource, optional: false },
+        WispaceCalendarService,
+      ],
+    },
     DiscordRedisUserDisplayNameCache,
     DiscordStudyReminderMessageSenderService,
     DiscordMappingReaderAdapter,

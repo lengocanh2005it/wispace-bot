@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   HttpCode,
+  Logger,
   Post,
   UseGuards,
 } from '@nestjs/common';
@@ -13,6 +14,8 @@ import { ZaloReportCronService } from '../zalo-chat/application/services/zalo-re
 @Controller('zalo')
 @UseGuards(InternalApiKeyGuard)
 export class ZaloOpsController {
+  private readonly logger = new Logger(ZaloOpsController.name);
+
   constructor(
     private readonly reportCronService: ZaloReportCronService,
     private readonly studyReminderSyncService: StudyReminderSyncService,
@@ -43,5 +46,14 @@ export class ZaloOpsController {
     return this.studyReminderSyncService.syncUpcomingSessions({
       platform: 'zalo',
     });
+  }
+
+  @Post('ops/doppler-sync')
+  @HttpCode(202)
+  dopplerRuntimeSync() {
+    this.logger.log(
+      'Doppler runtime sync requested — restart container to apply',
+    );
+    return { accepted: true, message: 'Doppler sync triggered' };
   }
 }

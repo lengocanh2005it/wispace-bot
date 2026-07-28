@@ -1,28 +1,27 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
+import { RedisWebhookDedupeStore } from './redis-webhook-dedupe.store';
 
 const DEFAULT_TTL_MS = 60_000;
 const CLEANUP_INTERVAL_MS = 5_000;
 
-/**
- * Simple in-memory webhook deduplication for Zalo.
- * Tracks recently processed message IDs to prevent duplicate processing
- * when Zalo retries webhooks.
- */
 @Injectable()
 export class ZaloWebhookDedupeService implements OnModuleDestroy {
   private readonly logger = new Logger(ZaloWebhookDedupeService.name);
   private readonly seen = new Map<string, number>();
   private cleanupTimer: ReturnType<typeof setInterval> | undefined;
+  private readonly useRedis: boolean;
 
-  constructor() {
+  constructor(
+    @Optional() private readonly redisStore?: RedisWebhookDedupeStore,
+  ) {
+    this.useRedis = this.redisStore?.isAvailable() ?? false;
     this.cleanupTimer = setInterval(() => this.cleanup(), CLEANUP_INTERVAL_MS);
   }
 
-  /**
-   * Returns true if this message was already recently processed.
-   * Call this with message.msg_id to deduplicate text messages.
-   */
-  isDuplicate(msgId: string): boolean {
+  async isDuplicate(msgId: string): Promise<boolean> {
+    if (this.useRedis && this.redisStore) {
+      return this.redisStore.isDuplicate(msgId);
+    }
     const now = Date.now();
     const expiry = this.seen.get(msgId);
     if (expiry !== undefined && expiry > now) {
@@ -33,6 +32,7 @@ export class ZaloWebhookDedupeService implements OnModuleDestroy {
   }
 
   private cleanup(): void {
+    if (this.useRedis) return;
     const now = Date.now();
     for (const [key, expiry] of this.seen) {
       if (expiry <= now) {

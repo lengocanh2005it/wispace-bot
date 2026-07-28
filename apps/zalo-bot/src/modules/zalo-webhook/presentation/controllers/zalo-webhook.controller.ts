@@ -71,7 +71,7 @@ export class ZaloWebhookController {
         const text = event.message?.text;
         const msgId = event.message?.msg_id;
         if (senderId && text) {
-          if (msgId && this.dedupeService.isDuplicate(msgId)) {
+          if (msgId && (await this.dedupeService.isDuplicate(msgId))) {
             this.logger.debug(`Skipping duplicate webhook msg_id=${msgId}`);
             return;
           }
