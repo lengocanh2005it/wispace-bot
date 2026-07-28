@@ -159,6 +159,7 @@ import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities/
     ZaloChatService,
     ZaloOutboundService,
     ZaloChatRateLimitService,
+    ZaloLlmUsageRecorderService,
     ZaloCleanupCronService,
     CleanupCronService,
     ZaloDeadLetterService,

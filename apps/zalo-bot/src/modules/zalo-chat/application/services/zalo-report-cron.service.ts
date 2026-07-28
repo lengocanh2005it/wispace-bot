@@ -3,15 +3,11 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WispaceApiError } from '@wispace/wispace-client';
-import type {
-  UserGoalsRecord,
-  TaskScoreAverageRecord,
-} from '@wispace/wispace-client';
 import { ZaloAccountLinkEntity } from '../../../../infrastructure/database/entities/zalo-account-link.entity';
 import { ScheduledReportClaimEntity } from '../../../../infrastructure/database/entities/scheduled-report-claim.entity';
 import { todayReportDate } from '@wispace/scheduler-core';
-import { ZaloWispaceGoalsService } from '../../../wispace/application/services/zalo-wispace-goals.service';
 import { ZaloReportDeliveryService } from './zalo-report-delivery.service';
+import { ZaloStudentReportService } from './zalo-student-report.service';
 
 const CONCURRENCY = 3;
 
@@ -24,8 +20,8 @@ export class ZaloReportCronService {
     private readonly linkRepo: Repository<ZaloAccountLinkEntity>,
     @InjectRepository(ScheduledReportClaimEntity)
     private readonly claimRepo: Repository<ScheduledReportClaimEntity>,
-    private readonly goalsService: ZaloWispaceGoalsService,
     private readonly deliveryService: ZaloReportDeliveryService,
+    private readonly reportService: ZaloStudentReportService,
   ) {}
 
   @Cron('0 8 * * *', {
@@ -89,12 +85,9 @@ export class ZaloReportCronService {
     }
 
     try {
-      const [goals, taskScores] = await Promise.all([
-        this.goalsService.getUserGoals(link.externalUserId),
-        this.goalsService.getTaskScoreAverages(link.externalUserId),
-      ]);
-
-      const report = formatReport(goals, taskScores);
+      const report = await this.reportService.generateReport(
+        link.externalUserId,
+      );
       const delivered = await this.deliveryService.sendReport(
         link.externalUserId,
         report,
@@ -134,29 +127,4 @@ export class ZaloReportCronService {
       return 'error';
     }
   }
-}
-
-function formatReport(
-  goals: UserGoalsRecord,
-  taskScores: TaskScoreAverageRecord[],
-): string {
-  const lines: string[] = [
-    '📊 Báo cáo học tập hôm nay',
-    `🎯 Mục tiêu: Band ${goals.targetScore} | Ngày thi: ${goals.examDate}`,
-    '',
-  ];
-
-  if (taskScores.length === 0) {
-    lines.push('Chưa có dữ liệu điểm. Hãy nộp bài để xem tiến độ nhé!');
-  } else {
-    lines.push('📝 Điểm trung bình các kỹ năng:');
-    for (const r of taskScores) {
-      lines.push(
-        `• ${r.task}: ${r.avgTotalScore.toFixed(1)} — đã làm ${r.totalTasks} bài`,
-      );
-    }
-  }
-
-  lines.push('', '💪 Cố gắng mỗi ngày bạn nhé!');
-  return lines.join('\n');
 }
