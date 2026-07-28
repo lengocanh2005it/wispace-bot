@@ -9,7 +9,7 @@ import {
   REPORT_SEND_JOB_REPOSITORY,
   type ReportSendJobRepositoryPort,
 } from '@wispace/scheduler-core';
-import { ReportSendScheduleService } from './report-send-schedule.service';
+import { ReportSendScheduleService } from '@wispace/scheduler-core';
 import { StudentReportRetryableError } from '../../../student-report/domain/errors/wispace-api.error';
 import { ProactiveMessenger24hSkippedError } from '../../../messenger/application/utils/proactive-send.utils';
 
