@@ -105,7 +105,6 @@ describe('ChatRateLimitService', () => {
         }
         return Promise.resolve({ allowed: true, count: current + 1 });
       }),
-      recordReservation: jest.fn(() => Promise.resolve()),
       releaseReservation: jest.fn(() => Promise.resolve()),
     };
 
@@ -248,20 +247,16 @@ describe('ChatRateLimitService', () => {
     });
     expect(getReserveCallCount()).toBe(0);
     expect(getCount()).toBe(0);
-    expect(burstCounter.recordReservation).not.toHaveBeenCalled();
   });
 
-  it('records burst reservation after successful reserve', async () => {
+  it('reserves via tryReserveBurst', async () => {
     const { service, burstCounter } = createService(true, 0);
 
     await service.reserveFreeFormSlot('psid-1', {
       idempotencyKey: 'mid-ok',
     });
 
-    // Burst is now incremented atomically inside tryReserveBurst, not via a separate
-    // recordReservation call after the DB transaction.
     expect(burstCounter.tryReserveBurst).toHaveBeenCalledWith('psid-1', 3);
-    expect(burstCounter.recordReservation).not.toHaveBeenCalled();
   });
 
   it('bypasses reserve for whitelisted psid', async () => {

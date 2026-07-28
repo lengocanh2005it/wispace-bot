@@ -1,20 +1,16 @@
 import { Global, Module } from '@nestjs/common';
-import { RedisConfigService } from './application/services/redis-config.service';
-import { RedisStartupService } from './application/services/redis-startup.service';
-import { REDIS_CLIENT } from './domain/redis.client.port';
-import { IoredisRedisClient } from './infrastructure/ioredis.client';
+import { REDIS_CLIENT } from './redis.client.port';
+import { RedisService } from './redis.service';
 
 @Global()
 @Module({
   providers: [
-    RedisConfigService,
-    IoredisRedisClient,
-    RedisStartupService,
+    RedisService,
     {
       provide: REDIS_CLIENT,
-      useExisting: IoredisRedisClient,
+      useExisting: RedisService,
     },
   ],
-  exports: [RedisConfigService, REDIS_CLIENT],
+  exports: [RedisService, REDIS_CLIENT],
 })
 export class RedisModule {}

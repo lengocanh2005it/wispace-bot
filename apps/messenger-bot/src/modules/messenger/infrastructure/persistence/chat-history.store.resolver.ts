@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { ChatHistoryMessage } from '../../domain/entities/chat-history.types';
+import type { ChatHistoryMessage } from '../../domain/entities/messenger-store.types';
 import type { ChatHistoryStorePort } from '../../domain/repositories/chat-history.store.port';
 import { MessengerChatSharedConfigService } from '../../application/services/messenger-chat-shared-config.service';
 import { MemoryChatHistoryStore } from './memory-chat-history.store';
@@ -41,10 +41,6 @@ export class ChatHistoryStoreResolver implements ChatHistoryStorePort {
     }
 
     return 'memory';
-  }
-
-  isConfiguredPostgres(): boolean {
-    return this.sharedConfig.getHistoryStore() === 'postgres';
   }
 
   private resolveStore(): ChatHistoryStorePort {

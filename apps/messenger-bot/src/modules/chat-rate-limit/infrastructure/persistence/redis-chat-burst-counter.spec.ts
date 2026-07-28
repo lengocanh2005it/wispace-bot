@@ -1,4 +1,4 @@
-import type { RedisClientPort } from '../../../../infrastructure/redis/domain/redis.client.port';
+import type { RedisClientPort } from '../../../../infrastructure/redis/redis.client.port';
 import { RedisChatBurstCounter } from './redis-chat-burst-counter';
 
 describe('RedisChatBurstCounter', () => {
@@ -20,22 +20,6 @@ describe('RedisChatBurstCounter', () => {
 
     return new RedisChatBurstCounter(redisClient);
   };
-
-  it('increments burst key with ttl on first reservation', async () => {
-    const client = {
-      get: jest.fn(),
-      incr: jest.fn().mockResolvedValue(1),
-      expire: jest.fn().mockResolvedValue(1),
-      decr: jest.fn(),
-      del: jest.fn(),
-    };
-
-    const counter = createCounter(client);
-    await counter.recordReservation('psid-1');
-
-    expect(client.incr).toHaveBeenCalled();
-    expect(client.expire).toHaveBeenCalledWith(expect.any(String), 120);
-  });
 
   it('releases burst slot by decrementing key', async () => {
     const client = {

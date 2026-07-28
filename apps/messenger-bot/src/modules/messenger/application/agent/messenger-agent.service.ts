@@ -14,7 +14,7 @@ import {
   MessengerAgentToolsService,
   MessengerAgentToolContext,
 } from './messenger-agent-tools.service';
-import { LlmSafetyEventService } from '../../../llm-safety/application/services/llm-safety-event.service';
+import { LlmSafetyService } from '../../../llm-safety/llm-safety.service';
 import { LlmExecutionService } from '../../../llm-execution/application/services/llm-execution.service';
 import type { LlmExecutionContext } from '../../../llm-execution/application/types/llm-execution.types';
 import { LlmUsageRecorderService } from '../../../llm-usage/application/services/llm-usage-recorder.service';
@@ -49,7 +49,7 @@ export class MessengerAgentService {
     private readonly userDisplayNameService: UserDisplayNameService,
     private readonly llmUsageRecorder: LlmUsageRecorderService,
     private readonly llmExecution: LlmExecutionService,
-    private readonly llmSafetyEventService: LlmSafetyEventService,
+    private readonly llmSafetyService: LlmSafetyService,
     private readonly metrics: MetricsService,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
@@ -201,7 +201,7 @@ export class MessengerAgentService {
       },
       safetyEvents: {
         recordGroundingWarning: (params) =>
-          this.llmSafetyEventService.recordGroundingWarning({
+          this.llmSafetyService.recordGroundingWarning({
             psid: params.externalUserId,
             userId: params.userId,
             correlationId: params.correlationId,

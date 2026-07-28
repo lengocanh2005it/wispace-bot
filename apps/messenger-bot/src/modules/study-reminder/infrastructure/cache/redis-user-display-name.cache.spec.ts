@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import type { RedisClientPort } from '../../../../infrastructure/redis/domain/redis.client.port';
+import type { RedisClientPort } from '../../../../infrastructure/redis/redis.client.port';
 import { RedisUserDisplayNameCache } from './redis-user-display-name.cache';
 
 describe('RedisUserDisplayNameCache', () => {

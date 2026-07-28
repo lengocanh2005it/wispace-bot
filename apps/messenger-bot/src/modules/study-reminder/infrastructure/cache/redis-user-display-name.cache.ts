@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { REDIS_CLIENT } from '../../../../infrastructure/redis/domain/redis.client.port';
-import type { RedisClientPort } from '../../../../infrastructure/redis/domain/redis.client.port';
+import { REDIS_CLIENT } from '../../../../infrastructure/redis/redis.client.port';
+import type { RedisClientPort } from '../../../../infrastructure/redis/redis.client.port';
 import type {
   CachedUserDisplayName,
   UserDisplayNameCachePort,

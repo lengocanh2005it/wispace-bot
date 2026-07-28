@@ -7,7 +7,7 @@ import {
 } from '../../../study-reminder/domain/repositories/study-reminder-job.repository.port';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '../../../messenger/domain/repositories/messenger-message-log.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../../messenger/domain/repositories/messenger-message-log.repository.port';
-import { LlmSafetyEventService } from '../../../llm-safety/application/services/llm-safety-event.service';
+import { LlmSafetyService } from '../../../llm-safety/llm-safety.service';
 import type {
   OpsHealthAlert,
   OpsHealthSnapshot,
@@ -25,7 +25,7 @@ export class OpsHealthService {
     private readonly studyReminderJobRepository: StudyReminderJobRepositoryPort,
     @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
     private readonly messageLogRepository: MessengerMessageLogRepositoryPort,
-    private readonly llmSafetyEventService: LlmSafetyEventService,
+    private readonly llmSafetyService: LlmSafetyService,
   ) {}
 
   isAlertCronEnabled(): boolean {
@@ -73,7 +73,7 @@ export class OpsHealthService {
         'META_TOKEN_EXPIRED',
         denySince,
       ),
-      this.llmSafetyEventService.countWarnings24h(),
+      this.llmSafetyService.countWarnings24h(),
     ]);
 
     const chatQuota = {
@@ -82,7 +82,7 @@ export class OpsHealthService {
     };
 
     const llmSafetyThreshold =
-      this.llmSafetyEventService.readWarningDailyThreshold();
+      this.llmSafetyService.readWarningDailyThreshold();
     const llmSafetyThresholdBreached =
       llmSafetyWarnings24h >= llmSafetyThreshold;
 
@@ -184,7 +184,7 @@ export class OpsHealthService {
       alerts.push({
         code: 'LLM_SAFETY_WARNING_THRESHOLD',
         severity: 'warn',
-        message: `LLM grounding warnings exceeded threshold — ${input.llmSafetyWarnings24h} event(s) in last 24h (threshold: ${this.llmSafetyEventService.readWarningDailyThreshold()})`,
+        message: `LLM grounding warnings exceeded threshold — ${input.llmSafetyWarnings24h} event(s) in last 24h (threshold: ${this.llmSafetyService.readWarningDailyThreshold()})`,
       });
     }
 

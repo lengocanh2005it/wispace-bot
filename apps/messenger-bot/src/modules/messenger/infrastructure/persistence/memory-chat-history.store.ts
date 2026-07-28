@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { MemoryChatHistoryStore as MemoryChatHistoryStoreCore } from '@wispace/chat-history';
-import type { ChatHistoryMessage } from '../../domain/entities/chat-history.types';
+import type { ChatHistoryMessage } from '../../domain/entities/messenger-store.types';
 import type { ChatHistoryStorePort } from '../../domain/repositories/chat-history.store.port';
 import { MessengerChatSharedConfigService } from '../../application/services/messenger-chat-shared-config.service';
 

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { WEBHOOK_POSTBACK_DEDUPE_MS } from '../../domain/entities/webhook-dedupe.types';
+import { WEBHOOK_POSTBACK_DEDUPE_MS } from '../../domain/entities/messenger-store.types';
 import type { WebhookDedupeStorePort } from '../../domain/repositories/webhook-dedupe.store.port';
 import { MessengerChatSharedConfigService } from '../../application/services/messenger-chat-shared-config.service';
 

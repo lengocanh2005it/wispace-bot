@@ -11,6 +11,5 @@ export interface ChatBurstCounterPort {
     psid: string,
     limit: number,
   ): Promise<{ allowed: boolean; count: number }>;
-  recordReservation(psid: string): Promise<void>;
   releaseReservation(psid: string): Promise<void>;
 }

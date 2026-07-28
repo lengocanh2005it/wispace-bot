@@ -1,4 +1,4 @@
-import type { ChatHistoryMessage } from '../entities/chat-history.types';
+import type { ChatHistoryMessage } from '../entities/messenger-store.types';
 
 export const CHAT_HISTORY_STORE = Symbol('CHAT_HISTORY_STORE');
 

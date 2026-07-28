@@ -50,3 +50,27 @@ export function readOptionalPositiveNumber(
 
   return value;
 }
+
+/** Reads a boolean env var — accepts true/1/yes (case-insensitive), defaults on missing/invalid. */
+export function readEnvBoolean(
+  configService: Pick<ConfigService, 'get'>,
+  key: string,
+  defaultValue: boolean,
+): boolean {
+  const raw = configService.get<string>(key)?.trim().toLowerCase();
+  if (!raw) return defaultValue;
+  return raw === 'true' || raw === '1' || raw === 'yes';
+}
+
+/** Reads a positive integer env var with a silent fallback on missing/invalid. */
+export function readEnvPositiveInt(
+  configService: Pick<ConfigService, 'get'>,
+  key: string,
+  defaultValue: number,
+): number {
+  const raw = configService.get<string>(key)?.trim();
+  if (!raw) return defaultValue;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return defaultValue;
+  return Math.floor(value);
+}

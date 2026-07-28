@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { REDIS_CLIENT } from '../../../../infrastructure/redis/domain/redis.client.port';
-import type { RedisClientPort } from '../../../../infrastructure/redis/domain/redis.client.port';
+import { REDIS_CLIENT } from '../../../../infrastructure/redis/redis.client.port';
+import type { RedisClientPort } from '../../../../infrastructure/redis/redis.client.port';
 import {
   CHAT_BURST_KEY_TTL_SECONDS,
   CHAT_BURST_WINDOW_MS,
@@ -83,28 +83,6 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
         }`,
       );
       return { allowed: true, count: 0 };
-    }
-  }
-
-  async recordReservation(psid: string): Promise<void> {
-    const client = this.redisClient.getNativeClient();
-    if (!client) {
-      return;
-    }
-
-    const key = this.key(psid);
-
-    try {
-      const count = await client.incr(key);
-      if (count === 1) {
-        await client.expire(key, CHAT_BURST_KEY_TTL_SECONDS);
-      }
-    } catch (error) {
-      this.logger.warn(
-        `Redis burst increment failed psid=${psid}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
     }
   }
 

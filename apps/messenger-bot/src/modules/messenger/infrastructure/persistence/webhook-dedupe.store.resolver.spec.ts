@@ -5,7 +5,7 @@ import { WebhookDedupeStoreResolver } from './webhook-dedupe.store.resolver';
 
 describe('WebhookDedupeStoreResolver', () => {
   const createResolver = (
-    configured: 'memory' | 'postgres' | 'redis',
+    configured: 'memory' | 'redis',
     redisAvailable = true,
   ) => {
     const sharedConfig = {
@@ -33,9 +33,5 @@ describe('WebhookDedupeStoreResolver', () => {
 
   it('falls back to memory when redis configured but unavailable', () => {
     expect(createResolver('redis', false).resolveStoreKind()).toBe('memory');
-  });
-
-  it('falls back to memory when postgres configured (table removed)', () => {
-    expect(createResolver('postgres').resolveStoreKind()).toBe('memory');
   });
 });

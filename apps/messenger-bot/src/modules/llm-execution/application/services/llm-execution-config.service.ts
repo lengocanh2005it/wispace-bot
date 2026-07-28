@@ -1,107 +1,53 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  readEnvBoolean,
+  readEnvPositiveInt,
+} from '../../../../shared/config/env-helpers';
 
 @Injectable()
 export class LlmExecutionConfigService {
   constructor(private readonly configService: ConfigService) {}
 
   isEnabled(): boolean {
-    const raw = this.configService
-      .get<string>('LLM_EXECUTION_ENABLED')
-      ?.trim()
-      .toLowerCase();
-
-    if (!raw) {
-      return true;
-    }
-
-    return raw === 'true' || raw === '1' || raw === 'yes';
+    return readEnvBoolean(this.configService, 'LLM_EXECUTION_ENABLED', true);
   }
 
   getMaxConcurrent(): number {
-    const raw = this.configService.get<string>('LLM_MAX_CONCURRENT')?.trim();
-
-    if (!raw) {
-      return 3;
-    }
-
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) {
-      return 3;
-    }
-
-    return Math.floor(value);
+    return readEnvPositiveInt(this.configService, 'LLM_MAX_CONCURRENT', 3);
   }
 
   getGlobalMaxConcurrent(): number {
-    const raw = this.configService
-      .get<string>('LLM_GLOBAL_MAX_CONCURRENT')
-      ?.trim();
-
-    if (!raw) {
-      return 10;
-    }
-
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) {
-      return 10;
-    }
-
-    return Math.floor(value);
+    return readEnvPositiveInt(
+      this.configService,
+      'LLM_GLOBAL_MAX_CONCURRENT',
+      10,
+    );
   }
 
   getRetryMaxAttempts(): number {
-    const raw = this.configService
-      .get<string>('LLM_OPENAI_RETRY_MAX_ATTEMPTS')
-      ?.trim();
-
-    if (!raw) {
-      return 3;
-    }
-
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) {
-      return 3;
-    }
-
-    return Math.floor(value);
+    return readEnvPositiveInt(
+      this.configService,
+      'LLM_OPENAI_RETRY_MAX_ATTEMPTS',
+      3,
+    );
   }
 
   getRetryBackoffMs(): number {
-    const raw = this.configService
-      .get<string>('LLM_OPENAI_RETRY_BACKOFF_MS')
-      ?.trim();
-
-    if (!raw) {
-      return 2_000;
-    }
-
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) {
-      return 2_000;
-    }
-
-    return Math.floor(value);
+    return readEnvPositiveInt(
+      this.configService,
+      'LLM_OPENAI_RETRY_BACKOFF_MS',
+      2_000,
+    );
   }
 
   getRequestTimeoutMs(): number {
-    const raw = this.configService
-      .get<string>('LLM_REQUEST_TIMEOUT_MS')
-      ?.trim();
-
-    if (!raw) {
-      return 30_000;
-    }
-
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) {
-      return 30_000;
-    }
-
-    return Math.floor(value);
+    return readEnvPositiveInt(
+      this.configService,
+      'LLM_REQUEST_TIMEOUT_MS',
+      30_000,
+    );
   }
-
-  // --- LLM provider config (used by OpenAiAdapter) ---
 
   getApiKey(): string | undefined {
     return (
@@ -126,8 +72,6 @@ export class LlmExecutionConfigService {
   getProvider(): string | undefined {
     return this.configService.get<string>('LLM_PROVIDER')?.trim() || undefined;
   }
-
-  // --- Failover config ---
 
   getFailoverOrder(): string[] {
     const raw = this.configService
@@ -181,22 +125,26 @@ export class LlmExecutionConfigService {
   }
 
   getFailoverCooldownLongMs(): number {
-    return this.getPositiveNumber('LLM_FAILOVER_COOLDOWN_LONG_MS', 600_000);
+    return readEnvPositiveInt(
+      this.configService,
+      'LLM_FAILOVER_COOLDOWN_LONG_MS',
+      600_000,
+    );
   }
 
   getFailoverCooldownShortMs(): number {
-    return this.getPositiveNumber('LLM_FAILOVER_COOLDOWN_SHORT_MS', 5_000);
+    return readEnvPositiveInt(
+      this.configService,
+      'LLM_FAILOVER_COOLDOWN_SHORT_MS',
+      5_000,
+    );
   }
 
   getFailoverQuickRetryDelayMs(): number {
-    return this.getPositiveNumber('LLM_FAILOVER_QUICK_RETRY_DELAY_MS', 150);
-  }
-
-  private getPositiveNumber(envKey: string, defaultValue: number): number {
-    const raw = this.configService.get<string>(envKey)?.trim();
-    if (!raw) return defaultValue;
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) return defaultValue;
-    return Math.floor(value);
+    return readEnvPositiveInt(
+      this.configService,
+      'LLM_FAILOVER_QUICK_RETRY_DELAY_MS',
+      150,
+    );
   }
 }

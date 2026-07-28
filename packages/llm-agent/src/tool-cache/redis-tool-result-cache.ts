@@ -1,4 +1,4 @@
-import type { AsyncToolResultCachePort } from './tool-result-cache.port';
+import type { ToolResultCachePort } from './tool-result-cache.port';
 
 /**
  * Minimal Redis client interface — implemented by ioredis or any compatible client.
@@ -17,7 +17,7 @@ const KEY_PREFIX = 'llm-agent:tool-cache:';
  * Redis-backed tool result cache for multi-pod deployments.
  * Values are JSON-serialized with a TTL managed by Redis EXPIRE.
  */
-export class RedisToolResultCache implements AsyncToolResultCachePort {
+export class RedisToolResultCache implements ToolResultCachePort {
   constructor(private readonly redis: RedisCacheClient) {}
 
   async get(key: string): Promise<unknown> {

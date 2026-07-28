@@ -1,13 +1,7 @@
 import type { LlmProviderAdapter } from './provider/llm-provider.adapter';
 import type { LlmMessage } from './provider/types';
-import type {
-  ToolResultCachePort,
-  AsyncToolResultCachePort,
-} from './tool-cache/tool-result-cache.port';
-import {
-  NOOP_TOOL_RESULT_CACHE,
-  toAsyncCache,
-} from './tool-cache/tool-result-cache.port';
+import type { ToolResultCachePort } from './tool-cache/tool-result-cache.port';
+import { NOOP_TOOL_RESULT_CACHE } from './tool-cache/tool-result-cache.port';
 import { AGENT_TOOLS } from './agent.tools';
 import { checkLlmGrounding } from './utils/llm-grounding.utils';
 import {
@@ -72,7 +66,7 @@ export interface LlmAgentPorts<TToolContext> {
   safetyEvents: LlmSafetyEventPort;
   toolExecutor: ToolExecutorPort<TToolContext>;
   adapter: LlmProviderAdapter;
-  toolResultCache?: ToolResultCachePort | AsyncToolResultCachePort;
+  toolResultCache?: ToolResultCachePort;
   metrics?: AgentMetricsPort;
   logger?: {
     warn: (message: string) => void;
@@ -721,11 +715,7 @@ export class LlmAgentService<TToolContext> {
   ): Promise<Array<{ toolCallId: string; content: string }>> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
     const metrics = this.ports.metrics ?? NOOP_METRICS_PORT;
-    const rawCache = this.ports.toolResultCache ?? NOOP_TOOL_RESULT_CACHE;
-    const cache: AsyncToolResultCachePort =
-      'get' in rawCache && rawCache.get.length <= 1
-        ? toAsyncCache(rawCache)
-        : (rawCache as AsyncToolResultCachePort);
+    const cache = this.ports.toolResultCache ?? NOOP_TOOL_RESULT_CACHE;
     const cacheTtlMs = this.getToolCacheTtlMs();
 
     return Promise.all(

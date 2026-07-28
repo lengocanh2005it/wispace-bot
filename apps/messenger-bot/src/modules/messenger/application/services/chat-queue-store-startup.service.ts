@@ -1,5 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { RedisConfigService } from '../../../../infrastructure/redis/application/services/redis-config.service';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  REDIS_CLIENT,
+  type RedisClientPort,
+} from '../../../../infrastructure/redis/redis.client.port';
 import { ChatQueueStoreResolver } from '../../infrastructure/persistence/chat-queue.store.resolver';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 
@@ -9,7 +12,7 @@ export class ChatQueueStoreStartupService implements OnModuleInit {
 
   constructor(
     private readonly sharedConfig: MessengerChatSharedConfigService,
-    private readonly redisConfig: RedisConfigService,
+    @Inject(REDIS_CLIENT) private readonly redisClient: RedisClientPort,
     private readonly chatQueueStoreResolver: ChatQueueStoreResolver,
   ) {}
 
@@ -21,13 +24,7 @@ export class ChatQueueStoreStartupService implements OnModuleInit {
       return;
     }
 
-    if (this.chatQueueStoreResolver.isConfiguredPostgres()) {
-      this.logger.warn(
-        'CHAT_QUEUE_STORE=postgres is no longer supported (table dropped) — active=redis',
-      );
-    }
-
-    if (!this.redisConfig.isEnabled()) {
+    if (!this.redisClient.isEnabled()) {
       this.logger.warn(
         'Distributed chat queue requires REDIS_ENABLED=true — buffer ops may fail',
       );

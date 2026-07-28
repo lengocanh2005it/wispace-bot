@@ -7,6 +7,10 @@ import {
   estimateCostUsd,
   todayUsageDate,
 } from '@wispace/chat-metering';
+import {
+  readEnvBoolean,
+  readEnvPositiveInt,
+} from '../../../../shared/config/env-helpers';
 import { resolveAppTimezone } from '../../../../shared/config/app-timezone';
 
 @Injectable()
@@ -14,16 +18,7 @@ export class LlmUsageConfigService {
   constructor(private readonly configService: ConfigService) {}
 
   isEnabled(): boolean {
-    const raw = this.configService
-      .get<string>('LLM_USAGE_ENABLED')
-      ?.trim()
-      .toLowerCase();
-
-    if (!raw) {
-      return true;
-    }
-
-    return raw === 'true' || raw === '1' || raw === 'yes';
+    return readEnvBoolean(this.configService, 'LLM_USAGE_ENABLED', true);
   }
 
   getTimezone(): string {
@@ -31,72 +26,15 @@ export class LlmUsageConfigService {
   }
 
   getRetentionDays(): number {
-    const raw = this.configService
-      .get<string>('LLM_USAGE_RETENTION_DAYS')
-      ?.trim();
-
-    if (!raw) {
-      return 180;
-    }
-
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) {
-      return 180;
-    }
-
-    return Math.floor(value);
+    return readEnvPositiveInt(
+      this.configService,
+      'LLM_USAGE_RETENTION_DAYS',
+      180,
+    );
   }
 
   todayUsageDate(now = new Date()): string {
     return todayUsageDate(this.getTimezone(), now);
-  }
-
-  /** BullMQ writer — requires REDIS_ENABLED=true (default on when Redis on). */
-  isBullMqEnabled(): boolean {
-    const raw = this.configService
-      .get<string>('LLM_USAGE_BULLMQ_ENABLED')
-      ?.trim()
-      .toLowerCase();
-
-    if (!raw) {
-      return true;
-    }
-
-    return raw === 'true' || raw === '1' || raw === 'yes';
-  }
-
-  getBullMqAttempts(): number {
-    const raw = this.configService
-      .get<string>('LLM_USAGE_BULLMQ_ATTEMPTS')
-      ?.trim();
-
-    if (!raw) {
-      return 3;
-    }
-
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) {
-      return 3;
-    }
-
-    return Math.floor(value);
-  }
-
-  getBullMqBackoffMs(): number {
-    const raw = this.configService
-      .get<string>('LLM_USAGE_BULLMQ_BACKOFF_MS')
-      ?.trim();
-
-    if (!raw) {
-      return 2_000;
-    }
-
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) {
-      return 2_000;
-    }
-
-    return Math.floor(value);
   }
 
   getModelInputUsdPer1M(model: string): number | null {
@@ -133,16 +71,9 @@ export class LlmUsageConfigService {
 
   private readPositiveNumber(envKey: string): number | null {
     const raw = this.configService.get<string>(envKey)?.trim();
-
-    if (!raw) {
-      return null;
-    }
-
+    if (!raw) return null;
     const value = Number(raw);
-    if (!Number.isFinite(value) || value < 0) {
-      return null;
-    }
-
+    if (!Number.isFinite(value) || value < 0) return null;
     return value;
   }
 }

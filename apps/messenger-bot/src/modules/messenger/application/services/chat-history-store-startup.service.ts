@@ -1,5 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { RedisConfigService } from '../../../../infrastructure/redis/application/services/redis-config.service';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  REDIS_CLIENT,
+  type RedisClientPort,
+} from '../../../../infrastructure/redis/redis.client.port';
 import { ChatHistoryStoreResolver } from '../../infrastructure/persistence/chat-history.store.resolver';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 
@@ -9,7 +12,7 @@ export class ChatHistoryStoreStartupService implements OnModuleInit {
 
   constructor(
     private readonly sharedConfig: MessengerChatSharedConfigService,
-    private readonly redisConfig: RedisConfigService,
+    @Inject(REDIS_CLIENT) private readonly redisClient: RedisClientPort,
     private readonly chatHistoryStoreResolver: ChatHistoryStoreResolver,
   ) {}
 
@@ -17,13 +20,7 @@ export class ChatHistoryStoreStartupService implements OnModuleInit {
     const configured = this.sharedConfig.getHistoryStore();
     const active = this.chatHistoryStoreResolver.resolveStoreKind();
 
-    if (this.chatHistoryStoreResolver.isConfiguredPostgres()) {
-      this.logger.warn(
-        'CHAT_HISTORY_STORE=postgres is no longer supported (table dropped) — active=memory/redis',
-      );
-    }
-
-    if (configured === 'redis' && !this.redisConfig.isEnabled()) {
+    if (configured === 'redis' && !this.redisClient.isEnabled()) {
       this.logger.warn(
         'CHAT_HISTORY_STORE=redis but REDIS_ENABLED=false — using memory fallback',
       );

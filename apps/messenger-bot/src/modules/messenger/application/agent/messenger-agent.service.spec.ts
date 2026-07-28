@@ -5,7 +5,7 @@ import { MessengerAgentToolsService } from './messenger-agent-tools.service';
 import { UserDisplayNameService } from '../../../study-reminder/application/services/user-display-name.service';
 import { LlmUsageRecorderService } from '../../../llm-usage/application/services/llm-usage-recorder.service';
 import { LlmExecutionService } from '../../../llm-execution/application/services/llm-execution.service';
-import { LlmSafetyEventService } from '../../../llm-safety/application/services/llm-safety-event.service';
+import { LlmSafetyService } from '../../../llm-safety/llm-safety.service';
 import type { MetricsService } from '../../../metrics/metrics.service';
 
 // ---- helpers ----------------------------------------------------------------
@@ -73,10 +73,10 @@ function buildService(
     run: overrides.llmRun ?? jest.fn(),
   } as unknown as LlmExecutionService;
 
-  const llmSafetyEventService = {
+  const llmSafetyService = {
     isEnabled: jest.fn().mockReturnValue(true),
     recordGroundingWarning: jest.fn(),
-  } as unknown as LlmSafetyEventService;
+  } as unknown as LlmSafetyService;
 
   const metrics = {
     timeLlmCall: jest.fn(
@@ -98,7 +98,7 @@ function buildService(
     userDisplayNameService,
     llmUsageRecorder,
     llmExecution,
-    llmSafetyEventService,
+    llmSafetyService,
     metrics,
     adapter,
   );

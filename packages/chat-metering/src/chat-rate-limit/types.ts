@@ -72,6 +72,5 @@ export interface BurstCounterPort {
     externalUserId: string,
     limit: number,
   ): Promise<{ allowed: boolean; count: number }>;
-  recordReservation(externalUserId: string): Promise<void>;
   releaseReservation(externalUserId: string): Promise<void>;
 }

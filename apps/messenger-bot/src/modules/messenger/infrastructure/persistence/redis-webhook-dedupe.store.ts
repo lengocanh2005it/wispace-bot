@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { REDIS_CLIENT } from '../../../../infrastructure/redis/domain/redis.client.port';
-import type { RedisClientPort } from '../../../../infrastructure/redis/domain/redis.client.port';
-import { WEBHOOK_POSTBACK_DEDUPE_MS } from '../../domain/entities/webhook-dedupe.types';
+import { REDIS_CLIENT } from '../../../../infrastructure/redis/redis.client.port';
+import type { RedisClientPort } from '../../../../infrastructure/redis/redis.client.port';
+import { WEBHOOK_POSTBACK_DEDUPE_MS } from '../../domain/entities/messenger-store.types';
 import type { WebhookDedupeStorePort } from '../../domain/repositories/webhook-dedupe.store.port';
 import { MessengerChatSharedConfigService } from '../../application/services/messenger-chat-shared-config.service';
 

@@ -1,5 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { RedisConfigService } from '../../../../infrastructure/redis/application/services/redis-config.service';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  REDIS_CLIENT,
+  type RedisClientPort,
+} from '../../../../infrastructure/redis/redis.client.port';
 import { WebhookDedupeStoreResolver } from '../../infrastructure/persistence/webhook-dedupe.store.resolver';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 
@@ -9,7 +12,7 @@ export class WebhookDedupeStoreStartupService implements OnModuleInit {
 
   constructor(
     private readonly sharedConfig: MessengerChatSharedConfigService,
-    private readonly redisConfig: RedisConfigService,
+    @Inject(REDIS_CLIENT) private readonly redisClient: RedisClientPort,
     private readonly webhookDedupeStoreResolver: WebhookDedupeStoreResolver,
   ) {}
 
@@ -17,14 +20,7 @@ export class WebhookDedupeStoreStartupService implements OnModuleInit {
     const configured = this.sharedConfig.getDedupeStore();
     const active = this.webhookDedupeStoreResolver.resolveStoreKind();
 
-    if (configured === 'postgres') {
-      this.logger.warn(
-        'CHAT_DEDUPE_STORE=postgres is no longer supported (table dropped) — active=memory; use redis for multi-pod',
-      );
-      return;
-    }
-
-    if (configured === 'redis' && !this.redisConfig.isEnabled()) {
+    if (configured === 'redis' && !this.redisClient.isEnabled()) {
       this.logger.warn(
         'CHAT_DEDUPE_STORE=redis but REDIS_ENABLED=false — using memory fallback',
       );

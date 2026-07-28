@@ -45,8 +45,4 @@ export class ChatQueueStoreResolver implements ChatQueueStorePort {
   resolveStoreKind(): 'redis' {
     return 'redis';
   }
-
-  isConfiguredPostgres(): boolean {
-    return this.sharedConfig.getQueueStore() === 'postgres';
-  }
 }

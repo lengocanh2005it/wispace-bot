@@ -10,8 +10,10 @@ import type {
   LlmProviderEntryConfig,
 } from '@wispace/llm-agent';
 import { RedisConcurrencyLimiter } from './infrastructure/redis-concurrency-limiter';
-import { REDIS_CLIENT } from '../../infrastructure/redis/domain/redis.client.port';
-import type Redis from 'ioredis';
+import {
+  REDIS_CLIENT,
+  type RedisClientPort,
+} from '../../infrastructure/redis/redis.client.port';
 
 /**
  * Provides LLM execution infrastructure: concurrency control, retry, timeout,
@@ -73,9 +75,12 @@ import type Redis from 'ioredis';
     },
     {
       provide: RedisConcurrencyLimiter,
-      useFactory: (redis: Redis): RedisConcurrencyLimiter | null => {
+      useFactory: (
+        redisClient: RedisClientPort | null,
+      ): RedisConcurrencyLimiter | null => {
         const enabled =
           process.env.LLM_GLOBAL_CONCURRENCY_ENABLED?.toLowerCase() === 'true';
+        const redis = redisClient?.getNativeClient();
         if (!enabled || !redis) return null;
         return new RedisConcurrencyLimiter(redis);
       },

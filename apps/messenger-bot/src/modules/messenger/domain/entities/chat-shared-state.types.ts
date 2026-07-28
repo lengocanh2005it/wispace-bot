@@ -1,5 +1,4 @@
 import type { MessengerLinkContext } from '../../../../shared/config/poc.constants';
-import type { ChatHistoryMessage } from './chat-history.types';
 
 export interface AppendChatBufferInput {
   psid: string;
@@ -22,5 +21,3 @@ export interface CompleteChatBufferInput {
   psid: string;
   debounceMs: number;
 }
-
-export type { ChatHistoryMessage };

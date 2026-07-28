@@ -1,10 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { ChatCompletion } from 'openai/resources/chat/completions';
 import type {
   LlmUsageFeature,
   RecordLlmUsageInput,
 } from '../../domain/entities/llm-usage.types';
-import { LlmUsageBullQueueService } from '../../infrastructure/queue/llm-usage-bull-queue.service';
+import {
+  LLM_USAGE_REPOSITORY,
+  type LlmUsageRepositoryPort,
+} from '../../domain/repositories/llm-usage.repository.port';
 import { LlmUsageConfigService } from './llm-usage-config.service';
 
 export interface RecordLlmUsageFromCompletionInput {
@@ -23,14 +26,15 @@ export class LlmUsageRecorderService {
 
   constructor(
     private readonly configService: LlmUsageConfigService,
-    private readonly bullQueue: LlmUsageBullQueueService,
+    @Inject(LLM_USAGE_REPOSITORY)
+    private readonly repository: LlmUsageRepositoryPort,
   ) {}
 
   isEnabled(): boolean {
     return this.configService.isEnabled();
   }
 
-  /** Non-blocking — BullMQ enqueue (retry) or inline fallback. */
+  /** Non-blocking — extracts usage from OpenAI response and inserts. */
   recordFromCompletion(input: RecordLlmUsageFromCompletionInput): void {
     const usage = input.response.usage;
     if (!usage) {
@@ -62,7 +66,8 @@ export class LlmUsageRecorderService {
     });
   }
 
-  /** Non-blocking — BullMQ enqueue (retry) or inline fallback. */
+  /** Non-blocking — fire-and-forget insert directly to DB. */
+  // ponytail: removed BullMQ queue, inline insert enough for current volume. Add queue when throughput justifies Redis/BullMQ overhead.
   recordUsage(input: RecordLlmUsageInput): void {
     if (!this.isEnabled()) {
       return;
@@ -78,10 +83,18 @@ export class LlmUsageRecorderService {
             input.cachedTokens,
           );
 
-    this.bullQueue.enqueue({
-      ...input,
-      estimatedCostUsd,
-      usageDate: this.configService.todayUsageDate(),
-    });
+    this.repository
+      .insertUsage({
+        ...input,
+        estimatedCostUsd,
+        usageDate: this.configService.todayUsageDate(),
+      })
+      .catch((error: unknown) => {
+        this.logger.error(
+          `LLM_USAGE_INSERT_FAILED feature=${input.feature} correlation=${input.correlationId ?? 'n/a'}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
   }
 }

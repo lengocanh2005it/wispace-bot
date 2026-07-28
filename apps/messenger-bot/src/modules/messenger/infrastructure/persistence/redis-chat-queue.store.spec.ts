@@ -1,4 +1,4 @@
-import type { RedisClientPort } from '../../../../infrastructure/redis/domain/redis.client.port';
+import type { RedisClientPort } from '../../../../infrastructure/redis/redis.client.port';
 import { RedisChatQueueStore } from './redis-chat-queue.store';
 
 describe('RedisChatQueueStore', () => {

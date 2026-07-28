@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { MessengerModule } from './modules/messenger/messenger.module';
@@ -35,6 +34,5 @@ import { MetricsModule } from './modules/metrics/metrics.module';
     MetricsModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
 })
 export class AppModule {}

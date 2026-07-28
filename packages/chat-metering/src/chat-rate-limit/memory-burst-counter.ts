@@ -28,12 +28,6 @@ export class MemoryBurstCounter implements BurstCounterPort {
     return Promise.resolve({ allowed: true, count: next });
   }
 
-  recordReservation(externalUserId: string): Promise<void> {
-    const key = this.bucketKey(externalUserId);
-    this.counts.set(key, (this.counts.get(key) ?? 0) + 1);
-    return Promise.resolve();
-  }
-
   releaseReservation(externalUserId: string): Promise<void> {
     const key = this.bucketKey(externalUserId);
     const current = this.counts.get(key) ?? 0;

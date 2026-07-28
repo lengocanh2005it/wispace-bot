@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, Logger } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule } from '../../shared/common/common.module';
 import {
@@ -23,8 +23,6 @@ import { CHAT_QUOTA_REPOSITORY } from './domain/repositories/chat-quota.reposito
 import { ChatQuotaEventRepository } from './infrastructure/persistence/chat-quota-event.repository';
 import { RedisChatBurstCounter } from './infrastructure/persistence/redis-chat-burst-counter';
 import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-limit.repository';
-import { RedisConfigService } from '../../infrastructure/redis/application/services/redis-config.service';
-import { Logger } from '@nestjs/common';
 
 @Module({
   imports: [
@@ -44,7 +42,6 @@ import { Logger } from '@nestjs/common';
       useFactory: (
         config: ChatRateLimitConfigService,
         redisCounter: RedisChatBurstCounter,
-        redisConfig: RedisConfigService,
         repository: ChatRateLimitRepository,
       ): ChatBurstCounterPort => {
         const logger = new Logger('ChatBurstCounter');
@@ -84,7 +81,6 @@ import { Logger } from '@nestjs/common';
       inject: [
         ChatRateLimitConfigService,
         RedisChatBurstCounter,
-        RedisConfigService,
         ChatRateLimitRepository,
       ],
     },

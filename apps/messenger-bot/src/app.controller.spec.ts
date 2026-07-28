@@ -2,9 +2,8 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
-import { REDIS_CLIENT } from './infrastructure/redis/domain/redis.client.port';
-import type { RedisClientPort } from './infrastructure/redis/domain/redis.client.port';
+import { REDIS_CLIENT } from './infrastructure/redis/redis.client.port';
+import type { RedisClientPort } from './infrastructure/redis/redis.client.port';
 
 describe('AppController', () => {
   let appController: AppController;
@@ -20,7 +19,6 @@ describe('AppController', () => {
     const app: TestingModule = await Test.createTestingModule({
       controllers: [AppController],
       providers: [
-        AppService,
         {
           provide: DataSource,
           useValue: {
@@ -47,7 +45,7 @@ describe('AppController', () => {
 
   describe('health/redis', () => {
     it('returns ok when redis is disabled', async () => {
-      redisClient.ping.mockResolvedValue({ status: 'disabled' });
+      redisClient.ping.mockResolvedValue('NO_REDIS');
 
       await expect(appController.checkRedis()).resolves.toEqual({
         ok: true,
@@ -56,20 +54,16 @@ describe('AppController', () => {
     });
 
     it('returns ok when redis ping succeeds', async () => {
-      redisClient.ping.mockResolvedValue({ status: 'ok', latencyMs: 12 });
+      redisClient.ping.mockResolvedValue('PONG');
 
       await expect(appController.checkRedis()).resolves.toEqual({
         ok: true,
         redis: 'connected',
-        latencyMs: 12,
       });
     });
 
     it('throws when redis ping fails', async () => {
-      redisClient.ping.mockResolvedValue({
-        status: 'error',
-        message: 'connection refused',
-      });
+      redisClient.ping.mockResolvedValue('connection refused');
 
       await expect(appController.checkRedis()).rejects.toBeInstanceOf(
         ServiceUnavailableException,

@@ -15,21 +15,19 @@ export class InMemoryToolResultCache implements ToolResultCachePort {
     this.maxEntries = maxEntries ?? DEFAULT_MAX_ENTRIES;
   }
 
-  get(key: string): unknown {
+  get(key: string): Promise<unknown> {
     const entry = this.store.get(key);
-    if (!entry) return undefined;
+    if (!entry) return Promise.resolve(undefined);
     if (Date.now() > entry.expiresAt) {
       this.store.delete(key);
-      return undefined;
+      return Promise.resolve(undefined);
     }
-    // Move to end (LRU touch)
     this.store.delete(key);
     this.store.set(key, entry);
-    return entry.value;
+    return Promise.resolve(entry.value);
   }
 
-  set(key: string, value: unknown, ttlMs: number): void {
-    // Evict oldest entries when at capacity
+  set(key: string, value: unknown, ttlMs: number): Promise<void> {
     if (this.store.size >= this.maxEntries && !this.store.has(key)) {
       const oldestKey: string | undefined = this.store.keys().next().value as
         | string
@@ -38,19 +36,22 @@ export class InMemoryToolResultCache implements ToolResultCachePort {
         this.store.delete(oldestKey);
       }
     }
-    this.store.delete(key); // Remove before re-insert to update LRU order
-    this.store.set(key, { value, expiresAt: Date.now() + ttlMs });
-  }
-
-  invalidate(key: string): void {
     this.store.delete(key);
+    this.store.set(key, { value, expiresAt: Date.now() + ttlMs });
+    return Promise.resolve();
   }
 
-  invalidatePrefix(prefix: string): void {
+  invalidate(key: string): Promise<void> {
+    this.store.delete(key);
+    return Promise.resolve();
+  }
+
+  invalidatePrefix(prefix: string): Promise<void> {
     for (const key of this.store.keys()) {
       if (key.startsWith(prefix)) {
         this.store.delete(key);
       }
     }
+    return Promise.resolve();
   }
 }

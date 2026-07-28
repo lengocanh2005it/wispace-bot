@@ -1,8 +1,12 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import {
+  readEnvBoolean,
+  readEnvPositiveInt,
+  readRequiredPositiveNumber,
+} from '../../../../shared/config/env-helpers';
 import type { ChatRateLimitSettings } from '../../domain/entities/chat-quota.types';
 import type { ChatBurstStoreKind } from '../../domain/entities/chat-burst.types';
-import { readRequiredPositiveNumber } from '../../../../shared/config/env-helpers';
 
 @Injectable()
 export class ChatRateLimitConfigService {
@@ -31,16 +35,7 @@ export class ChatRateLimitConfigService {
   }
 
   isEnabled(): boolean {
-    const raw = this.configService
-      .get<string>('CHAT_RATE_LIMIT_ENABLED')
-      ?.trim()
-      .toLowerCase();
-
-    if (!raw) {
-      return false;
-    }
-
-    return raw === 'true' || raw === '1' || raw === 'yes';
+    return readEnvBoolean(this.configService, 'CHAT_RATE_LIMIT_ENABLED', false);
   }
 
   getFreeFormDailyLimit(): number {
@@ -58,28 +53,17 @@ export class ChatRateLimitConfigService {
   }
 
   getTimezone(): string {
-    const timezone = this.configService
-      .get<string>('CHAT_USAGE_TIMEZONE')
-      ?.trim();
-
-    if (!timezone) {
-      throw new InternalServerErrorException(
-        'CHAT_USAGE_TIMEZONE must be set in .env',
-      );
-    }
-
-    return timezone;
+    return (
+      this.configService.get<string>('CHAT_USAGE_TIMEZONE')?.trim() ??
+      'Asia/Ho_Chi_Minh'
+    );
   }
 
   getWhitelistedPsids(): string[] {
     const raw = this.configService
       .get<string>('CHAT_RATE_LIMIT_WHITELIST_PSIDS')
       ?.trim();
-
-    if (!raw) {
-      return [];
-    }
-
+    if (!raw) return [];
     return raw
       .split(',')
       .map((psid) => psid.trim())
@@ -93,90 +77,44 @@ export class ChatRateLimitConfigService {
     );
   }
 
-  /** Default 10 minutes — H2 stuck `reserved` recovery. */
   getStuckReservedMs(): number {
-    const raw = this.configService
-      .get<string>('CHAT_IDEMPOTENCY_STUCK_RESERVED_MS')
-      ?.trim();
-
-    if (!raw) {
-      return 600_000;
-    }
-
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) {
-      throw new InternalServerErrorException(
-        'CHAT_IDEMPOTENCY_STUCK_RESERVED_MS must be a positive number in .env',
-      );
-    }
-
-    return Math.floor(value);
+    return readEnvPositiveInt(
+      this.configService,
+      'CHAT_IDEMPOTENCY_STUCK_RESERVED_MS',
+      600_000,
+    );
   }
 
-  /** H5: cap merged debounce text before LLM (default 4000). */
   getMergedTextMaxChars(): number {
-    const raw = this.configService
-      .get<string>('CHAT_MERGED_TEXT_MAX_CHARS')
-      ?.trim();
-
-    if (!raw) {
-      return 4000;
-    }
-
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) {
-      throw new InternalServerErrorException(
-        'CHAT_MERGED_TEXT_MAX_CHARS must be a positive number in .env',
-      );
-    }
-
-    return Math.floor(value);
+    return readEnvPositiveInt(
+      this.configService,
+      'CHAT_MERGED_TEXT_MAX_CHARS',
+      4000,
+    );
   }
 
-  /**
-   * H5: when false (default), burst window ignores refunded idempotency rows.
-   */
   getBurstCountsRefunded(): boolean {
-    const raw = this.configService
-      .get<string>('CHAT_BURST_COUNT_REFUNDED')
-      ?.trim()
-      .toLowerCase();
-
-    if (!raw) {
-      return false;
-    }
-
-    return raw === 'true' || raw === '1' || raw === 'yes';
+    return readEnvBoolean(
+      this.configService,
+      'CHAT_BURST_COUNT_REFUNDED',
+      false,
+    );
   }
 
   isQuotaEventsEnabled(): boolean {
-    const raw = this.configService
-      .get<string>('CHAT_QUOTA_EVENTS_ENABLED')
-      ?.trim()
-      .toLowerCase();
-
-    if (!raw) {
-      return true;
-    }
-
-    return raw === 'true' || raw === '1' || raw === 'yes';
+    return readEnvBoolean(
+      this.configService,
+      'CHAT_QUOTA_EVENTS_ENABLED',
+      true,
+    );
   }
 
   getQuotaEventsRetentionDays(): number {
-    const raw = this.configService
-      .get<string>('CHAT_QUOTA_EVENTS_RETENTION_DAYS')
-      ?.trim();
-
-    if (!raw) {
-      return 365;
-    }
-
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) {
-      return 365;
-    }
-
-    return Math.floor(value);
+    return readEnvPositiveInt(
+      this.configService,
+      'CHAT_QUOTA_EVENTS_RETENTION_DAYS',
+      365,
+    );
   }
 
   getBurstStore(): ChatBurstStoreKind {
@@ -184,11 +122,7 @@ export class ChatRateLimitConfigService {
       .get<string>('CHAT_BURST_STORE')
       ?.trim()
       .toLowerCase();
-
-    if (raw === 'memory' || raw === 'postgres' || raw === 'redis') {
-      return raw;
-    }
-
+    if (raw === 'memory' || raw === 'postgres' || raw === 'redis') return raw;
     return 'postgres';
   }
 }

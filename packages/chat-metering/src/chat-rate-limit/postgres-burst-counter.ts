@@ -32,11 +32,6 @@ export class PostgresBurstCounter implements BurstCounterPort {
     return { allowed: count < limit, count };
   }
 
-  recordReservation(_externalUserId: string): Promise<void> {
-    void _externalUserId;
-    return Promise.resolve();
-  }
-
   releaseReservation(_externalUserId: string): Promise<void> {
     void _externalUserId;
     return Promise.resolve();
