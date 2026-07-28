@@ -43,7 +43,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     };
 
     const reportSendJobRepository = {
-      markSentByPsidExamDate: jest.fn().mockResolvedValue(undefined),
+      markSentByExternalUserExamDate: jest.fn().mockResolvedValue(undefined),
       recordRetryableFailure: jest
         .fn()
         .mockResolvedValue({ nextRetryAt: new Date() }),

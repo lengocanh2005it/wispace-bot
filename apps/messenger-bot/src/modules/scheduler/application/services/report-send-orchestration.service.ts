@@ -8,7 +8,7 @@ import { MessengerReportDeliveryService } from '../../../messenger/application/s
 import {
   REPORT_SEND_JOB_REPOSITORY,
   type ReportSendJobRepositoryPort,
-} from '../../domain/repositories/report-send-job.repository.port';
+} from '@wispace/scheduler-core';
 import { ReportSendScheduleService } from './report-send-schedule.service';
 import { StudentReportRetryableError } from '../../../student-report/domain/errors/wispace-api.error';
 import { ProactiveMessenger24hSkippedError } from '../../../messenger/application/utils/proactive-send.utils';
@@ -80,7 +80,7 @@ export class ReportSendOrchestrationService {
           `Skip PSID ${mapping.psid}: scheduled report already sent today`,
         );
         if (examDateForOutbox) {
-          await this.reportSendJobRepository.markSentByPsidExamDate(
+          await this.reportSendJobRepository.markSentByExternalUserExamDate(
             mapping.psid,
             examDateForOutbox,
           );
@@ -117,7 +117,7 @@ export class ReportSendOrchestrationService {
           });
         }
         if (examDateForOutbox) {
-          await this.reportSendJobRepository.markSentByPsidExamDate(
+          await this.reportSendJobRepository.markSentByExternalUserExamDate(
             mapping.psid,
             examDateForOutbox,
           );
