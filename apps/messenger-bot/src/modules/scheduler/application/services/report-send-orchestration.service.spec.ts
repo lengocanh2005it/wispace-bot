@@ -170,7 +170,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     ).toHaveBeenCalledWith({ psid: 'psid-1', reportDate: '2026-07-11' });
     expect(reportSendJobRepository.recordRetryableFailure).toHaveBeenCalledWith(
       expect.objectContaining({
-        psid: 'psid-1',
+        externalUserId: 'psid-1',
         examDate: '2026-07-15',
         maxRetries: 3,
       }),
