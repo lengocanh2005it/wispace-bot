@@ -29,6 +29,7 @@ import { ZaloCalendarPort } from './infrastructure/adapters/zalo-calendar.port';
 import { ZaloReschedulePort } from './infrastructure/adapters/zalo-reschedule.port';
 import { ZaloDeadLetterService } from './application/services/zalo-dead-letter.service';
 import { ZaloDeadLetterCronService } from './application/services/zalo-dead-letter-cron.service';
+import { ZaloChatQueueService } from './application/services/zalo-chat-queue.service';
 import { ZaloDeliveryLogService } from './application/services/zalo-delivery-log.service';
 import { CleanupCronService } from '@wispace/cleanup-cron';
 import { ZaloCleanupCronService } from './application/services/zalo-cleanup-cron.service';
@@ -148,6 +149,7 @@ import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities/
     ZaloChatHistoryService,
     ZaloOutboundService,
     ZaloChatRateLimitService,
+    ZaloChatQueueService,
     ZaloDeadLetterService,
     ZaloDeadLetterCronService,
     ZaloDeliveryLogService,

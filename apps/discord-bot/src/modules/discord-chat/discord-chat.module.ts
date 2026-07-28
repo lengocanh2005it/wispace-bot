@@ -15,6 +15,7 @@ import { WispaceModule } from '../wispace/wispace.module';
 import { DiscordAgentService } from './application/agent/discord-agent.service';
 import { DiscordAgentToolsService } from './application/agent/discord-agent-tools.service';
 import { DiscordChatHistoryService } from './application/services/discord-chat-history.service';
+import { DiscordChatQueueService } from './application/services/discord-chat-queue.service';
 import { DiscordRescheduleConfirmationService } from './application/services/discord-reschedule-confirmation.service';
 import { DiscordMenuService } from './application/services/discord-menu.service';
 import { DiscordDeadLetterService } from './application/services/discord-dead-letter.service';
@@ -136,6 +137,7 @@ import { DiscordOutboundService } from './application/services/discord-outbound.
     DiscordAgentService,
     DiscordAgentToolsService,
     DiscordChatHistoryService,
+    DiscordChatQueueService,
     DiscordCalendarPort,
     DiscordReschedulePort,
     DiscordRescheduleConfirmationService,

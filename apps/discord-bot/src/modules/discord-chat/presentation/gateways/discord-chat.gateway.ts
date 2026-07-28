@@ -4,6 +4,7 @@ import { ChannelType } from 'discord.js';
 import { Button, Context, On, Once } from 'necord';
 import type { ButtonContext, ContextOf } from 'necord';
 import { DiscordAgentService } from '../../application/agent/discord-agent.service';
+import { DiscordChatQueueService } from '../../application/services/discord-chat-queue.service';
 import { DiscordOutboundService } from '../../application/services/discord-outbound.service';
 import { DiscordRescheduleConfirmationService } from '../../application/services/discord-reschedule-confirmation.service';
 import {
@@ -15,10 +16,9 @@ import {
   MENU_UPCOMING_SESSIONS_CUSTOM_ID,
 } from '../../application/constants/discord-menu.constants';
 import { DiscordChatRateLimitService } from '../../../chat-metering/application/services/discord-chat-rate-limit.service';
-import { buildChatQuotaDenyMessage } from '../../../chat-metering/application/messages/chat-quota.messages';
+import { DiscordChatHistoryService } from '../../application/services/discord-chat-history.service';
 import { DiscordAccountLinkService } from '../../../account-link/application/services/discord-account-link.service';
 import { DiscordMenuService } from '../../application/services/discord-menu.service';
-import { DiscordChatHistoryService } from '../../application/services/discord-chat-history.service';
 import { DiscordPendingJoinService } from '../../../account-link/application/services/discord-pending-join.service';
 import { buildDiscordLinkWelcomeMessage } from '../../../account-link/application/messages/account-link.messages';
 import { WispaceApiError } from '@wispace/wispace-client';
@@ -56,6 +56,7 @@ export class DiscordChatGateway {
     private readonly menuService: DiscordMenuService,
     private readonly chatHistoryService: DiscordChatHistoryService,
     private readonly pendingJoinService: DiscordPendingJoinService,
+    private readonly chatQueueService: DiscordChatQueueService,
   ) {}
 
   @Once('clientReady')
@@ -153,85 +154,22 @@ export class DiscordChatGateway {
       }
     }
 
-    // Check before agent runs — history is empty on the very first message
-    const history = await this.chatHistoryService.getHistory(discordUserId);
-    const sendMenuAfter = isDM && (isMentioned || history.length === 0);
-
-    const idempotencyKey = `discord:${message.id}`;
-    const quotaEnabled = this.rateLimitService.isEnabled();
-
-    let usageDate: string | undefined;
-    if (quotaEnabled) {
-      const quota = await this.rateLimitService.reserveFreeFormSlot(
-        discordUserId,
-        { idempotencyKey },
-      );
-      usageDate = quota.usageDate;
-
-      if (!quota.allowed) {
-        if (quota.reason === 'DAILY_LIMIT' || quota.reason === 'BURST_LIMIT') {
-          const denyMsg = buildChatQuotaDenyMessage(quota.reason, quota.limit);
-          if (isServerChannel) {
-            await message.reply(denyMsg);
-          } else {
-            await this.outboundService.sendText(discordUserId, denyMsg);
-          }
-        }
-        return;
-      }
-    }
-
     try {
       await message.channel.sendTyping();
       const userId =
         await this.accountLinkService.findUserIdByDiscordId(discordUserId);
-      const reply = await this.agentService.reply({
+
+      this.chatQueueService.enqueue(
         discordUserId,
-        userId,
-        userText: resolvedText,
-        correlationId: message.id,
-        isServerChannel,
-      });
-
-      if (isServerChannel) {
-        // Always reply via DM when mentioned in a server channel
-        const dmChannelId = await this.outboundService.sendTextAndGetChannelId(
-          discordUserId,
-          reply.text,
-        );
-        if (dmChannelId) {
-          await message.reply(
-            'Mình đã trả lời trong tin nhắn riêng (DM) của bạn rồi nhé! 📩',
-          );
-        } else {
-          // DM failed (e.g. privacy settings) — fallback to channel reply
-          await message.reply(reply.text);
-        }
-      } else {
-        await this.outboundService.sendText(discordUserId, reply.text);
-      }
-
-      if (sendMenuAfter) {
-        await this.outboundService.sendMenuButtons(discordUserId);
-      }
-
-      if (quotaEnabled) {
-        await this.rateLimitService.markCompleted(idempotencyKey);
-      }
+        resolvedText,
+        { userId, isServerChannel },
+        `discord:${message.id}`,
+      );
     } catch (error) {
       this.logger.error(
-        `Chat reply failed for discordUserId=${discordUserId}`,
+        `Chat enqueue failed for discordUserId=${discordUserId}`,
         formatError(error),
       );
-
-      if (quotaEnabled && usageDate) {
-        await this.rateLimitService.refundFreeFormSlot(
-          discordUserId,
-          usageDate,
-          idempotencyKey,
-        );
-      }
-
       const fallback = isGreetingOnly(resolvedText)
         ? FALLBACK_GREETING_MESSAGE
         : FALLBACK_ERROR_MESSAGE;
