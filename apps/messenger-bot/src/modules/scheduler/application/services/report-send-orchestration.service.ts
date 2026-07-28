@@ -154,6 +154,7 @@ export class ReportSendOrchestrationService {
           );
           const job = await this.reportSendJobRepository.recordRetryableFailure(
             {
+              platform: 'messenger',
               externalUserId: mapping.psid,
               userId: mapping.userId,
               examDate: examDateForOutbox,
