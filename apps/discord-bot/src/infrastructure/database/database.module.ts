@@ -9,6 +9,7 @@ import {
   LlmUsageEventEntity,
 } from '@wispace/chat-metering';
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
+import { StudyReminderJobEntity } from './entities/study-reminder-job.entity';
 import { WebhookDeadLetterEntity } from './entities/webhook-dead-letter.entity';
 import { ReportSendJobEntity } from './entities/report-send-job.entity';
 import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
@@ -38,6 +39,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       DiscordAccountLinkEntity,
+      StudyReminderJobEntity,
       WebhookDeadLetterEntity,
       ReportSendJobEntity,
       ScheduledReportClaimEntity,
@@ -62,6 +64,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       WebhookDeadLetterEntity,
       ReportSendJobEntity,
       ScheduledReportClaimEntity,
+      StudyReminderJobEntity,
     ]),
   ],
   exports: [TypeOrmModule],

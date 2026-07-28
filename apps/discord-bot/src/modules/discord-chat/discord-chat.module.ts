@@ -29,6 +29,7 @@ import { DiscordOpsHealthRepository } from './infrastructure/persistence/discord
 import { ReportSendJobEntity } from '../../infrastructure/database/entities/report-send-job.entity';
 import { DiscordCalendarPort } from './infrastructure/adapters/discord-calendar.port';
 import { DiscordReschedulePort } from './infrastructure/adapters/discord-reschedule.port';
+import { DiscordOutboundService } from './application/services/discord-outbound.service';
 
 @Module({
   imports: [
@@ -148,5 +149,6 @@ import { DiscordReschedulePort } from './infrastructure/adapters/discord-resched
     DiscordOpsHealthRepository,
     OpsHealthService,
   ],
+  exports: [DiscordOutboundService],
 })
 export class DiscordChatModule {}

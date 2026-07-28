@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { IntentsBitField, Partials } from 'discord.js';
 import { NecordModule } from 'necord';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { RedisModule } from './infrastructure/redis/redis.module';
 import { DiscordChatModule } from './modules/discord-chat/discord-chat.module';
+import { DiscordStudyReminderModule } from './modules/discord-study-reminder/discord-study-reminder.module';
 import { DiscordMetricsModule } from './modules/metrics/discord-metrics.module';
 import { HealthController } from './health.controller';
 
@@ -33,9 +35,11 @@ import { HealthController } from './health.controller';
         partials: [Partials.Channel],
       }),
     }),
+    ScheduleModule.forRoot(),
     DatabaseModule,
     RedisModule,
     DiscordChatModule,
+    DiscordStudyReminderModule,
     DiscordMetricsModule,
   ],
 })
