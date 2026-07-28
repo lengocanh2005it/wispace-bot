@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
+import { SchedulerRegistry } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import {
   StudyReminderScheduleService,
   StudyReminderSyncService,
@@ -46,7 +48,31 @@ import { ZaloOpsHealthRepository } from '../zalo-chat/infrastructure/persistence
     StudyReminderScheduleService,
     StudyReminderSyncService,
     StudyReminderDispatchService,
-    StudyReminderWorkerService,
+    {
+      provide: StudyReminderWorkerService,
+      useFactory: (
+        syncService: StudyReminderSyncService,
+        dispatchService: StudyReminderDispatchService,
+        scheduleService: StudyReminderScheduleService,
+        schedulerRegistry: SchedulerRegistry,
+        dataSource: DataSource,
+      ) =>
+        new StudyReminderWorkerService(
+          syncService,
+          dispatchService,
+          scheduleService,
+          schedulerRegistry,
+          dataSource,
+          'zalo',
+        ),
+      inject: [
+        StudyReminderSyncService,
+        StudyReminderDispatchService,
+        StudyReminderScheduleService,
+        SchedulerRegistry,
+        DataSource,
+      ],
+    },
     ZaloMessageSenderService,
     ZaloMappingReaderAdapter,
     ZaloStudyReminderJobRepository,

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 
 const DEFAULT_TTL_MS = 60_000;
 const CLEANUP_INTERVAL_MS = 5_000;
@@ -9,12 +9,12 @@ const CLEANUP_INTERVAL_MS = 5_000;
  * when Zalo retries webhooks.
  */
 @Injectable()
-export class ZaloWebhookDedupeService {
+export class ZaloWebhookDedupeService implements OnModuleDestroy {
   private readonly logger = new Logger(ZaloWebhookDedupeService.name);
   private readonly seen = new Map<string, number>();
   private cleanupTimer: ReturnType<typeof setInterval> | undefined;
 
-  constructor(private readonly ttlMs: number = DEFAULT_TTL_MS) {
+  constructor() {
     this.cleanupTimer = setInterval(() => this.cleanup(), CLEANUP_INTERVAL_MS);
   }
 
@@ -28,7 +28,7 @@ export class ZaloWebhookDedupeService {
     if (expiry !== undefined && expiry > now) {
       return true;
     }
-    this.seen.set(msgId, now + this.ttlMs);
+    this.seen.set(msgId, now + DEFAULT_TTL_MS);
     return false;
   }
 
