@@ -24,6 +24,8 @@ import { ZaloLlmUsageRecorderService } from './application/services/zalo-llm-usa
 import { ZaloLlmSafetyEventService } from './application/services/zalo-llm-safety-event.service';
 import { ZaloRescheduleConfirmationService } from './application/services/zalo-reschedule-confirmation.service';
 import { ZaloStudyCalendarCommandService } from './application/services/zalo-study-calendar-command.service';
+import { ZaloCalendarPort } from './infrastructure/adapters/zalo-calendar.port';
+import { ZaloReschedulePort } from './infrastructure/adapters/zalo-reschedule.port';
 
 @Module({
   imports: [
@@ -53,6 +55,8 @@ import { ZaloStudyCalendarCommandService } from './application/services/zalo-stu
     ZaloLlmUsageRecorderService,
     ZaloLlmSafetyEventService,
     ZaloStudyCalendarCommandService,
+    ZaloCalendarPort,
+    ZaloReschedulePort,
     ZaloRescheduleConfirmationService,
     ZaloAgentService,
     ZaloAgentToolsService,

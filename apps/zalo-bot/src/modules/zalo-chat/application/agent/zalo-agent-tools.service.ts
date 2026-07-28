@@ -226,7 +226,7 @@ export class ZaloAgentToolsService {
     }
 
     const result = await this.rescheduleConfirmationService.stage({
-      zaloUserId: ctx.zaloUserId,
+      externalId: ctx.zaloUserId,
       userId: ctx.userId!,
       calendarId,
       schedulingMode,

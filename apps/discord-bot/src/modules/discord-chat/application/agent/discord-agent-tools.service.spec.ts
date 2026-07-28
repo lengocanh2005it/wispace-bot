@@ -197,7 +197,7 @@ describe('DiscordAgentToolsService', () => {
       );
 
       expect(rescheduleConfirmationService.stage).toHaveBeenCalledWith({
-        discordUserId: 'discord-1',
+        externalId: 'discord-1',
         userId: 143,
         calendarId: 42,
         schedulingMode: 'default_next_day_same_time',

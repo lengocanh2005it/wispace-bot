@@ -34,6 +34,7 @@
     "@wispace/llm-agent": "*",
     "@wispace/ops-health": "*",
     "@wispace/bot-metrics": "*",
+    "@wispace/reschedule-confirm": "*",
     "@wispace/study-reminder-core": "*",
     "@wispace/study-reminder-shared": "*",
     "@opentelemetry/api": "^1.9.1",

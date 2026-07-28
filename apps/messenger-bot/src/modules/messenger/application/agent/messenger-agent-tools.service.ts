@@ -115,7 +115,7 @@ export class MessengerAgentToolsService {
     const entry = list.entries[0];
 
     const staged = await this.rescheduleConfirmationService.stage({
-      psid: ctx.psid,
+      externalId: ctx.psid,
       userId: ctx.userId,
       calendarId: entry.calendarId,
       schedulingMode: 'default_next_day_same_time',
@@ -287,7 +287,7 @@ export class MessengerAgentToolsService {
     }
 
     const staged = await this.rescheduleConfirmationService.stage({
-      psid: ctx.psid,
+      externalId: ctx.psid,
       userId: ctx.userId,
       calendarId: matchedEntry.calendarId,
       schedulingMode,

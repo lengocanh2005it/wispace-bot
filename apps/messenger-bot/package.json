@@ -62,6 +62,7 @@
     "@wispace/chat-queue-core": "*",
     "@wispace/cleanup-cron": "*",
     "@wispace/llm-agent": "*",
+    "@wispace/reschedule-confirm": "*",
     "@wispace/scheduler-core": "*",
     "@wispace/student-report": "*",
     "@wispace/study-reminder-core": "*",

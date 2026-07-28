@@ -27,6 +27,8 @@ import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities/
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 import { DiscordOpsHealthRepository } from './infrastructure/persistence/discord-ops-health.repository';
 import { ReportSendJobEntity } from '../../infrastructure/database/entities/report-send-job.entity';
+import { DiscordCalendarPort } from './infrastructure/adapters/discord-calendar.port';
+import { DiscordReschedulePort } from './infrastructure/adapters/discord-reschedule.port';
 
 @Module({
   imports: [
@@ -131,6 +133,8 @@ import { ReportSendJobEntity } from '../../infrastructure/database/entities/repo
     DiscordAgentService,
     DiscordAgentToolsService,
     DiscordChatHistoryService,
+    DiscordCalendarPort,
+    DiscordReschedulePort,
     DiscordRescheduleConfirmationService,
     DiscordMenuService,
     DiscordDeadLetterService,

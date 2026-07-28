@@ -1,0 +1,27 @@
+{
+  "name": "@wispace/reschedule-confirm",
+  "version": "0.0.1",
+  "description": "Generic reschedule confirmation service for WISPACE bots",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\" --fix",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.1"
+  },
+  "peerDependencies": {
+    "@wispace/wispace-client": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "prettier": "^3.4.2",
+    "eslint": "^9.18.0"
+  }
+}

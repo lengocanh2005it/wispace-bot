@@ -244,7 +244,7 @@ export class DiscordAgentToolsService {
     }
 
     const staged = await this.rescheduleConfirmationService.stage({
-      discordUserId: ctx.discordUserId,
+      externalId: ctx.discordUserId,
       userId: ctx.userId!,
       calendarId,
       schedulingMode,

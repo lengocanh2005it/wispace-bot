@@ -33,6 +33,7 @@
     "@wispace/llm-agent": "*",
     "@wispace/ops-health": "*",
     "@wispace/bot-metrics": "*",
+    "@wispace/reschedule-confirm": "*",
     "@wispace/scheduler-core": "*",
     "@wispace/student-report": "*",
     "@wispace/study-reminder-core": "*",
