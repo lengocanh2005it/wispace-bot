@@ -8,6 +8,8 @@ import type {
   TaskScoreAverageRecord,
 } from '@wispace/wispace-client';
 import { ZaloAccountLinkEntity } from '../../../../infrastructure/database/entities/zalo-account-link.entity';
+import { ScheduledReportClaimEntity } from '../../../../infrastructure/database/entities/scheduled-report-claim.entity';
+import { todayReportDate } from '@wispace/scheduler-core';
 import { ZaloWispaceGoalsService } from '../../../wispace/application/services/zalo-wispace-goals.service';
 import { ZaloReportDeliveryService } from './zalo-report-delivery.service';
 
@@ -20,6 +22,8 @@ export class ZaloReportCronService {
   constructor(
     @InjectRepository(ZaloAccountLinkEntity)
     private readonly linkRepo: Repository<ZaloAccountLinkEntity>,
+    @InjectRepository(ScheduledReportClaimEntity)
+    private readonly claimRepo: Repository<ScheduledReportClaimEntity>,
     private readonly goalsService: ZaloWispaceGoalsService,
     private readonly deliveryService: ZaloReportDeliveryService,
   ) {}
@@ -34,7 +38,10 @@ export class ZaloReportCronService {
       this.logger.log('No linked accounts found for daily report');
       return;
     }
-    this.logger.log(`Sending daily reports to ${links.length} Zalo users`);
+    const reportDate = todayReportDate();
+    this.logger.log(
+      `Sending daily reports to ${links.length} Zalo users (reportDate=${reportDate})`,
+    );
 
     let sent = 0;
     let skipped = 0;
@@ -44,7 +51,7 @@ export class ZaloReportCronService {
     for (let i = 0; i < links.length; i += CONCURRENCY) {
       const batch = links.slice(i, i + CONCURRENCY);
       const results = await Promise.allSettled(
-        batch.map((link) => this.sendReportForUser(link.externalUserId)),
+        batch.map((link) => this.sendReportForUser(link, reportDate)),
       );
       for (const r of results) {
         if (r.status === 'fulfilled') {
@@ -66,25 +73,49 @@ export class ZaloReportCronService {
   }
 
   private async sendReportForUser(
-    zaloUserId: string,
+    link: ZaloAccountLinkEntity,
+    reportDate: string,
   ): Promise<'sent' | 'skipped' | 'error'> {
+    if (link.userId) {
+      const alreadySent = await this.claimRepo.count({
+        where: { userId: link.userId, reportDate, status: 'sent' },
+      });
+      if (alreadySent > 0) {
+        this.logger.log(
+          `Report already sent on another platform for userId=${link.userId}, skipping Zalo`,
+        );
+        return 'skipped';
+      }
+    }
+
     try {
       const [goals, taskScores] = await Promise.all([
-        this.goalsService.getUserGoals(zaloUserId),
+        this.goalsService.getUserGoals(link.externalUserId),
         this.goalsService.getTaskScoreAverages(zaloUserId),
       ]);
 
       const report = formatReport(goals, taskScores);
       const delivered = await this.deliveryService.sendReport(
-        zaloUserId,
+        link.externalUserId,
         report,
       );
       if (delivered) {
-        this.logger.log(`Report sent to Zalo user ${zaloUserId}`);
+        if (link.userId) {
+          await this.claimRepo
+            .insert({
+              platform: 'zalo',
+              externalUserId: link.externalUserId,
+              userId: link.userId,
+              reportDate,
+              status: 'sent',
+            })
+            .catch(() => {});
+        }
+        this.logger.log(`Report sent to Zalo user ${link.externalUserId}`);
         return 'sent';
       }
       this.logger.warn(
-        `Report skipped for Zalo user ${zaloUserId} (48h window)`,
+        `Report skipped for Zalo user ${link.externalUserId} (48h window)`,
       );
       return 'skipped';
     } catch (error) {
@@ -93,12 +124,12 @@ export class ZaloReportCronService {
         (error.statusCode === 401 || error.statusCode === 403)
       ) {
         this.logger.warn(
-          `Wispace access denied for Zalo user ${zaloUserId}: ${error.message}`,
+          `Wispace access denied for Zalo user ${link.externalUserId}: ${error.message}`,
         );
         return 'skipped';
       }
       this.logger.error(
-        `Failed to send report to Zalo user ${zaloUserId}: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to send report to Zalo user ${link.externalUserId}: ${error instanceof Error ? error.message : String(error)}`,
       );
       return 'error';
     }

@@ -12,6 +12,7 @@ import {
   LlmSafetyEventEntity,
 } from '@wispace/chat-metering';
 import { StudyReminderJobEntity } from './entities/study-reminder-job.entity';
+import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
 
 /**
  * Connects to the same Postgres DB as `apps/messenger-bot` (Phase 2: shared
@@ -40,6 +41,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       StudyReminderJobEntity,
+      ScheduledReportClaimEntity,
     ],
     synchronize: false,
     logging: config.get<string>('DB_LOGGING') === 'true',
@@ -62,6 +64,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       StudyReminderJobEntity,
+      ScheduledReportClaimEntity,
     ]),
   ],
   exports: [TypeOrmModule],

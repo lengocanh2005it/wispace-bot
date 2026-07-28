@@ -9,6 +9,7 @@ import {
 } from '@wispace/scheduler-core';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
 import { DiscordAccountLinkEntity } from '../../../../infrastructure/database/entities/discord-account-link.entity';
+import { ScheduledReportClaimEntity } from '../../../../infrastructure/database/entities/scheduled-report-claim.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { ReportMapping } from '@wispace/scheduler-core';
@@ -28,6 +29,8 @@ export class DiscordReportCronService {
     private readonly orchestrationService: DiscordReportOrchestrationService,
     @InjectRepository(DiscordAccountLinkEntity)
     private readonly accountLinkRepo: Repository<DiscordAccountLinkEntity>,
+    @InjectRepository(ScheduledReportClaimEntity)
+    private readonly claimRepo: Repository<ScheduledReportClaimEntity>,
   ) {}
 
   @Cron('0 8 * * *', {
@@ -71,7 +74,7 @@ export class DiscordReportCronService {
     for (let i = 0; i < links.length; i += concurrency) {
       const batch = links.slice(i, i + concurrency);
       const results = await Promise.allSettled(
-        batch.map((link) => {
+        batch.map(async (link) => {
           const mapping: ReportMapping = {
             id: link.id,
             platform: PLATFORM,
@@ -80,6 +83,17 @@ export class DiscordReportCronService {
             notificationCadence: 'daily',
             status: 'ACTIVE',
           };
+          if (await this.isAlreadySentToday(link.userId, reportDate)) {
+            return {
+              sent: 0,
+              skipped: 0,
+              claimSkipped: 1,
+              deferred: 0,
+              windowClosed: 0,
+              retryQueued: 0,
+              failures: [],
+            };
+          }
           return this.orchestrationService.claimAndSend(mapping, {
             reportDate,
             skipAlreadySentToday: !opts.forceSend,
@@ -117,5 +131,16 @@ export class DiscordReportCronService {
       failed,
       failures,
     };
+  }
+
+  private async isAlreadySentToday(
+    userId: number | undefined | null,
+    reportDate: string,
+  ): Promise<boolean> {
+    if (!userId) return false;
+    const count = await this.claimRepo.count({
+      where: { userId, reportDate, status: 'sent' },
+    });
+    return count > 0;
   }
 }
