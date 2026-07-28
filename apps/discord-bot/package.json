@@ -27,18 +27,18 @@
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
     "@nestjs/typeorm": "^11.0.1",
+    "@opentelemetry/api": "^1.9.1",
+    "@wispace/bot-metrics": "*",
     "@wispace/chat-history": "*",
     "@wispace/chat-metering": "*",
     "@wispace/cleanup-cron": "*",
     "@wispace/llm-agent": "*",
     "@wispace/ops-health": "*",
-    "@wispace/bot-metrics": "*",
     "@wispace/reschedule-confirm": "*",
     "@wispace/scheduler-core": "*",
     "@wispace/student-report": "*",
     "@wispace/study-reminder-core": "*",
     "@wispace/wispace-client": "*",
-    "@opentelemetry/api": "^1.9.1",
     "discord.js": "^14.26.4",
     "necord": "^6.14.0",
     "openai": "^6.42.0",
@@ -54,6 +54,10 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@swc/cli": "^0.8.1",
+    "@swc/core": "^1.15.46",
+    "@swc/core-win32-x64-msvc": "^1.15.46",
+    "@swc/jest": "^0.2.39",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
@@ -65,7 +69,6 @@
     "jest": "^30.0.0",
     "prettier": "^3.4.2",
     "source-map-support": "^0.5.21",
-    "ts-jest": "^29.2.5",
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
@@ -81,7 +84,7 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": "@swc/jest"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"

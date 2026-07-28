@@ -3,7 +3,13 @@
   "collection": "@nestjs/schematics",
   "sourceRoot": "src",
   "compilerOptions": {
+    "builder": "swc",
     "deleteOutDir": true,
-    "assets": ["shared/prompts/**/*"]
+    "assets": ["shared/prompts/**/*"],
+    "typeCheck": false,
+    "autoCopyAssets": true,
+    "swc": {
+      "swcrcPath": ".swcrc"
+    }
   }
 }
