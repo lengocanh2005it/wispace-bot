@@ -37,7 +37,7 @@ Related: [project-overview.md](./project-overview.md), [study-session-reminder.m
 | **DOPPLER** ✓ | Doppler runtime sync | 1 day | `POST /messenger/ops/doppler-sync` |
 | **PKG** ✓ | Shared packages extraction | 3–5 days | 12 packages in `packages/` |
 | **DISCORD** ✓ | Discord bot (functional) | 3–5 days | Chat + quota + 6/7 tool handlers |
-| **ZALO** 🟡 | Zalo bot (functional) | 3–5 days | Chat + quota + account linking + 6/7 tool handlers + 08:00 report cron + reminders infra + dead letter. Missing: chat queue, ops endpoints, CI/CD, LLM report enrichment |
+| **ZALO** 🟡 | Zalo bot (functional) | 3–5 days | Chat + quota + account linking + 6/7 tool handlers + 08:00 report cron + study reminders + dead letter + ops endpoints + CI/CD. Missing: chat queue, Redis burst counter, LLM report enrichment, Doppler webhook |
 
 **Recommended order:** ~~Q1/S0/I1/S1/L1/R1/L2/R2/R3/L3/R4/R5/S2~~ (✓) → `CHAT_QUEUE_SHARED` at scale → remaining items per user feedback.
 

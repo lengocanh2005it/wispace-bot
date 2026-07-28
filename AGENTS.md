@@ -405,11 +405,11 @@ Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global ski
 | Tier / event store (Phase 7–8) | ✓ MVP — `chat_quota_events` + `llm_usage_events` tables; full §5.8 [chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) |
 | Discord 08:00 report cron + retry dispatch | ✓ Full leader-election, claim locks, LLM report generation, retry dispatch `*/15` |
 | Zalo 08:00 report cron | ✓ Raw format (goals+scores), cross-platform dedup, concurrency 3 |
-| Zalo study reminders | 🟡 Infra wired (dispatch/worker/sync) — sync broken: no `getSessions` callback → sessions default `[]` |
+| Zalo study reminders | ✓ Sync fixed — `getSessions` callback wired via `ZaloWispaceCalendarService` |
+| Zalo ops HTTP endpoints | ✓ `POST /zalo/send-reports`, `/zalo/study-calendar/sync`, `/zalo/sync-study-reminders` + `InternalApiKeyGuard` |
+| Zalo CI/CD | ✓ `deploy-zalo-bot.yml` + `vps-deploy-zalo.sh` + Dockerfile |
 | Zalo chat queue / debounce | ❌ Each message goes directly to LLM, no `CHAT_QUEUE_STORE` |
 | Zalo Redis burst counter | ❌ Memory only, no `CHAT_BURST_STORE=redis\|postgres` |
-| Zalo ops HTTP endpoints | ❌ No sync trigger, send-reports, profile setup, or Doppler webhook |
-| Zalo CI/CD | ❌ No GitHub Actions workflow; Dockerfile + compose exist |
 | Zalo LLM report enrichment | ❌ Report cron + `get_learning_progress_report` return raw data, not LLM narrative |
 | Discord/Zalo chat queue (H7) | ❌ No debounce/merge — Messenger-only via `CHAT_QUEUE_STORE` |
 | Discord/Zalo multi-pod chat history | ❌ In-memory only (Redis optional for Messenger) |

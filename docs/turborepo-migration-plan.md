@@ -79,7 +79,7 @@ Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB 
 - Unit tests for `DiscordChatHistoryService`, `DiscordAgentToolsService` (including linked/not-linked cases for all tools + valid/error reschedule cases), `DiscordOutboundService` (including button confirmation DMs), `WispaceDiscordTokenVerifyService`, `DiscordAccountLinkService`, `DiscordOauthController`, and `packages/wispace-client` (`UserGoalsApiClient`, `user-calendar-record.normalizer`, `buildWispaceHeaders`).
 
 **Remaining / technical debt:**
-- **CI/CD VPS deploy** — `deploy-discord-bot.yml`, `Dockerfile`, `docker-compose.prod.yml` committed. Still missing: 3 deploy shell scripts (`.github/scripts/vps-deploy-discord.sh`, `ssh-deploy-vps.sh`, `upload-to-vps.sh`). Not yet run on VPS.
+- **CI/CD VPS deploy** — `deploy-discord-bot.yml`, `Dockerfile`, `docker-compose.prod.yml`, all 3 deploy shell scripts committed. Not yet run on VPS.
 - **End-to-end testing not done** — needs real Discord Application OAuth2 client + public HTTPS redirect URI + WISPACE backend displaying "Connect Discord" link.
 - Persistent / multi-pod chat history (Redis) + chat queue (debounce) if scaling to multiple instances.
 - `apps/messenger-bot`'s local `study-reminder/application/utils/study-calendar.utils.ts` duplicates `packages/wispace-client` — not yet deduplicated.
@@ -111,15 +111,17 @@ Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 6/7 real WISPA
 **Still missing vs Discord/Messenger:**
 - **Chat queue** (debounce/merge) — Zalo handles each message immediately, no `CHAT_QUEUE_STORE` config
 - **Redis/postgres burst counter** — currently `MemoryBurstCounter` only (no `CHAT_BURST_STORE`)
-- **Study reminder sync broken** — `StudyReminderWorkerService.handleSyncCron()` calls `syncUpcomingSessions()` without `getSessions` callback, so sessions array defaults to `[]`. Needs `getSessions` function injected.
-- **No ops HTTP endpoints** — no sync trigger, no send-reports trigger, no profile setup, no Doppler webhook
-- **No `InternalApiKeyGuard`** on any endpoint
 - **LLM report enrichment** — report cron and `get_learning_progress_report` tool return raw API data, not LLM-generated narrative (Messenger uses `StudentReportCore` from `@wispace/student-report`)
 - **Chat history** — in-memory only (no Redis `CHAT_HISTORY_STORE=redis` option)
 - **Webhook dedupe** — in-memory only (no Redis option)
 - **Ops health** — `ZaloOpsHealthRepository` returns hardcoded zeros
-- **CI/CD** — no GitHub Actions workflow; Dockerfile + docker-compose exist but no deploy pipeline
 - **No health/redis endpoint** (`GET /health/redis`)
+- **No Doppler webhook endpoint** (`POST /zalo/ops/doppler-sync`)
+
+**Recently added (commit 9b9ff9a):**
+- Study reminder sync fixed: `getSessions` callback wired via `ZaloWispaceCalendarService`
+- Ops HTTP endpoints (`POST /zalo/send-reports`, `/zalo/study-calendar/sync`, `/zalo/sync-study-reminders`) with `InternalApiKeyGuard`
+- CI/CD: `deploy-zalo-bot.yml` workflow + `vps-deploy-zalo.sh` + Dockerfile updated with all @wispace packages
 
 ---
 
@@ -144,6 +146,6 @@ Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 6/7 real WISPA
 | 0 | Initial state before migration | Reference |
 | 1 | Turborepo scaffold + extract `packages/llm-agent` + discord/zalo placeholders | ✅ Completed |
 | 2 | Generalize DB key `(platform, external_user_id)` | ✅ Completed — migration ran on VPS production, verified via SSH |
-| 3 | Implement Discord bot | ✅ Features complete (chat + quota + account-linking OAuth2 + 6/7 real tools + reschedule + 08:00 report cron + leader-election + retry dispatch + study reminders + dead letter + message log + CI/CD workflow) — CI/CD VPS deploy scripts not yet committed, no real end-to-end testing yet |
-| 4 | Implement Zalo bot | 🟡 Functional (chat + quota + account-linking + 6/7 tools + 08:00 report cron + study reminders infra + dead letter + message log + stuck recovery) — missing: chat queue, Redis burst counter, ops endpoints, CI/CD, study reminder sync callback, LLM report enrichment |
-| 5 | Fully independent CI/CD | 🟡 Discord workflow committed (`deploy-discord-bot.yml`) — Messenger workflow not yet separated — Zalo CI/CD not started |
+| 3 | Implement Discord bot | ✅ Features complete (chat + quota + account-linking OAuth2 + 6/7 real tools + reschedule + 08:00 report cron + leader-election + retry dispatch + study reminders + dead letter + message log + CI/CD workflow + deploy scripts) — no real end-to-end testing yet |
+| 4 | Implement Zalo bot | 🟡 Functional (chat + quota + account-linking + 6/7 tools + 08:00 report cron + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD) — missing: chat queue, Redis burst counter, LLM report enrichment, Doppler webhook |
+| 5 | Fully independent CI/CD | 🟡 Discord + Zalo workflows committed (`deploy-discord-bot.yml`, `deploy-zalo-bot.yml`) — Messenger workflow not yet separated |
