@@ -6,6 +6,7 @@ import {
   ReportCronLeaderService,
   ReportCronLockService,
   REPORT_SEND_JOB_REPOSITORY,
+  GOALS_DATA_PORT,
 } from '@wispace/scheduler-core';
 import { ReportSendJobEntity } from '../../infrastructure/database/entities/report-send-job.entity';
 import { CommonModule } from '../../shared/common/common.module';
@@ -17,6 +18,7 @@ import { MessengerOutboundModule } from '../messenger/messenger-outbound.module'
 import { UserLinkingModule } from '../messenger/user-linking.module';
 import { StudentReportModule } from '../student-report/student-report.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
+import { UserGoalsApiService } from '../student-report/infrastructure/wispace/user-goals-api.service';
 import { DopplerRuntimeSyncService } from './application/services/doppler-runtime-sync.service';
 import { OpsHealthCronService } from './application/services/ops-health-cron.service';
 import { OpsHealthService } from './application/services/ops-health.service';
@@ -41,6 +43,13 @@ import { SchedulerController } from './presentation/controllers/scheduler.contro
   ],
   controllers: [SchedulerController],
   providers: [
+    {
+      provide: GOALS_DATA_PORT,
+      useFactory: (goalsApi: UserGoalsApiService) => ({
+        getUserGoals: (psid: string) => goalsApi.getUserGoals(psid),
+      }),
+      inject: [UserGoalsApiService],
+    },
     ReportScheduleService,
     ReportCronLeaderService,
     ReportCronLockService,

@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { rawDaysUntilExam } from '../utils/exam-date.utils';
 import { todayReportDate } from '../utils/report-date.utils';
+import { GOALS_DATA_PORT } from '../ports/goals-data.port';
 import type { GoalsDataPort } from '../ports/goals-data.port';
 
 const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
@@ -10,7 +11,7 @@ const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
 export class ReportScheduleService {
   constructor(
     private readonly configService: ConfigService,
-    private readonly goalsDataPort: GoalsDataPort,
+    @Inject(GOALS_DATA_PORT) private readonly goalsDataPort: GoalsDataPort,
   ) {}
 
   async getDaysUntilExam(externalUserId: string): Promise<number> {
