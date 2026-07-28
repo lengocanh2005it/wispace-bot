@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { HealthController } from './health.controller';
 import { DatabaseModule } from './infrastructure/database/database.module';
+import { RedisModule } from './infrastructure/redis/redis.module';
 import { ZaloOauthModule } from './modules/zalo-oauth/zalo-oauth.module';
 import { ZaloChatModule } from './modules/zalo-chat/zalo-chat.module';
 import { ZaloWebhookModule } from './modules/zalo-webhook/zalo-webhook.module';
@@ -22,6 +23,7 @@ import { ZaloMetricsModule } from './modules/metrics/zalo-metrics.module';
     }),
     ScheduleModule.forRoot(),
     DatabaseModule,
+    RedisModule,
     ZaloSharedModule,
     ZaloOauthModule,
     ZaloChatModule,
