@@ -75,24 +75,51 @@ Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB 
 - **`packages/wispace-client`** (new framework-agnostic package, third after `llm-agent`/`chat-metering`) — extracted Wispace HTTP client (`UserGoalsApiClient`, `TaskScoreAverageApiClient`, `UserCalendarApiClient`, `UserCalendarScheduleClient`) + retry/error handling (`withRetry`, `WispaceApiError`) + entire `study-calendar.utils.ts` (date/timezone math) shared by Messenger + Discord. Student identification header generalized to `buildWispaceHeaders(idHeader, externalId, internalKey)` with `idHeader` ∈ `x-psid` | `x-discordid` | `x-zaloid` (WISPACE API already supports all 3 — only send the header matching the platform, no changes needed on WISPACE side). `apps/messenger-bot`'s `UserGoalsApiService`/`TaskScoreAverageApiService`/`UserCalendarApiService`/`UserCalendarScheduleService` refactored into thin wrappers (platform=`x-psid`) — behavior unchanged, all 304 messenger-bot tests verified.
 - **6/7 real WISPACE tools for Discord** (`modules/wispace/` — `WispaceGoalsService`, `WispaceCalendarService`, `DiscordStudyCalendarCommandService`) — `get_user_goals`, `get_learning_progress_report` (returns raw goals+scores, main LLM chat self-narrates — no separate port of `StudentReportService`'s LLM call), `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder` now call real Wispace API (`x-discordid`) when `ctx.userId` is resolved; not yet linked returns Vietnamese "not connected" notification.
 - **`reschedule_study_session` (COMPLETED)** — Discord counterpart of Messenger postback confirm/cancel: `DiscordAgentToolsService` stages pending via `DiscordRescheduleConfirmationService` (Map keyed by `discordUserId` + TTL 10 minutes, same as Messenger's `MessengerRescheduleConfirmationService`), sends summary DM with 2 Discord button (`ActionRowBuilder`/`ButtonBuilder`, style Success/Danger) via `DiscordOutboundService.sendRescheduleConfirmation`. Button handling uses Necord `@Button(customId)` decorator in `DiscordChatGateway` (`onRescheduleConfirm`/`onRescheduleCancel`), routed by `interaction.user.id` — simpler than Messenger since no payload encoding into customId needed. Writes real calendar via `DiscordStudyCalendarCommandService.rescheduleSession` (delete + create calendar, reusing `resolveRescheduleSlot`/`resolveScheduledAtFromEventDate` from `@wispace/wispace-client` + `formatScheduledTimeLabel`/`getMinutesUntilSession` from `@wispace/study-reminder-core`) — no outbox sync after reschedule (Discord does not yet have its own job reminder system).
-- **Still a stub: `register_exam_report_notifications` (decision: keep as-is, no code)** — this tool exists in Messenger to work around Meta's 24h messaging limit (must opt-in to "Notification Messages" to message outside the 24h window from user's last message); Discord **does not have** this 24h limit so the bot can DM anytime, no "registration" needed. More importantly: Discord has not ported `ReportCronService` (cron for sending periodic AI reports before exams) — even if "registration" were implemented now (default cadence=WEEKLY, matching Messenger's fallback default in `poc.constants.ts`), there is nothing to read it back and send reports, making it a half-baked feature. Only implement when porting the periodic report cron to Discord.
+- **Still a stub: `register_exam_report_notifications`** — this tool exists in Messenger to work around Meta's 24h messaging limit (must opt-in to "Notification Messages"). Discord has no 24h limit, so registration is unnecessary. The 08:00 report cron (`DiscordReportCronService`) is fully implemented and sends to all linked accounts automatically.
 - Unit tests for `DiscordChatHistoryService`, `DiscordAgentToolsService` (including linked/not-linked cases for all tools + valid/error reschedule cases), `DiscordOutboundService` (including button confirmation DMs), `WispaceDiscordTokenVerifyService`, `DiscordAccountLinkService`, `DiscordOauthController`, and `packages/wispace-client` (`UserGoalsApiClient`, `user-calendar-record.normalizer`, `buildWispaceHeaders`).
 
 **Remaining / technical debt:**
-- **CI/CD VPS deploy** — `Dockerfile`, `docker-compose.prod.yml`, `deploy-discord-bot.yml`, `vps-deploy-discord.sh`, `health.controller.ts` written but not yet committed + not yet run on VPS.
-- **End-to-end testing not done** — needs real Discord Application OAuth2 client + public HTTPS redirect URI + WISPACE backend displaying "Connect Discord" link + confirmed real response shape from `WISPACE_API_VERIFY_TOKEN_URL`.
-- `register_exam_report_notifications` — decision: keep stub, only implement when porting `ReportCronService` (periodic report cron) to Discord.
-- Persistent / multi-pod chat history (Redis) if scaling to multiple instances is needed.
-- Whitelist, quota-event audit table, stuck-reserved recovery, ops CLI for Discord (Messenger-only currently).
-- `apps/messenger-bot`'s local `study-reminder/application/utils/study-calendar.utils.ts` duplicates `packages/wispace-client` — not yet deduplicated (deferred to avoid expanding Phase 3 scope).
+- **CI/CD VPS deploy** — `deploy-discord-bot.yml`, `Dockerfile`, `docker-compose.prod.yml` committed. Still missing: 3 deploy shell scripts (`.github/scripts/vps-deploy-discord.sh`, `ssh-deploy-vps.sh`, `upload-to-vps.sh`). Not yet run on VPS.
+- **End-to-end testing not done** — needs real Discord Application OAuth2 client + public HTTPS redirect URI + WISPACE backend displaying "Connect Discord" link.
+- Persistent / multi-pod chat history (Redis) + chat queue (debounce) if scaling to multiple instances.
+- `apps/messenger-bot`'s local `study-reminder/application/utils/study-calendar.utils.ts` duplicates `packages/wispace-client` — not yet deduplicated.
 
 **Verification done:** `npx turbo run format:check lint typecheck test build --filter=@wispace/messenger-bot... --filter=@wispace/discord-bot... --filter=@wispace/chat-metering... --filter=@wispace/wispace-client...` passed all (messenger-bot 304 tests + chat-metering 18 tests + wispace-client 10 tests + discord-bot 26 tests). Not yet tested with real Discord server (needs real `DISCORD_BOT_TOKEN` + `MESSAGE CONTENT INTENT` enabled in Developer Portal), not yet tested with real DB connection (`DB_*` env) or real Wispace API (`WISPACE_API_*_URL` + `x-discordid`) for Discord, and not yet tested with real OAuth flow (needs public redirect URI + WISPACE backend displaying "Connect Discord" link).
 
 ---
 
-## Phase 4 — Implement `apps/zalo-bot` (NOT YET DONE)
+## Phase 4 — Implement `apps/zalo-bot` (FUNCTIONAL — see gaps below)
 
-Similar to Phase 3, using Zalo OA API instead of Discord REST API. Prioritized after Phase 3 stabilizes (lessons learned from adapting a new bot into `@wispace/llm-agent`).
+Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 6/7 real WISPACE tool handlers via `@wispace/wispace-client` (same as Discord), 08:00 report cron (raw format, no LLM enrichment), study reminders infrastructure (sync/dispatch/worker via shared packages), PostgreSQL-backed dead letter + delivery log + cleanup crons, and stuck idempotency recovery.
+
+**Implemented:**
+- Chat via Zalo webhook (`POST /zalo/webhook`), rate limit reserve/refund/markCompleted via `@wispace/chat-metering`
+- Account linking via PKCE OAuth2 flow + `WISPACE_API_VERIFY_TOKEN_URL`
+- 6/7 tool handlers calling real Wispace API (`x-zaloid`): `get_user_goals`, `get_learning_progress_report`, `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder`, `reschedule_study_session` (with Zalo-specific confirm/cancel via structured messages)
+- `register_exam_report_notifications` — stub (same as Discord; Zalo has no 24h messaging limit)
+- 08:00 report cron (`ZaloReportCronService`) — fetches goals + scores via Wispace API, uses `ScheduledReportClaimEntity` for cross-platform dedup, concurrency 3
+- Study reminder: `StudyReminderWorkerService` with `platform='zalo'`, sync/dispatch/worker via shared `@wispace/study-reminder-shared`
+- LLM provider failover (OpenAI → OpenRouter → MiniMax) via `@wispace/llm-agent`
+- Redis user display name cache (same as Messenger/Discord)
+- PostgreSQL dead letter (`WebhookDeadLetterEntity`, `ZaloDeadLetterCronService` 5-min retry)
+- `ZaloMessageLogEntity` delivery logging + cleanup cron (daily 03:00)
+- Idempotency stuck recovery cron (30 min) + cleanup cron (weekly)
+- OAuth state cleanup cron (every 10s)
+- Rate limit H2/H4/H6 hardening (stuck recovery, refund on error, idempotency cleanup)
+- Multi-pod advisory locks for all cleanup crons
+
+**Still missing vs Discord/Messenger:**
+- **Chat queue** (debounce/merge) — Zalo handles each message immediately, no `CHAT_QUEUE_STORE` config
+- **Redis/postgres burst counter** — currently `MemoryBurstCounter` only (no `CHAT_BURST_STORE`)
+- **Study reminder sync broken** — `StudyReminderWorkerService.handleSyncCron()` calls `syncUpcomingSessions()` without `getSessions` callback, so sessions array defaults to `[]`. Needs `getSessions` function injected.
+- **No ops HTTP endpoints** — no sync trigger, no send-reports trigger, no profile setup, no Doppler webhook
+- **No `InternalApiKeyGuard`** on any endpoint
+- **LLM report enrichment** — report cron and `get_learning_progress_report` tool return raw API data, not LLM-generated narrative (Messenger uses `StudentReportCore` from `@wispace/student-report`)
+- **Chat history** — in-memory only (no Redis `CHAT_HISTORY_STORE=redis` option)
+- **Webhook dedupe** — in-memory only (no Redis option)
+- **Ops health** — `ZaloOpsHealthRepository` returns hardcoded zeros
+- **CI/CD** — no GitHub Actions workflow; Dockerfile + docker-compose exist but no deploy pipeline
+- **No health/redis endpoint** (`GET /health/redis`)
 
 ---
 
@@ -117,6 +144,6 @@ Similar to Phase 3, using Zalo OA API instead of Discord REST API. Prioritized a
 | 0 | Initial state before migration | Reference |
 | 1 | Turborepo scaffold + extract `packages/llm-agent` + discord/zalo placeholders | ✅ Completed |
 | 2 | Generalize DB key `(platform, external_user_id)` | ✅ Completed — migration ran on VPS production, verified via SSH |
-| 3 | Implement Discord bot | 🟡 Features complete (chat + quota + account-linking OAuth2 + 6/7 real tools + reschedule with Discord buttons) — CI/CD VPS deploy in progress (Dockerfile + compose + workflow not yet committed), no real end-to-end testing yet (needs bot token + public OAuth redirect) |
-| 4 | Implement Zalo bot | ⏳ Not yet done |
-| 5 | Fully independent CI/CD | 🟡 Discord workflow in progress (`deploy-discord-bot.yml`, `vps-deploy-discord.sh`) — Messenger workflow not yet separated |
+| 3 | Implement Discord bot | ✅ Features complete (chat + quota + account-linking OAuth2 + 6/7 real tools + reschedule + 08:00 report cron + leader-election + retry dispatch + study reminders + dead letter + message log + CI/CD workflow) — CI/CD VPS deploy scripts not yet committed, no real end-to-end testing yet |
+| 4 | Implement Zalo bot | 🟡 Functional (chat + quota + account-linking + 6/7 tools + 08:00 report cron + study reminders infra + dead letter + message log + stuck recovery) — missing: chat queue, Redis burst counter, ops endpoints, CI/CD, study reminder sync callback, LLM report enrichment |
+| 5 | Fully independent CI/CD | 🟡 Discord workflow committed (`deploy-discord-bot.yml`) — Messenger workflow not yet separated — Zalo CI/CD not started |
