@@ -27,6 +27,13 @@ import { ZaloRescheduleConfirmationService } from './application/services/zalo-r
 import { ZaloStudyCalendarCommandService } from './application/services/zalo-study-calendar-command.service';
 import { ZaloCalendarPort } from './infrastructure/adapters/zalo-calendar.port';
 import { ZaloReschedulePort } from './infrastructure/adapters/zalo-reschedule.port';
+import { ZaloDeadLetterService } from './application/services/zalo-dead-letter.service';
+import { ZaloDeadLetterCronService } from './application/services/zalo-dead-letter-cron.service';
+import { ZaloDeliveryLogService } from './application/services/zalo-delivery-log.service';
+import { CleanupCronService } from '@wispace/cleanup-cron';
+import { ZaloCleanupCronService } from './application/services/zalo-cleanup-cron.service';
+import { ZaloMessageLogEntity } from '../../infrastructure/database/entities/zalo-message-log.entity';
+import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities/webhook-dead-letter.entity';
 
 @Module({
   imports: [
@@ -37,6 +44,8 @@ import { ZaloReschedulePort } from './infrastructure/adapters/zalo-reschedule.po
       ChatIdempotencyEntity,
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
+      ZaloMessageLogEntity,
+      WebhookDeadLetterEntity,
     ]),
   ],
   providers: [
@@ -139,8 +148,20 @@ import { ZaloReschedulePort } from './infrastructure/adapters/zalo-reschedule.po
     ZaloChatHistoryService,
     ZaloOutboundService,
     ZaloChatRateLimitService,
+    ZaloDeadLetterService,
+    ZaloDeadLetterCronService,
+    ZaloDeliveryLogService,
+    CleanupCronService,
+    ZaloCleanupCronService,
     ZaloChatService,
   ],
-  exports: [ZaloChatService, ZaloOutboundService],
+  exports: [
+    ZaloChatService,
+    ZaloOutboundService,
+    ZaloChatRateLimitService,
+    ZaloCleanupCronService,
+    CleanupCronService,
+    ZaloDeadLetterService,
+  ],
 })
 export class ZaloChatModule {}

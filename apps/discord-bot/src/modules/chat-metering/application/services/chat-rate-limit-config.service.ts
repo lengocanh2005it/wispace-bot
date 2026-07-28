@@ -22,6 +22,7 @@ export class ChatRateLimitConfigService {
       ),
       burstPerMinute: this.readRequiredPositiveNumber('CHAT_BURST_PER_MINUTE'),
       timezone: this.getTimezone(),
+      burstCountsRefunded: this.getBurstCountsRefunded(),
     };
   }
 
@@ -37,6 +38,23 @@ export class ChatRateLimitConfigService {
     }
 
     return timezone;
+  }
+
+  private getBurstCountsRefunded(): boolean {
+    const raw = this.configService
+      .get<string>('CHAT_BURST_COUNT_REFUNDED')
+      ?.trim()
+      .toLowerCase();
+    return raw === 'true' || raw === '1' || raw === 'yes';
+  }
+
+  getStuckReservedMs(): number {
+    const raw = this.configService
+      .get<string>('CHAT_IDEMPOTENCY_STUCK_RESERVED_MS')
+      ?.trim();
+    if (!raw) return 600_000;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : 600_000;
   }
 
   private readRequiredPositiveNumber(key: string): number {

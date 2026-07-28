@@ -37,6 +37,16 @@ export class ZaloChatRateLimitService {
     const timezone =
       this.configService.get<string>('CHAT_USAGE_TIMEZONE') ??
       'Asia/Ho_Chi_Minh';
+    const burstCountsRefunded =
+      this.configService.get<string>('CHAT_BURST_COUNT_REFUNDED') === 'true';
+    const stuckReservedMs = (() => {
+      const raw = this.configService
+        .get<string>('CHAT_IDEMPOTENCY_STUCK_RESERVED_MS')
+        ?.trim();
+      if (!raw) return 600_000;
+      const value = Number(raw);
+      return Number.isFinite(value) && value > 0 ? value : 600_000;
+    })();
 
     const repository = new ChatRateLimitRepository(
       dailyUsageRepo,
@@ -47,11 +57,12 @@ export class ZaloChatRateLimitService {
     this.core = new ChatRateLimitCore(
       repository,
       new MemoryBurstCounter(),
-      { freeFormDailyLimit, burstPerMinute, timezone },
+      { freeFormDailyLimit, burstPerMinute, timezone, burstCountsRefunded },
       {
         warn: (msg) => this.logger.warn(msg),
         log: (msg) => this.logger.log(msg),
       },
+      stuckReservedMs,
     );
   }
 
@@ -69,5 +80,9 @@ export class ZaloChatRateLimitService {
 
   async refund(zaloUserId: string, usageDate: string, idempotencyKey: string) {
     return this.core.refundFreeFormSlot(zaloUserId, usageDate, idempotencyKey);
+  }
+
+  async recoverStuckReservedSlots(): Promise<{ recovered: string[] }> {
+    return this.core.recoverStuckReservedSlots();
   }
 }

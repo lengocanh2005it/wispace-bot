@@ -5,6 +5,7 @@ import { DataSourceOptions } from 'typeorm';
 import { ZaloOaTokenEntity } from './entities/zalo-oa-token.entity';
 import { ZaloOauthStateEntity } from './entities/zalo-oauth-state.entity';
 import { ZaloAccountLinkEntity } from './entities/zalo-account-link.entity';
+import { ZaloMessageLogEntity } from './entities/zalo-message-log.entity';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
@@ -13,6 +14,7 @@ import {
 } from '@wispace/chat-metering';
 import { StudyReminderJobEntity } from './entities/study-reminder-job.entity';
 import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
+import { WebhookDeadLetterEntity } from './entities/webhook-dead-letter.entity';
 
 /**
  * Connects to the same Postgres DB as `apps/messenger-bot` (Phase 2: shared
@@ -36,12 +38,14 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       ZaloOaTokenEntity,
       ZaloOauthStateEntity,
       ZaloAccountLinkEntity,
+      ZaloMessageLogEntity,
       ChatDailyUsageEntity,
       ChatIdempotencyEntity,
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       StudyReminderJobEntity,
       ScheduledReportClaimEntity,
+      WebhookDeadLetterEntity,
     ],
     synchronize: false,
     logging: config.get<string>('DB_LOGGING') === 'true',
@@ -59,12 +63,14 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       ZaloOaTokenEntity,
       ZaloOauthStateEntity,
       ZaloAccountLinkEntity,
+      ZaloMessageLogEntity,
       ChatDailyUsageEntity,
       ChatIdempotencyEntity,
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       StudyReminderJobEntity,
       ScheduledReportClaimEntity,
+      WebhookDeadLetterEntity,
     ]),
   ],
   exports: [TypeOrmModule],

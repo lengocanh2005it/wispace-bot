@@ -12,7 +12,6 @@ import {
   STUDY_REMINDER_JOB_REPOSITORY,
   DISPLAY_NAME_CACHE,
 } from '@wispace/study-reminder-shared';
-import { CleanupCronService } from '@wispace/cleanup-cron';
 import { OpsHealthService, OPS_HEALTH_REPOSITORY } from '@wispace/ops-health';
 import { StudyReminderJobEntity } from '../../infrastructure/database/entities/study-reminder-job.entity';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
@@ -22,7 +21,6 @@ import { ZaloMessageSenderService } from '../zalo-chat/application/services/zalo
 import { ZaloRedisUserDisplayNameCache } from './zalo-redis-user-display-name.cache';
 import { ZaloMappingReaderAdapter } from '../zalo-chat/infrastructure/persistence/zalo-mapping-reader.adapter';
 import { ZaloStudyReminderJobRepository } from '../zalo-chat/infrastructure/persistence/zalo-study-reminder-job.repository';
-import { ZaloCleanupCronService } from '../zalo-chat/application/services/zalo-cleanup-cron.service';
 import { ZaloOpsHealthRepository } from '../zalo-chat/infrastructure/persistence/zalo-ops-health.repository';
 
 @Module({
@@ -80,8 +78,6 @@ import { ZaloOpsHealthRepository } from '../zalo-chat/infrastructure/persistence
     ZaloRedisUserDisplayNameCache,
     ZaloMappingReaderAdapter,
     ZaloStudyReminderJobRepository,
-    CleanupCronService,
-    ZaloCleanupCronService,
     {
       provide: OPS_HEALTH_REPOSITORY,
       useExisting: ZaloOpsHealthRepository,

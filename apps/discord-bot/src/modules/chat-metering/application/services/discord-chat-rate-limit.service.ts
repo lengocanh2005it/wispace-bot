@@ -59,6 +59,10 @@ export class DiscordChatRateLimitService {
     await this.getCore().markCompleted(idempotencyKey);
   }
 
+  async recoverStuckReservedSlots(): Promise<{ recovered: string[] }> {
+    return this.getCore().recoverStuckReservedSlots();
+  }
+
   private getCore(): ChatRateLimitCore {
     if (!this.core) {
       const repository = new ChatRateLimitRepository(
@@ -66,11 +70,13 @@ export class DiscordChatRateLimitService {
         this.idempotencyRepo,
         PLATFORM,
       );
+      const stuckReservedMs = this.configService.getStuckReservedMs();
       this.core = new ChatRateLimitCore(
         repository,
         new MemoryBurstCounter(),
         this.configService.getSettings(),
         { warn: (m) => this.logger.warn(m), log: (m) => this.logger.log(m) },
+        stuckReservedMs,
       );
     }
 

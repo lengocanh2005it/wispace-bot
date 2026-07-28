@@ -27,6 +27,7 @@ import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities/
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 import { DiscordOpsHealthRepository } from './infrastructure/persistence/discord-ops-health.repository';
 import { ReportSendJobEntity } from '../../infrastructure/database/entities/report-send-job.entity';
+import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { DiscordCalendarPort } from './infrastructure/adapters/discord-calendar.port';
 import { DiscordReschedulePort } from './infrastructure/adapters/discord-reschedule.port';
 import { DiscordOutboundService } from './application/services/discord-outbound.service';
@@ -42,6 +43,7 @@ import { DiscordOutboundService } from './application/services/discord-outbound.
       WebhookDeadLetterEntity,
       DiscordMessageLogEntity,
       ReportSendJobEntity,
+      ChatIdempotencyEntity,
     ]),
   ],
   providers: [
