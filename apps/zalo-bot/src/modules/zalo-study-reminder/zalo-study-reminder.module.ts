@@ -50,27 +50,24 @@ import { ZaloOpsHealthRepository } from '../zalo-chat/infrastructure/persistence
     StudyReminderDispatchService,
     {
       provide: StudyReminderWorkerService,
-      useFactory: (
-        syncService: StudyReminderSyncService,
-        dispatchService: StudyReminderDispatchService,
-        scheduleService: StudyReminderScheduleService,
-        schedulerRegistry: SchedulerRegistry,
-        dataSource: DataSource,
-      ) =>
-        new StudyReminderWorkerService(
-          syncService,
-          dispatchService,
-          scheduleService,
-          schedulerRegistry,
-          dataSource,
+
+      useFactory: (...deps: unknown[]) =>
+        new (StudyReminderWorkerService as never as new (
+          ...args: unknown[]
+        ) => StudyReminderWorkerService)(
+          deps[0],
+          deps[1],
+          deps[2],
+          deps[3],
+          deps[4],
           'zalo',
         ),
       inject: [
         StudyReminderSyncService,
         StudyReminderDispatchService,
         StudyReminderScheduleService,
-        SchedulerRegistry,
-        DataSource,
+        { token: SchedulerRegistry, optional: false },
+        { token: DataSource, optional: false },
       ],
     },
     ZaloMessageSenderService,
