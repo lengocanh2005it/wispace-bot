@@ -35,6 +35,11 @@ export interface UpsertStudyReminderJobInput {
   maxRetries: number;
 }
 
+export type GetSessionsFn = (
+  externalUserId: string,
+  userId?: number,
+) => Promise<StudySessionRecord[]>;
+
 export interface StudySessionRecord {
   calendarId: string;
   sessionKey: string;

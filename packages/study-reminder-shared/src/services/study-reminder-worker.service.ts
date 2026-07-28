@@ -10,6 +10,7 @@ import { DataSource } from 'typeorm';
 import { StudyReminderSyncService } from './study-reminder-sync.service';
 import { StudyReminderDispatchService } from './study-reminder-dispatch.service';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
+import type { GetSessionsFn } from '../types/study-reminder.types';
 
 const ADVISORY_LOCK_SYNC = 884_200_901;
 const ADVISORY_LOCK_CLEANUP = 884_200_902;
@@ -21,6 +22,7 @@ export class StudyReminderWorkerService
   private readonly logger = new Logger(StudyReminderWorkerService.name);
   private dispatchTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly platform: string;
+  private readonly getSessions?: GetSessionsFn;
 
   constructor(
     private readonly syncService: StudyReminderSyncService,
@@ -29,8 +31,10 @@ export class StudyReminderWorkerService
     private readonly schedulerRegistry: SchedulerRegistry,
     @InjectDataSource() private readonly dataSource: DataSource,
     platform: string = 'messenger',
+    getSessions?: GetSessionsFn,
   ) {
     this.platform = platform;
+    this.getSessions = getSessions;
   }
 
   async onModuleInit(): Promise<void> {
@@ -65,6 +69,7 @@ export class StudyReminderWorkerService
       try {
         await this.syncService.syncUpcomingSessions({
           platform: this.platform,
+          getSessions: this.getSessions,
         });
       } finally {
         await runner.query('SELECT pg_advisory_unlock($1::bigint)', [
@@ -92,6 +97,7 @@ export class StudyReminderWorkerService
       try {
         await this.syncService.syncUpcomingSessions({
           platform: this.platform,
+          getSessions: this.getSessions,
         });
       } finally {
         await runner.query('SELECT pg_advisory_unlock($1::bigint)', [

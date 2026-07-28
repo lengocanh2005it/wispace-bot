@@ -11,6 +11,7 @@ import { ZaloSharedModule } from './modules/zalo-shared/zalo-shared.module';
 import { ZaloStudyReminderModule } from './modules/zalo-study-reminder/zalo-study-reminder.module';
 import { ZaloReportModule } from './modules/zalo-chat/zalo-report.module';
 import { ZaloMetricsModule } from './modules/metrics/zalo-metrics.module';
+import { ZaloOpsModule } from './modules/zalo-ops/zalo-ops.module';
 
 @Module({
   controllers: [HealthController],
@@ -30,6 +31,7 @@ import { ZaloMetricsModule } from './modules/metrics/zalo-metrics.module';
     ZaloWebhookModule,
     ZaloStudyReminderModule,
     ZaloReportModule,
+    ZaloOpsModule,
     ZaloMetricsModule,
   ],
 })

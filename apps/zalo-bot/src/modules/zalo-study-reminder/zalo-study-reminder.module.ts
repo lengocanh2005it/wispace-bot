@@ -22,6 +22,8 @@ import { ZaloRedisUserDisplayNameCache } from './zalo-redis-user-display-name.ca
 import { ZaloMappingReaderAdapter } from '../zalo-chat/infrastructure/persistence/zalo-mapping-reader.adapter';
 import { ZaloStudyReminderJobRepository } from '../zalo-chat/infrastructure/persistence/zalo-study-reminder-job.repository';
 import { ZaloOpsHealthRepository } from '../zalo-chat/infrastructure/persistence/zalo-ops-health.repository';
+import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
+import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo-wispace-calendar.service';
 
 @Module({
   imports: [
@@ -31,6 +33,7 @@ import { ZaloOpsHealthRepository } from '../zalo-chat/infrastructure/persistence
       ZaloOauthStateEntity,
     ]),
     ZaloChatModule,
+    ZaloWispaceModule,
   ],
   providers: [
     {
@@ -65,6 +68,21 @@ import { ZaloOpsHealthRepository } from '../zalo-chat/infrastructure/persistence
           deps[3],
           deps[4],
           'zalo',
+          deps[5]
+            ? (externalUserId: string) =>
+                (deps[5] as ZaloWispaceCalendarService)
+                  .getCalendarSessions(externalUserId, {
+                    timeRange: 'upcoming',
+                  })
+                  .then((sessions) =>
+                    sessions.map((s) => ({
+                      calendarId: s.sessionKey,
+                      sessionKey: s.sessionKey,
+                      scheduledAt: s.scheduledAt,
+                      topic: s.topic,
+                    })),
+                  )
+            : undefined,
         ),
       inject: [
         StudyReminderSyncService,
@@ -72,6 +90,7 @@ import { ZaloOpsHealthRepository } from '../zalo-chat/infrastructure/persistence
         StudyReminderScheduleService,
         { token: SchedulerRegistry, optional: false },
         { token: DataSource, optional: false },
+        ZaloWispaceCalendarService,
       ],
     },
     ZaloMessageSenderService,
