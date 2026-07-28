@@ -21,7 +21,7 @@ export class ZaloChatHistoryService {
 
   constructor(
     configService: ConfigService,
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+
     @Inject(REDIS_CLIENT) redis: any,
   ) {
     const ttlMs =
