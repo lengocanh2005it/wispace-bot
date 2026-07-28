@@ -6,7 +6,7 @@ import {
   ChatIdempotencyEntity,
   ChatRateLimitCore,
   ChatRateLimitRepository,
-  MemoryBurstCounter,
+  PostgresBurstCounter,
   type ChatQuotaCheckResult,
 } from '@wispace/chat-metering';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
@@ -70,11 +70,12 @@ export class DiscordChatRateLimitService {
         this.idempotencyRepo,
         PLATFORM,
       );
+      const settings = this.configService.getSettings();
       const stuckReservedMs = this.configService.getStuckReservedMs();
       this.core = new ChatRateLimitCore(
         repository,
-        new MemoryBurstCounter(),
-        this.configService.getSettings(),
+        new PostgresBurstCounter(repository, settings.burstCountsRefunded),
+        settings,
         { warn: (m) => this.logger.warn(m), log: (m) => this.logger.log(m) },
         stuckReservedMs,
       );

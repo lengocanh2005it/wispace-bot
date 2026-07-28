@@ -21,6 +21,8 @@ export class DiscordChatQueueService implements OnModuleDestroy {
   private readonly logger = new Logger(DiscordChatQueueService.name);
   private readonly queue: DebounceChatQueue<QueueCtx>;
 
+  private readonly mergedTextMaxChars: number;
+
   constructor(
     configService: ConfigService,
     private readonly rateLimitService: DiscordChatRateLimitService,
@@ -28,6 +30,10 @@ export class DiscordChatQueueService implements OnModuleDestroy {
     private readonly outboundService: DiscordOutboundService,
     private readonly agentService: DiscordAgentService,
   ) {
+    this.mergedTextMaxChars = Math.max(
+      1,
+      Number(configService.get<string>('CHAT_MERGED_TEXT_MAX_CHARS')) || 4000,
+    );
     this.queue = new DebounceChatQueue<QueueCtx>(
       {
         getDebounceMs: () =>
@@ -71,7 +77,7 @@ export class DiscordChatQueueService implements OnModuleDestroy {
       context,
       idempotencyKey,
     } = batch;
-    const mergedText = texts.join('\n').slice(0, 4000);
+    const mergedText = texts.join('\n').slice(0, this.mergedTextMaxChars);
 
     const quota = idempotencyKey
       ? await this.rateLimitService.reserveFreeFormSlot(discordUserId, {
