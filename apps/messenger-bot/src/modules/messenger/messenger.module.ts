@@ -78,6 +78,8 @@ import { MessengerRescheduleConfirmationService } from './application/services/m
     MessengerOutboundModule,
     MessengerService,
     MessengerReportDeliveryService,
+    MessengerCalendarPort,
+    MessengerReschedulePort,
     UserLinkingModule,
   ],
 })

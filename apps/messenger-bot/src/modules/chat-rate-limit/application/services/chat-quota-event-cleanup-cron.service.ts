@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import {
   CleanupCronService,
@@ -23,9 +24,7 @@ export class ChatQuotaEventCleanupCronService {
   private readonly logger = new Logger(ChatQuotaEventCleanupCronService.name);
 
   constructor(
-    private readonly configService: {
-      get: (key: string) => string | undefined;
-    },
+    private readonly configService: ConfigService,
     private readonly chatConfig: ChatRateLimitConfigService,
     @Inject(CHAT_QUOTA_EVENT_REPOSITORY)
     private readonly eventRepository: ChatQuotaEventRepositoryPort,
@@ -34,7 +33,7 @@ export class ChatQuotaEventCleanupCronService {
 
   isEnabled(): boolean {
     const raw = this.configService
-      .get(CLEANUP_CONFIG.enabledConfigKey)
+      .get<string>(CLEANUP_CONFIG.enabledConfigKey)
       ?.trim()
       .toLowerCase();
 

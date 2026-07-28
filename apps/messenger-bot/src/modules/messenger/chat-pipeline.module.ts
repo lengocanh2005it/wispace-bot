@@ -28,6 +28,8 @@ import { STUDY_DATA_PORT } from './domain/ports/study-data.port';
 import { StudyDataAdapter } from './infrastructure/adapters/study-data.adapter';
 import { UserGoalsApiService } from '../student-report/infrastructure/wispace/user-goals-api.service';
 import { StudentReportService } from '../student-report/application/services/student-report.service';
+import { MessengerCalendarPort } from './infrastructure/adapters/messenger-calendar.port';
+import { MessengerReschedulePort } from './infrastructure/adapters/messenger-reschedule.port';
 
 /**
  * Self-contained module for the chat pipeline:
@@ -83,6 +85,8 @@ import { StudentReportService } from '../student-report/application/services/stu
       provide: STUDY_DATA_PORT,
       useExisting: StudyDataAdapter,
     },
+    MessengerCalendarPort,
+    MessengerReschedulePort,
     MessengerChatQueueService,
     MessengerChatQueueWorkerService,
     MessengerAgentService,
