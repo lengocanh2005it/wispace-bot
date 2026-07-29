@@ -23,11 +23,12 @@ export interface StudyReminderJobRepositoryPort {
     nextRetryAt?: Date;
     terminal: boolean;
   }): Promise<void>;
-  markCancelled(jobId: number): Promise<void>;
+  markCancelled(jobId: number, reason?: string): Promise<void>;
   cancelStaleJobsForExternalUserId(
     platform: string,
     externalUserId: string,
     activeSessionKeys: string[],
+    horizonEnd?: Date,
   ): Promise<number>;
   cancelJobsFromOtherPlatforms(
     userId: number,
@@ -39,5 +40,8 @@ export interface StudyReminderJobRepositoryPort {
   deleteTerminalJobsOlderThan(olderThan: Date): Promise<number>;
   countJobsByStatus(platform: string): Promise<Record<string, number>>;
   countTerminalFailedSince(since: Date): Promise<number>;
-  findStuckProcessing(olderThan: Date): Promise<StudyReminderJob[]>;
+  findStuckProcessing(
+    olderThan: Date,
+    limit?: number,
+  ): Promise<StudyReminderJob[]>;
 }

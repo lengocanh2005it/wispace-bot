@@ -16,9 +16,15 @@ import type {
 
 const DEFAULT_PLATFORM = 'messenger';
 
+export type OnUserSyncHook = (
+  userId: number,
+  platform: string,
+) => Promise<void>;
+
 @Injectable()
 export class StudyReminderSyncService {
   private readonly logger = new Logger(StudyReminderSyncService.name);
+  private readonly onUserSync?: OnUserSyncHook;
 
   constructor(
     @Inject(MAPPING_READER)
@@ -26,7 +32,10 @@ export class StudyReminderSyncService {
     @Inject(STUDY_REMINDER_JOB_REPOSITORY)
     private readonly jobRepository: StudyReminderJobRepositoryPort,
     private readonly scheduleService: StudyReminderScheduleService,
-  ) {}
+    onUserSync?: OnUserSyncHook,
+  ) {
+    this.onUserSync = onUserSync;
+  }
 
   async syncUpcomingSessions(opts?: {
     userId?: number;
@@ -67,6 +76,11 @@ export class StudyReminderSyncService {
 
     for (const mapping of mappings) {
       try {
+        // Cross-platform cancel hook (Messenger calls cancelJobsFromOtherPlatforms)
+        if (opts?.userId && mapping.userId) {
+          await this.onUserSync?.(mapping.userId, platform);
+        }
+
         const sessions = opts?.getSessions
           ? await opts.getSessions(mapping.externalUserId, mapping.userId)
           : [];
@@ -103,6 +117,7 @@ export class StudyReminderSyncService {
             platform,
             mapping.externalUserId,
             activeSessionKeys,
+            horizonEnd,
           );
         cancelled += cancelledCount;
       } catch (error) {

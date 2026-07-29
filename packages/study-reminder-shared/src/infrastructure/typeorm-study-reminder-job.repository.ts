@@ -115,7 +115,8 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     });
   }
 
-  async markCancelled(jobId: number): Promise<void> {
+  async markCancelled(jobId: number, reason?: string): Promise<void> {
+    void reason; // reserved for audit logging
     await this.repo.update(jobId, { status: 'cancelled' });
   }
 
@@ -123,9 +124,10 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     platform: string,
     externalUserId: string,
     activeSessionKeys: string[],
+    horizonEnd?: Date,
   ): Promise<number> {
     if (activeSessionKeys.length === 0) return 0;
-    const result = await this.repo
+    const qb = this.repo
       .createQueryBuilder()
       .update(StudyReminderJobEntity)
       .set({ status: 'cancelled' })
@@ -134,8 +136,11 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
       .andWhere('sessionKey NOT IN (:...keys)', { keys: activeSessionKeys })
       .andWhere('status IN (:...statuses)', {
         statuses: ['pending', 'failed'],
-      })
-      .execute();
+      });
+    if (horizonEnd) {
+      qb.andWhere('scheduled_at <= :horizonEnd', { horizonEnd });
+    }
+    const result = await qb.execute();
     return result.affected ?? 0;
   }
 
@@ -228,12 +233,18 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
       .getCount();
   }
 
-  async findStuckProcessing(olderThan: Date): Promise<StudyReminderJob[]> {
-    const rows = await this.repo
+  async findStuckProcessing(
+    olderThan: Date,
+    limit?: number,
+  ): Promise<StudyReminderJob[]> {
+    const qb = this.repo
       .createQueryBuilder('job')
       .where('job.status = :status', { status: 'processing' })
-      .andWhere('job.updated_at < :olderThan', { olderThan })
-      .getMany();
+      .andWhere('job.updated_at < :olderThan', { olderThan });
+    if (limit) {
+      qb.limit(limit);
+    }
+    const rows = await qb.getMany();
     return rows.map((r) => this.mapEntity(r));
   }
 

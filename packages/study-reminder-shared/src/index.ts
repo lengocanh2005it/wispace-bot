@@ -6,6 +6,9 @@ export * from './ports/message-sender.port';
 export * from './ports/mapping-reader.port';
 export * from './ports/display-name-cache.port';
 export * from './ports/study-reminder-job.repository.port';
+export * from './ports/reminder-generator.port';
+export * from './ports/metrics-hook.port';
+export * from './ports/error-classifier.port';
 
 // Entities
 export { StudyReminderJobEntity } from './entities/study-reminder-job.entity';
@@ -15,6 +18,9 @@ export { TypeormStudyReminderJobRepository } from './infrastructure/typeorm-stud
 
 // Services
 export { StudyReminderScheduleService } from './services/study-reminder-schedule.service';
-export { StudyReminderSyncService } from './services/study-reminder-sync.service';
+export {
+  StudyReminderSyncService,
+  type OnUserSyncHook,
+} from './services/study-reminder-sync.service';
 export { StudyReminderDispatchService } from './services/study-reminder-dispatch.service';
 export { StudyReminderWorkerService } from './services/study-reminder-worker.service';

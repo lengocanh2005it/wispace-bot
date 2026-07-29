@@ -1,9 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  MAPPING_READER,
-  type MappingReaderPort,
-} from '../ports/mapping-reader.port';
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
@@ -12,6 +8,15 @@ import {
   MESSAGE_SENDER,
   type MessageSenderPort,
 } from '../ports/message-sender.port';
+import {
+  REMINDER_GENERATOR,
+  type ReminderGeneratorPort,
+} from '../ports/reminder-generator.port';
+import { METRICS_HOOK, type MetricsHook } from '../ports/metrics-hook.port';
+import {
+  ERROR_CLASSIFIER,
+  type ErrorClassifierPort,
+} from '../ports/error-classifier.port';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import type { StudyReminderJob } from '../types/study-reminder.types';
 
@@ -24,9 +29,16 @@ export class StudyReminderDispatchService {
     private readonly jobRepository: StudyReminderJobRepositoryPort,
     @Inject(MESSAGE_SENDER)
     private readonly messageSender: MessageSenderPort,
-    @Inject(MAPPING_READER)
-    private readonly mappingReader: MappingReaderPort,
     private readonly scheduleService: StudyReminderScheduleService,
+    @Optional()
+    @Inject(REMINDER_GENERATOR)
+    private readonly reminderGenerator?: ReminderGeneratorPort,
+    @Optional()
+    @Inject(METRICS_HOOK)
+    private readonly metrics?: MetricsHook,
+    @Optional()
+    @Inject(ERROR_CLASSIFIER)
+    private readonly errorClassifier?: ErrorClassifierPort,
   ) {}
 
   async dispatchDueReminders(): Promise<{
@@ -63,7 +75,14 @@ export class StudyReminderDispatchService {
       claimed += 1;
 
       if (this.scheduleService.isSessionStarted(claimedJob.scheduledAt, now)) {
-        await this.jobRepository.markCancelled(claimedJob.id);
+        await this.jobRepository.markCancelled(
+          claimedJob.id,
+          'session already started',
+        );
+        this.metrics?.onCancelled?.({
+          jobId: claimedJob.id,
+          externalUserId: claimedJob.externalUserId,
+        });
         cancelled += 1;
         continue;
       }
@@ -77,7 +96,7 @@ export class StudyReminderDispatchService {
           now,
         );
 
-        const text = this.buildReminderText(
+        const text = await this.buildReminderText(
           claimedJob,
           timeLabel,
           minutesUntil,
@@ -91,13 +110,20 @@ export class StudyReminderDispatchService {
         });
 
         await this.jobRepository.markSent(claimedJob.id);
+        this.metrics?.onSent?.({
+          jobId: claimedJob.id,
+          externalUserId: claimedJob.externalUserId,
+        });
         sent += 1;
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
 
-        const nextRetryCount = claimedJob.retryCount + 1;
-        const terminal = nextRetryCount >= claimedJob.maxRetries;
+        // Check if error is terminal (no retry)
+        const terminal =
+          this.errorClassifier?.isTerminal(error) ??
+          claimedJob.retryCount + 1 >= claimedJob.maxRetries;
 
+        const nextRetryCount = claimedJob.retryCount + 1;
         const nextRetryAt = terminal
           ? undefined
           : new Date(
@@ -115,11 +141,21 @@ export class StudyReminderDispatchService {
 
         if (terminal) {
           failed += 1;
+          this.metrics?.onFailed?.({
+            jobId: claimedJob.id,
+            externalUserId: claimedJob.externalUserId,
+            error: errorMsg,
+          });
           this.logger.warn(
             `Study reminder job failed terminal jobId=${claimedJob.id} externalUserId=${claimedJob.externalUserId}: ${errorMsg}`,
           );
         } else {
           retried += 1;
+          this.metrics?.onRetried?.({
+            jobId: claimedJob.id,
+            externalUserId: claimedJob.externalUserId,
+            retryCount: nextRetryCount,
+          });
           this.logger.warn(
             `Study reminder job retry jobId=${claimedJob.id} externalUserId=${claimedJob.externalUserId} retry=${nextRetryCount}/${claimedJob.maxRetries}: ${errorMsg}`,
           );
@@ -138,11 +174,28 @@ export class StudyReminderDispatchService {
     return { claimed, sent, cancelled, retried, failed, resetStuck, nextDueAt };
   }
 
-  private buildReminderText(
+  private async buildReminderText(
     job: StudyReminderJob,
     timeLabel: string,
     minutesUntil: number,
-  ): string {
+  ): Promise<string> {
+    if (this.reminderGenerator) {
+      return this.reminderGenerator.generate(
+        {
+          calendarId: job.sessionKey,
+          sessionKey: job.sessionKey,
+          scheduledAt: job.scheduledAt,
+          topic: job.topic,
+        },
+        {
+          externalUserId: job.externalUserId,
+          userId: job.userId,
+          timeLabel,
+          minutesUntil,
+        },
+      );
+    }
+
     const topic = job.topic || 'học tập';
     return `Nhắc lịch: Bạn có lịch ${topic} lúc ${timeLabel} (còn ${minutesUntil} phút).`;
   }
