@@ -7,20 +7,20 @@ import {
   StudyReminderSyncService,
   StudyReminderDispatchService,
   StudyReminderWorkerService,
+  StudyReminderJobEntity,
+  TypeormStudyReminderJobRepository,
   MESSAGE_SENDER,
   MAPPING_READER,
   STUDY_REMINDER_JOB_REPOSITORY,
   DISPLAY_NAME_CACHE,
 } from '@wispace/study-reminder-shared';
 import { OpsHealthService, OPS_HEALTH_REPOSITORY } from '@wispace/ops-health';
-import { StudyReminderJobEntity } from '../../infrastructure/database/entities/study-reminder-job.entity';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloMessageSenderService } from '../zalo-chat/application/services/zalo-message-sender.service';
 import { ZaloRedisUserDisplayNameCache } from './zalo-redis-user-display-name.cache';
 import { ZaloMappingReaderAdapter } from '../zalo-chat/infrastructure/persistence/zalo-mapping-reader.adapter';
-import { ZaloStudyReminderJobRepository } from '../zalo-chat/infrastructure/persistence/zalo-study-reminder-job.repository';
 import { ZaloOpsHealthRepository } from '../zalo-chat/infrastructure/persistence/zalo-ops-health.repository';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo-wispace-calendar.service';
@@ -46,7 +46,7 @@ import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo
     },
     {
       provide: STUDY_REMINDER_JOB_REPOSITORY,
-      useExisting: ZaloStudyReminderJobRepository,
+      useExisting: TypeormStudyReminderJobRepository,
     },
     {
       provide: DISPLAY_NAME_CACHE,
@@ -96,7 +96,7 @@ import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo
     ZaloMessageSenderService,
     ZaloRedisUserDisplayNameCache,
     ZaloMappingReaderAdapter,
-    ZaloStudyReminderJobRepository,
+    TypeormStudyReminderJobRepository,
     {
       provide: OPS_HEALTH_REPOSITORY,
       useExisting: ZaloOpsHealthRepository,

@@ -5,11 +5,15 @@ import type {
   StudyReminderJobRepositoryPort,
   StudyReminderJob,
   UpsertStudyReminderJobInput,
-} from '@wispace/study-reminder-shared';
-import { StudyReminderJobEntity } from '../../../../infrastructure/database/entities/study-reminder-job.entity';
+} from '../ports/study-reminder-job.repository.port';
+import { StudyReminderJobEntity } from '../entities/study-reminder-job.entity';
 
+/**
+ * TypeORM implementation of StudyReminderJobRepositoryPort.
+ * Shared across Discord and Zalo — eliminates the 256-line clone in each app.
+ */
 @Injectable()
-export class ZaloStudyReminderJobRepository implements StudyReminderJobRepositoryPort {
+export class TypeormStudyReminderJobRepository implements StudyReminderJobRepositoryPort {
   constructor(
     @InjectRepository(StudyReminderJobEntity)
     private readonly repo: Repository<StudyReminderJobEntity>,

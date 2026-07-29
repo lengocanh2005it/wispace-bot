@@ -3,6 +3,8 @@ import type {
   UpsertStudyReminderJobInput,
 } from '../types/study-reminder.types';
 
+export type { StudyReminderJob, UpsertStudyReminderJobInput };
+
 export const STUDY_REMINDER_JOB_REPOSITORY = Symbol(
   'STUDY_REMINDER_JOB_REPOSITORY',
 );

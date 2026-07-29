@@ -6,7 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { StudyReminderJobStatus } from '@wispace/study-reminder-shared';
+import type { StudyReminderJobStatus } from '../types/study-reminder.types';
 
 @Entity('study_reminder_jobs')
 @Index(
@@ -19,7 +19,7 @@ export class StudyReminderJobEntity {
   @PrimaryGeneratedColumn()
   id: number;
 
-  @Column({ type: 'varchar', length: 16, default: 'discord' })
+  @Column({ type: 'varchar', length: 16 })
   platform: string;
 
   @Column({ name: 'external_user_id', type: 'varchar', length: 64 })

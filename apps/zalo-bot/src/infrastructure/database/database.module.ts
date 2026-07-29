@@ -12,7 +12,7 @@ import {
   LlmUsageEventEntity,
   LlmSafetyEventEntity,
 } from '@wispace/chat-metering';
-import { StudyReminderJobEntity } from './entities/study-reminder-job.entity';
+import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
 import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
 import { WebhookDeadLetterEntity } from './entities/webhook-dead-letter.entity';
 

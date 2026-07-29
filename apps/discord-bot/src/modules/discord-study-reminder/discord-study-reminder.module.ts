@@ -7,19 +7,19 @@ import {
   StudyReminderSyncService,
   StudyReminderDispatchService,
   StudyReminderWorkerService,
+  StudyReminderJobEntity,
+  TypeormStudyReminderJobRepository,
   MESSAGE_SENDER,
   MAPPING_READER,
   STUDY_REMINDER_JOB_REPOSITORY,
   DISPLAY_NAME_CACHE,
 } from '@wispace/study-reminder-shared';
-import { StudyReminderJobEntity } from '../../infrastructure/database/entities/study-reminder-job.entity';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordChatModule } from '../discord-chat/discord-chat.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { WispaceCalendarService } from '../wispace/application/services/wispace-calendar.service';
 import { DiscordStudyReminderMessageSenderService } from '../discord-chat/application/services/discord-study-reminder-message-sender.service';
 import { DiscordMappingReaderAdapter } from '../discord-chat/infrastructure/persistence/discord-mapping-reader.adapter';
-import { DiscordStudyReminderJobRepository } from '../discord-chat/infrastructure/persistence/discord-study-reminder-job.repository';
 import { DiscordRedisUserDisplayNameCache } from './discord-redis-user-display-name.cache';
 
 @Module({
@@ -42,7 +42,7 @@ import { DiscordRedisUserDisplayNameCache } from './discord-redis-user-display-n
     },
     {
       provide: STUDY_REMINDER_JOB_REPOSITORY,
-      useExisting: DiscordStudyReminderJobRepository,
+      useExisting: TypeormStudyReminderJobRepository,
     },
     {
       provide: DISPLAY_NAME_CACHE,
@@ -91,7 +91,7 @@ import { DiscordRedisUserDisplayNameCache } from './discord-redis-user-display-n
     DiscordRedisUserDisplayNameCache,
     DiscordStudyReminderMessageSenderService,
     DiscordMappingReaderAdapter,
-    DiscordStudyReminderJobRepository,
+    TypeormStudyReminderJobRepository,
   ],
   exports: [
     StudyReminderSyncService,
