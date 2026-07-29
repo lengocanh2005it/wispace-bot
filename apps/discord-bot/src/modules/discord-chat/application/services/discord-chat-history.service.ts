@@ -7,7 +7,7 @@ import {
   type ChatHistoryStorePort,
   type RedisChatHistoryClient,
 } from '@wispace/chat-history';
-import { REDIS_CLIENT } from '../../../../infrastructure/redis/domain/redis.client.port';
+import { REDIS_CLIENT } from '@discord/infrastructure/redis/domain/redis.client.port';
 import type Redis from 'ioredis';
 
 const DEFAULT_MAX_MESSAGES = 20; // 10 turns (user + assistant)

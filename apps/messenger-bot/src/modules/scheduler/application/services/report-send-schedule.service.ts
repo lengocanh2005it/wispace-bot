@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { readRequiredPositiveNumber } from '../../../../shared/config/env-helpers';
+import { readRequiredPositiveNumber } from '@messenger/shared/config/env-helpers';
 
 @Injectable()
 export class ReportSendScheduleService {

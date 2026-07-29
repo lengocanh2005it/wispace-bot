@@ -6,11 +6,11 @@ import {
   getMinutesUntilSession,
   isSessionStarted,
 } from '@wispace/study-reminder-core';
-import { resolveAppTimezone } from '../../../../shared/config/app-timezone';
+import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 import {
   readOptionalPositiveNumber,
   readRequiredPositiveNumber,
-} from '../../../../shared/config/env-helpers';
+} from '@messenger/shared/config/env-helpers';
 
 @Injectable()
 export class StudyReminderScheduleService {

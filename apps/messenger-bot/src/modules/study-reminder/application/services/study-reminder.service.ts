@@ -6,26 +6,26 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { type LlmProviderAdapter } from '@wispace/llm-agent';
-import { loadSystemPrompt } from '../../../../shared/prompts/load-system-prompt';
+import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
 import {
   DEFAULT_TOPIC,
   FALLBACK_DISPLAY_NAME,
-} from '../../../../shared/config/poc.constants';
+} from '@messenger/shared/config/poc.constants';
 import {
   parseJsonObject,
   readRequiredStringArrayField,
   readRequiredStringField,
-} from '../../../../shared/utils/llm-json-output.utils';
+} from '@messenger/shared/utils/llm-json-output.utils';
 import { sanitizeUntrustedTextForLlm } from '@wispace/llm-agent';
-import { TaskScoreAverageApiService } from '../../../student-report/infrastructure/wispace/task-score-average-api.service';
-import { UserGoalsApiService } from '../../../student-report/infrastructure/wispace/user-goals-api.service';
+import { TaskScoreAverageApiService } from '@messenger/modules/student-report/infrastructure/wispace/task-score-average-api.service';
+import { UserGoalsApiService } from '@messenger/modules/student-report/infrastructure/wispace/user-goals-api.service';
 import {
   NormalizedStudySession,
   StudyReminderLlmInput,
   StudyReminderLlmOutput,
 } from '../../domain/entities/study-schedule.types';
-import { LlmExecutionService } from '../../../llm-execution/application/services/llm-execution.service';
-import { LlmUsageRecorderService } from '../../../llm-usage/application/services/llm-usage-recorder.service';
+import { LlmExecutionService } from '@messenger/modules/llm-execution/application/services/llm-execution.service';
+import { LlmUsageRecorderService } from '@messenger/modules/llm-usage/application/services/llm-usage-recorder.service';
 import { UserDisplayNameService } from './user-display-name.service';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { StudySessionSourceService } from './study-session-source.service';

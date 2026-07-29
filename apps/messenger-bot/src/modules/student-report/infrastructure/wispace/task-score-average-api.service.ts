@@ -12,12 +12,12 @@ import { StudentReportNoScoreDataError } from '../../domain/errors/student-repor
 import { TaskScoreAverageRecord } from '../../domain/types/task-score-average.types';
 import type { StudentCapacityInput } from '@wispace/student-report';
 import { UserGoalsApiService } from './user-goals-api.service';
-import { resolveAppTimezone } from '../../../../shared/config/app-timezone';
+import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 import {
   formatExamDateDisplay,
   resolveExamCountdown,
-} from '../../../../shared/utils/exam-date.utils';
-import { todayReportDate } from '../../../../shared/utils/report-date.utils';
+} from '@messenger/shared/utils/exam-date.utils';
+import { todayReportDate } from '@messenger/shared/utils/report-date.utils';
 
 const ID_HEADER = 'x-psid' as const;
 

@@ -15,7 +15,7 @@ import {
 } from '@wispace/wispace-client';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { StudyReminderSyncService } from './study-reminder-sync.service';
-import { DEFAULT_TOPIC } from '../../../../shared/config/poc.constants';
+import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
 
 export interface StudyCalendarEntryView {
   calendarId: number;

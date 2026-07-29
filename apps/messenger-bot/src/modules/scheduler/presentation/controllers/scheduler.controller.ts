@@ -6,10 +6,10 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { InternalApiKeyGuard } from '../../../../shared/common/guards/internal-api-key.guard';
-import { StudyReminderSyncService } from '../../../study-reminder/application/services/study-reminder-sync.service';
-import { StudyReminderWorkerService } from '../../../study-reminder/application/services/study-reminder-worker.service';
-import { MessengerMappingService } from '../../../messenger/application/services/messenger-mapping.service';
+import { InternalApiKeyGuard } from '@messenger/shared/common/guards/internal-api-key.guard';
+import { StudyReminderSyncService } from '@messenger/modules/study-reminder/application/services/study-reminder-sync.service';
+import { StudyReminderWorkerService } from '@messenger/modules/study-reminder/application/services/study-reminder-worker.service';
+import { MessengerMappingService } from '@messenger/modules/messenger/application/services/messenger-mapping.service';
 import {
   DopplerRuntimeSyncService,
   type DopplerWebhookPayload,

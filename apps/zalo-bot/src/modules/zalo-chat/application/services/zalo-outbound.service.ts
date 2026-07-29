@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ZaloTokenService } from '../../../zalo-oauth/application/services/zalo-token.service';
-import type { ZaloMessageSenderPort } from '../../../zalo-webhook/domain/ports/zalo-message-sender.port';
+import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
+import type { ZaloMessageSenderPort } from '@zalo/modules/zalo-webhook/domain/ports/zalo-message-sender.port';
 
 const SEND_TEXT_ENDPOINT = 'https://openapi.zalo.me/v3.0/oa/message/cs';
 const SEND_TIMEOUT_MS = 10_000;

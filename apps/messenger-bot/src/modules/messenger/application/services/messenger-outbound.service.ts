@@ -14,9 +14,9 @@ import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.reposi
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import type { MessageSenderPort } from '../ports/message-sender.port';
 import { readMessengerBubbleLimits } from '../utils/messenger-bubble-config.utils';
-import { splitMessengerBubbles } from '../../../../shared/utils/messenger-text.utils';
+import { splitMessengerBubbles } from '@messenger/shared/utils/messenger-text.utils';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
-import { keepAliveFetch } from '../../../../shared/http/http-agent';
+import { keepAliveFetch } from '@messenger/shared/http/http-agent';
 
 export class MessengerApiError extends Error {
   constructor(

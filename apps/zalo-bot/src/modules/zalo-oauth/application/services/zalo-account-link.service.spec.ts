@@ -2,8 +2,8 @@ import { createHash } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
 import { ZaloAccountLinkService } from './zalo-account-link.service';
-import { ZaloAccountLinkEntity } from '../../../../infrastructure/database/entities/zalo-account-link.entity';
-import { base64url } from '../../../../shared/utils/base64url';
+import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
+import { base64url } from '@zalo/shared/utils/base64url';
 
 function buildConfig(): ConfigService {
   return {

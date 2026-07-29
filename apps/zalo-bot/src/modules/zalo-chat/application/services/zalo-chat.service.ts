@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { ZaloWebhookHandler } from '../../../zalo-webhook/domain/ports/zalo-webhook-handler.port';
+import type { ZaloWebhookHandler } from '@zalo/modules/zalo-webhook/domain/ports/zalo-webhook-handler.port';
 import { ZaloOutboundService } from './zalo-outbound.service';
-import { ZaloAccountLinkService } from '../../../zalo-oauth/application/services/zalo-account-link.service';
+import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { ZaloChatQueueService } from './zalo-chat-queue.service';
 
 const FALLBACK_ERROR_MESSAGE =

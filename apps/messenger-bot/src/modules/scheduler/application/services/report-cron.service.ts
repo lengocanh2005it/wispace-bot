@@ -17,9 +17,9 @@ import {
 import {
   MESSENGER_REPOSITORY,
   type MessengerRepositoryPort,
-} from '../../../messenger/domain/repositories/messenger.repository.port';
+} from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
-import type { UserMessengerMapping } from '../../../messenger/domain/entities/messenger.types';
+import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
 import type { ClaimAndSendResult } from './report-send-orchestration.service';
 
 const ZERO: ClaimAndSendResult = {

@@ -9,9 +9,9 @@ import {
   UserGoalsApiClient,
   type WispaceApiClientConfig,
 } from '@wispace/wispace-client';
-import { MetricsService } from '../../../metrics/metrics.service';
+import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import type { UserGoalsRecord } from '@wispace/wispace-client';
-import { parseExamDateToIso } from '../../../../shared/utils/exam-date.utils';
+import { parseExamDateToIso } from '@messenger/shared/utils/exam-date.utils';
 
 const ID_HEADER = 'x-psid' as const;
 

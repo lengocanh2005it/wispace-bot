@@ -1,4 +1,4 @@
-import type { RedisClientPort } from '../../../../infrastructure/redis/redis.client.port';
+import type { RedisClientPort } from '@messenger/infrastructure/redis/redis.client.port';
 import { RedisChatBurstCounter } from './redis-chat-burst-counter';
 
 describe('RedisChatBurstCounter', () => {

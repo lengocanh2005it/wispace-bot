@@ -8,18 +8,18 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import type { ChatQueueBatch } from '@wispace/chat-queue-core';
-import { MessengerLinkContext } from '../../../../shared/config/poc.constants';
+import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import {
   capMergedChatUserText,
   mergeChatUserTexts,
-} from '../../../../shared/utils/messenger-text.utils';
-import { ChatRateLimitService } from '../../../chat-rate-limit/application/services/chat-rate-limit.service';
+} from '@messenger/shared/utils/messenger-text.utils';
+import { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import { CHAT_QUEUE_STORE } from '../../domain/repositories/chat-queue.store.port';
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
 import { MessengerAgentService } from '../agent/messenger-agent.service';
-import type { ChatQuotaCheckResult } from '../../../chat-rate-limit/domain/entities/chat-quota.types';
+import type { ChatQuotaCheckResult } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota.types';
 import {
   buildChatQuotaDenyMessage,
   buildChatQuotaRemainingHintMessage,
@@ -34,7 +34,7 @@ import {
   MessengerPartialSendError,
 } from './messenger-outbound.service';
 import { buildChatDeliveryErrorMessage } from '../messages/chat-delivery.messages';
-import { MetricsService } from '../../../metrics/metrics.service';
+import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import { trace, context, SpanStatusCode, SpanKind } from '@opentelemetry/api';
 
 export interface EnqueueChatMessageInput {

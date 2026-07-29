@@ -1,5 +1,5 @@
-import type { ChatQuotaOpsSummary } from '../../../chat-rate-limit/domain/entities/chat-quota-ops.types';
-import type { StudyReminderOpsSummary } from '../../../study-reminder/domain/entities/study-reminder-ops.types';
+import type { ChatQuotaOpsSummary } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota-ops.types';
+import type { StudyReminderOpsSummary } from '@messenger/modules/study-reminder/domain/entities/study-reminder-ops.types';
 
 export type OpsHealthAlertSeverity = 'warn' | 'info';
 

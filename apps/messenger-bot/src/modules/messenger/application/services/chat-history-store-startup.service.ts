@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import {
   REDIS_CLIENT,
   type RedisClientPort,
-} from '../../../../infrastructure/redis/redis.client.port';
+} from '@messenger/infrastructure/redis/redis.client.port';
 import { ChatHistoryStoreResolver } from '../../infrastructure/persistence/chat-history.store.resolver';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 

@@ -5,7 +5,7 @@ import type { MessengerRepositoryPort } from '../../domain/repositories/messenge
 import type {
   MessengerMappingReaderPort,
   UserLink,
-} from '../../../../shared/ports/messenger-mapping-reader.port';
+} from '@messenger/shared/ports/messenger-mapping-reader.port';
 
 /**
  * Adapts MessengerRepositoryPort (returns full UserMessengerMapping)

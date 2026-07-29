@@ -12,7 +12,7 @@ import type { Response } from 'express';
 import { DiscordPendingJoinService } from '../../application/services/discord-pending-join.service';
 import { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
 import { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';
-import { DiscordOutboundService } from '../../../discord-chat/application/services/discord-outbound.service';
+import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
 import { buildDiscordLinkWelcomeMessage } from '../../application/messages/account-link.messages';
 
 @Controller('discord/guild')

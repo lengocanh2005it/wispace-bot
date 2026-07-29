@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { REDIS_CLIENT } from '../../../../infrastructure/redis/redis.client.port';
-import type { RedisClientPort } from '../../../../infrastructure/redis/redis.client.port';
+import { REDIS_CLIENT } from '@messenger/infrastructure/redis/redis.client.port';
+import type { RedisClientPort } from '@messenger/infrastructure/redis/redis.client.port';
 import type { ChatHistoryMessage } from '../../domain/entities/messenger-store.types';
 import type { ChatHistoryStorePort } from '../../domain/repositories/chat-history.store.port';
 import { MessengerChatSharedConfigService } from '../../application/services/messenger-chat-shared-config.service';

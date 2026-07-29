@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
-import { ChatQuotaEventEntity } from '../../../../infrastructure/database/entities/chat-quota-event.entity';
+import { ChatQuotaEventEntity } from '@messenger/infrastructure/database/entities/chat-quota-event.entity';
 import type {
   ChatQuotaEventRepositoryPort,
   InsertChatQuotaDeniedInput,

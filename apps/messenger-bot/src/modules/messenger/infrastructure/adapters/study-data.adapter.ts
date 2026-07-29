@@ -7,10 +7,10 @@ import type {
   StudyReminderLlmOutput,
   CalendarSessionTimeRange,
 } from '../../domain/ports/study-data.port';
-import { StudySessionSourceService } from '../../../study-reminder/application/services/study-session-source.service';
-import { StudyReminderService } from '../../../study-reminder/application/services/study-reminder.service';
-import { StudyReminderScheduleService } from '../../../study-reminder/application/services/study-reminder-schedule.service';
-import { StudyCalendarCommandService } from '../../../study-reminder/application/services/study-calendar-command.service';
+import { StudySessionSourceService } from '@messenger/modules/study-reminder/application/services/study-session-source.service';
+import { StudyReminderService } from '@messenger/modules/study-reminder/application/services/study-reminder.service';
+import { StudyReminderScheduleService } from '@messenger/modules/study-reminder/application/services/study-reminder-schedule.service';
+import { StudyCalendarCommandService } from '@messenger/modules/study-reminder/application/services/study-calendar-command.service';
 
 @Injectable()
 export class StudyDataAdapter implements StudyDataPort {

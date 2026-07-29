@@ -1,5 +1,5 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { InternalApiKeyGuard } from '../../../../shared/common/guards/internal-api-key.guard';
+import { InternalApiKeyGuard } from '@messenger/shared/common/guards/internal-api-key.guard';
 import { LlmUsageQueryService } from '../../application/services/llm-usage-query.service';
 
 @Controller('messenger/ops/llm-usage')

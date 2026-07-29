@@ -1,6 +1,6 @@
 import type { Repository } from 'typeorm';
 import { ZaloOauthStateService } from './zalo-oauth-state.service';
-import { ZaloOauthStateEntity } from '../../../../infrastructure/database/entities/zalo-oauth-state.entity';
+import { ZaloOauthStateEntity } from '@zalo/infrastructure/database/entities/zalo-oauth-state.entity';
 
 function buildRepo(overrides: Partial<Repository<ZaloOauthStateEntity>> = {}) {
   return {

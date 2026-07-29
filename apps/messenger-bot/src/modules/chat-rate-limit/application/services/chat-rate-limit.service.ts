@@ -13,7 +13,7 @@ import {
   type ChatBurstCounterPort,
 } from '../../domain/repositories/chat-burst-counter.port';
 import { todayUsageDate } from '@wispace/chat-metering';
-import { MetricsService } from '../../../metrics/metrics.service';
+import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
 import { ChatQuotaEventRecorderService } from './chat-quota-event-recorder.service';
 

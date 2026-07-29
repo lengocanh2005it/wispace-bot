@@ -10,8 +10,8 @@ import {
 import {
   readEnvBoolean,
   readEnvPositiveInt,
-} from '../../../../shared/config/env-helpers';
-import { resolveAppTimezone } from '../../../../shared/config/app-timezone';
+} from '@messenger/shared/config/env-helpers';
+import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 
 @Injectable()
 export class LlmUsageConfigService {

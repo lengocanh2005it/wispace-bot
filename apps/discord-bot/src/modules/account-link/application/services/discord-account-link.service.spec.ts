@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
-import type { DiscordAccountLinkEntity } from '../../../../infrastructure/database/entities/discord-account-link.entity';
+import type { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
 import { DiscordAccountLinkService } from './discord-account-link.service';
 
 const CONFIG_VALUES: Record<string, string> = {

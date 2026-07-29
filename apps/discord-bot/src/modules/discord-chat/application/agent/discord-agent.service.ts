@@ -16,8 +16,8 @@ import type {
 } from '../../domain/entities/discord-chat.types';
 import { DiscordAgentToolsService } from './discord-agent-tools.service';
 import { DiscordChatHistoryService } from '../services/discord-chat-history.service';
-import { DiscordLlmUsageRecorderService } from '../../../chat-metering/application/services/discord-llm-usage-recorder.service';
-import { DiscordLlmSafetyEventService } from '../../../chat-metering/application/services/discord-llm-safety-event.service';
+import { DiscordLlmUsageRecorderService } from '@discord/modules/chat-metering/application/services/discord-llm-usage-recorder.service';
+import { DiscordLlmSafetyEventService } from '@discord/modules/chat-metering/application/services/discord-llm-safety-event.service';
 
 const FEATURE = 'FREE_FORM_CHAT';
 

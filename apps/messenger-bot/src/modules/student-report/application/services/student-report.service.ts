@@ -6,12 +6,12 @@ import {
 } from '@wispace/student-report';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { todayUsageDate } from '@wispace/chat-metering';
-import { resolveAppTimezone } from '../../../../shared/config/app-timezone';
-import { loadSystemPrompt } from '../../../../shared/prompts/load-system-prompt';
-import { sanitizeMessengerText } from '../../../../shared/utils/messenger-text.utils';
-import { LlmExecutionService } from '../../../llm-execution/application/services/llm-execution.service';
-import type { LlmExecutionContext } from '../../../llm-execution/application/types/llm-execution.types';
-import { LlmUsageRecorderService } from '../../../llm-usage/application/services/llm-usage-recorder.service';
+import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
+import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
+import { sanitizeMessengerText } from '@messenger/shared/utils/messenger-text.utils';
+import { LlmExecutionService } from '@messenger/modules/llm-execution/application/services/llm-execution.service';
+import type { LlmExecutionContext } from '@messenger/modules/llm-execution/application/types/llm-execution.types';
+import { LlmUsageRecorderService } from '@messenger/modules/llm-usage/application/services/llm-usage-recorder.service';
 import { TaskScoreAverageApiService } from '../../infrastructure/wispace/task-score-average-api.service';
 
 /**

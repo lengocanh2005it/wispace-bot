@@ -2,7 +2,7 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import {
   MESSENGER_MAPPING_READER,
   type MessengerMappingReaderPort,
-} from '../../../../shared/ports/messenger-mapping-reader.port';
+} from '@messenger/shared/ports/messenger-mapping-reader.port';
 import type {
   LlmUsageAggregateRow,
   LlmUsageFeatureSummary,

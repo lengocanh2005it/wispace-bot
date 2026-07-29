@@ -1,4 +1,4 @@
-import type { MessengerLinkContext } from '../../../../shared/config/poc.constants';
+import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import type { ChatHistoryMessage } from '../../domain/entities/messenger-store.types';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
 

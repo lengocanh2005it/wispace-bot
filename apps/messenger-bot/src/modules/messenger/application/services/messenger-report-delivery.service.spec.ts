@@ -1,7 +1,7 @@
 import { MessengerReportDeliveryService } from './messenger-report-delivery.service';
 import { ProactiveMessenger24hSkippedError } from '../utils/proactive-send.utils';
-import type { RetryableApiError } from '../../../student-report/domain/errors/wispace-api.error';
-import { StudentReportRetryableError } from '../../../student-report/domain/errors/wispace-api.error';
+import type { RetryableApiError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
+import { StudentReportRetryableError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
 
 describe('MessengerReportDeliveryService', () => {
   const buildService = (overrides?: {

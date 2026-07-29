@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   MessengerLinkContext,
   parseMessengerLinkContext,
-} from '../../../../shared/config/poc.constants';
+} from '@messenger/shared/config/poc.constants';
 import type { MessengerLinkResolveOutcome } from '../../domain/types/messenger-link-verify.types';
 import { WispaceMessengerTokenVerifyService } from '../../infrastructure/wispace/wispace-messenger-token-verify.service';
 

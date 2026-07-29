@@ -8,7 +8,7 @@ import {
   CHAT_QUOTA_EVENT_REPOSITORY,
   type ChatQuotaEventRepositoryPort,
 } from '../../domain/repositories/chat-quota-event.repository.port';
-import { runInBackground } from '../../../../shared/utils/run-in-background.utils';
+import { runInBackground } from '@messenger/shared/utils/run-in-background.utils';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
 
 @Injectable()

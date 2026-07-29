@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { WebhookDeadLetterEntity } from '../../../../infrastructure/database/entities/webhook-dead-letter.entity';
+import { WebhookDeadLetterEntity } from '@discord/infrastructure/database/entities/webhook-dead-letter.entity';
 
 const PLATFORM = 'discord' as const;
 

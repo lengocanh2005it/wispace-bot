@@ -1,18 +1,18 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ChatQuotaOpsService } from '../../../chat-rate-limit/application/services/chat-quota-ops.service';
+import { ChatQuotaOpsService } from '@messenger/modules/chat-rate-limit/application/services/chat-quota-ops.service';
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
-} from '../../../study-reminder/domain/repositories/study-reminder-job.repository.port';
-import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '../../../messenger/domain/repositories/messenger-message-log.repository.port';
-import type { MessengerMessageLogRepositoryPort } from '../../../messenger/domain/repositories/messenger-message-log.repository.port';
-import { LlmSafetyService } from '../../../llm-safety/llm-safety.service';
+} from '@messenger/modules/study-reminder/domain/repositories/study-reminder-job.repository.port';
+import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
+import type { MessengerMessageLogRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
+import { LlmSafetyService } from '@messenger/modules/llm-safety/llm-safety.service';
 import type {
   OpsHealthAlert,
   OpsHealthSnapshot,
 } from '../../domain/entities/ops-health.types';
-import type { StudyReminderOpsSummary } from '../../../study-reminder/domain/entities/study-reminder-ops.types';
+import type { StudyReminderOpsSummary } from '@messenger/modules/study-reminder/domain/entities/study-reminder-ops.types';
 
 @Injectable()
 export class OpsHealthService {

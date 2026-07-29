@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { WebhookDeadLetterEntity } from '../../../../infrastructure/database/entities/webhook-dead-letter.entity';
+import { WebhookDeadLetterEntity } from '@messenger/infrastructure/database/entities/webhook-dead-letter.entity';
 import type {
   ListPendingForRetryOptions,
   MessengerWebhookDeadLetterRepositoryPort,

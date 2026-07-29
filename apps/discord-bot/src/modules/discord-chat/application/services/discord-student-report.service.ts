@@ -8,8 +8,8 @@ import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { todayUsageDate } from '@wispace/chat-metering';
 import { join } from 'path';
 import { loadSystemPromptFile } from '@wispace/llm-agent';
-import { DiscordLlmUsageRecorderService } from '../../../chat-metering/application/services/discord-llm-usage-recorder.service';
-import { WispaceGoalsService } from '../../../wispace/application/services/wispace-goals.service';
+import { DiscordLlmUsageRecorderService } from '@discord/modules/chat-metering/application/services/discord-llm-usage-recorder.service';
+import { WispaceGoalsService } from '@discord/modules/wispace/application/services/wispace-goals.service';
 import type { StudentCapacityInput } from '@wispace/student-report';
 
 const FEATURE = 'STUDENT_REPORT';

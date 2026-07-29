@@ -11,10 +11,10 @@ import {
 import {
   MESSENGER_REPOSITORY,
   type MessengerRepositoryPort,
-} from '../../../messenger/domain/repositories/messenger.repository.port';
+} from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
-import { PgAdvisoryLockService } from '../../../../shared/common/pg-advisory-lock.service';
-import { ADVISORY_LOCK } from '../../../../shared/common/advisory-lock-ids';
+import { PgAdvisoryLockService } from '@messenger/shared/common/pg-advisory-lock.service';
+import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 
 @Injectable()
 export class ReportSendRetryDispatchService {

@@ -4,7 +4,7 @@ import { DiscordOauthController } from './discord-oauth.controller';
 import type { ConfigService } from '@nestjs/config';
 import type { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';
 import type { WispaceDiscordTokenVerifyService } from '../../infrastructure/wispace/wispace-discord-token-verify.service';
-import type { DiscordOutboundService } from '../../../discord-chat/application/services/discord-outbound.service';
+import type { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
 import type { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
 import type { DiscordPendingJoinService } from '../../application/services/discord-pending-join.service';
 

@@ -1,6 +1,6 @@
 import { StudyReminderJob } from '../../domain/entities/study-reminder-job.types';
 import { NormalizedStudySession } from '../../domain/entities/study-schedule.types';
-import { DEFAULT_TOPIC } from '../../../../shared/config/poc.constants';
+import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
 
 export function buildStudyReminderMessageType(
   session: NormalizedStudySession,

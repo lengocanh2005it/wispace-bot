@@ -3,7 +3,7 @@ import type {
   CalendarPort,
   CalendarEntryView,
 } from '@wispace/reschedule-confirm';
-import { StudyCalendarCommandService } from '../../../study-reminder/application/services/study-calendar-command.service';
+import { StudyCalendarCommandService } from '@messenger/modules/study-reminder/application/services/study-calendar-command.service';
 
 @Injectable()
 export class MessengerCalendarPort implements CalendarPort<string> {

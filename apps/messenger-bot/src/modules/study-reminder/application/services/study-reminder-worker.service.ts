@@ -8,8 +8,8 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Cron, SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
-import { ADVISORY_LOCK } from '../../../../shared/common/advisory-lock-ids';
-import { PgAdvisoryLockService } from '../../../../shared/common/pg-advisory-lock.service';
+import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
+import { PgAdvisoryLockService } from '@messenger/shared/common/pg-advisory-lock.service';
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,

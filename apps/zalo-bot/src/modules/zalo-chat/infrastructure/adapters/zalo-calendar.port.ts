@@ -3,7 +3,7 @@ import type {
   CalendarPort,
   CalendarEntryView,
 } from '@wispace/reschedule-confirm';
-import { ZaloWispaceCalendarService } from '../../../wispace/application/services/zalo-wispace-calendar.service';
+import { ZaloWispaceCalendarService } from '@zalo/modules/wispace/application/services/zalo-wispace-calendar.service';
 
 @Injectable()
 export class ZaloCalendarPort implements CalendarPort<string> {

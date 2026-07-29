@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { MessengerLinkContext } from '../../../../shared/config/poc.constants';
-import { StudyReminderSyncService } from '../../../study-reminder/application/services/study-reminder-sync.service';
+import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
+import { StudyReminderSyncService } from '@messenger/modules/study-reminder/application/services/study-reminder-sync.service';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import { UserMessengerMapping } from '../../domain/entities/messenger.types';

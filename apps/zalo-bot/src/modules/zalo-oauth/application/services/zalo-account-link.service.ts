@@ -3,8 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
-import { ZaloAccountLinkEntity } from '../../../../infrastructure/database/entities/zalo-account-link.entity';
-import { base64url } from '../../../../shared/utils/base64url';
+import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
+import { base64url } from '@zalo/shared/utils/base64url';
 
 const PLATFORM = 'zalo' as const;
 const ZALO_TOKEN_ENDPOINT = 'https://oauth.zaloapp.com/v4/access_token';

@@ -1,5 +1,5 @@
 import { ZaloOutboundService } from './zalo-outbound.service';
-import { ZaloTokenService } from '../../../zalo-oauth/application/services/zalo-token.service';
+import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
 
 describe('ZaloOutboundService', () => {
   it('sends a text consultation message with the current access token', async () => {

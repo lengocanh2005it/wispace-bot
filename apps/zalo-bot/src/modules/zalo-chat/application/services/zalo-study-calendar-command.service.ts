@@ -6,8 +6,8 @@ import {
   type UserCalendarRecord,
 } from '@wispace/wispace-client';
 import { formatScheduledTimeLabel } from '@wispace/study-reminder-core';
-import { ZaloWispaceCalendarService } from '../../../wispace/application/services/zalo-wispace-calendar.service';
-import { ZaloWispaceConfigService } from '../../../wispace/application/services/zalo-wispace-config.service';
+import { ZaloWispaceCalendarService } from '@zalo/modules/wispace/application/services/zalo-wispace-calendar.service';
+import { ZaloWispaceConfigService } from '@zalo/modules/wispace/application/services/zalo-wispace-config.service';
 
 export interface RescheduleStudySessionResult {
   cancelledCalendarId: number;

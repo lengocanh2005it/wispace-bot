@@ -3,7 +3,7 @@ import type {
   CalendarPort,
   CalendarEntryView,
 } from '@wispace/reschedule-confirm';
-import { DiscordStudyCalendarCommandService } from '../../../wispace/application/services/discord-study-calendar-command.service';
+import { DiscordStudyCalendarCommandService } from '@discord/modules/wispace/application/services/discord-study-calendar-command.service';
 
 @Injectable()
 export class DiscordCalendarPort implements CalendarPort<string> {

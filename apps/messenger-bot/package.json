@@ -14,7 +14,7 @@
     "env:sync-prod": "gh workflow run sync-env.yml",
     "env:upload-doppler": "node scripts/upload-env-to-doppler.mjs .env",
     "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
+    "start:prod": "node -r tsconfig-paths/register dist/main",
     "db:inspect": "node --env-file=.env scripts/inspect-db.mjs",
     "db:explore-study-schedule": "node --env-file=.env scripts/explore-study-schedule-db.mjs",
     "study-reminder:sync": "npm run build && npm run migration:run && node --env-file=.env scripts/sync-study-reminder-jobs.mjs",

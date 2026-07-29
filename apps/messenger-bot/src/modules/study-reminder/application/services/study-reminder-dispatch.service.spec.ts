@@ -1,8 +1,8 @@
-import { MessengerApiError } from '../../../messenger/application/services/messenger-outbound.service';
-import { shouldSkipProactiveRetries } from '../../../messenger/application/utils/proactive-send.utils';
-import { WispaceApiError } from '../../../../shared/errors/wispace-api.error';
+import { MessengerApiError } from '@messenger/modules/messenger/application/services/messenger-outbound.service';
+import { shouldSkipProactiveRetries } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
+import { WispaceApiError } from '@messenger/shared/errors/wispace-api.error';
 import type { StudyReminderJobRepositoryPort } from '../../domain/repositories/study-reminder-job.repository.port';
-import type { MessageSenderPort } from '../../../messenger/application/ports/message-sender.port';
+import type { MessageSenderPort } from '@messenger/modules/messenger/application/ports/message-sender.port';
 import type { StudyReminderJob } from '../../domain/entities/study-reminder-job.types';
 import { StudyReminderDispatchService } from './study-reminder-dispatch.service';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';

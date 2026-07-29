@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { REDIS_CLIENT } from '../../../infrastructure/redis/redis.client.port';
-import type { RedisClientPort } from '../../../infrastructure/redis/redis.client.port';
+import { REDIS_CLIENT } from '@zalo/infrastructure/redis/redis.client.port';
+import type { RedisClientPort } from '@zalo/infrastructure/redis/redis.client.port';
 
 const MID_KEY_PREFIX = 'dedupe:mid:';
 

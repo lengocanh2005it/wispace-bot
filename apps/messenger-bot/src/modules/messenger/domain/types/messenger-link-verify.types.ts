@@ -1,4 +1,4 @@
-import type { MessengerLinkContext } from '../../../../shared/config/poc.constants';
+import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import type { NotificationCadence } from '../entities/messenger.types';
 
 export type MessengerLinkVerifyFailureReason =

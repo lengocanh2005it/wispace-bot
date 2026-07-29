@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   readEnvBoolean,
   readEnvPositiveInt,
-} from '../../../../shared/config/env-helpers';
+} from '@messenger/shared/config/env-helpers';
 import type {
   ChatHistoryStoreKind,
   ChatQueueStoreKind,

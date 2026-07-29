@@ -7,7 +7,7 @@ import { DiscordRateLimiterAdapter } from '../../infrastructure/adapters/discord
 import { DiscordHistoryAdapter } from '../../infrastructure/adapters/discord-chat-pipeline.adapters';
 import { DiscordAgentAdapter } from '../../infrastructure/adapters/discord-chat-pipeline.adapters';
 import { DiscordOutboundAdapter } from '../../infrastructure/adapters/discord-chat-pipeline.adapters';
-import { DiscordChatRateLimitService } from '../../../chat-metering/application/services/discord-chat-rate-limit.service';
+import { DiscordChatRateLimitService } from '@discord/modules/chat-metering/application/services/discord-chat-rate-limit.service';
 import { DiscordChatHistoryService } from './discord-chat-history.service';
 import { DiscordOutboundService } from './discord-outbound.service';
 import { DiscordAgentService } from '../agent/discord-agent.service';

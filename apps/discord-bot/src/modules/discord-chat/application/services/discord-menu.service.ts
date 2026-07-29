@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { WispaceApiError } from '@wispace/wispace-client';
-import { WispaceCalendarService } from '../../../wispace/application/services/wispace-calendar.service';
-import { WispaceGoalsService } from '../../../wispace/application/services/wispace-goals.service';
+import { WispaceCalendarService } from '@discord/modules/wispace/application/services/wispace-calendar.service';
+import { WispaceGoalsService } from '@discord/modules/wispace/application/services/wispace-goals.service';
 
 const NOT_LINKED =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';

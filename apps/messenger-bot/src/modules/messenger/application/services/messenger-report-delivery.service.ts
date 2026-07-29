@@ -5,9 +5,9 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { StudentReportService } from '../../../student-report/application/services/student-report.service';
-import { StudentReportRetryableError } from '../../../student-report/domain/errors/wispace-api.error';
-import { buildStudentReportApiRetryMessage } from '../../../student-report/application/messages/student-report.messages';
+import { StudentReportService } from '@messenger/modules/student-report/application/services/student-report.service';
+import { StudentReportRetryableError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
+import { buildStudentReportApiRetryMessage } from '@messenger/modules/student-report/application/messages/student-report.messages';
 import { readMessengerBubbleLimits } from '../utils/messenger-bubble-config.utils';
 import {
   isProactiveMessenger24hError,
@@ -18,11 +18,11 @@ import type { UserMessengerMapping } from '../../domain/entities/messenger.types
 import {
   getPocAlreadySubscribedMessage,
   getPocSubscriptionConfirmationMessage,
-} from '../../../../shared/config/poc.constants';
-import { buildPocPsidToken } from '../../../../shared/config/poc.constants';
+} from '@messenger/shared/config/poc.constants';
+import { buildPocPsidToken } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
-import type { MessengerLinkContext } from '../../../../shared/config/poc.constants';
+import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 
 @Injectable()
 export class MessengerReportDeliveryService {

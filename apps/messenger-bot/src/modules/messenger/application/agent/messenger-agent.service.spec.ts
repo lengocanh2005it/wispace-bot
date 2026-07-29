@@ -2,11 +2,11 @@ import { ConfigService } from '@nestjs/config';
 import type { LlmToolChatResponse } from '@wispace/llm-agent';
 import { MessengerAgentService } from './messenger-agent.service';
 import { MessengerAgentToolsService } from './messenger-agent-tools.service';
-import { UserDisplayNameService } from '../../../study-reminder/application/services/user-display-name.service';
-import { LlmUsageRecorderService } from '../../../llm-usage/application/services/llm-usage-recorder.service';
-import { LlmExecutionService } from '../../../llm-execution/application/services/llm-execution.service';
-import { LlmSafetyService } from '../../../llm-safety/llm-safety.service';
-import type { MetricsService } from '../../../metrics/metrics.service';
+import { UserDisplayNameService } from '@messenger/modules/study-reminder/application/services/user-display-name.service';
+import { LlmUsageRecorderService } from '@messenger/modules/llm-usage/application/services/llm-usage-recorder.service';
+import { LlmExecutionService } from '@messenger/modules/llm-execution/application/services/llm-execution.service';
+import { LlmSafetyService } from '@messenger/modules/llm-safety/llm-safety.service';
+import type { MetricsService } from '@messenger/modules/metrics/metrics.service';
 
 // ---- helpers ----------------------------------------------------------------
 

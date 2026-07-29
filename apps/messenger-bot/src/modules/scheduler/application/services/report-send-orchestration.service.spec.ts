@@ -1,6 +1,6 @@
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
-import { StudentReportRetryableError } from '../../../student-report/domain/errors/wispace-api.error';
-import { ProactiveMessenger24hSkippedError } from '../../../messenger/application/utils/proactive-send.utils';
+import { StudentReportRetryableError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
+import { ProactiveMessenger24hSkippedError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
 
 describe('ReportSendOrchestrationService.claimAndSend', () => {
   const mapping = {

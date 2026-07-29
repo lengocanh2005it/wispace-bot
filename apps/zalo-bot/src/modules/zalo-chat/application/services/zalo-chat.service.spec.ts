@@ -1,7 +1,7 @@
 import type { ConfigService } from '@nestjs/config';
 import { ZaloChatService } from './zalo-chat.service';
 import { ZaloOutboundService } from './zalo-outbound.service';
-import { ZaloAccountLinkService } from '../../../zalo-oauth/application/services/zalo-account-link.service';
+import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { ZaloChatQueueService } from './zalo-chat-queue.service';
 
 function buildConfig(): ConfigService {

@@ -15,12 +15,12 @@ import {
   MENU_LEARNING_PROGRESS_CUSTOM_ID,
   MENU_UPCOMING_SESSIONS_CUSTOM_ID,
 } from '../../application/constants/discord-menu.constants';
-import { DiscordChatRateLimitService } from '../../../chat-metering/application/services/discord-chat-rate-limit.service';
+import { DiscordChatRateLimitService } from '@discord/modules/chat-metering/application/services/discord-chat-rate-limit.service';
 import { DiscordChatHistoryService } from '../../application/services/discord-chat-history.service';
-import { DiscordAccountLinkService } from '../../../account-link/application/services/discord-account-link.service';
+import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import { DiscordMenuService } from '../../application/services/discord-menu.service';
-import { DiscordPendingJoinService } from '../../../account-link/application/services/discord-pending-join.service';
-import { buildDiscordLinkWelcomeMessage } from '../../../account-link/application/messages/account-link.messages';
+import { DiscordPendingJoinService } from '@discord/modules/account-link/application/services/discord-pending-join.service';
+import { buildDiscordLinkWelcomeMessage } from '@discord/modules/account-link/application/messages/account-link.messages';
 import { WispaceApiError } from '@wispace/wispace-client';
 import { isGreetingOnly } from '@wispace/llm-agent';
 

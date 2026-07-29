@@ -8,8 +8,8 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { InternalApiKeyGuard } from '../../../../shared/common/guards/internal-api-key.guard';
-import { MessengerWebhookSignatureGuard } from '../../../../shared/common/guards/messenger-webhook-signature.guard';
+import { InternalApiKeyGuard } from '@messenger/shared/common/guards/internal-api-key.guard';
+import { MessengerWebhookSignatureGuard } from '@messenger/shared/common/guards/messenger-webhook-signature.guard';
 import { MessengerService } from '../../application/services/messenger.service';
 import type { MessengerWebhookPayload } from '../../domain/entities/messenger.types';
 import { MessengerProfileService } from '../../infrastructure/meta/messenger-profile.service';

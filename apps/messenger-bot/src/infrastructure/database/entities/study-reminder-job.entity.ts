@@ -6,7 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { StudyReminderJobStatus } from '../../../modules/study-reminder/domain/entities/study-reminder-job.types';
+import type { StudyReminderJobStatus } from '@messenger/modules/study-reminder/domain/entities/study-reminder-job.types';
 
 @Entity('study_reminder_jobs')
 @Index(

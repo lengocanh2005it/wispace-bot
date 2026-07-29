@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';
 import { WispaceDiscordTokenVerifyService } from '../../infrastructure/wispace/wispace-discord-token-verify.service';
-import { DiscordOutboundService } from '../../../discord-chat/application/services/discord-outbound.service';
+import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
 import { buildDiscordLinkWelcomeMessage } from '../../application/messages/account-link.messages';
 import { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
 import { DiscordPendingJoinService } from '../../application/services/discord-pending-join.service';

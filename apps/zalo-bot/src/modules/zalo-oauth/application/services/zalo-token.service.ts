@@ -6,7 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ZaloOaTokenEntity } from '../../../../infrastructure/database/entities/zalo-oa-token.entity';
+import { ZaloOaTokenEntity } from '@zalo/infrastructure/database/entities/zalo-oa-token.entity';
 
 const ZALO_TOKEN_ENDPOINT = 'https://oauth.zaloapp.com/v4/access_token';
 const EXPIRY_BUFFER_MS = 10 * 60 * 1000;

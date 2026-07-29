@@ -4,7 +4,7 @@ import {
   readEnvBoolean,
   readEnvPositiveInt,
   readRequiredPositiveNumber,
-} from '../../../../shared/config/env-helpers';
+} from '@messenger/shared/config/env-helpers';
 import type { ChatRateLimitSettings } from '../../domain/entities/chat-quota.types';
 import type { ChatBurstStoreKind } from '../../domain/entities/chat-burst.types';
 

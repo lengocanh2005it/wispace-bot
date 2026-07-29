@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import pLimit from 'p-limit';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
-import { MetricsService } from '../../../metrics/metrics.service';
+import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import type { LlmExecutionContext } from '../types/llm-execution.types';
 import { RedisConcurrencyLimiter } from '../../infrastructure/redis-concurrency-limiter';

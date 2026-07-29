@@ -1,8 +1,8 @@
 import type { ConfigService } from '@nestjs/config';
 import { ZaloAgentToolsService } from './zalo-agent-tools.service';
 import type { ZaloAgentToolContext } from '../../domain/entities/zalo-chat.types';
-import type { ZaloWispaceGoalsService } from '../../../wispace/application/services/zalo-wispace-goals.service';
-import type { ZaloWispaceCalendarService } from '../../../wispace/application/services/zalo-wispace-calendar.service';
+import type { ZaloWispaceGoalsService } from '@zalo/modules/wispace/application/services/zalo-wispace-goals.service';
+import type { ZaloWispaceCalendarService } from '@zalo/modules/wispace/application/services/zalo-wispace-calendar.service';
 
 function buildConfig(): ConfigService {
   return {

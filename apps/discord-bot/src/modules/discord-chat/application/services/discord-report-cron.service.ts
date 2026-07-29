@@ -8,8 +8,8 @@ import {
   todayReportDate,
 } from '@wispace/scheduler-core';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
-import { DiscordAccountLinkEntity } from '../../../../infrastructure/database/entities/discord-account-link.entity';
-import { ScheduledReportClaimEntity } from '../../../../infrastructure/database/entities/scheduled-report-claim.entity';
+import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
+import { ScheduledReportClaimEntity } from '@discord/infrastructure/database/entities/scheduled-report-claim.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { ReportMapping } from '@wispace/scheduler-core';

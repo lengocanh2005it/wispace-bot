@@ -10,7 +10,7 @@ import type {
   ChatHistoryMessage,
 } from '@wispace/chat-pipeline';
 import type { ChatQuotaCheckResult } from '@wispace/chat-metering';
-import { DiscordChatRateLimitService } from '../../../chat-metering/application/services/discord-chat-rate-limit.service';
+import { DiscordChatRateLimitService } from '@discord/modules/chat-metering/application/services/discord-chat-rate-limit.service';
 import { DiscordChatHistoryService } from '../../application/services/discord-chat-history.service';
 import { DiscordAgentService } from '../../application/agent/discord-agent.service';
 import { DiscordOutboundService } from '../../application/services/discord-outbound.service';

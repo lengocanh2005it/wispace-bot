@@ -7,8 +7,8 @@ import { ConfigService } from '@nestjs/config';
 import {
   isStrictProductionRuntime,
   isTestRuntime,
-} from '../../../../shared/config/production-runtime.utils';
-import { isMessengerWebhookSignatureVerifyEnabled } from '../../../../shared/common/utils/messenger-webhook-signature.config';
+} from '@messenger/shared/config/production-runtime.utils';
+import { isMessengerWebhookSignatureVerifyEnabled } from '@messenger/shared/common/utils/messenger-webhook-signature.config';
 
 @Injectable()
 export class MessengerWebhookStartupService implements OnModuleInit {

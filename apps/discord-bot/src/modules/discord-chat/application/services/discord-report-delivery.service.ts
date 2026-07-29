@@ -7,7 +7,7 @@ import type {
   ReportMapping,
 } from '@wispace/scheduler-core';
 import { DiscordOutboundService } from './discord-outbound.service';
-import { DiscordAccountLinkEntity } from '../../../../infrastructure/database/entities/discord-account-link.entity';
+import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
 
 const PLATFORM = 'discord' as const;
 

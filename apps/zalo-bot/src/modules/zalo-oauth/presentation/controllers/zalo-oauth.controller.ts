@@ -10,7 +10,7 @@ import {
 import {
   ZALO_MESSAGE_SENDER,
   type ZaloMessageSenderPort,
-} from '../../../zalo-webhook/domain/ports/zalo-message-sender.port';
+} from '@zalo/modules/zalo-webhook/domain/ports/zalo-message-sender.port';
 
 const LINK_WELCOME_MESSAGE =
   'Tài khoản WISPACE của bạn đã liên kết thành công với Zalo! 🎉';

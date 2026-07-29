@@ -7,7 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   isTestRuntime,
   readWispaceVerifyTokenUrl,
-} from '../../../../shared/config/production-runtime.utils';
+} from '@messenger/shared/config/production-runtime.utils';
 
 @Injectable()
 export class MessengerLinkStartupService implements OnModuleInit {

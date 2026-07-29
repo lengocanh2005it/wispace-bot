@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
-import type { ChatRateLimitService } from '../../../chat-rate-limit/application/services/chat-rate-limit.service';
-import type { ChatQuotaCheckResult } from '../../../chat-rate-limit/domain/entities/chat-quota.types';
+import type { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
+import type { ChatQuotaCheckResult } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota.types';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerAgentService } from '../agent/messenger-agent.service';
 import {
@@ -15,7 +15,7 @@ import {
   MessengerPartialSendError,
 } from './messenger-outbound.service';
 import { MessengerChatQueueService } from './messenger-chat-queue.service';
-import type { MetricsService } from '../../../metrics/metrics.service';
+import type { MetricsService } from '@messenger/modules/metrics/metrics.service';
 
 describe('MessengerChatQueueService', () => {
   let createdServices: MessengerChatQueueService[] = [];

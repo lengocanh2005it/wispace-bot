@@ -4,7 +4,7 @@ import type {
   RescheduleResult,
 } from '@wispace/reschedule-confirm';
 import type { RescheduleSchedulingMode } from '@wispace/wispace-client';
-import { DiscordStudyCalendarCommandService } from '../../../wispace/application/services/discord-study-calendar-command.service';
+import { DiscordStudyCalendarCommandService } from '@discord/modules/wispace/application/services/discord-study-calendar-command.service';
 
 @Injectable()
 export class DiscordReschedulePort implements ReschedulePort<string> {

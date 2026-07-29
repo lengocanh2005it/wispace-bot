@@ -2,16 +2,16 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   MESSENGER_REPOSITORY,
   type MessengerRepositoryPort,
-} from '../../../messenger/domain/repositories/messenger.repository.port';
-import type { UserMessengerMapping } from '../../../messenger/domain/entities/messenger.types';
-import { MessengerReportDeliveryService } from '../../../messenger/application/services/messenger-report-delivery.service';
+} from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
+import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
+import { MessengerReportDeliveryService } from '@messenger/modules/messenger/application/services/messenger-report-delivery.service';
 import {
   REPORT_SEND_JOB_REPOSITORY,
   type ReportSendJobRepositoryPort,
 } from '@wispace/scheduler-core';
 import { ReportSendScheduleService } from '@wispace/scheduler-core';
-import { StudentReportRetryableError } from '../../../student-report/domain/errors/wispace-api.error';
-import { ProactiveMessenger24hSkippedError } from '../../../messenger/application/utils/proactive-send.utils';
+import { StudentReportRetryableError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
+import { ProactiveMessenger24hSkippedError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
 
 export interface ClaimAndSendResult {
   sent: number;

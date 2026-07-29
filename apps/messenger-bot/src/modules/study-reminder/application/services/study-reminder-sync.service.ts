@@ -3,7 +3,7 @@ import {
   MESSENGER_MAPPING_READER,
   type MessengerMappingReaderPort,
   type UserLink,
-} from '../../../../shared/ports/messenger-mapping-reader.port';
+} from '@messenger/shared/ports/messenger-mapping-reader.port';
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,

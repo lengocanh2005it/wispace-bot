@@ -9,16 +9,16 @@ import {
 } from '@wispace/llm-agent';
 import { join } from 'path';
 import { trace } from '@opentelemetry/api';
-import { UserDisplayNameService } from '../../../study-reminder/application/services/user-display-name.service';
+import { UserDisplayNameService } from '@messenger/modules/study-reminder/application/services/user-display-name.service';
 import {
   MessengerAgentToolsService,
   MessengerAgentToolContext,
 } from './messenger-agent-tools.service';
-import { LlmSafetyService } from '../../../llm-safety/llm-safety.service';
-import { LlmExecutionService } from '../../../llm-execution/application/services/llm-execution.service';
-import type { LlmExecutionContext } from '../../../llm-execution/application/types/llm-execution.types';
-import { LlmUsageRecorderService } from '../../../llm-usage/application/services/llm-usage-recorder.service';
-import { MetricsService } from '../../../metrics/metrics.service';
+import { LlmSafetyService } from '@messenger/modules/llm-safety/llm-safety.service';
+import { LlmExecutionService } from '@messenger/modules/llm-execution/application/services/llm-execution.service';
+import type { LlmExecutionContext } from '@messenger/modules/llm-execution/application/types/llm-execution.types';
+import { LlmUsageRecorderService } from '@messenger/modules/llm-usage/application/services/llm-usage-recorder.service';
+import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import type {
   MessengerAgentReply,
   MessengerAgentStreamEvent,

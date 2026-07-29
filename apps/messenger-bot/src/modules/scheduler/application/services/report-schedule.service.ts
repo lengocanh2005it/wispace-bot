@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { UserGoalsApiService } from '../../../student-report/infrastructure/wispace/user-goals-api.service';
-import { rawDaysUntilExam } from '../../../../shared/utils/exam-date.utils';
-import { todayReportDate } from '../../../../shared/utils/report-date.utils';
-import { resolveAppTimezone } from '../../../../shared/config/app-timezone';
+import { UserGoalsApiService } from '@messenger/modules/student-report/infrastructure/wispace/user-goals-api.service';
+import { rawDaysUntilExam } from '@messenger/shared/utils/exam-date.utils';
+import { todayReportDate } from '@messenger/shared/utils/report-date.utils';
+import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 
 @Injectable()
 export class ReportScheduleService {

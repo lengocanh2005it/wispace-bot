@@ -1,4 +1,4 @@
-import type { MessengerLinkContext } from '../../../../shared/config/poc.constants';
+import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 
 export interface AppendChatBufferInput {
   psid: string;

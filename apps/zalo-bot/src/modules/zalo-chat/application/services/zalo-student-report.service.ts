@@ -9,7 +9,7 @@ import { todayUsageDate } from '@wispace/chat-metering';
 import { join } from 'path';
 import { loadSystemPromptFile } from '@wispace/llm-agent';
 import { ZaloLlmUsageRecorderService } from './zalo-llm-usage-recorder.service';
-import { ZaloWispaceGoalsService } from '../../../wispace/application/services/zalo-wispace-goals.service';
+import { ZaloWispaceGoalsService } from '@zalo/modules/wispace/application/services/zalo-wispace-goals.service';
 import type { StudentCapacityInput } from '@wispace/student-report';
 
 const FEATURE = 'STUDENT_REPORT';

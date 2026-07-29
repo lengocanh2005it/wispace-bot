@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { ReschedulePort } from '@wispace/reschedule-confirm';
 import type { RescheduleSchedulingMode } from '@wispace/wispace-client';
-import { StudyCalendarCommandService } from '../../../study-reminder/application/services/study-calendar-command.service';
+import { StudyCalendarCommandService } from '@messenger/modules/study-reminder/application/services/study-calendar-command.service';
 
 @Injectable()
 export class MessengerReschedulePort implements ReschedulePort<string> {

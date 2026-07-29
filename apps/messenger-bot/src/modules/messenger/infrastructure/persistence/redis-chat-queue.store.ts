@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type Redis from 'ioredis';
-import { REDIS_CLIENT } from '../../../../infrastructure/redis/redis.client.port';
-import type { RedisClientPort } from '../../../../infrastructure/redis/redis.client.port';
-import type { MessengerLinkContext } from '../../../../shared/config/poc.constants';
+import { REDIS_CLIENT } from '@messenger/infrastructure/redis/redis.client.port';
+import type { RedisClientPort } from '@messenger/infrastructure/redis/redis.client.port';
+import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { CHAT_QUEUE_BUFFER_TTL_SECONDS } from '../../domain/entities/messenger-store.types';
 import type {
   AppendChatBufferInput,

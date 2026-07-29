@@ -7,12 +7,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { UserEntity } from '../../../../infrastructure/database/entities/user.entity';
-import { FALLBACK_DISPLAY_NAME } from '../../../../shared/config/poc.constants';
+import { UserEntity } from '@messenger/infrastructure/database/entities/user.entity';
+import { FALLBACK_DISPLAY_NAME } from '@messenger/shared/config/poc.constants';
 import {
   MESSENGER_MAPPING_READER,
   type MessengerMappingReaderPort,
-} from '../../../../shared/ports/messenger-mapping-reader.port';
+} from '@messenger/shared/ports/messenger-mapping-reader.port';
 import {
   USER_DISPLAY_NAME_CACHE,
   type UserDisplayNameCachePort,

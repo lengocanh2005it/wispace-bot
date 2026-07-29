@@ -1,5 +1,5 @@
 import { Repository } from 'typeorm';
-import { ReportSendJobEntity } from '../../../../infrastructure/database/entities/report-send-job.entity';
+import { ReportSendJobEntity } from '@messenger/infrastructure/database/entities/report-send-job.entity';
 import { ReportSendJobRepository } from './report-send-job.repository';
 
 describe('ReportSendJobRepository (R5)', () => {

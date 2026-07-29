@@ -3,9 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import {
   MessengerLinkContext,
   buildWelcomeMessage,
-} from '../../../../shared/config/poc.constants';
-import { UserDisplayNameService } from '../../../study-reminder/application/services/user-display-name.service';
-import { getStudyReminderLeadTimeNotice } from '../../../study-reminder/application/messages/study-reminder.messages';
+} from '@messenger/shared/config/poc.constants';
+import { UserDisplayNameService } from '@messenger/modules/study-reminder/application/services/user-display-name.service';
+import { getStudyReminderLeadTimeNotice } from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
 import { MessengerWebhookEvent } from '../../domain/entities/messenger.types';
 import { MessengerChatQueueService } from './messenger-chat-queue.service';
 import { MessengerMappingService } from './messenger-mapping.service';

@@ -7,7 +7,7 @@ import type {
   ReportSendJobCreateParams,
   ReportSendJobUpdateParams,
 } from '@wispace/scheduler-core';
-import { ReportSendJobEntity } from '../../../../infrastructure/database/entities/report-send-job.entity';
+import { ReportSendJobEntity } from '@messenger/infrastructure/database/entities/report-send-job.entity';
 
 /** This repository only ever writes rows for the Messenger bot. */
 const PLATFORM = 'messenger' as const;

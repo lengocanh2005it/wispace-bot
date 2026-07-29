@@ -5,11 +5,11 @@ import {
   getPocAlreadySubscribedMessage,
   getPocSubscriptionConfirmationMessage,
   parseMessengerLinkContext,
-} from '../../../../shared/config/poc.constants';
+} from '@messenger/shared/config/poc.constants';
 import {
   getNoUpcomingStudySessionMessage,
   getStudyReminderLeadTimeNotice,
-} from '../../../study-reminder/application/messages/study-reminder.messages';
+} from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import { GOALS_DATA_PORT } from '../../domain/ports/goals-data.port';
@@ -25,11 +25,11 @@ import {
   buildUserGoalsRichFollowUp,
 } from '../formatters/messenger-rich-message.builder';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
-import { sanitizeMessengerText } from '../../../../shared/utils/messenger-text.utils';
+import { sanitizeMessengerText } from '@messenger/shared/utils/messenger-text.utils';
 import {
   hasExplicitRescheduleTarget,
   isRescheduleIntent,
-} from '../../../../shared/utils/messenger-chat-intent.utils';
+} from '@messenger/shared/utils/messenger-chat-intent.utils';
 import {
   isAgentToolName,
   AgentToolName,

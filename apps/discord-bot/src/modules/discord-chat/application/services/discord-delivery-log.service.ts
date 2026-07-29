@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { DiscordMessageLogEntity } from '../../../../infrastructure/database/entities/discord-message-log.entity';
+import { DiscordMessageLogEntity } from '@discord/infrastructure/database/entities/discord-message-log.entity';
 
 /**
  * Logs Discord message delivery attempts for audit trail.

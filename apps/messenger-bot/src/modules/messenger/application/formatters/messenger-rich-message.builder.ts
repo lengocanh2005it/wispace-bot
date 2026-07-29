@@ -1,5 +1,5 @@
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
-import { DEFAULT_TOPIC } from '../../../../shared/config/poc.constants';
+import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
 
 const TITLE_MAX = 80;
 const SUBTITLE_MAX = 80;

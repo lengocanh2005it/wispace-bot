@@ -1,4 +1,4 @@
-import type { MetricsService } from '../../../metrics/metrics.service';
+import type { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import { LlmExecutionService } from './llm-execution.service';
 

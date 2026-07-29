@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
 import { ZaloTokenService } from './zalo-token.service';
-import { ZaloOaTokenEntity } from '../../../../infrastructure/database/entities/zalo-oa-token.entity';
+import { ZaloOaTokenEntity } from '@zalo/infrastructure/database/entities/zalo-oa-token.entity';
 
 function buildConfig(): ConfigService {
   return {

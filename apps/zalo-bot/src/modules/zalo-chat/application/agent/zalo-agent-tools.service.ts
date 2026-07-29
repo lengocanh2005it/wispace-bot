@@ -12,8 +12,8 @@ import {
   readValidatedTime,
 } from '@wispace/llm-agent';
 import type { ZaloAgentToolContext } from '../../domain/entities/zalo-chat.types';
-import { ZaloWispaceGoalsService } from '../../../wispace/application/services/zalo-wispace-goals.service';
-import { ZaloWispaceCalendarService } from '../../../wispace/application/services/zalo-wispace-calendar.service';
+import { ZaloWispaceGoalsService } from '@zalo/modules/wispace/application/services/zalo-wispace-goals.service';
+import { ZaloWispaceCalendarService } from '@zalo/modules/wispace/application/services/zalo-wispace-calendar.service';
 import { ZaloRescheduleConfirmationService } from '../services/zalo-reschedule-confirmation.service';
 import { ZaloOutboundService } from '../services/zalo-outbound.service';
 

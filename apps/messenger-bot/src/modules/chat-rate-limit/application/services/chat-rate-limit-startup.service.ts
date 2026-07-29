@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
-import { isStrictProductionRuntime } from '../../../../shared/config/production-runtime.utils';
+import { isStrictProductionRuntime } from '@messenger/shared/config/production-runtime.utils';
 
 @Injectable()
 export class ChatRateLimitStartupService implements OnModuleInit {

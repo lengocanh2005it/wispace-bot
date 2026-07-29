@@ -1,7 +1,7 @@
 import type { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
 import { MessengerChatQueueService } from './messenger-chat-queue.service';
-import type { MetricsService } from '../../../metrics/metrics.service';
+import type { MetricsService } from '@messenger/modules/metrics/metrics.service';
 
 describe('MessengerChatQueueService distributed mode (H7/R4)', () => {
   let service: MessengerChatQueueService | undefined;

@@ -1,6 +1,6 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { keepAliveFetch } from '../../../../shared/http/http-agent';
+import { keepAliveFetch } from '@messenger/shared/http/http-agent';
 
 const PERSISTENT_MENU_ACTIONS = [
   {

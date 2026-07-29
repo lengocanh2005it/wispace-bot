@@ -7,7 +7,7 @@ import {
   type ChatHistoryStorePort,
   type RedisChatHistoryClient,
 } from '@wispace/chat-history';
-import { REDIS_CLIENT } from '../../../../infrastructure/redis/redis.client.port';
+import { REDIS_CLIENT } from '@zalo/infrastructure/redis/redis.client.port';
 import type Redis from 'ioredis';
 
 const DEFAULT_MAX_MESSAGES = 20;

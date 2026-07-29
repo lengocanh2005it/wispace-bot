@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UserCalendarScheduleClient } from '@wispace/wispace-client';
-import { resolveAppTimezone } from '../../../../shared/config/app-timezone';
+import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 import { UserCalendarApiService } from './user-calendar-api.service';
 import { UserCalendarRecord } from '../../domain/entities/user-calendar.types';
 import {

@@ -8,7 +8,7 @@ import {
   UserCalendarApiClient,
   type WispaceApiClientConfig,
 } from '@wispace/wispace-client';
-import { MetricsService } from '../../../metrics/metrics.service';
+import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import {
   CreateUserCalendarInput,
   UserCalendarRecord,

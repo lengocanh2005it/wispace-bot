@@ -5,7 +5,7 @@ import type {
   MappingReaderPort,
   UserLink,
 } from '@wispace/study-reminder-shared';
-import { DiscordAccountLinkEntity } from '../../../../infrastructure/database/entities/discord-account-link.entity';
+import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
 
 @Injectable()
 export class DiscordMappingReaderAdapter implements MappingReaderPort {

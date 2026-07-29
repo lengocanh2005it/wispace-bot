@@ -6,7 +6,7 @@ import {
   type ReportSendJobRepositoryPort,
 } from '@wispace/scheduler-core';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
-import { DiscordAccountLinkEntity } from '../../../../infrastructure/database/entities/discord-account-link.entity';
+import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { ReportMapping } from '@wispace/scheduler-core';

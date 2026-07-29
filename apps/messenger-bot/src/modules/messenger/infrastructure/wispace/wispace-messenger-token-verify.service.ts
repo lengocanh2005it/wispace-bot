@@ -9,13 +9,13 @@ import {
   normalizeCadence,
   POC_DEFAULT_LINK_CADENCE,
   POC_DEFAULT_LINK_TOPIC,
-} from '../../../../shared/config/poc.constants';
-import { readWispaceVerifyTokenUrl } from '../../../../shared/config/production-runtime.utils';
+} from '@messenger/shared/config/poc.constants';
+import { readWispaceVerifyTokenUrl } from '@messenger/shared/config/production-runtime.utils';
 import type {
   MessengerLinkVerifyFailureReason,
   MessengerLinkVerifyResult,
 } from '../../domain/types/messenger-link-verify.types';
-import { keepAliveFetch } from '../../../../shared/http/http-agent';
+import { keepAliveFetch } from '@messenger/shared/http/http-agent';
 
 const VERIFY_FAILURE_REASONS: MessengerLinkVerifyFailureReason[] = [
   'NOT_FOUND',

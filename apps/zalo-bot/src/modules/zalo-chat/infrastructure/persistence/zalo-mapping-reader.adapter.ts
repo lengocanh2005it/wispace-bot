@@ -5,7 +5,7 @@ import type {
   MappingReaderPort,
   UserLink,
 } from '@wispace/study-reminder-shared';
-import { ZaloAccountLinkEntity } from '../../../../infrastructure/database/entities/zalo-account-link.entity';
+import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 
 /**
  * Reads Zalo account links as user mappings for study reminder sync.

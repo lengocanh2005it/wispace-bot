@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
-import { StudyReminderJobEntity } from '../../../../infrastructure/database/entities/study-reminder-job.entity';
+import { StudyReminderJobEntity } from '@messenger/infrastructure/database/entities/study-reminder-job.entity';
 import {
   StudyReminderJob,
   UpsertStudyReminderJobInput,

@@ -1,7 +1,7 @@
 import { AGENT_TOOL_NAMES } from '@wispace/llm-agent';
 import { DiscordAgentToolsService } from './discord-agent-tools.service';
-import type { WispaceGoalsService } from '../../../wispace/application/services/wispace-goals.service';
-import type { WispaceCalendarService } from '../../../wispace/application/services/wispace-calendar.service';
+import type { WispaceGoalsService } from '@discord/modules/wispace/application/services/wispace-goals.service';
+import type { WispaceCalendarService } from '@discord/modules/wispace/application/services/wispace-calendar.service';
 import type { DiscordRescheduleConfirmationService } from '../services/discord-reschedule-confirmation.service';
 import type { DiscordOutboundService } from '../services/discord-outbound.service';
 

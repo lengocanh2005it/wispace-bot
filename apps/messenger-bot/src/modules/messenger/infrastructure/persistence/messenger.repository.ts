@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Not, Repository } from 'typeorm';
-import { buildPocPsidToken } from '../../../../shared/config/poc.constants';
+import { buildPocPsidToken } from '@messenger/shared/config/poc.constants';
 import {
   MessageLogEntity,
   ScheduledReportClaimEntity,
   UserPlatformMappingEntity,
-} from '../../../../infrastructure/database/entities';
+} from '@messenger/infrastructure/database/entities';
 import { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';

@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { WispaceApiError } from '../../../../shared/errors/wispace-api.error';
+import { WispaceApiError } from '@messenger/shared/errors/wispace-api.error';
 import { UserCalendarApiService } from './user-calendar-api.service';
 import { UserCalendarScheduleService } from './user-calendar-schedule.service';
 

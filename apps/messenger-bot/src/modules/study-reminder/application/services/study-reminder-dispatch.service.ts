@@ -1,9 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { MetricsService } from '../../../metrics/metrics.service';
-import { MESSAGE_SENDER } from '../../../messenger/application/ports/message-sender.port';
-import type { MessageSenderPort } from '../../../messenger/application/ports/message-sender.port';
-import { shouldSkipProactiveRetries } from '../../../messenger/application/utils/proactive-send.utils';
-import { WispaceApiError } from '../../../../shared/errors/wispace-api.error';
+import { MetricsService } from '@messenger/modules/metrics/metrics.service';
+import { MESSAGE_SENDER } from '@messenger/modules/messenger/application/ports/message-sender.port';
+import type { MessageSenderPort } from '@messenger/modules/messenger/application/ports/message-sender.port';
+import { shouldSkipProactiveRetries } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
+import { WispaceApiError } from '@messenger/shared/errors/wispace-api.error';
 import {
   buildStudyReminderMessageType,
   jobToSession,

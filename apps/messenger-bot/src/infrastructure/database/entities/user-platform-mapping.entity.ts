@@ -5,7 +5,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import { NotificationCadence } from '../../../modules/messenger/domain/entities/messenger.types';
+import { NotificationCadence } from '@messenger/modules/messenger/domain/entities/messenger.types';
 
 @Entity('user_platform_mappings')
 export class UserPlatformMappingEntity {

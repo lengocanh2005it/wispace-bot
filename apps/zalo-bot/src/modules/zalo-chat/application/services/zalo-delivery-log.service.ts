@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ZaloMessageLogEntity } from '../../../../infrastructure/database/entities/zalo-message-log.entity';
+import { ZaloMessageLogEntity } from '@zalo/infrastructure/database/entities/zalo-message-log.entity';
 
 @Injectable()
 export class ZaloDeliveryLogService {

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
-import { ScheduledReportClaimEntity } from '../../../../infrastructure/database/entities/scheduled-report-claim.entity';
+import { ScheduledReportClaimEntity } from '@discord/infrastructure/database/entities/scheduled-report-claim.entity';
 import { todayReportDate } from '@wispace/scheduler-core';
 
 const PLATFORM = 'discord' as const;
