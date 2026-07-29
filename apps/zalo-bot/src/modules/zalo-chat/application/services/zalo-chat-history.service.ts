@@ -1,90 +1,69 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   MemoryChatHistoryStore,
+  RedisChatHistoryStore,
   type ChatHistoryMessage,
+  type ChatHistoryStorePort,
+  type RedisChatHistoryClient,
 } from '@wispace/chat-history';
-
 import { REDIS_CLIENT } from '../../../../infrastructure/redis/redis.client.port';
-import type { Redis } from 'ioredis';
+import type Redis from 'ioredis';
 
 const DEFAULT_MAX_MESSAGES = 20;
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
-const KEY_PREFIX = 'chat-history:';
 
+/**
+ * Chat history for Zalo — supports memory (default) or Redis backend.
+ * Set CHAT_HISTORY_STORE=redis + REDIS_ENABLED=true for multi-pod mode.
+ */
 @Injectable()
 export class ZaloChatHistoryService {
-  private readonly store: MemoryChatHistoryStore;
-  private readonly redisNative: Redis | null;
-  private readonly redisTtlSec: number;
-  private readonly maxMessages: number;
+  private readonly logger = new Logger(ZaloChatHistoryService.name);
+  private readonly store: ChatHistoryStorePort;
 
   constructor(
     configService: ConfigService,
-
-    @Inject(REDIS_CLIENT) redis: any,
+    @Optional() @Inject(REDIS_CLIENT) redisClient?: Redis | null,
   ) {
     const ttlMs =
       Number(configService.get<string>('ZALO_CHAT_HISTORY_TTL_MS')) ||
       DEFAULT_TTL_MS;
-    this.maxMessages =
+    const maxMessages =
       Number(configService.get<string>('ZALO_CHAT_HISTORY_MAX_MESSAGES')) ||
       DEFAULT_MAX_MESSAGES;
-    this.redisTtlSec = Math.floor(ttlMs / 1000);
-    const storeKind = configService
-      .get<string>('CHAT_HISTORY_STORE')
-      ?.trim()
-      ?.toLowerCase();
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-    const isEnabled = redis?.isEnabled?.() ?? false;
-    this.redisNative =
-      storeKind === 'redis' && isEnabled
-        ? // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-          (redis.getNativeClient() as Redis | null)
-        : null;
-    this.store = new MemoryChatHistoryStore({
-      ttlMs,
-      maxMessages: this.maxMessages,
-    });
-  }
 
-  async getHistory(zaloUserId: string): Promise<ChatHistoryMessage[]> {
-    if (this.redisNative) {
-      try {
-        const raw = await this.redisNative.get(`${KEY_PREFIX}${zaloUserId}`);
-        if (!raw) return [];
-        return JSON.parse(raw) as ChatHistoryMessage[];
-      } catch {
-        return [];
+    const storeType =
+      configService.get<string>('CHAT_HISTORY_STORE')?.trim() ?? 'memory';
+
+    if (storeType === 'redis' && redisClient) {
+      this.store = new RedisChatHistoryStore(
+        redisClient as unknown as RedisChatHistoryClient,
+        {
+          ttlSec: Math.floor(ttlMs / 1000),
+          maxMessages,
+        },
+      );
+      this.logger.log('Chat history: Redis backend');
+    } else {
+      this.store = new MemoryChatHistoryStore({ ttlMs, maxMessages });
+      if (storeType === 'redis') {
+        this.logger.warn(
+          'CHAT_HISTORY_STORE=redis but Redis unavailable — falling back to memory',
+        );
       }
     }
+  }
+
+  getHistory(zaloUserId: string): Promise<ChatHistoryMessage[]> {
     return this.store.getHistory(zaloUserId);
   }
 
-  async appendTurn(
+  appendTurn(
     zaloUserId: string,
     userText: string,
     assistantText: string,
   ): Promise<void> {
-    if (this.redisNative) {
-      try {
-        const existing = await this.getHistory(zaloUserId);
-        const messages = [
-          ...existing,
-          { role: 'user' as const, content: userText.trim() },
-          { role: 'assistant' as const, content: assistantText.trim() },
-        ].slice(-this.maxMessages);
-        await this.redisNative.set(
-          `${KEY_PREFIX}${zaloUserId}`,
-          JSON.stringify(messages),
-          'EX',
-          this.redisTtlSec,
-        );
-      } catch {
-        // swallow
-      }
-      return;
-    }
     return this.store.appendTurn(zaloUserId, userText, assistantText);
   }
 }
