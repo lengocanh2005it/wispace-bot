@@ -32,6 +32,7 @@
     "@wispace/bot-metrics": "*",
     "@wispace/chat-history": "*",
     "@wispace/chat-metering": "*",
+    "@wispace/chat-pipeline": "*",
     "@wispace/cleanup-cron": "*",
     "@wispace/llm-agent": "*",
     "@wispace/ops-health": "*",

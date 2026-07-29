@@ -2,6 +2,11 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import type { ChatQueueBatch } from '@wispace/chat-queue-core';
+import { ChatPipeline } from '@wispace/chat-pipeline';
+import { DiscordRateLimiterAdapter } from '../../infrastructure/adapters/discord-chat-pipeline.adapters';
+import { DiscordHistoryAdapter } from '../../infrastructure/adapters/discord-chat-pipeline.adapters';
+import { DiscordAgentAdapter } from '../../infrastructure/adapters/discord-chat-pipeline.adapters';
+import { DiscordOutboundAdapter } from '../../infrastructure/adapters/discord-chat-pipeline.adapters';
 import { DiscordChatRateLimitService } from '../../../chat-metering/application/services/discord-chat-rate-limit.service';
 import { DiscordChatHistoryService } from './discord-chat-history.service';
 import { DiscordOutboundService } from './discord-outbound.service';
@@ -20,20 +25,29 @@ interface QueueCtx {
 export class DiscordChatQueueService implements OnModuleDestroy {
   private readonly logger = new Logger(DiscordChatQueueService.name);
   private readonly queue: DebounceChatQueue<QueueCtx>;
-
-  private readonly mergedTextMaxChars: number;
+  private readonly pipeline: ChatPipeline;
 
   constructor(
     configService: ConfigService,
-    private readonly rateLimitService: DiscordChatRateLimitService,
-    private readonly historyService: DiscordChatHistoryService,
-    private readonly outboundService: DiscordOutboundService,
-    private readonly agentService: DiscordAgentService,
+    rateLimitService: DiscordChatRateLimitService,
+    historyService: DiscordChatHistoryService,
+    outboundService: DiscordOutboundService,
+    agentService: DiscordAgentService,
   ) {
-    this.mergedTextMaxChars = Math.max(
+    const mergedTextMaxChars = Math.max(
       1,
       Number(configService.get<string>('CHAT_MERGED_TEXT_MAX_CHARS')) || 4000,
     );
+
+    this.pipeline = new ChatPipeline(
+      new DiscordRateLimiterAdapter(rateLimitService),
+      new DiscordHistoryAdapter(historyService),
+      new DiscordAgentAdapter(agentService),
+      new DiscordOutboundAdapter(outboundService),
+      {},
+      { mergedTextMaxChars },
+    );
+
     this.queue = new DebounceChatQueue<QueueCtx>(
       {
         getDebounceMs: () =>
@@ -71,51 +85,18 @@ export class DiscordChatQueueService implements OnModuleDestroy {
   }
 
   private async handleFlush(batch: ChatQueueBatch<QueueCtx>): Promise<void> {
-    const {
-      externalUserId: discordUserId,
-      texts,
-      context,
-      idempotencyKey,
-    } = batch;
-    const mergedText = texts.join('\n').slice(0, this.mergedTextMaxChars);
-
-    const quota = idempotencyKey
-      ? await this.rateLimitService.reserveFreeFormSlot(discordUserId, {
-          idempotencyKey,
-        })
-      : null;
-    if (quota && !quota.allowed) return;
-
     try {
-      const reply = await this.agentService.reply({
-        discordUserId,
-        userId: context?.userId,
-        userText: mergedText,
-        correlationId: idempotencyKey,
-        isServerChannel: context?.isServerChannel ?? false,
+      await this.pipeline.flush({
+        externalUserId: batch.externalUserId,
+        userId: batch.context?.userId,
+        texts: batch.texts,
+        idempotencyKey: batch.idempotencyKey,
       });
-
-      if (reply.text.trim()) {
-        await this.historyService.appendTurn(
-          discordUserId,
-          mergedText,
-          reply.text,
-        );
-        await this.outboundService.sendText(discordUserId, reply.text);
-      }
-
-      if (idempotencyKey)
-        await this.rateLimitService.markCompleted(idempotencyKey);
     } catch (error) {
-      if (idempotencyKey && quota?.usageDate) {
-        await this.rateLimitService.refundFreeFormSlot(
-          discordUserId,
-          quota.usageDate,
-          idempotencyKey,
-        );
-      }
       const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Chat queue flush failed for ${discordUserId}: ${msg}`);
+      this.logger.error(
+        `Chat queue flush failed for ${batch.externalUserId}: ${msg}`,
+      );
     }
   }
 }

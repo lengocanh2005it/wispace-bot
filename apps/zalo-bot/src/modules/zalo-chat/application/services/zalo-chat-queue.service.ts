@@ -2,6 +2,13 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import type { ChatQueueBatch } from '@wispace/chat-queue-core';
+import { ChatPipeline } from '@wispace/chat-pipeline';
+import {
+  ZaloRateLimiterAdapter,
+  ZaloHistoryAdapter,
+  ZaloAgentAdapter,
+  ZaloOutboundAdapter,
+} from '../../infrastructure/adapters/zalo-chat-pipeline.adapters';
 import { ZaloChatRateLimitService } from './zalo-chat-rate-limit.service';
 import { ZaloChatHistoryService } from './zalo-chat-history.service';
 import { ZaloOutboundService } from './zalo-outbound.service';
@@ -19,14 +26,22 @@ interface QueueCtx {
 export class ZaloChatQueueService implements OnModuleDestroy {
   private readonly logger = new Logger(ZaloChatQueueService.name);
   private readonly queue: DebounceChatQueue<QueueCtx>;
+  private readonly pipeline: ChatPipeline;
 
   constructor(
     configService: ConfigService,
-    private readonly rateLimitService: ZaloChatRateLimitService,
-    private readonly historyService: ZaloChatHistoryService,
-    private readonly outboundService: ZaloOutboundService,
-    private readonly agentService: ZaloAgentService,
+    rateLimitService: ZaloChatRateLimitService,
+    historyService: ZaloChatHistoryService,
+    outboundService: ZaloOutboundService,
+    agentService: ZaloAgentService,
   ) {
+    this.pipeline = new ChatPipeline(
+      new ZaloRateLimiterAdapter(rateLimitService),
+      new ZaloHistoryAdapter(historyService),
+      new ZaloAgentAdapter(agentService),
+      new ZaloOutboundAdapter(outboundService),
+    );
+
     this.queue = new DebounceChatQueue<QueueCtx>(
       {
         getDebounceMs: () =>
@@ -64,48 +79,18 @@ export class ZaloChatQueueService implements OnModuleDestroy {
   }
 
   private async handleFlush(batch: ChatQueueBatch<QueueCtx>): Promise<void> {
-    const {
-      externalUserId: zaloUserId,
-      texts,
-      context,
-      idempotencyKey,
-    } = batch;
-    const mergedText = texts.join('\n').slice(0, 4000);
-
-    const quota = idempotencyKey
-      ? await this.rateLimitService.reserve(zaloUserId, idempotencyKey)
-      : null;
-    if (quota && !quota.allowed) return;
-
     try {
-      const reply = await this.agentService.reply({
-        zaloUserId,
-        userId: context?.userId,
-        userText: mergedText,
-        correlationId: idempotencyKey,
+      await this.pipeline.flush({
+        externalUserId: batch.externalUserId,
+        userId: batch.context?.userId,
+        texts: batch.texts,
+        idempotencyKey: batch.idempotencyKey,
       });
-
-      if (reply.text.trim()) {
-        await this.historyService.appendTurn(
-          zaloUserId,
-          mergedText,
-          reply.text,
-        );
-        await this.outboundService.sendText(zaloUserId, reply.text);
-      }
-
-      if (idempotencyKey)
-        await this.rateLimitService.markCompleted(idempotencyKey);
     } catch (error) {
-      if (idempotencyKey && quota?.usageDate) {
-        await this.rateLimitService.refund(
-          zaloUserId,
-          quota.usageDate,
-          idempotencyKey,
-        );
-      }
       const msg = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Chat queue flush failed for ${zaloUserId}: ${msg}`);
+      this.logger.error(
+        `Chat queue flush failed for ${batch.externalUserId}: ${msg}`,
+      );
     }
   }
 }
