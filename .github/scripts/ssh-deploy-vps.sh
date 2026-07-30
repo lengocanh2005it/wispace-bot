@@ -21,5 +21,5 @@ ssh -p "$VPS_SSH_PORT" \
   -o StrictHostKeyChecking=no \
   -o ServerAliveInterval=30 \
   "${VPS_USER}@${VPS_HOST}" \
-  "cd '$(dirname "$REMOTE_SCRIPT")' && exec bash '$(basename "$REMOTE_SCRIPT")'" \
+  "IMAGE='$IMAGE' DEPLOY_MODE='$DEPLOY_MODE' FORCE_RECREATE='$FORCE_RECREATE' GHCR_PULL_TOKEN='$GHCR_PULL_TOKEN' GHCR_USER='$GHCR_USER' cd '$(dirname "$REMOTE_SCRIPT")' && exec bash '$(basename "$REMOTE_SCRIPT")'" \
   < /dev/null
