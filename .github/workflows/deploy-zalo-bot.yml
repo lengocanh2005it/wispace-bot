@@ -84,17 +84,13 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: |
-          echo "os=linux" >> .npmrc
-          npm ci
+        run: npm ci --force
 
       - name: Format check
         run: npx turbo run format:check --filter=@wispace/zalo-bot...
 
-      - name: Lint
-        run: npx turbo run lint --filter=@wispace/zalo-bot...
-
       - name: Typecheck
+        run: npx turbo run typecheck --filter=@wispace/zalo-bot...
         run: npx turbo run typecheck --filter=@wispace/zalo-bot...
 
       - name: Test

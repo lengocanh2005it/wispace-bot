@@ -24,9 +24,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: |
-          echo "os=linux" >> .npmrc
-          npm ci
+        run: npm ci --force
 
       - name: Verify (format + lint + typecheck + test + build)
         run: npm run verify

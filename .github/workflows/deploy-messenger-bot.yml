@@ -84,9 +84,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: |
-          echo "os=linux" >> .npmrc
-          npm ci
+        run: npm ci --force
 
       - name: Format check
         run: npx turbo run format:check --filter=@wispace/messenger-bot...
