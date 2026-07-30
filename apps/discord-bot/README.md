@@ -15,7 +15,7 @@ See the full plan at [docs/turborepo-migration-plan.md](../../docs/turborepo-mig
 - Custom prompt: `src/shared/prompts/discord-chat.system.txt`.
 
 **Not yet done / TODO:**
-- `register_exam_report_notifications` — still a stub; only implement when porting periodic report cron to Discord (no opt-in needed unlike Messenger since there is no 24h messaging limit).
+- `register_exam_report_notifications` — not needed; Discord has no 24h messaging limit so the 08:00 report cron already works without opt-in.
 - CI/CD deploy VPS — workflow + scripts + Dockerfile written, not yet running in production.
 - Persistent chat history (Redis/multi-pod) — currently only a Map in process, lost on restart.
 - Whitelist, quota-event audit table, stuck-reserved recovery, ops CLI (Messenger-only for now).

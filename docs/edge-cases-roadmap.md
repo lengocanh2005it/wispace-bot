@@ -205,8 +205,8 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 - **LLM Safety** — `LlmSafetyModule` tracks hallucination/safety events, cleanup cron, daily threshold alert.
 - **Metrics** — `MetricsModule` exposes `GET /metrics` for Prometheus scraping.
 - **Shared packages** — `@wispace/llm-agent`, `@wispace/chat-metering`, `@wispace/wispace-client`, etc.
-- **Discord bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator (`ChatPipelineHooks.onStep`) + user feedback ("Đang xử lý tin nhắn trước...") + 6/7 tool handlers (reschedule via button confirm/cancel). `register_exam_report_notifications` stubbed (no Discord ref-link equivalent).
-- **Zalo bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + user feedback ("Đang xử lý tin nhắn trước...") + account linking + 6/7 tools wired + 08:00 report cron + study reminders + dead letter + chat queue + ops endpoints + CI/CD (reschedule/register not yet available; `register_exam_report_notifications` stubbed).
+- **Discord bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator (`ChatPipelineHooks.onStep`) + user feedback ("Đang xử lý tin nhắn trước...") + 6/7 tool handlers (reschedule via button confirm/cancel). `register_exam_report_notifications` not needed (no 24h limit).
+- **Zalo bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + user feedback ("Đang xử lý tin nhắn trước...") + account linking + 6/7 tools wired + 08:00 report cron + study reminders + dead letter + chat queue + ops endpoints + CI/CD. `register_exam_report_notifications` not needed (48h window covers active users; ZNS deferred).
 
 ### Gaps & Remediation
 
@@ -215,7 +215,7 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 | Tier per WISPACE package | All users same `CHAT_FREE_FORM_DAILY_LIMIT` | Phase 7: limit by `user_id` / package API — [§5.8](./chat-rate-limit-quota.md) | **C1** |
 | Event store / billing | Hard to audit monthly LLM costs | `chat_quota_events` + `llm_usage_events` tables ✓ | **C2** ✓ MVP |
 | Schedule change tool via chat | **Confirm postback** — `reschedule_study_session` only stages; WISPACE API runs on "Confirm Reschedule" tap | Done (Messenger + Discord button confirm/cancel) |
-| `register_exam_report_notifications` | Not available on Discord/Zalo | Needs product decision — no ref-link equivalent on Discord | TBD |
+| `register_exam_report_notifications` | Not available on Discord/Zalo | **Skip** — Discord has no 24h limit; Zalo 48h window covers active users; ZNS deferred to post-product if users complain | **Done** (decided) |
 
 ---
 

@@ -54,7 +54,7 @@ Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB 
 
 ---
 
-## Phase 3 — Implement `apps/discord-bot` (chat + quota/usage/safety + account-linking + 6/7 tool handlers COMPLETED; register_exam_report_notifications NOT YET DONE)
+## Phase 3 — Implement `apps/discord-bot` (chat + quota/usage/safety + account-linking + 6/7 tool handlers COMPLETED; register_exam_report_notifications NOT NEEDED — no 24h limit)
 
 **Goal:** Real Discord bot using shared `packages/llm-agent` + `packages/chat-metering` + DB (generalized key from Phase 2).
 
@@ -96,7 +96,7 @@ Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 6/7 real WISPA
 - Chat via Zalo webhook (`POST /zalo/webhook`), rate limit reserve/refund/markCompleted via `@wispace/chat-metering`
 - Account linking via PKCE OAuth2 flow + `WISPACE_API_VERIFY_TOKEN_URL`
 - 6/7 tool handlers calling real Wispace API (`x-zaloid`): `get_user_goals`, `get_learning_progress_report`, `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder`, `reschedule_study_session` (with Zalo-specific confirm/cancel via structured messages)
-- `register_exam_report_notifications` — stub (same as Discord; Zalo has no 24h messaging limit)
+- `register_exam_report_notifications` — not needed (Zalo 48h window covers active users; ZNS deferred to post-product)
 - 08:00 report cron (`ZaloReportCronService`) — fetches goals + scores via Wispace API, uses `ScheduledReportClaimEntity` for cross-platform dedup, concurrency 3
 - Study reminder: `StudyReminderWorkerService` with `platform='zalo'`, sync/dispatch/worker via shared `@wispace/study-reminder-shared`
 - LLM provider failover (OpenAI → OpenRouter → MiniMax) via `@wispace/llm-agent`
