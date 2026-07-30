@@ -122,7 +122,7 @@ npm ci                     # required if you just ran npm ci --omit=dev
 npm run format:check       # prettier --check — CI fails on format errors
 npm run lint               # eslint --fix
 npm run typecheck          # tsc --noEmit
-npm run test               # Jest — 377 specs
+npm run test               # Jest — 399 specs
 npm run build              # nest build + copy assets → dist/
 ```
 
@@ -145,8 +145,9 @@ Fix lint/test/build errors until they pass. `npm run test:e2e` requires a real P
 - `collectDefaultMetrics()` from `prom-client`, `setInterval`, long `setTimeout` → **required** to implement `OnModuleDestroy` and clear in `onModuleDestroy()`
 - `prom-client` Registry: call `this.registry.clear()` on destroy to clean up collectors
 
-Existing specs:
+Existing specs (key files, not exhaustive — `apps/*/src/**/*.spec.ts` + `packages/*/src/**/*.spec.ts`):
 
+**Messenger bot:**
 - `apps/messenger-bot/src/modules/messenger/application/messenger-webhook.router.spec.ts` (37 tests — pure function router)
 - `apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-rate-limit.service.spec.ts`
 - `apps/messenger-bot/src/modules/chat-rate-limit/infrastructure/persistence/chat-rate-limit.repository.spec.ts`
@@ -161,7 +162,28 @@ Existing specs:
 - `apps/messenger-bot/src/shared/common/guards/internal-api-key.guard.spec.ts`
 - `apps/messenger-bot/src/shared/config/poc.constants.spec.ts`
 - `apps/messenger-bot/src/shared/utils/prompt-injection.utils.spec.ts`
-- `src/app.controller.spec.ts`
+
+**Discord bot:**
+- `apps/discord-bot/src/modules/discord-chat/application/services/discord-chat-queue.service.spec.ts`
+- `apps/discord-bot/src/modules/discord-chat/application/services/discord-chat-history.service.spec.ts`
+- `apps/discord-bot/src/modules/discord-chat/application/services/discord-outbound.service.spec.ts`
+- `apps/discord-bot/src/modules/discord-chat/application/services/discord-student-report.service.spec.ts`
+- `apps/discord-bot/src/modules/discord-chat/application/services/discord-study-reminder-message-sender.service.spec.ts`
+- `apps/discord-bot/src/modules/discord-chat/application/agent/discord-agent-tools.service.spec.ts`
+- `apps/discord-bot/src/modules/discord-chat/discord-chat-factory.spec.ts`
+- `apps/discord-bot/src/modules/account-link/` (3 specs)
+
+**Zalo bot:**
+- `apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat-queue.service.spec.ts`
+- `apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat-history.service.spec.ts`
+- `apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-outbound.service.spec.ts`
+- `apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-student-report.service.spec.ts`
+- `apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat.service.spec.ts`
+- `apps/zalo-bot/src/modules/zalo-chat/application/agent/zalo-agent-tools.service.spec.ts`
+- `apps/zalo-bot/src/modules/zalo-webhook/` (2 specs)
+- `apps/zalo-bot/src/modules/zalo-oauth/` (5 specs)
+
+**Shared packages:** 26 spec files across `packages/*/src/`
 
 ---
 
@@ -411,7 +433,7 @@ Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global ski
 | Zalo chat queue / debounce | ✓ DebounceChatQueue wrapping `@wispace/chat-queue-core` — same as Messenger |
 | Zalo Redis burst counter | ✓ `PostgresBurstCounter` (was `MemoryBurstCounter`) |
 | Zalo LLM report enrichment | ✓ Report cron uses `ZaloStudentReportService` (LLM); tool still raw |
-| Discord/Zalo chat queue (H7) | ❌ No debounce/merge — Messenger-only via `CHAT_QUEUE_STORE` |
+| Discord chat queue (H7) | ❌ No debounce/merge — Messenger/Zalo use `CHAT_QUEUE_STORE` / `DebounceChatQueue` |
 | Discord/Zalo multi-pod chat history | ❌ In-memory only (Redis optional for Messenger) |
 | Project-wide gaps (link, reports, reminders, ops) | Roadmap — [edge-cases-roadmap.md](docs/edge-cases-roadmap.md) |
 

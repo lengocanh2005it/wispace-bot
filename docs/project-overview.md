@@ -6,7 +6,7 @@ Turborepo monorepo connecting **WISPACE** (IELTS Writing learning platform) with
 |-----|--------|
 | `apps/messenger-bot` | Fully functional — chat, reports, reminders, rate limit |
 | `apps/discord-bot` | Fully functional — chat, quota, 6/7 tool handlers, report cron |
-| `apps/zalo-bot` | Placeholder — chat + account linking, tools not yet wired |
+| `apps/zalo-bot` | Fully functional — chat, quota, account linking, report cron, study reminders, CI/CD |
 
 Shared packages (`packages/`): `llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `study-reminder-core`, `study-reminder-shared`, `scheduler-core`, `ops-health`, `bot-metrics`, `cleanup-cron`.
 
@@ -186,7 +186,7 @@ wispace-bot/                          # Turborepo root
 │   │   ├── scripts/                  # CLI utilities (not run in app)
 │   │   └── .env.example
 │   ├── discord-bot/                  # Discord bot (NestJS)
-│   └── zalo-bot/                     # Zalo bot (placeholder)
+│   └── zalo-bot/                     # Zalo bot (NestJS)
 ├── packages/                         # Shared packages
 │   ├── llm-agent/                    # LLM adapter + function calling
 │   ├── chat-metering/                # quota + usage + safety
@@ -397,7 +397,7 @@ node scripts/drop-poc-tables-old-db.mjs       # drop POC + migrations on writing
 
 - **Single instance** — `CRON_LEADER_ENABLED=false` (default); enable `CHAT_RATE_LIMIT_ENABLED=true` on prod.
 - **Scaling ≥2 instances** — chat: `CHAT_QUEUE_SHARED=true` (H7); 08:00 reports: `CRON_LEADER_ENABLED` + `scheduled_report_claims` table (R4 ✓). Preparation runbook: [scale-phase-b-runbook.md](./scale-phase-b-runbook.md).
-- **Multi-platform** — Messenger (fully functional), Discord (fully functional), Zalo (placeholder). Shared packages in `packages/`.
+- **Multi-platform** — Messenger (fully functional), Discord (fully functional), Zalo (fully functional). Shared packages in `packages/`.
 - **Schedule integration** — WISPACE calls `POST /messenger/study-calendar/sync` on schedule change (S0 ✓); 30-minute cron is a fallback.
 - **UserCalendar API** — requires `WISPACE_API_USER_CALENDAR_URL`; no more DB fallback.
 - **Chat rate limit** — V1 + H1–H7 ✓; remaining project-wide gaps: [edge-cases-roadmap.md](./edge-cases-roadmap.md)
