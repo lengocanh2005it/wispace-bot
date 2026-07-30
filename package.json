@@ -21,7 +21,6 @@
   "devDependencies": {
     "@swc/cli": "^0.8.1",
     "@swc/core": "^1.15.46",
-    "@swc/core-win32-x64-msvc": "^1.15.46",
     "@swc/jest": "^0.2.39",
     "chokidar": "^5.0.0",
     "husky": "^9.1.7",
