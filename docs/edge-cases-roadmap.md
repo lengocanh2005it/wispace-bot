@@ -36,8 +36,8 @@ Related: [project-overview.md](./project-overview.md), [study-session-reminder.m
 | **METRICS** ✓ | Prometheus `/metrics` endpoint | 0.5 days | `MetricsModule` |
 | **DOPPLER** ✓ | Doppler runtime sync | 1 day | `POST /messenger/ops/doppler-sync` |
 | **PKG** ✓ | Shared packages extraction | 3–5 days | 12 packages in `packages/` |
-| **DISCORD** ✓ | Discord bot (functional) | 3–5 days | Chat + quota + 6/7 tool handlers |
-| **ZALO** ✓ | Zalo bot (fully functional) | 3–5 days | Chat + quota + account linking + 6/7 tool handlers + 08:00 report cron + study reminders + dead letter + ops endpoints + CI/CD + chat queue + Redis burst counter + LLM report enrichment + Doppler webhook |
+| **DISCORD** ✓ | Discord bot (functional) | 3–5 days | Chat + quota + pending cap + typing indicator + 6/7 tool handlers |
+| **ZALO** ✓ | Zalo bot (fully functional) | 3–5 days | Chat + quota + account linking + 6/7 tool handlers + 08:00 report cron + study reminders + dead letter + ops endpoints + CI/CD + chat queue + pending cap + typing indicator + Redis burst counter + LLM report enrichment + Doppler webhook |
 
 **Recommended order:** ~~Q1/S0/I1/S1/L1/R1/L2/R2/R3/L3/R4/R5/S2~~ (✓) → `CHAT_QUEUE_SHARED` at scale → remaining items per user feedback.
 
@@ -205,8 +205,8 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 - **LLM Safety** — `LlmSafetyModule` tracks hallucination/safety events, cleanup cron, daily threshold alert.
 - **Metrics** — `MetricsModule` exposes `GET /metrics` for Prometheus scraping.
 - **Shared packages** — `@wispace/llm-agent`, `@wispace/chat-metering`, `@wispace/wispace-client`, etc.
-- **Discord bot** — chat + quota + 6/7 tool handlers (reschedule via button confirm/cancel). `register_exam_report_notifications` stubbed (no Discord ref-link equivalent).
-- **Zalo bot** — chat + quota + account linking + 6/7 tools wired + 08:00 report cron + study reminders + dead letter + chat queue + ops endpoints + CI/CD (reschedule/register not yet available; `register_exam_report_notifications` stubbed).
+- **Discord bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator (`ChatPipelineHooks.onStep`) + user feedback ("Đang xử lý tin nhắn trước...") + 6/7 tool handlers (reschedule via button confirm/cancel). `register_exam_report_notifications` stubbed (no Discord ref-link equivalent).
+- **Zalo bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + user feedback ("Đang xử lý tin nhắn trước...") + account linking + 6/7 tools wired + 08:00 report cron + study reminders + dead letter + chat queue + ops endpoints + CI/CD (reschedule/register not yet available; `register_exam_report_notifications` stubbed).
 
 ### Gaps & Remediation
 

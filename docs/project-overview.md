@@ -5,10 +5,10 @@ Turborepo monorepo connecting **WISPACE** (IELTS Writing learning platform) with
 | App | Status |
 |-----|--------|
 | `apps/messenger-bot` | Fully functional — chat, reports, reminders, rate limit |
-| `apps/discord-bot` | Fully functional — chat, quota, 6/7 tool handlers, report cron |
-| `apps/zalo-bot` | Fully functional — chat, quota, account linking, report cron, study reminders, CI/CD |
+| `apps/discord-bot` | Fully functional — chat, quota, pending cap + typing indicator, 6/7 tool handlers, report cron |
+| `apps/zalo-bot` | Fully functional — chat, quota, pending cap, account linking, report cron, study reminders, CI/CD |
 
-Shared packages (`packages/`): `llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `study-reminder-core`, `study-reminder-shared`, `scheduler-core`, `ops-health`, `bot-metrics`, `cleanup-cron`.
+Shared packages (`packages/`): `llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `chat-pipeline`, `study-reminder-core`, `study-reminder-shared`, `scheduler-core`, `ops-health`, `bot-metrics`, `cleanup-cron`.
 
 This is a **POC** — prioritizing fast shipping, with a **dedicated** PostgreSQL DB (`ai_chat_bot_db`) + WISPACE HTTP API, not yet separated into a standalone microservice.
 
