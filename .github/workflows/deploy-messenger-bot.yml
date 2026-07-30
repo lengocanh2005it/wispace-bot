@@ -206,6 +206,8 @@ jobs:
           ls -la upload-bundle/
 
       - name: Upload bundle to VPS (retry)
+        env:
+          VPS_TARGET_DIR: /home/ngoc_anh/messenger-bot
         run: bash .github/scripts/upload-to-vps.sh upload-bundle
 
       - name: Deploy on VPS (retry)
