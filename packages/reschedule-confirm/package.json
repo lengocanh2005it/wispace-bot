@@ -15,9 +15,7 @@
     "test": "jest --runInBand"
   },
   "dependencies": {
-    "@nestjs/common": "^11.0.1"
-  },
-  "peerDependencies": {
+    "@nestjs/common": "^11.0.1",
     "@wispace/wispace-client": "*"
   },
   "devDependencies": {
