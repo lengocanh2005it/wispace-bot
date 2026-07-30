@@ -84,7 +84,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Format check
         run: npx turbo run format:check --filter=@wispace/discord-bot...
