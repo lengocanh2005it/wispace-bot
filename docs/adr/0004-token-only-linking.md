@@ -14,7 +14,7 @@ Account linking between Messenger and WISPACE uses token-based verification: use
 | Alternative | Reason for rejection |
 |-------------|---------------------|
 | Ref-only linking (legacy) | Does not verify ownership. Anyone with the link `m.me?ref=X` could link another user's account. |
-| Full OAuth2 flow | Too complex for the POC. Requires redirect URI, consent screen, refresh tokens. |
+| Full OAuth2 flow | Too complex at this stage. Requires redirect URI, consent screen, refresh tokens. |
 | Magic link (email) | Requires email infrastructure. Longer user journey. |
 
 ## Consequences

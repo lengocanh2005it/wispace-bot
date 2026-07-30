@@ -22,7 +22,7 @@ npm run test
 
 ## Constraints
 
-- Migration bảng POC: mappings, logs, jobs, `users` + view `"Users"` (DB dedicated, dùng chung giữa các bot — xem `docs/turborepo-migration-plan.md` Phase 2 về generalize khóa `psid`).
+- Migration bảng: mappings, logs, jobs, `users` + view `"Users"` (DB dedicated, dùng chung giữa các bot — xem `docs/turborepo-migration-plan.md` Phase 2 về generalize khóa `psid`).
 - **Không** migration bảng Wispace (`UserCalendars`, `"Users"` hub, …) — cache user qua bảng `users` local.
 - Cập nhật `apps/messenger-bot/.env.example` nếu thêm biến môi trường mới (không phải DB column).
 

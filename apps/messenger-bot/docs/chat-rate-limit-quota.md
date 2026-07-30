@@ -1,6 +1,6 @@
 # Messenger Chat Rate Limit — Quota Storage & Message Throttling
 
-Research document covering **3 quota storage approaches** for enabling two-way chatbot (user messages ↔ bot replies via LLM), analyzing trade-offs and **proposed implementation** for the WISPACE POC.
+Research document covering **3 quota storage approaches** for enabling two-way chatbot (user messages ↔ bot replies via LLM), analyzing trade-offs and **proposed implementation** for WISPACE.
 
 Related: [project-overview.md](../../docs/project-overview.md), [study-session-reminder.md](./study-session-reminder.md) (similar outbox pattern to `study_reminder_jobs`).
 
@@ -346,7 +346,7 @@ No UPSERT counter — each action only appends a log.
 | **Replay / rebuild state** | Not native | **Main strength** | Can re-COUNT — slow, no reserve/release semantics |
 | **Storage over time** | ~1 row/user/day | N event/action — largest | 1+ row/message — large |
 | **Changing quota rules later** | Only applies forward | Rebuild projection from events | Hard — old logs lack reserve semantics |
-| **Matches current POC stack** | Like `study_reminder_jobs` (snapshot state) | New pattern, learning curve | Leverages existing table |
+| **Matches current stack** | Like `study_reminder_jobs` (snapshot state) | New pattern, learning curve | Leverages existing table |
 | **Fits IELTS student scale** | **Very well** | Overkill for early stage | OK for < 50 active chat users |
 
 ### 4.2. Actual Cost Bottleneck
@@ -458,7 +458,7 @@ CREATE INDEX idx_chat_idempotency_psid_date
 | `idempotency_key` | `message.mid` — globally unique |
 | `status` | `reserved` → LLM running; `completed` → reply sent; `refunded` → turn returned after error |
 
-**Simpler approach (POC):** unique `(idempotency_key)` on `messenger_message_logs` when `message_type = 'FREE_FORM_CHAT_IN'` — reserve + insert log in one transaction. Insert failure → mid already processed, skip LLM.
+**Simpler approach:** unique `(idempotency_key)` on `messenger_message_logs` when `message_type = 'FREE_FORM_CHAT_IN'` — reserve + insert log in one transaction. Insert failure → mid already processed, skip LLM.
 
 #### Reserve Flow with Idempotency
 
@@ -547,12 +547,12 @@ sequenceDiagram
   WH->>DB: flush 2 after done → +1 more turn
 ```
 
-| Scenario | UX / quota result (1 POC instance) |
+| Scenario | UX / quota result (1 instance) |
 |----------|-------------------------------------|
 | Typing on PC + phone **almost simultaneously** (within debounce) | 1 reply (merged content), **1 turn** |
 | Typing on phone **while** bot is replying to PC message | 2 replies sequentially, **2 turns** |
 | Same PSID, **daily quota exhausted** | Next message (from any device) → `CHAT_QUOTA_DENIED` |
-| Exceeding **burst** (3/min POC default) | Next message → burst deny; applies per PSID, not per device |
+| Exceeding **burst** (3/min default) | Next message → burst deny; applies per PSID, not per device |
 
 **Race condition — practical impact:**
 
@@ -599,11 +599,11 @@ class ChatRateLimitService {
 
 `message_type`: `CHAT_QUOTA_DENIED`.
 
-### 5.6. Suggested POC Parameters
+### 5.6. Suggested Parameters
 
 | Tier | FREE_FORM / day | Burst |
 |------|-----------------|-------|
-| POC / demo | 15–20 | 3/min |
+| Demo | 15–20 | 3/min |
 | Light production | 30 | 5/min |
 | QA whitelist | unlimited (configured `psid` list) | — |
 
@@ -723,7 +723,7 @@ flowchart LR
 
 #### Phase 4 — Burst, Edge Cases & Hardening (≈ 1 day)
 
-**Goal:** Fast anti-spam + POC production stability.
+**Goal:** Fast anti-spam + production stability.
 
 | Task | Done when |
 |------|-----------|
@@ -739,7 +739,7 @@ flowchart LR
 
 #### Phase 5 — Ops, Docs & V1 Sign-off (≈ 0.5–1 day)
 
-**Goal:** Operations and POC handoff.
+**Goal:** Operations and handoff.
 
 | Task | Done when |
 |------|-----------|
@@ -777,7 +777,7 @@ flowchart LR
 | Task | Done when |
 |------|-----------|
 | `messenger_chat_events` table + replay rebuild projection | Audit & quota rule changes |
-| Per-token billing (if product requires) | Outside POC scope |
+| Per-token billing (if product requires) | Outside scope |
 
 ---
 
@@ -918,7 +918,7 @@ flowchart LR
 
 | Option | When |
 |--------|------|
-| **A** — 1 POC instance | Default `CHAT_QUEUE_SHARED=false` |
+| **A** — 1 instance | Default `CHAT_QUEUE_SHARED=false` |
 | **B** — sticky webhook / external queue | Not implemented — use C |
 | **C** — persist cross-pod debounce | `CHAT_QUEUE_STORE=redis` or `CHAT_QUEUE_SHARED=true` + `REDIS_ENABLED=true` |
 
@@ -936,7 +936,7 @@ flowchart LR
 
 #### Hardening Effort Summary
 
-| Phase | Effort | POC 1-Instance Priority |
+| Phase | Effort | Priority |
 |-------|--------|-------------------------|
 | H1 Go-live | 0.5 days | **Required** |
 | H2 Stuck reserved | 1–1.5 days | **High** |

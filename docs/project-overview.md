@@ -1,4 +1,4 @@
-# POC Overview — WISPACE Bots (Turborepo Monorepo)
+# Overview — WISPACE Bots (Turborepo Monorepo)
 
 Turborepo monorepo connecting **WISPACE** (IELTS Writing learning platform) with **Facebook Messenger**, **Discord**, and **Zalo**: students link accounts, receive AI progress reports and upcoming study session reminders.
 
@@ -10,7 +10,7 @@ Turborepo monorepo connecting **WISPACE** (IELTS Writing learning platform) with
 
 Shared packages (`packages/`): `llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `chat-pipeline`, `study-reminder-core`, `study-reminder-shared`, `scheduler-core`, `ops-health`, `bot-metrics`, `cleanup-cron`.
 
-This is a **POC** — prioritizing fast shipping, with a **dedicated** PostgreSQL DB (`ai_chat_bot_db`) + WISPACE HTTP API, not yet separated into a standalone microservice.
+This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_chat_bot_db`) + WISPACE HTTP API, not yet separated into a standalone microservice.
 
 ---
 
@@ -141,7 +141,7 @@ flowchart TB
 
 ### Responsibility Boundaries
 
-| Component | Belongs to this POC | Belongs to WISPACE (external) |
+| Component | Belongs to this project | Belongs to WISPACE (external) |
 |-----------|---------------------|-------------------------------|
 | Messenger message sending, bot menu | ✓ | |
 | Mapping + logs + jobs tables | ✓ (migration) | |
@@ -159,7 +159,7 @@ Repo uses **Clean Architecture** — each feature in `src/modules/<name>/` has 4
 ```
 wispace-bot/                          # Turborepo root
 ├── apps/
-│   ├── messenger-bot/                # This POC (NestJS)
+│   ├── messenger-bot/                # Messenger Bot (NestJS)
 │   │   ├── src/
 │   │   │   ├── main.ts, app.module.ts
 │   │   │   ├── shared/
@@ -229,7 +229,7 @@ wispace-bot/                          # Turborepo root
 
 ## 4. Database
 
-### Tables Created by POC (migration)
+### Tables Created (migration)
 
 | Table | Purpose |
 |-------|---------|
@@ -387,13 +387,13 @@ npm run chat-quota:cleanup         # H6: delete old completed/refunded idempoten
 npm run llm-usage:status           # Query LLM tokens (--psid, --user-id, --ops)
 npm run chat-quota:rebuild         # Q1: rebuild daily counter from events
 # Ops DB migrate (one-time):
-node scripts/migrate-hub-to-chat-bot-db.mjs   # copy POC tables from hub → ai_chat_bot_db
-node scripts/drop-poc-tables-old-db.mjs       # drop POC + migrations on writing_ai_hub_db
+node scripts/migrate-hub-to-chat-bot-db.mjs   # copy tables from hub → ai_chat_bot_db
+node scripts/drop-poc-tables-old-db.mjs       # drop tables + migrations on writing_ai_hub_db
 ```
 
 ---
 
-## 10. POC Scope & Limitations
+## 10. Scope & Limitations
 
 - **Single instance** — `CRON_LEADER_ENABLED=false` (default); enable `CHAT_RATE_LIMIT_ENABLED=true` on prod.
 - **Scaling ≥2 instances** — chat: `CHAT_QUEUE_SHARED=true` (H7); 08:00 reports: `CRON_LEADER_ENABLED` + `scheduled_report_claims` table (R4 ✓). Preparation runbook: [scale-phase-b-runbook.md](./scale-phase-b-runbook.md).
@@ -409,12 +409,12 @@ Detailed study reminder trade-offs: section 11 in [study-session-reminder.md](./
 
 ## 12. Runbook — Chat Rate Limit (V1)
 
-| Parameter | POC Recommendation | Env |
+| Parameter | Recommendation | Env |
 |-----------|-------------------|-----|
 | FREE_FORM / day | 15–20 | `CHAT_FREE_FORM_DAILY_LIMIT` |
 | Burst | 3/min | `CHAT_BURST_PER_MINUTE` |
 | Timezone reset | 00:00 ICT | `CHAT_USAGE_TIMEZONE=Asia/Ho_Chi_Minh` |
-| Enable enforcement | Prod POC | `CHAT_RATE_LIMIT_ENABLED=true` |
+| Enable enforcement | Production | `CHAT_RATE_LIMIT_ENABLED=true` |
 | PSID QA unlimited | Team-dependent | `CHAT_RATE_LIMIT_WHITELIST_PSIDS` (comma-separated) |
 
 **Ops quota query:**

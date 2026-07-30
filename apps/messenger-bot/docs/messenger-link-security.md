@@ -8,7 +8,7 @@ Related: [project-overview.md](../../docs/project-overview.md) (link flow), [edg
 
 ## 1. Problem
 
-### 1.1 Current POC State
+### 1.1 Current State
 
 Messenger links from WISPACE have this format:
 
@@ -16,7 +16,7 @@ Messenger links from WISPACE have this format:
 https://m.me/{pageId}?ref={userId}&topic=IELTS&cadence=WEEKLY
 ```
 
-Meta webhook sends `referral.ref` → POC parses integer → saves to `user_platform_mappings` (`external_user_id` ↔ `user_id`).
+Meta webhook sends `referral.ref` → Bot parses integer → saves to `user_platform_mappings` (`external_user_id` ↔ `user_id`).
 
 ```typescript
 // poc.constants.ts — treats ref as valid userId if a positive integer parses
@@ -38,7 +38,7 @@ parseUserIdFromRef(ref) → Number.parseInt(ref, 10)
 - **Study reminders:** schedule jobs synced by `userId`, proactive messages sent to mapped `psid` → student B's schedule could reach a stranger's Messenger.
 - **AI reports:** cron sends via mapping; `userId` context wrong across entire pipeline.
 - **Chat agent:** tool/context misunderstands account owner (name, goals, schedule operations).
-- Some WISPACE APIs use `x-psid` — **not sufficient** to consider safe; POC + shared DB still couples by `user_id` in many places.
+- Some WISPACE APIs use `x-psid` — **not sufficient** to consider safe; shared DB still couples by `user_id` in many places.
 
 ### 1.3 Encoding / Obfuscation is **Not** a Solution
 
@@ -70,7 +70,7 @@ Need **proof of issuance from WISPACE** (server-side signature or token), not ju
 
 ### 2.2 HMAC Signed Ref
 
-**Description:** WISPACE (logged-in user) signs payload; Messenger POC verifies before linking.
+**Description:** WISPACE (logged-in user) signs payload; Messenger Bot verifies before linking.
 
 ```text
 ref = {userId}.{expUnix}.{signature}
@@ -81,7 +81,7 @@ signature = HMAC-SHA256("{userId}.{expUnix}", MESSENGER_LINK_SIGNING_SECRET)
 
 1. User logs into WISPACE → backend creates `ref` with `exp` (e.g. 24h).
 2. User opens `m.me?ref=...`.
-3. POC verifies signature + not expired → then `upsertPsidUserLink`.
+3. Bot verifies signature + not expired → then `upsertPsidUserLink`.
 
 | Pros | Cons |
 |------|------|
@@ -90,19 +90,19 @@ signature = HMAC-SHA256("{userId}.{expUnix}", MESSENGER_LINK_SIGNING_SECRET)
 | Shared secret — simple 2-service sync | Hard to **revoke** individual links (wait for `exp`) |
 | Prevents userId change without secret | Need additional **block relink** policy for already-mapped PSID |
 
-**Verdict:** **Temporary bridge** for POC / urgent pilots; should not be the final production target.
+**Verdict:** **Temporary bridge** for pilots; should not be the final production target.
 
 ---
 
 ### 2.3 Opaque One-Time Token (Recommended for Production)
 
-**Description:** `ref` is a random string (UUID / CSPRNG). `userId` does **not** appear on URL. WISPACE stores token server-side; POC verifies via internal API or shared DB.
+**Description:** `ref` is a random string (UUID / CSPRNG). `userId` does **not** appear on URL. WISPACE stores token server-side; Bot verifies via internal API or shared DB.
 
 ```mermaid
 sequenceDiagram
   participant U as Student (logged into WISPACE)
   participant W as WISPACE backend
-  participant M as Messenger POC
+  participant M as Messenger Bot
   participant F as Meta webhook
 
   U->>W: Connect Messenger
@@ -142,7 +142,7 @@ CREATE INDEX idx_messenger_link_tokens_user ON messenger_link_tokens (user_id);
 |------|------|
 | No userId exposure; per-token revoke | Needs table + verify API (WISPACE implements) |
 | One-time + TTL — strongest for go-live | Adds 1 verify round-trip when webhook links |
-| Clear audit (`created_at`, `used_at`) | POC depends on Wispace (or shared DB) |
+| Clear audit (`created_at`, `used_at`) | Bot depends on Wispace (or shared DB) |
 | Better fit for GDPR / privacy than signed ref | Slightly higher effort than HMAC (~1–2 days total across 2 teams) |
 
 **Verdict:** **Final target** for real user deployment.
@@ -155,11 +155,11 @@ CREATE INDEX idx_messenger_link_tokens_user ON messenger_link_tokens (user_id);
 
 | Pros | Cons |
 |------|------|
-| Stateless verify (POC needs no token DB) | Meta `ref` limited to ~250 chars — JWT is long |
+| Stateless verify (Bot needs no token DB) | Meta `ref` limited to ~250 chars — JWT is long |
 | Industry standard | Still needs `jti` blacklist for one-time / revoke |
 | | `userId` may still be in payload (if not encrypted) |
 
-**Verdict:** Consider when JWKS infra exists; for current POC **opaque token + DB** is simpler and clearer.
+**Verdict:** Consider when JWKS infra exists; **opaque token + DB** is simpler and clearer.
 
 ---
 
@@ -172,7 +172,7 @@ CREATE INDEX idx_messenger_link_tokens_user ON messenger_link_tokens (user_id);
 | One-time / anti-forward | ✗ | ✗ | ✓ |
 | Revoke individual links | ✗ | △ (wait for exp) | ✓ |
 | WISPACE effort | — | Low | Medium |
-| Messenger POC effort | — | Low | Medium |
+| Messenger Bot effort | — | Low | Medium |
 | Production-ready | ✗ | △ (temporary) | ✓ |
 
 ---
@@ -184,10 +184,10 @@ CREATE INDEX idx_messenger_link_tokens_user ON messenger_link_tokens (user_id);
 | Step | Work | Owner |
 |------|------|-------|
 | **L4.1** | `messenger_link_tokens` table + token creation API (login required) | WISPACE |
-| **L4.2** | `POST /internal/messenger/verify-link-token` or shared DB query | WISPACE / POC |
-| **L4.3** | POC: replace `parseUserIdFromRef` → verify token; reject raw numeric ref (feature flag) | POC |
-| **L4.4** | Block relink PSID → different userId (except ops endpoint) | POC |
-| **L4.5** | Log `LINK_TOKEN_OK` / `LINK_TOKEN_REJECT` / `MAPPING_RELINK_BLOCKED`; alert ops | POC |
+| **L4.2** | `POST /internal/messenger/verify-link-token` or shared DB query | WISPACE / Bot |
+| **L4.3** | Bot: replace `parseUserIdFromRef` → verify token; reject raw numeric ref (feature flag) | Bot |
+| **L4.4** | Block relink PSID → different userId (except ops endpoint) | Bot |
+| **L4.5** | Log `LINK_TOKEN_OK` / `LINK_TOKEN_REJECT` / `MAPPING_RELINK_BLOCKED`; alert ops | Bot |
 
 **Emergency hotfix (before L4):** HMAC signed ref + block relink — max 1 day, with plan to remove when L4 is complete.
 
@@ -199,11 +199,11 @@ WISPACE_API_VERIFY_TOKEN_URL=...
 WISPACE_INTERNAL_KEY=...
 ```
 
-POC **only** supports `token` — `legacy` / `signed` already removed; startup fails if verify URL is missing or `MESSENGER_LINK_MODE` differs from `token`.
+Bot **only** supports `token` — `legacy` / `signed` already removed; startup fails if verify URL is missing or `MESSENGER_LINK_MODE` differs from `token`.
 
 ---
 
-## 5. POC Code Changes (When Implementing L4)
+## 5. Code Changes (When Implementing L4)
 
 | File / Module | Change |
 |---------------|--------|
@@ -265,7 +265,7 @@ Other WISPACE APIs (e.g. `UserCalendar` via `x-psid`) are **data APIs**, not rep
 
 ### 7.2 When to Trigger Verify? (Not Just Get Started)
 
-Meta may send `referral.ref` in various webhook types — POC calls verify at **every location** that would `linkPsidFromContext` when `ref` is a new token:
+Meta may send `referral.ref` in various webhook types — Bot calls verify at **every location** that would `linkPsidFromContext` when `ref` is a new token:
 
 | Webhook Source | Can Have `ref`? |
 |----------------|-----------------|
@@ -307,7 +307,7 @@ Verifying at menu tap **doesn't help** users who never linked — there's no tok
 
 | Approach | Description | When to Use |
 |----------|-------------|-------------|
-| **A — Ops-only** | Support verifies out-of-band → calls `mapping/relink` | Pilot / POC → first prod |
+| **A — Ops-only** | Support verifies out-of-band → calls `mapping/relink` | Pilot → first prod |
 | **B — Self-service** | WISPACE app: "Disconnect" → revoke mapping → new token → re-link | Production scale |
 | **C — Confirm on Messenger** | Postback confirmation before relink | Rare; complex UX — **not** default recommendation |
 
@@ -327,7 +327,7 @@ Token `USED` but user re-opens old URL: verify rejects, but if PSID is already m
 
 WISPACE app should have a **「Create New Link」** button on expiration.
 
-### 7.6 Webhook Decision Matrix (POC)
+### 7.6 Webhook Decision Matrix
 
 ```text
 Webhook event
@@ -348,4 +348,4 @@ Detailed event flow per webhook type: [messenger-link-integration.md §9](./mess
 
 ## 8. One-Line Summary
 
-**Production:** use **opaque one-time tokens** issued by WISPACE when user is logged in, POC verifies before mapping; **don't** trust `ref=userId` and **don't** allow free relinking. **HMAC** is only a bridge if fast shipping is needed before L4.
+**Production:** use **opaque one-time tokens** issued by WISPACE when user is logged in, Bot verifies before mapping; **don't** trust `ref=userId` and **don't** allow free relinking. **HMAC** is only a bridge if fast shipping is needed before L4.

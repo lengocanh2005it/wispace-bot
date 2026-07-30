@@ -83,7 +83,7 @@ presentation → application → domain ← infrastructure
 
 **Shared / cross-cutting** (not feature modules, inside `apps/messenger-bot/src/`):
 
-- `shared/config/` — POC constants (`poc.constants.ts`)
+- `shared/config/` — Constants (`poc.constants.ts`)
 - `shared/common/` — guards, shared modules
 - `shared/prompts/` — `*.system.txt` (Messenger-specific content), loaded via `loadSystemPromptFile()` from `@wispace/llm-agent`
 - `infrastructure/database/` — TypeORM entities, migrations, `DatabaseModule` (shared DB, not yet split into package — see `docs/turborepo-migration-plan.md` Phase 2)

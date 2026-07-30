@@ -265,7 +265,7 @@ DELETE /api/UserCalendar/{id}
 x-psid: {messenger_psid}
 ```
 
-POC code: `UserCalendarApiClient` + `UserCalendarScheduleClient` from `@wispace/wispace-client` package (normalize → `session_key: calendar:{id}`, combine `eventDate` + `time` per `STUDY_REMINDER_TIMEZONE`).
+Implementation: `UserCalendarApiClient` + `UserCalendarScheduleClient` from `@wispace/wispace-client` package (normalize → `session_key: calendar:{id}`, combine `eventDate` + `time` per `STUDY_REMINDER_TIMEZONE`).
 
 All schedule changes (POST/DELETE) **must call** `POST /messenger/study-calendar/sync` — see section [3.6](#36-api-sync-on-schedule-change).
 
@@ -461,7 +461,7 @@ Primary send status: `study_reminder_jobs.status`. `messenger_message_logs` used
 
 ## 11. Trade-offs — Strengths, Weaknesses & Improvement Directions
 
-The **outbox table (`study_reminder_jobs`) + cron sync/dispatch** approach suits the Messenger POC: dedicated DB **`ai_chat_bot_db`**, small user scale, retry + audit without needing a separate message queue.
+The **outbox table (`study_reminder_jobs`) + cron sync/dispatch** approach suits Messenger: dedicated DB **`ai_chat_bot_db`**, small user scale, retry + audit without needing a separate message queue.
 
 ### 11.1. Why This Approach Makes Sense Now
 
@@ -488,14 +488,14 @@ The **outbox table (`study_reminder_jobs`) + cron sync/dispatch** approach suits
 | **Messenger channel only** | Users without linked `psid` or blocking bot → no reminders | High for unmapped users — by design |
 | **Full-scan sync (cron)** | 30-min cron still scans **all** mappings — just a fallback; primary flow syncs per `userId` | Low with few users; increases at scale |
 | **Multiple app instances** | `claimJob` via DB prevents duplicate sends, but cron runs on every instance — needs monitoring on horizontal scale | Low on single instance |
-| **Dispatch polling** | ~~Fixed 1 minute~~ → **S2 ✓ adaptive** — fewer queries when no jobs due | Low at POC; reduces scale risk — section [11.6](#116-worker-dispatch-polling--db-load-concerns--risk-mitigation) |
+| **Dispatch polling** | ~~Fixed 1 minute~~ → **S2 ✓ adaptive** — fewer queries when no jobs due | Low at this stage; reduces scale risk — section [11.6](#116-worker-dispatch-polling--db-load-concerns--risk-mitigation) |
 
 ### 11.3. Comparison with Other Approaches (Summary)
 
 | Approach | Pros | Cons vs Current |
 |----------|------|-----------------|
 | **Fixed N-minute cron poll, send immediately** | Simple, no jobs table | No durable retry, hard to audit, high DB/API load scanning users |
-| **External queue (BullMQ, SQS…)** | Good scale, precise delay | Added infrastructure, operations — overkill for POC |
+| **External queue (BullMQ, SQS…)** | Good scale, precise delay | Added infrastructure, operations — overkill at this stage |
 | **Messenger scheduled messages** | Meta sends on your behalf | No dynamic LLM, limited policy/templates |
 | **Push/email multi-channel** | Reaches users not on Messenger | Outside current integration scope |
 
@@ -533,7 +533,7 @@ Multi-pod: each instance runs its own loop; `claimJob` (atomic `UPDATE … WHERE
 
 #### 11.6.2. Outbox vs Worker Polling (Summary)
 
-| Concept | In POC |
+| Concept | Current |
 |---------|--------|
 | **Outbox** | `study_reminder_jobs` table — snapshot of "T-30 reminder tasks to send", not yet calling Messenger |
 | **Sync worker** | Writes/updates outbox from `UserCalendar` (30-min cron, API sync, 23:00 rollover) |
@@ -582,10 +582,10 @@ The **30-minute sync cron** is **different load** (reads UserCalendar per `psid`
 | **Outbox bloat** | Hundreds of thousands / millions of `sent`, `cancelled` rows not cleaned | Large index, slow vacuum, slow due queries |
 | **Many `pending` jobs due at once** | One minute must process > `LIMIT 50` | Late reminders spill to next minute |
 | **Many Nest instances** | Each pod runs adaptive dispatch loop | Claim contention; `claimJob` is atomic (already in place) |
-| **Dedicated DB** | POC queries isolated to `ai_chat_bot_db` | No resource contention with WISPACE hub |
+| **Dedicated DB** | Queries isolated to `ai_chat_bot_db` | No resource contention with WISPACE hub |
 | **Absolute T-30 accuracy expectation** | Adaptive poll → max late by ~`pollMinMs` + lead when job is close to due | Acceptable for 30-minute advance reminders |
 
-**Practical conclusion:** S2 reduces idle queries; remaining risk is mainly **outbox size** and **burst of simultaneous due jobs**. POC with dozens of users, 14-day horizon, evening rollover deleting `sent` → **not yet an issue**.
+**Practical conclusion:** S2 reduces idle queries; remaining risk is mainly **outbox size** and **burst of simultaneous due jobs**. With dozens of users, 14-day horizon, evening rollover deleting `sent` → **not yet an issue**.
 
 #### 11.6.5. Already in Code to Mitigate Risk
 
@@ -627,4 +627,4 @@ The proposed `messenger_chat_daily_usage` table (see [chat-rate-limit-quota.md](
 
 ### 11.7. Short Conclusion
 
-The current solution is **good enough to ship POC and operate early**: DB job queue, retry, preview, per-user sync API, and fallback cron. The main weaknesses aren't in the dispatch code but in **whether WISPACE calls the sync API on time** and whether users have Messenger mappings. When the product scales or requires higher time precision / multi-channel, improve per section 11.4 rather than changing the architecture from scratch.
+The current solution is **good enough to ship and operate early**: DB job queue, retry, preview, per-user sync API, and fallback cron. The main weaknesses aren't in the dispatch code but in **whether WISPACE calls the sync API on time** and whether users have Messenger mappings. When the product scales or requires higher time precision / multi-channel, improve per section 11.4 rather than changing the architecture from scratch.

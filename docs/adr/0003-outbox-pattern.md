@@ -5,16 +5,16 @@ Study reminders and report sends use the outbox pattern: write a job row to `stu
 ## Rationale
 
 - **Durability**: Jobs are written to PostgreSQL before processing. If the server crashes mid-way, jobs remain in the DB and are retried when the server restarts.
-- **Simple for POC**: Single-instance, no distributed queue needed. Outbox in the DB is sufficient.
+- **Simple**: Single-instance, no distributed queue needed. Outbox in the DB is sufficient.
 - **Natural idempotency**: `sessionKey` unique constraint on `study_reminder_jobs` ensures syncing multiple times does not create duplicate jobs.
 - **Easy debugging**: Query the DB directly to view jobs, states, and history. Debug scripts (`npm run study-reminder:jobs`) read directly from the DB.
-- **No additional infrastructure needed**: No Redis or message broker required for the POC stage.
+- **No additional infrastructure needed**: No Redis or message broker required at this stage.
 
 ## Alternatives considered
 
 | Alternative | Reason for rejection |
 |-------------|---------------------|
-| Bull queue (Redis) | Requires Redis infrastructure. More complex than the POC needs. Can reconsider when scaling. |
+| Bull queue (Redis) | Requires Redis infrastructure. More complex than needed at this stage. Can reconsider when scaling. |
 | SQS (AWS) | Vendor lock-in, additional cost, requires AWS account. |
 | In-memory queue | Not durable — server crash loses all jobs. |
 | Direct DB polling via cron | No transaction safety — two instances could poll simultaneously. Outbox + claim table solves this. |

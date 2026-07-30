@@ -4,16 +4,16 @@ The bots (Messenger, Discord, Zalo) and shared packages (`llm-agent`, `chat-mete
 
 ## Rationale
 
-- **Shared code tightly coupled**: `llm-agent` and `chat-metering` change across all three bots. Multi-repo would require continuous version publishing + bumping, creating friction for the POC.
+- **Shared code tightly coupled**: `llm-agent` and `chat-metering` change across all three bots. Multi-repo would require continuous version publishing + bumping, creating friction for this stage.
 - **Single source of truth for DB schema**: One shared `ai_chat_bot_db`. Multi-repo would need a schema registry or cross-repo migrations.
 - **Simple CI/CD**: Turborepo cache + filter (`--filter=@wispace/messenger-bot...`) builds only the relevant parts quickly. No need for another monorepo tool.
-- **POC stage**: No need to split teams or have independent deploy pipelines yet. Can reconsider when scaling to production multi-tenant.
+- **This stage**: No need to split teams or have independent deploy pipelines yet. Can reconsider when scaling to production multi-tenant.
 
 ## Alternatives considered
 
 | Alternative | Reason for rejection |
 |-------------|---------------------|
-| Multi-repo (one repo per bot) | Shared packages would need versioning + publish workflow. Too complex for the POC. |
+| Multi-repo (one repo per bot) | Shared packages would need versioning + publish workflow. Too complex at this stage. |
 | Nx monorepo | Good but Turborepo is lighter, faster caching, more npm-native ecosystem. |
 | Lerna monorepo | Deprecated, Turborepo is the successor. |
 

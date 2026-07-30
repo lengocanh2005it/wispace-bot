@@ -11,7 +11,7 @@ Free-form chat: debounce → LLM agent → Send API. Integrates `ChatRateLimitMo
 
 | Mode | Env | Debounce buffer |
 |------|-----|-----------------|
-| Local (POC 1 instance) | `CHAT_QUEUE_STORE=memory` (default) | In-process RAM (`MessengerChatQueueService`) |
+| Local (1 instance) | `CHAT_QUEUE_STORE=memory` (default) | In-process RAM (`MessengerChatQueueService`) |
 | Distributed (≥2 pods or Redis) | `CHAT_QUEUE_STORE=redis` | Redis `chat:queue:buffer:{psid}` |
 
 Legacy: `CHAT_QUEUE_SHARED=true` → `CHAT_QUEUE_STORE=redis` when not explicitly set.
@@ -22,7 +22,7 @@ Legacy: `CHAT_QUEUE_SHARED=true` → `CHAT_QUEUE_STORE=redis` when not explicitl
 
 | Backend | Env | Notes |
 |---------|-----|-------|
-| Memory | `CHAT_QUEUE_STORE=memory` (default) | 1 pod POC — wraps `@wispace/chat-queue-core`'s `DebounceChatQueue` (package shared across all bots, see `.claude/rules/clean-architecture.md`) |
+| Memory | `CHAT_QUEUE_STORE=memory` (default) | 1 pod — wraps `@wispace/chat-queue-core`'s `DebounceChatQueue` (package shared across all bots, see `.claude/rules/clean-architecture.md`) |
 | Redis | `CHAT_QUEUE_STORE=redis` + `REDIS_ENABLED=true` | `chat:queue:buffer:{psid}`, set `chat:queue:active-psids`, lock `chat:queue:lock:{psid}` |
 
 Port: `CHAT_QUEUE_STORE` → `ChatQueueStoreResolver` (redis when distributed).
@@ -31,7 +31,7 @@ Port: `CHAT_QUEUE_STORE` → `ChatQueueStoreResolver` (redis when distributed).
 
 | Backend | Env | Notes |
 |---------|-----|-------|
-| Memory | `CHAT_HISTORY_STORE=memory` (default) | 1 pod POC — wraps `@wispace/chat-history`'s `MemoryChatHistoryStore` (package shared with Discord, see `.claude/rules/clean-architecture.md`) |
+| Memory | `CHAT_HISTORY_STORE=memory` (default) | 1 pod — wraps `@wispace/chat-history`'s `MemoryChatHistoryStore` (package shared with Discord, see `.claude/rules/clean-architecture.md`) |
 | Redis | `CHAT_HISTORY_STORE=redis` + `REDIS_ENABLED=true` | Key `chat:history:{psid}`, TTL `CHAT_HISTORY_TTL_MS` — Redis store is not in the package (infrastructure-specific to each app) |
 
 `CHAT_HISTORY_STORE=postgres` **removed** (`messenger_chat_history` table dropped).

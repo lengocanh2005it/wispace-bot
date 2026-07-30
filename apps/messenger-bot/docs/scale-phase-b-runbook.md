@@ -1,6 +1,6 @@
 # Runbook — Phase B Scale (2 Instances)
 
-**Preparation document** for operating when POC scales from **1 instance** to **2 NestJS instances** behind Nginx — **not yet implemented** until metrics trigger (section 2).
+**Preparation document** for operating when the project scales from **1 instance** to **2 NestJS instances** behind Nginx — **not yet implemented** until metrics trigger (section 2).
 
 Related: [project-overview.md](../../docs/project-overview.md) §10, [chat-rate-limit-quota.md](./chat-rate-limit-quota.md) §H7, [doppler-secrets.md](./doppler-secrets.md), `deploy/nginx/`.
 
@@ -32,7 +32,7 @@ Related: [project-overview.md](../../docs/project-overview.md) §10, [chat-rate-
 | OpenAI logs | 429 / timeouts increasing noticeably |
 | Dead-letter webhook | Retries / backlog growing |
 
-**Current POC status (reference):** 1 container ~50 MB RAM, CPU ~0% → **keep 1 instance**; this runbook is ready when needed.
+**Current status (reference):** 1 container ~50 MB RAM, CPU ~0% → **keep 1 instance**; this runbook is ready when needed.
 
 Monitor before scaling:
 

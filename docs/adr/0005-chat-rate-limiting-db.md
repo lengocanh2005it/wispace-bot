@@ -4,11 +4,11 @@ FREE_FORM chat quota (daily usage + burst limit) is tracked via PostgreSQL table
 
 ## Rationale
 
-- **POC simplicity**: Single-instance deployment. No distributed counter needed. PostgreSQL atomic operations (`UPDATE ... SET free_form_count = free_form_count + 1`) are sufficient.
+- **Simplicity**: Single-instance deployment. No distributed counter needed. PostgreSQL atomic operations (`UPDATE ... SET free_form_count = free_form_count + 1`) are sufficient.
 - **Audit trail**: The `chat_quota_events` table records all state changes (reserved, released, denied). Redis only holds counters, no history.
 - **Natural idempotency**: The `chat_idempotency` table with unique constraint on message ID ensures each message is counted only once. Redis would need additional logic to achieve this.
 - **Transaction safety**: Reserve + idempotency check in the same transaction. No race conditions between pods.
-- **No Redis infrastructure needed**: POC runs single pod, Redis not yet needed. Can migrate later (R3 phase).
+- **No Redis infrastructure needed**: Single pod, Redis not yet needed. Can migrate later (R3 phase).
 
 ## Alternatives considered
 

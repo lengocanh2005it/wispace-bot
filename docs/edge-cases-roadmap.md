@@ -1,8 +1,8 @@
 # Edge Cases & Gaps — Remediation Roadmap
 
-Document recording **weaknesses / unhandled items** in the WISPACE bots POC (all functionality, not just rate limit) and **how to fix them** in **small phases** — independent PR merges.
+Document recording **weaknesses / unhandled items** in the WISPACE bots (all functionality, not just rate limit) and **how to fix them** in **small phases** — independent PR merges.
 
-**Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. POC DB **separated** to `ai_chat_bot_db` (✓). LLM Provider Abstraction **done** (PR #32). Shared packages **extracted** (12 packages). Discord bot **functional** (chat + quota + 6/7 tool handlers). Items below are remaining gaps or scale-dependent improvements.
+**Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. DB **separated** to `ai_chat_bot_db` (✓). LLM Provider Abstraction **done** (PR #32). Shared packages **extracted** (12 packages). Discord bot **functional** (chat + quota + 6/7 tool handlers). Items below are remaining gaps or scale-dependent improvements.
 
 Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md), [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), [AGENTS.md](../AGENTS.md) (Integration gaps table).
 
@@ -10,13 +10,13 @@ Related: [project-overview.md](./project-overview.md), [study-session-reminder.m
 
 ## Phase Summary Table
 
-| Phase | Name | Estimated Effort | POC 1-Instance Priority |
+| Phase | Name | Estimated Effort | Priority |
 |-------|------|------------------|-------------------------|
 | **Q1** ✓ | E2E QA for 4 flows | 0.5 days | **High** — before go-live |
 | **L1** ✓ | Non-text message → guidance reply | 0.5 days | Medium |
 | **L2** ✓ | 24h Send policy for reports / reminders | 0.5–1 days | Medium |
 | **L3** ✓ | Mapping change `user_id` (PSID unchanged) | 1 day | Low (rare) |
-| **L4** ✓ | Link `ref` security — one-time token (POC); HMAC optional bridge | 1–2 days | **High** — before real user go-live |
+| **L4** ✓ | Link `ref` security — one-time token; HMAC optional bridge | 1–2 days | **High** — before real user go-live |
 | **R1** ✓ | Report: empty score → friendly message | 0.5 days | Medium |
 | **R2** ✓ | Report: split long bubbles | 0.5 days | Low |
 | **R3** ✓ | Report: classify WISPACE errors (defer cron / UX menu) | 1–1.5 days | Medium |
@@ -73,7 +73,7 @@ flowchart LR
 
 | Gap | Impact | Fix | Phase |
 |-----|--------|-----|-------|
-| ~~**`ref` = raw `userId` — no account owner verification**~~ | ~~IDOR~~ | **Done (POC)** — token-only + startup validator; `m.me` links only from WISPACE — [messenger-link-security.md](./messenger-link-security.md) | **L4** ✓ |
+| ~~**`ref` = raw `userId` — no account owner verification**~~ | ~~IDOR~~ | **Done** — token-only + startup validator; `m.me` links only from WISPACE — [messenger-link-security.md](./messenger-link-security.md) | **L4** ✓ |
 | ~~POST `/webhook` no Meta signature verification~~ | Fake payload if webhook URL leaked | **Done** — `MessengerWebhookSignatureGuard`, `MESSENGER_APP_SECRET`, `rawBody` | Done |
 | ~~App port public / flood bypasses Nginx~~ | Bypasses rate limit + body cap | **Done** — Docker `127.0.0.1:PORT`; Nginx `deploy/nginx/` on VPS | Done |
 | ~~Webhook Meta retry; 1 event error~~ | ~~Other events still processed (correct); errored event lost~~ | **DL** ✓ — `messenger_webhook_dead_letters` + 5-min auto-retry cron + advisory lock + ops script | Done |
@@ -102,7 +102,7 @@ flowchart LR
 
 | Gap | Impact | Fix | Phase |
 |-----|--------|-----|-------|
-| Menu 503 — UX only, no auto-retry | User must tap "View Progress" again | Accepted for POC; optional scheduled postback retry | Backlog |
+| Menu 503 — UX only, no auto-retry | User must tap "View Progress" again | Accepted; optional scheduled postback retry | Backlog |
 
 ### 2.1 R3 + R5 — Report Behavior (Done ✓)
 
@@ -223,7 +223,7 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 
 | Edge Case | Current State | Fix | Phase |
 |-----------|---------------|-----|-------|
-| **1 POC instance** | Suitable | Keep `CHAT_QUEUE_SHARED=false` | — |
+| **1 instance** | Suitable | Keep `CHAT_QUEUE_SHARED=false` | — |
 | **≥2 chat pods** | Queue/history split across pods | `CHAT_QUEUE_SHARED=true` + migration — H7 ✓; `appendChatHistoryTurn` atomic ✓ | Done (enable env) |
 | **≥2 report cron pods** | ~~Risk of duplicate 08:00 sends~~ | **R4** ✓ claim + advisory lock + optional cron leader | Done |
 | **≥2 reminder cron pods** | `claimJob` ✓ + **cron pg_advisory_lock** ✓ | `upsertPendingJob` TOCTOU fixed ✓ (`pg_advisory_xact_lock`) | Done |
@@ -305,4 +305,4 @@ npm run study-reminder:jobs
 
 ---
 
-*POC prioritizes shipping — not implementing the entire roadmap; choose phases based on real user feedback and deployment scale.*
+*Project prioritizes shipping — not implementing the entire roadmap; choose phases based on real user feedback and deployment scale.*

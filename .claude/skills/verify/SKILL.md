@@ -7,7 +7,7 @@ description: >-
 disable-model-invocation: true
 ---
 
-# Verify POC (Turborepo)
+# Verify (Turborepo)
 
 Run **after code changes** and **after updating agent docs/skills** (see `AGENTS.md` → *Docs & skills when changing code*).
 

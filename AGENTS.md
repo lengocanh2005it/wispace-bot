@@ -15,7 +15,7 @@ Read this file before modifying code. In-depth details are in `docs/` — only r
 | **Stack** | NestJS 11, TypeScript, TypeORM, PostgreSQL, LLM Provider Abstraction (adapter pattern) |
 | **Goal** | Link IELTS students `m.me` ↔ WISPACE, deliver progress reports and study session reminders via Messenger |
 | **Scope** | Small backend service — **not** full-stack, **not** a standalone microservice |
-| **DB** | PostgreSQL **`ai_chat_bot_db`** (dedicated POC); Wispace data via **HTTP API**; user name cache: `users` table + `"Users"` view |
+| **DB** | PostgreSQL **`ai_chat_bot_db`** (dedicated database); Wispace data via **HTTP API**; user name cache: `users` table + `"Users"` view |
 | **Principles** | Small diffs, reuse existing modules, config via `.env`; Redis optional (R0–R4) for scale / VPS |
 
 ---
@@ -91,7 +91,7 @@ npm run chat-quota:recover-stuck    # H2: refund stuck reserved (optional --dry-
 npm run chat-quota:cleanup          # H6: delete old completed/refunded idempotency records (optional --dry-run)
 # Ops DB migrate (one-time, requires DB_HOST + DB_USER + DB_PASSWORD):
 node scripts/migrate-hub-to-chat-bot-db.mjs   # writing_ai_hub_db → ai_chat_bot_db
-node scripts/drop-poc-tables-old-db.mjs       # drop POC tables + migrations on old DB
+node scripts/drop-poc-tables-old-db.mjs       # drop tables + migrations on old DB
 ```
 
 ---
@@ -303,7 +303,7 @@ domain/entities|repositories/ → application/services|ports/ → infrastructure
 | `StudyReminderModule` importing `MessengerModule` | `MessengerOutboundModule` + ports |
 | `@Entity()` in `domain/` | ORM entity in `infrastructure/database/entities/` |
 | Hardcoding study reminder lead time | `StudyReminderScheduleService` + `.env` |
-| Adding Bull/SQS/Redis queue | `study_reminder_jobs` table (outbox POC) |
+| Adding Bull/SQS/Redis queue | `study_reminder_jobs` table (outbox pattern) |
 | Hardcoding tokens/API keys | `.env` + `ConfigService` |
 | Committing `.env` | Only `.env.example` |
 
@@ -388,7 +388,7 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 | 1 | [docs/project-overview.md](docs/project-overview.md) | First time in the repo — architecture, API, cron |
 | 2 | [apps/messenger-bot/docs/study-session-reminder.md](apps/messenger-bot/docs/study-session-reminder.md) | Editing reminders, jobs, sync, dispatch, rollover |
 | 3 | [apps/messenger-bot/docs/chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) | Two-way chatbot, rate limit, quota |
-| 4 | [docs/edge-cases-roadmap.md](docs/edge-cases-roadmap.md) | POC-wide gaps & remediation phases (beyond chat H1–H7) |
+| 4 | [docs/edge-cases-roadmap.md](docs/edge-cases-roadmap.md) | Project-wide gaps & remediation phases (beyond chat H1–H7) |
 | 5 | `.env.example` | Required environment variables |
 | 6 | `apps/messenger-bot/src/shared/config/poc.constants.ts` | `m.me` links, parse `userId` from `ref` |
 | — | `.claude/rules/clean-architecture.md` | Editing/adding code in `apps/messenger-bot/src/modules/` |
@@ -410,13 +410,13 @@ Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global ski
 
 ## Integration gaps (do not assume these are done)
 
-| Gap | POC status |
+| Gap | Status |
 |-----|------------|
 | `POST /messenger/study-calendar/sync` | ✓ Endpoint + sync by `userId` |
 | Auth ops (`INTERNAL_API_KEY`) | ✓ Header `X-Internal-Api-Key` or Bearer |
 | Wispace wire sync after schedule change | ✓ Calls `POST /messenger/study-calendar/sync` + `X-Internal-Api-Key` |
 | Student name for LLM | ✓ `users` table + `"Users"` view on `ai_chat_bot_db` (`DisplayName` → `'Chào bạn nha'`) |
-| POC DB separated from `writing_ai_hub_db` | ✓ `ai_chat_bot_db` + migrate/drop scripts on old hub |
+| DB separated from `writing_ai_hub_db` | ✓ `ai_chat_bot_db` + migrate/drop scripts on old hub |
 | Upsert `sent` job when rescheduling same `session_key` | ✓ `StudyReminderJobRepository.upsertPendingJob` reopens → `pending` |
 | Mapping changes `user_id` for same PSID (L3) | ✓ Webhook blocked; ops `POST /messenger/mapping/relink` + `allowRelink` |
 | 1:1 `userId` ↔ `psid` mapping (L4) | ✓ Token-only link + relink webhook blocked; ACTIVE unique index on DB |

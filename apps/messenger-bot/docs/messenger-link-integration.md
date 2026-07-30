@@ -12,7 +12,7 @@ Related: [messenger-link-security.md](./messenger-link-security.md) (solution tr
 |-----------|------|
 | **Lan** | WISPACE student, `userId = 143` |
 | **Hung** | Someone trying to map their PSID to another person's account |
-| **Bot** | Messenger POC (`demo_send_message_fb`) |
+| **Bot** | Messenger Bot (`demo_send_message_fb`) |
 | **WISPACE** | Student app + backend |
 
 ---
@@ -104,7 +104,7 @@ Lan taps link → opens Facebook Messenger → Meta sends webhook to Bot (same a
 
 ---
 
-### Part C — Bot Verifies BEFORE Saving Mapping (Main Change in POC)
+### Part C — Bot Verifies BEFORE Saving Mapping (Main Change)
 
 **Before (current code):**
 
@@ -137,7 +137,7 @@ Bot: linkPsidFromContext("PSID_LAN", { userId: 143, ... })
      → save user_platform_mappings
 ```
 
-**POC code idea** (not yet implemented — phase L4):
+**Implementation idea** (not yet implemented — phase L4):
 
 ```typescript
 async function resolveLinkFromRef(ref: string, psid: string) {
@@ -158,7 +158,7 @@ Plug into all `parseMessengerLinkContext` / `linkPsidFromContext` call sites in 
 
 ---
 
-### Part D — Block Relink (Additional Layer in POC)
+### Part D — Block Relink (Additional Layer)
 
 Even with valid token, if **PSID is already mapped to user A** but token is from **user B**:
 
@@ -201,7 +201,7 @@ Modify `relinkPsidToUserId` — **don't** upsert freely when `previousUserId !==
                             │ POST verify { token, psid }
                             │
 ┌─────────────────────────────────────────────────────────────┐
-│  Messenger POC (our side)                                    │
+│  Messenger Bot (our side)                                    │
 │  • Webhook receives ref as before                            │
 │  • REPLACE parseInt(ref) → call WISPACE verify API           │
 │  • Block relink PSID to different user                       │
@@ -240,7 +240,7 @@ Messenger **doesn't** issue tokens itself — it doesn't know who's logged into 
 
 ## 8. WISPACE Requirements — New APIs
 
-WISPACE needs **2 APIs**: one for the **app** (create link), one for **Messenger POC** (verify). Same `messenger_link_tokens` table.
+WISPACE needs **2 APIs**: one for the **app** (create link), one for **Messenger Bot** (verify). Same `messenger_link_tokens` table.
 
 ### 8.1 Data Table (WISPACE DB)
 
@@ -278,7 +278,7 @@ Used when student taps 「Connect Messenger」in a **logged-in** app.
 | **Method / path** | `POST /api/messenger/link-token` |
 | **Auth** | Session cookie or `Authorization: Bearer {user_jwt}` — user must be logged in |
 | **Who calls** | WISPACE frontend → WISPACE backend |
-| **Messenger POC** | Does **not** call this API |
+| **Messenger Bot** | Does **not** call this API |
 
 #### Request Body (Optional)
 
@@ -321,7 +321,7 @@ Used when student taps 「Connect Messenger」in a **logged-in** app.
 
 ---
 
-### 8.3 API 2 — Verify Link Token (Called by Messenger POC)
+### 8.3 API 2 — Verify Link Token (Called by Messenger Bot)
 
 Used **once** when Meta webhook reports user just opened link (`referral.ref`).
 
@@ -329,7 +329,7 @@ Used **once** when Meta webhook reports user just opened link (`referral.ref`).
 |--|--|
 | **Method / path** | `POST /internal/messenger/verify-link-token` |
 | **Auth** | `X-Internal-Api-Key: {INTERNAL_API_KEY}` or `Authorization: Bearer {INTERNAL_API_KEY}` |
-| **Who calls** | **Messenger POC** |
+| **Who calls** | **Messenger Bot** |
 | **Content-Type** | `application/json` |
 
 #### Request Body — **This is the Payload Messenger Sends**
@@ -363,10 +363,10 @@ Used **once** when Meta webhook reports user just opened link (`referral.ref`).
 |-------|------|-------------|
 | `success` | boolean | `true` when token is valid |
 | `userId` | number | Account owner associated with token |
-| `username` | string | Display name (optional, POC doesn't store) |
-| `email` | string | Email (optional, POC doesn't store) |
+| `username` | string | Display name (optional, bot doesn't store) |
+| `email` | string | Email (optional, bot doesn't store) |
 
-Messenger POC maps default `topic` / `cadence` (`IELTS` / `WEEKLY`) when API doesn't return these fields.
+Messenger Bot maps default `topic` / `cadence` (`IELTS` / `WEEKLY`) when API doesn't return these fields.
 
 #### Success Response (Old L4 Draft — Reference)
 
@@ -399,7 +399,7 @@ HTTP `400 Bad Request` or `409 Conflict` — unified body:
 | `USED` | `used_at` already set — token consumed |
 | `INVALID_FORMAT` | Token empty / wrong format |
 
-Messenger POC maps `reason` → user-facing message (e.g. 「Link expired, please reopen from WISPACE app」).
+Messenger Bot maps `reason` → user-facing message (e.g. 「Link expired, please reopen from WISPACE app」).
 
 #### Auth Error Response
 
@@ -409,7 +409,7 @@ Messenger POC maps `reason` → user-facing message (e.g. 「Link expired, pleas
 
 ---
 
-### 8.4 Messenger POC Configuration (Reference)
+### 8.4 Messenger Bot Configuration (Reference)
 
 ```env
 MESSENGER_LINK_MODE=token
@@ -417,7 +417,7 @@ WISPACE_API_VERIFY_MESSENGER_TOKEN_URL=https://backend.aihubproduction.com/api/U
 WISPACE_INTERNAL_KEY=...
 ```
 
-POC calls verify at points in `MessengerService.handleEvent` before `linkPsidFromContext`.
+Bot calls verify at points in `MessengerService.handleEvent` before `linkPsidFromContext`.
 
 ---
 
@@ -431,7 +431,7 @@ POC calls verify at points in `MessengerService.handleEvent` before `linkPsidFro
 - [ ] App uses `url` from API — doesn't build `ref={userId}` client-side
 - [ ] Issues `INTERNAL_API_KEY` to Messenger service (or separate secret)
 
-**Messenger POC (L4):**
+**Messenger Bot (L4):**
 
 - [ ] HTTP client calls verify with `{ token, psid }`
 - [ ] Replace `parseUserIdFromRef` when `MESSENGER_LINK_MODE=token`
@@ -466,7 +466,7 @@ After step 7 in [§7](#7-end-to-end-example) (mapping `psid ↔ userId` saved), 
 
 ### 9.2 Webhook Event Matrix — Who Verifies, Who Reads DB
 
-| Event | Has `referral.ref`? | Calls WISPACE Verify? | `userId` Source | POC Code (Reference) |
+| Event | Has `referral.ref`? | Calls WISPACE Verify? | `userId` Source | Code (Reference) |
 |-------|---------------------|----------------------|----------------|---------------------|
 | Open `m.me?ref=token` first time | Yes | **Yes** (L4) | WISPACE returns after verify | `handleEvent` → `linkPsidFromContext` |
 | `optin` with ref | Yes | **Yes** (L4) | Same as above | `event.optin` branch |

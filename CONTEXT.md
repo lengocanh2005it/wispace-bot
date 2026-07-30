@@ -1,6 +1,6 @@
 # WISPACE BOTS
 
-NestJS Turborepo monorepo POC for IELTS student bots — AI reports, study reminders, rate-limited AI chat. Currently features `apps/messenger-bot` (fully functional), `apps/discord-bot` (placeholder), `apps/zalo-bot` (placeholder), with shared packages: `llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `study-reminder-core`.
+NestJS Turborepo monorepo for IELTS student bots — AI reports, study reminders, rate-limited AI chat. Currently features `apps/messenger-bot` (fully functional), `apps/discord-bot` (placeholder), `apps/zalo-bot` (placeholder), with shared packages: `llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `study-reminder-core`.
 
 ## Language
 
@@ -381,7 +381,7 @@ _Avoid_: generic redis phase
 ### Database & Entities
 
 **ai_chat_bot_db**:
-Dedicated PostgreSQL database for the POC bot. Previously named `writing_ai_hub_db`.
+Dedicated PostgreSQL database for the bot. Previously named `writing_ai_hub_db`.
 _Avoid_: bot database, main DB
 
 **users** / **"Users"** (view):

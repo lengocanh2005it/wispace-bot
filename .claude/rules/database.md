@@ -5,7 +5,7 @@ paths: apps/messenger-bot/src/infrastructure/database/**
 
 # Database & migrations
 
-## POC tables (migrations in repo)
+## Tables (migrations in repo)
 
 - `user_platform_mappings` — `user_id` ↔ `(platform, external_user_id)` (renamed from `user_messenger_mappings` in Phase 2)
 - `message_logs` — sent/received message audit; cron `messenger-message-log-cleanup` deletes rows older than `MESSENGER_MESSAGE_LOG_RETENTION_DAYS` (default 90) at 03:00 ICT every Monday
@@ -14,7 +14,7 @@ paths: apps/messenger-bot/src/infrastructure/database/**
 - `study_reminder_jobs` — reminder outbox
 - `users` + view `"Users"` — display name / exam date cache; only `user_id` entries with Messenger mapping
 
-**Prod DB:** `ai_chat_bot_db`. Old hub `writing_ai_hub_db` — POC tables already dropped (ops script). All tables above have been generalized to `(platform, external_user_id)` since Phase 2 — see `docs/turborepo-migration-plan.md`.
+**Prod DB:** `ai_chat_bot_db`. Old hub `writing_ai_hub_db` — Tables already dropped (ops script). All tables above have been generalized to `(platform, external_user_id)` since Phase 2 — see `docs/turborepo-migration-plan.md`.
 
 H7 migration created `messenger_chat_queue_buffer` + `messenger_chat_history` — **dropped** by `1717747200010-DropMessengerChatQueueBufferAndHistoryTables.ts` (queue/history moved to Redis or memory).
 
@@ -27,7 +27,7 @@ H7 migration created `messenger_chat_queue_buffer` + `messenger_chat_history` �
 ## Wispace hub (no migrations in repo)
 
 - Sole HTTP API for calendar (`UserCalendar`, goals, scores) — **I3 ✓** no more `UserCalendars` DB fallback in app.
-- Tables `"Users"`, `UserCalendars` on `writing_ai_hub_db` — owned by Wispace; POC app does not read directly.
+- Tables `"Users"`, `UserCalendars` on `writing_ai_hub_db` — owned by Wispace; bot app does not read directly.
 
 ## Adding a migration
 

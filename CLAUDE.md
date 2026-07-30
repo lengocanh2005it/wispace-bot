@@ -1,6 +1,6 @@
 # wispace-bots (Turborepo monorepo)
 
-NestJS POC — WISPACE student bots (Messenger now, Discord/Zalo coming soon): AI reports + study reminders + rate-limited AI chat. Turborepo monorepo — see `docs/turborepo-migration-plan.md` for the full roadmap.
+NestJS — WISPACE student bots (Messenger now, Discord/Zalo coming soon): AI reports + study reminders + rate-limited AI chat. Turborepo monorepo — see `docs/turborepo-migration-plan.md` for the full roadmap.
 
 ## Structure
 
@@ -42,7 +42,7 @@ npm run chat-quota:status
 - `docs/turborepo-migration-plan.md` — monorepo roadmap + Discord/Zalo bots, cross-platform DB, independent CI/CD
 - `docs/project-overview.md` — architecture, API, cron, quota runbook (primarily about `apps/messenger-bot`)
 - `apps/messenger-bot/docs/chat-rate-limit-quota.md` — rate limit V1 + H1–H7
-- `docs/edge-cases-roadmap.md` — POC-wide gaps + remediation phases
+- `docs/edge-cases-roadmap.md` — Project-wide gaps + remediation phases
 - `apps/messenger-bot/docs/study-session-reminder.md` — detailed study session reminders
 
 | Path | Purpose |
