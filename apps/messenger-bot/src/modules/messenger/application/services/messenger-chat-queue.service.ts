@@ -108,7 +108,6 @@ export class MessengerChatQueueService implements OnModuleDestroy {
         onPendingQueued: (externalUserId, _text, pendingCount) => {
           if (pendingCount === 1) {
             void this.outbound.sendTextViaPsid({
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
               psid: externalUserId,
               text: 'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...',
               messageType: 'PENDING_FEEDBACK',

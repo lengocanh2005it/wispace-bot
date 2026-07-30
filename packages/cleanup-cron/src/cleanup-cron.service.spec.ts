@@ -95,7 +95,6 @@ describe('CleanupCronService', () => {
       () => 3,
     );
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     const cutoffArg = (deleteFn.mock.calls as unknown[][])[0][0] as Date;
     const expectedCutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 

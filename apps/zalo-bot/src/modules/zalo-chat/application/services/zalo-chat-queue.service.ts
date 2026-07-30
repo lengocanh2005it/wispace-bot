@@ -68,7 +68,6 @@ export class ZaloChatQueueService implements OnModuleDestroy {
           if (pendingCount === 1) {
             this.outboundService
               .sendText(
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
                 externalUserId,
                 'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...',
               )
