@@ -433,7 +433,7 @@ Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global ski
 | Zalo chat queue / debounce | ✓ DebounceChatQueue wrapping `@wispace/chat-queue-core` — same as Messenger |
 | Zalo Redis burst counter | ✓ `PostgresBurstCounter` (was `MemoryBurstCounter`) |
 | Zalo LLM report enrichment | ✓ Report cron uses `ZaloStudentReportService` (LLM); tool still raw |
-| Discord chat queue (H7) | ✓ `DebounceChatQueue` + `ChatPipeline` + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator + user feedback |
+| Discord/Zalo chat queue (H7) | ✓ `DebounceChatQueue` + `ChatPipeline` + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator + user feedback |
 | Discord/Zalo multi-pod chat history | ❌ In-memory only (Redis optional for Messenger) |
 | Project-wide gaps (link, reports, reminders, ops) | Roadmap — [edge-cases-roadmap.md](docs/edge-cases-roadmap.md) |
 

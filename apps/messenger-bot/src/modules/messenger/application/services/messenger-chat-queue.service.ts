@@ -87,6 +87,11 @@ export class MessengerChatQueueService implements OnModuleDestroy {
     @Inject(CHAT_QUEUE_STORE)
     private readonly chatQueueStore?: ChatQueueStorePort,
   ) {
+    const maxPendingSize = Math.max(
+      0,
+      Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) || 0,
+    );
+
     this.debounceQueue = new DebounceChatQueue<MemoryQueueContext>(
       {
         getDebounceMs: () => this.getDebounceMs(),
@@ -96,8 +101,25 @@ export class MessengerChatQueueService implements OnModuleDestroy {
         cleanupIntervalMs:
           sharedConfig?.getQueueCleanupIntervalMs() ??
           MessengerChatQueueService.DEFAULT_QUEUE_CLEANUP_INTERVAL_MS,
+        maxPendingSize,
       },
       (batch) => this.handleMemoryFlush(batch),
+      {
+        onPendingQueued: (externalUserId, _text, pendingCount) => {
+          if (pendingCount === 1) {
+            void this.outbound.sendTextViaPsid({
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+              psid: externalUserId,
+              text: 'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...',
+            });
+          }
+        },
+        onPendingDropped: (externalUserId, droppedCount) => {
+          this.logger.warn(
+            `Dropped ${droppedCount} pending message(s) for ${externalUserId} (cap exceeded)`,
+          );
+        },
+      },
     );
   }
 
