@@ -111,6 +111,7 @@ export class MessengerChatQueueService implements OnModuleDestroy {
               // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
               psid: externalUserId,
               text: 'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...',
+              messageType: 'PENDING_FEEDBACK',
             });
           }
         },

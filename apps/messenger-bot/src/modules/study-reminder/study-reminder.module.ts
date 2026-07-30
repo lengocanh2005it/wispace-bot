@@ -29,7 +29,6 @@ import { USER_DISPLAY_NAME_CACHE } from './domain/repositories/user-display-name
 import { RedisUserDisplayNameCache } from './infrastructure/cache/redis-user-display-name.cache';
 import { UserCalendarScheduleService } from './infrastructure/wispace/user-calendar-schedule.service';
 import { UserCalendarApiService } from './infrastructure/wispace/user-calendar-api.service';
-import { STUDY_REMINDER_JOB_REPOSITORY } from './domain/repositories/study-reminder-job.repository.port';
 import { StudyReminderJobRepository } from './infrastructure/persistence/study-reminder-job.repository';
 import { MessengerReminderGeneratorAdapter } from './infrastructure/adapters/messenger-reminder-generator.adapter';
 import { MessengerReminderMetricsHook } from './infrastructure/adapters/messenger-metrics-hook.adapter';
