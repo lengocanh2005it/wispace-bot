@@ -84,14 +84,13 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install --prefer-offline
+        run: npm ci
 
       - name: Format check
         run: npx turbo run format:check --filter=@wispace/zalo-bot...
 
-      # Lint skipped in CI: passes locally but @typescript-eslint/no-unsafe-*
-      # false positives from Windows-generated lock file resolving differently on Linux.
-      # Re-enable after lock file is regenerated on Linux (Docker).
+      - name: Lint
+        run: npx turbo run lint --filter=@wispace/zalo-bot...
 
       - name: Typecheck
         run: npx turbo run typecheck --filter=@wispace/zalo-bot...
