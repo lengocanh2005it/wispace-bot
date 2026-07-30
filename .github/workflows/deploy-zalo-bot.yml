@@ -84,7 +84,9 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          echo "os=linux" >> .npmrc
+          npm ci
 
       - name: Format check
         run: npx turbo run format:check --filter=@wispace/zalo-bot...
