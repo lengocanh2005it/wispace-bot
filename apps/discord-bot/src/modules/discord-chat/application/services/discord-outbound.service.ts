@@ -40,6 +40,17 @@ export class DiscordOutboundService {
     await this.sendTextAndGetChannelId(discordUserId, text);
   }
 
+  /** Sends a typing indicator to the user's DM channel (fire-and-forget). */
+  async sendTyping(discordUserId: string): Promise<void> {
+    try {
+      const user = await this.client.users.fetch(discordUserId);
+      const channel = await user.createDM();
+      await channel.sendTyping();
+    } catch {
+      // typing indicator is best-effort — swallow errors
+    }
+  }
+
   /** Sends a DM and returns the DM channel id (used to build deep links). */
   async sendTextAndGetChannelId(
     discordUserId: string,

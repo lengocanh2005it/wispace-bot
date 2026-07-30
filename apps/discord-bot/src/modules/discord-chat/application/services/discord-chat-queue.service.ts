@@ -31,7 +31,7 @@ export class DiscordChatQueueService implements OnModuleDestroy {
     configService: ConfigService,
     rateLimitService: DiscordChatRateLimitService,
     historyService: DiscordChatHistoryService,
-    outboundService: DiscordOutboundService,
+    private readonly outboundService: DiscordOutboundService,
     agentService: DiscordAgentService,
   ) {
     const mergedTextMaxChars = Math.max(
@@ -39,12 +39,25 @@ export class DiscordChatQueueService implements OnModuleDestroy {
       Number(configService.get<string>('CHAT_MERGED_TEXT_MAX_CHARS')) || 4000,
     );
 
+    const maxPendingSize = Math.max(
+      0,
+      Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) || 0,
+    );
+
     this.pipeline = new ChatPipeline(
       new DiscordRateLimiterAdapter(rateLimitService),
       new DiscordHistoryAdapter(historyService),
       new DiscordAgentAdapter(agentService),
       new DiscordOutboundAdapter(outboundService),
-      {},
+      {
+        onStep: async (step, ctx) => {
+          if (step === 'before_agent') {
+            await this.outboundService
+              .sendTyping(ctx.externalUserId)
+              .catch(() => {});
+          }
+        },
+      },
       { mergedTextMaxChars },
     );
 
@@ -61,8 +74,27 @@ export class DiscordChatQueueService implements OnModuleDestroy {
           ),
         staleTtlMs: STALE_TTL_MS,
         cleanupIntervalMs: CLEANUP_INTERVAL_MS,
+        maxPendingSize,
       },
       (batch) => this.handleFlush(batch),
+      {
+        onPendingQueued: (externalUserId, _text, pendingCount) => {
+          if (pendingCount === 1) {
+            this.outboundService
+              .sendText(
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+                externalUserId,
+                'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...',
+              )
+              .catch(() => {});
+          }
+        },
+        onPendingDropped: (externalUserId, droppedCount) => {
+          this.logger.warn(
+            `Dropped ${droppedCount} pending message(s) for ${externalUserId} (cap exceeded)`,
+          );
+        },
+      },
     );
   }
 

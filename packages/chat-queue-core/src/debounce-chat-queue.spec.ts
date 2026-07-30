@@ -8,12 +8,14 @@ function makeFlushMock<TContext>() {
 function makeQueue<TContext = Record<string, unknown>>(
   onFlush: ReturnType<typeof makeFlushMock<TContext>>,
   debounceMs = 20,
+  configOverrides?: { maxPendingSize?: number },
 ) {
   return new DebounceChatQueue<TContext>(
     {
       getDebounceMs: () => debounceMs,
       staleTtlMs: 60_000,
       cleanupIntervalMs: 60_000,
+      ...configOverrides,
     },
     onFlush,
   );
@@ -152,6 +154,125 @@ describe('DebounceChatQueue', () => {
     }
     expect(byUser.u1).toEqual(['from u1']);
     expect(byUser.u2).toEqual(['from u2']);
+    queue.destroy();
+  });
+
+  it('calls onPendingQueued when message arrives during processing', async () => {
+    let resolveFirstFlush!: () => void;
+    const firstFlushGate = new Promise<void>((r) => {
+      resolveFirstFlush = r;
+    });
+
+    const onFlush = makeFlushMock<Record<string, unknown>>().mockImplementation(
+      async () => {
+        await firstFlushGate;
+      },
+    );
+
+    const onPendingQueued = jest.fn();
+    const queueWithCallbacks = new DebounceChatQueue<Record<string, unknown>>(
+      {
+        getDebounceMs: () => 20,
+        staleTtlMs: 60_000,
+        cleanupIntervalMs: 60_000,
+      },
+      onFlush,
+      { onPendingQueued },
+    );
+
+    queueWithCallbacks.enqueue({ externalUserId: 'u1', text: 'first' });
+    await wait(30);
+
+    queueWithCallbacks.enqueue({ externalUserId: 'u1', text: 'second' });
+    queueWithCallbacks.enqueue({ externalUserId: 'u1', text: 'third' });
+
+    expect(onPendingQueued).toHaveBeenCalledTimes(2);
+    expect(onPendingQueued).toHaveBeenCalledWith('u1', 'second', 1, undefined);
+    expect(onPendingQueued).toHaveBeenCalledWith('u1', 'third', 2, undefined);
+
+    resolveFirstFlush();
+    await wait(50);
+    queueWithCallbacks.destroy();
+  });
+
+  it('calls onPendingDropped when maxPendingSize is exceeded', async () => {
+    let resolveFirstFlush!: () => void;
+    const firstFlushGate = new Promise<void>((r) => {
+      resolveFirstFlush = r;
+    });
+
+    const onFlush = makeFlushMock<Record<string, unknown>>().mockImplementation(
+      async () => {
+        await firstFlushGate;
+      },
+    );
+
+    const onPendingDropped = jest.fn();
+    const queue = new DebounceChatQueue<Record<string, unknown>>(
+      {
+        getDebounceMs: () => 20,
+        staleTtlMs: 60_000,
+        cleanupIntervalMs: 60_000,
+        maxPendingSize: 3,
+      },
+      onFlush,
+      { onPendingDropped },
+    );
+
+    queue.enqueue({ externalUserId: 'u1', text: 'first' });
+    await wait(30);
+
+    queue.enqueue({ externalUserId: 'u1', text: 'p1' });
+    queue.enqueue({ externalUserId: 'u1', text: 'p2' });
+    queue.enqueue({ externalUserId: 'u1', text: 'p3' });
+    queue.enqueue({ externalUserId: 'u1', text: 'p4' });
+
+    expect(onPendingDropped).toHaveBeenCalledTimes(1);
+    expect(onPendingDropped).toHaveBeenCalledWith('u1', 1);
+
+    resolveFirstFlush();
+    await wait(50);
+    queue.destroy();
+  });
+
+  it('retains only the newest maxPendingSize messages when cap is exceeded', async () => {
+    let resolveFirstFlush!: () => void;
+    const firstFlushGate = new Promise<void>((r) => {
+      resolveFirstFlush = r;
+    });
+
+    const capturedBatches: ChatQueueBatch<Record<string, unknown>>[] = [];
+    const onFlush = makeFlushMock<Record<string, unknown>>().mockImplementation(
+      async (batch) => {
+        capturedBatches.push(batch);
+        if (capturedBatches.length === 1) {
+          await firstFlushGate;
+        }
+      },
+    );
+
+    const queue = new DebounceChatQueue<Record<string, unknown>>(
+      {
+        getDebounceMs: () => 20,
+        staleTtlMs: 60_000,
+        cleanupIntervalMs: 60_000,
+        maxPendingSize: 2,
+      },
+      onFlush,
+    );
+
+    queue.enqueue({ externalUserId: 'u1', text: 'first' });
+    await wait(30);
+
+    queue.enqueue({ externalUserId: 'u1', text: 'p1' });
+    queue.enqueue({ externalUserId: 'u1', text: 'p2' });
+    queue.enqueue({ externalUserId: 'u1', text: 'p3' });
+
+    resolveFirstFlush();
+    await wait(50);
+
+    expect(capturedBatches).toHaveLength(2);
+    expect(capturedBatches[1].texts).toEqual(['p2', 'p3']);
     queue.destroy();
   });
 });

@@ -1,5 +1,6 @@
 import type {
   ChatQueueFlushHandler,
+  DebounceChatQueueCallbacks,
   DebounceChatQueueConfig,
   EnqueueInput,
 } from './types';
@@ -30,11 +31,16 @@ interface QueueState<TContext> {
 export class DebounceChatQueue<TContext = Record<string, unknown>> {
   private readonly queues = new Map<string, QueueState<TContext>>();
   private readonly cleanupTimer: ReturnType<typeof setInterval>;
+  private readonly maxPendingSize: number;
+  private readonly callbacks: DebounceChatQueueCallbacks<TContext>;
 
   constructor(
     private readonly config: DebounceChatQueueConfig,
     private readonly onFlush: ChatQueueFlushHandler<TContext>,
+    callbacks: DebounceChatQueueCallbacks<TContext> = {},
   ) {
+    this.maxPendingSize = config.maxPendingSize ?? 0;
+    this.callbacks = callbacks;
     this.cleanupTimer = setInterval(
       () => this.evictStale(),
       config.cleanupIntervalMs,
@@ -69,6 +75,24 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
       if (input.idempotencyKey) {
         state.lastPendingIdempotencyKey = input.idempotencyKey;
       }
+
+      this.callbacks.onPendingQueued?.(
+        input.externalUserId,
+        text,
+        state.pendingWhileProcessing.length,
+        state.context,
+      );
+
+      if (
+        this.maxPendingSize > 0 &&
+        state.pendingWhileProcessing.length > this.maxPendingSize
+      ) {
+        const excess =
+          state.pendingWhileProcessing.length - this.maxPendingSize;
+        state.pendingWhileProcessing.splice(0, excess);
+        this.callbacks.onPendingDropped?.(input.externalUserId, excess);
+      }
+
       return;
     }
 

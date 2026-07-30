@@ -40,4 +40,27 @@ export interface DebounceChatQueueConfig {
   staleTtlMs: number;
   /** How often to sweep for stale users. */
   cleanupIntervalMs: number;
+  /**
+   * Maximum messages allowed in `pendingWhileProcessing` per user. When
+   * exceeded, the oldest pending messages are dropped. `0` = no cap.
+   */
+  maxPendingSize?: number;
+}
+
+export interface DebounceChatQueueCallbacks<TContext> {
+  /**
+   * Called when a message arrives while the previous batch is still being
+   * processed (i.e. it lands in `pendingWhileProcessing`).
+   */
+  onPendingQueued?: (
+    externalUserId: string,
+    text: string,
+    pendingCount: number,
+    context?: Partial<TContext>,
+  ) => void;
+  /**
+   * Called when pending messages are dropped because `maxPendingSize` was
+   * exceeded. `droppedCount` is the number of messages removed.
+   */
+  onPendingDropped?: (externalUserId: string, droppedCount: number) => void;
 }

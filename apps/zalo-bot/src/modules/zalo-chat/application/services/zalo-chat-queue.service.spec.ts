@@ -74,6 +74,12 @@ describe('ZaloChatQueueService', () => {
         cleanupIntervalMs: 15 * 60 * 1000,
       }),
       expect.any(Function),
+      expect.objectContaining({
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        onPendingQueued: expect.any(Function),
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        onPendingDropped: expect.any(Function),
+      }),
     );
 
     expect(ChatPipeline).toHaveBeenCalledWith(
