@@ -2,17 +2,10 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import {
-  createLlmProviderAdapter,
-  createFailoverLlmProviderAdapter,
-  type LlmProviderAdapter,
-  type LlmProviderEntryConfig,
-} from '@wispace/llm-agent';
-import {
   ReportScheduleService,
   ReportSendScheduleService,
   ReportCronLeaderService,
   ReportCronLockService,
-  REPORT_DELIVERY_PORT,
   REPORT_SEND_JOB_REPOSITORY,
   REPORT_CLAIM_REPOSITORY,
   GOALS_DATA_PORT,
@@ -28,6 +21,7 @@ import { DiscordReportRetryDispatchService } from './application/services/discor
 import { DiscordReportOrchestrationService } from './application/services/discord-report-orchestration.service';
 import { DiscordGoalsDataAdapter } from './infrastructure/adapters/discord-goals-data.adapter';
 import { DiscordOutboundModule } from './discord-outbound.module';
+import { DiscordSharedModule } from './discord-shared.module';
 import { AccountLinkModule } from '../account-link/account-link.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
@@ -42,70 +36,17 @@ import { DISCORD_REPORT_PORT } from './domain/ports/discord-report.port';
       DiscordAccountLinkEntity,
     ]),
     DiscordOutboundModule,
+    DiscordSharedModule,
     AccountLinkModule,
     WispaceModule,
     ChatMeteringModule,
   ],
   providers: [
     {
-      provide: 'LLM_PROVIDER_ADAPTER',
-      useFactory: (configService: ConfigService): LlmProviderAdapter => {
-        const orderRaw = configService
-          .get<string>('LLM_PROVIDER_FAILOVER_ORDER')
-          ?.trim();
-        const order = orderRaw
-          ? orderRaw
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : [];
-
-        if (order.length === 0) {
-          return createLlmProviderAdapter({
-            getApiKey: () =>
-              configService.get<string>('OPENAI_API_KEY')?.trim() || undefined,
-            getModel: () =>
-              configService.get<string>('OPENAI_MODEL')?.trim() || 'gpt-5.4',
-          });
-        }
-
-        const entries: LlmProviderEntryConfig[] = [
-          {
-            provider: 'openai',
-            getApiKey: () =>
-              configService.get<string>('OPENAI_API_KEY')?.trim() || undefined,
-            getModel: () =>
-              configService.get<string>('OPENAI_MODEL')?.trim() || 'gpt-5.4',
-          },
-          {
-            provider: 'openrouter',
-            getApiKey: () =>
-              configService.get<string>('OPENROUTER_API_KEY')?.trim() ||
-              undefined,
-            getModel: () =>
-              configService.get<string>('OPENROUTER_MODEL')?.trim() ||
-              'openai/gpt-4o-mini',
-            getBaseUrl: () =>
-              configService.get<string>('OPENROUTER_BASE_URL')?.trim() ||
-              'https://openrouter.ai/api/v1',
-          },
-        ];
-
-        return createFailoverLlmProviderAdapter(entries, order, {
-          warn: (m) => console.warn(m),
-        });
-      },
-      inject: [ConfigService],
-    },
-    {
       provide: GOALS_DATA_PORT,
       useFactory: (configService: ConfigService): DiscordGoalsDataAdapter =>
         new DiscordGoalsDataAdapter(configService),
       inject: [ConfigService],
-    },
-    {
-      provide: REPORT_DELIVERY_PORT,
-      useExisting: DiscordReportDeliveryService,
     },
     {
       provide: REPORT_SEND_JOB_REPOSITORY,
