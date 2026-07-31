@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Build context: repo root (needs access to packages/llm-agent)
+# Build context: repo root (needs access to shared packages)
 # docker build -f apps/messenger-bot/Dockerfile .
 
 FROM node:20-alpine AS build
@@ -34,11 +34,23 @@ RUN apk add --no-cache docker-cli docker-cli-compose curl bash gnupg \
   && addgroup -g 1001 -S app \
   && adduser -S app -u 1001 -G app
 
-COPY --from=build --chown=app:app /app/apps/messenger-bot/dist ./dist
-COPY --from=build --chown=app:app /app/node_modules ./node_modules
-COPY --from=build --chown=app:app /app/apps/messenger-bot/package.json ./package.json
-# node_modules/@wispace/* are npm-workspaces symlinks into packages/ —
-# each package must exist at the same relative path for Node to resolve them at runtime.
+COPY package.json ./
+COPY apps/messenger-bot/package.json apps/messenger-bot/package.json
+COPY packages/llm-agent/package.json packages/llm-agent/package.json
+COPY packages/chat-metering/package.json packages/chat-metering/package.json
+COPY packages/chat-history/package.json packages/chat-history/package.json
+COPY packages/chat-queue-core/package.json packages/chat-queue-core/package.json
+COPY packages/wispace-client/package.json packages/wispace-client/package.json
+COPY packages/student-report/package.json packages/student-report/package.json
+COPY packages/study-reminder-core/package.json packages/study-reminder-core/package.json
+COPY packages/study-reminder-shared/package.json packages/study-reminder-shared/package.json
+COPY packages/scheduler-core/package.json packages/scheduler-core/package.json
+COPY packages/bot-metrics/package.json packages/bot-metrics/package.json
+COPY packages/cleanup-cron/package.json packages/cleanup-cron/package.json
+COPY packages/reschedule-confirm/package.json packages/reschedule-confirm/package.json
+RUN rm -f package-lock.json && npm install --force --omit=dev --ignore-scripts
+
+COPY --from=build --chown=app:app /app/apps/messenger-bot/dist ./apps/messenger-bot/dist
 COPY --from=build --chown=app:app /app/packages/llm-agent ./packages/llm-agent
 COPY --from=build --chown=app:app /app/packages/chat-metering ./packages/chat-metering
 COPY --from=build --chown=app:app /app/packages/chat-history ./packages/chat-history
@@ -56,4 +68,4 @@ USER app
 
 EXPOSE 5007
 
-CMD ["node", "dist/main.js"]
+CMD ["node", "apps/messenger-bot/dist/main.js"]
