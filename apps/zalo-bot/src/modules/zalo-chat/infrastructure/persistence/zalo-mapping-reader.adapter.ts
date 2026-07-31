@@ -19,7 +19,7 @@ export class ZaloMappingReaderAdapter implements MappingReaderPort {
 
   async findActiveMappings(platform: string): Promise<UserLink[]> {
     const links = await this.repo.find({
-      where: { platform },
+      where: { platform: platform },
     });
     return links.map((link) => ({
       externalUserId: link.externalUserId,
