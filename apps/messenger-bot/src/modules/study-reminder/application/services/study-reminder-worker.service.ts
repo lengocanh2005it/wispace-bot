@@ -15,7 +15,7 @@ import {
   type StudyReminderJobRepositoryPort,
 } from '../../domain/repositories/study-reminder-job.repository.port';
 import { StudyReminderDispatchService } from './study-reminder-dispatch.service';
-import { StudyReminderScheduleService } from './study-reminder-schedule.service';
+import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudyReminderSyncService } from './study-reminder-sync.service';
 
 @Injectable()

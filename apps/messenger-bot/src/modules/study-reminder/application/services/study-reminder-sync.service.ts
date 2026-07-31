@@ -8,7 +8,7 @@ import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
 } from '../../domain/repositories/study-reminder-job.repository.port';
-import { StudyReminderScheduleService } from './study-reminder-schedule.service';
+import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudySessionSourceService } from './study-session-source.service';
 
 export interface StudyReminderSyncResult {

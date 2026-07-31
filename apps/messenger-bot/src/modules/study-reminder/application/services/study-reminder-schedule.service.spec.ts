@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { StudyReminderScheduleService } from './study-reminder-schedule.service';
+import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 
 describe('StudyReminderScheduleService', () => {
   const config = {

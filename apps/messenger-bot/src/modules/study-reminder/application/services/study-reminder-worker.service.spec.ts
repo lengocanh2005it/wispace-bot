@@ -4,7 +4,7 @@ import type { PgAdvisoryLockService } from '@messenger/shared/common/pg-advisory
 import type { StudyReminderSyncService } from './study-reminder-sync.service';
 import type { StudyReminderDispatchService } from './study-reminder-dispatch.service';
 import type { StudyReminderJobRepositoryPort } from '../../domain/repositories/study-reminder-job.repository.port';
-import type { StudyReminderScheduleService } from './study-reminder-schedule.service';
+import type { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudyReminderWorkerService } from './study-reminder-worker.service';
 
 describe('StudyReminderWorkerService', () => {
