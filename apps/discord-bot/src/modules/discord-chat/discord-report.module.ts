@@ -19,6 +19,7 @@ import { DiscordReportSendJobRepository } from './infrastructure/persistence/dis
 import { DiscordReportClaimRepository } from './infrastructure/persistence/discord-report-claim.repository';
 import { DiscordReportCronService } from './application/services/discord-report-cron.service';
 import { DiscordReportRetryDispatchService } from './application/services/discord-report-retry-dispatch.service';
+import { DiscordReportOrchestrationService } from './application/services/discord-report-orchestration.service';
 import { DiscordGoalsDataAdapter } from './infrastructure/adapters/discord-goals-data.adapter';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { AccountLinkModule } from '../account-link/account-link.module';
@@ -71,6 +72,7 @@ import { DISCORD_REPORT_PORT } from './domain/ports/discord-report.port';
     DiscordReportClaimRepository,
     DiscordReportCronService,
     DiscordReportRetryDispatchService,
+    DiscordReportOrchestrationService,
     DiscordStudentReportService,
   ],
   exports: [DiscordReportCronService, DiscordReportRetryDispatchService],
