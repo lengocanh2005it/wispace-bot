@@ -19,10 +19,10 @@ COPY packages/scheduler-core/package.json packages/scheduler-core/package.json
 COPY packages/bot-metrics/package.json packages/bot-metrics/package.json
 COPY packages/cleanup-cron/package.json packages/cleanup-cron/package.json
 COPY packages/reschedule-confirm/package.json packages/reschedule-confirm/package.json
-RUN npm install --force --ignore-scripts
+RUN rm -f package-lock.json && npm install --ignore-scripts
 
 COPY . .
-RUN npx turbo run build --filter=@wispace/messenger-bot... && npm install --force --omit=dev --ignore-scripts
+RUN npx turbo run build --filter=@wispace/messenger-bot... && rm -f package-lock.json && npm install --omit=dev --ignore-scripts
 
 FROM node:20-alpine AS production
 WORKDIR /app
