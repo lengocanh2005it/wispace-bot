@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
-  StudyReminderScheduleService,
   StudyReminderDispatchService,
   MESSAGE_SENDER,
   STUDY_REMINDER_JOB_REPOSITORY,
@@ -68,7 +67,6 @@ import { MetricsService } from '../metrics/metrics.service';
     },
 
     // ── Shared schedule service (replaces local) ─────────────────────────
-    StudyReminderScheduleService,
     LocalStudyReminderScheduleService,
 
     // ── Shared dispatch service (with Messenger adapters via ports) ──────
@@ -102,7 +100,7 @@ import { MetricsService } from '../metrics/metrics.service';
   ],
   exports: [
     StudyReminderService,
-    StudyReminderScheduleService,
+    LocalStudyReminderScheduleService,
     StudyReminderWorkerService,
     StudyReminderSyncService,
     StudyReminderDispatchService,
