@@ -54,7 +54,7 @@ COPY --from=build --chown=app:app /app/packages/cleanup-cron ./packages/cleanup-
 COPY --from=build --chown=app:app /app/packages/ops-health ./packages/ops-health
 COPY --from=build --chown=app:app /app/packages/reschedule-confirm ./packages/reschedule-confirm
 
-RUN npm install --omit=dev --ignore-scripts
+RUN npm install --force --omit=dev --ignore-scripts
 
 USER app
 
