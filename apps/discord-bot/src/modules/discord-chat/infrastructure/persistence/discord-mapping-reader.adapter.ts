@@ -15,10 +15,11 @@ export class DiscordMappingReaderAdapter implements MappingReaderPort {
   ) {}
 
   async findActiveMappings(platform: string): Promise<UserLink[]> {
-    const links = await this.repo
-      .createQueryBuilder('link')
-      .where('link.platform = :platform', { platform })
-      .getMany();
+    const results = await this.repo.query(
+      'SELECT external_user_id as "externalUserId", user_id as "userId", platform FROM discord_account_links WHERE platform = $1',
+      [platform],
+    );
+    return results;
     return links.map((link) => ({
       externalUserId: link.externalUserId,
       userId: link.userId,
