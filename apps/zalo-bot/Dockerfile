@@ -21,10 +21,10 @@ COPY packages/bot-metrics/package.json packages/bot-metrics/package.json
 COPY packages/cleanup-cron/package.json packages/cleanup-cron/package.json
 COPY packages/ops-health/package.json packages/ops-health/package.json
 COPY packages/reschedule-confirm/package.json packages/reschedule-confirm/package.json
-RUN npm ci --ignore-scripts
+RUN npm ci --force --ignore-scripts
 
 COPY . .
-RUN npx turbo run build --filter=@wispace/zalo-bot... && npm ci --omit=dev --ignore-scripts
+RUN npx turbo run build --filter=@wispace/zalo-bot... && npm ci --force --omit=dev --ignore-scripts
 
 FROM node:20-alpine AS production
 WORKDIR /app
