@@ -4,12 +4,19 @@ import type { ZaloWebhookHandler } from '@zalo/modules/zalo-webhook/domain/ports
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { ZaloChatQueueService } from './zalo-chat-queue.service';
+import { IntentDetector } from '@wispace/intent-detector';
 
 const FALLBACK_ERROR_MESSAGE =
   'Xin lỗi, mình gặp sự cố khi xử lý tin nhắn. Bạn thử lại sau ít phút nhé.';
 
 const UNSUPPORTED_MESSAGE_TYPE_MESSAGE =
   'Hiện mình chỉ hỗ trợ tin nhắn văn bản thôi nhé. Bạn gõ câu hỏi bằng chữ giúp mình nha!';
+
+const GREETING_TEMPLATE =
+  'Chào bạn! 👋 Mình là trợ lý WISPACE trên Zalo. Hiện tại một số tính năng chưa khả dụng trên Zalo — bạn có thể dùng Messenger để xem lịch học và tiến độ đầy đủ nhé!';
+
+const SELF_INTRO_TEMPLATE =
+  'Mình là WISPACE Bot — trợ lý AI hỗ trợ học IELTS Writing trên Zalo. Hiện tại một số tính năng cá nhân hoá chưa khả dụng trên Zalo. Bạn có thể dùng Messenger để trải nghiệm đầy đủ! 🎓';
 
 @Injectable()
 export class ZaloChatService implements ZaloWebhookHandler {
@@ -37,6 +44,18 @@ export class ZaloChatService implements ZaloWebhookHandler {
     text: string,
     idempotencyKey?: string,
   ): Promise<void> {
+    // Intent detection: greeting/self-intro → reply directly, skip LLM
+    const intentDetector = new IntentDetector();
+    const intent = intentDetector.detect(text.trim());
+    if (intent.intent === 'greeting') {
+      await this.outboundService.sendText(zaloUserId, GREETING_TEMPLATE);
+      return;
+    }
+    if (intent.intent === 'self_intro') {
+      await this.outboundService.sendText(zaloUserId, SELF_INTRO_TEMPLATE);
+      return;
+    }
+
     try {
       const userId =
         await this.accountLinkService.findUserIdByZaloId(zaloUserId);

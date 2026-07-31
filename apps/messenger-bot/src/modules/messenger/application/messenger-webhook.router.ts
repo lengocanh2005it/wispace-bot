@@ -5,6 +5,7 @@ import {
   CONFIRM_RESCHEDULE_POSTBACK,
   CANCEL_RESCHEDULE_POSTBACK,
 } from './constants/messenger-reschedule.constants';
+import { IntentDetector } from '@wispace/intent-detector';
 
 export type WebhookAction =
   | {
@@ -184,6 +185,32 @@ function routeTextMessage(
         psid,
         text: 'Vui lòng mở Messenger từ liên kết WISPACE (có đủ topic, cadence và ref) để kết nối tài khoản trước khi sử dụng.',
         messageType: 'MISSING_USER_REF',
+      },
+    ];
+  }
+
+  // Intent detection: greeting/self-intro → reply directly, skip LLM
+  const intentDetector = new IntentDetector();
+  const intent = intentDetector.detect(message.text!.trim());
+  if (intent.intent === 'greeting') {
+    return [
+      {
+        type: 'send_text',
+        psid,
+        userId: ctx.userId,
+        text: 'Chào bạn! 👋 Mình là trợ lý WISPACE — hỗ trợ bạn học IELTS Writing. Bạn có thể hỏi về lịch học, tiến độ hoặc mục tiêu band nhé!',
+        messageType: 'GREETING',
+      },
+    ];
+  }
+  if (intent.intent === 'self_intro') {
+    return [
+      {
+        type: 'send_text',
+        psid,
+        userId: ctx.userId,
+        text: 'Mình là WISPACE Bot — trợ lý AI hỗ trợ học IELTS Writing trên Messenger. Mình có thể giúp bạn xem lịch học, tiến độ và mục tiêu band. Gõ "hi" để bắt đầu! 🎓',
+        messageType: 'SELF_INTRO',
       },
     ];
   }

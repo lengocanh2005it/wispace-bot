@@ -22,13 +22,16 @@ import { DiscordMenuService } from '../../application/services/discord-menu.serv
 import { DiscordPendingJoinService } from '@discord/modules/account-link/application/services/discord-pending-join.service';
 import { buildDiscordLinkWelcomeMessage } from '@discord/modules/account-link/application/messages/account-link.messages';
 import { WispaceApiError } from '@wispace/wispace-client';
-import { isGreetingOnly } from '@wispace/llm-agent';
+import { IntentDetector } from '@wispace/intent-detector';
 
 const FALLBACK_ERROR_MESSAGE =
   'Xin lỗi, mình gặp sự cố khi xử lý tin nhắn. Bạn thử lại sau ít phút nhé.';
 
-const FALLBACK_GREETING_MESSAGE =
-  'Chào bạn! Mình là trợ lý học tập WISPACE. Hiện mình đang gặp chút trục trặc, bạn thử nhắn lại sau ít phút để mình hỗ trợ nhé.';
+const GREETING_TEMPLATE =
+  'Chào {name}! 👋 Mình là trợ lý WISPACE — hỗ trợ bạn học IELTS Writing. Bạn có thể hỏi về lịch học, tiến độ hoặc mục tiêu band nhé!';
+
+const SELF_INTRO_TEMPLATE =
+  'Mình là WISPACE Bot — trợ lý AI hỗ trợ học IELTS Writing trên Discord. Mình có thể giúp bạn xem lịch học, tiến độ và mục tiêu band. Gõ "hi" để bắt đầu! 🎓';
 
 function formatError(error: unknown): string {
   if (error instanceof WispaceApiError) {
@@ -45,6 +48,7 @@ function formatError(error: unknown): string {
 @Injectable()
 export class DiscordChatGateway {
   private readonly logger = new Logger(DiscordChatGateway.name);
+  private readonly intentDetector = new IntentDetector();
 
   constructor(
     private readonly configService: ConfigService,
@@ -154,6 +158,28 @@ export class DiscordChatGateway {
       }
     }
 
+    // Intent detection: greeting/self-intro → reply directly, skip LLM
+    const intent = this.intentDetector.detect(resolvedText);
+    if (intent.intent === 'greeting') {
+      const displayName = message.member?.displayName ?? message.author.displayName ?? 'bạn';
+      const reply = GREETING_TEMPLATE.replace('{name}', displayName);
+      if (isServerChannel) {
+        await message.reply(reply);
+      } else {
+        await this.outboundService.sendText(discordUserId, reply);
+      }
+      return;
+    }
+    if (intent.intent === 'self_intro') {
+      const reply = SELF_INTRO_TEMPLATE;
+      if (isServerChannel) {
+        await message.reply(reply);
+      } else {
+        await this.outboundService.sendText(discordUserId, reply);
+      }
+      return;
+    }
+
     try {
       await message.channel.sendTyping();
       const userId =
@@ -170,13 +196,10 @@ export class DiscordChatGateway {
         `Chat enqueue failed for discordUserId=${discordUserId}`,
         formatError(error),
       );
-      const fallback = isGreetingOnly(resolvedText)
-        ? FALLBACK_GREETING_MESSAGE
-        : FALLBACK_ERROR_MESSAGE;
       if (isServerChannel) {
-        await message.reply(fallback);
+        await message.reply(FALLBACK_ERROR_MESSAGE);
       } else {
-        await this.outboundService.sendText(discordUserId, fallback);
+        await this.outboundService.sendText(discordUserId, FALLBACK_ERROR_MESSAGE);
       }
     }
   }
