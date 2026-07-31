@@ -34,42 +34,12 @@ ENV NODE_ENV=production
 RUN addgroup -g 1001 -S app \
   && adduser -S app -u 1001 -G app
 
-# Copy workspace structure for npm install
-COPY package.json ./
-COPY apps/zalo-bot/package.json apps/zalo-bot/package.json
-COPY packages/llm-agent/package.json packages/llm-agent/package.json
-COPY packages/chat-history/package.json packages/chat-history/package.json
-COPY packages/chat-metering/package.json packages/chat-metering/package.json
-COPY packages/chat-pipeline/package.json packages/chat-pipeline/package.json
-COPY packages/chat-queue-core/package.json packages/chat-queue-core/package.json
-COPY packages/wispace-client/package.json packages/wispace-client/package.json
-COPY packages/student-report/package.json packages/student-report/package.json
-COPY packages/study-reminder-core/package.json packages/study-reminder-core/package.json
-COPY packages/study-reminder-shared/package.json packages/study-reminder-shared/package.json
-COPY packages/scheduler-core/package.json packages/scheduler-core/package.json
-COPY packages/bot-metrics/package.json packages/bot-metrics/package.json
-COPY packages/cleanup-cron/package.json packages/cleanup-cron/package.json
-COPY packages/ops-health/package.json packages/ops-health/package.json
-COPY packages/reschedule-confirm/package.json packages/reschedule-confirm/package.json
-RUN rm -f package-lock.json && npm install --force --omit=dev --ignore-scripts
-
-# Copy built dist
+# Copy built app
 COPY --from=build --chown=app:app /app/apps/zalo-bot/dist ./apps/zalo-bot/dist
-# Copy built packages (with dist/)
-COPY --from=build --chown=app:app /app/packages/llm-agent ./packages/llm-agent
-COPY --from=build --chown=app:app /app/packages/chat-history ./packages/chat-history
-COPY --from=build --chown=app:app /app/packages/chat-metering ./packages/chat-metering
-COPY --from=build --chown=app:app /app/packages/chat-pipeline ./packages/chat-pipeline
-COPY --from=build --chown=app:app /app/packages/chat-queue-core ./packages/chat-queue-core
-COPY --from=build --chown=app:app /app/packages/wispace-client ./packages/wispace-client
-COPY --from=build --chown=app:app /app/packages/student-report ./packages/student-report
-COPY --from=build --chown=app:app /app/packages/study-reminder-core ./packages/study-reminder-core
-COPY --from=build --chown=app:app /app/packages/study-reminder-shared ./packages/study-reminder-shared
-COPY --from=build --chown=app:app /app/packages/scheduler-core ./packages/scheduler-core
-COPY --from=build --chown=app:app /app/packages/bot-metrics ./packages/bot-metrics
-COPY --from=build --chown=app:app /app/packages/cleanup-cron ./packages/cleanup-cron
-COPY --from=build --chown=app:app /app/packages/ops-health ./packages/ops-health
-COPY --from=build --chown=app:app /app/packages/reschedule-confirm ./packages/reschedule-confirm
+# Copy node_modules (preserves workspace symlinks)
+COPY --from=build --chown=app:app /app/node_modules ./node_modules
+# Copy built packages (symlink targets)
+COPY --from=build --chown=app:app /app/packages ./packages
 
 USER app
 
