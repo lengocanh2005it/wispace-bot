@@ -24,7 +24,7 @@ COPY packages/reschedule-confirm/package.json packages/reschedule-confirm/packag
 RUN rm -f package-lock.json && npm install --force --ignore-scripts
 
 COPY . .
-RUN npx turbo run build --filter=@wispace/zalo-bot... && rm -f package-lock.json && npm install --force --omit=dev --ignore-scripts
+RUN npx turbo run build --filter=@wispace/zalo-bot...
 
 FROM node:20-alpine AS production
 WORKDIR /app
@@ -35,8 +35,9 @@ RUN addgroup -g 1001 -S app \
   && adduser -S app -u 1001 -G app
 
 COPY --from=build --chown=app:app /app/apps/zalo-bot/dist ./dist
+COPY --from=build --chown=app:app /app/package.json ./package.json
 COPY --from=build --chown=app:app /app/node_modules ./node_modules
-COPY --from=build --chown=app:app /app/apps/zalo-bot/package.json ./package.json
+COPY --from=build --chown=app:app /app/apps/zalo-bot/package.json ./apps/zalo-bot/package.json
 # node_modules/@wispace/* are npm-workspaces symlinks into packages/ —
 # each package must exist at the same relative path for Node to resolve them at runtime.
 COPY --from=build --chown=app:app /app/packages/llm-agent ./packages/llm-agent
@@ -53,8 +54,6 @@ COPY --from=build --chown=app:app /app/packages/bot-metrics ./packages/bot-metri
 COPY --from=build --chown=app:app /app/packages/cleanup-cron ./packages/cleanup-cron
 COPY --from=build --chown=app:app /app/packages/ops-health ./packages/ops-health
 COPY --from=build --chown=app:app /app/packages/reschedule-confirm ./packages/reschedule-confirm
-
-RUN npm install --force --omit=dev --ignore-scripts
 
 USER app
 

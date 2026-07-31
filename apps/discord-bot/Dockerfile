@@ -24,7 +24,7 @@ COPY packages/reschedule-confirm/package.json packages/reschedule-confirm/packag
 RUN rm -f package-lock.json && npm install --force --ignore-scripts
 
 COPY . .
-RUN npx turbo run build --filter=@wispace/discord-bot... && rm -f package-lock.json && npm install --force --omit=dev --ignore-scripts
+RUN npx turbo run build --filter=@wispace/discord-bot...
 
 FROM node:20-alpine AS production
 WORKDIR /app
@@ -53,8 +53,6 @@ COPY --from=build --chown=app:app /app/packages/bot-metrics ./packages/bot-metri
 COPY --from=build --chown=app:app /app/packages/cleanup-cron ./packages/cleanup-cron
 COPY --from=build --chown=app:app /app/packages/ops-health ./packages/ops-health
 COPY --from=build --chown=app:app /app/packages/reschedule-confirm ./packages/reschedule-confirm
-
-RUN npm install --force --omit=dev --ignore-scripts
 
 USER app
 
