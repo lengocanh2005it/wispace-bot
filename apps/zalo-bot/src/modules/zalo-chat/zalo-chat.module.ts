@@ -160,6 +160,7 @@ import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zal
     ZaloChatService,
   ],
   exports: [
+    'LLM_PROVIDER_ADAPTER',
     ZaloChatService,
     ZaloOutboundService,
     ZaloChatRateLimitService,
