@@ -16,6 +16,7 @@ import {
 } from '@wispace/study-reminder-shared';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordChatModule } from '../discord-chat/discord-chat.module';
+import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { WispaceCalendarService } from '../wispace/application/services/wispace-calendar.service';
 import { DiscordStudyReminderMessageSenderService } from '../discord-chat/application/services/discord-study-reminder-message-sender.service';
@@ -29,6 +30,7 @@ import { DiscordRedisUserDisplayNameCache } from './discord-redis-user-display-n
       DiscordAccountLinkEntity,
     ]),
     DiscordChatModule,
+    DiscordOutboundModule,
     WispaceModule,
   ],
   providers: [
