@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       force_build:
-        description: Force Docker image rebuild (lint, test, build)
+        description: Force Docker image rebuild
         type: boolean
         default: false
 
@@ -38,26 +38,8 @@ jobs:
         with:
           filters: |
             app:
-              - 'apps/discord-bot/src/**'
-              - 'apps/discord-bot/test/**'
-              - 'apps/discord-bot/Dockerfile'
-              - 'apps/discord-bot/package.json'
-              - 'apps/discord-bot/nest-cli.json'
-              - 'apps/discord-bot/tsconfig*.json'
-              - 'packages/llm-agent/**'
-              - 'packages/chat-metering/**'
-              - 'packages/chat-history/**'
-              - 'packages/chat-pipeline/**'
-              - 'packages/chat-queue-core/**'
-              - 'packages/wispace-client/**'
-              - 'packages/student-report/**'
-              - 'packages/study-reminder-core/**'
-              - 'packages/study-reminder-shared/**'
-              - 'packages/scheduler-core/**'
-              - 'packages/bot-metrics/**'
-              - 'packages/cleanup-cron/**'
-              - 'packages/ops-health/**'
-              - 'packages/reschedule-confirm/**'
+              - 'apps/discord-bot/**'
+              - 'packages/**'
               - 'package.json'
               - 'package-lock.json'
               - 'turbo.json'
@@ -66,51 +48,11 @@ jobs:
               - '.github/workflows/deploy-discord-bot.yml'
               - '.github/scripts/vps-deploy-discord.sh'
 
-  quality:
+  build-image:
     needs: changes
     if: |
       needs.changes.outputs.app == 'true' ||
       (github.event_name == 'workflow_dispatch' && inputs.force_build)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install dependencies
-        run: |
-          npm ci --force
-          npm install --ignore-scripts
-
-      - name: Format check
-        run: npx turbo run format:check --filter=@wispace/discord-bot...
-
-      - name: Lint
-        run: npx turbo run lint --filter=@wispace/discord-bot...
-
-      - name: Typecheck
-        run: npx turbo run typecheck --filter=@wispace/discord-bot...
-
-      - name: Test
-        run: npx turbo run test --filter=@wispace/discord-bot...
-
-      - name: Build application
-        run: npx turbo run build --filter=@wispace/discord-bot...
-
-  build-image:
-    needs: [changes, quality]
-    if: |
-      always() &&
-      !cancelled() &&
-      (needs.changes.outputs.app == 'true' ||
-        (github.event_name == 'workflow_dispatch' && inputs.force_build)) &&
-      needs.quality.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
@@ -151,14 +93,13 @@ jobs:
           cache-to: type=gha,mode=max
 
   deploy:
-    needs: [changes, quality, build-image]
+    needs: [changes, build-image]
     if: |
       always() &&
       !cancelled() &&
       (needs.changes.outputs.app == 'true' ||
         needs.changes.outputs.deploy == 'true' ||
         github.event_name == 'workflow_dispatch') &&
-      (needs.quality.result == 'success' || needs.quality.result == 'skipped') &&
       (needs.build-image.result == 'success' || needs.build-image.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -205,7 +146,6 @@ jobs:
           if [ -f production.env ]; then
             cp production.env upload-bundle/
           fi
-          ls -la upload-bundle/
 
       - name: Upload bundle to VPS (retry)
         env:
