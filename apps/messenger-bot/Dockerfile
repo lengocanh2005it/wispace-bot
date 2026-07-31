@@ -52,6 +52,8 @@ COPY --from=build --chown=app:app /app/packages/bot-metrics ./packages/bot-metri
 COPY --from=build --chown=app:app /app/packages/cleanup-cron ./packages/cleanup-cron
 COPY --from=build --chown=app:app /app/packages/reschedule-confirm ./packages/reschedule-confirm
 
+RUN npm install --omit=dev --ignore-scripts
+
 USER app
 
 EXPOSE 5007
