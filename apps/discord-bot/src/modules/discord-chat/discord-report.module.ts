@@ -22,6 +22,7 @@ import { DiscordReportRetryDispatchService } from './application/services/discor
 import { DiscordReportOrchestrationService } from './application/services/discord-report-orchestration.service';
 import { DiscordGoalsDataAdapter } from './infrastructure/adapters/discord-goals-data.adapter';
 import { DiscordOutboundModule } from './discord-outbound.module';
+import { DiscordChatModule } from './discord-chat.module';
 import { AccountLinkModule } from '../account-link/account-link.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
@@ -36,6 +37,7 @@ import { DISCORD_REPORT_PORT } from './domain/ports/discord-report.port';
       DiscordAccountLinkEntity,
     ]),
     DiscordOutboundModule,
+    DiscordChatModule,
     AccountLinkModule,
     WispaceModule,
     ChatMeteringModule,

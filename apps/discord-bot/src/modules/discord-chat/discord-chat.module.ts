@@ -152,6 +152,6 @@ import { DiscordReschedulePort } from './infrastructure/adapters/discord-resched
     DiscordOpsHealthRepository,
     OpsHealthService,
   ],
-  exports: [],
+  exports: ['LLM_PROVIDER_ADAPTER'],
 })
 export class DiscordChatModule {}
