@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   MAPPING_READER,
@@ -32,7 +32,7 @@ export class StudyReminderSyncService {
     @Inject(STUDY_REMINDER_JOB_REPOSITORY)
     private readonly jobRepository: StudyReminderJobRepositoryPort,
     private readonly scheduleService: StudyReminderScheduleService,
-    onUserSync?: OnUserSyncHook,
+    @Optional() onUserSync?: OnUserSyncHook,
   ) {
     this.onUserSync = onUserSync;
   }
