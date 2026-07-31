@@ -22,7 +22,7 @@ COPY packages/reschedule-confirm/package.json packages/reschedule-confirm/packag
 RUN rm -f package-lock.json && npm install --force --ignore-scripts
 
 COPY . .
-RUN npx turbo run build --filter=@wispace/messenger-bot...
+RUN npx turbo run build
 
 RUN for pkg in packages/*/; do \
       name=$(node -p "require('./${pkg}package.json').name" 2>/dev/null || true); \

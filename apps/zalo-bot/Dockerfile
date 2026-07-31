@@ -24,7 +24,7 @@ COPY packages/reschedule-confirm/package.json packages/reschedule-confirm/packag
 RUN rm -f package-lock.json && npm install --force --ignore-scripts
 
 COPY . .
-RUN npx turbo run build --filter=@wispace/zalo-bot...
+RUN npx turbo run build
 
 # Flatten: replace workspace symlinks with actual built packages
 RUN for pkg in packages/*/; do \
