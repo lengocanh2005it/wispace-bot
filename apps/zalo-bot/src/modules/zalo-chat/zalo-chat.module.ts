@@ -35,6 +35,7 @@ import { CleanupCronService } from '@wispace/cleanup-cron';
 import { ZaloCleanupCronService } from './application/services/zalo-cleanup-cron.service';
 import { ZaloMessageLogEntity } from '../../infrastructure/database/entities/zalo-message-log.entity';
 import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities/webhook-dead-letter.entity';
+import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities/
       LlmSafetyEventEntity,
       ZaloMessageLogEntity,
       WebhookDeadLetterEntity,
+      ZaloOauthStateEntity,
     ]),
   ],
   providers: [
