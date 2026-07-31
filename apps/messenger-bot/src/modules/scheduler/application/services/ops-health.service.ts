@@ -4,7 +4,7 @@ import { ChatQuotaOpsService } from '@messenger/modules/chat-rate-limit/applicat
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
-} from '@messenger/modules/study-reminder/domain/repositories/study-reminder-job.repository.port';
+} from '@wispace/study-reminder-shared';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import { LlmSafetyService } from '@messenger/modules/llm-safety/llm-safety.service';
