@@ -2,7 +2,7 @@
 
 Document recording **weaknesses / unhandled items** in the WISPACE bots (all functionality, not just rate limit) and **how to fix them** in **small phases** — independent PR merges.
 
-**Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. DB **separated** to `ai_chat_bot_db` (✓). LLM Provider Abstraction **done** (PR #32). Shared packages **extracted** (12 packages). Discord bot **functional** (chat + quota + 6/7 tool handlers). Items below are remaining gaps or scale-dependent improvements.
+**Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. DB **separated** to `ai_chat_bot_db` (✓). LLM Provider Abstraction **done** (PR #32). Shared packages **extracted** (14 packages). Discord bot **functional** (chat + quota + 6/7 tool handlers). Items below are remaining gaps or scale-dependent improvements.
 
 Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md), [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), [AGENTS.md](../AGENTS.md) (Integration gaps table).
 
@@ -35,7 +35,7 @@ Related: [project-overview.md](./project-overview.md), [study-session-reminder.m
 | **SAFETY** ✓ | LLM safety event tracking + cleanup | 1 day | Hallucination detection, daily alert |
 | **METRICS** ✓ | Prometheus `/metrics` endpoint | 0.5 days | `MetricsModule` |
 | **DOPPLER** ✓ | Doppler runtime sync | 1 day | `POST /messenger/ops/doppler-sync` |
-| **PKG** ✓ | Shared packages extraction | 3–5 days | 12 packages in `packages/` |
+| **PKG** ✓ | Shared packages extraction | 3–5 days | 14 packages in `packages/` |
 | **DISCORD** ✓ | Discord bot (functional) | 3–5 days | Chat + quota + pending cap + typing indicator + 6/7 tool handlers |
 | **ZALO** ✓ | Zalo bot (fully functional) | 3–5 days | Chat + quota + account linking + 6/7 tool handlers + 08:00 report cron + study reminders + dead letter + ops endpoints + CI/CD + chat queue + pending cap + typing indicator + Redis burst counter + LLM report enrichment + Doppler webhook |
 
