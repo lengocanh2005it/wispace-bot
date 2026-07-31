@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
+  StudyReminderScheduleService,
   StudyReminderDispatchService,
   MESSAGE_SENDER,
   STUDY_REMINDER_JOB_REPOSITORY,
@@ -24,7 +25,6 @@ import { StudyReminderWorkerService } from './application/services/study-reminde
 import { StudyReminderService } from './application/services/study-reminder.service';
 import { StudySessionSourceService } from './application/services/study-session-source.service';
 import { UserDisplayNameService } from './application/services/user-display-name.service';
-import { LocalStudyReminderScheduleService } from './application/services/study-reminder-schedule.service';
 import { USER_DISPLAY_NAME_CACHE } from './domain/repositories/user-display-name-cache.port';
 import { RedisUserDisplayNameCache } from './infrastructure/cache/redis-user-display-name.cache';
 import { UserCalendarScheduleService } from './infrastructure/wispace/user-calendar-schedule.service';
@@ -66,8 +66,8 @@ import { MetricsService } from '../metrics/metrics.service';
       useExisting: StudyReminderJobRepository,
     },
 
-    // ── Shared schedule service (replaces local) ─────────────────────────
-    LocalStudyReminderScheduleService,
+    // ── Shared schedule service ──────────────────────────────────────────
+    StudyReminderScheduleService,
 
     // ── Shared dispatch service (with Messenger adapters via ports) ──────
     {
@@ -100,7 +100,7 @@ import { MetricsService } from '../metrics/metrics.service';
   ],
   exports: [
     StudyReminderService,
-    LocalStudyReminderScheduleService,
+    StudyReminderScheduleService,
     StudyReminderWorkerService,
     StudyReminderSyncService,
     StudyReminderDispatchService,
