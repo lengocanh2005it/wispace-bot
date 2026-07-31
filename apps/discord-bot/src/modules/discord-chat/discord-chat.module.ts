@@ -31,7 +31,6 @@ import { ReportSendJobEntity } from '../../infrastructure/database/entities/repo
 import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { DiscordCalendarPort } from './infrastructure/adapters/discord-calendar.port';
 import { DiscordReschedulePort } from './infrastructure/adapters/discord-reschedule.port';
-import { DiscordOutboundService } from './application/services/discord-outbound.service';
 
 @Module({
   imports: [
@@ -153,6 +152,6 @@ import { DiscordOutboundService } from './application/services/discord-outbound.
     DiscordOpsHealthRepository,
     OpsHealthService,
   ],
-  exports: [DiscordOutboundService],
+  exports: [],
 })
 export class DiscordChatModule {}
