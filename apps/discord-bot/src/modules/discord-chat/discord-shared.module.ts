@@ -10,6 +10,7 @@ import { REPORT_DELIVERY_PORT } from '@wispace/scheduler-core';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
+import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordDeliveryLogService } from './application/services/discord-delivery-log.service';
 import { DiscordOutboundService } from './application/services/discord-outbound.service';
 
@@ -18,7 +19,7 @@ import { DiscordOutboundService } from './application/services/discord-outbound.
  * DiscordChatModule ↔ DiscordReportModule.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([DiscordMessageLogEntity])],
+  imports: [TypeOrmModule.forFeature([DiscordMessageLogEntity, DiscordAccountLinkEntity])],
   providers: [
     DiscordDeliveryLogService,
     DiscordOutboundService,
