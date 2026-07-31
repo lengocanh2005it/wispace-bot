@@ -26,6 +26,15 @@ RUN rm -f package-lock.json && npm install --force --ignore-scripts
 COPY . .
 RUN npx turbo run build --filter=@wispace/zalo-bot...
 
+# Flatten: replace workspace symlinks with actual built packages
+RUN for pkg in packages/*/; do \
+      name=$(node -p "require('./${pkg}package.json').name" 2>/dev/null || true); \
+      if [ -n "$name" ] && [ -d "node_modules/$name" ]; then \
+        rm -rf "node_modules/$name"; \
+        cp -r "$pkg" "node_modules/$name"; \
+      fi; \
+    done
+
 FROM node:20-alpine AS production
 WORKDIR /app
 
@@ -34,12 +43,8 @@ ENV NODE_ENV=production
 RUN addgroup -g 1001 -S app \
   && adduser -S app -u 1001 -G app
 
-# Copy built app
 COPY --from=build --chown=app:app /app/apps/zalo-bot/dist ./apps/zalo-bot/dist
-# Copy node_modules (preserves workspace symlinks)
 COPY --from=build --chown=app:app /app/node_modules ./node_modules
-# Copy built packages (symlink targets)
-COPY --from=build --chown=app:app /app/packages ./packages
 
 USER app
 

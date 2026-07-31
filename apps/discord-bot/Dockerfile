@@ -26,6 +26,14 @@ RUN rm -f package-lock.json && npm install --force --ignore-scripts
 COPY . .
 RUN npx turbo run build --filter=@wispace/discord-bot...
 
+RUN for pkg in packages/*/; do \
+      name=$(node -p "require('./${pkg}package.json').name" 2>/dev/null || true); \
+      if [ -n "$name" ] && [ -d "node_modules/$name" ]; then \
+        rm -rf "node_modules/$name"; \
+        cp -r "$pkg" "node_modules/$name"; \
+      fi; \
+    done
+
 FROM node:20-alpine AS production
 WORKDIR /app
 
@@ -36,7 +44,6 @@ RUN addgroup -g 1001 -S app \
 
 COPY --from=build --chown=app:app /app/apps/discord-bot/dist ./apps/discord-bot/dist
 COPY --from=build --chown=app:app /app/node_modules ./node_modules
-COPY --from=build --chown=app:app /app/packages ./packages
 
 USER app
 
