@@ -29,7 +29,6 @@ import { DiscordReportOrchestrationService } from './application/services/discor
 import { DiscordGoalsDataAdapter } from './infrastructure/adapters/discord-goals-data.adapter';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { AccountLinkModule } from '../account-link/account-link.module';
-import { AccountLinkModule } from '../account-link/account-link.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
 import { DiscordStudentReportService } from './application/services/discord-student-report.service';
