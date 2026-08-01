@@ -81,7 +81,7 @@ export class DiscordChatGateway {
           pending.entry.wispaceUserId,
           discordUserId,
         );
-        const dmChannelId = await this.outboundService.sendTextAndGetChannelId(
+        const dmChannelId = await this.outboundService.sendMenuButtons(
           discordUserId,
           buildDiscordLinkWelcomeMessage(pending.entry.discordUsername),
         );
@@ -117,7 +117,7 @@ export class DiscordChatGateway {
       const dmMsg =
         `Chào ${displayName}! Mình là trợ lý WISPACE. ` +
         `Bạn có thể hỏi về tiến độ học, lịch học sắp tới, hoặc mục tiêu band — cứ nhắn tự nhiên nhé 🎓`;
-      await this.outboundService.sendText(discordUserId, dmMsg);
+      await this.outboundService.sendMenuButtons(discordUserId, dmMsg);
     }
 
     this.logger.log(
@@ -161,12 +161,13 @@ export class DiscordChatGateway {
     // Intent detection: greeting/self-intro → reply directly, skip LLM
     const intent = this.intentDetector.detect(resolvedText);
     if (intent.intent === 'greeting') {
-      const displayName = message.member?.displayName ?? message.author.displayName ?? 'bạn';
+      const displayName =
+        message.member?.displayName ?? message.author.displayName ?? 'bạn';
       const reply = GREETING_TEMPLATE.replace('{name}', displayName);
       if (isServerChannel) {
         await message.reply(reply);
       } else {
-        await this.outboundService.sendText(discordUserId, reply);
+        await this.outboundService.sendMenuButtons(discordUserId, reply);
       }
       return;
     }
@@ -175,7 +176,7 @@ export class DiscordChatGateway {
       if (isServerChannel) {
         await message.reply(reply);
       } else {
-        await this.outboundService.sendText(discordUserId, reply);
+        await this.outboundService.sendMenuButtons(discordUserId, reply);
       }
       return;
     }
@@ -199,7 +200,10 @@ export class DiscordChatGateway {
       if (isServerChannel) {
         await message.reply(FALLBACK_ERROR_MESSAGE);
       } else {
-        await this.outboundService.sendText(discordUserId, FALLBACK_ERROR_MESSAGE);
+        await this.outboundService.sendText(
+          discordUserId,
+          FALLBACK_ERROR_MESSAGE,
+        );
       }
     }
   }

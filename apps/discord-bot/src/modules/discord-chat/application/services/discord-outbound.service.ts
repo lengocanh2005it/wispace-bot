@@ -97,7 +97,10 @@ export class DiscordOutboundService {
   }
 
   /** Sends a persistent quick-action menu with 3 buttons. Safe to click after bot restarts. */
-  async sendMenuButtons(discordUserId: string): Promise<void> {
+  async sendMenuButtons(
+    discordUserId: string,
+    content?: string,
+  ): Promise<string | undefined> {
     try {
       const user = await this.client.users.fetch(discordUserId);
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -110,13 +113,15 @@ export class DiscordOutboundService {
           .setLabel('📊 Xem tiến độ')
           .setStyle(ButtonStyle.Primary),
       );
-      await user.send({ components: [row] });
+      const msg = await user.send({ content, components: [row] });
+      return msg.channelId;
     } catch (error) {
       this.logger.warn(
         `Failed to send menu buttons to discordUserId=${discordUserId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
+      return undefined;
     }
   }
 
