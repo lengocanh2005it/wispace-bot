@@ -22,6 +22,10 @@ import type { StudentCapacityInput, StudentCapacityReport } from './types';
 
 const FEATURE = 'STUDENT_REPORT';
 
+/** In-process retry for short Wispace outages; long outages still flow to each app's outbox. */
+const CAPACITY_FETCH_MAX_ATTEMPTS = 3;
+const CAPACITY_FETCH_BACKOFF_MS = 5_000;
+
 export interface StudentReportConfig {
   adapter: LlmProviderAdapter;
   systemPrompt: string;
@@ -69,8 +73,7 @@ export class StudentReportCore {
     const correlationId = options?.correlationId ?? externalUserId;
 
     try {
-      const input =
-        await this.ports.capacityData.getCapacityData(externalUserId);
+      const input = await this.fetchCapacityData(externalUserId);
       const report = await this.generateAiReport(
         externalUserId,
         input,
@@ -100,6 +103,32 @@ export class StudentReportCore {
       }
 
       throw error;
+    }
+  }
+
+  private async fetchCapacityData(
+    externalUserId: string,
+  ): Promise<StudentCapacityInput> {
+    const logger = this.ports.logger ?? NOOP_LOGGER;
+
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.ports.capacityData.getCapacityData(externalUserId);
+      } catch (error) {
+        if (
+          !isRetryableApiError(error) ||
+          !error.isRetryable() ||
+          attempt >= CAPACITY_FETCH_MAX_ATTEMPTS
+        ) {
+          throw error;
+        }
+        logger.warn(
+          `Retrying capacity fetch for report externalUserId=${externalUserId} attempt=${attempt}/${CAPACITY_FETCH_MAX_ATTEMPTS} status=${error.statusCode} endpoint=${error.endpoint}`,
+        );
+        await new Promise((resolve) =>
+          setTimeout(resolve, CAPACITY_FETCH_BACKOFF_MS * attempt),
+        );
+      }
     }
   }
 

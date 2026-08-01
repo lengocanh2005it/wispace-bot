@@ -21,6 +21,7 @@ Related: [project-overview.md](./project-overview.md), [study-session-reminder.m
 | **R2** ✓ | Report: split long bubbles | 0.5 days | Low |
 | **R3** ✓ | Report: classify WISPACE errors (defer cron / UX menu) | 1–1.5 days | Medium |
 | **R5** ✓ | Report: outbox retry on 5xx (like reminders) | 1–1.5 days | When WISPACE has 503 |
+| **R6** ✓ | Report: short in-process retry on fetch 5xx (3 bots) | 0.5 days | On-demand paths (menu postback, agent tool, cron) |
 | **R4** ✓ | 08:00 report: idempotency / cron leader (≥2 pod) | 1 day | Only at scale |
 | **S0** ✓ | WISPACE wire `study-calendar/sync` | 0.5 days (WISPACE) | **High** — integration |
 | **S1** ✓ | Alert ops on `failed` / stuck reminder jobs | 0.5 days | Medium |
@@ -97,12 +98,13 @@ flowchart LR
 | **Meta 24h proactive** | **L2** ✓ — `*_MESSENGER_24H` log; cron `windowClosed` / `deferred` |
 | **Multi-pod 08:00 cron** | **R4** ✓ — `messenger_scheduled_report_claims`, advisory lock, `CRON_LEADER_*` |
 | **Outbox retry on report 5xx** | **R5** ✓ — `report_send_jobs`, `ReportSendRetryDispatchService` cron `*/15` ICT |
+| **Menu 503 auto-retry (short)** | **R6** ✓ — in-process retry (3×, 5s/10s backoff) on capacity fetch 5xx inside `StudentReportCore` — covers menu postback, agent tool, and cron across all 3 bots; LLM never called twice; long outages still flow to outbox |
 
 ### Gaps & Remediation
 
 | Gap | Impact | Fix | Phase |
 |-----|--------|-----|-------|
-| Menu 503 — UX only, no auto-retry | User must tap "View Progress" again | Accepted; optional scheduled postback retry | Backlog |
+| ~~Menu 503 — UX only, no auto-retry~~ | ~~User must tap "View Progress" again~~ | **R6** ✓ — `StudentReportCore` retries capacity fetch 3× (5s/10s backoff) on retryable 5xx before surfacing; same for agent tool + cron (all 3 bots). Long outages still fall through to outbox (R5) | Done |
 
 ### 2.1 R3 + R5 — Report Behavior (Done ✓)
 

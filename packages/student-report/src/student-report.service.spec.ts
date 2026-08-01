@@ -74,7 +74,8 @@ describe('StudentReportCore', () => {
     expect(llmExecution.run).not.toHaveBeenCalled();
   });
 
-  it('throws StudentReportRetryableError on a 5xx capacity fetch error', async () => {
+  it('throws StudentReportRetryableError after exhausting 5xx fetch retries', async () => {
+    jest.useFakeTimers();
     const llmExecution = { run: jest.fn() };
     const usageRecorder = { recordFromCompletion: jest.fn() };
     const capacityData = {
@@ -90,10 +91,45 @@ describe('StudentReportCore', () => {
       { llmExecution, usageRecorder, capacityData },
     );
 
-    await expect(core.generateReport('user-1')).rejects.toMatchObject({
+    const promise = core.generateReport('user-1');
+    const assertion = expect(promise).rejects.toMatchObject({
       name: 'StudentReportRetryableError',
       externalUserId: 'user-1',
     });
+    await jest.advanceTimersByTimeAsync(5_000);
+    await jest.advanceTimersByTimeAsync(10_000);
+    await assertion;
+    expect(capacityData.getCapacityData).toHaveBeenCalledTimes(3);
+    jest.useRealTimers();
+  });
+
+  it('succeeds on a retry after a transient 5xx fetch error', async () => {
+    jest.useFakeTimers();
+    const llmExecution = { run: jest.fn() };
+    const usageRecorder = { recordFromCompletion: jest.fn() };
+    const capacityData = {
+      getCapacityData: jest
+        .fn()
+        .mockRejectedValueOnce(makeRetryableError(503))
+        .mockResolvedValueOnce(baseInput),
+    };
+    const adapter = {
+      isConfigured: () => false,
+      getDefaultModel: () => 'gpt-5.4',
+    } as unknown as LlmProviderAdapter;
+
+    const core = new StudentReportCore(
+      { adapter, systemPrompt: 'prompt' },
+      { llmExecution, usageRecorder, capacityData },
+    );
+
+    const promise = core.generateReport('user-1');
+    await jest.advanceTimersByTimeAsync(5_000);
+    const result = await promise;
+
+    expect(capacityData.getCapacityData).toHaveBeenCalledTimes(2);
+    expect(result).toContain('còn 31 ngày');
+    jest.useRealTimers();
   });
 
   it('returns the api-unavailable message on a 4xx capacity fetch error', async () => {
@@ -114,6 +150,7 @@ describe('StudentReportCore', () => {
 
     const result = await core.generateReport('user-1');
     expect(result).toContain('chưa lấy được đủ dữ liệu học tập');
+    expect(capacityData.getCapacityData).toHaveBeenCalledTimes(1);
   });
 
   it('calls the LLM and records usage when adapter is configured', async () => {
