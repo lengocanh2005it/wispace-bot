@@ -27,15 +27,35 @@ describe('ZaloChatService', () => {
       { enqueue } as unknown as ZaloChatQueueService,
     );
 
-    await service.handleIncomingMessage('zalo-1', 'chào bạn');
+    await service.handleIncomingMessage('zalo-1', 'xem lich hoc cua minh');
 
     expect(findUserIdByZaloId).toHaveBeenCalledWith('zalo-1');
     expect(enqueue).toHaveBeenCalledWith(
       'zalo-1',
-      'chào bạn',
+      'xem lich hoc cua minh',
       { userId: 42 },
       expect.any(String),
     );
+  });
+
+  it('replies directly to greeting without enqueueing', async () => {
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const enqueue = jest.fn();
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {} as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as ZaloChatQueueService,
+    );
+
+    await service.handleIncomingMessage('zalo-1', 'chào bạn');
+
+    expect(sendText).toHaveBeenCalledWith(
+      'zalo-1',
+      expect.stringContaining('WISPACE'),
+    );
+    expect(enqueue).not.toHaveBeenCalled();
   });
 
   it('sends a welcome message on follow', async () => {

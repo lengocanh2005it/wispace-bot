@@ -1,10 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
-  StudyReminderScheduleService,
   StudyReminderDispatchService,
   MESSAGE_SENDER,
-  STUDY_REMINDER_JOB_REPOSITORY,
   REMINDER_GENERATOR,
   METRICS_HOOK,
   ERROR_CLASSIFIER,
@@ -24,8 +22,10 @@ import { StudyReminderSyncService } from './application/services/study-reminder-
 import { StudyReminderWorkerService } from './application/services/study-reminder-worker.service';
 import { StudyReminderService } from './application/services/study-reminder.service';
 import { StudySessionSourceService } from './application/services/study-session-source.service';
+import { StudyReminderScheduleService } from './application/services/study-reminder-schedule.service';
 import { UserDisplayNameService } from './application/services/user-display-name.service';
 import { USER_DISPLAY_NAME_CACHE } from './domain/repositories/user-display-name-cache.port';
+import { STUDY_REMINDER_JOB_REPOSITORY } from './domain/repositories/study-reminder-job.repository.port';
 import { RedisUserDisplayNameCache } from './infrastructure/cache/redis-user-display-name.cache';
 import { UserCalendarScheduleService } from './infrastructure/wispace/user-calendar-schedule.service';
 import { UserCalendarApiService } from './infrastructure/wispace/user-calendar-api.service';

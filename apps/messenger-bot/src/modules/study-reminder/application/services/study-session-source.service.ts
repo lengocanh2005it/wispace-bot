@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
+import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { NormalizedStudySession } from '../../domain/entities/study-schedule.types';
 import { UserCalendarScheduleService } from '../../infrastructure/wispace/user-calendar-schedule.service';
 

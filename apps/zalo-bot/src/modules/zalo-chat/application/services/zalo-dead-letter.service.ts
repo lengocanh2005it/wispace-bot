@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { WebhookDeadLetterEntity } from '@zalo/infrastructure/database/entities/webhook-dead-letter.entity';
+import { WebhookDeadLetterEntity } from '@wispace/database';
 
 const PLATFORM = 'zalo' as const;
 
@@ -32,7 +32,8 @@ export class ZaloDeadLetterService {
       await this.repo.save({
         platform: PLATFORM,
         externalUserId: input.externalUserId,
-        rawPayload: input.rawPayload,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        rawPayload: input.rawPayload as object,
         errorMessage: input.errorMessage,
         status: 'pending',
       });

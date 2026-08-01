@@ -1,4 +1,4 @@
-import type { ReportSendJobStatus } from '@messenger/infrastructure/database/entities/report-send-job.entity';
+import type { ReportSendJobStatus } from '@wispace/database';
 
 export interface ReportSendJob {
   id: number;

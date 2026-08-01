@@ -113,7 +113,7 @@ describe('routeWebhookEvent', () => {
 
   describe('text messages', () => {
     it('returns enqueue_chat when userId exists and mid is present', () => {
-      const actions = routeWebhookEvent(textEvent('hello', 'mid-1'), {
+      const actions = routeWebhookEvent(textEvent('xem lich hoc cua minh', 'mid-1'), {
         ...defaultCtx,
         userId: 42,
       });
@@ -122,7 +122,7 @@ describe('routeWebhookEvent', () => {
           type: 'enqueue_chat',
           psid: 'psid-123',
           userId: 42,
-          userText: 'hello',
+          userText: 'xem lich hoc cua minh',
           idempotencyKey: 'mid-1',
         },
       ]);
@@ -130,7 +130,7 @@ describe('routeWebhookEvent', () => {
 
     it('returns send_text MISSING_USER_REF when userId is missing', () => {
       const actions = routeWebhookEvent(
-        textEvent('hello', 'mid-1'),
+        textEvent('xem lich hoc cua minh', 'mid-1'),
         defaultCtx,
       );
       expect(actions).toEqual([
@@ -143,7 +143,7 @@ describe('routeWebhookEvent', () => {
     });
 
     it('returns send_text CHAT_MISSING_MID when mid is missing and rate limit enforced', () => {
-      const actions = routeWebhookEvent(textEvent('hello'), {
+      const actions = routeWebhookEvent(textEvent('xem lich hoc cua minh'), {
         ...defaultCtx,
         userId: 42,
         shouldEnforceRateLimit: true,
@@ -158,7 +158,7 @@ describe('routeWebhookEvent', () => {
     });
 
     it('returns enqueue_chat when mid is missing but rate limit not enforced', () => {
-      const actions = routeWebhookEvent(textEvent('hello'), {
+      const actions = routeWebhookEvent(textEvent('xem lich hoc cua minh'), {
         ...defaultCtx,
         userId: 42,
         shouldEnforceRateLimit: false,
@@ -168,14 +168,14 @@ describe('routeWebhookEvent', () => {
           type: 'enqueue_chat',
           psid: 'psid-123',
           userId: 42,
-          userText: 'hello',
+          userText: 'xem lich hoc cua minh',
           idempotencyKey: undefined,
         }),
       ]);
     });
 
     it('returns ignore for duplicate message mid', () => {
-      const actions = routeWebhookEvent(textEvent('hello', 'mid-1'), {
+      const actions = routeWebhookEvent(textEvent('xem lich hoc cua minh', 'mid-1'), {
         ...defaultCtx,
         userId: 42,
         isDuplicateMid: true,
@@ -192,11 +192,16 @@ describe('routeWebhookEvent', () => {
     });
 
     it('trims text before routing', () => {
-      const actions = routeWebhookEvent(textEvent('  hello  ', 'mid-1'), {
-        ...defaultCtx,
-        userId: 42,
-      });
-      expect(actions).toEqual([expect.objectContaining({ userText: 'hello' })]);
+      const actions = routeWebhookEvent(
+        textEvent('  xem lich hoc cua minh  ', 'mid-1'),
+        {
+          ...defaultCtx,
+          userId: 42,
+        },
+      );
+      expect(actions).toEqual([
+        expect.objectContaining({ userText: 'xem lich hoc cua minh' }),
+      ]);
     });
   });
 
@@ -243,7 +248,7 @@ describe('routeWebhookEvent', () => {
     });
 
     it('does not treat text messages as unsupported', () => {
-      const actions = routeWebhookEvent(textEvent('hello', 'mid-1'), {
+      const actions = routeWebhookEvent(textEvent('xem lich hoc cua minh', 'mid-1'), {
         ...defaultCtx,
         userId: 42,
       });

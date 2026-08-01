@@ -7,7 +7,7 @@ import { Repository, LessThan } from 'typeorm';
 import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { ZaloOauthStateEntity } from '@zalo/infrastructure/database/entities/zalo-oauth-state.entity';
 import { ZaloMessageLogEntity } from '@zalo/infrastructure/database/entities/zalo-message-log.entity';
-import { WebhookDeadLetterEntity } from '@zalo/infrastructure/database/entities/webhook-dead-letter.entity';
+import { WebhookDeadLetterEntity } from '@wispace/database';
 import { ZaloChatRateLimitService } from './zalo-chat-rate-limit.service';
 
 const OAUTH_STATE_LOCK_ID = 884_200_913;

@@ -17,10 +17,9 @@ import { DiscordCleanupCronService } from './application/services/discord-cleanu
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
 import { DiscordChatGateway } from './presentation/gateways/discord-chat.gateway';
-import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities/webhook-dead-letter.entity';
+import { WebhookDeadLetterEntity, ReportSendJobEntity } from '@wispace/database';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 import { DiscordOpsHealthRepository } from './infrastructure/persistence/discord-ops-health.repository';
-import { ReportSendJobEntity } from '../../infrastructure/database/entities/report-send-job.entity';
 import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { DiscordCalendarPort } from './infrastructure/adapters/discord-calendar.port';
 import { DiscordReschedulePort } from './infrastructure/adapters/discord-reschedule.port';

@@ -13,9 +13,9 @@ import { PgAdvisoryLockService } from '@messenger/shared/common/pg-advisory-lock
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
-  StudyReminderDispatchService,
-  StudyReminderScheduleService,
-} from '@wispace/study-reminder-shared';
+} from '../../domain/repositories/study-reminder-job.repository.port';
+import { StudyReminderDispatchService } from './study-reminder-dispatch.service';
+import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { StudyReminderSyncService } from './study-reminder-sync.service';
 
 @Injectable()

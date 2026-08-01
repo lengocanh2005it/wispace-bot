@@ -22,6 +22,7 @@ COPY packages/cleanup-cron/package.json packages/cleanup-cron/package.json
 COPY packages/ops-health/package.json packages/ops-health/package.json
 COPY packages/reschedule-confirm/package.json packages/reschedule-confirm/package.json
 COPY packages/intent-detector/package.json packages/intent-detector/package.json
+COPY packages/database/package.json packages/database/package.json
 RUN rm -f package-lock.json && npm install --force --ignore-scripts
 
 COPY . .

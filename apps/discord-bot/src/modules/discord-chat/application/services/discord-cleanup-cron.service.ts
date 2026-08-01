@@ -6,7 +6,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan } from 'typeorm';
 import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { DiscordMessageLogEntity } from '@discord/infrastructure/database/entities/discord-message-log.entity';
-import { WebhookDeadLetterEntity } from '@discord/infrastructure/database/entities/webhook-dead-letter.entity';
+import { WebhookDeadLetterEntity } from '@wispace/database';
 import { DiscordChatRateLimitService } from '@discord/modules/chat-metering/application/services/discord-chat-rate-limit.service';
 
 const MESSAGE_LOG_LOCK_ID = 884_200_911;

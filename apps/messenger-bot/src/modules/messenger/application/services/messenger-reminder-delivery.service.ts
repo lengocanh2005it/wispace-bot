@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { getNoUpcomingStudySessionMessage } from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
-import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
+import { StudyReminderScheduleService } from '@messenger/modules/study-reminder/application/services/study-reminder-schedule.service';
 import { StudyReminderService } from '@messenger/modules/study-reminder/application/services/study-reminder.service';
 import type { StudySessionView } from '../../domain/ports/study-data.port';
 import { MessengerOutboundService } from './messenger-outbound.service';

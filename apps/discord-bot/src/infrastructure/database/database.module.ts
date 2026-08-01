@@ -9,10 +9,13 @@ import {
   LlmUsageEventEntity,
 } from '@wispace/chat-metering';
 import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
+import {
+  WebhookDeadLetterEntity,
+  ScheduledReportClaimEntity,
+  ReportSendJobEntity,
+} from '@wispace/database';
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
-import { WebhookDeadLetterEntity } from './entities/webhook-dead-letter.entity';
-import { ReportSendJobEntity } from './entities/report-send-job.entity';
-import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
+import { DiscordMessageLogEntity } from './entities/discord-message-log.entity';
 
 /**
  * Connects to the same Postgres DB as `apps/messenger-bot` (Phase 2: shared
@@ -39,6 +42,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       DiscordAccountLinkEntity,
+      DiscordMessageLogEntity,
       StudyReminderJobEntity,
       WebhookDeadLetterEntity,
       ReportSendJobEntity,
@@ -61,6 +65,8 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       ChatIdempotencyEntity,
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
+      DiscordAccountLinkEntity,
+      DiscordMessageLogEntity,
       WebhookDeadLetterEntity,
       ReportSendJobEntity,
       ScheduledReportClaimEntity,

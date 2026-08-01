@@ -23,11 +23,6 @@ export class ZaloMappingReaderAdapter implements MappingReaderPort {
       [platform],
     );
     return results;
-    return links.map((link) => ({
-      externalUserId: link.externalUserId,
-      userId: link.userId,
-      platform: link.platform,
-    }));
   }
 
   async findActiveMappingByExternalUserId(

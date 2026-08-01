@@ -1,4 +1,10 @@
-export { ChatDailyUsageEntity } from './chat-daily-usage.entity';
-export { ChatIdempotencyEntity } from './chat-idempotency.entity';
-export type { ChatIdempotencyStatus } from './chat-idempotency.entity';
+export {
+  ChatDailyUsageEntity,
+  ChatIdempotencyEntity,
+} from '@wispace/chat-metering';
 export { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
+export {
+  WebhookDeadLetterEntity,
+  ScheduledReportClaimEntity,
+  ReportSendJobEntity,
+} from '@wispace/database';

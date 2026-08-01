@@ -34,6 +34,7 @@
     "@wispace/chat-metering": "*",
     "@wispace/chat-pipeline": "*",
     "@wispace/cleanup-cron": "*",
+    "@wispace/database": "*",
     "@wispace/llm-agent": "*",
     "@wispace/ops-health": "*",
     "@wispace/reschedule-confirm": "*",

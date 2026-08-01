@@ -13,7 +13,7 @@ import {
   resolveRescheduleSlot,
   resolveScheduledAtFromEventDate,
 } from '@wispace/wispace-client';
-import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
+import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { StudyReminderSyncService } from './study-reminder-sync.service';
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
 

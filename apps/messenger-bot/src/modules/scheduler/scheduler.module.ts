@@ -8,7 +8,7 @@ import {
   REPORT_SEND_JOB_REPOSITORY,
   GOALS_DATA_PORT,
 } from '@wispace/scheduler-core';
-import { ReportSendJobEntity } from '../../infrastructure/database/entities/report-send-job.entity';
+import { ReportSendJobEntity } from '@wispace/database';
 import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { LlmSafetyModule } from '../llm-safety/llm-safety.module';

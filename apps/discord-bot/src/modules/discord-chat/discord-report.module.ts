@@ -10,8 +10,7 @@ import {
   REPORT_CLAIM_REPOSITORY,
   GOALS_DATA_PORT,
 } from '@wispace/scheduler-core';
-import { ReportSendJobEntity } from '../../infrastructure/database/entities/report-send-job.entity';
-import { ScheduledReportClaimEntity } from '../../infrastructure/database/entities/scheduled-report-claim.entity';
+import { ReportSendJobEntity, ScheduledReportClaimEntity } from '@wispace/database';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
 import { DiscordReportSendJobRepository } from './infrastructure/persistence/discord-report-send-job.repository';

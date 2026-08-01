@@ -1,6 +1,6 @@
 import { ZaloDeadLetterService } from './zalo-dead-letter.service';
 import type { Repository } from 'typeorm';
-import type { WebhookDeadLetterEntity } from '@zalo/infrastructure/database/entities/webhook-dead-letter.entity';
+import type { WebhookDeadLetterEntity } from '@wispace/database';
 
 describe('ZaloDeadLetterService', () => {
   const buildService = () => {

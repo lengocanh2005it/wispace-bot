@@ -4,7 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WispaceApiError } from '@wispace/wispace-client';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
-import { ScheduledReportClaimEntity } from '@zalo/infrastructure/database/entities/scheduled-report-claim.entity';
+import { ScheduledReportClaimEntity } from '@wispace/database';
 import { todayReportDate } from '@wispace/scheduler-core';
 import { ZaloReportDeliveryService } from './zalo-report-delivery.service';
 import { ZaloStudentReportService } from './zalo-student-report.service';

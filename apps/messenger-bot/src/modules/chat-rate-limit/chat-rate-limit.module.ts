@@ -50,44 +50,38 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
         if (configured === 'redis') {
           // Defer Redis check — RedisService.onModuleInit() may not have
           // completed yet when this factory runs. Check on first use instead.
-          return {
-            async getBurstCount(psid) {
+          const pgFallback = (): PostgresBurstCounter =>
+            new PostgresBurstCounter(
+              {
+                countRecentReservations: (p, since, opts) =>
+                  repository.countRecentReservations(p, since, opts),
+              },
+              config.getBurstCountsRefunded(),
+            );
+          const counter: ChatBurstCounterPort = {
+            async getBurstCount(psid: string): Promise<number> {
               if (redisCounter.isAvailable()) {
                 return redisCounter.getBurstCount(psid);
               }
-              return new PostgresBurstCounter(
-                {
-                  countRecentReservations: (p, since, opts) =>
-                    repository.countRecentReservations(p, since, opts),
-                },
-                config.getBurstCountsRefunded(),
-              ).getBurstCount(psid);
+              return pgFallback().getBurstCount(psid);
             },
-            async incrementAndCheck(psid) {
+            async tryReserveBurst(
+              psid: string,
+              limit: number,
+            ): Promise<{ allowed: boolean; count: number }> {
               if (redisCounter.isAvailable()) {
-                return redisCounter.incrementAndCheck(psid);
+                return redisCounter.tryReserveBurst(psid, limit);
               }
-              return new PostgresBurstCounter(
-                {
-                  countRecentReservations: (p, since, opts) =>
-                    repository.countRecentReservations(p, since, opts),
-                },
-                config.getBurstCountsRefunded(),
-              ).incrementAndCheck(psid);
+              return pgFallback().tryReserveBurst(psid, limit);
             },
-            async refund(psid, idempotencyKey) {
+            async releaseReservation(psid: string): Promise<void> {
               if (redisCounter.isAvailable()) {
-                return redisCounter.refund(psid, idempotencyKey);
+                return redisCounter.releaseReservation(psid);
               }
-              return new PostgresBurstCounter(
-                {
-                  countRecentReservations: (p, since, opts) =>
-                    repository.countRecentReservations(p, since, opts),
-                },
-                config.getBurstCountsRefunded(),
-              ).refund(psid, idempotencyKey);
+              return pgFallback().releaseReservation(psid);
             },
-          } as ChatBurstCounterPort;
+          };
+          return counter;
         }
 
         if (configured === 'memory') {

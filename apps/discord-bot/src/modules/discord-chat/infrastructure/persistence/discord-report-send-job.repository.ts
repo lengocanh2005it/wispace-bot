@@ -7,7 +7,7 @@ import type {
   ReportSendJobCreateParams,
   ReportSendJobUpdateParams,
 } from '@wispace/scheduler-core';
-import { ReportSendJobEntity } from '@discord/infrastructure/database/entities/report-send-job.entity';
+import { ReportSendJobEntity } from '@wispace/database';
 
 const PLATFORM = 'discord' as const;
 

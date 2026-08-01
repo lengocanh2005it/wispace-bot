@@ -1,5 +1,5 @@
 import { Repository } from 'typeorm';
-import { ReportSendJobEntity } from '@messenger/infrastructure/database/entities/report-send-job.entity';
+import { ReportSendJobEntity } from '@wispace/database';
 import { ReportSendJobRepository } from './report-send-job.repository';
 
 describe('ReportSendJobRepository (R5)', () => {

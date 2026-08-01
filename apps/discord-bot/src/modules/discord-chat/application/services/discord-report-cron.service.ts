@@ -9,7 +9,7 @@ import {
 } from '@wispace/scheduler-core';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
 import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
-import { ScheduledReportClaimEntity } from '@discord/infrastructure/database/entities/scheduled-report-claim.entity';
+import { ScheduledReportClaimEntity } from '@wispace/database';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { ReportMapping } from '@wispace/scheduler-core';

@@ -5,7 +5,7 @@ import type { StudyReminderJobRepositoryPort } from '../../domain/repositories/s
 import type { MessageSenderPort } from '@messenger/modules/messenger/application/ports/message-sender.port';
 import type { StudyReminderJob } from '../../domain/entities/study-reminder-job.types';
 import { StudyReminderDispatchService } from './study-reminder-dispatch.service';
-import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
+import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { StudyReminderService } from './study-reminder.service';
 
 describe('StudyReminderDispatchService', () => {

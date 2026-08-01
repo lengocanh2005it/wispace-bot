@@ -13,8 +13,10 @@ import {
   LlmSafetyEventEntity,
 } from '@wispace/chat-metering';
 import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
-import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
-import { WebhookDeadLetterEntity } from './entities/webhook-dead-letter.entity';
+import {
+  ScheduledReportClaimEntity,
+  WebhookDeadLetterEntity,
+} from '@wispace/database';
 
 /**
  * Connects to the same Postgres DB as `apps/messenger-bot` (Phase 2: shared

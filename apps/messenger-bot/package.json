@@ -61,6 +61,7 @@
     "@wispace/chat-metering": "*",
     "@wispace/chat-queue-core": "*",
     "@wispace/cleanup-cron": "*",
+    "@wispace/database": "*",
     "@wispace/llm-agent": "*",
     "@wispace/reschedule-confirm": "*",
     "@wispace/scheduler-core": "*",

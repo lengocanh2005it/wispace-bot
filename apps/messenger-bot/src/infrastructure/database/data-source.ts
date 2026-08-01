@@ -1,5 +1,24 @@
 import 'reflect-metadata';
-import { DataSource } from 'typeorm';
-import { getTypeOrmOptions } from './typeorm.options';
+import { buildCliDataSource, SHARED_ENTITIES } from '@wispace/database';
+import {
+  ChatDailyUsageEntity,
+  ChatIdempotencyEntity,
+  LlmSafetyEventEntity,
+  LlmUsageEventEntity,
+} from '@wispace/chat-metering';
+import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
+import { ChatQuotaEventEntity } from './entities/chat-quota-event.entity';
+import { MessageLogEntity } from './entities/message-log.entity';
+import { UserPlatformMappingEntity } from './entities/user-platform-mapping.entity';
 
-export default new DataSource(getTypeOrmOptions(process.env));
+export default buildCliDataSource([
+  ...SHARED_ENTITIES,
+  UserPlatformMappingEntity,
+  MessageLogEntity,
+  ChatDailyUsageEntity,
+  ChatQuotaEventEntity,
+  LlmUsageEventEntity,
+  LlmSafetyEventEntity,
+  ChatIdempotencyEntity,
+  StudyReminderJobEntity,
+]);
