@@ -23,13 +23,28 @@ export interface IntentConfig {
 
 const DEFAULT_CONFIG: IntentConfig = {
   greetingKeywords: [
-    'hi', 'hello', 'hey', 'chào', 'xin chào', 'good morning',
-    'good afternoon', 'good evening', 'chào buổi sáng',
-    'chào buổi tối', 'sup', 'yo',
+    'hi',
+    'hello',
+    'hey',
+    'chào',
+    'xin chào',
+    'good morning',
+    'good afternoon',
+    'good evening',
+    'chào buổi sáng',
+    'chào buổi tối',
+    'sup',
+    'yo',
   ],
   selfIntroKeywords: [
-    'bạn là ai', 'bạn tên gì', 'bạn làm gì', 'tên bạn',
-    'giới thiệu', 'bạn là gì', 'ai vậy', 'mình là ai',
+    'bạn là ai',
+    'bạn tên gì',
+    'bạn làm gì',
+    'tên bạn',
+    'giới thiệu',
+    'bạn là gì',
+    'ai vậy',
+    'mình là ai',
   ],
   maxPrefixLength: 30,
 };
@@ -46,7 +61,7 @@ export class IntentDetector {
       .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
       .join('|');
     this.greetingRegex = new RegExp(
-      `^\\s*(?:${greetingPattern})\\b`,
+      `^\\s*(?:${greetingPattern})(?=\\s|$)`,
       'i',
     );
 
@@ -54,7 +69,7 @@ export class IntentDetector {
       .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
       .join('|');
     this.selfIntroRegex = new RegExp(
-      `^\\s*(?:${selfIntroPattern})\\b`,
+      `^\\s*(?:${selfIntroPattern})(?=\\s|$)`,
       'i',
     );
   }
@@ -67,11 +82,17 @@ export class IntentDetector {
     const prefix = message.slice(0, this.config.maxPrefixLength).trim();
 
     if (this.selfIntroRegex.test(prefix)) {
-      return { intent: 'self_intro', matchedKeyword: this.findMatch(prefix, this.config.selfIntroKeywords) };
+      return {
+        intent: 'self_intro',
+        matchedKeyword: this.findMatch(prefix, this.config.selfIntroKeywords),
+      };
     }
 
     if (this.greetingRegex.test(prefix)) {
-      return { intent: 'greeting', matchedKeyword: this.findMatch(prefix, this.config.greetingKeywords) };
+      return {
+        intent: 'greeting',
+        matchedKeyword: this.findMatch(prefix, this.config.greetingKeywords),
+      };
     }
 
     return { intent: 'unknown' };

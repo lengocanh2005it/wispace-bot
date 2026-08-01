@@ -5,9 +5,19 @@ describe('IntentDetector', () => {
 
   describe('greeting detection', () => {
     it.each([
-      'hi', 'Hi', 'HI', 'hello', 'Hello', 'chào', 'Chào bạn',
-      'xin chào', 'hey', 'good morning', 'chào buổi sáng',
-      'sup', 'yo',
+      'hi',
+      'Hi',
+      'HI',
+      'hello',
+      'Hello',
+      'chào',
+      'Chào bạn',
+      'xin chào',
+      'hey',
+      'good morning',
+      'chào buổi sáng',
+      'sup',
+      'yo',
     ])('detects "%s" as greeting', (input) => {
       expect(detector.detect(input).intent).toBe('greeting');
     });
@@ -23,8 +33,13 @@ describe('IntentDetector', () => {
 
   describe('self-intro detection', () => {
     it.each([
-      'bạn là ai', 'bạn tên gì', 'bạn làm gì', 'tên bạn',
-      'giới thiệu', 'bạn là gì', 'mình là ai',
+      'bạn là ai',
+      'bạn tên gì',
+      'bạn làm gì',
+      'tên bạn',
+      'giới thiệu',
+      'bạn là gì',
+      'mình là ai',
     ])('detects "%s" as self_intro', (input) => {
       expect(detector.detect(input).intent).toBe('self_intro');
     });
