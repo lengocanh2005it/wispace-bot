@@ -39,6 +39,7 @@
     "@wispace/reschedule-confirm": "*",
     "@wispace/study-reminder-core": "*",
     "@wispace/study-reminder-shared": "*",
+    "@wispace/intent-detector": "*",
     "openai": "^6.42.0",
     "p-limit": "^3.1.0",
     "pg": "^8.21.0",

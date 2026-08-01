@@ -36,9 +36,6 @@ RUN for pkg in packages/*/; do \
       fi; \
     done
 
-# Copy intent-detector to node_modules (not installed via npm)
-RUN mkdir -p node_modules/@wispace && cp -r packages/intent-detector node_modules/@wispace/intent-detector
-
 FROM node:20-alpine AS production
 WORKDIR /app
 

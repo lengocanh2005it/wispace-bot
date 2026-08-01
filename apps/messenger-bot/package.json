@@ -67,6 +67,7 @@
     "@wispace/student-report": "*",
     "@wispace/study-reminder-core": "*",
     "@wispace/wispace-client": "*",
+    "@wispace/intent-detector": "*",
     "ioredis": "^5.11.1",
     "openai": "^6.42.0",
     "p-limit": "^3.1.0",

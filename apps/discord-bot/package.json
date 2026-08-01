@@ -42,6 +42,7 @@
     "@wispace/study-reminder-core": "*",
     "@wispace/study-reminder-shared": "^0.0.1",
     "@wispace/wispace-client": "*",
+    "@wispace/intent-detector": "*",
     "discord.js": "^14.26.4",
     "necord": "^6.14.0",
     "openai": "^6.42.0",

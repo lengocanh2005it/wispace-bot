@@ -25,9 +25,6 @@ RUN rm -f package-lock.json && npm install --force --ignore-scripts
 COPY . .
 RUN npx turbo run build
 
-# Copy intent-detector to node_modules (not installed via npm)
-RUN mkdir -p node_modules/@wispace && cp -r packages/intent-detector node_modules/@wispace/intent-detector
-
 RUN for pkg in packages/*/; do \
       name=$(node -p "require('./${pkg}package.json').name" 2>/dev/null || true); \
       if [ -n "$name" ] && [ -d "node_modules/$name" ]; then \
