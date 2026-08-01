@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
-  StudyReminderDispatchService,
-  MESSAGE_SENDER,
   REMINDER_GENERATOR,
   METRICS_HOOK,
   ERROR_CLASSIFIER,
@@ -18,6 +16,7 @@ import { StudentReportModule } from '../student-report/student-report.module';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
 import { LlmUsageModule } from '../llm-usage/llm-usage.module';
 import { StudyCalendarCommandService } from './application/services/study-calendar-command.service';
+import { StudyReminderDispatchService } from './application/services/study-reminder-dispatch.service';
 import { StudyReminderSyncService } from './application/services/study-reminder-sync.service';
 import { StudyReminderWorkerService } from './application/services/study-reminder-worker.service';
 import { StudyReminderService } from './application/services/study-reminder.service';
@@ -33,7 +32,6 @@ import { StudyReminderJobRepository } from './infrastructure/persistence/study-r
 import { MessengerReminderGeneratorAdapter } from './infrastructure/adapters/messenger-reminder-generator.adapter';
 import { MessengerReminderMetricsHook } from './infrastructure/adapters/messenger-metrics-hook.adapter';
 import { MessengerErrorClassifierAdapter } from './infrastructure/adapters/messenger-error-classifier.adapter';
-import { MessengerOutboundService } from '../messenger/application/services/messenger-outbound.service';
 import { MetricsService } from '../metrics/metrics.service';
 
 @Module({
@@ -66,14 +64,11 @@ import { MetricsService } from '../metrics/metrics.service';
       useExisting: StudyReminderJobRepository,
     },
 
-    // ── Shared schedule service ──────────────────────────────────────────
+    // ── Local schedule service (full shape: maxRetries, retryBackoffMinutes) ─
     StudyReminderScheduleService,
 
-    // ── Shared dispatch service (with Messenger adapters via ports) ──────
-    {
-      provide: MESSAGE_SENDER,
-      useExisting: MessengerOutboundService,
-    },
+    // ── Local dispatch service (uses local MESSAGE_SENDER from MessengerOutboundModule) ─
+    StudyReminderDispatchService,
     {
       provide: REMINDER_GENERATOR,
       useFactory: (sr: StudyReminderService): ReminderGeneratorPort =>
