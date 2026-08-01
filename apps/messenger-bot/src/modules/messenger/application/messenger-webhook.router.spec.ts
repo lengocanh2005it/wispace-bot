@@ -113,10 +113,13 @@ describe('routeWebhookEvent', () => {
 
   describe('text messages', () => {
     it('returns enqueue_chat when userId exists and mid is present', () => {
-      const actions = routeWebhookEvent(textEvent('xem lich hoc cua minh', 'mid-1'), {
-        ...defaultCtx,
-        userId: 42,
-      });
+      const actions = routeWebhookEvent(
+        textEvent('xem lich hoc cua minh', 'mid-1'),
+        {
+          ...defaultCtx,
+          userId: 42,
+        },
+      );
       expect(actions).toEqual([
         {
           type: 'enqueue_chat',
@@ -175,11 +178,14 @@ describe('routeWebhookEvent', () => {
     });
 
     it('returns ignore for duplicate message mid', () => {
-      const actions = routeWebhookEvent(textEvent('xem lich hoc cua minh', 'mid-1'), {
-        ...defaultCtx,
-        userId: 42,
-        isDuplicateMid: true,
-      });
+      const actions = routeWebhookEvent(
+        textEvent('xem lich hoc cua minh', 'mid-1'),
+        {
+          ...defaultCtx,
+          userId: 42,
+          isDuplicateMid: true,
+        },
+      );
       expect(actions).toEqual([{ type: 'ignore' }]);
     });
 
@@ -248,10 +254,13 @@ describe('routeWebhookEvent', () => {
     });
 
     it('does not treat text messages as unsupported', () => {
-      const actions = routeWebhookEvent(textEvent('xem lich hoc cua minh', 'mid-1'), {
-        ...defaultCtx,
-        userId: 42,
-      });
+      const actions = routeWebhookEvent(
+        textEvent('xem lich hoc cua minh', 'mid-1'),
+        {
+          ...defaultCtx,
+          userId: 42,
+        },
+      );
       expect(actions[0].type).toBe('enqueue_chat');
     });
   });

@@ -1,6 +1,9 @@
 import { ConfigService } from '@nestjs/config';
 import { DataSourceOptions } from 'typeorm';
-import { getTypeOrmOptions as buildSharedOptions, SHARED_ENTITIES } from '@wispace/database';
+import {
+  getTypeOrmOptions as buildSharedOptions,
+  SHARED_ENTITIES,
+} from '@wispace/database';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
