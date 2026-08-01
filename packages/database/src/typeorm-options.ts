@@ -31,7 +31,6 @@ export const SHARED_ENTITIES: EntityClass[] = [
 export function getTypeOrmOptions(
   source: EnvSource,
   entities: EntityClass[],
-  options?: { includeUsers?: boolean },
 ): DataSourceOptions {
   const poolSize = Number(readEnv(source, 'DB_POOL_SIZE') ?? 10);
   const poolIdleTimeoutMs = Number(
