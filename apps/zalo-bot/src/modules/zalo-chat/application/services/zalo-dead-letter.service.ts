@@ -32,7 +32,7 @@ export class ZaloDeadLetterService {
       await this.repo.save({
         platform: PLATFORM,
         externalUserId: input.externalUserId,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
         rawPayload: input.rawPayload as object,
         errorMessage: input.errorMessage,
         status: 'pending',
