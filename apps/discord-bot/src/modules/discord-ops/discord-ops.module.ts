@@ -6,7 +6,12 @@ import { DiscordStudyReminderModule } from '../discord-study-reminder/discord-st
 import { DiscordOpsController } from './discord-ops.controller';
 
 @Module({
-  imports: [CommonModule, DiscordChatModule, DiscordReportModule, DiscordStudyReminderModule],
+  imports: [
+    CommonModule,
+    DiscordChatModule,
+    DiscordReportModule,
+    DiscordStudyReminderModule,
+  ],
   controllers: [DiscordOpsController],
 })
 export class DiscordOpsModule {}

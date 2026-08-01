@@ -19,7 +19,12 @@ import { DiscordOutboundService } from './application/services/discord-outbound.
  * DiscordChatModule ↔ DiscordReportModule.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([DiscordMessageLogEntity, DiscordAccountLinkEntity])],
+  imports: [
+    TypeOrmModule.forFeature([
+      DiscordMessageLogEntity,
+      DiscordAccountLinkEntity,
+    ]),
+  ],
   providers: [
     DiscordDeliveryLogService,
     DiscordOutboundService,

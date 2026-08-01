@@ -17,7 +17,10 @@ import { DiscordCleanupCronService } from './application/services/discord-cleanu
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
 import { DiscordChatGateway } from './presentation/gateways/discord-chat.gateway';
-import { WebhookDeadLetterEntity, ReportSendJobEntity } from '@wispace/database';
+import {
+  WebhookDeadLetterEntity,
+  ReportSendJobEntity,
+} from '@wispace/database';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 import { DiscordOpsHealthRepository } from './infrastructure/persistence/discord-ops-health.repository';
 import { ChatIdempotencyEntity } from '@wispace/chat-metering';
