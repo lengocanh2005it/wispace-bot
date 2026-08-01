@@ -47,17 +47,47 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
         const logger = new Logger('ChatBurstCounter');
         const configured = config.getBurstStore();
 
-        if (configured === 'redis' && redisCounter.isAvailable()) {
-          logger.log(
-            `Chat burst counter active=redis configured=redis limit=${config.getBurstPerMinute()}/min`,
-          );
-          return redisCounter;
-        }
-
         if (configured === 'redis') {
-          logger.warn(
-            'CHAT_BURST_STORE=redis but Redis client unavailable — using postgres fallback',
-          );
+          // Defer Redis check — RedisService.onModuleInit() may not have
+          // completed yet when this factory runs. Check on first use instead.
+          return {
+            async getBurstCount(psid) {
+              if (redisCounter.isAvailable()) {
+                return redisCounter.getBurstCount(psid);
+              }
+              return new PostgresBurstCounter(
+                {
+                  countRecentReservations: (p, since, opts) =>
+                    repository.countRecentReservations(p, since, opts),
+                },
+                config.getBurstCountsRefunded(),
+              ).getBurstCount(psid);
+            },
+            async incrementAndCheck(psid) {
+              if (redisCounter.isAvailable()) {
+                return redisCounter.incrementAndCheck(psid);
+              }
+              return new PostgresBurstCounter(
+                {
+                  countRecentReservations: (p, since, opts) =>
+                    repository.countRecentReservations(p, since, opts),
+                },
+                config.getBurstCountsRefunded(),
+              ).incrementAndCheck(psid);
+            },
+            async refund(psid, idempotencyKey) {
+              if (redisCounter.isAvailable()) {
+                return redisCounter.refund(psid, idempotencyKey);
+              }
+              return new PostgresBurstCounter(
+                {
+                  countRecentReservations: (p, since, opts) =>
+                    repository.countRecentReservations(p, since, opts),
+                },
+                config.getBurstCountsRefunded(),
+              ).refund(psid, idempotencyKey);
+            },
+          } as ChatBurstCounterPort;
         }
 
         if (configured === 'memory') {
