@@ -87,6 +87,7 @@ describe('StudentReportService', () => {
   });
 
   it('throws StudentReportRetryableError on Wispace 5xx (R3)', async () => {
+    jest.useFakeTimers();
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const studentCapacityService = {
       getCapacityData: jest.fn(() =>
@@ -109,9 +110,14 @@ describe('StudentReportService', () => {
       mockAdapter,
     );
 
-    await expect(service.generateReport('psid-1')).rejects.toBeInstanceOf(
+    const promise = service.generateReport('psid-1');
+    const assertion = expect(promise).rejects.toBeInstanceOf(
       StudentReportRetryableError,
     );
+    await jest.advanceTimersByTimeAsync(5_000);
+    await jest.advanceTimersByTimeAsync(10_000);
+    await assertion;
+    jest.useRealTimers();
   });
 
   it('returns unavailable message on Wispace 4xx (R3)', async () => {
