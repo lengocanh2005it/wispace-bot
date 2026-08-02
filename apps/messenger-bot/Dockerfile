@@ -45,6 +45,7 @@ RUN apk add --no-cache docker-cli docker-cli-compose curl bash gnupg \
   && adduser -S app -u 1001 -G app
 
 COPY --from=build --chown=app:app /app/apps/messenger-bot/dist ./apps/messenger-bot/dist
+COPY --from=build --chown=app:app /app/apps/messenger-bot/node_modules ./apps/messenger-bot/node_modules
 COPY --from=build --chown=app:app /app/node_modules ./node_modules
 
 USER app
