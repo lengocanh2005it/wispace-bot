@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { InternalApiKeyGuard } from '../../shared/common/guards/internal-api-key.guard';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
-import { ZaloReportCronService } from '../zalo-chat/application/services/zalo-report-cron.service';
+import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
 
 @Controller('zalo')
 @UseGuards(InternalApiKeyGuard)

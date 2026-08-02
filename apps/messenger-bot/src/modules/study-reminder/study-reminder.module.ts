@@ -9,7 +9,7 @@ import {
   type ErrorClassifierPort,
 } from '@wispace/study-reminder-shared';
 import { CommonModule } from '../../shared/common/common.module';
-import { StudyReminderJobEntity } from '../../infrastructure/database/entities/study-reminder-job.entity';
+import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
 import { UserEntity } from '../../infrastructure/database/entities/user.entity';
 import { MessengerOutboundModule } from '../messenger/messenger-outbound.module';
 import { StudentReportModule } from '../student-report/student-report.module';

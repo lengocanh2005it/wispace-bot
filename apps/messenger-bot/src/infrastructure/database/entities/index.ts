@@ -11,6 +11,6 @@ export {
   ReportSendJobEntity,
 } from '@wispace/database';
 export { MessageLogEntity } from './message-log.entity';
-export { StudyReminderJobEntity } from './study-reminder-job.entity';
+export { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
 export { UserPlatformMappingEntity } from './user-platform-mapping.entity';
 export { UserEntity } from './user.entity';

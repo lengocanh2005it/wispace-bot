@@ -52,7 +52,7 @@ jobs:
         run: |
           mkdir -p upload-bundle
           cp apps/messenger-bot/docker-compose.prod.yml upload-bundle/
-          cp .github/scripts/vps-deploy.sh upload-bundle/
+          cp .github/scripts/vps-deploy-messenger.sh upload-bundle/vps-deploy.sh
           if [ -f production.env ]; then
             cp production.env upload-bundle/
           fi

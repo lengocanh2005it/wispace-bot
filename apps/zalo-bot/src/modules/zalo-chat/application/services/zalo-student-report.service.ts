@@ -10,7 +10,7 @@ import { retryWithBackoff, type LlmProviderAdapter } from '@wispace/llm-agent';
 import { todayUsageDate } from '@wispace/chat-metering';
 import { join } from 'path';
 import { loadSystemPromptFile } from '@wispace/llm-agent';
-import { ZaloLlmUsageRecorderService } from './zalo-llm-usage-recorder.service';
+import { ZaloLlmUsageRecorderService } from '../../infrastructure/persistence/zalo-llm-usage-recorder.service';
 import { ZaloWispaceGoalsService } from '@zalo/modules/wispace/application/services/zalo-wispace-goals.service';
 
 const FEATURE = 'STUDENT_REPORT';

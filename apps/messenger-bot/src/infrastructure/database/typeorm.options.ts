@@ -12,7 +12,7 @@ import {
 } from '@wispace/chat-metering';
 import { ChatQuotaEventEntity } from './entities/chat-quota-event.entity';
 import { MessageLogEntity } from './entities/message-log.entity';
-import { StudyReminderJobEntity } from './entities/study-reminder-job.entity';
+import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
 import { UserPlatformMappingEntity } from './entities/user-platform-mapping.entity';
 import { UserEntity } from './entities/user.entity';
 

@@ -12,154 +12,19 @@ on:
         default: false
 
 concurrency:
-  group: production-deploy-discord
+  group: production-deploy-discord-bot
   cancel-in-progress: true
 
-permissions:
-  contents: read
-  packages: write
-
-env:
-  REGISTRY: ghcr.io
-
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    outputs:
-      app: ${{ steps.filter.outputs.app }}
-      deploy: ${{ steps.filter.outputs.deploy }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Detect changed paths
-        uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            app:
-              - 'apps/discord-bot/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'package-lock.json'
-              - 'turbo.json'
-            deploy:
-              - 'apps/discord-bot/docker-compose.prod.yml'
-              - '.github/workflows/deploy-discord-bot.yml'
-              - '.github/scripts/vps-deploy-discord.sh'
-
-  build-image:
-    needs: changes
-    if: |
-      needs.changes.outputs.app == 'true' ||
-      (github.event_name == 'workflow_dispatch' && inputs.force_build)
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    outputs:
-      image: ${{ steps.prep.outputs.image }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Prepare image reference
-        id: prep
-        run: |
-          REPO_LC=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          IMAGE="${{ env.REGISTRY }}/${REPO_LC}/discord-bot:${{ github.sha }}"
-          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
-          echo "IMAGE_LATEST=${{ env.REGISTRY }}/${REPO_LC}/discord-bot:latest" >> "$GITHUB_ENV"
-          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/discord-bot/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE }}
-            ${{ env.IMAGE_LATEST }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
   deploy:
-    needs: [changes, build-image]
-    if: |
-      always() &&
-      !cancelled() &&
-      (needs.changes.outputs.app == 'true' ||
-        needs.changes.outputs.deploy == 'true' ||
-        github.event_name == 'workflow_dispatch') &&
-      (needs.build-image.result == 'success' || needs.build-image.result == 'skipped')
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      VPS_HOST: ${{ secrets.VPS_HOST }}
-      VPS_USER: ${{ secrets.VPS_USER }}
-      VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT || '8443' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Resolve deploy image
-        run: |
-          REPO_LC=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          if [ "${{ needs.build-image.result }}" = "success" ]; then
-            echo "IMAGE=${{ env.REGISTRY }}/${REPO_LC}/discord-bot:${{ github.sha }}" >> "$GITHUB_ENV"
-            echo "DEPLOY_MODE=new-build" >> "$GITHUB_ENV"
-          else
-            echo "IMAGE=${{ env.REGISTRY }}/${REPO_LC}/discord-bot:latest" >> "$GITHUB_ENV"
-            echo "DEPLOY_MODE=reuse-latest" >> "$GITHUB_ENV"
-          fi
-
-      - name: Install Doppler CLI
-        uses: dopplerhq/cli-action@v3
-
-      - name: Download production env from Doppler
-        env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_DISCORD }}
-        run: |
-          if [ -z "${DOPPLER_TOKEN:-}" ]; then
-            echo "DOPPLER_TOKEN_DISCORD not set — VPS will keep existing .env"
-            exit 0
-          fi
-          doppler secrets download --no-file --format env > production.env
-          echo "Downloaded $(wc -l < production.env) lines from Doppler"
-          echo "has_production_env=true" >> "$GITHUB_ENV"
-
-      - name: Prepare VPS upload bundle
-        run: |
-          mkdir -p upload-bundle
-          cp apps/discord-bot/docker-compose.prod.yml upload-bundle/
-          cp .github/scripts/vps-deploy-discord.sh upload-bundle/vps-deploy.sh
-          if [ -f production.env ]; then
-            cp production.env upload-bundle/
-          fi
-
-      - name: Upload bundle to VPS (retry)
-        env:
-          VPS_TARGET_DIR: /home/ngoc_anh/discord-bot
-        run: bash .github/scripts/upload-to-vps.sh upload-bundle
-
-      - name: Deploy on VPS (retry)
-        env:
-          IMAGE: ${{ env.IMAGE }}
-          DEPLOY_MODE: ${{ env.DEPLOY_MODE }}
-          FORCE_RECREATE: 'false'
-          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
-          GHCR_USER: ${{ github.repository_owner }}
-          VPS_TARGET_DIR: /home/ngoc_anh/discord-bot
-        run: |
-          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER
-          bash .github/scripts/ssh-deploy-vps.sh /home/ngoc_anh/discord-bot/vps-deploy.sh
+    uses: ./.github/workflows/deploy-bot-reusable.yml
+    with:
+      app: discord-bot
+      vps_target_dir: /home/ngoc_anh/discord-bot
+      force_build: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build }}
+    secrets:
+      doppler_token: ${{ secrets.DOPPLER_TOKEN_DISCORD }}
+      ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
+      ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      vps_host: ${{ secrets.VPS_HOST }}
+      vps_user: ${{ secrets.VPS_USER }}

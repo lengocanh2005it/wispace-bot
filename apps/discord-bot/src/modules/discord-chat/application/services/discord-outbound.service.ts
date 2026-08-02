@@ -15,6 +15,7 @@ import {
   MENU_UPCOMING_SESSIONS_CUSTOM_ID,
 } from '../constants/discord-menu.constants';
 import { DiscordDeliveryLogService } from './discord-delivery-log.service';
+import { DiscordDeadLetterService } from './discord-dead-letter.service';
 
 const RETRY_MAX_ATTEMPTS = 2;
 const RETRY_BASE_DELAY_MS = 1_000;
@@ -34,10 +35,17 @@ export class DiscordOutboundService {
     @Optional()
     @Inject(DiscordDeliveryLogService)
     private readonly deliveryLog?: DiscordDeliveryLogService,
+    @Optional()
+    @Inject(DiscordDeadLetterService)
+    private readonly deadLetter?: DiscordDeadLetterService,
   ) {}
 
-  async sendText(discordUserId: string, text: string): Promise<void> {
-    await this.sendTextAndGetChannelId(discordUserId, text);
+  async sendText(
+    discordUserId: string,
+    text: string,
+    options?: { skipDeadLetter?: boolean },
+  ): Promise<void> {
+    await this.sendTextAndGetChannelId(discordUserId, text, options);
   }
 
   /** Sends a typing indicator to the user's DM channel (fire-and-forget). */
@@ -55,6 +63,7 @@ export class DiscordOutboundService {
   async sendTextAndGetChannelId(
     discordUserId: string,
     text: string,
+    options?: { skipDeadLetter?: boolean },
   ): Promise<string | undefined> {
     let lastError: unknown;
 
@@ -93,6 +102,13 @@ export class DiscordOutboundService {
       error: errorMsg,
       messageType: 'chat',
     });
+    if (options?.skipDeadLetter !== true) {
+      await this.deadLetter?.save({
+        externalUserId: discordUserId,
+        rawPayload: { discordUserId, text },
+        errorMessage: errorMsg,
+      });
+    }
     return undefined;
   }
 

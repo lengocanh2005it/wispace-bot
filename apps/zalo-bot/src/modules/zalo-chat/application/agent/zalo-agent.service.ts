@@ -17,8 +17,8 @@ import type {
 } from '../../domain/entities/zalo-chat.types';
 import { ZaloAgentToolsService } from './zalo-agent-tools.service';
 import { ZaloChatHistoryService } from '../services/zalo-chat-history.service';
-import { ZaloLlmUsageRecorderService } from '../services/zalo-llm-usage-recorder.service';
-import { ZaloLlmSafetyEventService } from '../services/zalo-llm-safety-event.service';
+import { ZaloLlmUsageRecorderService } from '../../infrastructure/persistence/zalo-llm-usage-recorder.service';
+import { ZaloLlmSafetyEventService } from '../../infrastructure/persistence/zalo-llm-safety-event.service';
 
 const FEATURE = 'FREE_FORM_CHAT';
 const DEFAULT_MAX_CONCURRENT = 3;

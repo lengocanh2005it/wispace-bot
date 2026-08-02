@@ -2,7 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import { ChatPipeline } from '@wispace/chat-pipeline';
 import { ZaloChatQueueService } from './zalo-chat-queue.service';
-import type { ZaloChatRateLimitService } from './zalo-chat-rate-limit.service';
+import type { ZaloChatRateLimitService } from '../../infrastructure/persistence/zalo-chat-rate-limit.service';
 import type { ZaloChatHistoryService } from './zalo-chat-history.service';
 import type { ZaloOutboundService } from './zalo-outbound.service';
 import type { ZaloAgentService } from '../agent/zalo-agent.service';

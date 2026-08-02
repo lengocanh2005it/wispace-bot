@@ -19,7 +19,7 @@ import {
   type ZaloWebhookHandler,
 } from '../../domain/ports/zalo-webhook-handler.port';
 import { ZaloWebhookDedupeService } from '../../application/zalo-webhook-dedupe.service';
-import { ZaloDeadLetterService } from '@zalo/modules/zalo-chat/application/services/zalo-dead-letter.service';
+import { ZaloDeadLetterService } from '@zalo/modules/zalo-chat/infrastructure/persistence/zalo-dead-letter.service';
 
 @Controller('zalo/webhook')
 export class ZaloWebhookController {

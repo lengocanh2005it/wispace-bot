@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { ZaloDeadLetterService } from './zalo-dead-letter.service';
+import { ZaloDeadLetterService } from '../../infrastructure/persistence/zalo-dead-letter.service';
 import { ZaloOutboundService } from './zalo-outbound.service';
 
 const DEFAULT_MAX_RETRIES = 3;

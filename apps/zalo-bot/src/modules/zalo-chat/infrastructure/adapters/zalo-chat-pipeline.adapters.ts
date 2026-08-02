@@ -9,7 +9,7 @@ import type {
   SendResult,
   ChatHistoryMessage,
 } from '@wispace/chat-pipeline';
-import { ZaloChatRateLimitService } from '../../application/services/zalo-chat-rate-limit.service';
+import { ZaloChatRateLimitService } from '../../infrastructure/persistence/zalo-chat-rate-limit.service';
 import { ZaloChatHistoryService } from '../../application/services/zalo-chat-history.service';
 import { ZaloAgentService } from '../../application/agent/zalo-agent.service';
 import { ZaloOutboundService } from '../../application/services/zalo-outbound.service';

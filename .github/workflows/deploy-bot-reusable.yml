@@ -1,0 +1,182 @@
+name: Deploy bot to VPS (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      app:
+        required: true
+        type: string
+        description: App directory name, e.g. messenger-bot
+      vps_target_dir:
+        required: true
+        type: string
+        description: Remote directory on the VPS, e.g. /home/ngoc_anh/messenger-bot
+      force_build:
+        required: false
+        type: boolean
+        default: false
+      extra_deploy_paths:
+        required: false
+        type: string
+        description: Additional path filters (newline-separated) that trigger deploy without build
+        default: ''
+    secrets:
+      doppler_token:
+        required: false
+      ghcr_pull_token:
+        required: true
+      ssh_private_key:
+        required: true
+      vps_host:
+        required: true
+      vps_user:
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      deploy: ${{ steps.filter.outputs.deploy }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            app:
+              - 'apps/${{ inputs.app }}/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'turbo.json'
+            deploy:
+              - 'apps/${{ inputs.app }}/docker-compose.prod.yml'
+              - '.github/scripts/vps-deploy-${{ inputs.app }}.sh'
+              - ${{ inputs.extra_deploy_paths }}
+
+  build-image:
+    needs: changes
+    if: |
+      needs.changes.outputs.app == 'true' ||
+      inputs.force_build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      image: ${{ steps.prep.outputs.image }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare image reference
+        id: prep
+        run: |
+          REPO_LC=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE="${{ env.REGISTRY }}/${REPO_LC}/${{ inputs.app }}:${{ github.sha }}"
+          echo "IMAGE=${IMAGE}" >> "$GITHUB_ENV"
+          echo "IMAGE_LATEST=${{ env.REGISTRY }}/${REPO_LC}/${{ inputs.app }}:latest" >> "$GITHUB_ENV"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/${{ inputs.app }}/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}
+            ${{ env.IMAGE_LATEST }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: [changes, build-image]
+    if: |
+      always() &&
+      !cancelled() &&
+      (needs.changes.outputs.app == 'true' ||
+        needs.changes.outputs.deploy == 'true' ||
+        inputs.force_build) &&
+      (needs.build-image.result == 'success' || needs.build-image.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SSH_PRIVATE_KEY: ${{ secrets.ssh_private_key }}
+      VPS_HOST: ${{ secrets.vps_host }}
+      VPS_USER: ${{ secrets.vps_user }}
+      VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT || '8443' }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve deploy image
+        run: |
+          REPO_LC=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          if [ "${{ needs.build-image.result }}" = "success" ]; then
+            echo "IMAGE=${{ env.REGISTRY }}/${REPO_LC}/${{ inputs.app }}:${{ github.sha }}" >> "$GITHUB_ENV"
+            echo "DEPLOY_MODE=new-build" >> "$GITHUB_ENV"
+          else
+            echo "IMAGE=${{ env.REGISTRY }}/${REPO_LC}/${{ inputs.app }}:latest" >> "$GITHUB_ENV"
+            echo "DEPLOY_MODE=reuse-latest" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install Doppler CLI
+        uses: dopplerhq/cli-action@v3
+
+      - name: Download production env from Doppler
+        env:
+          DOPPLER_TOKEN: ${{ secrets.doppler_token }}
+        run: |
+          if [ -z "${DOPPLER_TOKEN:-}" ]; then
+            echo "DOPPLER_TOKEN not set — VPS will keep existing .env"
+            exit 0
+          fi
+          doppler secrets download --no-file --format env > production.env
+          echo "Downloaded $(wc -l < production.env) lines from Doppler"
+          echo "has_production_env=true" >> "$GITHUB_ENV"
+
+      - name: Prepare VPS upload bundle
+        run: |
+          mkdir -p upload-bundle
+          cp apps/${{ inputs.app }}/docker-compose.prod.yml upload-bundle/
+          cp .github/scripts/vps-deploy-${{ inputs.app }}.sh upload-bundle/vps-deploy.sh
+          if [ -f production.env ]; then
+            cp production.env upload-bundle/
+          fi
+
+      - name: Upload bundle to VPS (retry)
+        env:
+          VPS_TARGET_DIR: ${{ inputs.vps_target_dir }}
+        run: bash .github/scripts/upload-to-vps.sh upload-bundle
+
+      - name: Deploy on VPS (retry)
+        env:
+          IMAGE: ${{ env.IMAGE }}
+          DEPLOY_MODE: ${{ env.DEPLOY_MODE }}
+          FORCE_RECREATE: 'false'
+          GHCR_PULL_TOKEN: ${{ secrets.ghcr_pull_token }}
+          GHCR_USER: ${{ github.repository_owner }}
+          VPS_TARGET_DIR: ${{ inputs.vps_target_dir }}
+        run: |
+          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER
+          bash .github/scripts/ssh-deploy-vps.sh ${{ inputs.vps_target_dir }}/vps-deploy.sh

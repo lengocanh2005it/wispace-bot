@@ -5,7 +5,7 @@ import { ScheduledReportClaimEntity } from '@wispace/database';
 import { ZaloChatModule } from './zalo-chat.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloReportDeliveryService } from './application/services/zalo-report-delivery.service';
-import { ZaloReportCronService } from './application/services/zalo-report-cron.service';
+import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-cron.service';
 import { ZaloStudentReportService } from './application/services/zalo-student-report.service';
 
 @Module({

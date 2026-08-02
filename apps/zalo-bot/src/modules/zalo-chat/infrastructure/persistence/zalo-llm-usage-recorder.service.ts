@@ -8,7 +8,7 @@ import {
   LlmUsageRecorderCore,
   LlmUsageRepository,
 } from '@wispace/chat-metering';
-import { ZaloLlmUsageConfigService } from './zalo-llm-usage-config.service';
+import { ZaloLlmUsageConfigService } from '../../application/services/zalo-llm-usage-config.service';
 
 const PLATFORM = 'zalo' as const;
 

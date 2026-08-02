@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import { ZaloStudentReportService } from './zalo-student-report.service';
-import type { ZaloLlmUsageRecorderService } from './zalo-llm-usage-recorder.service';
+import type { ZaloLlmUsageRecorderService } from '../../infrastructure/persistence/zalo-llm-usage-recorder.service';
 import type { ZaloWispaceGoalsService } from '@zalo/modules/wispace/application/services/zalo-wispace-goals.service';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 

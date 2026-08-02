@@ -62,6 +62,7 @@ export class DiscordDeadLetterCronService {
         await this.outboundService.sendText(
           payload.discordUserId,
           payload.text,
+          { skipDeadLetter: true },
         );
         await this.deadLetterService.markReplayed(entry.id);
       } catch (error) {

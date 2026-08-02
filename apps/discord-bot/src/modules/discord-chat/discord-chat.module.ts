@@ -11,7 +11,6 @@ import { DiscordChatHistoryService } from './application/services/discord-chat-h
 import { DiscordChatQueueService } from './application/services/discord-chat-queue.service';
 import { DiscordRescheduleConfirmationService } from './application/services/discord-reschedule-confirmation.service';
 import { DiscordMenuService } from './application/services/discord-menu.service';
-import { DiscordDeadLetterService } from './application/services/discord-dead-letter.service';
 import { DiscordDeadLetterCronService } from './application/services/discord-dead-letter-cron.service';
 import { DiscordCleanupCronService } from './application/services/discord-cleanup-cron.service';
 import { DiscordOutboundModule } from './discord-outbound.module';
@@ -51,7 +50,6 @@ import { DiscordReschedulePort } from './infrastructure/adapters/discord-resched
     DiscordReschedulePort,
     DiscordRescheduleConfirmationService,
     DiscordMenuService,
-    DiscordDeadLetterService,
     DiscordDeadLetterCronService,
     CleanupCronService,
     DiscordCleanupCronService,

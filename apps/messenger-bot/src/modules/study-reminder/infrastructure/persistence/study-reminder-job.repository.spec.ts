@@ -1,5 +1,5 @@
 import { Repository } from 'typeorm';
-import { StudyReminderJobEntity } from '@messenger/infrastructure/database/entities/study-reminder-job.entity';
+import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
 import { UpsertStudyReminderJobInput } from '../../domain/entities/study-reminder-job.types';
 import { StudyReminderJobRepository } from './study-reminder-job.repository';
 

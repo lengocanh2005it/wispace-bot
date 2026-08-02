@@ -9,7 +9,7 @@ import {
   ZaloAgentAdapter,
   ZaloOutboundAdapter,
 } from '../../infrastructure/adapters/zalo-chat-pipeline.adapters';
-import { ZaloChatRateLimitService } from './zalo-chat-rate-limit.service';
+import { ZaloChatRateLimitService } from '../../infrastructure/persistence/zalo-chat-rate-limit.service';
 import { ZaloChatHistoryService } from './zalo-chat-history.service';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAgentService } from '../agent/zalo-agent.service';
