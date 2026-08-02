@@ -4,6 +4,11 @@ import type { ZaloWebhookHandler } from '@zalo/modules/zalo-webhook/domain/ports
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { ZaloChatQueueService } from './zalo-chat-queue.service';
+import { ZaloRescheduleConfirmationService } from './zalo-reschedule-confirmation.service';
+import {
+  RESCHEDULE_CONFIRM_KEYWORDS,
+  RESCHEDULE_CANCEL_KEYWORDS,
+} from '../constants/zalo-reschedule.constants';
 import { IntentDetector } from '@wispace/intent-detector';
 
 const FALLBACK_ERROR_MESSAGE =
@@ -28,6 +33,7 @@ export class ZaloChatService implements ZaloWebhookHandler {
     private readonly outboundService: ZaloOutboundService,
     private readonly accountLinkService: ZaloAccountLinkService,
     private readonly chatQueueService: ZaloChatQueueService,
+    private readonly rescheduleConfirmationService: ZaloRescheduleConfirmationService,
   ) {
     const appId = this.configService.get<string>('ZALO_APP_ID');
     const redirectUri = this.configService.get<string>(
@@ -59,6 +65,35 @@ export class ZaloChatService implements ZaloWebhookHandler {
     try {
       const userId =
         await this.accountLinkService.findUserIdByZaloId(zaloUserId);
+
+      if (
+        this.rescheduleConfirmationService.hasPending(zaloUserId) &&
+        this.isConfirmKeyword(text.trim())
+      ) {
+        const result = await this.rescheduleConfirmationService.confirm(
+          zaloUserId,
+          userId,
+        );
+        if (result.confirmed) {
+          await this.outboundService.sendText(
+            zaloUserId,
+            `Đã dời buổi học sang ${result.scheduledTimeLabel} nhé.`,
+          );
+          return;
+        }
+        await this.outboundService.sendText(zaloUserId, result.message);
+        return;
+      }
+
+      if (
+        this.rescheduleConfirmationService.hasPending(zaloUserId) &&
+        this.isCancelKeyword(text.trim())
+      ) {
+        const message = this.rescheduleConfirmationService.cancel(zaloUserId);
+        await this.outboundService.sendText(zaloUserId, message);
+        return;
+      }
+
       const key = idempotencyKey ?? `zalo:${zaloUserId}:${Date.now()}`;
       this.chatQueueService.enqueue(zaloUserId, text, { userId }, key);
     } catch (error) {
@@ -73,6 +108,14 @@ export class ZaloChatService implements ZaloWebhookHandler {
         // ignore
       }
     }
+  }
+
+  private isConfirmKeyword(text: string): boolean {
+    return RESCHEDULE_CONFIRM_KEYWORDS.includes(text.toLowerCase());
+  }
+
+  private isCancelKeyword(text: string): boolean {
+    return RESCHEDULE_CANCEL_KEYWORDS.includes(text.toLowerCase());
   }
 
   async handleFollow(zaloUserId: string): Promise<void> {

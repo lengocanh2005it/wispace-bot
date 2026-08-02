@@ -21,7 +21,7 @@ Run at **root** — npm workspaces resolves both `apps/*` and `packages/*`. Requ
 
 ## Quality gate
 
-**CI / deploy** (`.github/workflows/deploy.yml`, runs only for `apps/messenger-bot`):
+**CI / deploy** (`.github/workflows/deploy-messenger-bot.yml`, runs only for `apps/messenger-bot`):
 
 ```bash
 npx turbo run lint --filter=@wispace/messenger-bot...

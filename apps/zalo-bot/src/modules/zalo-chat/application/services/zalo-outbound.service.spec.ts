@@ -2,6 +2,14 @@ import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
 
 describe('ZaloOutboundService', () => {
+  const deliveryLog = {
+    logDelivery: jest.fn().mockResolvedValue(undefined),
+  };
+
+  beforeEach(() => {
+    deliveryLog.logDelivery.mockClear();
+  });
+
   it('sends a text consultation message with the current access token', async () => {
     const getValidAccessToken = jest.fn().mockResolvedValue('token-abc');
     const tokenService = { getValidAccessToken } as unknown as ZaloTokenService;
@@ -12,7 +20,7 @@ describe('ZaloOutboundService', () => {
 
     global.fetch = fetchMock;
 
-    const service = new ZaloOutboundService(tokenService);
+    const service = new ZaloOutboundService(tokenService, deliveryLog as never);
     await service.sendText('zalo-1', 'hello');
 
     expect(getValidAccessToken).toHaveBeenCalled();
@@ -44,7 +52,7 @@ describe('ZaloOutboundService', () => {
 
     global.fetch = fetchMock;
 
-    const service = new ZaloOutboundService(tokenService);
+    const service = new ZaloOutboundService(tokenService, deliveryLog as never);
 
     await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow(
       'Zalo Send API network error',

@@ -1,38 +1,18 @@
-import { ConfigService } from '@nestjs/config';
 import type { GoalsDataPort } from '@wispace/scheduler-core';
 import { parseExamDateToIso } from '@wispace/scheduler-core';
-
-const WISPACE_API_USER_GOALS_URL = 'https://api.wispace.net/api/User/goals';
-const WISPACE_API_TIMEOUT_MS = 10_000;
+import { WispaceGoalsService } from '@discord/modules/wispace/application/services/wispace-goals.service';
 
 /**
  * Fetches user goals (exam date) from Wispace API for Discord users.
+ * Delegates to WispaceGoalsService so the x-discordid header and
+ * WISPACE_API_USER_GOALS_URL config are used consistently.
  */
 export class DiscordGoalsDataAdapter implements GoalsDataPort {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly goalsService: WispaceGoalsService) {}
 
   async getUserGoals(externalUserId: string): Promise<{ examDate: string }> {
-    const internalKey = this.configService.get<string>('WISPACE_INTERNAL_KEY');
-
-    const response = await fetch(WISPACE_API_USER_GOALS_URL, {
-      method: 'GET',
-      headers: {
-        'x-psid': externalUserId,
-        'X-Internal-Key': internalKey ?? '',
-      },
-      signal: AbortSignal.timeout(WISPACE_API_TIMEOUT_MS),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Wispace API user goals failed: HTTP ${response.status}`);
-    }
-
-    const data = (await response.json()) as { examDate?: string };
-    if (!data.examDate) {
-      throw new Error('Wispace API returned no examDate');
-    }
-
-    return { examDate: data.examDate };
+    const record = await this.goalsService.getUserGoals(externalUserId);
+    return { examDate: record.examDate };
   }
 
   parseExamDate(examDate: string): string {

@@ -19,7 +19,7 @@ Related: [project-overview.md](../../docs/project-overview.md), [study-session-r
 | Component | Status |
 |-----------|--------|
 | Two-way chat AI (`MessengerChatQueueService` → agent + tools) | ✓ |
-| Webhook dedupe `message.mid` | ✓ RAM (default) or DB when `CHAT_QUEUE_SHARED=true` |
+| Webhook dedupe `message.mid` | ✓ RAM (default) or Redis when `CHAT_DEDUPE_STORE=redis` |
 | Postback dedupe (`psid:payload`, TTL 15s) | ✓ |
 | Rate limit / `messenger_chat_daily_usage` | ✓ `ChatRateLimitModule` |
 | DB idempotency quota (`message.mid`) | ✓ `messenger_chat_idempotency` |
@@ -158,7 +158,7 @@ DO UPDATE SET
 RETURNING free_form_count;
 ```
 
-**Note:** UPSERT ensures the **counter is correct** when multiple requests write concurrently. **H3 ✓** adds `WHERE free_form_count < limit` in the same transaction as idempotency — daily cap doesn't exceed on multi-instance. **H7 ✓** persists debounce + history + webhook dedupe via DB when `CHAT_QUEUE_SHARED=true`.
+**Note:** UPSERT ensures the **counter is correct** when multiple requests write concurrently. **H3 ✓** adds `WHERE free_form_count < limit` in the same transaction as idempotency — daily cap doesn't exceed on multi-instance. **H7 ✓** persists debounce + history via Redis when `CHAT_QUEUE_SHARED=true`.
 
 #### Meta Webhook Idempotency
 
@@ -557,7 +557,7 @@ sequenceDiagram
 **Race condition — practical impact:**
 
 - **Single process (`CHAT_QUEUE_SHARED=false`):** Same PSID flushes **queue up** (`processing` + `pendingWhileProcessing`). Daily overshoot rare.
-- **Multiple instances:** Enable **`CHAT_QUEUE_SHARED=true`** (H7) — debounce/history/`mid` dedupe via PostgreSQL; claim buffer `FOR UPDATE`. Daily cap: **H3** hard cap in transaction — doesn't exceed limit on concurrent reserve.
+- **Multiple instances:** Enable **`CHAT_QUEUE_SHARED=true`** (H7) — debounce/history via Redis (`REDIS_ENABLED=true` required); claim buffer `FOR UPDATE`. Daily cap: **H3** hard cap in transaction — doesn't exceed limit on concurrent reserve.
 
 **Not done in V1:**
 

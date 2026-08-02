@@ -1,10 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
-  createLlmProviderAdapter,
   createFailoverLlmProviderAdapter,
+  createFailoverProviderEntries,
   type LlmProviderAdapter,
-  type LlmProviderEntryConfig,
 } from '@wispace/llm-agent';
 import { REPORT_DELIVERY_PORT } from '@wispace/scheduler-core';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
@@ -41,26 +40,13 @@ import { DiscordOutboundService } from './application/services/discord-outbound.
               .filter(Boolean)
           : [];
 
-        if (order.length === 0) {
-          return createLlmProviderAdapter({
-            getApiKey: () =>
-              configService.get<string>('OPENAI_API_KEY')?.trim() || undefined,
-            getModel: () =>
-              configService.get<string>('OPENAI_MODEL')?.trim() || 'gpt-5.4',
-          });
-        }
+        const providerOrder = order.length > 0 ? order : ['openai'];
+        const entries = createFailoverProviderEntries(
+          (key) => configService.get<string>(key)?.trim(),
+          providerOrder,
+        );
 
-        const entries: LlmProviderEntryConfig[] = [
-          {
-            provider: 'openai',
-            getApiKey: () =>
-              configService.get<string>('OPENAI_API_KEY')?.trim() || undefined,
-            getModel: () =>
-              configService.get<string>('OPENAI_MODEL')?.trim() || 'gpt-5.4',
-          },
-        ];
-
-        return createFailoverLlmProviderAdapter(entries, order, {
+        return createFailoverLlmProviderAdapter(entries, providerOrder, {
           warn: (m) => console.warn(m),
         });
       },

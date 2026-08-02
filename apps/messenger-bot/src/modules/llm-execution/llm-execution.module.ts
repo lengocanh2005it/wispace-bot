@@ -1,14 +1,13 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { LlmExecutionConfigService } from './application/services/llm-execution-config.service';
 import { LlmExecutionService } from './application/services/llm-execution.service';
 import {
   createLlmProviderAdapter,
   createFailoverLlmProviderAdapter,
+  createFailoverProviderEntries,
 } from '@wispace/llm-agent';
-import type {
-  LlmProviderAdapter,
-  LlmProviderEntryConfig,
-} from '@wispace/llm-agent';
+import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { RedisConcurrencyLimiter } from './infrastructure/redis-concurrency-limiter';
 import {
   REDIS_CLIENT,
@@ -25,7 +24,10 @@ import {
     LlmExecutionService,
     {
       provide: 'LLM_PROVIDER_ADAPTER',
-      useFactory: (config: LlmExecutionConfigService): LlmProviderAdapter => {
+      useFactory: (
+        config: LlmExecutionConfigService,
+        configService: ConfigService,
+      ): LlmProviderAdapter => {
         const order = config.getFailoverOrder();
 
         if (order.length === 0) {
@@ -37,14 +39,14 @@ import {
           });
         }
 
-        const entries: LlmProviderEntryConfig[] = [
-          {
-            provider: 'openai',
-            getApiKey: () => config.getApiKey(),
-            getModel: () => config.getModel(),
-            getBaseUrl: () => config.getBaseUrl(),
-          },
-        ];
+        const get = (key: string): string | undefined => {
+          if (key === 'OPENAI_API_KEY') return config.getApiKey();
+          if (key === 'OPENAI_MODEL') return config.getModel();
+          if (key === 'OPENAI_BASE_URL') return config.getBaseUrl();
+          return configService.get<string>(key)?.trim();
+        };
+
+        const entries = createFailoverProviderEntries(get, order);
 
         return createFailoverLlmProviderAdapter(
           entries,
@@ -59,7 +61,7 @@ import {
           },
         );
       },
-      inject: [LlmExecutionConfigService],
+      inject: [LlmExecutionConfigService, ConfigService],
     },
     {
       provide: RedisConcurrencyLimiter,

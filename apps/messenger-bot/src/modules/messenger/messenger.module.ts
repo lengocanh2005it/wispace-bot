@@ -27,7 +27,6 @@ import { ChatPipelineModule } from './chat-pipeline.module';
 import { UserLinkingModule } from './user-linking.module';
 import { MessengerCalendarPort } from './infrastructure/adapters/messenger-calendar.port';
 import { MessengerReschedulePort } from './infrastructure/adapters/messenger-reschedule.port';
-import { MessengerRescheduleConfirmationService } from './application/services/messenger-reschedule-confirmation.service';
 
 /**
  * Thin orchestrator module — owns webhook handling, event routing,
@@ -69,7 +68,6 @@ import { MessengerRescheduleConfirmationService } from './application/services/m
     MessengerMessageLogCleanupService,
     MessengerCalendarPort,
     MessengerReschedulePort,
-    MessengerRescheduleConfirmationService,
     MessengerReportDeliveryService,
     MessengerReminderDeliveryService,
     WebhookActionExecutorService,

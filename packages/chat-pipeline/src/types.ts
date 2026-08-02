@@ -49,6 +49,8 @@ export interface AgentInput {
   userText: string;
   history: readonly ChatHistoryMessage[];
   correlationId?: string;
+  /** Platform-specific context (e.g. Discord server channel flag). */
+  context?: Record<string, unknown>;
 }
 
 export interface AgentReply {

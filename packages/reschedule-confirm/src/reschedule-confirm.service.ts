@@ -184,6 +184,19 @@ export class RescheduleConfirmationService<TExternalId> {
     return 'Đã hủy yêu cầu đổi lịch. Lịch học giữ nguyên nhé.';
   }
 
+  /** Whether a valid (unexpired) pending reschedule exists for this user. */
+  hasPending(externalId: TExternalId): boolean {
+    const pending = this.pendingByExternalId.get(String(externalId));
+    if (!pending) {
+      return false;
+    }
+    if (pending.expiresAt <= Date.now()) {
+      this.pendingByExternalId.delete(String(externalId));
+      return false;
+    }
+    return true;
+  }
+
   private takePendingIfValid(
     externalId: TExternalId,
     userId?: number,

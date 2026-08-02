@@ -134,6 +134,7 @@ describe('DiscordChatQueueService', () => {
       userId: 42,
       texts: ['hi'],
       idempotencyKey: 'key-1',
+      context: { isServerChannel: false },
     });
   });
 

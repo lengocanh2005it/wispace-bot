@@ -19,10 +19,15 @@ chmod 600 "$HOME/.ssh/id_ed25519"
 ssh-keyscan -p "$VPS_SSH_PORT" "$VPS_HOST" >> "$HOME/.ssh/known_hosts" 2>/dev/null
 
 for i in 1 2 3; do
-  rsync -avz --delete \
+  if rsync -avz --delete \
     -e "ssh -p $VPS_SSH_PORT -o StrictHostKeyChecking=no" \
     "$SOURCE_DIR/" \
-    "${VPS_USER}@${VPS_HOST}:${VPS_TARGET_DIR}/" && break
+    "${VPS_USER}@${VPS_HOST}:${VPS_TARGET_DIR}/"; then
+    exit 0
+  fi
   echo "Upload attempt $i failed, retrying in 5s..."
   sleep 5
 done
+
+echo "ERROR: upload failed after 3 attempts" >&2
+exit 1

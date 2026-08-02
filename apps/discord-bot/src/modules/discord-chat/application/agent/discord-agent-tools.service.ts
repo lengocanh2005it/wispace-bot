@@ -185,7 +185,7 @@ export class DiscordAgentToolsService {
     },
     taskScores: Array<{ task1Count?: number; task2Count?: number }> | null,
   ): string {
-    const lines: string[] = ['📊 **Báo cáo tiến độ IELTS Writing**\n'];
+    const lines: string[] = ['📊 Báo cáo tiến độ IELTS Writing\n'];
 
     if (goals.targetBand) {
       lines.push(`🎯 Target band: ${goals.targetBand}`);

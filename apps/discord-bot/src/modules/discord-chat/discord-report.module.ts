@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { ConfigService } from '@nestjs/config';
 import {
   ReportScheduleService,
   ReportSendScheduleService,
@@ -46,9 +45,7 @@ import { DISCORD_REPORT_PORT } from './domain/ports/discord-report.port';
   providers: [
     {
       provide: GOALS_DATA_PORT,
-      useFactory: (configService: ConfigService): DiscordGoalsDataAdapter =>
-        new DiscordGoalsDataAdapter(configService),
-      inject: [ConfigService],
+      useExisting: DiscordGoalsDataAdapter,
     },
     {
       provide: REPORT_SEND_JOB_REPOSITORY,
@@ -66,6 +63,7 @@ import { DISCORD_REPORT_PORT } from './domain/ports/discord-report.port';
     ReportSendScheduleService,
     ReportCronLeaderService,
     ReportCronLockService,
+    DiscordGoalsDataAdapter,
     DiscordReportDeliveryService,
     DiscordReportSendJobRepository,
     DiscordReportClaimRepository,

@@ -42,7 +42,7 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 - **Daily quota** per `(psid, usage_date)` ICT — `messenger_chat_daily_usage`; idempotency `message.mid` — `messenger_chat_idempotency`.
 - **Burst** `CHAT_BURST_PER_MINUTE`/min; **hard cap** concurrent (H3); **hint** "X remaining" (Phase 6).
 - Menu postback, reminder cron, proactive reports — **no** quota deduction.
-- **Single instance:** `CHAT_QUEUE_STORE=memory` (RAM debounce). **≥2 pods:** `CHAT_QUEUE_STORE=redis` or `postgres` (`CHAT_QUEUE_SHARED=true` → postgres).
+- **Single instance:** `CHAT_QUEUE_STORE=memory` (RAM debounce). **≥2 pods:** `CHAT_QUEUE_STORE=redis` (requires `REDIS_ENABLED=true`; `CHAT_QUEUE_SHARED=true` maps to `redis`).
 - Details + runbook: [chat-rate-limit-quota.md](./chat-rate-limit-quota.md), section 12 below.
 
 ---
@@ -216,7 +216,7 @@ wispace-bot/                          # Turborepo root
 | `UserLinkingModule` | Link flow + mapping + token verify (split from MessengerModule) |
 | `ChatRateLimitModule` | FREE_FORM quota: `checkQuota`, `reserve`, `refund`, burst counter, idempotency |
 | `LlmExecutionModule` | LLM provider adapter (OpenAI/OpenRouter/MiniMax failover) + concurrency gate |
-| `LlmUsageModule` | LLM token usage tracking + BullMQ persist + cleanup cron |
+| `LlmUsageModule` | LLM token usage tracking (inline persist) + cleanup cron |
 | `LlmSafetyModule` | LLM hallucination/safety event tracking + cleanup |
 | `StudentReportModule` | WISPACE goals/scores → `StudentReportService` (LLM report) |
 | `StudyReminderModule` | Schedule sync, job dispatch, cleanup, LLM study reminders |
@@ -347,7 +347,7 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 - **LLM failover (shared):** `LLM_PROVIDER_FAILOVER_ORDER` (CSV: `openai,openrouter,minimax`; empty = no failover), `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, `MINIMAX_API_KEY`, `MINIMAX_MODEL`, `MINIMAX_BASE_URL`, `LLM_FAILOVER_COOLDOWN_LONG_MS`, `LLM_FAILOVER_COOLDOWN_SHORT_MS`, `LLM_FAILOVER_QUICK_RETRY_DELAY_MS`
 - **LLM execution gate:** `LLM_EXECUTION_ENABLED`, `LLM_MAX_CONCURRENT`, `LLM_OPENAI_RETRY_MAX_ATTEMPTS`, `LLM_OPENAI_RETRY_BACKOFF_MS`
 - **LLM global concurrency:** `LLM_GLOBAL_CONCURRENCY_ENABLED`, `LLM_GLOBAL_MAX_CONCURRENT`
-- **LLM usage (C2):** `LLM_USAGE_*`, `LLM_USAGE_BULLMQ_*`; USD estimate: `LLM_COST_USD_PER_1M_INPUT_TOKENS_<MODEL>` / `LLM_COST_USD_PER_1M_OUTPUT_TOKENS_<MODEL>` (e.g. `gpt-5.4` → `GPT_5_4`: input `2.50`, output `15.00` per [OpenAI pricing](https://developers.openai.com/api/docs/pricing); ≠ actual invoice)
+- **LLM usage (C2):** `LLM_USAGE_*`; USD estimate: `LLM_COST_USD_PER_1M_INPUT_TOKENS_<MODEL>` / `LLM_COST_USD_PER_1M_OUTPUT_TOKENS_<MODEL>` (e.g. `gpt-5.4` → `GPT_5_4`: input `2.50`, output `15.00` per [OpenAI pricing](https://developers.openai.com/api/docs/pricing); ≠ actual invoice)
 - **LLM safety:** `LLM_SAFETY_EVENTS_ENABLED`, `LLM_SAFETY_WARNING_DAILY_THRESHOLD`, `LLM_SAFETY_EVENT_RETENTION_DAYS`
 - **WISPACE API (shared):** `WISPACE_API_USER_CALENDAR_URL`, `WISPACE_API_USER_GOALS_URL`, `WISPACE_API_TASK_SCORE_URL`, `WISPACE_INTERNAL_KEY` — auth: `x-psid` + `X-Internal-Key`
 - **Study reminder (shared):** `STUDY_REMINDER_*` — **required**, no hardcoded fallbacks in code; `STUDY_REMINDER_STUCK_PROCESSING_MS`
@@ -513,7 +513,7 @@ Bootstrap reminder jobs: `npm run study-reminder:sync`.
 
 ## 12. VPS Deploy (Docker + GHCR + Doppler)
 
-GitHub Actions (push to `main`): [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) — **only builds image** when `src/`, `Dockerfile`, or `package*.json` change; otherwise VPS reuses `:latest`. Env-only: Doppler webhook or [`sync-env.yml`](../.github/workflows/sync-env.yml) / `npm run env:sync-prod`.
+GitHub Actions (push to `main`): [`.github/workflows/deploy-messenger-bot.yml`](../.github/workflows/deploy-messenger-bot.yml) — **only builds image** when `src/`, `Dockerfile`, or `package*.json` change; otherwise VPS reuses `:latest`. Env-only: Doppler webhook or [`sync-env.yml`](../.github/workflows/sync-env.yml) / `npm run env:sync-prod`.
 
 | GitHub Secret | Purpose |
 |---------------|---------|

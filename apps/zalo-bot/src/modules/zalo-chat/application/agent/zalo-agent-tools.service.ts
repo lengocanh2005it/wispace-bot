@@ -142,7 +142,7 @@ export class ZaloAgentToolsService {
             registered: true,
             alreadyActive: true,
             message:
-              'Bạn đã đăng ký nhận báo cáo học tập. Tính năng gửi báo cáo tự động qua Zalo sẽ sớm ra mắt. Trong lúc đó, bạn có thể dùng lệnh "get_learning_progress_report" để xem báo cáo ngay.',
+              'Bạn đã được đăng ký nhận báo cáo học tập qua Zalo mỗi sáng lúc 08:00 (không cần đăng ký riêng).',
           }),
         );
       default: {

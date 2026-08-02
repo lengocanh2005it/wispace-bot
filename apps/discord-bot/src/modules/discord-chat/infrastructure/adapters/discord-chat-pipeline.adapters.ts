@@ -86,7 +86,7 @@ export class DiscordAgentAdapter implements AgentPort {
       userId: input.userId,
       userText: input.userText,
       correlationId: input.correlationId,
-      isServerChannel: false,
+      isServerChannel: input.context?.isServerChannel === true,
     });
     return { text: result.text };
   }

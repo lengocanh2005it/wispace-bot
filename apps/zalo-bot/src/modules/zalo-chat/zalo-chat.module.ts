@@ -3,8 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   createFailoverLlmProviderAdapter,
+  createFailoverProviderEntries,
   type LlmProviderAdapter,
-  type LlmProviderEntryConfig,
 } from '@wispace/llm-agent';
 import {
   ChatDailyUsageEntity,
@@ -63,37 +63,14 @@ import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zal
             .map((s) => s.trim())
             .filter(Boolean) ?? [];
 
-        if (order.length === 0) {
-          return createFailoverLlmProviderAdapter(
-            [
-              {
-                provider: 'openai',
-                getApiKey: () =>
-                  configService.get<string>('OPENAI_API_KEY')?.trim() ||
-                  undefined,
-                getModel: () =>
-                  configService.get<string>('OPENAI_MODEL')?.trim() ||
-                  'gpt-5.4',
-              },
-            ],
-            ['openai'],
-            { warn: (m) => console.warn(m) },
-          );
-        }
-
-        const entries: LlmProviderEntryConfig[] = [
-          {
-            provider: 'openai',
-            getApiKey: () =>
-              configService.get<string>('OPENAI_API_KEY')?.trim() || undefined,
-            getModel: () =>
-              configService.get<string>('OPENAI_MODEL')?.trim() || 'gpt-5.4',
-          },
-        ];
+        const entries = createFailoverProviderEntries(
+          (key) => configService.get<string>(key)?.trim(),
+          order.length > 0 ? order : ['openai'],
+        );
 
         return createFailoverLlmProviderAdapter(
           entries,
-          order,
+          order.length > 0 ? order : ['openai'],
           { warn: (m) => console.warn(m) },
           {
             cooldownLongMs: Number(

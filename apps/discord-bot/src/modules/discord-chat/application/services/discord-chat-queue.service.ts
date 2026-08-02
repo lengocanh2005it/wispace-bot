@@ -122,6 +122,9 @@ export class DiscordChatQueueService implements OnModuleDestroy {
         userId: batch.context?.userId,
         texts: batch.texts,
         idempotencyKey: batch.idempotencyKey,
+        context: {
+          isServerChannel: batch.context?.isServerChannel === true,
+        },
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

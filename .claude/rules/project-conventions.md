@@ -45,7 +45,7 @@ Turborepo monorepo: `apps/messenger-bot` (NestJS, full-featured) + `apps/discord
 2. **Update skills** in `.claude/skills/` if debug/verify/migration/prompt workflows are affected.
 3. **Run quality gate** before reporting task complete (requires full `npm install` at root with dev deps):
 
-**CI / deploy** (matches `.github/workflows/deploy.yml`, runs for `apps/messenger-bot`):
+**CI / deploy** (matches `.github/workflows/deploy-messenger-bot.yml`, runs for `apps/messenger-bot`):
 
 ```bash
 npx turbo run lint --filter=@wispace/messenger-bot...

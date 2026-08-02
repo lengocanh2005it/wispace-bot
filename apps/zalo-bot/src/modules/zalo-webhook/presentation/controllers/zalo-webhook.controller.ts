@@ -19,6 +19,7 @@ import {
   type ZaloWebhookHandler,
 } from '../../domain/ports/zalo-webhook-handler.port';
 import { ZaloWebhookDedupeService } from '../../application/zalo-webhook-dedupe.service';
+import { ZaloDeadLetterService } from '@zalo/modules/zalo-chat/application/services/zalo-dead-letter.service';
 
 @Controller('zalo/webhook')
 export class ZaloWebhookController {
@@ -29,6 +30,7 @@ export class ZaloWebhookController {
     @Inject(ZALO_WEBHOOK_HANDLER)
     private readonly handler: ZaloWebhookHandler,
     private readonly dedupeService: ZaloWebhookDedupeService,
+    private readonly deadLetterService: ZaloDeadLetterService,
   ) {}
 
   @Post()
@@ -60,7 +62,28 @@ export class ZaloWebhookController {
       throw new UnauthorizedException('Invalid webhook signature');
     }
 
-    await this.dispatch(body);
+    try {
+      await this.dispatch(body);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Webhook event failed — saving to dead-letter: ${errorMessage}`,
+      );
+      await this.deadLetterService
+        .save({
+          externalUserId: body.sender?.id ?? body.follower?.id ?? 'unknown',
+          rawPayload: body,
+          errorMessage,
+        })
+        .catch((saveErr: unknown) => {
+          this.logger.error(
+            `Failed to save dead-letter entry: ${
+              saveErr instanceof Error ? saveErr.message : String(saveErr)
+            }`,
+          );
+        });
+    }
     return { received: true };
   }
 

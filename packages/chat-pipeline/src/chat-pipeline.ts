@@ -45,6 +45,7 @@ export class ChatPipeline {
     userId?: number;
     texts: string[];
     idempotencyKey?: string;
+    context?: Record<string, unknown>;
   }): Promise<boolean> {
     const mergedText = input.texts.join('\n').slice(0, this.mergedTextMaxChars);
 
@@ -91,6 +92,7 @@ export class ChatPipeline {
         userText: mergedText,
         history,
         correlationId: input.idempotencyKey,
+        context: input.context,
       });
 
       ctx.reply = reply;

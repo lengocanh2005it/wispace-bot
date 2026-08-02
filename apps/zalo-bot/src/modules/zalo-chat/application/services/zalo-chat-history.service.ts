@@ -8,7 +8,7 @@ import {
   type RedisChatHistoryClient,
 } from '@wispace/chat-history';
 import { REDIS_CLIENT } from '@zalo/infrastructure/redis/redis.client.port';
-import type Redis from 'ioredis';
+import type { RedisService } from '@zalo/infrastructure/redis/redis.service';
 
 const DEFAULT_MAX_MESSAGES = 20;
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
@@ -24,7 +24,7 @@ export class ZaloChatHistoryService {
 
   constructor(
     configService: ConfigService,
-    @Optional() @Inject(REDIS_CLIENT) redisClient?: Redis | null,
+    @Optional() @Inject(REDIS_CLIENT) redisClient?: RedisService | null,
   ) {
     const ttlMs =
       Number(configService.get<string>('ZALO_CHAT_HISTORY_TTL_MS')) ||
@@ -36,9 +36,11 @@ export class ZaloChatHistoryService {
     const storeType =
       configService.get<string>('CHAT_HISTORY_STORE')?.trim() ?? 'memory';
 
-    if (storeType === 'redis' && redisClient) {
+    const nativeClient = redisClient?.getNativeClient() ?? null;
+
+    if (storeType === 'redis' && nativeClient) {
       this.store = new RedisChatHistoryStore(
-        redisClient as unknown as RedisChatHistoryClient,
+        nativeClient as unknown as RedisChatHistoryClient,
         {
           ttlSec: Math.floor(ttlMs / 1000),
           maxMessages,

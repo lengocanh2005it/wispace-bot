@@ -76,11 +76,14 @@ export type {
 export type { LlmProviderAdapter } from './provider/llm-provider.adapter';
 export { OpenAiAdapter } from './provider/openai/openai-adapter';
 export { OpenAiCompatibleAdapter } from './provider/openai-compatible/openai-compatible-adapter';
+export { OpenRouterAdapter } from './provider/openrouter/openrouter-adapter';
+export { MiniMaxAdapter } from './provider/minimax/minimax-adapter';
 export { FailoverLlmProviderAdapter } from './provider/failover/failover-adapter';
 export { LlmAllProvidersExhaustedError } from './provider/failover/failover.errors';
 export {
   createLlmProviderAdapter,
   createFailoverLlmProviderAdapter,
+  createFailoverProviderEntries,
 } from './provider/factory';
 export type {
   LlmProviderEntryConfig,

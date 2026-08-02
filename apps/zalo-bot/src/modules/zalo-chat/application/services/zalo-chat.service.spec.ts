@@ -3,6 +3,11 @@ import { ZaloChatService } from './zalo-chat.service';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { ZaloChatQueueService } from './zalo-chat-queue.service';
+import type { ZaloRescheduleConfirmationService } from './zalo-reschedule-confirmation.service';
+
+const NO_RESCHEDULE = {
+  hasPending: jest.fn().mockResolvedValue(false),
+} as unknown as ZaloRescheduleConfirmationService;
 
 function buildConfig(): ConfigService {
   return {
@@ -25,6 +30,7 @@ describe('ZaloChatService', () => {
       {} as unknown as ZaloOutboundService,
       { findUserIdByZaloId } as unknown as ZaloAccountLinkService,
       { enqueue } as unknown as ZaloChatQueueService,
+      NO_RESCHEDULE,
     );
 
     await service.handleIncomingMessage('zalo-1', 'xem lich hoc cua minh');
@@ -47,6 +53,7 @@ describe('ZaloChatService', () => {
       { sendText } as unknown as ZaloOutboundService,
       {} as unknown as ZaloAccountLinkService,
       { enqueue } as unknown as ZaloChatQueueService,
+      NO_RESCHEDULE,
     );
 
     await service.handleIncomingMessage('zalo-1', 'chào bạn');
@@ -65,6 +72,7 @@ describe('ZaloChatService', () => {
       { sendText } as unknown as ZaloOutboundService,
       {} as unknown as ZaloAccountLinkService,
       {} as unknown as ZaloChatQueueService,
+      NO_RESCHEDULE,
     );
 
     await service.handleFollow('zalo-1');
@@ -82,6 +90,7 @@ describe('ZaloChatService', () => {
       { sendText } as unknown as ZaloOutboundService,
       {} as unknown as ZaloAccountLinkService,
       {} as unknown as ZaloChatQueueService,
+      NO_RESCHEDULE,
     );
 
     await service.handleUnsupportedMessage('zalo-1');

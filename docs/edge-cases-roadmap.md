@@ -235,7 +235,7 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 | WISPACE **schema** change | ~~`UserCalendars` DB fallback~~ | **I3** ✓ — API-only `UserCalendar` via `x-psid` | **I3** ✓ |
 | **LLM provider down** | Single provider failure | **LLM-AB** ✓ — adapter failover across OpenAI/OpenRouter/MiniMax |
 | **LLM safety events** | No tracking | **SAFETY** ✓ — `llm_safety_events` + cleanup cron + daily threshold alert |
-| **LLM usage audit** | No token tracking | `llm_usage_events` + BullMQ persist + cleanup ✓ |
+| **LLM usage audit** | No token tracking | `llm_usage_events` + inline persist + cleanup ✓ |
 | **DB table rename** | `user_messenger_mappings` → `user_platform_mappings` | Migration ✓ (`1751029200001-GeneralizePlatformIdentifiers`) |
 
 ### I1 — Light Ops Alert (No Prometheus Required) ✓

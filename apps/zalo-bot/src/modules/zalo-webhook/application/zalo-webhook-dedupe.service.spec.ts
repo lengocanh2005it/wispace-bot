@@ -34,26 +34,17 @@ describe('ZaloWebhookDedupeService', () => {
   });
 
   it('cleans up expired entries', async () => {
-    // First, add a non-expired entry to trigger the cleanup path
+    // Add a non-expired entry, then an expired one
     await service.isDuplicate('new-msg');
-
-    // Manually insert an expired entry
     const seen = (service as unknown as { seen: Map<string, number> }).seen;
     seen.set('old-msg', Date.now() - 100_000);
 
-    // Trigger cleanup via the interval (force it)
-    const cleanupTimer = (
-      service as unknown as { cleanupTimer: ReturnType<typeof setInterval> }
-    ).cleanupTimer;
-    if (cleanupTimer) {
-      clearInterval(cleanupTimer);
-    }
-    // Manually call the private cleanup method by accessing it
-    // The cleanup method is called by setInterval, so we test it indirectly
-    // by checking that expired entries are cleaned up after the interval fires
+    const cleanup = (service as unknown as { cleanup(): void }).cleanup.bind(
+      service,
+    );
+    cleanup();
 
-    // Instead, just verify the Map state directly
-    expect(seen.has('old-msg')).toBe(true);
+    expect(seen.has('old-msg')).toBe(false);
     expect(seen.has('new-msg')).toBe(true);
   });
 });

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import type { OpsHealthRepositoryPort } from '@wispace/ops-health';
 
 const PLATFORM = 'zalo';
@@ -16,7 +17,10 @@ interface StatusCountRow {
 
 @Injectable()
 export class ZaloOpsHealthRepository implements OpsHealthRepositoryPort {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly configService: ConfigService,
+  ) {}
 
   async getChatQuotaSummary(): Promise<Record<string, unknown>> {
     const [denyLogs24h, stuckReserved, usersAtDailyLimit] = await Promise.all([
@@ -63,9 +67,12 @@ export class ZaloOpsHealthRepository implements OpsHealthRepositoryPort {
 
   private async countUsersAtDailyLimit(): Promise<number> {
     const today = new Date().toISOString().split('T')[0];
+    const limit = Number(
+      this.configService.get<string>('CHAT_FREE_FORM_DAILY_LIMIT') ?? 15,
+    );
     const rows = await this.execQuery<CountRow>(
-      `SELECT COUNT(*)::int AS count FROM chat_daily_usage WHERE platform = $1 AND usage_date = $2::date AND free_form_count >= 15`,
-      [PLATFORM, today],
+      `SELECT COUNT(*)::int AS count FROM chat_daily_usage WHERE platform = $1 AND usage_date = $2::date AND free_form_count >= $3`,
+      [PLATFORM, today, limit],
     );
     return rows[0]?.count ?? 0;
   }

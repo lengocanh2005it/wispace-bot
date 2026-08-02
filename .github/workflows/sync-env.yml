@@ -30,7 +30,7 @@ jobs:
       - name: Resolve image (reuse latest)
         run: |
           REPO_LC=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          echo "IMAGE=${{ env.REGISTRY }}/${REPO_LC}:latest" >> "$GITHUB_ENV"
+          echo "IMAGE=${{ env.REGISTRY }}/${REPO_LC}/messenger-bot:latest" >> "$GITHUB_ENV"
           echo "DEPLOY_MODE=reuse-latest" >> "$GITHUB_ENV"
 
       - name: Install Doppler CLI
@@ -38,10 +38,10 @@ jobs:
 
       - name: Download production env from Doppler
         env:
-          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN_MESSENGER }}
         run: |
           if [ -z "${DOPPLER_TOKEN:-}" ]; then
-            echo "DOPPLER_TOKEN not set — VPS will keep existing .env"
+            echo "DOPPLER_TOKEN_MESSENGER not set — VPS will keep existing .env"
             exit 0
           fi
           doppler secrets download --no-file --format env > production.env
@@ -51,7 +51,7 @@ jobs:
       - name: Prepare VPS upload bundle
         run: |
           mkdir -p upload-bundle
-          cp docker-compose.prod.yml upload-bundle/
+          cp apps/messenger-bot/docker-compose.prod.yml upload-bundle/
           cp .github/scripts/vps-deploy.sh upload-bundle/
           if [ -f production.env ]; then
             cp production.env upload-bundle/
@@ -59,6 +59,8 @@ jobs:
           ls -la upload-bundle/
 
       - name: Upload bundle to VPS (retry)
+        env:
+          VPS_TARGET_DIR: /home/ngoc_anh/messenger-bot
         run: bash .github/scripts/upload-to-vps.sh upload-bundle
 
       - name: Deploy on VPS (retry)

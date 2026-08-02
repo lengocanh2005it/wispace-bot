@@ -2,7 +2,7 @@
 
 Production env on VPS is **synced from Doppler** on every GitHub Actions deploy (when `DOPPLER_TOKEN` is present). Local dev can use `doppler run` instead of copying `.env` manually.
 
-Related: [project-overview.md](../../docs/project-overview.md) § deploy, `.github/workflows/deploy.yml`, `.env.example` (variable names only, no values).
+Related: [project-overview.md](../../docs/project-overview.md) § deploy, `.github/workflows/deploy-messenger-bot.yml`, `.env.example` (variable names only, no values).
 
 ---
 
@@ -122,7 +122,7 @@ Runtime sync writes temp `/tmp/.env.sync.tmp` then `copyFile` to `/deploy/.env` 
 
 **Manual (no webhook):** `npm run env:sync-prod` or Actions → **Sync production env (no image build)**.
 
-### CI Deploy Code (`deploy.yml`)
+### CI Deploy Code (`deploy-messenger-bot.yml`)
 
 | Git Change | CI Action |
 |------------|-----------|

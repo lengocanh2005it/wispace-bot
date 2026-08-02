@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
 import type { ZaloMessageSenderPort } from '@zalo/modules/zalo-webhook/domain/ports/zalo-message-sender.port';
+import { ZaloDeliveryLogService } from './zalo-delivery-log.service';
 
 const SEND_TEXT_ENDPOINT = 'https://openapi.zalo.me/v3.0/oa/message/cs';
 const SEND_TIMEOUT_MS = 10_000;
@@ -54,7 +55,10 @@ export class ZaloSendError extends Error {
 export class ZaloOutboundService implements ZaloMessageSenderPort {
   private readonly logger = new Logger(ZaloOutboundService.name);
 
-  constructor(private readonly tokenService: ZaloTokenService) {}
+  constructor(
+    private readonly tokenService: ZaloTokenService,
+    private readonly deliveryLogService: ZaloDeliveryLogService,
+  ) {}
 
   async sendText(zaloUserId: string, text: string): Promise<void> {
     let lastError: unknown;
@@ -62,11 +66,16 @@ export class ZaloOutboundService implements ZaloMessageSenderPort {
     for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
       try {
         await this.sendTextOnce(zaloUserId, text);
+        await this.deliveryLogService.logDelivery({
+          externalUserId: zaloUserId,
+          status: 'SENT',
+          messageType: 'chat',
+        });
         return;
       } catch (error) {
         lastError = error;
         if (error instanceof ZaloSendError && !error.isRetryable()) {
-          throw error;
+          break;
         }
         if (attempt < RETRY_MAX_ATTEMPTS) {
           const delayMs = RETRY_BASE_DELAY_MS * attempt;
@@ -78,6 +87,12 @@ export class ZaloOutboundService implements ZaloMessageSenderPort {
       }
     }
 
+    await this.deliveryLogService.logDelivery({
+      externalUserId: zaloUserId,
+      status: 'FAILED',
+      messageType: 'chat',
+      error: lastError instanceof Error ? lastError.message : String(lastError),
+    });
     throw lastError;
   }
 

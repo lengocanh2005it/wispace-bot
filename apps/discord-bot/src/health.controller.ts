@@ -6,14 +6,14 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
+import type Redis from 'ioredis';
 import { REDIS_CLIENT } from './infrastructure/redis/redis.module';
 
 @Controller('health')
 export class HealthController {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    @Inject(REDIS_CLIENT) private readonly redisClient: any,
+    @Inject(REDIS_CLIENT) private readonly redisClient: Redis | null,
   ) {}
 
   @Get()
@@ -32,14 +32,24 @@ export class HealthController {
 
   @Get('redis')
   async checkRedis() {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
-    const result: string = await this.redisClient.ping();
-    if (result === 'NO_REDIS') return { ok: true, redis: 'disabled' };
-    if (result === 'PONG') return { ok: true, redis: 'connected' };
-    throw new ServiceUnavailableException({
-      ok: false,
-      redis: 'error',
-      message: result,
-    });
+    if (this.redisClient == null) {
+      return { ok: true, redis: 'disabled' };
+    }
+    try {
+      const result: string = await this.redisClient.ping();
+      if (result === 'PONG') return { ok: true, redis: 'connected' };
+      throw new ServiceUnavailableException({
+        ok: false,
+        redis: 'error',
+        message: result,
+      });
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) throw error;
+      throw new ServiceUnavailableException({
+        ok: false,
+        redis: 'unreachable',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }

@@ -33,7 +33,7 @@ Read this file before modifying code. In-depth details are in `docs/` — only r
 - Internal cron (30-minute sync, adaptive S2 dispatch) runs in-process — no API key required.
 - Debug study reminder jobs: `npm run study-reminder:jobs` (`--failed`, `--stuck`, `--summary`).
 - Query chat quota: `npm run chat-quota:status` (`--psid`, `--user-id`, `--date`, `--ops`); rebuild counter: `chat-quota:rebuild` (`--dry-run`).
-- Query LLM tokens: `npm run llm-usage:status` (`--psid`, `--feature`, `--ops`); HTTP ops `GET /messenger/ops/llm-usage/summary` (`psid` \| `userId`, `from`, `to`) and `GET /messenger/ops/llm-usage/fleet` (`date`); USD: `LLM_COST_USD_PER_1M_*_GPT_5_4` = `2.50` / `15.00` (OpenAI Standard gpt-5.4); persisted via BullMQ queue `llm-usage-write` when `REDIS_ENABLED=true`.
+- Query LLM tokens: `npm run llm-usage:status` (`--psid`, `--feature`, `--ops`); HTTP ops `GET /messenger/ops/llm-usage/summary` (`psid` \| `userId`, `from`, `to`) and `GET /messenger/ops/llm-usage/fleet` (`date`); USD: `LLM_COST_USD_PER_1M_*_GPT_5_4` = `2.50` / `15.00` (OpenAI Standard gpt-5.4); persisted via fire-and-forget inline insert (BullMQ queue removed — add when throughput justifies).
 - Cap concurrent LLM calls (single instance): `LLM_EXECUTION_ENABLED=true`, `LLM_MAX_CONCURRENT` (default `3`) — `LlmExecutionModule`; quick disable: `LLM_EXECUTION_ENABLED=false`.
 - LLM safety: free-form chat blocks prompt injection before calling LLM, sanitizes history/tool results; external data for reminders/reports must go through `prompt-injection.utils` / validate JSON output (`llm-json-output.utils`) before formatting/sending.
 - Ops health I1+S1: `npm run ops:health` (cron 09:00 ICT in-app when `OPS_HEALTH_ALERT_ENABLED=true`).
@@ -126,7 +126,7 @@ npm run test               # Jest — 399 specs
 npm run build              # nest build + copy assets → dist/
 ```
 
-> Missing any step may cause CI failure. The order above matches the `quality` jobs in `.github/workflows/deploy.yml`.
+> Missing any step may cause CI failure. The order above matches the `quality` jobs in `.github/workflows/deploy-messenger-bot.yml`.
 
 **Full local verification (recommended):** `npm run format` then `npm run verify`.
 
@@ -200,7 +200,7 @@ Same PR/task as code — update **agent-facing** docs (not just lengthy `docs/`)
 | Entity / migration / DB split | `.claude/rules/database.md`, `/typeorm-migration` skill, `.env.example` if adding variables |
 | Remove DB UserCalendars fallback (I3) | `user-calendar-schedule.service.ts`, `apps/messenger-bot/docs/study-session-reminder.md`, `docs/edge-cases-roadmap.md` |
 | LLM system prompt | `apps/messenger-bot/src/shared/prompts/*.system.txt`, `/edit-llm-prompt` skill |
-| Deploy / CI / VPS path | `.github/workflows/deploy.yml`, `apps/messenger-bot/docs/doppler-secrets.md`, `apps/messenger-bot/docs/scale-phase-b-runbook.md`, `deploy/nginx/` |
+| Deploy / CI / VPS path | `.github/workflows/deploy-messenger-bot.yml`, `apps/messenger-bot/docs/doppler-secrets.md`, `apps/messenger-bot/docs/scale-phase-b-runbook.md`, `deploy/nginx/` |
 | New env variable | `.env.example` + corresponding line in `docs/project-overview.md` or `AGENTS.md` |
 | Meta webhook signature / `MESSENGER_APP_SECRET` | `docs/project-overview.md`, `docs/edge-cases-roadmap.md` §1, `AGENTS.md` Security |
 | Closed gaps / roadmap | `docs/edge-cases-roadmap.md`, Integration gaps table in `AGENTS.md` |

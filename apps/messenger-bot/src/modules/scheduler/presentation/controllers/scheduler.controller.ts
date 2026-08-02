@@ -24,6 +24,11 @@ interface SyncStudyCalendarBody {
 interface RelinkMappingBody {
   psid: string;
   userId: number;
+  /**
+   * Cho phép đổi mapping khi PSID đã map user khác (L4).
+   * Mặc định false — cần ops chủ động bật.
+   */
+  allowRelink?: boolean;
 }
 
 interface SendReportsBody {
@@ -88,7 +93,7 @@ export class SchedulerController {
       psid,
       userId,
       notifyUser: false,
-      allowRelink: true,
+      allowRelink: body?.allowRelink === true,
     });
   }
 

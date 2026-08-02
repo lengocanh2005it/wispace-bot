@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { join } from 'path';
 import { ConfigService } from '@nestjs/config';
 import {
   LlmAgentService,
@@ -31,7 +32,7 @@ const DEFAULT_MAX_CONCURRENT = 3;
 @Injectable()
 export class ZaloAgentService {
   private readonly logger = new Logger(ZaloAgentService.name);
-  private readonly promptDir = `${process.cwd()}/src/shared/prompts`;
+  private readonly promptDir = join(__dirname, '../../../../shared/prompts');
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly limiter: (fn: () => Promise<any>) => Promise<any>;
   private agent?: LlmAgentService<ZaloAgentToolContext>;
