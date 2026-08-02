@@ -52,7 +52,7 @@ jobs:
         run: |
           mkdir -p upload-bundle
           cp apps/messenger-bot/docker-compose.prod.yml upload-bundle/
-          cp .github/scripts/vps-deploy-messenger.sh upload-bundle/vps-deploy.sh
+          cp .github/scripts/vps-deploy.sh upload-bundle/
           if [ -f production.env ]; then
             cp production.env upload-bundle/
           fi
@@ -70,6 +70,8 @@ jobs:
           FORCE_RECREATE: 'true'
           GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
           GHCR_USER: ${{ github.repository_owner }}
+          APP_NAME: messenger-bot
+          HEALTH_PATH: /health/db
         run: |
-          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER
+          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH
           bash .github/scripts/ssh-deploy-vps.sh /home/ngoc_anh/messenger-bot/vps-deploy.sh

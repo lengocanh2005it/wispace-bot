@@ -18,7 +18,7 @@ import {
 import { OpsHealthService, OPS_HEALTH_REPOSITORY } from '@wispace/ops-health';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
-import { CommonModule } from '../../shared/common/common.module';
+import { BotCommonModule } from '@wispace/bot-common';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloMessageSenderService } from '../zalo-chat/application/services/zalo-message-sender.service';
 import {
@@ -38,7 +38,7 @@ import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo
       ZaloAccountLinkEntity,
       ZaloOauthStateEntity,
     ]),
-    CommonModule,
+    BotCommonModule,
     ZaloChatModule,
     ZaloWispaceModule,
   ],

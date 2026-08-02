@@ -14,7 +14,7 @@ import {
 } from '@wispace/chat-metering';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
-import { CommonModule } from '../../shared/common/common.module';
+import { BotCommonModule } from '@wispace/bot-common';
 import { ZaloAgentService } from './application/agent/zalo-agent.service';
 import { ZaloAgentToolsService } from './application/agent/zalo-agent-tools.service';
 import { ZaloChatHistoryService } from './application/services/zalo-chat-history.service';
@@ -40,7 +40,7 @@ import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zal
 
 @Module({
   imports: [
-    CommonModule,
+    BotCommonModule,
     ZaloOauthModule,
     ZaloWispaceModule,
     TypeOrmModule.forFeature([

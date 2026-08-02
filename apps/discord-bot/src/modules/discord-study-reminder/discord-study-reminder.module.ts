@@ -15,7 +15,7 @@ import {
   DISPLAY_NAME_CACHE,
 } from '@wispace/study-reminder-shared';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
-import { CommonModule } from '../../shared/common/common.module';
+import { BotCommonModule } from '@wispace/bot-common';
 import { DiscordChatModule } from '../discord-chat/discord-chat.module';
 import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { WispaceModule } from '../wispace/wispace.module';
@@ -35,7 +35,7 @@ import {
       StudyReminderJobEntity,
       DiscordAccountLinkEntity,
     ]),
-    CommonModule,
+    BotCommonModule,
     DiscordChatModule,
     DiscordOutboundModule,
     WispaceModule,

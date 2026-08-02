@@ -20,6 +20,11 @@ on:
         type: string
         description: Additional path filters (newline-separated) that trigger deploy without build
         default: ''
+      health_path:
+        required: false
+        type: string
+        description: Health check path on the deployed bot, e.g. /health/db (empty = skip)
+        default: ''
     secrets:
       doppler_token:
         required: false
@@ -62,7 +67,7 @@ jobs:
               - 'turbo.json'
             deploy:
               - 'apps/${{ inputs.app }}/docker-compose.prod.yml'
-              - '.github/scripts/vps-deploy-${{ inputs.app }}.sh'
+              - '.github/scripts/vps-deploy.sh'
               - ${{ inputs.extra_deploy_paths }}
 
   build-image:
@@ -159,7 +164,7 @@ jobs:
         run: |
           mkdir -p upload-bundle
           cp apps/${{ inputs.app }}/docker-compose.prod.yml upload-bundle/
-          cp .github/scripts/vps-deploy-${{ inputs.app }}.sh upload-bundle/vps-deploy.sh
+          cp .github/scripts/vps-deploy.sh upload-bundle/
           if [ -f production.env ]; then
             cp production.env upload-bundle/
           fi
@@ -177,6 +182,8 @@ jobs:
           GHCR_PULL_TOKEN: ${{ secrets.ghcr_pull_token }}
           GHCR_USER: ${{ github.repository_owner }}
           VPS_TARGET_DIR: ${{ inputs.vps_target_dir }}
+          APP_NAME: ${{ inputs.app }}
+          HEALTH_PATH: ${{ inputs.health_path }}
         run: |
-          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER
+          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH
           bash .github/scripts/ssh-deploy-vps.sh ${{ inputs.vps_target_dir }}/vps-deploy.sh

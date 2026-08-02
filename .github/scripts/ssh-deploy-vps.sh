@@ -21,5 +21,5 @@ ssh -p "$VPS_SSH_PORT" \
   -o StrictHostKeyChecking=no \
   -o ServerAliveInterval=30 \
   "${VPS_USER}@${VPS_HOST}" \
-  "export IMAGE='$IMAGE' DEPLOY_MODE='$DEPLOY_MODE' FORCE_RECREATE='$FORCE_RECREATE' GHCR_PULL_TOKEN='$GHCR_PULL_TOKEN' GHCR_USER='$GHCR_USER' && cd '$(dirname "$REMOTE_SCRIPT")' && exec bash '$(basename "$REMOTE_SCRIPT")'" \
+  "export IMAGE='$IMAGE' DEPLOY_MODE='$DEPLOY_MODE' FORCE_RECREATE='$FORCE_RECREATE' GHCR_PULL_TOKEN='$GHCR_PULL_TOKEN' GHCR_USER='$GHCR_USER' APP_NAME='${APP_NAME:-}' HEALTH_PATH='${HEALTH_PATH:-}' PORT='${PORT:-}' && cd '$(dirname "$REMOTE_SCRIPT")' && exec bash '$(basename "$REMOTE_SCRIPT")'" \
   < /dev/null

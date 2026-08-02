@@ -22,6 +22,7 @@ jobs:
       app: messenger-bot
       vps_target_dir: /home/ngoc_anh/messenger-bot
       force_build: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build }}
+      health_path: /health/db
       extra_deploy_paths: |
         - '.github/workflows/deploy-messenger-bot.yml'
         - '.github/workflows/sync-env.yml'

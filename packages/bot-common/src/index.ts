@@ -3,6 +3,7 @@ export {
   InternalApiKeyGuard,
 } from './internal-api-key.guard';
 export { PgAdvisoryLockService } from './pg-advisory-lock.service';
+export { BotCommonModule } from './bot-common.module';
 export { REDIS_CLIENT, type RedisClientPort } from './redis.client.port';
 export { RedisService } from './redis.service';
 export { RedisModule } from './redis.module';
