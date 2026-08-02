@@ -15,13 +15,15 @@ export interface RedisChatHistoryClient {
   del(key: string): Promise<number>;
 }
 
-const KEY_PREFIX = 'chat-history:';
+const DEFAULT_KEY_PREFIX = 'chat-history:';
 
 export interface RedisChatHistoryStoreConfig {
   /** TTL for each user's history in seconds. Default: 3600 (1 hour). */
   ttlSec: number;
   /** Max stored messages per user (2 per turn: user + assistant). Default: 40. */
   maxMessages: number;
+  /** Key prefix, e.g. 'chat-history:messenger:' — platform-scoped to avoid cross-bot collisions. Default: 'chat-history:'. */
+  keyPrefix?: string;
 }
 
 /**
@@ -31,6 +33,7 @@ export interface RedisChatHistoryStoreConfig {
 export class RedisChatHistoryStore implements ChatHistoryStorePort {
   private readonly ttlSec: number;
   private readonly maxMessages: number;
+  private readonly keyPrefix: string;
 
   constructor(
     private readonly redis: RedisChatHistoryClient,
@@ -38,10 +41,11 @@ export class RedisChatHistoryStore implements ChatHistoryStorePort {
   ) {
     this.ttlSec = config?.ttlSec ?? 3600;
     this.maxMessages = config?.maxMessages ?? 40;
+    this.keyPrefix = config?.keyPrefix ?? DEFAULT_KEY_PREFIX;
   }
 
   async getHistory(externalUserId: string): Promise<ChatHistoryMessage[]> {
-    const raw = await this.redis.get(`${KEY_PREFIX}${externalUserId}`);
+    const raw = await this.redis.get(`${this.keyPrefix}${externalUserId}`);
     if (!raw) return [];
     try {
       return JSON.parse(raw) as ChatHistoryMessage[];
@@ -67,7 +71,7 @@ export class RedisChatHistoryStore implements ChatHistoryStorePort {
     ].slice(-this.maxMessages);
 
     await this.redis.set(
-      `${KEY_PREFIX}${externalUserId}`,
+      `${this.keyPrefix}${externalUserId}`,
       JSON.stringify(messages),
       'EX',
       this.ttlSec,
@@ -75,6 +79,6 @@ export class RedisChatHistoryStore implements ChatHistoryStorePort {
   }
 
   async clear(externalUserId: string): Promise<void> {
-    await this.redis.del(`${KEY_PREFIX}${externalUserId}`);
+    await this.redis.del(`${this.keyPrefix}${externalUserId}`);
   }
 }

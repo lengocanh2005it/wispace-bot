@@ -1,4 +1,4 @@
-import type { RedisClientPort } from '@messenger/infrastructure/redis/redis.client.port';
+import type { RedisClientPort } from '@wispace/bot-common';
 import { RedisChatQueueStore } from './redis-chat-queue.store';
 
 describe('RedisChatQueueStore', () => {

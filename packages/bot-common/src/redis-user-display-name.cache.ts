@@ -1,35 +1,46 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { REDIS_CLIENT } from '@messenger/infrastructure/redis/redis.client.port';
-import type { RedisClientPort } from '@messenger/infrastructure/redis/redis.client.port';
-import type {
-  CachedUserDisplayName,
-  UserDisplayNameCachePort,
-} from '../../domain/repositories/user-display-name-cache.port';
+import { REDIS_CLIENT } from './redis.client.port';
+import type { RedisClientPort } from './redis.client.port';
 
+export interface CachedUserDisplayName {
+  displayName: string | null;
+  username?: string | null;
+}
+
+export interface RedisUserDisplayNameCacheOptions {
+  /** Platform-scoped key prefix, e.g. 'messenger' — prevents cross-bot collisions on a shared Redis. */
+  platform: string;
+}
+
+/**
+ * Shared Redis user display-name cache. Keys are platform-scoped
+ * (`cache:user:display:{platform}:{userId}`) so multiple bots sharing one
+ * Redis instance never overwrite each other's entries for the same WISPACE
+ * userId.
+ */
 @Injectable()
-export class RedisUserDisplayNameCache implements UserDisplayNameCachePort {
-  private static readonly KEY_PREFIX = 'cache:user:display:';
-
+export class RedisUserDisplayNameCache {
   private readonly logger = new Logger(RedisUserDisplayNameCache.name);
 
   constructor(
     @Inject(REDIS_CLIENT)
     private readonly redisClient: RedisClientPort,
     private readonly configService: ConfigService,
+    private readonly options: RedisUserDisplayNameCacheOptions,
   ) {}
 
   isAvailable(): boolean {
     if (!this.isCacheEnabled()) {
       return false;
     }
-
     return (
       this.redisClient.isEnabled() &&
       this.redisClient.getNativeClient() !== null
     );
   }
 
+  /** Messenger-style: read both displayName and username. */
   async get(userId: number): Promise<CachedUserDisplayName | null> {
     const client = this.redisClient.getNativeClient();
     if (!client || !this.isAvailable()) {
@@ -41,7 +52,6 @@ export class RedisUserDisplayNameCache implements UserDisplayNameCachePort {
       if (!raw) {
         return null;
       }
-
       const parsed = JSON.parse(raw) as CachedUserDisplayName;
       return {
         displayName:
@@ -58,6 +68,7 @@ export class RedisUserDisplayNameCache implements UserDisplayNameCachePort {
     }
   }
 
+  /** Messenger-style: write both displayName and username. */
   async set(userId: number, value: CachedUserDisplayName): Promise<void> {
     const client = this.redisClient.getNativeClient();
     if (!client || !this.isAvailable()) {
@@ -69,7 +80,7 @@ export class RedisUserDisplayNameCache implements UserDisplayNameCachePort {
         this.key(userId),
         JSON.stringify({
           displayName: value.displayName,
-          username: value.username,
+          username: value.username ?? null,
         }),
         'EX',
         this.ttlSeconds(),
@@ -83,8 +94,19 @@ export class RedisUserDisplayNameCache implements UserDisplayNameCachePort {
     }
   }
 
+  /** Discord/Zalo-style: read just the display name. */
+  async getDisplayName(userId: number): Promise<string | null> {
+    const cached = await this.get(userId);
+    return cached?.displayName ?? null;
+  }
+
+  /** Discord/Zalo-style: write just the display name. */
+  async setDisplayName(userId: number, displayName: string): Promise<void> {
+    await this.set(userId, { displayName });
+  }
+
   private key(userId: number): string {
-    return `${RedisUserDisplayNameCache.KEY_PREFIX}${userId}`;
+    return `cache:user:display:${this.options.platform}:${userId}`;
   }
 
   private isCacheEnabled(): boolean {
@@ -108,7 +130,6 @@ export class RedisUserDisplayNameCache implements UserDisplayNameCachePort {
     if (!Number.isFinite(value) || value <= 0) {
       return 3600;
     }
-
     return Math.floor(value);
   }
 }

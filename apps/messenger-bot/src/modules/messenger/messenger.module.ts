@@ -19,8 +19,14 @@ import { MessengerService } from './application/services/messenger.service';
 import { MessengerProfileService } from './infrastructure/meta/messenger-profile.service';
 import { WEBHOOK_DEDUPE_STORE } from './domain/repositories/webhook-dedupe.store.port';
 import { MemoryWebhookDedupeStore } from './infrastructure/persistence/memory-webhook-dedupe.store';
-import { RedisWebhookDedupeStore } from './infrastructure/persistence/redis-webhook-dedupe.store';
 import { WebhookDedupeStoreResolver } from './infrastructure/persistence/webhook-dedupe.store.resolver';
+import {
+  REDIS_CLIENT,
+  RedisWebhookDedupeStore,
+  type RedisClientPort,
+} from '@wispace/bot-common';
+import { MessengerChatSharedConfigService } from './application/services/messenger-chat-shared-config.service';
+import { WEBHOOK_POSTBACK_DEDUPE_MS } from './domain/entities/messenger-store.types';
 import { MessengerOutboundModule } from './messenger-outbound.module';
 import { MessengerController } from './presentation/controllers/messenger.controller';
 import { ChatPipelineModule } from './chat-pipeline.module';
@@ -51,7 +57,24 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     MessengerProfileService,
     MessengerWebhookStartupService,
     MemoryWebhookDedupeStore,
-    RedisWebhookDedupeStore,
+    {
+      provide: RedisWebhookDedupeStore,
+      useFactory: (
+        redisClient: RedisClientPort,
+        sharedConfig: MessengerChatSharedConfigService,
+      ) =>
+        new RedisWebhookDedupeStore(redisClient, {
+          platform: 'messenger',
+          midTtlSeconds: () =>
+            Math.max(
+              1,
+              Math.ceil(sharedConfig.getWebhookDedupeRetentionMs() / 1000),
+            ),
+          postbackTtlSeconds: () =>
+            Math.max(1, Math.ceil(WEBHOOK_POSTBACK_DEDUPE_MS / 1000)),
+        }),
+      inject: [REDIS_CLIENT, MessengerChatSharedConfigService],
+    },
     WebhookDedupeStoreResolver,
     WebhookDedupeStoreStartupService,
     {

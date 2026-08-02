@@ -1,6 +1,6 @@
 import { MessengerChatSharedConfigService } from '../../application/services/messenger-chat-shared-config.service';
 import { MemoryWebhookDedupeStore } from './memory-webhook-dedupe.store';
-import { RedisWebhookDedupeStore } from './redis-webhook-dedupe.store';
+import type { RedisWebhookDedupeStore } from '@wispace/bot-common';
 import { WebhookDedupeStoreResolver } from './webhook-dedupe.store.resolver';
 
 describe('WebhookDedupeStoreResolver', () => {

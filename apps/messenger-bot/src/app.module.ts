@@ -3,7 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { DatabaseModule } from './infrastructure/database/database.module';
-import { RedisModule } from './infrastructure/redis/redis.module';
+import { RedisModule } from '@wispace/bot-common';
 import { MessengerModule } from './modules/messenger/messenger.module';
 import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { StudentReportModule } from './modules/student-report/student-report.module';

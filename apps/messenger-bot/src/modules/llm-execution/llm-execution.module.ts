@@ -9,10 +9,7 @@ import {
 } from '@wispace/llm-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { RedisConcurrencyLimiter } from './infrastructure/redis-concurrency-limiter';
-import {
-  REDIS_CLIENT,
-  type RedisClientPort,
-} from '../../infrastructure/redis/redis.client.port';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
 
 /**
  * Provides LLM execution infrastructure: concurrency control, retry, timeout,

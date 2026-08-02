@@ -5,8 +5,8 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { REDIS_CLIENT } from './infrastructure/redis/redis.client.port';
-import type { RedisClientPort } from './infrastructure/redis/redis.client.port';
+import { REDIS_CLIENT } from '@wispace/bot-common';
+import type { RedisClientPort } from '@wispace/bot-common';
 
 @Controller()
 export class AppController {

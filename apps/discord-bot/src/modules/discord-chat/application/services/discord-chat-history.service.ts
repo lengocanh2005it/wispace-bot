@@ -7,8 +7,8 @@ import {
   type ChatHistoryStorePort,
   type RedisChatHistoryClient,
 } from '@wispace/chat-history';
-import { REDIS_CLIENT } from '@discord/infrastructure/redis/domain/redis.client.port';
-import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '@wispace/bot-common';
+import type { RedisClientPort } from '@wispace/bot-common';
 
 const DEFAULT_MAX_MESSAGES = 20; // 10 turns (user + assistant)
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
@@ -24,7 +24,7 @@ export class DiscordChatHistoryService {
 
   constructor(
     configService: ConfigService,
-    @Optional() @Inject(REDIS_CLIENT) redisClient?: Redis | null,
+    @Optional() @Inject(REDIS_CLIENT) redisClient?: RedisClientPort | null,
   ) {
     const ttlMs =
       Number(configService.get<string>('CHAT_HISTORY_TTL_MS')) ||
@@ -36,12 +36,15 @@ export class DiscordChatHistoryService {
     const storeType =
       configService.get<string>('CHAT_HISTORY_STORE')?.trim() ?? 'memory';
 
-    if (storeType === 'redis' && redisClient) {
+    const nativeClient = redisClient?.getNativeClient() ?? null;
+
+    if (storeType === 'redis' && nativeClient) {
       this.store = new RedisChatHistoryStore(
-        redisClient as unknown as RedisChatHistoryClient,
+        nativeClient as unknown as RedisChatHistoryClient,
         {
           ttlSec: Math.floor(ttlMs / 1000),
           maxMessages,
+          keyPrefix: 'chat-history:discord:',
         },
       );
       this.logger.log('Chat history: Redis backend');

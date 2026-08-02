@@ -7,8 +7,8 @@ import {
   type ChatHistoryStorePort,
   type RedisChatHistoryClient,
 } from '@wispace/chat-history';
-import { REDIS_CLIENT } from '@zalo/infrastructure/redis/redis.client.port';
-import type { RedisService } from '@zalo/infrastructure/redis/redis.service';
+import { REDIS_CLIENT } from '@wispace/bot-common';
+import type { RedisService } from '@wispace/bot-common';
 
 const DEFAULT_MAX_MESSAGES = 20;
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
@@ -44,6 +44,7 @@ export class ZaloChatHistoryService {
         {
           ttlSec: Math.floor(ttlMs / 1000),
           maxMessages,
+          keyPrefix: 'chat-history:zalo:',
         },
       );
       this.logger.log('Chat history: Redis backend');

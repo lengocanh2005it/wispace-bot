@@ -22,7 +22,12 @@ import { WispaceModule } from '../wispace/wispace.module';
 import { WispaceCalendarService } from '../wispace/application/services/wispace-calendar.service';
 import { DiscordStudyReminderMessageSenderService } from '../discord-chat/application/services/discord-study-reminder-message-sender.service';
 import { DiscordMappingReaderAdapter } from '../discord-chat/infrastructure/persistence/discord-mapping-reader.adapter';
-import { DiscordRedisUserDisplayNameCache } from './discord-redis-user-display-name.cache';
+import { ConfigService } from '@nestjs/config';
+import {
+  REDIS_CLIENT,
+  RedisUserDisplayNameCache,
+  type RedisClientPort,
+} from '@wispace/bot-common';
 
 @Module({
   imports: [
@@ -49,8 +54,19 @@ import { DiscordRedisUserDisplayNameCache } from './discord-redis-user-display-n
       useExisting: TypeormStudyReminderJobRepository,
     },
     {
+      provide: RedisUserDisplayNameCache,
+      useFactory: (
+        redisClient: RedisClientPort,
+        configService: ConfigService,
+      ) =>
+        new RedisUserDisplayNameCache(redisClient, configService, {
+          platform: 'discord',
+        }),
+      inject: [REDIS_CLIENT, ConfigService],
+    },
+    {
       provide: DISPLAY_NAME_CACHE,
-      useExisting: DiscordRedisUserDisplayNameCache,
+      useExisting: RedisUserDisplayNameCache,
     },
     StudyReminderScheduleService,
     StudyReminderSyncService,
@@ -94,7 +110,7 @@ import { DiscordRedisUserDisplayNameCache } from './discord-redis-user-display-n
         WispaceCalendarService,
       ],
     },
-    DiscordRedisUserDisplayNameCache,
+    RedisUserDisplayNameCache,
     DiscordStudyReminderMessageSenderService,
     DiscordMappingReaderAdapter,
     TypeormStudyReminderJobRepository,

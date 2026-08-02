@@ -6,8 +6,8 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import { REDIS_CLIENT } from './infrastructure/redis/redis.client.port';
-import type { RedisClientPort } from './infrastructure/redis/redis.client.port';
+import { REDIS_CLIENT } from '@wispace/bot-common';
+import type { RedisClientPort } from '@wispace/bot-common';
 
 @Controller('health')
 export class HealthController {

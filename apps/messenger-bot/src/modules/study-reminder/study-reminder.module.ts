@@ -1,5 +1,11 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import {
+  REDIS_CLIENT,
+  RedisUserDisplayNameCache,
+  type RedisClientPort,
+} from '@wispace/bot-common';
 import {
   REMINDER_GENERATOR,
   METRICS_HOOK,
@@ -25,7 +31,6 @@ import { StudyReminderScheduleService } from './application/services/study-remin
 import { UserDisplayNameService } from './application/services/user-display-name.service';
 import { USER_DISPLAY_NAME_CACHE } from './domain/repositories/user-display-name-cache.port';
 import { STUDY_REMINDER_JOB_REPOSITORY } from './domain/repositories/study-reminder-job.repository.port';
-import { RedisUserDisplayNameCache } from './infrastructure/cache/redis-user-display-name.cache';
 import { UserCalendarScheduleService } from './infrastructure/wispace/user-calendar-schedule.service';
 import { UserCalendarApiService } from './infrastructure/wispace/user-calendar-api.service';
 import { StudyReminderJobRepository } from './infrastructure/persistence/study-reminder-job.repository';
@@ -51,7 +56,17 @@ import { MetricsService } from '../metrics/metrics.service';
     StudySessionSourceService,
     StudyReminderService,
     UserDisplayNameService,
-    RedisUserDisplayNameCache,
+    {
+      provide: RedisUserDisplayNameCache,
+      useFactory: (
+        redisClient: RedisClientPort,
+        configService: ConfigService,
+      ) =>
+        new RedisUserDisplayNameCache(redisClient, configService, {
+          platform: 'messenger',
+        }),
+      inject: [REDIS_CLIENT, ConfigService],
+    },
     {
       provide: USER_DISPLAY_NAME_CACHE,
       useExisting: RedisUserDisplayNameCache,

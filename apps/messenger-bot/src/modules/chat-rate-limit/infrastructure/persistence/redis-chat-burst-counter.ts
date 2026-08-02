@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { REDIS_CLIENT } from '@messenger/infrastructure/redis/redis.client.port';
-import type { RedisClientPort } from '@messenger/infrastructure/redis/redis.client.port';
+import { REDIS_CLIENT } from '@wispace/bot-common';
+import type { RedisClientPort } from '@wispace/bot-common';
 import {
   CHAT_BURST_KEY_TTL_SECONDS,
   CHAT_BURST_WINDOW_MS,

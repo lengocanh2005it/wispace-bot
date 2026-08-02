@@ -6,14 +6,14 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import type Redis from 'ioredis';
-import { REDIS_CLIENT } from './infrastructure/redis/redis.module';
+import { REDIS_CLIENT } from '@wispace/bot-common';
+import type { RedisClientPort } from '@wispace/bot-common';
 
 @Controller('health')
 export class HealthController {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
-    @Inject(REDIS_CLIENT) private readonly redisClient: Redis | null,
+    @Inject(REDIS_CLIENT) private readonly redisClient: RedisClientPort,
   ) {}
 
   @Get()
@@ -32,7 +32,7 @@ export class HealthController {
 
   @Get('redis')
   async checkRedis() {
-    if (this.redisClient == null) {
+    if (!this.redisClient.isEnabled()) {
       return { ok: true, redis: 'disabled' };
     }
     try {

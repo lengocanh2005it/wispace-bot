@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PgAdvisoryLockService } from '@wispace/bot-common';
@@ -20,7 +21,11 @@ import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zal
 import { CommonModule } from '../../shared/common/common.module';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloMessageSenderService } from '../zalo-chat/application/services/zalo-message-sender.service';
-import { ZaloRedisUserDisplayNameCache } from './zalo-redis-user-display-name.cache';
+import {
+  REDIS_CLIENT,
+  RedisUserDisplayNameCache,
+  type RedisClientPort,
+} from '@wispace/bot-common';
 import { ZaloMappingReaderAdapter } from '../zalo-chat/infrastructure/persistence/zalo-mapping-reader.adapter';
 import { ZaloOpsHealthRepository } from '../zalo-chat/infrastructure/persistence/zalo-ops-health.repository';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
@@ -51,8 +56,19 @@ import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo
       useExisting: TypeormStudyReminderJobRepository,
     },
     {
+      provide: RedisUserDisplayNameCache,
+      useFactory: (
+        redisClient: RedisClientPort,
+        configService: ConfigService,
+      ) =>
+        new RedisUserDisplayNameCache(redisClient, configService, {
+          platform: 'zalo',
+        }),
+      inject: [REDIS_CLIENT, ConfigService],
+    },
+    {
       provide: DISPLAY_NAME_CACHE,
-      useExisting: ZaloRedisUserDisplayNameCache,
+      useExisting: RedisUserDisplayNameCache,
     },
     StudyReminderScheduleService,
     StudyReminderSyncService,
@@ -98,7 +114,7 @@ import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo
       ],
     },
     ZaloMessageSenderService,
-    ZaloRedisUserDisplayNameCache,
+    RedisUserDisplayNameCache,
     ZaloMappingReaderAdapter,
     TypeormStudyReminderJobRepository,
     {

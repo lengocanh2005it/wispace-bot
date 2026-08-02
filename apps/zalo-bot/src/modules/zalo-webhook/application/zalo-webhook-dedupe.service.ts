@@ -1,5 +1,5 @@
 import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
-import { RedisWebhookDedupeStore } from './redis-webhook-dedupe.store';
+import { RedisWebhookDedupeStore } from '@wispace/bot-common';
 
 const DEFAULT_TTL_MS = 60_000;
 const CLEANUP_INTERVAL_MS = 5_000;
@@ -20,7 +20,7 @@ export class ZaloWebhookDedupeService implements OnModuleDestroy {
 
   async isDuplicate(msgId: string): Promise<boolean> {
     if (this.useRedis && this.redisStore) {
-      return this.redisStore.isDuplicate(msgId);
+      return this.redisStore.isDuplicateMessageMid(msgId);
     }
     const now = Date.now();
     const expiry = this.seen.get(msgId);
