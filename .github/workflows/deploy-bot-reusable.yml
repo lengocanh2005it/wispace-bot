@@ -15,11 +15,6 @@ on:
         required: false
         type: boolean
         default: false
-      extra_deploy_paths:
-        required: false
-        type: string
-        description: Additional path filters (newline-separated) that trigger deploy without build
-        default: ''
       health_path:
         required: false
         type: string
@@ -69,8 +64,8 @@ jobs:
               - 'turbo.json'
             deploy:
               - 'apps/${{ inputs.app }}/docker-compose.prod.yml'
-              - '.github/scripts/vps-deploy.sh'
-              - ${{ inputs.extra_deploy_paths }}
+              - '.github/workflows/**'
+              - '.github/scripts/**'
 
   build-image:
     needs: changes
