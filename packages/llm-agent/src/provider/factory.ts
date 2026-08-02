@@ -1,8 +1,6 @@
 import type { LlmProviderAdapter } from './llm-provider.adapter';
 import { OpenAiAdapter } from './openai/openai-adapter';
 import { OpenAiCompatibleAdapter } from './openai-compatible/openai-compatible-adapter';
-import { OpenRouterAdapter } from './openrouter/openrouter-adapter';
-import { MiniMaxAdapter } from './minimax/minimax-adapter';
 import { FailoverLlmProviderAdapter } from './failover/failover-adapter';
 
 export type LlmProviderType = string;
@@ -36,20 +34,6 @@ export function createLlmProviderAdapter(config: {
 
     case 'openai-compatible':
       return new OpenAiCompatibleAdapter(
-        config.getApiKey,
-        config.getModel,
-        config.getBaseUrl,
-      );
-
-    case 'openrouter':
-      return new OpenRouterAdapter(
-        config.getApiKey,
-        config.getModel,
-        config.getBaseUrl,
-      );
-
-    case 'minimax':
-      return new MiniMaxAdapter(
         config.getApiKey,
         config.getModel,
         config.getBaseUrl,

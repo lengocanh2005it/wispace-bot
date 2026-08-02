@@ -13,11 +13,12 @@ import { TaskScoreAverageRecord } from '../../domain/types/task-score-average.ty
 import type { StudentCapacityInput } from '@wispace/student-report';
 import { UserGoalsApiService } from './user-goals-api.service';
 import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
+// ponytail: shared date utils live in scheduler-core (same byte-identical copy was local)
 import {
   formatExamDateDisplay,
   resolveExamCountdown,
-} from '@messenger/shared/utils/exam-date.utils';
-import { todayReportDate } from '@messenger/shared/utils/report-date.utils';
+  todayReportDate,
+} from '@wispace/scheduler-core';
 
 const ID_HEADER = 'x-psid' as const;
 

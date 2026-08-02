@@ -3,8 +3,7 @@ import {
   createFailoverLlmProviderAdapter,
 } from './factory';
 import { OpenAiAdapter } from './openai/openai-adapter';
-import { OpenRouterAdapter } from './openrouter/openrouter-adapter';
-import { MiniMaxAdapter } from './minimax/minimax-adapter';
+import { OpenAiCompatibleAdapter } from './openai-compatible/openai-compatible-adapter';
 import { FailoverLlmProviderAdapter } from './failover/failover-adapter';
 import type { LlmProviderEntryConfig } from './factory';
 
@@ -19,24 +18,14 @@ describe('createLlmProviderAdapter', () => {
     expect(adapter.providerName).toBe('openai');
   });
 
-  it('creates OpenRouterAdapter for openrouter', () => {
+  it('creates OpenAiCompatibleAdapter for openai-compatible', () => {
     const adapter = createLlmProviderAdapter({
       getApiKey: () => 'key',
       getModel: () => 'model',
-      provider: 'openrouter',
+      provider: 'openai-compatible',
     });
-    expect(adapter).toBeInstanceOf(OpenRouterAdapter);
-    expect(adapter.providerName).toBe('openrouter');
-  });
-
-  it('creates MiniMaxAdapter for minimax', () => {
-    const adapter = createLlmProviderAdapter({
-      getApiKey: () => 'key',
-      getModel: () => 'model',
-      provider: 'minimax',
-    });
-    expect(adapter).toBeInstanceOf(MiniMaxAdapter);
-    expect(adapter.providerName).toBe('minimax');
+    expect(adapter).toBeInstanceOf(OpenAiCompatibleAdapter);
+    expect(adapter.providerName).toBe('openai-compatible');
   });
 
   it('defaults to openai when provider omitted', () => {
@@ -55,7 +44,7 @@ describe('createFailoverLlmProviderAdapter', () => {
     getModel: () => 'model-a',
   };
   const entryB: LlmProviderEntryConfig = {
-    provider: 'openrouter',
+    provider: 'openai-compatible',
     getApiKey: () => 'key-b',
     getModel: () => 'model-b',
   };
@@ -63,7 +52,7 @@ describe('createFailoverLlmProviderAdapter', () => {
   it('returns single adapter directly when only 1 provider configured', () => {
     const result = createFailoverLlmProviderAdapter(
       [entryA],
-      ['openai', 'openrouter'],
+      ['openai', 'openai-compatible'],
     );
     expect(result).toBeInstanceOf(OpenAiAdapter);
     expect(result).not.toBeInstanceOf(FailoverLlmProviderAdapter);
@@ -72,20 +61,20 @@ describe('createFailoverLlmProviderAdapter', () => {
   it('returns FailoverLlmProviderAdapter when ≥2 providers configured', () => {
     const result = createFailoverLlmProviderAdapter(
       [entryA, entryB],
-      ['openai', 'openrouter'],
+      ['openai', 'openai-compatible'],
     );
     expect(result).toBeInstanceOf(FailoverLlmProviderAdapter);
   });
 
   it('filters out providers without API key', () => {
     const entryNoKey: LlmProviderEntryConfig = {
-      provider: 'minimax',
+      provider: 'openai-compatible',
       getApiKey: () => undefined,
       getModel: () => 'model',
     };
     const result = createFailoverLlmProviderAdapter(
       [entryA, entryNoKey],
-      ['openai', 'minimax'],
+      ['openai', 'openai-compatible'],
     );
     // Only openai has key → single adapter, no failover
     expect(result).toBeInstanceOf(OpenAiAdapter);
@@ -95,7 +84,7 @@ describe('createFailoverLlmProviderAdapter', () => {
   it('follows order parameter', () => {
     const result = createFailoverLlmProviderAdapter(
       [entryA, entryB],
-      ['openrouter', 'openai'],
+      ['openai-compatible', 'openai'],
     );
     expect(result).toBeInstanceOf(FailoverLlmProviderAdapter);
     // Verify order by checking the adapter's internal behavior
@@ -106,7 +95,7 @@ describe('createFailoverLlmProviderAdapter', () => {
     expect(() =>
       createFailoverLlmProviderAdapter(
         [entryA],
-        ['openrouter'], // openrouter not in entries
+        ['openai-compatible'], // openai-compatible not in entries
       ),
     ).toThrow('No LLM provider configured in failover order');
   });
@@ -120,7 +109,7 @@ describe('createFailoverLlmProviderAdapter', () => {
   it('passes failoverConfig cooldown values to FailoverLlmProviderAdapter', () => {
     const adapter = createFailoverLlmProviderAdapter(
       [entryA, entryB],
-      ['openai', 'openrouter'],
+      ['openai', 'openai-compatible'],
       undefined,
       { cooldownLongMs: 1000, cooldownShortMs: 200, quickRetryDelayMs: 50 },
     );
@@ -135,7 +124,7 @@ describe('createFailoverLlmProviderAdapter', () => {
   it('uses default cooldown values when failoverConfig omitted', () => {
     const adapter = createFailoverLlmProviderAdapter(
       [entryA, entryB],
-      ['openai', 'openrouter'],
+      ['openai', 'openai-compatible'],
     );
     const failover = adapter as unknown as Record<string, number>;
     expect(failover.cooldownLongMs).toBe(600_000);

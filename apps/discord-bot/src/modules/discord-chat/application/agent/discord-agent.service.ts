@@ -5,6 +5,7 @@ import {
   LlmAgentPorts,
   NOOP_METRICS_PORT,
   ToolExecutorPort,
+  retryWithBackoff,
   type LlmProviderAdapter,
   loadSystemPromptFile,
 } from '@wispace/llm-agent';
@@ -21,13 +22,7 @@ import { DiscordLlmSafetyEventService } from '@discord/modules/chat-metering/app
 
 const FEATURE = 'FREE_FORM_CHAT';
 
-const RETRY_MAX_ATTEMPTS = 3;
-const RETRY_BASE_BACKOFF_MS = 500;
 const DEFAULT_MAX_CONCURRENT = 3;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Thin NestJS adapter around `@wispace/llm-agent`'s platform-agnostic
@@ -119,8 +114,20 @@ export class DiscordAgentService {
     };
 
     const ports: LlmAgentPorts<DiscordAgentToolContext> = {
+      // ponytail: shared retry helper from llm-agent (was 3 local copies of sleep+backoff)
       llmExecution: {
-        run: (fn) => this.runWithRetry(fn),
+        run: (fn) =>
+          retryWithBackoff(fn, {
+            maxAttempts: 3,
+            baseDelayMs: 500,
+            isRetryable: (error) => this.adapter.isRetryableError(error),
+            onRetry: (attempt, backoffMs, error) =>
+              this.logger.warn(
+                `LLM provider retry attempt=${attempt}/3 backoffMs=${backoffMs}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              ),
+          }),
       },
       usageRecorder: {
         recordFromCompletion: (params) =>
@@ -171,35 +178,6 @@ export class DiscordAgentService {
       },
       ports,
     );
-  }
-
-  private async runWithRetry<T>(fn: () => Promise<T>): Promise<T> {
-    let lastError: unknown;
-
-    for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
-      try {
-        return await fn();
-      } catch (error) {
-        lastError = error;
-
-        if (
-          !this.adapter.isRetryableError(error) ||
-          attempt >= RETRY_MAX_ATTEMPTS
-        ) {
-          throw error;
-        }
-
-        const backoffMs = RETRY_BASE_BACKOFF_MS * attempt;
-        this.logger.warn(
-          `LLM provider retry attempt=${attempt}/${RETRY_MAX_ATTEMPTS} backoffMs=${backoffMs}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-        await sleep(backoffMs);
-      }
-    }
-
-    throw lastError;
   }
 
   private buildSystemPrompt(): string {

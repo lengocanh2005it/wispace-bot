@@ -44,18 +44,6 @@ import {
             getModel: () => config.getModel(),
             getBaseUrl: () => config.getBaseUrl(),
           },
-          {
-            provider: 'openrouter',
-            getApiKey: () => config.getOpenRouterApiKey(),
-            getModel: () => config.getOpenRouterModel(),
-            getBaseUrl: () => config.getOpenRouterBaseUrl(),
-          },
-          {
-            provider: 'minimax',
-            getApiKey: () => config.getMiniMaxApiKey(),
-            getModel: () => config.getMiniMaxModel(),
-            getBaseUrl: () => config.getMiniMaxBaseUrl(),
-          },
         ];
 
         return createFailoverLlmProviderAdapter(

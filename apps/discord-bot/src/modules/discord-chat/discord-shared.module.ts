@@ -58,18 +58,6 @@ import { DiscordOutboundService } from './application/services/discord-outbound.
             getModel: () =>
               configService.get<string>('OPENAI_MODEL')?.trim() || 'gpt-5.4',
           },
-          {
-            provider: 'openrouter',
-            getApiKey: () =>
-              configService.get<string>('OPENROUTER_API_KEY')?.trim() ||
-              undefined,
-            getModel: () =>
-              configService.get<string>('OPENROUTER_MODEL')?.trim() ||
-              'openai/gpt-4o-mini',
-            getBaseUrl: () =>
-              configService.get<string>('OPENROUTER_BASE_URL')?.trim() ||
-              'https://openrouter.ai/api/v1',
-          },
         ];
 
         return createFailoverLlmProviderAdapter(entries, order, {

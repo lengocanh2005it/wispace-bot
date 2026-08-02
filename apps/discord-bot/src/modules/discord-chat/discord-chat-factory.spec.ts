@@ -28,14 +28,14 @@ describe('Discord chat module — LLM provider factory', () => {
           getModel: () => 'gpt-5.4',
         },
         {
-          provider: 'openrouter',
+          provider: 'openai-compatible',
           getApiKey: () => 'key-b',
           getModel: () => 'openai/gpt-4o-mini',
         },
       ];
       const adapter = createFailoverLlmProviderAdapter(entries, [
         'openai',
-        'openrouter',
+        'openai-compatible',
       ]);
       expect(adapter).toBeInstanceOf(FailoverLlmProviderAdapter);
     });
@@ -52,7 +52,7 @@ describe('Discord chat module — LLM provider factory', () => {
       ];
       const adapter = createFailoverLlmProviderAdapter(
         entries,
-        ['openai', 'openrouter'], // openrouter not in entries
+        ['openai', 'openai-compatible'], // openai-compatible not in entries
       );
       expect(adapter).toBeInstanceOf(OpenAiAdapter);
       expect(adapter).not.toBeInstanceOf(FailoverLlmProviderAdapter);

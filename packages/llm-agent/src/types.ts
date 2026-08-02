@@ -9,8 +9,6 @@ export interface LlmAgentConfig {
   model?: string;
   maxToolRounds?: number;
   maxContextChars?: number;
-  /** TTL for tool result cache in ms. Default: 300_000 (5 min). 0 = disable cache. */
-  toolCacheTtlMs?: number;
   /** Max LLM call retries on retryable errors. Default: 3. */
   maxLlmRetries?: number;
   /** Base delay for retry backoff in ms. Default: 100. */

@@ -89,29 +89,6 @@ import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zal
             getModel: () =>
               configService.get<string>('OPENAI_MODEL')?.trim() || 'gpt-5.4',
           },
-          {
-            provider: 'openrouter',
-            getApiKey: () =>
-              configService.get<string>('OPENROUTER_API_KEY')?.trim() ||
-              undefined,
-            getModel: () =>
-              configService.get<string>('OPENROUTER_MODEL')?.trim() ||
-              'openai/gpt-4o-mini',
-            getBaseUrl: () =>
-              configService.get<string>('OPENROUTER_BASE_URL')?.trim() ||
-              'https://openrouter.ai/api/v1',
-          },
-          {
-            provider: 'minimax',
-            getApiKey: () =>
-              configService.get<string>('MINIMAX_API_KEY')?.trim() || undefined,
-            getModel: () =>
-              configService.get<string>('MINIMAX_MODEL')?.trim() ||
-              'MiniMax-Text-01',
-            getBaseUrl: () =>
-              configService.get<string>('MINIMAX_BASE_URL')?.trim() ||
-              'https://api.minimax.chat/v1',
-          },
         ];
 
         return createFailoverLlmProviderAdapter(

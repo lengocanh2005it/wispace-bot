@@ -1,17 +1,8 @@
 /**
  * Messenger does not render Markdown — strip common markers so users do not see literal * or **.
  */
-export function sanitizeMessengerText(text: string): string {
-  return text
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/\*([^*\n]+)\*/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    .replace(/_([^_\n]+)_/g, '$1')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
+// ponytail: byte-identical to llm-agent's sanitizeReplyText — reuse instead of copying
+export { sanitizeReplyText as sanitizeMessengerText } from '@wispace/llm-agent';
 
 /** Split long replies into Messenger-sized bubbles (Meta recommends short messages). */
 export function splitMessengerBubbles(

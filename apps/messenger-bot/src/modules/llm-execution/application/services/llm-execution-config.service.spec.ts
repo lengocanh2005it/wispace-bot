@@ -50,62 +50,6 @@ describe('LlmExecutionConfigService', () => {
     });
   });
 
-  describe('getOpenRouterApiKey', () => {
-    it('returns undefined when unset', () => {
-      const svc = new LlmExecutionConfigService(makeConfigService({}));
-      expect(svc.getOpenRouterApiKey()).toBeUndefined();
-    });
-
-    it('returns trimmed key', () => {
-      const svc = new LlmExecutionConfigService(
-        makeConfigService({ OPENROUTER_API_KEY: ' sk-or-123 ' }),
-      );
-      expect(svc.getOpenRouterApiKey()).toBe('sk-or-123');
-    });
-  });
-
-  describe('getOpenRouterModel', () => {
-    it('returns default when unset', () => {
-      const svc = new LlmExecutionConfigService(makeConfigService({}));
-      expect(svc.getOpenRouterModel()).toBe('openai/gpt-4o-mini');
-    });
-
-    it('returns configured model', () => {
-      const svc = new LlmExecutionConfigService(
-        makeConfigService({ OPENROUTER_MODEL: 'anthropic/claude-3.5-sonnet' }),
-      );
-      expect(svc.getOpenRouterModel()).toBe('anthropic/claude-3.5-sonnet');
-    });
-  });
-
-  describe('getOpenRouterBaseUrl', () => {
-    it('returns default when unset', () => {
-      const svc = new LlmExecutionConfigService(makeConfigService({}));
-      expect(svc.getOpenRouterBaseUrl()).toBe('https://openrouter.ai/api/v1');
-    });
-  });
-
-  describe('getMiniMaxApiKey', () => {
-    it('returns undefined when unset', () => {
-      const svc = new LlmExecutionConfigService(makeConfigService({}));
-      expect(svc.getMiniMaxApiKey()).toBeUndefined();
-    });
-  });
-
-  describe('getMiniMaxModel', () => {
-    it('returns default when unset', () => {
-      const svc = new LlmExecutionConfigService(makeConfigService({}));
-      expect(svc.getMiniMaxModel()).toBe('MiniMax-Text-01');
-    });
-  });
-
-  describe('getMiniMaxBaseUrl', () => {
-    it('returns default when unset', () => {
-      const svc = new LlmExecutionConfigService(makeConfigService({}));
-      expect(svc.getMiniMaxBaseUrl()).toBe('https://api.minimax.chat/v1');
-    });
-  });
-
   describe('getFailoverCooldownLongMs', () => {
     it('returns 600000 by default', () => {
       const svc = new LlmExecutionConfigService(makeConfigService({}));

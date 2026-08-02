@@ -1,7 +1,5 @@
 import type { LlmProviderAdapter } from './provider/llm-provider.adapter';
 import type { LlmMessage } from './provider/types';
-import type { ToolResultCachePort } from './tool-cache/tool-result-cache.port';
-import { NOOP_TOOL_RESULT_CACHE } from './tool-cache/tool-result-cache.port';
 import { AGENT_TOOLS } from './agent.tools';
 import { checkLlmGrounding } from './utils/llm-grounding.utils';
 import {
@@ -66,7 +64,6 @@ export interface LlmAgentPorts<TToolContext> {
   safetyEvents: LlmSafetyEventPort;
   toolExecutor: ToolExecutorPort<TToolContext>;
   adapter: LlmProviderAdapter;
-  toolResultCache?: ToolResultCachePort;
   metrics?: AgentMetricsPort;
   logger?: {
     warn: (message: string) => void;
@@ -76,19 +73,6 @@ export interface LlmAgentPorts<TToolContext> {
 
 const NOOP_LOGGER = { warn: () => undefined, debug: () => undefined };
 
-/** djb2 hash — sufficient to distinguish different tool args. */
-function stableHash(str: string): string {
-  let hash = 5381;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash) ^ str.charCodeAt(i);
-    hash = hash >>> 0;
-  }
-  return hash.toString(36);
-}
-
-const DEFAULT_TOOL_CACHE_TTL_MS = 300_000; // 5 minutes
-const RESCHEDULE_TOOL = 'reschedule_study_session';
-const CALENDAR_TOOL = 'list_study_calendar_entries';
 const DEFAULT_MAX_LLM_RETRIES = 3;
 const DEFAULT_RETRY_BASE_DELAY_MS = 100;
 const MAX_RETRY_DELAY_MS = 10_000;
@@ -601,13 +585,6 @@ export class LlmAgentService<TToolContext> {
     return DEFAULT_RETRY_BASE_DELAY_MS;
   }
 
-  private getToolCacheTtlMs(): number {
-    const v = this.config.toolCacheTtlMs;
-    if (v === 0) return 0;
-    if (v && Number.isFinite(v) && v > 0) return Math.floor(v);
-    return DEFAULT_TOOL_CACHE_TTL_MS;
-  }
-
   private getToolExecutionTimeoutMs(): number {
     const v = this.config.toolExecutionTimeoutMs;
     if (v && Number.isFinite(v) && v > 0) return Math.floor(v);
@@ -715,49 +692,22 @@ export class LlmAgentService<TToolContext> {
   ): Promise<Array<{ toolCallId: string; content: string }>> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
     const metrics = this.ports.metrics ?? NOOP_METRICS_PORT;
-    const cache = this.ports.toolResultCache ?? NOOP_TOOL_RESULT_CACHE;
-    const cacheTtlMs = this.getToolCacheTtlMs();
 
     return Promise.all(
       toolCalls.map(async (toolCall) => {
         const toolName = toolCall.name;
         toolsCalledThisTurn.add(toolName);
         const argsJson = toolCall.arguments || '{}';
-        const cacheKey = `${input.externalUserId}:${toolName}:${stableHash(argsJson)}`;
 
         let content: string;
         try {
-          const cached = cacheTtlMs > 0 ? await cache.get(cacheKey) : undefined;
-          let result: unknown;
-          if (cached !== undefined) {
-            logger.debug(
-              `Tool cache hit externalUserId=${input.externalUserId} tool=${toolName}`,
-            );
-            result = cached;
-          } else {
-            result = await withTimeout(
-              metrics.timeTool(toolName, () =>
-                this.ports.toolExecutor.execute(
-                  toolName,
-                  argsJson,
-                  toolContext,
-                ),
-              ),
-              this.getToolExecutionTimeoutMs(),
-              `Tool ${toolName}`,
-            );
-            if (cacheTtlMs > 0) {
-              await cache.set(cacheKey, result, cacheTtlMs);
-              if (toolName === RESCHEDULE_TOOL) {
-                await cache.invalidatePrefix(
-                  `${input.externalUserId}:${CALENDAR_TOOL}:`,
-                );
-                logger.debug(
-                  `Cache invalidated ${CALENDAR_TOOL} for externalUserId=${input.externalUserId} after reschedule`,
-                );
-              }
-            }
-          }
+          const result = await withTimeout(
+            metrics.timeTool(toolName, () =>
+              this.ports.toolExecutor.execute(toolName, argsJson, toolContext),
+            ),
+            this.getToolExecutionTimeoutMs(),
+            `Tool ${toolName}`,
+          );
           const raw = JSON.stringify({ ok: true, data: result });
           const sanitized = sanitizeToolResultContent(raw);
           if (sanitized.wasSanitized) {

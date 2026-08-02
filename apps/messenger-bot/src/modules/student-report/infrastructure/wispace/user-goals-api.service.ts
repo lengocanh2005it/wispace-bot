@@ -11,7 +11,8 @@ import {
 } from '@wispace/wispace-client';
 import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import type { UserGoalsRecord } from '@wispace/wispace-client';
-import { parseExamDateToIso } from '@messenger/shared/utils/exam-date.utils';
+// ponytail: shared date utils live in scheduler-core (same byte-identical copy was local)
+import { parseExamDateToIso } from '@wispace/scheduler-core';
 
 const ID_HEADER = 'x-psid' as const;
 

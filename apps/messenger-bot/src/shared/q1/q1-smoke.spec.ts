@@ -1,12 +1,12 @@
 import { ConfigService } from '@nestjs/config';
 import { ChatRateLimitConfigService } from '../../modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
-import { ReportScheduleService } from '../../modules/scheduler/application/services/report-schedule.service';
-import { resolveAppTimezone } from '../config/app-timezone';
 import {
   parseExamDateToIso,
+  ReportScheduleService,
   resolveExamCountdown,
-} from '../utils/exam-date.utils';
-import { todayReportDate } from '../utils/report-date.utils';
+  todayReportDate,
+} from '@wispace/scheduler-core';
+import { resolveAppTimezone } from '../config/app-timezone';
 
 describe('Q1 smoke checks (automated)', () => {
   it('marks a past exam correctly for student reports', () => {
@@ -31,7 +31,7 @@ describe('Q1 smoke checks (automated)', () => {
     const service = new ReportScheduleService(config, {
       getUserGoals: jest.fn(),
       parseExamDate: jest.fn(),
-    } as never);
+    });
 
     expect(
       service.calculateDaysUntilExam(

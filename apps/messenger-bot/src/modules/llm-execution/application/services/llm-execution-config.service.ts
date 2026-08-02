@@ -84,46 +84,6 @@ export class LlmExecutionConfigService {
       .filter(Boolean);
   }
 
-  getOpenRouterApiKey(): string | undefined {
-    return (
-      this.configService.get<string>('OPENROUTER_API_KEY')?.trim() || undefined
-    );
-  }
-
-  getOpenRouterModel(): string {
-    return (
-      this.configService.get<string>('OPENROUTER_MODEL')?.trim() ||
-      'openai/gpt-4o-mini'
-    );
-  }
-
-  getOpenRouterBaseUrl(): string | undefined {
-    return (
-      this.configService.get<string>('OPENROUTER_BASE_URL')?.trim() ||
-      'https://openrouter.ai/api/v1'
-    );
-  }
-
-  getMiniMaxApiKey(): string | undefined {
-    return (
-      this.configService.get<string>('MINIMAX_API_KEY')?.trim() || undefined
-    );
-  }
-
-  getMiniMaxModel(): string {
-    return (
-      this.configService.get<string>('MINIMAX_MODEL')?.trim() ||
-      'MiniMax-Text-01'
-    );
-  }
-
-  getMiniMaxBaseUrl(): string | undefined {
-    return (
-      this.configService.get<string>('MINIMAX_BASE_URL')?.trim() ||
-      'https://api.minimax.chat/v1'
-    );
-  }
-
   getFailoverCooldownLongMs(): number {
     return readEnvPositiveInt(
       this.configService,

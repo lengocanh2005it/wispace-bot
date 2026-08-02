@@ -1,23 +1,20 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import pLimit from 'p-limit';
 import {
   StudentReportCore,
   type StudentReportPorts,
+  type StudentCapacityInput,
 } from '@wispace/student-report';
-import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import { retryWithBackoff, type LlmProviderAdapter } from '@wispace/llm-agent';
 import { todayUsageDate } from '@wispace/chat-metering';
 import { join } from 'path';
 import { loadSystemPromptFile } from '@wispace/llm-agent';
 import { DiscordLlmUsageRecorderService } from '@discord/modules/chat-metering/application/services/discord-llm-usage-recorder.service';
 import { WispaceGoalsService } from '@discord/modules/wispace/application/services/wispace-goals.service';
-import type { StudentCapacityInput } from '@wispace/student-report';
 
 const FEATURE = 'STUDENT_REPORT';
 const PROMPT_DIR = join(__dirname, '../../../../shared/prompts');
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /**
  * Thin NestJS adapter around the platform-agnostic `@wispace/student-report`
@@ -40,22 +37,10 @@ export class DiscordStudentReportService {
     const maxConcurrent = Number(
       this.configService.get<string>('LLM_MAX_CONCURRENT') ?? '3',
     );
-    let active = 0;
-    const queue: Array<() => void> = [];
-
-    this.limiter = async <T>(fn: () => Promise<T>): Promise<T> => {
-      while (active >= maxConcurrent) {
-        await new Promise<void>((resolve) => queue.push(resolve));
-      }
-      active++;
-      try {
-        return await fn();
-      } finally {
-        active--;
-        const next = queue.shift();
-        if (next) next();
-      }
-    };
+    // ponytail: p-limit instead of a hand-rolled active/queue limiter
+    this.limiter = pLimit(
+      Number.isFinite(maxConcurrent) && maxConcurrent > 0 ? maxConcurrent : 3,
+    );
   }
 
   generateReport(discordUserId: string): Promise<string> {
@@ -76,31 +61,23 @@ export class DiscordStudentReportService {
   private buildCore(): StudentReportCore {
     const ports: StudentReportPorts = {
       llmExecution: {
-        run: async (fn) => {
-          const maxRetries = 3;
-          const baseBackoffMs = 500;
-
-          for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-              return await fn();
-            } catch (error) {
-              const isRateLimit =
-                error instanceof Error &&
-                (error.message.includes('rate limit') ||
-                  error.message.includes('429'));
-              if (isRateLimit && attempt < maxRetries) {
-                const backoff = baseBackoffMs * 2 ** (attempt - 1);
-                this.logger.warn(
-                  `LLM provider retry feature=${FEATURE} attempt=${attempt}/${maxRetries} backoffMs=${backoff}: ${error instanceof Error ? error.message : String(error)}`,
-                );
-                await sleep(backoff);
-                continue;
-              }
-              throw error;
-            }
-          }
-          throw new Error('LLM retry exhausted');
-        },
+        // ponytail: shared retry helper from llm-agent (was a local sleep+backoff copy)
+        run: (fn) =>
+          retryWithBackoff(fn, {
+            maxAttempts: 3,
+            baseDelayMs: 500,
+            backoff: (attempt) => 500 * 2 ** (attempt - 1),
+            isRetryable: (error) =>
+              error instanceof Error &&
+              (error.message.includes('rate limit') ||
+                error.message.includes('429')),
+            onRetry: (attempt, backoffMs, error) =>
+              this.logger.warn(
+                `LLM provider retry feature=${FEATURE} attempt=${attempt}/3 backoffMs=${backoffMs}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              ),
+          }),
       },
       usageRecorder: {
         recordFromCompletion: (params) =>

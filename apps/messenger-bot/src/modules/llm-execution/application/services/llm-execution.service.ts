@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import pLimit from 'p-limit';
-import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import { retryWithBackoff, type LlmProviderAdapter } from '@wispace/llm-agent';
 import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import type { LlmExecutionContext } from '../types/llm-execution.types';
@@ -10,12 +10,6 @@ export type {
   LlmExecutionFeature,
   LlmExecutionContext,
 } from '../types/llm-execution.types';
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
 
 function withTimeout<T>(fn: () => Promise<T>, timeoutMs: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -87,34 +81,27 @@ export class LlmExecutionService {
   ): Promise<T> {
     const maxAttempts = this.config.getRetryMaxAttempts();
     const baseBackoffMs = this.config.getRetryBackoffMs();
-    let lastError: unknown;
-
     const timeoutMs = this.config.getRequestTimeoutMs();
     const feature = context?.feature ?? 'unknown';
+    const correlation = context?.correlationId ?? 'n/a';
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        return await this.metrics.timeLlmExecution(feature, () =>
+    // ponytail: shared retry helper from llm-agent (was a local sleep+backoff copy)
+    return retryWithBackoff(
+      () =>
+        this.metrics.timeLlmExecution(feature, () =>
           withTimeout(fn, timeoutMs),
-        );
-      } catch (error) {
-        lastError = error;
-
-        if (!this.adapter.isRetryableError(error) || attempt >= maxAttempts) {
-          throw error;
-        }
-
-        const backoffMs = baseBackoffMs * attempt;
-        const correlation = context?.correlationId ?? 'n/a';
-        this.logger.warn(
-          `LLM provider retry feature=${feature} correlation=${correlation} attempt=${attempt}/${maxAttempts} backoffMs=${backoffMs}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-        await sleep(backoffMs);
-      }
-    }
-
-    throw lastError;
+        ),
+      {
+        maxAttempts,
+        baseDelayMs: baseBackoffMs,
+        isRetryable: (error) => this.adapter.isRetryableError(error),
+        onRetry: (attempt, backoffMs, error) =>
+          this.logger.warn(
+            `LLM provider retry feature=${feature} correlation=${correlation} attempt=${attempt}/${maxAttempts} backoffMs=${backoffMs}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          ),
+      },
+    );
   }
 }

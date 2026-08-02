@@ -53,6 +53,7 @@ export {
 } from './utils/openai-error.utils';
 export { isObviouslyOffTopic, isGreetingOnly } from './utils/scope.utils';
 export { sanitizeReplyText } from './utils/text.utils';
+export { sleep, retryWithBackoff } from './utils/retry.utils';
 export { loadSystemPromptFile } from './utils/load-system-prompt';
 
 // --- Provider abstraction (new) ---
@@ -75,8 +76,6 @@ export type {
 export type { LlmProviderAdapter } from './provider/llm-provider.adapter';
 export { OpenAiAdapter } from './provider/openai/openai-adapter';
 export { OpenAiCompatibleAdapter } from './provider/openai-compatible/openai-compatible-adapter';
-export { OpenRouterAdapter } from './provider/openrouter/openrouter-adapter';
-export { MiniMaxAdapter } from './provider/minimax/minimax-adapter';
 export { FailoverLlmProviderAdapter } from './provider/failover/failover-adapter';
 export { LlmAllProvidersExhaustedError } from './provider/failover/failover.errors';
 export {
@@ -87,12 +86,3 @@ export type {
   LlmProviderEntryConfig,
   FailoverConfig,
 } from './provider/factory';
-
-// --- Tool result cache ---
-export type { ToolResultCachePort } from './tool-cache/tool-result-cache.port';
-export { NOOP_TOOL_RESULT_CACHE } from './tool-cache/tool-result-cache.port';
-export { InMemoryToolResultCache } from './tool-cache/in-memory-tool-result-cache';
-export {
-  RedisToolResultCache,
-  type RedisCacheClient,
-} from './tool-cache/redis-tool-result-cache';
