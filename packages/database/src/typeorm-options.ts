@@ -16,6 +16,17 @@ export function readEnv(source: EnvSource, key: string): string | undefined {
   return source[key];
 }
 
+export function getPostgresSsl(
+  source: EnvSource,
+): false | { rejectUnauthorized: true; ca?: string } {
+  if (readEnv(source, 'DB_SSL') !== 'true') {
+    return false;
+  }
+
+  const ca = readEnv(source, 'DB_SSL_CA')?.trim();
+  return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
+}
+
 /** Shared entities used by all bots — import and spread into each bot's entity list. */
 export const SHARED_ENTITIES: EntityClass[] = [
   WebhookDeadLetterEntity,
@@ -47,10 +58,7 @@ export function getTypeOrmOptions(
     username: readEnv(source, 'DB_USER'),
     password: readEnv(source, 'DB_PASSWORD'),
     database: readEnv(source, 'DB_NAME'),
-    ssl:
-      readEnv(source, 'DB_SSL') === 'true'
-        ? { rejectUnauthorized: false }
-        : false,
+    ssl: getPostgresSsl(source),
     poolSize,
     extra: {
       pool: {

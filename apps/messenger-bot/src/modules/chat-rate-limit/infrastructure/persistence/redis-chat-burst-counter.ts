@@ -82,7 +82,7 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return { allowed: true, count: 0 };
+      return { allowed: false, count: limit };
     }
   }
 

@@ -54,6 +54,7 @@ export interface ToolExecutorPort<TToolContext> {
     toolName: string,
     argsJson: string,
     context: TToolContext,
+    signal?: AbortSignal,
   ): Promise<unknown>;
 }
 

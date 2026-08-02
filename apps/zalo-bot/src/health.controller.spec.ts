@@ -16,5 +16,6 @@ describe('HealthController', () => {
     const dataSource = { query } as unknown as DataSource;
     const controller = new HealthController(dataSource);
     await expect(controller.check()).rejects.toThrow();
+    await expect(controller.check()).rejects.not.toThrow('connection refused');
   });
 });

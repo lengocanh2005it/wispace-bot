@@ -126,6 +126,7 @@ export class ChatRateLimitService {
       idempotencyKey: params.idempotencyKey,
       dailyLimit: freeFormDailyLimit,
       freeFormDailyLimit,
+      burstLimit: burstPerMinute,
     });
   }
 
@@ -139,6 +140,7 @@ export class ChatRateLimitService {
       idempotencyKey: string;
       dailyLimit: number;
       freeFormDailyLimit: number;
+      burstLimit: number;
     },
   ): Promise<ChatQuotaCheckResult> {
     const outcome = await this.reserveSlotOrRecoverOnConflict(psid, {
@@ -147,6 +149,27 @@ export class ChatRateLimitService {
       idempotencyKey: params.idempotencyKey,
       dailyLimit: params.dailyLimit,
     });
+
+    if (outcome.status === 'burst_limit_exceeded') {
+      await this.burstCounter.releaseReservation(psid);
+      this.metrics.incQuotaDenied('BURST_LIMIT');
+      this.logQuotaDeny(
+        'BURST_LIMIT',
+        psid,
+        params.idempotencyKey,
+        outcome.count,
+        params.burstLimit,
+      );
+      return {
+        allowed: false,
+        used: outcome.count,
+        limit: params.burstLimit,
+        remaining: 0,
+        reason: 'BURST_LIMIT',
+        usageDate: params.usageDate,
+        quotaReserved: false,
+      };
+    }
 
     if (outcome.status === 'daily_limit_exceeded') {
       await this.burstCounter.releaseReservation(psid);

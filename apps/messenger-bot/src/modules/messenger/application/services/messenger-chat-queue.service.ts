@@ -88,8 +88,8 @@ export class MessengerChatQueueService implements OnModuleDestroy {
     private readonly chatQueueStore?: ChatQueueStorePort,
   ) {
     const maxPendingSize = Math.max(
-      0,
-      Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) || 0,
+      1,
+      Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) || 20,
     );
 
     this.debounceQueue = new DebounceChatQueue<MemoryQueueContext>(

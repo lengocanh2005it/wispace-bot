@@ -1,5 +1,18 @@
 import { createHash, timingSafeEqual } from 'crypto';
 
+const MAX_WEBHOOK_CLOCK_SKEW_MS = 5 * 60 * 1000;
+
+export function isZaloWebhookTimestampFresh(
+  timestamp: string,
+  nowMs = Date.now(),
+): boolean {
+  const timestampMs = Number(timestamp);
+  return (
+    Number.isFinite(timestampMs) &&
+    Math.abs(nowMs - timestampMs) <= MAX_WEBHOOK_CLOCK_SKEW_MS
+  );
+}
+
 /**
  * Zalo webhook signature: mac = sha256(appId + rawBody + timestamp + appSecretKey).
  * Header name is `X-ZEvent-Signature` (see zalo-webhook.controller.ts).

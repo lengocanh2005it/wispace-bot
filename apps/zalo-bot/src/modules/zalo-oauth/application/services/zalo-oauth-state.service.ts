@@ -6,6 +6,11 @@ import { ZaloOauthStateEntity } from '@zalo/infrastructure/database/entities/zal
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
+export interface ConsumedZaloOauthState {
+  codeVerifier: string;
+  linkToken: string;
+}
+
 /**
  * PKCE code_verifier staging between GET /zalo/oauth/authorize and
  * GET /zalo/oauth/callback (spec §5.2). TTL enforced in application code —
@@ -19,18 +24,19 @@ export class ZaloOauthStateService {
     private readonly repo: Repository<ZaloOauthStateEntity>,
   ) {}
 
-  async create(codeVerifier: string): Promise<string> {
+  async create(codeVerifier: string, linkToken: string): Promise<string> {
     const state = randomBytes(24).toString('hex');
     await this.repo.save({
       state,
       codeVerifier,
+      linkToken,
       createdAt: new Date(),
     });
     return state;
   }
 
   /** Deletes the row regardless of outcome (single-use, even if expired). */
-  async consume(state: string): Promise<string | undefined> {
+  async consume(state: string): Promise<ConsumedZaloOauthState | undefined> {
     const row = await this.repo.findOne({ where: { state } });
     if (!row) {
       return undefined;
@@ -39,6 +45,8 @@ export class ZaloOauthStateService {
     await this.repo.delete({ state });
 
     const isExpired = Date.now() - row.createdAt.getTime() > STATE_TTL_MS;
-    return isExpired ? undefined : row.codeVerifier;
+    return isExpired
+      ? undefined
+      : { codeVerifier: row.codeVerifier, linkToken: row.linkToken };
   }
 }

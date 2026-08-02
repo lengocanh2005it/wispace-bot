@@ -75,6 +75,12 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
       })
       .andWhere('job.remind_at <= :now', { now })
       .andWhere('job.scheduled_at > :minLeadAt', { minLeadAt })
+      .andWhere('(job.next_retry_at IS NULL OR job.next_retry_at <= :now)', {
+        now,
+      })
+      .andWhere(
+        `(job.status = 'pending' OR (job.status = 'failed' AND job.retry_count < job.max_retries))`,
+      )
       .orderBy('job.remind_at', 'ASC')
       .limit(50)
       .getMany();
@@ -126,17 +132,18 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     activeSessionKeys: string[],
     horizonEnd?: Date,
   ): Promise<number> {
-    if (activeSessionKeys.length === 0) return 0;
     const qb = this.repo
       .createQueryBuilder()
       .update(StudyReminderJobEntity)
       .set({ status: 'cancelled' })
       .where('platform = :platform', { platform })
       .andWhere('externalUserId = :externalUserId', { externalUserId })
-      .andWhere('sessionKey NOT IN (:...keys)', { keys: activeSessionKeys })
       .andWhere('status IN (:...statuses)', {
         statuses: ['pending', 'failed'],
       });
+    if (activeSessionKeys.length > 0) {
+      qb.andWhere('sessionKey NOT IN (:...keys)', { keys: activeSessionKeys });
+    }
     if (horizonEnd) {
       qb.andWhere('scheduled_at <= :horizonEnd', { horizonEnd });
     }
@@ -168,6 +175,12 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
         statuses: ['pending', 'failed'],
       })
       .andWhere('job.remind_at > :now', { now })
+      .andWhere('(job.next_retry_at IS NULL OR job.next_retry_at <= :now)', {
+        now,
+      })
+      .andWhere(
+        `(job.status = 'pending' OR (job.status = 'failed' AND job.retry_count < job.max_retries))`,
+      )
       .orderBy('job.remind_at', 'ASC')
       .select('job.remind_at')
       .limit(1)

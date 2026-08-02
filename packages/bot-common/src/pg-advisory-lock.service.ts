@@ -47,15 +47,20 @@ export class PgAdvisoryLockService {
    */
   async acquire(lockId: number): Promise<QueryRunner | null> {
     const runner = this.dataSource.createQueryRunner();
-    await runner.connect();
+    try {
+      await runner.connect();
 
-    const acquired = await this.tryAcquireOnRunner(runner, lockId);
-    if (!acquired) {
+      const acquired = await this.tryAcquireOnRunner(runner, lockId);
+      if (!acquired) {
+        await runner.release();
+        return null;
+      }
+
+      return runner;
+    } catch (error) {
       await runner.release();
-      return null;
+      throw error;
     }
-
-    return runner;
   }
 
   async release(lockId: number, runner: QueryRunner): Promise<void> {

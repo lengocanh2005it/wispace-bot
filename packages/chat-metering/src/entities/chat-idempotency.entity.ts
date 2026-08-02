@@ -12,7 +12,7 @@ export class ChatIdempotencyEntity {
   @PrimaryColumn({ name: 'idempotency_key', type: 'varchar', length: 128 })
   idempotencyKey: string;
 
-  @Column({ type: 'varchar', length: 16, default: 'messenger' })
+  @PrimaryColumn({ type: 'varchar', length: 16, default: 'messenger' })
   platform: string;
 
   @Column({ name: 'external_user_id', type: 'varchar', length: 64 })

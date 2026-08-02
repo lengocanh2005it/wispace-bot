@@ -60,4 +60,25 @@ describe('ZaloOutboundService', () => {
 
     delete global.fetch;
   });
+
+  it('does not mark a 2xx application error as delivered', async () => {
+    const tokenService = {
+      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
+    } as unknown as ZaloTokenService;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ error: 4001, message: 'Invalid user id' }),
+    });
+
+    const service = new ZaloOutboundService(tokenService, deliveryLog as never);
+
+    await expect(service.sendText('zalo-1', 'hello')).rejects.toMatchObject({
+      status: 4001,
+    });
+    expect(deliveryLog.logDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'FAILED' }),
+    );
+
+    delete global.fetch;
+  });
 });

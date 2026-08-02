@@ -11,6 +11,7 @@ import {
   getMessengerAppSecret,
   isMessengerWebhookSignatureVerifyEnabled,
 } from '../utils/messenger-webhook-signature.config';
+import { isTestRuntime } from '@messenger/shared/config/production-runtime.utils';
 import {
   META_WEBHOOK_SIGNATURE_HEADER,
   verifyMessengerWebhookSignature,
@@ -24,7 +25,12 @@ export class MessengerWebhookSignatureGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     if (!isMessengerWebhookSignatureVerifyEnabled(this.configService)) {
-      return true;
+      if (isTestRuntime(this.configService)) {
+        return true;
+      }
+      throw new InternalServerErrorException(
+        'MESSENGER_APP_SECRET and webhook signature verification are required outside tests',
+      );
     }
 
     const appSecret = getMessengerAppSecret(this.configService);

@@ -7,7 +7,7 @@ function buildClientStub(fetch: jest.Mock): Client {
 
 describe('DiscordOutboundService', () => {
   it('fetches the Discord user and sends a DM', async () => {
-    const send = jest.fn().mockResolvedValue(undefined);
+    const send = jest.fn().mockResolvedValue({ channelId: 'dm-1' });
     const fetch = jest.fn().mockResolvedValue({ send });
 
     const service = new DiscordOutboundService(buildClientStub(fetch));
@@ -17,14 +17,14 @@ describe('DiscordOutboundService', () => {
     expect(send).toHaveBeenCalledWith('hello');
   });
 
-  it('swallows errors when the DM fails to send', async () => {
+  it('throws when the DM fails to send after retries', async () => {
     const fetch = jest.fn().mockRejectedValue(new Error('cannot DM user'));
 
     const service = new DiscordOutboundService(buildClientStub(fetch));
 
-    await expect(
-      service.sendText('discord-1', 'hello'),
-    ).resolves.toBeUndefined();
+    await expect(service.sendText('discord-1', 'hello')).rejects.toThrow(
+      'Discord DM delivery failed',
+    );
   });
 
   it('sends a reschedule confirmation DM with confirm/cancel buttons', async () => {

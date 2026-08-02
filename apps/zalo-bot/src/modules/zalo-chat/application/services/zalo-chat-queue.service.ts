@@ -36,8 +36,8 @@ export class ZaloChatQueueService implements OnModuleDestroy {
     agentService: ZaloAgentService,
   ) {
     const maxPendingSize = Math.max(
-      0,
-      Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) || 0,
+      1,
+      Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) || 20,
     );
 
     this.pipeline = new ChatPipeline(

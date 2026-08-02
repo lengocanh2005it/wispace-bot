@@ -22,11 +22,11 @@ export class HealthController {
     try {
       await this.dataSource.query('SELECT 1');
       return { status: 'ok', database: 'connected' };
-    } catch (error) {
+    } catch {
       throw new ServiceUnavailableException({
         status: 'error',
         database: 'disconnected',
-        message: error instanceof Error ? error.message : String(error),
+        message: 'database unavailable',
       });
     }
   }
@@ -43,7 +43,7 @@ export class HealthController {
     throw new ServiceUnavailableException({
       ok: false,
       redis: 'error',
-      message: result,
+      message: 'redis unavailable',
     });
   }
 }

@@ -27,10 +27,29 @@ describe('MessengerWebhookSignatureGuard', () => {
       }),
     }) as ExecutionContext;
 
-  it('allows request when signature verification is disabled', () => {
+  it('rejects unsigned requests outside the test runtime', () => {
     const guard = new MessengerWebhookSignatureGuard({
       get: (key: string) =>
-        key === 'MESSENGER_WEBHOOK_SIGNATURE_VERIFY' ? 'false' : undefined,
+        key === 'MESSENGER_WEBHOOK_SIGNATURE_VERIFY'
+          ? 'false'
+          : key === 'NODE_ENV'
+            ? 'development'
+            : undefined,
+    } as ConfigService);
+
+    expect(() => guard.canActivate(createContext({}))).toThrow(
+      InternalServerErrorException,
+    );
+  });
+
+  it('allows unsigned requests only in the test runtime', () => {
+    const guard = new MessengerWebhookSignatureGuard({
+      get: (key: string) =>
+        key === 'MESSENGER_WEBHOOK_SIGNATURE_VERIFY'
+          ? 'false'
+          : key === 'NODE_ENV'
+            ? 'test'
+            : undefined,
     } as ConfigService);
 
     expect(guard.canActivate(createContext({}))).toBe(true);

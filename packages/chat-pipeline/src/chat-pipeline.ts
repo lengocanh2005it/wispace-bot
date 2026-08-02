@@ -97,15 +97,6 @@ export class ChatPipeline {
 
       ctx.reply = reply;
 
-      // ── Append history ────────────────────────────────────────────────────
-      if (reply.text.trim()) {
-        await this.history.appendTurn(
-          input.externalUserId,
-          mergedText,
-          reply.text,
-        );
-      }
-
       // ── Send reply ────────────────────────────────────────────────────────
       if (reply.text.trim()) {
         await this.hooks.onBeforeSend?.(ctx);
@@ -120,10 +111,27 @@ export class ChatPipeline {
         delivered = sendResult.delivered;
       }
 
-      // ── Mark completed ────────────────────────────────────────────────────
+      if (!delivered) {
+        if (input.idempotencyKey && usageDate) {
+          await this.rateLimiter.refund(
+            input.externalUserId,
+            usageDate,
+            input.idempotencyKey,
+          );
+        }
+        return false;
+      }
+
+      // ── Mark completed after confirmed delivery ──────────────────────────
       if (input.idempotencyKey) {
         await this.rateLimiter.markCompleted(input.idempotencyKey);
       }
+
+      await this.history.appendTurn(
+        input.externalUserId,
+        mergedText,
+        reply.text,
+      );
 
       if (delivered) {
         await this.hooks.onStep?.('after_send', ctx);

@@ -160,7 +160,7 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
     status: ChatIdempotencyStatus,
   ): Promise<boolean> {
     const result = await this.idempotencyRepo.update(
-      { idempotencyKey },
+      { platform: PLATFORM, idempotencyKey },
       { status },
     );
 
@@ -171,7 +171,7 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
     idempotencyKey: string,
   ): Promise<ChatIdempotencyRecord | null> {
     const row = await this.idempotencyRepo.findOne({
-      where: { idempotencyKey },
+      where: { platform: PLATFORM, idempotencyKey },
     });
 
     if (!row) {
@@ -208,6 +208,7 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
     return this.idempotencyRepo
       .createQueryBuilder('row')
       .where(`row.status = 'reserved'`)
+      .andWhere('row.platform = :platform', { platform: PLATFORM })
       .andWhere('row.reserved_at < :stuckBefore', { stuckBefore })
       .getCount();
   }
@@ -220,6 +221,7 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
       .select('row.status', 'status')
       .addSelect('COUNT(*)::int', 'count')
       .where('row.usage_date = :usageDate', { usageDate })
+      .andWhere('row.platform = :platform', { platform: PLATFORM })
       .groupBy('row.status')
       .getRawMany<{ status: string; count: number }>();
 
@@ -234,6 +236,7 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
       .createQueryBuilder('usage')
       .select('COUNT(*)::int', 'count')
       .where('usage.usage_date = :usageDate', { usageDate })
+      .andWhere('usage.platform = :platform', { platform: PLATFORM })
       .andWhere('usage.free_form_count >= :dailyLimit', { dailyLimit })
       .getRawOne<{ count: number }>();
 

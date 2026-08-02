@@ -16,11 +16,15 @@ describe('ZaloOauthStateService', () => {
     const save = jest.fn().mockResolvedValue(undefined);
     const service = new ZaloOauthStateService(buildRepo({ save }));
 
-    const state = await service.create('verifier-123');
+    const state = await service.create('verifier-123', 'link-token-123');
 
     expect(state.length).toBeGreaterThan(10);
     expect(save).toHaveBeenCalledWith(
-      expect.objectContaining({ state, codeVerifier: 'verifier-123' }),
+      expect.objectContaining({
+        state,
+        codeVerifier: 'verifier-123',
+        linkToken: 'link-token-123',
+      }),
     );
   });
 
@@ -28,6 +32,7 @@ describe('ZaloOauthStateService', () => {
     const row = {
       state: 'state-1',
       codeVerifier: 'verifier-123',
+      linkToken: 'link-token-123',
       createdAt: new Date(),
     };
     const findOne = jest.fn().mockResolvedValue(row);
@@ -36,9 +41,12 @@ describe('ZaloOauthStateService', () => {
       buildRepo({ findOne, delete: del }),
     );
 
-    const codeVerifier = await service.consume('state-1');
+    const consumed = await service.consume('state-1');
 
-    expect(codeVerifier).toBe('verifier-123');
+    expect(consumed).toEqual({
+      codeVerifier: 'verifier-123',
+      linkToken: 'link-token-123',
+    });
     expect(del).toHaveBeenCalledWith({ state: 'state-1' });
   });
 
@@ -46,6 +54,7 @@ describe('ZaloOauthStateService', () => {
     const row = {
       state: 'state-1',
       codeVerifier: 'verifier-123',
+      linkToken: 'link-token-123',
       createdAt: new Date(Date.now() - 11 * 60 * 1000),
     };
     const findOne = jest.fn().mockResolvedValue(row);

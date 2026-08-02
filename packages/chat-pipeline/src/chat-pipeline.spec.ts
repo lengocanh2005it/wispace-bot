@@ -356,8 +356,12 @@ describe('ChatPipeline', () => {
 
     expect(delivered).toBe(false);
     expect(outbound.sendText).not.toHaveBeenCalled();
-    // markCompleted is still called when idempotencyKey is present
-    expect(rateLimiter.markCompleted).toHaveBeenCalledWith('msg-1');
+    expect(rateLimiter.markCompleted).not.toHaveBeenCalled();
+    expect(rateLimiter.refund).toHaveBeenCalledWith(
+      'user-1',
+      '2026-07-29',
+      'msg-1',
+    );
   });
 
   it('passes userId through context', async () => {

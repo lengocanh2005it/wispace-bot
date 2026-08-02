@@ -9,6 +9,9 @@ export class ZaloOauthStateEntity {
   @Column({ name: 'code_verifier', type: 'varchar', length: 128 })
   codeVerifier: string;
 
+  @Column({ name: 'link_token', type: 'varchar', length: 512 })
+  linkToken: string;
+
   @Column({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 }

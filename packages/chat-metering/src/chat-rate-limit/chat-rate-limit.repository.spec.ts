@@ -39,6 +39,10 @@ describe('ChatRateLimitRepository', () => {
       query: jest.fn((sql: string, params: unknown[]) => {
         const normalized = sql.replace(/\s+/g, ' ').trim();
 
+        if (normalized.startsWith('SELECT pg_advisory_xact_lock')) {
+          return [];
+        }
+
         if (
           normalized.startsWith(
             'INSERT INTO chat_daily_usage (platform, external_user_id, user_id, usage_date, free_form_count)',
@@ -121,7 +125,7 @@ describe('ChatRateLimitRepository', () => {
         }
 
         if (normalized.startsWith('UPDATE chat_idempotency SET status = ')) {
-          const [idempotencyKey] = params as [string];
+          const [, idempotencyKey] = params as [string, string];
           const row = idempotencyStore.get(idempotencyKey);
           if (!row) {
             return [];
@@ -182,7 +186,7 @@ describe('ChatRateLimitRepository', () => {
           normalized.includes('FROM chat_idempotency') &&
           normalized.includes('FOR UPDATE')
         ) {
-          const [idempotencyKey] = params as [string];
+          const [, idempotencyKey] = params as [string, string];
           const row = idempotencyStore.get(idempotencyKey);
           if (!row) {
             return [];
@@ -202,10 +206,10 @@ describe('ChatRateLimitRepository', () => {
 
         if (
           normalized.startsWith(
-            'DELETE FROM chat_idempotency WHERE idempotency_key = $1',
+            'DELETE FROM chat_idempotency WHERE platform = $1',
           )
         ) {
-          const [idempotencyKey] = params as [string];
+          const [, idempotencyKey] = params as [string, string];
           idempotencyStore.delete(idempotencyKey);
           return [];
         }
@@ -340,6 +344,8 @@ describe('ChatRateLimitRepository', () => {
       userId: number;
       usageDate: string;
       dailyLimit: number;
+      burstLimit?: number;
+      burstSince?: Date;
     }> = {},
   ) => ({
     idempotencyKey: 'mid-tx',
@@ -347,6 +353,8 @@ describe('ChatRateLimitRepository', () => {
     userId: 143,
     usageDate: '2026-06-15',
     dailyLimit: 15,
+    burstLimit: undefined,
+    burstSince: undefined,
     ...overrides,
   });
 
@@ -593,6 +601,28 @@ describe('ChatRateLimitRepository', () => {
     await expect(
       repository.getDailyUsageCount('ext-1', '2026-06-15'),
     ).resolves.toBe(15);
+  });
+
+  it('enforces the burst limit inside the reserve transaction', async () => {
+    idempotencyStore.set('mid-existing', {
+      idempotencyKey: 'mid-existing',
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      status: 'completed',
+      reservedAt: new Date('2026-06-15T08:00:00+07:00'),
+    });
+
+    const outcome = await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({
+        idempotencyKey: 'mid-burst',
+        burstLimit: 1,
+        burstSince: new Date('2026-06-14T08:00:00+07:00'),
+      }),
+    );
+
+    expect(outcome).toEqual({ status: 'burst_limit_exceeded', count: 2 });
+    expect(idempotencyStore.has('mid-burst')).toBe(false);
   });
 
   it('allows only one concurrent reserve when at daily limit minus one', async () => {

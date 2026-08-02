@@ -12,7 +12,10 @@ import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 
 type ZaloWebhookRequest = Request & { rawBody?: Buffer };
-import { verifyZaloWebhookSignature } from '../../application/utils/zalo-webhook-signature.utils';
+import {
+  isZaloWebhookTimestampFresh,
+  verifyZaloWebhookSignature,
+} from '../../application/utils/zalo-webhook-signature.utils';
 import type { ZaloWebhookEvent } from '../../domain/entities/zalo-webhook-event.types';
 import {
   ZALO_WEBHOOK_HANDLER,
@@ -60,6 +63,11 @@ export class ZaloWebhookController {
     if (!valid) {
       this.logger.warn('Rejected webhook request — signature mismatch');
       throw new UnauthorizedException('Invalid webhook signature');
+    }
+
+    if (!isZaloWebhookTimestampFresh(timestamp)) {
+      this.logger.warn('Rejected webhook request — stale timestamp');
+      throw new UnauthorizedException('Stale webhook timestamp');
     }
 
     try {

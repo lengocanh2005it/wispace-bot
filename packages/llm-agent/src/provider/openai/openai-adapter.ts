@@ -98,18 +98,21 @@ export class OpenAiAdapter implements LlmProviderAdapter {
     const client = this.getClientOrThrow();
     const model = request.model ?? this.getDefaultModel();
 
-    const response = await client.chat.completions.create({
-      model,
-      messages: toOpenAiMessages(request.messages),
-      tools: toOpenAiTools(request.tools),
-      tool_choice: request.toolChoice ?? 'auto',
-      ...(request.temperature !== undefined && {
-        temperature: request.temperature,
-      }),
-      ...(request.maxOutputTokens !== undefined && {
-        max_completion_tokens: request.maxOutputTokens,
-      }),
-    });
+    const response = await client.chat.completions.create(
+      {
+        model,
+        messages: toOpenAiMessages(request.messages),
+        tools: toOpenAiTools(request.tools),
+        tool_choice: request.toolChoice ?? 'auto',
+        ...(request.temperature !== undefined && {
+          temperature: request.temperature,
+        }),
+        ...(request.maxOutputTokens !== undefined && {
+          max_completion_tokens: request.maxOutputTokens,
+        }),
+      },
+      request.signal ? { signal: request.signal } : undefined,
+    );
 
     return fromOpenAiCompletion(response, this.providerName, model);
   }
@@ -124,20 +127,23 @@ export class OpenAiAdapter implements LlmProviderAdapter {
     const client = this.getClientOrThrow();
     const model = request.model ?? this.getDefaultModel();
 
-    const stream = await client.chat.completions.create({
-      model,
-      messages: toOpenAiMessages(request.messages),
-      tools: toOpenAiTools(request.tools),
-      tool_choice: request.toolChoice ?? 'auto',
-      stream: true,
-      stream_options: { include_usage: true },
-      ...(request.temperature !== undefined && {
-        temperature: request.temperature,
-      }),
-      ...(request.maxOutputTokens !== undefined && {
-        max_completion_tokens: request.maxOutputTokens,
-      }),
-    });
+    const stream = await client.chat.completions.create(
+      {
+        model,
+        messages: toOpenAiMessages(request.messages),
+        tools: toOpenAiTools(request.tools),
+        tool_choice: request.toolChoice ?? 'auto',
+        stream: true,
+        stream_options: { include_usage: true },
+        ...(request.temperature !== undefined && {
+          temperature: request.temperature,
+        }),
+        ...(request.maxOutputTokens !== undefined && {
+          max_completion_tokens: request.maxOutputTokens,
+        }),
+      },
+      request.signal ? { signal: request.signal } : undefined,
+    );
 
     // Accumulator for the final response
     const toolCallsAccum = new Map<

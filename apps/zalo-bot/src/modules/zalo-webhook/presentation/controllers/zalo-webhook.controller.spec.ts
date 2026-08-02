@@ -52,7 +52,7 @@ describe('ZaloWebhookController', () => {
 
     const body = { event_name: 'user_send_text' };
     const rawBody = JSON.stringify(body);
-    const timestamp = '1690000000000';
+    const timestamp = String(Date.now());
 
     await expect(
       controller.handleWebhook(
@@ -84,7 +84,7 @@ describe('ZaloWebhookController', () => {
       event_name: 'user_send_text',
       sender: { id: 'user-1' },
       message: { text: 'hello', msg_id: 'm1' },
-      timestamp: '1690000000000',
+      timestamp: String(Date.now()),
     };
     const rawBody = JSON.stringify(body);
     const signature = sign(appId, rawBody, body.timestamp, appSecretKey);
@@ -118,7 +118,7 @@ describe('ZaloWebhookController', () => {
       app_id: appId,
       event_name: 'user_send_image',
       sender: { id: 'user-3' },
-      timestamp: '1690000000000',
+      timestamp: String(Date.now()),
     };
     const rawBody = JSON.stringify(body);
     const signature = sign(appId, rawBody, body.timestamp, appSecretKey);
@@ -152,7 +152,7 @@ describe('ZaloWebhookController', () => {
       app_id: appId,
       event_name: 'follow',
       follower: { id: 'user-2' },
-      timestamp: '1690000000000',
+      timestamp: String(Date.now()),
     };
     const rawBody = JSON.stringify(body);
     const signature = sign(appId, rawBody, body.timestamp, appSecretKey);
@@ -185,7 +185,7 @@ describe('ZaloWebhookController', () => {
       app_id: appId,
       event_name: 'oa_send_text',
       recipient: { id: 'user-1' },
-      timestamp: '1690000000000',
+      timestamp: String(Date.now()),
     };
     const rawBody = JSON.stringify(body);
     const signature = sign(appId, rawBody, body.timestamp, appSecretKey);

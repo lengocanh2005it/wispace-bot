@@ -7,6 +7,7 @@ export {
 export {
   SHARED_ENTITIES,
   getTypeOrmOptions,
+  getPostgresSsl,
   buildCliDataSource,
   readEnv,
   type EntityClass,

@@ -14,6 +14,7 @@ export class ZaloSendError extends Error {
     readonly status: number,
     readonly statusText: string,
     readonly responseBody: string,
+    readonly httpStatus = status,
   ) {
     super(message);
     this.name = 'ZaloSendError';
@@ -29,7 +30,7 @@ export class ZaloSendError extends Error {
    * We detect by checking for 400 status + body containing window-related markers.
    */
   is48hWindowError(): boolean {
-    if (this.status !== 400) return false;
+    if (this.httpStatus !== 400) return false;
     const body = this.responseBody.toLowerCase();
     return (
       body.includes('4021') ||
@@ -42,7 +43,7 @@ export class ZaloSendError extends Error {
   }
 
   isRetryable(): boolean {
-    return this.status === 0 || this.status >= 500;
+    return this.httpStatus === 0 || this.httpStatus >= 500;
   }
 }
 
@@ -126,16 +127,31 @@ export class ZaloOutboundService implements ZaloMessageSenderPort {
       );
     }
 
-    if (!response.ok) {
-      const body = await response.text();
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = undefined;
+    }
+    const body = payload === undefined ? '' : JSON.stringify(payload);
+    const applicationError =
+      payload && typeof payload === 'object' && 'error' in payload
+        ? Number((payload as { error?: unknown }).error)
+        : 0;
+
+    if (
+      !response.ok ||
+      (Number.isFinite(applicationError) && applicationError !== 0)
+    ) {
       this.logger.warn(
         `Zalo send message failed HTTP ${response.status} for zaloUserId=${zaloUserId}: ${body}`,
       );
       throw new ZaloSendError(
         `Zalo Send API failed for ${zaloUserId}: HTTP ${response.status} ${response.statusText} - ${body}`,
-        response.status,
+        applicationError || response.status,
         response.statusText,
         body,
+        response.status,
       );
     }
   }

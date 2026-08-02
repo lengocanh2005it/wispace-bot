@@ -32,4 +32,5 @@ jobs:
       ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
       ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       vps_host: ${{ secrets.VPS_HOST }}
+      vps_known_hosts: ${{ secrets.VPS_KNOWN_HOSTS }}
       vps_user: ${{ secrets.VPS_USER }}

@@ -91,12 +91,13 @@ function withTimeout<T>(
   promise: Promise<T>,
   ms: number,
   label: string,
+  onTimeout?: () => void,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`${label} timed out after ${ms}ms`)),
-      ms,
-    );
+    const timer = setTimeout(() => {
+      onTimeout?.();
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -127,14 +128,16 @@ export class LlmAgentService<TToolContext> {
     input: LlmAgentInput,
     toolContext: TToolContext,
   ): Promise<LlmAgentReply> {
+    const controller = new AbortController();
     return withTimeout(
       this.ports.metrics?.timeAgentLoop
         ? this.ports.metrics.timeAgentLoop(FEATURE, () =>
-            this.collectReply(input, toolContext),
+            this.collectReply(input, toolContext, controller.signal),
           )
-        : this.collectReply(input, toolContext),
+        : this.collectReply(input, toolContext, controller.signal),
       this.getGlobalAgentTimeoutMs(),
       'Agent loop',
+      () => controller.abort(),
     );
   }
 
@@ -142,9 +145,10 @@ export class LlmAgentService<TToolContext> {
   private async collectReply(
     input: LlmAgentInput,
     toolContext: TToolContext,
+    signal?: AbortSignal,
   ): Promise<LlmAgentReply> {
     let reply: LlmAgentReply | undefined;
-    for await (const event of this.runRounds(input, toolContext)) {
+    for await (const event of this.runRounds(input, toolContext, signal)) {
       if (event.type === 'error') {
         throw event.error;
       }
@@ -172,19 +176,49 @@ export class LlmAgentService<TToolContext> {
     input: LlmAgentInput,
     toolContext: TToolContext,
   ): AsyncIterable<LlmAgentStreamEvent> {
-    for await (const event of this.runRounds(input, toolContext)) {
-      if (event.type === 'error') {
-        yield { type: 'error', error: event.error };
+    const controller = new AbortController();
+    const iterator = this.runRounds(input, toolContext, controller.signal)[
+      Symbol.asyncIterator
+    ]();
+    const deadline = Date.now() + this.getGlobalAgentTimeoutMs();
+
+    try {
+      while (true) {
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) {
+          controller.abort();
+          throw new Error(
+            `Agent loop timed out after ${this.getGlobalAgentTimeoutMs()}ms`,
+          );
+        }
+
+        const next = await withTimeout(
+          iterator.next(),
+          remainingMs,
+          'Agent loop',
+          () => controller.abort(),
+        );
+        if (next.done) {
+          break;
+        }
+
+        const event = next.value;
+        if (event.type === 'error') {
+          yield { type: 'error', error: event.error };
+          return;
+        }
+        if (event.type === 'tool_start') {
+          yield { type: 'tool_start', toolName: event.toolName };
+          continue;
+        }
+        if (event.type === 'final_text') {
+          yield { type: 'delta', textDelta: event.text };
+        }
+        yield { type: 'done', reply: event.reply };
         return;
       }
-      if (event.type === 'tool_start') {
-        yield { type: 'tool_start', toolName: event.toolName };
-        continue;
-      }
-      if (event.type === 'final_text') {
-        yield { type: 'delta', textDelta: event.text };
-      }
-      yield { type: 'done', reply: event.reply };
+    } catch (error) {
+      yield { type: 'error', error };
       return;
     }
     yield {
@@ -202,6 +236,7 @@ export class LlmAgentService<TToolContext> {
   private async *runRounds(
     input: LlmAgentInput,
     toolContext: TToolContext,
+    signal?: AbortSignal,
   ): AsyncGenerator<
     | { type: 'tool_start'; toolName: string }
     | { type: 'final_text'; text: string; reply: LlmAgentReply }
@@ -222,6 +257,7 @@ export class LlmAgentService<TToolContext> {
     const messages = this.buildMessages(input);
 
     const toolsCalledThisTurn = new Set<string>();
+    const groundedToolsThisTurn = new Set<string>();
     const maxToolRounds = this.getMaxToolRounds();
     let previousToolCallSignature: string | null = null;
 
@@ -240,6 +276,7 @@ export class LlmAgentService<TToolContext> {
                     toolChoice: 'auto',
                     correlationId: input.correlationId,
                     maxOutputTokens: this.getMaxOutputTokens(),
+                    signal,
                   }),
                 round,
                 logger,
@@ -281,7 +318,7 @@ export class LlmAgentService<TToolContext> {
             throw new Error('LLM provider returned empty content');
           }
 
-          const groundingCheck = checkLlmGrounding(text, toolsCalledThisTurn);
+          const groundingCheck = checkLlmGrounding(text, groundedToolsThisTurn);
           if (groundingCheck.suspicious) {
             logger.warn(
               `LLM_GROUNDING_WARNING feature=${FEATURE} externalUserId=${input.externalUserId} reason=${groundingCheck.reason} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
@@ -345,9 +382,13 @@ export class LlmAgentService<TToolContext> {
           input,
           toolContext,
           toolsCalledThisTurn,
+          signal,
         );
 
         for (const result of toolResults) {
+          if (result.succeeded) {
+            groundedToolsThisTurn.add(result.toolName);
+          }
           messages.push({
             role: 'tool',
             toolCallId: result.toolCallId,
@@ -607,7 +648,15 @@ export class LlmAgentService<TToolContext> {
     input: LlmAgentInput,
     toolContext: TToolContext,
     toolsCalledThisTurn: Set<string>,
-  ): Promise<Array<{ toolCallId: string; content: string }>> {
+    parentSignal?: AbortSignal,
+  ): Promise<
+    Array<{
+      toolCallId: string;
+      toolName: string;
+      content: string;
+      succeeded: boolean;
+    }>
+  > {
     const logger = this.ports.logger ?? NOOP_LOGGER;
     const metrics = this.ports.metrics ?? NOOP_METRICS_PORT;
 
@@ -618,13 +667,22 @@ export class LlmAgentService<TToolContext> {
         const argsJson = toolCall.arguments || '{}';
 
         let content: string;
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        parentSignal?.addEventListener('abort', abort, { once: true });
         try {
           const result = await withTimeout(
             metrics.timeTool(toolName, () =>
-              this.ports.toolExecutor.execute(toolName, argsJson, toolContext),
+              this.ports.toolExecutor.execute(
+                toolName,
+                argsJson,
+                toolContext,
+                controller.signal,
+              ),
             ),
             this.getToolExecutionTimeoutMs(),
             `Tool ${toolName}`,
+            () => controller.abort(),
           );
           const raw = JSON.stringify({ ok: true, data: result });
           const sanitized = sanitizeToolResultContent(raw);
@@ -634,15 +692,27 @@ export class LlmAgentService<TToolContext> {
             );
           }
           content = sanitized.content;
+          return {
+            toolCallId: toolCall.id,
+            toolName,
+            content,
+            succeeded: true,
+          };
         } catch (err) {
           const message = err instanceof Error ? err.message : 'unknown error';
           logger.warn(
             `Tool execution failed externalUserId=${input.externalUserId} tool=${toolName} error=${message}`,
           );
           content = JSON.stringify({ ok: false, error: message });
+          return {
+            toolCallId: toolCall.id,
+            toolName,
+            content,
+            succeeded: false,
+          };
+        } finally {
+          parentSignal?.removeEventListener('abort', abort);
         }
-
-        return { toolCallId: toolCall.id, content };
       }),
     );
   }

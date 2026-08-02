@@ -35,6 +35,15 @@ export class ZaloOauthController {
     @Query('token') linkToken: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
+    const normalizedLinkToken = linkToken?.trim();
+    if (!normalizedLinkToken || normalizedLinkToken.length > 512) {
+      res.status(400).json({
+        success: false,
+        message: 'Thiếu hoặc không hợp lệ link token.',
+      });
+      return;
+    }
+
     const appId = this.configService.getOrThrow<string>('ZALO_APP_ID');
     const redirectUri = this.configService.getOrThrow<string>(
       'ZALO_OAUTH_REDIRECT_URI',
@@ -42,13 +51,16 @@ export class ZaloOauthController {
 
     const { codeVerifier, codeChallenge } =
       this.accountLinkService.buildPkcePair();
-    const state = await this.oauthStateService.create(codeVerifier);
+    const state = await this.oauthStateService.create(
+      codeVerifier,
+      normalizedLinkToken,
+    );
 
     const url = new URL('https://oauth.zaloapp.com/v4/permission');
     url.searchParams.set('app_id', appId);
     url.searchParams.set('redirect_uri', redirectUri);
     url.searchParams.set('code_challenge', codeChallenge);
-    url.searchParams.set('state', `${state}:${linkToken ?? ''}`);
+    url.searchParams.set('state', state);
 
     res.redirect(url.toString());
   }
@@ -56,7 +68,6 @@ export class ZaloOauthController {
   @Get('callback')
   async callback(
     @Query('code') code: string | undefined,
-    @Query('token') linkTokenFallback: string | undefined,
     @Query('state') rawState: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
@@ -65,11 +76,8 @@ export class ZaloOauthController {
       return;
     }
 
-    const [state, linkTokenFromState] = rawState.split(':');
-    const linkToken = linkTokenFromState || linkTokenFallback;
-
-    const codeVerifier = await this.oauthStateService.consume(state);
-    if (!codeVerifier || !linkToken) {
+    const consumed = await this.oauthStateService.consume(rawState);
+    if (!consumed) {
       res.json({
         success: false,
         message: 'Link đã hết hạn hoặc không hợp lệ, vui lòng thử lại.',
@@ -80,11 +88,11 @@ export class ZaloOauthController {
     try {
       const zaloUser = await this.accountLinkService.exchangeCodeForZaloUser(
         code,
-        codeVerifier,
+        consumed.codeVerifier,
       );
 
       const verifyResult = await this.tokenVerifyService.verifyToken(
-        linkToken,
+        consumed.linkToken,
         zaloUser.id,
       );
       if (!verifyResult.valid) {

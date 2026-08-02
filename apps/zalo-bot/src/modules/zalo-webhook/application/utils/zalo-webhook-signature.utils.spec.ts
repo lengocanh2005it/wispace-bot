@@ -1,5 +1,8 @@
 import { createHash } from 'crypto';
-import { verifyZaloWebhookSignature } from './zalo-webhook-signature.utils';
+import {
+  isZaloWebhookTimestampFresh,
+  verifyZaloWebhookSignature,
+} from './zalo-webhook-signature.utils';
 
 function buildSignature(
   appId: string,
@@ -54,5 +57,17 @@ describe('verifyZaloWebhookSignature', () => {
         signatureHeader: undefined,
       }),
     ).toBe(false);
+  });
+
+  it('rejects timestamps outside the five-minute replay window', () => {
+    expect(isZaloWebhookTimestampFresh('1690000000000', 1690000000000)).toBe(
+      true,
+    );
+    expect(
+      isZaloWebhookTimestampFresh('1690000000000', 1690000000000 + 301_000),
+    ).toBe(false);
+    expect(isZaloWebhookTimestampFresh('not-a-timestamp', 1690000000000)).toBe(
+      false,
+    );
   });
 });

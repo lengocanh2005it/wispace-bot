@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const project = process.env.DOPPLER_PROJECT ?? 'messenger-bot';
@@ -59,7 +60,7 @@ function writeEnvFile(filePath, entries) {
     .map(([key, value]) => `${key}=${value}`)
     .join('\n');
 
-  fs.writeFileSync(filePath, `${body}\n`);
+  fs.writeFileSync(filePath, `${body}\n`, { mode: 0o600 });
 }
 
 function buildConfigEntries(config, baseEntries) {
@@ -82,10 +83,8 @@ function buildConfigEntries(config, baseEntries) {
 
 function uploadConfig(config, baseEntries) {
   const entries = buildConfigEntries(config, baseEntries);
-  const tempPath = path.join(
-    process.cwd(),
-    `.env.doppler.${config}.upload.tmp`,
-  );
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wispace-doppler-'));
+  const tempPath = path.join(tempDir, `${config}.env`);
 
   writeEnvFile(tempPath, entries);
 
@@ -105,7 +104,7 @@ function uploadConfig(config, baseEntries) {
     );
     console.log(`Uploaded ${entries.size} secrets to ${project}/${config}`);
   } finally {
-    fs.unlinkSync(tempPath);
+    fs.rmSync(tempDir, { recursive: true, force: true });
   }
 }
 

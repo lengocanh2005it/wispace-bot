@@ -27,6 +27,7 @@ interface RedisChatQueueBufferState {
 
 @Injectable()
 export class RedisChatQueueStore implements ChatQueueStorePort {
+  private static readonly MAX_BUFFERED_MESSAGES = 20;
   private static readonly BUFFER_PREFIX = 'chat:queue:buffer:';
   private static readonly LOCK_PREFIX = 'chat:queue:lock:';
   private static readonly ACTIVE_SET = 'chat:queue:active-psids';
@@ -53,11 +54,17 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
 
       if (state.processing) {
         state.pendingTexts.push(input.userText);
+        state.pendingTexts = state.pendingTexts.slice(
+          -RedisChatQueueStore.MAX_BUFFERED_MESSAGES,
+        );
         if (input.idempotencyKey) {
           state.lastPendingIdempotencyKey = input.idempotencyKey;
         }
       } else {
         state.texts.push(input.userText);
+        state.texts = state.texts.slice(
+          -RedisChatQueueStore.MAX_BUFFERED_MESSAGES,
+        );
         if (input.idempotencyKey) {
           state.lastIdempotencyKey = input.idempotencyKey;
         }

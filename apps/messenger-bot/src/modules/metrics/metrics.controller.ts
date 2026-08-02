@@ -1,8 +1,10 @@
-import { Controller, Get, Header, Res } from '@nestjs/common';
+import { Controller, Get, Header, Res, UseGuards } from '@nestjs/common';
+import { InternalApiKeyGuard } from '@wispace/bot-common';
 import type { Response } from 'express';
 import { MetricsService } from './metrics.service';
 
 @Controller('metrics')
+@UseGuards(InternalApiKeyGuard)
 export class MetricsController {
   constructor(private readonly metrics: MetricsService) {}
 

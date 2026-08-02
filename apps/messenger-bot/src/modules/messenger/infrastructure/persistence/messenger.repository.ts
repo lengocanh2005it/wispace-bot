@@ -280,12 +280,14 @@ export class MessengerRepository
       WITH keepers AS (
         SELECT DISTINCT ON (platform, external_user_id) id
         FROM user_platform_mappings
-        WHERE status = 'ACTIVE' AND external_user_id IS NOT NULL
+        WHERE platform = 'messenger'
+          AND status = 'ACTIVE' AND external_user_id IS NOT NULL
         ORDER BY platform, external_user_id, id DESC
       )
       UPDATE user_platform_mappings
       SET status = 'INACTIVE', updated_at = now()
       WHERE status = 'ACTIVE'
+        AND platform = 'messenger'
         AND external_user_id IS NOT NULL
         AND id NOT IN (SELECT id FROM keepers)
       RETURNING id
@@ -298,12 +300,14 @@ export class MessengerRepository
       WITH keepers AS (
         SELECT DISTINCT ON (user_id) id
         FROM user_platform_mappings
-        WHERE status = 'ACTIVE' AND user_id IS NOT NULL
+        WHERE platform = 'messenger'
+          AND status = 'ACTIVE' AND user_id IS NOT NULL
         ORDER BY user_id, id DESC
       )
       UPDATE user_platform_mappings
       SET status = 'INACTIVE', updated_at = now()
       WHERE status = 'ACTIVE'
+        AND platform = 'messenger'
         AND user_id IS NOT NULL
         AND id NOT IN (SELECT id FROM keepers)
       RETURNING id

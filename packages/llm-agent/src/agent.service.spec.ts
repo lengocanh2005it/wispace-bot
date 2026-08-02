@@ -147,7 +147,14 @@ function buildService(
 
   const service = new LlmAgentService<StubToolContext>({}, ports);
 
-  return { service, usageRecorder, llmExecution, toolExecutor, ports };
+  return {
+    service,
+    usageRecorder,
+    safetyEvents,
+    llmExecution,
+    toolExecutor,
+    ports,
+  };
 }
 
 const BASE_INPUT: LlmAgentInput = {
@@ -274,6 +281,7 @@ describe('LlmAgentService', () => {
         'get_learning_progress_report',
         '{}',
         TOOL_CONTEXT,
+        expect.any(AbortSignal),
       );
       expect(result.text).toBe('Đây là kết quả của bạn.');
       expect(adapter.chatWithTools).toHaveBeenCalledTimes(2);
@@ -393,11 +401,13 @@ describe('LlmAgentService', () => {
         'get_user_goals',
         '{}',
         TOOL_CONTEXT,
+        expect.any(AbortSignal),
       );
       expect(execute).toHaveBeenCalledWith(
         'get_upcoming_study_sessions',
         '{}',
         TOOL_CONTEXT,
+        expect.any(AbortSignal),
       );
       expect(adapter.chatWithTools).toHaveBeenCalledTimes(2);
     });
@@ -447,6 +457,42 @@ describe('LlmAgentService', () => {
       };
       expect(parsed.ok).toBe(false);
       expect(parsed.error).toBe('API timeout');
+    });
+
+    it('does not treat a failed tool call as grounding for personal data', async () => {
+      const adapter = makeAdapter([
+        makeToolCallResponse('get_user_goals'),
+        makeTextResponse('Band của bạn là 6.5.'),
+      ]);
+      const execute = jest.fn().mockRejectedValue(new Error('API timeout'));
+
+      const { service, safetyEvents } = buildService({ adapter, execute });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(result.text).toMatch(/tra cứu dữ liệu/i);
+      expect(safetyEvents.recordGroundingWarning).toHaveBeenCalled();
+    });
+
+    it('aborts the provider request when the global timeout expires', async () => {
+      const adapter = makeAdapter([]);
+      const chatWithTools = jest.fn(() => new Promise<never>(() => undefined));
+      adapter.chatWithTools = chatWithTools;
+      const { service } = buildService({ adapter });
+      const timedService = new LlmAgentService<StubToolContext>(
+        { globalAgentTimeoutMs: 5 },
+        buildService({ adapter }).ports,
+      );
+
+      await expect(
+        timedService.reply(BASE_INPUT, TOOL_CONTEXT),
+      ).rejects.toThrow('Agent loop timed out');
+      const request = chatWithTools.mock.calls[0]?.[0] as {
+        signal?: AbortSignal;
+      };
+      expect(request.signal).toBeInstanceOf(AbortSignal);
+      expect(request.signal?.aborted).toBe(true);
+      void service;
     });
   });
 

@@ -29,6 +29,7 @@ interface QueueState<TContext> {
  * `@wispace/chat-history`'s Redis store.
  */
 export class DebounceChatQueue<TContext = Record<string, unknown>> {
+  private static readonly DEFAULT_MAX_PENDING_SIZE = 20;
   private readonly queues = new Map<string, QueueState<TContext>>();
   private readonly cleanupTimer: ReturnType<typeof setInterval>;
   private readonly maxPendingSize: number;
@@ -39,7 +40,10 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
     private readonly onFlush: ChatQueueFlushHandler<TContext>,
     callbacks: DebounceChatQueueCallbacks<TContext> = {},
   ) {
-    this.maxPendingSize = config.maxPendingSize ?? 0;
+    this.maxPendingSize =
+      Number.isFinite(config.maxPendingSize) && (config.maxPendingSize ?? 0) > 0
+        ? Math.floor(config.maxPendingSize as number)
+        : DebounceChatQueue.DEFAULT_MAX_PENDING_SIZE;
     this.callbacks = callbacks;
     this.cleanupTimer = setInterval(
       () => this.evictStale(),
@@ -97,6 +101,11 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
     }
 
     state.texts.push(text);
+    if (state.texts.length > this.maxPendingSize) {
+      const excess = state.texts.length - this.maxPendingSize;
+      state.texts.splice(0, excess);
+      this.callbacks.onPendingDropped?.(input.externalUserId, excess);
+    }
     if (input.idempotencyKey) {
       state.lastIdempotencyKey = input.idempotencyKey;
     }

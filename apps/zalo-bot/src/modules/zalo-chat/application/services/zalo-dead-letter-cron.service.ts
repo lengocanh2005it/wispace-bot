@@ -46,8 +46,12 @@ export class ZaloDeadLetterCronService {
         const payload = entry.rawPayload as {
           zaloUserId?: string;
           text?: string;
+          sender?: { id?: string };
+          message?: { text?: string };
         };
-        if (!payload.zaloUserId || !payload.text) {
+        const zaloUserId = payload.zaloUserId ?? payload.sender?.id;
+        const text = payload.text ?? payload.message?.text;
+        if (!zaloUserId || !text) {
           await this.deadLetterService.markAbandoned(
             entry.id,
             'Missing zaloUserId or text in payload',
@@ -55,7 +59,7 @@ export class ZaloDeadLetterCronService {
           continue;
         }
 
-        await this.outboundService.sendText(payload.zaloUserId, payload.text);
+        await this.outboundService.sendText(zaloUserId, text);
         await this.deadLetterService.markReplayed(entry.id);
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);

@@ -59,6 +59,20 @@ describe('DebounceChatQueue', () => {
     queue.destroy();
   });
 
+  it('caps messages accumulated during the debounce window', async () => {
+    const onFlush =
+      makeFlushMock<Record<string, unknown>>().mockResolvedValue(undefined);
+    const queue = makeQueue(onFlush, 20, { maxPendingSize: 2 });
+
+    queue.enqueue({ externalUserId: 'u1', text: 'first' });
+    queue.enqueue({ externalUserId: 'u1', text: 'second' });
+    queue.enqueue({ externalUserId: 'u1', text: 'third' });
+    await wait(40);
+
+    expect(onFlush.mock.calls[0][0].texts).toEqual(['second', 'third']);
+    queue.destroy();
+  });
+
   it('ignores blank text', async () => {
     const onFlush =
       makeFlushMock<Record<string, unknown>>().mockResolvedValue(undefined);

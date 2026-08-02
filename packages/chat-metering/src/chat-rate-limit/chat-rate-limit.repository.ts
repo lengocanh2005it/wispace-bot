@@ -17,6 +17,13 @@ class DailyLimitExceededError extends Error {
   }
 }
 
+class BurstLimitExceededError extends Error {
+  constructor(readonly count: number) {
+    super('Burst limit exceeded during reserve transaction');
+    this.name = 'BurstLimitExceededError';
+  }
+}
+
 /**
  * Optional hooks so a caller (e.g. messenger-bot's quota-event audit trail)
  * can persist extra telemetry inside the SAME DB transaction as the
@@ -89,7 +96,7 @@ export class ChatRateLimitRepository {
           status
         )
         VALUES ($1, $2, $3, $4, $5::date, 'reserved')
-        ON CONFLICT (idempotency_key) DO NOTHING
+        ON CONFLICT (platform, idempotency_key) DO NOTHING
         RETURNING
           idempotency_key,
           external_user_id,
@@ -120,9 +127,33 @@ export class ChatRateLimitRepository {
   ): Promise<ReserveFreeFormSlotOutcome> {
     try {
       return await this.dailyUsageRepo.manager.transaction(async (manager) => {
+        if (input.burstLimit !== undefined && input.burstSince) {
+          await manager.query(
+            'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+            [`${this.platform}:${input.externalUserId}`],
+          );
+        }
+
         const idempotency = await this.tryReserveIdempotency(input, manager);
         if (!idempotency) {
           return { status: 'idempotency_conflict' };
+        }
+
+        if (input.burstLimit !== undefined && input.burstSince) {
+          const burstRows: Array<{ count: string }> = await manager.query(
+            `
+              SELECT COUNT(*)::text AS count
+              FROM chat_idempotency
+              WHERE platform = $1 AND external_user_id = $2
+                AND reserved_at > $3
+                AND status IN ('reserved', 'completed')
+            `,
+            [this.platform, input.externalUserId, input.burstSince],
+          );
+          const count = Number(burstRows[0]?.count ?? 0);
+          if (count > input.burstLimit) {
+            throw new BurstLimitExceededError(count);
+          }
         }
 
         const rows: Array<{ free_form_count: number }> = await manager.query(
@@ -170,6 +201,10 @@ export class ChatRateLimitRepository {
         return { status: 'daily_limit_exceeded' };
       }
 
+      if (error instanceof BurstLimitExceededError) {
+        return { status: 'burst_limit_exceeded', count: error.count };
+      }
+
       throw error;
     }
   }
@@ -189,10 +224,10 @@ export class ChatRateLimitRepository {
           `
             UPDATE chat_idempotency
             SET status = 'refunded'
-            WHERE idempotency_key = $1 AND status = 'reserved'
+            WHERE platform = $1 AND idempotency_key = $2 AND status = 'reserved'
             RETURNING idempotency_key
           `,
-          [params.idempotencyKey],
+          [this.platform, params.idempotencyKey],
         );
 
       if (!refundedRows[0]) {
@@ -231,10 +266,10 @@ export class ChatRateLimitRepository {
         `
           UPDATE chat_idempotency
           SET status = 'completed'
-          WHERE idempotency_key = $1 AND status = 'reserved'
+          WHERE platform = $1 AND idempotency_key = $2 AND status = 'reserved'
           RETURNING idempotency_key
         `,
-        [idempotencyKey],
+        [this.platform, idempotencyKey],
       );
 
     return rows.length > 0;
@@ -312,10 +347,10 @@ export class ChatRateLimitRepository {
             status,
             reserved_at
           FROM chat_idempotency
-          WHERE idempotency_key = $1
+          WHERE platform = $1 AND idempotency_key = $2
           FOR UPDATE
         `,
-        [idempotencyKey],
+        [this.platform, idempotencyKey],
       );
 
       const row = rows[0];
@@ -338,10 +373,10 @@ export class ChatRateLimitRepository {
             `
               UPDATE chat_idempotency
               SET status = 'refunded'
-              WHERE idempotency_key = $1 AND status = 'reserved'
+              WHERE platform = $1 AND idempotency_key = $2 AND status = 'reserved'
               RETURNING idempotency_key
             `,
-            [idempotencyKey],
+            [this.platform, idempotencyKey],
           );
 
         if (!refundedRows[0]) {
@@ -374,9 +409,9 @@ export class ChatRateLimitRepository {
         await manager.query(
           `
             DELETE FROM chat_idempotency
-            WHERE idempotency_key = $1
+            WHERE platform = $1 AND idempotency_key = $2
           `,
-          [idempotencyKey],
+          [this.platform, idempotencyKey],
         );
 
         return 'reopened';
@@ -386,9 +421,9 @@ export class ChatRateLimitRepository {
         await manager.query(
           `
             DELETE FROM chat_idempotency
-            WHERE idempotency_key = $1
+            WHERE platform = $1 AND idempotency_key = $2
           `,
-          [idempotencyKey],
+          [this.platform, idempotencyKey],
         );
 
         return 'reopened';

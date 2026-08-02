@@ -47,12 +47,16 @@ export interface ReserveFreeFormSlotInput {
   usageDate: string;
   idempotencyKey: string;
   dailyLimit: number;
+  /** Optional DB-authoritative burst check for Postgres-backed counters. */
+  burstLimit?: number;
+  burstSince?: Date;
 }
 
 export type ReserveFreeFormSlotOutcome =
   | { status: 'reserved'; freeFormCount: number }
   | { status: 'idempotency_conflict' }
-  | { status: 'daily_limit_exceeded' };
+  | { status: 'daily_limit_exceeded' }
+  | { status: 'burst_limit_exceeded'; count: number };
 
 /** Outcome when reclaiming an idempotency key stuck in `reserved` past TTL. */
 export type RecoverIdempotencyOutcome =

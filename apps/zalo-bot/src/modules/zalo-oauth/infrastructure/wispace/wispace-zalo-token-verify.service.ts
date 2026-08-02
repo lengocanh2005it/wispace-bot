@@ -15,6 +15,7 @@ const VERIFY_FAILURE_REASONS = [
   'USED',
   'INVALID_FORMAT',
 ] as const;
+const VERIFY_TIMEOUT_MS = 10_000;
 
 /**
  * Calls WISPACE's shared account-link verify API — same
@@ -44,6 +45,7 @@ export class WispaceZaloTokenVerifyService implements ZaloTokenVerifyPort {
         value: zaloUserId.trim(),
         platform: 'zalo',
       }),
+      signal: AbortSignal.timeout(VERIFY_TIMEOUT_MS),
     });
 
     const text = await response.text();

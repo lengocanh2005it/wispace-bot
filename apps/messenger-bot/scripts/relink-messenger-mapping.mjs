@@ -56,7 +56,9 @@ const pool = new pg.Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   ssl:
-    process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+    process.env.DB_SSL === 'true'
+      ? { rejectUnauthorized: true, ca: process.env.DB_SSL_CA || undefined }
+      : undefined,
 });
 
 try {

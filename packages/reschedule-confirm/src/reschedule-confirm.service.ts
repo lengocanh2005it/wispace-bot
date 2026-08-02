@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import type { RescheduleSchedulingMode } from '@wispace/wispace-client';
 
 export const PENDING_RESCHEDULE_TTL_MS = 10 * 60 * 1000;
+const MAX_PENDING_RESCHEDULES = 10_000;
 
 export interface CalendarEntryView {
   calendarId: number;
@@ -97,6 +98,7 @@ export class RescheduleConfirmationService<TExternalId> {
   async stage(
     input: StageInput<TExternalId>,
   ): Promise<StageResult | { error: string }> {
+    this.prunePending();
     const upcoming = await this.calendarPort.listUpcomingEntries(
       input.externalId,
       input.userId,
@@ -116,7 +118,18 @@ export class RescheduleConfirmationService<TExternalId> {
     const sessionLabel = matchedEntry.scheduledTimeLabel;
     const summary = this.buildSummary(input, sessionLabel);
 
-    this.pendingByExternalId.set(String(input.externalId), {
+    const key = String(input.externalId);
+    if (
+      !this.pendingByExternalId.has(key) &&
+      this.pendingByExternalId.size >= MAX_PENDING_RESCHEDULES
+    ) {
+      const oldestKey = Array.from(this.pendingByExternalId.keys())[0];
+      if (oldestKey !== undefined) {
+        this.pendingByExternalId.delete(oldestKey);
+      }
+    }
+
+    this.pendingByExternalId.set(key, {
       externalId: input.externalId,
       userId: input.userId,
       calendarId: matchedEntry.calendarId,
@@ -217,6 +230,15 @@ export class RescheduleConfirmationService<TExternalId> {
 
     this.pendingByExternalId.delete(String(externalId));
     return pending;
+  }
+
+  private prunePending(): void {
+    const now = Date.now();
+    for (const [key, pending] of this.pendingByExternalId) {
+      if (pending.expiresAt <= now) {
+        this.pendingByExternalId.delete(key);
+      }
+    }
   }
 
   private buildSummary(

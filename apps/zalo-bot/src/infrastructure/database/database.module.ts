@@ -16,6 +16,7 @@ import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
 import {
   ScheduledReportClaimEntity,
   WebhookDeadLetterEntity,
+  getPostgresSsl,
 } from '@wispace/database';
 
 /**
@@ -32,10 +33,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
     username: config.getOrThrow<string>('DB_USER'),
     password: config.getOrThrow<string>('DB_PASSWORD'),
     database: config.getOrThrow<string>('DB_NAME'),
-    ssl:
-      config.get<string>('DB_SSL') === 'true'
-        ? { rejectUnauthorized: false }
-        : false,
+    ssl: getPostgresSsl(config),
     entities: [
       ZaloOaTokenEntity,
       ZaloOauthStateEntity,

@@ -104,6 +104,7 @@ export interface LlmToolChatRequest {
   toolChoice?: 'auto' | 'none' | 'required';
   temperature?: number;
   maxOutputTokens?: number;
+  signal?: AbortSignal;
 }
 
 export interface LlmToolChatResponse {

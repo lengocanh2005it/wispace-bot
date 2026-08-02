@@ -98,7 +98,9 @@ async function main() {
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
     ssl:
-      process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+      process.env.DB_SSL === 'true'
+        ? { rejectUnauthorized: true, ca: process.env.DB_SSL_CA || undefined }
+        : false,
   });
 
   await client.connect();

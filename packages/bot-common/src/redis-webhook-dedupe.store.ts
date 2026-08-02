@@ -65,7 +65,8 @@ export class RedisWebhookDedupeStore {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return false;
+      // Fail closed: reprocessing is safer than accepting an unbounded burst.
+      return true;
     }
   }
 }

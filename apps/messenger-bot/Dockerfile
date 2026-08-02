@@ -5,7 +5,7 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+COPY package.json package-lock.json ./
 COPY apps/messenger-bot/package.json apps/messenger-bot/package.json
 COPY packages/llm-agent/package.json packages/llm-agent/package.json
 COPY packages/chat-metering/package.json packages/chat-metering/package.json
@@ -21,7 +21,7 @@ COPY packages/cleanup-cron/package.json packages/cleanup-cron/package.json
 COPY packages/reschedule-confirm/package.json packages/reschedule-confirm/package.json
 COPY packages/intent-detector/package.json packages/intent-detector/package.json
 COPY packages/database/package.json packages/database/package.json
-RUN rm -f package-lock.json && npm install --force --ignore-scripts
+RUN npm ci --ignore-scripts
 
 COPY . .
 RUN npx turbo run build

@@ -82,7 +82,10 @@ function createPool() {
     database: process.env.DB_NAME,
     user: process.env.DB_USER ?? process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
+    ssl:
+      process.env.DB_SSL === 'true'
+        ? { rejectUnauthorized: true, ca: process.env.DB_SSL_CA || undefined }
+        : false,
   });
 }
 

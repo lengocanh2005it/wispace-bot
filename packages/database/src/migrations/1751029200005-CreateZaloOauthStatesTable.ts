@@ -14,6 +14,7 @@ export class CreateZaloOauthStatesTable1751029200005 implements MigrationInterfa
       CREATE TABLE IF NOT EXISTS "zalo_oauth_states" (
         "state"         character varying(64) PRIMARY KEY,
         "code_verifier" character varying(128) NOT NULL,
+        "link_token"    character varying(512) NOT NULL,
         "created_at"    TIMESTAMPTZ NOT NULL DEFAULT now()
       )
     `);

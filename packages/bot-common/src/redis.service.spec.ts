@@ -1,0 +1,31 @@
+import IORedis from 'ioredis';
+import { RedisService } from './redis.service';
+
+jest.mock('ioredis', () => ({
+  __esModule: true,
+  default: jest.fn().mockImplementation(() => ({
+    ping: jest.fn().mockResolvedValue('PONG'),
+    quit: jest.fn().mockResolvedValue('OK'),
+  })),
+}));
+
+describe('RedisService', () => {
+  it('passes certificate validation options to Redis TLS connections', async () => {
+    const service = new RedisService({
+      get: (key: string) =>
+        ({
+          REDIS_ENABLED: 'true',
+          REDIS_TLS: 'true',
+          REDIS_CA: 'trusted-ca',
+        })[key],
+    } as never);
+
+    await service.onModuleInit();
+
+    expect(IORedis).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tls: { rejectUnauthorized: true, ca: 'trusted-ca' },
+      }),
+    );
+  });
+});

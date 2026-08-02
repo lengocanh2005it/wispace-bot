@@ -42,17 +42,23 @@ describe('ZaloOauthController', () => {
     const res = buildRes();
     await controller.authorize('wispace-link-token', res);
 
-    expect(create).toHaveBeenCalledWith('verifier-1');
+    expect(create).toHaveBeenCalledWith('verifier-1', 'wispace-link-token');
     expect(res.redirect).toHaveBeenCalledWith(
       expect.stringContaining('code_challenge=challenge-1'),
     );
     expect(res.redirect).toHaveBeenCalledWith(
       expect.stringContaining('state=state-1'),
     );
+    expect(res.redirect).not.toHaveBeenCalledWith(
+      expect.stringContaining('wispace-link-token'),
+    );
   });
 
   it('GET /callback links the account and sends a welcome message on success', async () => {
-    const consume = jest.fn().mockResolvedValue('verifier-1');
+    const consume = jest.fn().mockResolvedValue({
+      codeVerifier: 'verifier-1',
+      linkToken: 'stored-link-token',
+    });
     const exchangeCodeForZaloUser = jest
       .fn()
       .mockResolvedValue({ id: 'zalo-user-1', name: 'A' });
@@ -76,12 +82,7 @@ describe('ZaloOauthController', () => {
     );
 
     const res = buildRes();
-    await controller.callback(
-      'auth-code',
-      'wispace-link-token',
-      'state-1',
-      res,
-    );
+    await controller.callback('auth-code', 'state-1', res);
 
     expect(consume).toHaveBeenCalledWith('state-1');
     expect(exchangeCodeForZaloUser).toHaveBeenCalledWith(
@@ -89,7 +90,7 @@ describe('ZaloOauthController', () => {
       'verifier-1',
     );
     expect(verifyToken).toHaveBeenCalledWith(
-      'wispace-link-token',
+      'stored-link-token',
       'zalo-user-1',
     );
     expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1');
@@ -117,12 +118,7 @@ describe('ZaloOauthController', () => {
     );
 
     const res = buildRes();
-    await controller.callback(
-      'auth-code',
-      'wispace-link-token',
-      'state-1',
-      res,
-    );
+    await controller.callback('auth-code', 'state-1', res);
 
     const jsonMock = res.json;
     const lastCall = jsonMock.mock.calls[jsonMock.mock.calls.length - 1] as

@@ -28,7 +28,8 @@ export interface ReserveFreeFormSlotInput {
 export type ReserveFreeFormSlotOutcome =
   | { status: 'reserved'; freeFormCount: number }
   | { status: 'idempotency_conflict' }
-  | { status: 'daily_limit_exceeded' };
+  | { status: 'daily_limit_exceeded' }
+  | { status: 'burst_limit_exceeded'; count: number };
 
 /** Outcome when reclaiming an idempotency key for Meta retry / crash recovery (H2). */
 export type RecoverIdempotencyOutcome =

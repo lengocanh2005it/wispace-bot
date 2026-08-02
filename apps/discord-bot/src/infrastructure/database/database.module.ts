@@ -13,6 +13,7 @@ import {
   WebhookDeadLetterEntity,
   ScheduledReportClaimEntity,
   ReportSendJobEntity,
+  getPostgresSsl,
 } from '@wispace/database';
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
 import { DiscordMessageLogEntity } from './entities/discord-message-log.entity';
@@ -32,10 +33,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
     username: config.get<string>('DB_USER'),
     password: config.get<string>('DB_PASSWORD'),
     database: config.get<string>('DB_NAME'),
-    ssl:
-      config.get<string>('DB_SSL') === 'true'
-        ? { rejectUnauthorized: false }
-        : false,
+    ssl: getPostgresSsl(config),
     entities: [
       ChatDailyUsageEntity,
       ChatIdempotencyEntity,

@@ -1,5 +1,6 @@
 import type { ChatRateLimitRepository } from './chat-rate-limit.repository';
 import { todayUsageDate } from './chat-usage-date.utils';
+import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
 import type {
   BurstCounterPort,
   ChatQuotaCheckResult,
@@ -85,6 +86,8 @@ export class ChatRateLimitCore {
       idempotencyKey: params.idempotencyKey,
       dailyLimit: freeFormDailyLimit,
       freeFormDailyLimit,
+      burstLimit: burstPerMinute,
+      burstSince: new Date(Date.now() - CHAT_BURST_WINDOW_MS),
     });
   }
 
@@ -144,6 +147,8 @@ export class ChatRateLimitCore {
       idempotencyKey: string;
       dailyLimit: number;
       freeFormDailyLimit: number;
+      burstLimit: number;
+      burstSince: Date;
     },
   ): Promise<ChatQuotaCheckResult> {
     const outcome = await this.reserveSlotOrRecoverOnConflict(externalUserId, {
@@ -151,7 +156,29 @@ export class ChatRateLimitCore {
       usageDate: params.usageDate,
       idempotencyKey: params.idempotencyKey,
       dailyLimit: params.dailyLimit,
+      burstLimit: params.burstLimit,
+      burstSince: params.burstSince,
     });
+
+    if (outcome.status === 'burst_limit_exceeded') {
+      await this.burstCounter.releaseReservation(externalUserId);
+      this.logQuotaDeny(
+        'BURST_LIMIT',
+        externalUserId,
+        params.idempotencyKey,
+        outcome.count,
+        params.burstLimit,
+      );
+      return {
+        allowed: false,
+        used: outcome.count,
+        limit: params.burstLimit,
+        remaining: 0,
+        reason: 'BURST_LIMIT',
+        usageDate: params.usageDate,
+        quotaReserved: false,
+      };
+    }
 
     if (outcome.status === 'daily_limit_exceeded') {
       await this.burstCounter.releaseReservation(externalUserId);
@@ -204,6 +231,8 @@ export class ChatRateLimitCore {
       usageDate: string;
       idempotencyKey: string;
       dailyLimit: number;
+      burstLimit: number;
+      burstSince: Date;
     },
   ) {
     let outcome = await this.repository.reserveFreeFormSlotInTransaction({
@@ -212,6 +241,8 @@ export class ChatRateLimitCore {
       usageDate: input.usageDate,
       idempotencyKey: input.idempotencyKey,
       dailyLimit: input.dailyLimit,
+      burstLimit: input.burstLimit,
+      burstSince: input.burstSince,
     });
 
     if (
@@ -240,6 +271,8 @@ export class ChatRateLimitCore {
         usageDate: input.usageDate,
         idempotencyKey: input.idempotencyKey,
         dailyLimit: input.dailyLimit,
+        burstLimit: input.burstLimit,
+        burstSince: input.burstSince,
       });
     } else {
       this.logIdempotencyConflict(

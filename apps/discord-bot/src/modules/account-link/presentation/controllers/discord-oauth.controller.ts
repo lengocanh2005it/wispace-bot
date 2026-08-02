@@ -8,6 +8,15 @@ import { buildDiscordLinkWelcomeMessage } from '../../application/messages/accou
 import { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
 import { DiscordPendingJoinService } from '../../application/services/discord-pending-join.service';
 
+const escapeHtml = (value: string): string =>
+  value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        character
+      ] ?? character,
+  );
+
 @Controller('discord/oauth')
 export class DiscordOauthController {
   private readonly logger = new Logger(DiscordOauthController.name);
@@ -188,7 +197,7 @@ export class DiscordOauthController {
         <title>Kết nối thành công</title></head>
         <body style="font-family:sans-serif;text-align:center;padding-top:3rem;">
           <h2>Kết nối thành công</h2>
-          <p>Tài khoản Discord <strong>${result.discordUsername}</strong> đã liên kết với WISPACE.</p>
+          <p>Tài khoản Discord <strong>${escapeHtml(result.discordUsername)}</strong> đã liên kết với WISPACE.</p>
         </body></html>
       `);
     } else if (result.type === 'pending') {

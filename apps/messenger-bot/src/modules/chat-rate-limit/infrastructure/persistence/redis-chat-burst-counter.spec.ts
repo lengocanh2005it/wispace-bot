@@ -72,7 +72,7 @@ describe('RedisChatBurstCounter', () => {
       expect(result).toEqual({ allowed: true, count: 0 });
     });
 
-    it('fails open on Redis error', async () => {
+    it('fails closed on Redis error', async () => {
       const client = {
         get: jest.fn(),
         incr: jest.fn(),
@@ -83,7 +83,7 @@ describe('RedisChatBurstCounter', () => {
       };
       const counter = createCounter(client);
       const result = await counter.tryReserveBurst('psid-1', 3);
-      expect(result).toEqual({ allowed: true, count: 0 });
+      expect(result).toEqual({ allowed: false, count: 3 });
     });
   });
 });

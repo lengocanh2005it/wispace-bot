@@ -55,6 +55,11 @@ export class RedisService
     }
 
     try {
+      const redisTlsEnabled = ['true', '1', 'yes'].includes(
+        this.configService.get<string>('REDIS_TLS')?.trim().toLowerCase() ?? '',
+      );
+      const redisCa = this.configService.get<string>('REDIS_CA')?.trim();
+
       this.client = new IORedis({
         host: this.getHost(),
         port: this.getPort(),
@@ -62,6 +67,14 @@ export class RedisService
         maxRetriesPerRequest: 3,
         retryStrategy: (times) => Math.min(times * 200, 3000),
         lazyConnect: true,
+        ...(redisTlsEnabled
+          ? {
+              tls: {
+                rejectUnauthorized: true,
+                ...(redisCa ? { ca: redisCa } : {}),
+              },
+            }
+          : {}),
       });
 
       const pong = await this.client.ping();

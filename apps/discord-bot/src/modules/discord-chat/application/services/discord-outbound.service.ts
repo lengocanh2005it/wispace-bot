@@ -45,7 +45,14 @@ export class DiscordOutboundService {
     text: string,
     options?: { skipDeadLetter?: boolean },
   ): Promise<void> {
-    await this.sendTextAndGetChannelId(discordUserId, text, options);
+    const channelId = await this.sendTextAndGetChannelId(
+      discordUserId,
+      text,
+      options,
+    );
+    if (!channelId) {
+      throw new Error(`Discord DM delivery failed for ${discordUserId}`);
+    }
   }
 
   /** Sends a typing indicator to the user's DM channel (fire-and-forget). */
