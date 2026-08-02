@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CleanupCronService } from '@wispace/cleanup-cron';
 import { OpsHealthService, OPS_HEALTH_REPOSITORY } from '@wispace/ops-health';
+import { CommonModule } from '../../shared/common/common.module';
 import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
 import { AccountLinkModule } from '../account-link/account-link.module';
 import { WispaceModule } from '../wispace/wispace.module';
@@ -28,6 +29,7 @@ import { DiscordReschedulePort } from './infrastructure/adapters/discord-resched
 
 @Module({
   imports: [
+    CommonModule,
     ChatMeteringModule,
     DiscordOutboundModule,
     DiscordSharedModule,

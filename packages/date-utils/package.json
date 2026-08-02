@@ -1,7 +1,7 @@
 {
-  "name": "@wispace/cleanup-cron",
+  "name": "@wispace/date-utils",
   "version": "0.0.1",
-  "description": "Platform-agnostic cleanup cron service for WISPACE bots",
+  "description": "Timezone-aware date helpers for WISPACE bots (pure, no deps)",
   "private": true,
   "license": "UNLICENSED",
   "main": "dist/index.js",
@@ -13,12 +13,6 @@
     "format:check": "prettier --check \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\"",
     "test": "jest --runInBand"
-  },
-  "dependencies": {
-    "@wispace/bot-common": "*",
-    "@nestjs/common": "^11.0.1",
-    "@nestjs/config": "^4.0.4",
-    "@nestjs/typeorm": "^11.0.1"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

@@ -1,5 +1,5 @@
 import { Controller, HttpCode, Logger, Post, UseGuards } from '@nestjs/common';
-import { InternalApiKeyGuard } from '../../shared/common/guards/internal-api-key.guard';
+import { InternalApiKeyGuard } from '@wispace/bot-common';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
 import { DiscordReportCronService } from '../discord-chat/application/services/discord-report-cron.service';
 

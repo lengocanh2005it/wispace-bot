@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { DataSource } from 'typeorm';
+import { PgAdvisoryLockService } from '@wispace/bot-common';
 import {
   StudyReminderScheduleService,
   StudyReminderSyncService,
@@ -15,6 +15,7 @@ import {
   DISPLAY_NAME_CACHE,
 } from '@wispace/study-reminder-shared';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
+import { CommonModule } from '../../shared/common/common.module';
 import { DiscordChatModule } from '../discord-chat/discord-chat.module';
 import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { WispaceModule } from '../wispace/wispace.module';
@@ -29,6 +30,7 @@ import { DiscordRedisUserDisplayNameCache } from './discord-redis-user-display-n
       StudyReminderJobEntity,
       DiscordAccountLinkEntity,
     ]),
+    CommonModule,
     DiscordChatModule,
     DiscordOutboundModule,
     WispaceModule,
@@ -64,10 +66,11 @@ import { DiscordRedisUserDisplayNameCache } from './discord-redis-user-display-n
           deps[2],
           deps[3],
           deps[4],
+          deps[5],
           'discord',
-          deps[5] && typeof deps[5] === 'object'
+          deps[6] && typeof deps[6] === 'object'
             ? (externalUserId: string) =>
-                (deps[5] as WispaceCalendarService)
+                (deps[6] as WispaceCalendarService)
                   .getCalendarSessions(externalUserId, {
                     timeRange: 'upcoming',
                   })
@@ -86,7 +89,8 @@ import { DiscordRedisUserDisplayNameCache } from './discord-redis-user-display-n
         StudyReminderDispatchService,
         StudyReminderScheduleService,
         { token: SchedulerRegistry, optional: false },
-        { token: DataSource, optional: false },
+        PgAdvisoryLockService,
+        { token: STUDY_REMINDER_JOB_REPOSITORY, optional: true },
         WispaceCalendarService,
       ],
     },

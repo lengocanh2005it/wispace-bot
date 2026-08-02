@@ -6,7 +6,7 @@ import {
   Post,
   UseGuards,
 } from '@nestjs/common';
-import { InternalApiKeyGuard } from '@messenger/shared/common/guards/internal-api-key.guard';
+import { InternalApiKeyGuard } from '@wispace/bot-common';
 import { StudyReminderSyncService } from '@messenger/modules/study-reminder/application/services/study-reminder-sync.service';
 import { StudyReminderWorkerService } from '@messenger/modules/study-reminder/application/services/study-reminder-worker.service';
 import { MessengerMappingService } from '@messenger/modules/messenger/application/services/messenger-mapping.service';

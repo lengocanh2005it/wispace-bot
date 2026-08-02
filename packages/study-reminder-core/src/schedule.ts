@@ -1,4 +1,5 @@
 /** Pure timezone-aware study reminder scheduling math — no I/O, no config reads. */
+import { getDatePartsInTimezone as getDatePartsFromUtils } from '@wispace/date-utils';
 
 export function computeRemindAt(
   scheduledAt: Date,
@@ -26,15 +27,7 @@ export function getDatePartsInTimezone(
   date: Date,
   timezone: string,
 ): { year: number; month: number; day: number } {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const [year, month, day] = formatter.format(date).split('-').map(Number);
-
-  return { year, month, day };
+  return getDatePartsFromUtils(date, timezone);
 }
 
 /** "Hôm nay lúc HH:mm" / "Ngày mai lúc HH:mm" / "dd/MM/yyyy lúc HH:mm" (vi-VN). */

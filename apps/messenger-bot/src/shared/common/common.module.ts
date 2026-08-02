@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { InternalApiKeyGuard } from './guards/internal-api-key.guard';
+import { InternalApiKeyGuard } from '@wispace/bot-common';
 import { MessengerWebhookSignatureGuard } from './guards/messenger-webhook-signature.guard';
-import { PgAdvisoryLockService } from './pg-advisory-lock.service';
+import { PgAdvisoryLockService } from '@wispace/bot-common';
 
 @Module({
   providers: [

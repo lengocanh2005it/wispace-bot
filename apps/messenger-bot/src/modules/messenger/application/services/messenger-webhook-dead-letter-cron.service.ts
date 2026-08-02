@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
-import { PgAdvisoryLockService } from '@messenger/shared/common/pg-advisory-lock.service';
+import { PgAdvisoryLockService } from '@wispace/bot-common';
 import { MESSENGER_WEBHOOK_DEAD_LETTER_REPOSITORY } from '../../domain/repositories/messenger-webhook-dead-letter.repository.port';
 import type { MessengerWebhookDeadLetterRepositoryPort } from '../../domain/repositories/messenger-webhook-dead-letter.repository.port';
 import { MessengerService } from './messenger.service';

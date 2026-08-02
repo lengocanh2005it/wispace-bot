@@ -1,6 +1,12 @@
 const LOCAL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]?\d|2[0-3]):([0-5]\d)$/;
 
+import {
+  getDatePartsInTimezone,
+  formatLocalDate as formatLocalDateInTimezone,
+  tomorrowInTimezone,
+} from '@wispace/date-utils';
+
 export type RescheduleSchedulingMode =
   | 'default_next_day_same_time'
   | 'explicit';
@@ -113,15 +119,7 @@ export function getLocalDateParts(
   date: Date,
   timezone: string,
 ): { year: number; month: number; day: number } {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const [year, month, day] = formatter.format(date).split('-').map(Number);
-
-  return { year, month, day };
+  return getDatePartsInTimezone(date, timezone);
 }
 
 export function formatLocalDate(parts: {
@@ -129,19 +127,14 @@ export function formatLocalDate(parts: {
   month: number;
   day: number;
 }): string {
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`;
+  return formatLocalDateInTimezone(parts);
 }
 
 export function getTomorrowLocalDate(
   timezone: string,
   now = new Date(),
 ): string {
-  const today = getLocalDateParts(now, timezone);
-  const probe = new Date(
-    Date.UTC(today.year, today.month - 1, today.day + 1, 12, 0, 0),
-  );
-  return formatLocalDate(getLocalDateParts(probe, timezone));
+  return tomorrowInTimezone(timezone, now);
 }
 
 export function getLocalDateFromEventDate(

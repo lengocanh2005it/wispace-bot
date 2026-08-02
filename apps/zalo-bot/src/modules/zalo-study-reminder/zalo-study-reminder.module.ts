@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
+import { PgAdvisoryLockService } from '@wispace/bot-common';
 import {
   StudyReminderScheduleService,
   StudyReminderSyncService,
@@ -17,6 +17,7 @@ import {
 import { OpsHealthService, OPS_HEALTH_REPOSITORY } from '@wispace/ops-health';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
+import { CommonModule } from '../../shared/common/common.module';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloMessageSenderService } from '../zalo-chat/application/services/zalo-message-sender.service';
 import { ZaloRedisUserDisplayNameCache } from './zalo-redis-user-display-name.cache';
@@ -32,6 +33,7 @@ import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo
       ZaloAccountLinkEntity,
       ZaloOauthStateEntity,
     ]),
+    CommonModule,
     ZaloChatModule,
     ZaloWispaceModule,
   ],
@@ -67,10 +69,11 @@ import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo
           deps[2],
           deps[3],
           deps[4],
+          deps[5],
           'zalo',
-          deps[5]
+          deps[6]
             ? (externalUserId: string) =>
-                (deps[5] as ZaloWispaceCalendarService)
+                (deps[6] as ZaloWispaceCalendarService)
                   .getCalendarSessions(externalUserId, {
                     timeRange: 'upcoming',
                   })
@@ -89,7 +92,8 @@ import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo
         StudyReminderDispatchService,
         StudyReminderScheduleService,
         { token: SchedulerRegistry, optional: false },
-        { token: DataSource, optional: false },
+        PgAdvisoryLockService,
+        { token: STUDY_REMINDER_JOB_REPOSITORY, optional: true },
         ZaloWispaceCalendarService,
       ],
     },

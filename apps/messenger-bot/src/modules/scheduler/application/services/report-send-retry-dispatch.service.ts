@@ -13,7 +13,7 @@ import {
   type MessengerRepositoryPort,
 } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
-import { PgAdvisoryLockService } from '@messenger/shared/common/pg-advisory-lock.service';
+import { PgAdvisoryLockService } from '@wispace/bot-common';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 
 @Injectable()

@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
-import { InternalApiKeyGuard } from './guards/internal-api-key.guard';
+import {
+  InternalApiKeyGuard,
+  PgAdvisoryLockService,
+} from '@wispace/bot-common';
 
 @Module({
-  providers: [InternalApiKeyGuard],
-  exports: [InternalApiKeyGuard],
+  providers: [InternalApiKeyGuard, PgAdvisoryLockService],
+  exports: [InternalApiKeyGuard, PgAdvisoryLockService],
 })
 export class CommonModule {}

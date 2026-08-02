@@ -8,6 +8,7 @@ import type {
 } from '../types';
 import type { LlmProviderAdapter } from '../llm-provider.adapter';
 import { LlmAllProvidersExhaustedError } from './failover.errors';
+import { sleep } from '../../utils/retry.utils';
 
 interface CircuitState {
   healthyAgainAt: number;
@@ -16,10 +17,6 @@ interface CircuitState {
 const COOLDOWN_LONG_MS = 600_000;
 const COOLDOWN_SHORT_MS = 5_000;
 const QUICK_RETRY_DELAY_MS = 150;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export interface FailoverCircuitEvent {
   provider: string;

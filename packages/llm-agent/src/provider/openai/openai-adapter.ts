@@ -11,6 +11,10 @@ import type {
 } from '../types';
 import type { LlmProviderAdapter } from '../llm-provider.adapter';
 import {
+  isOpenAiRateLimitError,
+  isOpenAiServerError,
+} from '../../utils/openai-error.utils';
+import {
   toOpenAiTools,
   toOpenAiMessages,
   fromOpenAiToolCalls,
@@ -230,17 +234,7 @@ export class OpenAiAdapter implements LlmProviderAdapter {
   }
 
   isRateLimitError(error: unknown): boolean {
-    if (this.isPlatformApiError(error)) return false;
-    if (typeof error !== 'object' || error === null) return false;
-    const e = error as Record<string, unknown>;
-    if (e['name'] === 'RateLimitError') return true;
-    if (
-      e['status'] === 429 &&
-      typeof e['message'] === 'string' &&
-      /openai|rate.?limit/i.test(e['message'])
-    )
-      return true;
-    return false;
+    return isOpenAiRateLimitError(error);
   }
 
   normalizeError(error: unknown): LlmProviderError {
@@ -312,16 +306,7 @@ export class OpenAiAdapter implements LlmProviderAdapter {
   }
 
   private isServerError(error: unknown): boolean {
-    if (this.isPlatformApiError(error)) return false;
-    if (typeof error !== 'object' || error === null) return false;
-    const e = error as Record<string, unknown>;
-    if (
-      e['name'] === 'InternalServerError' ||
-      e['name'] === 'APIConnectionError'
-    )
-      return true;
-    const status = e['status'];
-    return typeof status === 'number' && status >= 500 && status < 600;
+    return isOpenAiServerError(error);
   }
 
   private isAuthError(error: unknown): boolean {

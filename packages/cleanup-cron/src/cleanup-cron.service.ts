@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { PgAdvisoryLockService } from '@wispace/bot-common';
 
 export interface CleanupCronConfig {
   /** Name for logging (e.g., 'llm-usage-cleanup') */
@@ -32,7 +33,10 @@ export interface CleanupResult {
 export class CleanupCronService {
   private readonly logger = new Logger(CleanupCronService.name);
 
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly pgLock: PgAdvisoryLockService,
+  ) {}
 
   /**
    * Execute cleanup with advisory lock protection.
@@ -54,37 +58,14 @@ export class CleanupCronService {
     const retentionDays = getRetentionDays();
     const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
-    const runner = this.dataSource.createQueryRunner();
-    await runner.connect();
-
-    try {
-      const rows = (await runner.query(
-        'SELECT pg_try_advisory_lock($1::bigint) AS acquired',
-        [config.advisoryLockId],
-      )) as Array<{ acquired: boolean }>;
-
-      if (!rows[0]?.acquired) {
-        this.logger.debug(
-          `${config.name}: advisory lock not acquired — another pod holds it`,
+    return this.pgLock.withLock(config.advisoryLockId, async () => {
+      const deleted = await deleteFn(cutoff);
+      if (deleted > 0) {
+        this.logger.log(
+          `${config.name}: deleted ${deleted} row(s) older than ${retentionDays} day(s) (before ${cutoff.toISOString()})`,
         );
-        return null;
       }
-
-      try {
-        const deleted = await deleteFn(cutoff);
-        if (deleted > 0) {
-          this.logger.log(
-            `${config.name}: deleted ${deleted} row(s) older than ${retentionDays} day(s) (before ${cutoff.toISOString()})`,
-          );
-        }
-        return { deleted, cutoff };
-      } finally {
-        await runner.query('SELECT pg_advisory_unlock($1::bigint)', [
-          config.advisoryLockId,
-        ]);
-      }
-    } finally {
-      await runner.release();
-    }
+      return { deleted, cutoff };
+    });
   }
 }

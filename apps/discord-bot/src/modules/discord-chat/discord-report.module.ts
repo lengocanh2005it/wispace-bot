@@ -23,6 +23,7 @@ import { DiscordReportOrchestrationService } from './application/services/discor
 import { DiscordGoalsDataAdapter } from './infrastructure/adapters/discord-goals-data.adapter';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
+import { CommonModule } from '../../shared/common/common.module';
 import { AccountLinkModule } from '../account-link/account-link.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
@@ -38,6 +39,7 @@ import { DISCORD_REPORT_PORT } from './domain/ports/discord-report.port';
     ]),
     DiscordOutboundModule,
     DiscordSharedModule,
+    CommonModule,
     AccountLinkModule,
     WispaceModule,
     ChatMeteringModule,

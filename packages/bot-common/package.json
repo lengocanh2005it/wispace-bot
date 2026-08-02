@@ -1,7 +1,7 @@
 {
-  "name": "@wispace/cleanup-cron",
+  "name": "@wispace/bot-common",
   "version": "0.0.1",
-  "description": "Platform-agnostic cleanup cron service for WISPACE bots",
+  "description": "Shared NestJS infrastructure for WISPACE bots: ops API guard, advisory locks",
   "private": true,
   "license": "UNLICENSED",
   "main": "dist/index.js",
@@ -15,13 +15,14 @@
     "test": "jest --runInBand"
   },
   "dependencies": {
-    "@wispace/bot-common": "*",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
-    "@nestjs/typeorm": "^11.0.1"
+    "@nestjs/typeorm": "^11.0.1",
+    "typeorm": "^1.0.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
+    "@types/node": "^22.10.0",
     "jest": "^30.0.0",
     "ts-jest": "^29.2.5",
     "typescript": "^5.7.3",

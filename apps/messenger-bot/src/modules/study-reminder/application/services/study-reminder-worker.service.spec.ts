@@ -1,6 +1,6 @@
 import type { ConfigService } from '@nestjs/config';
 import type { SchedulerRegistry } from '@nestjs/schedule';
-import type { PgAdvisoryLockService } from '@messenger/shared/common/pg-advisory-lock.service';
+import type { PgAdvisoryLockService } from '@wispace/bot-common';
 import type { StudyReminderSyncService } from './study-reminder-sync.service';
 import type { StudyReminderDispatchService } from './study-reminder-dispatch.service';
 import type { StudyReminderJobRepositoryPort } from '../../domain/repositories/study-reminder-job.repository.port';

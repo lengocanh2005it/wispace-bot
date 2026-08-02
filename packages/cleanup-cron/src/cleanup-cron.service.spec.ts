@@ -1,4 +1,5 @@
 import { CleanupCronService } from './cleanup-cron.service';
+import { PgAdvisoryLockService } from '@wispace/bot-common';
 
 function mockDataSource(acquired = true) {
   const queries: string[] = [];
@@ -23,6 +24,15 @@ function mockDataSource(acquired = true) {
   };
 }
 
+function buildService(acquired = true): {
+  service: CleanupCronService;
+  queries: string[];
+} {
+  const { dataSource, queries } = mockDataSource(acquired);
+  const pgLock = new PgAdvisoryLockService(dataSource);
+  return { service: new CleanupCronService(dataSource, pgLock), queries };
+}
+
 describe('CleanupCronService', () => {
   const config = {
     name: 'test-cleanup',
@@ -34,8 +44,7 @@ describe('CleanupCronService', () => {
   };
 
   it('returns null when disabled', async () => {
-    const { dataSource } = mockDataSource();
-    const service = new CleanupCronService(dataSource);
+    const { service } = buildService();
     const deleteFn = jest.fn().mockResolvedValue(0);
 
     const result = await service.execute(
@@ -50,8 +59,7 @@ describe('CleanupCronService', () => {
   });
 
   it('acquires advisory lock and runs deleteFn', async () => {
-    const { dataSource } = mockDataSource(true);
-    const service = new CleanupCronService(dataSource);
+    const { service } = buildService(true);
     const deleteFn = jest.fn().mockResolvedValue(42);
 
     const result = await service.execute(
@@ -68,8 +76,7 @@ describe('CleanupCronService', () => {
   });
 
   it('returns null when advisory lock not acquired', async () => {
-    const { dataSource } = mockDataSource(false);
-    const service = new CleanupCronService(dataSource);
+    const { service } = buildService(false);
     const deleteFn = jest.fn().mockResolvedValue(0);
 
     const result = await service.execute(
@@ -84,8 +91,7 @@ describe('CleanupCronService', () => {
   });
 
   it('computes cutoff from retention days', async () => {
-    const { dataSource } = mockDataSource(true);
-    const service = new CleanupCronService(dataSource);
+    const { service } = buildService(true);
     const deleteFn = jest.fn().mockResolvedValue(0);
 
     await service.execute(
@@ -105,8 +111,7 @@ describe('CleanupCronService', () => {
   });
 
   it('unlocks advisory lock even on deleteFn error', async () => {
-    const { dataSource, queries } = mockDataSource(true);
-    const service = new CleanupCronService(dataSource);
+    const { service, queries } = buildService(true);
     const deleteFn = jest.fn().mockRejectedValue(new Error('DB error'));
 
     await expect(

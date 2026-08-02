@@ -15,6 +15,7 @@
     "test": "jest --runInBand"
   },
   "dependencies": {
+    "@wispace/date-utils": "*",
     "typeorm": "^1.0.0"
   },
   "devDependencies": {
