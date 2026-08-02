@@ -21,7 +21,7 @@ COPY packages/cleanup-cron/package.json packages/cleanup-cron/package.json
 COPY packages/reschedule-confirm/package.json packages/reschedule-confirm/package.json
 COPY packages/intent-detector/package.json packages/intent-detector/package.json
 COPY packages/database/package.json packages/database/package.json
-RUN npm ci --ignore-scripts
+RUN HUSKY=0 npm ci
 
 COPY . .
 RUN npx turbo run build

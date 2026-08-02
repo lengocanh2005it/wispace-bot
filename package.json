@@ -28,7 +28,8 @@
     "turbo": "^2.3.0"
   },
   "optionalDependencies": {
-    "@swc/core-linux-x64-gnu": "1.15.46"
+    "@swc/core-linux-x64-gnu": "1.15.46",
+    "@swc/core-linux-x64-musl": "1.15.46"
   },
   "lint-staged": {
     "*.ts": [
