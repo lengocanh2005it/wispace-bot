@@ -11,6 +11,10 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+  packages: write
+
 concurrency:
   group: production-deploy-discord-bot
   cancel-in-progress: true
