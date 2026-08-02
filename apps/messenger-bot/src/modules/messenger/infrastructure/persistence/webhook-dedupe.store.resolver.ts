@@ -1,14 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type { WebhookDedupeStorePort } from '../../domain/repositories/webhook-dedupe.store.port';
 import { MessengerChatSharedConfigService } from '../../application/services/messenger-chat-shared-config.service';
 import { MemoryWebhookDedupeStore } from './memory-webhook-dedupe.store';
-import type { RedisWebhookDedupeStore } from '@wispace/bot-common';
+import { RedisWebhookDedupeStore } from '@wispace/bot-common';
 
 @Injectable()
 export class WebhookDedupeStoreResolver implements WebhookDedupeStorePort {
   constructor(
     private readonly sharedConfig: MessengerChatSharedConfigService,
     private readonly memoryStore: MemoryWebhookDedupeStore,
+    @Inject(RedisWebhookDedupeStore)
     private readonly redisStore: RedisWebhookDedupeStore,
   ) {}
 
