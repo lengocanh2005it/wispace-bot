@@ -110,7 +110,6 @@ import {
         WispaceCalendarService,
       ],
     },
-    RedisUserDisplayNameCache,
     DiscordStudyReminderMessageSenderService,
     DiscordMappingReaderAdapter,
     TypeormStudyReminderJobRepository,

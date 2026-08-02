@@ -114,7 +114,6 @@ import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo
       ],
     },
     ZaloMessageSenderService,
-    RedisUserDisplayNameCache,
     ZaloMappingReaderAdapter,
     TypeormStudyReminderJobRepository,
     {
