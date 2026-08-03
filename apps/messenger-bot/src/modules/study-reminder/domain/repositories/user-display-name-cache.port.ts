@@ -1,9 +1,8 @@
-export const USER_DISPLAY_NAME_CACHE = Symbol('USER_DISPLAY_NAME_CACHE');
+import type { CachedUserDisplayName } from '@wispace/bot-common';
 
-export interface CachedUserDisplayName {
-  displayName: string | null;
-  username: string | null;
-}
+export type { CachedUserDisplayName };
+
+export const USER_DISPLAY_NAME_CACHE = Symbol('USER_DISPLAY_NAME_CACHE');
 
 export interface UserDisplayNameCachePort {
   isAvailable(): boolean;

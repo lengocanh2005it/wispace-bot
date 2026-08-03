@@ -1,3 +1,10 @@
+import type {
+  CalendarSessionTimeRange,
+  NormalizedStudySession,
+} from '@wispace/wispace-client';
+
+export type { CalendarSessionTimeRange, NormalizedStudySession };
+
 export interface StudySessionRecord {
   id?: string | number;
   sessionId?: string | number;
@@ -13,15 +20,6 @@ export interface StudySessionRecord {
   duration_minutes?: number;
   status?: string;
 }
-
-export interface NormalizedStudySession {
-  sessionKey: string;
-  scheduledAt: Date;
-  topic: string;
-  durationMinutes?: number;
-}
-
-export type CalendarSessionTimeRange = 'upcoming' | 'past' | 'all';
 
 export interface StudyReminderLlmInput {
   displayName: string;

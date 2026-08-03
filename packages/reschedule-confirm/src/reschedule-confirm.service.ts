@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { RescheduleSchedulingMode } from '@wispace/wispace-client';
+import type {
+  RescheduleSchedulingMode,
+  UserCalendarRecord,
+} from '@wispace/wispace-client';
 
 export const PENDING_RESCHEDULE_TTL_MS = 10 * 60 * 1000;
 const MAX_PENDING_RESCHEDULES = 10_000;
@@ -9,8 +12,26 @@ export interface CalendarEntryView {
   scheduledTimeLabel: string;
 }
 
+/** Rich calendar entry view produced by platform calendar services. */
+export interface StudyCalendarEntryView {
+  calendarId: number;
+  eventDate: string;
+  time: string | null;
+  scheduledTimeLabel: string;
+  topic: string;
+}
+
 export interface RescheduleResult {
   scheduledTimeLabel: string;
+}
+
+export interface RescheduleStudySessionResult {
+  cancelledCalendarId: number;
+  created: UserCalendarRecord;
+  schedulingMode: RescheduleSchedulingMode;
+  scheduledTimeLabel: string;
+  /** Messenger only: whether the outbox sync was queued after reschedule. */
+  outboxSyncQueued?: boolean;
 }
 
 export interface StageInput<TExternalId> {

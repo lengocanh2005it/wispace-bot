@@ -82,3 +82,14 @@ export interface ReportMapping {
   notificationCadence?: string;
   status: string;
 }
+
+/** Per-batch claim-and-send outcome (Messenger/Discord orchestrations). */
+export interface ClaimAndSendResult {
+  sent: number;
+  skipped: number;
+  deferred: number;
+  windowClosed: number;
+  claimSkipped: number;
+  retryQueued: number;
+  failures: Array<{ externalUserId: string; error: string }>;
+}

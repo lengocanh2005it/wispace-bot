@@ -1,15 +1,13 @@
-import type { ChatHistoryMessage } from '../entities/messenger-store.types';
+import type {
+  ChatHistoryMessage,
+  ChatHistoryStorePort as BaseChatHistoryStorePort,
+} from '@wispace/chat-history';
+
+export type { ChatHistoryMessage };
 
 export const CHAT_HISTORY_STORE = Symbol('CHAT_HISTORY_STORE');
 
-export interface ChatHistoryStorePort {
-  getHistory(psid: string): Promise<ChatHistoryMessage[]>;
-  appendTurn(
-    psid: string,
-    userText: string,
-    assistantText: string,
-  ): Promise<void>;
+export interface ChatHistoryStorePort extends BaseChatHistoryStorePort {
   /** Append a tool_summary entry so next turns know what was looked up. */
   appendToolSummary(psid: string, summary: string): Promise<void>;
-  clear(psid: string): Promise<void>;
 }

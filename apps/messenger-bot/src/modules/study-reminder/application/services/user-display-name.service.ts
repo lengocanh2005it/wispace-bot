@@ -89,7 +89,10 @@ export class UserDisplayNameService implements OnModuleInit {
     if (this.displayNameCache?.isAvailable()) {
       const cached = await this.displayNameCache.get(userId);
       if (cached) {
-        return this.pickDisplayName(cached.displayName, cached.username);
+        return this.pickDisplayName(
+          cached.displayName,
+          cached.username ?? null,
+        );
       }
     }
 

@@ -13,25 +13,13 @@ import {
   resolveRescheduleSlot,
   resolveScheduledAtFromEventDate,
 } from '@wispace/wispace-client';
+import type {
+  RescheduleStudySessionResult,
+  StudyCalendarEntryView,
+} from '@wispace/reschedule-confirm';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { StudyReminderSyncService } from './study-reminder-sync.service';
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
-
-export interface StudyCalendarEntryView {
-  calendarId: number;
-  eventDate: string;
-  time: string | null;
-  scheduledTimeLabel: string;
-  topic: string;
-}
-
-export interface RescheduleStudySessionResult {
-  cancelledCalendarId: number;
-  created: UserCalendarRecord;
-  schedulingMode: RescheduleSchedulingMode;
-  scheduledTimeLabel: string;
-  outboxSyncQueued: boolean;
-}
 
 @Injectable()
 export class StudyCalendarCommandService {

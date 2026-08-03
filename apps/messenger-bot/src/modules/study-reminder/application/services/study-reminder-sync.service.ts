@@ -8,20 +8,9 @@ import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
 } from '../../domain/repositories/study-reminder-job.repository.port';
+import type { StudyReminderSyncResult } from '../../domain/entities/study-reminder-sync.types';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { StudySessionSourceService } from './study-session-source.service';
-
-export interface StudyReminderSyncResult {
-  scope: 'all' | 'user';
-  userId?: number;
-  linked: boolean;
-  mappings: number;
-  upserted: number;
-  cancelled: number;
-  cancelledOtherPlatforms: number;
-  skipped: number;
-  failures: Array<{ psid: string; error: string }>;
-}
 
 @Injectable()
 export class StudyReminderSyncService {

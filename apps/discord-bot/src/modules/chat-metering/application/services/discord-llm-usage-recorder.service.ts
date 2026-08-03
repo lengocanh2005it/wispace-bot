@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import type { ChatCompletion } from 'openai/resources/chat/completions';
 import {
   DirectUsageWriter,
   LlmUsageEventEntity,
@@ -9,18 +8,9 @@ import {
   LlmUsageRepository,
 } from '@wispace/chat-metering';
 import { LlmUsageConfigService } from './llm-usage-config.service';
+import type { RecordLlmUsageFromCompletionInput } from './discord-llm-usage-recorder.types';
 
 const PLATFORM = 'discord' as const;
-
-export interface RecordLlmUsageFromCompletionInput {
-  feature: string;
-  discordUserId: string;
-  userId?: number;
-  model: string;
-  response: Pick<ChatCompletion, 'id' | 'usage'>;
-  correlationId?: string;
-  toolRound?: number;
-}
 
 /**
  * Thin NestJS adapter around `@wispace/chat-metering`'s LLM usage recorder —

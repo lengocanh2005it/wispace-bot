@@ -10,7 +10,7 @@ import {
 import { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
-import type { ReportClaimRepositoryPort } from '../../domain/repositories/report-claim.repository.port';
+import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import {
   MessengerMessageLog,
   NotificationCadence,
@@ -371,7 +371,7 @@ export class MessengerRepository
     return this.dedupeMappingsByPsid(rows.map((row) => this.mapEntity(row)));
   }
 
-  async hasSentScheduledReportToday(psid: string): Promise<boolean> {
+  async hasSentScheduledReportToday(externalUserId: string): Promise<boolean> {
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
@@ -379,7 +379,7 @@ export class MessengerRepository
       .createQueryBuilder('log')
       .where('log.platform = :platform', { platform: PLATFORM })
       .andWhere('log.external_user_id = :externalUserId', {
-        externalUserId: psid,
+        externalUserId,
       })
       .andWhere('log.status = :status', { status: 'SENT' })
       .andWhere(
@@ -418,7 +418,7 @@ export class MessengerRepository
   }
 
   async tryClaimScheduledReport(params: {
-    psid: string;
+    externalUserId: string;
     userId?: number;
     reportDate: string;
   }): Promise<boolean> {
@@ -430,20 +430,25 @@ export class MessengerRepository
         ON CONFLICT (platform, external_user_id, report_date) DO NOTHING
         RETURNING id
       `,
-        [PLATFORM, params.psid, params.reportDate, params.userId ?? null],
+        [
+          PLATFORM,
+          params.externalUserId,
+          params.reportDate,
+          params.userId ?? null,
+        ],
       );
 
     return rows.length > 0;
   }
 
   async markScheduledReportClaimSent(params: {
-    psid: string;
+    externalUserId: string;
     reportDate: string;
   }): Promise<void> {
     await this.reportClaimRepo.update(
       {
         platform: PLATFORM,
-        externalUserId: params.psid,
+        externalUserId: params.externalUserId,
         reportDate: params.reportDate,
       },
       { status: 'sent' },
@@ -451,13 +456,13 @@ export class MessengerRepository
   }
 
   async releaseScheduledReportClaim(params: {
-    psid: string;
+    externalUserId: string;
     reportDate: string;
   }): Promise<void> {
     await this.reportClaimRepo.update(
       {
         platform: PLATFORM,
-        externalUserId: params.psid,
+        externalUserId: params.externalUserId,
         reportDate: params.reportDate,
         status: 'claimed',
       },

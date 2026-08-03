@@ -87,13 +87,16 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
       messengerReportDeliveryService.sendReportForMapping,
     ).toHaveBeenCalledWith(mapping);
     expect(messengerRepository.tryClaimScheduledReport).toHaveBeenCalledWith({
-      psid: 'psid-1',
+      externalUserId: 'psid-1',
       userId: 10,
       reportDate: '2026-07-11',
     });
     expect(
       messengerRepository.markScheduledReportClaimSent,
-    ).toHaveBeenCalledWith({ psid: 'psid-1', reportDate: '2026-07-11' });
+    ).toHaveBeenCalledWith({
+      externalUserId: 'psid-1',
+      reportDate: '2026-07-11',
+    });
   });
 
   it('already sent today → skip', async () => {
@@ -145,7 +148,10 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     expect(result.sent).toBe(0);
     expect(
       messengerRepository.releaseScheduledReportClaim,
-    ).toHaveBeenCalledWith({ psid: 'psid-1', reportDate: '2026-07-11' });
+    ).toHaveBeenCalledWith({
+      externalUserId: 'psid-1',
+      reportDate: '2026-07-11',
+    });
   });
 
   it('StudentReportRetryableError → release claim, record outbox', async () => {
@@ -167,7 +173,10 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     expect(result.retryQueued).toBe(1);
     expect(
       messengerRepository.releaseScheduledReportClaim,
-    ).toHaveBeenCalledWith({ psid: 'psid-1', reportDate: '2026-07-11' });
+    ).toHaveBeenCalledWith({
+      externalUserId: 'psid-1',
+      reportDate: '2026-07-11',
+    });
     expect(reportSendJobRepository.recordRetryableFailure).toHaveBeenCalledWith(
       expect.objectContaining({
         externalUserId: 'psid-1',
@@ -191,7 +200,10 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     expect(result.sent).toBe(0);
     expect(
       messengerRepository.releaseScheduledReportClaim,
-    ).toHaveBeenCalledWith({ psid: 'psid-1', reportDate: '2026-07-11' });
+    ).toHaveBeenCalledWith({
+      externalUserId: 'psid-1',
+      reportDate: '2026-07-11',
+    });
   });
 
   it('unknown error → release claim, return failure', async () => {

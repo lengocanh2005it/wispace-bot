@@ -10,18 +10,9 @@ import {
   type ReportSendJobRepositoryPort,
 } from '@wispace/scheduler-core';
 import { ReportSendScheduleService } from '@wispace/scheduler-core';
+import type { ClaimAndSendResult } from '@wispace/scheduler-core';
 import { StudentReportRetryableError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
 import { ProactiveMessenger24hSkippedError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
-
-export interface ClaimAndSendResult {
-  sent: number;
-  skipped: number;
-  deferred: number;
-  windowClosed: number;
-  claimSkipped: number;
-  retryQueued: number;
-  failures: Array<{ externalUserId: string; error: string }>;
-}
 
 const ZERO: ClaimAndSendResult = {
   sent: 0,
@@ -92,7 +83,7 @@ export class ReportSendOrchestrationService {
     let claimedForSend = false;
     if (skipAlreadySentToday) {
       const claimed = await this.messengerRepository.tryClaimScheduledReport({
-        psid: mapping.psid,
+        externalUserId: mapping.psid,
         userId: mapping.userId,
         reportDate,
       });
@@ -112,7 +103,7 @@ export class ReportSendOrchestrationService {
       if (result) {
         if (claimedForSend) {
           await this.messengerRepository.markScheduledReportClaimSent({
-            psid: mapping.psid,
+            externalUserId: mapping.psid,
             reportDate,
           });
         }
@@ -127,7 +118,7 @@ export class ReportSendOrchestrationService {
 
       if (claimedForSend) {
         await this.messengerRepository.releaseScheduledReportClaim({
-          psid: mapping.psid,
+          externalUserId: mapping.psid,
           reportDate,
         });
       }
@@ -139,7 +130,7 @@ export class ReportSendOrchestrationService {
           error instanceof ProactiveMessenger24hSkippedError
         ) {
           await this.messengerRepository.releaseScheduledReportClaim({
-            psid: mapping.psid,
+            externalUserId: mapping.psid,
             reportDate,
           });
         }

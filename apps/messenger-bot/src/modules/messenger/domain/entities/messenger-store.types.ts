@@ -1,7 +1,6 @@
-export interface ChatHistoryMessage {
-  role: 'user' | 'assistant' | 'tool_summary';
-  content: string;
-}
+import type { ChatHistoryMessage } from '@wispace/chat-history';
+
+export type { ChatHistoryMessage };
 
 export type ChatHistoryStoreKind = 'memory' | 'redis';
 

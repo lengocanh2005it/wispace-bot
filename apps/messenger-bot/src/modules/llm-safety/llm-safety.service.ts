@@ -4,18 +4,9 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, MoreThan, Repository } from 'typeorm';
 import { LlmSafetyEventEntity } from '@wispace/chat-metering';
+import type { RecordGroundingWarningInput } from './llm-safety.types';
 
 const PLATFORM = 'messenger' as const;
-
-export interface RecordGroundingWarningInput {
-  psid: string;
-  userId?: number;
-  correlationId?: string;
-  reason: string;
-  userTextPreview?: string;
-  assistantTextPreview?: string;
-  toolNamesUsed: string[];
-}
 
 @Injectable()
 export class LlmSafetyService {

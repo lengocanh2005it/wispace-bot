@@ -9,6 +9,16 @@ import {
 
 export type WebhookDeadLetterStatus = 'pending' | 'replayed' | 'abandoned';
 
+/** Narrow row view used by bot dead-letter retry dispatchers. */
+export interface WebhookDeadLetterEntry {
+  id: number;
+  externalUserId: string | null;
+  rawPayload: unknown;
+  errorMessage: string;
+  retryCount: number;
+  status: string;
+}
+
 @Entity('webhook_dead_letters')
 @Index('idx_webhook_dead_letter_status_created', ['status', 'createdAt'])
 export class WebhookDeadLetterEntity {

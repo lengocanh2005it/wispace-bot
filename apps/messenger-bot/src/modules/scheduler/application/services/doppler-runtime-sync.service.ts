@@ -8,24 +8,16 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type {
+  DopplerRuntimeSyncResult,
+  DopplerWebhookPayload,
+} from '../../domain/entities/doppler-runtime-sync.types';
 
 const execFileAsync = promisify(execFile);
 
 /** Writable in container; `/deploy/` is only a bind-mounted file, not a directory. */
 export const DOPPLER_RUNTIME_ENV_SYNC_TMP = '/tmp/.env.sync.tmp';
 export const DOPPLER_RUNTIME_COMPOSE_SIDECAR_IMAGE = 'docker:29-cli';
-
-export interface DopplerWebhookPayload {
-  project?: { name?: string } | string;
-  config?: { name?: string } | string;
-  type?: string;
-}
-
-export interface DopplerRuntimeSyncResult {
-  accepted: boolean;
-  skipped?: boolean;
-  reason?: string;
-}
 
 @Injectable()
 export class DopplerRuntimeSyncService {

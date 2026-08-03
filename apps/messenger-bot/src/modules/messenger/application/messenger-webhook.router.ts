@@ -1,5 +1,6 @@
 import type { MessengerWebhookEvent } from '../domain/entities/messenger.types';
 import type { MessengerLinkAttemptStatus } from '../domain/types/messenger-link-verify.types';
+import type { RouterContext } from './types/messenger-webhook-router.types';
 import { isUnsupportedUserMessage } from './utils/webhook-message.utils';
 import {
   CONFIRM_RESCHEDULE_POSTBACK,
@@ -64,19 +65,7 @@ export type WebhookAction =
     }
   | { type: 'ignore' };
 
-export interface RouterContext {
-  isDuplicateMid?: boolean;
-  isDuplicatePostback?: boolean;
-  userId?: number;
-  linkContext?: {
-    ref: string;
-    topic: string;
-    cadence: string;
-    userId: number;
-  } | null;
-  linkAttemptStatus?: MessengerLinkAttemptStatus;
-  shouldEnforceRateLimit?: boolean;
-}
+export type { RouterContext };
 
 function linkAttemptBlocksWelcome(
   status?: MessengerLinkAttemptStatus,

@@ -1,16 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import {
-  RescheduleConfirmationService,
-  type StageResult,
-} from '@wispace/reschedule-confirm';
+import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
 import { buildRescheduleConfirmFollowUp } from '../formatters/messenger-rich-message.builder';
-import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
+import type { MessengerStageResult } from '../types/messenger-reschedule-confirmation.types';
 import { MessengerCalendarPort } from '../../infrastructure/adapters/messenger-calendar.port';
 import { MessengerReschedulePort } from '../../infrastructure/adapters/messenger-reschedule.port';
-
-export interface MessengerStageResult extends StageResult {
-  richFollowUp: MessengerRichFollowUp;
-}
 
 /**
  * Messenger-specific reschedule confirmation — extends shared service

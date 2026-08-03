@@ -5,6 +5,7 @@ import type {
   ReportDeliveryPort,
   ReportMapping,
   GoalsDataPort,
+  ClaimAndSendResult,
 } from '@wispace/scheduler-core';
 import {
   REPORT_SEND_JOB_REPOSITORY,
@@ -18,16 +19,6 @@ import {
   DISCORD_REPORT_PORT,
   type DiscordReportPort,
 } from '../../domain/ports/discord-report.port';
-
-export interface ClaimAndSendResult {
-  sent: number;
-  skipped: number;
-  deferred: number;
-  windowClosed: number;
-  claimSkipped: number;
-  retryQueued: number;
-  failures: Array<{ externalUserId: string; error: string }>;
-}
 
 const ZERO: ClaimAndSendResult = {
   sent: 0,

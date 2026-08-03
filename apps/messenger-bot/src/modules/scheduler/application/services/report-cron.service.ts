@@ -20,7 +20,7 @@ import {
 } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
 import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
-import type { ClaimAndSendResult } from './report-send-orchestration.service';
+import type { ClaimAndSendResult } from '@wispace/scheduler-core';
 
 const ZERO: ClaimAndSendResult = {
   sent: 0,

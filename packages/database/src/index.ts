@@ -1,4 +1,8 @@
-export { WebhookDeadLetterEntity } from './entities/webhook-dead-letter.entity';
+export {
+  WebhookDeadLetterEntity,
+  type WebhookDeadLetterStatus,
+  type WebhookDeadLetterEntry,
+} from './entities/webhook-dead-letter.entity';
 export { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
 export {
   ReportSendJobEntity,

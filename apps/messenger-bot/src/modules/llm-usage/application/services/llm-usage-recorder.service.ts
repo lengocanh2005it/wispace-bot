@@ -1,7 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { ChatCompletion } from 'openai/resources/chat/completions';
 import type {
-  LlmUsageFeature,
+  RecordLlmUsageFromCompletionInput,
   RecordLlmUsageInput,
 } from '../../domain/entities/llm-usage.types';
 import {
@@ -9,16 +8,6 @@ import {
   type LlmUsageRepositoryPort,
 } from '../../domain/repositories/llm-usage.repository.port';
 import { LlmUsageConfigService } from './llm-usage-config.service';
-
-export interface RecordLlmUsageFromCompletionInput {
-  feature: LlmUsageFeature;
-  psid?: string;
-  userId?: number;
-  model: string;
-  response: Pick<ChatCompletion, 'id' | 'usage'>;
-  correlationId?: string;
-  toolRound?: number;
-}
 
 @Injectable()
 export class LlmUsageRecorderService {

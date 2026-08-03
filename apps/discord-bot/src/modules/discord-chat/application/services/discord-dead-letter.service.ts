@@ -1,18 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { WebhookDeadLetterEntity } from '@wispace/database';
+import {
+  WebhookDeadLetterEntity,
+  type WebhookDeadLetterEntry,
+} from '@wispace/database';
 
 const PLATFORM = 'discord' as const;
-
-export interface DeadLetterEntry {
-  id: number;
-  externalUserId: string | null;
-  rawPayload: unknown;
-  errorMessage: string;
-  retryCount: number;
-  status: string;
-}
 
 /**
  * Discord dead letter queue — saves failed webhook events for later retry.
@@ -54,7 +48,7 @@ export class DiscordDeadLetterService {
     limit: number;
     olderThan: Date;
     maxRetries: number;
-  }): Promise<DeadLetterEntry[]> {
+  }): Promise<WebhookDeadLetterEntry[]> {
     return this.repo
       .createQueryBuilder('dl')
       .where('dl.platform = :platform', { platform: PLATFORM })

@@ -3,21 +3,13 @@ import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { StudyReminderSyncService } from '@messenger/modules/study-reminder/application/services/study-reminder-sync.service';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
-import { UserMessengerMapping } from '../../domain/entities/messenger.types';
+import type { RelinkMappingResult } from '../types/messenger-mapping.types';
 import {
   buildMappingUserIdRelinkedMessage,
   buildMappingRelinkBlockedMessage,
   buildMappingUserLinkedOtherPsidMessage,
 } from '../messages/messenger-link.messages';
 import { MessengerOutboundService } from './messenger-outbound.service';
-
-export interface RelinkMappingResult {
-  mapping: UserMessengerMapping;
-  relinked: boolean;
-  blocked?: boolean;
-  previousUserId?: number;
-  syncedStudyReminders: boolean;
-}
 
 @Injectable()
 export class MessengerMappingService {

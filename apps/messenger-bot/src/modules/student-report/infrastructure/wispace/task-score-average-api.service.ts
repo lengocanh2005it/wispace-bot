@@ -6,10 +6,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   TaskScoreAverageApiClient,
+  type TaskScoreAverageRecord,
   type WispaceApiClientConfig,
 } from '@wispace/wispace-client';
 import { StudentReportNoScoreDataError } from '../../domain/errors/student-report-no-score-data.error';
-import { TaskScoreAverageRecord } from '../../domain/types/task-score-average.types';
 import type { StudentCapacityInput } from '@wispace/student-report';
 import { UserGoalsApiService } from './user-goals-api.service';
 import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';

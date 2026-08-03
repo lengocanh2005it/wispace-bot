@@ -11,27 +11,16 @@ import {
   resolveRescheduleSlot,
   resolveScheduledAtFromEventDate,
 } from '@wispace/wispace-client';
+import type {
+  RescheduleStudySessionResult,
+  StudyCalendarEntryView,
+} from '@wispace/reschedule-confirm';
 import {
   formatScheduledTimeLabel,
   getMinutesUntilSession,
 } from '@wispace/study-reminder-core';
 import { WispaceCalendarService } from './wispace-calendar.service';
 import { WispaceConfigService } from './wispace-config.service';
-
-export interface StudyCalendarEntryView {
-  calendarId: number;
-  eventDate: string;
-  time: string | null;
-  scheduledTimeLabel: string;
-  topic: string;
-}
-
-export interface RescheduleStudySessionResult {
-  cancelledCalendarId: number;
-  created: UserCalendarRecord;
-  schedulingMode: RescheduleSchedulingMode;
-  scheduledTimeLabel: string;
-}
 
 /**
  * Discord counterpart to Messenger's `StudyCalendarCommandService` — reuses

@@ -5,16 +5,10 @@ import {
   type RescheduleSchedulingMode,
   type UserCalendarRecord,
 } from '@wispace/wispace-client';
+import type { RescheduleStudySessionResult } from '@wispace/reschedule-confirm';
 import { formatScheduledTimeLabel } from '@wispace/study-reminder-core';
 import { ZaloWispaceCalendarService } from '@zalo/modules/wispace/application/services/zalo-wispace-calendar.service';
 import { ZaloWispaceConfigService } from '@zalo/modules/wispace/application/services/zalo-wispace-config.service';
-
-export interface RescheduleStudySessionResult {
-  cancelledCalendarId: number;
-  created: UserCalendarRecord;
-  schedulingMode: RescheduleSchedulingMode;
-  scheduledTimeLabel: string;
-}
 
 @Injectable()
 export class ZaloStudyCalendarCommandService {

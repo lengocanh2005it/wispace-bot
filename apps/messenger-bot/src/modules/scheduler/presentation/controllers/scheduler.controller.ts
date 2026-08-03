@@ -10,10 +10,8 @@ import { InternalApiKeyGuard } from '@wispace/bot-common';
 import { StudyReminderSyncService } from '@messenger/modules/study-reminder/application/services/study-reminder-sync.service';
 import { StudyReminderWorkerService } from '@messenger/modules/study-reminder/application/services/study-reminder-worker.service';
 import { MessengerMappingService } from '@messenger/modules/messenger/application/services/messenger-mapping.service';
-import {
-  DopplerRuntimeSyncService,
-  type DopplerWebhookPayload,
-} from '../../application/services/doppler-runtime-sync.service';
+import { DopplerRuntimeSyncService } from '../../application/services/doppler-runtime-sync.service';
+import type { DopplerWebhookPayload } from '../../domain/entities/doppler-runtime-sync.types';
 import { ReportCronService } from '../../application/services/report-cron.service';
 import { ReportSendRetryDispatchService } from '../../application/services/report-send-retry-dispatch.service';
 

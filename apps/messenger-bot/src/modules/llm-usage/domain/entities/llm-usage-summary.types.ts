@@ -1,16 +1,6 @@
-export interface LlmUsageAggregateRow {
-  feature: string;
-  model: string;
-  calls: number;
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  cachedTokens: number;
-  storedCostUsd: string | null;
-  unstoredPromptTokens: number;
-  unstoredCompletionTokens: number;
-  unstoredCachedTokens: number;
-}
+import type { LlmUsageAggregateRow } from '@wispace/chat-metering';
+
+export type { LlmUsageAggregateRow };
 
 export interface LlmUsageQueryFilter {
   psid?: string;

@@ -1,7 +1,6 @@
-export interface UserGoalsRecord {
-  targetScore: number;
-  examDate: string;
-}
+import type { UserGoalsRecord } from '@wispace/wispace-client';
+
+export type { UserGoalsRecord };
 
 export const GOALS_DATA_PORT = Symbol('GOALS_DATA_PORT');
 

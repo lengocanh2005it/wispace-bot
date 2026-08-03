@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import type { ChatQueueBatch } from '@wispace/chat-queue-core';
+import type { EnqueueChatMessageInput } from '../../domain/entities/messenger-chat-queue.types';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import {
   capMergedChatUserText,
@@ -37,14 +38,7 @@ import { buildChatDeliveryErrorMessage } from '../messages/chat-delivery.message
 import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import { trace, context, SpanStatusCode, SpanKind } from '@opentelemetry/api';
 
-export interface EnqueueChatMessageInput {
-  psid: string;
-  userId?: number;
-  userText: string;
-  linkContext?: MessengerLinkContext;
-  /** Meta message.mid — idempotency key for the last message in a debounce batch. */
-  idempotencyKey?: string;
-}
+export type { EnqueueChatMessageInput };
 
 interface MemoryQueueContext {
   userId?: number;

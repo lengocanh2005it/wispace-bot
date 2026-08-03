@@ -1,28 +1,18 @@
-export type CalendarSessionTimeRange = 'upcoming' | 'past' | 'all';
+import type {
+  CalendarSessionTimeRange,
+  NormalizedStudySession,
+} from '@wispace/wispace-client';
+import type { StudyCalendarEntryView } from '@wispace/reschedule-confirm';
+import type { StudyReminderLlmOutput } from '@messenger/modules/study-reminder/domain/entities/study-schedule.types';
 
-export interface StudySessionView {
-  sessionKey: string;
-  scheduledAt: Date;
-  topic: string;
-  durationMinutes?: number;
-}
+export type {
+  CalendarSessionTimeRange,
+  NormalizedStudySession,
+} from '@wispace/wispace-client';
 
-export interface StudyCalendarEntryView {
-  calendarId: number;
-  eventDate: string;
-  time: string | null;
-  scheduledTimeLabel: string;
-  topic: string;
-}
+export type StudySessionView = NormalizedStudySession;
 
-export interface StudyReminderLlmOutput {
-  greeting: string;
-  intro: string;
-  scheduledTime: string;
-  tasks: string[];
-  motivation: string;
-  signoff: string;
-}
+export type { StudyCalendarEntryView, StudyReminderLlmOutput };
 
 export interface StudyOutboxSettings {
   minutesBefore: number;

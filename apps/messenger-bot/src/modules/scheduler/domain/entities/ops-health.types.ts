@@ -1,13 +1,11 @@
 import type { ChatQuotaOpsSummary } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota-ops.types';
 import type { StudyReminderOpsSummary } from '@messenger/modules/study-reminder/domain/entities/study-reminder-ops.types';
+import type { OpsHealthAlert } from '@wispace/ops-health';
 
-export type OpsHealthAlertSeverity = 'warn' | 'info';
-
-export interface OpsHealthAlert {
-  code: string;
-  severity: OpsHealthAlertSeverity;
-  message: string;
-}
+export type {
+  OpsHealthAlert,
+  OpsHealthAlertSeverity,
+} from '@wispace/ops-health';
 
 export interface OpsHealthSnapshot {
   generatedAt: string;
