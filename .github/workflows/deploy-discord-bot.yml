@@ -25,6 +25,7 @@ jobs:
     with:
       app: discord-bot
       vps_target_dir: /home/ngoc_anh/discord-bot
+      health_path: /health
       force_build: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build }}
     secrets:
       doppler_token: ${{ secrets.DOPPLER_TOKEN_DISCORD }}

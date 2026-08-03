@@ -111,15 +111,53 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  migrations-check:
+    # Gate the deploy: apply the migration chain against a real Postgres
+    # inside the freshly built image. A broken migration must stop the
+    # deploy here, not crash the bot on the VPS.
+    needs: build-image
+    if: always() && !cancelled() && needs.build-image.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: ${{ needs.build-image.outputs.image }}
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_chat_bot_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ai_chat_bot_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      NODE_ENV: test
+    steps:
+      - name: Show migration status (pending)
+        run: npx --no-install typeorm migration:show -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
+      - name: Apply migrations
+        run: npx --no-install typeorm migration:run -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
+      - name: Show migration status (applied)
+        run: npx --no-install typeorm migration:show -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
+
   deploy:
-    needs: [changes, build-image]
+    needs: [changes, build-image, migrations-check]
     if: |
       always() &&
       !cancelled() &&
       (needs.changes.outputs.app == 'true' ||
         needs.changes.outputs.deploy == 'true' ||
         inputs.force_build) &&
-      (needs.build-image.result == 'success' || needs.build-image.result == 'skipped')
+      (needs.build-image.result == 'success' || needs.build-image.result == 'skipped') &&
+      (needs.migrations-check.result == 'success' || needs.migrations-check.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -128,6 +166,7 @@ jobs:
       VPS_KNOWN_HOSTS: ${{ secrets.vps_known_hosts }}
       VPS_USER: ${{ secrets.vps_user }}
       VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT || '8443' }}
+      MIGRATION_CMD: npx --no-install typeorm migration:run -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -182,6 +221,8 @@ jobs:
           VPS_TARGET_DIR: ${{ inputs.vps_target_dir }}
           APP_NAME: ${{ inputs.app }}
           HEALTH_PATH: ${{ inputs.health_path }}
+          RUN_MIGRATIONS: 'true'
+          MIGRATION_CMD: ${{ env.MIGRATION_CMD }}
         run: |
-          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH
+          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH RUN_MIGRATIONS MIGRATION_CMD
           bash .github/scripts/ssh-deploy-vps.sh ${{ inputs.vps_target_dir }}/vps-deploy.sh

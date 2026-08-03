@@ -20,16 +20,24 @@ chmod 600 "$HOME/.ssh/id_ed25519"
 printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 
-for i in 1 2 3; do
+# Exponential backoff: 4 attempts with 10s/20s/30s waits — GitHub runner
+# egress is occasionally flaky (timeouts seen on 8443), a longer backoff
+# rides through the blip without failing the deploy.
+attempt=1
+while [ "$attempt" -le 4 ]; do
   if rsync -avz --delete \
     -e "ssh -p $VPS_SSH_PORT -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts" \
     "$SOURCE_DIR/" \
     "${VPS_USER}@${VPS_HOST}:${VPS_TARGET_DIR}/"; then
     exit 0
   fi
-  echo "Upload attempt $i failed, retrying in 5s..."
-  sleep 5
+  if [ "$attempt" -lt 4 ]; then
+    wait_seconds=$((attempt * 10))
+    echo "Upload attempt $attempt failed, retrying in ${wait_seconds}s..."
+    sleep "$wait_seconds"
+  fi
+  attempt=$((attempt + 1))
 done
 
-echo "ERROR: upload failed after 3 attempts" >&2
+echo "ERROR: upload failed after 4 attempts" >&2
 exit 1

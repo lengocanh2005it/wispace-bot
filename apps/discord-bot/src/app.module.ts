@@ -9,10 +9,11 @@ import { DiscordChatModule } from './modules/discord-chat/discord-chat.module';
 import { DiscordStudyReminderModule } from './modules/discord-study-reminder/discord-study-reminder.module';
 import { DiscordOpsModule } from './modules/discord-ops/discord-ops.module';
 import { DiscordMetricsModule } from './modules/metrics/discord-metrics.module';
+import { DiscordMetricsController } from './modules/metrics/discord-metrics.controller';
 import { HealthController } from './health.controller';
 
 @Module({
-  controllers: [HealthController],
+  controllers: [HealthController, DiscordMetricsController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,

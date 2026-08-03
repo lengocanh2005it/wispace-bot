@@ -46,6 +46,7 @@ Read this file before modifying code. In-depth details are in `docs/` — only r
 - Burst counter R3: `CHAT_BURST_STORE=redis` \| `memory` \| `postgres` (default `postgres`).
 - Chat queue R4: `CHAT_QUEUE_STORE=redis` \| `memory` — debounce buffer; `CHAT_QUEUE_SHARED=true` maps to `redis` (H7 legacy). `CHAT_MAX_PENDING_MESSAGES` (0 = no cap) limits messages queued while bot is processing (Discord/Zalo).
 - Bootstrap jobs on first run: `npm run study-reminder:sync`.
+- **Prod hardening** (see `deploy/`): nightly `pg_dump` backup cron on VPS (`deploy/postgres-backup.sh`, 02:00, giữ 14 ngày); deploy tự chạy migrations (advisory-locked, `MIGRATION_CMD`) + health check (`health_path`) + tự rollback về image cũ nếu không healthy; Prometheus scrape cả 3 bot + Alertmanager → Telegram (`deploy/monitoring/`, keys trong `monitoring/.env`: `INTERNAL_API_KEY_*`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`).
 
 ---
 
