@@ -141,12 +141,20 @@ jobs:
       DB_PASSWORD: postgres
       NODE_ENV: test
     steps:
+      # The container job runs with CWD=/github/workspace, but the image's
+      # typeorm CLI lives in /app/node_modules/.bin — cd into /app first.
       - name: Show migration status (pending)
-        run: npx --no-install typeorm migration:show -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
+        run: |
+          cd /app
+          npx --no-install typeorm migration:show -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
       - name: Apply migrations
-        run: npx --no-install typeorm migration:run -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
+        run: |
+          cd /app
+          npx --no-install typeorm migration:run -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
       - name: Show migration status (applied)
-        run: npx --no-install typeorm migration:show -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
+        run: |
+          cd /app
+          npx --no-install typeorm migration:show -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
 
   deploy:
     needs: [changes, build-image, migrations-check]
