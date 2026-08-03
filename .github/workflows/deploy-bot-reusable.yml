@@ -115,8 +115,14 @@ jobs:
     # Gate the deploy: apply the migration chain against a real Postgres
     # inside the freshly built image. A broken migration must stop the
     # deploy here, not crash the bot on the VPS.
+    # Only messenger-bot has a data-source CLI entry; all 3 bots share one
+    # DB + one migration set, so this job runs for messenger only.
     needs: build-image
-    if: always() && !cancelled() && needs.build-image.result == 'success'
+    if: |
+      always() &&
+      !cancelled() &&
+      needs.build-image.result == 'success' &&
+      inputs.app == 'messenger-bot'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     container:
@@ -174,7 +180,7 @@ jobs:
       VPS_KNOWN_HOSTS: ${{ secrets.vps_known_hosts }}
       VPS_USER: ${{ secrets.vps_user }}
       VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT || '8443' }}
-      MIGRATION_CMD: npx --no-install typeorm migration:run -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
+      MIGRATION_CMD: ${{ inputs.app == 'messenger-bot' && 'npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js' || '' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -229,7 +235,7 @@ jobs:
           VPS_TARGET_DIR: ${{ inputs.vps_target_dir }}
           APP_NAME: ${{ inputs.app }}
           HEALTH_PATH: ${{ inputs.health_path }}
-          RUN_MIGRATIONS: 'true'
+          RUN_MIGRATIONS: ${{ inputs.app == 'messenger-bot' && 'true' || 'false' }}
           MIGRATION_CMD: ${{ env.MIGRATION_CMD }}
         run: |
           export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH RUN_MIGRATIONS MIGRATION_CMD
