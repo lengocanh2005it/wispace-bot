@@ -1,0 +1,29 @@
+groups:
+  - name: bots
+    rules:
+      - alert: BotDown
+        expr: up == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} is down"
+          description: "Prometheus cannot scrape {{ $labels.job }} (instance {{ $labels.instance }}) for 3 minutes."
+
+      - alert: BotRestartLoop
+        expr: changes(process_start_time_seconds{job=~".*_bot"}[15m]) >= 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.job }} restarting repeatedly"
+          description: "{{ $labels.job }} restarted {{ $value }} times in the last 15 minutes."
+
+      - alert: PrometheusJobMissing
+        expr: absent(up == 1)
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No bot metrics being scraped at all"
+          description: "Every scrape target is down — check the bots and Prometheus connectivity."

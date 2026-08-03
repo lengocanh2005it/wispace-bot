@@ -4,7 +4,9 @@ set -euo pipefail
 # Unified VPS deploy script for all WISPACE bots.
 # Runs in the deploy dir (cwd) containing docker-compose.prod.yml (+ optional production.env).
 # Requires env: IMAGE, DEPLOY_MODE, APP_NAME
-# Optional env: FORCE_RECREATE, GHCR_PULL_TOKEN, GHCR_USER, HEALTH_PATH, PORT, DEPLOY_HOST_DIR
+# Optional env: FORCE_RECREATE, GHCR_PULL_TOKEN, GHCR_USER, HEALTH_PATH, PORT,
+#               DEPLOY_HOST_DIR, RUN_MIGRATIONS, MIGRATION_CMD,
+#               MIGRATION_DB_CONTAINER, MIGRATION_LOCK_ID
 
 : "${IMAGE:?IMAGE is required}"
 : "${DEPLOY_MODE:?DEPLOY_MODE is required}"
@@ -86,26 +88,85 @@ export IMAGE
 export DEPLOY_UID=${DEPLOY_UID:-1001}
 export DEPLOY_GID=${DEPLOY_GID:-1001}
 
+# Remember the currently running image so we can roll back if the health
+# check fails after the switch.
+PREV_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$APP_NAME" 2>/dev/null || true)
+
 if [ "$FORCE_RECREATE" = "true" ]; then
   docker compose -f "$COMPOSE_FILE" pull "$APP_NAME" || true
-  docker compose -f "$COMPOSE_FILE" up -d --force-recreate "$APP_NAME"
 else
   docker compose -f "$COMPOSE_FILE" pull "$APP_NAME" 2>/dev/null || true
+fi
+
+# Apply DB migrations with the NEW image before switching traffic.
+# Guarded by a Postgres advisory lock: all 3 bots share one DB, so a
+# simultaneous deploy must never race on the migrations table.
+if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ -n "${MIGRATION_CMD:-}" ]; then
+  MIGRATION_DB_CONTAINER="${MIGRATION_DB_CONTAINER:-postgres_db}"
+  MIGRATION_LOCK_ID="${MIGRATION_LOCK_ID:-4242424242}"
+  DB_USER_ENV=$(grep -E '^DB_USER=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+  DB_NAME_ENV=$(grep -E '^DB_NAME=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+  DB_PASSWORD_ENV=$(grep -E '^DB_PASSWORD=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+  if [ -n "$DB_PASSWORD_ENV" ] && docker exec "$MIGRATION_DB_CONTAINER" true 2>/dev/null; then
+    lock_db() {
+      docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$MIGRATION_DB_CONTAINER" \
+        psql -U "$DB_USER_ENV" -d "$DB_NAME_ENV" -h localhost -q -tAc "$1" >/dev/null
+    }
+    echo "Applying migrations (advisory lock $MIGRATION_LOCK_ID): $MIGRATION_CMD"
+    if ! lock_db "SELECT pg_advisory_lock($MIGRATION_LOCK_ID)"; then
+      echo "ERROR: could not acquire migration lock" >&2
+      exit 1
+    fi
+    if docker compose -f "$COMPOSE_FILE" run --rm --no-deps "$APP_NAME" \
+      sh -c "cd /app && $MIGRATION_CMD"; then
+      echo "Migrations applied OK"
+    else
+      echo "ERROR: migrations failed" >&2
+      lock_db "SELECT pg_advisory_unlock($MIGRATION_LOCK_ID)" || true
+      exit 1
+    fi
+    lock_db "SELECT pg_advisory_unlock($MIGRATION_LOCK_ID)" || true
+  else
+    echo "WARNING: RUN_MIGRATIONS enabled but DB password / postgres container unavailable — skipping migrations"
+  fi
+fi
+
+if [ "$FORCE_RECREATE" = "true" ]; then
+  docker compose -f "$COMPOSE_FILE" up -d --force-recreate "$APP_NAME"
+else
   docker compose -f "$COMPOSE_FILE" up -d "$APP_NAME"
 fi
 
 echo "Deploy complete: $APP_NAME ($IMAGE)"
 
-# Optional health check (Messenger exposes /health/db; Discord/Zalo skip)
+# Health check + rollback: if the new image never becomes healthy, fall back
+# to the previously running image instead of leaving the bot down.
 if [ -n "$HEALTH_PATH" ]; then
+  healthy=""
   for attempt in $(seq 1 30); do
     if curl -sf "http://127.0.0.1:${PORT}${HEALTH_PATH}" >/dev/null; then
+      healthy=1
       echo "Health check passed on attempt ${attempt}"
-      exit 0
+      break
     fi
     sleep 2
   done
-  echo "ERROR: Health check failed" >&2
-  docker compose -f "$COMPOSE_FILE" logs "$APP_NAME" --tail 80 || true
-  exit 1
+  if [ -z "$healthy" ]; then
+    echo "ERROR: Health check failed" >&2
+    docker compose -f "$COMPOSE_FILE" logs "$APP_NAME" --tail 80 || true
+    if [ -n "${PREV_IMAGE:-}" ] && [ "$PREV_IMAGE" != "$IMAGE" ]; then
+      echo "Rolling back to previous image: $PREV_IMAGE"
+      IMAGE="$PREV_IMAGE" docker compose -f "$COMPOSE_FILE" up -d "$APP_NAME"
+      for attempt in $(seq 1 30); do
+        if curl -sf "http://127.0.0.1:${PORT}${HEALTH_PATH}" >/dev/null; then
+          echo "Rollback healthy (attempt ${attempt})"
+          break
+        fi
+        sleep 2
+      done
+    else
+      echo "No previous image to roll back to" >&2
+    fi
+    exit 1
+  fi
 fi

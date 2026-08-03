@@ -1,0 +1,93 @@
+services:
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: prometheus
+    restart: unless-stopped
+    environment:
+      INTERNAL_API_KEY_MESSENGER: ${INTERNAL_API_KEY_MESSENGER:-}
+      INTERNAL_API_KEY_DISCORD: ${INTERNAL_API_KEY_DISCORD:-}
+      INTERNAL_API_KEY_ZALO: ${INTERNAL_API_KEY_ZALO:-}
+    volumes:
+      - ./prometheus.tmpl:/etc/prometheus/prometheus.tmpl:ro
+      - ./prometheus-entrypoint.sh:/etc/prometheus/entrypoint.sh:ro
+      - ./alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
+      - prometheus_data:/prometheus
+    entrypoint: ["/bin/sh", "/etc/prometheus/entrypoint.sh"]
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    networks:
+      - monitoring
+      - messenger-bot_default
+      - discord-bot_default
+      - zalo-bot_default
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./alertmanager.tmpl:/etc/alertmanager/alertmanager.tmpl:ro
+      - ./alertmanager-entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
+      - alertmanager_data:/alertmanager
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # chat_id is an int64; 0 fails Alertmanager validation, so -1 = placeholder
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:--1}
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    ports:
+      - "127.0.0.1:9093:9093"
+    networks:
+      - monitoring
+
+  tempo:
+    image: grafana/tempo:2.5.0
+    container_name: tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    networks:
+      - monitoring
+      - messenger-bot_default
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?GRAFANA_PASSWORD is required}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3100:3000"
+    depends_on:
+      - prometheus
+      - tempo
+    networks:
+      - monitoring
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  tempo_data:
+  alertmanager_data:
+
+networks:
+  monitoring:
+    name: monitoring
+  messenger-bot_default:
+    external: true
+  discord-bot_default:
+    external: true
+  zalo-bot_default:
+    external: true
