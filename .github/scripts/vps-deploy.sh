@@ -117,6 +117,17 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ -n "${MIGRATION_CMD:-}" ]; then
       echo "ERROR: could not acquire migration lock" >&2
       exit 1
     fi
+    # Safety net: quick pg_dump before migrations. Keeps the last 3 so a
+    # broken migration can be investigated without waiting for the nightly
+    # backup. Uses -Fc (custom format) for fast pg_restore.
+    PRE_MIGRATE_DIR="/home/ngoc_anh/backups/ai_chat_bot_db/pre-migrate"
+    mkdir -p "$PRE_MIGRATE_DIR"
+    PRE_MIGRATE_DUMP="$PRE_MIGRATE_DIR/pre-migrate-$(date +%Y%m%d-%H%M%S).dump"
+    echo "Pre-migration safety dump → $PRE_MIGRATE_DUMP"
+    docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$MIGRATION_DB_CONTAINER" \
+      pg_dump -U "$DB_USER_ENV" -d "$DB_NAME_ENV" -h localhost -Fc \
+      > "$PRE_MIGRATE_DUMP" 2>/dev/null || echo "WARNING: pre-migration dump failed — proceeding anyway"
+    find "$PRE_MIGRATE_DIR" -name 'pre-migrate-*.dump' -mtime +1 -delete 2>/dev/null || true
     if docker compose -f "$COMPOSE_FILE" run --rm --no-deps "$APP_NAME" \
       sh -c "cd /app && $MIGRATION_CMD"; then
       echo "Migrations applied OK"

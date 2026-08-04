@@ -13,7 +13,7 @@ set -euo pipefail
 ENV_FILE="${ENV_FILE:-/home/ngoc_anh/messenger-bot/.env}"
 BACKUP_DIR="${BACKUP_DIR:-/home/ngoc_anh/backups/ai_chat_bot_db}"
 KEEP_DAYS="${KEEP_DAYS:-14}"
-DB_CONTAINER="${DB_CONTAINER:-postgres_db}"
+DB_CONTAINER="${DB_CONTAINER:-postgres_n8n_db}"
 
 DB_USER=$(grep -E '^DB_USER=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
 DB_NAME=$(grep -E '^DB_NAME=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
