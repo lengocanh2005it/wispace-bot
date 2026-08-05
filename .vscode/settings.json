@@ -1,4 +1,23 @@
 {
-  "typescript.tsdk": "node_modules/typescript/lib",
-  "eslint.validate": ["typescript"]
+  "js/ts.tsdk.path": "node_modules/typescript/lib",
+  "eslint.workingDirectories": [{ "mode": "auto" }],
+  "eslint.validate": ["typescript", "javascript"],
+  "js/ts.tsserver.maxMemory": 4096,
+  "js/ts.tsserver.experimental.enableProjectDiagnostics": false,
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.git": true,
+    "**/coverage": true
+  },
+  "files.watcherExclude": {
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/.git/**": true,
+    "**/coverage/**": true
+  },
+  "files.exclude": {
+    "**/dist": true
+  },
+  "editor.largeFileOptimizations": true
 }

@@ -12,10 +12,10 @@
     "target": "ES2023",
     "sourceMap": true,
     "outDir": "./dist",
-    "baseUrl": "./",
+    "rootDir": "./src",
     "paths": {
-      "@discord/*": ["src/*"],
-      "@discord/modules/*": ["src/modules/*"]
+      "@discord/*": ["./src/*"],
+      "@discord/modules/*": ["./src/modules/*"]
     },
     "incremental": true,
     "skipLibCheck": true,
