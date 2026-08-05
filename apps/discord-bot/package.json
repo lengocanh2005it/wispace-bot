@@ -35,6 +35,7 @@
     "@wispace/chat-pipeline": "*",
     "@wispace/cleanup-cron": "*",
     "@wispace/bot-common": "*",
+    "@wispace/chat-agent": "*",
     "@wispace/database": "*",
     "@wispace/llm-agent": "*",
     "@wispace/ops-health": "*",

@@ -9,18 +9,18 @@ import {
   type LlmProviderAdapter,
   loadSystemPromptFile,
 } from '@wispace/llm-agent';
-import { join } from 'path';
-import type {
-  DiscordAgentInput,
-  DiscordAgentReply,
-  DiscordAgentToolContext,
-} from '../../domain/entities/discord-chat.types';
-import { DiscordAgentToolsService } from './discord-agent-tools.service';
-import { DiscordChatHistoryService } from '../services/discord-chat-history.service';
 import {
-  PlatformLlmUsageRecorderAdapter,
   PlatformLlmSafetyEventAdapter,
+  PlatformLlmUsageRecorderAdapter,
 } from '@wispace/chat-metering';
+import { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
+import { PlatformAgentToolsService } from './platform-agent-tools.service';
+import type {
+  PlatformAgentInput,
+  PlatformAgentOptions,
+  PlatformAgentReply,
+  PlatformAgentToolContext,
+} from './platform-agent.types';
 
 const FEATURE = 'FREE_FORM_CHAT';
 
@@ -28,26 +28,27 @@ const DEFAULT_MAX_CONCURRENT = 3;
 
 /**
  * Thin NestJS adapter around `@wispace/llm-agent`'s platform-agnostic
- * orchestration loop — Discord counterpart to `MessengerAgentService`.
- * Usage/safety events persist via `@wispace/chat-metering` (platform='discord').
- * Includes p-limit concurrency cap to prevent overwhelming the LLM provider.
+ * orchestration loop — shared by Discord and Zalo (replaces their
+ * near-identical per-app agent services). Usage/safety events persist via
+ * `@wispace/chat-metering` (platform set by the app). Includes p-limit
+ * concurrency cap to prevent overwhelming the LLM provider.
  */
 @Injectable()
-export class DiscordAgentService {
-  private readonly logger = new Logger(DiscordAgentService.name);
-  private readonly promptDir = join(__dirname, '../../../../shared/prompts');
+export class PlatformAgentService {
+  private readonly logger = new Logger(PlatformAgentService.name);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly limiter: (fn: () => Promise<any>) => Promise<any>;
-  private agent?: LlmAgentService<DiscordAgentToolContext>;
+  private agent?: LlmAgentService<PlatformAgentToolContext>;
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly toolsService: DiscordAgentToolsService,
-    private readonly historyService: DiscordChatHistoryService,
+    private readonly toolsService: PlatformAgentToolsService,
+    private readonly historyService: PlatformChatHistoryService,
     private readonly usageRecorder: PlatformLlmUsageRecorderAdapter,
     private readonly safetyEventService: PlatformLlmSafetyEventAdapter,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
+    private readonly options: PlatformAgentOptions,
   ) {
     const maxConcurrent = Number(
       this.configService.get<string>('LLM_MAX_CONCURRENT') ??
@@ -64,30 +65,30 @@ export class DiscordAgentService {
     );
   }
 
-  async reply(input: DiscordAgentInput): Promise<DiscordAgentReply> {
+  async reply(input: PlatformAgentInput): Promise<PlatformAgentReply> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return this.limiter(() => this.replyInternal(input));
   }
 
   private async replyInternal(
-    input: DiscordAgentInput,
-  ): Promise<DiscordAgentReply> {
+    input: PlatformAgentInput,
+  ): Promise<PlatformAgentReply> {
     if (!this.agent) {
       this.agent = this.buildAgent();
     }
 
-    const toolContext: DiscordAgentToolContext = {
-      discordUserId: input.discordUserId,
+    const toolContext: PlatformAgentToolContext = {
+      externalUserId: input.externalUserId,
       userId: input.userId,
       isServerChannel: input.isServerChannel,
       privateDataFetched: false,
     };
 
-    const history = await this.historyService.getHistory(input.discordUserId);
+    const history = await this.historyService.getHistory(input.externalUserId);
 
     const result = await this.agent.reply(
       {
-        externalUserId: input.discordUserId,
+        externalUserId: input.externalUserId,
         userId: input.userId,
         userText: input.userText,
         systemPrompt: this.buildSystemPrompt(),
@@ -98,24 +99,24 @@ export class DiscordAgentService {
     );
 
     await this.historyService.appendTurn(
-      input.discordUserId,
+      input.externalUserId,
       input.userText,
       result.text,
     );
 
     return {
       text: result.text,
-      privateDataFetched: toolContext.privateDataFetched,
+      privateDataFetched: toolContext.privateDataFetched === true,
     };
   }
 
-  private buildAgent(): LlmAgentService<DiscordAgentToolContext> {
-    const toolExecutor: ToolExecutorPort<DiscordAgentToolContext> = {
+  private buildAgent(): LlmAgentService<PlatformAgentToolContext> {
+    const toolExecutor: ToolExecutorPort<PlatformAgentToolContext> = {
       execute: (toolName, argsJson, ctx) =>
         this.toolsService.execute(toolName, argsJson, ctx),
     };
 
-    const ports: LlmAgentPorts<DiscordAgentToolContext> = {
+    const ports: LlmAgentPorts<PlatformAgentToolContext> = {
       // ponytail: shared retry helper from llm-agent (was 3 local copies of sleep+backoff)
       llmExecution: {
         run: (fn) =>
@@ -166,7 +167,7 @@ export class DiscordAgentService {
       },
     };
 
-    return new LlmAgentService<DiscordAgentToolContext>(
+    return new LlmAgentService<PlatformAgentToolContext>(
       {
         maxToolRounds: Number(
           this.configService.get<string>('OPENAI_MAX_TOOL_ROUNDS'),
@@ -183,6 +184,9 @@ export class DiscordAgentService {
   }
 
   private buildSystemPrompt(): string {
-    return loadSystemPromptFile(this.promptDir, 'discord-chat.system.txt');
+    return loadSystemPromptFile(
+      this.options.promptDir,
+      this.options.promptFile,
+    );
   }
 }

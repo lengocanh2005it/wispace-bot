@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   isAgentToolName,
   type AgentToolName,
@@ -10,46 +10,38 @@ import {
   readValidatedDate,
   readValidatedTime,
 } from '@wispace/llm-agent';
-import type { DiscordAgentToolContext } from '../../domain/entities/discord-chat.types';
 import {
   WispaceCalendarService,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
-import { DiscordRescheduleConfirmationService } from '../services/discord-reschedule-confirmation.service';
-import { DiscordOutboundService } from '../services/discord-outbound.service';
-import {
-  REPORT_DELIVERY_PORT,
-  type ReportDeliveryPort,
-} from '@wispace/scheduler-core';
-
-const NOT_LINKED_MESSAGE =
-  'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';
+import type {
+  PlatformAgentToolContext,
+  PlatformAgentToolsOptions,
+  RescheduleStagePort,
+} from './platform-agent.types';
 
 /**
- * Wires the WISPACE tools to real Wispace API calls once the Discord
- * account is linked (`ctx.userId`). `reschedule_study_session` stages a
- * pending change and sends a Discord button confirmation (see
- * `DiscordRescheduleConfirmationService` + `discord-chat.gateway.ts`'s
- * `@Button` handlers) — Discord counterpart to Messenger's postback
- * confirmation flow.
+ * Wires the WISPACE tools to real Wispace API calls once the platform
+ * account is linked (`ctx.userId`). Platform-specific behavior (not-linked
+ * message, Wispace external id, register-report message, reschedule
+ * validation strings + confirmation mechanism) is injected per app — shared
+ * by Discord and Zalo (replaces their near-identical per-app tools services).
  */
 @Injectable()
-export class DiscordAgentToolsService {
-  private readonly logger = new Logger(DiscordAgentToolsService.name);
+export class PlatformAgentToolsService {
+  private readonly logger = new Logger(PlatformAgentToolsService.name);
 
   constructor(
     private readonly goalsService: WispaceGoalsService,
     private readonly calendarService: WispaceCalendarService,
-    private readonly rescheduleConfirmationService: DiscordRescheduleConfirmationService,
-    private readonly outboundService: DiscordOutboundService,
-    @Inject(REPORT_DELIVERY_PORT)
-    private readonly reportDeliveryPort: ReportDeliveryPort,
+    private readonly stagePort: RescheduleStagePort,
+    private readonly options: PlatformAgentToolsOptions,
   ) {}
 
   async execute(
     toolName: string,
     argsJson: string,
-    ctx: DiscordAgentToolContext,
+    ctx: PlatformAgentToolContext,
   ): Promise<unknown> {
     if (!isAgentToolName(toolName)) {
       return { error: `Unknown tool: ${toolName}` };
@@ -68,7 +60,7 @@ export class DiscordAgentToolsService {
       return await this.dispatch(toolName, args, ctx);
     } catch (error) {
       this.logger.warn(
-        `Tool ${toolName} failed for discordUserId=${ctx.discordUserId}: ${
+        `Tool ${toolName} failed for externalUserId=${ctx.externalUserId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -81,20 +73,24 @@ export class DiscordAgentToolsService {
   private async dispatch(
     toolName: AgentToolName,
     args: Record<string, unknown>,
-    ctx: DiscordAgentToolContext,
+    ctx: PlatformAgentToolContext,
   ): Promise<unknown> {
     switch (toolName) {
       case 'get_user_goals':
         return this.withLinkedAccount(ctx, () => {
           ctx.privateDataFetched = true;
-          return this.goalsService.getUserGoals(ctx.discordUserId);
+          return this.goalsService.getUserGoals(
+            this.options.wispaceExternalId(ctx),
+          );
         });
       case 'get_learning_progress_report':
         return this.withLinkedAccount(ctx, async () => {
           ctx.privateDataFetched = true;
           const [goals, taskScores] = await Promise.all([
-            this.goalsService.getUserGoals(ctx.discordUserId),
-            this.goalsService.getTaskScoreAverages(ctx.discordUserId),
+            this.goalsService.getUserGoals(this.options.wispaceExternalId(ctx)),
+            this.goalsService.getTaskScoreAverages(
+              this.options.wispaceExternalId(ctx),
+            ),
           ]);
           return this.formatReport(goals, taskScores);
         });
@@ -103,7 +99,7 @@ export class DiscordAgentToolsService {
           ctx.privateDataFetched = true;
           const limit = readPositiveLimit(args.limit, 5);
           const sessions = await this.calendarService.getCalendarSessions(
-            ctx.discordUserId,
+            this.options.wispaceExternalId(ctx),
             { timeRange: 'upcoming', limit },
           );
           return {
@@ -116,7 +112,7 @@ export class DiscordAgentToolsService {
           ctx.privateDataFetched = true;
           const timeRange = readCalendarTimeRange(args.timeRange) ?? 'upcoming';
           const sessions = await this.calendarService.getCalendarSessions(
-            ctx.discordUserId,
+            this.options.wispaceExternalId(ctx),
             {
               timeRange,
               limit: readPositiveLimit(args.limit, 10),
@@ -129,7 +125,7 @@ export class DiscordAgentToolsService {
         return this.withLinkedAccount(ctx, async () => {
           ctx.privateDataFetched = true;
           const sessions = await this.calendarService.getCalendarSessions(
-            ctx.discordUserId,
+            this.options.wispaceExternalId(ctx),
             { timeRange: 'upcoming', limit: 1 },
           );
           const session = sessions[0];
@@ -146,8 +142,7 @@ export class DiscordAgentToolsService {
           Promise.resolve({
             registered: true,
             alreadyActive: true,
-            message:
-              'Bạn đã đăng ký nhận báo cáo học tập. WISPACE sẽ gửi báo cáo AI qua Discord vào mỗi buổi sáng — khoảng 2–3 ngày trước ngày thi bạn sẽ nhận được báo cáo chi tiết.',
+            message: this.options.registerReportMessage,
           }),
         );
       default: {
@@ -158,11 +153,11 @@ export class DiscordAgentToolsService {
   }
 
   private async withLinkedAccount(
-    ctx: DiscordAgentToolContext,
+    ctx: PlatformAgentToolContext,
     fn: () => Promise<unknown>,
   ): Promise<unknown> {
     if (!ctx.userId) {
-      return { available: false, message: NOT_LINKED_MESSAGE };
+      return { available: false, message: this.options.getNotLinkedMessage() };
     }
 
     return fn();
@@ -212,38 +207,42 @@ export class DiscordAgentToolsService {
   }
 
   private async rescheduleStudySession(
-    ctx: DiscordAgentToolContext,
+    ctx: PlatformAgentToolContext,
     args: Record<string, unknown>,
   ): Promise<unknown> {
     const calendarId = readPositiveInteger(args.calendarId);
     if (!calendarId) {
-      return { error: 'calendarId is required' };
+      return { error: this.options.reschedule.messages.calendarIdRequired };
     }
 
     const schedulingMode = readSchedulingMode(args.schedulingMode);
     if (!schedulingMode) {
       return {
-        error: 'schedulingMode must be default_next_day_same_time or explicit',
+        error: this.options.reschedule.messages.schedulingModeInvalid,
       };
     }
 
     const newLocalDate = readValidatedDate(args.newLocalDate);
     const newTime = readValidatedTime(args.newTime);
 
-    if (
-      args.newLocalDate !== undefined &&
-      args.newLocalDate !== null &&
-      !newLocalDate
-    ) {
-      return { error: 'newLocalDate must be in YYYY-MM-DD format' };
+    if (this.options.reschedule.validateDateAndTime) {
+      if (
+        args.newLocalDate !== undefined &&
+        args.newLocalDate !== null &&
+        !newLocalDate
+      ) {
+        return {
+          error: this.options.reschedule.messages.newLocalDateInvalid,
+        };
+      }
+
+      if (args.newTime !== undefined && args.newTime !== null && !newTime) {
+        return { error: this.options.reschedule.messages.newTimeInvalid };
+      }
     }
 
-    if (args.newTime !== undefined && args.newTime !== null && !newTime) {
-      return { error: 'newTime must be in HH:MM format' };
-    }
-
-    const staged = await this.rescheduleConfirmationService.stage({
-      externalId: ctx.discordUserId,
+    const staged = await this.stagePort.stage({
+      externalId: ctx.externalUserId,
       userId: ctx.userId!,
       calendarId,
       schedulingMode,
@@ -255,8 +254,8 @@ export class DiscordAgentToolsService {
       return staged;
     }
 
-    await this.outboundService.sendRescheduleConfirmation(
-      ctx.discordUserId,
+    await this.options.reschedule.confirmSender(
+      ctx.externalUserId,
       staged.summary,
     );
 

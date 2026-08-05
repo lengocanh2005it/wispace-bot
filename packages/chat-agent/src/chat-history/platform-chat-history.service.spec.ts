@@ -1,19 +1,22 @@
 import { ConfigService } from '@nestjs/config';
-import { DiscordChatHistoryService } from './discord-chat-history.service';
+import { PlatformChatHistoryService } from './platform-chat-history.service';
 
-describe('DiscordChatHistoryService', () => {
-  let service: DiscordChatHistoryService;
-
-  beforeEach(() => {
-    const configService = { get: () => undefined } as unknown as ConfigService;
-    service = new DiscordChatHistoryService(configService);
+function buildService(envPrefix: string, keyPrefix: string) {
+  const configService = { get: () => undefined } as unknown as ConfigService;
+  return new PlatformChatHistoryService(configService, {
+    envPrefix,
+    keyPrefix,
   });
+}
 
+describe('PlatformChatHistoryService', () => {
   it('returns empty history for a user with no prior turns', async () => {
+    const service = buildService('CHAT_HISTORY_', 'chat-history:discord:');
     await expect(service.getHistory('user-1')).resolves.toEqual([]);
   });
 
   it('appends user + assistant messages in order', async () => {
+    const service = buildService('ZALO_CHAT_HISTORY_', 'chat-history:zalo:');
     await service.appendTurn('user-1', 'hello', 'hi there');
 
     await expect(service.getHistory('user-1')).resolves.toEqual([
@@ -23,6 +26,7 @@ describe('DiscordChatHistoryService', () => {
   });
 
   it('keeps history isolated per user', async () => {
+    const service = buildService('CHAT_HISTORY_', 'chat-history:discord:');
     await service.appendTurn('user-1', 'a', 'b');
     await service.appendTurn('user-2', 'c', 'd');
 
@@ -34,6 +38,7 @@ describe('DiscordChatHistoryService', () => {
   });
 
   it('trims history to the most recent 10 turns (20 messages)', async () => {
+    const service = buildService('CHAT_HISTORY_', 'chat-history:discord:');
     for (let i = 0; i < 15; i++) {
       await service.appendTurn('user-1', `q${i}`, `a${i}`);
     }

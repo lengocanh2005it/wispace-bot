@@ -2,50 +2,77 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import type { ChatQueueBatch } from '@wispace/chat-queue-core';
+import type {
+  AgentPort,
+  HistoryPort,
+  OutboundPort,
+  RateLimiterPort,
+} from '@wispace/chat-pipeline';
 import { ChatPipeline } from '@wispace/chat-pipeline';
-import {
-  ZaloRateLimiterAdapter,
-  ZaloHistoryAdapter,
-  ZaloAgentAdapter,
-  ZaloOutboundAdapter,
-} from '../../infrastructure/adapters/zalo-chat-pipeline.adapters';
-import { ZaloChatRateLimitService } from '../../infrastructure/persistence/zalo-chat-rate-limit.service';
-import { ZaloChatHistoryService } from './zalo-chat-history.service';
-import { ZaloOutboundService } from './zalo-outbound.service';
-import { ZaloAgentService } from '../agent/zalo-agent.service';
+import type { PlatformChatQueueOptions } from '../agent/platform-agent.types';
 
 const DEFAULT_DEBOUNCE_MS = 2000;
 const STALE_TTL_MS = 60 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
 
+const PENDING_MESSAGE =
+  'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...';
+
 interface QueueCtx {
   userId?: number;
+  isServerChannel?: boolean;
 }
 
+/**
+ * Debounce chat queue + flush pipeline shared by Discord and Zalo (replaces
+ * their near-identical per-app queue services). Platform extras (merged-text
+ * cap, typing indicator, server-channel context) are optional — Zalo uses
+ * none, so its pipeline gets exactly 4 constructor args like before.
+ */
 @Injectable()
-export class ZaloChatQueueService implements OnModuleDestroy {
-  private readonly logger = new Logger(ZaloChatQueueService.name);
+export class PlatformChatQueueService implements OnModuleDestroy {
+  private readonly logger = new Logger(PlatformChatQueueService.name);
   private readonly queue: DebounceChatQueue<QueueCtx>;
   private readonly pipeline: ChatPipeline;
 
   constructor(
     configService: ConfigService,
-    rateLimitService: ZaloChatRateLimitService,
-    historyService: ZaloChatHistoryService,
-    private readonly outboundService: ZaloOutboundService,
-    agentService: ZaloAgentService,
+    rateLimiter: RateLimiterPort,
+    history: HistoryPort,
+    agent: AgentPort,
+    outbound: OutboundPort,
+    pendingTextSender: {
+      sendText(externalUserId: string, text: string): Promise<void>;
+    },
+    private readonly options: PlatformChatQueueOptions = {},
   ) {
     const maxPendingSize = Math.max(
       1,
       Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) || 20,
     );
 
-    this.pipeline = new ChatPipeline(
-      new ZaloRateLimiterAdapter(rateLimitService),
-      new ZaloHistoryAdapter(historyService),
-      new ZaloAgentAdapter(agentService),
-      new ZaloOutboundAdapter(outboundService),
-    );
+    const hooks =
+      options.typingIndicator !== undefined
+        ? {
+            onStep: async (step: string, ctx: { externalUserId: string }) => {
+              if (step === 'before_agent') {
+                await options.typingIndicator!(ctx.externalUserId).catch(
+                  () => {},
+                );
+              }
+            },
+          }
+        : undefined;
+
+    const config =
+      options.mergedTextMaxChars !== undefined
+        ? { mergedTextMaxChars: options.mergedTextMaxChars }
+        : undefined;
+
+    this.pipeline =
+      hooks !== undefined && config !== undefined
+        ? new ChatPipeline(rateLimiter, history, agent, outbound, hooks, config)
+        : new ChatPipeline(rateLimiter, history, agent, outbound);
 
     this.queue = new DebounceChatQueue<QueueCtx>(
       {
@@ -66,11 +93,8 @@ export class ZaloChatQueueService implements OnModuleDestroy {
       {
         onPendingQueued: (externalUserId, _text, pendingCount) => {
           if (pendingCount === 1) {
-            this.outboundService
-              .sendText(
-                externalUserId,
-                'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...',
-              )
+            pendingTextSender
+              .sendText(externalUserId, PENDING_MESSAGE)
               .catch(() => {});
           }
         },
@@ -88,13 +112,13 @@ export class ZaloChatQueueService implements OnModuleDestroy {
   }
 
   enqueue(
-    zaloUserId: string,
+    externalUserId: string,
     text: string,
     ctx: QueueCtx,
     idempotencyKey: string,
   ): void {
     this.queue.enqueue({
-      externalUserId: zaloUserId,
+      externalUserId,
       text,
       context: ctx,
       idempotencyKey,
@@ -108,6 +132,12 @@ export class ZaloChatQueueService implements OnModuleDestroy {
         userId: batch.context?.userId,
         texts: batch.texts,
         idempotencyKey: batch.idempotencyKey,
+        context:
+          this.options.propagateServerChannel === true
+            ? {
+                isServerChannel: batch.context?.isServerChannel === true,
+              }
+            : undefined,
       });
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

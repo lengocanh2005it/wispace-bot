@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   MemoryChatHistoryStore,
@@ -7,30 +7,32 @@ import {
   type ChatHistoryStorePort,
   type RedisChatHistoryClient,
 } from '@wispace/chat-history';
-import { REDIS_CLIENT } from '@wispace/bot-common';
-import type { RedisClientPort } from '@wispace/bot-common';
+import type { PlatformChatHistoryOptions } from '../agent/platform-agent.types';
 
 const DEFAULT_MAX_MESSAGES = 20; // 10 turns (user + assistant)
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
 
 /**
- * Chat history for Discord — supports memory (default) or Redis backend.
- * Set CHAT_HISTORY_STORE=redis + REDIS_ENABLED=true for multi-pod mode.
+ * Chat history for a platform — supports memory (default) or Redis backend.
+ * Env keys and Redis key prefix are parameterized per app (Discord:
+ * CHAT_HISTORY_* / chat-history:discord:; Zalo: ZALO_CHAT_HISTORY_* /
+ * chat-history:zalo:).
  */
 @Injectable()
-export class DiscordChatHistoryService {
-  private readonly logger = new Logger(DiscordChatHistoryService.name);
+export class PlatformChatHistoryService {
+  private readonly logger = new Logger(PlatformChatHistoryService.name);
   private readonly store: ChatHistoryStorePort;
 
   constructor(
     configService: ConfigService,
-    @Optional() @Inject(REDIS_CLIENT) redisClient?: RedisClientPort | null,
+    options: PlatformChatHistoryOptions,
+    redisClient?: { getNativeClient(): unknown } | null,
   ) {
     const ttlMs =
-      Number(configService.get<string>('CHAT_HISTORY_TTL_MS')) ||
+      Number(configService.get<string>(`${options.envPrefix}TTL_MS`)) ||
       DEFAULT_TTL_MS;
     const maxMessages =
-      Number(configService.get<string>('CHAT_HISTORY_MAX_MESSAGES')) ||
+      Number(configService.get<string>(`${options.envPrefix}MAX_MESSAGES`)) ||
       DEFAULT_MAX_MESSAGES;
 
     const storeType =
@@ -44,7 +46,7 @@ export class DiscordChatHistoryService {
         {
           ttlSec: Math.floor(ttlMs / 1000),
           maxMessages,
-          keyPrefix: 'chat-history:discord:',
+          keyPrefix: options.keyPrefix,
         },
       );
       this.logger.log('Chat history: Redis backend');
@@ -58,15 +60,15 @@ export class DiscordChatHistoryService {
     }
   }
 
-  getHistory(discordUserId: string): Promise<ChatHistoryMessage[]> {
-    return this.store.getHistory(discordUserId);
+  getHistory(externalUserId: string): Promise<ChatHistoryMessage[]> {
+    return this.store.getHistory(externalUserId);
   }
 
   appendTurn(
-    discordUserId: string,
+    externalUserId: string,
     userText: string,
     assistantText: string,
   ): Promise<void> {
-    return this.store.appendTurn(discordUserId, userText, assistantText);
+    return this.store.appendTurn(externalUserId, userText, assistantText);
   }
 }

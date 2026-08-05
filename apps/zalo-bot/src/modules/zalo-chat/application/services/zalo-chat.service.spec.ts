@@ -2,7 +2,7 @@ import type { ConfigService } from '@nestjs/config';
 import { ZaloChatService } from './zalo-chat.service';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
-import { ZaloChatQueueService } from './zalo-chat-queue.service';
+import { PlatformChatQueueService } from '@wispace/chat-agent';
 import type { ZaloRescheduleConfirmationService } from './zalo-reschedule-confirmation.service';
 
 const NO_RESCHEDULE = {
@@ -29,7 +29,7 @@ describe('ZaloChatService', () => {
       buildConfig(),
       {} as unknown as ZaloOutboundService,
       { findUserIdByZaloId } as unknown as ZaloAccountLinkService,
-      { enqueue } as unknown as ZaloChatQueueService,
+      { enqueue } as unknown as PlatformChatQueueService,
       NO_RESCHEDULE,
     );
 
@@ -52,7 +52,7 @@ describe('ZaloChatService', () => {
       buildConfig(),
       { sendText } as unknown as ZaloOutboundService,
       {} as unknown as ZaloAccountLinkService,
-      { enqueue } as unknown as ZaloChatQueueService,
+      { enqueue } as unknown as PlatformChatQueueService,
       NO_RESCHEDULE,
     );
 
@@ -71,7 +71,7 @@ describe('ZaloChatService', () => {
       buildConfig(),
       { sendText } as unknown as ZaloOutboundService,
       {} as unknown as ZaloAccountLinkService,
-      {} as unknown as ZaloChatQueueService,
+      {} as unknown as PlatformChatQueueService,
       NO_RESCHEDULE,
     );
 
@@ -89,7 +89,7 @@ describe('ZaloChatService', () => {
       buildConfig(),
       { sendText } as unknown as ZaloOutboundService,
       {} as unknown as ZaloAccountLinkService,
-      {} as unknown as ZaloChatQueueService,
+      {} as unknown as PlatformChatQueueService,
       NO_RESCHEDULE,
     );
 
