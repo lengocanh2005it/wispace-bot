@@ -127,7 +127,7 @@ npm run test               # Jest — 399 specs
 npm run build              # nest build + copy assets → dist/
 ```
 
-> Missing any step may cause CI failure. The order above matches the `quality` jobs in `.github/workflows/deploy-messenger-bot.yml`.
+> Missing any step may cause CI failure. The order above matches the `quality` jobs in `.github/workflows/pull-request.yml` (`npm run verify`).
 
 **Full local verification (recommended):** `npm run format` then `npm run verify`.
 
@@ -201,7 +201,7 @@ Same PR/task as code — update **agent-facing** docs (not just lengthy `docs/`)
 | Entity / migration / DB split | `.claude/rules/database.md`, `/typeorm-migration` skill, `.env.example` if adding variables |
 | Remove DB UserCalendars fallback (I3) | `user-calendar-schedule.service.ts`, `apps/messenger-bot/docs/study-session-reminder.md`, `docs/edge-cases-roadmap.md` |
 | LLM system prompt | `apps/messenger-bot/src/shared/prompts/*.system.txt`, `/edit-llm-prompt` skill |
-| Deploy / CI / VPS path | `.github/workflows/deploy-messenger-bot.yml`, `apps/messenger-bot/docs/doppler-secrets.md`, `apps/messenger-bot/docs/scale-phase-b-runbook.md`, `deploy/nginx/` |
+| Deploy / CI / VPS path | `.github/workflows/deploy-bots.yml` + `deploy-bot-reusable.yml` + `deploy/Dockerfile.bot` (shared, `ARG APP_NAME`), `apps/messenger-bot/docs/doppler-secrets.md`, `apps/messenger-bot/docs/scale-phase-b-runbook.md`, `deploy/nginx/` |
 | New env variable | `.env.example` + corresponding line in `docs/project-overview.md` or `AGENTS.md` |
 | Meta webhook signature / `MESSENGER_APP_SECRET` | `docs/project-overview.md`, `docs/edge-cases-roadmap.md` §1, `AGENTS.md` Security |
 | Closed gaps / roadmap | `docs/edge-cases-roadmap.md`, Integration gaps table in `AGENTS.md` |
@@ -430,7 +430,7 @@ Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global ski
 | Zalo 08:00 report cron | ✓ Raw format (goals+scores), cross-platform dedup, concurrency 3 |
 | Zalo study reminders | ✓ Sync fixed — `getSessions` callback wired via `ZaloWispaceCalendarService` |
 | Zalo ops HTTP endpoints | ✓ `POST /zalo/send-reports`, `/zalo/study-calendar/sync`, `/zalo/sync-study-reminders` + `InternalApiKeyGuard` |
-| Zalo CI/CD | ✓ `deploy-zalo-bot.yml` + `vps-deploy-zalo.sh` + Dockerfile |
+| Zalo CI/CD | ✓ `deploy-bots.yml` (3 jobs: messenger/discord/zalo) + shared `deploy/Dockerfile.bot` + `vps-deploy-zalo.sh` |
 | Zalo chat queue / debounce | ✓ DebounceChatQueue wrapping `@wispace/chat-queue-core` — same as Messenger |
 | Zalo Redis burst counter | ✓ `PostgresBurstCounter` (was `MemoryBurstCounter`) |
 | Zalo LLM report enrichment | ✓ Report cron uses `ZaloStudentReportService` (LLM); tool still raw |

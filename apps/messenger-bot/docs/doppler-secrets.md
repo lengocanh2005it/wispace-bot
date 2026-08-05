@@ -122,7 +122,7 @@ Runtime sync writes temp `/tmp/.env.sync.tmp` then `copyFile` to `/deploy/.env` 
 
 **Manual (no webhook):** `npm run env:sync-prod` or Actions → **Sync production env (no image build)**.
 
-### CI Deploy Code (`deploy-messenger-bot.yml`)
+### CI Deploy Code (`deploy-bots.yml` → `deploy-bot-reusable.yml`)
 
 | Git Change | CI Action |
 |------------|-----------|
