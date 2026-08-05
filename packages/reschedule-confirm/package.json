@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
-    "lint": "npm run build && eslint \"src/**/*.ts\" --fix",
+    "lint": "eslint \"src/**/*.ts\" --fix",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\"",
     "test": "jest --runInBand"
