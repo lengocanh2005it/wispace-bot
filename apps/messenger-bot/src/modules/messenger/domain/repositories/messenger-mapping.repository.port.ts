@@ -25,9 +25,6 @@ export interface MessengerMappingRepositoryPort {
     topic: string;
     notificationMessagesToken: string;
   }): Promise<UserMessengerMapping>;
-  findActiveMappingsForCadence(
-    cadence: NotificationCadence,
-  ): Promise<UserMessengerMapping[]>;
   findActiveSubscribedMappings(): Promise<UserMessengerMapping[]>;
   findActiveMappingsWithPsid(): Promise<UserMessengerMapping[]>;
   cleanupActiveDuplicateMappings(): Promise<number>;

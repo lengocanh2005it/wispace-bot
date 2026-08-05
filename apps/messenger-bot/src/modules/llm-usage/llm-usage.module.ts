@@ -5,7 +5,6 @@ import { MessengerOutboundModule } from '../messenger/messenger-outbound.module'
 import { LlmUsageEventEntity } from '@wispace/chat-metering';
 import { CleanupCronService } from '@wispace/cleanup-cron';
 import { LlmUsageCleanupCronService } from './application/services/llm-usage-cleanup-cron.service';
-import { LlmUsageCleanupService } from './application/services/llm-usage-cleanup.service';
 import { LlmUsageConfigService } from './application/services/llm-usage-config.service';
 import { LlmUsageQueryService } from './application/services/llm-usage-query.service';
 import { LlmUsageRecorderService } from './application/services/llm-usage-recorder.service';
@@ -29,7 +28,6 @@ import { LlmUsageController } from './presentation/controllers/llm-usage.control
     },
     LlmUsageRecorderService,
     LlmUsageQueryService,
-    LlmUsageCleanupService,
     CleanupCronService,
     LlmUsageCleanupCronService,
   ],

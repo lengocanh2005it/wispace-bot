@@ -4,7 +4,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
-import { base64url } from '@zalo/shared/utils/base64url';
 
 const PLATFORM = 'zalo' as const;
 const ZALO_TOKEN_ENDPOINT = 'https://oauth.zaloapp.com/v4/access_token';
@@ -29,10 +28,11 @@ export class ZaloAccountLinkService {
   ) {}
 
   buildPkcePair(): { codeVerifier: string; codeChallenge: string } {
-    const codeVerifier = base64url(randomBytes(32));
-    const codeChallenge = base64url(
-      createHash('sha256').update(codeVerifier).digest(),
-    );
+    const codeVerifier = randomBytes(32).toString('base64url');
+    const codeChallenge = createHash('sha256')
+      .update(codeVerifier)
+      .digest()
+      .toString('base64url');
     return { codeVerifier, codeChallenge };
   }
 

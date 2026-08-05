@@ -118,23 +118,6 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
     });
   }
 
-  async markSentByPsidExamDate(psid: string, examDate: string): Promise<void> {
-    await this.jobRepo.update(
-      {
-        platform: PLATFORM,
-        externalUserId: psid,
-        examDate,
-        status: In(['failed', 'processing', 'pending']),
-      },
-      {
-        status: 'sent',
-        sentAt: new Date(),
-        nextRetryAt: null,
-        lastError: null,
-      },
-    );
-  }
-
   async markSentByExternalUserExamDate(
     externalUserId: string,
     examDate: string,

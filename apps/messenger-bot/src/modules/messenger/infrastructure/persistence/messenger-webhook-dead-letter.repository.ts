@@ -33,15 +33,6 @@ export class MessengerWebhookDeadLetterRepository implements MessengerWebhookDea
     return this.map(saved);
   }
 
-  async listPending(limit: number): Promise<WebhookDeadLetterRecord[]> {
-    const rows = await this.repo.find({
-      where: { status: 'pending' },
-      order: { createdAt: 'ASC' },
-      take: limit,
-    });
-    return rows.map((r) => this.map(r));
-  }
-
   async listPendingForRetry(
     opts: ListPendingForRetryOptions,
   ): Promise<WebhookDeadLetterRecord[]> {

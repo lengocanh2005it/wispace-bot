@@ -64,32 +64,8 @@ export function parseMessengerLinkContext(input: {
   };
 }
 
-export function parseUserIdFromPayload(payload?: string): number | undefined {
-  if (!payload) {
-    return undefined;
-  }
-
-  const refMatch = /(?:^|[;,]\s*)ref[:=](\d+)/i.exec(payload);
-  if (refMatch) {
-    return parseUserIdFromRef(refMatch[1]);
-  }
-
-  return undefined;
-}
-
 export function buildPocPsidToken(psid: string): string {
   return `poc:psid:${psid}`;
-}
-
-export function buildMMeLink(
-  pageRef: string,
-  context: MessengerLinkContext,
-): string {
-  const url = new URL(`https://m.me/${pageRef}`);
-  url.searchParams.set('topic', context.topic);
-  url.searchParams.set('cadence', context.cadence);
-  url.searchParams.set('ref', context.ref);
-  return url.toString();
 }
 
 export const FALLBACK_DISPLAY_NAME = 'Chào bạn nha';
@@ -111,12 +87,4 @@ export function getPocSubscriptionConfirmationMessage(): string {
 
 export function getPocAlreadySubscribedMessage(): string {
   return 'Bạn đã đăng ký nhận báo cáo học tập rồi. WISPACE sẽ gửi báo cáo AI khoảng 2–3 ngày trước ngày thi — không cần bấm lại.';
-}
-
-export function getMissingUserRefMessage(): string {
-  return 'Vui lòng mở Messenger từ liên kết WISPACE (có đủ topic, cadence và ref) để kết nối tài khoản trước khi sử dụng.';
-}
-
-export function isPocPsidToken(token: string): boolean {
-  return token.startsWith('poc:psid:');
 }

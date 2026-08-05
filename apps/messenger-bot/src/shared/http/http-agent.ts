@@ -49,16 +49,3 @@ export async function keepAliveFetch(
 
   return fetch(url, opts);
 }
-
-export function closeAllAgents(): Promise<void> {
-  const closePromises: Promise<void>[] = [];
-  for (const [host, agent] of agents) {
-    closePromises.push(
-      agent.close().catch((err: unknown) => {
-        console.error(`Failed to close HTTP agent for ${host}:`, err);
-      }),
-    );
-    agents.delete(host);
-  }
-  return Promise.all(closePromises).then();
-}

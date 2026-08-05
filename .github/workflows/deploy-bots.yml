@@ -1,0 +1,66 @@
+name: Deploy bots to VPS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: Force Docker image rebuild
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy-messenger-bot:
+    uses: ./.github/workflows/deploy-bot-reusable.yml
+    with:
+      app: messenger-bot
+      vps_target_dir: /home/ngoc_anh/messenger-bot
+      force_build: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build }}
+      health_path: /health/db
+    secrets:
+      doppler_token: ${{ secrets.DOPPLER_TOKEN_MESSENGER }}
+      ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
+      ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      vps_host: ${{ secrets.VPS_HOST }}
+      vps_known_hosts: ${{ secrets.VPS_KNOWN_HOSTS }}
+      vps_user: ${{ secrets.VPS_USER }}
+
+  deploy-discord-bot:
+    uses: ./.github/workflows/deploy-bot-reusable.yml
+    with:
+      app: discord-bot
+      vps_target_dir: /home/ngoc_anh/discord-bot
+      force_build: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build }}
+      health_path: /health
+    secrets:
+      doppler_token: ${{ secrets.DOPPLER_TOKEN_DISCORD }}
+      ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
+      ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      vps_host: ${{ secrets.VPS_HOST }}
+      vps_known_hosts: ${{ secrets.VPS_KNOWN_HOSTS }}
+      vps_user: ${{ secrets.VPS_USER }}
+
+  deploy-zalo-bot:
+    uses: ./.github/workflows/deploy-bot-reusable.yml
+    with:
+      app: zalo-bot
+      vps_target_dir: /home/ngoc_anh/zalo-bot
+      force_build: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build }}
+      health_path: /health
+    secrets:
+      doppler_token: ${{ secrets.DOPPLER_TOKEN_ZALO }}
+      ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
+      ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      vps_host: ${{ secrets.VPS_HOST }}
+      vps_known_hosts: ${{ secrets.VPS_KNOWN_HOSTS }}
+      vps_user: ${{ secrets.VPS_USER }}

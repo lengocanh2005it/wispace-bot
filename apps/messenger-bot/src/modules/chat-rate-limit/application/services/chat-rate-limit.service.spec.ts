@@ -43,15 +43,6 @@ describe('ChatRateLimitService', () => {
     let reserveCallCount = 0;
     const repository: ChatQuotaRepositoryPort = {
       getDailyUsageCount: jest.fn(() => Promise.resolve(count)),
-      incrementDailyUsage: jest.fn(() => {
-        count += 1;
-        return Promise.resolve(count);
-      }),
-      decrementDailyUsage: jest.fn(() => {
-        count = Math.max(count - 1, 0);
-        return Promise.resolve(count);
-      }),
-      tryReserveIdempotency: jest.fn(),
       reserveFreeFormSlotInTransaction: jest.fn(
         ({ idempotencyKey, dailyLimit = 15 }) => {
           reserveCallCount += 1;
@@ -86,9 +77,6 @@ describe('ChatRateLimitService', () => {
       countRecentReservations: jest.fn(() =>
         Promise.resolve(options.burstCount ?? 0),
       ),
-      updateIdempotencyStatus: jest.fn(() => Promise.resolve(true)),
-      getIdempotencyByKey: jest.fn(() => Promise.resolve(null)),
-      listStuckReserved: jest.fn(() => Promise.resolve([])),
       recoverIdempotencyForRetry: jest.fn(() => Promise.resolve('not_found')),
       recoverAllStuckReserved: jest.fn(() => Promise.resolve([])),
       countStuckReserved: jest.fn(() => Promise.resolve(0)),
@@ -135,45 +123,6 @@ describe('ChatRateLimitService', () => {
       getReserveCallCount: () => reserveCallCount,
     };
   };
-
-  it('allows checkQuota when usage is under the daily limit', async () => {
-    const { service } = createService(true, 7);
-
-    const result = await service.checkQuota('psid-1', 143);
-
-    expect(result.allowed).toBe(true);
-    expect(result.used).toBe(7);
-    expect(result.limit).toBe(15);
-    expect(result.remaining).toBe(8);
-    expect(result.usageDate).toMatch(usageDatePattern);
-  });
-
-  it('denies checkQuota when usage reaches the daily limit', async () => {
-    const { service } = createService(true, 15);
-
-    const result = await service.checkQuota('psid-1');
-
-    expect(result).toMatchObject({
-      allowed: false,
-      used: 15,
-      limit: 15,
-      remaining: 0,
-      reason: 'DAILY_LIMIT',
-    });
-    expect(result.usageDate).toMatch(usageDatePattern);
-  });
-
-  it('bypasses enforcement when rate limit is disabled', async () => {
-    const { service } = createService(false, 99);
-
-    const result = await service.checkQuota('psid-1');
-
-    expect(result.allowed).toBe(true);
-    expect(result.used).toBe(0);
-    expect(result.limit).toBe(15);
-    expect(result.remaining).toBe(15);
-    expect(result.usageDate).toMatch(usageDatePattern);
-  });
 
   it('reserves a slot when under the daily limit', async () => {
     const { service, getCount } = createService(true, 14);
@@ -274,17 +223,6 @@ describe('ChatRateLimitService', () => {
     expect(getCount()).toBe(15);
   });
 
-  it('keeps checkQuota allowed for whitelisted psid at daily limit', async () => {
-    const { service } = createService(true, 15, {
-      whitelistPsids: 'psid-qa',
-    });
-
-    const result = await service.checkQuota('psid-qa');
-
-    expect(result.allowed).toBe(true);
-    expect(result.used).toBe(15);
-  });
-
   it('rejects duplicate reserve for the same message mid', async () => {
     const { service, getCount } = createService(true, 0);
 
@@ -322,11 +260,6 @@ describe('ChatRateLimitService', () => {
 
     expect(burstCounter.releaseReservation).toHaveBeenCalledWith('psid-1');
     expect(getCount()).toBe(0);
-    await expect(service.checkQuota('psid-1')).resolves.toMatchObject({
-      allowed: true,
-      used: 0,
-      remaining: 15,
-    });
   });
 
   it('re-reserves after recovering stale reserved idempotency on conflict', async () => {

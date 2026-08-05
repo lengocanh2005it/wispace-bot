@@ -513,7 +513,7 @@ Bootstrap reminder jobs: `npm run study-reminder:sync`.
 
 ## 12. VPS Deploy (Docker + GHCR + Doppler)
 
-GitHub Actions (push to `main`): [`.github/workflows/deploy-messenger-bot.yml`](../.github/workflows/deploy-messenger-bot.yml) — **only builds image** when `src/`, `Dockerfile`, or `package*.json` change; otherwise VPS reuses `:latest`. Env-only: Doppler webhook or [`sync-env.yml`](../.github/workflows/sync-env.yml) / `npm run env:sync-prod`.
+GitHub Actions (push to `main`): [`.github/workflows/deploy-bots.yml`](../.github/workflows/deploy-bots.yml) (1 file, 3 jobs: messenger/discord/zalo → `deploy-bot-reusable.yml`) — **only builds image** when `src/`, `Dockerfile`, or `package*.json` change; otherwise VPS reuses `:latest`. Shared image build: [`deploy/Dockerfile.bot`](../deploy/Dockerfile.bot) (`ARG APP_NAME`). Env-only: Doppler webhook or [`sync-env.yml`](../.github/workflows/sync-env.yml) (`env_only=true` → no image build, pushes `.env` + restart) / `npm run env:sync-prod`.
 
 | GitHub Secret | Purpose |
 |---------------|---------|

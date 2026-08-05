@@ -20,6 +20,11 @@ on:
         type: string
         description: Health check path on the deployed bot, e.g. /health/db (empty = skip)
         default: ''
+      env_only:
+        required: false
+        type: boolean
+        description: Skip image build/migrations, only push .env from Doppler and restart (FORCE_RECREATE=true)
+        default: false
     secrets:
       doppler_token:
         required: false
@@ -64,14 +69,16 @@ jobs:
               - 'turbo.json'
             deploy:
               - 'apps/${{ inputs.app }}/docker-compose.prod.yml'
+              - 'deploy/Dockerfile.bot'
               - '.github/workflows/**'
               - '.github/scripts/**'
 
   build-image:
     needs: changes
     if: |
-      needs.changes.outputs.app == 'true' ||
-      inputs.force_build
+      inputs.env_only != true &&
+      (needs.changes.outputs.app == 'true' ||
+        inputs.force_build)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
@@ -103,7 +110,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: apps/${{ inputs.app }}/Dockerfile
+          file: deploy/Dockerfile.bot
+          build-args: |
+            APP_NAME=${{ inputs.app }}
+            APP_PORT=${{ inputs.app == 'messenger-bot' && '5007' || (inputs.app == 'discord-bot' && '3001' || '3002') }}
+            WITH_DOPPLER=${{ inputs.app == 'messenger-bot' && 'true' || 'false' }}
           push: true
           tags: |
             ${{ env.IMAGE }}
@@ -121,6 +132,7 @@ jobs:
     if: |
       always() &&
       !cancelled() &&
+      inputs.env_only != true &&
       needs.build-image.result == 'success' &&
       inputs.app == 'messenger-bot'
     runs-on: ubuntu-latest
@@ -167,7 +179,8 @@ jobs:
     if: |
       always() &&
       !cancelled() &&
-      (needs.changes.outputs.app == 'true' ||
+      (inputs.env_only == true ||
+        needs.changes.outputs.app == 'true' ||
         needs.changes.outputs.deploy == 'true' ||
         inputs.force_build) &&
       (needs.build-image.result == 'success' || needs.build-image.result == 'skipped') &&
@@ -180,7 +193,7 @@ jobs:
       VPS_KNOWN_HOSTS: ${{ secrets.vps_known_hosts }}
       VPS_USER: ${{ secrets.vps_user }}
       VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT || '8443' }}
-      MIGRATION_CMD: ${{ inputs.app == 'messenger-bot' && 'npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js' || '' }}
+      MIGRATION_CMD: ${{ !inputs.env_only && inputs.app == 'messenger-bot' && 'npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js' || '' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -229,13 +242,13 @@ jobs:
         env:
           IMAGE: ${{ env.IMAGE }}
           DEPLOY_MODE: ${{ env.DEPLOY_MODE }}
-          FORCE_RECREATE: 'false'
+          FORCE_RECREATE: ${{ inputs.env_only == true && 'true' || 'false' }}
           GHCR_PULL_TOKEN: ${{ secrets.ghcr_pull_token }}
           GHCR_USER: ${{ github.repository_owner }}
           VPS_TARGET_DIR: ${{ inputs.vps_target_dir }}
           APP_NAME: ${{ inputs.app }}
           HEALTH_PATH: ${{ inputs.health_path }}
-          RUN_MIGRATIONS: ${{ inputs.app == 'messenger-bot' && 'true' || 'false' }}
+          RUN_MIGRATIONS: ${{ !inputs.env_only && inputs.app == 'messenger-bot' && 'true' || 'false' }}
           MIGRATION_CMD: ${{ env.MIGRATION_CMD }}
         run: |
           export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH RUN_MIGRATIONS MIGRATION_CMD

@@ -142,83 +142,6 @@ export class MessengerRepository
     return this.mapEntity(saved);
   }
 
-  async upsertFromOptin(params: {
-    psid?: string;
-    userId?: number;
-    notificationMessagesToken: string;
-    cadence?: NotificationCadence;
-    topic?: string;
-  }): Promise<UserMessengerMapping> {
-    const resolvedUserId = params.userId;
-    const existing =
-      (await this.mappingRepo.findOne({
-        where: { notificationMessagesToken: params.notificationMessagesToken },
-      })) ??
-      (params.psid
-        ? await this.mappingRepo.findOne({
-            where: {
-              platform: PLATFORM,
-              externalUserId: params.psid,
-              status: 'ACTIVE',
-            },
-            order: { id: 'DESC' },
-          })
-        : null);
-
-    if (!resolvedUserId) {
-      throw new Error('userId is required for upsertFromOptin');
-    }
-
-    if (existing) {
-      existing.platform = PLATFORM;
-      existing.externalUserId = params.psid ?? existing.externalUserId;
-      existing.userId = resolvedUserId;
-      existing.notificationMessagesToken = params.notificationMessagesToken;
-      existing.cadence = params.cadence ?? existing.cadence;
-      existing.topic = params.topic ?? existing.topic;
-      existing.status = 'ACTIVE';
-
-      const saved = await this.mappingRepo.save(existing);
-      if (saved.externalUserId) {
-        await this.deactivateDuplicateMappingsForPsid(
-          saved.externalUserId,
-          saved.id,
-        );
-      }
-      return this.mapEntity(saved);
-    }
-
-    const created = this.mappingRepo.create({
-      userId: resolvedUserId,
-      platform: PLATFORM,
-      externalUserId: params.psid ?? null,
-      notificationMessagesToken: params.notificationMessagesToken,
-      cadence: params.cadence ?? null,
-      topic: params.topic ?? null,
-      status: 'ACTIVE',
-    });
-
-    const saved = await this.mappingRepo.save(created);
-    if (saved.externalUserId) {
-      await this.deactivateDuplicateMappingsForPsid(
-        saved.externalUserId,
-        saved.id,
-      );
-    }
-    return this.mapEntity(saved);
-  }
-
-  async findActiveMappingsForCadence(
-    cadence: NotificationCadence,
-  ): Promise<UserMessengerMapping[]> {
-    const rows = await this.mappingRepo.find({
-      where: { status: 'ACTIVE', cadence },
-      order: { id: 'DESC' },
-    });
-
-    return this.dedupeMappingsByPsid(rows.map((row) => this.mapEntity(row)));
-  }
-
   async findActiveSubscribedMappings(): Promise<UserMessengerMapping[]> {
     const rows = await this.mappingRepo
       .createQueryBuilder('mapping')
@@ -340,24 +263,6 @@ export class MessengerRepository
       },
       { status: 'INACTIVE' },
     );
-  }
-
-  async findActiveMetaTokenMappingByPsid(
-    psid: string,
-  ): Promise<UserMessengerMapping | null> {
-    const row = await this.mappingRepo
-      .createQueryBuilder('mapping')
-      .where('mapping.platform = :platform', { platform: PLATFORM })
-      .andWhere('mapping.external_user_id = :externalUserId', {
-        externalUserId: psid,
-      })
-      .andWhere('mapping.status = :status', { status: 'ACTIVE' })
-      .andWhere('mapping.notification_messages_token NOT LIKE :legacyToken', {
-        legacyToken: 'poc:psid:%',
-      })
-      .getOne();
-
-    return row ? this.mapEntity(row) : null;
   }
 
   async findActiveMappingsWithPsid(): Promise<UserMessengerMapping[]> {

@@ -260,60 +260,6 @@ describe('ChatRateLimitRepository (messenger-bot wrapper)', () => {
     );
   });
 
-  it('tryReserveIdempotency maps externalUserId back to psid', async () => {
-    const record = await repository.tryReserveIdempotency({
-      idempotencyKey: 'mid-2',
-      psid: 'psid-1',
-      usageDate: '2026-06-15',
-    });
-
-    expect(record?.psid).toBe('psid-1');
-  });
-
-  it('increments and decrements daily usage directly (ops path)', async () => {
-    const first = await repository.incrementDailyUsage({
-      psid: 'psid-1',
-      userId: 143,
-      usageDate: '2026-06-15',
-    });
-    const second = await repository.incrementDailyUsage({
-      psid: 'psid-1',
-      userId: 143,
-      usageDate: '2026-06-15',
-    });
-
-    expect(first).toBe(1);
-    expect(second).toBe(2);
-
-    const decremented = await repository.decrementDailyUsage(
-      'psid-1',
-      '2026-06-15',
-    );
-    expect(decremented).toBe(1);
-  });
-
-  it('updates and reads idempotency by key directly (ops path)', async () => {
-    await repository.tryReserveIdempotency({
-      idempotencyKey: 'mid-3',
-      psid: 'psid-1',
-      usageDate: '2026-06-15',
-    });
-
-    const updated = await repository.updateIdempotencyStatus(
-      'mid-3',
-      'completed',
-    );
-    const missing = await repository.updateIdempotencyStatus(
-      'mid-404',
-      'completed',
-    );
-    const record = await repository.getIdempotencyByKey('mid-3');
-
-    expect(updated).toBe(true);
-    expect(missing).toBe(false);
-    expect(record?.status).toBe('completed');
-  });
-
   it('exposes ops-only aggregate counters without throwing', async () => {
     await expect(repository.countStuckReserved(new Date())).resolves.toBe(0);
     await expect(

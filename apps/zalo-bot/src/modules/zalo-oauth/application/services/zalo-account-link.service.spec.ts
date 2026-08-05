@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
 import { ZaloAccountLinkService } from './zalo-account-link.service';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
-import { base64url } from '@zalo/shared/utils/base64url';
 
 function buildConfig(): ConfigService {
   return {
@@ -21,9 +20,10 @@ describe('ZaloAccountLinkService', () => {
 
     const { codeVerifier, codeChallenge } = service.buildPkcePair();
 
-    const expected = base64url(
-      createHash('sha256').update(codeVerifier).digest(),
-    );
+    const expected = createHash('sha256')
+      .update(codeVerifier)
+      .digest()
+      .toString('base64url');
     expect(codeChallenge).toBe(expected);
   });
 

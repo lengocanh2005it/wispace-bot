@@ -1,9 +1,3 @@
-export interface DiscordAccountLink {
-  userId: number;
-  discordUserId: string;
-  linkedAt: Date;
-}
-
 export type DiscordLinkVerifyFailureReason =
   | 'NOT_FOUND'
   | 'EXPIRED'
