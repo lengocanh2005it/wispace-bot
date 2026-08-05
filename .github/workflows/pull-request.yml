@@ -27,9 +27,7 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: |
-          npm ci --force
-          npm install --ignore-scripts
+        run: npm ci --force
 
       - name: Verify (format + lint + typecheck + test + build)
         run: npm run verify
