@@ -102,6 +102,7 @@ describe('PlatformCleanupCronService', () => {
       'discord-idempotency-recovery',
       'discord-idempotency-cleanup',
     ]);
+    service.onModuleDestroy();
   });
 
   it('registers the 5th oauth-state cron for zalo', () => {
@@ -116,6 +117,7 @@ describe('PlatformCleanupCronService', () => {
     const { service } = buildService(config);
     service.onModuleInit();
     expect([...service['jobs'].keys()]).toContain('zalo-oauth-state-cleanup');
+    service.onModuleDestroy();
   });
 
   it('message log cleanup uses platform env keys and lock id', async () => {
@@ -139,10 +141,9 @@ describe('PlatformCleanupCronService', () => {
   });
 
   it('oauth state cleanup deletes states older than 10 minutes', async () => {
-    const oauthDelete = jest.fn<
-      Promise<{ affected: number }>,
-      [{ createdAt: { value: Date } }]
-    >();
+    const oauthDelete = jest
+      .fn<Promise<{ affected: number }>, [{ createdAt: { value: Date } }]>()
+      .mockResolvedValue({ affected: 0 });
     const oauthStateRepo = {
       delete: oauthDelete,
     } as never as Repository<{ createdAt: Date }>;
