@@ -1,8 +1,10 @@
 import type { ConfigService } from '@nestjs/config';
 import { ZaloAgentToolsService } from './zalo-agent-tools.service';
 import type { ZaloAgentToolContext } from '../../domain/entities/zalo-chat.types';
-import type { ZaloWispaceGoalsService } from '@zalo/modules/wispace/application/services/zalo-wispace-goals.service';
-import type { ZaloWispaceCalendarService } from '@zalo/modules/wispace/application/services/zalo-wispace-calendar.service';
+import type {
+  WispaceCalendarService,
+  WispaceGoalsService,
+} from '@wispace/wispace-client';
 
 function buildConfig(): ConfigService {
   return {
@@ -15,7 +17,7 @@ function buildConfig(): ConfigService {
   } as unknown as ConfigService;
 }
 
-function buildGoalsService(): ZaloWispaceGoalsService {
+function buildGoalsService(): WispaceGoalsService {
   return {
     getUserGoals: () =>
       Promise.resolve({
@@ -26,13 +28,13 @@ function buildGoalsService(): ZaloWispaceGoalsService {
       }),
     getTaskScoreAverages: () =>
       Promise.resolve([{ task1Count: 10, task2Count: 15 }]),
-  } as unknown as ZaloWispaceGoalsService;
+  } as unknown as WispaceGoalsService;
 }
 
-function buildCalendarService(): ZaloWispaceCalendarService {
+function buildCalendarService(): WispaceCalendarService {
   return {
     getCalendarSessions: () => Promise.resolve([]),
-  } as unknown as ZaloWispaceCalendarService;
+  } as unknown as WispaceCalendarService;
 }
 
 describe('ZaloAgentToolsService', () => {

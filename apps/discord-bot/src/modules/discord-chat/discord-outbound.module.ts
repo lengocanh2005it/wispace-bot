@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
+import {
+  DeliveryLogService,
+  PlatformDeadLetterService,
+  WebhookDeadLetterEntity,
+} from '@wispace/database';
+import { Repository } from 'typeorm';
 import { DiscordOutboundService } from './application/services/discord-outbound.service';
-import { DiscordDeliveryLogService } from './application/services/discord-delivery-log.service';
-import { DiscordDeadLetterService } from './application/services/discord-dead-letter.service';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
-import { WebhookDeadLetterEntity } from '@wispace/database';
 
 /**
  * Split out from `DiscordChatModule` so `AccountLinkModule` (OAuth callback,
@@ -20,10 +23,20 @@ import { WebhookDeadLetterEntity } from '@wispace/database';
     ]),
   ],
   providers: [
-    DiscordDeliveryLogService,
-    DiscordDeadLetterService,
+    {
+      provide: DeliveryLogService,
+      useFactory: (repo: Repository<DiscordMessageLogEntity>) =>
+        new DeliveryLogService(repo),
+      inject: [getRepositoryToken(DiscordMessageLogEntity)],
+    },
+    {
+      provide: PlatformDeadLetterService,
+      useFactory: (repo: Repository<WebhookDeadLetterEntity>) =>
+        new PlatformDeadLetterService('discord', repo),
+      inject: [getRepositoryToken(WebhookDeadLetterEntity)],
+    },
     DiscordOutboundService,
   ],
-  exports: [DiscordOutboundService, DiscordDeadLetterService],
+  exports: [DiscordOutboundService, PlatformDeadLetterService],
 })
 export class DiscordOutboundModule {}

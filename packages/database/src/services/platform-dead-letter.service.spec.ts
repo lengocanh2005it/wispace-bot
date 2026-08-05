@@ -1,9 +1,9 @@
-import { ZaloDeadLetterService } from './zalo-dead-letter.service';
+import { PlatformDeadLetterService } from './platform-dead-letter.service';
 import type { Repository } from 'typeorm';
-import type { WebhookDeadLetterEntity } from '@wispace/database';
+import type { WebhookDeadLetterEntity } from '../entities/webhook-dead-letter.entity';
 
-describe('ZaloDeadLetterService', () => {
-  const buildService = () => {
+describe('PlatformDeadLetterService', () => {
+  const buildService = (platform: string) => {
     const saveMock = jest.fn().mockResolvedValue(undefined);
     const updateMock = jest.fn().mockResolvedValue(undefined);
     const createQueryBuilderMock = jest.fn();
@@ -13,15 +13,15 @@ describe('ZaloDeadLetterService', () => {
       createQueryBuilder: createQueryBuilderMock,
     } as unknown as Repository<WebhookDeadLetterEntity>;
     return {
-      service: new ZaloDeadLetterService(repo),
+      service: new PlatformDeadLetterService(platform, repo),
       saveMock,
       updateMock,
       createQueryBuilderMock,
     };
   };
 
-  it('saves dead letter entry with pending status', async () => {
-    const { service, saveMock } = buildService();
+  it('saves dead letter entry with pending status and platform', async () => {
+    const { service, saveMock } = buildService('zalo');
 
     await service.save({
       externalUserId: 'u1',
@@ -39,7 +39,7 @@ describe('ZaloDeadLetterService', () => {
   });
 
   it('swallows errors when save fails', async () => {
-    const { service, saveMock } = buildService();
+    const { service, saveMock } = buildService('discord');
     saveMock.mockRejectedValue(new Error('db error'));
 
     await expect(
@@ -52,7 +52,7 @@ describe('ZaloDeadLetterService', () => {
   });
 
   it('marks entry as replayed', async () => {
-    const { service, updateMock } = buildService();
+    const { service, updateMock } = buildService('discord');
 
     await service.markReplayed(42);
 
@@ -64,7 +64,7 @@ describe('ZaloDeadLetterService', () => {
   });
 
   it('marks entry as abandoned with reason', async () => {
-    const { service, updateMock } = buildService();
+    const { service, updateMock } = buildService('discord');
 
     await service.markAbandoned(42, 'max retries exceeded');
 
@@ -75,7 +75,7 @@ describe('ZaloDeadLetterService', () => {
   });
 
   it('increments retry count', async () => {
-    const { service, createQueryBuilderMock } = buildService();
+    const { service, createQueryBuilderMock } = buildService('discord');
     const mockExecute = jest.fn().mockResolvedValue(undefined);
     const mockWhere = jest.fn().mockReturnValue({ execute: mockExecute });
     const mockSet = jest.fn().mockReturnValue({ where: mockWhere });

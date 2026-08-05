@@ -11,6 +11,9 @@ import {
   ChatIdempotencyEntity,
   LlmUsageEventEntity,
   LlmSafetyEventEntity,
+  LlmUsageConfigService,
+  PlatformLlmUsageRecorderAdapter,
+  PlatformLlmSafetyEventAdapter,
 } from '@wispace/chat-metering';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
@@ -21,22 +24,23 @@ import { ZaloChatHistoryService } from './application/services/zalo-chat-history
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
 import { ZaloChatService } from './application/services/zalo-chat.service';
 import { ZaloChatRateLimitService } from './infrastructure/persistence/zalo-chat-rate-limit.service';
-import { ZaloLlmUsageConfigService } from './application/services/zalo-llm-usage-config.service';
-import { ZaloLlmUsageRecorderService } from './infrastructure/persistence/zalo-llm-usage-recorder.service';
-import { ZaloLlmSafetyEventService } from './infrastructure/persistence/zalo-llm-safety-event.service';
 import { ZaloRescheduleConfirmationService } from './application/services/zalo-reschedule-confirmation.service';
 import { ZaloStudyCalendarCommandService } from './application/services/zalo-study-calendar-command.service';
 import { ZaloCalendarPort } from './infrastructure/adapters/zalo-calendar.port';
 import { ZaloReschedulePort } from './infrastructure/adapters/zalo-reschedule.port';
-import { ZaloDeadLetterService } from './infrastructure/persistence/zalo-dead-letter.service';
 import { ZaloDeadLetterCronService } from './application/services/zalo-dead-letter-cron.service';
 import { ZaloChatQueueService } from './application/services/zalo-chat-queue.service';
-import { ZaloDeliveryLogService } from './infrastructure/persistence/zalo-delivery-log.service';
 import { CleanupCronService } from '@wispace/cleanup-cron';
 import { ZaloCleanupCronService } from './infrastructure/persistence/zalo-cleanup-cron.service';
 import { ZaloMessageLogEntity } from '../../infrastructure/database/entities/zalo-message-log.entity';
-import { WebhookDeadLetterEntity } from '@wispace/database';
+import {
+  DeliveryLogService,
+  PlatformDeadLetterService,
+  WebhookDeadLetterEntity,
+} from '@wispace/database';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 @Module({
   imports: [
@@ -95,9 +99,36 @@ import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zal
       },
       inject: [ConfigService],
     },
-    ZaloLlmUsageConfigService,
-    ZaloLlmUsageRecorderService,
-    ZaloLlmSafetyEventService,
+    LlmUsageConfigService,
+    {
+      provide: PlatformLlmUsageRecorderAdapter,
+      useFactory: (
+        configService: LlmUsageConfigService,
+        usageRepo: Repository<LlmUsageEventEntity>,
+      ) =>
+        new PlatformLlmUsageRecorderAdapter('zalo', configService, usageRepo),
+      inject: [LlmUsageConfigService, getRepositoryToken(LlmUsageEventEntity)],
+    },
+    {
+      provide: PlatformLlmSafetyEventAdapter,
+      useFactory: (
+        safetyRepo: Repository<LlmSafetyEventEntity>,
+        configService: ConfigService,
+      ) => new PlatformLlmSafetyEventAdapter('zalo', safetyRepo, configService),
+      inject: [getRepositoryToken(LlmSafetyEventEntity), ConfigService],
+    },
+    {
+      provide: DeliveryLogService,
+      useFactory: (repo: Repository<ZaloMessageLogEntity>) =>
+        new DeliveryLogService(repo),
+      inject: [getRepositoryToken(ZaloMessageLogEntity)],
+    },
+    {
+      provide: PlatformDeadLetterService,
+      useFactory: (repo: Repository<WebhookDeadLetterEntity>) =>
+        new PlatformDeadLetterService('zalo', repo),
+      inject: [getRepositoryToken(WebhookDeadLetterEntity)],
+    },
     ZaloStudyCalendarCommandService,
     ZaloCalendarPort,
     ZaloReschedulePort,
@@ -108,9 +139,7 @@ import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zal
     ZaloOutboundService,
     ZaloChatRateLimitService,
     ZaloChatQueueService,
-    ZaloDeadLetterService,
     ZaloDeadLetterCronService,
-    ZaloDeliveryLogService,
     CleanupCronService,
     ZaloCleanupCronService,
     ZaloChatService,
@@ -120,10 +149,10 @@ import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zal
     ZaloChatService,
     ZaloOutboundService,
     ZaloChatRateLimitService,
-    ZaloLlmUsageRecorderService,
+    PlatformLlmUsageRecorderAdapter,
     ZaloCleanupCronService,
     CleanupCronService,
-    ZaloDeadLetterService,
+    PlatformDeadLetterService,
   ],
 })
 export class ZaloChatModule {}

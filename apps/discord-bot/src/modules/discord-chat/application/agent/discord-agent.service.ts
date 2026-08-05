@@ -17,8 +17,10 @@ import type {
 } from '../../domain/entities/discord-chat.types';
 import { DiscordAgentToolsService } from './discord-agent-tools.service';
 import { DiscordChatHistoryService } from '../services/discord-chat-history.service';
-import { DiscordLlmUsageRecorderService } from '@discord/modules/chat-metering/application/services/discord-llm-usage-recorder.service';
-import { DiscordLlmSafetyEventService } from '@discord/modules/chat-metering/application/services/discord-llm-safety-event.service';
+import {
+  PlatformLlmUsageRecorderAdapter,
+  PlatformLlmSafetyEventAdapter,
+} from '@wispace/chat-metering';
 
 const FEATURE = 'FREE_FORM_CHAT';
 
@@ -42,8 +44,8 @@ export class DiscordAgentService {
     private readonly configService: ConfigService,
     private readonly toolsService: DiscordAgentToolsService,
     private readonly historyService: DiscordChatHistoryService,
-    private readonly usageRecorder: DiscordLlmUsageRecorderService,
-    private readonly safetyEventService: DiscordLlmSafetyEventService,
+    private readonly usageRecorder: PlatformLlmUsageRecorderAdapter,
+    private readonly safetyEventService: PlatformLlmSafetyEventAdapter,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
   ) {
@@ -133,11 +135,11 @@ export class DiscordAgentService {
         recordFromCompletion: (params) =>
           this.usageRecorder.recordFromCompletion({
             feature: FEATURE,
-            discordUserId: params.externalUserId,
+            externalUserId: params.externalUserId,
             userId: params.userId,
             model: params.model,
             response: params.response as Parameters<
-              DiscordLlmUsageRecorderService['recordFromCompletion']
+              PlatformLlmUsageRecorderAdapter['recordFromCompletion']
             >[0]['response'],
             correlationId: params.correlationId,
             toolRound: params.toolRound,

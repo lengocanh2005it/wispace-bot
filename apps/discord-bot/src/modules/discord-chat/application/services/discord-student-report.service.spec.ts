@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { DiscordStudentReportService } from './discord-student-report.service';
-import type { DiscordLlmUsageRecorderService } from '@discord/modules/chat-metering/application/services/discord-llm-usage-recorder.service';
-import type { WispaceGoalsService } from '@discord/modules/wispace/application/services/wispace-goals.service';
+import type { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering';
+import type { WispaceGoalsService } from '@wispace/wispace-client';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 
 jest.mock('@wispace/llm-agent', () => ({
@@ -29,7 +29,7 @@ describe('DiscordStudentReportService', () => {
     const goalsService = {} as unknown as WispaceGoalsService;
     const usageRecorder = {
       recordFromCompletion: jest.fn(),
-    } as unknown as DiscordLlmUsageRecorderService;
+    } as unknown as PlatformLlmUsageRecorderAdapter;
     const adapter = {} as unknown as LlmProviderAdapter;
 
     return new DiscordStudentReportService(

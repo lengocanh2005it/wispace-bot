@@ -1,16 +1,18 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
+import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
   LlmSafetyEventEntity,
   LlmUsageEventEntity,
+  LlmUsageConfigService,
+  PlatformLlmUsageRecorderAdapter,
+  PlatformLlmSafetyEventAdapter,
 } from '@wispace/chat-metering';
+import { Repository } from 'typeorm';
 import { ChatRateLimitConfigService } from './application/services/chat-rate-limit-config.service';
 import { DiscordChatRateLimitService } from './application/services/discord-chat-rate-limit.service';
-import { LlmUsageConfigService } from './application/services/llm-usage-config.service';
-import { DiscordLlmUsageRecorderService } from './application/services/discord-llm-usage-recorder.service';
-import { DiscordLlmSafetyEventService } from './application/services/discord-llm-safety-event.service';
 
 @Module({
   imports: [
@@ -25,13 +27,33 @@ import { DiscordLlmSafetyEventService } from './application/services/discord-llm
     ChatRateLimitConfigService,
     DiscordChatRateLimitService,
     LlmUsageConfigService,
-    DiscordLlmUsageRecorderService,
-    DiscordLlmSafetyEventService,
+    {
+      provide: PlatformLlmUsageRecorderAdapter,
+      useFactory: (
+        configService: LlmUsageConfigService,
+        usageRepo: Repository<LlmUsageEventEntity>,
+      ) =>
+        new PlatformLlmUsageRecorderAdapter(
+          'discord',
+          configService,
+          usageRepo,
+        ),
+      inject: [LlmUsageConfigService, getRepositoryToken(LlmUsageEventEntity)],
+    },
+    {
+      provide: PlatformLlmSafetyEventAdapter,
+      useFactory: (
+        safetyRepo: Repository<LlmSafetyEventEntity>,
+        configService: ConfigService,
+      ) =>
+        new PlatformLlmSafetyEventAdapter('discord', safetyRepo, configService),
+      inject: [getRepositoryToken(LlmSafetyEventEntity), ConfigService],
+    },
   ],
   exports: [
     DiscordChatRateLimitService,
-    DiscordLlmUsageRecorderService,
-    DiscordLlmSafetyEventService,
+    PlatformLlmUsageRecorderAdapter,
+    PlatformLlmSafetyEventAdapter,
   ],
 })
 export class ChatMeteringModule {}

@@ -1,13 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { todayUsageDate } from '../chat-rate-limit/chat-usage-date.utils';
 import {
   buildInputCostEnvKey,
   buildOutputCostEnvKey,
   buildCachedInputCostEnvKey,
   estimateCostUsd,
-  todayUsageDate,
-} from '@wispace/chat-metering';
+} from './cost.utils';
 
+/**
+ * LLM usage tracking config — shared by Discord and Zalo (identical classes,
+ * now consolidated into one).
+ */
 @Injectable()
 export class LlmUsageConfigService {
   constructor(private readonly configService: ConfigService) {}

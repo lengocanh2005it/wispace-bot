@@ -1,6 +1,6 @@
 import type { GoalsDataPort } from '@wispace/scheduler-core';
 import { parseExamDateToIso } from '@wispace/scheduler-core';
-import { WispaceGoalsService } from '@discord/modules/wispace/application/services/wispace-goals.service';
+import { WispaceGoalsService } from '@wispace/wispace-client';
 
 /**
  * Fetches user goals (exam date) from Wispace API for Discord users.

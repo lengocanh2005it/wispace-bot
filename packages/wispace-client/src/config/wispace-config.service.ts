@@ -1,7 +1,12 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { WispaceApiClientConfig } from '@wispace/wispace-client';
+import type { WispaceApiClientConfig } from '../clients/wispace-client-types';
 
+/**
+ * Wispace API client config — shared by Discord and Zalo (consolidation of
+ * their near-identical per-app config services, including the required
+ * study-reminder horizon/lead-time getters).
+ */
 @Injectable()
 export class WispaceConfigService {
   constructor(private readonly configService: ConfigService) {}

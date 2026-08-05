@@ -2,21 +2,22 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  LlmSafetyCore,
-  LlmSafetyEventEntity,
-  LlmSafetyEventRepository,
-  type RecordGroundingWarningInput,
-} from '@wispace/chat-metering';
+import { LlmSafetyEventEntity } from '../entities';
+import { LlmSafetyCore } from './llm-safety-core.service';
+import { LlmSafetyEventRepository } from './llm-safety.repository';
+import type { RecordGroundingWarningInput } from './types';
 
-const PLATFORM = 'zalo' as const;
-
+/**
+ * Thin NestJS adapter around `LlmSafetyCore` — shared by Discord and Zalo.
+ * Platform (`'discord'` / `'zalo'`) parameterizes the persisted event row.
+ */
 @Injectable()
-export class ZaloLlmSafetyEventService {
-  private readonly logger = new Logger(ZaloLlmSafetyEventService.name);
+export class PlatformLlmSafetyEventAdapter {
+  private readonly logger = new Logger(PlatformLlmSafetyEventAdapter.name);
   private core?: LlmSafetyCore;
 
   constructor(
+    private readonly platform: string,
     @InjectRepository(LlmSafetyEventEntity)
     private readonly repo: Repository<LlmSafetyEventEntity>,
     private readonly configService: ConfigService,
@@ -41,7 +42,7 @@ export class ZaloLlmSafetyEventService {
 
   private getCore(): LlmSafetyCore {
     if (!this.core) {
-      const repository = new LlmSafetyEventRepository(this.repo, PLATFORM);
+      const repository = new LlmSafetyEventRepository(this.repo, this.platform);
       this.core = new LlmSafetyCore(repository, {
         warn: (m) => this.logger.warn(m),
         log: (m) => this.logger.log(m),

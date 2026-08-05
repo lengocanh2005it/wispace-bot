@@ -7,11 +7,13 @@ import {
   type StudentCapacityInput,
 } from '@wispace/student-report';
 import { retryWithBackoff, type LlmProviderAdapter } from '@wispace/llm-agent';
-import { todayUsageDate } from '@wispace/chat-metering';
+import {
+  PlatformLlmUsageRecorderAdapter,
+  todayUsageDate,
+} from '@wispace/chat-metering';
 import { join } from 'path';
 import { loadSystemPromptFile } from '@wispace/llm-agent';
-import { ZaloLlmUsageRecorderService } from '../../infrastructure/persistence/zalo-llm-usage-recorder.service';
-import { ZaloWispaceGoalsService } from '@zalo/modules/wispace/application/services/zalo-wispace-goals.service';
+import { WispaceGoalsService } from '@wispace/wispace-client';
 
 const FEATURE = 'STUDENT_REPORT';
 const PROMPT_DIR = join(__dirname, '../../../../shared/prompts');
@@ -24,8 +26,8 @@ export class ZaloStudentReportService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly goalsService: ZaloWispaceGoalsService,
-    private readonly usageRecorder: ZaloLlmUsageRecorderService,
+    private readonly goalsService: WispaceGoalsService,
+    private readonly usageRecorder: PlatformLlmUsageRecorderAdapter,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
   ) {
@@ -76,10 +78,10 @@ export class ZaloStudentReportService {
         recordFromCompletion: (params) =>
           this.usageRecorder.recordFromCompletion({
             feature: FEATURE,
-            zaloUserId: params.externalUserId,
+            externalUserId: params.externalUserId,
             model: params.model,
             response: params.response as Parameters<
-              ZaloLlmUsageRecorderService['recordFromCompletion']
+              PlatformLlmUsageRecorderAdapter['recordFromCompletion']
             >[0]['response'],
             correlationId: params.correlationId,
           }),

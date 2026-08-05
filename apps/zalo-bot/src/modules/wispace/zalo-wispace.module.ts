@@ -1,18 +1,26 @@
 import { Module } from '@nestjs/common';
-import { ZaloWispaceConfigService } from './application/services/zalo-wispace-config.service';
-import { ZaloWispaceGoalsService } from './application/services/zalo-wispace-goals.service';
-import { ZaloWispaceCalendarService } from './application/services/zalo-wispace-calendar.service';
+import {
+  WispaceCalendarService,
+  WispaceConfigService,
+  WispaceGoalsService,
+} from '@wispace/wispace-client';
 
 @Module({
   providers: [
-    ZaloWispaceConfigService,
-    ZaloWispaceGoalsService,
-    ZaloWispaceCalendarService,
+    WispaceConfigService,
+    {
+      provide: WispaceGoalsService,
+      useFactory: (configService: WispaceConfigService) =>
+        new WispaceGoalsService('x-zaloid', configService),
+      inject: [WispaceConfigService],
+    },
+    {
+      provide: WispaceCalendarService,
+      useFactory: (configService: WispaceConfigService) =>
+        new WispaceCalendarService('x-zaloid', configService),
+      inject: [WispaceConfigService],
+    },
   ],
-  exports: [
-    ZaloWispaceConfigService,
-    ZaloWispaceGoalsService,
-    ZaloWispaceCalendarService,
-  ],
+  exports: [WispaceConfigService, WispaceGoalsService, WispaceCalendarService],
 })
 export class ZaloWispaceModule {}

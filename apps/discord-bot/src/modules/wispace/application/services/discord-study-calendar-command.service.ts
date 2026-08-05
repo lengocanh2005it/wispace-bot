@@ -19,8 +19,10 @@ import {
   formatScheduledTimeLabel,
   getMinutesUntilSession,
 } from '@wispace/study-reminder-core';
-import { WispaceCalendarService } from './wispace-calendar.service';
-import { WispaceConfigService } from './wispace-config.service';
+import {
+  WispaceCalendarService,
+  WispaceConfigService,
+} from '@wispace/wispace-client';
 
 /**
  * Discord counterpart to Messenger's `StudyCalendarCommandService` — reuses

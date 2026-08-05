@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { DiscordDeadLetterService } from './discord-dead-letter.service';
+import { PlatformDeadLetterService } from '@wispace/database';
 import { DiscordOutboundService } from './discord-outbound.service';
 
 const DEFAULT_MAX_RETRIES = 3;
@@ -17,7 +17,7 @@ export class DiscordDeadLetterCronService {
   private readonly logger = new Logger(DiscordDeadLetterCronService.name);
 
   constructor(
-    private readonly deadLetterService: DiscordDeadLetterService,
+    private readonly deadLetterService: PlatformDeadLetterService,
     private readonly outboundService: DiscordOutboundService,
     private readonly configService: ConfigService,
   ) {}

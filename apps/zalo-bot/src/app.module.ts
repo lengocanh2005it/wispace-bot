@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
-import { HealthController } from './health.controller';
+import { HealthController } from '@wispace/bot-common';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { RedisModule } from '@wispace/bot-common';
 import { ZaloOauthModule } from './modules/zalo-oauth/zalo-oauth.module';

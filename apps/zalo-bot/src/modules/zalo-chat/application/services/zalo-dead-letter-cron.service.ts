@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { ZaloDeadLetterService } from '../../infrastructure/persistence/zalo-dead-letter.service';
+import { PlatformDeadLetterService } from '@wispace/database';
 import { ZaloOutboundService } from './zalo-outbound.service';
 
 const DEFAULT_MAX_RETRIES = 3;
@@ -13,7 +13,7 @@ export class ZaloDeadLetterCronService {
   private readonly logger = new Logger(ZaloDeadLetterCronService.name);
 
   constructor(
-    private readonly deadLetterService: ZaloDeadLetterService,
+    private readonly deadLetterService: PlatformDeadLetterService,
     private readonly outboundService: ZaloOutboundService,
     private readonly configService: ConfigService,
   ) {}

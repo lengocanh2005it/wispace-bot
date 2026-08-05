@@ -1,32 +1,36 @@
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  TaskScoreAverageApiClient,
-  UserGoalsApiClient,
-  type TaskScoreAverageRecord,
-  type UserGoalsRecord,
-} from '@wispace/wispace-client';
-import { WispaceConfigService } from './wispace-config.service';
+import { WispaceConfigService } from '../config/wispace-config.service';
+import type { TaskScoreAverageRecord } from '../types/task-score-average.types';
+import type { UserGoalsRecord } from '../types/user-goals.types';
+import type { WispaceIdHeader } from '../utils/wispace-headers';
+import { TaskScoreAverageApiClient } from './task-score-average-api.client';
+import { UserGoalsApiClient } from './user-goals-api.client';
 
-const ID_HEADER = 'x-discordid' as const;
-
+/**
+ * Wispace goals/task-score access — shared by Discord (`x-discordid`) and
+ * Zalo (`x-zaloid`); the id-header is injected per app.
+ */
 @Injectable()
 export class WispaceGoalsService {
   private readonly logger = new Logger(WispaceGoalsService.name);
   private goalsClient?: UserGoalsApiClient;
   private taskScoreClient?: TaskScoreAverageApiClient;
 
-  constructor(private readonly configService: WispaceConfigService) {}
+  constructor(
+    private readonly idHeader: WispaceIdHeader,
+    private readonly configService: WispaceConfigService,
+  ) {}
 
-  getUserGoals(discordUserId: string): Promise<UserGoalsRecord> {
-    return this.getGoalsClient().getUserGoals(ID_HEADER, discordUserId);
+  getUserGoals(externalUserId: string): Promise<UserGoalsRecord> {
+    return this.getGoalsClient().getUserGoals(this.idHeader, externalUserId);
   }
 
   getTaskScoreAverages(
-    discordUserId: string,
+    externalUserId: string,
   ): Promise<TaskScoreAverageRecord[]> {
     return this.getTaskScoreClient().getTaskScoreAverages(
-      ID_HEADER,
-      discordUserId,
+      this.idHeader,
+      externalUserId,
     );
   }
 

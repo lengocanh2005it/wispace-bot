@@ -6,9 +6,13 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import { REDIS_CLIENT } from '@wispace/bot-common';
-import type { RedisClientPort } from '@wispace/bot-common';
+import { REDIS_CLIENT, type RedisClientPort } from './redis.client.port';
 
+/**
+ * Health endpoints shared by all WISPACE bots — consolidated from the
+ * per-app controllers (unified on the richer behavior: DB error detail +
+ * Redis `isEnabled()` guard).
+ */
 @Controller('health')
 export class HealthController {
   constructor(

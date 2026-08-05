@@ -1,74 +1,86 @@
 import { Injectable, Logger } from '@nestjs/common';
-import {
-  UserCalendarApiClient,
-  UserCalendarScheduleClient,
-  type CalendarSessionTimeRange,
-  type CreateUserCalendarInput,
-  type NormalizedStudySession,
-  type UserCalendarRecord,
-} from '@wispace/wispace-client';
-import { ZaloWispaceConfigService } from './zalo-wispace-config.service';
+import { WispaceConfigService } from '../config/wispace-config.service';
+import type {
+  CalendarSessionTimeRange,
+  NormalizedStudySession,
+} from '../types/study-schedule.types';
+import type {
+  CreateUserCalendarInput,
+  UserCalendarRecord,
+} from '../types/user-calendar.types';
+import type { WispaceIdHeader } from '../utils/wispace-headers';
+import { UserCalendarApiClient } from './user-calendar-api.client';
+import { UserCalendarScheduleClient } from './user-calendar-schedule.client';
 
-const ID_HEADER = 'x-zaloid' as const;
-
+/**
+ * Wispace user-calendar access — shared by Discord (`x-discordid`, env-driven
+ * sync horizon) and Zalo (`x-zaloid`, fixed 24h horizon). The id-header and
+ * horizon resolver are injected per app.
+ */
 @Injectable()
-export class ZaloWispaceCalendarService {
-  private readonly logger = new Logger(ZaloWispaceCalendarService.name);
+export class WispaceCalendarService {
+  private readonly logger = new Logger(WispaceCalendarService.name);
   private apiClient?: UserCalendarApiClient;
   private scheduleClient?: UserCalendarScheduleClient;
 
-  constructor(private readonly configService: ZaloWispaceConfigService) {}
+  constructor(
+    private readonly idHeader: WispaceIdHeader,
+    private readonly configService: WispaceConfigService,
+    private readonly horizonHours: () => number = () => 24,
+  ) {}
 
   getCalendarSessions(
-    zaloUserId: string,
+    externalUserId: string,
     options: {
       timeRange?: CalendarSessionTimeRange;
       pastDays?: number;
       limit?: number;
     } = {},
   ): Promise<NormalizedStudySession[]> {
-    const horizonEnd = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const horizonEnd = new Date(
+      Date.now() + this.horizonHours() * 60 * 60 * 1000,
+    );
 
     return this.getScheduleClient().getCalendarSessions(
-      ID_HEADER,
-      zaloUserId,
+      this.idHeader,
+      externalUserId,
       horizonEnd,
       { ...options, swallowErrors: true },
     );
   }
 
-  listCalendars(zaloUserId: string): Promise<UserCalendarRecord[]> {
-    return this.getApiClient().listCalendars(ID_HEADER, zaloUserId);
+  listCalendars(externalUserId: string): Promise<UserCalendarRecord[]> {
+    return this.getApiClient().listCalendars(this.idHeader, externalUserId);
   }
 
   findCalendarRecord(
-    zaloUserId: string,
+    externalUserId: string,
     calendarId: number,
   ): Promise<UserCalendarRecord | null> {
     return this.getScheduleClient().findCalendarRecord(
-      ID_HEADER,
-      zaloUserId,
+      this.idHeader,
+      externalUserId,
       calendarId,
     );
   }
 
   createCalendar(
-    zaloUserId: string,
+    externalUserId: string,
     input: CreateUserCalendarInput,
     options?: { userId?: number },
   ): Promise<UserCalendarRecord> {
     return this.getApiClient().createCalendar(
-      ID_HEADER,
-      zaloUserId,
+      this.idHeader,
+      externalUserId,
       input,
       options,
     );
   }
 
-  deleteCalendar(zaloUserId: string, calendarId: number): Promise<void> {
+  deleteCalendar(externalUserId: string, calendarId: number): Promise<void> {
     return this.getApiClient().deleteCalendar(
-      ID_HEADER,
-      zaloUserId,
+      this.idHeader,
+      externalUserId,
       calendarId,
     );
   }

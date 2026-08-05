@@ -42,6 +42,12 @@ export { LlmUsageRepository } from './llm-usage/llm-usage.repository';
 export { DirectUsageWriter } from './llm-usage/direct-usage-writer';
 export { LlmUsageRecorderCore } from './llm-usage/llm-usage-recorder-core.service';
 export type { RecordLlmUsageFromCompletionInput } from './llm-usage/llm-usage-recorder-core.service';
+export { LlmUsageConfigService } from './llm-usage/llm-usage-config.service';
+export {
+  PlatformLlmUsageRecorderAdapter,
+  type PlatformLlmUsageConfig,
+  type PlatformRecordLlmUsageInput,
+} from './llm-usage/platform-llm-usage-recorder.adapter';
 export type {
   LlmUsageAggregateRow,
   LlmUsageQueryFilter,
@@ -52,6 +58,7 @@ export type {
 
 export { LlmSafetyEventRepository } from './llm-safety/llm-safety.repository';
 export { LlmSafetyCore } from './llm-safety/llm-safety-core.service';
+export { PlatformLlmSafetyEventAdapter } from './llm-safety/platform-llm-safety-event.adapter';
 export type { LlmSafetyLogger } from './llm-safety/llm-safety-core.service';
 export type {
   InsertLlmSafetyEvent,

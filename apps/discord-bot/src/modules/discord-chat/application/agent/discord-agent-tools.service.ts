@@ -11,8 +11,10 @@ import {
   readValidatedTime,
 } from '@wispace/llm-agent';
 import type { DiscordAgentToolContext } from '../../domain/entities/discord-chat.types';
-import { WispaceGoalsService } from '@discord/modules/wispace/application/services/wispace-goals.service';
-import { WispaceCalendarService } from '@discord/modules/wispace/application/services/wispace-calendar.service';
+import {
+  WispaceCalendarService,
+  WispaceGoalsService,
+} from '@wispace/wispace-client';
 import { DiscordRescheduleConfirmationService } from '../services/discord-reschedule-confirmation.service';
 import { DiscordOutboundService } from '../services/discord-outbound.service';
 import {

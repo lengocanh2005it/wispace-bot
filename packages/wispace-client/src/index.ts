@@ -32,3 +32,6 @@ export { TaskScoreAverageApiClient } from './clients/task-score-average-api.clie
 export { UserCalendarApiClient } from './clients/user-calendar-api.client';
 export { UserCalendarScheduleClient } from './clients/user-calendar-schedule.client';
 export type { ListCalendarsFn } from './clients/user-calendar-schedule.client';
+export { WispaceGoalsService } from './clients/wispace-goals.service';
+export { WispaceCalendarService } from './clients/wispace-calendar.service';
+export { WispaceConfigService } from './config/wispace-config.service';

@@ -1,7 +1,7 @@
 import { ConfigService } from '@nestjs/config';
 import { ZaloStudentReportService } from './zalo-student-report.service';
-import type { ZaloLlmUsageRecorderService } from '../../infrastructure/persistence/zalo-llm-usage-recorder.service';
-import type { ZaloWispaceGoalsService } from '@zalo/modules/wispace/application/services/zalo-wispace-goals.service';
+import type { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering';
+import type { WispaceGoalsService } from '@wispace/wispace-client';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 
 jest.mock('@wispace/llm-agent', () => ({
@@ -26,10 +26,10 @@ describe('ZaloStudentReportService', () => {
       return undefined;
     });
     const config = { get: configGet } as unknown as ConfigService;
-    const goalsService = {} as unknown as ZaloWispaceGoalsService;
+    const goalsService = {} as unknown as WispaceGoalsService;
     const usageRecorder = {
       recordFromCompletion: jest.fn(),
-    } as unknown as ZaloLlmUsageRecorderService;
+    } as unknown as PlatformLlmUsageRecorderAdapter;
     const adapter = {} as unknown as LlmProviderAdapter;
 
     return new ZaloStudentReportService(

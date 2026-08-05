@@ -10,7 +10,7 @@ import { DiscordStudyReminderModule } from './modules/discord-study-reminder/dis
 import { DiscordOpsModule } from './modules/discord-ops/discord-ops.module';
 import { DiscordMetricsModule } from './modules/metrics/discord-metrics.module';
 import { DiscordMetricsController } from './modules/metrics/discord-metrics.controller';
-import { HealthController } from './health.controller';
+import { HealthController } from '@wispace/bot-common';
 
 @Module({
   controllers: [HealthController, DiscordMetricsController],

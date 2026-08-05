@@ -7,11 +7,13 @@ import {
   type StudentCapacityInput,
 } from '@wispace/student-report';
 import { retryWithBackoff, type LlmProviderAdapter } from '@wispace/llm-agent';
-import { todayUsageDate } from '@wispace/chat-metering';
+import {
+  PlatformLlmUsageRecorderAdapter,
+  todayUsageDate,
+} from '@wispace/chat-metering';
 import { join } from 'path';
 import { loadSystemPromptFile } from '@wispace/llm-agent';
-import { DiscordLlmUsageRecorderService } from '@discord/modules/chat-metering/application/services/discord-llm-usage-recorder.service';
-import { WispaceGoalsService } from '@discord/modules/wispace/application/services/wispace-goals.service';
+import { WispaceGoalsService } from '@wispace/wispace-client';
 
 const FEATURE = 'STUDENT_REPORT';
 const PROMPT_DIR = join(__dirname, '../../../../shared/prompts');
@@ -30,7 +32,7 @@ export class DiscordStudentReportService {
   constructor(
     private readonly configService: ConfigService,
     private readonly goalsService: WispaceGoalsService,
-    private readonly usageRecorder: DiscordLlmUsageRecorderService,
+    private readonly usageRecorder: PlatformLlmUsageRecorderAdapter,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
   ) {
@@ -83,10 +85,10 @@ export class DiscordStudentReportService {
         recordFromCompletion: (params) =>
           this.usageRecorder.recordFromCompletion({
             feature: FEATURE,
-            discordUserId: params.externalUserId,
+            externalUserId: params.externalUserId,
             model: params.model,
             response: params.response as Parameters<
-              DiscordLlmUsageRecorderService['recordFromCompletion']
+              PlatformLlmUsageRecorderAdapter['recordFromCompletion']
             >[0]['response'],
             correlationId: params.correlationId,
           }),

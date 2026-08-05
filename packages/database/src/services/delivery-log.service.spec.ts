@@ -1,14 +1,13 @@
-import { ZaloDeliveryLogService } from './zalo-delivery-log.service';
+import { DeliveryLogService, type MessageLogRow } from './delivery-log.service';
 import type { Repository } from 'typeorm';
-import type { ZaloMessageLogEntity } from '@zalo/infrastructure/database/entities/zalo-message-log.entity';
 
-describe('ZaloDeliveryLogService', () => {
+describe('DeliveryLogService', () => {
   const buildService = () => {
     const saveMock = jest.fn().mockResolvedValue(undefined);
     const repo = {
       save: saveMock,
-    } as unknown as Repository<ZaloMessageLogEntity>;
-    return { service: new ZaloDeliveryLogService(repo), saveMock };
+    } as unknown as Repository<MessageLogRow>;
+    return { service: new DeliveryLogService(repo), saveMock };
   };
 
   it('saves delivery log with default message type', async () => {

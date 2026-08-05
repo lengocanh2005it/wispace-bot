@@ -4,15 +4,19 @@ import { Repository } from 'typeorm';
 import {
   WebhookDeadLetterEntity,
   type WebhookDeadLetterEntry,
-} from '@wispace/database';
+} from '../entities/webhook-dead-letter.entity';
 
-const PLATFORM = 'zalo' as const;
-
+/**
+ * Dead letter queue for failed webhook events — shared by Discord and Zalo
+ * (replaces their near-identical per-app services). Platform
+ * (`'discord'` / `'zalo'`) parameterizes the saved row and queries.
+ */
 @Injectable()
-export class ZaloDeadLetterService {
-  private readonly logger = new Logger(ZaloDeadLetterService.name);
+export class PlatformDeadLetterService {
+  private readonly logger = new Logger(PlatformDeadLetterService.name);
 
   constructor(
+    private readonly platform: string,
     @InjectRepository(WebhookDeadLetterEntity)
     private readonly repo: Repository<WebhookDeadLetterEntity>,
   ) {}
@@ -24,7 +28,7 @@ export class ZaloDeadLetterService {
   }): Promise<void> {
     try {
       await this.repo.save({
-        platform: PLATFORM,
+        platform: this.platform,
         externalUserId: input.externalUserId,
 
         rawPayload: input.rawPayload as object,
@@ -47,7 +51,7 @@ export class ZaloDeadLetterService {
   }): Promise<WebhookDeadLetterEntry[]> {
     return this.repo
       .createQueryBuilder('dl')
-      .where('dl.platform = :platform', { platform: PLATFORM })
+      .where('dl.platform = :platform', { platform: this.platform })
       .andWhere('dl.status = :status', { status: 'pending' })
       .andWhere('dl.retry_count < :maxRetries', {
         maxRetries: opts.maxRetries,
