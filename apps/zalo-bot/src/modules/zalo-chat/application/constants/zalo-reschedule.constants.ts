@@ -1,5 +1,3 @@
-export const PENDING_RESCHEDULE_TTL_MS = 10 * 60 * 1000;
-
 export const RESCHEDULE_CONFIRM_KEYWORDS = [
   'xác nhận',
   'confirm',

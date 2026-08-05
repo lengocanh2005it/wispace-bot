@@ -51,26 +51,6 @@ export class ChatRateLimitService {
     return this.configService.shouldEnforceForPsid(psid);
   }
 
-  async checkQuota(
-    psid: string,
-    _userId?: number,
-  ): Promise<ChatQuotaCheckResult> {
-    void _userId;
-
-    const { freeFormDailyLimit, timezone } = this.configService.getSettings();
-    const usageDate = todayUsageDate(timezone);
-
-    if (!this.configService.shouldEnforceForPsid(psid)) {
-      const used = this.configService.isEnabled()
-        ? await this.repository.getDailyUsageCount(psid, usageDate)
-        : 0;
-      return this.buildBypassResult(used, freeFormDailyLimit, usageDate);
-    }
-
-    const used = await this.repository.getDailyUsageCount(psid, usageDate);
-    return this.buildQuotaResult(used, freeFormDailyLimit, usageDate);
-  }
-
   async reserveFreeFormSlot(
     psid: string,
     params: { userId?: number; idempotencyKey: string },
@@ -370,24 +350,6 @@ export class ChatRateLimitService {
     this.logger.warn(
       `CHAT_QUOTA_DENY reason=${reason} psid=${psid} mid=${idempotencyKey} used=${used} limit=${limit}`,
     );
-  }
-
-  private buildQuotaResult(
-    used: number,
-    limit: number,
-    usageDate: string,
-  ): ChatQuotaCheckResult {
-    const remaining = Math.max(limit - used, 0);
-
-    return {
-      allowed: used < limit,
-      used,
-      limit,
-      remaining,
-      reason: used >= limit ? 'DAILY_LIMIT' : undefined,
-      usageDate,
-      quotaReserved: false,
-    };
   }
 
   private buildBypassResult(

@@ -17,7 +17,6 @@ import { ChatHistoryStoreStartupService } from './application/services/chat-hist
 import { ChatQueueStoreStartupService } from './application/services/chat-queue-store-startup.service';
 import { CHAT_QUEUE_STORE } from './domain/repositories/chat-queue.store.port';
 import { CHAT_HISTORY_STORE } from './domain/repositories/chat-history.store.port';
-import { ChatQueueStoreResolver } from './infrastructure/persistence/chat-queue.store.resolver';
 import { RedisChatQueueStore } from './infrastructure/persistence/redis-chat-queue.store';
 import { ChatHistoryStoreResolver } from './infrastructure/persistence/chat-history.store.resolver';
 import { MemoryChatHistoryStore } from './infrastructure/persistence/memory-chat-history.store';
@@ -60,11 +59,10 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
       useExisting: ChatHistoryStoreResolver,
     },
     RedisChatQueueStore,
-    ChatQueueStoreResolver,
     ChatQueueStoreStartupService,
     {
       provide: CHAT_QUEUE_STORE,
-      useExisting: ChatQueueStoreResolver,
+      useExisting: RedisChatQueueStore,
     },
     {
       provide: GOALS_DATA_PORT,

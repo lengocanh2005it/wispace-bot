@@ -6,16 +6,8 @@ import {
   RedisUserDisplayNameCache,
   type RedisClientPort,
 } from '@wispace/bot-common';
-import {
-  REMINDER_GENERATOR,
-  METRICS_HOOK,
-  ERROR_CLASSIFIER,
-  type ReminderGeneratorPort,
-  type MetricsHook,
-  type ErrorClassifierPort,
-} from '@wispace/study-reminder-shared';
-import { CommonModule } from '../../shared/common/common.module';
 import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
+import { CommonModule } from '../../shared/common/common.module';
 import { UserEntity } from '../../infrastructure/database/entities/user.entity';
 import { MessengerOutboundModule } from '../messenger/messenger-outbound.module';
 import { StudentReportModule } from '../student-report/student-report.module';
@@ -34,10 +26,6 @@ import { STUDY_REMINDER_JOB_REPOSITORY } from './domain/repositories/study-remin
 import { UserCalendarScheduleService } from './infrastructure/wispace/user-calendar-schedule.service';
 import { UserCalendarApiService } from './infrastructure/wispace/user-calendar-api.service';
 import { StudyReminderJobRepository } from './infrastructure/persistence/study-reminder-job.repository';
-import { MessengerReminderGeneratorAdapter } from './infrastructure/adapters/messenger-reminder-generator.adapter';
-import { MessengerReminderMetricsHook } from './infrastructure/adapters/messenger-metrics-hook.adapter';
-import { MessengerErrorClassifierAdapter } from './infrastructure/adapters/messenger-error-classifier.adapter';
-import { MetricsService } from '../metrics/metrics.service';
 
 @Module({
   imports: [
@@ -83,25 +71,6 @@ import { MetricsService } from '../metrics/metrics.service';
     StudyReminderScheduleService,
 
     // ── Local dispatch service (uses local MESSAGE_SENDER from MessengerOutboundModule) ─
-    StudyReminderDispatchService,
-    {
-      provide: REMINDER_GENERATOR,
-      useFactory: (sr: StudyReminderService): ReminderGeneratorPort =>
-        new MessengerReminderGeneratorAdapter(sr),
-      inject: [StudyReminderService],
-    },
-    {
-      provide: METRICS_HOOK,
-      useFactory: (m: MetricsService): MetricsHook =>
-        new MessengerReminderMetricsHook(m),
-      inject: [MetricsService],
-    },
-    {
-      provide: ERROR_CLASSIFIER,
-      useFactory: (): ErrorClassifierPort =>
-        new MessengerErrorClassifierAdapter(),
-      inject: [],
-    },
     StudyReminderDispatchService,
 
     // ── Local worker and sync (Messenger-specific: PgAdvisoryLock, psid) ─

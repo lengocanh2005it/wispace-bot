@@ -31,7 +31,6 @@ export interface ListPendingForRetryOptions {
 
 export interface MessengerWebhookDeadLetterRepositoryPort {
   save(input: SaveDeadLetterInput): Promise<WebhookDeadLetterRecord>;
-  listPending(limit: number): Promise<WebhookDeadLetterRecord[]>;
   listPendingForRetry(
     opts: ListPendingForRetryOptions,
   ): Promise<WebhookDeadLetterRecord[]>;

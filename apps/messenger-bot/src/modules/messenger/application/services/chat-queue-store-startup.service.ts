@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
-import { ChatQueueStoreResolver } from '../../infrastructure/persistence/chat-queue.store.resolver';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 
 @Injectable()
@@ -10,7 +9,6 @@ export class ChatQueueStoreStartupService implements OnModuleInit {
   constructor(
     private readonly sharedConfig: MessengerChatSharedConfigService,
     @Inject(REDIS_CLIENT) private readonly redisClient: RedisClientPort,
-    private readonly chatQueueStoreResolver: ChatQueueStoreResolver,
   ) {}
 
   onModuleInit(): void {
