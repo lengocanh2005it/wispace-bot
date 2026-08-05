@@ -20,3 +20,4 @@ export {
   formatReport,
   parseReportOutput,
 } from './report-formatter';
+export { PlatformStudentReportService } from './platform-student-report.service';

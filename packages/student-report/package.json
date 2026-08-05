@@ -15,8 +15,13 @@
     "test": "jest --runInBand"
   },
   "dependencies": {
+    "@wispace/chat-metering": "*",
     "@wispace/llm-agent": "*",
-    "openai": "^6.42.0"
+    "@wispace/wispace-client": "*",
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/config": "^4.0.4",
+    "openai": "^6.42.0",
+    "p-limit": "^3.1.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

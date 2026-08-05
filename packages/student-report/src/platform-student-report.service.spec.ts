@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { ZaloStudentReportService } from './zalo-student-report.service';
+import { PlatformStudentReportService } from './platform-student-report.service';
 import type { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering';
 import type { WispaceGoalsService } from '@wispace/wispace-client';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
@@ -12,13 +12,13 @@ const mockGenerateReport = jest
   .fn<Promise<string>, unknown[]>()
   .mockResolvedValue('mock report');
 
-jest.mock('@wispace/student-report', () => ({
+jest.mock('./student-report.service', () => ({
   StudentReportCore: jest.fn().mockImplementation(() => ({
     generateReport: mockGenerateReport,
   })),
 }));
 
-describe('ZaloStudentReportService', () => {
+describe('PlatformStudentReportService', () => {
   const buildService = (overrides?: { maxConcurrent?: string }) => {
     const configGet = jest.fn((key: string) => {
       if (key === 'LLM_MAX_CONCURRENT') return overrides?.maxConcurrent ?? '3';
@@ -32,11 +32,13 @@ describe('ZaloStudentReportService', () => {
     } as unknown as PlatformLlmUsageRecorderAdapter;
     const adapter = {} as unknown as LlmProviderAdapter;
 
-    return new ZaloStudentReportService(
+    return new PlatformStudentReportService(
+      'discord',
       config,
       goalsService,
       usageRecorder,
       adapter,
+      '/prompts',
     );
   };
 
@@ -46,21 +48,21 @@ describe('ZaloStudentReportService', () => {
 
   it('creates StudentReportCore lazily on first generateReport call', async () => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const { StudentReportCore } = jest.requireMock('@wispace/student-report');
+    const { StudentReportCore } = jest.requireMock('./student-report.service');
     const service = buildService();
 
-    await service.generateReport('zalo-1');
+    await service.generateReport('external-1');
 
     expect(StudentReportCore).toHaveBeenCalledTimes(1);
   });
 
   it('reuses StudentReportCore on subsequent calls', async () => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const { StudentReportCore } = jest.requireMock('@wispace/student-report');
+    const { StudentReportCore } = jest.requireMock('./student-report.service');
     const service = buildService();
 
-    await service.generateReport('zalo-1');
-    await service.generateReport('zalo-1');
+    await service.generateReport('external-1');
+    await service.generateReport('external-1');
 
     expect(StudentReportCore).toHaveBeenCalledTimes(1);
   });
@@ -68,18 +70,18 @@ describe('ZaloStudentReportService', () => {
   it('generates report with correlationId containing userId and date', async () => {
     const service = buildService();
 
-    await service.generateReport('zalo-1');
+    await service.generateReport('external-1');
 
-    expect(mockGenerateReport).toHaveBeenCalledWith('zalo-1', {
+    expect(mockGenerateReport).toHaveBeenCalledWith('external-1', {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-      correlationId: expect.stringContaining('zalo-1:'),
+      correlationId: expect.stringContaining('external-1:'),
     });
   });
 
   it('returns the report text from the core', async () => {
     const service = buildService();
 
-    const result: string = await service.generateReport('zalo-1');
+    const result: string = await service.generateReport('external-1');
 
     expect(result).toBe('mock report');
   });

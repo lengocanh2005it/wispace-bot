@@ -37,15 +37,16 @@ import { ZaloRescheduleConfirmationService } from './application/services/zalo-r
 import { ZaloStudyCalendarCommandService } from './application/services/zalo-study-calendar-command.service';
 import { ZaloCalendarPort } from './infrastructure/adapters/zalo-calendar.port';
 import { ZaloReschedulePort } from './infrastructure/adapters/zalo-reschedule.port';
-import { ZaloDeadLetterCronService } from './application/services/zalo-dead-letter-cron.service';
-import { CleanupCronService } from '@wispace/cleanup-cron';
-import { ZaloCleanupCronService } from './infrastructure/persistence/zalo-cleanup-cron.service';
-import { ZaloMessageLogEntity } from '../../infrastructure/database/entities/zalo-message-log.entity';
 import {
-  DeliveryLogService,
+  PlatformDeadLetterCronService,
   PlatformDeadLetterService,
-  WebhookDeadLetterEntity,
 } from '@wispace/database';
+import {
+  CleanupCronService,
+  PlatformCleanupCronService,
+} from '@wispace/cleanup-cron';
+import { ZaloMessageLogEntity } from '../../infrastructure/database/entities/zalo-message-log.entity';
+import { DeliveryLogService, WebhookDeadLetterEntity } from '@wispace/database';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -284,9 +285,66 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     ZaloRescheduleConfirmationService,
     ZaloOutboundService,
     ZaloChatRateLimitService,
-    ZaloDeadLetterCronService,
     CleanupCronService,
-    ZaloCleanupCronService,
+    {
+      provide: PlatformDeadLetterCronService,
+      useFactory: (
+        deadLetterService: PlatformDeadLetterService,
+        configService: ConfigService,
+        outboundService: ZaloOutboundService,
+      ) =>
+        new PlatformDeadLetterCronService(deadLetterService, configService, {
+          extractPayload: (payload) => ({
+            externalUserId:
+              (payload.zaloUserId as string | undefined) ??
+              (payload.sender as { id?: string } | undefined)?.id,
+            text:
+              (payload.text as string | undefined) ??
+              (payload.message as { text?: string } | undefined)?.text,
+          }),
+          abandonReason: 'Missing zaloUserId or text in payload',
+          sendText: (externalUserId, text) =>
+            outboundService.sendText(externalUserId, text),
+        }),
+      inject: [PlatformDeadLetterService, ConfigService, ZaloOutboundService],
+    },
+    {
+      provide: PlatformCleanupCronService,
+      useFactory: (
+        cleanupService: CleanupCronService,
+        configService: ConfigService,
+        oauthStateRepo: Repository<ZaloOauthStateEntity>,
+        messageLogRepo: Repository<ZaloMessageLogEntity>,
+        deadLetterRepo: Repository<WebhookDeadLetterEntity>,
+        idempotencyRepo: Repository<ChatIdempotencyEntity>,
+        rateLimitService: ZaloChatRateLimitService,
+      ) =>
+        new PlatformCleanupCronService(cleanupService, configService, {
+          platform: 'zalo',
+          envPrefix: 'ZALO_',
+          lockIds: {
+            messageLog: 884_200_916,
+            deadLetter: 884_200_917,
+            idempotencyRecovery: 884_200_918,
+            idempotencyCleanup: 884_200_919,
+            oauthState: 884_200_913,
+          },
+          messageLogRepo,
+          deadLetterRepo,
+          idempotencyRepo,
+          oauthStateRepo,
+          rateLimitService,
+        }),
+      inject: [
+        CleanupCronService,
+        ConfigService,
+        getRepositoryToken(ZaloOauthStateEntity),
+        getRepositoryToken(ZaloMessageLogEntity),
+        getRepositoryToken(WebhookDeadLetterEntity),
+        getRepositoryToken(ChatIdempotencyEntity),
+        ZaloChatRateLimitService,
+      ],
+    },
     ZaloChatService,
   ],
   exports: [
@@ -295,7 +353,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     ZaloOutboundService,
     ZaloChatRateLimitService,
     PlatformLlmUsageRecorderAdapter,
-    ZaloCleanupCronService,
+    PlatformCleanupCronService,
     CleanupCronService,
     PlatformDeadLetterService,
   ],

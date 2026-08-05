@@ -8,12 +8,11 @@ import { RedisModule } from '@wispace/bot-common';
 import { DiscordChatModule } from './modules/discord-chat/discord-chat.module';
 import { DiscordStudyReminderModule } from './modules/discord-study-reminder/discord-study-reminder.module';
 import { DiscordOpsModule } from './modules/discord-ops/discord-ops.module';
-import { DiscordMetricsModule } from './modules/metrics/discord-metrics.module';
-import { DiscordMetricsController } from './modules/metrics/discord-metrics.controller';
+import { createMetricsModule } from '@wispace/bot-metrics';
 import { HealthController } from '@wispace/bot-common';
 
 @Module({
-  controllers: [HealthController, DiscordMetricsController],
+  controllers: [HealthController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
@@ -43,7 +42,7 @@ import { HealthController } from '@wispace/bot-common';
     DiscordChatModule,
     DiscordStudyReminderModule,
     DiscordOpsModule,
-    DiscordMetricsModule,
+    createMetricsModule('discord', 'discord-bot'),
   ],
 })
 export class AppModule {}

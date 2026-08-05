@@ -2,34 +2,43 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import pLimit from 'p-limit';
 import {
-  StudentReportCore,
-  type StudentReportPorts,
-  type StudentCapacityInput,
-} from '@wispace/student-report';
-import { retryWithBackoff, type LlmProviderAdapter } from '@wispace/llm-agent';
-import {
   PlatformLlmUsageRecorderAdapter,
   todayUsageDate,
 } from '@wispace/chat-metering';
-import { join } from 'path';
-import { loadSystemPromptFile } from '@wispace/llm-agent';
 import { WispaceGoalsService } from '@wispace/wispace-client';
+import {
+  loadSystemPromptFile,
+  retryWithBackoff,
+  type LlmProviderAdapter,
+} from '@wispace/llm-agent';
+import {
+  StudentReportCore,
+  type StudentReportPorts,
+} from './student-report.service';
+import type { StudentCapacityInput } from './types';
 
 const FEATURE = 'STUDENT_REPORT';
-const PROMPT_DIR = join(__dirname, '../../../../shared/prompts');
 
+/**
+ * Thin NestJS adapter around the platform-agnostic `StudentReportCore`
+ * (capacity fetch → LLM call → fallback → format), shared by Discord and
+ * Zalo. The correlation id prefix is the platform user id itself, so the
+ * `platform` param is reserved for future per-platform behavior.
+ */
 @Injectable()
-export class ZaloStudentReportService {
-  private readonly logger = new Logger(ZaloStudentReportService.name);
+export class PlatformStudentReportService {
+  private readonly logger = new Logger(PlatformStudentReportService.name);
   private core?: StudentReportCore;
   private readonly limiter: <T>(fn: () => Promise<T>) => Promise<T>;
 
   constructor(
+    private readonly platform: string,
     private readonly configService: ConfigService,
     private readonly goalsService: WispaceGoalsService,
     private readonly usageRecorder: PlatformLlmUsageRecorderAdapter,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
+    private readonly promptDir: string,
   ) {
     const maxConcurrent = Number(
       this.configService.get<string>('LLM_MAX_CONCURRENT') ?? '3',
@@ -40,16 +49,18 @@ export class ZaloStudentReportService {
     );
   }
 
-  generateReport(zaloUserId: string): Promise<string> {
+  generateReport(externalUserId: string): Promise<string> {
     if (!this.core) {
       this.core = this.buildCore();
     }
+
     const timezone =
       this.configService.get<string>('STUDY_REMINDER_TIMEZONE')?.trim() ??
       'Asia/Ho_Chi_Minh';
-    const correlationId = `${zaloUserId}:${todayUsageDate(timezone)}`;
+    const correlationId = `${externalUserId}:${todayUsageDate(timezone)}`;
+
     return this.limiter(() =>
-      this.core!.generateReport(zaloUserId, { correlationId }),
+      this.core!.generateReport(externalUserId, { correlationId }),
     );
   }
 
@@ -94,19 +105,23 @@ export class ZaloStudentReportService {
             this.goalsService.getTaskScoreAverages(externalUserId),
             this.goalsService.getUserGoals(externalUserId),
           ]);
+
           if (!taskScores || taskScores.length === 0) {
             throw new Error('No score data available');
           }
+
           const task1 = taskScores.find((r) =>
             r.task.toLowerCase().includes('task 1'),
           );
           const task2 = taskScores.find((r) =>
             r.task.toLowerCase().includes('task 2'),
           );
+
           const examDate = goals.examDate
             ? new Date(goals.examDate).toISOString().split('T')[0]
             : '';
           const currentDate = new Date().toISOString().split('T')[0];
+
           const examDateObj = examDate ? new Date(examDate) : null;
           const now = new Date();
           const daysUntilExam = examDateObj
@@ -115,6 +130,7 @@ export class ZaloStudentReportService {
               )
             : 0;
           const examHasPassed = daysUntilExam < 0;
+
           return {
             exam_date: examDate,
             exam_date_display: examDate
@@ -145,7 +161,7 @@ export class ZaloStudentReportService {
       {
         adapter: this.adapter,
         systemPrompt: loadSystemPromptFile(
-          PROMPT_DIR,
+          this.promptDir,
           'student-report.system.txt',
         ),
       },

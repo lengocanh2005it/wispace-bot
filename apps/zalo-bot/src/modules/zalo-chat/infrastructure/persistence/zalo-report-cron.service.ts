@@ -3,11 +3,11 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WispaceApiError } from '@wispace/wispace-client';
+import { PlatformStudentReportService } from '@wispace/student-report';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 import { ScheduledReportClaimEntity } from '@wispace/database';
 import { todayReportDate } from '@wispace/scheduler-core';
 import { ZaloReportDeliveryService } from '../../application/services/zalo-report-delivery.service';
-import { ZaloStudentReportService } from '../../application/services/zalo-student-report.service';
 
 const CONCURRENCY = 3;
 
@@ -21,7 +21,7 @@ export class ZaloReportCronService {
     @InjectRepository(ScheduledReportClaimEntity)
     private readonly claimRepo: Repository<ScheduledReportClaimEntity>,
     private readonly deliveryService: ZaloReportDeliveryService,
-    private readonly reportService: ZaloStudentReportService,
+    private readonly reportService: PlatformStudentReportService,
   ) {}
 
   @Cron('0 8 * * *', {

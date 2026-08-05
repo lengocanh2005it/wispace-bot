@@ -1,9 +1,14 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import { DataSource, Repository } from 'typeorm';
 import { join } from 'path';
-import { CleanupCronService } from '@wispace/cleanup-cron';
+import {
+  CleanupCronService,
+  PlatformCleanupCronService,
+} from '@wispace/cleanup-cron';
 import { OpsHealthService, OPS_HEALTH_REPOSITORY } from '@wispace/ops-health';
+import { TypeormOpsHealthRepository } from '@wispace/ops-health';
 import { BotCommonModule, REDIS_CLIENT } from '@wispace/bot-common';
 import type { RedisClientPort } from '@wispace/bot-common';
 import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
@@ -28,17 +33,16 @@ import { REPORT_DELIVERY_PORT } from '@wispace/scheduler-core';
 import type { ReportDeliveryPort } from '@wispace/scheduler-core';
 import { DiscordRescheduleConfirmationService } from './application/services/discord-reschedule-confirmation.service';
 import { DiscordMenuService } from './application/services/discord-menu.service';
-import { DiscordDeadLetterCronService } from './application/services/discord-dead-letter-cron.service';
-import { DiscordCleanupCronService } from './application/services/discord-cleanup-cron.service';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
 import { DiscordChatGateway } from './presentation/gateways/discord-chat.gateway';
 import {
+  PlatformDeadLetterCronService,
+  PlatformDeadLetterService,
   WebhookDeadLetterEntity,
   ReportSendJobEntity,
 } from '@wispace/database';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
-import { DiscordOpsHealthRepository } from './infrastructure/persistence/discord-ops-health.repository';
 import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { DiscordCalendarPort } from './infrastructure/adapters/discord-calendar.port';
 import { DiscordReschedulePort } from './infrastructure/adapters/discord-reschedule.port';
@@ -201,14 +205,70 @@ const REGISTER_REPORT_MESSAGE =
     DiscordReschedulePort,
     DiscordRescheduleConfirmationService,
     DiscordMenuService,
-    DiscordDeadLetterCronService,
     CleanupCronService,
-    DiscordCleanupCronService,
+    {
+      provide: PlatformDeadLetterCronService,
+      useFactory: (
+        deadLetterService: PlatformDeadLetterService,
+        configService: ConfigService,
+        outboundService: DiscordOutboundService,
+      ) =>
+        new PlatformDeadLetterCronService(deadLetterService, configService, {
+          extractPayload: (payload) => ({
+            externalUserId: payload.discordUserId as string | undefined,
+            text: payload.text as string | undefined,
+          }),
+          abandonReason: 'Missing discordUserId or text in payload',
+          sendText: (externalUserId, text) =>
+            outboundService.sendText(externalUserId, text, {
+              skipDeadLetter: true,
+            }),
+        }),
+      inject: [
+        PlatformDeadLetterService,
+        ConfigService,
+        DiscordOutboundService,
+      ],
+    },
+    {
+      provide: PlatformCleanupCronService,
+      useFactory: (
+        cleanupService: CleanupCronService,
+        configService: ConfigService,
+        messageLogRepo: Repository<DiscordMessageLogEntity>,
+        deadLetterRepo: Repository<WebhookDeadLetterEntity>,
+        idempotencyRepo: Repository<ChatIdempotencyEntity>,
+        rateLimitService: DiscordChatRateLimitService,
+      ) =>
+        new PlatformCleanupCronService(cleanupService, configService, {
+          platform: 'discord',
+          envPrefix: 'DISCORD_',
+          lockIds: {
+            messageLog: 884_200_911,
+            deadLetter: 884_200_912,
+            idempotencyRecovery: 884_200_914,
+            idempotencyCleanup: 884_200_915,
+          },
+          messageLogRepo,
+          deadLetterRepo,
+          idempotencyRepo,
+          rateLimitService,
+        }),
+      inject: [
+        CleanupCronService,
+        ConfigService,
+        getRepositoryToken(DiscordMessageLogEntity),
+        getRepositoryToken(WebhookDeadLetterEntity),
+        getRepositoryToken(ChatIdempotencyEntity),
+        DiscordChatRateLimitService,
+      ],
+    },
     {
       provide: OPS_HEALTH_REPOSITORY,
-      useExisting: DiscordOpsHealthRepository,
+      useFactory: (dataSource: DataSource) =>
+        new TypeormOpsHealthRepository(dataSource, 'discord', () => 15),
+      inject: [DataSource],
     },
-    DiscordOpsHealthRepository,
     OpsHealthService,
   ],
   exports: [],

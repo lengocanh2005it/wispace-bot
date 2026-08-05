@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { PgAdvisoryLockService } from '@wispace/bot-common';
 import {
   StudyReminderScheduleService,
@@ -19,6 +19,7 @@ import {
   DISPLAY_NAME_CACHE,
 } from '@wispace/study-reminder-shared';
 import { OpsHealthService, OPS_HEALTH_REPOSITORY } from '@wispace/ops-health';
+import { TypeormOpsHealthRepository } from '@wispace/ops-health';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 import { BotCommonModule } from '@wispace/bot-common';
@@ -29,7 +30,6 @@ import {
   RedisUserDisplayNameCache,
   type RedisClientPort,
 } from '@wispace/bot-common';
-import { ZaloOpsHealthRepository } from '../zalo-chat/infrastructure/persistence/zalo-ops-health.repository';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { WispaceCalendarService } from '@wispace/wispace-client';
 
@@ -122,9 +122,12 @@ import { WispaceCalendarService } from '@wispace/wispace-client';
     TypeormStudyReminderJobRepository,
     {
       provide: OPS_HEALTH_REPOSITORY,
-      useExisting: ZaloOpsHealthRepository,
+      useFactory: (dataSource: DataSource, configService: ConfigService) =>
+        new TypeormOpsHealthRepository(dataSource, 'zalo', () =>
+          Number(configService.get<string>('CHAT_FREE_FORM_DAILY_LIMIT') ?? 15),
+        ),
+      inject: [DataSource, ConfigService],
     },
-    ZaloOpsHealthRepository,
     OpsHealthService,
   ],
   exports: [

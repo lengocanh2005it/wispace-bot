@@ -11,11 +11,10 @@ import { ZaloSharedModule } from './modules/zalo-shared/zalo-shared.module';
 import { ZaloStudyReminderModule } from './modules/zalo-study-reminder/zalo-study-reminder.module';
 import { ZaloReportModule } from './modules/zalo-chat/zalo-report.module';
 import { ZaloOpsModule } from './modules/zalo-ops/zalo-ops.module';
-import { ZaloMetricsModule } from './modules/metrics/zalo-metrics.module';
-import { ZaloMetricsController } from './modules/metrics/zalo-metrics.controller';
+import { createMetricsModule } from '@wispace/bot-metrics';
 
 @Module({
-  controllers: [HealthController, ZaloMetricsController],
+  controllers: [HealthController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
@@ -33,7 +32,7 @@ import { ZaloMetricsController } from './modules/metrics/zalo-metrics.controller
     ZaloStudyReminderModule,
     ZaloReportModule,
     ZaloOpsModule,
-    ZaloMetricsModule,
+    createMetricsModule('zalo', 'zalo-bot'),
   ],
 })
 export class AppModule {}

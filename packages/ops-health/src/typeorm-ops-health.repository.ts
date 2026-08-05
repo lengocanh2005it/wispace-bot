@@ -1,10 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
-import type { OpsHealthRepositoryPort } from '@wispace/ops-health';
-
-const PLATFORM = 'zalo';
+import type { OpsHealthRepositoryPort } from './types';
 
 interface CountRow {
   count: number;
@@ -15,11 +11,17 @@ interface StatusCountRow {
   count: number;
 }
 
+/**
+ * TypeORM implementation of the ops health repository, parameterized by
+ * platform and a daily-limit resolver (Discord hardcodes 15; Zalo reads
+ * `CHAT_FREE_FORM_DAILY_LIMIT`).
+ */
 @Injectable()
-export class ZaloOpsHealthRepository implements OpsHealthRepositoryPort {
+export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
   constructor(
-    @InjectDataSource() private readonly dataSource: DataSource,
-    private readonly configService: ConfigService,
+    private readonly dataSource: DataSource,
+    private readonly platform: string,
+    private readonly dailyLimit: () => number,
   ) {}
 
   async getChatQuotaSummary(): Promise<Record<string, unknown>> {
@@ -42,7 +44,7 @@ export class ZaloOpsHealthRepository implements OpsHealthRepositoryPort {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const rows = await this.execQuery<CountRow>(
       `SELECT COUNT(*)::int AS count FROM llm_safety_events WHERE platform = $1 AND created_at > $2`,
-      [PLATFORM, since],
+      [this.platform, since],
     );
     return rows[0]?.count ?? 0;
   }
@@ -51,7 +53,7 @@ export class ZaloOpsHealthRepository implements OpsHealthRepositoryPort {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const rows = await this.execQuery<CountRow>(
       `SELECT COUNT(*)::int AS count FROM chat_idempotency WHERE platform = $1 AND status = 'refunded' AND reserved_at > $2`,
-      [PLATFORM, since],
+      [this.platform, since],
     );
     return rows[0]?.count ?? 0;
   }
@@ -60,19 +62,17 @@ export class ZaloOpsHealthRepository implements OpsHealthRepositoryPort {
     const stuckBefore = new Date(Date.now() - 600_000);
     const rows = await this.execQuery<CountRow>(
       `SELECT COUNT(*)::int AS count FROM chat_idempotency WHERE platform = $1 AND status = 'reserved' AND reserved_at < $2`,
-      [PLATFORM, stuckBefore],
+      [this.platform, stuckBefore],
     );
     return rows[0]?.count ?? 0;
   }
 
   private async countUsersAtDailyLimit(): Promise<number> {
     const today = new Date().toISOString().split('T')[0];
-    const limit = Number(
-      this.configService.get<string>('CHAT_FREE_FORM_DAILY_LIMIT') ?? 15,
-    );
+    const limit = this.dailyLimit();
     const rows = await this.execQuery<CountRow>(
       `SELECT COUNT(*)::int AS count FROM chat_daily_usage WHERE platform = $1 AND usage_date = $2::date AND free_form_count >= $3`,
-      [PLATFORM, today, limit],
+      [this.platform, today, limit],
     );
     return rows[0]?.count ?? 0;
   }
@@ -80,7 +80,7 @@ export class ZaloOpsHealthRepository implements OpsHealthRepositoryPort {
   private async getCountsByStatus(): Promise<Record<string, number>> {
     const rows = await this.execQuery<StatusCountRow>(
       `SELECT status, COUNT(*)::int AS count FROM study_reminder_jobs WHERE platform = $1 GROUP BY status`,
-      [PLATFORM],
+      [this.platform],
     );
     const counts: Record<string, number> = {};
     for (const row of rows) {
@@ -93,7 +93,7 @@ export class ZaloOpsHealthRepository implements OpsHealthRepositoryPort {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const rows = await this.execQuery<CountRow>(
       `SELECT COUNT(*)::int AS count FROM study_reminder_jobs WHERE platform = $1 AND status = 'failed' AND updated_at > $2`,
-      [PLATFORM, since],
+      [this.platform, since],
     );
     return rows[0]?.count ?? 0;
   }
@@ -102,7 +102,7 @@ export class ZaloOpsHealthRepository implements OpsHealthRepositoryPort {
     const stuckBefore = new Date(Date.now() - 300_000);
     const rows = await this.execQuery<CountRow>(
       `SELECT COUNT(*)::int AS count FROM study_reminder_jobs WHERE platform = $1 AND status = 'processing' AND updated_at < $2`,
-      [PLATFORM, stuckBefore],
+      [this.platform, stuckBefore],
     );
     return rows[0]?.count ?? 0;
   }

@@ -16,6 +16,8 @@
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/schedule": "^6.0.0",
     "@nestjs/typeorm": "^11.0.1",
     "typeorm": "^1.0.0"
   },

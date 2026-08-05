@@ -1,21 +1,37 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { PlatformDeadLetterService } from '@wispace/database';
-import { ZaloOutboundService } from './zalo-outbound.service';
+import { PlatformDeadLetterService } from './platform-dead-letter.service';
 
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_MIN_RETRY_AGE_MS = 60_000;
 const DEFAULT_RETRY_LIMIT = 10;
 
+export interface DeadLetterCronOptions {
+  /** Extract the retry target (external user id + text) from a saved raw webhook payload. */
+  extractPayload: (payload: Record<string, unknown>) => {
+    externalUserId?: string;
+    text?: string;
+  };
+  /** Mark-abandoned reason when the payload can't be extracted. */
+  abandonReason: string;
+  /** Platform outbound send (e.g. Discord passes `{ skipDeadLetter: true }`). */
+  sendText: (externalUserId: string, text: string) => Promise<void>;
+}
+
+/**
+ * Retries failed platform message deliveries from the dead letter queue.
+ * Runs every 5 minutes. Single-pod safe (Discord uses WebSocket, Zalo uses
+ * pull-based delivery — neither depends on webhook reachability).
+ */
 @Injectable()
-export class ZaloDeadLetterCronService {
-  private readonly logger = new Logger(ZaloDeadLetterCronService.name);
+export class PlatformDeadLetterCronService {
+  private readonly logger = new Logger(PlatformDeadLetterCronService.name);
 
   constructor(
     private readonly deadLetterService: PlatformDeadLetterService,
-    private readonly outboundService: ZaloOutboundService,
     private readonly configService: ConfigService,
+    private readonly options: DeadLetterCronOptions,
   ) {}
 
   @Cron('0 */5 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
@@ -43,23 +59,17 @@ export class ZaloDeadLetterCronService {
 
     for (const entry of entries) {
       try {
-        const payload = entry.rawPayload as {
-          zaloUserId?: string;
-          text?: string;
-          sender?: { id?: string };
-          message?: { text?: string };
-        };
-        const zaloUserId = payload.zaloUserId ?? payload.sender?.id;
-        const text = payload.text ?? payload.message?.text;
-        if (!zaloUserId || !text) {
+        const payload = entry.rawPayload as Record<string, unknown>;
+        const { externalUserId, text } = this.options.extractPayload(payload);
+        if (!externalUserId || !text) {
           await this.deadLetterService.markAbandoned(
             entry.id,
-            'Missing zaloUserId or text in payload',
+            this.options.abandonReason,
           );
           continue;
         }
 
-        await this.outboundService.sendText(zaloUserId, text);
+        await this.options.sendText(externalUserId, text);
         await this.deadLetterService.markReplayed(entry.id);
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
