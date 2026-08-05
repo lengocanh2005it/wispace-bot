@@ -42,44 +42,8 @@ services:
     networks:
       - monitoring
 
-  tempo:
-    image: grafana/tempo:2.5.0
-    container_name: tempo
-    restart: unless-stopped
-    command: ["-config.file=/etc/tempo.yaml"]
-    volumes:
-      - ./tempo.yaml:/etc/tempo.yaml:ro
-      - tempo_data:/var/tempo
-    networks:
-      - monitoring
-      - messenger-bot_default
-
-  grafana:
-    image: grafana/grafana:11.1.0
-    container_name: grafana
-    restart: unless-stopped
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?GRAFANA_PASSWORD is required}
-      GF_USERS_ALLOW_SIGN_UP: "false"
-      GF_AUTH_ANONYMOUS_ENABLED: "false"
-      GF_FEATURE_TOGGLES_ENABLE: traceqlEditor
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
-    ports:
-      - "3100:3000"
-    depends_on:
-      - prometheus
-      - tempo
-    networks:
-      - monitoring
-
 volumes:
   prometheus_data:
-  grafana_data:
-  tempo_data:
   alertmanager_data:
 
 networks:
