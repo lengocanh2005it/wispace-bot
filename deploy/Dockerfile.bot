@@ -34,6 +34,10 @@ RUN for pkg in packages/*/; do \
 FROM node:20-alpine AS production
 WORKDIR /app
 
+# Global ARGs are out of scope after FROM — redeclare per stage that uses them.
+ARG APP_NAME
+ARG APP_PORT
+
 ENV NODE_ENV=production
 ENV APP_NAME=$APP_NAME
 

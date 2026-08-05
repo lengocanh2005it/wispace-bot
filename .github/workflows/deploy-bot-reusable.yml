@@ -69,6 +69,7 @@ jobs:
               - 'turbo.json'
             deploy:
               - 'apps/${{ inputs.app }}/docker-compose.prod.yml'
+              - 'deploy/Dockerfile.bot'
               - '.github/workflows/**'
               - '.github/scripts/**'
 

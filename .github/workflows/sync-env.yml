@@ -3,6 +3,10 @@ name: Sync production env (no image build)
 on:
   workflow_dispatch:
 
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
 permissions:
   contents: read
 

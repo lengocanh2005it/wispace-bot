@@ -485,7 +485,7 @@ Persistent menu (`messenger-profile.service.ts` — payload `REGISTER_LEARNING_R
 1. `handlePostbackEvent` calls `resolveLinkContext(psid, event)`.
 2. Postback **doesn't** carry `referral` → falls back to `findActiveMappingByPsid`.
 3. Mapping exists → `registerForScheduledReports` (upsert subscription topic/cadence).
-4. No mapping → `getMissingUserRefMessage()` — user must open link from WISPACE app.
+4. No mapping → hướng dẫn user mở link từ WISPACE app (missing-user-ref message, inlined trong router).
 
 **No** verify call at menu tap: no token available; menu is an action on a PSID **already bound** previously. Same for chat, reports, reminders.
 
