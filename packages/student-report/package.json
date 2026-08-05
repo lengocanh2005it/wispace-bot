@@ -12,7 +12,7 @@
     "format:check": "prettier --check \"src/**/*.ts\"",
     "lint": "eslint \"src/**/*.ts\" --fix",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
-    "test": "jest --runInBand"
+    "test": "jest --maxWorkers=50%"
   },
   "dependencies": {
     "@wispace/chat-metering": "*",

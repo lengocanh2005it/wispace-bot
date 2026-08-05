@@ -137,7 +137,7 @@ Fix lint/test/build errors until they pass. `npm run test:e2e` requires a real P
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Jest passes locally but CI hangs then fails after ~30s | Service has `setInterval` / `setTimeout` not cleared → open handle | Add `OnModuleDestroy` + `clearInterval`; `npm run test` runs `jest --runInBand` and does not use `forceExit` |
+| Jest passes locally but CI hangs then fails after ~30s | Service has `setInterval` / `setTimeout` not cleared → open handle | Add `OnModuleDestroy` + `clearInterval`; `npm run test` runs `jest --forceExit --maxWorkers=50%` (workers for speed, `forceExit` guards open handles) |
 | `prettier --check` fails even though local reports no errors | File has CRLF (Windows) but Prettier config expects LF | Run `npm run format` before committing |
 | `eslint` reports `no-useless-escape` | Regex uses `\/` or `\-` in character class | Remove backslash: `[/-]` instead of `[\/\-]` |
 | Tests pass locally but fail CI due to date/time | CI runs UTC, local runs UTC+7 | Do not hardcode dates — use `new Date()` or mock `Date.now` |
