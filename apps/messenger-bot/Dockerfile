@@ -24,7 +24,7 @@ COPY packages/database/package.json packages/database/package.json
 RUN --mount=type=cache,target=/root/.npm HUSKY=0 npm ci
 
 # Source layer: exclude CI/deploy/docs — keeps cache when only those change.
-COPY --exclude=.git --exclude=node_modules --exclude=.github --exclude=deploy --exclude=docs --exclude='*.md' --exclude='.env*' --exclude='docker-compose*' --exclude='vps-deploy.sh' . .
+COPY --exclude=.git --exclude=node_modules --exclude=.github --exclude=deploy --exclude=docs --exclude='*.md' --exclude='.env*' --exclude='docker-compose*' . .
 RUN npx turbo run build
 
 RUN for pkg in packages/*/; do \

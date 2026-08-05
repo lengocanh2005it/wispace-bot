@@ -10,11 +10,6 @@ services:
       HOME: /tmp
     ports:
       - '127.0.0.1:${PORT:-3001}:${PORT:-3001}'
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.5'
-        reservations:
-          memory: 128M
-          cpus: '0.25'
+    mem_limit: 256M
+    mem_reservation: 128M
+    cpus: '0.5'

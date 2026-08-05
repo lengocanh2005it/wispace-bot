@@ -102,7 +102,7 @@ fi
 # Guarded by a Postgres advisory lock: all 3 bots share one DB, so a
 # simultaneous deploy must never race on the migrations table.
 if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ -n "${MIGRATION_CMD:-}" ]; then
-  MIGRATION_DB_CONTAINER="${MIGRATION_DB_CONTAINER:-postgres_db}"
+  MIGRATION_DB_CONTAINER="${MIGRATION_DB_CONTAINER:-postgres_n8n_db}"
   MIGRATION_LOCK_ID="${MIGRATION_LOCK_ID:-4242424242}"
   DB_USER_ENV=$(grep -E '^DB_USER=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
   DB_NAME_ENV=$(grep -E '^DB_NAME=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
@@ -117,10 +117,10 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ -n "${MIGRATION_CMD:-}" ]; then
       echo "ERROR: could not acquire migration lock" >&2
       exit 1
     fi
-    # Safety net: quick pg_dump before migrations. Keeps the last 3 so a
-    # broken migration can be investigated without waiting for the nightly
-    # backup. Uses -Fc (custom format) for fast pg_restore.
-    PRE_MIGRATE_DIR="/home/ngoc_anh/backups/ai_chat_bot_db/pre-migrate"
+    # Safety net: quick pg_dump before migrations. Keeps ~1 day so a broken
+    # migration can be investigated without waiting for the nightly backup.
+    # Uses -Fc (custom format) for fast pg_restore.
+    PRE_MIGRATE_DIR="${PRE_MIGRATE_DIR:-/home/ngoc_anh/backups/ai_chat_bot_db/pre-migrate}"
     mkdir -p "$PRE_MIGRATE_DIR"
     PRE_MIGRATE_DUMP="$PRE_MIGRATE_DIR/pre-migrate-$(date +%Y%m%d-%H%M%S).dump"
     echo "Pre-migration safety dump → $PRE_MIGRATE_DUMP"

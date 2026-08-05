@@ -16,11 +16,6 @@ services:
       - ./.env:/deploy/.env
       - ./docker-compose.prod.yml:/deploy/docker-compose.prod.yml:ro
       - /var/run/docker.sock:/var/run/docker.sock
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '1.0'
-        reservations:
-          memory: 256M
-          cpus: '0.5'
+    mem_limit: 512M
+    mem_reservation: 256M
+    cpus: '1.0'
