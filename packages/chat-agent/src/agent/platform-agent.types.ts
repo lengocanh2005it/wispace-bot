@@ -1,5 +1,6 @@
 import type { ReportDeliveryPort } from '@wispace/scheduler-core';
 import type { StageInput, StageResult } from '@wispace/reschedule-confirm';
+import type { AgentMetricsPort, AgentToolName } from '@wispace/llm-agent';
 
 /**
  * Platform-neutral agent context — Discord sets `isServerChannel` +
@@ -17,12 +18,28 @@ export interface PlatformAgentToolContext {
    * of the server channel; Zalo ignores it.
    */
   privateDataFetched?: boolean;
+  /**
+   * Platform-specific quick replies / buttons collected by tools (Messenger
+   * rich follow-ups). Optional — Discord/Zalo never fill it.
+   */
+  richFollowUps?: unknown[];
+  /**
+   * Platform-specific link context (Messenger ref token). Optional — Discord
+   * and Zalo resolve links through their own account-link flows.
+   */
+  linkContext?: unknown;
 }
 
 export interface PlatformAgentReply {
   text: string;
   /** Mirrors PlatformAgentToolContext.privateDataFetched after agent run. */
   privateDataFetched: boolean;
+  /** Tools may push platform-specific follow-ups (Messenger quick replies). */
+  richFollowUps?: unknown[];
+  /** True when the agent loop hit maxToolRounds without a final text. */
+  exhausted?: boolean;
+  /** E.g. "[Đã tra cứu: get_user_goals]" — appended to history for next turns. */
+  toolSummary?: string;
 }
 
 export interface PlatformAgentInput {
@@ -32,12 +49,47 @@ export interface PlatformAgentInput {
   /** Platform message id — LLM usage correlation id. */
   correlationId?: string;
   isServerChannel?: boolean;
+  /** Pre-loaded history — when absent the service loads it itself. */
+  history?: readonly {
+    role: 'user' | 'assistant' | 'tool_summary';
+    content: string;
+  }[];
+  /** Platform-specific link context (Messenger ref token). */
+  linkContext?: unknown;
 }
 
 /** Per-platform agent options — prompt files are owned by each app. */
 export interface PlatformAgentOptions {
   promptDir: string;
   promptFile: string;
+  /**
+   * Appended to the base system prompt (e.g. Messenger's per-user display
+   * name linkage note). Default: no suffix.
+   */
+  systemPromptSuffix?: (
+    input: PlatformAgentInput,
+  ) => Promise<string | undefined>;
+  /** Called before the LLM loop (Messenger sets OTel span attributes). */
+  onBeforeReply?: (input: PlatformAgentInput) => Promise<void>;
+  /**
+   * Messenger's fast "reschedule my default session" pre-check — returns a
+   * ready reply without calling the LLM, or null to continue the normal loop.
+   */
+  tryFastReschedule?: (
+    ctx: PlatformAgentToolContext,
+    userText: string,
+  ) => Promise<PlatformAgentReply | null>;
+  /** Prometheus/OTel agent metrics (default: no-op). */
+  metrics?: AgentMetricsPort;
+  /** 0 disables agent-level retry when the app's LLM execution already retries. */
+  maxLlmRetries?: number;
+  /** Per-tool execution timeout in ms (Messenger report tool needs 30s). */
+  toolExecutionTimeoutMs?: number;
+  /**
+   * When true (default), the service appends the turn to chat history itself.
+   * Apps whose pipeline appends (Messenger queue) set false to avoid doubles.
+   */
+  appendHistory?: boolean;
 }
 
 /** Stage-only view of the shared `RescheduleConfirmationService`. */
@@ -61,6 +113,21 @@ export interface PlatformAgentToolsOptions {
   registerReportMessage: string;
   /** Discord injects its report delivery port; Zalo leaves it undefined. */
   reportDeliveryPort?: ReportDeliveryPort;
+  /**
+   * Per-tool platform overrides — checked before the shared implementations.
+   * Messenger overrides the tools whose data sources/side effects differ
+   * (LLM report, StudyDataPort-based calendar tools, real subscription
+   * upsert, Messenger confirmation follow-ups); Discord/Zalo pass nothing.
+   */
+  toolOverrides?: Partial<
+    Record<
+      AgentToolName,
+      (
+        ctx: PlatformAgentToolContext,
+        args: Record<string, unknown>,
+      ) => Promise<unknown>
+    >
+  >;
   reschedule: {
     /** Discord validates newLocalDate/newTime; Zalo does not. */
     validateDateAndTime: boolean;

@@ -18,7 +18,7 @@ import {
   MENU_LEARNING_PROGRESS_CUSTOM_ID,
   MENU_UPCOMING_SESSIONS_CUSTOM_ID,
 } from '../../application/constants/discord-menu.constants';
-import { DiscordChatRateLimitService } from '@discord/modules/chat-metering/application/services/discord-chat-rate-limit.service';
+import { PlatformChatRateLimitService } from '@wispace/chat-metering';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import { DiscordMenuService } from '../../application/services/discord-menu.service';
 import { DiscordPendingJoinService } from '@discord/modules/account-link/application/services/discord-pending-join.service';
@@ -56,7 +56,7 @@ export class DiscordChatGateway {
     private readonly configService: ConfigService,
     private readonly agentService: PlatformAgentService,
     private readonly outboundService: DiscordOutboundService,
-    private readonly rateLimitService: DiscordChatRateLimitService,
+    private readonly rateLimitService: PlatformChatRateLimitService,
     private readonly accountLinkService: DiscordAccountLinkService,
     private readonly rescheduleConfirmationService: RescheduleConfirmationService<string>,
     private readonly menuService: DiscordMenuService,

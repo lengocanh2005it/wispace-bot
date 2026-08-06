@@ -13,11 +13,13 @@ import {
   PlatformAgentService,
   PlatformChatHistoryService,
 } from '@wispace/chat-agent';
-import { ZaloChatRateLimitService } from '../../infrastructure/persistence/zalo-chat-rate-limit.service';
+import { PlatformChatRateLimitService } from '@wispace/chat-metering';
 import { ZaloOutboundService } from '../../application/services/zalo-outbound.service';
 
 export class ZaloRateLimiterAdapter implements RateLimiterPort {
-  constructor(private readonly rateLimitService: ZaloChatRateLimitService) {}
+  constructor(
+    private readonly rateLimitService: PlatformChatRateLimitService,
+  ) {}
 
   async reserve(
     externalUserId: string,

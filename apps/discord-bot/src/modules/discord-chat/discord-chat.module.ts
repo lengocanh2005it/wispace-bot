@@ -22,6 +22,7 @@ import {
 } from '@wispace/chat-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
+  PlatformChatRateLimitService,
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
 } from '@wispace/chat-metering';
@@ -52,7 +53,6 @@ import {
   DiscordOutboundAdapter,
   DiscordRateLimiterAdapter,
 } from './infrastructure/adapters/discord-chat-pipeline.adapters';
-import { DiscordChatRateLimitService } from '@discord/modules/chat-metering/application/services/discord-chat-rate-limit.service';
 import { DiscordOutboundService } from './application/services/discord-outbound.service';
 
 const NOT_LINKED_MESSAGE =
@@ -170,7 +170,7 @@ const REGISTER_REPORT_MESSAGE =
       provide: PlatformChatQueueService,
       useFactory: (
         configService: ConfigService,
-        rateLimitService: DiscordChatRateLimitService,
+        rateLimitService: PlatformChatRateLimitService,
         historyService: PlatformChatHistoryService,
         agentService: PlatformAgentService,
         outboundService: DiscordOutboundService,
@@ -195,7 +195,7 @@ const REGISTER_REPORT_MESSAGE =
         ),
       inject: [
         ConfigService,
-        DiscordChatRateLimitService,
+        PlatformChatRateLimitService,
         PlatformChatHistoryService,
         PlatformAgentService,
         DiscordOutboundService,
@@ -246,7 +246,7 @@ const REGISTER_REPORT_MESSAGE =
         messageLogRepo: Repository<DiscordMessageLogEntity>,
         deadLetterRepo: Repository<WebhookDeadLetterEntity>,
         idempotencyRepo: Repository<ChatIdempotencyEntity>,
-        rateLimitService: DiscordChatRateLimitService,
+        rateLimitService: PlatformChatRateLimitService,
       ) =>
         new PlatformCleanupCronService(cleanupService, configService, {
           platform: 'discord',
@@ -268,7 +268,7 @@ const REGISTER_REPORT_MESSAGE =
         getRepositoryToken(DiscordMessageLogEntity),
         getRepositoryToken(WebhookDeadLetterEntity),
         getRepositoryToken(ChatIdempotencyEntity),
-        DiscordChatRateLimitService,
+        PlatformChatRateLimitService,
       ],
     },
     {

@@ -48,7 +48,8 @@ export class RedisChatHistoryStore implements ChatHistoryStorePort {
     const raw = await this.redis.get(`${this.keyPrefix}${externalUserId}`);
     if (!raw) return [];
     try {
-      return JSON.parse(raw) as ChatHistoryMessage[];
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? (parsed as ChatHistoryMessage[]) : [];
     } catch {
       return [];
     }
@@ -68,6 +69,24 @@ export class RedisChatHistoryStore implements ChatHistoryStorePort {
       ...existing,
       { role: 'user' as const, content: user },
       { role: 'assistant' as const, content: assistant },
+    ].slice(-this.maxMessages);
+
+    await this.redis.set(
+      `${this.keyPrefix}${externalUserId}`,
+      JSON.stringify(messages),
+      'EX',
+      this.ttlSec,
+    );
+  }
+
+  async appendToolSummary(
+    externalUserId: string,
+    summary: string,
+  ): Promise<void> {
+    const existing = await this.getHistory(externalUserId);
+    const messages = [
+      ...existing,
+      { role: 'tool_summary' as const, content: summary },
     ].slice(-this.maxMessages);
 
     await this.redis.set(

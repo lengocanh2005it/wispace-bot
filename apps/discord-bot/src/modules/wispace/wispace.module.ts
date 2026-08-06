@@ -4,7 +4,7 @@ import {
   WispaceConfigService,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
-import { DiscordStudyCalendarCommandService } from './application/services/discord-study-calendar-command.service';
+import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
 
 @Module({
   providers: [
@@ -23,12 +23,24 @@ import { DiscordStudyCalendarCommandService } from './application/services/disco
         ),
       inject: [WispaceConfigService],
     },
-    DiscordStudyCalendarCommandService,
+    {
+      provide: PlatformStudyCalendarCommandService,
+      useFactory: (
+        calendarService: WispaceCalendarService,
+        configService: WispaceConfigService,
+      ) =>
+        new PlatformStudyCalendarCommandService(
+          { platform: 'discord', enforceLeadTime: true },
+          calendarService,
+          configService,
+        ),
+      inject: [WispaceCalendarService, WispaceConfigService],
+    },
   ],
   exports: [
     WispaceGoalsService,
     WispaceCalendarService,
-    DiscordStudyCalendarCommandService,
+    PlatformStudyCalendarCommandService,
   ],
 })
 export class WispaceModule {}

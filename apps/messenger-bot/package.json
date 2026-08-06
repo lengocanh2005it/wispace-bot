@@ -59,6 +59,7 @@
     "@opentelemetry/semantic-conventions": "^1.41.1",
     "@wispace/bot-common": "*",
     "@wispace/bot-metrics": "*",
+    "@wispace/chat-agent": "*",
     "@wispace/chat-history": "*",
     "@wispace/chat-metering": "*",
     "@wispace/chat-queue-core": "*",

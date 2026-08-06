@@ -70,6 +70,58 @@ describe('MemoryChatHistoryStore', () => {
     await expect(store.getHistory('u1')).resolves.toEqual([]);
   });
 
+  it('appends tool summary visible in getHistory', async () => {
+    const store = new MemoryChatHistoryStore({
+      ttlMs: 60_000,
+      maxMessages: 20,
+    });
+    await store.appendTurn('u1', 'ask schedule', 'Your schedule is...');
+    await store.appendToolSummary(
+      'u1',
+      '[Đã tra cứu: get_upcoming_study_sessions]',
+    );
+
+    await expect(store.getHistory('u1')).resolves.toEqual([
+      { role: 'user', content: 'ask schedule' },
+      { role: 'assistant', content: 'Your schedule is...' },
+      {
+        role: 'tool_summary',
+        content: '[Đã tra cứu: get_upcoming_study_sessions]',
+      },
+    ]);
+  });
+
+  it('drops pending tool summaries when appendTurn is called next', async () => {
+    const store = new MemoryChatHistoryStore({
+      ttlMs: 60_000,
+      maxMessages: 20,
+    });
+    await store.appendTurn('u1', 'ask schedule', 'Your schedule is...');
+    await store.appendToolSummary(
+      'u1',
+      '[Đã tra cứu: get_upcoming_study_sessions]',
+    );
+    await store.appendTurn('u1', 'thanks', 'no problem');
+
+    const history = await store.getHistory('u1');
+    expect(history.some((m) => m.role === 'tool_summary')).toBe(false);
+  });
+
+  it('clear drops pending tool summaries', async () => {
+    const store = new MemoryChatHistoryStore({
+      ttlMs: 60_000,
+      maxMessages: 20,
+    });
+    await store.appendTurn('u1', 'ask schedule', 'Your schedule is...');
+    await store.appendToolSummary(
+      'u1',
+      '[Đã tra cứu: get_upcoming_study_sessions]',
+    );
+    await store.clear('u1');
+
+    await expect(store.getHistory('u1')).resolves.toEqual([]);
+  });
+
   it('keeps histories independent per user', async () => {
     const store = new MemoryChatHistoryStore({
       ttlMs: 60_000,

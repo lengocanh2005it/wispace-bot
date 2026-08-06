@@ -1,15 +1,12 @@
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
-import {
+  WispaceCalendarService,
+  WispaceConfigService,
+  resolveRescheduleSlot,
+  resolveScheduledAtFromEventDate,
   type CalendarSessionTimeRange,
   type RescheduleSchedulingMode,
   type UserCalendarRecord,
-  resolveRescheduleSlot,
-  resolveScheduledAtFromEventDate,
 } from '@wispace/wispace-client';
 import type {
   RescheduleStudySessionResult,
@@ -19,39 +16,46 @@ import {
   formatScheduledTimeLabel,
   getMinutesUntilSession,
 } from '@wispace/study-reminder-core';
-import {
-  WispaceCalendarService,
-  WispaceConfigService,
-} from '@wispace/wispace-client';
+
+export interface PlatformStudyCalendarCommandOptions {
+  /** Platform label used in log lines, e.g. `discord` → `discordUserId=...`. */
+  platform: string;
+  /**
+   * Reject target slots that are too close / already past (discord);
+   * zalo skips this check.
+   */
+  enforceLeadTime?: boolean;
+}
 
 /**
- * Discord counterpart to Messenger's `StudyCalendarCommandService` — reuses
- * the same write-capable Wispace calendar client + pure scheduling math
- * (`@wispace/wispace-client`, `@wispace/study-reminder-core`). No outbox
- * sync afterwards: Discord has no study-reminder job system yet (Phase 3
- * gap, see docs/turborepo-migration-plan.md).
+ * Delete-recreate calendar reschedule flow + upcoming-session listing,
+ * shared by the Discord and Zalo bots. Uses the same write-capable Wispace
+ * calendar client + pure scheduling math as messenger-bot's
+ * `StudyCalendarCommandService`.
  */
-@Injectable()
-export class DiscordStudyCalendarCommandService {
-  private readonly logger = new Logger(DiscordStudyCalendarCommandService.name);
+export class PlatformStudyCalendarCommandService {
+  private readonly logger = new Logger(
+    PlatformStudyCalendarCommandService.name,
+  );
 
   constructor(
+    private readonly options: PlatformStudyCalendarCommandOptions,
     private readonly calendarService: WispaceCalendarService,
     private readonly configService: WispaceConfigService,
   ) {}
 
   async listEntries(
-    discordUserId: string,
+    externalUserId: string,
     options?: { timeRange?: CalendarSessionTimeRange; limit?: number },
   ): Promise<{
     timeRange: CalendarSessionTimeRange;
     entries: StudyCalendarEntryView[];
   }> {
     const timeRange = options?.timeRange ?? 'upcoming';
-    const records = await this.calendarService.listCalendars(discordUserId);
+    const records = await this.calendarService.listCalendars(externalUserId);
     const recordById = new Map(records.map((record) => [record.id, record]));
     const sessions = await this.calendarService.getCalendarSessions(
-      discordUserId,
+      externalUserId,
       { timeRange, limit: options?.limit },
     );
 
@@ -87,7 +91,7 @@ export class DiscordStudyCalendarCommandService {
   }
 
   async rescheduleSession(params: {
-    discordUserId: string;
+    externalUserId: string;
     userId: number;
     calendarId: number;
     schedulingMode: RescheduleSchedulingMode;
@@ -95,7 +99,7 @@ export class DiscordStudyCalendarCommandService {
     newTime?: string;
   }): Promise<RescheduleStudySessionResult> {
     const source = await this.findCalendarRecord(
-      params.discordUserId,
+      params.externalUserId,
       params.calendarId,
     );
     const timezone = this.configService.getTimezone();
@@ -108,23 +112,25 @@ export class DiscordStudyCalendarCommandService {
       timezone,
     });
 
-    this.assertFutureSlot(target.eventDate, target.time, timezone);
+    if (this.options.enforceLeadTime === true) {
+      this.assertFutureSlot(target.eventDate, target.time, timezone);
+    }
 
     await this.calendarService.deleteCalendar(
-      params.discordUserId,
+      params.externalUserId,
       params.calendarId,
     );
 
     let created: UserCalendarRecord;
     try {
       created = await this.calendarService.createCalendar(
-        params.discordUserId,
+        params.externalUserId,
         { eventDate: target.eventDate, time: target.time },
         { userId: params.userId },
       );
     } catch (error) {
       this.logger.error(
-        `Reschedule recreate failed after delete calendarId=${params.calendarId} discordUserId=${params.discordUserId}`,
+        `Reschedule recreate failed after delete calendarId=${params.calendarId} ${this.options.platform}UserId=${params.externalUserId}`,
       );
       throw error;
     }
@@ -144,11 +150,11 @@ export class DiscordStudyCalendarCommandService {
   }
 
   private async findCalendarRecord(
-    discordUserId: string,
+    externalUserId: string,
     calendarId: number,
   ): Promise<UserCalendarRecord> {
     const source = await this.calendarService.findCalendarRecord(
-      discordUserId,
+      externalUserId,
       calendarId,
     );
 

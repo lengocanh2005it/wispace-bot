@@ -1,51 +1,96 @@
-import { Injectable } from '@nestjs/common';
-import type { ChatHistoryMessage } from '../../domain/entities/messenger-store.types';
-import type { ChatHistoryStorePort } from '../../domain/repositories/chat-history.store.port';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  MemoryChatHistoryStore,
+  RedisChatHistoryStore,
+  type ChatHistoryMessage,
+  type ChatHistoryStorePort,
+  type RedisChatHistoryClient,
+} from '@wispace/chat-history';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
 import { MessengerChatSharedConfigService } from '../../application/services/messenger-chat-shared-config.service';
-import { MemoryChatHistoryStore } from './memory-chat-history.store';
-import { RedisChatHistoryStore } from './redis-chat-history.store';
 
+const KEY_PREFIX = 'chat:history:';
+
+/**
+ * Chat history store selector — wraps the shared @wispace/chat-history
+ * stores with Messenger's env config (CHAT_HISTORY_*). Redis failures fall
+ * back to empty/no-op instead of throwing (same resilience as before).
+ */
 @Injectable()
 export class ChatHistoryStoreResolver implements ChatHistoryStorePort {
+  private readonly logger = new Logger(ChatHistoryStoreResolver.name);
+  private readonly memory: MemoryChatHistoryStore;
+  private readonly redis?: RedisChatHistoryStore;
+
   constructor(
     private readonly sharedConfig: MessengerChatSharedConfigService,
-    private readonly memoryStore: MemoryChatHistoryStore,
-    private readonly redisStore: RedisChatHistoryStore,
-  ) {}
+    @Inject(REDIS_CLIENT)
+    redisClient?: RedisClientPort | null,
+  ) {
+    const ttlMs = sharedConfig.getHistoryTtlMs();
+    const maxMessages = sharedConfig.getHistoryMaxMessages();
+    this.memory = new MemoryChatHistoryStore({ ttlMs, maxMessages });
 
-  getHistory(psid: string): Promise<ChatHistoryMessage[]> {
-    return this.resolveStore().getHistory(psid);
+    const nativeClient = redisClient?.getNativeClient();
+    if (nativeClient) {
+      this.redis = new RedisChatHistoryStore(
+        nativeClient as unknown as RedisChatHistoryClient,
+        {
+          ttlSec: Math.max(1, Math.ceil(ttlMs / 1000)),
+          maxMessages,
+          keyPrefix: KEY_PREFIX,
+        },
+      );
+    }
   }
 
-  appendTurn(
+  async getHistory(psid: string): Promise<ChatHistoryMessage[]> {
+    return this.safe(() => this.resolveStore().getHistory(psid), []);
+  }
+
+  async appendTurn(
     psid: string,
     userText: string,
     assistantText: string,
   ): Promise<void> {
-    return this.resolveStore().appendTurn(psid, userText, assistantText);
+    await this.safe(
+      () => this.resolveStore().appendTurn(psid, userText, assistantText),
+      undefined,
+    );
   }
 
   appendToolSummary(psid: string, summary: string): Promise<void> {
-    return this.resolveStore().appendToolSummary(psid, summary);
+    return this.safe(async () => {
+      await this.resolveStore().appendToolSummary?.(psid, summary);
+    }, undefined);
   }
 
-  clear(psid: string): Promise<void> {
-    return this.resolveStore().clear(psid);
+  async clear(psid: string): Promise<void> {
+    await this.safe(() => this.resolveStore().clear(psid), undefined);
   }
 
   resolveStoreKind(): 'memory' | 'redis' {
     const configured = this.sharedConfig.getHistoryStore();
-
-    if (configured === 'redis' && this.redisStore.isAvailable()) {
+    if (configured === 'redis' && this.redis) {
       return 'redis';
     }
-
     return 'memory';
   }
 
   private resolveStore(): ChatHistoryStorePort {
-    return this.resolveStoreKind() === 'redis'
-      ? this.redisStore
-      : this.memoryStore;
+    return this.resolveStoreKind() === 'redis' ? this.redis! : this.memory;
+  }
+
+  private async safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      this.logger.warn(
+        `Chat history store failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return fallback;
+    }
   }
 }

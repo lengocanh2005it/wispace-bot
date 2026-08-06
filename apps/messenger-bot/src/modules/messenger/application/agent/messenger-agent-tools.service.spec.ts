@@ -1,5 +1,9 @@
+import { PlatformAgentToolsService } from '@wispace/chat-agent';
+import type {
+  PlatformAgentReply,
+  PlatformAgentToolContext,
+} from '@wispace/chat-agent';
 import { MessengerAgentToolsService } from './messenger-agent-tools.service';
-import type { MessengerAgentToolContext } from './messenger-agent-tools.service';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import type { StudyDataPort } from '../../domain/ports/study-data.port';
 import type { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
@@ -39,7 +43,7 @@ describe('MessengerAgentToolsService', () => {
         stage: overrides.stage ?? jest.fn(),
       } as unknown as jest.Mocked<MessengerRescheduleConfirmationService>;
 
-    const service = new MessengerAgentToolsService(
+    const messengerTools = new MessengerAgentToolsService(
       repository,
       studentReportService,
       userGoalsApiService,
@@ -47,14 +51,23 @@ describe('MessengerAgentToolsService', () => {
       rescheduleConfirmationService,
     );
 
-    const ctx: MessengerAgentToolContext = {
-      psid: 'psid-123',
+    const stagePort = { stage: jest.fn() };
+    const service = new PlatformAgentToolsService(
+      undefined,
+      undefined,
+      stagePort,
+      messengerTools.buildToolsOptions(),
+    );
+
+    const ctx: PlatformAgentToolContext = {
+      externalUserId: 'psid-123',
       userId: 42,
       richFollowUps: [],
     };
 
     return {
       service,
+      messengerTools,
       ctx,
       repository,
       studentReportService,
@@ -112,7 +125,7 @@ describe('MessengerAgentToolsService', () => {
   });
 
   describe('get_user_goals', () => {
-    it('calls userGoalsApiService.getUserGoals', async () => {
+    it('calls userGoalsApiService.getUserGoals and pushes follow-up', async () => {
       const goals = { goals: [{ id: 1, name: 'IELTS 7.0' }] };
       const { service, ctx } = createService({
         getUserGoals: jest.fn().mockResolvedValue(goals),
@@ -121,6 +134,7 @@ describe('MessengerAgentToolsService', () => {
       const result = await service.execute('get_user_goals', '{}', ctx);
 
       expect(result).toEqual(goals);
+      expect(ctx.richFollowUps).toHaveLength(1);
     });
   });
 
@@ -206,7 +220,7 @@ describe('MessengerAgentToolsService', () => {
   describe('reschedule_study_session', () => {
     it('returns error when no userId', async () => {
       const { service } = createService();
-      const ctx = { psid: 'psid-123', richFollowUps: [] };
+      const ctx = { externalUserId: 'psid-123', richFollowUps: [] };
 
       const result = await service.execute(
         'reschedule_study_session',
@@ -373,15 +387,16 @@ describe('MessengerAgentToolsService', () => {
         registered: true,
         alreadyActive: false,
       });
+      expect(ctx.richFollowUps).toHaveLength(0);
     });
   });
 
   describe('tryFastDefaultReschedule', () => {
     it('returns null when no userId', async () => {
-      const { service } = createService();
-      const ctx = { psid: 'psid-123', richFollowUps: [] };
+      const { messengerTools } = createService();
+      const ctx = { externalUserId: 'psid-123', richFollowUps: [] };
 
-      const result = await service.tryFastDefaultReschedule(
+      const result = await messengerTools.tryFastDefaultReschedule(
         ctx,
         'đổi lịch giúp mình',
       );
@@ -390,7 +405,7 @@ describe('MessengerAgentToolsService', () => {
     });
 
     it('returns null when multiple entries', async () => {
-      const { service, ctx } = createService({
+      const { messengerTools, ctx } = createService({
         listEntries: jest.fn().mockResolvedValue({
           entries: [
             { calendarId: 1, scheduledTimeLabel: 'Thứ 2' },
@@ -399,12 +414,34 @@ describe('MessengerAgentToolsService', () => {
         }),
       });
 
-      const result = await service.tryFastDefaultReschedule(
+      const result = await messengerTools.tryFastDefaultReschedule(
         ctx,
         'đổi lịch giúp mình',
       );
 
       expect(result).toBeNull();
+    });
+
+    it('returns confirmation reply when exactly one upcoming entry', async () => {
+      const { messengerTools, ctx } = createService({
+        listEntries: jest.fn().mockResolvedValue({
+          entries: [{ calendarId: 1, scheduledTimeLabel: 'Thứ 2, 08:00' }],
+          total: 1,
+        }),
+        stage: jest.fn().mockResolvedValue({
+          sessionLabel: 'IELTS Writing',
+          summary: 'Đổi lịch từ Thứ 2 sang Thứ 3',
+          richFollowUp: { type: 'button', title: 'Xác nhận' },
+        }),
+      });
+
+      const result = (await messengerTools.tryFastDefaultReschedule(
+        ctx,
+        'đổi lịch giúp mình',
+      )) as PlatformAgentReply;
+
+      expect(result.text).toContain('Xác nhận đổi lịch');
+      expect(result.richFollowUps).toHaveLength(1);
     });
   });
 });

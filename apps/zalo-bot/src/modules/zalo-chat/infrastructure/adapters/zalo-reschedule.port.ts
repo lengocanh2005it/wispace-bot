@@ -1,12 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import type { ReschedulePort } from '@wispace/reschedule-confirm';
 import type { RescheduleSchedulingMode } from '@wispace/wispace-client';
-import { ZaloStudyCalendarCommandService } from '../../application/services/zalo-study-calendar-command.service';
+import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
 
 @Injectable()
 export class ZaloReschedulePort implements ReschedulePort<string> {
   constructor(
-    private readonly studyCalendarCommandService: ZaloStudyCalendarCommandService,
+    private readonly studyCalendarCommandService: PlatformStudyCalendarCommandService,
   ) {}
 
   async rescheduleSession(params: {
@@ -18,7 +18,7 @@ export class ZaloReschedulePort implements ReschedulePort<string> {
     newTime?: string;
   }): Promise<{ scheduledTimeLabel: string }> {
     const result = await this.studyCalendarCommandService.rescheduleSession({
-      zaloUserId: params.externalId,
+      externalUserId: params.externalId,
       userId: params.userId,
       calendarId: params.calendarId,
       schedulingMode: params.schedulingMode,

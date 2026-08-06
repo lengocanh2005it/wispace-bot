@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { ZaloAccountLinkService } from '../../application/services/zalo-account-link.service';
 import { ZaloOauthStateService } from '../../application/services/zalo-oauth-state.service';
-import { WispaceZaloTokenVerifyService } from '../../infrastructure/wispace/wispace-zalo-token-verify.service';
+import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import {
   ZALO_MESSAGE_SENDER,
   type ZaloMessageSenderPort,
@@ -20,7 +20,7 @@ export class ZaloOauthController {
     private readonly configService: ConfigService,
     private readonly accountLinkService: ZaloAccountLinkService,
     private readonly oauthStateService: ZaloOauthStateService,
-    private readonly tokenVerifyService: WispaceZaloTokenVerifyService,
+    private readonly tokenVerifyService: WispaceTokenVerifyService,
     @Inject(ZALO_MESSAGE_SENDER)
     private readonly outboundService: ZaloMessageSenderPort,
   ) {}

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import {
   isAgentToolName,
   type AgentToolName,
@@ -32,8 +32,12 @@ export class PlatformAgentToolsService {
   private readonly logger = new Logger(PlatformAgentToolsService.name);
 
   constructor(
-    private readonly goalsService: WispaceGoalsService,
-    private readonly calendarService: WispaceCalendarService,
+    // Messenger overrides every tool, so the shared Wispace services are
+    // optional — Discord/Zalo always inject them.
+    @Optional()
+    private readonly goalsService: WispaceGoalsService | undefined,
+    @Optional()
+    private readonly calendarService: WispaceCalendarService | undefined,
     private readonly stagePort: RescheduleStagePort,
     private readonly options: PlatformAgentToolsOptions,
   ) {}
@@ -79,11 +83,16 @@ export class PlatformAgentToolsService {
     args: Record<string, unknown>,
     ctx: PlatformAgentToolContext,
   ): Promise<unknown> {
+    const override = this.options.toolOverrides?.[toolName];
+    if (override) {
+      return override(ctx, args);
+    }
+
     switch (toolName) {
       case 'get_user_goals':
         return this.withLinkedAccount(ctx, () => {
           ctx.privateDataFetched = true;
-          return this.goalsService.getUserGoals(
+          return this.goalsService!.getUserGoals(
             this.options.wispaceExternalId(ctx),
           );
         });
@@ -91,8 +100,10 @@ export class PlatformAgentToolsService {
         return this.withLinkedAccount(ctx, async () => {
           ctx.privateDataFetched = true;
           const [goals, taskScores] = await Promise.all([
-            this.goalsService.getUserGoals(this.options.wispaceExternalId(ctx)),
-            this.goalsService.getTaskScoreAverages(
+            this.goalsService!.getUserGoals(
+              this.options.wispaceExternalId(ctx),
+            ),
+            this.goalsService!.getTaskScoreAverages(
               this.options.wispaceExternalId(ctx),
             ),
           ]);
@@ -102,7 +113,7 @@ export class PlatformAgentToolsService {
         return this.withLinkedAccount(ctx, async () => {
           ctx.privateDataFetched = true;
           const limit = readPositiveLimit(args.limit, 5);
-          const sessions = await this.calendarService.getCalendarSessions(
+          const sessions = await this.calendarService!.getCalendarSessions(
             this.options.wispaceExternalId(ctx),
             { timeRange: 'upcoming', limit },
           );
@@ -115,7 +126,7 @@ export class PlatformAgentToolsService {
         return this.withLinkedAccount(ctx, async () => {
           ctx.privateDataFetched = true;
           const timeRange = readCalendarTimeRange(args.timeRange) ?? 'upcoming';
-          const sessions = await this.calendarService.getCalendarSessions(
+          const sessions = await this.calendarService!.getCalendarSessions(
             this.options.wispaceExternalId(ctx),
             {
               timeRange,
@@ -128,7 +139,7 @@ export class PlatformAgentToolsService {
       case 'preview_next_study_reminder':
         return this.withLinkedAccount(ctx, async () => {
           ctx.privateDataFetched = true;
-          const sessions = await this.calendarService.getCalendarSessions(
+          const sessions = await this.calendarService!.getCalendarSessions(
             this.options.wispaceExternalId(ctx),
             { timeRange: 'upcoming', limit: 1 },
           );

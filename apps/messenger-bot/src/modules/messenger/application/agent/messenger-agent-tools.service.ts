@@ -1,4 +1,18 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type {
+  PlatformAgentReply,
+  PlatformAgentToolContext,
+  PlatformAgentToolsOptions,
+} from '@wispace/chat-agent';
+import {
+  readCalendarTimeRange,
+  readPastDays,
+  readPositiveInteger,
+  readPositiveLimit,
+  readSchedulingMode,
+  readValidatedDate,
+  readValidatedTime,
+} from '@wispace/llm-agent';
 import {
   MessengerLinkContext,
   buildPocPsidToken,
@@ -28,18 +42,6 @@ import {
   hasExplicitRescheduleTarget,
   isRescheduleIntent,
 } from '@messenger/shared/utils/messenger-chat-intent.utils';
-import {
-  isAgentToolName,
-  AgentToolName,
-  readPositiveLimit,
-  readPastDays,
-  readCalendarTimeRange,
-  readPositiveInteger,
-  readSchedulingMode,
-  readValidatedDate,
-  readValidatedTime,
-} from '@wispace/llm-agent';
-import type { MessengerAgentReply } from './messenger-agent.service';
 import { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
 
 function withToolTimeout<T>(
@@ -65,13 +67,15 @@ function withToolTimeout<T>(
   });
 }
 
-export interface MessengerAgentToolContext {
-  psid: string;
-  userId?: number;
-  linkContext?: MessengerLinkContext;
-  richFollowUps: MessengerRichFollowUp[];
-}
+export const MESSENGER_NOT_LINKED_MESSAGE =
+  'Chưa liên kết tài khoản WISPACE. Học viên cần mở Messenger từ link trong app WISPACE.';
 
+/**
+ * Messenger tool implementations — injected into the shared
+ * `PlatformAgentToolsService` via `toolOverrides` because every WISPACE tool
+ * here uses Messenger data sources (LLM report, StudyDataPort, real
+ * subscription upsert) and pushes Messenger quick-reply follow-ups.
+ */
 @Injectable()
 export class MessengerAgentToolsService {
   private readonly logger = new Logger(MessengerAgentToolsService.name);
@@ -86,10 +90,52 @@ export class MessengerAgentToolsService {
     private readonly rescheduleConfirmationService: MessengerRescheduleConfirmationService,
   ) {}
 
+  buildToolsOptions(): PlatformAgentToolsOptions {
+    return {
+      getNotLinkedMessage: () => MESSENGER_NOT_LINKED_MESSAGE,
+      wispaceExternalId: (ctx) => ctx.externalUserId,
+      registerReportMessage: '',
+      // Every tool is overridden below, so the shared reschedule path is unused —
+      // these values keep the option shape valid.
+      reschedule: {
+        validateDateAndTime: true,
+        messages: {
+          calendarIdRequired: 'calendarId is required',
+          schedulingModeInvalid:
+            'schedulingMode must be default_next_day_same_time or explicit',
+          newLocalDateInvalid: 'newLocalDate must be in YYYY-MM-DD format',
+          newTimeInvalid: 'newTime must be in HH:MM format',
+        },
+        confirmSender: async () => {},
+      },
+      toolOverrides: {
+        get_learning_progress_report: (ctx) =>
+          this.getLearningProgressReport(ctx.externalUserId),
+        get_user_goals: async (ctx) => {
+          const goals = await this.userGoalsApiService.getUserGoals(
+            ctx.externalUserId,
+          );
+          this.pushRichFollowUp(ctx, buildUserGoalsRichFollowUp(goals));
+          return goals;
+        },
+        get_upcoming_study_sessions: (ctx, args) =>
+          this.getUpcomingStudySessions(ctx, args),
+        list_study_calendar_entries: (ctx, args) =>
+          this.listStudyCalendarEntries(ctx, args),
+        preview_next_study_reminder: (ctx) =>
+          this.previewNextStudyReminder(ctx),
+        reschedule_study_session: (ctx, args) =>
+          this.rescheduleStudySession(ctx, args),
+        register_exam_report_notifications: (ctx) =>
+          this.registerExamReportNotifications(ctx),
+      },
+    };
+  }
+
   async tryFastDefaultReschedule(
-    ctx: MessengerAgentToolContext,
+    ctx: PlatformAgentToolContext,
     userText: string,
-  ): Promise<MessengerAgentReply | null> {
+  ): Promise<PlatformAgentReply | null> {
     if (!ctx.userId || !isRescheduleIntent(userText)) {
       return null;
     }
@@ -99,7 +145,7 @@ export class MessengerAgentToolsService {
     }
 
     const list = await this.studyPort.listCalendarEntries(
-      ctx.psid,
+      ctx.externalUserId,
       ctx.userId,
       { timeRange: 'upcoming' },
     );
@@ -111,7 +157,7 @@ export class MessengerAgentToolsService {
     const entry = list.entries[0];
 
     const staged = await this.rescheduleConfirmationService.stage({
-      externalId: ctx.psid,
+      externalId: ctx.externalUserId,
       userId: ctx.userId,
       calendarId: entry.calendarId,
       schedulingMode: 'default_next_day_same_time',
@@ -132,109 +178,131 @@ export class MessengerAgentToolsService {
         ].join('\n\n'),
       ),
       richFollowUps: [staged.richFollowUp],
+      privateDataFetched: false,
     };
   }
 
-  async execute(
-    toolName: string,
-    argsJson: string,
-    ctx: MessengerAgentToolContext,
-  ): Promise<unknown> {
-    if (!isAgentToolName(toolName)) {
-      return { error: `Unknown tool: ${toolName}` };
-    }
-
-    let args: Record<string, unknown> = {};
-    if (argsJson.trim()) {
-      try {
-        args = JSON.parse(argsJson) as Record<string, unknown>;
-      } catch {
-        return { error: 'Invalid tool arguments JSON' };
-      }
-    }
-
-    try {
-      return await this.dispatch(toolName, args, ctx);
-    } catch (error) {
-      this.logger.warn(
-        `Tool ${toolName} failed for psid=${ctx.psid}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return {
-        error: error instanceof Error ? error.message : 'Tool execution failed',
-      };
-    }
+  private async getLearningProgressReport(psid: string): Promise<unknown> {
+    const report = await withToolTimeout(
+      this.studentReportService.generateReport(psid),
+      30_000,
+      'get_learning_progress_report',
+    );
+    return { report };
   }
 
-  private async dispatch(
-    toolName: AgentToolName,
+  private async listStudyCalendarEntries(
+    ctx: PlatformAgentToolContext,
     args: Record<string, unknown>,
-    ctx: MessengerAgentToolContext,
   ): Promise<unknown> {
-    switch (toolName) {
-      case 'get_learning_progress_report': {
-        const report = await withToolTimeout(
-          this.studentReportService.generateReport(ctx.psid),
-          30_000,
-          'get_learning_progress_report',
-        );
-        return { report };
-      }
-      case 'get_user_goals': {
-        const goals = await this.userGoalsApiService.getUserGoals(ctx.psid);
-        this.pushRichFollowUp(ctx, buildUserGoalsRichFollowUp(goals));
-        return goals;
-      }
-      case 'get_upcoming_study_sessions':
-        return this.getUpcomingStudySessions(ctx, args);
-      case 'list_study_calendar_entries': {
-        const timeRange = readCalendarTimeRange(args.timeRange) ?? 'upcoming';
-        const list = await this.studyPort.listCalendarEntries(
-          ctx.psid,
-          ctx.userId,
-          {
-            timeRange,
-            limit: readPositiveLimit(args.limit, 10),
-            pastDays: readPastDays(args.pastDays),
-          },
-        );
-        this.pushRichFollowUp(
-          ctx,
-          buildCalendarEntriesRichFollowUp(list.entries),
-        );
-        const minutesBefore = this.studyPort.getOutboxSettings().minutesBefore;
+    const timeRange = readCalendarTimeRange(args.timeRange) ?? 'upcoming';
+    const list = await this.studyPort.listCalendarEntries(
+      ctx.externalUserId,
+      ctx.userId,
+      {
+        timeRange,
+        limit: readPositiveLimit(args.limit, 10),
+        pastDays: readPastDays(args.pastDays),
+      },
+    );
+    this.pushRichFollowUp(ctx, buildCalendarEntriesRichFollowUp(list.entries));
+    const minutesBefore = this.studyPort.getOutboxSettings().minutesBefore;
 
-        return {
-          ...list,
-          reminderNotice:
-            list.timeRange === 'upcoming' && list.entries.length > 0
-              ? getStudyReminderLeadTimeNotice(minutesBefore)
-              : undefined,
-        };
-      }
-      case 'reschedule_study_session':
-        return this.rescheduleStudySession(ctx, args);
-      case 'preview_next_study_reminder':
-        return this.previewNextStudyReminder(ctx);
-      case 'register_exam_report_notifications':
-        return this.registerExamReportNotifications(ctx);
-      default: {
-        const unknownTool = toolName as string;
-        return { error: `Unhandled tool: ${unknownTool}` };
-      }
+    return {
+      ...list,
+      reminderNotice:
+        list.timeRange === 'upcoming' && list.entries.length > 0
+          ? getStudyReminderLeadTimeNotice(minutesBefore)
+          : undefined,
+    };
+  }
+
+  private async getUpcomingStudySessions(
+    ctx: PlatformAgentToolContext,
+    args: Record<string, unknown>,
+  ): Promise<unknown> {
+    const limit = readPositiveLimit(args.limit, 5);
+    const sessions = await this.studyPort.getUpcomingSessions({
+      psid: ctx.externalUserId,
+      userId: ctx.userId,
+    });
+
+    const mapped = sessions.slice(0, limit).map((session) => ({
+      sessionKey: session.sessionKey,
+      topic: session.topic,
+      scheduledAtIso: session.scheduledAt.toISOString(),
+      scheduledTimeLabel: this.studyPort.formatScheduledTimeLabel(
+        session.scheduledAt,
+      ),
+    }));
+
+    this.pushRichFollowUp(ctx, ...buildStudySessionsRichFollowUps(mapped));
+
+    const minutesBefore = this.studyPort.getOutboxSettings().minutesBefore;
+
+    return {
+      count: sessions.length,
+      sessions: mapped,
+      reminderNotice:
+        mapped.length > 0
+          ? getStudyReminderLeadTimeNotice(minutesBefore)
+          : undefined,
+    };
+  }
+
+  private async previewNextStudyReminder(
+    ctx: PlatformAgentToolContext,
+  ): Promise<unknown> {
+    const session = await this.studyPort.getNextUpcomingSession(
+      ctx.externalUserId,
+      ctx.userId,
+    );
+
+    if (!session) {
+      return {
+        hasSession: false,
+        message: getNoUpcomingStudySessionMessage(
+          this.studyPort.getOutboxSettings().minutesBefore,
+        ),
+      };
     }
+
+    const bundle = await this.studyPort.generateReminderBundleForSession(
+      ctx.externalUserId,
+      session,
+      { userId: ctx.userId },
+    );
+
+    const scheduledTimeLabel = this.studyPort.formatScheduledTimeLabel(
+      session.scheduledAt,
+    );
+
+    const teaser = [bundle.output.greeting, bundle.output.intro]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ');
+
+    this.pushRichFollowUp(
+      ctx,
+      buildReminderPreviewRichFollowUp({ scheduledTimeLabel, teaser }),
+    );
+
+    return {
+      hasSession: true,
+      scheduledTimeLabel,
+      reminder: bundle.text,
+    };
   }
 
   private async rescheduleStudySession(
-    ctx: MessengerAgentToolContext,
+    ctx: PlatformAgentToolContext,
     args: Record<string, unknown>,
   ): Promise<unknown> {
     if (!ctx.userId) {
       return {
         rescheduled: false,
-        message:
-          'Chưa liên kết tài khoản WISPACE — không thể đổi lịch qua Messenger.',
+        message: MESSENGER_NOT_LINKED_MESSAGE,
       };
     }
 
@@ -251,7 +319,7 @@ export class MessengerAgentToolsService {
     }
 
     const upcoming = await this.studyPort.listCalendarEntries(
-      ctx.psid,
+      ctx.externalUserId,
       ctx.userId,
       { timeRange: 'upcoming' },
     );
@@ -283,7 +351,7 @@ export class MessengerAgentToolsService {
     }
 
     const staged = await this.rescheduleConfirmationService.stage({
-      externalId: ctx.psid,
+      externalId: ctx.externalUserId,
       userId: ctx.userId,
       calendarId: matchedEntry.calendarId,
       schedulingMode,
@@ -306,97 +374,20 @@ export class MessengerAgentToolsService {
     };
   }
 
-  private async getUpcomingStudySessions(
-    ctx: MessengerAgentToolContext,
-    args: Record<string, unknown>,
-  ): Promise<unknown> {
-    const limit = readPositiveLimit(args.limit, 5);
-    const sessions = await this.studyPort.getUpcomingSessions({
-      psid: ctx.psid,
-      userId: ctx.userId,
-    });
-
-    const mapped = sessions.slice(0, limit).map((session) => ({
-      sessionKey: session.sessionKey,
-      topic: session.topic,
-      scheduledAtIso: session.scheduledAt.toISOString(),
-      scheduledTimeLabel: this.studyPort.formatScheduledTimeLabel(
-        session.scheduledAt,
-      ),
-    }));
-
-    this.pushRichFollowUp(ctx, ...buildStudySessionsRichFollowUps(mapped));
-
-    const minutesBefore = this.studyPort.getOutboxSettings().minutesBefore;
-
-    return {
-      count: sessions.length,
-      sessions: mapped,
-      reminderNotice:
-        mapped.length > 0
-          ? getStudyReminderLeadTimeNotice(minutesBefore)
-          : undefined,
-    };
-  }
-
-  private async previewNextStudyReminder(
-    ctx: MessengerAgentToolContext,
-  ): Promise<unknown> {
-    const session = await this.studyPort.getNextUpcomingSession(
-      ctx.psid,
-      ctx.userId,
-    );
-
-    if (!session) {
-      return {
-        hasSession: false,
-        message: getNoUpcomingStudySessionMessage(
-          this.studyPort.getOutboxSettings().minutesBefore,
-        ),
-      };
-    }
-
-    const bundle = await this.studyPort.generateReminderBundleForSession(
-      ctx.psid,
-      session,
-      { userId: ctx.userId },
-    );
-
-    const scheduledTimeLabel = this.studyPort.formatScheduledTimeLabel(
-      session.scheduledAt,
-    );
-
-    const teaser = [bundle.output.greeting, bundle.output.intro]
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .join(' ')
-      .replace(/\s+/g, ' ');
-
-    this.pushRichFollowUp(
-      ctx,
-      buildReminderPreviewRichFollowUp({ scheduledTimeLabel, teaser }),
-    );
-
-    return {
-      hasSession: true,
-      scheduledTimeLabel,
-      reminder: bundle.text,
-    };
-  }
-
   private async registerExamReportNotifications(
-    ctx: MessengerAgentToolContext,
+    ctx: PlatformAgentToolContext,
   ): Promise<unknown> {
     const linkContext = await this.resolveLinkContext(ctx);
     if (!linkContext) {
       return {
         registered: false,
-        message:
-          'Chưa liên kết tài khoản WISPACE. Học viên cần mở Messenger từ link trong app WISPACE.',
+        message: MESSENGER_NOT_LINKED_MESSAGE,
       };
     }
 
-    const existing = await this.repository.findActiveMappingByPsid(ctx.psid);
+    const existing = await this.repository.findActiveMappingByPsid(
+      ctx.externalUserId,
+    );
     if (
       existing?.cadence === linkContext.cadence &&
       existing?.topic === linkContext.topic
@@ -409,11 +400,11 @@ export class MessengerAgentToolsService {
     }
 
     await this.repository.upsertPocSubscription({
-      psid: ctx.psid,
+      psid: ctx.externalUserId,
       userId: linkContext.userId,
       cadence: linkContext.cadence,
       topic: linkContext.topic,
-      notificationMessagesToken: buildPocPsidToken(ctx.psid),
+      notificationMessagesToken: buildPocPsidToken(ctx.externalUserId),
     });
 
     return {
@@ -424,13 +415,15 @@ export class MessengerAgentToolsService {
   }
 
   private async resolveLinkContext(
-    ctx: MessengerAgentToolContext,
+    ctx: PlatformAgentToolContext,
   ): Promise<MessengerLinkContext | undefined> {
     if (ctx.linkContext) {
-      return ctx.linkContext;
+      return ctx.linkContext as MessengerLinkContext;
     }
 
-    const mapping = await this.repository.findActiveMappingByPsid(ctx.psid);
+    const mapping = await this.repository.findActiveMappingByPsid(
+      ctx.externalUserId,
+    );
     if (!mapping?.userId) {
       return undefined;
     }
@@ -443,12 +436,12 @@ export class MessengerAgentToolsService {
   }
 
   private pushRichFollowUp(
-    ctx: MessengerAgentToolContext,
+    ctx: PlatformAgentToolContext,
     ...followUps: Array<MessengerRichFollowUp | undefined>
   ): void {
     for (const followUp of followUps) {
       if (followUp) {
-        ctx.richFollowUps.push(followUp);
+        ctx.richFollowUps!.push(followUp);
       }
     }
   }

@@ -1,4 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  LlmUsageRecorderCore,
+  type UsageWriterPort,
+} from '@wispace/chat-metering';
 import type {
   RecordLlmUsageFromCompletionInput,
   RecordLlmUsageInput,
@@ -12,6 +16,7 @@ import { LlmUsageConfigService } from './llm-usage-config.service';
 @Injectable()
 export class LlmUsageRecorderService {
   private readonly logger = new Logger(LlmUsageRecorderService.name);
+  private core?: LlmUsageRecorderCore;
 
   constructor(
     private readonly configService: LlmUsageConfigService,
@@ -25,33 +30,15 @@ export class LlmUsageRecorderService {
 
   /** Non-blocking — extracts usage from OpenAI response and inserts. */
   recordFromCompletion(input: RecordLlmUsageFromCompletionInput): void {
-    const usage = input.response.usage;
-    if (!usage) {
-      this.logger.warn(
-        `LLM_USAGE_MISSING_TOKENS feature=${input.feature} correlation=${input.correlationId ?? 'n/a'}`,
-      );
-    }
-
-    const cachedTokens = usage?.prompt_tokens_details?.cached_tokens ?? 0;
-
-    this.recordUsage({
+    if (!this.isEnabled()) return;
+    this.getCore().recordFromCompletion({
       feature: input.feature,
-      psid: input.psid,
+      externalUserId: input.psid,
       userId: input.userId,
       model: input.model,
-      promptTokens: usage?.prompt_tokens ?? 0,
-      completionTokens: usage?.completion_tokens ?? 0,
-      totalTokens: usage?.total_tokens ?? 0,
-      cachedTokens,
-      openaiResponseId: input.response.id,
+      response: input.response,
       correlationId: input.correlationId,
       toolRound: input.toolRound,
-      estimatedCostUsd: this.configService.estimateCostUsdForModel(
-        input.model,
-        usage?.prompt_tokens ?? 0,
-        usage?.completion_tokens ?? 0,
-        cachedTokens,
-      ),
     });
   }
 
@@ -85,5 +72,51 @@ export class LlmUsageRecorderService {
           }`,
         );
       });
+  }
+
+  private getCore(): LlmUsageRecorderCore {
+    if (!this.core) {
+      const writer: UsageWriterPort = {
+        write: (event) => {
+          this.repository
+            .insertUsage({
+              feature: event.feature as RecordLlmUsageInput['feature'],
+              psid: event.externalUserId,
+              userId: event.userId,
+              model: event.model,
+              promptTokens: event.promptTokens,
+              completionTokens: event.completionTokens,
+              totalTokens: event.totalTokens,
+              cachedTokens: event.cachedTokens,
+              openaiResponseId: event.openaiResponseId,
+              correlationId: event.correlationId,
+              toolRound: event.toolRound,
+              estimatedCostUsd: event.estimatedCostUsd,
+              usageDate: event.usageDate,
+            })
+            .catch((error: unknown) => {
+              this.logger.error(
+                `LLM_USAGE_INSERT_FAILED feature=${event.feature} correlation=${event.correlationId ?? 'n/a'}: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            });
+        },
+      };
+
+      this.core = new LlmUsageRecorderCore(
+        writer,
+        (model, promptTokens, completionTokens, cachedTokens) =>
+          this.configService.estimateCostUsdForModel(
+            model,
+            promptTokens,
+            completionTokens,
+            cachedTokens,
+          ),
+        () => this.configService.todayUsageDate(),
+        { warn: (m) => this.logger.warn(m) },
+      );
+    }
+    return this.core;
   }
 }

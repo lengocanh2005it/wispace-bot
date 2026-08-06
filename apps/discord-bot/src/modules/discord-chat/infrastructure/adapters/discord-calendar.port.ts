@@ -3,12 +3,12 @@ import type {
   CalendarPort,
   CalendarEntryView,
 } from '@wispace/reschedule-confirm';
-import { DiscordStudyCalendarCommandService } from '@discord/modules/wispace/application/services/discord-study-calendar-command.service';
+import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
 
 @Injectable()
 export class DiscordCalendarPort implements CalendarPort<string> {
   constructor(
-    private readonly studyCalendarCommandService: DiscordStudyCalendarCommandService,
+    private readonly studyCalendarCommandService: PlatformStudyCalendarCommandService,
   ) {}
 
   async listUpcomingEntries(

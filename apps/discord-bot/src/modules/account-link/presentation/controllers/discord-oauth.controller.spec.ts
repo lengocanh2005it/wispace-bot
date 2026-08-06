@@ -3,7 +3,7 @@ import type { Response } from 'express';
 import { DiscordOauthController } from './discord-oauth.controller';
 import type { ConfigService } from '@nestjs/config';
 import type { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';
-import type { WispaceDiscordTokenVerifyService } from '../../infrastructure/wispace/wispace-discord-token-verify.service';
+import type { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import type { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
 import type { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
 import type { DiscordPendingJoinService } from '../../application/services/discord-pending-join.service';
@@ -58,7 +58,7 @@ describe('DiscordOauthController', () => {
   it('returns 400 when code or state is missing', async () => {
     const tokenVerifyService = {
       verifyToken: jest.fn(),
-    } as unknown as WispaceDiscordTokenVerifyService;
+    } as unknown as WispaceTokenVerifyService;
     const accountLinkService = {
       exchangeCodeForDiscordUser: jest.fn(),
     } as unknown as DiscordAccountLinkService;
@@ -86,7 +86,7 @@ describe('DiscordOauthController', () => {
       verifyToken: jest
         .fn()
         .mockResolvedValue({ valid: false, reason: 'EXPIRED' }),
-    } as unknown as WispaceDiscordTokenVerifyService;
+    } as unknown as WispaceTokenVerifyService;
     const accountLinkService = {
       exchangeCodeForDiscordUser: jest
         .fn()
@@ -119,7 +119,7 @@ describe('DiscordOauthController', () => {
   it('links the account and sends a welcome DM on success', async () => {
     const tokenVerifyService = {
       verifyToken: jest.fn().mockResolvedValue({ valid: true, userId: 143 }),
-    } as unknown as WispaceDiscordTokenVerifyService;
+    } as unknown as WispaceTokenVerifyService;
     const accountLinkService = {
       exchangeCodeForDiscordUser: jest
         .fn()
@@ -158,7 +158,7 @@ describe('DiscordOauthController', () => {
   it('issues a pending token when user is not in the guild', async () => {
     const tokenVerifyService = {
       verifyToken: jest.fn().mockResolvedValue({ valid: true, userId: 143 }),
-    } as unknown as WispaceDiscordTokenVerifyService;
+    } as unknown as WispaceTokenVerifyService;
     const accountLinkService = {
       exchangeCodeForDiscordUser: jest
         .fn()
@@ -194,7 +194,7 @@ describe('DiscordOauthController', () => {
   it('redirects to frontend callback URL when DISCORD_OAUTH_FRONTEND_CALLBACK_URL is set', async () => {
     const tokenVerifyService = {
       verifyToken: jest.fn().mockResolvedValue({ valid: true, userId: 143 }),
-    } as unknown as WispaceDiscordTokenVerifyService;
+    } as unknown as WispaceTokenVerifyService;
     const accountLinkService = {
       exchangeCodeForDiscordUser: jest
         .fn()
@@ -227,7 +227,7 @@ describe('DiscordOauthController', () => {
   it('returns 400 when the Discord code exchange fails', async () => {
     const tokenVerifyService = {
       verifyToken: jest.fn(),
-    } as unknown as WispaceDiscordTokenVerifyService;
+    } as unknown as WispaceTokenVerifyService;
     const accountLinkService = {
       exchangeCodeForDiscordUser: jest
         .fn()

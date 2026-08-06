@@ -2,8 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, MoreThan, Repository } from 'typeorm';
-import { LlmSafetyEventEntity } from '@wispace/chat-metering';
+import { Repository } from 'typeorm';
+import {
+  LlmSafetyCore,
+  LlmSafetyEventEntity,
+  LlmSafetyEventRepository,
+} from '@wispace/chat-metering';
 import type { RecordGroundingWarningInput } from './llm-safety.types';
 
 const PLATFORM = 'messenger' as const;
@@ -12,6 +16,7 @@ const PLATFORM = 'messenger' as const;
 export class LlmSafetyService {
   private readonly logger = new Logger(LlmSafetyService.name);
   private readonly retentionDays: number;
+  private core?: LlmSafetyCore;
 
   constructor(
     private readonly configService: ConfigService,
@@ -33,55 +38,31 @@ export class LlmSafetyService {
     return raw !== 'false' && raw !== '0';
   }
 
-  /** Best-effort — never throws. */
+  /** Best-effort — never throws. Delegates to the shared LlmSafetyCore. */
   recordGroundingWarning(input: RecordGroundingWarningInput): void {
     if (!this.isEnabled()) return;
-
-    const payload: Record<string, unknown> = {
-      toolNamesUsed: input.toolNamesUsed,
-    };
-    if (input.userTextPreview)
-      payload['userTextPreview'] = input.userTextPreview.slice(0, 200);
-    if (input.assistantTextPreview)
-      payload['assistantTextPreview'] = input.assistantTextPreview.slice(
-        0,
-        200,
-      );
-
-    const entity = this.repo.create({
-      platform: PLATFORM,
+    this.getCore().recordGroundingWarning({
       externalUserId: input.psid,
       userId: input.userId,
       correlationId: input.correlationId,
-      feature: 'FREE_FORM_CHAT',
-      eventType: 'GROUNDING_WARNING',
       reason: input.reason,
-      payload: payload ?? null,
-    });
-    this.repo.save(entity).catch((err: unknown) => {
-      this.logger.warn(
-        `recordGroundingWarning failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      userTextPreview: input.userTextPreview,
+      assistantTextPreview: input.assistantTextPreview,
+      toolNamesUsed: input.toolNamesUsed,
     });
   }
 
   async countWarnings24h(): Promise<number> {
     if (!this.isEnabled()) return 0;
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    return this.repo.count({
-      where: { platform: PLATFORM, createdAt: MoreThan(since) },
-    });
+    return this.getCore().countWarningsSince(since);
   }
 
   async deleteOlderThanRetentionDays(): Promise<number> {
     const before = new Date(
       Date.now() - this.retentionDays * 24 * 60 * 60 * 1000,
     );
-    const result = await this.repo.delete({
-      platform: PLATFORM,
-      createdAt: LessThan(before),
-    });
-    const deleted = result.affected ?? 0;
+    const deleted = await this.getCore().deleteOlderThan(before);
     if (deleted > 0)
       this.logger.log(
         `LLM_SAFETY_CLEANUP deleted=${deleted} older_than_days=${this.retentionDays}`,
@@ -104,5 +85,18 @@ export class LlmSafetyService {
   async runCleanup(): Promise<void> {
     if (!this.isEnabled()) return;
     await this.deleteOlderThanRetentionDays();
+  }
+
+  private getCore(): LlmSafetyCore {
+    if (!this.core) {
+      this.core = new LlmSafetyCore(
+        new LlmSafetyEventRepository(this.repo, PLATFORM),
+        {
+          warn: (m) => this.logger.warn(m),
+          log: (m) => this.logger.log(m),
+        },
+      );
+    }
+    return this.core;
   }
 }
