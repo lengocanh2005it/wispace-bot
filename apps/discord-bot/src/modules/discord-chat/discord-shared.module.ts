@@ -10,13 +10,15 @@ import { DiscordReportDeliveryService } from './application/services/discord-rep
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
+import { DiscordOutboundModule } from './discord-outbound.module';
 
 /**
  * Shared providers for Discord modules — breaks circular dependency between
- * DiscordChatModule ↔ DiscordReportModule.
+ * DiscordChatModule ⇄ DiscordReportModule.
  */
 @Module({
   imports: [
+    DiscordOutboundModule,
     TypeOrmModule.forFeature([
       DiscordMessageLogEntity,
       DiscordAccountLinkEntity,

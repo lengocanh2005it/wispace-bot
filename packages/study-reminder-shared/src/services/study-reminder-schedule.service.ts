@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Optional,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   computeRemindAt,
@@ -37,6 +41,7 @@ export interface StudyReminderScheduleServiceOptions {
 export class StudyReminderScheduleService {
   constructor(
     private readonly configService: ConfigService,
+    @Optional()
     private readonly options: StudyReminderScheduleServiceOptions = {},
   ) {}
 
