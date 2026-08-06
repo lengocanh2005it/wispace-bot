@@ -1,20 +1,11 @@
 import { Module } from '@nestjs/common';
-import { SchedulerRegistry } from '@nestjs/schedule';
-import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { PgAdvisoryLockService } from '@wispace/bot-common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import {
-  StudyReminderScheduleService,
   StudyReminderSyncService,
   StudyReminderDispatchService,
   StudyReminderWorkerService,
   StudyReminderJobEntity,
-  TypeormStudyReminderJobRepository,
-  TypeormMappingReader,
-  wrapMessageSender,
-  MESSAGE_SENDER,
-  MAPPING_READER,
-  STUDY_REMINDER_JOB_REPOSITORY,
+  createStudyReminderProviders,
 } from '@wispace/study-reminder-shared';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
@@ -35,68 +26,13 @@ import { WispaceCalendarService } from '@wispace/wispace-client';
     ZaloChatModule,
     ZaloWispaceModule,
   ],
-  providers: [
-    {
-      provide: MESSAGE_SENDER,
-      useFactory: (outbound: ZaloOutboundService) =>
-        wrapMessageSender(outbound),
-      inject: [ZaloOutboundService],
-    },
-    {
-      provide: MAPPING_READER,
-      useFactory: (repo: Repository<ZaloAccountLinkEntity>) =>
-        new TypeormMappingReader(repo, 'zalo_account_links'),
-      inject: [getRepositoryToken(ZaloAccountLinkEntity)],
-    },
-    {
-      provide: STUDY_REMINDER_JOB_REPOSITORY,
-      useExisting: TypeormStudyReminderJobRepository,
-    },
-    StudyReminderScheduleService,
-    StudyReminderSyncService,
-    StudyReminderDispatchService,
-    {
-      provide: StudyReminderWorkerService,
-
-      useFactory: (...deps: unknown[]) =>
-        new (StudyReminderWorkerService as never as new (
-          ...args: unknown[]
-        ) => StudyReminderWorkerService)(
-          deps[0],
-          deps[1],
-          deps[2],
-          deps[3],
-          deps[4],
-          deps[5],
-          'zalo',
-          deps[6]
-            ? (externalUserId: string) =>
-                (deps[6] as WispaceCalendarService)
-                  .getCalendarSessions(externalUserId, {
-                    timeRange: 'upcoming',
-                  })
-                  .then((sessions) =>
-                    sessions.map((s) => ({
-                      calendarId: s.sessionKey,
-                      sessionKey: s.sessionKey,
-                      scheduledAt: s.scheduledAt,
-                      topic: s.topic,
-                    })),
-                  )
-            : undefined,
-        ),
-      inject: [
-        StudyReminderSyncService,
-        StudyReminderDispatchService,
-        StudyReminderScheduleService,
-        { token: SchedulerRegistry, optional: false },
-        PgAdvisoryLockService,
-        { token: STUDY_REMINDER_JOB_REPOSITORY, optional: true },
-        WispaceCalendarService,
-      ],
-    },
-    TypeormStudyReminderJobRepository,
-  ],
+  providers: createStudyReminderProviders({
+    platform: 'zalo',
+    mappingTable: 'zalo_account_links',
+    mappingEntity: ZaloAccountLinkEntity,
+    outboundService: ZaloOutboundService,
+    calendarService: WispaceCalendarService,
+  }),
   exports: [
     StudyReminderSyncService,
     StudyReminderDispatchService,

@@ -82,6 +82,7 @@ export {
   createFailoverLlmProviderAdapter,
   createFailoverProviderEntries,
 } from './provider/factory';
+export { createLlmProviderAdapterFromEnv } from './provider/from-env.factory';
 export type {
   LlmProviderEntryConfig,
   FailoverConfig,

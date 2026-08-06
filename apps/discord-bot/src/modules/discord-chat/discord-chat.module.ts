@@ -9,7 +9,13 @@ import {
 } from '@wispace/cleanup-cron';
 import { BotCommonModule, REDIS_CLIENT } from '@wispace/bot-common';
 import type { RedisClientPort } from '@wispace/bot-common';
-import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
+import {
+  ChatMeteringModule,
+  PlatformChatRateLimitService,
+  PlatformLlmSafetyEventAdapter,
+  PlatformLlmUsageRecorderAdapter,
+  ChatIdempotencyEntity,
+} from '@wispace/chat-metering';
 import { AccountLinkModule } from '../account-link/account-link.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import {
@@ -20,11 +26,6 @@ import {
   createChatPipelineAdapters,
 } from '@wispace/chat-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
-import {
-  PlatformChatRateLimitService,
-  PlatformLlmSafetyEventAdapter,
-  PlatformLlmUsageRecorderAdapter,
-} from '@wispace/chat-metering';
 import {
   WispaceCalendarService,
   WispaceGoalsService,
@@ -43,7 +44,6 @@ import {
   ReportSendJobEntity,
 } from '@wispace/database';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
-import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { DiscordCalendarPort } from './infrastructure/adapters/discord-calendar.port';
 import { DiscordReschedulePort } from './infrastructure/adapters/discord-reschedule.port';
 import { DiscordOutboundService } from './application/services/discord-outbound.service';
@@ -57,7 +57,10 @@ const REGISTER_REPORT_MESSAGE =
 @Module({
   imports: [
     BotCommonModule,
-    ChatMeteringModule,
+    ChatMeteringModule.forPlatform('discord', {
+      requireEnv: true,
+      lenientEnabledCheck: true,
+    }),
     DiscordOutboundModule,
     DiscordSharedModule,
     AccountLinkModule,

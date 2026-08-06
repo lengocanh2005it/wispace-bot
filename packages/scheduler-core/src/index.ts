@@ -10,6 +10,7 @@ export * from './ports/goals-data.port';
 // Utils
 export * from './utils/report-date.utils';
 export * from './utils/exam-date.utils';
+export * from './utils/batch.utils';
 
 // Services
 export { ReportScheduleService } from './services/report-schedule.service';

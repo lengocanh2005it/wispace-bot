@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { join } from 'path';
 import { PlatformStudentReportService } from '@wispace/student-report';
 import {
@@ -14,14 +15,17 @@ import {
 import {
   ReportSendJobEntity,
   ScheduledReportClaimEntity,
+  PlatformReportClaimRepository,
 } from '@wispace/database';
-import { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering';
+import {
+  ChatMeteringModule,
+  PlatformLlmUsageRecorderAdapter,
+} from '@wispace/chat-metering';
 import { WispaceGoalsService } from '@wispace/wispace-client';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
 import { DiscordReportSendJobRepository } from './infrastructure/persistence/discord-report-send-job.repository';
-import { DiscordReportClaimRepository } from './infrastructure/persistence/discord-report-claim.repository';
 import { DiscordReportCronService } from './application/services/discord-report-cron.service';
 import { DiscordReportRetryDispatchService } from './application/services/discord-report-retry-dispatch.service';
 import { DiscordReportOrchestrationService } from './application/services/discord-report-orchestration.service';
@@ -29,7 +33,6 @@ import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
 import { BotCommonModule } from '@wispace/bot-common';
 import { WispaceModule } from '../wispace/wispace.module';
-import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
 
 @Module({
   imports: [
@@ -42,7 +45,10 @@ import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
     DiscordSharedModule,
     BotCommonModule,
     WispaceModule,
-    ChatMeteringModule,
+    ChatMeteringModule.forPlatform('discord', {
+      requireEnv: true,
+      lenientEnabledCheck: true,
+    }),
   ],
   providers: [
     {
@@ -51,7 +57,9 @@ import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
     },
     {
       provide: REPORT_CLAIM_REPOSITORY,
-      useExisting: DiscordReportClaimRepository,
+      useFactory: (repo: Repository<ScheduledReportClaimEntity>) =>
+        new PlatformReportClaimRepository('discord', repo),
+      inject: [getRepositoryToken(ScheduledReportClaimEntity)],
     },
     {
       provide: PlatformStudentReportService,
@@ -82,7 +90,6 @@ import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
     ReportCronLockService,
     DiscordReportDeliveryService,
     DiscordReportSendJobRepository,
-    DiscordReportClaimRepository,
     DiscordReportCronService,
     DiscordReportRetryDispatchService,
     DiscordReportOrchestrationService,

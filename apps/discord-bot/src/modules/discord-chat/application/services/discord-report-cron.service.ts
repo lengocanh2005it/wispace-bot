@@ -6,12 +6,16 @@ import {
   ReportCronLockService,
   ReportScheduleService,
   todayReportDate,
+  runBatched,
 } from '@wispace/scheduler-core';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
 import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import type { ReportMapping } from '@wispace/scheduler-core';
+import type {
+  ReportMapping,
+  ClaimAndSendResult,
+} from '@wispace/scheduler-core';
 
 const PLATFORM = 'discord' as const;
 const DEFAULT_SEND_CONCURRENCY = 3;
@@ -68,40 +72,40 @@ export class DiscordReportCronService {
     let failed = 0;
     const failures: Array<{ externalUserId: string; error: string }> = [];
 
-    for (let i = 0; i < links.length; i += concurrency) {
-      const batch = links.slice(i, i + concurrency);
-      const results = await Promise.allSettled(
-        batch.map(async (link) => {
-          const mapping: ReportMapping = {
-            id: link.id,
-            platform: PLATFORM,
-            externalUserId: link.externalUserId,
-            userId: link.userId ?? undefined,
-            notificationCadence: 'daily',
-            status: 'ACTIVE',
-          };
-          return this.orchestrationService.claimAndSend(mapping, {
-            reportDate,
-            skipAlreadySentToday: !opts.forceSend,
-          });
-        }),
-      );
+    const results = await runBatched(
+      links,
+      concurrency,
+      async (link): Promise<ClaimAndSendResult> => {
+        const mapping: ReportMapping = {
+          id: link.id,
+          platform: PLATFORM,
+          externalUserId: link.externalUserId,
+          userId: link.userId ?? undefined,
+          notificationCadence: 'daily',
+          status: 'ACTIVE',
+        };
+        return this.orchestrationService.claimAndSend(mapping, {
+          reportDate,
+          skipAlreadySentToday: !opts.forceSend,
+        });
+      },
+    );
 
-      for (const result of results) {
-        if (result.status === 'fulfilled') {
-          sent += result.value.sent;
-          skipped += result.value.skipped;
-          claimSkipped += result.value.claimSkipped;
-          failures.push(...result.value.failures);
-          failed += result.value.failures.length;
-        } else {
-          failed += 1;
-          const reason = result.reason as Error | undefined;
-          failures.push({
-            externalUserId: 'unknown',
-            error: reason?.message ?? String(reason),
-          });
-        }
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        const v = result.value as ClaimAndSendResult;
+        sent += v.sent;
+        skipped += v.skipped;
+        claimSkipped += v.claimSkipped;
+        failures.push(...v.failures);
+        failed += v.failures.length;
+      } else {
+        failed += 1;
+        const reason = result.reason as Error | undefined;
+        failures.push({
+          externalUserId: 'unknown',
+          error: reason?.message ?? String(reason),
+        });
       }
     }
 

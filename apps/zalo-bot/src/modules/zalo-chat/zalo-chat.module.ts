@@ -3,16 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { join } from 'path';
 import {
-  createFailoverLlmProviderAdapter,
-  createFailoverProviderEntries,
+  createLlmProviderAdapterFromEnv,
   type LlmProviderAdapter,
 } from '@wispace/llm-agent';
 import {
-  ChatDailyUsageEntity,
+  ChatMeteringModule,
   ChatIdempotencyEntity,
-  LlmUsageEventEntity,
-  LlmSafetyEventEntity,
-  LlmUsageConfigService,
   PlatformChatRateLimitService,
   PlatformLlmUsageRecorderAdapter,
   PlatformLlmSafetyEventAdapter,
@@ -67,11 +63,9 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     BotCommonModule,
     forwardRef(() => ZaloOauthModule),
     ZaloWispaceModule,
+    ChatMeteringModule.forPlatform('zalo'),
     TypeOrmModule.forFeature([
-      ChatDailyUsageEntity,
       ChatIdempotencyEntity,
-      LlmUsageEventEntity,
-      LlmSafetyEventEntity,
       ZaloMessageLogEntity,
       WebhookDeadLetterEntity,
       ZaloOauthStateEntity,
@@ -80,81 +74,11 @@ const RESCHEDULE_CONFIRM_SUFFIX =
   providers: [
     {
       provide: 'LLM_PROVIDER_ADAPTER',
-      useFactory: (configService: ConfigService): LlmProviderAdapter => {
-        const order =
-          configService
-            .get<string>('LLM_PROVIDER_FAILOVER_ORDER')
-            ?.trim()
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean) ?? [];
-
-        const entries = createFailoverProviderEntries(
-          (key) => configService.get<string>(key)?.trim(),
-          order.length > 0 ? order : ['openai'],
-        );
-
-        return createFailoverLlmProviderAdapter(
-          entries,
-          order.length > 0 ? order : ['openai'],
-          { warn: (m) => console.warn(m) },
-          {
-            cooldownLongMs: Number(
-              configService
-                .get<string>('LLM_FAILOVER_COOLDOWN_LONG_MS')
-                ?.trim() ?? 600_000,
-            ),
-            cooldownShortMs: Number(
-              configService
-                .get<string>('LLM_FAILOVER_COOLDOWN_SHORT_MS')
-                ?.trim() ?? 5_000,
-            ),
-            quickRetryDelayMs: Number(
-              configService
-                .get<string>('LLM_FAILOVER_QUICK_RETRY_DELAY_MS')
-                ?.trim() ?? 150,
-            ),
-          },
-        );
-      },
-      inject: [ConfigService],
-    },
-    LlmUsageConfigService,
-    {
-      provide: PlatformChatRateLimitService,
-      useFactory: (
-        configService: ConfigService,
-        dailyUsageRepo: Repository<ChatDailyUsageEntity>,
-        idempotencyRepo: Repository<ChatIdempotencyEntity>,
-      ) =>
-        new PlatformChatRateLimitService(
-          { platform: 'zalo' },
-          configService,
-          dailyUsageRepo,
-          idempotencyRepo,
+      useFactory: (configService: ConfigService): LlmProviderAdapter =>
+        createLlmProviderAdapterFromEnv((key) =>
+          configService.get<string>(key)?.trim(),
         ),
-      inject: [
-        ConfigService,
-        getRepositoryToken(ChatDailyUsageEntity),
-        getRepositoryToken(ChatIdempotencyEntity),
-      ],
-    },
-    {
-      provide: PlatformLlmUsageRecorderAdapter,
-      useFactory: (
-        configService: LlmUsageConfigService,
-        usageRepo: Repository<LlmUsageEventEntity>,
-      ) =>
-        new PlatformLlmUsageRecorderAdapter('zalo', configService, usageRepo),
-      inject: [LlmUsageConfigService, getRepositoryToken(LlmUsageEventEntity)],
-    },
-    {
-      provide: PlatformLlmSafetyEventAdapter,
-      useFactory: (
-        safetyRepo: Repository<LlmSafetyEventEntity>,
-        configService: ConfigService,
-      ) => new PlatformLlmSafetyEventAdapter('zalo', safetyRepo, configService),
-      inject: [getRepositoryToken(LlmSafetyEventEntity), ConfigService],
+      inject: [ConfigService],
     },
     {
       provide: DeliveryLogService,

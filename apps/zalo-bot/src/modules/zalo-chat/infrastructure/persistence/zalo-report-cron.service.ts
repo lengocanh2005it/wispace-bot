@@ -7,6 +7,7 @@ import { PlatformStudentReportService } from '@wispace/student-report';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import {
   REPORT_CLAIM_REPOSITORY,
+  runBatched,
   todayReportDate,
 } from '@wispace/scheduler-core';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
@@ -50,22 +51,20 @@ export class ZaloReportCronService {
     let failed = 0;
     const errors: string[] = [];
 
-    for (let i = 0; i < links.length; i += CONCURRENCY) {
-      const batch = links.slice(i, i + CONCURRENCY);
-      const results = await Promise.allSettled(
-        batch.map((link) => this.sendReportForUser(link, reportDate)),
-      );
-      for (const r of results) {
-        if (r.status === 'fulfilled') {
-          if (r.value === 'sent') sent++;
-          else if (r.value === 'skipped') skipped++;
-          else failed++;
-        } else {
-          failed++;
-          errors.push(
-            r.reason instanceof Error ? r.reason.message : String(r.reason),
-          );
-        }
+    const results = await runBatched(links, CONCURRENCY, (link) =>
+      this.sendReportForUser(link, reportDate),
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        const v = r.value as 'sent' | 'skipped' | 'error';
+        if (v === 'sent') sent++;
+        else if (v === 'skipped') skipped++;
+        else failed++;
+      } else {
+        failed++;
+        errors.push(
+          r.reason instanceof Error ? r.reason.message : String(r.reason),
+        );
       }
     }
 

@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
-  createFailoverLlmProviderAdapter,
-  createFailoverProviderEntries,
+  createLlmProviderAdapterFromEnv,
   type LlmProviderAdapter,
 } from '@wispace/llm-agent';
 import { REPORT_DELIVERY_PORT } from '@wispace/scheduler-core';
@@ -27,27 +26,10 @@ import { DiscordOutboundModule } from './discord-outbound.module';
   providers: [
     {
       provide: 'LLM_PROVIDER_ADAPTER',
-      useFactory: (configService: ConfigService): LlmProviderAdapter => {
-        const orderRaw = configService
-          .get<string>('LLM_PROVIDER_FAILOVER_ORDER')
-          ?.trim();
-        const order = orderRaw
-          ? orderRaw
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : [];
-
-        const providerOrder = order.length > 0 ? order : ['openai'];
-        const entries = createFailoverProviderEntries(
-          (key) => configService.get<string>(key)?.trim(),
-          providerOrder,
-        );
-
-        return createFailoverLlmProviderAdapter(entries, providerOrder, {
-          warn: (m) => console.warn(m),
-        });
-      },
+      useFactory: (configService: ConfigService): LlmProviderAdapter =>
+        createLlmProviderAdapterFromEnv((key) =>
+          configService.get<string>(key)?.trim(),
+        ),
       inject: [ConfigService],
     },
     DiscordReportDeliveryService,

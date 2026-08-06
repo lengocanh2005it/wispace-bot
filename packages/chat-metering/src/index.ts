@@ -4,6 +4,7 @@ export {
   LlmUsageEventEntity,
   LlmSafetyEventEntity,
 } from './entities';
+export { ChatMeteringModule } from './chat-metering.module';
 export type { ChatIdempotencyStatus } from './entities';
 
 export { todayInTimezone as todayUsageDate } from '@wispace/date-utils';

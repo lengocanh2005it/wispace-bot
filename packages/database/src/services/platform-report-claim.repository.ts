@@ -2,22 +2,27 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
-import { ScheduledReportClaimEntity } from '@wispace/database';
+import { todayReportDate } from '@wispace/scheduler-core';
+import { ScheduledReportClaimEntity } from '../entities/scheduled-report-claim.entity';
 
-const PLATFORM = 'zalo' as const;
-
+/**
+ * Report claim idempotency for the 08:00 scheduled report cron — shared by
+ * Discord and Zalo (replaces their near-identical per-app repositories).
+ * Platform (`'discord'` / `'zalo'`) parameterizes the claimed row.
+ */
 @Injectable()
-export class ZaloReportClaimRepository implements ReportClaimRepositoryPort {
+export class PlatformReportClaimRepository implements ReportClaimRepositoryPort {
   constructor(
+    private readonly platform: string,
     @InjectRepository(ScheduledReportClaimEntity)
     private readonly claimRepo: Repository<ScheduledReportClaimEntity>,
   ) {}
 
   async hasSentScheduledReportToday(externalUserId: string): Promise<boolean> {
-    const reportDate = new Date().toISOString().slice(0, 10);
+    const reportDate = todayReportDate();
     const claim = await this.claimRepo.findOne({
       where: {
-        platform: PLATFORM,
+        platform: this.platform,
         externalUserId,
         reportDate,
         status: 'sent',
@@ -43,7 +48,7 @@ export class ZaloReportClaimRepository implements ReportClaimRepositoryPort {
   }): Promise<boolean> {
     try {
       await this.claimRepo.save({
-        platform: PLATFORM,
+        platform: this.platform,
         externalUserId: params.externalUserId,
         userId: params.userId ?? null,
         reportDate: params.reportDate,
@@ -61,7 +66,7 @@ export class ZaloReportClaimRepository implements ReportClaimRepositoryPort {
   }): Promise<void> {
     await this.claimRepo.update(
       {
-        platform: PLATFORM,
+        platform: this.platform,
         externalUserId: params.externalUserId,
         reportDate: params.reportDate,
       },
@@ -75,7 +80,7 @@ export class ZaloReportClaimRepository implements ReportClaimRepositoryPort {
   }): Promise<void> {
     await this.claimRepo.update(
       {
-        platform: PLATFORM,
+        platform: this.platform,
         externalUserId: params.externalUserId,
         reportDate: params.reportDate,
         status: 'claimed',

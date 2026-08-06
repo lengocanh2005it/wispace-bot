@@ -50,3 +50,9 @@ export {
   GenericCalendarPort,
   type ListUpcomingFn,
 } from './ports/generic-calendar.port';
+
+// Factories
+export {
+  createStudyReminderProviders,
+  type CreateStudyReminderProvidersOptions,
+} from './services/study-reminder-providers.factory';
