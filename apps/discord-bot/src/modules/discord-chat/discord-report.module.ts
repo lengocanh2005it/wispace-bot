@@ -11,6 +11,8 @@ import {
   ReportCronLockService,
   REPORT_SEND_JOB_REPOSITORY,
   REPORT_CLAIM_REPOSITORY,
+  GOALS_DATA_PORT,
+  parseExamDateToIso,
 } from '@wispace/scheduler-core';
 import {
   ReportSendJobEntity,
@@ -51,6 +53,16 @@ import { WispaceModule } from '../wispace/wispace.module';
     }),
   ],
   providers: [
+    {
+      provide: GOALS_DATA_PORT,
+      useFactory: (goalsService: WispaceGoalsService) => ({
+        getUserGoals: async (externalUserId: string) => ({
+          examDate: (await goalsService.getUserGoals(externalUserId)).examDate,
+        }),
+        parseExamDate: (examDate: string) => parseExamDateToIso(examDate),
+      }),
+      inject: [WispaceGoalsService],
+    },
     {
       provide: REPORT_SEND_JOB_REPOSITORY,
       useExisting: DiscordReportSendJobRepository,
