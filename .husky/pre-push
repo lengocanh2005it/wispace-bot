@@ -1,2 +1,3 @@
-# Full quality gate before pushing — mirrors CI (deploy-messenger-bot.yml quality job).
-npx turbo run format:check lint typecheck test build
+# Full quality gate before pushing, mirrors CI (deploy-messenger-bot.yml quality job).
+# --concurrency=4: keeps the full gate but avoids Windows OOM crashes at full parallelism.
+npx turbo run format:check lint typecheck test build --concurrency=4
