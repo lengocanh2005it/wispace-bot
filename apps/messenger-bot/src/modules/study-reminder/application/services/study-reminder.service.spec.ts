@@ -4,7 +4,7 @@ import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { TaskScoreAverageApiService } from '@messenger/modules/student-report/infrastructure/wispace/task-score-average-api.service';
 import { UserGoalsApiService } from '@messenger/modules/student-report/infrastructure/wispace/user-goals-api.service';
 import { NormalizedStudySession } from '../../domain/entities/study-schedule.types';
-import { StudyReminderScheduleService } from './study-reminder-schedule.service';
+import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudyReminderService } from './study-reminder.service';
 import { StudySessionSourceService } from './study-session-source.service';
 import { UserDisplayNameService } from './user-display-name.service';

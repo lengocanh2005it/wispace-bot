@@ -2,7 +2,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { UserCalendarApiService } from '../../infrastructure/wispace/user-calendar-api.service';
 import type { UserCalendarScheduleService } from '../../infrastructure/wispace/user-calendar-schedule.service';
 import type { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
-import type { StudyReminderSyncService } from './study-reminder-sync.service';
+import type { StudyReminderSyncService } from '@wispace/study-reminder-shared';
 import type { NormalizedStudySession } from '../../domain/entities/study-schedule.types';
 import type { UserCalendarRecord } from '../../domain/entities/user-calendar.types';
 import { StudyCalendarCommandService } from './study-calendar-command.service';

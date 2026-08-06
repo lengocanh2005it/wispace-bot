@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
   MAPPING_READER,
   type MappingReaderPort,
@@ -10,6 +9,9 @@ import {
 } from '../ports/study-reminder-job.repository.port';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import type {
+  StudyReminderJobStatus,
+  StudyReminderSyncFailure,
+  StudyReminderSyncResult,
   UserLink,
   StudySessionRecord,
 } from '../types/study-reminder.types';
@@ -19,7 +21,23 @@ const DEFAULT_PLATFORM = 'messenger';
 export type OnUserSyncHook = (
   userId: number,
   platform: string,
-) => Promise<void>;
+) => Promise<number | void>;
+
+export interface StudyReminderSyncOptions {
+  userId?: number;
+  platform?: string;
+  getSessions?: (
+    externalUserId: string,
+    userId?: number,
+  ) => Promise<StudySessionRecord[]>;
+  /**
+   * Messenger: resolves the mapping by WISPACE userId (its ops flow syncs by
+   * userId, not by external id). Falls back to findActiveMappingByExternalUserId.
+   */
+  userIdMappingLookup?: (userId: number) => Promise<UserLink | null>;
+  /** Statuses considered stale when cancelling out-of-horizon jobs (Messenger adds 'processing'). */
+  staleCancelStatuses?: StudyReminderJobStatus[];
+}
 
 @Injectable()
 export class StudyReminderSyncService {
@@ -37,20 +55,9 @@ export class StudyReminderSyncService {
     this.onUserSync = onUserSync;
   }
 
-  async syncUpcomingSessions(opts?: {
-    userId?: number;
-    platform?: string;
-    getSessions?: (
-      externalUserId: string,
-      userId?: number,
-    ) => Promise<StudySessionRecord[]>;
-  }): Promise<{
-    mappings: number;
-    upserted: number;
-    cancelled: number;
-    skipped: number;
-    failed: number;
-  }> {
+  async syncUpcomingSessions(
+    opts?: StudyReminderSyncOptions,
+  ): Promise<StudyReminderSyncResult> {
     const platform = opts?.platform ?? DEFAULT_PLATFORM;
     const settings = this.scheduleService.getOutboxSettings();
     const horizonEnd = new Date(
@@ -58,27 +65,47 @@ export class StudyReminderSyncService {
     );
 
     let mappings: UserLink[];
+    let linked = true;
+    let skipped = 0;
     if (opts?.userId) {
-      const mapping =
-        await this.mappingReader.findActiveMappingByExternalUserId(
-          platform,
-          String(opts.userId),
-        );
+      const mapping = opts.userIdMappingLookup
+        ? await opts.userIdMappingLookup(opts.userId)
+        : await this.mappingReader.findActiveMappingByExternalUserId(
+            platform,
+            String(opts.userId),
+          );
       mappings = mapping ? [mapping] : [];
+      linked = mapping != null;
+      if (!mapping) {
+        // Messenger reports an unlinked userId as one skipped mapping.
+        skipped = 1;
+      }
     } else {
       mappings = await this.mappingReader.findActiveMappings(platform);
     }
 
     let upserted = 0;
     let cancelled = 0;
-    let skipped = 0;
     let failed = 0;
+    let cancelledOtherPlatforms = 0;
+    const failures: StudyReminderSyncFailure[] = [];
 
     for (const mapping of mappings) {
+      if (!mapping.externalUserId) {
+        skipped += 1;
+        continue;
+      }
+
       try {
-        // Cross-platform cancel hook (Messenger calls cancelJobsFromOtherPlatforms)
+        // Cross-platform cancel hook (Messenger cancels jobs from other platforms)
         if (opts?.userId && mapping.userId) {
-          await this.onUserSync?.(mapping.userId, platform);
+          const cancelledCount = await this.onUserSync?.(
+            mapping.userId,
+            platform,
+          );
+          if (typeof cancelledCount === 'number') {
+            cancelledOtherPlatforms += cancelledCount;
+          }
         }
 
         const sessions = opts?.getSessions
@@ -105,7 +132,7 @@ export class StudyReminderSyncService {
             scheduledAt: session.scheduledAt,
             remindAt,
             topic: session.topic,
-            maxRetries: this.getMaxRetries(),
+            maxRetries: settings.maxRetries,
           });
 
           upserted += 1;
@@ -118,18 +145,19 @@ export class StudyReminderSyncService {
             mapping.externalUserId,
             activeSessionKeys,
             horizonEnd,
+            opts?.staleCancelStatuses
+              ? { statuses: opts.staleCancelStatuses }
+              : undefined,
           );
         cancelled += cancelledCount;
       } catch (error) {
         failed += 1;
+        failures.push({
+          externalUserId: mapping.externalUserId,
+          error: this.toErrorMessage(error),
+        });
         this.logger.warn(
-          `Failed to sync for externalUserId=${mapping.externalUserId}: ${
-            error instanceof Error
-              ? error.message
-              : typeof error === 'string'
-                ? error
-                : 'unknown error'
-          }`,
+          `Failed to sync for externalUserId=${mapping.externalUserId}: ${this.toErrorMessage(error)}`,
         );
       }
     }
@@ -138,19 +166,23 @@ export class StudyReminderSyncService {
       `Study reminder sync (all, platform=${platform}): mappings=${mappings.length}, upserted=${upserted}, cancelled=${cancelled}, skipped=${skipped}, failed=${failed}`,
     );
 
-    return { mappings: mappings.length, upserted, cancelled, skipped, failed };
+    return {
+      mappings: mappings.length,
+      upserted,
+      cancelled,
+      skipped,
+      failed,
+      scope: opts?.userId ? 'user' : 'all',
+      userId: opts?.userId,
+      linked,
+      cancelledOtherPlatforms,
+      failures,
+    };
   }
 
-  private getMaxRetries(): number {
-    const raw = this.configService
-      .get<string>('STUDY_REMINDER_MAX_RETRIES')
-      ?.trim();
-    if (!raw) return 3;
-    const value = Number(raw);
-    return Number.isFinite(value) && value > 0 ? value : 3;
-  }
-
-  private get configService(): ConfigService {
-    return this.scheduleService['configService'];
+  private toErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    return 'unknown error';
   }
 }

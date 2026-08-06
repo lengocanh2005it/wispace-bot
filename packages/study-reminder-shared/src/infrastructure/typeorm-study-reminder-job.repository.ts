@@ -1,16 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import type {
   StudyReminderJobRepositoryPort,
   StudyReminderJob,
+  StudyReminderJobStatus,
   UpsertStudyReminderJobInput,
+  UpsertStudyReminderJobOptions,
 } from '../ports/study-reminder-job.repository.port';
 import { StudyReminderJobEntity } from '../entities/study-reminder-job.entity';
 
+const DEFAULT_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
+  'pending',
+  'failed',
+];
+
 /**
  * TypeORM implementation of StudyReminderJobRepositoryPort.
- * Shared across Discord and Zalo — eliminates the 256-line clone in each app.
+ * Shared across Discord, Zalo and Messenger.
  */
 @Injectable()
 export class TypeormStudyReminderJobRepository implements StudyReminderJobRepositoryPort {
@@ -21,8 +28,28 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
 
   async upsertPendingJob(
     input: UpsertStudyReminderJobInput,
+    options?: UpsertStudyReminderJobOptions,
   ): Promise<StudyReminderJob> {
-    const existing = await this.repo.findOne({
+    if (!options?.lockKey) {
+      return this.doUpsert(this.repo.manager, input, options);
+    }
+
+    // Serialize concurrent upserts for the same (platform, externalUserId, sessionKey).
+    // pg_advisory_xact_lock is transaction-scoped — auto-released on commit/rollback.
+    return this.repo.manager.transaction(async (manager) => {
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        options.lockKey,
+      ]);
+      return this.doUpsert(manager, input, options);
+    });
+  }
+
+  private async doUpsert(
+    manager: EntityManager,
+    input: UpsertStudyReminderJobInput,
+    options?: UpsertStudyReminderJobOptions,
+  ): Promise<StudyReminderJob> {
+    const existing = await manager.findOne(StudyReminderJobEntity, {
       where: {
         platform: input.platform,
         externalUserId: input.externalUserId,
@@ -30,36 +57,79 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
       },
     });
 
-    if (existing) {
-      if (existing.status === 'sent') {
+    if (!existing) {
+      const created = manager.create(StudyReminderJobEntity, {
+        platform: input.platform,
+        externalUserId: input.externalUserId,
+        userId: input.userId ?? null,
+        sessionKey: input.sessionKey,
+        scheduledAt: input.scheduledAt,
+        remindAt: input.remindAt,
+        topic: input.topic ?? null,
+        status: 'pending',
+        retryCount: 0,
+        maxRetries: input.maxRetries,
+        nextRetryAt: null,
+        lastError: null,
+        sentAt: null,
+      });
+      const saved = await manager.save(StudyReminderJobEntity, created);
+      return this.mapEntity(saved);
+    }
+
+    const reopenOnlyOnScheduleChange =
+      options?.reopenOnlyOnScheduleChange ?? false;
+
+    if (existing.status === 'sent') {
+      if (
+        !reopenOnlyOnScheduleChange ||
+        !this.hasScheduleChanged(existing, input)
+      ) {
         return this.mapEntity(existing);
       }
-      existing.scheduledAt = input.scheduledAt;
-      existing.remindAt = input.remindAt;
-      existing.topic = input.topic ?? existing.topic;
+      this.reopenToPending(existing, input);
+      const saved = await manager.save(StudyReminderJobEntity, existing);
+      return this.mapEntity(saved);
+    }
+
+    if (existing.status === 'processing') {
+      if (
+        reopenOnlyOnScheduleChange &&
+        !this.hasScheduleChanged(existing, input)
+      ) {
+        return this.mapEntity(existing);
+      }
+      this.reopenToPending(existing, input);
+      const saved = await manager.save(StudyReminderJobEntity, existing);
+      return this.mapEntity(saved);
+    }
+
+    if (existing.status === 'cancelled') {
+      this.reopenToPending(existing, input);
+      const saved = await manager.save(StudyReminderJobEntity, existing);
+      return this.mapEntity(saved);
+    }
+
+    // pending / failed — update in place
+    existing.userId = input.userId ?? existing.userId;
+    existing.scheduledAt = input.scheduledAt;
+    existing.remindAt = input.remindAt;
+    existing.topic = input.topic ?? existing.topic;
+    existing.maxRetries = input.maxRetries;
+    if (reopenOnlyOnScheduleChange) {
+      // Messenger keeps retryCount across re-syncs; failed jobs re-enter as pending.
+      if (existing.status === 'failed') {
+        existing.status = 'pending';
+        existing.nextRetryAt = null;
+        existing.lastError = null;
+      }
+    } else {
       existing.status = 'pending';
       existing.retryCount = 0;
       existing.lastError = null;
       existing.nextRetryAt = null;
-      if (input.userId != null) {
-        existing.userId = input.userId;
-      }
-      const saved = await this.repo.save(existing);
-      return this.mapEntity(saved);
     }
-
-    const created = this.repo.create({
-      platform: input.platform,
-      externalUserId: input.externalUserId,
-      userId: input.userId ?? null,
-      sessionKey: input.sessionKey,
-      scheduledAt: input.scheduledAt,
-      remindAt: input.remindAt,
-      topic: input.topic ?? null,
-      status: 'pending',
-      maxRetries: input.maxRetries,
-    });
-    const saved = await this.repo.save(created);
+    const saved = await manager.save(StudyReminderJobEntity, existing);
     return this.mapEntity(saved);
   }
 
@@ -122,8 +192,12 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
   }
 
   async markCancelled(jobId: number, reason?: string): Promise<void> {
-    void reason; // reserved for audit logging
-    await this.repo.update(jobId, { status: 'cancelled' });
+    const patch: Partial<StudyReminderJobEntity> = { status: 'cancelled' };
+    if (reason) {
+      patch.lastError = reason;
+      patch.nextRetryAt = null;
+    }
+    await this.repo.update(jobId, patch);
   }
 
   async cancelStaleJobsForExternalUserId(
@@ -131,6 +205,7 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     externalUserId: string,
     activeSessionKeys: string[],
     horizonEnd?: Date,
+    options?: { statuses?: StudyReminderJobStatus[] },
   ): Promise<number> {
     const qb = this.repo
       .createQueryBuilder()
@@ -139,7 +214,7 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
       .where('platform = :platform', { platform })
       .andWhere('externalUserId = :externalUserId', { externalUserId })
       .andWhere('status IN (:...statuses)', {
-        statuses: ['pending', 'failed'],
+        statuses: options?.statuses ?? DEFAULT_STALE_CANCEL_STATUSES,
       });
     if (activeSessionKeys.length > 0) {
       qb.andWhere('sessionKey NOT IN (:...keys)', { keys: activeSessionKeys });
@@ -154,7 +229,11 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
   async cancelJobsFromOtherPlatforms(
     userId: number,
     currentPlatform: string,
+    options?: { statuses?: StudyReminderJobStatus[] },
   ): Promise<number> {
+    if (!userId) {
+      return 0;
+    }
     const result = await this.repo
       .createQueryBuilder()
       .update(StudyReminderJobEntity)
@@ -162,50 +241,55 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
       .where('userId = :userId', { userId })
       .andWhere('platform != :platform', { platform: currentPlatform })
       .andWhere('status IN (:...statuses)', {
-        statuses: ['pending', 'failed'],
+        statuses: options?.statuses ?? DEFAULT_STALE_CANCEL_STATUSES,
       })
       .execute();
     return result.affected ?? 0;
   }
 
   async findNextDueTime(now: Date): Promise<Date | null> {
-    const row = await this.repo
-      .createQueryBuilder('job')
-      .where('job.status IN (:...statuses)', {
-        statuses: ['pending', 'failed'],
-      })
-      .andWhere('job.remind_at > :now', { now })
-      .andWhere('(job.next_retry_at IS NULL OR job.next_retry_at <= :now)', {
-        now,
-      })
-      .andWhere(
-        `(job.status = 'pending' OR (job.status = 'failed' AND job.retry_count < job.max_retries))`,
-      )
-      .orderBy('job.remind_at', 'ASC')
-      .select('job.remind_at')
-      .limit(1)
-      .getOne();
-    return row?.remindAt ?? null;
+    // Earliest moment any pending/retryable job becomes actionable — accounts
+    // for next_retry_at (Messenger semantics; shared by all platforms).
+    const rows = await this.repo.manager.query<
+      Array<{ next_due: Date | null }>
+    >(
+      `SELECT MIN(
+         CASE
+           WHEN next_retry_at IS NOT NULL AND next_retry_at > $1 THEN next_retry_at
+           WHEN remind_at > $1 THEN remind_at
+           ELSE NULL
+         END
+       ) AS next_due
+       FROM study_reminder_jobs
+       WHERE status IN ('pending', 'failed')`,
+      [now],
+    );
+    return rows[0]?.next_due ?? null;
   }
 
-  async resetStuckProcessingJobs(olderThan: Date): Promise<number> {
+  async resetStuckProcessingJobs(
+    olderThan: Date,
+    targetStatus: 'pending' | 'failed' = 'failed',
+  ): Promise<number> {
     const result = await this.repo
       .createQueryBuilder()
       .update(StudyReminderJobEntity)
-      .set({ status: 'failed' })
+      .set({ status: targetStatus })
       .where('status = :status', { status: 'processing' })
-      .andWhere('updated_at < :olderThan', { olderThan })
+      .andWhere('updated_at <= :olderThan', { olderThan })
       .execute();
     return result.affected ?? 0;
   }
 
-  async deleteSentJobs(olderThan: Date): Promise<number> {
-    const result = await this.repo
+  async deleteSentJobs(olderThan?: Date): Promise<number> {
+    const qb = this.repo
       .createQueryBuilder()
       .delete()
-      .where('status = :status', { status: 'sent' })
-      .andWhere('sent_at < :olderThan', { olderThan })
-      .execute();
+      .where('status = :status', { status: 'sent' });
+    if (olderThan) {
+      qb.andWhere('sent_at < :olderThan', { olderThan });
+    }
+    const result = await qb.execute();
     return result.affected ?? 0;
   }
 
@@ -222,14 +306,16 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     return result.affected ?? 0;
   }
 
-  async countJobsByStatus(platform: string): Promise<Record<string, number>> {
-    const rows = await this.repo
+  async countJobsByStatus(platform?: string): Promise<Record<string, number>> {
+    const qb = this.repo
       .createQueryBuilder('job')
       .select('job.status', 'status')
       .addSelect('COUNT(*)', 'count')
-      .where('job.platform = :platform', { platform })
-      .groupBy('job.status')
-      .getRawMany<{ status: string; count: string }>();
+      .groupBy('job.status');
+    if (platform) {
+      qb.where('job.platform = :platform', { platform });
+    }
+    const rows = await qb.getRawMany<{ status: string; count: string }>();
     const result: Record<string, number> = {};
     for (const row of rows) {
       result[row.status] = parseInt(row.count, 10);
@@ -246,6 +332,29 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
       .getCount();
   }
 
+  async countStuckProcessing(olderThan: Date): Promise<number> {
+    return this.repo
+      .createQueryBuilder('job')
+      .where('job.status = :status', { status: 'processing' })
+      .andWhere('job.updated_at <= :olderThan', { olderThan })
+      .getCount();
+  }
+
+  async findTerminalFailedSince(
+    since: Date,
+    limit: number,
+  ): Promise<StudyReminderJob[]> {
+    const entities = await this.repo
+      .createQueryBuilder('job')
+      .where('job.status = :status', { status: 'failed' })
+      .andWhere('job.retry_count >= job.max_retries')
+      .andWhere('job.updated_at >= :since', { since })
+      .orderBy('job.updated_at', 'DESC')
+      .take(limit)
+      .getMany();
+    return entities.map((r) => this.mapEntity(r));
+  }
+
   async findStuckProcessing(
     olderThan: Date,
     limit?: number,
@@ -253,12 +362,40 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     const qb = this.repo
       .createQueryBuilder('job')
       .where('job.status = :status', { status: 'processing' })
-      .andWhere('job.updated_at < :olderThan', { olderThan });
+      .andWhere('job.updated_at <= :olderThan', { olderThan })
+      .orderBy('job.updated_at', 'ASC');
     if (limit) {
       qb.limit(limit);
     }
     const rows = await qb.getMany();
     return rows.map((r) => this.mapEntity(r));
+  }
+
+  private hasScheduleChanged(
+    existing: StudyReminderJobEntity,
+    input: UpsertStudyReminderJobInput,
+  ): boolean {
+    return (
+      existing.scheduledAt.getTime() !== input.scheduledAt.getTime() ||
+      existing.remindAt.getTime() !== input.remindAt.getTime() ||
+      (input.topic ?? null) !== (existing.topic ?? null)
+    );
+  }
+
+  private reopenToPending(
+    existing: StudyReminderJobEntity,
+    input: UpsertStudyReminderJobInput,
+  ): void {
+    existing.userId = input.userId ?? existing.userId;
+    existing.scheduledAt = input.scheduledAt;
+    existing.remindAt = input.remindAt;
+    existing.topic = input.topic ?? existing.topic;
+    existing.maxRetries = input.maxRetries;
+    existing.status = 'pending';
+    existing.retryCount = 0;
+    existing.sentAt = null;
+    existing.lastError = null;
+    existing.nextRetryAt = null;
   }
 
   private mapEntity(entity: StudyReminderJobEntity): StudyReminderJob {

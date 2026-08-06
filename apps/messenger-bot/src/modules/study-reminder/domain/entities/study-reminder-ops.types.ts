@@ -1,4 +1,4 @@
-import { StudyReminderJob } from './study-reminder-job.types';
+import { StudyReminderJob } from '@wispace/study-reminder-shared';
 
 export interface StudyReminderOpsSummary {
   countsByStatus: Record<string, number>;

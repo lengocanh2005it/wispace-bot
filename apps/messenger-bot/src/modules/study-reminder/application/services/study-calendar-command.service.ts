@@ -17,8 +17,8 @@ import type {
   RescheduleStudySessionResult,
   StudyCalendarEntryView,
 } from '@wispace/reschedule-confirm';
-import { StudyReminderScheduleService } from './study-reminder-schedule.service';
-import { StudyReminderSyncService } from './study-reminder-sync.service';
+import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
+import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
 
 @Injectable()

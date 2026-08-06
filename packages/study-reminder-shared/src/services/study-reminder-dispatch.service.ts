@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
@@ -20,6 +19,45 @@ import {
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import type { StudyReminderJob } from '../types/study-reminder.types';
 
+export interface StudyReminderDispatchFailure {
+  jobId: number;
+  externalUserId: string;
+  error: string;
+}
+
+export interface StudyReminderDispatchResult {
+  claimed: number;
+  sent: number;
+  cancelled: number;
+  retried: number;
+  failed: number;
+  resetStuck: number;
+  nextDueAt: Date | null;
+  failures: StudyReminderDispatchFailure[];
+}
+
+export interface StudyReminderDispatchServiceOptions {
+  /**
+   * 'exponential' (default): backoff grows 2^retryCount.
+   * 'flat' (Messenger): fixed retryBackoffMinutes between attempts.
+   */
+  backoffMode?: 'exponential' | 'flat';
+  /**
+   * Messenger: batch display-name warm-up before dispatching (single query
+   * instead of N lazy DB reads). Errors are logged and ignored.
+   */
+  preloadDisplayNames?: (userIds: number[]) => Promise<void>;
+  /**
+   * Messenger: classifies a send failure as terminal (24h window, non-retryable
+   * Wispace error) and normalizes the persisted error message. When it returns
+   * a value, it fully overrides the default classification.
+   */
+  classifyFailure?: (params: {
+    error: unknown;
+    job: StudyReminderJob;
+  }) => { terminal: boolean; errorMessage: string } | undefined;
+}
+
 @Injectable()
 export class StudyReminderDispatchService {
   private readonly logger = new Logger(StudyReminderDispatchService.name);
@@ -39,17 +77,10 @@ export class StudyReminderDispatchService {
     @Optional()
     @Inject(ERROR_CLASSIFIER)
     private readonly errorClassifier?: ErrorClassifierPort,
+    @Optional() private readonly options?: StudyReminderDispatchServiceOptions,
   ) {}
 
-  async dispatchDueReminders(): Promise<{
-    claimed: number;
-    sent: number;
-    cancelled: number;
-    retried: number;
-    failed: number;
-    resetStuck: number;
-    nextDueAt: Date | null;
-  }> {
+  async dispatchDueReminders(): Promise<StudyReminderDispatchResult> {
     const settings = this.scheduleService.getOutboxSettings();
     const now = new Date();
 
@@ -62,11 +93,30 @@ export class StudyReminderDispatchService {
       settings.minLeadMinutes,
     );
 
+    // Pre-fetch display names in a single batch query to avoid N lazy DB reads.
+    const uniqueUserIds = [
+      ...new Set(
+        dueJobs.map((j) => j.userId).filter((id): id is number => !!id),
+      ),
+    ];
+    if (uniqueUserIds.length > 0 && this.options?.preloadDisplayNames) {
+      try {
+        await this.options.preloadDisplayNames(uniqueUserIds);
+      } catch (error) {
+        this.logger.warn(
+          `Display name preload failed, continuing with lazy fallback: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
     let claimed = 0;
     let sent = 0;
     let cancelled = 0;
     let retried = 0;
     let failed = 0;
+    const failures: StudyReminderDispatchFailure[] = [];
 
     for (const job of dueJobs) {
       const claimedJob = await this.jobRepository.claimJob(job.id);
@@ -116,32 +166,40 @@ export class StudyReminderDispatchService {
         });
         sent += 1;
       } catch (error) {
-        const errorMsg =
-          error instanceof Error
-            ? error.message
-            : typeof error === 'string'
-              ? error
-              : 'unknown error';
+        const errorMsg = this.toErrorMessage(error);
 
-        // Check if error is terminal (no retry)
-        const terminal =
-          this.errorClassifier?.isTerminal(error) ??
-          claimedJob.retryCount + 1 >= claimedJob.maxRetries;
+        const classification = this.options?.classifyFailure?.({
+          error,
+          job: claimedJob,
+        });
+        const terminal = classification
+          ? classification.terminal
+          : (this.errorClassifier?.isTerminal(error) ??
+            claimedJob.retryCount + 1 >= claimedJob.maxRetries);
+        const errorMessage = classification?.errorMessage ?? errorMsg;
 
         const nextRetryCount = claimedJob.retryCount + 1;
+        const backoffMs = settings.retryBackoffMinutes * 60 * 1000;
         const nextRetryAt = terminal
           ? undefined
           : new Date(
               now.getTime() +
-                this.getRetryBackoffMs() * Math.pow(2, claimedJob.retryCount),
+                (this.options?.backoffMode === 'flat'
+                  ? backoffMs
+                  : backoffMs * Math.pow(2, claimedJob.retryCount)),
             );
 
         await this.jobRepository.markFailed({
           jobId: claimedJob.id,
-          errorMessage: errorMsg,
+          errorMessage,
           retryCount: nextRetryCount,
           nextRetryAt,
           terminal,
+        });
+        failures.push({
+          jobId: claimedJob.id,
+          externalUserId: claimedJob.externalUserId,
+          error: errorMessage,
         });
 
         if (terminal) {
@@ -149,10 +207,10 @@ export class StudyReminderDispatchService {
           this.metrics?.onFailed?.({
             jobId: claimedJob.id,
             externalUserId: claimedJob.externalUserId,
-            error: errorMsg,
+            error: errorMessage,
           });
           this.logger.warn(
-            `Study reminder job failed terminal jobId=${claimedJob.id} externalUserId=${claimedJob.externalUserId}: ${errorMsg}`,
+            `Study reminder job failed terminal jobId=${claimedJob.id} externalUserId=${claimedJob.externalUserId}: ${errorMessage}`,
           );
         } else {
           retried += 1;
@@ -162,13 +220,15 @@ export class StudyReminderDispatchService {
             retryCount: nextRetryCount,
           });
           this.logger.warn(
-            `Study reminder job retry jobId=${claimedJob.id} externalUserId=${claimedJob.externalUserId} retry=${nextRetryCount}/${claimedJob.maxRetries}: ${errorMsg}`,
+            `Study reminder job retry jobId=${claimedJob.id} externalUserId=${claimedJob.externalUserId} retry=${nextRetryCount}/${claimedJob.maxRetries}: ${errorMessage}`,
           );
         }
       }
     }
 
-    const nextDueAt = await this.jobRepository.findNextDueTime(now);
+    const nextDueAt = await this.jobRepository
+      .findNextDueTime(now)
+      .catch(() => null);
 
     if (claimed > 0 || resetStuck > 0) {
       this.logger.log(
@@ -176,7 +236,16 @@ export class StudyReminderDispatchService {
       );
     }
 
-    return { claimed, sent, cancelled, retried, failed, resetStuck, nextDueAt };
+    return {
+      claimed,
+      sent,
+      cancelled,
+      retried,
+      failed,
+      resetStuck,
+      nextDueAt,
+      failures,
+    };
   }
 
   private async buildReminderText(
@@ -197,6 +266,7 @@ export class StudyReminderDispatchService {
           userId: job.userId,
           timeLabel,
           minutesUntil,
+          jobId: job.id,
         },
       );
     }
@@ -205,18 +275,9 @@ export class StudyReminderDispatchService {
     return `Nhắc lịch: Bạn có lịch ${topic} lúc ${timeLabel} (còn ${minutesUntil} phút).`;
   }
 
-  private getRetryBackoffMs(): number {
-    const raw = this.configService
-      .get<string>('STUDY_REMINDER_RETRY_BACKOFF_MINUTES')
-      ?.trim();
-    if (!raw) return 2 * 60 * 1000;
-    const value = Number(raw);
-    return Number.isFinite(value) && value > 0
-      ? value * 60 * 1000
-      : 2 * 60 * 1000;
-  }
-
-  private get configService(): ConfigService {
-    return this.scheduleService['configService'];
+  private toErrorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    return 'unknown error';
   }
 }
