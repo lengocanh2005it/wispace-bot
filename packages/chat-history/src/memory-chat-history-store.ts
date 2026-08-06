@@ -21,6 +21,8 @@ interface ChatHistoryState {
  */
 export class MemoryChatHistoryStore implements ChatHistoryStorePort {
   private readonly store = new Map<string, ChatHistoryState>();
+  /** Tool summaries visible via getHistory until the next appendTurn commits. */
+  private readonly pendingSummaries = new Map<string, string[]>();
 
   constructor(private readonly config: MemoryChatHistoryStoreConfig) {}
 
@@ -37,10 +39,20 @@ export class MemoryChatHistoryStore implements ChatHistoryStorePort {
       return Promise.resolve([]);
     }
 
-    return Promise.resolve([...state.messages]);
+    const summaries = this.pendingSummaries.get(externalUserId) ?? [];
+    if (summaries.length === 0) {
+      return Promise.resolve([...state.messages]);
+    }
+    return Promise.resolve([
+      ...state.messages,
+      ...summaries.map((content) => ({
+        role: 'tool_summary' as const,
+        content,
+      })),
+    ]);
   }
 
-  async appendTurn(
+  appendTurn(
     externalUserId: string,
     userText: string,
     assistantText: string,
@@ -48,23 +60,38 @@ export class MemoryChatHistoryStore implements ChatHistoryStorePort {
     const user = userText.trim();
     const assistant = assistantText.trim();
     if (!user || !assistant) {
-      return;
+      return Promise.resolve();
     }
 
-    const existing = await this.getHistory(externalUserId);
+    this.evictStale();
+
+    // Pending tool summaries were visible via getHistory(); drop them —
+    // only the user/assistant turn is committed to the store.
+    const state = this.store.get(externalUserId);
+    const existing = state ? state.messages : [];
     const messages = [
       ...existing,
       { role: 'user' as const, content: user },
       { role: 'assistant' as const, content: assistant },
     ].slice(-this.config.maxMessages);
 
+    this.pendingSummaries.delete(externalUserId);
     this.store.set(externalUserId, {
       messages,
       updatedAt: Date.now(),
     });
+    return Promise.resolve();
+  }
+
+  appendToolSummary(externalUserId: string, summary: string): Promise<void> {
+    const list = this.pendingSummaries.get(externalUserId) ?? [];
+    list.push(summary);
+    this.pendingSummaries.set(externalUserId, list);
+    return Promise.resolve();
   }
 
   clear(externalUserId: string): Promise<void> {
+    this.pendingSummaries.delete(externalUserId);
     this.store.delete(externalUserId);
     return Promise.resolve();
   }

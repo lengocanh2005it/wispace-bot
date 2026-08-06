@@ -4,12 +4,12 @@ import type {
   RescheduleResult,
 } from '@wispace/reschedule-confirm';
 import type { RescheduleSchedulingMode } from '@wispace/wispace-client';
-import { DiscordStudyCalendarCommandService } from '@discord/modules/wispace/application/services/discord-study-calendar-command.service';
+import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
 
 @Injectable()
 export class DiscordReschedulePort implements ReschedulePort<string> {
   constructor(
-    private readonly studyCalendarCommandService: DiscordStudyCalendarCommandService,
+    private readonly studyCalendarCommandService: PlatformStudyCalendarCommandService,
   ) {}
 
   async rescheduleSession(params: {
@@ -21,7 +21,7 @@ export class DiscordReschedulePort implements ReschedulePort<string> {
     newTime?: string;
   }): Promise<RescheduleResult> {
     const result = await this.studyCalendarCommandService.rescheduleSession({
-      discordUserId: params.externalId,
+      externalUserId: params.externalId,
       userId: params.userId,
       calendarId: params.calendarId,
       schedulingMode: params.schedulingMode,

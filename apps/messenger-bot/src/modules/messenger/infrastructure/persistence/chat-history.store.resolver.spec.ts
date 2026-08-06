@@ -1,6 +1,5 @@
+import type { RedisClientPort } from '@wispace/bot-common';
 import { ChatHistoryStoreResolver } from './chat-history.store.resolver';
-import { MemoryChatHistoryStore } from './memory-chat-history.store';
-import { RedisChatHistoryStore } from './redis-chat-history.store';
 import { MessengerChatSharedConfigService } from '../../application/services/messenger-chat-shared-config.service';
 
 describe('ChatHistoryStoreResolver', () => {
@@ -10,17 +9,23 @@ describe('ChatHistoryStoreResolver', () => {
   ) => {
     const sharedConfig = {
       getHistoryStore: () => configured,
+      getHistoryTtlMs: () => 1_800_000,
+      getHistoryMaxMessages: () => 12,
     } as MessengerChatSharedConfigService;
 
-    const memoryStore = {
-      getHistory: jest.fn(),
-    } as unknown as MemoryChatHistoryStore;
-    const redisStore = {
-      isAvailable: () => redisAvailable,
-      getHistory: jest.fn(),
-    } as unknown as RedisChatHistoryStore;
+    const redisClient = {
+      isEnabled: () => redisAvailable,
+      getNativeClient: () =>
+        redisAvailable
+          ? {
+              get: jest.fn().mockResolvedValue(null),
+              set: jest.fn().mockResolvedValue('OK'),
+              del: jest.fn(),
+            }
+          : null,
+    } as unknown as RedisClientPort;
 
-    return new ChatHistoryStoreResolver(sharedConfig, memoryStore, redisStore);
+    return new ChatHistoryStoreResolver(sharedConfig, redisClient);
   };
 
   it('resolves redis when configured and available', () => {
@@ -33,5 +38,17 @@ describe('ChatHistoryStoreResolver', () => {
 
   it('resolves memory by default', () => {
     expect(createResolver('memory').resolveStoreKind()).toBe('memory');
+  });
+
+  it('round-trips history through the shared stores', async () => {
+    const resolver = createResolver('memory');
+    await resolver.appendTurn('psid-1', 'hi', 'hello');
+    await resolver.appendToolSummary('psid-1', '[Đã tra cứu: get_user_goals]');
+
+    await expect(resolver.getHistory('psid-1')).resolves.toEqual([
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'hello' },
+      { role: 'tool_summary', content: '[Đã tra cứu: get_user_goals]' },
+    ]);
   });
 });

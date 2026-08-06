@@ -13,6 +13,7 @@ import {
   LlmUsageEventEntity,
   LlmSafetyEventEntity,
   LlmUsageConfigService,
+  PlatformChatRateLimitService,
   PlatformLlmUsageRecorderAdapter,
   PlatformLlmSafetyEventAdapter,
 } from '@wispace/chat-metering';
@@ -24,6 +25,7 @@ import {
 } from '@wispace/chat-agent';
 import {
   WispaceCalendarService,
+  WispaceConfigService,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
 import { BotCommonModule, REDIS_CLIENT } from '@wispace/bot-common';
@@ -32,9 +34,8 @@ import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
 import { ZaloChatService } from './application/services/zalo-chat.service';
-import { ZaloChatRateLimitService } from './infrastructure/persistence/zalo-chat-rate-limit.service';
 import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
-import { ZaloStudyCalendarCommandService } from './application/services/zalo-study-calendar-command.service';
+import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
 import { ZaloCalendarPort } from './infrastructure/adapters/zalo-calendar.port';
 import { ZaloReschedulePort } from './infrastructure/adapters/zalo-reschedule.port';
 import {
@@ -124,6 +125,25 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       inject: [ConfigService],
     },
     LlmUsageConfigService,
+    {
+      provide: PlatformChatRateLimitService,
+      useFactory: (
+        configService: ConfigService,
+        dailyUsageRepo: Repository<ChatDailyUsageEntity>,
+        idempotencyRepo: Repository<ChatIdempotencyEntity>,
+      ) =>
+        new PlatformChatRateLimitService(
+          { platform: 'zalo' },
+          configService,
+          dailyUsageRepo,
+          idempotencyRepo,
+        ),
+      inject: [
+        ConfigService,
+        getRepositoryToken(ChatDailyUsageEntity),
+        getRepositoryToken(ChatIdempotencyEntity),
+      ],
+    },
     {
       provide: PlatformLlmUsageRecorderAdapter,
       useFactory: (
@@ -258,7 +278,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       provide: PlatformChatQueueService,
       useFactory: (
         configService: ConfigService,
-        rateLimitService: ZaloChatRateLimitService,
+        rateLimitService: PlatformChatRateLimitService,
         historyService: PlatformChatHistoryService,
         agentService: PlatformAgentService,
         outboundService: ZaloOutboundService,
@@ -273,13 +293,25 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         ),
       inject: [
         ConfigService,
-        ZaloChatRateLimitService,
+        PlatformChatRateLimitService,
         PlatformChatHistoryService,
         PlatformAgentService,
         ZaloOutboundService,
       ],
     },
-    ZaloStudyCalendarCommandService,
+    {
+      provide: PlatformStudyCalendarCommandService,
+      useFactory: (
+        calendarService: WispaceCalendarService,
+        configService: WispaceConfigService,
+      ) =>
+        new PlatformStudyCalendarCommandService(
+          { platform: 'zalo' },
+          calendarService,
+          configService,
+        ),
+      inject: [WispaceCalendarService, WispaceConfigService],
+    },
     ZaloCalendarPort,
     ZaloReschedulePort,
     {
@@ -292,7 +324,6 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       inject: [ZaloCalendarPort, ZaloReschedulePort],
     },
     ZaloOutboundService,
-    ZaloChatRateLimitService,
     CleanupCronService,
     {
       provide: PlatformDeadLetterCronService,
@@ -325,7 +356,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         messageLogRepo: Repository<ZaloMessageLogEntity>,
         deadLetterRepo: Repository<WebhookDeadLetterEntity>,
         idempotencyRepo: Repository<ChatIdempotencyEntity>,
-        rateLimitService: ZaloChatRateLimitService,
+        rateLimitService: PlatformChatRateLimitService,
       ) =>
         new PlatformCleanupCronService(cleanupService, configService, {
           platform: 'zalo',
@@ -350,7 +381,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         getRepositoryToken(ZaloMessageLogEntity),
         getRepositoryToken(WebhookDeadLetterEntity),
         getRepositoryToken(ChatIdempotencyEntity),
-        ZaloChatRateLimitService,
+        PlatformChatRateLimitService,
       ],
     },
     ZaloChatService,
@@ -359,7 +390,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     'LLM_PROVIDER_ADAPTER',
     ZaloChatService,
     ZaloOutboundService,
-    ZaloChatRateLimitService,
+    PlatformChatRateLimitService,
     PlatformLlmUsageRecorderAdapter,
     PlatformCleanupCronService,
     CleanupCronService,

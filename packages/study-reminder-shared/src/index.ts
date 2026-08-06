@@ -43,3 +43,7 @@ export {
   type StudyReminderWorkerLockIds,
   type StudyReminderWorkerOptions,
 } from './services/study-reminder-worker.service';
+export {
+  PlatformStudyCalendarCommandService,
+  type PlatformStudyCalendarCommandOptions,
+} from './services/platform-study-calendar-command.service';

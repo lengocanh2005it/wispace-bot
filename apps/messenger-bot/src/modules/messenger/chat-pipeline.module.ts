@@ -1,11 +1,31 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
+import { join } from 'path';
+import { trace } from '@opentelemetry/api';
+import { Repository } from 'typeorm';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
+import {
+  PlatformAgentService,
+  PlatformAgentToolsService,
+  PlatformChatHistoryService,
+} from '@wispace/chat-agent';
+import {
+  LlmSafetyEventEntity,
+  LlmUsageEventEntity,
+  PlatformLlmSafetyEventAdapter,
+  PlatformLlmUsageRecorderAdapter,
+} from '@wispace/chat-metering';
+import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
 import { LlmUsageModule } from '../llm-usage/llm-usage.module';
-import { LlmSafetyModule } from '../llm-safety/llm-safety.module';
+import { LlmUsageConfigService } from '../llm-usage/application/services/llm-usage-config.service';
 import { StudentReportModule } from '../student-report/student-report.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
+import { UserDisplayNameService } from '../study-reminder/application/services/user-display-name.service';
+import { MetricsService } from '../metrics/metrics.service';
 import { MessengerOutboundModule } from './messenger-outbound.module';
 import { MessengerAgentToolsService } from './application/agent/messenger-agent-tools.service';
 import { MessengerAgentService } from './application/agent/messenger-agent.service';
@@ -19,8 +39,6 @@ import { CHAT_QUEUE_STORE } from './domain/repositories/chat-queue.store.port';
 import { CHAT_HISTORY_STORE } from './domain/repositories/chat-history.store.port';
 import { RedisChatQueueStore } from './infrastructure/persistence/redis-chat-queue.store';
 import { ChatHistoryStoreResolver } from './infrastructure/persistence/chat-history.store.resolver';
-import { MemoryChatHistoryStore } from './infrastructure/persistence/memory-chat-history.store';
-import { RedisChatHistoryStore } from './infrastructure/persistence/redis-chat-history.store';
 import { STUDY_DATA_PORT } from './domain/ports/study-data.port';
 import { StudyDataAdapter } from './infrastructure/adapters/study-data.adapter';
 import { MessengerCalendarPort } from './infrastructure/adapters/messenger-calendar.port';
@@ -29,6 +47,11 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
 /**
  * Self-contained module for the chat pipeline:
  * debounce → rate limit → LLM agent → send.
+ *
+ * The LLM agent + tool execution delegate to the shared @wispace/chat-agent
+ * (`PlatformAgentService` + `PlatformAgentToolsService`); the debounce queue
+ * stays messenger-local because of its distributed (Redis) backend, quota
+ * messaging and bubble delivery.
  *
  * Exports: MessengerChatQueueService, MessengerAgentService,
  * MessengerAgentToolsService, MessengerRescheduleConfirmationService.
@@ -40,19 +63,138 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     ChatRateLimitModule,
     LlmExecutionModule,
     LlmUsageModule,
-    LlmSafetyModule,
     StudentReportModule,
     StudyReminderModule,
+    TypeOrmModule.forFeature([LlmUsageEventEntity, LlmSafetyEventEntity]),
   ],
   providers: [
     MessengerChatSharedConfigService,
-    MemoryChatHistoryStore,
-    RedisChatHistoryStore,
     ChatHistoryStoreResolver,
     ChatHistoryStoreStartupService,
     {
       provide: CHAT_HISTORY_STORE,
       useExisting: ChatHistoryStoreResolver,
+    },
+    {
+      provide: PlatformChatHistoryService,
+      useFactory: (
+        configService: ConfigService,
+        redisClient?: RedisClientPort | null,
+      ) =>
+        new PlatformChatHistoryService(
+          configService,
+          { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat:history:' },
+          redisClient,
+        ),
+      inject: [ConfigService, { token: REDIS_CLIENT, optional: true }],
+    },
+    {
+      provide: PlatformLlmUsageRecorderAdapter,
+      useFactory: (
+        config: LlmUsageConfigService,
+        usageRepo: Repository<LlmUsageEventEntity>,
+      ) => new PlatformLlmUsageRecorderAdapter('messenger', config, usageRepo),
+      inject: [LlmUsageConfigService, getRepositoryToken(LlmUsageEventEntity)],
+    },
+    {
+      provide: PlatformLlmSafetyEventAdapter,
+      useFactory: (
+        safetyRepo: Repository<LlmSafetyEventEntity>,
+        configService: ConfigService,
+      ) =>
+        new PlatformLlmSafetyEventAdapter(
+          'messenger',
+          safetyRepo,
+          configService,
+        ),
+      inject: [getRepositoryToken(LlmSafetyEventEntity), ConfigService],
+    },
+    {
+      provide: PlatformAgentToolsService,
+      useFactory: (
+        rescheduleService: MessengerRescheduleConfirmationService,
+        messengerTools: MessengerAgentToolsService,
+      ) =>
+        new PlatformAgentToolsService(
+          undefined,
+          undefined,
+          rescheduleService,
+          messengerTools.buildToolsOptions(),
+        ),
+      inject: [
+        MessengerRescheduleConfirmationService,
+        MessengerAgentToolsService,
+      ],
+    },
+    {
+      provide: PlatformAgentService,
+      useFactory: (
+        configService: ConfigService,
+        toolsService: PlatformAgentToolsService,
+        historyService: PlatformChatHistoryService,
+        usageRecorder: PlatformLlmUsageRecorderAdapter,
+        safetyEventService: PlatformLlmSafetyEventAdapter,
+        adapter: LlmProviderAdapter,
+        messengerTools: MessengerAgentToolsService,
+        userDisplayNameService: UserDisplayNameService,
+        metrics: MetricsService,
+      ) =>
+        new PlatformAgentService(
+          configService,
+          toolsService,
+          historyService,
+          usageRecorder,
+          safetyEventService,
+          adapter,
+          {
+            promptDir: join(__dirname, '../../../shared/prompts'),
+            promptFile: 'messenger-chat.system.txt',
+            appendHistory: false,
+            maxLlmRetries: 0,
+            toolExecutionTimeoutMs: 30_000,
+            metrics: {
+              timeLlmCall: (feature, model, round, fn) =>
+                metrics.timeLlmCall(feature, model, round, fn),
+              timeTool: (toolName, fn) => metrics.timeTool(toolName, fn),
+              llmRoundOutcomeInc: (feature, outcome) =>
+                metrics.incRoundOutcome(feature, outcome),
+            },
+            onBeforeReply: (input) => {
+              const activeSpan = trace.getActiveSpan();
+              if (activeSpan) {
+                activeSpan.setAttributes({
+                  'messenger.psid': input.externalUserId,
+                  'messenger.user_id': input.userId ?? 0,
+                  'llm.feature': 'FREE_FORM_CHAT',
+                });
+              }
+              return Promise.resolve();
+            },
+            systemPromptSuffix: async (input) => {
+              const displayName =
+                await userDisplayNameService.resolveDisplayName({
+                  psid: input.externalUserId,
+                  userId: input.userId,
+                });
+              return input.userId
+                ? `Học viên đã liên kết WISPACE (userId=${input.userId}). Tên gọi: ${displayName}.`
+                : `Học viên chưa liên kết WISPACE. Tên gọi: ${displayName}. Nhắc mở Messenger từ link trong app WISPACE nếu cần dữ liệu cá nhân.`;
+            },
+            tryFastReschedule: (ctx, userText) =>
+              messengerTools.tryFastDefaultReschedule(ctx, userText),
+          },
+        ),
+      inject: [
+        ConfigService,
+        PlatformAgentToolsService,
+        PlatformChatHistoryService,
+        PlatformLlmUsageRecorderAdapter,
+        PlatformLlmSafetyEventAdapter,
+        'LLM_PROVIDER_ADAPTER',
+        MessengerAgentToolsService,
+        UserDisplayNameService,
+        MetricsService,
+      ],
     },
     RedisChatQueueStore,
     ChatQueueStoreStartupService,

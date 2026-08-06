@@ -39,4 +39,9 @@ export { UserCalendarScheduleClient } from './clients/user-calendar-schedule.cli
 export type { ListCalendarsFn } from './clients/user-calendar-schedule.client';
 export { WispaceGoalsService } from './clients/wispace-goals.service';
 export { WispaceCalendarService } from './clients/wispace-calendar.service';
+export { WispaceTokenVerifyService } from './clients/wispace-token-verify.service';
+export type {
+  WispaceLinkVerifyFailureReason,
+  WispaceLinkVerifyResult,
+} from './types/token-verify.types';
 export { WispaceConfigService } from './config/wispace-config.service';

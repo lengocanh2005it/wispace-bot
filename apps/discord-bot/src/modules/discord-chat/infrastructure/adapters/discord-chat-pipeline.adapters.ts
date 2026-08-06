@@ -14,7 +14,7 @@ import {
   PlatformAgentService,
   PlatformChatHistoryService,
 } from '@wispace/chat-agent';
-import { DiscordChatRateLimitService } from '@discord/modules/chat-metering/application/services/discord-chat-rate-limit.service';
+import { PlatformChatRateLimitService } from '@wispace/chat-metering';
 import { DiscordOutboundService } from '../../application/services/discord-outbound.service';
 
 /**
@@ -23,7 +23,9 @@ import { DiscordOutboundService } from '../../application/services/discord-outbo
  */
 
 export class DiscordRateLimiterAdapter implements RateLimiterPort {
-  constructor(private readonly rateLimitService: DiscordChatRateLimitService) {}
+  constructor(
+    private readonly rateLimitService: PlatformChatRateLimitService,
+  ) {}
 
   async reserve(
     externalUserId: string,

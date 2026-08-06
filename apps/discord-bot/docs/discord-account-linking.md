@@ -37,7 +37,8 @@ no extra WISPACE backend endpoint needed.
 1. Exchange `code` for a Discord access token, then fetch the Discord user id
    via `GET /users/@me` (`DiscordAccountLinkService.exchangeCodeForDiscordUserId`).
 2. Call WISPACE's **shared** account-link verify API
-   (`WispaceDiscordTokenVerifyService`) — same `WISPACE_API_VERIFY_TOKEN_URL`
+   (`WispaceTokenVerifyService` from `@wispace/wispace-client`, platform
+   `'discord'`) — same `WISPACE_API_VERIFY_TOKEN_URL`
    endpoint used by all 3 bots (`WISPACE_API_VERIFY_TOKEN_URL`, no more
    per-platform URL — see root `.env.shared.example`):
 

@@ -18,6 +18,10 @@ export {
   CHAT_BURST_WINDOW_MS,
 } from './chat-rate-limit/memory-burst-counter';
 export { PostgresBurstCounter } from './chat-rate-limit/postgres-burst-counter';
+export {
+  PlatformChatRateLimitService,
+  type PlatformChatRateLimitOptions,
+} from './chat-rate-limit/platform-chat-rate-limit.service';
 export type {
   BurstCounterPort,
   ChatIdempotencyRecord,

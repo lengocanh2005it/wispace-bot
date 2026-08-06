@@ -82,31 +82,56 @@ export class PlatformAgentService {
       userId: input.userId,
       isServerChannel: input.isServerChannel,
       privateDataFetched: false,
+      richFollowUps: [],
+      linkContext: input.linkContext,
     };
 
-    const history = await this.historyService.getHistory(input.externalUserId);
+    await this.options.onBeforeReply?.(input);
+
+    const fastReschedule = this.options.tryFastReschedule
+      ? await this.options.tryFastReschedule(toolContext, input.userText)
+      : null;
+    if (fastReschedule) {
+      return {
+        ...fastReschedule,
+        privateDataFetched: false,
+        richFollowUps:
+          fastReschedule.richFollowUps ?? toolContext.richFollowUps ?? [],
+      };
+    }
+
+    const history =
+      input.history ??
+      (await this.historyService.getHistory(input.externalUserId));
 
     const result = await this.agent.reply(
       {
         externalUserId: input.externalUserId,
         userId: input.userId,
         userText: input.userText,
-        systemPrompt: this.buildSystemPrompt(),
-        history,
+        systemPrompt: await this.buildSystemPrompt(input),
+        history: history as Parameters<
+          LlmAgentService<PlatformAgentToolContext>['reply']
+        >[0]['history'],
         correlationId: input.correlationId,
       },
       toolContext,
     );
 
-    await this.historyService.appendTurn(
-      input.externalUserId,
-      input.userText,
-      result.text,
-    );
+    if (this.options.appendHistory !== false) {
+      await this.historyService.appendTurn(
+        input.externalUserId,
+        input.userText,
+        result.text,
+      );
+    }
 
     return {
       text: result.text,
       privateDataFetched: toolContext.privateDataFetched === true,
+      richFollowUps: toolContext.richFollowUps ?? [],
+      exhausted: result.exhausted,
+      toolSummary: result.toolSummary,
     };
   }
 
@@ -182,15 +207,22 @@ export class PlatformAgentService {
         maxOutputTokens: Number(
           this.configService.get<string>('OPENAI_MAX_OUTPUT_TOKENS'),
         ),
+        maxLlmRetries: this.options.maxLlmRetries,
+        toolExecutionTimeoutMs: this.options.toolExecutionTimeoutMs,
       },
-      ports,
+      {
+        ...ports,
+        metrics: this.options.metrics ?? NOOP_METRICS_PORT,
+      },
     );
   }
 
-  private buildSystemPrompt(): string {
-    return loadSystemPromptFile(
+  private async buildSystemPrompt(input: PlatformAgentInput): Promise<string> {
+    const base = loadSystemPromptFile(
       this.options.promptDir,
       this.options.promptFile,
     );
+    const suffix = await this.options.systemPromptSuffix?.(input);
+    return suffix ? `${base}\n\n${suffix}` : base;
   }
 }

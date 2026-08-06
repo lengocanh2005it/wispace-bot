@@ -5,11 +5,11 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type {
-  DiscordLinkVerifyFailureReason,
-  DiscordLinkVerifyResult,
-} from '../../domain/entities/discord-account-link.types';
+  WispaceLinkVerifyFailureReason,
+  WispaceLinkVerifyResult,
+} from '../types/token-verify.types';
 
-const VERIFY_FAILURE_REASONS: DiscordLinkVerifyFailureReason[] = [
+const VERIFY_FAILURE_REASONS: WispaceLinkVerifyFailureReason[] = [
   'NOT_FOUND',
   'EXPIRED',
   'USED',
@@ -17,21 +17,26 @@ const VERIFY_FAILURE_REASONS: DiscordLinkVerifyFailureReason[] = [
 ];
 
 /**
- * Calls WISPACE's shared account-link verify API — same
+ * Calls WISPACE's shared account-link verify API — the same
  * `WISPACE_API_VERIFY_TOKEN_URL` endpoint used by all 3 bots, payload
- * `{ token, value, platform }` — WISPACE owns the token and its expiry/usage
- * state, we just verify + resolve `userId` server-to-server.
+ * `{ token, value, platform }`. WISPACE owns the token and its expiry/usage
+ * state; we just verify + resolve `userId` server-to-server. The platform
+ * string is injected per app (e.g. 'discord', 'zalo') — mirrors how
+ * `WispaceGoalsService` takes its per-app id-header.
  */
 @Injectable()
-export class WispaceDiscordTokenVerifyService {
-  private readonly logger = new Logger(WispaceDiscordTokenVerifyService.name);
+export class WispaceTokenVerifyService {
+  private readonly logger = new Logger(WispaceTokenVerifyService.name);
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly platform: string,
+  ) {}
 
   async verifyToken(
     token: string,
-    discordUserId: string,
-  ): Promise<DiscordLinkVerifyResult> {
+    value: string,
+  ): Promise<WispaceLinkVerifyResult> {
     const url = this.getVerifyUrl();
     const response = await fetch(url, {
       method: 'POST',
@@ -41,8 +46,8 @@ export class WispaceDiscordTokenVerifyService {
       },
       body: JSON.stringify({
         token: token.trim(),
-        value: discordUserId.trim(),
-        platform: 'discord',
+        value: value.trim(),
+        platform: this.platform,
       }),
       signal: AbortSignal.timeout(10_000),
     });
@@ -61,7 +66,7 @@ export class WispaceDiscordTokenVerifyService {
     const bodyText =
       payload === undefined ? '' : JSON.stringify(payload).slice(0, 500);
     throw new InternalServerErrorException(
-      `WISPACE verify-discord-token failed: HTTP ${response.status} ${response.statusText} - ${bodyText}`,
+      `WISPACE verify-${this.platform}-token failed: HTTP ${response.status} ${response.statusText} - ${bodyText}`,
     );
   }
 
@@ -106,10 +111,10 @@ export class WispaceDiscordTokenVerifyService {
   private parseSuccessPayload(
     payload: unknown,
     token: string,
-  ): DiscordLinkVerifyResult {
+  ): WispaceLinkVerifyResult {
     if (!payload || typeof payload !== 'object') {
       throw new InternalServerErrorException(
-        'WISPACE verify-discord-token returned invalid JSON body',
+        `WISPACE verify-${this.platform}-token returned invalid JSON body`,
       );
     }
 
@@ -126,12 +131,12 @@ export class WispaceDiscordTokenVerifyService {
     const userId = this.readPositiveInt(record.userId);
     if (!userId) {
       throw new InternalServerErrorException(
-        'WISPACE verify-discord-token missing userId in success response',
+        `WISPACE verify-${this.platform}-token missing userId in success response`,
       );
     }
 
     this.logger.log(
-      `WISPACE verify-discord-token OK userId=${userId} token=${token.slice(0, 8)}…`,
+      `WISPACE verify-${this.platform}-token OK userId=${userId} token=${token.slice(0, 8)}…`,
     );
 
     return { valid: true, userId };
@@ -139,7 +144,7 @@ export class WispaceDiscordTokenVerifyService {
 
   private parseFailurePayload(
     payload: unknown,
-  ): DiscordLinkVerifyResult | undefined {
+  ): WispaceLinkVerifyResult | undefined {
     if (!payload || typeof payload !== 'object') {
       return undefined;
     }
@@ -155,7 +160,7 @@ export class WispaceDiscordTokenVerifyService {
 
   private readFailureReason(
     value: unknown,
-  ): DiscordLinkVerifyFailureReason | undefined {
+  ): WispaceLinkVerifyFailureReason | undefined {
     if (typeof value !== 'string') {
       return undefined;
     }

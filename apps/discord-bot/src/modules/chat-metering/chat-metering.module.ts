@@ -7,12 +7,11 @@ import {
   LlmSafetyEventEntity,
   LlmUsageEventEntity,
   LlmUsageConfigService,
+  PlatformChatRateLimitService,
   PlatformLlmUsageRecorderAdapter,
   PlatformLlmSafetyEventAdapter,
 } from '@wispace/chat-metering';
 import { Repository } from 'typeorm';
-import { ChatRateLimitConfigService } from './application/services/chat-rate-limit-config.service';
-import { DiscordChatRateLimitService } from './application/services/discord-chat-rate-limit.service';
 
 @Module({
   imports: [
@@ -24,9 +23,26 @@ import { DiscordChatRateLimitService } from './application/services/discord-chat
     ]),
   ],
   providers: [
-    ChatRateLimitConfigService,
-    DiscordChatRateLimitService,
     LlmUsageConfigService,
+    {
+      provide: PlatformChatRateLimitService,
+      useFactory: (
+        configService: ConfigService,
+        dailyUsageRepo: Repository<ChatDailyUsageEntity>,
+        idempotencyRepo: Repository<ChatIdempotencyEntity>,
+      ) =>
+        new PlatformChatRateLimitService(
+          { platform: 'discord', requireEnv: true, lenientEnabledCheck: true },
+          configService,
+          dailyUsageRepo,
+          idempotencyRepo,
+        ),
+      inject: [
+        ConfigService,
+        getRepositoryToken(ChatDailyUsageEntity),
+        getRepositoryToken(ChatIdempotencyEntity),
+      ],
+    },
     {
       provide: PlatformLlmUsageRecorderAdapter,
       useFactory: (
@@ -51,7 +67,7 @@ import { DiscordChatRateLimitService } from './application/services/discord-chat
     },
   ],
   exports: [
-    DiscordChatRateLimitService,
+    PlatformChatRateLimitService,
     PlatformLlmUsageRecorderAdapter,
     PlatformLlmSafetyEventAdapter,
   ],
