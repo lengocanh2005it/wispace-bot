@@ -8,6 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { parse as parseDotenv } from 'dotenv';
 import type {
   DopplerRuntimeSyncResult,
   DopplerWebhookPayload,
@@ -225,7 +226,9 @@ export class DopplerRuntimeSyncService {
     content: string,
     hostDeployDir: string,
   ): Promise<string> {
-    const entries = parseEnvLines(content);
+    const entries = new Map<string, string>(
+      Object.entries(parseDotenv(content)),
+    );
 
     entries.set('DOPPLER_RUNTIME_SYNC_ENABLED', 'true');
     entries.set('DEPLOY_DIR', '/deploy');
@@ -339,35 +342,6 @@ export class DopplerRuntimeSyncService {
 
     return value;
   }
-}
-
-function parseEnvLines(content: string): Map<string, string> {
-  const entries = new Map<string, string>();
-
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) {
-      continue;
-    }
-
-    const idx = trimmed.indexOf('=');
-    if (idx <= 0) {
-      continue;
-    }
-
-    const key = trimmed.slice(0, idx).trim();
-    let value = trimmed.slice(idx + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-
-    entries.set(key, value);
-  }
-
-  return entries;
 }
 
 function serializeEnvLines(entries: Map<string, string>): string {

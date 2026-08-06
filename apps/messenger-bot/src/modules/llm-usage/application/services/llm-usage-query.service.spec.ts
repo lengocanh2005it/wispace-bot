@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import { MESSENGER_MAPPING_READER } from '@messenger/shared/ports/messenger-mapping-reader.port';
+import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import { LLM_USAGE_REPOSITORY } from '../../domain/repositories/llm-usage.repository.port';
 import { LlmUsageConfigService } from './llm-usage-config.service';
 import { LlmUsageQueryService } from './llm-usage-query.service';
@@ -39,7 +39,7 @@ describe('LlmUsageQueryService', () => {
           },
         },
         {
-          provide: MESSENGER_MAPPING_READER,
+          provide: MESSENGER_REPOSITORY,
           useValue: {
             findActiveMappingByPsid,
             findActiveMappingByUserId,

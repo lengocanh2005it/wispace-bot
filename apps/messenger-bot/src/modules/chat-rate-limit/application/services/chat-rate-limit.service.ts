@@ -1,8 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type {
-  ChatQuotaCheckResult,
-  ChatRateLimitSettings,
-} from '../../domain/entities/chat-quota.types';
+import type { ChatQuotaCheckResult } from '../../domain/entities/chat-quota.types';
 import type { RecoverIdempotencyOutcome } from '../../domain/entities/chat-idempotency.types';
 import {
   CHAT_QUOTA_REPOSITORY,
@@ -34,22 +31,6 @@ export class ChatRateLimitService {
     private readonly quotaEventRecorder: ChatQuotaEventRecorderService,
     private readonly metrics: MetricsService,
   ) {}
-
-  getSettings(): ChatRateLimitSettings {
-    return this.configService.getSettings();
-  }
-
-  isEnabled(): boolean {
-    return this.configService.isEnabled();
-  }
-
-  isWhitelisted(psid: string): boolean {
-    return this.configService.isWhitelisted(psid);
-  }
-
-  shouldEnforceForPsid(psid: string): boolean {
-    return this.configService.shouldEnforceForPsid(psid);
-  }
 
   async reserveFreeFormSlot(
     psid: string,
@@ -104,7 +85,6 @@ export class ChatRateLimitService {
       userId: params.userId,
       usageDate,
       idempotencyKey: params.idempotencyKey,
-      dailyLimit: freeFormDailyLimit,
       freeFormDailyLimit,
       burstLimit: burstPerMinute,
     });
@@ -118,7 +98,6 @@ export class ChatRateLimitService {
       userId?: number;
       usageDate: string;
       idempotencyKey: string;
-      dailyLimit: number;
       freeFormDailyLimit: number;
       burstLimit: number;
     },
@@ -127,7 +106,7 @@ export class ChatRateLimitService {
       userId: params.userId,
       usageDate: params.usageDate,
       idempotencyKey: params.idempotencyKey,
-      dailyLimit: params.dailyLimit,
+      dailyLimit: params.freeFormDailyLimit,
     });
 
     if (outcome.status === 'burst_limit_exceeded') {
@@ -154,7 +133,7 @@ export class ChatRateLimitService {
     if (outcome.status === 'daily_limit_exceeded') {
       await this.burstCounter.releaseReservation(psid);
       // Count is known to be >= dailyLimit — no need for a second DB read.
-      const used = params.dailyLimit;
+      const used = params.freeFormDailyLimit;
       this.metrics.incQuotaDenied('DAILY_LIMIT');
       this.logQuotaDeny(
         'DAILY_LIMIT',

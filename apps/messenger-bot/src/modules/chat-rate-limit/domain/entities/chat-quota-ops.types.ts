@@ -2,7 +2,8 @@ export interface ChatQuotaOpsSummary {
   usageDate: string;
   stuckReserved: number;
   stuckReservedMs: number;
-  denyLogs24h: number;
+  /** Set by OpsHealthService from the message log — absent from ChatQuotaOpsService.getSummary(). */
+  denyLogs24h?: number;
   usersAtDailyLimit: number;
   dailyLimit: number;
   idempotencyByStatus: Record<string, number>;

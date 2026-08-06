@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { join } from 'path';
@@ -65,7 +65,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
 @Module({
   imports: [
     BotCommonModule,
-    ZaloOauthModule,
+    forwardRef(() => ZaloOauthModule),
     ZaloWispaceModule,
     TypeOrmModule.forFeature([
       ChatDailyUsageEntity,
@@ -392,10 +392,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     'LLM_PROVIDER_ADAPTER',
     ZaloChatService,
     ZaloOutboundService,
-    PlatformChatRateLimitService,
     PlatformLlmUsageRecorderAdapter,
-    PlatformCleanupCronService,
-    CleanupCronService,
     PlatformDeadLetterService,
   ],
 })

@@ -6,6 +6,7 @@ import { PgAdvisoryLockService } from '@wispace/bot-common';
 import { MESSENGER_WEBHOOK_DEAD_LETTER_REPOSITORY } from '../../domain/repositories/messenger-webhook-dead-letter.repository.port';
 import type { MessengerWebhookDeadLetterRepositoryPort } from '../../domain/repositories/messenger-webhook-dead-letter.repository.port';
 import { MessengerService } from './messenger.service';
+import { readEnvPositiveInt } from '@messenger/shared/config/env-helpers';
 
 @Injectable()
 export class MessengerWebhookDeadLetterCronService {
@@ -42,15 +43,21 @@ export class MessengerWebhookDeadLetterCronService {
   }
 
   private async runRetryBatch(): Promise<void> {
-    const maxRetries = this.readPositiveInt(
+    const maxRetries = readEnvPositiveInt(
+      this.configService,
       'WEBHOOK_DEAD_LETTER_MAX_RETRIES',
       5,
     );
-    const minAgeMs = this.readPositiveInt(
+    const minAgeMs = readEnvPositiveInt(
+      this.configService,
       'WEBHOOK_DEAD_LETTER_MIN_RETRY_AGE_MS',
       60_000,
     );
-    const limit = this.readPositiveInt('WEBHOOK_DEAD_LETTER_RETRY_LIMIT', 20);
+    const limit = readEnvPositiveInt(
+      this.configService,
+      'WEBHOOK_DEAD_LETTER_RETRY_LIMIT',
+      20,
+    );
 
     const olderThan = new Date(Date.now() - minAgeMs);
 
@@ -107,14 +114,5 @@ export class MessengerWebhookDeadLetterCronService {
     this.logger.log(
       `Dead-letter retry done: replayed=${replayed}, failed=${failed}, abandoned=${abandoned}`,
     );
-  }
-
-  private readPositiveInt(key: string, defaultValue: number): number {
-    const raw = this.configService.get<string>(key)?.trim();
-    if (!raw) return defaultValue;
-    const value = Number(raw);
-    return Number.isFinite(value) && value > 0
-      ? Math.floor(value)
-      : defaultValue;
   }
 }

@@ -1,5 +1,3 @@
-import type { MessengerLinkAttemptStatus } from '../../domain/types/messenger-link-verify.types';
-
 export interface RouterContext {
   isDuplicateMid?: boolean;
   isDuplicatePostback?: boolean;
@@ -10,6 +8,5 @@ export interface RouterContext {
     cadence: string;
     userId: number;
   } | null;
-  linkAttemptStatus?: MessengerLinkAttemptStatus;
   shouldEnforceRateLimit?: boolean;
 }

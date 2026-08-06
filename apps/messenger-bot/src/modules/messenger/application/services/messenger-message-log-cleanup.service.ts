@@ -7,6 +7,10 @@ import {
 } from '@wispace/cleanup-cron';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
+import {
+  readEnvBoolean,
+  readEnvPositiveInt,
+} from '@messenger/shared/config/env-helpers';
 
 const DEFAULT_RETENTION_DAYS = 90;
 
@@ -32,33 +36,19 @@ export class MessengerMessageLogCleanupService {
   ) {}
 
   isEnabled(): boolean {
-    const raw = this.configService
-      .get<string>(CLEANUP_CONFIG.enabledConfigKey)
-      ?.trim()
-      .toLowerCase();
-
-    if (!raw) {
-      return true;
-    }
-
-    return raw === 'true' || raw === '1' || raw === 'yes';
+    return readEnvBoolean(
+      this.configService,
+      CLEANUP_CONFIG.enabledConfigKey,
+      true,
+    );
   }
 
   getRetentionDays(): number {
-    const raw = this.configService
-      .get<string>(CLEANUP_CONFIG.retentionDaysConfigKey)
-      ?.trim();
-
-    if (!raw) {
-      return CLEANUP_CONFIG.defaultRetentionDays;
-    }
-
-    const value = Number(raw);
-    if (!Number.isFinite(value) || value <= 0) {
-      return CLEANUP_CONFIG.defaultRetentionDays;
-    }
-
-    return Math.floor(value);
+    return readEnvPositiveInt(
+      this.configService,
+      CLEANUP_CONFIG.retentionDaysConfigKey,
+      CLEANUP_CONFIG.defaultRetentionDays,
+    );
   }
 
   async purgeExpiredLogs(): Promise<{ deleted: number; cutoff: string }> {

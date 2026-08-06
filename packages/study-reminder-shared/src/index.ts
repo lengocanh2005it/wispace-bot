@@ -4,11 +4,10 @@ export * from './types/study-reminder.types';
 // Ports
 export * from './ports/message-sender.port';
 export * from './ports/mapping-reader.port';
-export * from './ports/display-name-cache.port';
 export * from './ports/study-reminder-job.repository.port';
 export * from './ports/reminder-generator.port';
-export * from './ports/metrics-hook.port';
 export * from './ports/error-classifier.port';
+export * from './ports/metrics-hook.port';
 
 // Entities
 export { StudyReminderJobEntity } from './entities/study-reminder-job.entity';

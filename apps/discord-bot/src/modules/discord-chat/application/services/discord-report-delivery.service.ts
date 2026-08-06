@@ -62,9 +62,6 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
         `Failed to send report to externalUserId=${mapping.externalUserId}: ${msg}`,
       );
 
-      if (msg.includes('Cannot send messages to this user')) {
-        return { ok: false, reason: 'DELIVERY_FAILED' };
-      }
       if (msg.includes('429') || msg.includes('rate limit')) {
         return { ok: false, reason: 'RETRYABLE' };
       }

@@ -29,10 +29,8 @@ import {
 import { CommonModule } from '../../shared/common/common.module';
 import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
 import { UserEntity } from '../../infrastructure/database/entities/user.entity';
-import {
-  MESSENGER_MAPPING_READER,
-  type MessengerMappingReaderPort,
-} from '../../shared/ports/messenger-mapping-reader.port';
+import { MESSENGER_REPOSITORY } from '../messenger/domain/repositories/messenger.repository.port';
+import type { MessengerRepositoryPort } from '../messenger/domain/repositories/messenger.repository.port';
 import { MessengerOutboundModule } from '../messenger/messenger-outbound.module';
 import { MessengerOutboundService } from '../messenger/application/services/messenger-outbound.service';
 import { StudentReportModule } from '../student-report/student-report.module';
@@ -113,9 +111,9 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
 
     {
       provide: MAPPING_READER,
-      useFactory: (reader: MessengerMappingReaderPort): MappingReaderPort => ({
+      useFactory: (repository: MessengerRepositoryPort): MappingReaderPort => ({
         findActiveMappings: (platform) =>
-          reader.findActiveMappingsWithPsid().then((list) =>
+          repository.findActiveMappingsWithPsid().then((list) =>
             list
               .filter((m) => m.psid)
               .map((m) => ({
@@ -125,7 +123,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
               })),
           ),
         findActiveMappingByExternalUserId: (platform, externalUserId) =>
-          reader.findActiveMappingByPsid(externalUserId).then((m) =>
+          repository.findActiveMappingByPsid(externalUserId).then((m) =>
             m?.psid
               ? {
                   externalUserId: m.psid,
@@ -135,7 +133,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
               : null,
           ),
       }),
-      inject: [MESSENGER_MAPPING_READER],
+      inject: [MESSENGER_REPOSITORY],
     },
 
     {

@@ -1,39 +1,7 @@
-import pg from 'pg';
+import { createPool } from './_db.mjs';
+import { parseArgs } from './_args.mjs';
 
-function parseArgs(argv) {
-  const args = {
-    psid: null,
-    userId: null,
-    date: null,
-    ops: false,
-  };
-
-  for (const arg of argv) {
-    if (arg.startsWith('--psid=')) {
-      args.psid = arg.slice('--psid='.length).trim();
-    } else if (arg.startsWith('--user-id=')) {
-      const value = Number(arg.slice('--user-id='.length));
-      if (!Number.isFinite(value)) {
-        throw new Error('--user-id must be a number');
-      }
-      args.userId = value;
-    } else if (arg.startsWith('--date=')) {
-      args.date = arg.slice('--date='.length).trim();
-    } else if (arg === '--ops') {
-      args.ops = true;
-    } else if (arg === '--help' || arg === '-h') {
-      printHelp();
-      process.exit(0);
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-
-  return args;
-}
-
-function printHelp() {
-  console.log(`Usage: npm run chat-quota:status -- [options]
+const HELP = `Usage: npm run chat-quota:status -- [options]
 
 Options:
   --psid=<psid>         Filter by Messenger PSID
@@ -41,8 +9,7 @@ Options:
   --date=YYYY-MM-DD     Usage date (ICT calendar day). Default: today per CHAT_USAGE_TIMEZONE
   --ops                 Fleet-wide I1 ops summary (ignore psid/user filters)
   -h, --help            Show this help
-`);
-}
+`;
 
 function todayUsageDate(timezone, now = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -120,7 +87,33 @@ function readRetentionDays() {
   return Math.floor(value);
 }
 
-const args = parseArgs(process.argv.slice(2));
+const args = parseArgs(process.argv.slice(2), {
+  defaults: { psid: null, userId: null, date: null, ops: false },
+  help: HELP,
+  handle: (a, arg) => {
+    if (arg.startsWith('--psid=')) {
+      a.psid = arg.slice('--psid='.length).trim();
+      return true;
+    }
+    if (arg.startsWith('--user-id=')) {
+      const value = Number(arg.slice('--user-id='.length));
+      if (!Number.isFinite(value)) {
+        throw new Error('--user-id must be a number');
+      }
+      a.userId = value;
+      return true;
+    }
+    if (arg.startsWith('--date=')) {
+      a.date = arg.slice('--date='.length).trim();
+      return true;
+    }
+    if (arg === '--ops') {
+      a.ops = true;
+      return true;
+    }
+    return false;
+  },
+});
 const timezone =
   process.env.CHAT_USAGE_TIMEZONE?.trim() ?? 'Asia/Ho_Chi_Minh';
 const usageDate = args.date ?? todayUsageDate(timezone);
@@ -134,17 +127,7 @@ const stuckReservedMs = readStuckReservedMs();
 const retentionDays = readRetentionDays();
 const stuckBefore = new Date(Date.now() - stuckReservedMs);
 
-const pool = new pg.Pool({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT ?? 5432),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  ssl:
-    process.env.DB_SSL === 'true'
-      ? { rejectUnauthorized: true, ca: process.env.DB_SSL_CA || undefined }
-      : undefined,
-});
+const pool = createPool();
 
 try {
   if (args.ops) {

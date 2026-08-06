@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { PgAdvisoryLockService } from '@wispace/bot-common';
 import {
   StudyReminderScheduleService,
@@ -16,20 +15,12 @@ import {
   MESSAGE_SENDER,
   MAPPING_READER,
   STUDY_REMINDER_JOB_REPOSITORY,
-  DISPLAY_NAME_CACHE,
 } from '@wispace/study-reminder-shared';
-import { OpsHealthService, OPS_HEALTH_REPOSITORY } from '@wispace/ops-health';
-import { TypeormOpsHealthRepository } from '@wispace/ops-health';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 import { BotCommonModule } from '@wispace/bot-common';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloOutboundService } from '../zalo-chat/application/services/zalo-outbound.service';
-import {
-  REDIS_CLIENT,
-  RedisUserDisplayNameCache,
-  type RedisClientPort,
-} from '@wispace/bot-common';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { WispaceCalendarService } from '@wispace/wispace-client';
 
@@ -60,21 +51,6 @@ import { WispaceCalendarService } from '@wispace/wispace-client';
     {
       provide: STUDY_REMINDER_JOB_REPOSITORY,
       useExisting: TypeormStudyReminderJobRepository,
-    },
-    {
-      provide: RedisUserDisplayNameCache,
-      useFactory: (
-        redisClient: RedisClientPort,
-        configService: ConfigService,
-      ) =>
-        new RedisUserDisplayNameCache(redisClient, configService, {
-          platform: 'zalo',
-        }),
-      inject: [REDIS_CLIENT, ConfigService],
-    },
-    {
-      provide: DISPLAY_NAME_CACHE,
-      useExisting: RedisUserDisplayNameCache,
     },
     StudyReminderScheduleService,
     StudyReminderSyncService,
@@ -120,13 +96,6 @@ import { WispaceCalendarService } from '@wispace/wispace-client';
       ],
     },
     TypeormStudyReminderJobRepository,
-    {
-      provide: OPS_HEALTH_REPOSITORY,
-      useFactory: (dataSource: DataSource) =>
-        new TypeormOpsHealthRepository(dataSource, 'zalo'),
-      inject: [DataSource],
-    },
-    OpsHealthService,
   ],
   exports: [
     StudyReminderSyncService,

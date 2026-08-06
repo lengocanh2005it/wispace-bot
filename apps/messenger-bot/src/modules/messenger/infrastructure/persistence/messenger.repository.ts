@@ -182,21 +182,6 @@ export class MessengerRepository
     return Array.from(byPsid.values());
   }
 
-  private async deactivateDuplicateMappingsForPsid(
-    psid: string,
-    keepId: number,
-  ): Promise<void> {
-    await this.mappingRepo.update(
-      {
-        platform: PLATFORM,
-        externalUserId: psid,
-        id: Not(keepId),
-        status: 'ACTIVE',
-      },
-      { status: 'INACTIVE' },
-    );
-  }
-
   async cleanupActiveDuplicateMappings(): Promise<number> {
     const result = await this.mappingRepo.manager.query<Array<{ id: number }>>(
       `

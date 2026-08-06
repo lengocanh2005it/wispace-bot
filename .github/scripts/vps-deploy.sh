@@ -92,11 +92,7 @@ export DEPLOY_GID=${DEPLOY_GID:-1001}
 # check fails after the switch.
 PREV_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$APP_NAME" 2>/dev/null || true)
 
-if [ "$FORCE_RECREATE" = "true" ]; then
-  docker compose -f "$COMPOSE_FILE" pull "$APP_NAME" || true
-else
-  docker compose -f "$COMPOSE_FILE" pull "$APP_NAME" 2>/dev/null || true
-fi
+if [ "$FORCE_RECREATE" = "true" ]; then docker compose -f "$COMPOSE_FILE" pull "$APP_NAME" || true; else docker compose -f "$COMPOSE_FILE" pull "$APP_NAME" 2>/dev/null || true; fi
 
 # Apply DB migrations with the NEW image before switching traffic.
 # Guarded by a Postgres advisory lock: all 3 bots share one DB, so a
@@ -142,11 +138,7 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ -n "${MIGRATION_CMD:-}" ]; then
   fi
 fi
 
-if [ "$FORCE_RECREATE" = "true" ]; then
-  docker compose -f "$COMPOSE_FILE" up -d --force-recreate "$APP_NAME"
-else
-  docker compose -f "$COMPOSE_FILE" up -d "$APP_NAME"
-fi
+if [ "$FORCE_RECREATE" = "true" ]; then docker compose -f "$COMPOSE_FILE" up -d --force-recreate "$APP_NAME"; else docker compose -f "$COMPOSE_FILE" up -d "$APP_NAME"; fi
 
 echo "Deploy complete: $APP_NAME ($IMAGE)"
 

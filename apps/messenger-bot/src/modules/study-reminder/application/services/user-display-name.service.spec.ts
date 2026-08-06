@@ -1,5 +1,5 @@
 import { UserDisplayNameService } from './user-display-name.service';
-import type { MessengerMappingReaderPort } from '@messenger/shared/ports/messenger-mapping-reader.port';
+import type { MessengerRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import type { UserDisplayNameCachePort } from '../../domain/repositories/user-display-name-cache.port';
 
 describe('UserDisplayNameService', () => {
@@ -7,10 +7,11 @@ describe('UserDisplayNameService', () => {
     findOne: jest.fn(),
   };
 
-  const mappingReader: MessengerMappingReaderPort = {
+  const mappingReader: Pick<
+    MessengerRepositoryPort,
+    'findActiveMappingByPsid'
+  > = {
     findActiveMappingByPsid: jest.fn(),
-    findActiveMappingByUserId: jest.fn(),
-    findActiveMappingsWithPsid: jest.fn(),
   };
 
   const cacheGet = jest.fn();

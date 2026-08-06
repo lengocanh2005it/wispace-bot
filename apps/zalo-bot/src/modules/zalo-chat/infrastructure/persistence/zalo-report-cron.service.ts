@@ -10,7 +10,10 @@ import {
   todayReportDate,
 } from '@wispace/scheduler-core';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
-import { ZaloReportDeliveryService } from '../../application/services/zalo-report-delivery.service';
+import {
+  ZaloOutboundService,
+  ZaloSendError,
+} from '../../application/services/zalo-outbound.service';
 
 const CONCURRENCY = 3;
 
@@ -23,7 +26,7 @@ export class ZaloReportCronService {
     private readonly linkRepo: Repository<ZaloAccountLinkEntity>,
     @Inject(REPORT_CLAIM_REPOSITORY)
     private readonly claimRepo: ReportClaimRepositoryPort,
-    private readonly deliveryService: ZaloReportDeliveryService,
+    private readonly outbound: ZaloOutboundService,
     private readonly reportService: PlatformStudentReportService,
   ) {}
 
@@ -92,10 +95,21 @@ export class ZaloReportCronService {
       const report = await this.reportService.generateReport(
         link.externalUserId,
       );
-      const delivered = await this.deliveryService.sendReport(
-        link.externalUserId,
-        report,
-      );
+      let delivered = true;
+      try {
+        await this.outbound.sendText(link.externalUserId, report);
+      } catch (error) {
+        if (error instanceof ZaloSendError && error.is48hWindowError()) {
+          this.logger.warn(
+            `48h window closed for Zalo user ${link.externalUserId}, report not delivered`,
+          );
+        } else {
+          this.logger.error(
+            `Failed to send report to Zalo user ${link.externalUserId}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        delivered = false;
+      }
       if (delivered) {
         if (link.userId) {
           await this.claimRepo

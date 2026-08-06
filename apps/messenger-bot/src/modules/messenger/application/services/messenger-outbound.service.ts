@@ -12,7 +12,6 @@ import {
 } from '../utils/proactive-send.utils';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
-import type { MessageSenderPort } from '../ports/message-sender.port';
 import { readMessengerBubbleLimits } from '../utils/messenger-bubble-config.utils';
 import { splitMessengerBubbles } from '@messenger/shared/utils/messenger-text.utils';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
@@ -53,7 +52,7 @@ export class MessengerPartialSendError extends MessengerApiError {
 export type MessengerSenderAction = 'mark_seen' | 'typing_on' | 'typing_off';
 
 @Injectable()
-export class MessengerOutboundService implements MessageSenderPort {
+export class MessengerOutboundService {
   private readonly logger = new Logger(MessengerOutboundService.name);
 
   constructor(

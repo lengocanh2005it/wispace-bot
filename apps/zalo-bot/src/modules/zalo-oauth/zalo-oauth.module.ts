@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
@@ -10,9 +10,11 @@ import { ZaloTokenRefreshService } from './application/services/zalo-token-refre
 import { ZaloOauthStateService } from './application/services/zalo-oauth-state.service';
 import { ZaloAccountLinkService } from './application/services/zalo-account-link.service';
 import { ZaloOauthController } from './presentation/controllers/zalo-oauth.controller';
+import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 
 @Module({
   imports: [
+    forwardRef(() => ZaloChatModule),
     TypeOrmModule.forFeature([
       ZaloOaTokenEntity,
       ZaloOauthStateEntity,

@@ -1,13 +1,10 @@
-import { Controller, Get, Inject, Logger, Query, Res } from '@nestjs/common';
+import { Controller, Get, Logger, Query, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { ZaloAccountLinkService } from '../../application/services/zalo-account-link.service';
 import { ZaloOauthStateService } from '../../application/services/zalo-oauth-state.service';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
-import {
-  ZALO_MESSAGE_SENDER,
-  type ZaloMessageSenderPort,
-} from '@zalo/modules/zalo-webhook/domain/ports/zalo-message-sender.port';
+import { ZaloOutboundService } from '@zalo/modules/zalo-chat/application/services/zalo-outbound.service';
 
 const LINK_WELCOME_MESSAGE =
   'Tài khoản WISPACE của bạn đã liên kết thành công với Zalo! 🎉';
@@ -21,8 +18,7 @@ export class ZaloOauthController {
     private readonly accountLinkService: ZaloAccountLinkService,
     private readonly oauthStateService: ZaloOauthStateService,
     private readonly tokenVerifyService: WispaceTokenVerifyService,
-    @Inject(ZALO_MESSAGE_SENDER)
-    private readonly outboundService: ZaloMessageSenderPort,
+    private readonly outboundService: ZaloOutboundService,
   ) {}
 
   /** `token` is WISPACE's own link token, passed through as-is (WISPACE owns its expiry/usage state). */

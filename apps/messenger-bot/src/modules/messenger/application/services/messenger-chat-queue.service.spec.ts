@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import type { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
+import type { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import type { ChatQuotaCheckResult } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota.types';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerAgentService } from '../agent/messenger-agent.service';
@@ -15,6 +16,7 @@ import {
   MessengerPartialSendError,
 } from './messenger-outbound.service';
 import { MessengerChatQueueService } from './messenger-chat-queue.service';
+import type { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import type { MetricsService } from '@messenger/modules/metrics/metrics.service';
 
 describe('MessengerChatQueueService', () => {
@@ -44,21 +46,11 @@ describe('MessengerChatQueueService', () => {
       sendRichFollowUps,
     } as unknown as MessengerOutboundService;
 
-    const replyStream = jest.fn(
-      // Returns an AsyncIterable that yields a single `done` event.
-      // Tests can override with replyStream.mockImplementationOnce(...).
-      () =>
-        (function* () {
-          yield {
-            type: 'done' as const,
-            reply: { text: 'Bot reply', richFollowUps: [] as [] },
-          };
-        })(),
+    const reply = jest.fn(() =>
+      Promise.resolve({ text: 'Bot reply', richFollowUps: [] as [] }),
     );
-    // Keep `reply` alias so existing assertions still reference the same mock.
-    const reply = replyStream;
     const messengerAgentService = {
-      replyStream,
+      reply,
     } as unknown as MessengerAgentService;
 
     const getHistory = jest.fn(() => []);
@@ -77,6 +69,9 @@ describe('MessengerChatQueueService', () => {
       reserveFreeFormSlot,
       markCompleted,
       refundFreeFormSlot,
+    } as unknown as ChatRateLimitService;
+
+    const chatRateLimitConfig = {
       shouldEnforceForPsid: jest.fn(() => options.shouldEnforce ?? false),
       getSettings: jest.fn(() => ({
         enabled: true,
@@ -89,12 +84,19 @@ describe('MessengerChatQueueService', () => {
         mergedTextMaxChars: 100,
         burstCountsRefunded: false,
       })),
-    } as unknown as ChatRateLimitService;
+    } as unknown as ChatRateLimitConfigService;
 
     const logMessage = jest.fn(() => Promise.resolve());
     const messengerRepository = {
       logMessage,
     } as unknown as MessengerRepositoryPort;
+
+    const sharedConfig = {
+      isDistributedQueueEnabled: () => false,
+      getProcessingStuckMs: () => 600_000,
+      getQueueStaleTtlMs: () => 3_600_000,
+      getQueueCleanupIntervalMs: () => 900_000,
+    } as unknown as MessengerChatSharedConfigService;
 
     const configService = {
       get: (key: string) => {
@@ -123,8 +125,10 @@ describe('MessengerChatQueueService', () => {
       messengerAgentService,
       chatHistory,
       chatRateLimitService,
+      chatRateLimitConfig,
       metrics,
       messengerRepository,
+      sharedConfig,
     );
     createdServices.push(service);
 
@@ -308,15 +312,9 @@ describe('MessengerChatQueueService', () => {
       refundFreeFormSlot,
       markCompleted,
     } = createService();
-    reply.mockImplementationOnce(() => {
-      const err = new Error('OpenAI down');
-      // Return an object satisfying AsyncIterable that throws on first next()
-      return {
-        [Symbol.asyncIterator]() {
-          return { next: () => Promise.reject(err) };
-        },
-      };
-    });
+    reply.mockImplementationOnce(() =>
+      Promise.reject(new Error('OpenAI down')),
+    );
 
     service.enqueue({
       psid: 'psid-1',

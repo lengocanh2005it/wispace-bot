@@ -8,6 +8,7 @@ import {
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import { LlmSafetyService } from '@messenger/modules/llm-safety/llm-safety.service';
+import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
 import type {
   OpsHealthAlert,
   OpsHealthSnapshot,
@@ -29,16 +30,7 @@ export class OpsHealthService {
   ) {}
 
   isAlertCronEnabled(): boolean {
-    const raw = this.configService
-      .get<string>('OPS_HEALTH_ALERT_ENABLED')
-      ?.trim()
-      .toLowerCase();
-
-    if (!raw) {
-      return true;
-    }
-
-    return raw === 'true' || raw === '1' || raw === 'yes';
+    return readEnvBoolean(this.configService, 'OPS_HEALTH_ALERT_ENABLED', true);
   }
 
   async collectSnapshot(): Promise<OpsHealthSnapshot> {

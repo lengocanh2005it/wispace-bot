@@ -10,7 +10,6 @@ import {
   ReportCronLockService,
   REPORT_SEND_JOB_REPOSITORY,
   REPORT_CLAIM_REPOSITORY,
-  GOALS_DATA_PORT,
 } from '@wispace/scheduler-core';
 import {
   ReportSendJobEntity,
@@ -26,11 +25,9 @@ import { DiscordReportClaimRepository } from './infrastructure/persistence/disco
 import { DiscordReportCronService } from './application/services/discord-report-cron.service';
 import { DiscordReportRetryDispatchService } from './application/services/discord-report-retry-dispatch.service';
 import { DiscordReportOrchestrationService } from './application/services/discord-report-orchestration.service';
-import { DiscordGoalsDataAdapter } from './infrastructure/adapters/discord-goals-data.adapter';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
 import { BotCommonModule } from '@wispace/bot-common';
-import { AccountLinkModule } from '../account-link/account-link.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
 
@@ -44,15 +41,10 @@ import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
     DiscordOutboundModule,
     DiscordSharedModule,
     BotCommonModule,
-    AccountLinkModule,
     WispaceModule,
     ChatMeteringModule,
   ],
   providers: [
-    {
-      provide: GOALS_DATA_PORT,
-      useExisting: DiscordGoalsDataAdapter,
-    },
     {
       provide: REPORT_SEND_JOB_REPOSITORY,
       useExisting: DiscordReportSendJobRepository,
@@ -88,7 +80,6 @@ import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
     ReportSendScheduleService,
     ReportCronLeaderService,
     ReportCronLockService,
-    DiscordGoalsDataAdapter,
     DiscordReportDeliveryService,
     DiscordReportSendJobRepository,
     DiscordReportClaimRepository,

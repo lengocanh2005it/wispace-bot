@@ -15,6 +15,7 @@ import {
   mergeChatUserTexts,
 } from '@messenger/shared/utils/messenger-text.utils';
 import { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
+import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import { CHAT_QUEUE_STORE } from '../../domain/repositories/chat-queue.store.port';
@@ -62,9 +63,6 @@ export class MessengerChatQueueService implements OnModuleDestroy {
     ReturnType<typeof setTimeout>
   >();
 
-  private static readonly DEFAULT_QUEUE_STALE_TTL_MS = 60 * 60 * 1000; // 1 hour
-  private static readonly DEFAULT_QUEUE_CLEANUP_INTERVAL_MS = 15 * 60 * 1000; // 15 min
-
   constructor(
     private readonly configService: ConfigService,
     private readonly outbound: MessengerOutboundService,
@@ -72,11 +70,11 @@ export class MessengerChatQueueService implements OnModuleDestroy {
     @Inject(CHAT_HISTORY_STORE)
     private readonly chatHistory: ChatHistoryStorePort,
     private readonly chatRateLimitService: ChatRateLimitService,
+    private readonly chatRateLimitConfig: ChatRateLimitConfigService,
     private readonly metrics: MetricsService,
     @Inject(MESSENGER_REPOSITORY)
     private readonly messengerRepository: MessengerRepositoryPort,
-    @Optional()
-    private readonly sharedConfig?: MessengerChatSharedConfigService,
+    private readonly sharedConfig: MessengerChatSharedConfigService,
     @Optional()
     @Inject(CHAT_QUEUE_STORE)
     private readonly chatQueueStore?: ChatQueueStorePort,
@@ -89,12 +87,8 @@ export class MessengerChatQueueService implements OnModuleDestroy {
     this.debounceQueue = new DebounceChatQueue<MemoryQueueContext>(
       {
         getDebounceMs: () => this.getDebounceMs(),
-        staleTtlMs:
-          sharedConfig?.getQueueStaleTtlMs() ??
-          MessengerChatQueueService.DEFAULT_QUEUE_STALE_TTL_MS,
-        cleanupIntervalMs:
-          sharedConfig?.getQueueCleanupIntervalMs() ??
-          MessengerChatQueueService.DEFAULT_QUEUE_CLEANUP_INTERVAL_MS,
+        staleTtlMs: sharedConfig.getQueueStaleTtlMs(),
+        cleanupIntervalMs: sharedConfig.getQueueCleanupIntervalMs(),
         maxPendingSize,
       },
       (batch) => this.handleMemoryFlush(batch),
@@ -207,7 +201,7 @@ export class MessengerChatQueueService implements OnModuleDestroy {
     const snapshot = await this.chatQueueStore!.claimReadyBuffer(
       psid,
       this.getDebounceMs(),
-      this.sharedConfig!.getProcessingStuckMs(),
+      this.sharedConfig.getProcessingStuckMs(),
     );
 
     if (!snapshot || snapshot.texts.length === 0) {
@@ -347,7 +341,7 @@ export class MessengerChatQueueService implements OnModuleDestroy {
             status: 'SENT',
           });
         }
-      } else if (this.chatRateLimitService.shouldEnforceForPsid(psid)) {
+      } else if (this.chatRateLimitConfig.shouldEnforceForPsid(psid)) {
         this.logger.error(
           `Chat flush without message.mid psid=${psid}; skipped (H5)`,
         );
@@ -362,30 +356,16 @@ export class MessengerChatQueueService implements OnModuleDestroy {
         this.chatHistory.getHistory(psid),
       );
 
-      const reply = await this.metrics.timeStep('llm_agent', async () => {
-        // Collect stream events into a final reply.
-        // Future enhancement: on 'delta' events, send partial bubbles for
-        // faster perceived response before all tool rounds complete.
-        const stream = this.messengerAgentService.replyStream({
+      const reply = await this.metrics.timeStep('llm_agent', async () =>
+        this.messengerAgentService.reply({
           psid,
           userId,
           userText: mergedText,
           linkContext,
           history,
           correlationId: idempotencyKey,
-        });
-        for await (const event of stream) {
-          if (event.type === 'done') {
-            return event.reply;
-          }
-          if (event.type === 'error') {
-            throw event.error instanceof Error
-              ? event.error
-              : new Error(String(event.error));
-          }
-        }
-        throw new Error('LLM agent stream ended without done event');
-      });
+        }),
+      );
 
       const assistantText = reply.text.trim();
       if (assistantText) {
@@ -440,7 +420,7 @@ export class MessengerChatQueueService implements OnModuleDestroy {
   }
 
   private isDistributedMode(): boolean {
-    return this.sharedConfig?.isDistributedQueueEnabled() === true;
+    return this.sharedConfig.isDistributedQueueEnabled() === true;
   }
 
   /** H4: mark quota consumed once the first main reply bubble is sent. */
@@ -542,7 +522,7 @@ export class MessengerChatQueueService implements OnModuleDestroy {
     userId: number | undefined,
     quota: ChatQuotaCheckResult,
   ): Promise<void> {
-    const { remainingHintThreshold } = this.chatRateLimitService.getSettings();
+    const { remainingHintThreshold } = this.chatRateLimitConfig.getSettings();
     if (
       !shouldShowQuotaRemainingHint(quota.remaining, remainingHintThreshold)
     ) {
@@ -558,7 +538,7 @@ export class MessengerChatQueueService implements OnModuleDestroy {
   }
 
   private getMergedTextMaxChars(): number {
-    return this.chatRateLimitService.getSettings().mergedTextMaxChars;
+    return this.chatRateLimitConfig.getSettings().mergedTextMaxChars;
   }
 
   private getDebounceMs(): number {

@@ -1,26 +1,7 @@
-import pg from 'pg';
+import { createPool } from './_db.mjs';
+import { parseArgs } from './_args.mjs';
 
-function parseArgs(argv) {
-  const args = {
-    dryRun: false,
-  };
-
-  for (const arg of argv) {
-    if (arg === '--dry-run') {
-      args.dryRun = true;
-    } else if (arg === '--help' || arg === '-h') {
-      printHelp();
-      process.exit(0);
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-
-  return args;
-}
-
-function printHelp() {
-  console.log(`Usage: npm run chat-quota:recover-stuck -- [options]
+const HELP = `Usage: npm run chat-quota:recover-stuck -- [options]
 
 Refund + release messenger_chat_idempotency rows stuck in status=reserved
 past CHAT_IDEMPOTENCY_STUCK_RESERVED_MS (default 10 minutes).
@@ -28,8 +9,7 @@ past CHAT_IDEMPOTENCY_STUCK_RESERVED_MS (default 10 minutes).
 Options:
   --dry-run   List stuck keys only; do not refund/delete
   -h, --help  Show this help
-`);
-}
+`;
 
 function readStuckReservedMs() {
   const raw = process.env.CHAT_IDEMPOTENCY_STUCK_RESERVED_MS?.trim();
@@ -47,21 +27,21 @@ function readStuckReservedMs() {
   return Math.floor(value);
 }
 
-const args = parseArgs(process.argv.slice(2));
+const args = parseArgs(process.argv.slice(2), {
+  defaults: { dryRun: false },
+  help: HELP,
+  handle: (a, arg) => {
+    if (arg === '--dry-run') {
+      a.dryRun = true;
+      return true;
+    }
+    return false;
+  },
+});
 const stuckMs = readStuckReservedMs();
 const stuckBefore = new Date(Date.now() - stuckMs);
 
-const pool = new pg.Pool({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT ?? 5432),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  ssl:
-    process.env.DB_SSL === 'true'
-      ? { rejectUnauthorized: true, ca: process.env.DB_SSL_CA || undefined }
-      : undefined,
-});
+const pool = createPool();
 
 const client = await pool.connect();
 

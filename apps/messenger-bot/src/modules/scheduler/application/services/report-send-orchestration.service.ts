@@ -14,7 +14,7 @@ import type { ClaimAndSendResult } from '@wispace/scheduler-core';
 import { StudentReportRetryableError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
 import { ProactiveMessenger24hSkippedError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
 
-const ZERO: ClaimAndSendResult = {
+export const ZERO: ClaimAndSendResult = {
   sent: 0,
   skipped: 0,
   deferred: 0,

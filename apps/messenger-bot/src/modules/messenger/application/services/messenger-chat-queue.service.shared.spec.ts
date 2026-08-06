@@ -45,6 +45,7 @@ describe('MessengerChatQueueService distributed mode (H7/R4)', () => {
       { sendSenderActionOptional } as never,
       {} as never,
       { getHistory: jest.fn(() => Promise.resolve([])) } as never,
+      {} as never,
       {
         shouldEnforceForPsid: jest.fn(() => false),
         getSettings: jest.fn(() => ({ mergedTextMaxChars: 4000 })),

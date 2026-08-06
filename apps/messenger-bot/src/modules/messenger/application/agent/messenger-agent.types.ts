@@ -9,13 +9,6 @@ export interface MessengerAgentReply {
   toolSummary?: string;
 }
 
-/** Stream events from MessengerAgentService.replyStream() — done carries full MessengerAgentReply. */
-export type MessengerAgentStreamEvent =
-  | { type: 'delta'; textDelta: string }
-  | { type: 'tool_start'; toolName: string }
-  | { type: 'done'; reply: MessengerAgentReply }
-  | { type: 'error'; error: unknown };
-
 export interface MessengerAgentInput {
   psid: string;
   userId?: number;

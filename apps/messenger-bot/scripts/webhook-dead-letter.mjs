@@ -8,52 +8,13 @@
  *   npm run webhook:dead-letter -- --stats
  */
 
-import pg from 'pg';
+import { createPool } from './_db.mjs';
+import { parseArgs, printHelp } from './_args.mjs';
 
 const DEFAULT_BASE_URL = 'http://localhost:3000';
 const DEFAULT_LIMIT = 20;
 
-function parseArgs(argv) {
-  const args = {
-    command: null,
-    id: null,
-    limit: DEFAULT_LIMIT,
-    baseUrl: DEFAULT_BASE_URL,
-  };
-
-  for (const arg of argv) {
-    if (arg === '--list') {
-      args.command = 'list';
-    } else if (arg === '--replay') {
-      args.command = 'replay';
-    } else if (arg === '--stats') {
-      args.command = 'stats';
-    } else if (arg === '--abandon') {
-      args.command = 'abandon';
-    } else if (arg.startsWith('--id=')) {
-      args.id = Number(arg.slice('--id='.length));
-    } else if (arg.startsWith('--limit=')) {
-      args.limit = Number(arg.slice('--limit='.length));
-    } else if (arg.startsWith('--base-url=')) {
-      args.baseUrl = arg.slice('--base-url='.length).trim();
-    } else if (arg === '--help' || arg === '-h') {
-      printHelp();
-      process.exit(0);
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-
-  if (!args.command) {
-    printHelp();
-    process.exit(1);
-  }
-
-  return args;
-}
-
-function printHelp() {
-  console.log(`Usage: npm run webhook:dead-letter -- <command> [options]
+const HELP = `Usage: npm run webhook:dead-letter -- <command> [options]
 
 Commands:
   --list              Show pending dead-letter entries
@@ -72,22 +33,7 @@ Examples:
   npm run webhook:dead-letter -- --replay --limit=5
   npm run webhook:dead-letter -- --replay --base-url=https://api.myapp.com
   npm run webhook:dead-letter -- --abandon --id=42
-`);
-}
-
-function createPool() {
-  return new pg.Pool({
-    host: process.env.DB_HOST ?? 'localhost',
-    port: Number(process.env.DB_PORT ?? 5432),
-    database: process.env.DB_NAME,
-    user: process.env.DB_USER ?? process.env.DB_USERNAME,
-    password: process.env.DB_PASSWORD,
-    ssl:
-      process.env.DB_SSL === 'true'
-        ? { rejectUnauthorized: true, ca: process.env.DB_SSL_CA || undefined }
-        : false,
-  });
-}
+`;
 
 async function cmdStats(pool) {
   const { rows } = await pool.query(`
@@ -244,7 +190,52 @@ async function cmdAbandon(pool, id) {
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseArgs(process.argv.slice(2), {
+    defaults: {
+      command: null,
+      id: null,
+      limit: DEFAULT_LIMIT,
+      baseUrl: DEFAULT_BASE_URL,
+    },
+    help: HELP,
+    handle: (a, arg) => {
+      if (arg === '--list') {
+        a.command = 'list';
+        return true;
+      }
+      if (arg === '--replay') {
+        a.command = 'replay';
+        return true;
+      }
+      if (arg === '--stats') {
+        a.command = 'stats';
+        return true;
+      }
+      if (arg === '--abandon') {
+        a.command = 'abandon';
+        return true;
+      }
+      if (arg.startsWith('--id=')) {
+        a.id = Number(arg.slice('--id='.length));
+        return true;
+      }
+      if (arg.startsWith('--limit=')) {
+        a.limit = Number(arg.slice('--limit='.length));
+        return true;
+      }
+      if (arg.startsWith('--base-url=')) {
+        a.baseUrl = arg.slice('--base-url='.length).trim();
+        return true;
+      }
+      return false;
+    },
+  });
+
+  if (!args.command) {
+    printHelp(HELP);
+    process.exit(1);
+  }
+
   const pool = createPool();
 
   try {

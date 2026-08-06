@@ -11,7 +11,6 @@ import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/za
 import { ScheduledReportClaimEntity } from '@wispace/database';
 import { ZaloChatModule } from './zalo-chat.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
-import { ZaloReportDeliveryService } from './application/services/zalo-report-delivery.service';
 import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-cron.service';
 import { ZaloReportClaimRepository } from './infrastructure/persistence/zalo-report-claim.repository';
 
@@ -25,7 +24,6 @@ import { ZaloReportClaimRepository } from './infrastructure/persistence/zalo-rep
     ZaloWispaceModule,
   ],
   providers: [
-    ZaloReportDeliveryService,
     ZaloReportCronService,
     {
       provide: REPORT_CLAIM_REPOSITORY,

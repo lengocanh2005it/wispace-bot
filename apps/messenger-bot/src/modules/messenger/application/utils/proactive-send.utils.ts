@@ -25,7 +25,3 @@ export function buildProactiveFailureMessageType(
 export function buildProactive24hLogErrorMessage(): string {
   return 'Meta 24h messaging window (#10) — user has not messaged bot recently';
 }
-
-export function shouldSkipProactiveRetries(error: unknown): boolean {
-  return isProactiveMessenger24hError(error);
-}

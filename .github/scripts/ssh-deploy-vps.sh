@@ -12,7 +12,6 @@ REMOTE_SCRIPT="${1:?remote script path is required}"
 : "${VPS_KNOWN_HOSTS:?VPS_KNOWN_HOSTS is required}"
 : "${IMAGE:?IMAGE is required}"
 : "${DEPLOY_MODE:?DEPLOY_MODE is required}"
-: "${VPS_SSH_PORT:=22}"
 
 mkdir -p -m 700 "$HOME/.ssh"
 echo "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"

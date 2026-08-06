@@ -3,13 +3,11 @@ import { PlatformAgentService } from '@wispace/chat-agent';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
 import type {
   MessengerAgentReply,
-  MessengerAgentStreamEvent,
   MessengerAgentInput,
 } from './messenger-agent.types';
 
 export type {
   MessengerAgentReply,
-  MessengerAgentStreamEvent,
   MessengerAgentInput,
 } from './messenger-agent.types';
 
@@ -38,17 +36,5 @@ export class MessengerAgentService {
       exhausted: result.exhausted,
       toolSummary: result.toolSummary,
     };
-  }
-
-  async *replyStream(
-    input: MessengerAgentInput,
-  ): AsyncIterable<MessengerAgentStreamEvent> {
-    try {
-      const reply = await this.reply(input);
-      yield { type: 'delta', textDelta: reply.text };
-      yield { type: 'done', reply };
-    } catch (error) {
-      yield { type: 'error', error };
-    }
   }
 }

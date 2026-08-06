@@ -21,16 +21,8 @@ import {
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
 import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
 import type { ClaimAndSendResult } from '@wispace/scheduler-core';
-
-const ZERO: ClaimAndSendResult = {
-  sent: 0,
-  skipped: 0,
-  deferred: 0,
-  windowClosed: 0,
-  claimSkipped: 0,
-  retryQueued: 0,
-  failures: [],
-};
+import { readEnvPositiveInt } from '@messenger/shared/config/env-helpers';
+import { ZERO } from './report-send-orchestration.service';
 
 @Injectable()
 export class ReportCronService {
@@ -219,11 +211,6 @@ export class ReportCronService {
   }
 
   private readConcurrency(): number {
-    const raw = this.configService
-      .get<string>('REPORT_SEND_CONCURRENCY')
-      ?.trim();
-    if (!raw) return 5;
-    const value = parseInt(raw, 10);
-    return Number.isFinite(value) && value > 0 ? value : 5;
+    return readEnvPositiveInt(this.configService, 'REPORT_SEND_CONCURRENCY', 5);
   }
 }

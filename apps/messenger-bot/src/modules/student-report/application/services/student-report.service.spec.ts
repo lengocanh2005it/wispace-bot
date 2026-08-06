@@ -9,7 +9,7 @@ import {
 import {
   buildStudentReportApiUnavailableMessage,
   buildStudentReportNoScoreDataMessage,
-} from '../messages/student-report.messages';
+} from '@wispace/student-report';
 import { TaskScoreAverageApiService } from '../infrastructure/wispace/task-score-average-api.service';
 import { StudentReportService } from './student-report.service';
 

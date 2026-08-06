@@ -34,7 +34,6 @@ export class ChatQuotaOpsService {
       usageDate,
       stuckReserved,
       stuckReservedMs: settings.stuckReservedMs,
-      denyLogs24h: 0,
       usersAtDailyLimit,
       dailyLimit: settings.freeFormDailyLimit,
       idempotencyByStatus,

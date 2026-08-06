@@ -275,7 +275,6 @@ describe('routeWebhookEvent', () => {
           cadence: 'WEEKLY',
           userId: 42,
         },
-        linkAttemptStatus: 'linked',
       };
       const actions = routeWebhookEvent(
         postbackEvent('GET_LEARNING_REPORT'),
@@ -409,7 +408,6 @@ describe('routeWebhookEvent', () => {
       const actions = routeWebhookEvent(postbackEvent('GET_STARTED'), {
         ...defaultCtx,
         userId: 42,
-        linkAttemptStatus: 'linked',
       });
       expect(actions).toEqual([
         expect.objectContaining({
@@ -418,22 +416,6 @@ describe('routeWebhookEvent', () => {
           userId: 42,
         }),
       ]);
-    });
-
-    it('returns ignore for GET_STARTED when link attempt blocked', () => {
-      const actions = routeWebhookEvent(postbackEvent('GET_STARTED'), {
-        ...defaultCtx,
-        linkAttemptStatus: 'blocked',
-      });
-      expect(actions).toEqual([{ type: 'ignore' }]);
-    });
-
-    it('returns ignore for GET_STARTED when link attempt verify_failed', () => {
-      const actions = routeWebhookEvent(postbackEvent('GET_STARTED'), {
-        ...defaultCtx,
-        linkAttemptStatus: 'verify_failed',
-      });
-      expect(actions).toEqual([{ type: 'ignore' }]);
     });
 
     it('returns send_welcome for unknown postback payload (fallback)', () => {
@@ -455,14 +437,6 @@ describe('routeWebhookEvent', () => {
         ...defaultCtx,
         isDuplicatePostback: true,
         userId: 42,
-      });
-      expect(actions).toEqual([{ type: 'ignore' }]);
-    });
-
-    it('returns ignore for unknown postback when link attempt blocked', () => {
-      const actions = routeWebhookEvent(postbackEvent('UNKNOWN_PAYLOAD'), {
-        ...defaultCtx,
-        linkAttemptStatus: 'blocked',
       });
       expect(actions).toEqual([{ type: 'ignore' }]);
     });
@@ -488,7 +462,7 @@ describe('routeWebhookEvent', () => {
           postback: { payload: 'GET_STARTED' },
           message: { text: 'hello', mid: 'mid-1' },
         }),
-        { ...defaultCtx, userId: 42, linkAttemptStatus: 'linked' },
+        { ...defaultCtx, userId: 42 },
       );
       expect(actions[0].type).toBe('send_welcome');
     });

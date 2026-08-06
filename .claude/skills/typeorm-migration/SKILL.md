@@ -26,14 +26,9 @@ npm run test
 - **Không** migration bảng Wispace (`UserCalendars`, `"Users"` hub, …) — cache user qua bảng `users` local.
 - Cập nhật `apps/messenger-bot/.env.example` nếu thêm biến môi trường mới (không phải DB column).
 
-## Tách DB (ops một lần)
+## Tách DB (ops một lần — đã hoàn thành)
 
-Prod dùng `DB_NAME=ai_chat_bot_db`. Scripts (chạy trong `apps/messenger-bot/`):
-
-```bash
-DB_PASSWORD=... node scripts/migrate-hub-to-chat-bot-db.mjs
-DB_PASSWORD=... node scripts/drop-poc-tables-old-db.mjs   # sau khi verify app
-```
+Prod dùng `DB_NAME=ai_chat_bot_db`; các script migrate/drop một lần đã bị xoá khỏi `scripts/`.
 
 ## Revert (cẩn thận)
 

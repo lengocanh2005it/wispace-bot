@@ -20,7 +20,10 @@ import type {
 } from '../../domain/types/messenger-link-verify.types';
 import { MessengerReportDeliveryService } from './messenger-report-delivery.service';
 import { MessengerReminderDeliveryService } from './messenger-reminder-delivery.service';
-import { WebhookAction } from '../messenger-webhook.router';
+import {
+  extractRefFromEvent,
+  WebhookAction,
+} from '../messenger-webhook.router';
 
 @Injectable()
 export class WebhookActionExecutorService {
@@ -61,7 +64,7 @@ export class WebhookActionExecutorService {
           this.logger.log(
             `Linked PSID ${psid} from opt-in (ref=${linkAttempt.context.ref}, topic=${linkAttempt.context.topic}, cadence=${linkAttempt.context.cadence})`,
           );
-        } else if (!this.extractRefFromEvent(event)) {
+        } else if (!extractRefFromEvent(event)) {
           this.logger.warn(
             `Opt-in for PSID ${psid} missing ref, topic or cadence`,
           );
@@ -137,20 +140,11 @@ export class WebhookActionExecutorService {
     }
   }
 
-  extractRefFromEvent(event: MessengerWebhookEvent): string | undefined {
-    return (
-      event.referral?.ref ??
-      event.postback?.referral?.ref ??
-      event.message?.referral?.ref ??
-      event.optin?.ref
-    );
-  }
-
   private async attemptLinkFromEvent(
     psid: string,
     event: MessengerWebhookEvent,
   ): Promise<MessengerLinkAttemptResult> {
-    const ref = this.extractRefFromEvent(event);
+    const ref = extractRefFromEvent(event);
     if (!ref) {
       return { status: 'no_ref' };
     }

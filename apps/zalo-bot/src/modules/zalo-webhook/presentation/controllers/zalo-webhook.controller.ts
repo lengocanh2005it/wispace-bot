@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Headers,
-  Inject,
   Logger,
   Post,
   Req,
@@ -17,10 +16,7 @@ import {
   verifyZaloWebhookSignature,
 } from '../../application/utils/zalo-webhook-signature.utils';
 import type { ZaloWebhookEvent } from '../../domain/entities/zalo-webhook-event.types';
-import {
-  ZALO_WEBHOOK_HANDLER,
-  type ZaloWebhookHandler,
-} from '../../domain/ports/zalo-webhook-handler.port';
+import { ZaloChatService } from '../../../zalo-chat/application/services/zalo-chat.service';
 import { ZaloWebhookDedupeService } from '../../application/zalo-webhook-dedupe.service';
 import { PlatformDeadLetterService } from '@wispace/database';
 
@@ -30,8 +26,7 @@ export class ZaloWebhookController {
 
   constructor(
     private readonly configService: ConfigService,
-    @Inject(ZALO_WEBHOOK_HANDLER)
-    private readonly handler: ZaloWebhookHandler,
+    private readonly handler: ZaloChatService,
     private readonly dedupeService: ZaloWebhookDedupeService,
     private readonly deadLetterService: PlatformDeadLetterService,
   ) {}

@@ -1,40 +1,7 @@
-import pg from 'pg';
+import { createPool } from './_db.mjs';
+import { parseArgs } from './_args.mjs';
 
-function parseArgs(argv) {
-  const args = {
-    psid: null,
-    userId: null,
-    dryRun: false,
-  };
-
-  for (const arg of argv) {
-    if (arg.startsWith('--psid=')) {
-      args.psid = arg.slice('--psid='.length).trim();
-    } else if (arg.startsWith('--user-id=')) {
-      args.userId = Number(arg.slice('--user-id='.length));
-    } else if (arg === '--dry-run') {
-      args.dryRun = true;
-    } else if (arg === '--help' || arg === '-h') {
-      printHelp();
-      process.exit(0);
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-
-  if (!args.psid) {
-    throw new Error('--psid is required');
-  }
-
-  if (!Number.isFinite(args.userId) || args.userId <= 0) {
-    throw new Error('--user-id must be a positive number');
-  }
-
-  return args;
-}
-
-function printHelp() {
-  console.log(`Usage: npm run messenger:relink -- --psid=<PSID> --user-id=<number> [--dry-run]
+const HELP = `Usage: npm run messenger:relink -- --psid=<PSID> --user-id=<number> [--dry-run]
 
 Ops relink (L3): update user_messenger_mappings.user_id for an existing PSID.
 Prefer webhook relink via m.me?ref= when user can open Messenger.
@@ -44,22 +11,37 @@ Options:
   --user-id=<number>  New WISPACE user_id
   --dry-run           Show current mapping only
   -h, --help          Show this help
-`);
+`;
+
+const args = parseArgs(process.argv.slice(2), {
+  defaults: { psid: null, userId: null, dryRun: false },
+  help: HELP,
+  handle: (a, arg) => {
+    if (arg.startsWith('--psid=')) {
+      a.psid = arg.slice('--psid='.length).trim();
+      return true;
+    }
+    if (arg.startsWith('--user-id=')) {
+      a.userId = Number(arg.slice('--user-id='.length));
+      return true;
+    }
+    if (arg === '--dry-run') {
+      a.dryRun = true;
+      return true;
+    }
+    return false;
+  },
+});
+
+if (!args.psid) {
+  throw new Error('--psid is required');
 }
 
-const args = parseArgs(process.argv.slice(2));
+if (!Number.isFinite(args.userId) || args.userId <= 0) {
+  throw new Error('--user-id must be a positive number');
+}
 
-const pool = new pg.Pool({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT ?? 5432),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  ssl:
-    process.env.DB_SSL === 'true'
-      ? { rejectUnauthorized: true, ca: process.env.DB_SSL_CA || undefined }
-      : undefined,
-});
+const pool = createPool();
 
 try {
   const current = await pool.query(

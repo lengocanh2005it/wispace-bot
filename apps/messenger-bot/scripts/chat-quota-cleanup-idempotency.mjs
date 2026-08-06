@@ -1,33 +1,7 @@
-import pg from 'pg';
+import { createPool } from './_db.mjs';
+import { parseArgs } from './_args.mjs';
 
-function parseArgs(argv) {
-  const args = {
-    dryRun: false,
-    retentionDays: null,
-  };
-
-  for (const arg of argv) {
-    if (arg === '--dry-run') {
-      args.dryRun = true;
-    } else if (arg.startsWith('--retention-days=')) {
-      const value = Number(arg.slice('--retention-days='.length));
-      if (!Number.isFinite(value) || value <= 0) {
-        throw new Error('--retention-days must be a positive number');
-      }
-      args.retentionDays = Math.floor(value);
-    } else if (arg === '--help' || arg === '-h') {
-      printHelp();
-      process.exit(0);
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-
-  return args;
-}
-
-function printHelp() {
-  console.log(`Usage: npm run chat-quota:cleanup -- [options]
+const HELP = `Usage: npm run chat-quota:cleanup -- [options]
 
 Delete terminal messenger_chat_idempotency rows (completed/refunded) older than
 CHAT_IDEMPOTENCY_RETENTION_DAYS (default 90). Does not delete status=reserved.
@@ -36,8 +10,7 @@ Options:
   --dry-run                 List rows that would be deleted
   --retention-days=<n>      Override env retention window
   -h, --help                Show this help
-`);
-}
+`;
 
 function readRetentionDays(override) {
   if (override !== null) {
@@ -59,20 +32,28 @@ function readRetentionDays(override) {
   return Math.floor(value);
 }
 
-const args = parseArgs(process.argv.slice(2));
+const args = parseArgs(process.argv.slice(2), {
+  defaults: { dryRun: false, retentionDays: null },
+  help: HELP,
+  handle: (a, arg) => {
+    if (arg === '--dry-run') {
+      a.dryRun = true;
+      return true;
+    }
+    if (arg.startsWith('--retention-days=')) {
+      const value = Number(arg.slice('--retention-days='.length));
+      if (!Number.isFinite(value) || value <= 0) {
+        throw new Error('--retention-days must be a positive number');
+      }
+      a.retentionDays = Math.floor(value);
+      return true;
+    }
+    return false;
+  },
+});
 const retentionDays = readRetentionDays(args.retentionDays);
 
-const pool = new pg.Pool({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT ?? 5432),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  ssl:
-    process.env.DB_SSL === 'true'
-      ? { rejectUnauthorized: true, ca: process.env.DB_SSL_CA || undefined }
-      : undefined,
-});
+const pool = createPool();
 
 try {
   const preview = await pool.query(

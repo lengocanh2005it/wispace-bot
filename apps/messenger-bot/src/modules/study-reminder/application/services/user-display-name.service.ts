@@ -9,10 +9,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { UserEntity } from '@messenger/infrastructure/database/entities/user.entity';
 import { FALLBACK_DISPLAY_NAME } from '@messenger/shared/config/poc.constants';
-import {
-  MESSENGER_MAPPING_READER,
-  type MessengerMappingReaderPort,
-} from '@messenger/shared/ports/messenger-mapping-reader.port';
+import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
+import type { MessengerRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import {
   USER_DISPLAY_NAME_CACHE,
   type UserDisplayNameCachePort,
@@ -25,8 +23,8 @@ export class UserDisplayNameService implements OnModuleInit {
   constructor(
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
-    @Inject(MESSENGER_MAPPING_READER)
-    private readonly messengerMappingReader: MessengerMappingReaderPort,
+    @Inject(MESSENGER_REPOSITORY)
+    private readonly messengerRepository: MessengerRepositoryPort,
     @Optional()
     @Inject(USER_DISPLAY_NAME_CACHE)
     private readonly displayNameCache?: UserDisplayNameCachePort,
@@ -140,7 +138,7 @@ export class UserDisplayNameService implements OnModuleInit {
       return undefined;
     }
 
-    const mapping = await this.messengerMappingReader.findActiveMappingByPsid(
+    const mapping = await this.messengerRepository.findActiveMappingByPsid(
       params.psid.trim(),
     );
 

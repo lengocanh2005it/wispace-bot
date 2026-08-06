@@ -1,5 +1,4 @@
 import type { MessengerWebhookEvent } from '../domain/entities/messenger.types';
-import type { MessengerLinkAttemptStatus } from '../domain/types/messenger-link-verify.types';
 import type { RouterContext } from './types/messenger-webhook-router.types';
 import { isUnsupportedUserMessage } from './utils/webhook-message.utils';
 import {
@@ -7,6 +6,12 @@ import {
   CANCEL_RESCHEDULE_POSTBACK,
 } from './constants/messenger-reschedule.constants';
 import { IntentDetector } from '@wispace/intent-detector';
+import {
+  buildChatMissingMidMessage,
+  buildUnsupportedMessageTypeReply,
+} from './messages/chat-delivery.messages';
+
+const intentDetector = new IntentDetector();
 
 export type WebhookAction =
   | {
@@ -67,13 +72,9 @@ export type WebhookAction =
 
 export type { RouterContext };
 
-function linkAttemptBlocksWelcome(
-  status?: MessengerLinkAttemptStatus,
-): boolean {
-  return status === 'blocked' || status === 'verify_failed';
-}
-
-function extractRefFromEvent(event: MessengerWebhookEvent): string | undefined {
+export function extractRefFromEvent(
+  event: MessengerWebhookEvent,
+): string | undefined {
   return (
     event.referral?.ref ??
     event.postback?.referral?.ref ??
@@ -179,7 +180,6 @@ function routeTextMessage(
   }
 
   // Intent detection: greeting/self-intro → reply directly, skip LLM
-  const intentDetector = new IntentDetector();
   const intent = intentDetector.detect(message.text!.trim());
   if (intent.intent === 'greeting') {
     return [
@@ -210,7 +210,7 @@ function routeTextMessage(
         type: 'send_text',
         psid,
         userId: ctx.userId,
-        text: 'Mình chưa nhận diện được tin nhắn này. Bạn thử gửi lại một tin ngắn giúp mình nhé.',
+        text: buildChatMissingMidMessage(),
         messageType: 'CHAT_MISSING_MID',
       },
     ];
@@ -242,7 +242,7 @@ function routeUnsupportedMessage(
       type: 'send_text',
       psid,
       userId: ctx.userId,
-      text: 'Mình chỉ đọc được tin nhắn chữ thôi nhé. Bạn gửi lại câu hỏi bằng chữ để mình hỗ trợ bạn.',
+      text: buildUnsupportedMessageTypeReply(),
       messageType: 'UNSUPPORTED_MESSAGE_TYPE',
     },
   ];
@@ -310,15 +310,9 @@ function routePostback(
   }
 
   if (payload === 'GET_STARTED') {
-    if (linkAttemptBlocksWelcome(ctx.linkAttemptStatus)) {
-      return [{ type: 'ignore' }];
-    }
     return [{ type: 'send_welcome', psid, userId }];
   }
 
   // Unknown postback — fallback to welcome (same as original behavior)
-  if (linkAttemptBlocksWelcome(ctx.linkAttemptStatus)) {
-    return [{ type: 'ignore' }];
-  }
   return [{ type: 'send_welcome', psid, userId }];
 }

@@ -1,8 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
-import {
-  MESSENGER_MAPPING_READER,
-  type MessengerMappingReaderPort,
-} from '@messenger/shared/ports/messenger-mapping-reader.port';
+import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
+import type { MessengerRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import type {
   LlmUsageAggregateRow,
   LlmUsageFeatureSummary,
@@ -24,8 +22,8 @@ export class LlmUsageQueryService {
     private readonly configService: LlmUsageConfigService,
     @Inject(LLM_USAGE_REPOSITORY)
     private readonly usageRepository: LlmUsageRepositoryPort,
-    @Inject(MESSENGER_MAPPING_READER)
-    private readonly mappingReader: MessengerMappingReaderPort,
+    @Inject(MESSENGER_REPOSITORY)
+    private readonly messengerRepository: MessengerRepositoryPort,
   ) {}
 
   async getUserSummary(input: {
@@ -98,11 +96,11 @@ export class LlmUsageQueryService {
 
   private async resolveMapping(psid?: string, userId?: number) {
     if (psid) {
-      return this.mappingReader.findActiveMappingByPsid(psid);
+      return this.messengerRepository.findActiveMappingByPsid(psid);
     }
 
     if (userId !== undefined) {
-      return this.mappingReader.findActiveMappingByUserId(userId);
+      return this.messengerRepository.findActiveMappingByUserId(userId);
     }
 
     return null;

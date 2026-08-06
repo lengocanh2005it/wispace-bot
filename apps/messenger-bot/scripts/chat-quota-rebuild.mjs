@@ -1,39 +1,7 @@
 import pg from 'pg';
+import { parseArgs } from './_args.mjs';
 
-function parseArgs(argv) {
-  const args = {
-    from: null,
-    to: null,
-    dailyLimit: null,
-    dryRun: false,
-  };
-
-  for (const arg of argv) {
-    if (arg.startsWith('--from=')) {
-      args.from = arg.slice('--from='.length).trim();
-    } else if (arg.startsWith('--to=')) {
-      args.to = arg.slice('--to='.length).trim();
-    } else if (arg.startsWith('--daily-limit=')) {
-      const value = Number(arg.slice('--daily-limit='.length));
-      if (!Number.isFinite(value) || value <= 0) {
-        throw new Error('--daily-limit must be a positive number');
-      }
-      args.dailyLimit = value;
-    } else if (arg === '--dry-run') {
-      args.dryRun = true;
-    } else if (arg === '--help' || arg === '-h') {
-      printHelp();
-      process.exit(0);
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-
-  return args;
-}
-
-function printHelp() {
-  console.log(`Usage: npm run chat-quota:rebuild -- [options]
+const HELP = `Usage: npm run chat-quota:rebuild -- [options]
 
 Rebuild messenger_chat_daily_usage.free_form_count from messenger_chat_events.
 
@@ -43,8 +11,7 @@ Options:
   --daily-limit=N       Override CHAT_FREE_FORM_DAILY_LIMIT (projection only)
   --dry-run             Print changes without writing
   -h, --help            Show this help
-`);
-}
+`;
 
 function todayUsageDate(timezone, now = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -83,7 +50,33 @@ function replayEvents(events) {
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseArgs(process.argv.slice(2), {
+    defaults: { from: null, to: null, dailyLimit: null, dryRun: false },
+    help: HELP,
+    handle: (a, arg) => {
+      if (arg.startsWith('--from=')) {
+        a.from = arg.slice('--from='.length).trim();
+        return true;
+      }
+      if (arg.startsWith('--to=')) {
+        a.to = arg.slice('--to='.length).trim();
+        return true;
+      }
+      if (arg.startsWith('--daily-limit=')) {
+        const value = Number(arg.slice('--daily-limit='.length));
+        if (!Number.isFinite(value) || value <= 0) {
+          throw new Error('--daily-limit must be a positive number');
+        }
+        a.dailyLimit = value;
+        return true;
+      }
+      if (arg === '--dry-run') {
+        a.dryRun = true;
+        return true;
+      }
+      return false;
+    },
+  });
   const timezone = process.env.CHAT_USAGE_TIMEZONE?.trim() ?? 'Asia/Ho_Chi_Minh';
   const today = todayUsageDate(timezone);
   const from = args.from ?? today;

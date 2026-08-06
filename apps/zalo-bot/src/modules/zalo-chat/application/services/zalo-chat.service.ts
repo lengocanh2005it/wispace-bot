@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { ZaloWebhookHandler } from '@zalo/modules/zalo-webhook/domain/ports/zalo-webhook-handler.port';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { PlatformChatQueueService } from '@wispace/chat-agent';
@@ -24,8 +23,9 @@ const SELF_INTRO_TEMPLATE =
   'Mình là WISPACE Bot — trợ lý AI hỗ trợ học IELTS Writing trên Zalo. Hiện tại một số tính năng cá nhân hoá chưa khả dụng trên Zalo. Bạn có thể dùng Messenger để trải nghiệm đầy đủ! 🎓';
 
 @Injectable()
-export class ZaloChatService implements ZaloWebhookHandler {
+export class ZaloChatService {
   private readonly logger = new Logger(ZaloChatService.name);
+  private readonly intentDetector = new IntentDetector();
   private readonly oauthAuthorizeUrl: string;
 
   constructor(
@@ -51,8 +51,7 @@ export class ZaloChatService implements ZaloWebhookHandler {
     idempotencyKey?: string,
   ): Promise<void> {
     // Intent detection: greeting/self-intro → reply directly, skip LLM
-    const intentDetector = new IntentDetector();
-    const intent = intentDetector.detect(text.trim());
+    const intent = this.intentDetector.detect(text.trim());
     if (intent.intent === 'greeting') {
       await this.outboundService.sendText(zaloUserId, GREETING_TEMPLATE);
       return;

@@ -1,65 +1,7 @@
-import pg from 'pg';
+import { createPool } from './_db.mjs';
+import { parseArgs } from './_args.mjs';
 
-function parseArgs(argv) {
-  const args = {
-    status: null,
-    failed: false,
-    stuck: false,
-    summary: false,
-    hours: 24,
-    stuckMinutes: 10,
-    limit: 100,
-    psid: null,
-    userId: null,
-  };
-
-  for (const arg of argv) {
-    if (arg.startsWith('--status=')) {
-      args.status = arg.slice('--status='.length).trim();
-    } else if (arg.startsWith('--hours=')) {
-      args.hours = readPositiveNumber(arg.slice('--hours='.length), '--hours');
-    } else if (arg.startsWith('--stuck-minutes=')) {
-      args.stuckMinutes = readPositiveNumber(
-        arg.slice('--stuck-minutes='.length),
-        '--stuck-minutes',
-      );
-    } else if (arg.startsWith('--limit=')) {
-      args.limit = readPositiveNumber(arg.slice('--limit='.length), '--limit');
-    } else if (arg.startsWith('--psid=')) {
-      args.psid = arg.slice('--psid='.length).trim();
-    } else if (arg.startsWith('--user-id=')) {
-      args.userId = readPositiveNumber(
-        arg.slice('--user-id='.length),
-        '--user-id',
-      );
-    } else if (arg === '--failed') {
-      args.failed = true;
-    } else if (arg === '--stuck') {
-      args.stuck = true;
-    } else if (arg === '--summary') {
-      args.summary = true;
-    } else if (arg === '--help' || arg === '-h') {
-      printHelp();
-      process.exit(0);
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-
-  return args;
-}
-
-function readPositiveNumber(raw, label) {
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error(`${label} must be a positive number`);
-  }
-
-  return Math.floor(value);
-}
-
-function printHelp() {
-  console.log(`Usage: npm run study-reminder:jobs -- [options]
+const HELP = `Usage: npm run study-reminder:jobs -- [options]
 
 Options:
   --status=<status>       Filter by status (pending|processing|sent|failed|cancelled)
@@ -72,22 +14,75 @@ Options:
   --psid=<psid>           Filter by PSID
   --user-id=<number>      Filter by user_id
   -h, --help              Show this help
-`);
+`;
+
+function readPositiveNumber(raw, label) {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${label} must be a positive number`);
+  }
+
+  return Math.floor(value);
 }
 
-const args = parseArgs(process.argv.slice(2));
-
-const pool = new pg.Pool({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT ?? 5432),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  ssl:
-    process.env.DB_SSL === 'true'
-      ? { rejectUnauthorized: true, ca: process.env.DB_SSL_CA || undefined }
-      : undefined,
+const args = parseArgs(process.argv.slice(2), {
+  defaults: {
+    status: null,
+    failed: false,
+    stuck: false,
+    summary: false,
+    hours: 24,
+    stuckMinutes: 10,
+    limit: 100,
+    psid: null,
+    userId: null,
+  },
+  help: HELP,
+  handle: (a, arg) => {
+    if (arg.startsWith('--status=')) {
+      a.status = arg.slice('--status='.length).trim();
+      return true;
+    }
+    if (arg.startsWith('--hours=')) {
+      a.hours = readPositiveNumber(arg.slice('--hours='.length), '--hours');
+      return true;
+    }
+    if (arg.startsWith('--stuck-minutes=')) {
+      a.stuckMinutes = readPositiveNumber(
+        arg.slice('--stuck-minutes='.length),
+        '--stuck-minutes',
+      );
+      return true;
+    }
+    if (arg.startsWith('--limit=')) {
+      a.limit = readPositiveNumber(arg.slice('--limit='.length), '--limit');
+      return true;
+    }
+    if (arg.startsWith('--psid=')) {
+      a.psid = arg.slice('--psid='.length).trim();
+      return true;
+    }
+    if (arg.startsWith('--user-id=')) {
+      a.userId = readPositiveNumber(arg.slice('--user-id='.length), '--user-id');
+      return true;
+    }
+    if (arg === '--failed') {
+      a.failed = true;
+      return true;
+    }
+    if (arg === '--stuck') {
+      a.stuck = true;
+      return true;
+    }
+    if (arg === '--summary') {
+      a.summary = true;
+      return true;
+    }
+    return false;
+  },
 });
+
+const pool = createPool();
 
 try {
   const since = new Date(Date.now() - args.hours * 60 * 60 * 1000);

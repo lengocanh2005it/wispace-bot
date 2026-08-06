@@ -43,29 +43,7 @@ import {
   isRescheduleIntent,
 } from '@messenger/shared/utils/messenger-chat-intent.utils';
 import { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
-
-function withToolTimeout<T>(
-  promise: Promise<T>,
-  ms: number,
-  toolName: string,
-): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`Tool ${toolName} timed out after ${ms}ms`)),
-      ms,
-    );
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (err: unknown) => {
-        clearTimeout(timer);
-        reject(err instanceof Error ? err : new Error(String(err)));
-      },
-    );
-  });
-}
+import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
 
 export const MESSENGER_NOT_LINKED_MESSAGE =
   'Chưa liên kết tài khoản WISPACE. Học viên cần mở Messenger từ link trong app WISPACE.';
@@ -183,10 +161,10 @@ export class MessengerAgentToolsService {
   }
 
   private async getLearningProgressReport(psid: string): Promise<unknown> {
-    const report = await withToolTimeout(
+    const report = await withTimeout(
       this.studentReportService.generateReport(psid),
       30_000,
-      'get_learning_progress_report',
+      `Tool get_learning_progress_report`,
     );
     return { report };
   }

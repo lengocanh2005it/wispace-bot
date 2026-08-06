@@ -16,11 +16,16 @@ import type { MessengerWebhookDeadLetterRepositoryPort } from '../../domain/repo
 import {
   MessengerWebhookEvent,
   MessengerWebhookPayload,
+  UserMessengerMapping,
 } from '../../domain/entities/messenger.types';
 import { MessengerLinkContextService } from './messenger-link-context.service';
 import { MessengerOutboundService } from './messenger-outbound.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
-import { routeWebhookEvent, RouterContext } from '../messenger-webhook.router';
+import {
+  extractRefFromEvent,
+  routeWebhookEvent,
+  RouterContext,
+} from '../messenger-webhook.router';
 import { WebhookActionExecutorService } from './webhook-action-executor.service';
 
 export { MessengerApiError } from './messenger-outbound.service';
@@ -177,10 +182,12 @@ export class MessengerService {
       this.chatRateLimitConfig.shouldEnforceForPsid(psid);
 
     let linkContext: RouterContext['linkContext'] = undefined;
-    const linkAttemptStatus: RouterContext['linkAttemptStatus'] = undefined;
 
     if (!event.optin && !event.referral?.ref) {
-      const resolved = await this.resolveLinkContextFromMapping(psid);
+      const resolved = await this.resolveLinkContextFromMapping(
+        psid,
+        existingMapping,
+      );
       if (resolved) {
         linkContext = resolved;
       }
@@ -191,15 +198,16 @@ export class MessengerService {
       isDuplicatePostback,
       userId: existingMapping?.userId,
       linkContext,
-      linkAttemptStatus,
       shouldEnforceRateLimit,
     };
   }
 
   private async resolveLinkContextFromMapping(
     psid: string,
+    existingMapping?: UserMessengerMapping | null,
   ): Promise<MessengerLinkContext | undefined> {
-    const mapping = await this.repository.findActiveMappingByPsid(psid);
+    const mapping =
+      existingMapping ?? (await this.repository.findActiveMappingByPsid(psid));
     if (!mapping?.userId) {
       return undefined;
     }
@@ -215,7 +223,7 @@ export class MessengerService {
     psid: string,
     event: MessengerWebhookEvent,
   ): Promise<MessengerLinkContext | undefined> {
-    const ref = this.actionExecutor.extractRefFromEvent(event);
+    const ref = extractRefFromEvent(event);
     if (ref) {
       const outcome = await this.messengerLinkContextService.resolveFromRef(
         psid,

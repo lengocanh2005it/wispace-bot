@@ -1,53 +1,7 @@
-import pg from 'pg';
+import { createPool } from './_db.mjs';
+import { parseArgs } from './_args.mjs';
 
-function parseArgs(argv) {
-  const args = {
-    warnOnly: false,
-    failedHours: 24,
-    stuckMinutes: 10,
-    denyHours: 24,
-  };
-
-  for (const arg of argv) {
-    if (arg === '--warn-only') {
-      args.warnOnly = true;
-    } else if (arg.startsWith('--failed-hours=')) {
-      args.failedHours = readPositiveNumber(
-        arg.slice('--failed-hours='.length),
-        '--failed-hours',
-      );
-    } else if (arg.startsWith('--stuck-minutes=')) {
-      args.stuckMinutes = readPositiveNumber(
-        arg.slice('--stuck-minutes='.length),
-        '--stuck-minutes',
-      );
-    } else if (arg.startsWith('--deny-hours=')) {
-      args.denyHours = readPositiveNumber(
-        arg.slice('--deny-hours='.length),
-        '--deny-hours',
-      );
-    } else if (arg === '--help' || arg === '-h') {
-      printHelp();
-      process.exit(0);
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-
-  return args;
-}
-
-function readPositiveNumber(raw, label) {
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new Error(`${label} must be a positive number`);
-  }
-
-  return Math.floor(value);
-}
-
-function printHelp() {
-  console.log(`Usage: npm run ops:health -- [options]
+const HELP = `Usage: npm run ops:health -- [options]
 
 Combined I1 + S1 ops snapshot from PostgreSQL (no app process required).
 
@@ -57,7 +11,15 @@ Options:
   --stuck-minutes=<n>   Study reminder stuck processing threshold (default 10)
   --deny-hours=<n>      Chat quota denied logs lookback (default 24)
   -h, --help            Show this help
-`);
+`;
+
+function readPositiveNumber(raw, label) {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`${label} must be a positive number`);
+  }
+
+  return Math.floor(value);
 }
 
 function todayUsageDate(timezone, now = new Date()) {
@@ -91,7 +53,38 @@ function readDailyLimit() {
   return readPositiveEnv('CHAT_FREE_FORM_DAILY_LIMIT', 15);
 }
 
-const args = parseArgs(process.argv.slice(2));
+const args = parseArgs(process.argv.slice(2), {
+  defaults: { warnOnly: false, failedHours: 24, stuckMinutes: 10, denyHours: 24 },
+  help: HELP,
+  handle: (a, arg) => {
+    if (arg === '--warn-only') {
+      a.warnOnly = true;
+      return true;
+    }
+    if (arg.startsWith('--failed-hours=')) {
+      a.failedHours = readPositiveNumber(
+        arg.slice('--failed-hours='.length),
+        '--failed-hours',
+      );
+      return true;
+    }
+    if (arg.startsWith('--stuck-minutes=')) {
+      a.stuckMinutes = readPositiveNumber(
+        arg.slice('--stuck-minutes='.length),
+        '--stuck-minutes',
+      );
+      return true;
+    }
+    if (arg.startsWith('--deny-hours=')) {
+      a.denyHours = readPositiveNumber(
+        arg.slice('--deny-hours='.length),
+        '--deny-hours',
+      );
+      return true;
+    }
+    return false;
+  },
+});
 const timezone =
   process.env.CHAT_USAGE_TIMEZONE?.trim() ?? 'Asia/Ho_Chi_Minh';
 const usageDate = todayUsageDate(timezone);
@@ -104,17 +97,7 @@ const stuckProcessingBefore = new Date(
 );
 const denySince = new Date(Date.now() - args.denyHours * 60 * 60 * 1000);
 
-const pool = new pg.Pool({
-  host: process.env.DB_HOST,
-  port: Number(process.env.DB_PORT ?? 5432),
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  ssl:
-    process.env.DB_SSL === 'true'
-      ? { rejectUnauthorized: true, ca: process.env.DB_SSL_CA || undefined }
-      : undefined,
-});
+const pool = createPool();
 
 try {
   const [

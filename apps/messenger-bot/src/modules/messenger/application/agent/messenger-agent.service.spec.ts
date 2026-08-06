@@ -416,43 +416,4 @@ describe('MessengerAgentService', () => {
       expect(result.text).toBeTruthy();
     });
   });
-
-  describe('replyStream()', () => {
-    it('yields done with the reply', async () => {
-      const completion = makeCompletion('Trả lời.');
-      const { service } = buildService(
-        { OPENAI_API_KEY: 'sk-test' },
-        { chatWithTools: jest.fn().mockResolvedValue(completion) },
-      );
-
-      const events = [];
-      for await (const event of service.replyStream(BASE_INPUT)) {
-        events.push(event);
-      }
-
-      expect(events.map((e) => e.type)).toEqual(['delta', 'done']);
-      expect(events[1]).toMatchObject({
-        type: 'done',
-        reply: { text: 'Trả lời.' },
-      });
-    });
-
-    it('yields error event when the agent fails', async () => {
-      const { service } = buildService(
-        { OPENAI_API_KEY: 'sk-test' },
-        {
-          chatWithTools: jest
-            .fn()
-            .mockRejectedValue(new Error('provider down')),
-        },
-      );
-
-      const events = [];
-      for await (const event of service.replyStream(BASE_INPUT)) {
-        events.push(event);
-      }
-
-      expect(events[0].type).toBe('error');
-    });
-  });
 });

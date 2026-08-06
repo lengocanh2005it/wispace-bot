@@ -8,15 +8,6 @@ import { buildDiscordLinkWelcomeMessage } from '../../application/messages/accou
 import { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
 import { DiscordPendingJoinService } from '../../application/services/discord-pending-join.service';
 
-const escapeHtml = (value: string): string =>
-  value.replace(
-    /[&<>"']/g,
-    (character) =>
-      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
-        character
-      ] ?? character,
-  );
-
 @Controller('discord/oauth')
 export class DiscordOauthController {
   private readonly logger = new Logger(DiscordOauthController.name);
@@ -181,43 +172,9 @@ export class DiscordOauthController {
       return;
     }
 
-    // Inline fallback HTML (no frontend URL configured)
-    if (result.type === 'cancelled') {
-      res.status(200).type('html').send(`
-        <!doctype html><html lang="vi"><head><meta charset="utf-8">
-        <title>Đã hủy</title></head>
-        <body style="font-family:sans-serif;text-align:center;padding-top:3rem;">
-          <h2>Đã hủy liên kết</h2>
-          <p>Bạn có thể thử lại bất cứ lúc nào.</p>
-        </body></html>
-      `);
-    } else if (result.type === 'success') {
-      res.status(200).type('html').send(`
-        <!doctype html><html lang="vi"><head><meta charset="utf-8">
-        <title>Kết nối thành công</title></head>
-        <body style="font-family:sans-serif;text-align:center;padding-top:3rem;">
-          <h2>Kết nối thành công</h2>
-          <p>Tài khoản Discord <strong>${escapeHtml(result.discordUsername)}</strong> đã liên kết với WISPACE.</p>
-        </body></html>
-      `);
-    } else if (result.type === 'pending') {
-      res.status(200).type('html').send(`
-        <!doctype html><html lang="vi"><head><meta charset="utf-8">
-        <title>Tham gia server trước</title></head>
-        <body style="font-family:sans-serif;text-align:center;padding-top:3rem;">
-          <h2>Bạn chưa trong server WISPACE</h2>
-          <p>Tham gia server rồi quay lại để hoàn tất liên kết.</p>
-          ${inviteUrl ? `<a href="${inviteUrl}">Tham gia server →</a>` : ''}
-        </body></html>
-      `);
-    } else {
-      res.status(400).type('html').send(`
-        <!doctype html><html lang="vi"><head><meta charset="utf-8">
-        <title>Kết nối thất bại</title></head>
-        <body style="font-family:sans-serif;text-align:center;padding-top:3rem;">
-          <h2>Kết nối thất bại</h2><p>${result.message}</p>
-        </body></html>
-      `);
-    }
+    this.logger.warn('DISCORD_OAUTH_FRONTEND_CALLBACK_URL is not set');
+    res
+      .status(400)
+      .json({ error: 'OAuth frontend callback URL not configured' });
   }
 }

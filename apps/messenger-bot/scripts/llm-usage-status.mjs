@@ -1,42 +1,7 @@
 import pg from 'pg';
+import { parseArgs } from './_args.mjs';
 
-function parseArgs(argv) {
-  const args = {
-    psid: null,
-    userId: null,
-    date: null,
-    feature: null,
-    ops: false,
-  };
-
-  for (const arg of argv) {
-    if (arg.startsWith('--psid=')) {
-      args.psid = arg.slice('--psid='.length).trim();
-    } else if (arg.startsWith('--user-id=')) {
-      const value = Number(arg.slice('--user-id='.length));
-      if (!Number.isFinite(value)) {
-        throw new Error('--user-id must be a number');
-      }
-      args.userId = value;
-    } else if (arg.startsWith('--date=')) {
-      args.date = arg.slice('--date='.length).trim();
-    } else if (arg.startsWith('--feature=')) {
-      args.feature = arg.slice('--feature='.length).trim();
-    } else if (arg === '--ops') {
-      args.ops = true;
-    } else if (arg === '--help' || arg === '-h') {
-      printHelp();
-      process.exit(0);
-    } else {
-      throw new Error(`Unknown argument: ${arg}`);
-    }
-  }
-
-  return args;
-}
-
-function printHelp() {
-  console.log(`Usage: npm run llm-usage:status -- [options]
+const HELP = `Usage: npm run llm-usage:status -- [options]
 
 Options:
   --psid=<psid>           Filter by Messenger PSID
@@ -45,8 +10,7 @@ Options:
   --feature=<name>        FREE_FORM_CHAT | STUDENT_REPORT | STUDY_REMINDER
   --ops                   Fleet-wide summary by feature
   -h, --help              Show this help
-`);
-}
+`;
 
 function todayUsageDate(timezone, now = new Date()) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -58,7 +22,37 @@ function todayUsageDate(timezone, now = new Date()) {
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const args = parseArgs(process.argv.slice(2), {
+    defaults: { psid: null, userId: null, date: null, feature: null, ops: false },
+    help: HELP,
+    handle: (a, arg) => {
+      if (arg.startsWith('--psid=')) {
+        a.psid = arg.slice('--psid='.length).trim();
+        return true;
+      }
+      if (arg.startsWith('--user-id=')) {
+        const value = Number(arg.slice('--user-id='.length));
+        if (!Number.isFinite(value)) {
+          throw new Error('--user-id must be a number');
+        }
+        a.userId = value;
+        return true;
+      }
+      if (arg.startsWith('--date=')) {
+        a.date = arg.slice('--date='.length).trim();
+        return true;
+      }
+      if (arg.startsWith('--feature=')) {
+        a.feature = arg.slice('--feature='.length).trim();
+        return true;
+      }
+      if (arg === '--ops') {
+        a.ops = true;
+        return true;
+      }
+      return false;
+    },
+  });
   const timezone =
     process.env.LLM_USAGE_TIMEZONE?.trim() ?? 'Asia/Ho_Chi_Minh';
   const usageDate = args.date ?? todayUsageDate(timezone);

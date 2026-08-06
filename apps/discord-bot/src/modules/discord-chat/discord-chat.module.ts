@@ -1,14 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { DataSource, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { join } from 'path';
 import {
   CleanupCronService,
   PlatformCleanupCronService,
 } from '@wispace/cleanup-cron';
-import { OpsHealthService, OPS_HEALTH_REPOSITORY } from '@wispace/ops-health';
-import { TypeormOpsHealthRepository } from '@wispace/ops-health';
 import { BotCommonModule, REDIS_CLIENT } from '@wispace/bot-common';
 import type { RedisClientPort } from '@wispace/bot-common';
 import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
@@ -274,13 +272,6 @@ const REGISTER_REPORT_MESSAGE =
         PlatformChatRateLimitService,
       ],
     },
-    {
-      provide: OPS_HEALTH_REPOSITORY,
-      useFactory: (dataSource: DataSource) =>
-        new TypeormOpsHealthRepository(dataSource, 'discord'),
-      inject: [DataSource],
-    },
-    OpsHealthService,
   ],
   exports: [],
 })

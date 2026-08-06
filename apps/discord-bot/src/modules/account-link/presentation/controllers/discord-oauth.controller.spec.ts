@@ -15,6 +15,7 @@ function buildConfigService(
     DISCORD_CLIENT_ID: 'client-id',
     DISCORD_OAUTH_REDIRECT_URI:
       'https://bot.example.com/discord/oauth/callback',
+    DISCORD_OAUTH_FRONTEND_CALLBACK_URL: 'http://localhost:4321/callback.html',
     ...overrides,
   };
   return {
@@ -75,7 +76,9 @@ describe('DiscordOauthController', () => {
 
     await controller.callback(undefined, 'token', undefined, res);
 
-    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.redirect).toHaveBeenCalledWith(
+      expect.stringContaining('error='),
+    );
     expect(
       accountLinkService.exchangeCodeForDiscordUser,
     ).not.toHaveBeenCalled();
@@ -113,7 +116,9 @@ describe('DiscordOauthController', () => {
       'discord-user-1',
     );
     expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.redirect).toHaveBeenCalledWith(
+      expect.stringContaining('error='),
+    );
   });
 
   it('links the account and sends a welcome DM on success', async () => {
@@ -152,7 +157,9 @@ describe('DiscordOauthController', () => {
       'discord-user-1',
       expect.any(String),
     );
-    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.redirect).toHaveBeenCalledWith(
+      expect.stringContaining('localhost:4321/callback.html'),
+    );
   });
 
   it('issues a pending token when user is not in the guild', async () => {
@@ -187,8 +194,9 @@ describe('DiscordOauthController', () => {
       'TestUser',
     );
     expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
-    // Inline fallback: no DISCORD_OAUTH_FRONTEND_CALLBACK_URL set → res.status(200) pending HTML
-    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.redirect).toHaveBeenCalledWith(
+      expect.stringContaining('pendingToken=pending-token-123'),
+    );
   });
 
   it('redirects to frontend callback URL when DISCORD_OAUTH_FRONTEND_CALLBACK_URL is set', async () => {
@@ -247,6 +255,8 @@ describe('DiscordOauthController', () => {
     await controller.callback('code', 'good-token', undefined, res);
 
     expect(tokenVerifyService.verifyToken).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.redirect).toHaveBeenCalledWith(
+      expect.stringContaining('error='),
+    );
   });
 });

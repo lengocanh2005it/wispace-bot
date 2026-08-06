@@ -90,9 +90,6 @@ npm run chat-quota:rebuild            # rebuild counter from messenger_chat_even
 npm run llm-usage:status              # query LLM tokens by feature/psid (--ops)
 npm run chat-quota:recover-stuck    # H2: refund stuck reserved (optional --dry-run)
 npm run chat-quota:cleanup          # H6: delete old completed/refunded idempotency records (optional --dry-run)
-# Ops DB migrate (one-time, requires DB_HOST + DB_USER + DB_PASSWORD):
-node scripts/migrate-hub-to-chat-bot-db.mjs   # writing_ai_hub_db → ai_chat_bot_db
-node scripts/drop-poc-tables-old-db.mjs       # drop tables + migrations on old DB
 ```
 
 ---
@@ -226,8 +223,7 @@ Repo uses **feature modules + 4 layers** (presentation → application → domai
 | Token | Used for |
 |-------|----------|
 | `MESSENGER_REPOSITORY` | Read/write mapping, logs |
-| `MESSENGER_MAPPING_READER` | Study reminder sync / display name |
-| `MESSAGE_SENDER` | Send Messenger messages (dispatch, do not import `MessengerService`) |
+| `MESSAGE_SENDER` | Send Messenger messages — provided by `@wispace/study-reminder-shared`, wrapped via `wrapMessageSender` (dispatch, do not import `MessengerService`) |
 | `GOALS_DATA_PORT` | Fetch goals data from WISPACE API (replaces `UserGoalsApiService`) |
 | `REPORT_PORT` | Generate study reports via LLM (replaces `StudentReportService`) |
 | `STUDY_DATA_PORT` | Retrieve study schedule/reminder data (replaces 4 study-reminder services) |

@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
-import type { ZaloMessageSenderPort } from '@zalo/modules/zalo-webhook/domain/ports/zalo-message-sender.port';
 import { DeliveryLogService } from '@wispace/database';
 import { withRetry } from '@wispace/wispace-client';
 
@@ -52,7 +51,7 @@ export class ZaloSendError extends Error {
  * future work, see spec §11.4).
  */
 @Injectable()
-export class ZaloOutboundService implements ZaloMessageSenderPort {
+export class ZaloOutboundService {
   private readonly logger = new Logger(ZaloOutboundService.name);
 
   constructor(

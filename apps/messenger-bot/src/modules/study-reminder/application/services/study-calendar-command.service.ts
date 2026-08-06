@@ -47,7 +47,9 @@ export class StudyCalendarCommandService {
     const timeRange = options?.timeRange ?? 'upcoming';
     const records = await this.userCalendarApiService.listCalendars(psid);
     const recordById = new Map(records.map((record) => [record.id, record]));
-    const horizonEnd = this.getSyncHorizonEnd();
+    const { syncHorizonHours } =
+      this.studyReminderScheduleService.getOutboxSettings();
+    const horizonEnd = new Date(Date.now() + syncHorizonHours * 60 * 60 * 1000);
     const sessions = await this.userCalendarScheduleService.getCalendarSessions(
       psid,
       horizonEnd,
@@ -139,7 +141,7 @@ export class StudyCalendarCommandService {
 
     this.scheduleOutboxSync(params.userId);
 
-    const scheduledAt = this.resolveScheduledAt(
+    const scheduledAt = resolveScheduledAtFromEventDate(
       target.eventDate,
       target.time,
       timezone,
@@ -190,18 +192,16 @@ export class StudyCalendarCommandService {
     return source;
   }
 
-  private getSyncHorizonEnd(): Date {
-    const { syncHorizonHours } =
-      this.studyReminderScheduleService.getOutboxSettings();
-    return new Date(Date.now() + syncHorizonHours * 60 * 60 * 1000);
-  }
-
   private assertFutureSlot(
     eventDate: string,
     time: string,
     timezone: string,
   ): void {
-    const scheduledAt = this.resolveScheduledAt(eventDate, time, timezone);
+    const scheduledAt = resolveScheduledAtFromEventDate(
+      eventDate,
+      time,
+      timezone,
+    );
     const minLeadMinutes =
       this.studyReminderScheduleService.getOutboxSettings().minLeadMinutes;
 
@@ -213,13 +213,5 @@ export class StudyCalendarCommandService {
         'Thời gian mới quá gần hoặc đã qua — chọn buổi học sắp tới hơn.',
       );
     }
-  }
-
-  private resolveScheduledAt(
-    eventDate: string,
-    time: string,
-    timezone: string,
-  ): Date {
-    return resolveScheduledAtFromEventDate(eventDate, time, timezone);
   }
 }

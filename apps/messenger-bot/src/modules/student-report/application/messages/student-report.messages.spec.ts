@@ -1,4 +1,4 @@
-import { buildStudentReportNoScoreDataMessage } from './student-report.messages';
+import { buildStudentReportNoScoreDataMessage } from '@wispace/student-report';
 
 describe('student-report.messages', () => {
   it('buildStudentReportNoScoreDataMessage returns Vietnamese guidance (R1)', () => {

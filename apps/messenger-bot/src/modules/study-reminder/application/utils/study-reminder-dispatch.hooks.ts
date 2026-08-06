@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { shouldSkipProactiveRetries } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
+import { isProactiveMessenger24hError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
 import { WispaceApiError } from '@messenger/shared/errors/wispace-api.error';
 
 /**
@@ -17,7 +17,7 @@ export function classifyMessengerDispatchFailure(params: {
 }): { terminal: boolean; errorMessage: string } {
   const message =
     params.error instanceof Error ? params.error.message : String(params.error);
-  const is24hWindow = shouldSkipProactiveRetries(params.error);
+  const is24hWindow = isProactiveMessenger24hError(params.error);
   const isNonRetryableWispace =
     params.error instanceof WispaceApiError && !params.error.isRetryable();
   const retriesExhausted = params.retryCount + 1 >= params.maxRetries;

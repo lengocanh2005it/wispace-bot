@@ -5,28 +5,12 @@ import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import type { LlmExecutionContext } from '../types/llm-execution.types';
 import { RedisConcurrencyLimiter } from '../../infrastructure/redis-concurrency-limiter';
+import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
 
 export type {
   LlmExecutionFeature,
   LlmExecutionContext,
 } from '../types/llm-execution.types';
-
-function withTimeout<T>(fn: () => Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new Error(`LLM request timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-  });
-
-  return Promise.race([Promise.resolve().then(fn), timeoutPromise]).finally(
-    () => {
-      if (timer) {
-        clearTimeout(timer);
-      }
-    },
-  );
-}
 
 @Injectable()
 export class LlmExecutionService {
@@ -70,11 +54,6 @@ export class LlmExecutionService {
     return this.limiter(() => this.runWithRetry(fn, context));
   }
 
-  /** Rebuild limiter when config changes at runtime (tests). */
-  refreshLimiter(): void {
-    this.limiter = pLimit(this.config.getMaxConcurrent());
-  }
-
   private async runWithRetry<T>(
     fn: () => Promise<T>,
     context?: LlmExecutionContext,
@@ -89,7 +68,7 @@ export class LlmExecutionService {
     return retryWithBackoff(
       () =>
         this.metrics.timeLlmExecution(feature, () =>
-          withTimeout(fn, timeoutMs),
+          withTimeout(Promise.resolve().then(fn), timeoutMs, 'LLM request'),
         ),
       {
         maxAttempts,

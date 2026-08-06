@@ -386,9 +386,6 @@ npm run chat-quota:recover-stuck   # H2: refund stuck reserved
 npm run chat-quota:cleanup         # H6: delete old completed/refunded idempotency records
 npm run llm-usage:status           # Query LLM tokens (--psid, --user-id, --ops)
 npm run chat-quota:rebuild         # Q1: rebuild daily counter from events
-# Ops DB migrate (one-time):
-node scripts/migrate-hub-to-chat-bot-db.mjs   # copy tables from hub → ai_chat_bot_db
-node scripts/drop-poc-tables-old-db.mjs       # drop tables + migrations on writing_ai_hub_db
 ```
 
 ---

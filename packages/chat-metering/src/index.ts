@@ -12,7 +12,6 @@ export {
   type ChatRateLimitRepositoryHooks,
 } from './chat-rate-limit/chat-rate-limit.repository';
 export { ChatRateLimitCore } from './chat-rate-limit/chat-rate-limit-core.service';
-export type { ChatRateLimitLogger } from './chat-rate-limit/chat-rate-limit-core.service';
 export {
   MemoryBurstCounter,
   CHAT_BURST_WINDOW_MS,
@@ -63,7 +62,6 @@ export type {
 export { LlmSafetyEventRepository } from './llm-safety/llm-safety.repository';
 export { LlmSafetyCore } from './llm-safety/llm-safety-core.service';
 export { PlatformLlmSafetyEventAdapter } from './llm-safety/platform-llm-safety-event.adapter';
-export type { LlmSafetyLogger } from './llm-safety/llm-safety-core.service';
 export type {
   InsertLlmSafetyEvent,
   RecordGroundingWarningInput,

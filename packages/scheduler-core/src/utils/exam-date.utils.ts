@@ -28,14 +28,18 @@ export function resolveExamCountdown(
   };
 }
 
+const EXAM_DATE_DISPLAY_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
 export function formatExamDateDisplay(isoDate: string): string {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(isoDate.trim());
-  if (!match) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(isoDate.trim())) {
     return isoDate;
   }
-
-  const [, year, month, day] = match;
-  return `${day}/${month}/${year}`;
+  return EXAM_DATE_DISPLAY_FORMATTER.format(new Date(isoDate));
 }
 
 export function parseExamDateToIso(examDate: string): string {

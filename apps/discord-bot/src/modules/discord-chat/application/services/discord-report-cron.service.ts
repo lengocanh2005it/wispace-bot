@@ -9,7 +9,6 @@ import {
 } from '@wispace/scheduler-core';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
 import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
-import { ScheduledReportClaimEntity } from '@wispace/database';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { ReportMapping } from '@wispace/scheduler-core';
@@ -29,8 +28,6 @@ export class DiscordReportCronService {
     private readonly orchestrationService: DiscordReportOrchestrationService,
     @InjectRepository(DiscordAccountLinkEntity)
     private readonly accountLinkRepo: Repository<DiscordAccountLinkEntity>,
-    @InjectRepository(ScheduledReportClaimEntity)
-    private readonly claimRepo: Repository<ScheduledReportClaimEntity>,
   ) {}
 
   @Cron('0 8 * * *', {
@@ -83,17 +80,6 @@ export class DiscordReportCronService {
             notificationCadence: 'daily',
             status: 'ACTIVE',
           };
-          if (await this.isAlreadySentToday(link.userId, reportDate)) {
-            return {
-              sent: 0,
-              skipped: 0,
-              claimSkipped: 1,
-              deferred: 0,
-              windowClosed: 0,
-              retryQueued: 0,
-              failures: [],
-            };
-          }
           return this.orchestrationService.claimAndSend(mapping, {
             reportDate,
             skipAlreadySentToday: !opts.forceSend,
@@ -131,16 +117,5 @@ export class DiscordReportCronService {
       failed,
       failures,
     };
-  }
-
-  private async isAlreadySentToday(
-    userId: number | undefined | null,
-    reportDate: string,
-  ): Promise<boolean> {
-    if (!userId) return false;
-    const count = await this.claimRepo.count({
-      where: { userId, reportDate, status: 'sent' },
-    });
-    return count > 0;
   }
 }
