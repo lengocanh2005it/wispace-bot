@@ -5,6 +5,12 @@ import {
   Histogram,
   collectDefaultMetrics,
 } from 'prom-client';
+import type {
+  Tracer,
+  SpanStatusCode,
+  ContextAPI,
+  TraceAPI,
+} from '@opentelemetry/api';
 
 export interface MetricsConfig {
   /** Prefix for metric names (e.g., 'messenger', 'discord', 'zalo') */
@@ -12,29 +18,13 @@ export interface MetricsConfig {
   /** Whether to collect default Node.js metrics */
   collectDefaults?: boolean;
   /** Optional OTel tracer for distributed tracing (pass trace.getTracer('service-name')) */
-  tracer?: {
-    startSpan: (name: string) => {
-      setAttributes: (attrs: Record<string, unknown>) => void;
-      setAttribute: (key: string, value: unknown) => void;
-      setStatus: (status: { code: number; message?: string }) => void;
-      recordException: (error: Error) => void;
-      end: () => void;
-    };
-  };
+  tracer?: Tracer;
   /** OTel SpanStatusCode values (pass SpanStatusCode from @opentelemetry/api) */
-  spanStatusCode?: {
-    OK: number;
-    ERROR: number;
-  };
+  spanStatusCode?: typeof SpanStatusCode;
   /** OTel context API (pass context from @opentelemetry/api) */
-  contextApi?: {
-    active: () => unknown;
-    with: <T>(ctx: unknown, fn: () => Promise<T>) => Promise<T>;
-  };
+  contextApi?: ContextAPI;
   /** OTel trace API (pass trace from @opentelemetry/api) */
-  traceApi?: {
-    setSpan: (ctx: unknown, span: unknown) => unknown;
-  };
+  traceApi?: TraceAPI;
 }
 
 /**

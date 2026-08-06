@@ -20,8 +20,7 @@
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "jest": "^30.0.0",
-    "ts-jest": "^29.2.5",
-    "typescript": "^5.7.3"
+    "ts-jest": "^29.2.5"
   },
   "jest": {
     "moduleFileExtensions": ["js", "json", "ts"],
