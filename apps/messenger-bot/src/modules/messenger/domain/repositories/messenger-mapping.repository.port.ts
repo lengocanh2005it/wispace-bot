@@ -3,10 +3,6 @@ import {
   UserMessengerMapping,
 } from '../entities/messenger.types';
 
-export const MESSENGER_MAPPING_REPOSITORY = Symbol(
-  'MESSENGER_MAPPING_REPOSITORY',
-);
-
 export interface MessengerMappingRepositoryPort {
   findActiveMappingByPsid(psid: string): Promise<UserMessengerMapping | null>;
   findActiveMappingByUserId(

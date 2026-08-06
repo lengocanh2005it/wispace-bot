@@ -12,12 +12,10 @@ import {
 } from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
-import { GOALS_DATA_PORT } from '../../domain/ports/goals-data.port';
-import type { GoalsDataPort } from '../../domain/ports/goals-data.port';
-import { REPORT_PORT } from '../../domain/ports/report.port';
-import type { ReportPort } from '../../domain/ports/report.port';
 import { STUDY_DATA_PORT } from '../../domain/ports/study-data.port';
 import type { StudyDataPort } from '../../domain/ports/study-data.port';
+import { UserGoalsApiService } from '../../../student-report/infrastructure/wispace/user-goals-api.service';
+import { StudentReportService } from '../../../student-report/application/services/student-report.service';
 import {
   buildCalendarEntriesRichFollowUp,
   buildReminderPreviewRichFollowUp,
@@ -81,10 +79,8 @@ export class MessengerAgentToolsService {
   constructor(
     @Inject(MESSENGER_REPOSITORY)
     private readonly repository: MessengerRepositoryPort,
-    @Inject(REPORT_PORT)
-    private readonly reportPort: ReportPort,
-    @Inject(GOALS_DATA_PORT)
-    private readonly goalsPort: GoalsDataPort,
+    private readonly studentReportService: StudentReportService,
+    private readonly userGoalsApiService: UserGoalsApiService,
     @Inject(STUDY_DATA_PORT)
     private readonly studyPort: StudyDataPort,
     private readonly rescheduleConfirmationService: MessengerRescheduleConfirmationService,
@@ -179,14 +175,14 @@ export class MessengerAgentToolsService {
     switch (toolName) {
       case 'get_learning_progress_report': {
         const report = await withToolTimeout(
-          this.reportPort.generateReport(ctx.psid),
+          this.studentReportService.generateReport(ctx.psid),
           30_000,
           'get_learning_progress_report',
         );
         return { report };
       }
       case 'get_user_goals': {
-        const goals = await this.goalsPort.getUserGoals(ctx.psid);
+        const goals = await this.userGoalsApiService.getUserGoals(ctx.psid);
         this.pushRichFollowUp(ctx, buildUserGoalsRichFollowUp(goals));
         return goals;
       }

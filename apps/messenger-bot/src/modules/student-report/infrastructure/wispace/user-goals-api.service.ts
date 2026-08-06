@@ -7,12 +7,15 @@ import { ConfigService } from '@nestjs/config';
 import {
   buildWispaceHeaders,
   UserGoalsApiClient,
-  type WispaceApiClientConfig,
 } from '@wispace/wispace-client';
 import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import type { UserGoalsRecord } from '@wispace/wispace-client';
 // ponytail: shared date utils live in scheduler-core (same byte-identical copy was local)
 import { parseExamDateToIso } from '@wispace/scheduler-core';
+import {
+  buildWispaceClientConfig,
+  getWispaceInternalKey,
+} from './wispace-client-helpers';
 
 const ID_HEADER = 'x-psid' as const;
 
@@ -50,48 +53,28 @@ export class UserGoalsApiService {
       );
     }
 
-    return buildWispaceHeaders(ID_HEADER, psid, this.getInternalKey());
+    return buildWispaceHeaders(
+      ID_HEADER,
+      psid,
+      getWispaceInternalKey(this.configService),
+    );
   }
 
   private getClient(): UserGoalsApiClient {
     if (!this.client) {
-      this.client = new UserGoalsApiClient(this.buildClientConfig(), {
-        warn: (m) => this.logger.warn(m),
-        log: (m) => this.logger.log(m),
-      });
-    }
-
-    return this.client;
-  }
-
-  private buildClientConfig(): WispaceApiClientConfig {
-    return {
-      url:
-        this.configService.get<string>('WISPACE_API_USER_GOALS_URL') ??
-        'https://backend.aihubproduction.com/api/User/goals',
-      internalKey: this.getInternalKey(),
-      maxRetries: this.readPositiveInt('WISPACE_API_MAX_RETRIES', 3),
-      baseDelayMs: this.readPositiveInt('WISPACE_API_RETRY_BASE_DELAY_MS', 500),
-    };
-  }
-
-  private getInternalKey(): string {
-    const key = this.configService.get<string>('WISPACE_INTERNAL_KEY')?.trim();
-    if (!key) {
-      throw new InternalServerErrorException(
-        'WISPACE_INTERNAL_KEY must be set in .env',
+      this.client = new UserGoalsApiClient(
+        buildWispaceClientConfig(
+          this.configService,
+          'WISPACE_API_USER_GOALS_URL',
+          'https://backend.aihubproduction.com/api/User/goals',
+        ),
+        {
+          warn: (m) => this.logger.warn(m),
+          log: (m) => this.logger.log(m),
+        },
       );
     }
 
-    return key;
-  }
-
-  private readPositiveInt(key: string, defaultValue: number): number {
-    const raw = this.configService.get<string>(key)?.trim();
-    if (!raw) return defaultValue;
-    const value = Number(raw);
-    return Number.isFinite(value) && value >= 0
-      ? Math.floor(value)
-      : defaultValue;
+    return this.client;
   }
 }

@@ -1,7 +1,7 @@
 export {
   computeRemindAt,
   formatScheduledTimeLabel,
-  getDatePartsInTimezone,
   getMinutesUntilSession,
   isSessionStarted,
 } from './schedule';
+export { getDatePartsInTimezone } from '@wispace/date-utils';

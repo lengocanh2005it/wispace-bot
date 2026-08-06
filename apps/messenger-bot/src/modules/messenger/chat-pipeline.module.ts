@@ -21,12 +21,8 @@ import { RedisChatQueueStore } from './infrastructure/persistence/redis-chat-que
 import { ChatHistoryStoreResolver } from './infrastructure/persistence/chat-history.store.resolver';
 import { MemoryChatHistoryStore } from './infrastructure/persistence/memory-chat-history.store';
 import { RedisChatHistoryStore } from './infrastructure/persistence/redis-chat-history.store';
-import { GOALS_DATA_PORT } from './domain/ports/goals-data.port';
-import { REPORT_PORT } from './domain/ports/report.port';
 import { STUDY_DATA_PORT } from './domain/ports/study-data.port';
 import { StudyDataAdapter } from './infrastructure/adapters/study-data.adapter';
-import { UserGoalsApiService } from '../student-report/infrastructure/wispace/user-goals-api.service';
-import { StudentReportService } from '../student-report/application/services/student-report.service';
 import { MessengerCalendarPort } from './infrastructure/adapters/messenger-calendar.port';
 import { MessengerReschedulePort } from './infrastructure/adapters/messenger-reschedule.port';
 
@@ -63,20 +59,6 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     {
       provide: CHAT_QUEUE_STORE,
       useExisting: RedisChatQueueStore,
-    },
-    {
-      provide: GOALS_DATA_PORT,
-      useFactory: (goalsApi: UserGoalsApiService) => ({
-        getUserGoals: (psid: string) => goalsApi.getUserGoals(psid),
-      }),
-      inject: [UserGoalsApiService],
-    },
-    {
-      provide: REPORT_PORT,
-      useFactory: (reportService: StudentReportService) => ({
-        generateReport: (psid: string) => reportService.generateReport(psid),
-      }),
-      inject: [StudentReportService],
     },
     StudyDataAdapter,
     {

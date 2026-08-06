@@ -1,13 +1,8 @@
-import {
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   TaskScoreAverageApiClient,
   type TaskScoreAverageRecord,
-  type WispaceApiClientConfig,
 } from '@wispace/wispace-client';
 import { StudentReportNoScoreDataError } from '../../domain/errors/student-report-no-score-data.error';
 import type { StudentCapacityInput } from '@wispace/student-report';
@@ -19,6 +14,7 @@ import {
   resolveExamCountdown,
   todayReportDate,
 } from '@wispace/scheduler-core';
+import { buildWispaceClientConfig } from './wispace-client-helpers';
 
 const ID_HEADER = 'x-psid' as const;
 
@@ -49,44 +45,20 @@ export class TaskScoreAverageApiService {
 
   private getClient(): TaskScoreAverageApiClient {
     if (!this.client) {
-      this.client = new TaskScoreAverageApiClient(this.buildClientConfig(), {
-        warn: (m) => this.logger.warn(m),
-        log: (m) => this.logger.log(m),
-      });
-    }
-
-    return this.client;
-  }
-
-  private buildClientConfig(): WispaceApiClientConfig {
-    return {
-      url:
-        this.configService.get<string>('WISPACE_API_TASK_SCORE_URL') ??
-        'https://backend.aihubproduction.com/api/TaskScoreAverage',
-      internalKey: this.getInternalKey(),
-      maxRetries: this.readPositiveInt('WISPACE_API_MAX_RETRIES', 3),
-      baseDelayMs: this.readPositiveInt('WISPACE_API_RETRY_BASE_DELAY_MS', 500),
-    };
-  }
-
-  private getInternalKey(): string {
-    const key = this.configService.get<string>('WISPACE_INTERNAL_KEY')?.trim();
-    if (!key) {
-      throw new InternalServerErrorException(
-        'WISPACE_INTERNAL_KEY must be set in .env',
+      this.client = new TaskScoreAverageApiClient(
+        buildWispaceClientConfig(
+          this.configService,
+          'WISPACE_API_TASK_SCORE_URL',
+          'https://backend.aihubproduction.com/api/TaskScoreAverage',
+        ),
+        {
+          warn: (m) => this.logger.warn(m),
+          log: (m) => this.logger.log(m),
+        },
       );
     }
 
-    return key;
-  }
-
-  private readPositiveInt(key: string, defaultValue: number): number {
-    const raw = this.configService.get<string>(key)?.trim();
-    if (!raw) return defaultValue;
-    const value = Number(raw);
-    return Number.isFinite(value) && value >= 0
-      ? Math.floor(value)
-      : defaultValue;
+    return this.client;
   }
 
   private mapToCapacityInput(

@@ -123,7 +123,7 @@ npm ci                     # required if you just ran npm ci --omit=dev
 npm run format:check       # prettier --check — CI fails on format errors
 npm run lint               # eslint --fix
 npm run typecheck          # tsc --noEmit
-npm run test               # Jest — 399 specs
+npm run test               # Jest — run npm run test
 npm run build              # nest build + copy assets → dist/
 ```
 
@@ -184,7 +184,7 @@ Existing specs (key files, not exhaustive — `apps/*/src/**/*.spec.ts` + `packa
 - `apps/zalo-bot/src/modules/zalo-webhook/` (2 specs)
 - `apps/zalo-bot/src/modules/zalo-oauth/` (5 specs)
 
-**Shared packages:** 26 spec files across `packages/*/src/`
+**Shared packages:** spec files across `packages/*/src/` — run `npm run test`
 
 ---
 
@@ -430,7 +430,7 @@ Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global ski
 | Zalo 08:00 report cron | ✓ Raw format (goals+scores), cross-platform dedup, concurrency 3 |
 | Zalo study reminders | ✓ Sync fixed — `getSessions` callback wired via `ZaloWispaceCalendarService` |
 | Zalo ops HTTP endpoints | ✓ `POST /zalo/send-reports`, `/zalo/study-calendar/sync`, `/zalo/sync-study-reminders` + `InternalApiKeyGuard` |
-| Zalo CI/CD | ✓ `deploy-bots.yml` (3 jobs: messenger/discord/zalo) + shared `deploy/Dockerfile.bot` + `vps-deploy-zalo.sh` |
+| Zalo CI/CD | ✓ `deploy-bots.yml` (3 jobs: messenger/discord/zalo) + shared `deploy/Dockerfile.bot` + `.github/scripts/vps-deploy.sh` |
 | Zalo chat queue / debounce | ✓ DebounceChatQueue wrapping `@wispace/chat-queue-core` — same as Messenger |
 | Zalo Redis burst counter | ✓ `PostgresBurstCounter` (was `MemoryBurstCounter`) |
 | Zalo LLM report enrichment | ✓ Report cron uses `ZaloStudentReportService` (LLM); tool still raw |

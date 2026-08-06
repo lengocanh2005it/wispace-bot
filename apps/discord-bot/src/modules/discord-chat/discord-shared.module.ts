@@ -7,12 +7,9 @@ import {
 } from '@wispace/llm-agent';
 import { REPORT_DELIVERY_PORT } from '@wispace/scheduler-core';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
-import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
-import { DeliveryLogService } from '@wispace/database';
-import { Repository } from 'typeorm';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
-import { DiscordOutboundService } from './application/services/discord-outbound.service';
 
 /**
  * Shared providers for Discord modules — breaks circular dependency between
@@ -26,13 +23,6 @@ import { DiscordOutboundService } from './application/services/discord-outbound.
     ]),
   ],
   providers: [
-    {
-      provide: DeliveryLogService,
-      useFactory: (repo: Repository<DiscordMessageLogEntity>) =>
-        new DeliveryLogService(repo),
-      inject: [getRepositoryToken(DiscordMessageLogEntity)],
-    },
-    DiscordOutboundService,
     {
       provide: 'LLM_PROVIDER_ADAPTER',
       useFactory: (configService: ConfigService): LlmProviderAdapter => {
@@ -64,10 +54,6 @@ import { DiscordOutboundService } from './application/services/discord-outbound.
       useExisting: DiscordReportDeliveryService,
     },
   ],
-  exports: [
-    'LLM_PROVIDER_ADAPTER',
-    REPORT_DELIVERY_PORT,
-    DiscordOutboundService,
-  ],
+  exports: ['LLM_PROVIDER_ADAPTER', REPORT_DELIVERY_PORT],
 })
 export class DiscordSharedModule {}

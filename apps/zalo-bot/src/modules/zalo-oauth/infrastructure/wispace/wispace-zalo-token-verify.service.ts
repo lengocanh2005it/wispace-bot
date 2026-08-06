@@ -4,10 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type {
-  ZaloLinkVerifyResult,
-  ZaloTokenVerifyPort,
-} from '../../domain/ports/zalo-token-verify.port';
+import type { ZaloLinkVerifyResult } from '../../domain/zalo-link-verify.types';
 
 const VERIFY_FAILURE_REASONS = [
   'NOT_FOUND',
@@ -24,7 +21,7 @@ const VERIFY_TIMEOUT_MS = 10_000;
  * apps/discord-bot's WispaceDiscordTokenVerifyService.
  */
 @Injectable()
-export class WispaceZaloTokenVerifyService implements ZaloTokenVerifyPort {
+export class WispaceZaloTokenVerifyService {
   private readonly logger = new Logger(WispaceZaloTokenVerifyService.name);
 
   constructor(private readonly configService: ConfigService) {}

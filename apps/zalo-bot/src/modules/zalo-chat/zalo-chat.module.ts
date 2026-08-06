@@ -33,7 +33,7 @@ import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
 import { ZaloChatService } from './application/services/zalo-chat.service';
 import { ZaloChatRateLimitService } from './infrastructure/persistence/zalo-chat-rate-limit.service';
-import { ZaloRescheduleConfirmationService } from './application/services/zalo-reschedule-confirmation.service';
+import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
 import { ZaloStudyCalendarCommandService } from './application/services/zalo-study-calendar-command.service';
 import { ZaloCalendarPort } from './infrastructure/adapters/zalo-calendar.port';
 import { ZaloReschedulePort } from './infrastructure/adapters/zalo-reschedule.port';
@@ -172,7 +172,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         configService: ConfigService,
         goalsService: WispaceGoalsService,
         calendarService: WispaceCalendarService,
-        rescheduleConfirmationService: ZaloRescheduleConfirmationService,
+        rescheduleConfirmationService: RescheduleConfirmationService<string>,
         outboundService: ZaloOutboundService,
       ) => {
         const appId = configService.get<string>('ZALO_APP_ID');
@@ -219,7 +219,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         ConfigService,
         WispaceGoalsService,
         WispaceCalendarService,
-        ZaloRescheduleConfirmationService,
+        RescheduleConfirmationService,
         ZaloOutboundService,
       ],
     },
@@ -282,7 +282,15 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     ZaloStudyCalendarCommandService,
     ZaloCalendarPort,
     ZaloReschedulePort,
-    ZaloRescheduleConfirmationService,
+    {
+      provide: RescheduleConfirmationService,
+      useFactory: (
+        calendarPort: ZaloCalendarPort,
+        reschedulePort: ZaloReschedulePort,
+      ) =>
+        new RescheduleConfirmationService<string>(calendarPort, reschedulePort),
+      inject: [ZaloCalendarPort, ZaloReschedulePort],
+    },
     ZaloOutboundService,
     ZaloChatRateLimitService,
     CleanupCronService,

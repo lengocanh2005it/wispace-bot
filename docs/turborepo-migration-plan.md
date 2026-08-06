@@ -150,4 +150,4 @@ Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 6/7 real WISPA
 | 2 | Generalize DB key `(platform, external_user_id)` | ✅ Completed — migration ran on VPS production, verified via SSH |
 | 3 | Implement Discord bot | ✅ Features complete (chat + quota + account-linking OAuth2 + 6/7 real tools + reschedule + 08:00 report cron + leader-election + retry dispatch + study reminders + dead letter + message log + CI/CD workflow + deploy scripts) — no real end-to-end testing yet |
 | 4 | Implement Zalo bot | ✅ Features complete (chat + quota + account-linking + 6/7 tools + LLM report + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD + Doppler webhook + health/redis + Redis dedupe + chat queue) |
-| 5 | Fully independent CI/CD | ✅ All 3 bots have independent workflows (`deploy-messenger-bot.yml`, `deploy-discord-bot.yml`, `deploy-zalo-bot.yml`) |
+| 5 | Fully independent CI/CD | ✅ Single `deploy-bots.yml` with 3 jobs (messenger/discord/zalo) + shared `deploy-bot-reusable.yml` + `deploy/Dockerfile.bot` |

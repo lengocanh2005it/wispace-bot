@@ -4,6 +4,11 @@ export type { WithRetryOptions } from './utils/with-retry';
 export { buildWispaceHeaders } from './utils/wispace-headers';
 export type { WispaceIdHeader } from './utils/wispace-headers';
 export * from './utils/study-calendar.utils';
+export {
+  formatLocalDate,
+  getDatePartsInTimezone as getLocalDateParts,
+  tomorrowInTimezone as getTomorrowLocalDate,
+} from '@wispace/date-utils';
 
 export type { UserGoalsRecord } from './types/user-goals.types';
 export type { TaskScoreAverageRecord } from './types/task-score-average.types';

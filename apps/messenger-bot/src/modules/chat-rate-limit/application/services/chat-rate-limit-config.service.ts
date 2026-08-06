@@ -7,6 +7,7 @@ import {
 } from '@messenger/shared/config/env-helpers';
 import type { ChatRateLimitSettings } from '../../domain/entities/chat-quota.types';
 import type { ChatBurstStoreKind } from '../../domain/entities/chat-burst.types';
+import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 
 @Injectable()
 export class ChatRateLimitConfigService {
@@ -53,10 +54,7 @@ export class ChatRateLimitConfigService {
   }
 
   getTimezone(): string {
-    return (
-      this.configService.get<string>('CHAT_USAGE_TIMEZONE')?.trim() ??
-      'Asia/Ho_Chi_Minh'
-    );
+    return resolveAppTimezone(this.configService);
   }
 
   getWhitelistedPsids(): string[] {

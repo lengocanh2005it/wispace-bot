@@ -1,18 +1,12 @@
-import {
-  Injectable,
-  InternalServerErrorException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  UserCalendarApiClient,
-  type WispaceApiClientConfig,
-} from '@wispace/wispace-client';
+import { UserCalendarApiClient } from '@wispace/wispace-client';
 import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import {
   CreateUserCalendarInput,
   UserCalendarRecord,
 } from '../../domain/entities/user-calendar.types';
+import { buildWispaceClientConfig } from '../../../student-report/infrastructure/wispace/wispace-client-helpers';
 
 const ID_HEADER = 'x-psid' as const;
 
@@ -50,55 +44,18 @@ export class UserCalendarApiService {
 
   private getClient(): UserCalendarApiClient {
     if (!this.client) {
-      this.client = new UserCalendarApiClient(this.buildClientConfig(), {
-        warn: (m) => this.logger.warn(m),
-        log: (m) => this.logger.log(m),
-      });
+      this.client = new UserCalendarApiClient(
+        buildWispaceClientConfig(
+          this.configService,
+          'WISPACE_API_USER_CALENDAR_URL',
+        ),
+        {
+          warn: (m) => this.logger.warn(m),
+          log: (m) => this.logger.log(m),
+        },
+      );
     }
 
     return this.client;
-  }
-
-  private buildClientConfig(): WispaceApiClientConfig {
-    return {
-      url: this.getBaseUrl(),
-      internalKey: this.getInternalKey(),
-      maxRetries: this.readPositiveInt('WISPACE_API_MAX_RETRIES', 3),
-      baseDelayMs: this.readPositiveInt('WISPACE_API_RETRY_BASE_DELAY_MS', 500),
-    };
-  }
-
-  private getInternalKey(): string {
-    const key = this.configService.get<string>('WISPACE_INTERNAL_KEY')?.trim();
-    if (!key) {
-      throw new InternalServerErrorException(
-        'WISPACE_INTERNAL_KEY must be set in .env',
-      );
-    }
-
-    return key;
-  }
-
-  private readPositiveInt(key: string, defaultValue: number): number {
-    const raw = this.configService.get<string>(key)?.trim();
-    if (!raw) return defaultValue;
-    const value = Number(raw);
-    return Number.isFinite(value) && value >= 0
-      ? Math.floor(value)
-      : defaultValue;
-  }
-
-  private getBaseUrl(): string {
-    const url = this.configService
-      .get<string>('WISPACE_API_USER_CALENDAR_URL')
-      ?.trim();
-
-    if (!url) {
-      throw new InternalServerErrorException(
-        'WISPACE_API_USER_CALENDAR_URL must be set in .env',
-      );
-    }
-
-    return url;
   }
 }

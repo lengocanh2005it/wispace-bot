@@ -9,7 +9,6 @@ import { ZaloOauthStateService } from './application/services/zalo-oauth-state.s
 import { ZaloAccountLinkService } from './application/services/zalo-account-link.service';
 import { WispaceZaloTokenVerifyService } from './infrastructure/wispace/wispace-zalo-token-verify.service';
 import { ZaloOauthController } from './presentation/controllers/zalo-oauth.controller';
-import { ZALO_TOKEN_VERIFY_PORT } from './domain/ports/zalo-token-verify.port';
 
 @Module({
   imports: [
@@ -26,10 +25,6 @@ import { ZALO_TOKEN_VERIFY_PORT } from './domain/ports/zalo-token-verify.port';
     ZaloOauthStateService,
     ZaloAccountLinkService,
     WispaceZaloTokenVerifyService,
-    {
-      provide: ZALO_TOKEN_VERIFY_PORT,
-      useExisting: WispaceZaloTokenVerifyService,
-    },
   ],
   exports: [ZaloTokenService, ZaloAccountLinkService],
 })

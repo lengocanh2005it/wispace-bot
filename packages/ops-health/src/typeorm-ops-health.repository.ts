@@ -11,17 +11,25 @@ interface StatusCountRow {
   count: number;
 }
 
+const DEFAULT_DAILY_LIMIT = 15;
+
+function readDailyLimitFromEnv(): () => number {
+  return () => {
+    const raw = process.env.CHAT_FREE_FORM_DAILY_LIMIT;
+    return raw === undefined ? DEFAULT_DAILY_LIMIT : Number(raw);
+  };
+}
+
 /**
  * TypeORM implementation of the ops health repository, parameterized by
- * platform and a daily-limit resolver (Discord hardcodes 15; Zalo reads
- * `CHAT_FREE_FORM_DAILY_LIMIT`).
+ * platform. Daily limit defaults to `CHAT_FREE_FORM_DAILY_LIMIT` (15).
  */
 @Injectable()
 export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
   constructor(
     private readonly dataSource: DataSource,
     private readonly platform: string,
-    private readonly dailyLimit: () => number,
+    private readonly dailyLimit: () => number = readDailyLimitFromEnv(),
   ) {}
 
   async getChatQuotaSummary(): Promise<Record<string, unknown>> {
