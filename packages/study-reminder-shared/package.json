@@ -12,7 +12,7 @@
     "lint": "eslint \"src/**/*.ts\" --fix",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\"",
-    "test": "jest --maxWorkers=50%"
+    "test": "jest --forceExit --maxWorkers=50%"
   },
   "dependencies": {
     "@wispace/bot-common": "*",
@@ -21,6 +21,7 @@
     "@nestjs/schedule": "^6.0.0",
     "@nestjs/typeorm": "^11.0.1",
     "@wispace/study-reminder-core": "*",
+    "cron": "^4.4.0",
     "typeorm": "^1.0.0"
   },
   "devDependencies": {

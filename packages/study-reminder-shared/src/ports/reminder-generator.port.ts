@@ -14,6 +14,8 @@ export interface ReminderGeneratorPort {
       userId?: number;
       timeLabel: string;
       minutesUntil: number;
+      /** Messenger uses it as the LLM correlation id. */
+      jobId?: number;
     },
   ): Promise<string>;
 }

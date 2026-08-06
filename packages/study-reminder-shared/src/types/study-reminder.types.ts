@@ -78,3 +78,26 @@ export interface SendMessageInput {
   messageType?: string;
   userId?: number;
 }
+
+export interface StudyReminderSyncFailure {
+  externalUserId: string;
+  error: string;
+}
+
+/**
+ * Result of a sync run. Counters are always present; `scope`/`userId`/
+ * `linked`/`cancelledOtherPlatforms`/`failures` are populated by every run
+ * (Messenger consumes the full shape — see scheduler.controller).
+ */
+export interface StudyReminderSyncResult {
+  mappings: number;
+  upserted: number;
+  cancelled: number;
+  skipped: number;
+  failed: number;
+  scope?: 'all' | 'user';
+  userId?: number;
+  linked?: boolean;
+  cancelledOtherPlatforms?: number;
+  failures?: StudyReminderSyncFailure[];
+}

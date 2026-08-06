@@ -9,7 +9,7 @@ import type {
 } from '../../domain/ports/study-data.port';
 import { StudySessionSourceService } from '@messenger/modules/study-reminder/application/services/study-session-source.service';
 import { StudyReminderService } from '@messenger/modules/study-reminder/application/services/study-reminder.service';
-import { StudyReminderScheduleService } from '@messenger/modules/study-reminder/application/services/study-reminder-schedule.service';
+import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudyCalendarCommandService } from '@messenger/modules/study-reminder/application/services/study-calendar-command.service';
 
 @Injectable()

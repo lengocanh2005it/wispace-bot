@@ -7,8 +7,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { InternalApiKeyGuard } from '@wispace/bot-common';
-import { StudyReminderSyncService } from '@messenger/modules/study-reminder/application/services/study-reminder-sync.service';
-import { StudyReminderWorkerService } from '@messenger/modules/study-reminder/application/services/study-reminder-worker.service';
+import {
+  StudyReminderSyncService,
+  StudyReminderWorkerService,
+  type StudyReminderSyncResult,
+} from '@wispace/study-reminder-shared';
 import { MessengerMappingService } from '@messenger/modules/messenger/application/services/messenger-mapping.service';
 import { DopplerRuntimeSyncService } from '../../application/services/doppler-runtime-sync.service';
 import type { DopplerWebhookPayload } from '../../domain/entities/doppler-runtime-sync.types';
@@ -103,24 +106,55 @@ export class SchedulerController {
       throw new BadRequestException('userId must be a positive number');
     }
 
-    return this.studyReminderSyncService.syncUpcomingSessions({ userId });
+    return this.studyReminderSyncService
+      .syncUpcomingSessions({ userId })
+      .then((result) => this.toWireSyncResult(result));
   }
 
   @Post('sync-study-reminders')
   @HttpCode(200)
   syncStudyReminders() {
-    return this.studyReminderSyncService.syncUpcomingSessions();
+    return this.studyReminderSyncService
+      .syncUpcomingSessions()
+      .then((result) => this.toWireSyncResult(result));
   }
 
   @Post('send-study-reminders')
   @HttpCode(200)
   sendStudyReminders() {
-    return this.studyReminderWorkerService.runSyncAndDispatch();
+    return this.studyReminderWorkerService.runSyncAndDispatch().then((r) => ({
+      sync: r.sync ? this.toWireSyncResult(r.sync) : r.sync,
+      dispatch: {
+        ...r.dispatch,
+        failures: r.dispatch.failures.map((f) => ({
+          psid: f.externalUserId,
+          error: f.error,
+        })),
+      },
+    }));
   }
 
   @Post('study-reminder/evening-rollover')
   @HttpCode(200)
   runStudyReminderEveningRollover() {
-    return this.studyReminderWorkerService.runEveningRollover();
+    return this.studyReminderWorkerService.runEveningRollover().then((r) => ({
+      deletedSent: r.deletedSent,
+      sync: this.toWireSyncResult(r.sync),
+    }));
+  }
+
+  /**
+   * Shared sync result shape uses platform-agnostic `externalUserId`;
+   * the messenger ops wire exposes it as `psid`.
+   */
+  private toWireSyncResult(result: StudyReminderSyncResult) {
+    return {
+      ...result,
+      failures:
+        result.failures?.map((f) => ({
+          psid: f.externalUserId,
+          error: f.error,
+        })) ?? [],
+    };
   }
 }

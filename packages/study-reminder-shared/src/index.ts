@@ -22,6 +22,7 @@ export {
 
 // Services
 export { StudyReminderScheduleService } from './services/study-reminder-schedule.service';
+export type { StudyReminderScheduleServiceOptions } from './services/study-reminder-schedule.service';
 export {
   wrapMessageSender,
   type OutboundMessageSender,
@@ -29,6 +30,16 @@ export {
 export {
   StudyReminderSyncService,
   type OnUserSyncHook,
+  type StudyReminderSyncOptions,
 } from './services/study-reminder-sync.service';
-export { StudyReminderDispatchService } from './services/study-reminder-dispatch.service';
-export { StudyReminderWorkerService } from './services/study-reminder-worker.service';
+export {
+  StudyReminderDispatchService,
+  type StudyReminderDispatchServiceOptions,
+  type StudyReminderDispatchResult,
+  type StudyReminderDispatchFailure,
+} from './services/study-reminder-dispatch.service';
+export {
+  StudyReminderWorkerService,
+  type StudyReminderWorkerLockIds,
+  type StudyReminderWorkerOptions,
+} from './services/study-reminder-worker.service';

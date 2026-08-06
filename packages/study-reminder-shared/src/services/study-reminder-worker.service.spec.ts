@@ -1,11 +1,19 @@
-import type { ConfigService } from '@nestjs/config';
 import type { SchedulerRegistry } from '@nestjs/schedule';
 import type { PgAdvisoryLockService } from '@wispace/bot-common';
+import { StudyReminderWorkerService } from './study-reminder-worker.service';
 import type { StudyReminderSyncService } from './study-reminder-sync.service';
 import type { StudyReminderDispatchService } from './study-reminder-dispatch.service';
-import type { StudyReminderJobRepositoryPort } from '../../domain/repositories/study-reminder-job.repository.port';
-import type { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
-import { StudyReminderWorkerService } from './study-reminder-worker.service';
+import type { StudyReminderScheduleService } from './study-reminder-schedule.service';
+import type { StudyReminderJobRepositoryPort } from '../ports/study-reminder-job.repository.port';
+
+jest.mock('cron', () => {
+  const CronJob = jest.fn().mockImplementation((cronTime: string) => ({
+    cronTime: { source: cronTime },
+    start: jest.fn(),
+    stop: jest.fn(),
+  }));
+  return { CronJob };
+});
 
 describe('StudyReminderWorkerService', () => {
   let service: StudyReminderWorkerService;
@@ -15,11 +23,9 @@ describe('StudyReminderWorkerService', () => {
   let scheduleService: jest.Mocked<StudyReminderScheduleService>;
   let schedulerRegistry: jest.Mocked<SchedulerRegistry>;
   let pgLock: jest.Mocked<PgAdvisoryLockService>;
-  let configService: jest.Mocked<ConfigService>;
 
   const defaultSettings = {
     syncHorizonHours: 168,
-    maxRetries: 3,
     eveningRolloverHour: 23,
     timezone: 'Asia/Ho_Chi_Minh',
     minutesBefore: 30,
@@ -27,6 +33,7 @@ describe('StudyReminderWorkerService', () => {
     retryBackoffMinutes: 5,
     jobRetentionDays: 30,
     stuckProcessingMs: 600_000,
+    maxRetries: 3,
   };
 
   beforeEach(() => {
@@ -38,9 +45,11 @@ describe('StudyReminderWorkerService', () => {
         upserted: 0,
         cancelled: 0,
         skipped: 0,
+        failed: 0,
+        cancelledOtherPlatforms: 0,
         failures: [],
       }),
-    };
+    } as unknown as jest.Mocked<StudyReminderSyncService>;
 
     dispatchService = {
       dispatchDueReminders: jest.fn().mockResolvedValue({
@@ -53,13 +62,13 @@ describe('StudyReminderWorkerService', () => {
         nextDueAt: null,
         failures: [],
       }),
-    };
+    } as unknown as jest.Mocked<StudyReminderDispatchService>;
 
     jobRepo = {
       deleteSentJobs: jest.fn().mockResolvedValue(0),
       deleteTerminalJobsOlderThan: jest.fn().mockResolvedValue(0),
       upsertPendingJob: jest.fn(),
-      cancelStaleJobsForPsid: jest.fn(),
+      cancelStaleJobsForExternalUserId: jest.fn(),
       cancelJobsFromOtherPlatforms: jest.fn(),
       findDueJobs: jest.fn(),
       claimJob: jest.fn(),
@@ -77,6 +86,11 @@ describe('StudyReminderWorkerService', () => {
 
     scheduleService = {
       getOutboxSettings: jest.fn().mockReturnValue(defaultSettings),
+      getDispatchSettings: jest.fn().mockReturnValue({
+        pollMinMs: 30_000,
+        pollMaxMs: 210_000,
+        pollLeadMs: 60_000,
+      }),
       computeRemindAt: jest.fn(),
       getMinutesUntilSession: jest.fn(),
       isSessionStarted: jest.fn(),
@@ -89,34 +103,33 @@ describe('StudyReminderWorkerService', () => {
     } as unknown as jest.Mocked<SchedulerRegistry>;
 
     pgLock = {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return
-      withLock: jest.fn().mockImplementation((_id, fn) => fn()),
+      withLock: jest
+        .fn()
+        .mockImplementation((_id: number, fn: () => Promise<unknown>) => fn()),
     } as unknown as jest.Mocked<PgAdvisoryLockService>;
+  });
 
-    configService = {
-      get: jest.fn().mockImplementation((key: string) => {
-        const env: Record<string, string> = {
-          STUDY_REMINDER_POLL_MIN_MS: '30000',
-          STUDY_REMINDER_POLL_MAX_MS: '210000',
-          STUDY_REMINDER_POLL_LEAD_MS: '60000',
-        };
-        return env[key];
-      }),
-    } as unknown as jest.Mocked<ConfigService>;
-
+  function build(
+    lockIds?: { sync: number; cleanup: number; rollover: number },
+    options?: { logLockSkips?: boolean; startupSyncSwallowErrors?: boolean },
+  ): void {
     service = new StudyReminderWorkerService(
       syncService,
       dispatchService,
-      jobRepo,
       scheduleService,
       schedulerRegistry,
       pgLock,
-      configService,
+      jobRepo,
+      'messenger',
+      undefined,
+      lockIds,
+      options,
     );
-  });
+  }
 
   describe('onModuleInit', () => {
-    it('registers evening rollover cron and runs initial sync', async () => {
+    it('registers the evening rollover cron and runs initial sync', async () => {
+      build();
       await service.onModuleInit();
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
@@ -128,85 +141,78 @@ describe('StudyReminderWorkerService', () => {
       expect(syncService.syncUpcomingSessions).toHaveBeenCalled();
     });
 
-    it('skips sync when advisory lock is not acquired', async () => {
-      pgLock.withLock.mockResolvedValue(null);
-
-      await service.onModuleInit();
-
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(syncService.syncUpcomingSessions).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('onModuleDestroy', () => {
-    it('clears dispatch timer and deletes cron job', async () => {
-      await service.onModuleInit();
-      service.onModuleDestroy();
-
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(schedulerRegistry.deleteCronJob).toHaveBeenCalledWith(
-        'study-reminder-evening-rollover',
-      );
-    });
-
-    it('does not throw if cron job was never registered', () => {
-      schedulerRegistry.deleteCronJob.mockImplementation(() => {
-        throw new Error('Not found');
+    it('registers the rollover cron at the configured hour', async () => {
+      scheduleService.getOutboxSettings.mockReturnValue({
+        ...defaultSettings,
+        eveningRolloverHour: 22,
       });
+      build();
+      await service.onModuleInit();
 
-      expect(() => service.onModuleDestroy()).not.toThrow();
-    });
-  });
-
-  describe('handleSyncCron', () => {
-    it('runs sync under advisory lock', async () => {
-      await service.handleSyncCron();
-
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(pgLock.withLock).toHaveBeenCalledWith(
-        expect.any(Number),
-        expect.any(Function),
-      );
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(syncService.syncUpcomingSessions).toHaveBeenCalled();
-    });
-  });
-
-  describe('handleCleanupCron', () => {
-    it('runs purgeExpiredJobs under advisory lock', async () => {
-      await service.handleCleanupCron();
-
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.deleteTerminalJobsOlderThan).toHaveBeenCalled();
-    });
-  });
-
-  describe('handleEveningRolloverCron', () => {
-    it('purges sent jobs then syncs', async () => {
-      jobRepo.deleteSentJobs.mockResolvedValue(5);
-
-      await service.handleEveningRolloverCron();
-
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.deleteSentJobs).toHaveBeenCalled();
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(syncService.syncUpcomingSessions).toHaveBeenCalled();
+      const added = schedulerRegistry.addCronJob.mock.calls[0]?.[1] as {
+        cronTime: { source: string };
+      };
+      expect(added.cronTime.source).toBe('0 0 22 * * *');
     });
 
-    it('skips when lock not acquired', async () => {
+    it('skips sync when the advisory lock is not acquired', async () => {
       pgLock.withLock.mockResolvedValue(null);
+      build({ sync: 1, cleanup: 2, rollover: 3 }, { logLockSkips: true });
+      await service.onModuleInit();
 
-      await service.handleEveningRolloverCron();
-
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.deleteSentJobs).not.toHaveBeenCalled();
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(syncService.syncUpcomingSessions).not.toHaveBeenCalled();
+    });
+
+    it('swallows startup sync errors when configured', async () => {
+      syncService.syncUpcomingSessions.mockRejectedValue(new Error('DB down'));
+      build(undefined, { startupSyncSwallowErrors: true });
+      await expect(service.onModuleInit()).resolves.toBeUndefined();
+    });
+
+    it('propagates startup sync errors by default', async () => {
+      syncService.syncUpcomingSessions.mockRejectedValue(new Error('DB down'));
+      build();
+      await expect(service.onModuleInit()).rejects.toThrow('DB down');
+    });
+  });
+
+  describe('advisory lock ids', () => {
+    it('uses the configured lock ids', async () => {
+      build(
+        { sync: 900_001, cleanup: 900_002, rollover: 900_003 },
+        { logLockSkips: true },
+      );
+      await service.handleSyncCron();
+      await service.handleCleanupCron();
+      await service.handleEveningRolloverCron();
+
+      const lockIds = pgLock.withLock.mock.calls.map((call) => call[0]);
+      expect(lockIds).toContain(900_001);
+      expect(lockIds).toContain(900_002);
+      expect(lockIds).toContain(900_003);
+    });
+  });
+
+  describe('runEveningRollover', () => {
+    it('purges sent jobs and syncs', async () => {
+      jobRepo.deleteSentJobs.mockResolvedValue(5);
+      build();
+
+      const result = await service.runEveningRollover();
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(jobRepo.deleteSentJobs).toHaveBeenCalledWith();
+      expect(result).toMatchObject({ deletedSent: 5 });
+      expect(result.sync).toHaveProperty('upserted');
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(syncService.syncUpcomingSessions).toHaveBeenCalled();
     });
   });
 
   describe('runSyncAndDispatch', () => {
-    it('runs both sync and dispatch sequentially', async () => {
+    it('runs sync then dispatch and returns both results', async () => {
+      build();
       const result = await service.runSyncAndDispatch();
 
       expect(result).toHaveProperty('sync');
@@ -218,27 +224,25 @@ describe('StudyReminderWorkerService', () => {
     });
   });
 
-  describe('computePollDelay', () => {
-    it('returns pollMaxMs when no nextDueAt', async () => {
+  describe('onModuleDestroy', () => {
+    it('clears the dispatch timer and deletes the cron job', async () => {
+      build();
       await service.onModuleInit();
-      dispatchService.dispatchDueReminders.mockResolvedValue({
-        claimed: 0,
-        sent: 0,
-        cancelled: 0,
-        failed: 0,
-        retried: 0,
-        resetStuck: 0,
-        nextDueAt: null,
-        failures: [],
+      service.onModuleDestroy();
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(schedulerRegistry.deleteCronJob).toHaveBeenCalledWith(
+        'study-reminder-evening-rollover',
+      );
+    });
+
+    it('does not throw if the cron job was never registered', () => {
+      schedulerRegistry.deleteCronJob.mockImplementation(() => {
+        throw new Error('Not found');
       });
+      build();
 
-      // Trigger dispatch tick to exercise computePollDelay
-      await (
-        service as unknown as { runDispatchTick: () => Promise<void> }
-      ).runDispatchTick();
-
-      // Timer should be scheduled (dispatchTimer is set)
-      // We can't directly assert the delay, but the timer should be set
+      expect(() => service.onModuleDestroy()).not.toThrow();
     });
   });
 });

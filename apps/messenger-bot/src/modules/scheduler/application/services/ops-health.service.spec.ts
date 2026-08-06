@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { ChatQuotaOpsService } from '@messenger/modules/chat-rate-limit/application/services/chat-quota-ops.service';
-import { STUDY_REMINDER_JOB_REPOSITORY } from '@messenger/modules/study-reminder/domain/repositories/study-reminder-job.repository.port';
+import { STUDY_REMINDER_JOB_REPOSITORY } from '@wispace/study-reminder-shared';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import { LlmSafetyService } from '@messenger/modules/llm-safety/llm-safety.service';
 import { OpsHealthService } from './ops-health.service';
