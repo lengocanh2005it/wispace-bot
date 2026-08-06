@@ -23,21 +23,14 @@ export function isSessionStarted(
   return getMinutesUntilSession(scheduledAt, now) <= minLeadMinutes;
 }
 
-export function getDatePartsInTimezone(
-  date: Date,
-  timezone: string,
-): { year: number; month: number; day: number } {
-  return getDatePartsFromUtils(date, timezone);
-}
-
 /** "Hôm nay lúc HH:mm" / "Ngày mai lúc HH:mm" / "dd/MM/yyyy lúc HH:mm" (vi-VN). */
 export function formatScheduledTimeLabel(
   scheduledAt: Date,
   timezone: string,
   now: Date = new Date(),
 ): string {
-  const todayParts = getDatePartsInTimezone(now, timezone);
-  const sessionParts = getDatePartsInTimezone(scheduledAt, timezone);
+  const todayParts = getDatePartsFromUtils(now, timezone);
+  const sessionParts = getDatePartsFromUtils(scheduledAt, timezone);
 
   const isToday =
     todayParts.year === sessionParts.year &&
@@ -54,7 +47,7 @@ export function formatScheduledTimeLabel(
       0,
     ),
   );
-  const tomorrowParts = getDatePartsInTimezone(tomorrowProbe, timezone);
+  const tomorrowParts = getDatePartsFromUtils(tomorrowProbe, timezone);
   const isTomorrow =
     tomorrowParts.year === sessionParts.year &&
     tomorrowParts.month === sessionParts.month &&

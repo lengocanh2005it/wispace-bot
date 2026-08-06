@@ -9,7 +9,7 @@ import {
   PlatformChatQueueService,
 } from '@wispace/chat-agent';
 import { DiscordOutboundService } from '../../application/services/discord-outbound.service';
-import { DiscordRescheduleConfirmationService } from '../../application/services/discord-reschedule-confirmation.service';
+import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
 import {
   RESCHEDULE_CANCEL_CUSTOM_ID,
   RESCHEDULE_CONFIRM_CUSTOM_ID,
@@ -58,7 +58,7 @@ export class DiscordChatGateway {
     private readonly outboundService: DiscordOutboundService,
     private readonly rateLimitService: DiscordChatRateLimitService,
     private readonly accountLinkService: DiscordAccountLinkService,
-    private readonly rescheduleConfirmationService: DiscordRescheduleConfirmationService,
+    private readonly rescheduleConfirmationService: RescheduleConfirmationService<string>,
     private readonly menuService: DiscordMenuService,
     private readonly chatHistoryService: PlatformChatHistoryService,
     private readonly pendingJoinService: DiscordPendingJoinService,

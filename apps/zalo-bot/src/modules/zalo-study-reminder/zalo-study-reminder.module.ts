@@ -122,11 +122,9 @@ import { WispaceCalendarService } from '@wispace/wispace-client';
     TypeormStudyReminderJobRepository,
     {
       provide: OPS_HEALTH_REPOSITORY,
-      useFactory: (dataSource: DataSource, configService: ConfigService) =>
-        new TypeormOpsHealthRepository(dataSource, 'zalo', () =>
-          Number(configService.get<string>('CHAT_FREE_FORM_DAILY_LIMIT') ?? 15),
-        ),
-      inject: [DataSource, ConfigService],
+      useFactory: (dataSource: DataSource) =>
+        new TypeormOpsHealthRepository(dataSource, 'zalo'),
+      inject: [DataSource],
     },
     OpsHealthService,
   ],

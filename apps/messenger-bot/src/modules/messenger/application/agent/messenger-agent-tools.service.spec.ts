@@ -1,10 +1,10 @@
 import { MessengerAgentToolsService } from './messenger-agent-tools.service';
 import type { MessengerAgentToolContext } from './messenger-agent-tools.service';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
-import type { ReportPort } from '../../domain/ports/report.port';
-import type { GoalsDataPort } from '../../domain/ports/goals-data.port';
 import type { StudyDataPort } from '../../domain/ports/study-data.port';
 import type { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
+import type { UserGoalsApiService } from '../../../student-report/infrastructure/wispace/user-goals-api.service';
+import type { StudentReportService } from '../../../student-report/application/services/student-report.service';
 
 describe('MessengerAgentToolsService', () => {
   const createService = (
@@ -16,13 +16,13 @@ describe('MessengerAgentToolsService', () => {
       upsertPocSubscription: overrides.upsertPocSubscription ?? jest.fn(),
     } as unknown as jest.Mocked<MessengerRepositoryPort>;
 
-    const reportPort: jest.Mocked<ReportPort> = {
+    const studentReportService: jest.Mocked<StudentReportService> = {
       generateReport: overrides.generateReport ?? jest.fn(),
-    };
+    } as unknown as jest.Mocked<StudentReportService>;
 
-    const goalsPort: jest.Mocked<GoalsDataPort> = {
+    const userGoalsApiService: jest.Mocked<UserGoalsApiService> = {
       getUserGoals: overrides.getUserGoals ?? jest.fn(),
-    };
+    } as unknown as jest.Mocked<UserGoalsApiService>;
 
     const studyPort: jest.Mocked<StudyDataPort> = {
       getUpcomingSessions: overrides.getUpcomingSessions ?? jest.fn(),
@@ -41,8 +41,8 @@ describe('MessengerAgentToolsService', () => {
 
     const service = new MessengerAgentToolsService(
       repository,
-      reportPort,
-      goalsPort,
+      studentReportService,
+      userGoalsApiService,
       studyPort,
       rescheduleConfirmationService,
     );
@@ -57,8 +57,8 @@ describe('MessengerAgentToolsService', () => {
       service,
       ctx,
       repository,
-      reportPort,
-      goalsPort,
+      studentReportService,
+      userGoalsApiService,
       studyPort,
       rescheduleConfirmationService,
     };

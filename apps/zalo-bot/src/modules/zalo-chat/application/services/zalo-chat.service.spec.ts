@@ -3,11 +3,11 @@ import { ZaloChatService } from './zalo-chat.service';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { PlatformChatQueueService } from '@wispace/chat-agent';
-import type { ZaloRescheduleConfirmationService } from './zalo-reschedule-confirmation.service';
+import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
 
 const NO_RESCHEDULE = {
   hasPending: jest.fn().mockResolvedValue(false),
-} as unknown as ZaloRescheduleConfirmationService;
+} as unknown as RescheduleConfirmationService<string>;
 
 function buildConfig(): ConfigService {
   return {

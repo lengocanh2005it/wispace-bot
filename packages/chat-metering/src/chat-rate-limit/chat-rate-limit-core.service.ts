@@ -1,5 +1,5 @@
 import type { ChatRateLimitRepository } from './chat-rate-limit.repository';
-import { todayUsageDate } from './chat-usage-date.utils';
+import { todayInTimezone as todayUsageDate } from '@wispace/date-utils';
 import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
 import type {
   BurstCounterPort,

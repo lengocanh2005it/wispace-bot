@@ -6,7 +6,7 @@ export {
 } from './entities';
 export type { ChatIdempotencyStatus } from './entities';
 
-export { todayUsageDate } from './chat-rate-limit/chat-usage-date.utils';
+export { todayInTimezone as todayUsageDate } from '@wispace/date-utils';
 export {
   ChatRateLimitRepository,
   type ChatRateLimitRepositoryHooks,

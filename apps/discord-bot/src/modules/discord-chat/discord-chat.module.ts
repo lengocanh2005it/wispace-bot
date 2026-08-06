@@ -31,7 +31,7 @@ import {
 } from '@wispace/wispace-client';
 import { REPORT_DELIVERY_PORT } from '@wispace/scheduler-core';
 import type { ReportDeliveryPort } from '@wispace/scheduler-core';
-import { DiscordRescheduleConfirmationService } from './application/services/discord-reschedule-confirmation.service';
+import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
 import { DiscordMenuService } from './application/services/discord-menu.service';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
@@ -96,7 +96,7 @@ const REGISTER_REPORT_MESSAGE =
       useFactory: (
         goalsService: WispaceGoalsService,
         calendarService: WispaceCalendarService,
-        rescheduleConfirmationService: DiscordRescheduleConfirmationService,
+        rescheduleConfirmationService: RescheduleConfirmationService<string>,
         outboundService: DiscordOutboundService,
         reportDeliveryPort?: ReportDeliveryPort,
       ) =>
@@ -130,7 +130,7 @@ const REGISTER_REPORT_MESSAGE =
       inject: [
         WispaceGoalsService,
         WispaceCalendarService,
-        DiscordRescheduleConfirmationService,
+        RescheduleConfirmationService,
         DiscordOutboundService,
         { token: REPORT_DELIVERY_PORT, optional: true },
       ],
@@ -203,7 +203,15 @@ const REGISTER_REPORT_MESSAGE =
     },
     DiscordCalendarPort,
     DiscordReschedulePort,
-    DiscordRescheduleConfirmationService,
+    {
+      provide: RescheduleConfirmationService,
+      useFactory: (
+        calendarPort: DiscordCalendarPort,
+        reschedulePort: DiscordReschedulePort,
+      ) =>
+        new RescheduleConfirmationService<string>(calendarPort, reschedulePort),
+      inject: [DiscordCalendarPort, DiscordReschedulePort],
+    },
     DiscordMenuService,
     CleanupCronService,
     {
@@ -266,7 +274,7 @@ const REGISTER_REPORT_MESSAGE =
     {
       provide: OPS_HEALTH_REPOSITORY,
       useFactory: (dataSource: DataSource) =>
-        new TypeormOpsHealthRepository(dataSource, 'discord', () => 15),
+        new TypeormOpsHealthRepository(dataSource, 'discord'),
       inject: [DataSource],
     },
     OpsHealthService,

@@ -4,7 +4,7 @@ import type { ZaloWebhookHandler } from '@zalo/modules/zalo-webhook/domain/ports
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { PlatformChatQueueService } from '@wispace/chat-agent';
-import { ZaloRescheduleConfirmationService } from './zalo-reschedule-confirmation.service';
+import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
 import {
   RESCHEDULE_CONFIRM_KEYWORDS,
   RESCHEDULE_CANCEL_KEYWORDS,
@@ -33,7 +33,7 @@ export class ZaloChatService implements ZaloWebhookHandler {
     private readonly outboundService: ZaloOutboundService,
     private readonly accountLinkService: ZaloAccountLinkService,
     private readonly chatQueueService: PlatformChatQueueService,
-    private readonly rescheduleConfirmationService: ZaloRescheduleConfirmationService,
+    private readonly rescheduleConfirmationService: RescheduleConfirmationService<string>,
   ) {
     const appId = this.configService.get<string>('ZALO_APP_ID');
     const redirectUri = this.configService.get<string>(

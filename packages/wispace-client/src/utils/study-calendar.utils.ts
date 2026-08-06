@@ -53,7 +53,7 @@ export function parseLocalDatePartsFromEventDate(
     return { year, month, day };
   }
 
-  return getLocalDateParts(new Date(trimmed), timezone);
+  return getDatePartsInTimezone(new Date(trimmed), timezone);
 }
 
 export function resolveScheduledAtFromEventDate(
@@ -115,33 +115,13 @@ export function normalizeStudyCalendarTime(time: string): string {
   return `${hour}:${minute}`;
 }
 
-export function getLocalDateParts(
-  date: Date,
-  timezone: string,
-): { year: number; month: number; day: number } {
-  return getDatePartsInTimezone(date, timezone);
-}
-
-export function formatLocalDate(parts: {
-  year: number;
-  month: number;
-  day: number;
-}): string {
-  return formatLocalDateInTimezone(parts);
-}
-
-export function getTomorrowLocalDate(
-  timezone: string,
-  now = new Date(),
-): string {
-  return tomorrowInTimezone(timezone, now);
-}
-
 export function getLocalDateFromEventDate(
   eventDate: string,
   timezone: string,
 ): string {
-  return formatLocalDate(parseLocalDatePartsFromEventDate(eventDate, timezone));
+  return formatLocalDateInTimezone(
+    parseLocalDatePartsFromEventDate(eventDate, timezone),
+  );
 }
 
 export function formatStoredCalendarDate(
@@ -149,7 +129,7 @@ export function formatStoredCalendarDate(
   timezone: string,
 ): string {
   if (value instanceof Date) {
-    return formatLocalDate(getLocalDateParts(value, timezone));
+    return formatLocalDateInTimezone(getDatePartsInTimezone(value, timezone));
   }
 
   const trimmed = String(value).trim();
@@ -175,7 +155,7 @@ export function addDaysToLocalDate(
 
   const [year, month, day] = localDate.split('-').map(Number);
   const probe = new Date(Date.UTC(year, month - 1, day + days, 12, 0, 0));
-  return formatLocalDate(getLocalDateParts(probe, timezone));
+  return formatLocalDateInTimezone(getDatePartsInTimezone(probe, timezone));
 }
 
 export function resolveRescheduleSlot(params: {
@@ -219,8 +199,7 @@ export function resolveRescheduleSlot(params: {
   }
 
   const resolvedLocalDate =
-    localDate ??
-    getTomorrowLocalDate(params.timezone, params.now ?? new Date());
+    localDate ?? tomorrowInTimezone(params.timezone, params.now ?? new Date());
 
   if (!LOCAL_DATE_PATTERN.test(resolvedLocalDate)) {
     throw new Error(

@@ -33,7 +33,6 @@ import { BotCommonModule } from '@wispace/bot-common';
 import { AccountLinkModule } from '../account-link/account-link.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
-import { DISCORD_REPORT_PORT } from './domain/ports/discord-report.port';
 
 @Module({
   imports: [
@@ -61,10 +60,6 @@ import { DISCORD_REPORT_PORT } from './domain/ports/discord-report.port';
     {
       provide: REPORT_CLAIM_REPOSITORY,
       useExisting: DiscordReportClaimRepository,
-    },
-    {
-      provide: DISCORD_REPORT_PORT,
-      useExisting: PlatformStudentReportService,
     },
     {
       provide: PlatformStudentReportService,

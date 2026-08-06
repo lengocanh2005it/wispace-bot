@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { todayUsageDate } from '../chat-rate-limit/chat-usage-date.utils';
+import { todayInTimezone as todayUsageDate } from '@wispace/date-utils';
 import {
   buildInputCostEnvKey,
   buildOutputCostEnvKey,
