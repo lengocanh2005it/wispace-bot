@@ -316,7 +316,6 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     'LLM_PROVIDER_ADAPTER',
     ZaloChatService,
     ZaloOutboundService,
-    PlatformLlmUsageRecorderAdapter,
     PlatformDeadLetterService,
   ],
 })

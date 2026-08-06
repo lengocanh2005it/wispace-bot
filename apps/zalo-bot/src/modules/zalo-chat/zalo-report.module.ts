@@ -4,7 +4,10 @@ import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { join } from 'path';
 import { PlatformStudentReportService } from '@wispace/student-report';
-import { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering';
+import {
+  ChatMeteringModule,
+  PlatformLlmUsageRecorderAdapter,
+} from '@wispace/chat-metering';
 import { WispaceGoalsService } from '@wispace/wispace-client';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { REPORT_CLAIM_REPOSITORY } from '@wispace/scheduler-core';
@@ -25,6 +28,7 @@ import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-
     ]),
     ZaloChatModule,
     ZaloWispaceModule,
+    ChatMeteringModule.forPlatform('zalo'),
   ],
   providers: [
     ZaloReportCronService,
