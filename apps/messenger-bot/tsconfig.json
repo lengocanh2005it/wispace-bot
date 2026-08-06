@@ -11,7 +11,7 @@
     "target": "ES2023",
     "sourceMap": true,
     "outDir": "./dist",
-    "rootDir": "./src",
+
     "paths": {
       "@messenger/*": ["./src/*"],
       "@messenger/modules/*": ["./src/modules/*"]
