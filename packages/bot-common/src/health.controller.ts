@@ -29,7 +29,12 @@ export class HealthController {
       throw new ServiceUnavailableException({
         status: 'error',
         database: 'disconnected',
-        message: error instanceof Error ? error.message : String(error),
+        message:
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : 'unknown error',
       });
     }
   }
@@ -52,7 +57,12 @@ export class HealthController {
       throw new ServiceUnavailableException({
         ok: false,
         redis: 'unreachable',
-        message: error instanceof Error ? error.message : String(error),
+        message:
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : 'unknown error',
       });
     }
   }
