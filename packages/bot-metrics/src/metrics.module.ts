@@ -54,7 +54,14 @@ export function createMetricsModule(
 
   @Module({
     controllers: [PlatformMetricsController],
-    providers: [PlatformMetricsService],
+    // useFactory so Nest does not try to resolve the (phantom) constructor
+    // paramtypes that SWC emits for this class expression.
+    providers: [
+      {
+        provide: PlatformMetricsService,
+        useFactory: () => new PlatformMetricsService(),
+      },
+    ],
     exports: [PlatformMetricsService],
   })
   class PlatformMetricsModule {}
