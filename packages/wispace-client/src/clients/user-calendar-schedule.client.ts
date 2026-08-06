@@ -168,7 +168,12 @@ export class UserCalendarScheduleClient {
     externalId: string,
     error: unknown,
   ): void {
-    const message = error instanceof Error ? error.message : String(error);
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : 'unknown error';
     const unknownId =
       error instanceof WispaceApiError && error.statusCode === 401;
 

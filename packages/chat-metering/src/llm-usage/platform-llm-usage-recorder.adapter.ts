@@ -69,7 +69,11 @@ export class PlatformLlmUsageRecorderAdapter {
       const writer = new DirectUsageWriter(repository, (error) => {
         this.logger.warn(
           `LLM_USAGE_INSERT_FAILED: ${
-            error instanceof Error ? error.message : String(error)
+            error instanceof Error
+              ? error.message
+              : typeof error === 'string'
+                ? error
+                : 'unknown error'
           }`,
         );
       });

@@ -72,7 +72,12 @@ export class PlatformDeadLetterCronService {
         await this.options.sendText(externalUserId, text);
         await this.deadLetterService.markReplayed(entry.id);
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorMsg =
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : 'unknown error';
 
         if ((entry.retryCount ?? 0) + 1 >= maxRetries) {
           await this.deadLetterService.markAbandoned(entry.id, errorMsg);

@@ -183,7 +183,7 @@ export class StudyReminderWorkerService
       }
     } catch (error) {
       this.logger.error(
-        `Dispatch tick failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Dispatch tick failed: ${error instanceof Error ? error.message : typeof error === 'string' ? error : 'unknown error'}`,
       );
       const settings = this.scheduleService.getDispatchSettings();
       this.scheduleNextDispatch(settings.pollMinMs);

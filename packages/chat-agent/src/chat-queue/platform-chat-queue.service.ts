@@ -140,7 +140,12 @@ export class PlatformChatQueueService implements OnModuleDestroy {
             : undefined,
       });
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg =
+        error instanceof Error
+          ? error.message
+          : typeof error === 'string'
+            ? error
+            : 'unknown error';
       this.logger.error(
         `Chat queue flush failed for ${batch.externalUserId}: ${msg}`,
       );

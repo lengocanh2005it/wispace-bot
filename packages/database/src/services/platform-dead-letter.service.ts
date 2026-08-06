@@ -38,7 +38,11 @@ export class PlatformDeadLetterService {
     } catch (error) {
       this.logger.warn(
         `Failed to save dead letter: ${
-          error instanceof Error ? error.message : String(error)
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : 'unknown error'
         }`,
       );
     }

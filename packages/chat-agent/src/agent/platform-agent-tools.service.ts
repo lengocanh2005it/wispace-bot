@@ -61,7 +61,11 @@ export class PlatformAgentToolsService {
     } catch (error) {
       this.logger.warn(
         `Tool ${toolName} failed for externalUserId=${ctx.externalUserId}: ${
-          error instanceof Error ? error.message : String(error)
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : 'unknown error'
         }`,
       );
       return {

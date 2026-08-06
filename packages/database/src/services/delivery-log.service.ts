@@ -36,7 +36,11 @@ export class DeliveryLogService<Entity extends MessageLogRow = MessageLogRow> {
     } catch (error) {
       this.logger.warn(
         `Failed to log delivery: ${
-          error instanceof Error ? error.message : String(error)
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : 'unknown error'
         }`,
       );
     }

@@ -127,7 +127,11 @@ export class PlatformAgentService {
             onRetry: (attempt, backoffMs, error) =>
               this.logger.warn(
                 `LLM provider retry attempt=${attempt}/3 backoffMs=${backoffMs}: ${
-                  error instanceof Error ? error.message : String(error)
+                  error instanceof Error
+                    ? error.message
+                    : typeof error === 'string'
+                      ? error
+                      : 'unknown error'
                 }`,
               ),
           }),

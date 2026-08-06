@@ -24,7 +24,11 @@ export function wrapMessageSender(
       } catch (error) {
         logger.warn(
           `Failed to send study reminder to externalUserId=${input.externalUserId}: ${
-            error instanceof Error ? error.message : String(error)
+            error instanceof Error
+              ? error.message
+              : typeof error === 'string'
+                ? error
+                : 'unknown error'
           }`,
         );
         throw error;
