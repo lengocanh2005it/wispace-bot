@@ -61,7 +61,11 @@ export class RedisUserDisplayNameCache {
     } catch (error) {
       this.logger.warn(
         `Redis user display cache read failed userId=${userId}: ${
-          error instanceof Error ? error.message : String(error)
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : 'unknown error'
         }`,
       );
       return null;
@@ -88,7 +92,11 @@ export class RedisUserDisplayNameCache {
     } catch (error) {
       this.logger.warn(
         `Redis user display cache write failed userId=${userId}: ${
-          error instanceof Error ? error.message : String(error)
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : 'unknown error'
         }`,
       );
     }

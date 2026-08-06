@@ -10,9 +10,11 @@ import type {
   ChatHistoryMessage,
 } from '@wispace/chat-pipeline';
 import type { ChatQuotaCheckResult } from '@wispace/chat-metering';
+import {
+  PlatformAgentService,
+  PlatformChatHistoryService,
+} from '@wispace/chat-agent';
 import { DiscordChatRateLimitService } from '@discord/modules/chat-metering/application/services/discord-chat-rate-limit.service';
-import { DiscordChatHistoryService } from '../../application/services/discord-chat-history.service';
-import { DiscordAgentService } from '../../application/agent/discord-agent.service';
 import { DiscordOutboundService } from '../../application/services/discord-outbound.service';
 
 /**
@@ -56,7 +58,7 @@ export class DiscordRateLimiterAdapter implements RateLimiterPort {
 }
 
 export class DiscordHistoryAdapter implements HistoryPort {
-  constructor(private readonly historyService: DiscordChatHistoryService) {}
+  constructor(private readonly historyService: PlatformChatHistoryService) {}
 
   async getHistory(
     externalUserId: string,
@@ -78,11 +80,11 @@ export class DiscordHistoryAdapter implements HistoryPort {
 }
 
 export class DiscordAgentAdapter implements AgentPort {
-  constructor(private readonly agentService: DiscordAgentService) {}
+  constructor(private readonly agentService: PlatformAgentService) {}
 
   async reply(input: AgentInput): Promise<AgentReply> {
     const result = await this.agentService.reply({
-      discordUserId: input.externalUserId,
+      externalUserId: input.externalUserId,
       userId: input.userId,
       userText: input.userText,
       correlationId: input.correlationId,

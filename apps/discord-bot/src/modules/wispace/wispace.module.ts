@@ -1,14 +1,28 @@
 import { Module } from '@nestjs/common';
-import { WispaceConfigService } from './application/services/wispace-config.service';
-import { WispaceGoalsService } from './application/services/wispace-goals.service';
-import { WispaceCalendarService } from './application/services/wispace-calendar.service';
+import {
+  WispaceCalendarService,
+  WispaceConfigService,
+  WispaceGoalsService,
+} from '@wispace/wispace-client';
 import { DiscordStudyCalendarCommandService } from './application/services/discord-study-calendar-command.service';
 
 @Module({
   providers: [
     WispaceConfigService,
-    WispaceGoalsService,
-    WispaceCalendarService,
+    {
+      provide: WispaceGoalsService,
+      useFactory: (configService: WispaceConfigService) =>
+        new WispaceGoalsService('x-discordid', configService),
+      inject: [WispaceConfigService],
+    },
+    {
+      provide: WispaceCalendarService,
+      useFactory: (configService: WispaceConfigService) =>
+        new WispaceCalendarService('x-discordid', configService, () =>
+          configService.getSyncHorizonHours(),
+        ),
+      inject: [WispaceConfigService],
+    },
     DiscordStudyCalendarCommandService,
   ],
   exports: [

@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { PgAdvisoryLockService } from '@wispace/bot-common';
 import {
   StudyReminderScheduleService,
@@ -10,26 +11,27 @@ import {
   StudyReminderWorkerService,
   StudyReminderJobEntity,
   TypeormStudyReminderJobRepository,
+  TypeormMappingReader,
+  wrapMessageSender,
   MESSAGE_SENDER,
   MAPPING_READER,
   STUDY_REMINDER_JOB_REPOSITORY,
   DISPLAY_NAME_CACHE,
 } from '@wispace/study-reminder-shared';
 import { OpsHealthService, OPS_HEALTH_REPOSITORY } from '@wispace/ops-health';
+import { TypeormOpsHealthRepository } from '@wispace/ops-health';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 import { BotCommonModule } from '@wispace/bot-common';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
-import { ZaloMessageSenderService } from '../zalo-chat/application/services/zalo-message-sender.service';
+import { ZaloOutboundService } from '../zalo-chat/application/services/zalo-outbound.service';
 import {
   REDIS_CLIENT,
   RedisUserDisplayNameCache,
   type RedisClientPort,
 } from '@wispace/bot-common';
-import { ZaloMappingReaderAdapter } from '../zalo-chat/infrastructure/persistence/zalo-mapping-reader.adapter';
-import { ZaloOpsHealthRepository } from '../zalo-chat/infrastructure/persistence/zalo-ops-health.repository';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
-import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo-wispace-calendar.service';
+import { WispaceCalendarService } from '@wispace/wispace-client';
 
 @Module({
   imports: [
@@ -45,11 +47,15 @@ import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo
   providers: [
     {
       provide: MESSAGE_SENDER,
-      useExisting: ZaloMessageSenderService,
+      useFactory: (outbound: ZaloOutboundService) =>
+        wrapMessageSender(outbound),
+      inject: [ZaloOutboundService],
     },
     {
       provide: MAPPING_READER,
-      useExisting: ZaloMappingReaderAdapter,
+      useFactory: (repo: Repository<ZaloAccountLinkEntity>) =>
+        new TypeormMappingReader(repo, 'zalo_account_links'),
+      inject: [getRepositoryToken(ZaloAccountLinkEntity)],
     },
     {
       provide: STUDY_REMINDER_JOB_REPOSITORY,
@@ -89,7 +95,7 @@ import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo
           'zalo',
           deps[6]
             ? (externalUserId: string) =>
-                (deps[6] as ZaloWispaceCalendarService)
+                (deps[6] as WispaceCalendarService)
                   .getCalendarSessions(externalUserId, {
                     timeRange: 'upcoming',
                   })
@@ -110,17 +116,18 @@ import { ZaloWispaceCalendarService } from '../wispace/application/services/zalo
         { token: SchedulerRegistry, optional: false },
         PgAdvisoryLockService,
         { token: STUDY_REMINDER_JOB_REPOSITORY, optional: true },
-        ZaloWispaceCalendarService,
+        WispaceCalendarService,
       ],
     },
-    ZaloMessageSenderService,
-    ZaloMappingReaderAdapter,
     TypeormStudyReminderJobRepository,
     {
       provide: OPS_HEALTH_REPOSITORY,
-      useExisting: ZaloOpsHealthRepository,
+      useFactory: (dataSource: DataSource, configService: ConfigService) =>
+        new TypeormOpsHealthRepository(dataSource, 'zalo', () =>
+          Number(configService.get<string>('CHAT_FREE_FORM_DAILY_LIMIT') ?? 15),
+        ),
+      inject: [DataSource, ConfigService],
     },
-    ZaloOpsHealthRepository,
     OpsHealthService,
   ],
   exports: [

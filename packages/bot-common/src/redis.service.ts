@@ -83,7 +83,7 @@ export class RedisService
       );
     } catch (error) {
       this.logger.error(
-        `Redis connection failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Redis connection failed: ${error instanceof Error ? error.message : typeof error === 'string' ? error : 'unknown error'}`,
       );
       this.client = null;
     }

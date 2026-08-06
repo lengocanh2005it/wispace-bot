@@ -3,8 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { ChannelType } from 'discord.js';
 import { Button, Context, On, Once } from 'necord';
 import type { ButtonContext, ContextOf } from 'necord';
-import { DiscordAgentService } from '../../application/agent/discord-agent.service';
-import { DiscordChatQueueService } from '../../application/services/discord-chat-queue.service';
+import {
+  PlatformAgentService,
+  PlatformChatHistoryService,
+  PlatformChatQueueService,
+} from '@wispace/chat-agent';
 import { DiscordOutboundService } from '../../application/services/discord-outbound.service';
 import { DiscordRescheduleConfirmationService } from '../../application/services/discord-reschedule-confirmation.service';
 import {
@@ -16,7 +19,6 @@ import {
   MENU_UPCOMING_SESSIONS_CUSTOM_ID,
 } from '../../application/constants/discord-menu.constants';
 import { DiscordChatRateLimitService } from '@discord/modules/chat-metering/application/services/discord-chat-rate-limit.service';
-import { DiscordChatHistoryService } from '../../application/services/discord-chat-history.service';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import { DiscordMenuService } from '../../application/services/discord-menu.service';
 import { DiscordPendingJoinService } from '@discord/modules/account-link/application/services/discord-pending-join.service';
@@ -52,15 +54,15 @@ export class DiscordChatGateway {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly agentService: DiscordAgentService,
+    private readonly agentService: PlatformAgentService,
     private readonly outboundService: DiscordOutboundService,
     private readonly rateLimitService: DiscordChatRateLimitService,
     private readonly accountLinkService: DiscordAccountLinkService,
     private readonly rescheduleConfirmationService: DiscordRescheduleConfirmationService,
     private readonly menuService: DiscordMenuService,
-    private readonly chatHistoryService: DiscordChatHistoryService,
+    private readonly chatHistoryService: PlatformChatHistoryService,
     private readonly pendingJoinService: DiscordPendingJoinService,
-    private readonly chatQueueService: DiscordChatQueueService,
+    private readonly chatQueueService: PlatformChatQueueService,
   ) {}
 
   @Once('clientReady')

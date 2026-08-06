@@ -11,11 +11,13 @@ import {
   RESCHEDULE_CONFIRM_CUSTOM_ID,
 } from '../constants/discord-reschedule.constants';
 import {
+  DeliveryLogService,
+  PlatformDeadLetterService,
+} from '@wispace/database';
+import {
   MENU_LEARNING_PROGRESS_CUSTOM_ID,
   MENU_UPCOMING_SESSIONS_CUSTOM_ID,
 } from '../constants/discord-menu.constants';
-import { DiscordDeliveryLogService } from './discord-delivery-log.service';
-import { DiscordDeadLetterService } from './discord-dead-letter.service';
 
 const RETRY_MAX_ATTEMPTS = 2;
 const RETRY_BASE_DELAY_MS = 1_000;
@@ -33,11 +35,11 @@ export class DiscordOutboundService {
   constructor(
     private readonly client: Client,
     @Optional()
-    @Inject(DiscordDeliveryLogService)
-    private readonly deliveryLog?: DiscordDeliveryLogService,
+    @Inject(DeliveryLogService)
+    private readonly deliveryLog?: DeliveryLogService,
     @Optional()
-    @Inject(DiscordDeadLetterService)
-    private readonly deadLetter?: DiscordDeadLetterService,
+    @Inject(PlatformDeadLetterService)
+    private readonly deadLetter?: PlatformDeadLetterService,
   ) {}
 
   async sendText(

@@ -116,7 +116,12 @@ export class StudyReminderDispatchService {
         });
         sent += 1;
       } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : String(error);
+        const errorMsg =
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : 'unknown error';
 
         // Check if error is terminal (no retry)
         const terminal =

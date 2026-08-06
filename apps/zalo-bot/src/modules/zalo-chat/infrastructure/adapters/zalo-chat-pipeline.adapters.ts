@@ -9,9 +9,11 @@ import type {
   SendResult,
   ChatHistoryMessage,
 } from '@wispace/chat-pipeline';
+import {
+  PlatformAgentService,
+  PlatformChatHistoryService,
+} from '@wispace/chat-agent';
 import { ZaloChatRateLimitService } from '../../infrastructure/persistence/zalo-chat-rate-limit.service';
-import { ZaloChatHistoryService } from '../../application/services/zalo-chat-history.service';
-import { ZaloAgentService } from '../../application/agent/zalo-agent.service';
 import { ZaloOutboundService } from '../../application/services/zalo-outbound.service';
 
 export class ZaloRateLimiterAdapter implements RateLimiterPort {
@@ -50,7 +52,7 @@ export class ZaloRateLimiterAdapter implements RateLimiterPort {
 }
 
 export class ZaloHistoryAdapter implements HistoryPort {
-  constructor(private readonly historyService: ZaloChatHistoryService) {}
+  constructor(private readonly historyService: PlatformChatHistoryService) {}
 
   async getHistory(
     externalUserId: string,
@@ -72,11 +74,11 @@ export class ZaloHistoryAdapter implements HistoryPort {
 }
 
 export class ZaloAgentAdapter implements AgentPort {
-  constructor(private readonly agentService: ZaloAgentService) {}
+  constructor(private readonly agentService: PlatformAgentService) {}
 
   async reply(input: AgentInput): Promise<AgentReply> {
     const result = await this.agentService.reply({
-      zaloUserId: input.externalUserId,
+      externalUserId: input.externalUserId,
       userId: input.userId,
       userText: input.userText,
       correlationId: input.correlationId,

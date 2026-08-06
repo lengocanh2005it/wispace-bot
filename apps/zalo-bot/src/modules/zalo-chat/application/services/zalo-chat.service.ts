@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { ZaloWebhookHandler } from '@zalo/modules/zalo-webhook/domain/ports/zalo-webhook-handler.port';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
-import { ZaloChatQueueService } from './zalo-chat-queue.service';
+import { PlatformChatQueueService } from '@wispace/chat-agent';
 import { ZaloRescheduleConfirmationService } from './zalo-reschedule-confirmation.service';
 import {
   RESCHEDULE_CONFIRM_KEYWORDS,
@@ -32,7 +32,7 @@ export class ZaloChatService implements ZaloWebhookHandler {
     private readonly configService: ConfigService,
     private readonly outboundService: ZaloOutboundService,
     private readonly accountLinkService: ZaloAccountLinkService,
-    private readonly chatQueueService: ZaloChatQueueService,
+    private readonly chatQueueService: PlatformChatQueueService,
     private readonly rescheduleConfirmationService: ZaloRescheduleConfirmationService,
   ) {
     const appId = this.configService.get<string>('ZALO_APP_ID');

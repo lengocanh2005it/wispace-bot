@@ -15,9 +15,17 @@ export { StudyReminderJobEntity } from './entities/study-reminder-job.entity';
 
 // Infrastructure
 export { TypeormStudyReminderJobRepository } from './infrastructure/typeorm-study-reminder-job.repository';
+export {
+  TypeormMappingReader,
+  type AccountLinkRow,
+} from './infrastructure/typeorm-mapping-reader';
 
 // Services
 export { StudyReminderScheduleService } from './services/study-reminder-schedule.service';
+export {
+  wrapMessageSender,
+  type OutboundMessageSender,
+} from './services/message-sender.factory';
 export {
   StudyReminderSyncService,
   type OnUserSyncHook,

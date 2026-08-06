@@ -187,7 +187,11 @@ export class StudentReportCore {
     } catch (error) {
       logger.warn(
         `Invalid student report LLM output externalUserId=${externalUserId}: ${
-          error instanceof Error ? error.message : String(error)
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : 'unknown error'
         }`,
       );
       return buildFallbackReport(input);

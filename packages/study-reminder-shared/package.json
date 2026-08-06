@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "lint": "eslint \"src/**/*.ts\" --fix",
     "format:check": "prettier --check \"src/**/*.ts\"",
-    "format": "prettier --write \"src/**/*.ts\""
+    "format": "prettier --write \"src/**/*.ts\"",
+    "test": "jest --maxWorkers=50%"
   },
   "dependencies": {
     "@wispace/bot-common": "*",
@@ -23,8 +24,24 @@
     "typeorm": "^1.0.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.3",
+    "@types/jest": "^30.0.0",
+    "jest": "^30.0.0",
+    "reflect-metadata": "^0.2.2",
+    "ts-jest": "^29.2.5",
     "prettier": "^3.4.2",
     "eslint": "^9.18.0"
+  },
+  "jest": {
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "testEnvironment": "node"
   }
 }

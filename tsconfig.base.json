@@ -1,7 +1,6 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "module": "node16",
     "esModuleInterop": true,
     "isolatedModules": true,
     "declaration": true,
@@ -11,7 +10,9 @@
     "sourceMap": true,
     "incremental": true,
     "skipLibCheck": true,
+    "types": ["node", "jest"],
     "strictNullChecks": true,
+    "strictPropertyInitialization": false,
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": true,
     "strictBindCallApply": true

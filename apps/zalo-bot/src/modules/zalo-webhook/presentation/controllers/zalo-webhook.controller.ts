@@ -22,7 +22,7 @@ import {
   type ZaloWebhookHandler,
 } from '../../domain/ports/zalo-webhook-handler.port';
 import { ZaloWebhookDedupeService } from '../../application/zalo-webhook-dedupe.service';
-import { ZaloDeadLetterService } from '@zalo/modules/zalo-chat/infrastructure/persistence/zalo-dead-letter.service';
+import { PlatformDeadLetterService } from '@wispace/database';
 
 @Controller('zalo/webhook')
 export class ZaloWebhookController {
@@ -33,7 +33,7 @@ export class ZaloWebhookController {
     @Inject(ZALO_WEBHOOK_HANDLER)
     private readonly handler: ZaloWebhookHandler,
     private readonly dedupeService: ZaloWebhookDedupeService,
-    private readonly deadLetterService: ZaloDeadLetterService,
+    private readonly deadLetterService: PlatformDeadLetterService,
   ) {}
 
   @Post()

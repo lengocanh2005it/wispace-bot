@@ -62,7 +62,11 @@ export class RedisWebhookDedupeStore {
     } catch (error) {
       this.logger.warn(
         `Redis webhook dedupe failed key=${key}: ${
-          error instanceof Error ? error.message : String(error)
+          error instanceof Error
+            ? error.message
+            : typeof error === 'string'
+              ? error
+              : 'unknown error'
         }`,
       );
       // Fail closed: reprocessing is safer than accepting an unbounded burst.

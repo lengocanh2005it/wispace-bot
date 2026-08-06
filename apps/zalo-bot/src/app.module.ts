@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
-import { HealthController } from './health.controller';
+import { HealthController } from '@wispace/bot-common';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { RedisModule } from '@wispace/bot-common';
 import { ZaloOauthModule } from './modules/zalo-oauth/zalo-oauth.module';
@@ -11,11 +11,10 @@ import { ZaloSharedModule } from './modules/zalo-shared/zalo-shared.module';
 import { ZaloStudyReminderModule } from './modules/zalo-study-reminder/zalo-study-reminder.module';
 import { ZaloReportModule } from './modules/zalo-chat/zalo-report.module';
 import { ZaloOpsModule } from './modules/zalo-ops/zalo-ops.module';
-import { ZaloMetricsModule } from './modules/metrics/zalo-metrics.module';
-import { ZaloMetricsController } from './modules/metrics/zalo-metrics.controller';
+import { createMetricsModule } from '@wispace/bot-metrics';
 
 @Module({
-  controllers: [HealthController, ZaloMetricsController],
+  controllers: [HealthController],
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
@@ -33,7 +32,7 @@ import { ZaloMetricsController } from './modules/metrics/zalo-metrics.controller
     ZaloStudyReminderModule,
     ZaloReportModule,
     ZaloOpsModule,
-    ZaloMetricsModule,
+    createMetricsModule('zalo', 'zalo-bot'),
   ],
 })
 export class AppModule {}

@@ -124,7 +124,11 @@ export class StudyReminderSyncService {
         failed += 1;
         this.logger.warn(
           `Failed to sync for externalUserId=${mapping.externalUserId}: ${
-            error instanceof Error ? error.message : String(error)
+            error instanceof Error
+              ? error.message
+              : typeof error === 'string'
+                ? error
+                : 'unknown error'
           }`,
         );
       }

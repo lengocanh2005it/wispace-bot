@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { PgAdvisoryLockService } from '@wispace/bot-common';
 import {
@@ -9,6 +10,8 @@ import {
   StudyReminderWorkerService,
   StudyReminderJobEntity,
   TypeormStudyReminderJobRepository,
+  TypeormMappingReader,
+  wrapMessageSender,
   MESSAGE_SENDER,
   MAPPING_READER,
   STUDY_REMINDER_JOB_REPOSITORY,
@@ -19,9 +22,8 @@ import { BotCommonModule } from '@wispace/bot-common';
 import { DiscordChatModule } from '../discord-chat/discord-chat.module';
 import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { WispaceModule } from '../wispace/wispace.module';
-import { WispaceCalendarService } from '../wispace/application/services/wispace-calendar.service';
-import { DiscordStudyReminderMessageSenderService } from '../discord-chat/application/services/discord-study-reminder-message-sender.service';
-import { DiscordMappingReaderAdapter } from '../discord-chat/infrastructure/persistence/discord-mapping-reader.adapter';
+import { WispaceCalendarService } from '@wispace/wispace-client';
+import { DiscordOutboundService } from '../discord-chat/application/services/discord-outbound.service';
 import { ConfigService } from '@nestjs/config';
 import {
   REDIS_CLIENT,
@@ -43,11 +45,15 @@ import {
   providers: [
     {
       provide: MESSAGE_SENDER,
-      useExisting: DiscordStudyReminderMessageSenderService,
+      useFactory: (outbound: DiscordOutboundService) =>
+        wrapMessageSender(outbound),
+      inject: [DiscordOutboundService],
     },
     {
       provide: MAPPING_READER,
-      useExisting: DiscordMappingReaderAdapter,
+      useFactory: (repo: Repository<DiscordAccountLinkEntity>) =>
+        new TypeormMappingReader(repo, 'discord_account_links'),
+      inject: [getRepositoryToken(DiscordAccountLinkEntity)],
     },
     {
       provide: STUDY_REMINDER_JOB_REPOSITORY,
@@ -110,8 +116,6 @@ import {
         WispaceCalendarService,
       ],
     },
-    DiscordStudyReminderMessageSenderService,
-    DiscordMappingReaderAdapter,
     TypeormStudyReminderJobRepository,
   ],
   exports: [

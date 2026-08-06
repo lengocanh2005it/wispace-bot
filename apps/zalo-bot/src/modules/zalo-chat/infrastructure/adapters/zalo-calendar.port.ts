@@ -3,11 +3,11 @@ import type {
   CalendarPort,
   CalendarEntryView,
 } from '@wispace/reschedule-confirm';
-import { ZaloWispaceCalendarService } from '@zalo/modules/wispace/application/services/zalo-wispace-calendar.service';
+import { WispaceCalendarService } from '@wispace/wispace-client';
 
 @Injectable()
 export class ZaloCalendarPort implements CalendarPort<string> {
-  constructor(private readonly calendarService: ZaloWispaceCalendarService) {}
+  constructor(private readonly calendarService: WispaceCalendarService) {}
 
   async listUpcomingEntries(
     zaloUserId: string,

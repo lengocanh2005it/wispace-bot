@@ -16,3 +16,13 @@ export {
   readEnv,
   type EntityClass,
 } from './typeorm-options';
+
+export { PlatformDeadLetterService } from './services/platform-dead-letter.service';
+export {
+  PlatformDeadLetterCronService,
+  type DeadLetterCronOptions,
+} from './services/platform-dead-letter-cron.service';
+export {
+  DeliveryLogService,
+  type MessageLogRow,
+} from './services/delivery-log.service';

@@ -7,16 +7,18 @@ import {
 } from '@wispace/wispace-client';
 import type { RescheduleStudySessionResult } from '@wispace/reschedule-confirm';
 import { formatScheduledTimeLabel } from '@wispace/study-reminder-core';
-import { ZaloWispaceCalendarService } from '@zalo/modules/wispace/application/services/zalo-wispace-calendar.service';
-import { ZaloWispaceConfigService } from '@zalo/modules/wispace/application/services/zalo-wispace-config.service';
+import {
+  WispaceCalendarService,
+  WispaceConfigService,
+} from '@wispace/wispace-client';
 
 @Injectable()
 export class ZaloStudyCalendarCommandService {
   private readonly logger = new Logger(ZaloStudyCalendarCommandService.name);
 
   constructor(
-    private readonly calendarService: ZaloWispaceCalendarService,
-    private readonly configService: ZaloWispaceConfigService,
+    private readonly calendarService: WispaceCalendarService,
+    private readonly configService: WispaceConfigService,
   ) {}
 
   async rescheduleSession(params: {

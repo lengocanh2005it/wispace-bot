@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { join } from 'path';
+import { PlatformStudentReportService } from '@wispace/student-report';
 import {
   ReportScheduleService,
   ReportSendScheduleService,
@@ -13,6 +16,9 @@ import {
   ReportSendJobEntity,
   ScheduledReportClaimEntity,
 } from '@wispace/database';
+import { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering';
+import { WispaceGoalsService } from '@wispace/wispace-client';
+import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
 import { DiscordReportSendJobRepository } from './infrastructure/persistence/discord-report-send-job.repository';
@@ -27,7 +33,6 @@ import { BotCommonModule } from '@wispace/bot-common';
 import { AccountLinkModule } from '../account-link/account-link.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { ChatMeteringModule } from '../chat-metering/chat-metering.module';
-import { DiscordStudentReportService } from './application/services/discord-student-report.service';
 import { DISCORD_REPORT_PORT } from './domain/ports/discord-report.port';
 
 @Module({
@@ -59,7 +64,30 @@ import { DISCORD_REPORT_PORT } from './domain/ports/discord-report.port';
     },
     {
       provide: DISCORD_REPORT_PORT,
-      useExisting: DiscordStudentReportService,
+      useExisting: PlatformStudentReportService,
+    },
+    {
+      provide: PlatformStudentReportService,
+      useFactory: (
+        configService: ConfigService,
+        goalsService: WispaceGoalsService,
+        usageRecorder: PlatformLlmUsageRecorderAdapter,
+        adapter: LlmProviderAdapter,
+      ) =>
+        new PlatformStudentReportService(
+          'discord',
+          configService,
+          goalsService,
+          usageRecorder,
+          adapter,
+          join(__dirname, '../../shared/prompts'),
+        ),
+      inject: [
+        ConfigService,
+        WispaceGoalsService,
+        PlatformLlmUsageRecorderAdapter,
+        'LLM_PROVIDER_ADAPTER',
+      ],
     },
     ReportScheduleService,
     ReportSendScheduleService,
@@ -72,7 +100,6 @@ import { DISCORD_REPORT_PORT } from './domain/ports/discord-report.port';
     DiscordReportCronService,
     DiscordReportRetryDispatchService,
     DiscordReportOrchestrationService,
-    DiscordStudentReportService,
   ],
   exports: [DiscordReportCronService, DiscordReportRetryDispatchService],
 })
