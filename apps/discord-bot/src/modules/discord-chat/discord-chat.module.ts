@@ -19,6 +19,7 @@ import {
   PlatformAgentToolsService,
   PlatformChatHistoryService,
   PlatformChatQueueService,
+  createChatPipelineAdapters,
 } from '@wispace/chat-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
@@ -47,12 +48,6 @@ import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/
 import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { DiscordCalendarPort } from './infrastructure/adapters/discord-calendar.port';
 import { DiscordReschedulePort } from './infrastructure/adapters/discord-reschedule.port';
-import {
-  DiscordAgentAdapter,
-  DiscordHistoryAdapter,
-  DiscordOutboundAdapter,
-  DiscordRateLimiterAdapter,
-} from './infrastructure/adapters/discord-chat-pipeline.adapters';
 import { DiscordOutboundService } from './application/services/discord-outbound.service';
 
 const NOT_LINKED_MESSAGE =
@@ -174,13 +169,20 @@ const REGISTER_REPORT_MESSAGE =
         historyService: PlatformChatHistoryService,
         agentService: PlatformAgentService,
         outboundService: DiscordOutboundService,
-      ) =>
-        new PlatformChatQueueService(
+      ) => {
+        const adapters = createChatPipelineAdapters(
+          rateLimitService,
+          historyService,
+          agentService,
+          outboundService,
+          { isServerChannel: true },
+        );
+        return new PlatformChatQueueService(
           configService,
-          new DiscordRateLimiterAdapter(rateLimitService),
-          new DiscordHistoryAdapter(historyService),
-          new DiscordAgentAdapter(agentService),
-          new DiscordOutboundAdapter(outboundService),
+          adapters.rateLimiter,
+          adapters.history,
+          adapters.agent,
+          adapters.outbound,
           outboundService,
           {
             mergedTextMaxChars: Math.max(
@@ -192,7 +194,8 @@ const REGISTER_REPORT_MESSAGE =
               outboundService.sendTyping(externalUserId),
             propagateServerChannel: true,
           },
-        ),
+        );
+      },
       inject: [
         ConfigService,
         PlatformChatRateLimitService,

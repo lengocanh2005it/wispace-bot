@@ -1,6 +1,6 @@
 import type { ConfigService } from '@nestjs/config';
 
-export const DEFAULT_APP_TIMEZONE = 'Asia/Ho_Chi_Minh';
+const DEFAULT_APP_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
 /**
  * Single source of truth for the application timezone.

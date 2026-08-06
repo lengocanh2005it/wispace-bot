@@ -12,3 +12,8 @@ export type {
 } from './agent/platform-agent.types';
 export { PlatformChatHistoryService } from './chat-history/platform-chat-history.service';
 export { PlatformChatQueueService } from './chat-queue/platform-chat-queue.service';
+export {
+  createChatPipelineAdapters,
+  type OutboundServicePort,
+  type ChatPipelineAdaptersOptions,
+} from './chat-pipeline-adapters';

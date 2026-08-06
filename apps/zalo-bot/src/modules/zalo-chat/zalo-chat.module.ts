@@ -22,6 +22,7 @@ import {
   PlatformAgentToolsService,
   PlatformChatHistoryService,
   PlatformChatQueueService,
+  createChatPipelineAdapters,
 } from '@wispace/chat-agent';
 import {
   WispaceCalendarService,
@@ -51,12 +52,6 @@ import { DeliveryLogService, WebhookDeadLetterEntity } from '@wispace/database';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import {
-  ZaloAgentAdapter,
-  ZaloHistoryAdapter,
-  ZaloOutboundAdapter,
-  ZaloRateLimiterAdapter,
-} from './infrastructure/adapters/zalo-chat-pipeline.adapters';
 
 const NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Zalo. Liên kết tài khoản để sử dụng tính năng này nhé.';
@@ -282,15 +277,22 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         historyService: PlatformChatHistoryService,
         agentService: PlatformAgentService,
         outboundService: ZaloOutboundService,
-      ) =>
-        new PlatformChatQueueService(
-          configService,
-          new ZaloRateLimiterAdapter(rateLimitService),
-          new ZaloHistoryAdapter(historyService),
-          new ZaloAgentAdapter(agentService),
-          new ZaloOutboundAdapter(outboundService),
+      ) => {
+        const adapters = createChatPipelineAdapters(
+          rateLimitService,
+          historyService,
+          agentService,
           outboundService,
-        ),
+        );
+        return new PlatformChatQueueService(
+          configService,
+          adapters.rateLimiter,
+          adapters.history,
+          adapters.agent,
+          adapters.outbound,
+          outboundService,
+        );
+      },
       inject: [
         ConfigService,
         PlatformChatRateLimitService,

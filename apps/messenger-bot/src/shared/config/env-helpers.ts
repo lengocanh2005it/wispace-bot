@@ -25,32 +25,6 @@ export function readRequiredPositiveNumber(
   return value;
 }
 
-/**
- * Read an env var, trim it, and parse as a positive integer.
- * Returns `defaultValue` if the var is missing or empty.
- * Throws if the var is present but zero, negative, or non-numeric.
- */
-export function readOptionalPositiveNumber(
-  configService: Pick<ConfigService, 'get'>,
-  key: string,
-  defaultValue: number,
-): number {
-  const raw = configService.get<string>(key)?.trim();
-
-  if (!raw) {
-    return defaultValue;
-  }
-
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new InternalServerErrorException(
-      `${key} must be a positive number in .env`,
-    );
-  }
-
-  return value;
-}
-
 /** Reads a boolean env var — accepts true/1/yes (case-insensitive), defaults on missing/invalid. */
 export function readEnvBoolean(
   configService: Pick<ConfigService, 'get'>,

@@ -3,19 +3,18 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import { ScheduledReportClaimEntity } from '@wispace/database';
-import { todayReportDate } from '@wispace/scheduler-core';
 
-const PLATFORM = 'discord' as const;
+const PLATFORM = 'zalo' as const;
 
 @Injectable()
-export class DiscordReportClaimRepository implements ReportClaimRepositoryPort {
+export class ZaloReportClaimRepository implements ReportClaimRepositoryPort {
   constructor(
     @InjectRepository(ScheduledReportClaimEntity)
     private readonly claimRepo: Repository<ScheduledReportClaimEntity>,
   ) {}
 
   async hasSentScheduledReportToday(externalUserId: string): Promise<boolean> {
-    const reportDate = todayReportDate();
+    const reportDate = new Date().toISOString().slice(0, 10);
     const claim = await this.claimRepo.findOne({
       where: {
         platform: PLATFORM,

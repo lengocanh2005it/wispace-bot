@@ -1,12 +1,15 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WispaceApiError } from '@wispace/wispace-client';
 import { PlatformStudentReportService } from '@wispace/student-report';
+import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
+import {
+  REPORT_CLAIM_REPOSITORY,
+  todayReportDate,
+} from '@wispace/scheduler-core';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
-import { ScheduledReportClaimEntity } from '@wispace/database';
-import { todayReportDate } from '@wispace/scheduler-core';
 import { ZaloReportDeliveryService } from '../../application/services/zalo-report-delivery.service';
 
 const CONCURRENCY = 3;
@@ -18,8 +21,8 @@ export class ZaloReportCronService {
   constructor(
     @InjectRepository(ZaloAccountLinkEntity)
     private readonly linkRepo: Repository<ZaloAccountLinkEntity>,
-    @InjectRepository(ScheduledReportClaimEntity)
-    private readonly claimRepo: Repository<ScheduledReportClaimEntity>,
+    @Inject(REPORT_CLAIM_REPOSITORY)
+    private readonly claimRepo: ReportClaimRepositoryPort,
     private readonly deliveryService: ZaloReportDeliveryService,
     private readonly reportService: PlatformStudentReportService,
   ) {}
@@ -73,10 +76,11 @@ export class ZaloReportCronService {
     reportDate: string,
   ): Promise<'sent' | 'skipped' | 'error'> {
     if (link.userId) {
-      const alreadySent = await this.claimRepo.count({
-        where: { userId: link.userId, reportDate, status: 'sent' },
-      });
-      if (alreadySent > 0) {
+      const alreadySent = await this.claimRepo.hasAnyPlatformSentReportToday(
+        link.userId,
+        reportDate,
+      );
+      if (alreadySent) {
         this.logger.log(
           `Report already sent on another platform for userId=${link.userId}, skipping Zalo`,
         );
@@ -95,13 +99,17 @@ export class ZaloReportCronService {
       if (delivered) {
         if (link.userId) {
           await this.claimRepo
-            .insert({
-              platform: 'zalo',
+            .tryClaimScheduledReport({
               externalUserId: link.externalUserId,
               userId: link.userId,
               reportDate,
-              status: 'sent',
             })
+            .then(() =>
+              this.claimRepo.markScheduledReportClaimSent({
+                externalUserId: link.externalUserId,
+                reportDate,
+              }),
+            )
             .catch(() => {});
         }
         this.logger.log(`Report sent to Zalo user ${link.externalUserId}`);

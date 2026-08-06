@@ -1,28 +1,25 @@
 import { Injectable } from '@nestjs/common';
-import type {
-  CalendarPort,
-  CalendarEntryView,
-} from '@wispace/reschedule-confirm';
-import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
+import type { CalendarEntryView } from '@wispace/reschedule-confirm';
+import {
+  GenericCalendarPort,
+  PlatformStudyCalendarCommandService,
+} from '@wispace/study-reminder-shared';
 
 @Injectable()
-export class DiscordCalendarPort implements CalendarPort<string> {
+export class DiscordCalendarPort extends GenericCalendarPort {
   constructor(
     private readonly studyCalendarCommandService: PlatformStudyCalendarCommandService,
-  ) {}
-
-  async listUpcomingEntries(
-    discordUserId: string,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    _userId?: number,
-  ): Promise<CalendarEntryView[]> {
-    const upcoming = await this.studyCalendarCommandService.listEntries(
-      discordUserId,
-      { timeRange: 'upcoming' },
+  ) {
+    super(
+      (externalId: string): Promise<CalendarEntryView[]> =>
+        studyCalendarCommandService
+          .listEntries(externalId, { timeRange: 'upcoming' })
+          .then((result) =>
+            result.entries.map((entry) => ({
+              calendarId: entry.calendarId,
+              scheduledTimeLabel: entry.scheduledTimeLabel,
+            })),
+          ),
     );
-    return upcoming.entries.map((entry) => ({
-      calendarId: entry.calendarId,
-      scheduledTimeLabel: entry.scheduledTimeLabel,
-    }));
   }
 }

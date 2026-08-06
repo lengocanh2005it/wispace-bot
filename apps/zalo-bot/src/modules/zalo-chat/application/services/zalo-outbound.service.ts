@@ -2,11 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
 import type { ZaloMessageSenderPort } from '@zalo/modules/zalo-webhook/domain/ports/zalo-message-sender.port';
 import { DeliveryLogService } from '@wispace/database';
+import { withRetry } from '@wispace/wispace-client';
 
 const SEND_TEXT_ENDPOINT = 'https://openapi.zalo.me/v3.0/oa/message/cs';
 const SEND_TIMEOUT_MS = 10_000;
-const RETRY_MAX_ATTEMPTS = 2;
-const RETRY_BASE_DELAY_MS = 1_000;
 
 export class ZaloSendError extends Error {
   constructor(
@@ -62,39 +61,32 @@ export class ZaloOutboundService implements ZaloMessageSenderPort {
   ) {}
 
   async sendText(zaloUserId: string, text: string): Promise<void> {
-    let lastError: unknown;
-
-    for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
-      try {
-        await this.sendTextOnce(zaloUserId, text);
-        await this.deliveryLogService.logDelivery({
-          externalUserId: zaloUserId,
-          status: 'SENT',
-          messageType: 'chat',
-        });
-        return;
-      } catch (error) {
-        lastError = error;
-        if (error instanceof ZaloSendError && !error.isRetryable()) {
-          break;
-        }
-        if (attempt < RETRY_MAX_ATTEMPTS) {
-          const delayMs = RETRY_BASE_DELAY_MS * attempt;
+    try {
+      await withRetry(() => this.sendTextOnce(zaloUserId, text), {
+        maxRetries: 1,
+        baseDelayMs: 1_000,
+        shouldRetry: (error) =>
+          !(error instanceof ZaloSendError && !error.isRetryable()),
+        onRetry: (attempt, maxRetries) => {
           this.logger.warn(
-            `Zalo send attempt ${attempt}/${RETRY_MAX_ATTEMPTS} failed for zaloUserId=${zaloUserId}, retrying in ${delayMs}ms`,
+            `Zalo send attempt ${attempt}/${maxRetries + 1} failed for zaloUserId=${zaloUserId}, retrying`,
           );
-          await new Promise((r) => setTimeout(r, delayMs));
-        }
-      }
+        },
+      });
+      await this.deliveryLogService.logDelivery({
+        externalUserId: zaloUserId,
+        status: 'SENT',
+        messageType: 'chat',
+      });
+    } catch (error) {
+      await this.deliveryLogService.logDelivery({
+        externalUserId: zaloUserId,
+        status: 'FAILED',
+        messageType: 'chat',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
-
-    await this.deliveryLogService.logDelivery({
-      externalUserId: zaloUserId,
-      status: 'FAILED',
-      messageType: 'chat',
-      error: lastError instanceof Error ? lastError.message : String(lastError),
-    });
-    throw lastError;
   }
 
   private async sendTextOnce(zaloUserId: string, text: string): Promise<void> {

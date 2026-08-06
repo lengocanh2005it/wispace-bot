@@ -47,3 +47,7 @@ export {
   PlatformStudyCalendarCommandService,
   type PlatformStudyCalendarCommandOptions,
 } from './services/platform-study-calendar-command.service';
+export {
+  GenericCalendarPort,
+  type ListUpcomingFn,
+} from './ports/generic-calendar.port';

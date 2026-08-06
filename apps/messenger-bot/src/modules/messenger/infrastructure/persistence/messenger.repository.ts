@@ -303,6 +303,16 @@ export class MessengerRepository
     return count > 0;
   }
 
+  async hasAnyPlatformSentReportToday(
+    userId: number,
+    reportDate: string,
+  ): Promise<boolean> {
+    const claim = await this.reportClaimRepo.findOne({
+      where: { userId, reportDate, status: 'sent' },
+    });
+    return !!claim;
+  }
+
   async countMessageLogsByTypeSince(
     messageType: string,
     since: Date,

@@ -18,9 +18,7 @@ import {
   MENU_LEARNING_PROGRESS_CUSTOM_ID,
   MENU_UPCOMING_SESSIONS_CUSTOM_ID,
 } from '../constants/discord-menu.constants';
-
-const RETRY_MAX_ATTEMPTS = 2;
-const RETRY_BASE_DELAY_MS = 1_000;
+import { withRetry } from '@wispace/wispace-client';
 
 /**
  * Discord counterpart to Messenger's `MessageSenderPort` — sends by fetching
@@ -74,51 +72,50 @@ export class DiscordOutboundService {
     text: string,
     options?: { skipDeadLetter?: boolean },
   ): Promise<string | undefined> {
-    let lastError: unknown;
-
-    for (let attempt = 1; attempt <= RETRY_MAX_ATTEMPTS; attempt++) {
-      try {
-        const user = await this.client.users.fetch(discordUserId);
-        const msg = await user.send(text);
-        await this.deliveryLog?.logDelivery({
-          externalUserId: discordUserId,
-          status: 'SENT',
-          messageType: 'chat',
-        });
-        return msg.channelId;
-      } catch (error) {
-        lastError = error;
-        const errorMsg = error instanceof Error ? error.message : String(error);
-
-        if (attempt < RETRY_MAX_ATTEMPTS) {
-          const delayMs = RETRY_BASE_DELAY_MS * attempt;
-          this.logger.warn(
-            `DM send attempt ${attempt}/${RETRY_MAX_ATTEMPTS} failed for discordUserId=${discordUserId}, retrying in ${delayMs}ms: ${errorMsg}`,
-          );
-          await new Promise((r) => setTimeout(r, delayMs));
-        }
-      }
-    }
-
-    const errorMsg =
-      lastError instanceof Error ? lastError.message : String(lastError);
-    this.logger.warn(
-      `Failed to send DM to discordUserId=${discordUserId} after ${RETRY_MAX_ATTEMPTS} attempts: ${errorMsg}`,
-    );
-    await this.deliveryLog?.logDelivery({
-      externalUserId: discordUserId,
-      status: 'FAILED',
-      error: errorMsg,
-      messageType: 'chat',
-    });
-    if (options?.skipDeadLetter !== true) {
-      await this.deadLetter?.save({
+    try {
+      const msg = await withRetry(
+        async () => {
+          const user = await this.client.users.fetch(discordUserId);
+          return user.send(text);
+        },
+        {
+          maxRetries: 1,
+          baseDelayMs: 1_000,
+          onRetry: (attempt, maxRetries, error) => {
+            const errorMsg =
+              error instanceof Error ? error.message : String(error);
+            this.logger.warn(
+              `DM send attempt ${attempt}/${maxRetries + 1} failed for discordUserId=${discordUserId}, retrying: ${errorMsg}`,
+            );
+          },
+        },
+      );
+      await this.deliveryLog?.logDelivery({
         externalUserId: discordUserId,
-        rawPayload: { discordUserId, text },
-        errorMessage: errorMsg,
+        status: 'SENT',
+        messageType: 'chat',
       });
+      return msg.channelId;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Failed to send DM to discordUserId=${discordUserId} after retries: ${errorMsg}`,
+      );
+      await this.deliveryLog?.logDelivery({
+        externalUserId: discordUserId,
+        status: 'FAILED',
+        error: errorMsg,
+        messageType: 'chat',
+      });
+      if (options?.skipDeadLetter !== true) {
+        await this.deadLetter?.save({
+          externalUserId: discordUserId,
+          rawPayload: { discordUserId, text },
+          errorMessage: errorMsg,
+        });
+      }
+      return undefined;
     }
-    return undefined;
   }
 
   /** Sends a persistent quick-action menu with 3 buttons. Safe to click after bot restarts. */

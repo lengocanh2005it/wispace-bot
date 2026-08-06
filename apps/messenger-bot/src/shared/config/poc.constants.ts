@@ -16,7 +16,7 @@ export interface MessengerLinkContext {
   userId: number;
 }
 
-export function parseUserIdFromRef(ref?: string | null): number | undefined {
+function parseUserIdFromRef(ref?: string | null): number | undefined {
   if (!ref?.trim()) {
     return undefined;
   }
