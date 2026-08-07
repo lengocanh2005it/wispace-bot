@@ -17,6 +17,9 @@ COPY apps/$APP_NAME/package.json apps/$APP_NAME/package.json
 # exclude source so npm ci cache survives package code changes.
 COPY --exclude='*/src' --exclude='*/dist' --exclude='*/coverage' --exclude='*/node_modules' packages packages
 RUN --mount=type=cache,target=/root/.npm HUSKY=0 npm ci
+# Some apps have no non-hoisted deps, so npm ci skips creating their
+# workspace node_modules dir — keep the path present for the COPY below.
+RUN mkdir -p apps/$APP_NAME/node_modules
 
 # Source layer: exclude CI/deploy/docs — keeps cache when only those change.
 COPY --exclude=.git --exclude=node_modules --exclude=.github --exclude=deploy --exclude=docs --exclude='*.md' --exclude='.env*' --exclude='docker-compose*' . .
