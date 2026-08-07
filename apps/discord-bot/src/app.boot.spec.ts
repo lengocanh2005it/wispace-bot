@@ -1,6 +1,6 @@
 import { Test } from '@nestjs/testing';
 import { DataSource, Repository } from 'typeorm';
-import { NecordModule } from 'necord';
+import { Client } from 'discord.js';
 import { AppModule } from './app.module';
 
 /**
@@ -9,14 +9,18 @@ import { AppModule } from './app.module';
  * unowned tokens, inject/constructor mismatches) that typecheck cannot see
  * and that otherwise only surface at the deploy health check.
  *
- * NecordModule is replaced with a stub so no Discord websocket connection
- * is attempted; the advisory-lock mock returns "not acquired" so startup
- * sync crons are no-ops.
+ * Client.login is mocked so no Discord websocket connection is attempted;
+ * the advisory-lock mock returns "not acquired" so startup sync crons are
+ * no-ops.
  */
 describe('AppModule boot smoke', () => {
   it('boots without DI errors', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     process.env.OPENAI_MODEL = 'test-model';
+    process.env.DISCORD_BOT_TOKEN = 'fake-token';
+    const loginSpy = jest
+      .spyOn(Client.prototype, 'login')
+      .mockResolvedValue('fake-token');
 
     const stubRepo = {} as Repository<unknown>;
     const dataSourceMock = new Proxy({} as DataSource, {
@@ -57,12 +61,12 @@ describe('AppModule boot smoke', () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(DataSource)
       .useValue(dataSourceMock)
-      .overrideModule(NecordModule)
-      .useModule({ module: class StubNecordModule {} })
       .compile();
 
     const app = moduleRef.createNestApplication({ logger: false });
     await app.init();
     await app.close();
+
+    loginSpy.mockRestore();
   }, 30_000);
 });
