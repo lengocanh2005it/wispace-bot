@@ -45,6 +45,8 @@ import { UserCalendarScheduleService } from './infrastructure/wispace/user-calen
 import { UserCalendarApiService } from './infrastructure/wispace/user-calendar-api.service';
 import { classifyMessengerDispatchFailure } from './application/utils/study-reminder-dispatch.hooks';
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
+import { STUDY_REMINDER_OPERATIONS_PORT } from './domain/ports/study-reminder-operations.port';
+import { StudyReminderOperationsAdapter } from './infrastructure/study-reminder-operations.adapter';
 
 const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
   'pending',
@@ -243,6 +245,13 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         StudyReminderService,
       ],
     },
+
+    // ── Operations port (messenger-facing seam) ───────────────────────────
+    StudyReminderOperationsAdapter,
+    {
+      provide: STUDY_REMINDER_OPERATIONS_PORT,
+      useExisting: StudyReminderOperationsAdapter,
+    },
   ],
   exports: [
     StudyReminderService,
@@ -255,6 +264,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     UserCalendarApiService,
     UserDisplayNameService,
     STUDY_REMINDER_JOB_REPOSITORY,
+    STUDY_REMINDER_OPERATIONS_PORT,
   ],
 })
 export class StudyReminderModule {}

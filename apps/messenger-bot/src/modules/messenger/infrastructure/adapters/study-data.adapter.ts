@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import type {
   StudyDataPort,
   StudySessionView,
@@ -7,18 +7,18 @@ import type {
   StudyReminderLlmOutput,
   CalendarSessionTimeRange,
 } from '../../domain/ports/study-data.port';
-import { StudySessionSourceService } from '@messenger/modules/study-reminder/application/services/study-session-source.service';
-import { StudyReminderService } from '@messenger/modules/study-reminder/application/services/study-reminder.service';
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
-import { StudyCalendarCommandService } from '@messenger/modules/study-reminder/application/services/study-calendar-command.service';
+import {
+  STUDY_REMINDER_OPERATIONS_PORT,
+  type StudyReminderOperationsPort,
+} from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 
 @Injectable()
 export class StudyDataAdapter implements StudyDataPort {
   constructor(
-    private readonly sessionSource: StudySessionSourceService,
-    private readonly reminderService: StudyReminderService,
+    @Inject(STUDY_REMINDER_OPERATIONS_PORT)
+    private readonly operations: StudyReminderOperationsPort,
     private readonly scheduleService: StudyReminderScheduleService,
-    private readonly calendarCommand: StudyCalendarCommandService,
   ) {}
 
   async getUpcomingSessions(params: {
@@ -26,7 +26,7 @@ export class StudyDataAdapter implements StudyDataPort {
     userId?: number;
     horizonEnd?: Date;
   }): Promise<StudySessionView[]> {
-    const sessions = await this.sessionSource.getUpcomingSessions(params);
+    const sessions = await this.operations.getUpcomingSessions(params);
     return sessions.map((s) => ({
       sessionKey: s.sessionKey,
       scheduledAt: s.scheduledAt,
@@ -39,10 +39,7 @@ export class StudyDataAdapter implements StudyDataPort {
     psid: string,
     userId?: number,
   ): Promise<StudySessionView | null> {
-    const session = await this.reminderService.getNextUpcomingSession(
-      psid,
-      userId,
-    );
+    const session = await this.operations.getNextUpcomingSession(psid, userId);
     if (!session) return null;
     return {
       sessionKey: session.sessionKey,
@@ -57,7 +54,7 @@ export class StudyDataAdapter implements StudyDataPort {
     session: StudySessionView,
     options?: { userId?: number; displayName?: string; jobId?: number },
   ): Promise<{ text: string; output: StudyReminderLlmOutput }> {
-    const bundle = await this.reminderService.generateReminderBundleForSession(
+    const bundle = await this.operations.generateReminderBundleForSession(
       psid,
       {
         sessionKey: session.sessionKey,
@@ -85,7 +82,7 @@ export class StudyDataAdapter implements StudyDataPort {
     timeRange: CalendarSessionTimeRange;
     entries: StudyCalendarEntryView[];
   }> {
-    return this.calendarCommand.listEntries(psid, userId, options);
+    return this.operations.listEntries(psid, userId, options);
   }
 
   getOutboxSettings(): StudyOutboxSettings {
