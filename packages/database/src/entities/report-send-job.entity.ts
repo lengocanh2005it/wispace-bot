@@ -6,8 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-
-export type ReportSendJobStatus = 'pending' | 'processing' | 'sent' | 'failed';
+import type { Platform, ReportSendJobStatus } from '../types';
 
 /** R5: outbox retry báo cáo cron khi Wispace 5xx — một job / (platform, external_user_id, exam_date). */
 @Entity('report_send_jobs')
@@ -22,7 +21,7 @@ export class ReportSendJobEntity {
   id: number;
 
   @Column({ type: 'varchar', length: 16, default: 'messenger' })
-  platform: string;
+  platform: Platform;
 
   @Column({ name: 'external_user_id', type: 'varchar', length: 64 })
   externalUserId: string;

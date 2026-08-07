@@ -16,17 +16,18 @@ import type {
   UserLink,
   StudySessionRecord,
 } from '../types/study-reminder.types';
+import type { Platform } from '@wispace/database';
 
 const DEFAULT_PLATFORM = 'messenger';
 
 export type OnUserSyncHook = (
   userId: number,
-  platform: string,
+  platform: Platform,
 ) => Promise<number | void>;
 
 export interface StudyReminderSyncOptions {
   userId?: number;
-  platform?: string;
+  platform?: Platform;
   getSessions?: (
     externalUserId: string,
     userId?: number,

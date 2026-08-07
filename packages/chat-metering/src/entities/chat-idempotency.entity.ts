@@ -1,6 +1,5 @@
 import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
-
-export type ChatIdempotencyStatus = 'reserved' | 'completed' | 'refunded';
+import type { Platform, ChatIdempotencyStatus } from '@wispace/database';
 
 @Entity('chat_idempotency')
 @Index('idx_chat_idempotency_platform_external_date', [
@@ -13,7 +12,7 @@ export class ChatIdempotencyEntity {
   idempotencyKey: string;
 
   @PrimaryColumn({ type: 'varchar', length: 16, default: 'messenger' })
-  platform: string;
+  platform: Platform;
 
   @Column({ name: 'external_user_id', type: 'varchar', length: 64 })
   externalUserId: string;

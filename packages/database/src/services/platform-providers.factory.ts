@@ -3,6 +3,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WebhookDeadLetterEntity } from '../entities/webhook-dead-letter.entity';
 import type { EntityClass } from '../typeorm-options';
+import type { Platform } from '../types';
 import { DeliveryLogService, type MessageLogRow } from './delivery-log.service';
 import { PlatformDeadLetterService } from './platform-dead-letter.service';
 
@@ -22,7 +23,7 @@ export function createDeliveryLogProvider<
 }
 
 export function createPlatformDeadLetterProvider(
-  platform: string,
+  platform: Platform,
   deadLetterEntity: EntityClass,
 ): Provider {
   return {

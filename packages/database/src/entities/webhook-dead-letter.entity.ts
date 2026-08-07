@@ -6,8 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-
-export type WebhookDeadLetterStatus = 'pending' | 'replayed' | 'abandoned';
+import type { Platform, WebhookDeadLetterStatus } from '../types';
 
 /** Narrow row view used by bot dead-letter retry dispatchers. */
 export interface WebhookDeadLetterEntry {
@@ -26,7 +25,7 @@ export class WebhookDeadLetterEntity {
   id: number;
 
   @Column({ type: 'varchar', length: 16, default: 'messenger' })
-  platform: string;
+  platform: Platform;
 
   @Column({
     name: 'external_user_id',

@@ -1,12 +1,13 @@
 import type { Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering';
+import type { Platform } from '@wispace/database';
 import { WispaceGoalsService } from '@wispace/wispace-client';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { PlatformStudentReportService } from './platform-student-report.service';
 
 export interface CreatePlatformStudentReportServiceOptions {
-  platform: string;
+  platform: Platform;
   promptDir: string;
 }
 

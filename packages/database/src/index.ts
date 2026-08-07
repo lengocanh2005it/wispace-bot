@@ -1,13 +1,9 @@
 export {
   WebhookDeadLetterEntity,
-  type WebhookDeadLetterStatus,
   type WebhookDeadLetterEntry,
 } from './entities/webhook-dead-letter.entity';
 export { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
-export {
-  ReportSendJobEntity,
-  type ReportSendJobStatus,
-} from './entities/report-send-job.entity';
+export { ReportSendJobEntity } from './entities/report-send-job.entity';
 export {
   SHARED_ENTITIES,
   getTypeOrmOptions,
@@ -16,6 +12,26 @@ export {
   readEnv,
   type EntityClass,
 } from './typeorm-options';
+
+// Shared types
+export {
+  type Platform,
+  type MappingStatus,
+  type MessageLogStatus,
+  type ChatQuotaDenyReason,
+  type ChatIdempotencyStatus,
+  type ChatQuotaEventType,
+  type ChatQuotaReleaseReason,
+  type ReportSendJobStatus,
+  type ScheduledReportClaimStatus,
+  type WebhookDeadLetterStatus,
+  type StudyReminderJobStatus,
+  type LlmFeature,
+  MessageType,
+  type MessageType as MessageTypeValue,
+  type CalendarSessionTimeRange,
+  type ReportDeliveryReason,
+} from './types';
 
 export { PlatformDeadLetterService } from './services/platform-dead-letter.service';
 export {

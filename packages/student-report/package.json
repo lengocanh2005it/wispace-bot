@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@wispace/chat-metering": "*",
+    "@wispace/database": "*",
     "@wispace/llm-agent": "*",
     "@wispace/wispace-client": "*",
     "@nestjs/common": "^11.0.1",

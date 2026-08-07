@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import { todayReportDate } from '@wispace/scheduler-core';
 import { ScheduledReportClaimEntity } from '../entities/scheduled-report-claim.entity';
+import type { Platform } from '../types';
 
 /**
  * Report claim idempotency for the 08:00 scheduled report cron — shared by
@@ -13,7 +14,7 @@ import { ScheduledReportClaimEntity } from '../entities/scheduled-report-claim.e
 @Injectable()
 export class PlatformReportClaimRepository implements ReportClaimRepositoryPort {
   constructor(
-    private readonly platform: string,
+    private readonly platform: Platform,
     @InjectRepository(ScheduledReportClaimEntity)
     private readonly claimRepo: Repository<ScheduledReportClaimEntity>,
   ) {}

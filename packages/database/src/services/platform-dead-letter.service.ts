@@ -5,6 +5,7 @@ import {
   WebhookDeadLetterEntity,
   type WebhookDeadLetterEntry,
 } from '../entities/webhook-dead-letter.entity';
+import type { Platform } from '../types';
 
 /**
  * Dead letter queue for failed webhook events — shared by Discord and Zalo
@@ -16,7 +17,7 @@ export class PlatformDeadLetterService {
   private readonly logger = new Logger(PlatformDeadLetterService.name);
 
   constructor(
-    private readonly platform: string,
+    private readonly platform: Platform,
     @InjectRepository(WebhookDeadLetterEntity)
     private readonly repo: Repository<WebhookDeadLetterEntity>,
   ) {}

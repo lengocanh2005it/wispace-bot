@@ -5,6 +5,7 @@ import {
   PlatformLlmUsageRecorderAdapter,
   todayUsageDate,
 } from '@wispace/chat-metering';
+import type { Platform } from '@wispace/database';
 import { WispaceGoalsService } from '@wispace/wispace-client';
 import {
   loadSystemPromptFile,
@@ -32,7 +33,7 @@ export class PlatformStudentReportService {
   private readonly limiter: <T>(fn: () => Promise<T>) => Promise<T>;
 
   constructor(
-    private readonly platform: string,
+    private readonly platform: Platform,
     private readonly configService: ConfigService,
     private readonly goalsService: WispaceGoalsService,
     private readonly usageRecorder: PlatformLlmUsageRecorderAdapter,

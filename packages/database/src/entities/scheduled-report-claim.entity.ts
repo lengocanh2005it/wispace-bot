@@ -6,8 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-
-export type ScheduledReportClaimStatus = 'claimed' | 'sent' | 'released';
+import type { Platform, ScheduledReportClaimStatus } from '../types';
 
 @Entity('scheduled_report_claims')
 @Index(
@@ -20,7 +19,7 @@ export class ScheduledReportClaimEntity {
   id: number;
 
   @Column({ type: 'varchar', length: 16, default: 'messenger' })
-  platform: string;
+  platform: Platform;
 
   @Column({ name: 'external_user_id', type: 'varchar', length: 64 })
   externalUserId: string;

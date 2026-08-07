@@ -9,12 +9,13 @@ import { CronJob } from 'cron';
 import { LessThan, Repository } from 'typeorm';
 import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { WebhookDeadLetterEntity } from '@wispace/database';
+import type { Platform } from '@wispace/database';
 import { minutesAgo } from '@wispace/date-utils';
 import { CleanupCronService } from './cleanup-cron.service';
 
 export interface CleanupCronJobsConfig {
   /** Platform name ('discord' | 'zalo') — used for cron names and idempotency cleanup filter. */
-  platform: string;
+  platform: Platform;
   /** Env var prefix for cleanup toggles/retention (e.g. 'DISCORD_'). */
   envPrefix: string;
   /** Advisory lock IDs for multi-pod safety. */

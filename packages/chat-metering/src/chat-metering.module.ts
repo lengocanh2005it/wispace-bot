@@ -2,6 +2,7 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
+import type { Platform } from '@wispace/database';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
@@ -25,7 +26,7 @@ import { PlatformLlmSafetyEventAdapter } from './llm-safety/platform-llm-safety-
 @Module({})
 export class ChatMeteringModule {
   static forPlatform(
-    platform: string,
+    platform: Platform,
     options?: { requireEnv?: boolean; lenientEnabledCheck?: boolean },
   ): DynamicModule {
     const rateLimitOptions: PlatformChatRateLimitOptions = { platform };

@@ -26,13 +26,13 @@ export type {
   BurstCounterPort,
   ChatIdempotencyRecord,
   ChatQuotaCheckResult,
-  ChatQuotaDenyReason,
   ChatRateLimitSettings,
   RecoverIdempotencyOutcome,
   ReserveFreeFormSlotInput,
   ReserveFreeFormSlotOutcome,
   ReserveIdempotencyInput,
 } from './chat-rate-limit/types';
+export type { ChatQuotaDenyReason } from '@wispace/database';
 
 export {
   normalizeModelForEnvKey,

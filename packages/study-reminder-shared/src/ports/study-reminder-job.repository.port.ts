@@ -3,6 +3,7 @@ import type {
   StudyReminderJobStatus,
   UpsertStudyReminderJobInput,
 } from '../types/study-reminder.types';
+import type { Platform } from '@wispace/database';
 
 export type {
   StudyReminderJob,
@@ -48,7 +49,7 @@ export interface StudyReminderJobRepositoryPort {
   }): Promise<void>;
   markCancelled(jobId: number, reason?: string): Promise<void>;
   cancelStaleJobsForExternalUserId(
-    platform: string,
+    platform: Platform,
     externalUserId: string,
     activeSessionKeys: string[],
     horizonEnd?: Date,
@@ -56,7 +57,7 @@ export interface StudyReminderJobRepositoryPort {
   ): Promise<number>;
   cancelJobsFromOtherPlatforms(
     userId: number,
-    currentPlatform: string,
+    currentPlatform: Platform,
     options?: { statuses?: StudyReminderJobStatus[] },
   ): Promise<number>;
   findNextDueTime(now: Date): Promise<Date | null>;

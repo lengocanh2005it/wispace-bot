@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Repository, type FindOptionsWhere } from 'typeorm';
 import type { MappingReaderPort } from '../ports/mapping-reader.port';
 import type { UserLink } from '../types/study-reminder.types';
+import type { Platform } from '@wispace/database';
 
 /** Minimum column shape shared by the per-app account-link entities. */
 export interface AccountLinkRow {
@@ -43,7 +44,7 @@ export class TypeormMappingReader<
     return {
       externalUserId: link.externalUserId,
       userId: link.userId,
-      platform: link.platform,
+      platform: link.platform as Platform,
     };
   }
 }

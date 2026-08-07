@@ -1,13 +1,14 @@
-export type StudyReminderJobStatus =
-  | 'pending'
-  | 'processing'
-  | 'sent'
-  | 'failed'
-  | 'cancelled';
+import type {
+  Platform,
+  StudyReminderJobStatus,
+  MessageType,
+} from '@wispace/database';
+
+export type { StudyReminderJobStatus } from '@wispace/database';
 
 export interface StudyReminderJob {
   id: number;
-  platform: string;
+  platform: Platform;
   externalUserId: string;
   userId?: number;
   sessionKey: string;
@@ -25,7 +26,7 @@ export interface StudyReminderJob {
 }
 
 export interface UpsertStudyReminderJobInput {
-  platform: string;
+  platform: Platform;
   externalUserId: string;
   userId?: number;
   sessionKey: string;
@@ -69,13 +70,13 @@ export interface StudyReminderLlmOutput {
 export interface UserLink {
   externalUserId: string;
   userId?: number;
-  platform: string;
+  platform: Platform;
 }
 
 export interface SendMessageInput {
   externalUserId: string;
   text: string;
-  messageType?: string;
+  messageType?: MessageType;
   userId?: number;
 }
 

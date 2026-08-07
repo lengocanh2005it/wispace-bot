@@ -21,6 +21,7 @@ import type {
   GetSessionsFn,
   StudyReminderSyncResult,
 } from '../types/study-reminder.types';
+import type { Platform } from '@wispace/database';
 import type { StudyReminderDispatchResult } from './study-reminder-dispatch.service';
 
 const ADVISORY_LOCK_SYNC = 884_200_901;
@@ -53,7 +54,7 @@ export class StudyReminderWorkerService
   private readonly eveningRolloverCronName = 'study-reminder-evening-rollover';
   private dispatchTimer: ReturnType<typeof setTimeout> | null = null;
   private shuttingDown = false;
-  private readonly platform: string;
+  private readonly platform: Platform;
   private readonly getSessions?: GetSessionsFn;
   private readonly lockIds: StudyReminderWorkerLockIds;
   private readonly options: StudyReminderWorkerOptions;
@@ -67,7 +68,7 @@ export class StudyReminderWorkerService
     @Optional()
     @Inject(STUDY_REMINDER_JOB_REPOSITORY)
     private readonly jobRepository?: StudyReminderJobRepositoryPort,
-    platform: string = 'messenger',
+    platform: Platform = 'messenger',
     getSessions?: GetSessionsFn,
     lockIds?: Partial<StudyReminderWorkerLockIds>,
     options?: StudyReminderWorkerOptions,

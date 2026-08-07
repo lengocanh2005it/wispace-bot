@@ -1,10 +1,9 @@
-export type ChatIdempotencyStatus = 'reserved' | 'completed' | 'refunded';
+import type {
+  ChatIdempotencyStatus,
+  ChatQuotaDenyReason,
+} from '@wispace/database';
 
-export type ChatQuotaDenyReason =
-  | 'DAILY_LIMIT'
-  | 'BURST_LIMIT'
-  | 'NOT_LINKED'
-  | 'IDEMPOTENCY_CONFLICT';
+export type { ChatIdempotencyStatus } from '@wispace/database';
 
 export interface ChatQuotaCheckResult {
   allowed: boolean;
