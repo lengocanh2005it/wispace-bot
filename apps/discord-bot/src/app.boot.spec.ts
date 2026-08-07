@@ -15,6 +15,9 @@ import { AppModule } from './app.module';
  */
 describe('AppModule boot smoke', () => {
   it('boots without DI errors', async () => {
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'test-model';
+
     const stubRepo = {} as Repository<unknown>;
     const dataSourceMock = new Proxy({} as DataSource, {
       get: (target, prop, receiver) => {
