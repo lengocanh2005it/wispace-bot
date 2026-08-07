@@ -19,32 +19,37 @@ import {
   PlatformChatHistoryService,
   PlatformChatQueueService,
   createChatPipelineAdapters,
+  createPlatformChatHistoryServiceProvider,
 } from '@wispace/chat-agent';
 import {
   WispaceCalendarService,
   WispaceConfigService,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
-import { BotCommonModule, REDIS_CLIENT } from '@wispace/bot-common';
-import type { RedisService } from '@wispace/bot-common';
+import { BotCommonModule } from '@wispace/bot-common';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
 import { ZaloChatService } from './application/services/zalo-chat.service';
-import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
+import {
+  RescheduleConfirmationService,
+  createRescheduleConfirmationProvider,
+} from '@wispace/reschedule-confirm';
 import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
 import { ZaloCalendarPort } from './infrastructure/adapters/zalo-calendar.port';
 import { ZaloReschedulePort } from './infrastructure/adapters/zalo-reschedule.port';
 import {
   PlatformDeadLetterCronService,
   PlatformDeadLetterService,
+  WebhookDeadLetterEntity,
+  createDeliveryLogProvider,
+  createPlatformDeadLetterProvider,
 } from '@wispace/database';
 import {
   CleanupCronService,
   PlatformCleanupCronService,
 } from '@wispace/cleanup-cron';
 import { ZaloMessageLogEntity } from '../../infrastructure/database/entities/zalo-message-log.entity';
-import { DeliveryLogService, WebhookDeadLetterEntity } from '@wispace/database';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -80,31 +85,12 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         ),
       inject: [ConfigService],
     },
-    {
-      provide: DeliveryLogService,
-      useFactory: (repo: Repository<ZaloMessageLogEntity>) =>
-        new DeliveryLogService(repo),
-      inject: [getRepositoryToken(ZaloMessageLogEntity)],
-    },
-    {
-      provide: PlatformDeadLetterService,
-      useFactory: (repo: Repository<WebhookDeadLetterEntity>) =>
-        new PlatformDeadLetterService('zalo', repo),
-      inject: [getRepositoryToken(WebhookDeadLetterEntity)],
-    },
-    {
-      provide: PlatformChatHistoryService,
-      useFactory: (
-        configService: ConfigService,
-        redisClient?: RedisService | null,
-      ) =>
-        new PlatformChatHistoryService(
-          configService,
-          { envPrefix: 'ZALO_CHAT_HISTORY_', keyPrefix: 'chat-history:zalo:' },
-          redisClient,
-        ),
-      inject: [ConfigService, { token: REDIS_CLIENT, optional: true }],
-    },
+    createDeliveryLogProvider(ZaloMessageLogEntity),
+    createPlatformDeadLetterProvider('zalo', WebhookDeadLetterEntity),
+    createPlatformChatHistoryServiceProvider({
+      envPrefix: 'ZALO_CHAT_HISTORY_',
+      keyPrefix: 'chat-history:zalo:',
+    }),
     {
       provide: PlatformAgentToolsService,
       useFactory: (
@@ -240,15 +226,10 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     },
     ZaloCalendarPort,
     ZaloReschedulePort,
-    {
-      provide: RescheduleConfirmationService,
-      useFactory: (
-        calendarPort: ZaloCalendarPort,
-        reschedulePort: ZaloReschedulePort,
-      ) =>
-        new RescheduleConfirmationService<string>(calendarPort, reschedulePort),
-      inject: [ZaloCalendarPort, ZaloReschedulePort],
-    },
+    createRescheduleConfirmationProvider<string>(
+      ZaloCalendarPort,
+      ZaloReschedulePort,
+    ),
     ZaloOutboundService,
     CleanupCronService,
     {

@@ -19,6 +19,24 @@ import { MessengerChatQueueService } from './messenger-chat-queue.service';
 import type { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import type { MetricsService } from '@messenger/modules/metrics/metrics.service';
 
+const mockQueueConfigs: Array<{ maxPendingSize?: number }> = [];
+
+jest.mock('@wispace/chat-queue-core', () => {
+  const actual = jest.requireActual<typeof import('@wispace/chat-queue-core')>(
+    '@wispace/chat-queue-core',
+  );
+  return {
+    ...actual,
+    DebounceChatQueue: jest.fn().mockImplementation(function (
+      this: unknown,
+      ...args: unknown[]
+    ) {
+      mockQueueConfigs.push(args[0] as { maxPendingSize?: number });
+      return new actual.DebounceChatQueue(...(args as never[]));
+    }),
+  };
+});
+
 describe('MessengerChatQueueService', () => {
   let createdServices: MessengerChatQueueService[] = [];
 
@@ -34,7 +52,9 @@ describe('MessengerChatQueueService', () => {
     ...overrides,
   });
 
-  const createService = (options: { shouldEnforce?: boolean } = {}) => {
+  const createService = (
+    options: { shouldEnforce?: boolean; maxPendingMessages?: string } = {},
+  ) => {
     const sendSenderActionOptional = jest.fn(() => Promise.resolve());
     const sendTextViaPsid = jest.fn(() => Promise.resolve());
     const sendTextBubblesViaPsid = jest.fn(() => Promise.resolve(1));
@@ -100,6 +120,12 @@ describe('MessengerChatQueueService', () => {
 
     const configService = {
       get: (key: string) => {
+        if (
+          options.maxPendingMessages !== undefined &&
+          key === 'CHAT_MAX_PENDING_MESSAGES'
+        ) {
+          return options.maxPendingMessages;
+        }
         const values: Record<string, string> = {
           CHAT_DEBOUNCE_MS: '0',
           CHAT_MAX_BUBBLES: '4',
@@ -568,5 +594,17 @@ describe('MessengerChatQueueService', () => {
 
     expect(reserveFreeFormSlot).not.toHaveBeenCalled();
     expect(reply).not.toHaveBeenCalled();
+  });
+
+  it('defaults maxPendingSize to 20 when CHAT_MAX_PENDING_MESSAGES is unset', () => {
+    mockQueueConfigs.length = 0;
+    createService();
+    expect(mockQueueConfigs[0]?.maxPendingSize).toBe(20);
+  });
+
+  it('passes no-cap maxPendingSize when CHAT_MAX_PENDING_MESSAGES=0', () => {
+    mockQueueConfigs.length = 0;
+    createService({ maxPendingMessages: '0' });
+    expect(mockQueueConfigs[0]?.maxPendingSize).toBe(Number.MAX_SAFE_INTEGER);
   });
 });

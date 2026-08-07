@@ -254,4 +254,26 @@ describe('PlatformChatQueueService', () => {
       'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...',
     );
   });
+
+  it('defaults maxPendingSize to 20 when CHAT_MAX_PENDING_MESSAGES is unset', () => {
+    buildService();
+    const cfg = jest.mocked(DebounceChatQueue).mock.calls[0][0] as {
+      maxPendingSize: number;
+    };
+    expect(cfg.maxPendingSize).toBe(20);
+  });
+
+  it('passes no-cap maxPendingSize when CHAT_MAX_PENDING_MESSAGES=0', () => {
+    configGet.mockImplementation((key: string) => {
+      if (key === 'CHAT_MAX_PENDING_MESSAGES') return '0';
+      if (key === 'CHAT_DEBOUNCE_MS') return '2000';
+      return undefined;
+    });
+
+    buildService();
+    const cfg = jest.mocked(DebounceChatQueue).mock.calls[0][0] as {
+      maxPendingSize: number;
+    };
+    expect(cfg.maxPendingSize).toBe(Number.MAX_SAFE_INTEGER);
+  });
 });

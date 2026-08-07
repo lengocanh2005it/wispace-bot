@@ -38,7 +38,7 @@ npx turbo run verify
 
 If only editing `packages/llm-agent`: run `npx turbo run test --filter=@wispace/llm-agent` first (mock port tests, no DB/Nest needed), then re-run the `@wispace/messenger-bot...` gate (use `...` to rebuild dependent apps).
 
-`apps/discord-bot` and `apps/zalo-bot` are currently placeholders (no-op scripts) — no need to run verify separately until real code exists (see `docs/turborepo-migration-plan.md`).
+All 3 bots (`apps/messenger-bot`, `apps/discord-bot`, `apps/zalo-bot`) are fully functional — the full `npx turbo run format` + `npm run verify` gate above covers all workspaces.
 
 ## Checks
 

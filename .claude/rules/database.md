@@ -27,7 +27,7 @@ H7 migration created `messenger_chat_queue_buffer` + `messenger_chat_history` �
 ## Wispace hub (no migrations in repo)
 
 - Sole HTTP API for calendar (`UserCalendar`, goals, scores) — **I3 ✓** no more `UserCalendars` DB fallback in app.
-- Tables `"Users"`, `UserCalendars` on `writing_ai_hub_db` — owned by Wispace; bot app does not read directly.
+- `"Users"` view on `ai_chat_bot_db` (migration `1717747200008`) — read by the user display-name cache (`users` table / `"Users"` view, Redis R5 cache first). `UserCalendars` on `writing_ai_hub_db` — owned by Wispace; bot does not read it (I3 removed the DB fallback).
 
 ## Adding a migration
 

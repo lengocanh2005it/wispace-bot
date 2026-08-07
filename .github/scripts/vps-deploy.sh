@@ -5,7 +5,7 @@ set -euo pipefail
 # Runs in the deploy dir (cwd) containing docker-compose.prod.yml (+ optional production.env).
 # Requires env: IMAGE, DEPLOY_MODE, APP_NAME
 # Optional env: FORCE_RECREATE, GHCR_PULL_TOKEN, GHCR_USER, HEALTH_PATH, PORT,
-#               DEPLOY_HOST_DIR, RUN_MIGRATIONS, MIGRATION_CMD,
+#               HEALTH_MAX_ATTEMPTS, DEPLOY_HOST_DIR, RUN_MIGRATIONS, MIGRATION_CMD,
 #               MIGRATION_DB_CONTAINER, MIGRATION_LOCK_ID
 
 : "${IMAGE:?IMAGE is required}"
@@ -15,6 +15,7 @@ set -euo pipefail
 : "${GHCR_PULL_TOKEN:-}"
 : "${GHCR_USER:-}"
 : "${HEALTH_PATH:=}"                       # e.g. /health/db — empty skips the health check
+: "${HEALTH_MAX_ATTEMPTS:=30}"             # health check attempts before rollback
 : "${PORT:=5007}"                          # health check port (compose overrides via .env PORT=)
 : "${DEPLOY_HOST_DIR:=/home/ngoc_anh/${APP_NAME}}"
 
@@ -146,8 +147,8 @@ echo "Deploy complete: $APP_NAME ($IMAGE)"
 # to the previously running image instead of leaving the bot down.
 if [ -n "$HEALTH_PATH" ]; then
   healthy=""
-  for attempt in $(seq 1 30); do
-    if curl -sf "http://127.0.0.1:${PORT}${HEALTH_PATH}" >/dev/null; then
+  for attempt in $(seq 1 "${HEALTH_MAX_ATTEMPTS:-30}"); do
+    if curl -sf --max-time 3 "http://127.0.0.1:${PORT}${HEALTH_PATH}" >/dev/null; then
       healthy=1
       echo "Health check passed on attempt ${attempt}"
       break
@@ -160,8 +161,8 @@ if [ -n "$HEALTH_PATH" ]; then
     if [ -n "${PREV_IMAGE:-}" ] && [ "$PREV_IMAGE" != "$IMAGE" ]; then
       echo "Rolling back to previous image: $PREV_IMAGE"
       IMAGE="$PREV_IMAGE" docker compose -f "$COMPOSE_FILE" up -d "$APP_NAME"
-      for attempt in $(seq 1 30); do
-        if curl -sf "http://127.0.0.1:${PORT}${HEALTH_PATH}" >/dev/null; then
+      for attempt in $(seq 1 "${HEALTH_MAX_ATTEMPTS:-30}"); do
+        if curl -sf --max-time 3 "http://127.0.0.1:${PORT}${HEALTH_PATH}" >/dev/null; then
           echo "Rollback healthy (attempt ${attempt})"
           break
         fi

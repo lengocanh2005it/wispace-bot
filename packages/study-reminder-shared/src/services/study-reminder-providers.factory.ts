@@ -20,15 +20,72 @@ import { StudyReminderSyncService } from './study-reminder-sync.service';
 import { StudyReminderDispatchService } from './study-reminder-dispatch.service';
 import { StudyReminderWorkerService } from './study-reminder-worker.service';
 import { TypeormStudyReminderJobRepository } from '../infrastructure/typeorm-study-reminder-job.repository';
+import type {
+  GetSessionsFn,
+  StudySessionRecord,
+} from '../types/study-reminder.types';
+import type {
+  StudyReminderWorkerLockIds,
+  StudyReminderWorkerOptions,
+} from './study-reminder-worker.service';
 
 export type StudyReminderProviderTarget = new (...args: never[]) => unknown;
 
 export interface CreateStudyReminderProvidersOptions {
   platform: string;
-  mappingTable: string;
-  mappingEntity: StudyReminderProviderTarget;
+  /** Required when `mappingReader` is not provided (discord/zalo). */
+  mappingTable?: string;
+  /** Required when `mappingReader` is not provided (discord/zalo). */
+  mappingEntity?: StudyReminderProviderTarget;
   outboundService: StudyReminderProviderTarget;
-  calendarService: StudyReminderProviderTarget;
+  /** Required when `getSessionsService` is not provided (discord/zalo). */
+  calendarService?: StudyReminderProviderTarget;
+  /** Messenger: replaces the TypeormMappingReader factory with a custom provider (backed by MESSENGER_REPOSITORY). */
+  mappingReader?: Provider;
+  /**
+   * Messenger: worker getSessions source. When set, the worker factory
+   * injects this provider (deps[6]) and calls
+   * `getUpcomingSessions({ psid, userId })` instead of the calendar mapping.
+   */
+  getSessionsService?: StudyReminderProviderTarget;
+  /** Messenger: advisory lock ids for sync/cleanup/rollover (shared defaults when absent). */
+  workerLockIds?: StudyReminderWorkerLockIds;
+  /** Messenger: worker options (logLockSkips, startupSyncSwallowErrors). */
+  workerOptions?: StudyReminderWorkerOptions;
+}
+
+/** Structural surface of messenger's StudySessionSourceService (no cross-app import). */
+interface GetUpcomingSessionsService {
+  getUpcomingSessions(input: {
+    psid: string;
+    userId?: number;
+  }): Promise<StudySessionRecord[]>;
+}
+
+function buildCalendarGetSessions(service: unknown): GetSessionsFn | undefined {
+  if (!service) return undefined;
+  return (externalUserId: string) =>
+    (service as WispaceCalendarService)
+      .getCalendarSessions(externalUserId, { timeRange: 'upcoming' })
+      .then((sessions) =>
+        sessions.map((s) => ({
+          calendarId: s.sessionKey,
+          sessionKey: s.sessionKey,
+          scheduledAt: s.scheduledAt,
+          topic: s.topic,
+        })),
+      );
+}
+
+function buildSessionSourceGetSessions(
+  service: unknown,
+): GetSessionsFn | undefined {
+  if (!service) return undefined;
+  return (externalUserId: string, userId?: number) =>
+    (service as GetUpcomingSessionsService).getUpcomingSessions({
+      psid: externalUserId,
+      userId,
+    });
 }
 
 /**
@@ -47,11 +104,11 @@ export function createStudyReminderProviders(
         wrapMessageSender(outbound),
       inject: [options.outboundService],
     },
-    {
+    options.mappingReader ?? {
       provide: MAPPING_READER,
       useFactory: (repo: Repository<AccountLinkRow>) =>
-        new TypeormMappingReader(repo, options.mappingTable),
-      inject: [getRepositoryToken(options.mappingEntity)],
+        new TypeormMappingReader(repo, options.mappingTable!),
+      inject: [getRepositoryToken(options.mappingEntity!)],
     },
     {
       provide: STUDY_REMINDER_JOB_REPOSITORY,
@@ -73,21 +130,11 @@ export function createStudyReminderProviders(
           deps[4],
           deps[5],
           options.platform,
-          deps[6]
-            ? (externalUserId: string) =>
-                (deps[6] as WispaceCalendarService)
-                  .getCalendarSessions(externalUserId, {
-                    timeRange: 'upcoming',
-                  })
-                  .then((sessions) =>
-                    sessions.map((s) => ({
-                      calendarId: s.sessionKey,
-                      sessionKey: s.sessionKey,
-                      scheduledAt: s.scheduledAt,
-                      topic: s.topic,
-                    })),
-                  )
-            : undefined,
+          options.getSessionsService
+            ? buildSessionSourceGetSessions(deps[6])
+            : buildCalendarGetSessions(deps[6]),
+          options.workerLockIds,
+          options.workerOptions,
         ),
       inject: [
         StudyReminderSyncService,
@@ -96,7 +143,7 @@ export function createStudyReminderProviders(
         { token: SchedulerRegistry, optional: false },
         PgAdvisoryLockService,
         { token: STUDY_REMINDER_JOB_REPOSITORY, optional: true },
-        options.calendarService,
+        options.getSessionsService ?? options.calendarService!,
       ],
     },
     TypeormStudyReminderJobRepository,

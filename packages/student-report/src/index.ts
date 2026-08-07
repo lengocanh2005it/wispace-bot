@@ -21,3 +21,7 @@ export {
   parseReportOutput,
 } from './report-formatter';
 export { PlatformStudentReportService } from './platform-student-report.service';
+export {
+  createPlatformStudentReportServiceProvider,
+  type CreatePlatformStudentReportServiceOptions,
+} from './platform-student-report.provider';

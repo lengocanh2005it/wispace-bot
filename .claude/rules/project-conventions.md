@@ -1,6 +1,6 @@
 # General conventions — wispace-bots (Turborepo monorepo)
 
-Turborepo monorepo: `apps/messenger-bot` (NestJS, full-featured) + `apps/discord-bot`/`apps/zalo-bot` (placeholders) + `packages/llm-agent` (shared LLM function-calling). Messenger webhook + AI reports + study reminders + **rate-limited AI chat** for WISPACE.
+Turborepo monorepo: `apps/messenger-bot` (NestJS, full-featured) + `apps/discord-bot`/`apps/zalo-bot` (fully functional) + `packages/llm-agent` (shared LLM function-calling). Messenger webhook + AI reports + study reminders + **rate-limited AI chat** for WISPACE.
 
 **Read more:** `.claude/rules/clean-architecture.md` — mandatory when adding/modifying code in `apps/*/src/modules/` or `packages/llm-agent/`.
 

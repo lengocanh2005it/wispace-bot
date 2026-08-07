@@ -69,7 +69,7 @@ export class ZaloReportCronService {
     }
 
     this.logger.log(
-      `Daily report done: sent=${sent}, skipped(48h)=${skipped}, failed=${failed}${errors.length > 0 ? ', errors=' + errors.join('; ') : ''}`,
+      `Daily report done: sent=${sent}, skipped(already-sent/claimed/48h)=${skipped}, failed=${failed}${errors.length > 0 ? ', errors=' + errors.join('; ') : ''}`,
     );
   }
 
@@ -88,51 +88,51 @@ export class ZaloReportCronService {
         );
         return 'skipped';
       }
+      const claimed = await this.claimRepo.tryClaimScheduledReport({
+        externalUserId: link.externalUserId,
+        userId: link.userId,
+        reportDate,
+      });
+      if (!claimed) {
+        this.logger.log(
+          `Report already claimed by another instance for Zalo user ${link.externalUserId}, skipping`,
+        );
+        return 'skipped';
+      }
     }
 
     try {
       const report = await this.reportService.generateReport(
         link.externalUserId,
       );
-      let delivered = true;
-      try {
-        await this.outbound.sendText(link.externalUserId, report);
-      } catch (error) {
-        if (error instanceof ZaloSendError && error.is48hWindowError()) {
-          this.logger.warn(
-            `48h window closed for Zalo user ${link.externalUserId}, report not delivered`,
-          );
-        } else {
-          this.logger.error(
-            `Failed to send report to Zalo user ${link.externalUserId}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-        delivered = false;
+      await this.outbound.sendText(link.externalUserId, report);
+      if (link.userId) {
+        await this.claimRepo.markScheduledReportClaimSent({
+          externalUserId: link.externalUserId,
+          reportDate,
+        });
       }
-      if (delivered) {
-        if (link.userId) {
-          await this.claimRepo
-            .tryClaimScheduledReport({
-              externalUserId: link.externalUserId,
-              userId: link.userId,
-              reportDate,
-            })
-            .then(() =>
-              this.claimRepo.markScheduledReportClaimSent({
-                externalUserId: link.externalUserId,
-                reportDate,
-              }),
-            )
-            .catch(() => {});
-        }
-        this.logger.log(`Report sent to Zalo user ${link.externalUserId}`);
-        return 'sent';
-      }
-      this.logger.warn(
-        `Report skipped for Zalo user ${link.externalUserId} (48h window)`,
-      );
-      return 'skipped';
+      this.logger.log(`Report sent to Zalo user ${link.externalUserId}`);
+      return 'sent';
     } catch (error) {
+      if (link.userId) {
+        await this.claimRepo
+          .releaseScheduledReportClaim({
+            externalUserId: link.externalUserId,
+            reportDate,
+          })
+          .catch((releaseError) => {
+            this.logger.error(
+              `Failed to release report claim for Zalo user ${link.externalUserId}: ${releaseError instanceof Error ? releaseError.message : String(releaseError)}`,
+            );
+          });
+      }
+      if (error instanceof ZaloSendError && error.is48hWindowError()) {
+        this.logger.warn(
+          `48h window closed for Zalo user ${link.externalUserId}, report not delivered`,
+        );
+        return 'skipped';
+      }
       if (
         error instanceof WispaceApiError &&
         (error.statusCode === 401 || error.statusCode === 403)

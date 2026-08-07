@@ -46,10 +46,16 @@ export class PlatformChatQueueService implements OnModuleDestroy {
     },
     private readonly options: PlatformChatQueueOptions = {},
   ) {
-    const maxPendingSize = Math.max(
-      1,
-      Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) || 20,
-    );
+    // 0 = no cap (DebounceChatQueue maps 0 to its default 20, so pass
+    // MAX_SAFE_INTEGER to disable the pending-message cap entirely).
+    const maxPendingSize =
+      configService.get<string>('CHAT_MAX_PENDING_MESSAGES') === '0'
+        ? Number.MAX_SAFE_INTEGER
+        : Math.max(
+            1,
+            Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) ||
+              20,
+          );
 
     const hooks =
       options.typingIndicator !== undefined

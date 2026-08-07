@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import {
-  DeliveryLogService,
   PlatformDeadLetterService,
   WebhookDeadLetterEntity,
+  createDeliveryLogProvider,
+  createPlatformDeadLetterProvider,
 } from '@wispace/database';
-import { Repository } from 'typeorm';
 import { DiscordOutboundService } from './application/services/discord-outbound.service';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 
@@ -23,18 +23,8 @@ import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/
     ]),
   ],
   providers: [
-    {
-      provide: DeliveryLogService,
-      useFactory: (repo: Repository<DiscordMessageLogEntity>) =>
-        new DeliveryLogService(repo),
-      inject: [getRepositoryToken(DiscordMessageLogEntity)],
-    },
-    {
-      provide: PlatformDeadLetterService,
-      useFactory: (repo: Repository<WebhookDeadLetterEntity>) =>
-        new PlatformDeadLetterService('discord', repo),
-      inject: [getRepositoryToken(WebhookDeadLetterEntity)],
-    },
+    createDeliveryLogProvider(DiscordMessageLogEntity),
+    createPlatformDeadLetterProvider('discord', WebhookDeadLetterEntity),
     DiscordOutboundService,
   ],
   exports: [DiscordOutboundService, PlatformDeadLetterService],

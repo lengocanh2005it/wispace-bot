@@ -79,10 +79,16 @@ export class MessengerChatQueueService implements OnModuleDestroy {
     @Inject(CHAT_QUEUE_STORE)
     private readonly chatQueueStore?: ChatQueueStorePort,
   ) {
-    const maxPendingSize = Math.max(
-      1,
-      Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) || 20,
-    );
+    // 0 = no cap (DebounceChatQueue maps 0 to its default 20, so pass
+    // MAX_SAFE_INTEGER to disable the pending-message cap entirely).
+    const maxPendingSize =
+      configService.get<string>('CHAT_MAX_PENDING_MESSAGES') === '0'
+        ? Number.MAX_SAFE_INTEGER
+        : Math.max(
+            1,
+            Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) ||
+              20,
+          );
 
     this.debounceQueue = new DebounceChatQueue<MemoryQueueContext>(
       {
@@ -95,11 +101,19 @@ export class MessengerChatQueueService implements OnModuleDestroy {
       {
         onPendingQueued: (externalUserId, _text, pendingCount) => {
           if (pendingCount === 1) {
-            void this.outbound.sendTextViaPsid({
-              psid: externalUserId,
-              text: 'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...',
-              messageType: 'PENDING_FEEDBACK',
-            });
+            void this.outbound
+              .sendTextViaPsid({
+                psid: externalUserId,
+                text: 'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...',
+                messageType: 'PENDING_FEEDBACK',
+              })
+              .catch((error) => {
+                this.logger.error(
+                  `Failed to send pending feedback to psid=${externalUserId}: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`,
+                );
+              });
           }
         },
         onPendingDropped: (externalUserId, droppedCount) => {
@@ -190,7 +204,13 @@ export class MessengerChatQueueService implements OnModuleDestroy {
 
     const timer = setTimeout(() => {
       this.sharedFlushTimers.delete(psid);
-      void this.flushDistributed(psid);
+      void this.flushDistributed(psid).catch((error) => {
+        this.logger.error(
+          `Distributed chat flush failed psid=${psid}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
     }, this.getDebounceMs());
     timer.unref?.();
 

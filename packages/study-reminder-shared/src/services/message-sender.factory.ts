@@ -4,13 +4,19 @@ import type { SendMessageInput } from '../types/study-reminder.types';
 
 /** Outbound surface needed to send study reminder texts. */
 export interface OutboundMessageSender {
-  sendText(externalUserId: string, text: string): Promise<void>;
+  sendText(
+    externalUserId: string,
+    text: string,
+    input?: SendMessageInput,
+  ): Promise<void>;
 }
 
 /**
  * Wraps a platform outbound service (`DiscordOutboundService` /
  * `ZaloOutboundService`) to implement the shared `MessageSenderPort` —
- * replaces the near-identical per-app sender classes.
+ * replaces the near-identical per-app sender classes. The full input is
+ * forwarded as an optional 3rd arg so messenger can keep messageType/userId
+ * in its message log; discord/zalo ignore it.
  */
 export function wrapMessageSender(
   outbound: OutboundMessageSender,
@@ -20,7 +26,7 @@ export function wrapMessageSender(
   return {
     async sendText(input: SendMessageInput): Promise<void> {
       try {
-        await outbound.sendText(input.externalUserId, input.text);
+        await outbound.sendText(input.externalUserId, input.text, input);
       } catch (error) {
         logger.warn(
           `Failed to send study reminder to externalUserId=${input.externalUserId}: ${

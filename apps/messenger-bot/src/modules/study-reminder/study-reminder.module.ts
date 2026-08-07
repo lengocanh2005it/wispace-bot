@@ -1,11 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SchedulerRegistry } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   REDIS_CLIENT,
   RedisUserDisplayNameCache,
-  PgAdvisoryLockService,
   type RedisClientPort,
 } from '@wispace/bot-common';
 import {
@@ -20,6 +18,7 @@ import {
   STUDY_REMINDER_JOB_REPOSITORY,
   REMINDER_GENERATOR,
   METRICS_HOOK,
+  createStudyReminderProviders,
   type MappingReaderPort,
   type MessageSenderPort,
   type ReminderGeneratorPort,
@@ -63,6 +62,53 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     LlmUsageModule,
   ],
   providers: [
+    // ── Shared package wiring (@wispace/study-reminder-shared) ────────────
+    // Provides MESSAGE_SENDER (wrapMessageSender(MessengerOutboundService)),
+    // MAPPING_READER (custom via mappingReader), STUDY_REMINDER_JOB_REPOSITORY,
+    // StudyReminderWorkerService + TypeormStudyReminderJobRepository.
+    // The custom Schedule/Sync/Dispatch providers below are registered after
+    // this spread and override the shared plain-class defaults (NestJS: last
+    // provider for a token wins).
+    ...createStudyReminderProviders({
+      platform: 'messenger',
+      outboundService: MessengerOutboundService,
+      mappingReader: {
+        provide: MAPPING_READER,
+        useFactory: (
+          repository: MessengerRepositoryPort,
+        ): MappingReaderPort => ({
+          findActiveMappings: (platform) =>
+            repository.findActiveMappingsWithPsid().then((list) =>
+              list
+                .filter((m) => m.psid)
+                .map((m) => ({
+                  externalUserId: m.psid as string,
+                  userId: m.userId,
+                  platform,
+                })),
+            ),
+          findActiveMappingByExternalUserId: (platform, externalUserId) =>
+            repository.findActiveMappingByPsid(externalUserId).then((m) =>
+              m?.psid
+                ? {
+                    externalUserId: m.psid,
+                    userId: m.userId,
+                    platform,
+                  }
+                : null,
+            ),
+        }),
+        inject: [MESSENGER_REPOSITORY],
+      },
+      getSessionsService: StudySessionSourceService,
+      workerLockIds: {
+        sync: ADVISORY_LOCK.STUDY_REMINDER_SYNC,
+        cleanup: ADVISORY_LOCK.STUDY_REMINDER_CLEANUP,
+        rollover: ADVISORY_LOCK.STUDY_REMINDER_ROLLOVER,
+      },
+      workerOptions: { logLockSkips: true, startupSyncSwallowErrors: true },
+    }),
+
     // ── Messenger-local services (kept) ──────────────────────────────────
     UserCalendarApiService,
     UserCalendarScheduleService,
@@ -86,13 +132,6 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
       useExisting: RedisUserDisplayNameCache,
     },
 
-    // ── Shared package services (adopted from @wispace/study-reminder-shared) ──
-    TypeormStudyReminderJobRepository,
-    {
-      provide: STUDY_REMINDER_JOB_REPOSITORY,
-      useExisting: TypeormStudyReminderJobRepository,
-    },
-
     {
       // Strict mode: missing STUDY_REMINDER_* vars fail startup (AGENTS.md).
       // Timezone key order matches resolveAppTimezone (CHAT → LLM → STUDY_REMINDER).
@@ -107,48 +146,6 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
           ],
         }),
       inject: [ConfigService],
-    },
-
-    {
-      provide: MAPPING_READER,
-      useFactory: (repository: MessengerRepositoryPort): MappingReaderPort => ({
-        findActiveMappings: (platform) =>
-          repository.findActiveMappingsWithPsid().then((list) =>
-            list
-              .filter((m) => m.psid)
-              .map((m) => ({
-                externalUserId: m.psid as string,
-                userId: m.userId,
-                platform,
-              })),
-          ),
-        findActiveMappingByExternalUserId: (platform, externalUserId) =>
-          repository.findActiveMappingByPsid(externalUserId).then((m) =>
-            m?.psid
-              ? {
-                  externalUserId: m.psid,
-                  userId: m.userId,
-                  platform,
-                }
-              : null,
-          ),
-      }),
-      inject: [MESSENGER_REPOSITORY],
-    },
-
-    {
-      // MessageSenderPort adapter: keeps the messenger message log + 24h classification.
-      provide: MESSAGE_SENDER,
-      useFactory: (outbound: MessengerOutboundService): MessageSenderPort => ({
-        sendText: (input) =>
-          outbound.sendTextViaPsid({
-            psid: input.externalUserId,
-            text: input.text,
-            messageType: input.messageType ?? 'STUDY_REMINDER',
-            userId: input.userId,
-          }),
-      }),
-      inject: [MessengerOutboundService],
     },
 
     {
@@ -244,47 +241,6 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         METRICS_HOOK,
         StudySessionSourceService,
         StudyReminderService,
-      ],
-    },
-
-    {
-      provide: StudyReminderWorkerService,
-      useFactory: (...deps: unknown[]) =>
-        new (StudyReminderWorkerService as never as new (
-          ...args: unknown[]
-        ) => StudyReminderWorkerService)(
-          deps[0],
-          deps[1],
-          deps[2],
-          deps[3],
-          deps[4],
-          deps[5],
-          'messenger',
-          deps[6]
-            ? (externalUserId: string, userId?: number) =>
-                (deps[6] as StudySessionSourceService).getUpcomingSessions({
-                  psid: externalUserId,
-                  userId,
-                })
-            : undefined,
-          {
-            sync: ADVISORY_LOCK.STUDY_REMINDER_SYNC,
-            cleanup: ADVISORY_LOCK.STUDY_REMINDER_CLEANUP,
-            rollover: ADVISORY_LOCK.STUDY_REMINDER_ROLLOVER,
-          },
-          {
-            logLockSkips: true,
-            startupSyncSwallowErrors: true,
-          },
-        ),
-      inject: [
-        StudyReminderSyncService,
-        StudyReminderDispatchService,
-        StudyReminderScheduleService,
-        { token: SchedulerRegistry, optional: false },
-        PgAdvisoryLockService,
-        { token: STUDY_REMINDER_JOB_REPOSITORY, optional: true },
-        StudySessionSourceService,
       ],
     },
   ],

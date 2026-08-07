@@ -27,3 +27,7 @@ export {
   type MessageLogRow,
 } from './services/delivery-log.service';
 export { PlatformReportClaimRepository } from './services/platform-report-claim.repository';
+export {
+  createDeliveryLogProvider,
+  createPlatformDeadLetterProvider,
+} from './services/platform-providers.factory';

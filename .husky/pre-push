@@ -1,3 +1,4 @@
-# Full quality gate before pushing, mirrors CI (deploy-messenger-bot.yml quality job).
-# --concurrency=4: keeps the full gate but avoids Windows OOM crashes at full parallelism.
-npx turbo run format:check lint typecheck test build --concurrency=4
+# Slim pre-push gate — the full quality gate (format + lint + typecheck + test + build)
+# runs in CI (.github/workflows/pull-request.yml) on every PR and push to main.
+# --concurrency=4: avoids Windows OOM crashes at full parallelism.
+npx turbo run typecheck test --concurrency=4

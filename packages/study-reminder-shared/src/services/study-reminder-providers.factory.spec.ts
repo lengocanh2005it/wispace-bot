@@ -101,4 +101,45 @@ describe('createStudyReminderProviders', () => {
       }),
     ).toBeDefined();
   });
+
+  it('uses the provided mappingReader provider instead of the TypeormMappingReader factory', () => {
+    const customReader = { provide: MAPPING_READER, useValue: {} };
+    const withReader = createStudyReminderProviders({
+      platform: 'messenger',
+      outboundService: FakeOutbound,
+      mappingReader: customReader,
+      getSessionsService: FakeCalendarService,
+    });
+
+    expect(withReader[1]).toBe(customReader);
+  });
+
+  it('builds the worker from getSessionsService + worker lock ids when provided (messenger)', () => {
+    const lockIds = { sync: 1, cleanup: 2, rollover: 3 };
+    const withReader = createStudyReminderProviders({
+      platform: 'messenger',
+      outboundService: FakeOutbound,
+      mappingReader: { provide: MAPPING_READER, useValue: {} },
+      getSessionsService: FakeCalendarService,
+      workerLockIds: lockIds,
+      workerOptions: { logLockSkips: true, startupSyncSwallowErrors: true },
+    });
+
+    const workerProvider = withReader[6] as unknown as {
+      useFactory: (...deps: unknown[]) => unknown;
+      inject: unknown[];
+    };
+    expect(workerProvider.inject[6]).toBe(FakeCalendarService);
+
+    const service = workerProvider.useFactory(
+      {},
+      {},
+      {},
+      {},
+      {},
+      {},
+      new FakeCalendarService(),
+    );
+    expect(service).toBeInstanceOf(StudyReminderWorkerService);
+  });
 });

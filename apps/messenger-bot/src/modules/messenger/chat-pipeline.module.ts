@@ -4,11 +4,11 @@ import { ConfigService } from '@nestjs/config';
 import { join } from 'path';
 import { trace } from '@opentelemetry/api';
 import { Repository } from 'typeorm';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
 import {
   PlatformAgentService,
   PlatformAgentToolsService,
   PlatformChatHistoryService,
+  createPlatformChatHistoryServiceProvider,
 } from '@wispace/chat-agent';
 import {
   LlmSafetyEventEntity,
@@ -75,19 +75,10 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
       provide: CHAT_HISTORY_STORE,
       useExisting: ChatHistoryStoreResolver,
     },
-    {
-      provide: PlatformChatHistoryService,
-      useFactory: (
-        configService: ConfigService,
-        redisClient?: RedisClientPort | null,
-      ) =>
-        new PlatformChatHistoryService(
-          configService,
-          { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat:history:' },
-          redisClient,
-        ),
-      inject: [ConfigService, { token: REDIS_CLIENT, optional: true }],
-    },
+    createPlatformChatHistoryServiceProvider({
+      envPrefix: 'CHAT_HISTORY_',
+      keyPrefix: 'chat:history:',
+    }),
     {
       provide: PlatformLlmUsageRecorderAdapter,
       useFactory: (

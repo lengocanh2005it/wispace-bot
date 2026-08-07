@@ -1,13 +1,13 @@
 # wispace-bots (Turborepo monorepo)
 
-NestJS — WISPACE student bots (Messenger now, Discord/Zalo coming soon): AI reports + study reminders + rate-limited AI chat. Turborepo monorepo — see `docs/turborepo-migration-plan.md` for the full roadmap.
+NestJS — WISPACE student bots (Messenger + Discord + Zalo): AI reports + study reminders + rate-limited AI chat. Turborepo monorepo — see `docs/turborepo-migration-plan.md` for the full roadmap.
 
 ## Structure
 
 ```
-apps/messenger-bot/    @wispace/messenger-bot — current NestJS app (fully functional)
-apps/discord-bot/      @wispace/discord-bot — placeholder, not yet implemented (Phase 3)
-apps/zalo-bot/         @wispace/zalo-bot — placeholder, not yet implemented (Phase 4)
+apps/messenger-bot/    @wispace/messenger-bot — NestJS app (fully functional)
+apps/discord-bot/      @wispace/discord-bot — NestJS app (fully functional)
+apps/zalo-bot/         @wispace/zalo-bot — NestJS app (fully functional)
 packages/llm-agent/    @wispace/llm-agent — shared LLM function-calling orchestration, framework-agnostic
 ```
 

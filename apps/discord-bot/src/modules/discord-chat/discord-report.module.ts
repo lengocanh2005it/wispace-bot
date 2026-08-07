@@ -1,9 +1,8 @@
 import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { join } from 'path';
-import { PlatformStudentReportService } from '@wispace/student-report';
+import { createPlatformStudentReportServiceProvider } from '@wispace/student-report';
 import {
   ReportScheduleService,
   ReportSendScheduleService,
@@ -19,12 +18,8 @@ import {
   ScheduledReportClaimEntity,
   PlatformReportClaimRepository,
 } from '@wispace/database';
-import {
-  ChatMeteringModule,
-  PlatformLlmUsageRecorderAdapter,
-} from '@wispace/chat-metering';
+import { ChatMeteringModule } from '@wispace/chat-metering';
 import { WispaceGoalsService } from '@wispace/wispace-client';
-import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
 import { DiscordReportSendJobRepository } from './infrastructure/persistence/discord-report-send-job.repository';
@@ -73,29 +68,10 @@ import { WispaceModule } from '../wispace/wispace.module';
         new PlatformReportClaimRepository('discord', repo),
       inject: [getRepositoryToken(ScheduledReportClaimEntity)],
     },
-    {
-      provide: PlatformStudentReportService,
-      useFactory: (
-        configService: ConfigService,
-        goalsService: WispaceGoalsService,
-        usageRecorder: PlatformLlmUsageRecorderAdapter,
-        adapter: LlmProviderAdapter,
-      ) =>
-        new PlatformStudentReportService(
-          'discord',
-          configService,
-          goalsService,
-          usageRecorder,
-          adapter,
-          join(__dirname, '../../shared/prompts'),
-        ),
-      inject: [
-        ConfigService,
-        WispaceGoalsService,
-        PlatformLlmUsageRecorderAdapter,
-        'LLM_PROVIDER_ADAPTER',
-      ],
-    },
+    createPlatformStudentReportServiceProvider({
+      platform: 'discord',
+      promptDir: join(__dirname, '../../shared/prompts'),
+    }),
     ReportScheduleService,
     ReportSendScheduleService,
     ReportCronLeaderService,

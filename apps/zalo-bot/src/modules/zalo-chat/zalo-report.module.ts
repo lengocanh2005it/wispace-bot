@@ -1,15 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { join } from 'path';
-import { PlatformStudentReportService } from '@wispace/student-report';
-import {
-  ChatMeteringModule,
-  PlatformLlmUsageRecorderAdapter,
-} from '@wispace/chat-metering';
-import { WispaceGoalsService } from '@wispace/wispace-client';
-import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import { createPlatformStudentReportServiceProvider } from '@wispace/student-report';
+import { ChatMeteringModule } from '@wispace/chat-metering';
 import { REPORT_CLAIM_REPOSITORY } from '@wispace/scheduler-core';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import {
@@ -38,29 +32,10 @@ import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-
         new PlatformReportClaimRepository('zalo', repo),
       inject: [getRepositoryToken(ScheduledReportClaimEntity)],
     },
-    {
-      provide: PlatformStudentReportService,
-      useFactory: (
-        configService: ConfigService,
-        goalsService: WispaceGoalsService,
-        usageRecorder: PlatformLlmUsageRecorderAdapter,
-        adapter: LlmProviderAdapter,
-      ) =>
-        new PlatformStudentReportService(
-          'zalo',
-          configService,
-          goalsService,
-          usageRecorder,
-          adapter,
-          join(__dirname, '../../shared/prompts'),
-        ),
-      inject: [
-        ConfigService,
-        WispaceGoalsService,
-        PlatformLlmUsageRecorderAdapter,
-        'LLM_PROVIDER_ADAPTER',
-      ],
-    },
+    createPlatformStudentReportServiceProvider({
+      platform: 'zalo',
+      promptDir: join(__dirname, '../../shared/prompts'),
+    }),
   ],
   exports: [ZaloReportCronService],
 })

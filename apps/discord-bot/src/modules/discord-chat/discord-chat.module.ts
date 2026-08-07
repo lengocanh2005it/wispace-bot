@@ -7,8 +7,7 @@ import {
   CleanupCronService,
   PlatformCleanupCronService,
 } from '@wispace/cleanup-cron';
-import { BotCommonModule, REDIS_CLIENT } from '@wispace/bot-common';
-import type { RedisClientPort } from '@wispace/bot-common';
+import { BotCommonModule } from '@wispace/bot-common';
 import {
   ChatMeteringModule,
   PlatformChatRateLimitService,
@@ -24,6 +23,7 @@ import {
   PlatformChatHistoryService,
   PlatformChatQueueService,
   createChatPipelineAdapters,
+  createPlatformChatHistoryServiceProvider,
 } from '@wispace/chat-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
@@ -32,7 +32,10 @@ import {
 } from '@wispace/wispace-client';
 import { REPORT_DELIVERY_PORT } from '@wispace/scheduler-core';
 import type { ReportDeliveryPort } from '@wispace/scheduler-core';
-import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
+import {
+  RescheduleConfirmationService,
+  createRescheduleConfirmationProvider,
+} from '@wispace/reschedule-confirm';
 import { DiscordMenuService } from './application/services/discord-menu.service';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
@@ -74,19 +77,10 @@ const REGISTER_REPORT_MESSAGE =
   ],
   providers: [
     DiscordChatGateway,
-    {
-      provide: PlatformChatHistoryService,
-      useFactory: (
-        configService: ConfigService,
-        redisClient?: RedisClientPort | null,
-      ) =>
-        new PlatformChatHistoryService(
-          configService,
-          { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat-history:discord:' },
-          redisClient,
-        ),
-      inject: [ConfigService, { token: REDIS_CLIENT, optional: true }],
-    },
+    createPlatformChatHistoryServiceProvider({
+      envPrefix: 'CHAT_HISTORY_',
+      keyPrefix: 'chat-history:discord:',
+    }),
     {
       provide: PlatformAgentToolsService,
       useFactory: (
@@ -207,15 +201,10 @@ const REGISTER_REPORT_MESSAGE =
     },
     DiscordCalendarPort,
     DiscordReschedulePort,
-    {
-      provide: RescheduleConfirmationService,
-      useFactory: (
-        calendarPort: DiscordCalendarPort,
-        reschedulePort: DiscordReschedulePort,
-      ) =>
-        new RescheduleConfirmationService<string>(calendarPort, reschedulePort),
-      inject: [DiscordCalendarPort, DiscordReschedulePort],
-    },
+    createRescheduleConfirmationProvider<string>(
+      DiscordCalendarPort,
+      DiscordReschedulePort,
+    ),
     DiscordMenuService,
     CleanupCronService,
     {

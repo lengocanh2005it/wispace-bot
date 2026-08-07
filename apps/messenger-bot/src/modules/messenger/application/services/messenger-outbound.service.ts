@@ -287,6 +287,24 @@ export class MessengerOutboundService {
     }
   }
 
+  /**
+   * Outbound surface used by the shared study-reminder MessageSenderPort
+   * (@wispace/study-reminder-shared wrapMessageSender). Keeps the messenger
+   * message log + 24h classification via sendTextViaPsid.
+   */
+  async sendText(
+    externalUserId: string,
+    text: string,
+    input?: { messageType?: string; userId?: number },
+  ): Promise<void> {
+    await this.sendTextViaPsid({
+      psid: externalUserId,
+      text,
+      messageType: input?.messageType ?? 'STUDY_REMINDER',
+      userId: input?.userId,
+    });
+  }
+
   private async logSendFailure(
     params: {
       psid: string;

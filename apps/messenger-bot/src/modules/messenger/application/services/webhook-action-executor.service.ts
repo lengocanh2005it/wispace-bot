@@ -92,7 +92,14 @@ export class WebhookActionExecutorService {
             text: action.text,
             messageType: action.messageType,
           })
-          .catch(() => undefined);
+          .catch((error) => {
+            this.logger.error(
+              `Failed to send text action to psid=${psid}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+            return undefined;
+          });
         break;
 
       case 'register_report':
