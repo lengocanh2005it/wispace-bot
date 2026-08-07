@@ -1,4 +1,3 @@
-import { ConfigService } from '@nestjs/config';
 import type { LlmJsonResponse } from '@wispace/llm-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { TaskScoreAverageApiService } from '@messenger/modules/student-report/infrastructure/wispace/task-score-average-api.service';
@@ -35,11 +34,6 @@ describe('StudyReminderService', () => {
 
   function buildService(llmContent: string) {
     const service = new StudyReminderService(
-      {
-        get: jest.fn((key: string) =>
-          key === 'OPENAI_API_KEY' ? 'sk-test' : undefined,
-        ),
-      } as unknown as ConfigService,
       {
         getUpcomingSessions: jest.fn(),
       } as unknown as StudySessionSourceService,

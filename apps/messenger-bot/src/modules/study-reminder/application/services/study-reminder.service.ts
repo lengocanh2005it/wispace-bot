@@ -4,7 +4,6 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { type LlmProviderAdapter } from '@wispace/llm-agent';
 import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
 import {
@@ -35,7 +34,6 @@ export class StudyReminderService {
   private readonly logger = new Logger(StudyReminderService.name);
 
   constructor(
-    private readonly configService: ConfigService,
     private readonly studySessionSourceService: StudySessionSourceService,
     private readonly studyReminderScheduleService: StudyReminderScheduleService,
     private readonly userGoalsApiService: UserGoalsApiService,
