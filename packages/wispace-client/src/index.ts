@@ -3,8 +3,12 @@ export {
   withRetry,
   isWispaceRetryable,
   CircuitBreaker,
+  createCircuitBreaker,
 } from './utils/with-retry';
-export type { WithRetryOptions } from './utils/with-retry';
+export type {
+  CircuitBreakerOptions,
+  WithRetryOptions,
+} from './utils/with-retry';
 export { buildWispaceHeaders } from './utils/wispace-headers';
 export type { WispaceIdHeader } from './utils/wispace-headers';
 export * from './utils/study-calendar.utils';

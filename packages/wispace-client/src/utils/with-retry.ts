@@ -1,3 +1,5 @@
+import CircuitBreaker from 'opossum';
+
 export interface WithRetryOptions {
   /** Total retry attempts after the initial call (maxRetries=3 → 4 total calls). */
   maxRetries: number;
@@ -47,36 +49,33 @@ export function isWispaceRetryable(error: unknown): boolean {
   return error instanceof TypeError; // network / DNS error
 }
 
+export { CircuitBreaker };
+
+export interface CircuitBreakerOptions {
+  /** Number of failures before opening the circuit. Default: 5. */
+  threshold?: number;
+  /** Time in ms to wait before trying again after circuit opens. Default: 60000. */
+  cooldown?: number;
+  /** Timeout per call in ms. Default: 10000. */
+  timeout?: number;
+}
+
 /**
- * Simple in-memory circuit breaker.
- * After `threshold` failures within `windowMs`, the circuit opens and
- * rejects calls immediately for `cooldownMs`. Resets on success.
+ * Create an opossum circuit breaker wrapped around an async function.
+ * Usage:
+ *   const breaker = createCircuitBreaker(fetchFn, { threshold: 5, cooldown: 60000 });
+ *   const result = await breaker.fire(); // throws CircuitBreakerOpenError when circuit is open
  */
-export class CircuitBreaker {
-  private failures = 0;
-  private openedAt = 0;
+export function createCircuitBreaker<T>(
+  fn: () => Promise<T>,
+  opts: CircuitBreakerOptions = {},
+): CircuitBreaker<T> {
+  const breaker = new CircuitBreaker(fn, {
+    timeout: opts.timeout ?? 10_000,
+    errorThresholdPercentage: 50,
+    resetTimeout: opts.cooldown ?? 60_000,
+    volumeThreshold: opts.threshold ?? 5,
+  });
 
-  constructor(
-    private readonly threshold: number = 5,
-    private readonly windowMs: number = 60_000,
-    private readonly cooldownMs: number = 60_000,
-  ) {}
-
-  isOpen(): boolean {
-    if (this.failures < this.threshold) return false;
-    if (Date.now() - this.openedAt < this.cooldownMs) return true;
-    // Cooldown expired — allow a probe
-    return false;
-  }
-
-  recordSuccess(): void {
-    this.failures = 0;
-  }
-
-  recordFailure(): void {
-    this.failures += 1;
-    if (this.failures >= this.threshold && this.openedAt === 0) {
-      this.openedAt = Date.now();
-    }
-  }
+  return breaker;
 }

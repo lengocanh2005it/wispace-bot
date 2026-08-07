@@ -22,6 +22,7 @@
     "@swc/cli": "^0.8.1",
     "@swc/core": "^1.15.46",
     "@swc/jest": "^0.2.39",
+    "@types/opossum": "^8.1.9",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
     "turbo": "^2.3.0",
@@ -38,6 +39,7 @@
     ]
   },
   "dependencies": {
-    "@nestjs/throttler": "^6.5.0"
+    "@nestjs/throttler": "^6.5.0",
+    "opossum": "^10.0.0"
   }
 }
