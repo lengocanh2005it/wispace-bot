@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { IntentsBitField, Partials } from 'discord.js';
 import { NecordModule } from 'necord';
 import { DatabaseModule } from './infrastructure/database/database.module';
@@ -16,11 +17,10 @@ import { HealthController } from '@wispace/bot-common';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      // Own .env wins; falls back to root .env.shared for cross-bot vars
-      // (WISPACE_INTERNAL_KEY, OPENAI_*, DB_*...) — see .env.shared.example.
-      // Missing files are silently skipped, so this is a no-op when the
-      // shared file doesn't exist (e.g. production containers).
       envFilePath: ['.env', '../../.env.shared'],
+    }),
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 20 }],
     }),
     NecordModule.forRootAsync({
       imports: [ConfigModule],

@@ -1,4 +1,5 @@
-import { Controller, Get, Logger, Query, Res } from '@nestjs/common';
+import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';
@@ -9,6 +10,7 @@ import { DiscordGuildMembershipService } from '../../application/services/discor
 import { DiscordPendingJoinService } from '../../application/services/discord-pending-join.service';
 
 @Controller('discord/oauth')
+@UseGuards(ThrottlerGuard)
 export class DiscordOauthController {
   private readonly logger = new Logger(DiscordOauthController.name);
 

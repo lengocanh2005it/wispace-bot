@@ -6,7 +6,9 @@ import {
   Post,
   Query,
   Res,
+  UseGuards,
 } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { DiscordPendingJoinService } from '../../application/services/discord-pending-join.service';
@@ -16,6 +18,7 @@ import { DiscordOutboundService } from '@discord/modules/discord-chat/applicatio
 import { buildDiscordLinkWelcomeMessage } from '../../application/messages/account-link.messages';
 
 @Controller('discord/guild')
+@UseGuards(ThrottlerGuard)
 export class DiscordGuildController {
   private readonly logger = new Logger(DiscordGuildController.name);
 

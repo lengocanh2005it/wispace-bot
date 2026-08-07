@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { HealthController } from '@wispace/bot-common';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { RedisModule } from '@wispace/bot-common';
@@ -17,9 +18,10 @@ import { createMetricsModule } from '@wispace/bot-metrics';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      // Own .env wins; falls back to root .env.shared for cross-bot vars
-      // (WISPACE_INTERNAL_KEY, OPENAI_*, DB_*...) — see .env.shared.example.
       envFilePath: ['.env', '../../.env.shared'],
+    }),
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 20 }],
     }),
     ScheduleModule.forRoot(),
     DatabaseModule,

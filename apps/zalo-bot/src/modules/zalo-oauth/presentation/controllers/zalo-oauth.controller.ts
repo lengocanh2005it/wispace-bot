@@ -1,4 +1,5 @@
-import { Controller, Get, Logger, Query, Res } from '@nestjs/common';
+import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { ZaloAccountLinkService } from '../../application/services/zalo-account-link.service';
@@ -10,6 +11,7 @@ const LINK_WELCOME_MESSAGE =
   'Tài khoản WISPACE của bạn đã liên kết thành công với Zalo! 🎉';
 
 @Controller('zalo/oauth')
+@UseGuards(ThrottlerGuard)
 export class ZaloOauthController {
   private readonly logger = new Logger(ZaloOauthController.name);
 
