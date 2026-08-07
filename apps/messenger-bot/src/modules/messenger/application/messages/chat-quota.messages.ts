@@ -31,10 +31,3 @@ export function buildChatQuotaRemainingHintMessage(remaining: number): string {
     `(reset 00:00 giờ Việt Nam).`
   );
 }
-
-export function shouldShowQuotaRemainingHint(
-  remaining: number,
-  threshold: number,
-): boolean {
-  return remaining > 0 && remaining <= threshold;
-}

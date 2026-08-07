@@ -1,5 +1,5 @@
 import type { MessengerWebhookEvent } from '../../domain/entities/messenger.types';
-import { isUnsupportedUserMessage } from './webhook-message.utils';
+import { isUnsupportedUserMessage } from '../../domain/utils/webhook-predicates';
 
 describe('webhook-message.utils', () => {
   const baseMessage = {} as NonNullable<MessengerWebhookEvent['message']>;

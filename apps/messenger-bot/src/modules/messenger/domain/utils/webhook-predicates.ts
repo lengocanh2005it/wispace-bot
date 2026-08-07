@@ -1,4 +1,4 @@
-import type { MessengerWebhookEvent } from '../../domain/entities/messenger.types';
+import type { MessengerWebhookEvent } from '../entities/messenger.types';
 
 type UserMessage = NonNullable<MessengerWebhookEvent['message']>;
 

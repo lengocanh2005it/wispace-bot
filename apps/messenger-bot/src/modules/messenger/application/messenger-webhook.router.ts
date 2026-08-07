@@ -1,6 +1,6 @@
 import type { MessengerWebhookEvent } from '../domain/entities/messenger.types';
 import type { RouterContext } from './types/messenger-webhook-router.types';
-import { isUnsupportedUserMessage } from './utils/webhook-message.utils';
+import { isUnsupportedUserMessage } from '../domain/utils/webhook-predicates';
 import {
   CONFIRM_RESCHEDULE_POSTBACK,
   CANCEL_RESCHEDULE_POSTBACK,

@@ -25,8 +25,8 @@ import type { ChatQuotaCheckResult } from '@messenger/modules/chat-rate-limit/do
 import {
   buildChatQuotaDenyMessage,
   buildChatQuotaRemainingHintMessage,
-  shouldShowQuotaRemainingHint,
 } from '../messages/chat-quota.messages';
+import { shouldShowQuotaRemainingHint } from '@messenger/modules/chat-rate-limit/domain/utils/quota-hint';
 import { CHAT_HISTORY_STORE } from '../../domain/repositories/chat-history.store.port';
 import type { ChatHistoryStorePort } from '../../domain/repositories/chat-history.store.port';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
