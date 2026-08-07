@@ -1,5 +1,9 @@
 export { WispaceApiError } from './errors/wispace-api.error';
-export { withRetry, isWispaceRetryable } from './utils/with-retry';
+export {
+  withRetry,
+  isWispaceRetryable,
+  CircuitBreaker,
+} from './utils/with-retry';
 export type { WithRetryOptions } from './utils/with-retry';
 export { buildWispaceHeaders } from './utils/wispace-headers';
 export type { WispaceIdHeader } from './utils/wispace-headers';

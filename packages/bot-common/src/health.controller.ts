@@ -23,20 +23,58 @@ export class HealthController {
     @Inject(REDIS_CLIENT) private readonly redisClient: RedisClientPort,
   ) {}
 
+  /**
+   * Combined health endpoint — checks both DB and Redis.
+   * Use this for load balancers / k8s probes.
+   */
   @Get()
-  async check(): Promise<{ status: string; database: string }> {
+  async check(): Promise<{
+    status: string;
+    database: string;
+    redis: string;
+  }> {
+    const result: { status: string; database: string; redis: string } = {
+      status: 'ok',
+      database: 'unknown',
+      redis: 'unknown',
+    };
+
+    // DB check
     try {
       await this.dataSource.query('SELECT 1');
-      return { status: 'ok', database: 'connected' };
+      result.database = 'connected';
     } catch (error) {
       this.logger.warn(
-        `Health check failed: ${error instanceof Error ? error.message : String(error)}`,
+        `Health check DB failed: ${error instanceof Error ? error.message : String(error)}`,
       );
-      throw new ServiceUnavailableException({
-        status: 'error',
-        database: 'disconnected',
-      });
+      result.database = 'disconnected';
+      result.status = 'error';
     }
+
+    // Redis check
+    if (!this.redisClient.isEnabled()) {
+      result.redis = 'disabled';
+    } else {
+      try {
+        const pingResult: string = await this.redisClient.ping();
+        result.redis = pingResult === 'PONG' ? 'connected' : 'error';
+        if (result.redis !== 'connected') {
+          result.status = 'error';
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Health check Redis failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        result.redis = 'unreachable';
+        result.status = 'error';
+      }
+    }
+
+    if (result.status === 'error') {
+      throw new ServiceUnavailableException(result);
+    }
+
+    return result;
   }
 
   @Get('redis')

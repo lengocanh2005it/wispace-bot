@@ -38,6 +38,21 @@ export class ReportCronService {
     private readonly reportSendOrchestrationService: ReportSendOrchestrationService,
   ) {}
 
+  @Cron('0 3 * * 1', {
+    name: 'weekly-cleanup-duplicate-mappings',
+    timeZone: 'Asia/Ho_Chi_Minh',
+  })
+  async handleWeeklyCleanup(): Promise<void> {
+    this.logger.log('Weekly cleanup: deactivating duplicate mappings');
+    const count =
+      await this.messengerRepository.cleanupActiveDuplicateMappings();
+    if (count > 0) {
+      this.logger.log(
+        `Weekly cleanup: deactivated ${count} duplicate mappings`,
+      );
+    }
+  }
+
   @Cron('0 8 * * *', {
     name: 'exam-reminder-report',
     timeZone: 'Asia/Ho_Chi_Minh',
@@ -82,8 +97,6 @@ export class ReportCronService {
             : ', skip already sent today'),
       );
     }
-
-    await this.messengerRepository.cleanupActiveDuplicateMappings();
 
     let mappings =
       await this.messengerRepository.findActiveSubscribedMappings();

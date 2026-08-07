@@ -434,20 +434,48 @@ export class ChatRateLimitRepository {
   }
 
   async recoverAllStuckReserved(stuckBefore: Date): Promise<string[]> {
-    const stuck = await this.listStuckReserved(stuckBefore);
-    const recovered: string[] = [];
-
-    for (const row of stuck) {
-      const outcome = await this.recoverIdempotencyForRetry(
-        row.idempotencyKey,
-        stuckBefore,
+    return this.idempotencyRepo.manager.transaction(async (manager) => {
+      const rows: Array<{
+        idempotency_key: string;
+        usage_date: string;
+        user_id: number | null;
+      }> = await manager.query(
+        `
+            UPDATE chat_idempotency
+            SET status = 'refunded', updated_at = NOW()
+            WHERE platform = $1
+              AND status = 'reserved'
+              AND reserved_at < $2
+            RETURNING idempotency_key, usage_date, user_id
+          `,
+        [this.platform, stuckBefore],
       );
-      if (outcome === 'reopened') {
-        recovered.push(row.idempotencyKey);
-      }
-    }
 
-    return recovered;
+      if (rows.length === 0) return [];
+
+      // Decrement daily usage counters in bulk
+      const usageDecrement = new Map<string, number>();
+      for (const row of rows) {
+        const key = `${row.usage_date}:${row.user_id ?? ''}`;
+        usageDecrement.set(key, (usageDecrement.get(key) ?? 0) + 1);
+      }
+
+      for (const [key, count] of usageDecrement) {
+        const [usageDate, userIdStr] = key.split(':');
+        const userId = userIdStr ? Number(userIdStr) : null;
+        await manager.query(
+          `
+            UPDATE chat_daily_usage
+            SET free_form_count = GREATEST(0, free_form_count - $1)
+            WHERE platform = $2 AND usage_date = $3
+              AND ($4::int IS NULL AND user_id IS NULL OR user_id = $4)
+          `,
+          [count, this.platform, usageDate, userId],
+        );
+      }
+
+      return rows.map((r) => r.idempotency_key);
+    });
   }
 
   private mapIdempotency(row: {

@@ -46,3 +46,37 @@ export function isWispaceRetryable(error: unknown): boolean {
   }
   return error instanceof TypeError; // network / DNS error
 }
+
+/**
+ * Simple in-memory circuit breaker.
+ * After `threshold` failures within `windowMs`, the circuit opens and
+ * rejects calls immediately for `cooldownMs`. Resets on success.
+ */
+export class CircuitBreaker {
+  private failures = 0;
+  private openedAt = 0;
+
+  constructor(
+    private readonly threshold: number = 5,
+    private readonly windowMs: number = 60_000,
+    private readonly cooldownMs: number = 60_000,
+  ) {}
+
+  isOpen(): boolean {
+    if (this.failures < this.threshold) return false;
+    if (Date.now() - this.openedAt < this.cooldownMs) return true;
+    // Cooldown expired — allow a probe
+    return false;
+  }
+
+  recordSuccess(): void {
+    this.failures = 0;
+  }
+
+  recordFailure(): void {
+    this.failures += 1;
+    if (this.failures >= this.threshold && this.openedAt === 0) {
+      this.openedAt = Date.now();
+    }
+  }
+}

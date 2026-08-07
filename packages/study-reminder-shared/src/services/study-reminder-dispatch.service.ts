@@ -118,9 +118,10 @@ export class StudyReminderDispatchService {
     let failed = 0;
     const failures: StudyReminderDispatchFailure[] = [];
 
-    for (const job of dueJobs) {
+    const CONCURRENCY_LIMIT = 3;
+    const processJob = async (job: StudyReminderJob) => {
       const claimedJob = await this.jobRepository.claimJob(job.id);
-      if (!claimedJob) continue;
+      if (!claimedJob) return;
 
       claimed += 1;
 
@@ -134,7 +135,7 @@ export class StudyReminderDispatchService {
           externalUserId: claimedJob.externalUserId,
         });
         cancelled += 1;
-        continue;
+        return;
       }
 
       try {
@@ -224,6 +225,12 @@ export class StudyReminderDispatchService {
           );
         }
       }
+    };
+
+    // Process jobs with bounded concurrency (batches of CONCURRENCY_LIMIT)
+    for (let i = 0; i < dueJobs.length; i += CONCURRENCY_LIMIT) {
+      const batch = dueJobs.slice(i, i + CONCURRENCY_LIMIT);
+      await Promise.allSettled(batch.map((job) => processJob(job)));
     }
 
     const nextDueAt = await this.jobRepository
