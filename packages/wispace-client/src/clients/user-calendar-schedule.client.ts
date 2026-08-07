@@ -11,6 +11,7 @@ import {
   NOOP_WISPACE_LOGGER,
   type WispaceClientLogger,
 } from './wispace-client-types';
+import { daysAgo } from '@wispace/date-utils';
 
 /** Structural subset so callers can adapt their own list-calendars method without depending on the full client class. */
 export type ListCalendarsFn = UserCalendarApiClient['listCalendars'];
@@ -112,7 +113,7 @@ export class UserCalendarScheduleClient {
   ): NormalizedStudySession[] {
     const now = Date.now();
     const upcomingCutoff = now - 60 * 60 * 1000;
-    const pastCutoff = now - params.pastDays * 24 * 60 * 60 * 1000;
+    const pastCutoff = daysAgo(params.pastDays).getTime();
 
     return sessions.filter((session) => {
       const scheduledAtMs = session.scheduledAt.getTime();

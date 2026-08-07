@@ -8,6 +8,7 @@ import {
   type StudyReminderJobRepositoryPort,
 } from '../ports/study-reminder-job.repository.port';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
+import { hoursFromNow } from '@wispace/date-utils';
 import type {
   StudyReminderJobStatus,
   StudyReminderSyncFailure,
@@ -60,9 +61,7 @@ export class StudyReminderSyncService {
   ): Promise<StudyReminderSyncResult> {
     const platform = opts?.platform ?? DEFAULT_PLATFORM;
     const settings = this.scheduleService.getOutboxSettings();
-    const horizonEnd = new Date(
-      Date.now() + settings.syncHorizonHours * 60 * 60 * 1000,
-    );
+    const horizonEnd = hoursFromNow(settings.syncHorizonHours);
 
     let mappings: UserLink[];
     let linked = true;

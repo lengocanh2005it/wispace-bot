@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
+import { subtractMs } from '@wispace/date-utils';
 import { PlatformDeadLetterService } from './platform-dead-letter.service';
 
 const DEFAULT_MAX_RETRIES = 3;
@@ -46,7 +47,7 @@ export class PlatformDeadLetterCronService {
       this.configService.get<number>('WEBHOOK_DEAD_LETTER_RETRY_LIMIT') ??
       DEFAULT_RETRY_LIMIT;
 
-    const olderThan = new Date(Date.now() - minRetryAgeMs);
+    const olderThan = subtractMs(new Date(), minRetryAgeMs);
     const entries = await this.deadLetterService.listPendingForRetry({
       limit: retryLimit,
       olderThan,

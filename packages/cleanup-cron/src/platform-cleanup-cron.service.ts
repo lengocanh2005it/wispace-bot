@@ -9,6 +9,7 @@ import { CronJob } from 'cron';
 import { LessThan, Repository } from 'typeorm';
 import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { WebhookDeadLetterEntity } from '@wispace/database';
+import { minutesAgo } from '@wispace/date-utils';
 import { CleanupCronService } from './cleanup-cron.service';
 
 export interface CleanupCronJobsConfig {
@@ -211,7 +212,7 @@ export class PlatformCleanupCronService
         defaultRetentionDays: 0,
       },
       () => {
-        const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+        const tenMinutesAgo = minutesAgo(10);
         return this.config
           .oauthStateRepo!.delete({ createdAt: LessThan(tenMinutesAgo) })
           .then((r) => r.affected ?? 0);

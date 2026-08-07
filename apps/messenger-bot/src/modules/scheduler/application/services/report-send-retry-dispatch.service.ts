@@ -14,6 +14,7 @@ import {
 } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
 import { PgAdvisoryLockService } from '@wispace/bot-common';
+import { subtractMs, minutesFromNow } from '@wispace/date-utils';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 
 @Injectable()
@@ -63,7 +64,7 @@ export class ReportSendRetryDispatchService {
 
     const resetStuck =
       await this.reportSendJobRepository.resetStuckProcessingJobs(
-        new Date(now.getTime() - 10 * 60 * 1000),
+        subtractMs(now, 10 * 60 * 1000),
       );
 
     const dueJobs = await this.reportSendJobRepository.findDueJobs(now);
@@ -131,9 +132,7 @@ export class ReportSendRetryDispatchService {
         await this.reportSendJobRepository.markSent(claimedJob.id);
         sent += 1;
       } else if (orchestrationResult.claimSkipped > 0) {
-        const nextRetryAt = new Date(
-          now.getTime() + settings.retryBackoffMinutes * 60 * 1000,
-        );
+        const nextRetryAt = minutesFromNow(settings.retryBackoffMinutes);
         await this.reportSendJobRepository.markFailed({
           jobId: claimedJob.id,
           errorMessage: 'Report claim exists for today (R4)',
@@ -145,9 +144,7 @@ export class ReportSendRetryDispatchService {
       } else if (orchestrationResult.deferred > 0) {
         const nextRetryCount = claimedJob.retryCount + 1;
         const terminal = nextRetryCount >= claimedJob.maxRetries;
-        const nextRetryAt = new Date(
-          now.getTime() + settings.retryBackoffMinutes * 60 * 1000,
-        );
+        const nextRetryAt = minutesFromNow(settings.retryBackoffMinutes);
 
         await this.reportSendJobRepository.markFailed({
           jobId: claimedJob.id,

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { PgAdvisoryLockService } from '@wispace/bot-common';
+import { daysAgo } from '@wispace/date-utils';
 
 export interface CleanupCronConfig {
   /** Name for logging (e.g., 'llm-usage-cleanup') */
@@ -56,7 +57,7 @@ export class CleanupCronService {
     }
 
     const retentionDays = getRetentionDays();
-    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    const cutoff = daysAgo(retentionDays);
 
     return this.pgLock.withLock(config.advisoryLockId, async () => {
       const deleted = await deleteFn(cutoff);

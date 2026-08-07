@@ -16,6 +16,7 @@ import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
 } from '../ports/study-reminder-job.repository.port';
+import { daysAgo } from '@wispace/date-utils';
 import type {
   GetSessionsFn,
   StudyReminderSyncResult,
@@ -202,8 +203,7 @@ export class StudyReminderWorkerService
       async () => {
         if (this.jobRepository) {
           const settings = this.scheduleService.getOutboxSettings();
-          const retentionMs = settings.jobRetentionDays * 24 * 60 * 60 * 1000;
-          const cutoff = new Date(Date.now() - retentionMs);
+          const cutoff = daysAgo(settings.jobRetentionDays);
           const deleted =
             await this.jobRepository.deleteTerminalJobsOlderThan(cutoff);
           if (deleted > 0) {

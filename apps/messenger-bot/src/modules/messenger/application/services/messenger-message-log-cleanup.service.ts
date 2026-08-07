@@ -11,6 +11,7 @@ import {
   readEnvBoolean,
   readEnvPositiveInt,
 } from '@messenger/shared/config/env-helpers';
+import { daysAgo } from '@wispace/date-utils';
 
 const DEFAULT_RETENTION_DAYS = 90;
 
@@ -53,7 +54,7 @@ export class MessengerMessageLogCleanupService {
 
   async purgeExpiredLogs(): Promise<{ deleted: number; cutoff: string }> {
     const retentionDays = this.getRetentionDays();
-    const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+    const cutoff = daysAgo(retentionDays);
 
     const deleted =
       await this.messengerRepository.deleteMessageLogsOlderThan(cutoff);

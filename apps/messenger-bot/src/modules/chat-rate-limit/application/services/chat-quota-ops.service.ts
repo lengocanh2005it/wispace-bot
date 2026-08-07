@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { todayUsageDate } from '@wispace/chat-metering';
+import { subtractMs } from '@wispace/date-utils';
 import { ChatQuotaOpsSummary } from '../../domain/entities/chat-quota-ops.types';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
 import {
@@ -17,7 +18,7 @@ export class ChatQuotaOpsService {
 
   async getSummary(): Promise<ChatQuotaOpsSummary> {
     const settings = this.chatRateLimitConfigService.getSettings();
-    const stuckBefore = new Date(Date.now() - settings.stuckReservedMs);
+    const stuckBefore = subtractMs(new Date(), settings.stuckReservedMs);
     const usageDate = todayUsageDate(settings.timezone);
 
     const [stuckReserved, idempotencyByStatus, usersAtDailyLimit] =

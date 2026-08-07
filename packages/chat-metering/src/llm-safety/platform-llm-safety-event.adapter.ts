@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { hoursAgo } from '@wispace/date-utils';
 import { LlmSafetyEventEntity } from '../entities';
 import { LlmSafetyCore } from './llm-safety-core.service';
 import { LlmSafetyEventRepository } from './llm-safety.repository';
@@ -28,7 +29,7 @@ export class PlatformLlmSafetyEventAdapter {
   }
 
   async countWarnings24h(): Promise<number> {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const since = hoursAgo(24);
     return this.getCore().countWarningsSince(since);
   }
 

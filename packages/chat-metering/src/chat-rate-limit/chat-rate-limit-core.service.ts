@@ -1,5 +1,8 @@
 import type { ChatRateLimitRepository } from './chat-rate-limit.repository';
-import { todayInTimezone as todayUsageDate } from '@wispace/date-utils';
+import {
+  todayInTimezone as todayUsageDate,
+  subtractMs,
+} from '@wispace/date-utils';
 import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
 import type {
   BurstCounterPort,
@@ -87,7 +90,7 @@ export class ChatRateLimitCore {
       dailyLimit: freeFormDailyLimit,
       freeFormDailyLimit,
       burstLimit: burstPerMinute,
-      burstSince: new Date(Date.now() - CHAT_BURST_WINDOW_MS),
+      burstSince: subtractMs(new Date(), CHAT_BURST_WINDOW_MS),
     });
   }
 
@@ -136,7 +139,7 @@ export class ChatRateLimitCore {
   }
 
   private stuckReservedCutoff(): Date {
-    return new Date(Date.now() - this.stuckReservedMs);
+    return subtractMs(new Date(), this.stuckReservedMs);
   }
 
   private async reserveAndRollbackBurstOnFailure(

@@ -11,6 +11,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type { ReportMapping } from '@wispace/scheduler-core';
 import { todayReportDate } from '@wispace/scheduler-core';
+import { subtractMs, minutesFromNow } from '@wispace/date-utils';
 
 const PLATFORM = 'discord' as const;
 
@@ -38,7 +39,7 @@ export class DiscordReportRetryDispatchService {
   async dispatchDueReportRetries() {
     const now = new Date();
     const resetStuck = await this.jobRepository.resetStuckProcessingJobs(
-      new Date(now.getTime() - 10 * 60 * 1000),
+      subtractMs(now, 10 * 60 * 1000),
     );
 
     const dueJobs = await this.jobRepository.findDueJobs(now);
@@ -90,7 +91,7 @@ export class DiscordReportRetryDispatchService {
         sent += 1;
       } else if (result.failures.length > 0) {
         const error = result.failures[0].error;
-        const nextRetryAt = new Date(now.getTime() + 15 * 60 * 1000);
+        const nextRetryAt = minutesFromNow(15);
         await this.jobRepository.markFailed({
           jobId: job.id,
           errorMessage: error,

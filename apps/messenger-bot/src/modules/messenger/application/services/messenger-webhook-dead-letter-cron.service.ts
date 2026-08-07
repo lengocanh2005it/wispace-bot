@@ -5,6 +5,7 @@ import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 import { PgAdvisoryLockService } from '@wispace/bot-common';
 import { MESSENGER_WEBHOOK_DEAD_LETTER_REPOSITORY } from '../../domain/repositories/messenger-webhook-dead-letter.repository.port';
 import type { MessengerWebhookDeadLetterRepositoryPort } from '../../domain/repositories/messenger-webhook-dead-letter.repository.port';
+import { subtractMs } from '@wispace/date-utils';
 import { MessengerService } from './messenger.service';
 import { readEnvPositiveInt } from '@messenger/shared/config/env-helpers';
 
@@ -59,7 +60,7 @@ export class MessengerWebhookDeadLetterCronService {
       20,
     );
 
-    const olderThan = new Date(Date.now() - minAgeMs);
+    const olderThan = subtractMs(new Date(), minAgeMs);
 
     const entries = await this.deadLetterRepository!.listPendingForRetry({
       limit,

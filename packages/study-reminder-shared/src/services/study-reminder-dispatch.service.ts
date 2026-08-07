@@ -17,6 +17,7 @@ import {
   type ErrorClassifierPort,
 } from '../ports/error-classifier.port';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
+import { subtractMs } from '@wispace/date-utils';
 import type { StudyReminderJob } from '../types/study-reminder.types';
 
 export interface StudyReminderDispatchFailure {
@@ -85,7 +86,7 @@ export class StudyReminderDispatchService {
     const now = new Date();
 
     const resetStuck = await this.jobRepository.resetStuckProcessingJobs(
-      new Date(now.getTime() - settings.stuckProcessingMs),
+      subtractMs(now, settings.stuckProcessingMs),
     );
 
     const dueJobs = await this.jobRepository.findDueJobs(

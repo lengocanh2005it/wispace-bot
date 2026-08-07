@@ -10,6 +10,7 @@ import {
   type ChatBurstCounterPort,
 } from '../../domain/repositories/chat-burst-counter.port';
 import { todayUsageDate } from '@wispace/chat-metering';
+import { subtractMs } from '@wispace/date-utils';
 import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
 import { ChatQuotaEventRecorderService } from './chat-quota-event-recorder.service';
@@ -246,7 +247,7 @@ export class ChatRateLimitService {
   }
 
   private stuckReservedCutoff(): Date {
-    return new Date(Date.now() - this.configService.getStuckReservedMs());
+    return subtractMs(new Date(), this.configService.getStuckReservedMs());
   }
 
   private async reserveSlotOrRecoverOnConflict(

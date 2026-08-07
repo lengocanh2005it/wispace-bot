@@ -18,6 +18,7 @@
     "@wispace/bot-common": "*",
     "@wispace/chat-metering": "*",
     "@wispace/database": "*",
+    "@wispace/date-utils": "*",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/typeorm": "^11.0.1",

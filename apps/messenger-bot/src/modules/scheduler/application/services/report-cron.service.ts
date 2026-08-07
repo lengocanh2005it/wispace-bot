@@ -11,6 +11,7 @@ import {
   ReportCronLockService,
   ReportScheduleService,
   todayReportDate,
+  runBatched,
   type SendScheduledReportsOptions,
   type SendScheduledReportsResult,
 } from '@wispace/scheduler-core';
@@ -111,16 +112,19 @@ export class ReportCronService {
     }
 
     const concurrency = this.readConcurrency();
-    const results = await this.runWithConcurrency(
-      mappings,
-      concurrency,
-      (mapping) =>
-        this.processMappingForReport(mapping, {
-          forceSend,
-          skipAlreadySentToday,
-          reportDate,
-        }),
+    const settled = await runBatched(mappings, concurrency, (mapping) =>
+      this.processMappingForReport(mapping, {
+        forceSend,
+        skipAlreadySentToday,
+        reportDate,
+      }),
     );
+    const results = settled
+      .filter(
+        (r): r is PromiseFulfilledResult<ClaimAndSendResult> =>
+          r.status === 'fulfilled',
+      )
+      .map((r) => r.value);
 
     let sent = 0;
     let skipped = 0;
@@ -198,29 +202,6 @@ export class ReportCronService {
       skipAlreadySentToday,
       examDateForOutbox,
     });
-  }
-
-  private async runWithConcurrency(
-    mappings: UserMessengerMapping[],
-    concurrency: number,
-    fn: (m: UserMessengerMapping) => Promise<ClaimAndSendResult>,
-  ): Promise<ClaimAndSendResult[]> {
-    const results: ClaimAndSendResult[] = [];
-    for (let i = 0; i < mappings.length; i += concurrency) {
-      const batch = mappings.slice(i, i + concurrency);
-      const settled = await Promise.allSettled(batch.map((m) => fn(m)));
-      for (const r of settled) {
-        if (r.status === 'fulfilled') {
-          results.push(r.value);
-        } else {
-          this.logger.error(
-            'Unexpected error in processMappingForReport',
-            r.reason,
-          );
-        }
-      }
-    }
-    return results;
   }
 
   private readConcurrency(): number {

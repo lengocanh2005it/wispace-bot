@@ -1,3 +1,48 @@
+import {
+  subMilliseconds,
+  subMinutes,
+  subHours,
+  subDays,
+  addMinutes,
+  addHours,
+  addDays,
+} from 'date-fns';
+
+/** Subtract milliseconds from a date. */
+export function subtractMs(date: Date, ms: number): Date {
+  return subMilliseconds(date, ms);
+}
+
+/** Date N minutes ago. */
+export function minutesAgo(n: number, now: Date = new Date()): Date {
+  return subMinutes(now, n);
+}
+
+/** Date N hours ago. */
+export function hoursAgo(n: number, now: Date = new Date()): Date {
+  return subHours(now, n);
+}
+
+/** Date N days ago. */
+export function daysAgo(n: number, now: Date = new Date()): Date {
+  return subDays(now, n);
+}
+
+/** Date N minutes from now. */
+export function minutesFromNow(n: number, now: Date = new Date()): Date {
+  return addMinutes(now, n);
+}
+
+/** Date N hours from now. */
+export function hoursFromNow(n: number, now: Date = new Date()): Date {
+  return addHours(now, n);
+}
+
+/** Date N days from now. */
+export function daysFromNow(n: number, now: Date = new Date()): Date {
+  return addDays(now, n);
+}
+
 /** YYYY-MM-DD date parts in a given IANA timezone (e.g. Asia/Ho_Chi_Minh). */
 export function getDatePartsInTimezone(
   date: Date,

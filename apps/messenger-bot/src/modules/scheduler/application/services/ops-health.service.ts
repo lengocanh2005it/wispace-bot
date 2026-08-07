@@ -9,6 +9,7 @@ import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '@messenger/modules/messenger/d
 import type { MessengerMessageLogRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import { LlmSafetyService } from '@messenger/modules/llm-safety/llm-safety.service';
 import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
+import { hoursAgo, subtractMs } from '@wispace/date-utils';
 import type {
   OpsHealthAlert,
   OpsHealthSnapshot,
@@ -46,7 +47,7 @@ export class OpsHealthService {
       'OPS_ALERT_DENY_LOOKBACK_HOURS',
       24,
     );
-    const denySince = new Date(Date.now() - denyLookbackHours * 60 * 60 * 1000);
+    const denySince = hoursAgo(denyLookbackHours);
 
     const [
       chatQuotaBase,
@@ -188,9 +189,10 @@ export class OpsHealthService {
     stuckProcessingMinutes: number,
   ): Promise<StudyReminderOpsSummary> {
     const sampleLimit = 20;
-    const failedSince = new Date(Date.now() - failedHours * 60 * 60 * 1000);
-    const stuckBefore = new Date(
-      Date.now() - stuckProcessingMinutes * 60 * 1000,
+    const failedSince = hoursAgo(failedHours);
+    const stuckBefore = subtractMs(
+      new Date(),
+      stuckProcessingMinutes * 60 * 1000,
     );
 
     const [

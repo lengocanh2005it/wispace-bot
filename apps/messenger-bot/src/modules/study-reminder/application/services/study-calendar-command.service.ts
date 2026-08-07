@@ -19,6 +19,7 @@ import type {
 } from '@wispace/reschedule-confirm';
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
+import { hoursFromNow } from '@wispace/date-utils';
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
 
 @Injectable()
@@ -49,7 +50,7 @@ export class StudyCalendarCommandService {
     const recordById = new Map(records.map((record) => [record.id, record]));
     const { syncHorizonHours } =
       this.studyReminderScheduleService.getOutboxSettings();
-    const horizonEnd = new Date(Date.now() + syncHorizonHours * 60 * 60 * 1000);
+    const horizonEnd = hoursFromNow(syncHorizonHours);
     const sessions = await this.userCalendarScheduleService.getCalendarSessions(
       psid,
       horizonEnd,
