@@ -84,20 +84,16 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
   }
 
   async claimJob(jobId: number): Promise<ReportSendJob | null> {
-    const result = await this.jobRepo.update(
-      {
-        id: jobId,
-        status: 'failed',
-      },
-      { status: 'processing' },
+    const rows: Array<Record<string, unknown>> = await this.jobRepo.query(
+      `UPDATE report_send_jobs SET status = 'processing' WHERE id = $1 AND status = 'failed' RETURNING *`,
+      [jobId],
     );
 
-    if (!result.affected) {
+    if (!rows.length) {
       return null;
     }
 
-    const row = await this.jobRepo.findOne({ where: { id: jobId } });
-    return row ? this.mapEntity(row) : null;
+    return this.mapEntity(rows[0] as unknown as ReportSendJobEntity);
   }
 
   async markSent(jobId: number): Promise<void> {

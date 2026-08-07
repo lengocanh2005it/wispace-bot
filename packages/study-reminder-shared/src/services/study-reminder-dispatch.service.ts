@@ -228,7 +228,12 @@ export class StudyReminderDispatchService {
 
     const nextDueAt = await this.jobRepository
       .findNextDueTime(now)
-      .catch(() => null);
+      .catch((error) => {
+        this.logger.warn(
+          `findNextDueTime failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return null;
+      });
 
     if (claimed > 0 || resetStuck > 0) {
       this.logger.log(

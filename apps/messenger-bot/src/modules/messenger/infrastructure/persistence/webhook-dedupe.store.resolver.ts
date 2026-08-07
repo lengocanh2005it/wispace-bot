@@ -24,7 +24,7 @@ export class WebhookDedupeStoreResolver implements WebhookDedupeStorePort {
   resolveStoreKind(): 'memory' | 'redis' {
     const configured = this.sharedConfig.getDedupeStore();
 
-    if (configured === 'redis' && this.redisStore.isAvailable()) {
+    if (configured === 'redis') {
       return 'redis';
     }
 

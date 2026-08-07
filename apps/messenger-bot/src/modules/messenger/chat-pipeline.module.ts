@@ -17,6 +17,7 @@ import {
   PlatformLlmUsageRecorderAdapter,
 } from '@wispace/chat-metering';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import { sanitizeUntrustedTextForLlm } from '@wispace/llm-agent';
 import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
@@ -162,11 +163,15 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
               return Promise.resolve();
             },
             systemPromptSuffix: async (input) => {
-              const displayName =
-                await userDisplayNameService.resolveDisplayName({
-                  psid: input.externalUserId,
-                  userId: input.userId,
-                });
+              const rawName = await userDisplayNameService.resolveDisplayName({
+                psid: input.externalUserId,
+                userId: input.userId,
+              });
+              const sanitized = sanitizeUntrustedTextForLlm(rawName, {
+                maxChars: 80,
+                unsafePlaceholder: 'Chào bạn nha',
+              });
+              const displayName = sanitized.text || 'Chào bạn nha';
               return input.userId
                 ? `Học viên đã liên kết WISPACE (userId=${input.userId}). Tên gọi: ${displayName}.`
                 : `Học viên chưa liên kết WISPACE. Tên gọi: ${displayName}. Nhắc mở Messenger từ link trong app WISPACE nếu cần dữ liệu cá nhân.`;

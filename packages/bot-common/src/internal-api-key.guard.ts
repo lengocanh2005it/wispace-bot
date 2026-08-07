@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { timingSafeEqual } from 'crypto';
 import { Request } from 'express';
 
 export const INTERNAL_API_KEY_HEADER = 'x-internal-api-key';
@@ -26,7 +27,13 @@ export class InternalApiKeyGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<Request>();
     const provided = this.extractApiKey(request);
 
-    if (!provided || provided !== expected) {
+    if (!provided) {
+      throw new UnauthorizedException('Invalid or missing internal API key');
+    }
+
+    const a = Buffer.from(provided);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
       throw new UnauthorizedException('Invalid or missing internal API key');
     }
 

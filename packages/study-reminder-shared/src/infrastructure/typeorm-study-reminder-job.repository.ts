@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, In, Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import type {
   StudyReminderJobRepositoryPort,
   StudyReminderJob,
@@ -158,13 +158,12 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
   }
 
   async claimJob(jobId: number): Promise<StudyReminderJob | null> {
-    const result = await this.repo.update(
-      { id: jobId, status: In(['pending', 'failed']) },
-      { status: 'processing' },
+    const rows: Array<Record<string, unknown>> = await this.repo.query(
+      `UPDATE study_reminder_jobs SET status = 'processing' WHERE id = $1 AND status IN ('pending', 'failed') RETURNING *`,
+      [jobId],
     );
-    if (!result.affected) return null;
-    const row = await this.repo.findOne({ where: { id: jobId } });
-    return row ? this.mapEntity(row) : null;
+    if (!rows.length) return null;
+    return this.mapEntity(rows[0] as unknown as StudyReminderJobEntity);
   }
 
   async markSent(jobId: number): Promise<void> {

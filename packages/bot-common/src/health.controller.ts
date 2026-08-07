@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Inject,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
@@ -15,6 +16,8 @@ import { REDIS_CLIENT, type RedisClientPort } from './redis.client.port';
  */
 @Controller('health')
 export class HealthController {
+  private readonly logger = new Logger(HealthController.name);
+
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     @Inject(REDIS_CLIENT) private readonly redisClient: RedisClientPort,
@@ -26,15 +29,12 @@ export class HealthController {
       await this.dataSource.query('SELECT 1');
       return { status: 'ok', database: 'connected' };
     } catch (error) {
+      this.logger.warn(
+        `Health check failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw new ServiceUnavailableException({
         status: 'error',
         database: 'disconnected',
-        message:
-          error instanceof Error
-            ? error.message
-            : typeof error === 'string'
-              ? error
-              : 'unknown error',
       });
     }
   }
@@ -47,22 +47,19 @@ export class HealthController {
     try {
       const result: string = await this.redisClient.ping();
       if (result === 'PONG') return { ok: true, redis: 'connected' };
+      this.logger.warn(`Redis health check failed: unexpected response`);
       throw new ServiceUnavailableException({
         ok: false,
         redis: 'error',
-        message: result,
       });
     } catch (error) {
       if (error instanceof ServiceUnavailableException) throw error;
+      this.logger.warn(
+        `Redis health check failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw new ServiceUnavailableException({
         ok: false,
         redis: 'unreachable',
-        message:
-          error instanceof Error
-            ? error.message
-            : typeof error === 'string'
-              ? error
-              : 'unknown error',
       });
     }
   }

@@ -168,15 +168,16 @@ export class MessengerService {
     psid: string,
     event: MessengerWebhookEvent,
   ): Promise<RouterContext> {
-    const isDuplicateMid = event.message?.mid
-      ? await this.isDuplicateMessageMid(event.message.mid, psid)
-      : undefined;
-
-    const isDuplicatePostback = event.postback?.payload
-      ? await this.isDuplicatePostback(psid, event.postback.payload)
-      : undefined;
-
-    const existingMapping = await this.repository.findActiveMappingByPsid(psid);
+    const [isDuplicateMid, isDuplicatePostback, existingMapping] =
+      await Promise.all([
+        event.message?.mid
+          ? this.isDuplicateMessageMid(event.message.mid, psid)
+          : undefined,
+        event.postback?.payload
+          ? this.isDuplicatePostback(psid, event.postback.payload)
+          : undefined,
+        this.repository.findActiveMappingByPsid(psid),
+      ]);
 
     const shouldEnforceRateLimit =
       this.chatRateLimitConfig.shouldEnforceForPsid(psid);
