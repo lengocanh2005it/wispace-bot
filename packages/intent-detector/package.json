@@ -14,6 +14,9 @@
     "format": "prettier --write \"src/**/*.ts\"",
     "test": "jest --maxWorkers=50%"
   },
+  "dependencies": {
+    "@wispace/llm-agent": "*"
+  },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "jest": "^30.0.0",

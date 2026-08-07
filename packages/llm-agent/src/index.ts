@@ -54,6 +54,12 @@ export { isObviouslyOffTopic, isGreetingOnly } from './utils/scope.utils';
 export { sanitizeReplyText } from './utils/text.utils';
 export { sleep, retryWithBackoff } from './utils/retry.utils';
 export { loadSystemPromptFile } from './utils/load-system-prompt';
+export {
+  IntentDetector,
+  type IntentType,
+  type IntentConfig,
+  type IntentMatch,
+} from './intent-detector';
 
 // --- Provider abstraction (new) ---
 export type {

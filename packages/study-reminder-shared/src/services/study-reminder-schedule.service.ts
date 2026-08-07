@@ -9,7 +9,7 @@ import {
   formatScheduledTimeLabel,
   getMinutesUntilSession,
   isSessionStarted,
-} from '@wispace/study-reminder-core';
+} from '../utils/schedule';
 
 const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
 const DEFAULT_MINUTES_BEFORE = 30;

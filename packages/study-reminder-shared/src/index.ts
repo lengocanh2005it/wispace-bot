@@ -1,6 +1,14 @@
 // Types
 export * from './types/study-reminder.types';
 
+// Pure scheduling math
+export {
+  computeRemindAt,
+  formatScheduledTimeLabel,
+  getMinutesUntilSession,
+  isSessionStarted,
+} from './utils/schedule';
+
 // Ports
 export * from './ports/message-sender.port';
 export * from './ports/mapping-reader.port';

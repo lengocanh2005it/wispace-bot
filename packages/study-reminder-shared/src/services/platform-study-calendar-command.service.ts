@@ -15,7 +15,7 @@ import type {
 import {
   formatScheduledTimeLabel,
   getMinutesUntilSession,
-} from '@wispace/study-reminder-core';
+} from '../utils/schedule';
 
 export interface PlatformStudyCalendarCommandOptions {
   /** Platform label used in log lines, e.g. `discord` → `discordUserId=...`. */

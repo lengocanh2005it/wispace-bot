@@ -15,7 +15,8 @@
     "test": "jest --maxWorkers=50%"
   },
   "dependencies": {
-    "@wispace/date-utils": "*"
+    "@wispace/date-utils": "*",
+    "@wispace/study-reminder-shared": "*"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
