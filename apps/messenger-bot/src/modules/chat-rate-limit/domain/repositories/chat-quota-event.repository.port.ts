@@ -1,10 +1,16 @@
-import type { EntityManager } from 'typeorm';
 import type {
   ChatQuotaDeniedPayload,
   ChatQuotaReleaseReason,
   ChatQuotaReservedPayload,
   ChatQuotaReleasedPayload,
 } from '../entities/chat-quota-event.types';
+
+/**
+ * Opaque transaction context — the domain doesn't know about TypeORM.
+ * The infrastructure adapter casts the real EntityManager to this type.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type TransactionManager = any;
 
 export const CHAT_QUOTA_EVENT_REPOSITORY = Symbol(
   'CHAT_QUOTA_EVENT_REPOSITORY',
@@ -36,12 +42,12 @@ export interface InsertChatQuotaDeniedInput {
 
 export interface ChatQuotaEventRepositoryPort {
   insertReservedInTransaction(
-    manager: EntityManager,
+    manager: TransactionManager,
     input: InsertChatQuotaReservedInput,
   ): Promise<void>;
 
   insertReleasedInTransaction(
-    manager: EntityManager,
+    manager: TransactionManager,
     input: InsertChatQuotaReleasedInput,
   ): Promise<void>;
 

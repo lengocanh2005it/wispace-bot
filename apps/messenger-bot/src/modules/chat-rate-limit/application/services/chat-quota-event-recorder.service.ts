@@ -1,5 +1,4 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { EntityManager } from 'typeorm';
 import type {
   ChatQuotaDenyReason,
   ChatQuotaReleaseReason,
@@ -7,6 +6,7 @@ import type {
 import {
   CHAT_QUOTA_EVENT_REPOSITORY,
   type ChatQuotaEventRepositoryPort,
+  type TransactionManager,
 } from '../../domain/repositories/chat-quota-event.repository.port';
 import { runInBackground } from '@messenger/shared/utils/run-in-background.utils';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
@@ -26,7 +26,7 @@ export class ChatQuotaEventRecorderService {
   }
 
   async recordReservedInTransaction(
-    manager: EntityManager,
+    manager: TransactionManager,
     input: {
       psid: string;
       userId?: number;
@@ -54,7 +54,7 @@ export class ChatQuotaEventRecorderService {
   }
 
   async recordReleasedInTransaction(
-    manager: EntityManager,
+    manager: TransactionManager,
     input: {
       psid: string;
       userId?: number;

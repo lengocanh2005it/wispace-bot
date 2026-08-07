@@ -7,6 +7,7 @@ import type {
   InsertChatQuotaDeniedInput,
   InsertChatQuotaReleasedInput,
   InsertChatQuotaReservedInput,
+  TransactionManager,
 } from '../../domain/repositories/chat-quota-event.repository.port';
 
 const PLATFORM = 'messenger' as const;
@@ -19,10 +20,10 @@ export class ChatQuotaEventRepository implements ChatQuotaEventRepositoryPort {
   ) {}
 
   async insertReservedInTransaction(
-    manager: EntityManager,
+    manager: TransactionManager,
     input: InsertChatQuotaReservedInput,
   ): Promise<void> {
-    await manager.query(
+    await (manager as EntityManager).query(
       `
         INSERT INTO chat_quota_events (
           platform,
@@ -48,10 +49,10 @@ export class ChatQuotaEventRepository implements ChatQuotaEventRepositoryPort {
   }
 
   async insertReleasedInTransaction(
-    manager: EntityManager,
+    manager: TransactionManager,
     input: InsertChatQuotaReleasedInput,
   ): Promise<void> {
-    await manager.query(
+    await (manager as EntityManager).query(
       `
         INSERT INTO chat_quota_events (
           platform,
