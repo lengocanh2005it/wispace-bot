@@ -8,7 +8,7 @@ import {
   RESCHEDULE_CONFIRM_KEYWORDS,
   RESCHEDULE_CANCEL_KEYWORDS,
 } from '../constants/zalo-reschedule.constants';
-import { IntentDetector } from '@wispace/intent-detector';
+import { IntentDetector } from '@wispace/llm-agent';
 
 const FALLBACK_ERROR_MESSAGE =
   'Xin lỗi, mình gặp sự cố khi xử lý tin nhắn. Bạn thử lại sau ít phút nhé.';

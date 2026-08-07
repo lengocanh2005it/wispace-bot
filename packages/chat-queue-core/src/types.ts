@@ -1,14 +1,3 @@
-/**
- * Resolves an opaque idempotency key from a platform's raw inbound message
- * (Messenger: `message.mid`, Discord: `message.id`). Implemented per platform
- * at the ingestion layer (webhook/gateway) — the queue core itself never
- * inspects the key, it only carries whatever string it is given through to
- * `ChatQueueFlushHandler`.
- */
-export interface IdempotencyKeyPort<TRawMessage> {
-  resolve(raw: TRawMessage): string | undefined;
-}
-
 export interface EnqueueInput<TContext> {
   externalUserId: string;
   text: string;

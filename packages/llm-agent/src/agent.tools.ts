@@ -175,7 +175,7 @@ export function readSchedulingMode(
   return undefined;
 }
 
-export function readOptionalString(value: unknown): string | undefined {
+function readOptionalString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const trimmed = value.trim();
   return trimmed || undefined;

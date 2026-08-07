@@ -24,7 +24,7 @@ import { DiscordMenuService } from '../../application/services/discord-menu.serv
 import { DiscordPendingJoinService } from '@discord/modules/account-link/application/services/discord-pending-join.service';
 import { buildDiscordLinkWelcomeMessage } from '@discord/modules/account-link/application/messages/account-link.messages';
 import { WispaceApiError } from '@wispace/wispace-client';
-import { IntentDetector } from '@wispace/intent-detector';
+import { IntentDetector } from '@wispace/llm-agent';
 
 const FALLBACK_ERROR_MESSAGE =
   'Xin lỗi, mình gặp sự cố khi xử lý tin nhắn. Bạn thử lại sau ít phút nhé.';

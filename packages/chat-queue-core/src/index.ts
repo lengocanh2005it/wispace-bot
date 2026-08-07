@@ -5,5 +5,4 @@ export type {
   DebounceChatQueueCallbacks,
   DebounceChatQueueConfig,
   EnqueueInput,
-  IdempotencyKeyPort,
 } from './types';

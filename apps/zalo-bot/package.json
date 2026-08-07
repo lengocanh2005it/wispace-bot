@@ -39,7 +39,6 @@
     "@wispace/ops-health": "*",
     "@wispace/reschedule-confirm": "*",
     "@wispace/study-reminder-shared": "*",
-    "@wispace/intent-detector": "*",
     "@wispace/wispace-client": "*",
     "pg": "^8.21.0",
     "reflect-metadata": "^0.2.2",

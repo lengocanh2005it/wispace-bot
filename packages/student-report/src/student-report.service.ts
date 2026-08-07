@@ -3,6 +3,7 @@ import type {
   LlmProviderAdapter,
   LlmUsageRecorderPort,
 } from '@wispace/llm-agent';
+import { retryWithBackoff } from '@wispace/llm-agent';
 import type { CapacityDataPort } from './ports';
 import {
   StudentReportNoScoreDataError,
@@ -111,25 +112,20 @@ export class StudentReportCore {
   ): Promise<StudentCapacityInput> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
 
-    for (let attempt = 1; ; attempt++) {
-      try {
-        return await this.ports.capacityData.getCapacityData(externalUserId);
-      } catch (error) {
-        if (
-          !isRetryableApiError(error) ||
-          !error.isRetryable() ||
-          attempt >= CAPACITY_FETCH_MAX_ATTEMPTS
-        ) {
-          throw error;
-        }
-        logger.warn(
-          `Retrying capacity fetch for report externalUserId=${externalUserId} attempt=${attempt}/${CAPACITY_FETCH_MAX_ATTEMPTS} status=${error.statusCode} endpoint=${error.endpoint}`,
-        );
-        await new Promise((resolve) =>
-          setTimeout(resolve, CAPACITY_FETCH_BACKOFF_MS * attempt),
-        );
-      }
-    }
+    return retryWithBackoff(
+      () => this.ports.capacityData.getCapacityData(externalUserId),
+      {
+        maxAttempts: CAPACITY_FETCH_MAX_ATTEMPTS,
+        baseDelayMs: CAPACITY_FETCH_BACKOFF_MS,
+        isRetryable: (error) =>
+          isRetryableApiError(error) && error.isRetryable(),
+        onRetry: (attempt, delayMs, error) => {
+          logger.warn(
+            `Retrying capacity fetch for report externalUserId=${externalUserId} attempt=${attempt}/${CAPACITY_FETCH_MAX_ATTEMPTS} status=${(error as RetryableApiError).statusCode} endpoint=${(error as RetryableApiError).endpoint}`,
+          );
+        },
+      },
+    );
   }
 
   private async generateAiReport(

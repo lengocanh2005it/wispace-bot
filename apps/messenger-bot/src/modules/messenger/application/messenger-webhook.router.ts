@@ -5,7 +5,7 @@ import {
   CONFIRM_RESCHEDULE_POSTBACK,
   CANCEL_RESCHEDULE_POSTBACK,
 } from './constants/messenger-reschedule.constants';
-import { IntentDetector } from '@wispace/intent-detector';
+import { IntentDetector } from '@wispace/llm-agent';
 import {
   buildChatMissingMidMessage,
   buildUnsupportedMessageTypeReply,

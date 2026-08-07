@@ -36,10 +36,8 @@ export interface HistoryPort {
   ): Promise<void>;
 }
 
-export interface ChatHistoryMessage {
-  role: 'user' | 'assistant' | 'tool_summary';
-  content: string;
-}
+import type { ChatHistoryMessage } from '@wispace/chat-history';
+export type { ChatHistoryMessage };
 
 // ── Agent ───────────────────────────────────────────────────────────────────
 

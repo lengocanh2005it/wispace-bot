@@ -14,7 +14,9 @@
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test": "jest --maxWorkers=50%"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@wispace/chat-history": "*"
+  },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "jest": "^30.0.0",
