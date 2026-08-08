@@ -1,7 +1,7 @@
 import { StudyReminderDispatchService } from './study-reminder-dispatch.service';
 import type { StudyReminderJobRepositoryPort } from '../ports/study-reminder-job.repository.port';
 import type { MessageSenderPort } from '../ports/message-sender.port';
-import type { ReminderGeneratorPort } from '../ports/reminder-generator.port';
+import type { DispatchHooksPort } from '../ports/dispatch-hooks.port';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import type { StudyReminderJob } from '../types/study-reminder.types';
 
@@ -10,7 +10,7 @@ describe('StudyReminderDispatchService', () => {
   let jobRepo: jest.Mocked<StudyReminderJobRepositoryPort>;
   let messageSender: jest.Mocked<MessageSenderPort>;
   let scheduleService: jest.Mocked<StudyReminderScheduleService>;
-  let reminderGenerator: jest.Mocked<ReminderGeneratorPort>;
+  let hooks: jest.Mocked<DispatchHooksPort>;
   let options: {
     backoffMode: 'exponential' | 'flat';
     preloadDisplayNames: jest.Mock;
@@ -82,8 +82,8 @@ describe('StudyReminderDispatchService', () => {
       formatScheduledTimeLabel: jest.fn().mockReturnValue('Hôm nay lúc 10:00'),
     } as unknown as jest.Mocked<StudyReminderScheduleService>;
 
-    reminderGenerator = {
-      generate: jest.fn().mockResolvedValue('Nhắc nhở học toán!'),
+    hooks = {
+      generateReminder: jest.fn().mockResolvedValue('Nhắc nhở học toán!'),
     };
 
     options = {
@@ -98,9 +98,7 @@ describe('StudyReminderDispatchService', () => {
       jobRepo,
       messageSender,
       scheduleService,
-      reminderGenerator,
-      undefined,
-      undefined,
+      hooks,
       options,
     );
   }
@@ -148,7 +146,7 @@ describe('StudyReminderDispatchService', () => {
     await service.dispatchDueReminders();
 
     // eslint-disable-next-line @typescript-eslint/unbound-method
-    expect(reminderGenerator.generate).toHaveBeenCalledWith(
+    expect(hooks.generateReminder).toHaveBeenCalledWith(
       expect.objectContaining({ sessionKey: 'calendar:99' }),
       expect.objectContaining({ externalUserId: 'ext-1', jobId: 1 }),
     );

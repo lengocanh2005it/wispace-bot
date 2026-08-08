@@ -8,14 +8,9 @@ import {
   type MessageSenderPort,
 } from '../ports/message-sender.port';
 import {
-  REMINDER_GENERATOR,
-  type ReminderGeneratorPort,
-} from '../ports/reminder-generator.port';
-import { METRICS_HOOK, type MetricsHook } from '../ports/metrics-hook.port';
-import {
-  ERROR_CLASSIFIER,
-  type ErrorClassifierPort,
-} from '../ports/error-classifier.port';
+  DISPATCH_HOOKS,
+  type DispatchHooksPort,
+} from '../ports/dispatch-hooks.port';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { subtractMs } from '@wispace/date-utils';
 import type { StudyReminderJob } from '../types/study-reminder.types';
@@ -70,14 +65,8 @@ export class StudyReminderDispatchService {
     private readonly messageSender: MessageSenderPort,
     private readonly scheduleService: StudyReminderScheduleService,
     @Optional()
-    @Inject(REMINDER_GENERATOR)
-    private readonly reminderGenerator?: ReminderGeneratorPort,
-    @Optional()
-    @Inject(METRICS_HOOK)
-    private readonly metrics?: MetricsHook,
-    @Optional()
-    @Inject(ERROR_CLASSIFIER)
-    private readonly errorClassifier?: ErrorClassifierPort,
+    @Inject(DISPATCH_HOOKS)
+    private readonly hooks?: DispatchHooksPort,
     @Optional() private readonly options?: StudyReminderDispatchServiceOptions,
   ) {}
 
@@ -131,7 +120,7 @@ export class StudyReminderDispatchService {
           claimedJob.id,
           'session already started',
         );
-        this.metrics?.onCancelled?.({
+        this.hooks?.onCancelled?.({
           jobId: claimedJob.id,
           externalUserId: claimedJob.externalUserId,
         });
@@ -162,7 +151,7 @@ export class StudyReminderDispatchService {
         });
 
         await this.jobRepository.markSent(claimedJob.id);
-        this.metrics?.onSent?.({
+        this.hooks?.onSent?.({
           jobId: claimedJob.id,
           externalUserId: claimedJob.externalUserId,
         });
@@ -176,7 +165,7 @@ export class StudyReminderDispatchService {
         });
         const terminal = classification
           ? classification.terminal
-          : (this.errorClassifier?.isTerminal(error) ??
+          : (this.hooks?.isTerminalError?.(error) ??
             claimedJob.retryCount + 1 >= claimedJob.maxRetries);
         const errorMessage = classification?.errorMessage ?? errorMsg;
 
@@ -206,7 +195,7 @@ export class StudyReminderDispatchService {
 
         if (terminal) {
           failed += 1;
-          this.metrics?.onFailed?.({
+          this.hooks?.onFailed?.({
             jobId: claimedJob.id,
             externalUserId: claimedJob.externalUserId,
             error: errorMessage,
@@ -216,7 +205,7 @@ export class StudyReminderDispatchService {
           );
         } else {
           retried += 1;
-          this.metrics?.onRetried?.({
+          this.hooks?.onRetried?.({
             jobId: claimedJob.id,
             externalUserId: claimedJob.externalUserId,
             retryCount: nextRetryCount,
@@ -266,8 +255,8 @@ export class StudyReminderDispatchService {
     timeLabel: string,
     minutesUntil: number,
   ): Promise<string> {
-    if (this.reminderGenerator) {
-      return this.reminderGenerator.generate(
+    if (this.hooks?.generateReminder) {
+      return this.hooks.generateReminder(
         {
           calendarId: job.sessionKey,
           sessionKey: job.sessionKey,

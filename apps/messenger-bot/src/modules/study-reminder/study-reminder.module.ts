@@ -11,13 +11,11 @@ import {
   MAPPING_READER,
   MESSAGE_SENDER,
   STUDY_REMINDER_JOB_REPOSITORY,
-  REMINDER_GENERATOR,
-  METRICS_HOOK,
+  DISPATCH_HOOKS,
   createStudyReminderProviders,
   type MappingReaderPort,
   type MessageSenderPort,
-  type ReminderGeneratorPort,
-  type MetricsHook,
+  type DispatchHooksPort,
   type StudyReminderJobStatus,
 } from '@wispace/study-reminder-shared';
 import { CommonModule } from '../../shared/common/common.module';
@@ -130,11 +128,12 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     },
 
     {
-      provide: REMINDER_GENERATOR,
+      provide: DISPATCH_HOOKS,
       useFactory: (
         reminderService: StudyReminderService,
-      ): ReminderGeneratorPort => ({
-        generate: (session, ctx) =>
+        metrics: MetricsService,
+      ): DispatchHooksPort => ({
+        generateReminder: (session, ctx) =>
           reminderService.generateReminderForSession(
             ctx.externalUserId,
             {
@@ -144,19 +143,12 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
             },
             { userId: ctx.userId, jobId: ctx.jobId },
           ),
-      }),
-      inject: [StudyReminderService],
-    },
-
-    {
-      provide: METRICS_HOOK,
-      useFactory: (metrics: MetricsService): MetricsHook => ({
         onSent: () => metrics.incReminderDispatch('sent'),
         onFailed: () => metrics.incReminderDispatch('failed'),
         onRetried: () => metrics.incReminderDispatch('retried'),
         onCancelled: () => metrics.incReminderDispatch('cancelled'),
       }),
-      inject: [MetricsService],
+      inject: [StudyReminderService, MetricsService],
     },
 
     {
@@ -188,8 +180,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         jobRepository: TypeormStudyReminderJobRepository,
         messageSender: MessageSenderPort,
         scheduleService: StudyReminderScheduleService,
-        reminderGenerator: ReminderGeneratorPort,
-        metrics: MetricsHook,
+        hooks: DispatchHooksPort,
         sessionSource: StudySessionSourceService,
         reminderService: StudyReminderService,
       ) =>
@@ -197,9 +188,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
           jobRepository,
           messageSender,
           scheduleService,
-          reminderGenerator,
-          metrics,
-          undefined,
+          hooks,
           {
             backoffMode: 'flat',
             preloadDisplayNames: (userIds) =>
@@ -218,8 +207,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         STUDY_REMINDER_JOB_REPOSITORY,
         MESSAGE_SENDER,
         StudyReminderScheduleService,
-        REMINDER_GENERATOR,
-        METRICS_HOOK,
+        DISPATCH_HOOKS,
         StudySessionSourceService,
         StudyReminderService,
       ],
