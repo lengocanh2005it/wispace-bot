@@ -240,7 +240,6 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     StudyReminderDispatchService,
     StudySessionSourceService,
     StudyCalendarCommandService,
-    UserCalendarApiService,
     STUDY_REMINDER_JOB_REPOSITORY,
     STUDY_REMINDER_OPERATIONS_PORT,
   ],

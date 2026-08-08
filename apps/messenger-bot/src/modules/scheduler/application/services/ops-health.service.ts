@@ -7,7 +7,7 @@ import {
 } from '@wispace/study-reminder-shared';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
-import { LlmSafetyService } from '@messenger/modules/llm-safety/llm-safety.service';
+import { LlmSafetyService } from './llm-safety.service';
 import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
 import { hoursAgo, subtractMs } from '@wispace/date-utils';
 import type {
