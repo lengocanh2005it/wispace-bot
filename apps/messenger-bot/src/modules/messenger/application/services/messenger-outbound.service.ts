@@ -5,6 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import CircuitBreaker from 'opossum';
 import { isMessenger24hWindowError } from '../messages/chat-delivery.messages';
 import {
   buildProactive24hLogErrorMessage,
@@ -54,12 +55,35 @@ export type MessengerSenderAction = 'mark_seen' | 'typing_on' | 'typing_off';
 @Injectable()
 export class MessengerOutboundService {
   private readonly logger = new Logger(MessengerOutboundService.name);
+  private readonly sendBreaker: CircuitBreaker;
 
   constructor(
     private readonly configService: ConfigService,
     @Inject(MESSENGER_REPOSITORY)
     private readonly repository: MessengerRepositoryPort,
-  ) {}
+  ) {
+    this.sendBreaker = new CircuitBreaker(
+      async (psid: string, payload: Record<string, unknown>) => {
+        await this.doCallSendApi(psid, payload);
+      },
+      {
+        timeout: 10_000,
+        errorThresholdPercentage: 50,
+        resetTimeout: 60_000,
+        volumeThreshold: 5,
+      },
+    );
+
+    this.sendBreaker.on('open', () => {
+      this.logger.warn('Meta Send API circuit breaker OPEN — failing fast');
+    });
+    this.sendBreaker.on('halfOpen', () => {
+      this.logger.log('Meta Send API circuit breaker half-open — testing');
+    });
+    this.sendBreaker.on('close', () => {
+      this.logger.log('Meta Send API circuit breaker closed — recovered');
+    });
+  }
 
   async sendSenderAction(
     psid: string,
@@ -360,28 +384,18 @@ export class MessengerOutboundService {
     psid: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const maxSendRetries = 1;
-    const retryDelayMs = 1_000;
-
-    for (let attempt = 0; attempt <= maxSendRetries; attempt++) {
-      try {
-        await this.doCallSendApi(psid, payload);
-        return;
-      } catch (error) {
-        const isLastAttempt = attempt === maxSendRetries;
-        const isRetryable =
-          error instanceof MessengerApiError &&
-          (error.status >= 500 || error.status === 408);
-
-        if (isLastAttempt || !isRetryable) {
-          throw error;
-        }
-
-        this.logger.warn(
-          `Send API retry ${attempt + 1}/${maxSendRetries} for PSID ${psid}: ${error instanceof Error ? error.message : String(error)}`,
+    try {
+      await this.sendBreaker.fire(psid, payload);
+    } catch (error) {
+      if (error instanceof Error && CircuitBreaker.isOurError(error)) {
+        throw new MessengerApiError(
+          `Meta Send API circuit breaker is OPEN for PSID ${psid}`,
+          503,
+          'Service Unavailable',
+          '',
         );
-        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
       }
+      throw error;
     }
   }
 

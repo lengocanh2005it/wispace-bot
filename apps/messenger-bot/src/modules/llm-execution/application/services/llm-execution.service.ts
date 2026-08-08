@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import pLimit from 'p-limit';
+import CircuitBreaker from 'opossum';
 import { retryWithBackoff, type LlmProviderAdapter } from '@wispace/llm-agent';
 import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
@@ -16,6 +17,7 @@ export type {
 export class LlmExecutionService {
   private readonly logger = new Logger(LlmExecutionService.name);
   private limiter: ReturnType<typeof pLimit>;
+  private readonly breaker: CircuitBreaker;
 
   constructor(
     private readonly config: LlmExecutionConfigService,
@@ -27,11 +29,33 @@ export class LlmExecutionService {
     private readonly globalLimiter?: RedisConcurrencyLimiter,
   ) {
     this.limiter = pLimit(this.config.getMaxConcurrent());
+
+    this.breaker = new CircuitBreaker(
+      (fn: () => Promise<unknown>, context?: LlmExecutionContext) =>
+        this.runWithRetry(fn, context),
+      {
+        timeout: this.config.getRequestTimeoutMs() + 5_000,
+        errorThresholdPercentage: 50,
+        resetTimeout: 60_000,
+        volumeThreshold: 3,
+      },
+    );
+
+    this.breaker.on('open', () => {
+      this.logger.warn('LLM provider circuit breaker OPEN — failing fast');
+    });
+    this.breaker.on('halfOpen', () => {
+      this.logger.log('LLM provider circuit breaker half-open — testing');
+    });
+    this.breaker.on('close', () => {
+      this.logger.log('LLM provider circuit breaker closed — recovered');
+    });
   }
 
   /**
-   * Runs an LLM call with optional global concurrency cap (p-limit) and retry
-   * on retryable errors (429 / 5xx). Each LLM request should pass through here.
+   * Runs an LLM call with optional global concurrency cap (p-limit), circuit
+   * breaker, and retry on retryable errors (429 / 5xx). Each LLM request
+   * should pass through here.
    */
   async run<T>(
     fn: () => Promise<T>,
@@ -45,13 +69,15 @@ export class LlmExecutionService {
       const globalLimit = this.config.getGlobalMaxConcurrent();
       const release = await this.globalLimiter.acquire('global', globalLimit);
       try {
-        return await this.limiter(() => this.runWithRetry(fn, context));
+        return await this.limiter(
+          () => this.breaker.fire(fn, context) as Promise<T>,
+        );
       } finally {
         await release();
       }
     }
 
-    return this.limiter(() => this.runWithRetry(fn, context));
+    return this.limiter(() => this.breaker.fire(fn, context) as Promise<T>);
   }
 
   private async runWithRetry<T>(
@@ -68,7 +94,11 @@ export class LlmExecutionService {
     return retryWithBackoff(
       () =>
         this.metrics.timeLlmExecution(feature, () =>
-          withTimeout(Promise.resolve().then(fn), timeoutMs, 'LLM request'),
+          withTimeout(
+            () => Promise.resolve().then(fn),
+            timeoutMs,
+            'LLM request',
+          ),
         ),
       {
         maxAttempts,
