@@ -1,4 +1,10 @@
-import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  Index,
+  PrimaryColumn,
+  UpdateDateColumn,
+} from 'typeorm';
 import type { Platform, ChatIdempotencyStatus } from '@wispace/database';
 
 @Entity('chat_idempotency')
@@ -32,4 +38,7 @@ export class ChatIdempotencyEntity {
 
   @Column({ type: 'varchar', length: 16, default: 'reserved' })
   status: ChatIdempotencyStatus;
+
+  @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
+  updatedAt: Date;
 }
