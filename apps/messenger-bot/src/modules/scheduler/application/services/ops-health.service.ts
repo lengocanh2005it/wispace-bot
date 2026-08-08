@@ -7,6 +7,7 @@ import {
 } from '@wispace/study-reminder-shared';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
 import { LlmSafetyService } from './llm-safety.service';
 import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
 import { hoursAgo, subtractMs } from '@wispace/date-utils';
@@ -28,6 +29,8 @@ export class OpsHealthService {
     @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
     private readonly messageLogRepository: MessengerMessageLogRepositoryPort,
     private readonly llmSafetyService: LlmSafetyService,
+    @Inject(REDIS_CLIENT)
+    private readonly redisClient: RedisClientPort,
   ) {}
 
   isAlertCronEnabled(): boolean {
@@ -69,6 +72,17 @@ export class OpsHealthService {
       this.llmSafetyService.countWarnings24h(),
     ]);
 
+    // Redis health check
+    let redisStatus: OpsHealthSnapshot['redisStatus'] = 'disabled';
+    if (this.redisClient.isEnabled()) {
+      try {
+        const pong = await this.redisClient.ping();
+        redisStatus = pong === 'PONG' ? 'ok' : 'unreachable';
+      } catch {
+        redisStatus = 'unreachable';
+      }
+    }
+
     const chatQuota = {
       ...chatQuotaBase,
       denyLogs24h,
@@ -85,6 +99,7 @@ export class OpsHealthService {
       metaTokenExpiredEvents24h,
       llmSafetyWarnings24h,
       llmSafetyThresholdBreached,
+      redisStatus,
     });
 
     return {
@@ -94,6 +109,7 @@ export class OpsHealthService {
       metaTokenExpiredEvents24h,
       llmSafetyWarnings24h,
       llmSafetyThresholdBreached,
+      redisStatus,
       alerts,
     };
   }
@@ -126,6 +142,7 @@ export class OpsHealthService {
     metaTokenExpiredEvents24h: number;
     llmSafetyWarnings24h: number;
     llmSafetyThresholdBreached: boolean;
+    redisStatus: OpsHealthSnapshot['redisStatus'];
   }): OpsHealthAlert[] {
     const alerts: OpsHealthAlert[] = [];
     const minFailedJobs = this.readPositiveNumber(
@@ -178,6 +195,14 @@ export class OpsHealthService {
         code: 'LLM_SAFETY_WARNING_THRESHOLD',
         severity: 'warn',
         message: `LLM grounding warnings exceeded threshold — ${input.llmSafetyWarnings24h} event(s) in last 24h (threshold: ${this.llmSafetyService.readWarningDailyThreshold()})`,
+      });
+    }
+
+    if (input.redisStatus === 'unreachable') {
+      alerts.push({
+        code: 'REDIS_UNREACHABLE',
+        severity: 'warn',
+        message: `Redis is unreachable — chat queue, dedupe, and burst counter may be degraded`,
       });
     }
 

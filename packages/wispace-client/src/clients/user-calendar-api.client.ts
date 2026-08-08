@@ -1,5 +1,10 @@
 import { WispaceApiError } from '../errors/wispace-api.error';
-import { isWispaceRetryable, withRetry } from '../utils/with-retry';
+import {
+  isWispaceRetryable,
+  createCircuitBreaker,
+  withRetry,
+} from '../utils/with-retry';
+import type { CircuitBreaker } from '../utils/with-retry';
 import {
   buildWispaceHeaders,
   type WispaceIdHeader,
@@ -20,24 +25,32 @@ import {
 } from './wispace-client-types';
 
 export class UserCalendarApiClient {
+  private readonly listBreaker: CircuitBreaker<UserCalendarRecord[]>;
+
   constructor(
     private readonly config: WispaceApiClientConfig,
     private readonly logger: WispaceClientLogger = NOOP_WISPACE_LOGGER,
-  ) {}
+  ) {
+    this.listBreaker = createCircuitBreaker(
+      (idHeader: WispaceIdHeader, externalId: string) =>
+        withRetry(() => this.doListCalendars(idHeader, externalId), {
+          maxRetries: this.config.maxRetries ?? 3,
+          baseDelayMs: this.config.baseDelayMs ?? 500,
+          shouldRetry: isWispaceRetryable,
+          onRetry: (attempt, max, err) =>
+            this.logger.warn(
+              `UserCalendar retry ${attempt}/${max} (${idHeader}=${externalId}): ${err instanceof Error ? err.message : String(err)}`,
+            ),
+        }),
+      { timeout: this.config.requestTimeoutMs ?? 10_000 },
+    );
+  }
 
   async listCalendars(
     idHeader: WispaceIdHeader,
     externalId: string,
   ): Promise<UserCalendarRecord[]> {
-    return withRetry(() => this.doListCalendars(idHeader, externalId), {
-      maxRetries: this.config.maxRetries ?? 3,
-      baseDelayMs: this.config.baseDelayMs ?? 500,
-      shouldRetry: isWispaceRetryable,
-      onRetry: (attempt, max, err) =>
-        this.logger.warn(
-          `UserCalendar retry ${attempt}/${max} (${idHeader}=${externalId}): ${err instanceof Error ? err.message : String(err)}`,
-        ),
-    });
+    return this.listBreaker.fire(idHeader, externalId);
   }
 
   private async doListCalendars(

@@ -14,5 +14,6 @@ export interface OpsHealthSnapshot {
   metaTokenExpiredEvents24h: number;
   llmSafetyWarnings24h: number;
   llmSafetyThresholdBreached: boolean;
+  redisStatus: 'ok' | 'disabled' | 'unreachable';
   alerts: OpsHealthAlert[];
 }

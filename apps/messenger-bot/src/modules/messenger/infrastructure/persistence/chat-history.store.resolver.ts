@@ -85,8 +85,10 @@ export class ChatHistoryStoreResolver implements ChatHistoryStorePort {
     try {
       return await fn();
     } catch (error) {
-      this.logger.warn(
-        `Chat history store failed: ${
+      this.logger.error(
+        `Chat history store failed — falling back to ${
+          this.resolveStoreKind() === 'redis' ? 'memory' : 'empty'
+        }. Multi-pod history coherence lost. ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

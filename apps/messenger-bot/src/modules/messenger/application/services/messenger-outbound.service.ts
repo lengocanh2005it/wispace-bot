@@ -360,6 +360,35 @@ export class MessengerOutboundService {
     psid: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
+    const maxSendRetries = 1;
+    const retryDelayMs = 1_000;
+
+    for (let attempt = 0; attempt <= maxSendRetries; attempt++) {
+      try {
+        await this.doCallSendApi(psid, payload);
+        return;
+      } catch (error) {
+        const isLastAttempt = attempt === maxSendRetries;
+        const isRetryable =
+          error instanceof MessengerApiError &&
+          (error.status >= 500 || error.status === 408);
+
+        if (isLastAttempt || !isRetryable) {
+          throw error;
+        }
+
+        this.logger.warn(
+          `Send API retry ${attempt + 1}/${maxSendRetries} for PSID ${psid}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
+    }
+  }
+
+  private async doCallSendApi(
+    psid: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
     const pageAccessToken = this.configService.get<string>('PAGE_ACCESS_TOKEN');
     const graphApiVersion =
       this.configService.get<string>('GRAPH_API_VERSION') ?? 'v21.0';

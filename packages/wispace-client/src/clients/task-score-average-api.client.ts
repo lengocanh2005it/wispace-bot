@@ -1,5 +1,10 @@
 import { WispaceApiError } from '../errors/wispace-api.error';
-import { isWispaceRetryable, withRetry } from '../utils/with-retry';
+import {
+  isWispaceRetryable,
+  createCircuitBreaker,
+  withRetry,
+} from '../utils/with-retry';
+import type { CircuitBreaker } from '../utils/with-retry';
 import {
   buildWispaceHeaders,
   type WispaceIdHeader,
@@ -12,24 +17,32 @@ import {
 } from './wispace-client-types';
 
 export class TaskScoreAverageApiClient {
+  private readonly breaker: CircuitBreaker<TaskScoreAverageRecord[]>;
+
   constructor(
     private readonly config: WispaceApiClientConfig,
     private readonly logger: WispaceClientLogger = NOOP_WISPACE_LOGGER,
-  ) {}
+  ) {
+    this.breaker = createCircuitBreaker(
+      (idHeader: WispaceIdHeader, externalId: string) =>
+        withRetry(() => this.fetchTaskScoreAverages(idHeader, externalId), {
+          maxRetries: this.config.maxRetries ?? 3,
+          baseDelayMs: this.config.baseDelayMs ?? 500,
+          shouldRetry: isWispaceRetryable,
+          onRetry: (attempt, max, err) =>
+            this.logger.warn(
+              `TaskScoreAverage retry ${attempt}/${max} (${idHeader}=${externalId}): ${err instanceof Error ? err.message : String(err)}`,
+            ),
+        }),
+      { timeout: this.config.requestTimeoutMs ?? 10_000 },
+    );
+  }
 
   async getTaskScoreAverages(
     idHeader: WispaceIdHeader,
     externalId: string,
   ): Promise<TaskScoreAverageRecord[]> {
-    return withRetry(() => this.fetchTaskScoreAverages(idHeader, externalId), {
-      maxRetries: this.config.maxRetries ?? 3,
-      baseDelayMs: this.config.baseDelayMs ?? 500,
-      shouldRetry: isWispaceRetryable,
-      onRetry: (attempt, max, err) =>
-        this.logger.warn(
-          `TaskScoreAverage retry ${attempt}/${max} (${idHeader}=${externalId}): ${err instanceof Error ? err.message : String(err)}`,
-        ),
-    });
+    return this.breaker.fire(idHeader, externalId);
   }
 
   private async fetchTaskScoreAverages(

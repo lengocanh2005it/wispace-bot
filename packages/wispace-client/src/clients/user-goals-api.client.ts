@@ -1,5 +1,7 @@
 import { WispaceApiError } from '../errors/wispace-api.error';
-import { isWispaceRetryable, withRetry } from '../utils/with-retry';
+import { isWispaceRetryable, createCircuitBreaker } from '../utils/with-retry';
+import type { CircuitBreaker } from '../utils/with-retry';
+import { withRetry } from '../utils/with-retry';
 import {
   buildWispaceHeaders,
   type WispaceIdHeader,
@@ -12,24 +14,32 @@ import {
 } from './wispace-client-types';
 
 export class UserGoalsApiClient {
+  private readonly breaker: CircuitBreaker<UserGoalsRecord>;
+
   constructor(
     private readonly config: WispaceApiClientConfig,
     private readonly logger: WispaceClientLogger = NOOP_WISPACE_LOGGER,
-  ) {}
+  ) {
+    this.breaker = createCircuitBreaker(
+      (idHeader: WispaceIdHeader, externalId: string) =>
+        withRetry(() => this.fetchUserGoals(idHeader, externalId), {
+          maxRetries: this.config.maxRetries ?? 3,
+          baseDelayMs: this.config.baseDelayMs ?? 500,
+          shouldRetry: isWispaceRetryable,
+          onRetry: (attempt, max, err) =>
+            this.logger.warn(
+              `User/goals retry ${attempt}/${max} (${idHeader}=${externalId}): ${err instanceof Error ? err.message : String(err)}`,
+            ),
+        }),
+      { timeout: this.config.requestTimeoutMs ?? 10_000 },
+    );
+  }
 
   async getUserGoals(
     idHeader: WispaceIdHeader,
     externalId: string,
   ): Promise<UserGoalsRecord> {
-    return withRetry(() => this.fetchUserGoals(idHeader, externalId), {
-      maxRetries: this.config.maxRetries ?? 3,
-      baseDelayMs: this.config.baseDelayMs ?? 500,
-      shouldRetry: isWispaceRetryable,
-      onRetry: (attempt, max, err) =>
-        this.logger.warn(
-          `User/goals retry ${attempt}/${max} (${idHeader}=${externalId}): ${err instanceof Error ? err.message : String(err)}`,
-        ),
-    });
+    return this.breaker.fire(idHeader, externalId);
   }
 
   private async fetchUserGoals(

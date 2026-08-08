@@ -4,6 +4,7 @@ export {
   isWispaceRetryable,
   CircuitBreaker,
   createCircuitBreaker,
+  createWispaceBreaker,
 } from './utils/with-retry';
 export type {
   CircuitBreakerOptions,
