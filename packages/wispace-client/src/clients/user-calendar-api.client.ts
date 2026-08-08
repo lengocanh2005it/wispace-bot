@@ -25,7 +25,7 @@ import {
 } from './wispace-client-types';
 
 export class UserCalendarApiClient {
-  private readonly listBreaker: CircuitBreaker<UserCalendarRecord[]>;
+  private readonly listBreaker: CircuitBreaker<any[], UserCalendarRecord[]>;
 
   constructor(
     private readonly config: WispaceApiClientConfig,

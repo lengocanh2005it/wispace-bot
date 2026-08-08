@@ -67,9 +67,9 @@ export interface CircuitBreakerOptions {
  *   const result = await breaker.fire(); // throws CircuitBreakerOpenError when circuit is open
  */
 export function createCircuitBreaker<T>(
-  fn: () => Promise<T>,
+  fn: (...args: any[]) => Promise<T>,
   opts: CircuitBreakerOptions = {},
-): CircuitBreaker<T> {
+): CircuitBreaker<any[], T> {
   const breaker = new CircuitBreaker(fn, {
     timeout: opts.timeout ?? 10_000,
     errorThresholdPercentage: 50,
@@ -89,6 +89,6 @@ export function createWispaceBreaker<T>(
   fn: () => Promise<T>,
   retryOpts: WithRetryOptions,
   cbOpts: CircuitBreakerOptions = {},
-): CircuitBreaker<T> {
+): CircuitBreaker<any[], T> {
   return createCircuitBreaker(() => withRetry(fn, retryOpts), cbOpts);
 }

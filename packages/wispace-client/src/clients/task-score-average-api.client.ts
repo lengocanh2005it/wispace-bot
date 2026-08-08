@@ -17,7 +17,7 @@ import {
 } from './wispace-client-types';
 
 export class TaskScoreAverageApiClient {
-  private readonly breaker: CircuitBreaker<TaskScoreAverageRecord[]>;
+  private readonly breaker: CircuitBreaker<any[], TaskScoreAverageRecord[]>;
 
   constructor(
     private readonly config: WispaceApiClientConfig,

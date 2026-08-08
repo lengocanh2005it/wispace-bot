@@ -14,7 +14,7 @@ import {
 } from './wispace-client-types';
 
 export class UserGoalsApiClient {
-  private readonly breaker: CircuitBreaker<UserGoalsRecord>;
+  private readonly breaker: CircuitBreaker<any[], UserGoalsRecord>;
 
   constructor(
     private readonly config: WispaceApiClientConfig,
