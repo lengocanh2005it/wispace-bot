@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import type { Platform } from '@wispace/database';
 import {
   StudyReminderScheduleService,
   StudyReminderSyncService,
@@ -79,7 +80,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
                 .map((m) => ({
                   externalUserId: m.psid as string,
                   userId: m.userId,
-                  platform,
+                  platform: platform as Platform,
                 })),
             ),
           findActiveMappingByExternalUserId: (platform, externalUserId) =>
@@ -88,7 +89,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
                 ? {
                     externalUserId: m.psid,
                     userId: m.userId,
-                    platform,
+                    platform: platform as Platform,
                   }
                 : null,
             ),
