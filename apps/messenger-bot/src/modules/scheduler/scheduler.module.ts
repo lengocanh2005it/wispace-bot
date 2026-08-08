@@ -13,7 +13,7 @@ import { LlmSafetyEventEntity } from '@wispace/chat-metering';
 import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
-import { MessengerModule } from '../messenger/messenger.module';
+import { MessengerReportModule } from '../messenger/messenger-report.module';
 import { MessengerOutboundModule } from '../messenger/messenger-outbound.module';
 import { UserLinkingModule } from '../messenger/user-linking.module';
 import { StudentReportModule } from '../student-report/student-report.module';
@@ -36,7 +36,7 @@ import { SchedulerController } from './presentation/controllers/scheduler.contro
     TypeOrmModule.forFeature([ReportSendJobEntity, LlmSafetyEventEntity]),
     ChatRateLimitModule,
     MessengerOutboundModule,
-    MessengerModule,
+    MessengerReportModule,
     UserLinkingModule,
     StudentReportModule,
     StudyReminderModule,

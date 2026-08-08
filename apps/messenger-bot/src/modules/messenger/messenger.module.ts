@@ -13,7 +13,6 @@ import { WebhookDedupeStoreStartupService } from './application/services/webhook
 import { MessengerMessageLogCleanupService } from './application/services/messenger-message-log-cleanup.service';
 import { MessengerWebhookDeadLetterCronService } from './application/services/messenger-webhook-dead-letter-cron.service';
 import { MessengerWebhookStartupService } from './application/services/messenger-webhook-startup.service';
-import { MessengerReportDeliveryService } from './application/services/messenger-report-delivery.service';
 import { MessengerReminderDeliveryService } from './application/services/messenger-reminder-delivery.service';
 import { WebhookActionExecutorService } from './application/services/webhook-action-executor.service';
 import { MessengerService } from './application/services/messenger.service';
@@ -29,6 +28,7 @@ import {
 import { MessengerChatSharedConfigService } from './application/services/messenger-chat-shared-config.service';
 import { WEBHOOK_POSTBACK_DEDUPE_MS } from './domain/entities/messenger-store.types';
 import { MessengerOutboundModule } from './messenger-outbound.module';
+import { MessengerReportModule } from './messenger-report.module';
 import { MessengerController } from './presentation/controllers/messenger.controller';
 import { ChatPipelineModule } from './chat-pipeline.module';
 import { UserLinkingModule } from './user-linking.module';
@@ -51,6 +51,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     DisplayNameModule,
     ChatPipelineModule,
     UserLinkingModule,
+    MessengerReportModule,
     TypeOrmModule.forFeature([WebhookDeadLetterEntity]),
   ],
   controllers: [MessengerController],
@@ -93,14 +94,12 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     MessengerMessageLogCleanupService,
     MessengerCalendarPort,
     MessengerReschedulePort,
-    MessengerReportDeliveryService,
     MessengerReminderDeliveryService,
     WebhookActionExecutorService,
   ],
   exports: [
     MessengerOutboundModule,
     MessengerService,
-    MessengerReportDeliveryService,
     MessengerCalendarPort,
     MessengerReschedulePort,
     UserLinkingModule,
