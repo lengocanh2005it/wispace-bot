@@ -82,7 +82,8 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return { allowed: false, count: limit };
+      // Fail-open: Redis error should not block users from chatting.
+      return { allowed: true, count: 0 };
     }
   }
 
@@ -94,15 +95,17 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
 
     const key = this.key(psid);
 
-    try {
-      const raw = await client.get(key);
-      const current = Number(raw ?? 0);
-      if (current <= 1) {
-        await client.del(key);
-        return;
-      }
+    // Atomic: DECR, then DEL if result <= 0.
+    const luaScript = `
+      local remaining = redis.call('DECR', KEYS[1])
+      if remaining <= 0 then
+        redis.call('DEL', KEYS[1])
+      end
+      return remaining
+    `;
 
-      await client.decr(key);
+    try {
+      await client.eval(luaScript, 1, key);
     } catch (error) {
       this.logger.warn(
         `Redis burst decrement failed psid=${maskExternalId(psid)}: ${

@@ -178,7 +178,7 @@ export class MessengerChatQueueService implements OnModuleDestroy {
     text: string,
   ): Promise<void> {
     try {
-      await this.chatQueueStore!.appendChatBuffer({
+      await this.getChatQueueStore().appendChatBuffer({
         psid: input.psid,
         userText: text,
         userId: input.userId,
@@ -218,7 +218,7 @@ export class MessengerChatQueueService implements OnModuleDestroy {
   }
 
   private async flushDistributed(psid: string): Promise<void> {
-    const snapshot = await this.chatQueueStore!.claimReadyBuffer(
+    const snapshot = await this.getChatQueueStore().claimReadyBuffer(
       psid,
       this.getDebounceMs(),
       this.sharedConfig.getProcessingStuckMs(),
@@ -242,13 +242,26 @@ export class MessengerChatQueueService implements OnModuleDestroy {
         idempotencyKey: snapshot.lastIdempotencyKey,
       });
     } finally {
-      const hasPending = await this.chatQueueStore!.completeChatBuffer({
-        psid,
-        debounceMs: this.getDebounceMs(),
-      });
+      try {
+        const hasPending = await this.getChatQueueStore().completeChatBuffer({
+          psid,
+          debounceMs: this.getDebounceMs(),
+        });
 
-      if (hasPending) {
-        this.scheduleDistributedFlush(psid);
+        if (hasPending) {
+          this.scheduleDistributedFlush(psid);
+        }
+      } catch (completeError) {
+        // Don't let completeChatBuffer failure mask the original error
+        // from processChatBatch. Log and continue — the buffer will be
+        // retried on next flush cycle (stuck detection).
+        this.logger.error(
+          `completeChatBuffer failed psid=${psid}: ${
+            completeError instanceof Error
+              ? completeError.message
+              : String(completeError)
+          }`,
+        );
       }
     }
   }
@@ -437,6 +450,15 @@ export class MessengerChatQueueService implements OnModuleDestroy {
         );
       }
     }
+  }
+
+  private getChatQueueStore(): ChatQueueStorePort {
+    if (!this.chatQueueStore) {
+      throw new Error(
+        'CHAT_QUEUE_STORE not available — distributed mode requires Redis',
+      );
+    }
+    return this.chatQueueStore;
   }
 
   private isDistributedMode(): boolean {

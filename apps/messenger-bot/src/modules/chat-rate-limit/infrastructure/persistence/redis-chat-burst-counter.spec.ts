@@ -21,19 +21,20 @@ describe('RedisChatBurstCounter', () => {
     return new RedisChatBurstCounter(redisClient);
   };
 
-  it('releases burst slot by decrementing key', async () => {
+  it('releases burst slot atomically via Lua script', async () => {
     const client = {
-      get: jest.fn().mockResolvedValue('2'),
+      get: jest.fn(),
       incr: jest.fn(),
       expire: jest.fn(),
-      decr: jest.fn().mockResolvedValue(1),
+      decr: jest.fn(),
       del: jest.fn(),
+      eval: jest.fn().mockResolvedValue(1),
     };
 
     const counter = createCounter(client);
     await counter.releaseReservation('psid-1');
 
-    expect(client.decr).toHaveBeenCalled();
+    expect(client.eval).toHaveBeenCalled();
   });
 
   describe('tryReserveBurst', () => {
@@ -72,7 +73,7 @@ describe('RedisChatBurstCounter', () => {
       expect(result).toEqual({ allowed: true, count: 0 });
     });
 
-    it('fails closed on Redis error', async () => {
+    it('fails open on Redis error', async () => {
       const client = {
         get: jest.fn(),
         incr: jest.fn(),
@@ -83,7 +84,7 @@ describe('RedisChatBurstCounter', () => {
       };
       const counter = createCounter(client);
       const result = await counter.tryReserveBurst('psid-1', 3);
-      expect(result).toEqual({ allowed: false, count: 3 });
+      expect(result).toEqual({ allowed: true, count: 0 });
     });
   });
 });

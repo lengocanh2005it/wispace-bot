@@ -19,7 +19,9 @@ describe('RedisChatQueueStore', () => {
       ping: jest.fn(),
     } as unknown as RedisClientPort;
 
-    return new RedisChatQueueStore(redisClient);
+    return new RedisChatQueueStore(redisClient, {
+      get: () => undefined,
+    } as never);
   };
 
   it('appends text to buffer under psid lock', async () => {
@@ -45,7 +47,7 @@ describe('RedisChatQueueStore', () => {
       expect.stringContaining('chat:queue:lock:psid-1'),
       expect.any(String),
       'PX',
-      5000,
+      30_000,
       'NX',
     );
     expect(client.set).toHaveBeenCalledWith(

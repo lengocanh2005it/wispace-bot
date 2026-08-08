@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { RedisModule } from '@wispace/bot-common';
@@ -22,6 +23,7 @@ import { MetricsModule } from './modules/metrics/metrics.module';
       // shared file doesn't exist (e.g. production containers).
       envFilePath: ['.env', '../../.env.shared'],
     }),
+    ThrottlerModule.forRoot(),
     DatabaseModule,
     RedisModule,
     ScheduleModule.forRoot(),

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
 import { REDIS_CLIENT } from '@wispace/bot-common';
 import type { RedisClientPort } from '@wispace/bot-common';
@@ -31,14 +32,23 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
   private static readonly BUFFER_PREFIX = 'chat:queue:buffer:';
   private static readonly LOCK_PREFIX = 'chat:queue:lock:';
   private static readonly ACTIVE_SET = 'chat:queue:active-psids';
-  private static readonly LOCK_TTL_MS = 5_000;
+  private static readonly DEFAULT_LOCK_TTL_MS = 30_000;
 
   private readonly logger = new Logger(RedisChatQueueStore.name);
+  private readonly lockTtlMs: number;
 
   constructor(
     @Inject(REDIS_CLIENT)
     private readonly redisClient: RedisClientPort,
-  ) {}
+    configService: ConfigService,
+  ) {
+    const raw = configService.get<string>('CHAT_QUEUE_LOCK_TTL_MS');
+    const parsed = raw ? Number(raw) : NaN;
+    this.lockTtlMs =
+      Number.isFinite(parsed) && parsed > 0
+        ? Math.floor(parsed)
+        : RedisChatQueueStore.DEFAULT_LOCK_TTL_MS;
+  }
 
   isAvailable(): boolean {
     return (
@@ -204,12 +214,12 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         .slice(0, limit)
         .map((entry) => entry.psid);
     } catch (error) {
-      this.logger.warn(
-        `Redis queue list ready failed: ${
+      this.logger.error(
+        `Redis queue list ready failed — messages may be delayed: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return [];
+      throw error;
     }
   }
 
@@ -228,7 +238,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       lockKey,
       lockValue,
       'PX',
-      RedisChatQueueStore.LOCK_TTL_MS,
+      this.lockTtlMs,
       'NX',
     );
 
