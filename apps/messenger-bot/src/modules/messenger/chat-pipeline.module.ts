@@ -25,7 +25,8 @@ import { LlmUsageModule } from '../llm-usage/llm-usage.module';
 import { LlmUsageConfigService } from '../llm-usage/application/services/llm-usage-config.service';
 import { StudentReportModule } from '../student-report/student-report.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
-import { UserDisplayNameService } from '../study-reminder/application/services/user-display-name.service';
+import { DisplayNameModule } from '../display-name/display-name.module';
+import { UserDisplayNameService } from '../display-name/application/user-display-name.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { MessengerOutboundModule } from './messenger-outbound.module';
 import { MessengerAgentToolsService } from './application/agent/messenger-agent-tools.service';
@@ -66,6 +67,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     LlmUsageModule,
     StudentReportModule,
     StudyReminderModule,
+    DisplayNameModule,
     TypeOrmModule.forFeature([LlmUsageEventEntity, LlmSafetyEventEntity]),
   ],
   providers: [

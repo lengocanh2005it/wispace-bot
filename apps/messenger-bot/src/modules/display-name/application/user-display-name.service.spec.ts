@@ -1,6 +1,6 @@
 import { UserDisplayNameService } from './user-display-name.service';
 import type { MessengerRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
-import type { UserDisplayNameCachePort } from '../../domain/repositories/user-display-name-cache.port';
+import type { UserDisplayNameCachePort } from '../domain/user-display-name-cache.port';
 
 describe('UserDisplayNameService', () => {
   const userRepo = {

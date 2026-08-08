@@ -25,7 +25,7 @@ import {
 } from '../../domain/entities/study-schedule.types';
 import { LlmExecutionService } from '@messenger/modules/llm-execution/application/services/llm-execution.service';
 import { LlmUsageRecorderService } from '@messenger/modules/llm-usage/application/services/llm-usage-recorder.service';
-import { UserDisplayNameService } from './user-display-name.service';
+import { UserDisplayNameService } from '@messenger/modules/display-name/application/user-display-name.service';
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudySessionSourceService } from './study-session-source.service';
 

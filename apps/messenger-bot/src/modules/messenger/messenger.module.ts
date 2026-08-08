@@ -8,6 +8,7 @@ import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { StudentReportModule } from '../student-report/student-report.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
+import { DisplayNameModule } from '../display-name/display-name.module';
 import { WebhookDedupeStoreStartupService } from './application/services/webhook-dedupe-store-startup.service';
 import { MessengerMessageLogCleanupService } from './application/services/messenger-message-log-cleanup.service';
 import { MessengerWebhookDeadLetterCronService } from './application/services/messenger-webhook-dead-letter-cron.service';
@@ -47,6 +48,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     ChatRateLimitModule,
     StudentReportModule,
     StudyReminderModule,
+    DisplayNameModule,
     ChatPipelineModule,
     UserLinkingModule,
     TypeOrmModule.forFeature([WebhookDeadLetterEntity]),

@@ -6,7 +6,7 @@ import { NormalizedStudySession } from '../../domain/entities/study-schedule.typ
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudyReminderService } from './study-reminder.service';
 import { StudySessionSourceService } from './study-session-source.service';
-import { UserDisplayNameService } from './user-display-name.service';
+import { UserDisplayNameService } from '@messenger/modules/display-name/application/user-display-name.service';
 
 const mockAdapter = {
   isConfigured: () => true,

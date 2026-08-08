@@ -14,7 +14,7 @@ import type { MessengerRepositoryPort } from '@messenger/modules/messenger/domai
 import {
   USER_DISPLAY_NAME_CACHE,
   type UserDisplayNameCachePort,
-} from '../../domain/repositories/user-display-name-cache.port';
+} from '../domain/user-display-name-cache.port';
 
 @Injectable()
 export class UserDisplayNameService implements OnModuleInit {

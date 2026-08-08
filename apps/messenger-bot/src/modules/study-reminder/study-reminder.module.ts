@@ -2,11 +2,6 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
-  REDIS_CLIENT,
-  RedisUserDisplayNameCache,
-  type RedisClientPort,
-} from '@wispace/bot-common';
-import {
   StudyReminderScheduleService,
   StudyReminderSyncService,
   StudyReminderDispatchService,
@@ -35,12 +30,11 @@ import { MessengerOutboundService } from '../messenger/application/services/mess
 import { StudentReportModule } from '../student-report/student-report.module';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
 import { LlmUsageModule } from '../llm-usage/llm-usage.module';
+import { DisplayNameModule } from '../display-name/display-name.module';
 import { MetricsService } from '../metrics/metrics.service';
 import { StudyCalendarCommandService } from './application/services/study-calendar-command.service';
 import { StudyReminderService } from './application/services/study-reminder.service';
 import { StudySessionSourceService } from './application/services/study-session-source.service';
-import { UserDisplayNameService } from './application/services/user-display-name.service';
-import { USER_DISPLAY_NAME_CACHE } from './domain/repositories/user-display-name-cache.port';
 import { UserCalendarScheduleService } from './infrastructure/wispace/user-calendar-schedule.service';
 import { UserCalendarApiService } from './infrastructure/wispace/user-calendar-api.service';
 import { classifyMessengerDispatchFailure } from './application/utils/study-reminder-dispatch.hooks';
@@ -62,6 +56,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     StudentReportModule,
     LlmExecutionModule,
     LlmUsageModule,
+    DisplayNameModule,
   ],
   providers: [
     // ── Shared package wiring (@wispace/study-reminder-shared) ────────────
@@ -117,22 +112,6 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     StudyCalendarCommandService,
     StudySessionSourceService,
     StudyReminderService,
-    UserDisplayNameService,
-    {
-      provide: RedisUserDisplayNameCache,
-      useFactory: (
-        redisClient: RedisClientPort,
-        configService: ConfigService,
-      ) =>
-        new RedisUserDisplayNameCache(redisClient, configService, {
-          platform: 'messenger',
-        }),
-      inject: [REDIS_CLIENT, ConfigService],
-    },
-    {
-      provide: USER_DISPLAY_NAME_CACHE,
-      useExisting: RedisUserDisplayNameCache,
-    },
 
     {
       // Strict mode: missing STUDY_REMINDER_* vars fail startup (AGENTS.md).
@@ -262,7 +241,6 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     StudySessionSourceService,
     StudyCalendarCommandService,
     UserCalendarApiService,
-    UserDisplayNameService,
     STUDY_REMINDER_JOB_REPOSITORY,
     STUDY_REMINDER_OPERATIONS_PORT,
   ],

@@ -4,7 +4,7 @@ import {
   MessengerLinkContext,
   buildWelcomeMessage,
 } from '@messenger/shared/config/poc.constants';
-import { UserDisplayNameService } from '@messenger/modules/study-reminder/application/services/user-display-name.service';
+import { UserDisplayNameService } from '@messenger/modules/display-name/application/user-display-name.service';
 import { getStudyReminderLeadTimeNotice } from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
 import { MessengerWebhookEvent } from '../../domain/entities/messenger.types';
 import { MessengerChatQueueService } from './messenger-chat-queue.service';
