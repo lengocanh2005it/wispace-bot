@@ -1,9 +1,10 @@
 import { PlatformDeadLetterService } from './platform-dead-letter.service';
 import type { Repository } from 'typeorm';
 import type { WebhookDeadLetterEntity } from '../entities/webhook-dead-letter.entity';
+import type { Platform } from '../types';
 
 describe('PlatformDeadLetterService', () => {
-  const buildService = (platform: string) => {
+  const buildService = (platform: Platform) => {
     const saveMock = jest.fn().mockResolvedValue(undefined);
     const updateMock = jest.fn().mockResolvedValue(undefined);
     const createQueryBuilderMock = jest.fn();
