@@ -8,7 +8,7 @@ export interface RetryBackoffOptions {
   baseDelayMs: number;
   isRetryable: (error: unknown) => boolean;
   onRetry?: (attempt: number, delayMs: number, error: unknown) => void;
-  /** Backoff for attempt (1-based). Default: linear `baseDelayMs * attempt`. */
+  /** Backoff for attempt (1-based). Default: exponential `baseDelayMs * 2^(attempt-1)`. */
   backoff?: (attempt: number) => number;
 }
 
@@ -32,7 +32,7 @@ export async function retryWithBackoff<T>(
       }
       const delayMs = options.backoff
         ? options.backoff(attempt)
-        : options.baseDelayMs * attempt;
+        : options.baseDelayMs * 2 ** (attempt - 1);
       options.onRetry?.(attempt, delayMs, error);
       await sleep(delayMs);
     }
