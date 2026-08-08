@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { getNoUpcomingStudySessionMessage } from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudyReminderService } from '@messenger/modules/study-reminder/application/services/study-reminder.service';
-import type { StudySessionView } from '../../domain/ports/study-data.port';
+import type { NormalizedStudySession } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import { MessengerOutboundService } from './messenger-outbound.service';
 
 @Injectable()
@@ -44,7 +44,7 @@ export class MessengerReminderDeliveryService {
 
   async sendReminder(params: {
     psid: string;
-    session: StudySessionView;
+    session: NormalizedStudySession;
     messageType: string;
     userId?: number;
     displayName?: string;

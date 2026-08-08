@@ -41,8 +41,6 @@ import { CHAT_QUEUE_STORE } from './domain/repositories/chat-queue.store.port';
 import { CHAT_HISTORY_STORE } from './domain/repositories/chat-history.store.port';
 import { RedisChatQueueStore } from './infrastructure/persistence/redis-chat-queue.store';
 import { ChatHistoryStoreResolver } from './infrastructure/persistence/chat-history.store.resolver';
-import { STUDY_DATA_PORT } from './domain/ports/study-data.port';
-import { StudyDataAdapter } from './infrastructure/adapters/study-data.adapter';
 import { MessengerCalendarPort } from './infrastructure/adapters/messenger-calendar.port';
 import { MessengerReschedulePort } from './infrastructure/adapters/messenger-reschedule.port';
 
@@ -199,11 +197,6 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     {
       provide: CHAT_QUEUE_STORE,
       useExisting: RedisChatQueueStore,
-    },
-    StudyDataAdapter,
-    {
-      provide: STUDY_DATA_PORT,
-      useExisting: StudyDataAdapter,
     },
     MessengerCalendarPort,
     MessengerReschedulePort,

@@ -5,7 +5,7 @@ import type {
 } from '@wispace/chat-agent';
 import { MessengerAgentToolsService } from './messenger-agent-tools.service';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
-import type { StudyDataPort } from '../../domain/ports/study-data.port';
+import type { StudyReminderOperationsPort } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import type { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
 import type { UserGoalsApiService } from '../../../student-report/infrastructure/wispace/user-goals-api.service';
 import type { StudentReportService } from '../../../student-report/application/services/student-report.service';
@@ -28,15 +28,16 @@ describe('MessengerAgentToolsService', () => {
       getUserGoals: overrides.getUserGoals ?? jest.fn(),
     } as unknown as jest.Mocked<UserGoalsApiService>;
 
-    const studyPort: jest.Mocked<StudyDataPort> = {
+    const studyPort: jest.Mocked<StudyReminderOperationsPort> = {
       getUpcomingSessions: overrides.getUpcomingSessions ?? jest.fn(),
       getNextUpcomingSession: overrides.getNextUpcomingSession ?? jest.fn(),
       generateReminderBundleForSession:
         overrides.generateReminderBundleForSession ?? jest.fn(),
-      listCalendarEntries: overrides.listEntries ?? jest.fn(),
+      listEntries: overrides.listEntries ?? jest.fn(),
       getOutboxSettings: jest.fn(() => ({ minutesBefore: 30 })),
       formatScheduledTimeLabel: jest.fn(() => 'Thứ 2, 08:00'),
-    } as unknown as jest.Mocked<StudyDataPort>;
+      rescheduleSession: jest.fn(),
+    } as unknown as jest.Mocked<StudyReminderOperationsPort>;
 
     const rescheduleConfirmationService: jest.Mocked<MessengerRescheduleConfirmationService> =
       {

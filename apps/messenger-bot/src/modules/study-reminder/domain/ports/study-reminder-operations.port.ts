@@ -15,6 +15,18 @@ export const STUDY_REMINDER_OPERATIONS_PORT = Symbol(
   'STUDY_REMINDER_OPERATIONS_PORT',
 );
 
+export interface StudyOutboxSettings {
+  minutesBefore: number;
+  minLeadMinutes: number;
+  syncHorizonHours: number;
+  maxRetries: number;
+  retryBackoffMinutes: number;
+  jobRetentionDays: number;
+  eveningRolloverHour: number;
+  timezone: string;
+  stuckProcessingMs: number;
+}
+
 export interface StudyReminderOperationsPort {
   getUpcomingSessions(params: {
     psid: string;
@@ -45,6 +57,10 @@ export interface StudyReminderOperationsPort {
     timeRange: CalendarSessionTimeRange;
     entries: StudyCalendarEntryView[];
   }>;
+
+  getOutboxSettings(): StudyOutboxSettings;
+
+  formatScheduledTimeLabel(scheduledAt: Date, now?: Date): string;
 
   rescheduleSession(params: {
     psid: string;

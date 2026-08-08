@@ -26,8 +26,8 @@ import {
 } from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
-import { STUDY_DATA_PORT } from '../../domain/ports/study-data.port';
-import type { StudyDataPort } from '../../domain/ports/study-data.port';
+import { STUDY_REMINDER_OPERATIONS_PORT } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
+import type { StudyReminderOperationsPort } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import { UserGoalsApiService } from '../../../student-report/infrastructure/wispace/user-goals-api.service';
 import { StudentReportService } from '../../../student-report/application/services/student-report.service';
 import {
@@ -51,7 +51,7 @@ export const MESSENGER_NOT_LINKED_MESSAGE =
 /**
  * Messenger tool implementations — injected into the shared
  * `PlatformAgentToolsService` via `toolOverrides` because every WISPACE tool
- * here uses Messenger data sources (LLM report, StudyDataPort, real
+ * here uses Messenger data sources (LLM report, StudyReminderOperationsPort, real
  * subscription upsert) and pushes Messenger quick-reply follow-ups.
  */
 @Injectable()
@@ -63,8 +63,8 @@ export class MessengerAgentToolsService {
     private readonly repository: MessengerRepositoryPort,
     private readonly studentReportService: StudentReportService,
     private readonly userGoalsApiService: UserGoalsApiService,
-    @Inject(STUDY_DATA_PORT)
-    private readonly studyPort: StudyDataPort,
+    @Inject(STUDY_REMINDER_OPERATIONS_PORT)
+    private readonly studyPort: StudyReminderOperationsPort,
     private readonly rescheduleConfirmationService: MessengerRescheduleConfirmationService,
   ) {}
 
@@ -122,7 +122,7 @@ export class MessengerAgentToolsService {
       return null;
     }
 
-    const list = await this.studyPort.listCalendarEntries(
+    const list = await this.studyPort.listEntries(
       ctx.externalUserId,
       ctx.userId,
       { timeRange: 'upcoming' },
@@ -174,7 +174,7 @@ export class MessengerAgentToolsService {
     args: Record<string, unknown>,
   ): Promise<unknown> {
     const timeRange = readCalendarTimeRange(args.timeRange) ?? 'upcoming';
-    const list = await this.studyPort.listCalendarEntries(
+    const list = await this.studyPort.listEntries(
       ctx.externalUserId,
       ctx.userId,
       {
@@ -296,7 +296,7 @@ export class MessengerAgentToolsService {
       };
     }
 
-    const upcoming = await this.studyPort.listCalendarEntries(
+    const upcoming = await this.studyPort.listEntries(
       ctx.externalUserId,
       ctx.userId,
       { timeRange: 'upcoming' },

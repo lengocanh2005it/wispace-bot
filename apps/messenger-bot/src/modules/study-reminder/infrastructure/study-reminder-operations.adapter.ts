@@ -3,6 +3,7 @@ import type {
   StudyReminderOperationsPort,
   CalendarSessionTimeRange,
   NormalizedStudySession,
+  StudyOutboxSettings,
 } from '../domain/ports/study-reminder-operations.port';
 import type { StudyReminderLlmOutput } from '../domain/entities/study-schedule.types';
 import type { StudyCalendarEntryView } from '@wispace/reschedule-confirm';
@@ -10,6 +11,7 @@ import type { RescheduleSchedulingMode } from '@wispace/wispace-client';
 import { StudySessionSourceService } from '../application/services/study-session-source.service';
 import { StudyReminderService } from '../application/services/study-reminder.service';
 import { StudyCalendarCommandService } from '../application/services/study-calendar-command.service';
+import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 
 @Injectable()
 export class StudyReminderOperationsAdapter implements StudyReminderOperationsPort {
@@ -17,6 +19,7 @@ export class StudyReminderOperationsAdapter implements StudyReminderOperationsPo
     private readonly sessionSource: StudySessionSourceService,
     private readonly reminderService: StudyReminderService,
     private readonly calendarCommand: StudyCalendarCommandService,
+    private readonly scheduleService: StudyReminderScheduleService,
   ) {}
 
   async getUpcomingSessions(params: {
@@ -59,6 +62,14 @@ export class StudyReminderOperationsAdapter implements StudyReminderOperationsPo
     entries: StudyCalendarEntryView[];
   }> {
     return this.calendarCommand.listEntries(psid, userId, options);
+  }
+
+  getOutboxSettings(): StudyOutboxSettings {
+    return this.scheduleService.getOutboxSettings();
+  }
+
+  formatScheduledTimeLabel(scheduledAt: Date, now?: Date): string {
+    return this.scheduleService.formatScheduledTimeLabel(scheduledAt, now);
   }
 
   async rescheduleSession(params: {
