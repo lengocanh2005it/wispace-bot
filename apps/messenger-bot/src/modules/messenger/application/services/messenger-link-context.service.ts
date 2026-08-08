@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { maskExternalId } from '@wispace/bot-common';
 import {
   MessengerLinkContext,
   parseMessengerLinkContext,
@@ -33,7 +34,7 @@ export class MessengerLinkContextService {
 
       if (!verified.valid) {
         this.logger.warn(
-          `Messenger link verify failed psid=${psid} reason=${verified.reason}`,
+          `Messenger link verify failed psid=${maskExternalId(psid)} reason=${verified.reason}`,
         );
         return { verifyFailureReason: verified.reason };
       }
@@ -48,7 +49,9 @@ export class MessengerLinkContextService {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Messenger link verify error psid=${psid}: ${message}`);
+      this.logger.error(
+        `Messenger link verify error psid=${maskExternalId(psid)}: ${message}`,
+      );
       return { verifyFailureReason: 'NOT_FOUND' };
     }
   }

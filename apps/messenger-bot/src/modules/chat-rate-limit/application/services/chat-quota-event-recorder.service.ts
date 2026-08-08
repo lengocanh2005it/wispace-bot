@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { maskExternalId } from '@wispace/bot-common';
 import type {
   ChatQuotaDenyReason,
   ChatQuotaReleaseReason,
@@ -107,7 +108,7 @@ export class ChatQuotaEventRecorderService {
         }),
       (error) => {
         this.logger.warn(
-          `CHAT_QUOTA_EVENT_DENIED_INSERT_FAILED psid=${input.psid} reason=${input.reason}: ${
+          `CHAT_QUOTA_EVENT_DENIED_INSERT_FAILED psid=${maskExternalId(input.psid)} reason=${input.reason}: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );

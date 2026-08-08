@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { maskExternalId } from '@wispace/bot-common';
 import type { ChatQuotaCheckResult } from '../../domain/entities/chat-quota.types';
 import type { RecoverIdempotencyOutcome } from '../../domain/entities/chat-idempotency.types';
 import {
@@ -212,7 +213,7 @@ export class ChatRateLimitService {
       }
 
       this.logger.warn(
-        `CHAT_QUOTA_REFUND psid=${psid} mid=${idempotencyKey} usageDate=${usageDate}`,
+        `CHAT_QUOTA_REFUND psid=${maskExternalId(psid)} mid=${idempotencyKey} usageDate=${usageDate}`,
       );
     }
   }
@@ -285,7 +286,7 @@ export class ChatRateLimitService {
 
     if (recovery === 'reopened') {
       this.logger.log(
-        `Reopened idempotency mid=${input.idempotencyKey} psid=${psid} for retry (H2)`,
+        `Reopened idempotency mid=${input.idempotencyKey} psid=${maskExternalId(psid)} for retry (H2)`,
       );
       outcome = await this.repository.reserveFreeFormSlotInTransaction({
         psid,
@@ -308,14 +309,14 @@ export class ChatRateLimitService {
   ): void {
     if (recovery === 'in_flight') {
       this.logger.log(
-        `Idempotency in flight mid=${idempotencyKey} psid=${psid}; skip duplicate flush`,
+        `Idempotency in flight mid=${idempotencyKey} psid=${maskExternalId(psid)}; skip duplicate flush`,
       );
       return;
     }
 
     if (recovery === 'completed') {
       this.logger.log(
-        `Idempotency already completed mid=${idempotencyKey} psid=${psid}; skip duplicate flush`,
+        `Idempotency already completed mid=${idempotencyKey} psid=${maskExternalId(psid)}; skip duplicate flush`,
       );
     }
   }
@@ -328,7 +329,7 @@ export class ChatRateLimitService {
     limit: number,
   ): void {
     this.logger.warn(
-      `CHAT_QUOTA_DENY reason=${reason} psid=${psid} mid=${idempotencyKey} used=${used} limit=${limit}`,
+      `CHAT_QUOTA_DENY reason=${reason} psid=${maskExternalId(psid)} mid=${idempotencyKey} used=${used} limit=${limit}`,
     );
   }
 

@@ -1,7 +1,8 @@
 import './tracing'; // MUST be first — initialises OTel SDK before any module loads
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { Logger } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 const SHUTDOWN_LOGGER = new Logger('Shutdown');
@@ -27,6 +28,11 @@ async function bootstrap() {
   const bodyLimit = process.env.HTTP_JSON_BODY_LIMIT?.trim() || '256kb';
   app.useBodyParser('json', { limit: bodyLimit });
   app.useBodyParser('urlencoded', { limit: bodyLimit, extended: true });
+
+  app.use(helmet());
+  app.useGlobalPipes(
+    new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
+  );
 
   app.enableShutdownHooks();
 

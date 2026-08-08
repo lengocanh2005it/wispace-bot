@@ -29,11 +29,15 @@ describe('HealthController', () => {
   it('returns status ok when database is connected', async () => {
     const { controller, query } = build();
     const result = await controller.check();
-    expect(result).toEqual({ status: 'ok', database: 'connected' });
+    expect(result).toEqual({
+      status: 'ok',
+      database: 'connected',
+      redis: 'disabled',
+    });
     expect(query).toHaveBeenCalledWith('SELECT 1');
   });
 
-  it('throws ServiceUnavailableException with error detail when database is down', async () => {
+  it('throws ServiceUnavailableException with generic error when database is down', async () => {
     const query = jest.fn().mockRejectedValue(new Error('connection refused'));
     const { controller } = build({ dataSource: { query } });
 
@@ -41,8 +45,6 @@ describe('HealthController', () => {
     expect(error).toHaveProperty('status', 503);
     expect((error as { getResponse(): unknown }).getResponse()).toEqual({
       status: 'error',
-      database: 'disconnected',
-      message: 'connection refused',
     });
   });
 
@@ -79,7 +81,6 @@ describe('HealthController', () => {
     expect((error as { getResponse(): unknown }).getResponse()).toEqual({
       ok: false,
       redis: 'unreachable',
-      message: 'ECONNREFUSED',
     });
   });
 });

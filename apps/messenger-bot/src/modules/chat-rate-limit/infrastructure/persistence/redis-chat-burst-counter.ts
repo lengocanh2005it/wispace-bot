@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { REDIS_CLIENT } from '@wispace/bot-common';
+import { REDIS_CLIENT, maskExternalId } from '@wispace/bot-common';
 import type { RedisClientPort } from '@wispace/bot-common';
 import {
   CHAT_BURST_KEY_TTL_SECONDS,
@@ -36,7 +36,7 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
       return Number(raw ?? 0);
     } catch (error) {
       this.logger.warn(
-        `Redis burst read failed psid=${psid}: ${
+        `Redis burst read failed psid=${maskExternalId(psid)}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -78,7 +78,7 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
       return { allowed: result[0] === 1, count: result[1] ?? 0 };
     } catch (error) {
       this.logger.warn(
-        `Redis burst tryReserve failed psid=${psid}: ${
+        `Redis burst tryReserve failed psid=${maskExternalId(psid)}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -105,7 +105,7 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
       await client.decr(key);
     } catch (error) {
       this.logger.warn(
-        `Redis burst decrement failed psid=${psid}: ${
+        `Redis burst decrement failed psid=${maskExternalId(psid)}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

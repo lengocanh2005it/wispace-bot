@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { maskExternalId } from '@wispace/bot-common';
 import { isProactiveMessenger24hError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
 import { WispaceApiError } from '@messenger/shared/errors/wispace-api.error';
 
@@ -25,13 +26,13 @@ export function classifyMessengerDispatchFailure(params: {
 
   if (is24hWindow) {
     logger.warn(
-      `MESSENGER_24H_WINDOW psid=${params.externalUserId} jobId=${params.jobId} study_reminder`,
+      `MESSENGER_24H_WINDOW psid=${maskExternalId(params.externalUserId)} jobId=${params.jobId} study_reminder`,
     );
   }
 
   if (isNonRetryableWispace) {
     logger.warn(
-      `WISPACE_NON_RETRYABLE psid=${params.externalUserId} jobId=${params.jobId} status=${(params.error as WispaceApiError).statusCode}; marking terminal`,
+      `WISPACE_NON_RETRYABLE psid=${maskExternalId(params.externalUserId)} jobId=${params.jobId} status=${(params.error as WispaceApiError).statusCode}; marking terminal`,
     );
   }
 

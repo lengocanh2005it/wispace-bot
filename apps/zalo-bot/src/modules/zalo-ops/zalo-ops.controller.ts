@@ -1,14 +1,14 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  HttpCode,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { IsNumber, IsPositive } from 'class-validator';
 import { InternalApiKeyGuard } from '@wispace/bot-common';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
 import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
+
+class SyncStudyCalendarBody {
+  @IsNumber()
+  @IsPositive()
+  userId!: number;
+}
 
 @Controller('zalo')
 @UseGuards(InternalApiKeyGuard)
@@ -26,13 +26,9 @@ export class ZaloOpsController {
 
   @Post('study-calendar/sync')
   @HttpCode(200)
-  syncStudyCalendarAfterChange(@Body() body: { userId: number }) {
-    const userId = Number(body?.userId);
-    if (!Number.isFinite(userId) || userId <= 0) {
-      throw new BadRequestException('userId must be a positive number');
-    }
+  syncStudyCalendarAfterChange(@Body() body: SyncStudyCalendarBody) {
     return this.studyReminderSyncService.syncUpcomingSessions({
-      userId,
+      userId: body.userId,
       platform: 'zalo',
     });
   }

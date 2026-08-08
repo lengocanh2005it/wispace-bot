@@ -1,7 +1,8 @@
-import { Logger } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 const logger = new Logger('Bootstrap');
@@ -28,6 +29,11 @@ async function bootstrap() {
   if (corsOrigin) {
     app.enableCors({ origin: corsOrigin.split(',') });
   }
+
+  app.use(helmet());
+  app.useGlobalPipes(
+    new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
+  );
 
   app.enableShutdownHooks();
 

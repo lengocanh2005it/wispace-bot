@@ -71,7 +71,7 @@ export class HealthController {
     }
 
     if (result.status === 'error') {
-      throw new ServiceUnavailableException(result);
+      throw new ServiceUnavailableException({ status: 'error' });
     }
 
     return result;

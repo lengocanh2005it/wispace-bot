@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { maskExternalId } from '@wispace/bot-common';
 import {
   MessengerLinkContext,
   buildWelcomeMessage,
@@ -54,7 +55,7 @@ export class WebhookActionExecutorService {
     switch (action.type) {
       case 'ignore':
         if (psid) {
-          this.logger.log(`Ignored event for PSID ${psid}`);
+          this.logger.log(`Ignored event for PSID ${maskExternalId(psid)}`);
         }
         break;
 
@@ -62,11 +63,11 @@ export class WebhookActionExecutorService {
         const linkAttempt = await this.attemptLinkFromEvent(psid!, event);
         if (linkAttempt.status === 'linked' && linkAttempt.context) {
           this.logger.log(
-            `Linked PSID ${psid} from opt-in (ref=${linkAttempt.context.ref}, topic=${linkAttempt.context.topic}, cadence=${linkAttempt.context.cadence})`,
+            `Linked PSID ${maskExternalId(psid)} from opt-in (ref=${linkAttempt.context.ref}, topic=${linkAttempt.context.topic}, cadence=${linkAttempt.context.cadence})`,
           );
         } else if (!extractRefFromEvent(event)) {
           this.logger.warn(
-            `Opt-in for PSID ${psid} missing ref, topic or cadence`,
+            `Opt-in for PSID ${maskExternalId(psid)} missing ref, topic or cadence`,
           );
         }
         break;

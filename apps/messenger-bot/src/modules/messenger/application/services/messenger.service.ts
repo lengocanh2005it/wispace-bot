@@ -6,6 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { maskExternalId } from '@wispace/bot-common';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
@@ -79,7 +80,7 @@ export class MessengerService {
           failures.push({ psid: event.sender?.id, error: errorMessage });
 
           this.logger.warn(
-            `Webhook event for PSID ${event.sender?.id ?? 'unknown'} failed — saving to dead-letter: ${errorMessage}`,
+            `Webhook event for PSID ${maskExternalId(event.sender?.id)} failed — saving to dead-letter: ${errorMessage}`,
           );
 
           if (this.deadLetterRepository) {
