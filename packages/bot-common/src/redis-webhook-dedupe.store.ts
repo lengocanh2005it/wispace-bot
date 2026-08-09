@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from './error-message';
 import { REDIS_CLIENT } from './redis.client.port';
 import type { RedisClientPort } from './redis.client.port';
 
@@ -61,13 +62,7 @@ export class RedisWebhookDedupeStore {
       return result !== 'OK';
     } catch (error) {
       this.logger.warn(
-        `Redis webhook dedupe failed key=${key}: ${
-          error instanceof Error
-            ? error.message
-            : typeof error === 'string'
-              ? error
-              : 'unknown error'
-        }`,
+        `Redis webhook dedupe failed key=${key}: ${errorMessage(error)}`,
       );
       // Fail closed: reprocessing is safer than accepting an unbounded burst.
       return true;

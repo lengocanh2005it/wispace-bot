@@ -68,7 +68,7 @@ export class PlatformAgentToolsService {
         `Tool ${toolName} failed for externalUserId=${ctx.externalUserId}: ${errorMessage(error)}`,
       );
       return {
-        error: errorMessage(error) || 'Tool execution failed',
+        error: errorMessage(error),
       };
     }
   }

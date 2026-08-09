@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { errorMessage } from './error-message';
 import { REDIS_CLIENT } from './redis.client.port';
 import type { RedisClientPort } from './redis.client.port';
 
@@ -60,13 +61,7 @@ export class RedisUserDisplayNameCache {
       };
     } catch (error) {
       this.logger.warn(
-        `Redis user display cache read failed userId=${userId}: ${
-          error instanceof Error
-            ? error.message
-            : typeof error === 'string'
-              ? error
-              : 'unknown error'
-        }`,
+        `Redis user display cache read failed userId=${userId}: ${errorMessage(error)}`,
       );
       return null;
     }
@@ -91,13 +86,7 @@ export class RedisUserDisplayNameCache {
       );
     } catch (error) {
       this.logger.warn(
-        `Redis user display cache write failed userId=${userId}: ${
-          error instanceof Error
-            ? error.message
-            : typeof error === 'string'
-              ? error
-              : 'unknown error'
-        }`,
+        `Redis user display cache write failed userId=${userId}: ${errorMessage(error)}`,
       );
     }
   }
