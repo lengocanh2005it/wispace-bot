@@ -5,7 +5,6 @@ export {
   daysAgo,
   minutesFromNow,
   hoursFromNow,
-  daysFromNow,
   getDatePartsInTimezone,
   formatLocalDate,
   todayInTimezone,

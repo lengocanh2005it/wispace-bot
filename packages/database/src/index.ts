@@ -16,21 +16,14 @@ export {
 // Shared types
 export {
   type Platform,
-  type MappingStatus,
-  type MessageLogStatus,
   type ChatQuotaDenyReason,
   type ChatIdempotencyStatus,
-  type ChatQuotaEventType,
   type ChatQuotaReleaseReason,
   type ReportSendJobStatus,
   type ScheduledReportClaimStatus,
   type WebhookDeadLetterStatus,
   type StudyReminderJobStatus,
-  type LlmFeature,
   MessageType,
-  type MessageType as MessageTypeValue,
-  type CalendarSessionTimeRange,
-  type ReportDeliveryReason,
 } from './types';
 
 export { PlatformDeadLetterService } from './services/platform-dead-letter.service';

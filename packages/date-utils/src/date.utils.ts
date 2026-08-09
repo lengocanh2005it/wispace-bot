@@ -5,7 +5,6 @@ import {
   subDays,
   addMinutes,
   addHours,
-  addDays,
 } from 'date-fns';
 
 /** Subtract milliseconds from a date. */
@@ -36,11 +35,6 @@ export function minutesFromNow(n: number, now: Date = new Date()): Date {
 /** Date N hours from now. */
 export function hoursFromNow(n: number, now: Date = new Date()): Date {
   return addHours(now, n);
-}
-
-/** Date N days from now. */
-export function daysFromNow(n: number, now: Date = new Date()): Date {
-  return addDays(now, n);
 }
 
 /** YYYY-MM-DD date parts in a given IANA timezone (e.g. Asia/Ho_Chi_Minh). */

@@ -4,7 +4,6 @@ export {
   isWispaceRetryable,
   CircuitBreaker,
   createCircuitBreaker,
-  createWispaceBreaker,
 } from './utils/with-retry';
 export type {
   CircuitBreakerOptions,
@@ -30,12 +29,6 @@ export type {
   NormalizedStudySession,
 } from './types/study-schedule.types';
 
-export {
-  normalizeCreatedCalendarRecord,
-  normalizeUserCalendarRecord,
-  normalizeUserCalendarRecords,
-  unwrapCalendarCreatePayload,
-} from './clients/user-calendar-record.normalizer';
 export type {
   WispaceApiClientConfig,
   WispaceClientLogger,

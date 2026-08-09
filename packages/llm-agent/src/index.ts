@@ -47,7 +47,6 @@ export { checkLlmGrounding } from './utils/llm-grounding.utils';
 export type { LlmGroundingResult } from './utils/llm-grounding.utils';
 export {
   isOpenAiRateLimitError,
-  isOpenAiRetryableError,
   isOpenAiServerError,
 } from './utils/openai-error.utils';
 export { isObviouslyOffTopic, isGreetingOnly } from './utils/scope.utils';

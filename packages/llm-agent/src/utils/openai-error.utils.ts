@@ -45,7 +45,3 @@ export function isOpenAiServerError(error: unknown): boolean {
   const status = e['status'];
   return typeof status === 'number' && status >= 500 && status < 600;
 }
-
-export function isOpenAiRetryableError(error: unknown): boolean {
-  return isOpenAiRateLimitError(error) || isOpenAiServerError(error);
-}
