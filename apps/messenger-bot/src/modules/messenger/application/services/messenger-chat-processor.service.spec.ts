@@ -2,7 +2,7 @@ import { ConfigService } from '@nestjs/config';
 import type { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import type { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import type { ChatQuotaCheckResult } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota.types';
-import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
+import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
 import type { MessengerAgentService } from '../agent/messenger-agent.service';
 import {
   buildChatBurstLimitMessage,
@@ -87,7 +87,7 @@ describe('MessengerChatProcessorService', () => {
     const logMessage = jest.fn(() => Promise.resolve());
     const messengerRepository = {
       logMessage,
-    } as unknown as MessengerRepositoryPort;
+    } as unknown as MessengerMessageLogRepositoryPort;
 
     const sharedConfig = {
       isDistributedQueueEnabled: () => false,

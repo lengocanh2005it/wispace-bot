@@ -4,7 +4,7 @@ import type {
   PlatformAgentToolContext,
 } from '@wispace/chat-agent';
 import { MessengerAgentToolsService } from './messenger-agent-tools.service';
-import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
+import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { StudyReminderOperationsPort } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import type { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
 import type { UserGoalsApiService } from '../../../student-report/infrastructure/wispace/user-goals-api.service';
@@ -14,11 +14,11 @@ describe('MessengerAgentToolsService', () => {
   const createService = (
     overrides: Partial<Record<string, jest.Mock>> = {},
   ) => {
-    const repository: jest.Mocked<MessengerRepositoryPort> = {
+    const repository: jest.Mocked<MessengerMappingRepositoryPort> = {
       logMessage: jest.fn(),
       findActiveMappingByPsid: overrides.findActiveMappingByPsid ?? jest.fn(),
       upsertPocSubscription: overrides.upsertPocSubscription ?? jest.fn(),
-    } as unknown as jest.Mocked<MessengerRepositoryPort>;
+    } as unknown as jest.Mocked<MessengerMappingRepositoryPort>;
 
     const studentReportService: jest.Mocked<StudentReportService> = {
       generateReport: overrides.generateReport ?? jest.fn(),

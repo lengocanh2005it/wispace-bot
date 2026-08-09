@@ -10,8 +10,8 @@ import {
 import { shouldShowQuotaRemainingHint } from '@messenger/modules/chat-rate-limit/domain/utils/quota-hint';
 import { CHAT_HISTORY_STORE } from '../../domain/repositories/chat-history.store.port';
 import type { ChatHistoryStorePort } from '../../domain/repositories/chat-history.store.port';
-import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
-import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
+import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '../../domain/repositories/messenger-message-log.repository.port';
+import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
 import { CHAT_QUEUE_STORE } from '../../domain/repositories/chat-queue.store.port';
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
 import { MessengerAgentService } from '../agent/messenger-agent.service';
@@ -51,8 +51,8 @@ export class MessengerChatProcessorService {
     private readonly chatRateLimitService: ChatRateLimitService,
     private readonly chatRateLimitConfig: ChatRateLimitConfigService,
     private readonly metrics: MetricsService,
-    @Inject(MESSENGER_REPOSITORY)
-    private readonly messengerRepository: MessengerRepositoryPort,
+    @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
+    private readonly messengerRepository: MessengerMessageLogRepositoryPort,
     private readonly sharedConfig: MessengerChatSharedConfigService,
     @Inject(CHAT_QUEUE_STORE)
     private readonly chatQueueStore?: ChatQueueStorePort,

@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { maskExternalId } from '@wispace/bot-common';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
-import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
+import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import { WEBHOOK_DEDUPE_STORE } from '../../domain/repositories/webhook-dedupe.store.port';
 import type { WebhookDedupeStorePort } from '../../domain/repositories/webhook-dedupe.store.port';
 import { MESSENGER_WEBHOOK_DEAD_LETTER_REPOSITORY } from '../../domain/repositories/messenger-webhook-dead-letter.repository.port';
@@ -38,7 +38,7 @@ export class MessengerService {
   constructor(
     private readonly configService: ConfigService,
     @Inject(MESSENGER_REPOSITORY)
-    private readonly repository: MessengerRepositoryPort,
+    private readonly repository: MessengerMappingRepositoryPort,
     private readonly outbound: MessengerOutboundService,
     private readonly messengerLinkContextService: MessengerLinkContextService,
     private readonly chatRateLimitConfig: ChatRateLimitConfigService,

@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
-import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
+import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { RelinkMappingResult } from '../types/messenger-mapping.types';
 import {
   buildMappingUserIdRelinkedMessage,
@@ -17,7 +17,7 @@ export class MessengerMappingService {
 
   constructor(
     @Inject(MESSENGER_REPOSITORY)
-    private readonly repository: MessengerRepositoryPort,
+    private readonly repository: MessengerMappingRepositoryPort,
     private readonly outbound: MessengerOutboundService,
     private readonly studyReminderSyncService: StudyReminderSyncService,
   ) {}

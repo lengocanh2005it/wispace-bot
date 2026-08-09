@@ -11,8 +11,8 @@ import {
   buildProactive24hLogErrorMessage,
   buildProactiveFailureMessageType,
 } from '../utils/proactive-send.utils';
-import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
-import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
+import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '../../domain/repositories/messenger-message-log.repository.port';
+import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
 import { readMessengerBubbleLimits } from '../utils/messenger-bubble-config.utils';
 import { splitMessengerBubbles } from '@messenger/shared/utils/messenger-text.utils';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
@@ -59,8 +59,8 @@ export class MessengerOutboundService {
 
   constructor(
     private readonly configService: ConfigService,
-    @Inject(MESSENGER_REPOSITORY)
-    private readonly repository: MessengerRepositoryPort,
+    @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
+    private readonly repository: MessengerMessageLogRepositoryPort,
   ) {
     this.sendBreaker = new CircuitBreaker(
       async (psid: string, payload: Record<string, unknown>) => {

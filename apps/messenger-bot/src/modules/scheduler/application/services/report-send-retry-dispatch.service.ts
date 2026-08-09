@@ -8,10 +8,8 @@ import {
   ReportSendScheduleService,
   todayReportDate,
 } from '@wispace/scheduler-core';
-import {
-  MESSENGER_REPOSITORY,
-  type MessengerRepositoryPort,
-} from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
+import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
+import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
 import { PgAdvisoryLockService } from '@wispace/bot-common';
 import { subtractMs, minutesFromNow } from '@wispace/date-utils';
@@ -25,7 +23,7 @@ export class ReportSendRetryDispatchService {
     @Inject(REPORT_SEND_JOB_REPOSITORY)
     private readonly reportSendJobRepository: ReportSendJobRepositoryPort,
     @Inject(MESSENGER_REPOSITORY)
-    private readonly messengerRepository: MessengerRepositoryPort,
+    private readonly messengerRepository: MessengerMappingRepositoryPort,
     private readonly reportScheduleService: ReportScheduleService,
     private readonly reportSendScheduleService: ReportSendScheduleService,
     private readonly reportCronLeaderService: ReportCronLeaderService,

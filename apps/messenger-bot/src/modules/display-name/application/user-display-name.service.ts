@@ -10,7 +10,7 @@ import { In, Repository } from 'typeorm';
 import { UserEntity } from '@messenger/infrastructure/database/entities/user.entity';
 import { FALLBACK_DISPLAY_NAME } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
-import type { MessengerRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
+import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
 import {
   USER_DISPLAY_NAME_CACHE,
   type UserDisplayNameCachePort,
@@ -24,7 +24,7 @@ export class UserDisplayNameService implements OnModuleInit {
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
     @Inject(MESSENGER_REPOSITORY)
-    private readonly messengerRepository: MessengerRepositoryPort,
+    private readonly messengerRepository: MessengerMappingRepositoryPort,
     @Optional()
     @Inject(USER_DISPLAY_NAME_CACHE)
     private readonly displayNameCache?: UserDisplayNameCachePort,

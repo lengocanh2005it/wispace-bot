@@ -25,7 +25,7 @@ import {
   getStudyReminderLeadTimeNotice,
 } from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
-import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
+import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import { STUDY_REMINDER_OPERATIONS_PORT } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import type { StudyReminderOperationsPort } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import { UserGoalsApiService } from '../../../student-report/infrastructure/wispace/user-goals-api.service';
@@ -60,7 +60,7 @@ export class MessengerAgentToolsService {
 
   constructor(
     @Inject(MESSENGER_REPOSITORY)
-    private readonly repository: MessengerRepositoryPort,
+    private readonly repository: MessengerMappingRepositoryPort,
     private readonly studentReportService: StudentReportService,
     private readonly userGoalsApiService: UserGoalsApiService,
     @Inject(STUDY_REMINDER_OPERATIONS_PORT)

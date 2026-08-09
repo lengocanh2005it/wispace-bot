@@ -15,10 +15,8 @@ import {
   type SendScheduledReportsOptions,
   type SendScheduledReportsResult,
 } from '@wispace/scheduler-core';
-import {
-  MESSENGER_REPOSITORY,
-  type MessengerRepositoryPort,
-} from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
+import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
+import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
 import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
 import type { ClaimAndSendResult } from '@wispace/scheduler-core';
@@ -31,7 +29,7 @@ export class ReportCronService {
 
   constructor(
     @Inject(MESSENGER_REPOSITORY)
-    private readonly messengerRepository: MessengerRepositoryPort,
+    private readonly messengerRepository: MessengerMappingRepositoryPort,
     private readonly reportScheduleService: ReportScheduleService,
     private readonly reportCronLeaderService: ReportCronLeaderService,
     private readonly reportCronLockService: ReportCronLockService,

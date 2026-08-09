@@ -5,8 +5,8 @@ import {
   CleanupCronService,
   type CleanupCronConfig,
 } from '@wispace/cleanup-cron';
-import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
-import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
+import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '../../domain/repositories/messenger-message-log.repository.port';
+import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
 import {
   readEnvBoolean,
   readEnvPositiveInt,
@@ -31,8 +31,8 @@ export class MessengerMessageLogCleanupService {
 
   constructor(
     private readonly configService: ConfigService,
-    @Inject(MESSENGER_REPOSITORY)
-    private readonly messengerRepository: MessengerRepositoryPort,
+    @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
+    private readonly messengerRepository: MessengerMessageLogRepositoryPort,
     private readonly cleanupCron: CleanupCronService,
   ) {}
 

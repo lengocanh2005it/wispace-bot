@@ -23,7 +23,7 @@ import { CommonModule } from '../../shared/common/common.module';
 import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
 import { UserEntity } from '../../infrastructure/database/entities/user.entity';
 import { MESSENGER_REPOSITORY } from '../messenger/domain/repositories/messenger.repository.port';
-import type { MessengerRepositoryPort } from '../messenger/domain/repositories/messenger.repository.port';
+import type { MessengerMappingRepositoryPort } from '../messenger/domain/repositories/messenger-mapping.repository.port';
 import { MessengerOutboundModule } from '../messenger/messenger-outbound.module';
 import { MessengerOutboundService } from '../messenger/application/services/messenger-outbound.service';
 import { StudentReportModule } from '../student-report/student-report.module';
@@ -71,7 +71,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
       mappingReader: {
         provide: MAPPING_READER,
         useFactory: (
-          repository: MessengerRepositoryPort,
+          repository: MessengerMappingRepositoryPort,
         ): MappingReaderPort => ({
           findActiveMappings: (platform) =>
             repository.findActiveMappingsWithPsid().then((list) =>

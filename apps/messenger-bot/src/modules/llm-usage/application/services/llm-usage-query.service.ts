@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
-import type { MessengerRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
+import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
 import type {
   LlmUsageAggregateRow,
   LlmUsageFeatureSummary,
@@ -23,7 +23,7 @@ export class LlmUsageQueryService {
     @Inject(LLM_USAGE_REPOSITORY)
     private readonly usageRepository: LlmUsageRepositoryPort,
     @Inject(MESSENGER_REPOSITORY)
-    private readonly messengerRepository: MessengerRepositoryPort,
+    private readonly messengerRepository: MessengerMappingRepositoryPort,
   ) {}
 
   async getUserSummary(input: {

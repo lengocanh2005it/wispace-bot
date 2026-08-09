@@ -21,7 +21,7 @@ import {
 } from '@messenger/shared/config/poc.constants';
 import { buildPocPsidToken } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
-import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
+import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 
 @Injectable()
@@ -31,7 +31,7 @@ export class MessengerReportDeliveryService {
   constructor(
     private readonly configService: ConfigService,
     @Inject(MESSENGER_REPOSITORY)
-    private readonly repository: MessengerRepositoryPort,
+    private readonly repository: MessengerMappingRepositoryPort,
     private readonly outbound: MessengerOutboundService,
     private readonly studentReportService: StudentReportService,
   ) {}

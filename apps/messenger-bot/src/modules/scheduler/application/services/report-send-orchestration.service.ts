@@ -1,8 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
-  MESSENGER_REPOSITORY,
-  type MessengerRepositoryPort,
-} from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
+  REPORT_CLAIM_REPOSITORY,
+  type ReportClaimRepositoryPort,
+} from '@wispace/scheduler-core';
 import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
 import { MessengerReportDeliveryService } from '@messenger/modules/messenger/application/services/messenger-report-delivery.service';
 import {
@@ -33,8 +33,8 @@ export class ReportSendOrchestrationService {
   private readonly logger = new Logger(ReportSendOrchestrationService.name);
 
   constructor(
-    @Inject(MESSENGER_REPOSITORY)
-    private readonly messengerRepository: MessengerRepositoryPort,
+    @Inject(REPORT_CLAIM_REPOSITORY)
+    private readonly messengerRepository: ReportClaimRepositoryPort,
     private readonly messengerReportDeliveryService: MessengerReportDeliveryService,
     @Inject(REPORT_SEND_JOB_REPOSITORY)
     private readonly reportSendJobRepository: ReportSendJobRepositoryPort,
