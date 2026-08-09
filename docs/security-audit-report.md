@@ -14,7 +14,7 @@ The wispace-bot monorepo demonstrates **strong security fundamentals** in its co
 
 | # | Severity | Finding | Impact |
 |---|----------|---------|--------|
-| 1 | **HIGH** | No Helmet/security headers middleware | Missing CSP, HSTS, X-Frame-Options leaves apps vulnerable to clickjacking, MIME sniffing, and other browser-based attacks |
+| 1 | ~~**HIGH**~~ | ~~No Helmet/security headers middleware~~ | **Fixed** — `helmet` installed and used in all 3 apps (`app.use(helmet())`) |
 | 2 | **HIGH** | No global ValidationPipe / DTO validation | Incoming request bodies are not schema-validated; malformed or malicious payloads reach business logic unchecked |
 | 3 | **MEDIUM** | Health endpoints expose DB/Redis connection status without auth | `/health` and `/health/redis` leak infrastructure details to unauthenticated callers |
 | 4 | **MEDIUM** | PSIDs logged in error messages and dead-letter entries | Platform user identifiers are persisted in plaintext logs and dead-letter tables |
@@ -26,7 +26,7 @@ The wispace-bot monorepo demonstrates **strong security fundamentals** in its co
 
 | ID | Severity | Category | File(s) | Description |
 |----|----------|----------|---------|-------------|
-| A-01 | HIGH | HTTP Security | `apps/*/src/main.ts` | No Helmet middleware — missing security headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy) |
+| A-01 | ~~HIGH~~ | HTTP Security | `apps/*/src/main.ts` | **Fixed** — `helmet` installed and used in all 3 apps |
 | A-02 | HIGH | Input Validation | `apps/*/src/main.ts` | No global `ValidationPipe` — no DTO/class-validator validation on any endpoint |
 | A-03 | MEDIUM | Auth | `packages/bot-common/src/health.controller.ts:30-78` | `/health` and `/health/redis` endpoints are unprotected — expose DB and Redis connection status |
 | A-04 | MEDIUM | Data Exposure | `apps/messenger-bot/src/modules/messenger/application/services/messenger.service.ts:79-82` | PSIDs logged in webhook error messages and dead-letter entries |

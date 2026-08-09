@@ -1,6 +1,6 @@
 # Turborepo monorepo instead of multi-repo
 
-The bots (Messenger, Discord, Zalo) and shared packages (`llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `study-reminder-core`) live in the same repo with npm workspaces + Turborepo, instead of being split into separate repos.
+The bots (Messenger, Discord, Zalo) and shared packages (`llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `study-reminder-shared`) live in the same repo with npm workspaces + Turborepo, instead of being split into separate repos.
 
 ## Rationale
 

@@ -60,13 +60,12 @@ Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (re
 - `apps/messenger-bot`'s `MessengerChatEnqueueService` uses `DebounceChatQueue` for **memory mode** (`CHAT_QUEUE_STORE=memory`); Redis/distributed mode (`enqueueDistributed`, `flushDistributed`, `ChatQueueStorePort`) is **not** in the package — infrastructure-specific, kept in app (same pattern as `@wispace/chat-history`: only memory backend is split out, Redis stays in app).
 - Modify package → rebuild + test `apps/messenger-bot` (`npx turbo run build test --filter=@wispace/messenger-bot... --filter=@wispace/chat-queue-core`). `apps/discord-bot` doesn't have debounce/queue yet — when adding, use this package directly instead of rewriting the state machine.
 
-## Monorepo boundary: `packages/study-reminder-core`
+## Monorepo boundary: `packages/study-reminder-shared`
 
-`packages/study-reminder-core` (`@wispace/study-reminder-core`) is the seventh framework-agnostic package — pure functions for computing study reminder schedules (`computeRemindAt`, `getMinutesUntilSession`, `isSessionStarted`, `formatScheduledTimeLabel`), stateless, no config/IO.
+`packages/study-reminder-shared` (`@wispace/study-reminder-shared`) contains pure functions for computing study reminder schedules (`computeRemindAt`, `getMinutesUntilSession`, `isSessionStarted`, `formatScheduledTimeLabel`) in `src/utils/schedule.ts`, plus dispatch/sync/worker services for all platforms.
 
-- **Do not** import anything beyond `Intl`/`Date` built-ins. App reads `STUDY_REMINDER_*` from `ConfigService` then passes values (minutesBefore, minLeadMinutes, timezone) into pure functions — see `apps/messenger-bot/src/modules/study-reminder/application/services/study-reminder-schedule.service.ts` for a thin adapter.
-- **Not yet split**: orchestration sync (`StudyReminderSyncService`: query mapping → fetch session → upsert job) and dispatch (`StudyReminderDispatchService`: claim job → send via `MESSAGE_SENDER`) — both are behind their own ports (`MessengerMappingReaderPort`, `StudyReminderJobRepositoryPort`) but **no second bot needs them yet** (Discord reads/writes calendar directly via `DiscordStudyCalendarCommandService`, including `reschedule_study_session`, but doesn't have its own job reminder/outbox sync system yet). Forcing the split now is premature abstraction with no real consumer to verify — save it when Discord/Zalo actually need separate reminder jobs.
-- Modify package → rebuild + test `apps/messenger-bot` (`npx turbo run build test --filter=@wispace/messenger-bot... --filter=@wispace/study-reminder-core`).
+- **Do not** import anything beyond `Intl`/`Date` built-ins for the pure functions. App reads `STUDY_REMINDER_*` from `ConfigService` then passes values (minutesBefore, minLeadMinutes, timezone) into pure functions — see `apps/messenger-bot/src/modules/study-reminder/application/services/study-reminder-schedule.service.ts` for a thin adapter.
+- Modify package → rebuild + test `apps/messenger-bot` (`npx turbo run build test --filter=@wispace/messenger-bot... --filter=@wispace/study-reminder-shared`).
 
 ## Dependency flow within one app (mandatory)
 

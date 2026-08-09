@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Implemented (PR #32 — `LlmProviderAdapter` pattern with OpenAI, OpenRouter, MiniMax adapters + failover)
 
 ## Context
 

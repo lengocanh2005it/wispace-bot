@@ -9,8 +9,8 @@ This document describes what the WISPACE team needs to do to integrate with the 
 | Bot | Status | Account linking method |
 |-----|--------|----------------------|
 | Messenger Bot | Running in production | `m.me/<page>?ref=<token>` |
-| Discord Bot | Under implementation | Discord OAuth2 + link token |
-| Zalo Bot | Future plan | TBD |
+| Discord Bot | Running in production | Discord OAuth2 + link token |
+| Zalo Bot | Running in production | Zalo OA OAuth2 + link token |
 
 All 3 bots use **the same API endpoint** to verify link tokens — the WISPACE team only needs to implement it once.
 
@@ -171,7 +171,7 @@ After accounts are linked, whenever a student messages the bot, the bot will cal
 |----------|--------|
 | Messenger | `x-psid: {PSID}` |
 | Discord | `x-discordid: {Discord User ID}` |
-| Zalo (future) | `x-zaloid: {Zalo User ID}` |
+| Zalo | `x-zaloid: {Zalo User ID}` |
 
 Along with the common header:
 

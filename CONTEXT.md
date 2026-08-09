@@ -1,6 +1,6 @@
 # WISPACE BOTS
 
-NestJS Turborepo monorepo for IELTS student bots — AI reports, study reminders, rate-limited AI chat. Currently features `apps/messenger-bot` (fully functional), `apps/discord-bot` (fully functional), `apps/zalo-bot` (fully functional), with shared packages: `llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `study-reminder-core`.
+NestJS Turborepo monorepo for IELTS student bots — AI reports, study reminders, rate-limited AI chat. Currently features `apps/messenger-bot` (fully functional), `apps/discord-bot` (fully functional), `apps/zalo-bot` (fully functional), with shared packages: `llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `study-reminder-shared`.
 
 ## Language
 

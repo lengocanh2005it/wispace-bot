@@ -1,29 +1,50 @@
 # wispace-bots
 
-Turborepo monorepo — WISPACE student bots across multiple messaging platforms. Currently features **Facebook Messenger** (fully functional), **Discord** and **Zalo** (placeholder, not yet implemented), sharing a single LLM function-calling package.
+Turborepo monorepo — WISPACE student bots across multiple messaging platforms. Currently features **Facebook Messenger** (fully functional), **Discord** (fully functional), and **Zalo** (fully functional), sharing 17 common packages.
 
 ## Structure
 
 ```
-apps/messenger-bot/    NestJS — AI reports, study reminders, AI chat with rate limit via Messenger (fully functional)
-apps/discord-bot/      Placeholder — not yet implemented (see docs/turborepo-migration-plan.md Phase 3)
-apps/zalo-bot/         Placeholder — not yet implemented (see docs/turborepo-migration-plan.md Phase 4)
-packages/llm-agent/    OpenAI function-calling orchestration shared across all bots (framework-agnostic)
+apps/messenger-bot/    NestJS — AI reports, study reminders, AI chat via Messenger
+apps/discord-bot/      NestJS — AI chat, OAuth2 account linking, report cron, study reminders
+apps/zalo-bot/         NestJS — AI chat, OAuth2 account linking, report cron, study reminders
+
+packages/llm-agent/             LLM function-calling + provider abstraction (OpenAI, OpenRouter, MiniMax)
+packages/chat-metering/         Quota/rate-limit + LLM usage/safety event tracking
+packages/chat-agent/            Platform-parameterized agent, queue, history services (Discord, Zalo)
+packages/wispace-client/        Wispace API HTTP clients (goals, scores, calendar, token verify)
+packages/chat-history/          In-memory chat history store with TTL + turn cap
+packages/student-report/        Student capacity report generation (LLM + fallback)
+packages/chat-queue-core/       Per-user debounce/merge state machine
+packages/chat-pipeline/         Platform-agnostic chat pipeline (reserve → history → agent → send)
+packages/study-reminder-shared/ Study reminder dispatch/sync/worker services
+packages/scheduler-core/        Report cron scheduling + leader election
+packages/bot-metrics/           Prometheus metrics (prom-client)
+packages/cleanup-cron/          Advisory-lock cleanup cron service
+packages/ops-health/            Ops health snapshot + alerts
+packages/reschedule-confirm/    Generic reschedule confirmation service
+packages/bot-common/            Shared NestJS infrastructure: ops API guard, advisory locks
+packages/database/              Shared TypeORM entities + migrations
+packages/date-utils/            Timezone-aware date helpers (date-fns)
 ```
 
-## Features (Messenger bot)
+## Features
 
-- Link WISPACE students to Messenger (`m.me` + webhook)
-- AI progress reports before exam day (cron + menu)
-- Upcoming study session reminders (outbox jobs + LLM + cron)
-- Free-form chat with **rate limit** (daily quota, burst, H1–H7 hardening)
-- Wispace calls `POST /messenger/study-calendar/sync` after modifying `UserCalendar` schedule
+**All bots:**
+- Free-form AI chat with rate limit (daily quota, burst, H1–H7 hardening)
+- AI progress reports (cron 08:00 + menu)
+- Study session reminders (outbox jobs + LLM + cron)
+- Multi-LLM provider failover (OpenAI → OpenRouter → MiniMax)
+
+**Messenger:** Webhook routing, Get Started referral, persistent menu, `m.me` linking
+**Discord:** Slash commands, OAuth2 account linking, guild-only access
+**Zalo:** OA account linking, webhook signature verification
 
 ## Documentation
 
 | File | Description |
 |------|-------------|
-| [docs/turborepo-migration-plan.md](docs/turborepo-migration-plan.md) | Monorepo roadmap: Discord/Zalo bots, cross-platform DB, independent CI/CD |
+| [docs/turborepo-migration-plan.md](docs/turborepo-migration-plan.md) | Monorepo roadmap: cross-platform DB, independent CI/CD |
 | [docs/project-overview.md](docs/project-overview.md) | Architecture, code structure, DB, API, cron, quota runbook |
 | [apps/messenger-bot/docs/chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) | Chat rate limit V1 + H1–H7 |
 | [docs/edge-cases-roadmap.md](docs/edge-cases-roadmap.md) | Project-wide gaps + QA checklist + remediation phases |
@@ -65,4 +86,4 @@ npx turbo run format:check lint typecheck test build
 
 ## Stack
 
-Turborepo + npm workspaces · NestJS 11 · TypeORM · PostgreSQL (shared across bots) · OpenAI · Facebook Graph API
+Turborepo + npm workspaces · NestJS 11 · TypeORM · PostgreSQL (shared across bots) · Redis (optional) · OpenAI + OpenRouter + MiniMax · Facebook Graph API · Discord.js · Zalo OA API
