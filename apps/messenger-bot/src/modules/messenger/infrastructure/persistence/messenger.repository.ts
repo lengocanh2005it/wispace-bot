@@ -107,13 +107,17 @@ export class MessengerRepository
     topic: string;
     notificationMessagesToken: string;
   }): Promise<UserMessengerMapping> {
-    const existing =
-      (await this.mappingRepo.findOne({
-        where: { platform: PLATFORM, externalUserId: params.psid },
-      })) ??
-      (await this.mappingRepo.findOne({
-        where: { notificationMessagesToken: params.notificationMessagesToken },
-      }));
+    const existing = await this.mappingRepo
+      .createQueryBuilder('mapping')
+      .where(
+        '(mapping.platform = :platform AND mapping.externalUserId = :psid) OR mapping.notificationMessagesToken = :token',
+        {
+          platform: PLATFORM,
+          psid: params.psid,
+          token: params.notificationMessagesToken,
+        },
+      )
+      .getOne();
 
     if (existing) {
       existing.platform = PLATFORM;
@@ -145,6 +149,14 @@ export class MessengerRepository
   async findActiveSubscribedMappings(): Promise<UserMessengerMapping[]> {
     const rows = await this.mappingRepo
       .createQueryBuilder('mapping')
+      .select([
+        'mapping.id',
+        'mapping.platform',
+        'mapping.externalUserId',
+        'mapping.userId',
+        'mapping.cadence',
+        'mapping.topic',
+      ])
       .where('mapping.status = :status', { status: 'ACTIVE' })
       .andWhere('mapping.cadence IS NOT NULL')
       .andWhere('mapping.topic IS NOT NULL')

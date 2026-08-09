@@ -2,9 +2,18 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 
+@Index('idx_msg_log_ext_type_status_date', [
+  'externalUserId',
+  'messageType',
+  'status',
+  'createdAt',
+])
+@Index('idx_msg_log_type_created', ['messageType', 'createdAt'])
+@Index('idx_msg_log_created', ['createdAt'])
 @Entity('message_logs')
 export class MessageLogEntity {
   @PrimaryGeneratedColumn()

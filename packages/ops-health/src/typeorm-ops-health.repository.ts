@@ -43,9 +43,12 @@ export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
   }
 
   async getStudyReminderSummary(): Promise<Record<string, unknown>> {
-    const countsByStatus = await this.getCountsByStatus();
-    const terminalFailedSince = await this.countTerminalFailedSince();
-    const stuckProcessing = await this.countStuckProcessing();
+    const [countsByStatus, terminalFailedSince, stuckProcessing] =
+      await Promise.all([
+        this.getCountsByStatus(),
+        this.countTerminalFailedSince(),
+        this.countStuckProcessing(),
+      ]);
     return { countsByStatus, terminalFailedSince, stuckProcessing };
   }
 

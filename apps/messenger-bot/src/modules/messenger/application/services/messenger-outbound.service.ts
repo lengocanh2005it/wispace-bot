@@ -266,7 +266,7 @@ export class MessengerOutboundService {
       await this.callSendApiByPsid(params.psid, {
         message: payload,
       });
-      await this.repository.logMessage({
+      void this.repository.logMessage({
         userId: params.userId,
         psid: params.psid,
         messageType: params.messageType,
@@ -276,7 +276,7 @@ export class MessengerOutboundService {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      await this.repository.logMessage({
+      void this.repository.logMessage({
         userId: params.userId,
         psid: params.psid,
         messageType: params.messageType,
@@ -298,7 +298,7 @@ export class MessengerOutboundService {
       await this.callSendApiByPsid(params.psid, {
         message: { text: params.text },
       });
-      await this.repository.logMessage({
+      void this.repository.logMessage({
         userId: params.userId,
         psid: params.psid,
         messageType: params.messageType,

@@ -2,11 +2,18 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { NotificationCadence } from '@messenger/modules/messenger/domain/entities/messenger.types';
 
+@Index('idx_mapping_platform_ext_status', [
+  'platform',
+  'externalUserId',
+  'status',
+])
+@Index('idx_mapping_user_status', ['userId', 'status'])
 @Entity('user_platform_mappings')
 export class UserPlatformMappingEntity {
   @PrimaryGeneratedColumn()

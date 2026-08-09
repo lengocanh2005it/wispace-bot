@@ -460,17 +460,33 @@ export class ChatRateLimitRepository {
         usageDecrement.set(key, (usageDecrement.get(key) ?? 0) + 1);
       }
 
-      for (const [key, count] of usageDecrement) {
-        const [usageDate, userIdStr] = key.split(':');
-        const userId = userIdStr ? Number(userIdStr) : null;
+      if (usageDecrement.size > 0) {
+        const entries = [...usageDecrement.entries()];
+        const valuesClauses: string[] = [];
+        const params: unknown[] = [this.platform];
+        let paramIndex = 2;
+
+        for (let i = 0; i < entries.length; i++) {
+          const [key, count] = entries[i];
+          const [usageDate, userIdStr] = key.split(':');
+          const userId = userIdStr ? Number(userIdStr) : null;
+          valuesClauses.push(
+            `($${paramIndex}::varchar, $${paramIndex + 1}::date, $${paramIndex + 2}::int, $${paramIndex + 3}::int)`,
+          );
+          params.push(this.platform, usageDate, userId, count);
+          paramIndex += 4;
+        }
+
         await manager.query(
           `
             UPDATE chat_daily_usage
-            SET free_form_count = GREATEST(0, free_form_count - $1)
-            WHERE platform = $2 AND usage_date = $3
-              AND ($4::int IS NULL AND user_id IS NULL OR user_id = $4)
+            SET free_form_count = GREATEST(0, free_form_count - v.delta)
+            FROM (VALUES ${valuesClauses.join(', ')}) AS v(platform, usage_date, user_id, delta)
+            WHERE chat_daily_usage.platform = v.platform
+              AND chat_daily_usage.usage_date = v.usage_date
+              AND ((v.user_id IS NULL AND chat_daily_usage.user_id IS NULL) OR chat_daily_usage.user_id = v.user_id)
           `,
-          [count, this.platform, usageDate, userId],
+          params,
         );
       }
 
