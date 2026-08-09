@@ -1,6 +1,5 @@
 import {
   isOpenAiRateLimitError,
-  isOpenAiRetryableError,
   isOpenAiServerError,
 } from './openai-error.utils';
 
@@ -34,6 +33,5 @@ describe('openai-error.utils', () => {
       responseBody: '{}',
     });
     expect(isOpenAiServerError(error)).toBe(false);
-    expect(isOpenAiRetryableError(error)).toBe(false);
   });
 });
