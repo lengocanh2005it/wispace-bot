@@ -1,7 +1,7 @@
 services:
   discord-bot:
     image: ${IMAGE:?IMAGE is required}
-    container_name: discord-bot
+    container_name: ${CONTAINER_NAME:-discord-bot}
     restart: unless-stopped
     user: '${DEPLOY_UID:?DEPLOY_UID is required}:${DEPLOY_GID:?DEPLOY_GID is required}'
     env_file:

@@ -229,6 +229,9 @@ jobs:
           mkdir -p upload-bundle
           cp apps/${{ inputs.app }}/docker-compose.prod.yml upload-bundle/
           cp .github/scripts/vps-deploy.sh upload-bundle/
+          # Copy nginx upstream config for zero-downtime deploy
+          mkdir -p upload-bundle/upstreams
+          cp deploy/nginx/upstreams/${{ inputs.app }}.conf upload-bundle/upstreams/ 2>/dev/null || true
           if [ -f production.env ]; then
             cp production.env upload-bundle/
           fi
@@ -250,6 +253,7 @@ jobs:
           HEALTH_PATH: ${{ inputs.health_path }}
           RUN_MIGRATIONS: ${{ !inputs.env_only && inputs.app == 'messenger-bot' && 'true' || 'false' }}
           MIGRATION_CMD: ${{ env.MIGRATION_CMD }}
+          NGINX_UPSTREAM_DIR: /home/ngoc_anh/infra/nginx/upstreams
         run: |
-          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH RUN_MIGRATIONS MIGRATION_CMD
+          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH RUN_MIGRATIONS MIGRATION_CMD NGINX_UPSTREAM_DIR
           bash .github/scripts/ssh-deploy-vps.sh ${{ inputs.vps_target_dir }}/vps-deploy.sh
