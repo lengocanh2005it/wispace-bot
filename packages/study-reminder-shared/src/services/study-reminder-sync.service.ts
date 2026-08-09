@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import {
   MAPPING_READER,
   type MappingReaderPort,
@@ -181,8 +182,6 @@ export class StudyReminderSyncService {
   }
 
   private toErrorMessage(error: unknown): string {
-    if (error instanceof Error) return error.message;
-    if (typeof error === 'string') return error;
-    return 'unknown error';
+    return errorMessage(error);
   }
 }

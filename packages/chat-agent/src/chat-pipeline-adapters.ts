@@ -21,11 +21,6 @@ export interface OutboundServicePort {
   sendText(externalUserId: string, text: string): Promise<unknown>;
 }
 
-export interface ChatPipelineAdaptersOptions {
-  /** Pass `true` for Discord server channels; omit for Zalo/DM. */
-  isServerChannel?: boolean;
-}
-
 /**
  * Creates the four port adapters that plug into `ChatPipeline` /
  * `PlatformChatQueueService` for any platform.
@@ -38,7 +33,7 @@ export function createChatPipelineAdapters(
   historyService: PlatformChatHistoryService,
   agentService: PlatformAgentService,
   outboundService: OutboundServicePort,
-  options?: ChatPipelineAdaptersOptions,
+  options?: { isServerChannel?: boolean },
 ) {
   const rateLimiter: RateLimiterPort = {
     async reserve(

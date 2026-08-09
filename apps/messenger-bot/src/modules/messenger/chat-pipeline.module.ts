@@ -8,7 +8,6 @@ import {
   PlatformAgentService,
   PlatformAgentToolsService,
   PlatformChatHistoryService,
-  createPlatformChatHistoryServiceProvider,
 } from '@wispace/chat-agent';
 import {
   LlmSafetyEventEntity,
@@ -18,6 +17,7 @@ import {
 } from '@wispace/chat-metering';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { sanitizeUntrustedTextForLlm } from '@wispace/llm-agent';
+import { REDIS_CLIENT } from '@wispace/bot-common';
 import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
@@ -77,10 +77,19 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
       provide: CHAT_HISTORY_STORE,
       useExisting: ChatHistoryStoreResolver,
     },
-    createPlatformChatHistoryServiceProvider({
-      envPrefix: 'CHAT_HISTORY_',
-      keyPrefix: 'chat:history:',
-    }),
+    {
+      provide: PlatformChatHistoryService,
+      useFactory: (
+        configService: ConfigService,
+        redisClient?: { getNativeClient(): unknown } | null,
+      ) =>
+        new PlatformChatHistoryService(
+          configService,
+          { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat:history:' },
+          redisClient,
+        ),
+      inject: [ConfigService, { token: REDIS_CLIENT, optional: true }],
+    },
     {
       provide: PlatformLlmUsageRecorderAdapter,
       useFactory: (

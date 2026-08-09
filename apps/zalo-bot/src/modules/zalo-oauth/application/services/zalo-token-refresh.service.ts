@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
@@ -38,9 +39,7 @@ export class ZaloTokenRefreshService implements OnModuleInit {
       await this.tokenService.refreshNow();
     } catch (error) {
       this.logger.error(
-        `Zalo OA token refresh cron failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Zalo OA token refresh cron failed: ${errorMessage(error)}`,
       );
     }
   }

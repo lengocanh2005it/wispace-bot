@@ -7,6 +7,7 @@ import {
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 
@@ -68,22 +69,19 @@ export class ZaloWebhookController {
     try {
       await this.dispatch(body);
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorMessageValue = errorMessage(error);
       this.logger.warn(
-        `Webhook event failed — saving to dead-letter: ${errorMessage}`,
+        `Webhook event failed — saving to dead-letter: ${errorMessageValue}`,
       );
       await this.deadLetterService
         .save({
           externalUserId: body.sender?.id ?? body.follower?.id ?? 'unknown',
           rawPayload: body,
-          errorMessage,
+          errorMessage: errorMessageValue,
         })
         .catch((saveErr: unknown) => {
           this.logger.error(
-            `Failed to save dead-letter entry: ${
-              saveErr instanceof Error ? saveErr.message : String(saveErr)
-            }`,
+            `Failed to save dead-letter entry: ${errorMessage(saveErr)}`,
           );
         });
     }

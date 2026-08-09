@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { maskExternalId } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import {
   MessengerLinkContext,
   buildWelcomeMessage,
@@ -95,9 +95,9 @@ export class WebhookActionExecutorService {
           })
           .catch((error) => {
             this.logger.error(
-              `Failed to send text action to psid=${psid}: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
+              `Failed to send text action to psid=${psid}: ${errorMessage(
+                error,
+              )}`,
             );
             return undefined;
           });

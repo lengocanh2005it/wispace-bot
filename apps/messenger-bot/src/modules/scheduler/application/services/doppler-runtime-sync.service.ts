@@ -7,6 +7,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { parse as parseDotenv } from 'dotenv';
 import type {
@@ -184,7 +185,7 @@ export class DopplerRuntimeSyncService {
         `DOPPLER_RUNTIME_SYNC complete image=${image} env=${envFile}`,
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
       this.logger.error(`DOPPLER_RUNTIME_SYNC failed: ${message}`);
     }
   }

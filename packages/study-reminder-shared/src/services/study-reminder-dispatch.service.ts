@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
@@ -94,9 +95,7 @@ export class StudyReminderDispatchService {
         await this.options.preloadDisplayNames(uniqueUserIds);
       } catch (error) {
         this.logger.warn(
-          `Display name preload failed, continuing with lazy fallback: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Display name preload failed, continuing with lazy fallback: ${errorMessage(error)}`,
         );
       }
     }
@@ -226,9 +225,7 @@ export class StudyReminderDispatchService {
     const nextDueAt = await this.jobRepository
       .findNextDueTime(now)
       .catch((error) => {
-        this.logger.warn(
-          `findNextDueTime failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        this.logger.warn(`findNextDueTime failed: ${errorMessage(error)}`);
         return null;
       });
 
@@ -278,8 +275,6 @@ export class StudyReminderDispatchService {
   }
 
   private toErrorMessage(error: unknown): string {
-    if (error instanceof Error) return error.message;
-    if (typeof error === 'string') return error;
-    return 'unknown error';
+    return errorMessage(error);
   }
 }

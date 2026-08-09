@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
@@ -115,11 +116,9 @@ export class MessengerChatProcessorService {
         }
       } catch (completeError) {
         this.logger.error(
-          `completeChatBuffer failed psid=${psid}: ${
-            completeError instanceof Error
-              ? completeError.message
-              : String(completeError)
-          }`,
+          `completeChatBuffer failed psid=${psid}: ${errorMessage(
+            completeError,
+          )}`,
         );
       }
     }
@@ -278,17 +277,17 @@ export class MessengerChatProcessorService {
         }
 
         this.logger.error(
-          `Chat queue failed before delivery psid=${psid}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Chat queue failed before delivery psid=${psid}: ${errorMessage(
+            error,
+          )}`,
         );
 
         await this.sendChatDeliveryFallback(psid, userId, error, mergedText);
       } else {
         this.logger.error(
-          `Chat queue failed after partial delivery psid=${psid}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Chat queue failed after partial delivery psid=${psid}: ${errorMessage(
+            error,
+          )}`,
         );
       }
     }
@@ -353,9 +352,9 @@ export class MessengerChatProcessorService {
         });
       } catch (error) {
         this.logger.warn(
-          `Rich follow-up delivery failed psid=${params.psid}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Rich follow-up delivery failed psid=${params.psid}: ${errorMessage(
+            error,
+          )}`,
         );
       }
     }
@@ -369,9 +368,9 @@ export class MessengerChatProcessorService {
         );
       } catch (error) {
         this.logger.warn(
-          `Quota hint delivery failed psid=${params.psid}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Quota hint delivery failed psid=${params.psid}: ${errorMessage(
+            error,
+          )}`,
         );
       }
     }
@@ -392,9 +391,9 @@ export class MessengerChatProcessorService {
       });
     } catch (sendError) {
       this.logger.error(
-        `Failed to send chat error fallback psid=${psid}: ${
-          sendError instanceof Error ? sendError.message : String(sendError)
-        }`,
+        `Failed to send chat error fallback psid=${psid}: ${errorMessage(
+          sendError,
+        )}`,
       );
     }
   }

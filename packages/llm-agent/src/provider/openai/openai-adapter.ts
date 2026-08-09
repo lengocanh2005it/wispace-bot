@@ -11,6 +11,7 @@ import type {
 } from '../types';
 import type { LlmProviderAdapter } from '../llm-provider.adapter';
 import {
+  isPlatformApiError,
   isOpenAiRateLimitError,
   isOpenAiServerError,
 } from '../../utils/openai-error.utils';
@@ -302,28 +303,19 @@ export class OpenAiAdapter implements LlmProviderAdapter {
     return this.client;
   }
 
-  private isPlatformApiError(error: unknown): boolean {
-    return (
-      error instanceof Error &&
-      (error.name === 'MessengerApiError' ||
-        error.name === 'DiscordApiError' ||
-        error.name === 'ZaloApiError')
-    );
-  }
-
   private isServerError(error: unknown): boolean {
     return isOpenAiServerError(error);
   }
 
   private isAuthError(error: unknown): boolean {
-    if (this.isPlatformApiError(error)) return false;
+    if (isPlatformApiError(error)) return false;
     if (typeof error !== 'object' || error === null) return false;
     const e = error as Record<string, unknown>;
     return e['status'] === 401 || e['status'] === 403;
   }
 
   private isQuotaExhaustedError(error: unknown): boolean {
-    if (this.isPlatformApiError(error)) return false;
+    if (isPlatformApiError(error)) return false;
     if (typeof error !== 'object' || error === null) return false;
     const e = error as Record<string, unknown>;
     const status = e['status'];

@@ -37,6 +37,7 @@ export {
 } from './llm-usage/cost.utils';
 export { LlmUsageRepository } from './llm-usage/llm-usage.repository';
 export { LlmUsageRecorderCore } from './llm-usage/llm-usage-recorder-core.service';
+export type { UsageWriterPort } from './llm-usage/types';
 export { LlmUsageConfigService } from './llm-usage/llm-usage-config.service';
 export { PlatformLlmUsageRecorderAdapter } from './llm-usage/platform-llm-usage-recorder.adapter';
 export type {

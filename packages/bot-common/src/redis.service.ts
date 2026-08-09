@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import IORedis from 'ioredis';
 import type Redis from 'ioredis';
 import type { RedisClientPort } from './redis.client.port';
+import { errorMessage } from './error-message';
 
 @Injectable()
 export class RedisService
@@ -82,9 +83,7 @@ export class RedisService
         `Redis connected host=${this.getHost()} port=${this.getPort()} ping=${pong}`,
       );
     } catch (error) {
-      this.logger.error(
-        `Redis connection failed: ${error instanceof Error ? error.message : typeof error === 'string' ? error : 'unknown error'}`,
-      );
+      this.logger.error(`Redis connection failed: ${errorMessage(error)}`);
       this.client = null;
     }
   }

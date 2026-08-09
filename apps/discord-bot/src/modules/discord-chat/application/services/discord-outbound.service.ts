@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -82,8 +83,7 @@ export class DiscordOutboundService {
           maxRetries: 1,
           baseDelayMs: 1_000,
           onRetry: (attempt, maxRetries, error) => {
-            const errorMsg =
-              error instanceof Error ? error.message : String(error);
+            const errorMsg = errorMessage(error);
             this.logger.warn(
               `DM send attempt ${attempt}/${maxRetries + 1} failed for discordUserId=${discordUserId}, retrying: ${errorMsg}`,
             );
@@ -97,7 +97,7 @@ export class DiscordOutboundService {
       });
       return msg.channelId;
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorMsg = errorMessage(error);
       this.logger.warn(
         `Failed to send DM to discordUserId=${discordUserId} after retries: ${errorMsg}`,
       );
@@ -139,9 +139,9 @@ export class DiscordOutboundService {
       return msg.channelId;
     } catch (error) {
       this.logger.warn(
-        `Failed to send menu buttons to discordUserId=${discordUserId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Failed to send menu buttons to discordUserId=${discordUserId}: ${errorMessage(
+          error,
+        )}`,
       );
       return undefined;
     }
@@ -160,9 +160,7 @@ export class DiscordOutboundService {
       }
     } catch (error) {
       this.logger.warn(
-        `Failed to send to channelId=${channelId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Failed to send to channelId=${channelId}: ${errorMessage(error)}`,
       );
     }
   }
@@ -187,9 +185,9 @@ export class DiscordOutboundService {
       await user.send({ content: summary, components: [row] });
     } catch (error) {
       this.logger.warn(
-        `Failed to send reschedule confirmation to discordUserId=${discordUserId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Failed to send reschedule confirmation to discordUserId=${discordUserId}: ${errorMessage(
+          error,
+        )}`,
       );
     }
   }

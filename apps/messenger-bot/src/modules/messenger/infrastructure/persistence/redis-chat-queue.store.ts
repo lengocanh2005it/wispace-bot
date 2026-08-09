@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
-import { REDIS_CLIENT } from '@wispace/bot-common';
+import { errorMessage, REDIS_CLIENT } from '@wispace/bot-common';
 import type { RedisClientPort } from '@wispace/bot-common';
 import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { CHAT_QUEUE_BUFFER_TTL_SECONDS } from '../../domain/entities/messenger-store.types';
@@ -215,9 +215,9 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         .map((entry) => entry.psid);
     } catch (error) {
       this.logger.error(
-        `Redis queue list ready failed — messages may be delayed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Redis queue list ready failed — messages may be delayed: ${errorMessage(
+          error,
+        )}`,
       );
       throw error;
     }
@@ -250,9 +250,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       return await fn(client);
     } catch (error) {
       this.logger.warn(
-        `Redis queue operation failed psid=${psid}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Redis queue operation failed psid=${psid}: ${errorMessage(error)}`,
       );
       return null;
     } finally {

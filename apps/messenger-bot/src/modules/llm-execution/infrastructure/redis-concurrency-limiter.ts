@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import type { Redis } from 'ioredis';
 
 const KEY_PREFIX = 'llm:concurrency:';
@@ -43,7 +44,7 @@ export class RedisConcurrencyLimiter {
       }
     } catch (err) {
       this.logger.warn(
-        `Failed to release concurrency slot: ${err instanceof Error ? err.message : String(err)}`,
+        `Failed to release concurrency slot: ${errorMessage(err)}`,
       );
     }
   }

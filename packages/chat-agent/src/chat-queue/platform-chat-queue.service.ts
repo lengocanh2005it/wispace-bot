@@ -9,6 +9,7 @@ import type {
   RateLimiterPort,
 } from '@wispace/chat-pipeline';
 import { ChatPipeline } from '@wispace/chat-pipeline';
+import { errorMessage } from '@wispace/bot-common';
 import type { PlatformChatQueueOptions } from '../agent/platform-agent.types';
 
 const DEFAULT_DEBOUNCE_MS = 2000;
@@ -146,12 +147,7 @@ export class PlatformChatQueueService implements OnModuleDestroy {
             : undefined,
       });
     } catch (error) {
-      const msg =
-        error instanceof Error
-          ? error.message
-          : typeof error === 'string'
-            ? error
-            : 'unknown error';
+      const msg = errorMessage(error);
       this.logger.error(
         `Chat queue flush failed for ${batch.externalUserId}: ${msg}`,
       );

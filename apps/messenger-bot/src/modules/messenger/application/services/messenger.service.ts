@@ -6,7 +6,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { maskExternalId } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
@@ -74,13 +74,12 @@ export class MessengerService {
           const handled = await this.handleEvent(event);
           processed += handled ? 1 : 0;
         } catch (error) {
-          const errorMessage =
-            error instanceof Error ? error.message : String(error);
+          const errorMessageValue = errorMessage(error);
 
-          failures.push({ psid: event.sender?.id, error: errorMessage });
+          failures.push({ psid: event.sender?.id, error: errorMessageValue });
 
           this.logger.warn(
-            `Webhook event for PSID ${maskExternalId(event.sender?.id)} failed — saving to dead-letter: ${errorMessage}`,
+            `Webhook event for PSID ${maskExternalId(event.sender?.id)} failed — saving to dead-letter: ${errorMessageValue}`,
           );
 
           if (this.deadLetterRepository) {
@@ -89,13 +88,11 @@ export class MessengerService {
                 psid: event.sender?.id ?? null,
                 messageMid: event.message?.mid ?? null,
                 rawPayload: event,
-                errorMessage,
+                errorMessage: errorMessageValue,
               })
               .catch((saveErr: unknown) => {
                 this.logger.error(
-                  `Failed to save dead-letter entry: ${
-                    saveErr instanceof Error ? saveErr.message : String(saveErr)
-                  }`,
+                  `Failed to save dead-letter entry: ${errorMessage(saveErr)}`,
                 );
               });
           }
@@ -116,7 +113,7 @@ export class MessengerService {
     } catch (error) {
       return {
         handled: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       };
     }
   }

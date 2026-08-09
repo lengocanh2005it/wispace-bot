@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { Cron } from '@nestjs/schedule';
 import { CHAT_QUEUE_STORE } from '../../domain/repositories/chat-queue.store.port';
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
@@ -37,9 +38,7 @@ export class MessengerChatQueueWorkerService {
       }
     } catch (error) {
       this.logger.error(
-        `Shared chat queue poll failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Shared chat queue poll failed: ${errorMessage(error)}`,
       );
     }
   }

@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import pLimit from 'p-limit';
 import CircuitBreaker from 'opossum';
 import { retryWithBackoff, type LlmProviderAdapter } from '@wispace/llm-agent';
@@ -106,9 +107,9 @@ export class LlmExecutionService {
         isRetryable: (error) => this.adapter.isRetryableError(error),
         onRetry: (attempt, backoffMs, error) =>
           this.logger.warn(
-            `LLM provider retry feature=${feature} correlation=${correlation} attempt=${attempt}/${maxAttempts} backoffMs=${backoffMs}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
+            `LLM provider retry feature=${feature} correlation=${correlation} attempt=${attempt}/${maxAttempts} backoffMs=${backoffMs}: ${errorMessage(
+              error,
+            )}`,
           ),
       },
     );

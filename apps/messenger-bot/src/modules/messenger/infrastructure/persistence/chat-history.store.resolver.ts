@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import {
   MemoryChatHistoryStore,
   RedisChatHistoryStore,
@@ -88,9 +89,7 @@ export class ChatHistoryStoreResolver implements ChatHistoryStorePort {
       this.logger.error(
         `Chat history store failed — falling back to ${
           this.resolveStoreKind() === 'redis' ? 'memory' : 'empty'
-        }. Multi-pod history coherence lost. ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        }. Multi-pod history coherence lost. ${errorMessage(error)}`,
       );
       return fallback;
     }

@@ -5,6 +5,7 @@ import {
   OnModuleDestroy,
   Optional,
 } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import type { ChatQueueBatch } from '@wispace/chat-queue-core';
@@ -77,9 +78,9 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
               })
               .catch((error) => {
                 this.logger.error(
-                  `Failed to send pending feedback to psid=${externalUserId}: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`,
+                  `Failed to send pending feedback to psid=${externalUserId}: ${errorMessage(
+                    error,
+                  )}`,
                 );
               });
           }
@@ -164,9 +165,9 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
       this.scheduleDistributedFlush(input.psid);
     } catch (error) {
       this.logger.error(
-        `Distributed chat enqueue failed psid=${input.psid}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Distributed chat enqueue failed psid=${input.psid}: ${errorMessage(
+          error,
+        )}`,
       );
     }
   }
@@ -181,9 +182,7 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
       this.sharedFlushTimers.delete(psid);
       void this.processor.flushReady(psid).catch((error) => {
         this.logger.error(
-          `Distributed chat flush failed psid=${psid}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Distributed chat flush failed psid=${psid}: ${errorMessage(error)}`,
         );
       });
     }, this.getDebounceMs());

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { subtractMs } from '@wispace/date-utils';
+import { errorMessage } from '@wispace/bot-common';
 import { PlatformDeadLetterService } from './platform-dead-letter.service';
 
 const DEFAULT_MAX_RETRIES = 3;
@@ -73,12 +74,7 @@ export class PlatformDeadLetterCronService {
         await this.options.sendText(externalUserId, text);
         await this.deadLetterService.markReplayed(entry.id);
       } catch (error) {
-        const errorMsg =
-          error instanceof Error
-            ? error.message
-            : typeof error === 'string'
-              ? error
-              : 'unknown error';
+        const errorMsg = errorMessage(error);
 
         if ((entry.retryCount ?? 0) + 1 >= maxRetries) {
           await this.deadLetterService.markAbandoned(entry.id, errorMsg);

@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import {
   LlmUsageRecorderCore,
   type UsageWriterPort,
@@ -67,9 +68,9 @@ export class LlmUsageRecorderService {
       })
       .catch((error: unknown) => {
         this.logger.error(
-          `LLM_USAGE_INSERT_FAILED feature=${input.feature} correlation=${input.correlationId ?? 'n/a'}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `LLM_USAGE_INSERT_FAILED feature=${input.feature} correlation=${input.correlationId ?? 'n/a'}: ${errorMessage(
+            error,
+          )}`,
         );
       });
   }
@@ -96,9 +97,9 @@ export class LlmUsageRecorderService {
             })
             .catch((error: unknown) => {
               this.logger.error(
-                `LLM_USAGE_INSERT_FAILED feature=${event.feature} correlation=${event.correlationId ?? 'n/a'}: ${
-                  error instanceof Error ? error.message : String(error)
-                }`,
+                `LLM_USAGE_INSERT_FAILED feature=${event.feature} correlation=${event.correlationId ?? 'n/a'}: ${errorMessage(
+                  error,
+                )}`,
               );
             });
         },

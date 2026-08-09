@@ -14,6 +14,7 @@ import {
   WispaceCalendarService,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
+import { errorMessage } from '@wispace/bot-common';
 import type {
   PlatformAgentToolContext,
   PlatformAgentToolsOptions,
@@ -64,16 +65,10 @@ export class PlatformAgentToolsService {
       return await this.dispatch(toolName, args, ctx);
     } catch (error) {
       this.logger.warn(
-        `Tool ${toolName} failed for externalUserId=${ctx.externalUserId}: ${
-          error instanceof Error
-            ? error.message
-            : typeof error === 'string'
-              ? error
-              : 'unknown error'
-        }`,
+        `Tool ${toolName} failed for externalUserId=${ctx.externalUserId}: ${errorMessage(error)}`,
       );
       return {
-        error: error instanceof Error ? error.message : 'Tool execution failed',
+        error: errorMessage(error) || 'Tool execution failed',
       };
     }
   }

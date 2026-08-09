@@ -1,3 +1,4 @@
+import { errorMessage } from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import {
   isWispaceRetryable,
@@ -31,7 +32,7 @@ export class TaskScoreAverageApiClient {
           shouldRetry: isWispaceRetryable,
           onRetry: (attempt, max, err) =>
             this.logger.warn(
-              `TaskScoreAverage retry ${attempt}/${max} (${idHeader}=${externalId}): ${err instanceof Error ? err.message : String(err)}`,
+              `TaskScoreAverage retry ${attempt}/${max} (${idHeader}=${externalId}): ${errorMessage(err)}`,
             ),
         }),
       { timeout: this.config.requestTimeoutMs ?? 10_000 },

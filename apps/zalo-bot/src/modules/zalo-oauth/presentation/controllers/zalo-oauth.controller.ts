@@ -1,4 +1,5 @@
 import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
@@ -105,11 +106,7 @@ export class ZaloOauthController {
 
       res.json({ success: true });
     } catch (error) {
-      this.logger.error(
-        `Zalo OAuth callback failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      this.logger.error(`Zalo OAuth callback failed: ${errorMessage(error)}`);
       res.json({ success: false, message: 'Có lỗi xảy ra, vui lòng thử lại.' });
     }
   }

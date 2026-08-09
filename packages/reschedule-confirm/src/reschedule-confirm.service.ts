@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import type {
   RescheduleSchedulingMode,
   UserCalendarRecord,
@@ -200,12 +201,7 @@ export class RescheduleConfirmationService<TExternalId> {
         scheduledTimeLabel: result.scheduledTimeLabel,
       };
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : typeof error === 'string'
-            ? error
-            : 'unknown error';
+      const message = errorMessage(error);
       this.logger.warn(
         `RESCHEDULE_CONFIRM_FAILED externalId=${String(externalId)}: ${message}`,
       );

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { maskExternalId } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import {
   MessengerLinkContext,
   parseMessengerLinkContext,
@@ -48,7 +48,7 @@ export class MessengerLinkContextService {
         },
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
       this.logger.error(
         `Messenger link verify error psid=${maskExternalId(psid)}: ${message}`,
       );

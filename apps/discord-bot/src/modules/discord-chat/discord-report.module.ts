@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { join } from 'path';
-import { createPlatformStudentReportServiceProvider } from '@wispace/student-report';
+import { PlatformStudentReportService } from '@wispace/student-report';
+import { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering';
+import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
   ReportScheduleService,
   ReportSendScheduleService,
@@ -68,10 +71,29 @@ import { WispaceModule } from '../wispace/wispace.module';
         new PlatformReportClaimRepository('discord', repo),
       inject: [getRepositoryToken(ScheduledReportClaimEntity)],
     },
-    createPlatformStudentReportServiceProvider({
-      platform: 'discord',
-      promptDir: join(__dirname, '../../shared/prompts'),
-    }),
+    {
+      provide: PlatformStudentReportService,
+      useFactory: (
+        configService: ConfigService,
+        goalsService: WispaceGoalsService,
+        usageRecorder: PlatformLlmUsageRecorderAdapter,
+        adapter: LlmProviderAdapter,
+      ) =>
+        new PlatformStudentReportService(
+          'discord',
+          configService,
+          goalsService,
+          usageRecorder,
+          adapter,
+          join(__dirname, '../../shared/prompts'),
+        ),
+      inject: [
+        ConfigService,
+        WispaceGoalsService,
+        PlatformLlmUsageRecorderAdapter,
+        'LLM_PROVIDER_ADAPTER',
+      ],
+    },
     ReportScheduleService,
     ReportSendScheduleService,
     ReportCronLeaderService,

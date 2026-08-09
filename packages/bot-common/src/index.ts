@@ -1,3 +1,4 @@
+export { errorMessage } from './error-message';
 export {
   INTERNAL_API_KEY_HEADER,
   InternalApiKeyGuard,

@@ -5,6 +5,7 @@ import {
   PlatformLlmUsageRecorderAdapter,
   todayUsageDate,
 } from '@wispace/chat-metering';
+import { errorMessage } from '@wispace/bot-common';
 import type { Platform } from '@wispace/database';
 import { WispaceGoalsService } from '@wispace/wispace-client';
 import {
@@ -80,13 +81,9 @@ export class PlatformStudentReportService {
                 error.message.includes('429')),
             onRetry: (attempt, backoffMs, error) =>
               this.logger.warn(
-                `LLM provider retry feature=${FEATURE} attempt=${attempt}/3 backoffMs=${backoffMs}: ${
-                  error instanceof Error
-                    ? error.message
-                    : typeof error === 'string'
-                      ? error
-                      : 'unknown error'
-                }`,
+                `LLM provider retry feature=${FEATURE} attempt=${attempt}/3 backoffMs=${backoffMs}: ${errorMessage(
+                  error,
+                )}`,
               ),
           }),
       },

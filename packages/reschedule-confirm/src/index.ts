@@ -16,4 +16,3 @@ export {
   GenericReschedulePort,
   type RescheduleFn,
 } from './generic-reschedule.port';
-export { createRescheduleConfirmationProvider } from './reschedule-confirmation.provider';

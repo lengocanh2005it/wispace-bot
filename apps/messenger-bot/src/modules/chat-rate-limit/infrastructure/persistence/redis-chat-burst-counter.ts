@@ -1,5 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { REDIS_CLIENT, maskExternalId } from '@wispace/bot-common';
+import {
+  REDIS_CLIENT,
+  errorMessage,
+  maskExternalId,
+} from '@wispace/bot-common';
 import type { RedisClientPort } from '@wispace/bot-common';
 import {
   CHAT_BURST_KEY_TTL_SECONDS,
@@ -36,9 +40,9 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
       return Number(raw ?? 0);
     } catch (error) {
       this.logger.warn(
-        `Redis burst read failed psid=${maskExternalId(psid)}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Redis burst read failed psid=${maskExternalId(psid)}: ${errorMessage(
+          error,
+        )}`,
       );
       return 0;
     }
@@ -78,9 +82,9 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
       return { allowed: result[0] === 1, count: result[1] ?? 0 };
     } catch (error) {
       this.logger.warn(
-        `Redis burst tryReserve failed psid=${maskExternalId(psid)}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Redis burst tryReserve failed psid=${maskExternalId(psid)}: ${errorMessage(
+          error,
+        )}`,
       );
       // Fail-open: Redis error should not block users from chatting.
       return { allowed: true, count: 0 };
@@ -108,9 +112,9 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
       await client.eval(luaScript, 1, key);
     } catch (error) {
       this.logger.warn(
-        `Redis burst decrement failed psid=${maskExternalId(psid)}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Redis burst decrement failed psid=${maskExternalId(psid)}: ${errorMessage(
+          error,
+        )}`,
       );
     }
   }

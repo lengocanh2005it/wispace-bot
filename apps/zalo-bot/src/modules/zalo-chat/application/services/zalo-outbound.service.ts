@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
 import { DeliveryLogService } from '@wispace/database';
 import { withRetry } from '@wispace/wispace-client';
@@ -82,7 +83,7 @@ export class ZaloOutboundService {
         externalUserId: zaloUserId,
         status: 'FAILED',
         messageType: 'chat',
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
       throw error;
     }
@@ -106,7 +107,7 @@ export class ZaloOutboundService {
         signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
       });
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = errorMessage(error);
       this.logger.warn(
         `Zalo send network error for zaloUserId=${zaloUserId}: ${msg}`,
       );

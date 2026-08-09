@@ -1,4 +1,5 @@
 import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
@@ -122,9 +123,7 @@ export class DiscordOauthController {
       });
     } catch (error) {
       this.logger.error(
-        `Discord OAuth callback failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Discord OAuth callback failed: ${errorMessage(error)}`,
       );
       this.sendResult(res, {
         type: 'error',

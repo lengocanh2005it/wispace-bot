@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { Cron, SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
-import { PgAdvisoryLockService } from '@wispace/bot-common';
+import { PgAdvisoryLockService, errorMessage } from '@wispace/bot-common';
 import { StudyReminderSyncService } from './study-reminder-sync.service';
 import { StudyReminderDispatchService } from './study-reminder-dispatch.service';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
@@ -319,8 +319,6 @@ export class StudyReminderWorkerService
   }
 
   private toErrorMessage(error: unknown): string {
-    if (error instanceof Error) return error.message;
-    if (typeof error === 'string') return error;
-    return 'unknown error';
+    return errorMessage(error);
   }
 }

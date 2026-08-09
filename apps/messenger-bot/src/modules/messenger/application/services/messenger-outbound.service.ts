@@ -4,6 +4,7 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import CircuitBreaker from 'opossum';
 import { isMessenger24hWindowError } from '../messages/chat-delivery.messages';
@@ -103,9 +104,9 @@ export class MessengerOutboundService {
       await this.sendSenderAction(psid, senderAction);
     } catch (error) {
       this.logger.debug(
-        `Sender action ${senderAction} skipped psid=${psid}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Sender action ${senderAction} skipped psid=${psid}: ${errorMessage(
+          error,
+        )}`,
       );
     }
   }
@@ -222,15 +223,14 @@ export class MessengerOutboundService {
         status: 'SENT',
       });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorText = errorMessage(error);
       await this.repository.logMessage({
         userId: params.userId,
         psid: params.psid,
         messageType: params.messageType,
         messageText: JSON.stringify(params.elements),
         status: 'FAILED',
-        errorMessage,
+        errorMessage: errorText,
       });
       throw error;
     }
@@ -274,15 +274,14 @@ export class MessengerOutboundService {
         status: 'SENT',
       });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+      const errorText = errorMessage(error);
       void this.repository.logMessage({
         userId: params.userId,
         psid: params.psid,
         messageType: params.messageType,
         messageText: params.text,
         status: 'FAILED',
-        errorMessage,
+        errorMessage: errorText,
       });
       throw error;
     }
@@ -371,7 +370,7 @@ export class MessengerOutboundService {
       return error;
     }
 
-    const message = error instanceof Error ? error.message : String(error);
+    const message = errorMessage(error);
     return new MessengerApiError(
       `Messenger Send API failed for PSID ${psid}: ${message}`,
       0,

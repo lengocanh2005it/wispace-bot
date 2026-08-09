@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelType } from 'discord.js';
 import { Button, Context, On, Once } from 'necord';
@@ -93,9 +94,9 @@ export class DiscordChatGateway {
         );
       } catch (error) {
         this.logger.error(
-          `Auto-complete link failed for discordUserId=${discordUserId}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Auto-complete link failed for discordUserId=${discordUserId}: ${errorMessage(
+            error,
+          )}`,
         );
       }
     }

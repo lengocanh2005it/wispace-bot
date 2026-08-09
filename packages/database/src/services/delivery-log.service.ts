@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Repository, type DeepPartial } from 'typeorm';
+import { errorMessage } from '@wispace/bot-common';
 
 /** Minimum column shape shared by the per-app message log entities. */
 export interface MessageLogRow {
@@ -34,15 +35,7 @@ export class DeliveryLogService<Entity extends MessageLogRow = MessageLogRow> {
         messageType: input.messageType ?? 'chat',
       } as DeepPartial<Entity>);
     } catch (error) {
-      this.logger.warn(
-        `Failed to log delivery: ${
-          error instanceof Error
-            ? error.message
-            : typeof error === 'string'
-              ? error
-              : 'unknown error'
-        }`,
-      );
+      this.logger.warn(`Failed to log delivery: ${errorMessage(error)}`);
     }
   }
 }

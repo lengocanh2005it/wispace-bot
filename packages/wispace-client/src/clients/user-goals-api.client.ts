@@ -1,3 +1,4 @@
+import { errorMessage } from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import { isWispaceRetryable, createCircuitBreaker } from '../utils/with-retry';
 import type { CircuitBreaker } from '../utils/with-retry';
@@ -28,7 +29,7 @@ export class UserGoalsApiClient {
           shouldRetry: isWispaceRetryable,
           onRetry: (attempt, max, err) =>
             this.logger.warn(
-              `User/goals retry ${attempt}/${max} (${idHeader}=${externalId}): ${err instanceof Error ? err.message : String(err)}`,
+              `User/goals retry ${attempt}/${max} (${idHeader}=${externalId}): ${errorMessage(err)}`,
             ),
         }),
       { timeout: this.config.requestTimeoutMs ?? 10_000 },

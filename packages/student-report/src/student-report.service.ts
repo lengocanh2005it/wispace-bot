@@ -4,6 +4,7 @@ import type {
   LlmUsageRecorderPort,
 } from '@wispace/llm-agent';
 import { retryWithBackoff } from '@wispace/llm-agent';
+import { errorMessage } from '@wispace/bot-common';
 import type { CapacityDataPort } from './ports';
 import {
   StudentReportNoScoreDataError,
@@ -182,13 +183,7 @@ export class StudentReportCore {
       return parseReportOutput(content, this.config.sanitizeText);
     } catch (error) {
       logger.warn(
-        `Invalid student report LLM output externalUserId=${externalUserId}: ${
-          error instanceof Error
-            ? error.message
-            : typeof error === 'string'
-              ? error
-              : 'unknown error'
-        }`,
+        `Invalid student report LLM output externalUserId=${externalUserId}: ${errorMessage(error)}`,
       );
       return buildFallbackReport(input);
     }

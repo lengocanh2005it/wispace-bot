@@ -13,6 +13,7 @@ import {
   buildWispaceScopeRedirectMessage,
   buildGroundingBlockedMessage,
 } from './messages';
+import { errorMessage } from '@wispace/bot-common';
 import {
   AgentMetricsPort,
   LlmExecutionPort,
@@ -699,7 +700,7 @@ export class LlmAgentService<TToolContext> {
             succeeded: true,
           };
         } catch (err) {
-          const message = err instanceof Error ? err.message : 'unknown error';
+          const message = errorMessage(err);
           logger.warn(
             `Tool execution failed externalUserId=${input.externalUserId} tool=${toolName} error=${message}`,
           );

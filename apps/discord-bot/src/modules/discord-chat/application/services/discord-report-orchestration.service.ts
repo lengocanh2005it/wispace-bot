@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import type {
   ReportSendJobRepositoryPort,
   ReportClaimRepositoryPort,
@@ -147,7 +148,7 @@ export class DiscordReportOrchestrationService {
           reportDate,
         });
       }
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = errorMessage(error);
       return {
         ...ZERO,
         failures: [{ externalUserId: mapping.externalUserId, error: msg }],

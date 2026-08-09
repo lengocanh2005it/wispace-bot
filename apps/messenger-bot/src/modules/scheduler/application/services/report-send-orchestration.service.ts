@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import {
   REPORT_CLAIM_REPOSITORY,
   type ReportClaimRepositoryPort,
@@ -170,7 +171,7 @@ export class ReportSendOrchestrationService {
         return { ...ZERO, windowClosed: 1 };
       }
 
-      const message = error instanceof Error ? error.message : String(error);
+      const message = errorMessage(error);
       this.logger.error(
         `Failed to send report for PSID ${mapping.psid}`,
         error,

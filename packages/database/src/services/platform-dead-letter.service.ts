@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { errorMessage } from '@wispace/bot-common';
 import {
   WebhookDeadLetterEntity,
   type WebhookDeadLetterEntry,
@@ -37,15 +38,7 @@ export class PlatformDeadLetterService {
         status: 'pending',
       });
     } catch (error) {
-      this.logger.warn(
-        `Failed to save dead letter: ${
-          error instanceof Error
-            ? error.message
-            : typeof error === 'string'
-              ? error
-              : 'unknown error'
-        }`,
-      );
+      this.logger.warn(`Failed to save dead letter: ${errorMessage(error)}`);
     }
   }
 

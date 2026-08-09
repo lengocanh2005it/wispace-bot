@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { errorMessage } from '@wispace/bot-common';
 import { LlmUsageEventEntity } from '../entities';
 import { DirectUsageWriter } from './direct-usage-writer';
 import { LlmUsageRecorderCore } from './llm-usage-recorder-core.service';
@@ -67,15 +68,7 @@ export class PlatformLlmUsageRecorderAdapter {
     if (!this.core) {
       const repository = new LlmUsageRepository(this.usageRepo, this.platform);
       const writer = new DirectUsageWriter(repository, (error) => {
-        this.logger.warn(
-          `LLM_USAGE_INSERT_FAILED: ${
-            error instanceof Error
-              ? error.message
-              : typeof error === 'string'
-                ? error
-                : 'unknown error'
-          }`,
-        );
+        this.logger.warn(`LLM_USAGE_INSERT_FAILED: ${errorMessage(error)}`);
       });
 
       this.core = new LlmUsageRecorderCore(

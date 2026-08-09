@@ -3,6 +3,7 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -114,9 +115,9 @@ export class ZaloTokenService {
         if (attempt < REFRESH_MAX_ATTEMPTS) {
           const backoffMs = REFRESH_BASE_BACKOFF_MS * Math.pow(2, attempt - 1);
           this.logger.warn(
-            `Zalo OA token refresh attempt ${attempt}/${REFRESH_MAX_ATTEMPTS} failed, retrying in ${backoffMs}ms: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
+            `Zalo OA token refresh attempt ${attempt}/${REFRESH_MAX_ATTEMPTS} failed, retrying in ${backoffMs}ms: ${errorMessage(
+              error,
+            )}`,
           );
           await new Promise((r) => setTimeout(r, backoffMs));
         }
@@ -124,9 +125,9 @@ export class ZaloTokenService {
     }
 
     throw new InternalServerErrorException(
-      `Zalo OA token refresh failed after ${REFRESH_MAX_ATTEMPTS} attempts: ${
-        lastError instanceof Error ? lastError.message : String(lastError)
-      }`,
+      `Zalo OA token refresh failed after ${REFRESH_MAX_ATTEMPTS} attempts: ${errorMessage(
+        lastError,
+      )}`,
     );
   }
 }

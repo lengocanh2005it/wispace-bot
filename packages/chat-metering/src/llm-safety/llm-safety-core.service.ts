@@ -1,3 +1,4 @@
+import { errorMessage } from '@wispace/bot-common';
 import type { LlmSafetyEventRepository } from './llm-safety.repository';
 import type { RecordGroundingWarningInput } from './types';
 
@@ -44,9 +45,7 @@ export class LlmSafetyCore {
       })
       .catch((err: unknown) => {
         this.logger.warn(
-          `LlmSafetyCore.recordGroundingWarning failed: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
+          `LlmSafetyCore.recordGroundingWarning failed: ${errorMessage(err)}`,
         );
       });
   }

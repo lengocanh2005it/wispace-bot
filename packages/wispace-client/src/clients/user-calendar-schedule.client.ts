@@ -1,3 +1,4 @@
+import { errorMessage } from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import { resolveScheduledAtFromEventDate } from '../utils/study-calendar.utils';
 import type { UserCalendarApiClient } from './user-calendar-api.client';
@@ -169,12 +170,7 @@ export class UserCalendarScheduleClient {
     externalId: string,
     error: unknown,
   ): void {
-    const message =
-      error instanceof Error
-        ? error.message
-        : typeof error === 'string'
-          ? error
-          : 'unknown error';
+    const message = errorMessage(error);
     const unknownId =
       error instanceof WispaceApiError && error.statusCode === 401;
 

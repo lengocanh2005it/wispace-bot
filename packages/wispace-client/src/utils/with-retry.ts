@@ -85,10 +85,3 @@ export function createCircuitBreaker<T>(
  * When the circuit is open, calls fail fast without attempting retries.
  * When closed, the full retry logic runs normally.
  */
-export function createWispaceBreaker<T>(
-  fn: () => Promise<T>,
-  retryOpts: WithRetryOptions,
-  cbOpts: CircuitBreakerOptions = {},
-): CircuitBreaker<any[], T> {
-  return createCircuitBreaker(() => withRetry(fn, retryOpts), cbOpts);
-}

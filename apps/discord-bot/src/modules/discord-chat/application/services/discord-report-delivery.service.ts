@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type {
@@ -57,7 +58,7 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
 
       return { ok: true };
     } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
+      const msg = errorMessage(error);
       this.logger.warn(
         `Failed to send report to externalUserId=${mapping.externalUserId}: ${msg}`,
       );

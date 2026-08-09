@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -62,9 +63,7 @@ export class ZaloReportCronService {
         else failed++;
       } else {
         failed++;
-        errors.push(
-          r.reason instanceof Error ? r.reason.message : String(r.reason),
-        );
+        errors.push(errorMessage(r.reason));
       }
     }
 
@@ -123,7 +122,7 @@ export class ZaloReportCronService {
           })
           .catch((releaseError) => {
             this.logger.error(
-              `Failed to release report claim for Zalo user ${link.externalUserId}: ${releaseError instanceof Error ? releaseError.message : String(releaseError)}`,
+              `Failed to release report claim for Zalo user ${link.externalUserId}: ${errorMessage(releaseError)}`,
             );
           });
       }
@@ -143,7 +142,7 @@ export class ZaloReportCronService {
         return 'skipped';
       }
       this.logger.error(
-        `Failed to send report to Zalo user ${link.externalUserId}: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to send report to Zalo user ${link.externalUserId}: ${errorMessage(error)}`,
       );
       return 'error';
     }

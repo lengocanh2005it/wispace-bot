@@ -8,6 +8,7 @@ import {
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
 import { REDIS_CLIENT, type RedisClientPort } from './redis.client.port';
+import { errorMessage } from './error-message';
 
 /**
  * Health endpoints shared by all WISPACE bots — consolidated from the
@@ -44,9 +45,7 @@ export class HealthController {
       await this.dataSource.query('SELECT 1');
       result.database = 'connected';
     } catch (error) {
-      this.logger.warn(
-        `Health check DB failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      this.logger.warn(`Health check DB failed: ${errorMessage(error)}`);
       result.database = 'disconnected';
       result.status = 'error';
     }
@@ -62,9 +61,7 @@ export class HealthController {
           result.status = 'error';
         }
       } catch (error) {
-        this.logger.warn(
-          `Health check Redis failed: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        this.logger.warn(`Health check Redis failed: ${errorMessage(error)}`);
         result.redis = 'unreachable';
         result.status = 'error';
       }
@@ -92,9 +89,7 @@ export class HealthController {
       });
     } catch (error) {
       if (error instanceof ServiceUnavailableException) throw error;
-      this.logger.warn(
-        `Redis health check failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      this.logger.warn(`Redis health check failed: ${errorMessage(error)}`);
       throw new ServiceUnavailableException({
         ok: false,
         redis: 'unreachable',

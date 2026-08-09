@@ -18,6 +18,7 @@
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/typeorm": "^11.0.1",
+    "@wispace/bot-common": "*",
     "@wispace/database": "*",
     "@wispace/date-utils": "*",
     "typeorm": "^1.0.0"

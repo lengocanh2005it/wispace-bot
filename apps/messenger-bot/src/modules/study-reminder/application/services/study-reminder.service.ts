@@ -4,6 +4,7 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { type LlmProviderAdapter } from '@wispace/llm-agent';
 import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
 import {
@@ -125,9 +126,9 @@ export class StudyReminderService {
       input.targetScore = goals.targetScore;
     } catch (error) {
       this.logger.warn(
-        `Could not load user goals for study reminder (psid=${psid}): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Could not load user goals for study reminder (psid=${psid}): ${errorMessage(
+          error,
+        )}`,
       );
     }
 
@@ -140,9 +141,9 @@ export class StudyReminderService {
       }
     } catch (error) {
       this.logger.warn(
-        `Could not load capacity data for study reminder (psid=${psid}): ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Could not load capacity data for study reminder (psid=${psid}): ${errorMessage(
+          error,
+        )}`,
       );
     }
 
@@ -205,9 +206,9 @@ export class StudyReminderService {
       return parseReminderOutput(content);
     } catch (error) {
       this.logger.warn(
-        `Invalid study reminder LLM output psid=${context.psid}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Invalid study reminder LLM output psid=${context.psid}: ${errorMessage(
+          error,
+        )}`,
       );
       return buildFallbackReminder(input);
     }

@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { hoursFromNow } from '@wispace/date-utils';
 import { NormalizedStudySession } from '../../domain/entities/study-schedule.types';
@@ -30,9 +31,9 @@ export class StudySessionSourceService {
       );
     } catch (error) {
       this.logger.error(
-        `Failed to load study sessions for psid=${params.psid}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Failed to load study sessions for psid=${params.psid}: ${errorMessage(
+          error,
+        )}`,
       );
       throw error;
     }

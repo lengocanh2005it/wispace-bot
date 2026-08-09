@@ -15,6 +15,7 @@
     "test": "jest --maxWorkers=50%"
   },
   "dependencies": {
+    "@wispace/bot-common": "*",
     "@wispace/chat-metering": "*",
     "@wispace/database": "*",
     "@wispace/llm-agent": "*",

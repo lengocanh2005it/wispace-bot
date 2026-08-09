@@ -13,6 +13,7 @@ import {
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
 } from '@wispace/chat-metering';
+import { errorMessage } from '@wispace/bot-common';
 import { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
 import { PlatformAgentToolsService } from './platform-agent-tools.service';
 import type {
@@ -151,13 +152,9 @@ export class PlatformAgentService {
             isRetryable: (error) => this.adapter.isRetryableError(error),
             onRetry: (attempt, backoffMs, error) =>
               this.logger.warn(
-                `LLM provider retry attempt=${attempt}/3 backoffMs=${backoffMs}: ${
-                  error instanceof Error
-                    ? error.message
-                    : typeof error === 'string'
-                      ? error
-                      : 'unknown error'
-                }`,
+                `LLM provider retry attempt=${attempt}/3 backoffMs=${backoffMs}: ${errorMessage(
+                  error,
+                )}`,
               ),
           }),
       },

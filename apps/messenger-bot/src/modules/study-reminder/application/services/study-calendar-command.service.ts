@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { CalendarSessionTimeRange } from '../../domain/entities/study-schedule.types';
 import { UserCalendarRecord } from '../../domain/entities/user-calendar.types';
 import { UserCalendarApiService } from '../../infrastructure/wispace/user-calendar-api.service';
@@ -168,9 +169,9 @@ export class StudyCalendarCommandService {
       })
       .catch((error) => {
         this.logger.error(
-          `Background outbox sync failed userId=${userId}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Background outbox sync failed userId=${userId}: ${errorMessage(
+            error,
+          )}`,
         );
       });
   }
