@@ -38,7 +38,7 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 
 ### 1.4. Free-form Chat + Rate Limit (FREE_FORM)
 
-- WISPACE-linked users can **send text messages** → bot replies via LLM agent (`MessengerChatQueueService` debounce → `MessengerAgentService`).
+- WISPACE-linked users can **send text messages** → bot replies via LLM agent (`MessengerChatEnqueueService` debounce → `MessengerChatProcessorService` → `MessengerAgentService`).
 - **Daily quota** per `(psid, usage_date)` ICT — `messenger_chat_daily_usage`; idempotency `message.mid` — `messenger_chat_idempotency`.
 - **Burst** `CHAT_BURST_PER_MINUTE`/min; **hard cap** concurrent (H3); **hint** "X remaining" (Phase 6).
 - Menu postback, reminder cron, proactive reports — **no** quota deduction.

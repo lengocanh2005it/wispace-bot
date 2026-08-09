@@ -32,7 +32,8 @@ import { MessengerOutboundModule } from './messenger-outbound.module';
 import { MessengerAgentToolsService } from './application/agent/messenger-agent-tools.service';
 import { MessengerAgentService } from './application/agent/messenger-agent.service';
 import { MessengerChatSharedConfigService } from './application/services/messenger-chat-shared-config.service';
-import { MessengerChatQueueService } from './application/services/messenger-chat-queue.service';
+import { MessengerChatEnqueueService } from './application/services/messenger-chat-enqueue.service';
+import { MessengerChatProcessorService } from './application/services/messenger-chat-processor.service';
 import { MessengerChatQueueWorkerService } from './application/services/messenger-chat-queue-worker.service';
 import { MessengerRescheduleConfirmationService } from './application/services/messenger-reschedule-confirmation.service';
 import { ChatHistoryStoreStartupService } from './application/services/chat-history-store-startup.service';
@@ -53,7 +54,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
  * stays messenger-local because of its distributed (Redis) backend, quota
  * messaging and bubble delivery.
  *
- * Exports: MessengerChatQueueService, MessengerAgentService,
+ * Exports: MessengerChatEnqueueService, MessengerAgentService,
  * MessengerAgentToolsService, MessengerRescheduleConfirmationService.
  */
 @Module({
@@ -200,14 +201,15 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     },
     MessengerCalendarPort,
     MessengerReschedulePort,
-    MessengerChatQueueService,
-    MessengerChatQueueWorkerService,
     MessengerAgentService,
     MessengerAgentToolsService,
     MessengerRescheduleConfirmationService,
+    MessengerChatProcessorService,
+    MessengerChatEnqueueService,
+    MessengerChatQueueWorkerService,
   ],
   exports: [
-    MessengerChatQueueService,
+    MessengerChatEnqueueService,
     MessengerAgentService,
     MessengerAgentToolsService,
     MessengerRescheduleConfirmationService,

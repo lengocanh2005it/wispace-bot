@@ -22,7 +22,7 @@ Turborepo monorepo: `apps/messenger-bot` (NestJS, full-featured) + `apps/discord
 | `modules/study-reminder/` | Sync/dispatch/cleanup jobs, UserCalendar API |
 | `modules/scheduler/` | Report cron + HTTP ops trigger |
 
-**Do not** put study reminder logic in `MessengerService`. **Do not** reserve quota in webhook — only in `MessengerChatQueueService` flush.
+**Do not** put study reminder logic in `MessengerService`. **Do not** reserve quota in webhook — only in `MessengerChatProcessorService` flush.
 
 ## Auth & API
 

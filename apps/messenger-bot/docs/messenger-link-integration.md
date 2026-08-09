@@ -473,7 +473,7 @@ After step 7 in [§7](#7-end-to-end-example) (mapping `psid ↔ userId` saved), 
 | Get Started right after linking | Usually yes (`postback.referral`) | **Yes** if ref still present | Same as above | `handlePostbackEvent` |
 | Get Started later (already linked) | Usually **no** | **No** | `resolveLinkContext` → DB | `handlePostbackEvent` |
 | Menu "Register Report" | **No** | **No** | DB mapping | `REGISTER_LEARNING_REPORT` → `registerForScheduledReports` |
-| Free-form chat | **No** | **No** | `resolveUserId` → DB | `MessengerChatQueueService.enqueue` |
+| Free-form chat | **No** | **No** | `resolveUserId` → DB | `MessengerChatEnqueueService.enqueue` |
 | Report cron / reminder dispatch | — | **No** | Mapping by `psid` / `userId` | `ReportCronService`, `StudyReminderDispatchService` |
 
 **Get Started** is usually the moment user taps for first time after `m.me`, but verify trigger is **`ref` in webhook**, not the `GET_STARTED` payload.

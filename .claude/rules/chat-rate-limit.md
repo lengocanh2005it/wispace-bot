@@ -12,13 +12,13 @@ FREE_FORM quota for bidirectional AI chat. V1 + hardening **H1–H7 ✓**.
 ## Flow (hook reserve)
 
 ```
-Webhook text → MessengerChatQueueService.enqueue → debounce flush
+Webhook text → MessengerChatEnqueueService.enqueue → debounce flush
   → ChatRateLimitService.reserveFreeFormSlot (DB idempotency + daily usage, hard cap H3)
   → MessengerAgentService → Send API
   → markCompleted; error before first bubble → refund (H4)
 ```
 
-Reserve is **not** called from webhook — only from `MessengerChatQueueService` on flush.
+Reserve is **not** called from webhook — only from `MessengerChatProcessorService` on flush.
 
 Menu postback, reminder cron, proactive reports do **not** go through this module.
 
@@ -46,7 +46,7 @@ Adding a new variable → update `.env.example`.
 | `infrastructure/persistence/*-chat-burst-counter.ts` | infrastructure | Burst counter memory/postgres/redis (R3) |
 | `domain/repositories/chat-rate-limit.repository.port.ts` | domain | Port + token `CHAT_RATE_LIMIT_REPOSITORY` |
 
-**Consumer:** `MessengerChatQueueService` injects `ChatRateLimitService` (imports `ChatRateLimitModule`).
+**Consumer:** `MessengerChatProcessorService` injects `ChatRateLimitService` (imports `ChatRateLimitModule`).
 
 ## Existing hardening (do not regress)
 

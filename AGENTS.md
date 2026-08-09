@@ -319,7 +319,7 @@ domain/entities|repositories/ → application/services|ports/ → infrastructure
 | UserCalendar API client | `study-reminder/infrastructure/wispace/user-calendar-api.service.ts` |
 | Send message from another module | Inject `MESSAGE_SENDER`, not `MessengerService` |
 | Full sync (ops) | `POST /messenger/sync-study-reminders`, `scripts/sync-study-reminder-jobs.mjs` |
-| Chat rate limit | `ChatRateLimitService`, `MessengerChatQueueService`, [chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) |
+| Chat rate limit | `ChatRateLimitService`, `MessengerChatEnqueueService`, `MessengerChatProcessorService`, [chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) |
 | Shared queue multi-pod (H7/R4) | `CHAT_QUEUE_STORE` / `CHAT_QUEUE_SHARED`, `CHAT_QUEUE_STORE` port, `MessengerChatQueueWorkerService` |
 | Ops quota scripts | `scripts/chat-quota-status.mjs`, `chat-quota-recover-stuck.mjs`, `chat-quota-cleanup-idempotency.mjs` |
 | Agent tools / cross-module ports | `domain/ports/goals-data.port.ts`, `domain/ports/report.port.ts`, `domain/ports/study-data.port.ts`, `infrastructure/adapters/*.adapter.ts` |
@@ -356,7 +356,8 @@ Wispace schedule change → POST /messenger/study-calendar/sync { userId }
 
 ```
 Webhook text → dedupe mid (`CHAT_DEDUPE_STORE` memory/postgres/redis)
-  → MessengerChatQueueService.enqueue → debounce flush
+  → MessengerChatEnqueueService.enqueue → debounce flush
+  → MessengerChatProcessorService.processChatBatch
   → ChatRateLimitService.reserve (DB idempotency + daily usage, hard cap H3)
   → MessengerAgentService (LLM) → Send API
   → markCompleted; error before bubble → refund (H4)

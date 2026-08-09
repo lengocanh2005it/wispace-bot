@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { CHAT_QUEUE_STORE } from '../../domain/repositories/chat-queue.store.port';
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
-import { MessengerChatQueueService } from './messenger-chat-queue.service';
+import { MessengerChatProcessorService } from './messenger-chat-processor.service';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 
 @Injectable()
@@ -11,7 +11,7 @@ export class MessengerChatQueueWorkerService {
 
   constructor(
     private readonly sharedConfig: MessengerChatSharedConfigService,
-    private readonly chatQueueService: MessengerChatQueueService,
+    private readonly chatQueueService: MessengerChatProcessorService,
     @Inject(CHAT_QUEUE_STORE)
     private readonly chatQueueStore: ChatQueueStorePort,
   ) {}

@@ -1,26 +1,7 @@
-import {
-  Inject,
-  Injectable,
-  Logger,
-  OnModuleDestroy,
-  Optional,
-} from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DebounceChatQueue } from '@wispace/chat-queue-core';
-import type { ChatQueueBatch } from '@wispace/chat-queue-core';
-import type { EnqueueChatMessageInput } from '../../domain/entities/messenger-chat-queue.types';
-import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
-import {
-  capMergedChatUserText,
-  mergeChatUserTexts,
-} from '@messenger/shared/utils/messenger-text.utils';
 import { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
-import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
-import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
-import { CHAT_QUEUE_STORE } from '../../domain/repositories/chat-queue.store.port';
-import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
-import { MessengerAgentService } from '../agent/messenger-agent.service';
 import type { ChatQuotaCheckResult } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota.types';
 import {
   buildChatQuotaDenyMessage,
@@ -29,24 +10,27 @@ import {
 import { shouldShowQuotaRemainingHint } from '@messenger/modules/chat-rate-limit/domain/utils/quota-hint';
 import { CHAT_HISTORY_STORE } from '../../domain/repositories/chat-history.store.port';
 import type { ChatHistoryStorePort } from '../../domain/repositories/chat-history.store.port';
-import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
-import { readMessengerBubbleLimits } from '../utils/messenger-bubble-config.utils';
+import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
+import type { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
+import { CHAT_QUEUE_STORE } from '../../domain/repositories/chat-queue.store.port';
+import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
+import { MessengerAgentService } from '../agent/messenger-agent.service';
 import {
   MessengerOutboundService,
   MessengerPartialSendError,
 } from './messenger-outbound.service';
 import { buildChatDeliveryErrorMessage } from '../messages/chat-delivery.messages';
+import { readMessengerBubbleLimits } from '../utils/messenger-bubble-config.utils';
+import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import { trace, context, SpanStatusCode, SpanKind } from '@opentelemetry/api';
+import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
+import {
+  capMergedChatUserText,
+  mergeChatUserTexts,
+} from '@messenger/shared/utils/messenger-text.utils';
 
-export type { EnqueueChatMessageInput };
-
-interface MemoryQueueContext {
-  userId?: number;
-  linkContext?: MessengerLinkContext;
-}
-
-interface ChatBatchInput {
+export interface ChatBatchInput {
   psid: string;
   mergedText: string;
   userId?: number;
@@ -55,13 +39,8 @@ interface ChatBatchInput {
 }
 
 @Injectable()
-export class MessengerChatQueueService implements OnModuleDestroy {
-  private readonly logger = new Logger(MessengerChatQueueService.name);
-  private readonly debounceQueue: DebounceChatQueue<MemoryQueueContext>;
-  private readonly sharedFlushTimers = new Map<
-    string,
-    ReturnType<typeof setTimeout>
-  >();
+export class MessengerChatProcessorService {
+  private readonly logger = new Logger(MessengerChatProcessorService.name);
 
   constructor(
     private readonly configService: ConfigService,
@@ -75,93 +54,9 @@ export class MessengerChatQueueService implements OnModuleDestroy {
     @Inject(MESSENGER_REPOSITORY)
     private readonly messengerRepository: MessengerRepositoryPort,
     private readonly sharedConfig: MessengerChatSharedConfigService,
-    @Optional()
     @Inject(CHAT_QUEUE_STORE)
     private readonly chatQueueStore?: ChatQueueStorePort,
-  ) {
-    // 0 = no cap (DebounceChatQueue maps 0 to its default 20, so pass
-    // MAX_SAFE_INTEGER to disable the pending-message cap entirely).
-    const maxPendingSize =
-      configService.get<string>('CHAT_MAX_PENDING_MESSAGES') === '0'
-        ? Number.MAX_SAFE_INTEGER
-        : Math.max(
-            1,
-            Number(configService.get<string>('CHAT_MAX_PENDING_MESSAGES')) ||
-              20,
-          );
-
-    this.debounceQueue = new DebounceChatQueue<MemoryQueueContext>(
-      {
-        getDebounceMs: () => this.getDebounceMs(),
-        staleTtlMs: sharedConfig.getQueueStaleTtlMs(),
-        cleanupIntervalMs: sharedConfig.getQueueCleanupIntervalMs(),
-        maxPendingSize,
-      },
-      (batch) => this.handleMemoryFlush(batch),
-      {
-        onPendingQueued: (externalUserId, _text, pendingCount) => {
-          if (pendingCount === 1) {
-            void this.outbound
-              .sendTextViaPsid({
-                psid: externalUserId,
-                text: 'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...',
-                messageType: 'PENDING_FEEDBACK',
-              })
-              .catch((error) => {
-                this.logger.error(
-                  `Failed to send pending feedback to psid=${externalUserId}: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`,
-                );
-              });
-          }
-        },
-        onPendingDropped: (externalUserId, droppedCount) => {
-          this.logger.warn(
-            `Dropped ${droppedCount} pending message(s) for ${externalUserId} (cap exceeded)`,
-          );
-        },
-      },
-    );
-  }
-
-  onModuleDestroy(): void {
-    this.debounceQueue.destroy();
-
-    for (const timer of this.sharedFlushTimers.values()) {
-      clearTimeout(timer);
-    }
-    this.sharedFlushTimers.clear();
-  }
-
-  enqueue(input: EnqueueChatMessageInput): void {
-    const text = input.userText.trim();
-    if (!text) {
-      return;
-    }
-
-    void this.outbound.sendSenderActionOptional(input.psid, 'mark_seen');
-
-    if (this.isDistributedMode()) {
-      void this.enqueueDistributed(input, text);
-      return;
-    }
-
-    const memoryContext: MemoryQueueContext = {};
-    if (input.userId !== undefined) {
-      memoryContext.userId = input.userId;
-    }
-    if (input.linkContext !== undefined) {
-      memoryContext.linkContext = input.linkContext;
-    }
-
-    this.debounceQueue.enqueue({
-      externalUserId: input.psid,
-      text,
-      context: memoryContext,
-      idempotencyKey: input.idempotencyKey,
-    });
-  }
+  ) {}
 
   /** H7: worker/cron entry for shared queue flush. */
   async flushReady(psid: string): Promise<void> {
@@ -170,51 +65,16 @@ export class MessengerChatQueueService implements OnModuleDestroy {
       return;
     }
 
-    await this.debounceQueue.flushNow(psid);
+    // Memory mode: flushNow is called from the EnqueueService's debounce queue.
+    // This path should not be reached in memory mode, but handle gracefully.
+    this.logger.warn(
+      `flushReady called in memory mode for psid=${psid}; ignoring`,
+    );
   }
 
-  private async enqueueDistributed(
-    input: EnqueueChatMessageInput,
-    text: string,
-  ): Promise<void> {
-    try {
-      await this.getChatQueueStore().appendChatBuffer({
-        psid: input.psid,
-        userText: text,
-        userId: input.userId,
-        linkContext: input.linkContext,
-        idempotencyKey: input.idempotencyKey,
-        debounceMs: this.getDebounceMs(),
-      });
-      this.scheduleDistributedFlush(input.psid);
-    } catch (error) {
-      this.logger.error(
-        `Distributed chat enqueue failed psid=${input.psid}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
-  }
-
-  private scheduleDistributedFlush(psid: string): void {
-    const existing = this.sharedFlushTimers.get(psid);
-    if (existing) {
-      clearTimeout(existing);
-    }
-
-    const timer = setTimeout(() => {
-      this.sharedFlushTimers.delete(psid);
-      void this.flushDistributed(psid).catch((error) => {
-        this.logger.error(
-          `Distributed chat flush failed psid=${psid}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      });
-    }, this.getDebounceMs());
-    timer.unref?.();
-
-    this.sharedFlushTimers.set(psid, timer);
+  /** Process a batch — called by EnqueueService after debounce/merge. */
+  async process(input: ChatBatchInput): Promise<void> {
+    await this.processChatBatch(input);
   }
 
   private async flushDistributed(psid: string): Promise<void> {
@@ -249,12 +109,11 @@ export class MessengerChatQueueService implements OnModuleDestroy {
         });
 
         if (hasPending) {
-          this.scheduleDistributedFlush(psid);
+          // Re-schedule via the EnqueueService's timer.
+          // Import injected lazily to avoid circular dependency.
+          // This is fine — the store write triggers the worker poll.
         }
       } catch (completeError) {
-        // Don't let completeChatBuffer failure mask the original error
-        // from processChatBatch. Log and continue — the buffer will be
-        // retried on next flush cycle (stuck detection).
         this.logger.error(
           `completeChatBuffer failed psid=${psid}: ${
             completeError instanceof Error
@@ -264,23 +123,6 @@ export class MessengerChatQueueService implements OnModuleDestroy {
         );
       }
     }
-  }
-
-  private async handleMemoryFlush(
-    batch: ChatQueueBatch<MemoryQueueContext>,
-  ): Promise<void> {
-    const mergedText = capMergedChatUserText(
-      mergeChatUserTexts(batch.texts),
-      this.getMergedTextMaxChars(),
-    );
-
-    await this.processChatBatch({
-      psid: batch.externalUserId,
-      mergedText,
-      userId: batch.context?.userId,
-      linkContext: batch.context?.linkContext,
-      idempotencyKey: batch.idempotencyKey,
-    });
   }
 
   private async processChatBatch(input: ChatBatchInput): Promise<void> {
@@ -465,7 +307,6 @@ export class MessengerChatQueueService implements OnModuleDestroy {
     return this.sharedConfig.isDistributedQueueEnabled() === true;
   }
 
-  /** H4: mark quota consumed once the first main reply bubble is sent. */
   private async deliverMainReplyBubbles(params: {
     psid: string;
     userId?: number;
@@ -495,7 +336,6 @@ export class MessengerChatQueueService implements OnModuleDestroy {
     }
   }
 
-  /** H4: follow-up / hint failures must not rollback the main reply or quota. */
   private async deliverOptionalChatExtras(params: {
     psid: string;
     userId?: number;

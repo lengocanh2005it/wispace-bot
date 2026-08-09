@@ -11,7 +11,7 @@ Free-form chat: debounce → LLM agent → Send API. Integrates `ChatRateLimitMo
 
 | Mode | Env | Debounce buffer |
 |------|-----|-----------------|
-| Local (1 instance) | `CHAT_QUEUE_STORE=memory` (default) | In-process RAM (`MessengerChatQueueService`) |
+| Local (1 instance) | `CHAT_QUEUE_STORE=memory` (default) | In-process RAM (`MessengerChatEnqueueService`) |
 | Distributed (≥2 pods or Redis) | `CHAT_QUEUE_STORE=redis` | Redis `chat:queue:buffer:{psid}` |
 
 Legacy: `CHAT_QUEUE_SHARED=true` → `CHAT_QUEUE_STORE=redis` when not explicitly set.

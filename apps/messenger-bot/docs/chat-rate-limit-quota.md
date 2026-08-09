@@ -10,7 +10,7 @@ Related: [project-overview.md](../../docs/project-overview.md), [study-session-r
 
 ### 1.1. Feature
 
-- WISPACE-linked users can send free-form text → bot replies via LLM agent (`MessengerChatQueueService` + tools).
+- WISPACE-linked users can send free-form text → bot replies via LLM agent (`MessengerChatEnqueueService` debounce → `MessengerChatProcessorService` → LLM).
 - Each debounced flush (merging consecutive messages) = **1 turn** when `CHAT_RATE_LIMIT_ENABLED=true`.
 - Cost control: daily quota, burst/min, PSID QA whitelist, "X remaining" hint.
 
@@ -18,7 +18,7 @@ Related: [project-overview.md](../../docs/project-overview.md), [study-session-r
 
 | Component | Status |
 |-----------|--------|
-| Two-way chat AI (`MessengerChatQueueService` → agent + tools) | ✓ |
+| Two-way chat AI (`MessengerChatEnqueueService` → `MessengerChatProcessorService` → agent + tools) | ✓ |
 | Webhook dedupe `message.mid` | ✓ RAM (default) or Redis when `CHAT_DEDUPE_STORE=redis` |
 | Postback dedupe (`psid:payload`, TTL 15s) | ✓ |
 | Rate limit / `messenger_chat_daily_usage` | ✓ `ChatRateLimitModule` |
@@ -210,7 +210,7 @@ src/modules/chat-rate-limit/
 
 > **Note:** Core rate-limit logic (`ChatRateLimitCore`, `ChatRateLimitRepository`, `MemoryBurstCounter`, `PostgresBurstCounter`) now lives in `@wispace/chat-metering` package, shared across Messenger, Discord, and Zalo bots.
 
-Hook: **`MessengerChatQueueService.flush()`** — before LLM; webhook keeps RAM dedupe. Postback does **not** go through rate limit.
+Hook: **`MessengerChatProcessorService.flush()`** — before LLM; webhook keeps RAM dedupe. Postback does **not** go through rate limit.
 
 #### Integration with Existing Logs
 
@@ -416,7 +416,7 @@ flowchart TD
 
 **Menu postback** (`VIEW_UPCOMING_STUDY_SESSION`, …) takes a separate branch — does **not** go through `ChatRateLimitService`.
 
-Hook reserve: **`MessengerChatQueueService.processChatBatch()`** (called from `flush`) — after debounce, **before** `MessengerAgentService.reply()`. Webhook dedupe + enqueue; reserve at flush.
+Hook reserve: **`MessengerChatProcessorService.processChatBatch()`** (called from `flush`) — after debounce, **before** `MessengerAgentService.reply()`. Webhook dedupe + enqueue; reserve at flush.
 
 ### 5.3. Idempotency — Already Implemented (V1 + H2)
 
@@ -492,12 +492,12 @@ sequenceDiagram
 
 #### Debounce vs Idempotency
 
-`MessengerChatQueueService` merges consecutive messages (`CHAT_DEBOUNCE_MS`) into **one** LLM call.
+`MessengerChatEnqueueService` merges consecutive messages (`CHAT_DEBOUNCE_MS`) into **one** LLM call.
 
 | Convention | Description |
 |------------|-------------|
 | **Recommended** | **1 quota turn / 1 flush** (one bot reply), not per `mid` in burst |
-| Idempotency key on merge | `mid` of the **last message** in debounce batch (implemented in `MessengerChatQueueService.flush()`) |
+| Idempotency key on merge | `mid` of the **last message** in debounce batch (implemented in `MessengerChatProcessorService.flush()`) |
 | User sends 5 messages / 2s burst | User receives 1 reply → deducts **1** turn (fair UX) |
 
 Document this convention in code + tests to avoid disputes about "5 messages = 5 turns or 1 turn".
@@ -520,7 +520,7 @@ Students typically message the bot from **computer** (Messenger web / desktop) a
 | Layer | Behavior |
 |-------|----------|
 | **Webhook** | Each message = one unique `message.mid` (PC and phone always have different `mid`). RAM dedupe only drops **duplicate retries** with same `mid`, doesn't merge two devices. |
-| **Queue** (`MessengerChatQueueService`) | One `Map` entry **per PSID** — no device source distinction. `processing` flag ensures **at most one flush** (one reserve + LLM) runs for that PSID on the **same instance**. |
+| **Queue** (`MessengerChatProcessorService`) | One `Map` entry **per PSID** — no device source distinction. `processing` flag ensures **at most one flush** (one reserve + LLM) runs for that PSID on the **same instance**. |
 | **Debounce** | Messages from PC + phone arriving **within** `CHAT_DEBOUNCE_MS` (before flush) → merge `texts[]` → **one** bot reply → **deducts 1 turn**. |
 | **Pending while processing** | Message arrives **while** bot is calling LLM (`processing = true`) → enters `pendingWhileProcessing` → after flush completes, **flushes again** → **deducts 1 more turn** (two legitimate messages). |
 | **Quota DB** | Reserve by `idempotency_key` = `mid` of last message in flush batch; counter `free_form_count` by PSID + ICT day. |
@@ -612,7 +612,7 @@ class ChatRateLimitService {
 - [x] Migration `messenger_chat_daily_usage`
 - [x] Migration `messenger_chat_idempotency` (or unique `message.mid` on log IN)
 - [x] Entity + repository + `ChatRateLimitService` (`reserve` / `refund` / `markCompleted`)
-- [x] Wire **`MessengerChatQueueService.flush()`** — reserve + idempotency **before** LLM; refund in `catch`
+- [x] Wire **`MessengerChatProcessorService.flush()`** — reserve + idempotency **before** LLM; refund in `catch`
 - [x] Keep RAM dedupe `isDuplicateMessageMid` at webhook (fast path)
 - [x] Debounce convention: **1 turn / 1 flush**; document idempotency key when merging burst
 - [x] Document **multiple devices** same account (§5.3) — shared PSID/quota, debounce vs pending
@@ -706,7 +706,7 @@ flowchart LR
 
 | Task | Done when |
 |------|-----------|
-| Hook `MessengerChatQueueService.flush()`: after debounce, **before** `MessengerAgentService.reply()` | Reserve called in right place |
+| Hook `MessengerChatProcessorService.flush()`: after debounce, **before** `MessengerAgentService.reply()` | Reserve called in right place |
 | Pass `idempotencyKey` = `message.mid` of **last** message in debounce batch (convention §5.3) | 5-message burst → 1 turn |
 | Quota exhausted → `sendTextViaPsid` message §5.5, `message_type=CHAT_QUOTA_DENIED` | No OpenAI call |
 | Success → `markCompleted`; `catch` → `refund` | LLM error doesn't waste turns |

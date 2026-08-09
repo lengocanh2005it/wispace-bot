@@ -8,7 +8,7 @@ import {
 import { UserDisplayNameService } from '@messenger/modules/display-name/application/user-display-name.service';
 import { getStudyReminderLeadTimeNotice } from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
 import { MessengerWebhookEvent } from '../../domain/entities/messenger.types';
-import { MessengerChatQueueService } from './messenger-chat-queue.service';
+import { MessengerChatEnqueueService } from './messenger-chat-enqueue.service';
 import { MessengerMappingService } from './messenger-mapping.service';
 import { MessengerLinkContextService } from './messenger-link-context.service';
 import { MessengerOutboundService } from './messenger-outbound.service';
@@ -35,7 +35,7 @@ export class WebhookActionExecutorService {
     private readonly outbound: MessengerOutboundService,
     private readonly messengerMappingService: MessengerMappingService,
     private readonly messengerLinkContextService: MessengerLinkContextService,
-    private readonly messengerChatQueueService: MessengerChatQueueService,
+    private readonly messengerChatQueueService: MessengerChatEnqueueService,
     private readonly reportDeliveryService: MessengerReportDeliveryService,
     private readonly reminderDeliveryService: MessengerReminderDeliveryService,
     private readonly userDisplayNameService: UserDisplayNameService,

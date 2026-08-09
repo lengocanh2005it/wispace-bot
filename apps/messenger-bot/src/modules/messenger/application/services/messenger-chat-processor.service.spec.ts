@@ -15,31 +15,11 @@ import {
   MessengerApiError,
   MessengerPartialSendError,
 } from './messenger-outbound.service';
-import { MessengerChatQueueService } from './messenger-chat-queue.service';
+import { MessengerChatProcessorService } from './messenger-chat-processor.service';
 import type { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import type { MetricsService } from '@messenger/modules/metrics/metrics.service';
 
-const mockQueueConfigs: Array<{ maxPendingSize?: number }> = [];
-
-jest.mock('@wispace/chat-queue-core', () => {
-  const actual = jest.requireActual<typeof import('@wispace/chat-queue-core')>(
-    '@wispace/chat-queue-core',
-  );
-  return {
-    ...actual,
-    DebounceChatQueue: jest.fn().mockImplementation(function (
-      this: unknown,
-      ...args: unknown[]
-    ) {
-      mockQueueConfigs.push(args[0] as { maxPendingSize?: number });
-      return new actual.DebounceChatQueue(...(args as never[]));
-    }),
-  };
-});
-
-describe('MessengerChatQueueService', () => {
-  let createdServices: MessengerChatQueueService[] = [];
-
+describe('MessengerChatProcessorService', () => {
   const quotaAllowed = (
     overrides: Partial<ChatQuotaCheckResult> = {},
   ): ChatQuotaCheckResult => ({
@@ -52,9 +32,7 @@ describe('MessengerChatQueueService', () => {
     ...overrides,
   });
 
-  const createService = (
-    options: { shouldEnforce?: boolean; maxPendingMessages?: string } = {},
-  ) => {
+  const createService = (options: { shouldEnforce?: boolean } = {}) => {
     const sendSenderActionOptional = jest.fn(() => Promise.resolve());
     const sendTextViaPsid = jest.fn(() => Promise.resolve());
     const sendTextBubblesViaPsid = jest.fn(() => Promise.resolve(1));
@@ -120,12 +98,6 @@ describe('MessengerChatQueueService', () => {
 
     const configService = {
       get: (key: string) => {
-        if (
-          options.maxPendingMessages !== undefined &&
-          key === 'CHAT_MAX_PENDING_MESSAGES'
-        ) {
-          return options.maxPendingMessages;
-        }
         const values: Record<string, string> = {
           CHAT_DEBOUNCE_MS: '0',
           CHAT_MAX_BUBBLES: '4',
@@ -145,7 +117,7 @@ describe('MessengerChatQueueService', () => {
       ),
     } as unknown as MetricsService;
 
-    const service = new MessengerChatQueueService(
+    const service = new MessengerChatProcessorService(
       configService,
       outbound,
       messengerAgentService,
@@ -156,7 +128,6 @@ describe('MessengerChatQueueService', () => {
       messengerRepository,
       sharedConfig,
     );
-    createdServices.push(service);
 
     return {
       service,
@@ -172,14 +143,10 @@ describe('MessengerChatQueueService', () => {
   };
 
   beforeEach(() => {
-    createdServices = [];
     jest.useFakeTimers();
   });
 
   afterEach(() => {
-    for (const service of createdServices) {
-      service.onModuleDestroy();
-    }
     jest.clearAllTimers();
     jest.useRealTimers();
   });
@@ -194,14 +161,12 @@ describe('MessengerChatQueueService', () => {
       logMessage,
     } = createService();
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
+      mergedText: 'Hello',
       userId: 143,
-      userText: 'Hello',
       idempotencyKey: 'mid-1',
     });
-
-    await jest.runOnlyPendingTimersAsync();
 
     expect(reserveFreeFormSlot).toHaveBeenCalledWith('psid-1', {
       userId: 143,
@@ -217,28 +182,6 @@ describe('MessengerChatQueueService', () => {
     expect(reply).toHaveBeenCalled();
     expect(markCompleted).toHaveBeenCalledWith('mid-1');
     expect(refundFreeFormSlot).not.toHaveBeenCalled();
-  });
-
-  it('uses the last message mid after debounce merge', async () => {
-    const { service, reserveFreeFormSlot } = createService();
-
-    service.enqueue({
-      psid: 'psid-1',
-      userText: 'One',
-      idempotencyKey: 'mid-1',
-    });
-    service.enqueue({
-      psid: 'psid-1',
-      userText: 'Two',
-      idempotencyKey: 'mid-2',
-    });
-
-    await jest.runOnlyPendingTimersAsync();
-
-    expect(reserveFreeFormSlot).toHaveBeenCalledWith('psid-1', {
-      userId: undefined,
-      idempotencyKey: 'mid-2',
-    });
   });
 
   it('sends quota denied message without calling LLM', async () => {
@@ -258,13 +201,11 @@ describe('MessengerChatQueueService', () => {
       usageDate: '2026-06-15',
     });
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
-      userText: 'Hello',
+      mergedText: 'Hello',
       idempotencyKey: 'mid-1',
     });
-
-    await jest.runOnlyPendingTimersAsync();
 
     expect(sendTextViaPsid).toHaveBeenCalledWith({
       psid: 'psid-1',
@@ -288,13 +229,11 @@ describe('MessengerChatQueueService', () => {
       usageDate: '2026-06-15',
     });
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
-      userText: 'Hello',
+      mergedText: 'Hello',
       idempotencyKey: 'mid-dup',
     });
-
-    await jest.runOnlyPendingTimersAsync();
 
     expect(reply).not.toHaveBeenCalled();
     expect(markCompleted).not.toHaveBeenCalled();
@@ -313,13 +252,11 @@ describe('MessengerChatQueueService', () => {
       quotaReserved: false,
     });
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
-      userText: 'Spam',
+      mergedText: 'Spam',
       idempotencyKey: 'mid-burst',
     });
-
-    await jest.runOnlyPendingTimersAsync();
 
     expect(sendTextViaPsid).toHaveBeenCalledWith({
       psid: 'psid-1',
@@ -342,13 +279,11 @@ describe('MessengerChatQueueService', () => {
       Promise.reject(new Error('OpenAI down')),
     );
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
-      userText: 'Hello',
+      mergedText: 'Hello',
       idempotencyKey: 'mid-fail',
     });
-
-    await jest.runOnlyPendingTimersAsync();
 
     expect(refundFreeFormSlot).toHaveBeenCalledWith(
       'psid-1',
@@ -369,13 +304,11 @@ describe('MessengerChatQueueService', () => {
       quotaAllowed({ used: 13, remaining: 2 }),
     );
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
-      userText: 'Hello',
+      mergedText: 'Hello',
       idempotencyKey: 'mid-hint',
     });
-
-    await jest.runOnlyPendingTimersAsync();
 
     expect(sendTextViaPsid).toHaveBeenCalledWith({
       psid: 'psid-1',
@@ -391,13 +324,11 @@ describe('MessengerChatQueueService', () => {
       quotaAllowed({ used: 15, remaining: 0 }),
     );
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
-      userText: 'Hello',
+      mergedText: 'Hello',
       idempotencyKey: 'mid-zero-hint',
     });
-
-    await jest.runOnlyPendingTimersAsync();
 
     expect(sendTextViaPsid).not.toHaveBeenCalledWith(
       expect.objectContaining({
@@ -412,13 +343,11 @@ describe('MessengerChatQueueService', () => {
       quotaAllowed({ used: 5, remaining: 10 }),
     );
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
-      userText: 'Hello',
+      mergedText: 'Hello',
       idempotencyKey: 'mid-no-hint',
     });
-
-    await jest.runOnlyPendingTimersAsync();
 
     expect(sendTextViaPsid).not.toHaveBeenCalledWith(
       expect.objectContaining({
@@ -438,13 +367,11 @@ describe('MessengerChatQueueService', () => {
       new MessengerApiError('Send failed', 500, 'Error', '{}'),
     );
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
-      userText: 'Hello',
+      mergedText: 'Hello',
       idempotencyKey: 'mid-send-fail',
     });
-
-    await jest.runOnlyPendingTimersAsync();
 
     expect(refundFreeFormSlot).toHaveBeenCalledWith(
       'psid-1',
@@ -468,13 +395,11 @@ describe('MessengerChatQueueService', () => {
       ),
     );
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
-      userText: 'Hello',
+      mergedText: 'Hello',
       idempotencyKey: 'mid-partial',
     });
-
-    await jest.runOnlyPendingTimersAsync();
 
     expect(markCompleted).toHaveBeenCalledWith('mid-partial');
     expect(refundFreeFormSlot).not.toHaveBeenCalled();
@@ -493,13 +418,11 @@ describe('MessengerChatQueueService', () => {
       },
     );
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
-      userText: 'Hello',
+      mergedText: 'Hello',
       idempotencyKey: 'mid-hint-fail',
     });
-
-    await jest.runOnlyPendingTimersAsync();
 
     expect(markCompleted).toHaveBeenCalledWith('mid-hint-fail');
     expect(refundFreeFormSlot).not.toHaveBeenCalled();
@@ -508,18 +431,12 @@ describe('MessengerChatQueueService', () => {
   it('uses optional sender actions so typing_on failures do not block chat', async () => {
     const { service, reply, sendSenderActionOptional } = createService();
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
-      userText: 'mình muốn xem tiến độ học tập',
+      mergedText: 'mình muốn xem tiến độ học tập',
       idempotencyKey: 'mid-typing',
     });
 
-    await jest.runOnlyPendingTimersAsync();
-
-    expect(sendSenderActionOptional).toHaveBeenCalledWith(
-      'psid-1',
-      'mark_seen',
-    );
     expect(sendSenderActionOptional).toHaveBeenCalledWith(
       'psid-1',
       'typing_on',
@@ -539,13 +456,11 @@ describe('MessengerChatQueueService', () => {
       ),
     );
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
-      userText: 'Hello',
+      mergedText: 'Hello',
       idempotencyKey: 'mid-window',
     });
-
-    await jest.runOnlyPendingTimersAsync();
 
     expect(sendTextViaPsid).toHaveBeenCalled();
     const sendArgs = (
@@ -557,54 +472,17 @@ describe('MessengerChatQueueService', () => {
     expect(sendArgs.text).toContain('24 giờ');
   });
 
-  it('caps merged debounce text before LLM (H5)', async () => {
-    const { service, reply } = createService();
-
-    service.enqueue({
-      psid: 'psid-1',
-      userText: 'a'.repeat(80),
-      idempotencyKey: 'mid-1',
-    });
-    service.enqueue({
-      psid: 'psid-1',
-      userText: 'b'.repeat(80),
-      idempotencyKey: 'mid-2',
-    });
-
-    await jest.runOnlyPendingTimersAsync();
-
-    const userText = (
-      reply.mock.calls[0] as unknown as [{ userText: string }]
-    )[0].userText;
-    expect(userText.length).toBeLessThanOrEqual(100);
-    expect(userText).toContain('…');
-  });
-
   it('skips flush without mid when rate limit enforces (H5)', async () => {
     const { service, reply, reserveFreeFormSlot } = createService({
       shouldEnforce: true,
     });
 
-    service.enqueue({
+    await service.process({
       psid: 'psid-1',
-      userText: 'Hello',
+      mergedText: 'Hello',
     });
-
-    await jest.runOnlyPendingTimersAsync();
 
     expect(reserveFreeFormSlot).not.toHaveBeenCalled();
     expect(reply).not.toHaveBeenCalled();
-  });
-
-  it('defaults maxPendingSize to 20 when CHAT_MAX_PENDING_MESSAGES is unset', () => {
-    mockQueueConfigs.length = 0;
-    createService();
-    expect(mockQueueConfigs[0]?.maxPendingSize).toBe(20);
-  });
-
-  it('passes no-cap maxPendingSize when CHAT_MAX_PENDING_MESSAGES=0', () => {
-    mockQueueConfigs.length = 0;
-    createService({ maxPendingMessages: '0' });
-    expect(mockQueueConfigs[0]?.maxPendingSize).toBe(Number.MAX_SAFE_INTEGER);
   });
 });

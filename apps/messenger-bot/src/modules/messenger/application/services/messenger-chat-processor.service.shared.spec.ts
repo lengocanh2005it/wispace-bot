@@ -1,21 +1,21 @@
 import type { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
-import { MessengerChatQueueService } from './messenger-chat-queue.service';
+import { MessengerChatProcessorService } from './messenger-chat-processor.service';
 import type { MetricsService } from '@messenger/modules/metrics/metrics.service';
 
-describe('MessengerChatQueueService distributed mode (H7/R4)', () => {
-  let service: MessengerChatQueueService | undefined;
-
-  const flushMicrotasks = async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-  };
-
-  it('appends to shared buffer and schedules flush', async () => {
+describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
+  it('claims ready buffer and processes batch', async () => {
     jest.useFakeTimers();
 
     const appendChatBuffer = jest.fn(() => Promise.resolve());
-    const claimReadyBuffer = jest.fn(() => Promise.resolve(null));
+    const claimReadyBuffer = jest.fn(() =>
+      Promise.resolve({
+        texts: ['hello'],
+        userId: undefined,
+        linkContext: undefined,
+        lastIdempotencyKey: 'mid-1',
+      }),
+    );
     const completeChatBuffer = jest.fn(() => Promise.resolve(false));
     const chatQueueStore = {
       appendChatBuffer,
@@ -31,6 +31,7 @@ describe('MessengerChatQueueService distributed mode (H7/R4)', () => {
     } as MessengerChatSharedConfigService;
 
     const sendSenderActionOptional = jest.fn(() => Promise.resolve());
+    const sendTextBubblesViaPsid = jest.fn(() => Promise.resolve(1));
     const metrics = {
       chatStep: { startTimer: jest.fn(() => jest.fn()) },
       timeStep: jest.fn((_step: string, fn: () => Promise<unknown>) => fn()),
@@ -40,15 +41,22 @@ describe('MessengerChatQueueService distributed mode (H7/R4)', () => {
       ),
     } as unknown as MetricsService;
 
-    service = new MessengerChatQueueService(
+    const service = new MessengerChatProcessorService(
       { get: () => '0' } as never,
-      { sendSenderActionOptional } as never,
-      {} as never,
+      { sendSenderActionOptional, sendTextBubblesViaPsid } as never,
+      {
+        reply: jest.fn(() =>
+          Promise.resolve({ text: 'Bot reply', richFollowUps: [] }),
+        ),
+      } as never,
       { getHistory: jest.fn(() => Promise.resolve([])) } as never,
       {} as never,
       {
         shouldEnforceForPsid: jest.fn(() => false),
-        getSettings: jest.fn(() => ({ mergedTextMaxChars: 4000 })),
+        getSettings: jest.fn(() => ({
+          mergedTextMaxChars: 4000,
+          remainingHintThreshold: 3,
+        })),
       } as never,
       metrics,
       {} as never,
@@ -56,24 +64,7 @@ describe('MessengerChatQueueService distributed mode (H7/R4)', () => {
       chatQueueStore,
     );
 
-    service.enqueue({
-      psid: 'psid-shared',
-      userText: 'hello',
-      idempotencyKey: 'mid-1',
-    });
-
-    await flushMicrotasks();
-
-    expect(appendChatBuffer).toHaveBeenCalledWith(
-      expect.objectContaining({
-        psid: 'psid-shared',
-        userText: 'hello',
-        idempotencyKey: 'mid-1',
-      }),
-    );
-
-    jest.runOnlyPendingTimers();
-    await flushMicrotasks();
+    await service.flushReady('psid-shared');
 
     expect(claimReadyBuffer).toHaveBeenCalledWith('psid-shared', 0, 300_000);
 
@@ -81,8 +72,6 @@ describe('MessengerChatQueueService distributed mode (H7/R4)', () => {
   });
 
   afterEach(() => {
-    service?.onModuleDestroy();
-    service = undefined;
     jest.clearAllTimers();
     jest.useRealTimers();
   });

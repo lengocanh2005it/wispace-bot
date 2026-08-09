@@ -57,7 +57,7 @@ Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (re
 
 - **Do not** import NestJS — plain class. All content logic (merge/cap text, reserve quota, call LLM, send outbound) lives in `ChatQueueFlushHandler` injected by the app, **not** in the core.
 - **Idempotency key**: the package exports type `IdempotencyKeyPort<TRawMessage>` — this is a **contract**, not logic running in the core. Idempotency key (Messenger: `message.mid`, Discord: `message.id`) is resolved by each platform at the ingestion layer (webhook/gateway) **before** calling `enqueue()`; core only carries that string through `ChatQueueBatch.idempotencyKey`, not interpreting it.
-- `apps/messenger-bot`'s `MessengerChatQueueService` uses `DebounceChatQueue` for **memory mode** (`CHAT_QUEUE_STORE=memory`); Redis/distributed mode (`enqueueDistributed`, `flushDistributed`, `ChatQueueStorePort`) is **not** in the package — infrastructure-specific, kept in app (same pattern as `@wispace/chat-history`: only memory backend is split out, Redis stays in app).
+- `apps/messenger-bot`'s `MessengerChatEnqueueService` uses `DebounceChatQueue` for **memory mode** (`CHAT_QUEUE_STORE=memory`); Redis/distributed mode (`enqueueDistributed`, `flushDistributed`, `ChatQueueStorePort`) is **not** in the package — infrastructure-specific, kept in app (same pattern as `@wispace/chat-history`: only memory backend is split out, Redis stays in app).
 - Modify package → rebuild + test `apps/messenger-bot` (`npx turbo run build test --filter=@wispace/messenger-bot... --filter=@wispace/chat-queue-core`). `apps/discord-bot` doesn't have debounce/queue yet — when adding, use this package directly instead of rewriting the state machine.
 
 ## Monorepo boundary: `packages/study-reminder-core`
@@ -126,7 +126,7 @@ apps/messenger-bot/src/modules/<feature>/
 | `MESSENGER_MAPPING_READER` | `MessengerMappingReaderPort` | `MessengerRepository` | `StudyReminderSyncService`, `UserDisplayNameService` |
 | `MESSAGE_SENDER` | `MessageSenderPort` | `MessengerOutboundService` | `StudyReminderDispatchService` |
 | `CHAT_RATE_LIMIT_REPOSITORY` | `ChatRateLimitRepositoryPort` | `ChatRateLimitRepository` | `ChatRateLimitService` |
-| `CHAT_QUEUE_STORE` | `ChatQueueStorePort` | `ChatQueueStoreResolver` → Redis | `MessengerChatQueueService` (distributed) |
+| `CHAT_QUEUE_STORE` | `ChatQueueStorePort` | `ChatQueueStoreResolver` → Redis | `MessengerChatProcessorService` (distributed) |
 | `CHAT_HISTORY_STORE` | `ChatHistoryStorePort` | `ChatHistoryStoreResolver` | `MessengerChatHistoryService` |
 | `STUDY_REMINDER_JOB_REPOSITORY` | `StudyReminderJobRepositoryPort` | `StudyReminderJobRepository` | (backup inject via port) |
 
@@ -154,7 +154,7 @@ apps/messenger-bot/src/modules/<feature>/
 | `@Entity()` in `domain/` | ORM entity in `infrastructure/database/entities/` |
 | `StudyReminderModule` imports `MessengerModule` | Import `MessengerOutboundModule` + port |
 | `MessengerService` in dispatch | `MESSAGE_SENDER` + `StudyReminderService` |
-| Reserve quota in webhook | `ChatRateLimitService` in `MessengerChatQueueService` flush |
+| Reserve quota in webhook | `ChatRateLimitService` in `MessengerChatProcessorService` flush |
 | New service in `apps/messenger-bot/src/messenger/*.ts` (flat) | Correct layer in `apps/messenger-bot/src/modules/messenger/...` |
 | Import NestJS/TypeORM in `packages/llm-agent` | Package only uses port interface, app implements with Nest |
 | Wispace API business logic in `packages/llm-agent` | Tool handler stays in app, implements `ToolExecutorPort` |

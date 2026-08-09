@@ -14,7 +14,7 @@ export type {
 /**
  * Messenger adapter over the shared `PlatformAgentService` — maps the
  * Messenger input/reply shapes (psid, linkContext, richFollowUps) that
- * MessengerChatQueueService consumes onto the platform-neutral ones.
+ * MessengerChatProcessorService consumes onto the platform-neutral ones.
  */
 @Injectable()
 export class MessengerAgentService {
