@@ -463,8 +463,11 @@ export class ChatRateLimitRepository {
       if (usageDecrement.size > 0) {
         const entries = [...usageDecrement.entries()];
         const valuesClauses: string[] = [];
-        const params: unknown[] = [this.platform];
-        let paramIndex = 2;
+        // NOTE: no leading platform param — the SQL below only references
+        // $1..$4 (one per VALUES column); a stray $1 param would make
+        // Postgres fail with "could not determine data type of parameter $1".
+        const params: unknown[] = [];
+        let paramIndex = 1;
 
         for (let i = 0; i < entries.length; i++) {
           const [key, count] = entries[i];
