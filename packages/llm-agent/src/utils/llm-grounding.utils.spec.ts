@@ -14,27 +14,68 @@ describe('checkLlmGrounding', () => {
         'Mình chỉ hỗ trợ về WISPACE và IELTS Writing thôi bạn nhé.',
         new Set<string>(),
       ],
-      [
-        'score after tool',
-        'Band của bạn hiện tại là 6.5 theo mục tiêu bạn đã đặt.',
-        new Set(['get_user_goals']),
-      ],
-      [
-        'schedule after tool',
-        'Buổi học của bạn lúc 19:00 ngày 28/06.',
-        new Set(['list_study_calendar_entries']),
-      ],
-      [
-        'reminder tool covered',
-        'Lúc 08:30 ngày 29/6 bạn có buổi học nhé.',
-        new Set(['get_upcoming_study_sessions']),
-      ],
-    ] as const;
+    [
+      'score after tool',
+      'Band của bạn hiện tại là 6.5 theo mục tiêu bạn đề đạt.',
+      new Set(['get_user_goals']),
+    ],
+    [
+      'schedule after tool',
+      'Buổi học của bạn lúc 19:00 ngày 28/06.',
+      new Set(['list_study_calendar_entries']),
+    ],
+    [
+      'reminder tool covered',
+      'Lúc 08:30 ngày 29/6 bạn có buổi học nhé.',
+      new Set(['get_upcoming_study_sessions']),
+    ],
+    [
+      'generic advice with decimal (no score keyword)',
+      'Bạn có thể đạt 6.5 nếu luyện thêm Task 1 nhé.',
+      new Set<string>(),
+    ],
+    [
+      'bare time mention (no schedule context)',
+      'Mình sẽ nhắc bạn lúc 19:30 tối nay nhé.',
+      new Set<string>(),
+    ],
+    [
+      'date mention without schedule context',
+      'Ngày 2/9 tới WISPACE nghỉ lễ nhé.',
+      new Set<string>(),
+    ],
+    [
+      'whole number band without decimal',
+      'Để đạt band 7, bạn cần luyện coherence và Task Achievement.',
+      new Set<string>(),
+    ],
+  ] as const;
 
-    it.each(cases)('%s', (_label, text, tools) => {
-      const result = checkLlmGrounding(text, tools);
+  it.each(cases)('%s', (_label, text, tools) => {
+    const result = checkLlmGrounding(text, tools);
+    expect(result.suspicious).toBe(false);
+  });
+
+  describe('user echo suppression', () => {
+    it('does not flag a date the user just typed', () => {
+      const result = checkLlmGrounding(
+        'Buổi học 15/08 của bạn đã được dời.',
+        new Set<string>(),
+        'buổi học 15/08 có bị dời không?',
+      );
       expect(result.suspicious).toBe(false);
     });
+
+    it('still flags a date the user did NOT provide', () => {
+      const result = checkLlmGrounding(
+        'Buổi học 15/08 của bạn đã được dời.',
+        new Set<string>(),
+        'tuần sau mình có lịch gì không?',
+      );
+      expect(result.suspicious).toBe(true);
+      expect(result.reason).toBe('schedule_without_tool');
+    });
+  });
   });
 
   describe('suspicious responses — personal score without score tool', () => {

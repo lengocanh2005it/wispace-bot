@@ -319,7 +319,11 @@ export class LlmAgentService<TToolContext> {
             throw new Error('LLM provider returned empty content');
           }
 
-          const groundingCheck = checkLlmGrounding(text, groundedToolsThisTurn);
+          const groundingCheck = checkLlmGrounding(
+            text,
+            groundedToolsThisTurn,
+            input.userText,
+          );
           if (groundingCheck.suspicious) {
             logger.warn(
               `LLM_GROUNDING_WARNING feature=${FEATURE} externalUserId=${input.externalUserId} reason=${groundingCheck.reason} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
