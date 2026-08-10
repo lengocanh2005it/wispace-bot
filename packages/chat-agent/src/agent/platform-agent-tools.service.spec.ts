@@ -254,14 +254,14 @@ describe('PlatformAgentToolsService', () => {
       expect(result).toEqual({ hasSession: false });
     });
 
-    it('register_exam_report_notifications returns success when linked', async () => {
+    it('register_exam_report_notifications reports automatic coverage when linked', async () => {
       const result = await service.execute(
         'register_exam_report_notifications',
         '{}',
         { externalUserId: 'discord-1', userId: 143 },
       );
 
-      expect(result).toMatchObject({ registered: true });
+      expect(result).toMatchObject({ registered: false, automatic: true });
     });
 
     it('register_exam_report_notifications returns not-linked message when unlinked', async () => {

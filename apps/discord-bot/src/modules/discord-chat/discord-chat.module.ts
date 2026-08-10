@@ -56,7 +56,7 @@ const NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';
 
 const REGISTER_REPORT_MESSAGE =
-  'Bạn đã đăng ký nhận báo cáo học tập. WISPACE sẽ gửi báo cáo AI qua Discord vào mỗi buổi sáng — khoảng 2–3 ngày trước ngày thi bạn sẽ nhận được báo cáo chi tiết.';
+  'Báo cáo học tập là tự động — WISPACE gửi báo cáo AI qua Discord vào mỗi buổi sáng, khoảng 2–3 ngày trước ngày thi bạn sẽ nhận được báo cáo chi tiết. Bạn không cần đăng ký riêng.';
 
 @Module({
   imports: [

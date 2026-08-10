@@ -148,10 +148,14 @@ export class PlatformAgentToolsService {
           this.rescheduleStudySession(ctx, args),
         );
       case 'register_exam_report_notifications':
+        // No side effect on Discord/Zalo: the report cron covers every linked
+        // account, so registration is automatic. Be honest about it instead
+        // of claiming a registration that never happened.
         return this.withLinkedAccount(ctx, () =>
           Promise.resolve({
-            registered: true,
-            alreadyActive: true,
+            registered: false,
+            alreadyActive: false,
+            automatic: true,
             message: this.options.registerReportMessage,
           }),
         );
