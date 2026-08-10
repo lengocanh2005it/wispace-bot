@@ -4,7 +4,9 @@ set -euo pipefail
 # Zero-downtime VPS deploy script for all WISPACE bots.
 # Runs in the deploy dir (cwd) containing docker-compose.prod.yml (+ optional production.env).
 #
-# Flow: start new container → health check → switch nginx → monitor → stop old
+# Flow: start new container (docker run, NOT compose — compose would recreate
+# the old container instead of running both side by side) → health check →
+# switch nginx → monitor → stop old.
 #
 # Requires env: IMAGE, DEPLOY_MODE, APP_NAME
 # Optional env: FORCE_RECREATE, GHCR_PULL_TOKEN, GHCR_USER, HEALTH_PATH, PORT,
@@ -18,31 +20,51 @@ set -euo pipefail
 : "${GHCR_PULL_TOKEN:-}"
 : "${GHCR_USER:-}"
 : "${HEALTH_PATH:=/health}"                   # health check path (empty skips)
-: "${HEALTH_MAX_ATTEMPTS:=30}"             # health check attempts before rollback
-: "${PORT:=5007}"                          # default port (compose overrides via .env)
+: "${HEALTH_MAX_ATTEMPTS:=30}"                # health check attempts before rollback
+: "${PORT:=5007}"                             # default port (overridden from .env)
 : "${DEPLOY_HOST_DIR:=/home/ngoc_anh/${APP_NAME}}"
 : "${NGINX_UPSTREAM_DIR:=/home/ngoc_anh/infra/nginx/upstreams}"
-: "${POST_SWITCH_MONITOR_ATTEMPTS:=24}"    # monitor after switch (24 × 5s = 2 min)
-: "${POST_SWITCH_MONITOR_INTERVAL:=5}"     # seconds between post-switch checks
+: "${POST_SWITCH_MONITOR_ATTEMPTS:=24}"       # monitor after switch (24 × 5s = 2 min)
+: "${POST_SWITCH_MONITOR_INTERVAL:=5}"        # seconds between post-switch checks
 
 COMPOSE_FILE="docker-compose.prod.yml"
 
-# ─── Port mapping: active ↔ standby ─────────────────────────────────────────
-# Each bot has two ports; the deploy toggles between them.
-declare -A PORT_MAP=(
-  [messenger-bot]="5007:5008"
-  [discord-bot]="3001:3002"
-  [zalo-bot]="3002:3003"
+# ─── Per-app config: port pairs + docker run resources ─────────────────────────
+# Format: ACTIVE:STANDBY:MEM:CPUS:EXTRA_VOLUMES(;separated):GROUP_DOCKER
+declare -A APP_CFG=(
+  [messenger-bot]="5007:5008:512m:1.0:./.env:/deploy/.env;./docker-compose.prod.yml:/deploy/docker-compose.prod.yml:ro;/var/run/docker.sock:/var/run/docker.sock:yes"
+  [discord-bot]="3001:3002:256m:0.5::no"
+  [zalo-bot]="3002:3003:256m:0.5::no"
 )
 
 get_standalone_port() {
   local app="$1"
-  echo "${PORT_MAP[$app]%%:*}"
+  echo "${APP_CFG[$app]%%:*}"
 }
 
 get_standby_port() {
   local app="$1"
-  echo "${PORT_MAP[$app]##*:}"
+  echo "${APP_CFG[$app]#*:}" | cut -d: -f1
+}
+
+get_mem() {
+  local app="$1"
+  echo "${APP_CFG[$app]#*:*:}" | cut -d: -f1
+}
+
+get_cpus() {
+  local app="$1"
+  echo "${APP_CFG[$app]#*:*:*:}" | cut -d: -f1
+}
+
+get_extra_volumes() {
+  local app="$1"
+  echo "${APP_CFG[$app]#*:*:*:*:}" | cut -d: -f1
+}
+
+get_group_docker() {
+  local app="$1"
+  echo "${APP_CFG[$app]##*:}"
 }
 
 # ─── Prepare .env from production.env (Doppler download from CI) ─────────────
@@ -60,7 +82,7 @@ if [ -f "production.env" ]; then
 fi
 
 if [ ! -f ".env" ]; then
-  echo "WARNING: No .env file found — docker compose may fail"
+  echo "WARNING: No .env file found — container will have no env"
 fi
 
 # ─── Ensure deploy-owned env vars (idempotent — only fills missing keys) ─────
@@ -107,20 +129,37 @@ if [ -n "${GHCR_PULL_TOKEN:-}" ] && [ -n "${GHCR_USER:-}" ]; then
   echo "$GHCR_PULL_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>/dev/null || true
 fi
 
-export IMAGE
-export DEPLOY_UID=${DEPLOY_UID:-1001}
-export DEPLOY_GID=${DEPLOY_GID:-1001}
+DEPLOY_UID=${DEPLOY_UID:-$(id -u)}
+DEPLOY_GID=${DEPLOY_GID:-$(id -g)}
+
+# ─── Prepare env file for docker run (strip quotes) ───────────────────────────
+# docker run --env-file does NOT strip surrounding quotes like compose does,
+# and Doppler downloads values as KEY="value" — strip them here.
+ENV_FILE="/tmp/${APP_NAME}.docker-env"
+sed 's/^\([A-Za-z_][A-Za-z0-9_]*\)="\(.*\)"$/\1=\2/' .env > "$ENV_FILE"
 
 # ─── Determine active / standby ports ────────────────────────────────────────
 ACTIVE_PORT=$(get_standalone_port "$APP_NAME")
 STANDBY_PORT=$(get_standby_port "$APP_NAME")
 
-# If the active container is already on the standby port (previous deploy didn't
-# complete the toggle), swap roles so we always deploy to the other port.
+# Active container: prefer ${APP_NAME}-old; fall back to ${APP_NAME} (first
+# deploy after the migration, when containers were not suffixed yet).
 ACTIVE_CONTAINER="${APP_NAME}-old"
-ACTIVE_CONTAINER_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$ACTIVE_CONTAINER" 2>/dev/null || true)
-if [ -n "$ACTIVE_CONTAINER_IMAGE" ]; then
+if ! docker inspect "$ACTIVE_CONTAINER" >/dev/null 2>&1; then
+  if docker inspect "$APP_NAME" >/dev/null 2>&1; then
+    ACTIVE_CONTAINER="$APP_NAME"
+  else
+    ACTIVE_CONTAINER=""
+  fi
+fi
+
+ACTIVE_CONTAINER_IMAGE=""
+ACTIVE_CONTAINER_PORT=""
+if [ -n "$ACTIVE_CONTAINER" ]; then
+  ACTIVE_CONTAINER_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$ACTIVE_CONTAINER" 2>/dev/null || true)
   ACTIVE_CONTAINER_PORT=$(docker inspect -f '{{range $p, $conf := .NetworkSettings.Ports}}{{(index $conf 0).HostPort}}{{end}}' "$ACTIVE_CONTAINER" 2>/dev/null | head -1 || true)
+  # If the active container is already on the standby port (previous deploy
+  # switched but naming lagged), swap roles so we always deploy to the other port.
   if [ "$ACTIVE_CONTAINER_PORT" = "$STANDBY_PORT" ]; then
     echo "Active container already on standby port $STANDBY_PORT — swapping ports"
     tmp="$ACTIVE_PORT"
@@ -131,21 +170,51 @@ fi
 
 NEW_CONTAINER="${APP_NAME}-new"
 echo "Deploy: $APP_NAME"
-echo "  Active container:  $ACTIVE_CONTAINER (port $ACTIVE_PORT)"
+echo "  Active container:  ${ACTIVE_CONTAINER:-<none>} (port $ACTIVE_PORT)"
 echo "  New container:     $NEW_CONTAINER (port $STANDBY_PORT)"
 echo "  Image:             $IMAGE"
 
+# Clean leftover container from a failed deploy
+docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+
 # ─── Pull image ───────────────────────────────────────────────────────────────
-if [ "$FORCE_RECREATE" = "true" ]; then
-  docker compose -f "$COMPOSE_FILE" pull "$APP_NAME" || true
-else
-  docker compose -f "$COMPOSE_FILE" pull "$APP_NAME" 2>/dev/null || true
+docker pull "$IMAGE" 2>/dev/null || docker pull "$IMAGE" || true
+
+# ─── Start new container on standby port (docker run, NOT compose) ────────────
+# Compose would "recreate" the old container (it matches by project/service
+# labels), killing it instead of running both side by side.
+echo "Starting $NEW_CONTAINER on port $STANDBY_PORT ..."
+
+RUN_ARGS=(
+  -d
+  --name "$NEW_CONTAINER"
+  --restart unless-stopped
+  --user "${DEPLOY_UID}:${DEPLOY_GID}"
+  --env-file "$ENV_FILE"
+  -e HOME=/tmp
+  -e PORT="${STANDBY_PORT}"
+  -p "127.0.0.1:${STANDBY_PORT}:${STANDBY_PORT}"
+  --memory "$(get_mem "$APP_NAME")"
+  --cpus "$(get_cpus "$APP_NAME")"
+)
+
+EXTRA_VOLUMES="$(get_extra_volumes "$APP_NAME")"
+if [ -n "$EXTRA_VOLUMES" ]; then
+  IFS=';' read -r -a VOL_ARRAY <<< "$EXTRA_VOLUMES"
+  for vol in "${VOL_ARRAY[@]}"; do
+    [ -n "$vol" ] && RUN_ARGS+=(-v "$vol")
+  done
 fi
 
-# ─── Start new container on standby port ──────────────────────────────────────
-echo "Starting $NEW_CONTAINER on port $STANDBY_PORT ..."
-CONTAINER_NAME="$NEW_CONTAINER" PORT="$STANDBY_PORT" \
-  docker compose -f "$COMPOSE_FILE" up -d "$APP_NAME"
+if [ "$(get_group_docker "$APP_NAME")" = "yes" ] && [ -n "${DOCKER_GID:-}" ]; then
+  RUN_ARGS+=(--group-add "${DOCKER_GID}")
+fi
+
+if ! docker run "${RUN_ARGS[@]}" "$IMAGE"; then
+  echo "ERROR: docker run failed for $NEW_CONTAINER" >&2
+  docker logs "$NEW_CONTAINER" --tail 60 2>/dev/null || true
+  exit 1
+fi
 
 # ─── Health check new container (before migrations) ──────────────────────────
 echo "Health-checking $NEW_CONTAINER (port $STANDBY_PORT) ..."
@@ -161,9 +230,8 @@ done
 
 if [ -z "$healthy" ]; then
   echo "ERROR: New container failed health check — rolling back" >&2
-  docker compose -f "$COMPOSE_FILE" logs "$NEW_CONTAINER" --tail 80 2>/dev/null || true
-  CONTAINER_NAME="$NEW_CONTAINER" docker compose -f "$COMPOSE_FILE" stop "$APP_NAME" 2>/dev/null || true
-  CONTAINER_NAME="$NEW_CONTAINER" docker compose -f "$COMPOSE_FILE" rm -f "$APP_NAME" 2>/dev/null || true
+  docker logs "$NEW_CONTAINER" --tail 80 2>/dev/null || true
+  docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
   exit 1
 fi
 
@@ -194,15 +262,12 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ -n "${MIGRATION_CMD:-}" ]; then
       > "$PRE_MIGRATE_DUMP" 2>/dev/null || echo "WARNING: pre-migration dump failed — proceeding anyway"
     find "$PRE_MIGRATE_DIR" -name 'pre-migrate-*.dump' -mtime +1 -delete 2>/dev/null || true
 
-    # Run migrations inside the NEW container
-    if CONTAINER_NAME="$NEW_CONTAINER" docker compose -f "$COMPOSE_FILE" exec -T "$APP_NAME" \
-      sh -c "cd /app && $MIGRATION_CMD"; then
+    if docker exec "$NEW_CONTAINER" sh -c "cd /app && $MIGRATION_CMD"; then
       echo "Migrations applied OK"
     else
       echo "ERROR: migrations failed — rolling back" >&2
       lock_db "SELECT pg_advisory_unlock($MIGRATION_LOCK_ID)" || true
-      CONTAINER_NAME="$NEW_CONTAINER" docker compose -f "$COMPOSE_FILE" stop "$APP_NAME" 2>/dev/null || true
-      CONTAINER_NAME="$NEW_CONTAINER" docker compose -f "$COMPOSE_FILE" rm -f "$APP_NAME" 2>/dev/null || true
+      docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
       exit 1
     fi
     lock_db "SELECT pg_advisory_unlock($MIGRATION_LOCK_ID)" || true
@@ -212,8 +277,6 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ -n "${MIGRATION_CMD:-}" ]; then
 fi
 
 # ─── Sync upstream config from upload bundle to nginx dir ─────────────────────
-# The CI workflow uploads upstreams/${APP_NAME}.conf into the deploy dir.
-# Copy it to the live nginx upstreams dir so nginx picks it up.
 UPLOAD_UPSTREAM="$(pwd)/upstreams/${APP_NAME}.conf"
 mkdir -p "$NGINX_UPSTREAM_DIR"
 if [ -f "$UPLOAD_UPSTREAM" ]; then
@@ -226,9 +289,12 @@ UPSTREAM_CONF="${NGINX_UPSTREAM_DIR}/${APP_NAME}.conf"
 if [ -f "$UPSTREAM_CONF" ]; then
   echo "Switching nginx upstream → 127.0.0.1:${STANDBY_PORT}"
   sed -i "s/server 127.0.0.1:[0-9]*/server 127.0.0.1:${STANDBY_PORT}/" "$UPSTREAM_CONF"
-  nginx -s reload 2>/dev/null || sudo nginx -s reload 2>/dev/null || {
-    echo "WARNING: nginx reload failed — traffic may still go to old container"
-  }
+  if ! sudo nginx -s reload 2>/dev/null; then
+    echo "ERROR: nginx reload failed — rolling back upstream" >&2
+    sed -i "s/server 127.0.0.1:[0-9]*/server 127.0.0.1:${ACTIVE_PORT}/" "$UPSTREAM_CONF"
+    docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+    exit 1
+  fi
 else
   echo "WARNING: upstream conf not found at $UPSTREAM_CONF — skipping nginx switch"
 fi
@@ -251,18 +317,16 @@ if [ -z "$monitor_healthy" ]; then
   echo "ERROR: Post-switch health check failed — rolling back nginx to port $ACTIVE_PORT" >&2
   if [ -f "$UPSTREAM_CONF" ]; then
     sed -i "s/server 127.0.0.1:[0-9]*/server 127.0.0.1:${ACTIVE_PORT}/" "$UPSTREAM_CONF"
-    nginx -s reload 2>/dev/null || sudo nginx -s reload 2>/dev/null || true
+    sudo nginx -s reload 2>/dev/null || true
   fi
-  # Stop the failed new container
-  CONTAINER_NAME="$NEW_CONTAINER" docker compose -f "$COMPOSE_FILE" stop "$APP_NAME" 2>/dev/null || true
-  CONTAINER_NAME="$NEW_CONTAINER" docker compose -f "$COMPOSE_FILE" rm -f "$APP_NAME" 2>/dev/null || true
+  docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
   exit 1
 fi
 
 echo "Post-switch health OK — new container stable"
 
 # ─── Stop old container ──────────────────────────────────────────────────────
-if [ -n "$ACTIVE_CONTAINER_IMAGE" ]; then
+if [ -n "$ACTIVE_CONTAINER" ] && [ -n "$ACTIVE_CONTAINER_IMAGE" ]; then
   echo "Stopping old container: $ACTIVE_CONTAINER"
   docker stop "$ACTIVE_CONTAINER" 2>/dev/null || true
   docker rm "$ACTIVE_CONTAINER" 2>/dev/null || true
@@ -270,7 +334,7 @@ fi
 
 # ─── Rename new container → old (for next deploy) ────────────────────────────
 if docker inspect "$NEW_CONTAINER" >/dev/null 2>&1; then
-  docker rename "$NEW_CONTAINER" "$ACTIVE_CONTAINER" 2>/dev/null || true
+  docker rename "$NEW_CONTAINER" "${APP_NAME}-old" 2>/dev/null || true
 fi
 
 echo "✓ Deploy complete: $APP_NAME ($IMAGE) on port $STANDBY_PORT"
