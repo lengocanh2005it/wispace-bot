@@ -33,7 +33,7 @@ COMPOSE_FILE="docker-compose.prod.yml"
 # Format: ACTIVE:STANDBY:MEM:CPUS:EXTRA_VOLUMES(;separated):GROUP_DOCKER
 declare -A APP_CFG=(
   [messenger-bot]="5007:5008:512m:1.0:./.env:/deploy/.env;./docker-compose.prod.yml:/deploy/docker-compose.prod.yml:ro;/var/run/docker.sock:/var/run/docker.sock:yes"
-  [discord-bot]="3001:3002:256m:0.5::no"
+  [discord-bot]="3001:3004:256m:0.5::no"
   [zalo-bot]="3002:3003:256m:0.5::no"
 )
 
