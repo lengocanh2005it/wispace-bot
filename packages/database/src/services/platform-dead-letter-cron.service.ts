@@ -42,9 +42,8 @@ export class PlatformDeadLetterCronService {
 
   @Cron('0 */5 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async handleRetry(): Promise<void> {
-    const result = await this.pgLock.withLock(
-      this.options.lockId,
-      () => this.runRetryBatch(),
+    const result = await this.pgLock.withLock(this.options.lockId, () =>
+      this.runRetryBatch(),
     );
 
     if (result === null) {

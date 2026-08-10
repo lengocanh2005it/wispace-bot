@@ -7,7 +7,11 @@ import {
   CleanupCronService,
   PlatformCleanupCronService,
 } from '@wispace/cleanup-cron';
-import { BotCommonModule, PgAdvisoryLockService, REDIS_CLIENT } from '@wispace/bot-common';
+import {
+  BotCommonModule,
+  PgAdvisoryLockService,
+  REDIS_CLIENT,
+} from '@wispace/bot-common';
 import {
   ChatMeteringModule,
   PlatformChatRateLimitService,
@@ -232,18 +236,23 @@ const REGISTER_REPORT_MESSAGE =
         outboundService: DiscordOutboundService,
         pgLock: PgAdvisoryLockService,
       ) =>
-        new PlatformDeadLetterCronService(deadLetterService, configService, pgLock, {
-          lockId: 884_200_930,
-          extractPayload: (payload) => ({
-            externalUserId: payload.discordUserId as string | undefined,
-            text: payload.text as string | undefined,
-          }),
-          abandonReason: 'Missing discordUserId or text in payload',
-          sendText: (externalUserId, text) =>
-            outboundService.sendText(externalUserId, text, {
-              skipDeadLetter: true,
+        new PlatformDeadLetterCronService(
+          deadLetterService,
+          configService,
+          pgLock,
+          {
+            lockId: 884_200_930,
+            extractPayload: (payload) => ({
+              externalUserId: payload.discordUserId as string | undefined,
+              text: payload.text as string | undefined,
             }),
-        }),
+            abandonReason: 'Missing discordUserId or text in payload',
+            sendText: (externalUserId, text) =>
+              outboundService.sendText(externalUserId, text, {
+                skipDeadLetter: true,
+              }),
+          },
+        ),
       inject: [
         PlatformDeadLetterService,
         ConfigService,

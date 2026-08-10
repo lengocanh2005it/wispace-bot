@@ -189,13 +189,13 @@ export class ReportSendOrchestrationService {
               firstAttemptDate: reportDate,
               maxRetries: settings.maxRetries,
               nextRetryAt,
-              errorMessage: error.message,
+              errorMessage: errorMessage(error),
             },
           );
           if (job.nextRetryAt) retryQueued = 1;
         }
         this.logger.warn(
-          `Deferred scheduled report for PSID ${mapping.psid} (retryable ${error.constructor.name}, R3/R5)`,
+          `Deferred scheduled report for PSID ${mapping.psid} (retryable, R3/R5)`,
         );
         return { ...ZERO, deferred: 1, retryQueued };
       }

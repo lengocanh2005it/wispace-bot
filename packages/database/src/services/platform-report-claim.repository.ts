@@ -62,7 +62,12 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
       ON CONFLICT (platform, external_user_id, report_date) DO NOTHING
       RETURNING id
     `,
-      [this.platform, params.externalUserId, params.reportDate, params.userId ?? null],
+      [
+        this.platform,
+        params.externalUserId,
+        params.reportDate,
+        params.userId ?? null,
+      ],
     );
 
     return rows.length > 0;

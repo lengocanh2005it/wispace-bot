@@ -19,9 +19,7 @@ const DEFAULT_STALE_CLAIM_MS = 2 * 60 * 60 * 1000;
  */
 @Injectable()
 export class ReportClaimStaleResetCronService {
-  private readonly logger = new Logger(
-    ReportClaimStaleResetCronService.name,
-  );
+  private readonly logger = new Logger(ReportClaimStaleResetCronService.name);
 
   constructor(
     private readonly configService: ConfigService,

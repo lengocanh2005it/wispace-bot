@@ -284,7 +284,9 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     });
 
     expect(result.failures).toHaveLength(1);
-    expect(reportSendJobRepository.recordRetryableFailure).not.toHaveBeenCalled();
+    expect(
+      reportSendJobRepository.recordRetryableFailure,
+    ).not.toHaveBeenCalled();
     expect(
       messengerRepository.releaseScheduledReportClaim,
     ).toHaveBeenCalledWith({
@@ -323,6 +325,8 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     expect(
       messengerRepository.releaseScheduledReportClaim,
     ).not.toHaveBeenCalled();
-    expect(reportSendJobRepository.recordRetryableFailure).not.toHaveBeenCalled();
+    expect(
+      reportSendJobRepository.recordRetryableFailure,
+    ).not.toHaveBeenCalled();
   });
 });

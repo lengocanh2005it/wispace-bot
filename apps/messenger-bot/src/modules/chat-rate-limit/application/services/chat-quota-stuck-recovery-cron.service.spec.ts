@@ -4,9 +4,7 @@ import { ChatQuotaStuckRecoveryCronService } from './chat-quota-stuck-recovery-c
 describe('ChatQuotaStuckRecoveryCronService', () => {
   const buildService = () => {
     const chatRateLimitService = {
-      recoverStuckReservedSlots: jest
-        .fn()
-        .mockResolvedValue({ recovered: [] }),
+      recoverStuckReservedSlots: jest.fn().mockResolvedValue({ recovered: [] }),
     };
     const pgLock = {
       withLock: jest
@@ -38,6 +36,8 @@ describe('ChatQuotaStuckRecoveryCronService', () => {
 
     await service.handleStuckRecovery();
 
-    expect(chatRateLimitService.recoverStuckReservedSlots).not.toHaveBeenCalled();
+    expect(
+      chatRateLimitService.recoverStuckReservedSlots,
+    ).not.toHaveBeenCalled();
   });
 });

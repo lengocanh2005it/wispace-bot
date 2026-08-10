@@ -70,9 +70,7 @@ export class ZaloWebhookController {
       // Inbound webhook events are never dead-lettered for replay — the retry
       // cron only replays outbound sends. Logging is the audit trail here;
       // Zalo does not retry webhook callbacks after we answer 200.
-      this.logger.warn(
-        `Webhook event failed: ${errorMessage(error)}`,
-      );
+      this.logger.warn(`Webhook event failed: ${errorMessage(error)}`);
     }
     return { received: true };
   }

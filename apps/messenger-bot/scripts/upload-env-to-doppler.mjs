@@ -91,15 +91,7 @@ function uploadConfig(config, baseEntries) {
   try {
     execFileSync(
       'doppler',
-      [
-        'secrets',
-        'upload',
-        tempPath,
-        '--project',
-        project,
-        '--config',
-        config,
-      ],
+      ['secrets', 'upload', tempPath, '--project', project, '--config', config],
       { stdio: 'inherit' },
     );
     console.log(`Uploaded ${entries.size} secrets to ${project}/${config}`);

@@ -24,8 +24,6 @@ function buildDedupe(): ZaloWebhookDedupeService {
   return new ZaloWebhookDedupeService();
 }
 
-
-
 describe('ZaloWebhookController', () => {
   const appId = 'app-1';
   const appSecretKey = 'app-secret';

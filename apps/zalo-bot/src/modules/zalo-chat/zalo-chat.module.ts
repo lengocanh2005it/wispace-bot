@@ -270,18 +270,23 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         outboundService: ZaloOutboundService,
         pgLock: PgAdvisoryLockService,
       ) =>
-        new PlatformDeadLetterCronService(deadLetterService, configService, pgLock, {
-          lockId: 884_200_931,
-          extractPayload: (payload) => ({
-            externalUserId: payload.zaloUserId as string | undefined,
-            text: payload.text as string | undefined,
-          }),
-          abandonReason: 'Missing zaloUserId or text in payload',
-          sendText: (externalUserId, text) =>
-            outboundService.sendText(externalUserId, text, {
-              skipDeadLetter: true,
+        new PlatformDeadLetterCronService(
+          deadLetterService,
+          configService,
+          pgLock,
+          {
+            lockId: 884_200_931,
+            extractPayload: (payload) => ({
+              externalUserId: payload.zaloUserId as string | undefined,
+              text: payload.text as string | undefined,
             }),
-        }),
+            abandonReason: 'Missing zaloUserId or text in payload',
+            sendText: (externalUserId, text) =>
+              outboundService.sendText(externalUserId, text, {
+                skipDeadLetter: true,
+              }),
+          },
+        ),
       inject: [
         PlatformDeadLetterService,
         ConfigService,

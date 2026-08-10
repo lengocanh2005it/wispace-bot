@@ -73,7 +73,7 @@ async function cmdList(pool, limit) {
   for (const row of rows) {
     console.log(
       `  id=${row.id}  psid=${row.psid ?? 'n/a'}  mid=${row.message_mid ?? 'n/a'}` +
-      `  retries=${row.retry_count}  created=${row.created_at.toISOString()}`,
+        `  retries=${row.retry_count}  created=${row.created_at.toISOString()}`,
     );
     console.log(`    error: ${row.error_message}`);
   }
@@ -139,7 +139,9 @@ async function cmdReplay(pool, limit, baseUrl) {
            WHERE id = $1`,
           [row.id, errMsg],
         );
-        console.log(`  [FAIL] id=${row.id} psid=${row.psid ?? 'n/a'}: ${errMsg}`);
+        console.log(
+          `  [FAIL] id=${row.id} psid=${row.psid ?? 'n/a'}: ${errMsg}`,
+        );
         failed += 1;
       } else {
         await pool.query(

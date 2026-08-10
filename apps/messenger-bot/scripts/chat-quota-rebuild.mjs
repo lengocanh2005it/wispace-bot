@@ -77,7 +77,8 @@ async function main() {
       return false;
     },
   });
-  const timezone = process.env.CHAT_USAGE_TIMEZONE?.trim() ?? 'Asia/Ho_Chi_Minh';
+  const timezone =
+    process.env.CHAT_USAGE_TIMEZONE?.trim() ?? 'Asia/Ho_Chi_Minh';
   const today = todayUsageDate(timezone);
   const from = args.from ?? today;
   const to = args.to ?? from;

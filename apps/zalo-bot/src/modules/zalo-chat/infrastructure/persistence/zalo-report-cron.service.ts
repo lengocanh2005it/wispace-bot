@@ -61,7 +61,12 @@ export class ZaloReportCronService {
     const errors: string[] = [];
 
     const results = await runBatched(links, CONCURRENCY, (link) =>
-      this.sendReportForUser(link, reportDate, sentUserIds, opts.forceSend === true),
+      this.sendReportForUser(
+        link,
+        reportDate,
+        sentUserIds,
+        opts.forceSend === true,
+      ),
     );
     for (const r of results) {
       if (r.status === 'fulfilled') {

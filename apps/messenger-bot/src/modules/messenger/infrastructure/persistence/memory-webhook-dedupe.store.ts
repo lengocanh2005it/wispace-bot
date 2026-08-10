@@ -43,8 +43,10 @@ export class MemoryWebhookDedupeStore implements WebhookDedupeStorePort {
     return Promise.resolve(false);
   }
 
-  async forgetMessageMid(mid: string, _psid: string): Promise<void> {
+  forgetMessageMid(mid: string, _psid: string): Promise<void> {
+    void _psid;
     this.messageMids.delete(mid);
+    return Promise.resolve();
   }
 
   private evictStaleMessageMids(): void {

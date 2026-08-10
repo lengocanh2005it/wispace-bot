@@ -70,11 +70,7 @@ export function splitMessengerBubbles(
     }
 
     let offset = 0;
-    for (
-      ;
-      offset < paragraph.length;
-      offset += maxCharsPerBubble
-    ) {
+    for (; offset < paragraph.length; offset += maxCharsPerBubble) {
       if (bubbles.length >= maxBubbles) {
         droppedTail = true;
         break;

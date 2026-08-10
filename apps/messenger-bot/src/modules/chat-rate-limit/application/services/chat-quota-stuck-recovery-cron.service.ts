@@ -13,9 +13,7 @@ import { ChatRateLimitService } from './chat-rate-limit.service';
  */
 @Injectable()
 export class ChatQuotaStuckRecoveryCronService {
-  private readonly logger = new Logger(
-    ChatQuotaStuckRecoveryCronService.name,
-  );
+  private readonly logger = new Logger(ChatQuotaStuckRecoveryCronService.name);
 
   constructor(
     private readonly chatRateLimitService: ChatRateLimitService,

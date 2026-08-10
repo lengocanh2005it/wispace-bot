@@ -114,8 +114,7 @@ const args = parseArgs(process.argv.slice(2), {
     return false;
   },
 });
-const timezone =
-  process.env.CHAT_USAGE_TIMEZONE?.trim() ?? 'Asia/Ho_Chi_Minh';
+const timezone = process.env.CHAT_USAGE_TIMEZONE?.trim() ?? 'Asia/Ho_Chi_Minh';
 const usageDate = args.date ?? todayUsageDate(timezone);
 const dailyLimit = readPositiveNumber('CHAT_FREE_FORM_DAILY_LIMIT', 15);
 const burstPerMinute = readPositiveNumber('CHAT_BURST_PER_MINUTE', 3);
@@ -205,8 +204,7 @@ try {
             stuckReserved: stuckReservedCount.rows[0]?.count ?? 0,
             usersAtDailyLimit: usersAtLimit.rows[0]?.count ?? 0,
             denyLogs24h: denyLogs24h.rows[0]?.count ?? 0,
-            usersWithUsageToday:
-              dailyUsageToday.rows[0]?.users_with_usage ?? 0,
+            usersWithUsageToday: dailyUsageToday.rows[0]?.users_with_usage ?? 0,
             totalMessagesToday: dailyUsageToday.rows[0]?.total_messages ?? 0,
             idempotencyByStatus: Object.fromEntries(
               idempotencyFleet.rows.map((row) => [row.status, row.count]),
@@ -229,8 +227,8 @@ try {
       ),
     );
   } else {
-  const dailyUsageResult = await pool.query(
-    `
+    const dailyUsageResult = await pool.query(
+      `
       SELECT
         id,
         psid,
@@ -245,11 +243,11 @@ try {
         AND usage_date = $3::date
       ORDER BY psid ASC
     `,
-    [args.psid, args.userId, usageDate],
-  );
+      [args.psid, args.userId, usageDate],
+    );
 
-  const idempotencyResult = await pool.query(
-    `
+    const idempotencyResult = await pool.query(
+      `
       SELECT
         idempotency_key,
         psid,
@@ -264,22 +262,22 @@ try {
       ORDER BY reserved_at DESC
       LIMIT 100
     `,
-    [args.psid, args.userId, usageDate],
-  );
+      [args.psid, args.userId, usageDate],
+    );
 
-  const burstResult = await pool.query(
-    `
+    const burstResult = await pool.query(
+      `
       SELECT COUNT(*)::int AS recent_count
       FROM messenger_chat_idempotency
       WHERE ($1::varchar IS NULL OR psid = $1)
         AND reserved_at > NOW() - INTERVAL '1 minute'
         AND status IN ('reserved', 'completed')
     `,
-    [args.psid],
-  );
+      [args.psid],
+    );
 
-  const stuckResult = await pool.query(
-    `
+    const stuckResult = await pool.query(
+      `
       SELECT
         idempotency_key,
         psid,
@@ -293,11 +291,11 @@ try {
       ORDER BY reserved_at ASC
       LIMIT 50
     `,
-    [stuckBefore, args.psid],
-  );
+      [stuckBefore, args.psid],
+    );
 
-  const idempotencyStatsResult = await pool.query(
-    `
+    const idempotencyStatsResult = await pool.query(
+      `
       SELECT status, COUNT(*)::int AS count
       FROM messenger_chat_idempotency
       WHERE ($1::varchar IS NULL OR psid = $1)
@@ -306,28 +304,28 @@ try {
       GROUP BY status
       ORDER BY status ASC
     `,
-    [args.psid, args.userId, usageDate],
-  );
+      [args.psid, args.userId, usageDate],
+    );
 
-  const retentionEligibleResult = await pool.query(
-    `
+    const retentionEligibleResult = await pool.query(
+      `
       SELECT COUNT(*)::int AS count
       FROM messenger_chat_idempotency
       WHERE status IN ('completed', 'refunded')
         AND reserved_at < NOW() - ($1::int * INTERVAL '1 day')
     `,
-    [retentionDays],
-  );
+      [retentionDays],
+    );
 
-  const idempotencyTotalResult = await pool.query(
-    `
+    const idempotencyTotalResult = await pool.query(
+      `
       SELECT COUNT(*)::int AS count
       FROM messenger_chat_idempotency
     `,
-  );
+    );
 
-  const denyLogsResult = await pool.query(
-    `
+    const denyLogsResult = await pool.query(
+      `
       SELECT COUNT(*)::int AS count
       FROM messenger_message_logs
       WHERE message_type = 'CHAT_QUOTA_DENIED'
@@ -335,80 +333,82 @@ try {
         AND ($2::int IS NULL OR user_id = $2)
         AND created_at::date = $3::date
     `,
-    [args.psid, args.userId, usageDate],
-  );
+      [args.psid, args.userId, usageDate],
+    );
 
-  let sharedQueueStats = {
-    queueStore:
-      process.env.CHAT_QUEUE_STORE ??
-      (process.env.CHAT_QUEUE_SHARED === 'true' ? 'redis' : 'memory'),
-    historyStore:
-      process.env.CHAT_HISTORY_STORE ??
-      (process.env.CHAT_QUEUE_SHARED === 'true' ? 'redis' : 'memory'),
-    queueSharedEnv: process.env.CHAT_QUEUE_SHARED === 'true',
-    note: 'Queue/history buffers live in Redis or in-process memory — postgres tables removed',
-  };
+    let sharedQueueStats = {
+      queueStore:
+        process.env.CHAT_QUEUE_STORE ??
+        (process.env.CHAT_QUEUE_SHARED === 'true' ? 'redis' : 'memory'),
+      historyStore:
+        process.env.CHAT_HISTORY_STORE ??
+        (process.env.CHAT_QUEUE_SHARED === 'true' ? 'redis' : 'memory'),
+      queueSharedEnv: process.env.CHAT_QUEUE_SHARED === 'true',
+      note: 'Queue/history buffers live in Redis or in-process memory — postgres tables removed',
+    };
 
-  const summary = dailyUsageResult.rows.map((row) => ({
-    psid: row.psid,
-    userId: row.user_id,
-    usageDate: row.usage_date,
-    used: row.free_form_count,
-    limit: dailyLimit,
-    remaining: Math.max(dailyLimit - row.free_form_count, 0),
-    whitelisted: readWhitelist().includes(row.psid),
-  }));
+    const summary = dailyUsageResult.rows.map((row) => ({
+      psid: row.psid,
+      userId: row.user_id,
+      usageDate: row.usage_date,
+      used: row.free_form_count,
+      limit: dailyLimit,
+      remaining: Math.max(dailyLimit - row.free_form_count, 0),
+      whitelisted: readWhitelist().includes(row.psid),
+    }));
 
-  console.log(
-    JSON.stringify(
-      {
-        filters: {
-          psid: args.psid,
-          userId: args.userId,
-          usageDate,
-        },
-        config: {
-          enabled: readEnabledFlag(),
-          dailyLimit,
-          burstPerMinute,
-          remainingHintThreshold,
-          stuckReservedMs,
-          retentionDays,
-          timezone,
-          whitelistedPsids: readWhitelist(),
-        },
-        observability: {
-          idempotencyByStatus: idempotencyStatsResult.rows,
-          idempotencyTableTotal: idempotencyTotalResult.rows[0]?.count ?? 0,
-          retentionEligibleCount: retentionEligibleResult.rows[0]?.count ?? 0,
-          chatQuotaDeniedLogsToday: denyLogsResult.rows[0]?.count ?? 0,
-          sharedQueue: sharedQueueStats,
-          logGrepHints: [
-            'CHAT_QUOTA_DENY',
-            'CHAT_QUOTA_REFUND',
-            'CHAT_QUOTA_RECOVERED',
-          ],
-        },
-        runbook: {
-          recommendedPoc: {
-            dailyLimit: '15-20',
-            burstPerMinute: 3,
+    console.log(
+      JSON.stringify(
+        {
+          filters: {
+            psid: args.psid,
+            userId: args.userId,
+            usageDate,
           },
-          recoverStuck: 'npm run chat-quota:recover-stuck',
-          cleanupIdempotency: 'npm run chat-quota:cleanup',
-          note: 'Bật CHAT_RATE_LIMIT_ENABLED=true trên production POC sau khi QA xong.',
+          config: {
+            enabled: readEnabledFlag(),
+            dailyLimit,
+            burstPerMinute,
+            remainingHintThreshold,
+            stuckReservedMs,
+            retentionDays,
+            timezone,
+            whitelistedPsids: readWhitelist(),
+          },
+          observability: {
+            idempotencyByStatus: idempotencyStatsResult.rows,
+            idempotencyTableTotal: idempotencyTotalResult.rows[0]?.count ?? 0,
+            retentionEligibleCount: retentionEligibleResult.rows[0]?.count ?? 0,
+            chatQuotaDeniedLogsToday: denyLogsResult.rows[0]?.count ?? 0,
+            sharedQueue: sharedQueueStats,
+            logGrepHints: [
+              'CHAT_QUOTA_DENY',
+              'CHAT_QUOTA_REFUND',
+              'CHAT_QUOTA_RECOVERED',
+            ],
+          },
+          runbook: {
+            recommendedPoc: {
+              dailyLimit: '15-20',
+              burstPerMinute: 3,
+            },
+            recoverStuck: 'npm run chat-quota:recover-stuck',
+            cleanupIdempotency: 'npm run chat-quota:cleanup',
+            note: 'Bật CHAT_RATE_LIMIT_ENABLED=true trên production POC sau khi QA xong.',
+          },
+          summary,
+          burstLastMinute: args.psid
+            ? (burstResult.rows[0]?.recent_count ?? 0)
+            : null,
+          stuckReserved: stuckResult.rows,
+          stuckReservedBefore: stuckBefore.toISOString(),
+          dailyUsage: dailyUsageResult.rows,
+          idempotency: idempotencyResult.rows,
         },
-        summary,
-        burstLastMinute: args.psid ? burstResult.rows[0]?.recent_count ?? 0 : null,
-        stuckReserved: stuckResult.rows,
-        stuckReservedBefore: stuckBefore.toISOString(),
-        dailyUsage: dailyUsageResult.rows,
-        idempotency: idempotencyResult.rows,
-      },
-      null,
-      2,
-    ),
-  );
+        null,
+        2,
+      ),
+    );
   }
 } finally {
   await pool.end();

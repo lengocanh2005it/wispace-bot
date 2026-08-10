@@ -20,7 +20,8 @@ const PERSONAL_SCORE_RE = new RegExp(
 // "ngày 2/9" mention is not enough.
 const SCHEDULE_CONTEXT =
   '(buổi học|lịch học|học vào|đã dời|được dời|chuyển lịch|ca học|giờ học)';
-const TIME_MARKER = '\\b\\d{1,2}[/-]\\d{1,2}([/-]\\d{2,4})?\\b|\\b\\d{1,2}:\\d{2}\\b';
+const TIME_MARKER =
+  '\\b\\d{1,2}[/-]\\d{1,2}([/-]\\d{2,4})?\\b|\\b\\d{1,2}:\\d{2}\\b';
 const PERSONAL_SCHEDULE_RE = new RegExp(
   `${SCHEDULE_CONTEXT}[^.!?\\n]{0,60}(?:${TIME_MARKER})|(?:${TIME_MARKER})[^.!?\\n]{0,60}${SCHEDULE_CONTEXT}`,
   'i',

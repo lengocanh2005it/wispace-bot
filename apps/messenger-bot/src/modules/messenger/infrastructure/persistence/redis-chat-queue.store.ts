@@ -121,8 +121,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         if (state.pendingTexts.length > 0) {
           state.texts = [...state.pendingTexts];
           state.pendingTexts = [];
-          state.lastIdempotencyKey =
-            state.lastPendingIdempotencyKey ?? null;
+          state.lastIdempotencyKey = state.lastPendingIdempotencyKey ?? null;
           state.lastPendingIdempotencyKey = null;
           // Claim immediately — the stuck job already consumed the debounce wait.
           state.flushAfterAt = Date.now();
