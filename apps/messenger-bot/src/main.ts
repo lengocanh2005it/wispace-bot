@@ -1,4 +1,5 @@
 import './tracing'; // MUST be first — initialises OTel SDK before any module loads
+// vps-self-pull-deploy smoke test: no-op, verifies end-to-end self-pull deploy
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger, ValidationPipe } from '@nestjs/common';
