@@ -58,6 +58,26 @@ export class RedisWebhookDedupeStore {
     );
   }
 
+  /**
+   * Forget a message mid (Redis key + in-process fallback) so a dead-letter
+   * replay can re-process the event.
+   */
+  async forgetMessageMid(mid: string): Promise<void> {
+    const key = `dedupe:mid:${this.options.platform}:${mid}`;
+    this.fallbackSeen.delete(key);
+
+    const client = this.redisClient.getNativeClient();
+    if (client) {
+      try {
+        await client.del(key);
+      } catch (error) {
+        this.logger.warn(
+          `Redis webhook dedupe forget failed key=${key}: ${errorMessage(error)}`,
+        );
+      }
+    }
+  }
+
   private async tryMarkKey(key: string, ttlSeconds: number): Promise<boolean> {
     const client = this.redisClient.getNativeClient();
     if (!client) {

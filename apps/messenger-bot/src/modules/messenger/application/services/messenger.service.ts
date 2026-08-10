@@ -96,6 +96,13 @@ export class MessengerService {
                 );
               });
           }
+
+          // Forget the mid so a dead-letter replay re-processes the event —
+          // otherwise the mid (marked before execution) makes replay a no-op.
+          const mid = event.message?.mid;
+          if (mid) {
+            await this.forgetMessageMid(mid, event.sender?.id ?? '');
+          }
         }
       }
     }
@@ -263,5 +270,9 @@ export class MessengerService {
 
   private isDuplicatePostback(psid: string, payload: string): Promise<boolean> {
     return this.webhookDedupeStore.isDuplicatePostback(psid, payload);
+  }
+
+  private forgetMessageMid(mid: string, psid: string): Promise<void> {
+    return this.webhookDedupeStore.forgetMessageMid(mid, psid);
   }
 }

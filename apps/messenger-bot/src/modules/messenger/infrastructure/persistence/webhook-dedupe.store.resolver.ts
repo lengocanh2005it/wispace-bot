@@ -21,6 +21,10 @@ export class WebhookDedupeStoreResolver implements WebhookDedupeStorePort {
     return this.resolveStore().isDuplicatePostback(psid, payload);
   }
 
+  forgetMessageMid(mid: string, psid: string): Promise<void> {
+    return this.resolveStore().forgetMessageMid(mid, psid);
+  }
+
   resolveStoreKind(): 'memory' | 'redis' {
     const configured = this.sharedConfig.getDedupeStore();
 
