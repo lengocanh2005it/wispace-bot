@@ -60,9 +60,10 @@ export class UserCalendarScheduleService {
       timeRange: options.timeRange,
       pastDays: options.pastDays,
       limit: options.limit,
-      // Original behavior: only swallow errors when a userId is present
-      // (matches the "unlinked account" bypass used elsewhere).
-      swallowErrors: options.userId !== undefined,
+      // Swallow only for unlinked accounts (no data is expected there). For
+      // linked users an API failure must propagate: sync skips cancellation
+      // and agent tools surface an error to the LLM instead of a fake empty list.
+      swallowErrors: options.userId === undefined,
     });
   }
 

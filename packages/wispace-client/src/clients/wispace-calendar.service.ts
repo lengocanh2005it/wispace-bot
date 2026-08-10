@@ -44,7 +44,7 @@ export class WispaceCalendarService {
       this.idHeader,
       externalUserId,
       horizonEnd,
-      { ...options, swallowErrors: true },
+      options,
     );
   }
 

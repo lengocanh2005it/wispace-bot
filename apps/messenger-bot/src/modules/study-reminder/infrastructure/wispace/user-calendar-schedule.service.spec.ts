@@ -51,7 +51,17 @@ describe('UserCalendarScheduleService', () => {
     expect(sessions[0]?.sessionKey).toBe('calendar:42');
   });
 
-  it('returns empty list when API fails for sync user instead of DB fallback', async () => {
+  it('rethrows API errors for linked sync users so sync skips cancellation', async () => {
+    const service = createService(() => {
+      throw new WispaceApiError('down', 503, 'psid-1', 'UserCalendar');
+    });
+
+    await expect(
+      service.getUpcomingSessions('psid-1', horizonEnd, 143),
+    ).rejects.toBeInstanceOf(WispaceApiError);
+  });
+
+  it('returns empty list when API fails for an unlinked user', async () => {
     const service = createService(() => {
       throw new WispaceApiError('down', 503, 'psid-1', 'UserCalendar');
     });
@@ -59,20 +69,10 @@ describe('UserCalendarScheduleService', () => {
     const sessions = await service.getUpcomingSessions(
       'psid-1',
       horizonEnd,
-      143,
+      undefined,
     );
 
     expect(sessions).toEqual([]);
-  });
-
-  it('rethrows API errors when userId is not provided', async () => {
-    const service = createService(() => {
-      throw new WispaceApiError('down', 503, 'psid-1', 'UserCalendar');
-    });
-
-    await expect(
-      service.getUpcomingSessions('psid-1', horizonEnd),
-    ).rejects.toBeInstanceOf(WispaceApiError);
   });
 
   it('finds calendar record via API only', async () => {
