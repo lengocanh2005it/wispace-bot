@@ -509,22 +509,26 @@ Bootstrap reminder jobs: `npm run study-reminder:sync`.
 
 ---
 
-## 12. VPS Deploy (Docker + GHCR + Doppler)
+## 12. VPS Deploy (Docker + GHCR + self-pull)
 
-GitHub Actions (push to `main`): [`.github/workflows/deploy-bots.yml`](../.github/workflows/deploy-bots.yml) (1 file, 3 jobs: messenger/discord/zalo → `deploy-bot-reusable.yml`) — **only builds image** when `src/`, `Dockerfile`, or `package*.json` change; otherwise VPS reuses `:latest`. Shared image build: [`deploy/Dockerfile.bot`](../deploy/Dockerfile.bot) (`ARG APP_NAME`). Env-only: Doppler webhook or [`sync-env.yml`](../.github/workflows/sync-env.yml) (`env_only=true` → no image build, pushes `.env` + restart) / `npm run env:sync-prod`.
+GitHub Actions (push to `main`): [`.github/workflows/deploy-bots.yml`](../.github/workflows/deploy-bots.yml) (1 file, 3 jobs: messenger/discord/zalo → `deploy-bot-reusable.yml`) **only builds + pushes the image to GHCR** — it no longer SSHes into the VPS for normal deploys. Shared image build: [`deploy/Dockerfile.bot`](../deploy/Dockerfile.bot) (`ARG APP_NAME`).
+
+**Why no SSH from CI:** the VPS provider's edge network intermittently drops inbound SSH from GitHub Actions runner IPs (`Connection timed out`, independent of port or retry count — confirmed the VPS's own `ufw`/`iptables`/`sshd` show nothing, so the drop happens upstream of the box). Retrying from CI doesn't help since it's not a rate limit.
+
+**VPS self-pull instead:** a cron job on the VPS runs [`.github/scripts/vps-self-pull-deploy.sh`](../.github/scripts/vps-self-pull-deploy.sh) every few minutes — `git fetch`/`reset` a local clone, check GHCR for an image tagged with the new commit SHA, and if published, run the existing [`vps-deploy.sh`](../.github/scripts/vps-deploy.sh) (unchanged: blue-green swap, health check, migrations, nginx switch). All outbound from the VPS, so the inbound edge-filter never applies. One-time setup (git clone + crontab entry + `GHCR_USER`/`GHCR_PULL_TOKEN`) is documented in the script's header comment.
+
+`.env` sync is separate and unaffected: Doppler webhook → each bot's `/v1/*/ops/doppler-sync` HTTP endpoint (see `packages/doppler-sync`) keeps `.env` current independently of image deploys — no SSH involved either.
 
 | GitHub Secret | Purpose |
 |---------------|---------|
-| `VPS_HOST`, `VPS_USER`, `SSH_PRIVATE_KEY` | SSH deploy |
-| `GHCR_PULL_TOKEN` | PAT `read:packages` — VPS `docker login ghcr.io` to pull private image |
-| `DOPPLER_TOKEN` | Service token for **prd** config — downloads env → VPS on each deploy |
+| `GHCR_PULL_TOKEN` | PAT `read:packages` — image build/push, and VPS `docker login ghcr.io` to pull |
+| `VPS_HOST`, `VPS_USER`, `SSH_PRIVATE_KEY` | Only used by [`sync-env.yml`](../.github/workflows/sync-env.yml) (`env_only=true`, manual `workflow_dispatch`) — legacy env-only SSH path, kept as a fallback since it's rarely triggered |
+| `DOPPLER_TOKEN` | Service token for **prd** config — used by `sync-env.yml` and the Doppler webhook sync |
 
-Image: `ghcr.io/<owner>/messenger-ai-for-student:latest` (tagged with `:commit-sha`).
+Image: `ghcr.io/lengocanh2005it/wispace-bot/<app>:<commit-sha>` (also tagged `:latest`).
 
-On VPS: `docker-compose.prod.yml` + `.env` at `/home/ngoc_anh/messenger-bot/`. Legacy PM2 `publish/` no longer used after migration.
+On VPS: `docker-compose.prod.yml` + `.env` at `/home/ngoc_anh/<app>/`. Legacy PM2 `publish/` no longer used after migration.
 
 **Prod public URL:** `https://aiassist.aihubproduction.com` (Nginx → `127.0.0.1:5007`). Docker binds **localhost only** — does not expose `:5007` to the internet. Nginx: `client_max_body_size` + rate limit on `POST /v1/webhook` — see [`deploy/nginx/README.md`](../deploy/nginx/README.md).
-
-When `DOPPLER_TOKEN` is present: CI runs `doppler secrets download` → SCP `production.env` → `.env`. No need to SSH-edit env manually.
 
 Setup details for project/config `dev` + `prd`: [doppler-secrets.md](./doppler-secrets.md).

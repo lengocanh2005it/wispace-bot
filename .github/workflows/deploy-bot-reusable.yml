@@ -175,14 +175,17 @@ jobs:
           npx --no-install typeorm migration:show -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
 
   deploy:
+    # SSH deploy now only runs for the env-only path (manual sync-env.yml
+    # dispatch). Normal image deploys are picked up by the VPS itself via
+    # .github/scripts/vps-self-pull-deploy.sh (cron, outbound git/docker
+    # pull) — the Hostinger edge network intermittently drops inbound SSH
+    # from GitHub Actions runner IPs regardless of port/retries, so pushing
+    # from CI on every commit is no longer reliable.
     needs: [changes, build-image, migrations-check]
     if: |
       always() &&
       !cancelled() &&
-      (inputs.env_only == true ||
-        needs.changes.outputs.app == 'true' ||
-        needs.changes.outputs.deploy == 'true' ||
-        inputs.force_build) &&
+      inputs.env_only == true &&
       (needs.build-image.result == 'success' || needs.build-image.result == 'skipped') &&
       (needs.migrations-check.result == 'success' || needs.migrations-check.result == 'skipped')
     runs-on: ubuntu-latest
