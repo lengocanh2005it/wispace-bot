@@ -36,10 +36,9 @@ jobs:
       vps_user: ${{ secrets.VPS_USER }}
 
   deploy-discord-bot:
-    needs: [deploy-messenger-bot]
-    # Serialize deploys: parallel SSH uploads from CI get dropped by the VPS
-    # (connection timeouts). Each job still runs even if a previous bot failed.
-    if: ${{ !cancelled() }}
+    # No longer needs to be serialized after deploy-messenger-bot: the SSH
+    # deploy step is skipped for normal pushes (see deploy-bot-reusable.yml),
+    # so there's no shared VPS SSH session to contend for anymore.
     uses: ./.github/workflows/deploy-bot-reusable.yml
     with:
       app: discord-bot
@@ -55,8 +54,6 @@ jobs:
       vps_user: ${{ secrets.VPS_USER }}
 
   deploy-zalo-bot:
-    needs: [deploy-discord-bot]
-    if: ${{ !cancelled() }}
     uses: ./.github/workflows/deploy-bot-reusable.yml
     with:
       app: zalo-bot
