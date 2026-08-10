@@ -19,24 +19,24 @@ chmod 600 "$HOME/.ssh/id_ed25519"
 printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 
-# Exponential backoff: 4 attempts with 10s/20s/30s waits — GitHub runner
-# egress is occasionally flaky (timeouts seen on 8443), a longer backoff
-# rides through the blip without failing the deploy.
+# Exponential backoff: the VPS provider (Hostinger) rate-limits new SSH
+# connections from GitHub runner IPs and drops them for a few minutes.
+# Retry long enough (8 attempts, ~8 min) to ride through the block.
 attempt=1
-while [ "$attempt" -le 4 ]; do
+while [ "$attempt" -le 8 ]; do
   if rsync -avz --delete \
-    -e "ssh -p $VPS_SSH_PORT -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts" \
+    -e "ssh -p $VPS_SSH_PORT -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=3" \
     "$SOURCE_DIR/" \
     "${VPS_USER}@${VPS_HOST}:${VPS_TARGET_DIR}/"; then
     exit 0
   fi
-  if [ "$attempt" -lt 4 ]; then
-    wait_seconds=$((attempt * 10))
+  if [ "$attempt" -lt 8 ]; then
+    wait_seconds=$((attempt * 15))
     echo "Upload attempt $attempt failed, retrying in ${wait_seconds}s..."
     sleep "$wait_seconds"
   fi
   attempt=$((attempt + 1))
 done
 
-echo "ERROR: upload failed after 4 attempts" >&2
+echo "ERROR: upload failed after 8 attempts" >&2
 exit 1

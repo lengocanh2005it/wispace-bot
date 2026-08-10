@@ -19,10 +19,29 @@ chmod 600 "$HOME/.ssh/id_ed25519"
 printf '%s\n' "$VPS_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
 chmod 600 "$HOME/.ssh/known_hosts"
 
-ssh -p "$VPS_SSH_PORT" \
-  -o StrictHostKeyChecking=yes \
-  -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-  -o ServerAliveInterval=30 \
-  "${VPS_USER}@${VPS_HOST}" \
-  "export IMAGE='$IMAGE' DEPLOY_MODE='$DEPLOY_MODE' FORCE_RECREATE='$FORCE_RECREATE' GHCR_PULL_TOKEN='$GHCR_PULL_TOKEN' GHCR_USER='$GHCR_USER' APP_NAME='${APP_NAME:-}' HEALTH_PATH='${HEALTH_PATH:-}' PORT='${PORT:-}' RUN_MIGRATIONS='${RUN_MIGRATIONS:-}' MIGRATION_CMD='${MIGRATION_CMD:-}' NGINX_UPSTREAM_DIR='${NGINX_UPSTREAM_DIR:-}' && cd '$(dirname "$REMOTE_SCRIPT")' && exec bash '$(basename "$REMOTE_SCRIPT")'" \
-  < /dev/null
+# Retry the SSH session: the VPS provider rate-limits new SSH connections
+# from runner IPs (drops them for a few minutes). 4 attempts with long
+# backoff rides through the block — the deploy script itself is idempotent
+# enough to re-run safely (container names are cleaned before start).
+attempt=1
+while [ "$attempt" -le 4 ]; do
+  if ssh -p "$VPS_SSH_PORT" \
+    -o StrictHostKeyChecking=yes \
+    -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+    -o ServerAliveInterval=30 \
+    -o ConnectTimeout=30 \
+    "${VPS_USER}@${VPS_HOST}" \
+    "export IMAGE='$IMAGE' DEPLOY_MODE='$DEPLOY_MODE' FORCE_RECREATE='$FORCE_RECREATE' GHCR_PULL_TOKEN='$GHCR_PULL_TOKEN' GHCR_USER='$GHCR_USER' APP_NAME='${APP_NAME:-}' HEALTH_PATH='${HEALTH_PATH:-}' PORT='${PORT:-}' RUN_MIGRATIONS='${RUN_MIGRATIONS:-}' MIGRATION_CMD='${MIGRATION_CMD:-}' NGINX_UPSTREAM_DIR='${NGINX_UPSTREAM_DIR:-}' && cd '$(dirname "$REMOTE_SCRIPT")' && exec bash '$(basename "$REMOTE_SCRIPT")'" \
+    < /dev/null; then
+    exit 0
+  fi
+  if [ "$attempt" -lt 4 ]; then
+    wait_seconds=$((attempt * 20))
+    echo "SSH deploy attempt $attempt failed, retrying in ${wait_seconds}s..."
+    sleep "$wait_seconds"
+  fi
+  attempt=$((attempt + 1))
+done
+
+echo "ERROR: SSH deploy failed after 4 attempts" >&2
+exit 1
