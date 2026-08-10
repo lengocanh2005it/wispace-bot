@@ -82,11 +82,15 @@ export class DiscordReportRetryDispatchService {
       const reportDate = todayReportDate();
       const result = await this.orchestrationService.claimAndSend(mapping, {
         reportDate,
-        skipAlreadySentToday: false,
+        skipAlreadySentToday: true,
         examDateForOutbox: job.examDate,
       });
 
       if (result.sent > 0) {
+        await this.jobRepository.markSent(job.id);
+        sent += 1;
+      } else if (result.skipped > 0) {
+        // Report already delivered today by another path — outbox job is done.
         await this.jobRepository.markSent(job.id);
         sent += 1;
       } else if (result.failures.length > 0) {
