@@ -22,9 +22,6 @@ concurrency:
 jobs:
   deploy-messenger-bot:
     uses: ./.github/workflows/deploy-bot-reusable.yml
-    concurrency:
-      group: deploy-vps-ssh
-      cancel-in-progress: false
     with:
       app: messenger-bot
       vps_target_dir: /home/ngoc_anh/messenger-bot
@@ -40,9 +37,6 @@ jobs:
 
   deploy-discord-bot:
     uses: ./.github/workflows/deploy-bot-reusable.yml
-    concurrency:
-      group: deploy-vps-ssh
-      cancel-in-progress: false
     with:
       app: discord-bot
       vps_target_dir: /home/ngoc_anh/discord-bot
@@ -58,9 +52,6 @@ jobs:
 
   deploy-zalo-bot:
     uses: ./.github/workflows/deploy-bot-reusable.yml
-    concurrency:
-      group: deploy-vps-ssh
-      cancel-in-progress: false
     with:
       app: zalo-bot
       vps_target_dir: /home/ngoc_anh/zalo-bot

@@ -157,7 +157,7 @@ ACTIVE_CONTAINER_IMAGE=""
 ACTIVE_CONTAINER_PORT=""
 if [ -n "$ACTIVE_CONTAINER" ]; then
   ACTIVE_CONTAINER_IMAGE=$(docker inspect -f '{{.Config.Image}}' "$ACTIVE_CONTAINER" 2>/dev/null || true)
-  ACTIVE_CONTAINER_PORT=$(docker inspect -f '{{range $p, $conf := .NetworkSettings.Ports}}{{(index $conf 0).HostPort}}{{end}}' "$ACTIVE_CONTAINER" 2>/dev/null | head -1 || true)
+  ACTIVE_CONTAINER_PORT=$(docker port "$ACTIVE_CONTAINER" 2>/dev/null | head -1 | grep -oE '[0-9]+$' || true)
   # If the active container is already on the standby port (previous deploy
   # switched but naming lagged), swap roles so we always deploy to the other port.
   if [ "$ACTIVE_CONTAINER_PORT" = "$STANDBY_PORT" ]; then
