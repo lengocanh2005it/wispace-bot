@@ -3,7 +3,7 @@ import { parseArgs } from './_args.mjs';
 
 const HELP = `Usage: npm run chat-quota:rebuild -- [options]
 
-Rebuild messenger_chat_daily_usage.free_form_count from messenger_chat_events.
+Rebuild chat_daily_usage.free_form_count from chat_quota_events.
 
 Options:
   --from=YYYY-MM-DD     Start usage_date (inclusive). Default: today ICT
@@ -101,9 +101,10 @@ async function main() {
   try {
     const pairs = await client.query(
       `
-        SELECT DISTINCT aggregate_id AS psid, usage_date::text AS usage_date
-        FROM messenger_chat_events
-        WHERE usage_date >= $1::date AND usage_date <= $2::date
+        SELECT DISTINCT aggregate_id AS external_user_id, usage_date::text AS usage_date
+        FROM chat_quota_events
+        WHERE platform = 'messenger'
+          AND usage_date >= $1::date AND usage_date <= $2::date
         ORDER BY usage_date, aggregate_id
       `,
       [from, to],
@@ -114,11 +115,12 @@ async function main() {
       const eventsResult = await client.query(
         `
           SELECT event_type
-          FROM messenger_chat_events
-          WHERE aggregate_id = $1 AND usage_date = $2::date
+          FROM chat_quota_events
+          WHERE platform = 'messenger'
+            AND aggregate_id = $1 AND usage_date = $2::date
           ORDER BY occurred_at ASC, id ASC
         `,
-        [pair.psid, pair.usage_date],
+        [pair.external_user_id, pair.usage_date],
       );
 
       const used = replayEvents(eventsResult.rows);
@@ -127,10 +129,11 @@ async function main() {
       const current = await client.query(
         `
           SELECT free_form_count
-          FROM messenger_chat_daily_usage
-          WHERE psid = $1 AND usage_date = $2::date
+          FROM chat_daily_usage
+          WHERE platform = 'messenger'
+            AND external_user_id = $1 AND usage_date = $2::date
         `,
-        [pair.psid, pair.usage_date],
+        [pair.external_user_id, pair.usage_date],
       );
 
       const before = current.rows[0]?.free_form_count ?? 0;
@@ -139,20 +142,20 @@ async function main() {
       }
 
       console.log(
-        `${args.dryRun ? '[dry-run] ' : ''}psid=${pair.psid} date=${pair.usage_date} ${before} -> ${capped} (raw=${used}, limit=${dailyLimit})`,
+        `${args.dryRun ? '[dry-run] ' : ''}externalUserId=${pair.external_user_id} date=${pair.usage_date} ${before} -> ${capped} (raw=${used}, limit=${dailyLimit})`,
       );
 
       if (!args.dryRun) {
         await client.query(
           `
-            INSERT INTO messenger_chat_daily_usage (psid, usage_date, free_form_count)
-            VALUES ($1, $2::date, $3)
-            ON CONFLICT (psid, usage_date)
+            INSERT INTO chat_daily_usage (platform, external_user_id, usage_date, free_form_count)
+            VALUES ('messenger', $1, $2::date, $3)
+            ON CONFLICT (platform, external_user_id, usage_date)
             DO UPDATE SET
               free_form_count = EXCLUDED.free_form_count,
               updated_at = now()
           `,
-          [pair.psid, pair.usage_date, capped],
+          [pair.external_user_id, pair.usage_date, capped],
         );
       }
 

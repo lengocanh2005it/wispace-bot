@@ -20,4 +20,7 @@ export const ADVISORY_LOCK = {
 
   /** R5: report send retry dispatch (every 15 min). */
   REPORT_SEND_RETRY_DISPATCH: 884_200_909,
+
+  /** H2: auto-refund quota slots stuck in `reserved` (every 5 min). */
+  CHAT_QUOTA_STUCK_RECOVERY: 884_200_906,
 } as const;

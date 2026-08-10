@@ -3,7 +3,7 @@ import { parseArgs } from './_args.mjs';
 
 const HELP = `Usage: npm run chat-quota:recover-stuck -- [options]
 
-Refund + release messenger_chat_idempotency rows stuck in status=reserved
+Refund + release chat_idempotency rows stuck in status=reserved
 past CHAT_IDEMPOTENCY_STUCK_RESERVED_MS (default 10 minutes).
 
 Options:
@@ -50,12 +50,12 @@ try {
     `
       SELECT
         idempotency_key,
-        psid,
+        external_user_id,
         user_id,
         usage_date,
         reserved_at
-      FROM messenger_chat_idempotency
-      WHERE status = 'reserved' AND reserved_at < $1
+      FROM chat_idempotency
+      WHERE platform = 'messenger' AND status = 'reserved' AND reserved_at < $1
       ORDER BY reserved_at ASC
     `,
     [stuckBefore],
@@ -86,7 +86,7 @@ try {
     try {
       const refundResult = await client.query(
         `
-          UPDATE messenger_chat_idempotency
+          UPDATE chat_idempotency
           SET status = 'refunded'
           WHERE idempotency_key = $1 AND status = 'reserved'
           RETURNING idempotency_key
@@ -101,18 +101,20 @@ try {
 
       await client.query(
         `
-          UPDATE messenger_chat_daily_usage
+          UPDATE chat_daily_usage
           SET
             free_form_count = GREATEST(free_form_count - 1, 0),
             updated_at = now()
-          WHERE psid = $1 AND usage_date = $2::date
+          WHERE platform = 'messenger'
+            AND external_user_id = $1
+            AND usage_date = $2::date
         `,
-        [row.psid, row.usage_date],
+        [row.external_user_id, row.usage_date],
       );
 
       await client.query(
         `
-          DELETE FROM messenger_chat_idempotency
+          DELETE FROM chat_idempotency
           WHERE idempotency_key = $1
         `,
         [row.idempotency_key],
@@ -121,7 +123,7 @@ try {
       await client.query('COMMIT');
       recovered.push({
         idempotencyKey: row.idempotency_key,
-        psid: row.psid,
+        externalUserId: row.external_user_id,
         userId: row.user_id,
         usageDate: row.usage_date,
         reservedAt: row.reserved_at,
