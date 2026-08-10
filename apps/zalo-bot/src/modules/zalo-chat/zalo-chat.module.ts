@@ -25,7 +25,11 @@ import {
   WispaceConfigService,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
-import { BotCommonModule, REDIS_CLIENT } from '@wispace/bot-common';
+import {
+  BotCommonModule,
+  PgAdvisoryLockService,
+  REDIS_CLIENT,
+} from '@wispace/bot-common';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
@@ -264,21 +268,26 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         deadLetterService: PlatformDeadLetterService,
         configService: ConfigService,
         outboundService: ZaloOutboundService,
+        pgLock: PgAdvisoryLockService,
       ) =>
-        new PlatformDeadLetterCronService(deadLetterService, configService, {
+        new PlatformDeadLetterCronService(deadLetterService, configService, pgLock, {
+          lockId: 884_200_931,
           extractPayload: (payload) => ({
-            externalUserId:
-              (payload.zaloUserId as string | undefined) ??
-              (payload.sender as { id?: string } | undefined)?.id,
-            text:
-              (payload.text as string | undefined) ??
-              (payload.message as { text?: string } | undefined)?.text,
+            externalUserId: payload.zaloUserId as string | undefined,
+            text: payload.text as string | undefined,
           }),
           abandonReason: 'Missing zaloUserId or text in payload',
           sendText: (externalUserId, text) =>
-            outboundService.sendText(externalUserId, text),
+            outboundService.sendText(externalUserId, text, {
+              skipDeadLetter: true,
+            }),
         }),
-      inject: [PlatformDeadLetterService, ConfigService, ZaloOutboundService],
+      inject: [
+        PlatformDeadLetterService,
+        ConfigService,
+        ZaloOutboundService,
+        PgAdvisoryLockService,
+      ],
     },
     {
       provide: PlatformCleanupCronService,

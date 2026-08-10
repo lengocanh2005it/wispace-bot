@@ -7,7 +7,7 @@ import {
   CleanupCronService,
   PlatformCleanupCronService,
 } from '@wispace/cleanup-cron';
-import { BotCommonModule, REDIS_CLIENT } from '@wispace/bot-common';
+import { BotCommonModule, PgAdvisoryLockService, REDIS_CLIENT } from '@wispace/bot-common';
 import {
   ChatMeteringModule,
   PlatformChatRateLimitService,
@@ -230,8 +230,10 @@ const REGISTER_REPORT_MESSAGE =
         deadLetterService: PlatformDeadLetterService,
         configService: ConfigService,
         outboundService: DiscordOutboundService,
+        pgLock: PgAdvisoryLockService,
       ) =>
-        new PlatformDeadLetterCronService(deadLetterService, configService, {
+        new PlatformDeadLetterCronService(deadLetterService, configService, pgLock, {
+          lockId: 884_200_930,
           extractPayload: (payload) => ({
             externalUserId: payload.discordUserId as string | undefined,
             text: payload.text as string | undefined,
@@ -246,6 +248,7 @@ const REGISTER_REPORT_MESSAGE =
         PlatformDeadLetterService,
         ConfigService,
         DiscordOutboundService,
+        PgAdvisoryLockService,
       ],
     },
     {

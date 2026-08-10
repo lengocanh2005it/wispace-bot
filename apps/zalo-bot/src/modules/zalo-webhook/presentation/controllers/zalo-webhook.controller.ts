@@ -19,7 +19,6 @@ import {
 import type { ZaloWebhookEvent } from '../../domain/entities/zalo-webhook-event.types';
 import { ZaloChatService } from '../../../zalo-chat/application/services/zalo-chat.service';
 import { ZaloWebhookDedupeService } from '../../application/zalo-webhook-dedupe.service';
-import { PlatformDeadLetterService } from '@wispace/database';
 
 @Controller('zalo/webhook')
 export class ZaloWebhookController {
@@ -29,7 +28,6 @@ export class ZaloWebhookController {
     private readonly configService: ConfigService,
     private readonly handler: ZaloChatService,
     private readonly dedupeService: ZaloWebhookDedupeService,
-    private readonly deadLetterService: PlatformDeadLetterService,
   ) {}
 
   @Post()
@@ -69,21 +67,12 @@ export class ZaloWebhookController {
     try {
       await this.dispatch(body);
     } catch (error) {
-      const errorMessageValue = errorMessage(error);
+      // Inbound webhook events are never dead-lettered for replay — the retry
+      // cron only replays outbound sends. Logging is the audit trail here;
+      // Zalo does not retry webhook callbacks after we answer 200.
       this.logger.warn(
-        `Webhook event failed — saving to dead-letter: ${errorMessageValue}`,
+        `Webhook event failed: ${errorMessage(error)}`,
       );
-      await this.deadLetterService
-        .save({
-          externalUserId: body.sender?.id ?? body.follower?.id ?? 'unknown',
-          rawPayload: body,
-          errorMessage: errorMessageValue,
-        })
-        .catch((saveErr: unknown) => {
-          this.logger.error(
-            `Failed to save dead-letter entry: ${errorMessage(saveErr)}`,
-          );
-        });
     }
     return { received: true };
   }

@@ -8,6 +8,9 @@ import {
 } from 'typeorm';
 import type { Platform, WebhookDeadLetterStatus } from '../types';
 
+/** Direction of the dead-lettered operation — retry only replays outbound sends. */
+export type WebhookDeadLetterDirection = 'inbound' | 'outbound';
+
 /** Narrow row view used by bot dead-letter retry dispatchers. */
 export interface WebhookDeadLetterEntry {
   id: number;
@@ -37,6 +40,14 @@ export class WebhookDeadLetterEntity {
 
   @Column({ name: 'message_mid', type: 'varchar', length: 255, nullable: true })
   messageMid: string | null;
+
+  @Column({
+    name: 'direction',
+    type: 'varchar',
+    length: 10,
+    default: 'inbound',
+  })
+  direction: WebhookDeadLetterDirection;
 
   @Column({ name: 'raw_payload', type: 'jsonb' })
   rawPayload: object;

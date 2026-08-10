@@ -27,12 +27,14 @@ export class PlatformDeadLetterService {
     externalUserId: string;
     rawPayload: unknown;
     errorMessage: string;
+    /** Outbound sends are retried by the shared cron; inbound events are not. */
+    direction?: 'inbound' | 'outbound';
   }): Promise<void> {
     try {
       await this.repo.save({
         platform: this.platform,
         externalUserId: input.externalUserId,
-
+        direction: input.direction ?? 'inbound',
         rawPayload: input.rawPayload as object,
         errorMessage: input.errorMessage,
         status: 'pending',
@@ -51,6 +53,7 @@ export class PlatformDeadLetterService {
       .createQueryBuilder('dl')
       .where('dl.platform = :platform', { platform: this.platform })
       .andWhere('dl.status = :status', { status: 'pending' })
+      .andWhere('dl.direction = :direction', { direction: 'outbound' })
       .andWhere('dl.retry_count < :maxRetries', {
         maxRetries: opts.maxRetries,
       })

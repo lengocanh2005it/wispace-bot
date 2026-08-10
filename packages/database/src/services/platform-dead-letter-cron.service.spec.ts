@@ -9,6 +9,7 @@ function buildOptions(
   overrides: Partial<DeadLetterCronOptions> = {},
 ): DeadLetterCronOptions {
   return {
+    lockId: 884_200_930,
     extractPayload: (payload) => ({
       externalUserId: payload.discordUserId as string | undefined,
       text: payload.text as string | undefined,
@@ -31,6 +32,7 @@ function buildService(options: DeadLetterCronOptions): {
     incrementRetry: jest.Mock;
   };
   configGet: jest.Mock<unknown, [string]>;
+  pgLock: { withLock: jest.Mock };
 } {
   const deadLetterService = {
     listPendingForRetry: jest
@@ -45,12 +47,18 @@ function buildService(options: DeadLetterCronOptions): {
   };
   const configGet = jest.fn<unknown, [string]>(() => undefined);
   const configService = { get: configGet } as never as ConfigService;
+  const pgLock = {
+    withLock: jest
+      .fn()
+      .mockImplementation((_id: number, fn: () => Promise<void>) => fn()),
+  };
   const service = new PlatformDeadLetterCronService(
     deadLetterService as never,
     configService,
+    pgLock as never,
     options,
   );
-  return { service, deadLetterService, configGet };
+  return { service, deadLetterService, configGet, pgLock };
 }
 
 function entry(
@@ -151,5 +159,47 @@ describe('PlatformDeadLetterCronService', () => {
     expect(Math.abs(olderThan.getTime() - (Date.now() - 120_000))).toBeLessThan(
       1000,
     );
+  });
+
+  it('runs the retry batch under the advisory lock', async () => {
+    const options = buildOptions();
+    const { service, pgLock, deadLetterService } = buildService(options);
+
+    await service.handleRetry();
+
+    expect(pgLock.withLock).toHaveBeenCalledWith(
+      884_200_930,
+      expect.any(Function),
+    );
+    expect(deadLetterService.listPendingForRetry).toHaveBeenCalled();
+  });
+
+  it('skips the batch when the advisory lock is held by another pod', async () => {
+    const options = buildOptions();
+    const { service, pgLock, deadLetterService } = buildService(options);
+    pgLock.withLock.mockResolvedValue(null);
+
+    await service.handleRetry();
+
+    expect(deadLetterService.listPendingForRetry).not.toHaveBeenCalled();
+  });
+
+  it('falls back to defaults on malformed env values', async () => {
+    const options = buildOptions();
+    const { service, deadLetterService, configGet } = buildService(options);
+    configGet.mockImplementation((key: string) => {
+      if (key === 'WEBHOOK_DEAD_LETTER_MAX_RETRIES') return 'not-a-number';
+      if (key === 'WEBHOOK_DEAD_LETTER_MIN_RETRY_AGE_MS') return '60k';
+      if (key === 'WEBHOOK_DEAD_LETTER_RETRY_LIMIT') return -1;
+      return undefined;
+    });
+
+    await service.handleRetry();
+
+    const { limit, maxRetries, olderThan } =
+      deadLetterService.listPendingForRetry.mock.calls[0][0];
+    expect(maxRetries).toBe(3);
+    expect(limit).toBe(10);
+    expect(Number.isNaN(olderThan.getTime())).toBe(false);
   });
 });

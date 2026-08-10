@@ -24,9 +24,7 @@ function buildDedupe(): ZaloWebhookDedupeService {
   return new ZaloWebhookDedupeService();
 }
 
-const deadLetterService = {
-  save: jest.fn().mockResolvedValue(undefined),
-};
+
 
 describe('ZaloWebhookController', () => {
   const appId = 'app-1';
@@ -47,7 +45,6 @@ describe('ZaloWebhookController', () => {
         handleUnsupportedMessage: jest.fn(),
       },
       buildDedupe(),
-      deadLetterService,
     );
 
     const body = { event_name: 'user_send_text' };
@@ -76,7 +73,6 @@ describe('ZaloWebhookController', () => {
         handleUnsupportedMessage: jest.fn(),
       },
       buildDedupe(),
-      deadLetterService,
     );
 
     const body = {
@@ -111,7 +107,6 @@ describe('ZaloWebhookController', () => {
         handleUnsupportedMessage,
       },
       buildDedupe(),
-      deadLetterService,
     );
 
     const body = {
@@ -145,7 +140,6 @@ describe('ZaloWebhookController', () => {
         handleUnsupportedMessage: jest.fn(),
       },
       buildDedupe(),
-      deadLetterService,
     );
 
     const body = {
@@ -178,7 +172,6 @@ describe('ZaloWebhookController', () => {
         handleUnsupportedMessage: jest.fn(),
       },
       buildDedupe(),
-      deadLetterService,
     );
 
     const body = {
