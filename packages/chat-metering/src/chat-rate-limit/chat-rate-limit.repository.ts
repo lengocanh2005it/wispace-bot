@@ -456,7 +456,15 @@ export class ChatRateLimitRepository {
       // Decrement daily usage counters in bulk
       const usageDecrement = new Map<string, number>();
       for (const row of rows) {
-        const key = `${row.usage_date}:${row.user_id ?? ''}`;
+        // usage_date comes back as a Date object (TypeORM date parser);
+        // its toString() contains ':' and would corrupt the key below —
+        // normalize to YYYY-MM-DD first.
+        const rawUsageDate = row.usage_date as unknown;
+        const usageDate =
+          rawUsageDate instanceof Date
+            ? rawUsageDate.toISOString().slice(0, 10)
+            : String(row.usage_date ?? '').slice(0, 10);
+        const key = `${usageDate}:${row.user_id ?? ''}`;
         usageDecrement.set(key, (usageDecrement.get(key) ?? 0) + 1);
       }
 
@@ -471,7 +479,10 @@ export class ChatRateLimitRepository {
 
         for (let i = 0; i < entries.length; i++) {
           const [key, count] = entries[i];
-          const [usageDate, userIdStr] = key.split(':');
+          const [usageDateRaw, userIdStr] = key.split(':');
+          // usage_date is normalized to YYYY-MM-DD when the key was built
+          // (see usageDecrement loop), so this is a plain date string.
+          const usageDate = String(usageDateRaw ?? '').slice(0, 10);
           const userId = userIdStr ? Number(userIdStr) : null;
           valuesClauses.push(
             `($${paramIndex}::varchar, $${paramIndex + 1}::date, $${paramIndex + 2}::int, $${paramIndex + 3}::int)`,
