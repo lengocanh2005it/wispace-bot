@@ -146,6 +146,7 @@ export class PlatformCleanupCronService
       (cutoff) =>
         this.config.deadLetterRepo
           .delete({
+            platform: this.config.platform as never,
             status: ['replayed', 'abandoned'] as never,
             createdAt: LessThan(cutoff),
           })
