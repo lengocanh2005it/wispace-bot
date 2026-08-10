@@ -94,8 +94,8 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
     );
   }
 
-  onModuleDestroy(): void {
-    this.debounceQueue.destroy();
+  async onModuleDestroy(): Promise<void> {
+    await this.debounceQueue.destroy();
 
     for (const timer of this.sharedFlushTimers.values()) {
       clearTimeout(timer);

@@ -39,7 +39,7 @@ describe('DebounceChatQueue', () => {
       externalUserId: 'u1',
       texts: ['hello'],
     });
-    queue.destroy();
+    await queue.destroy();
   });
 
   it('merges multiple messages arriving within the debounce window', async () => {
@@ -56,7 +56,7 @@ describe('DebounceChatQueue', () => {
       texts: ['a', 'b'],
       idempotencyKey: 'k2',
     });
-    queue.destroy();
+    await queue.destroy();
   });
 
   it('caps messages accumulated during the debounce window', async () => {
@@ -70,7 +70,7 @@ describe('DebounceChatQueue', () => {
     await wait(40);
 
     expect(onFlush.mock.calls[0][0].texts).toEqual(['second', 'third']);
-    queue.destroy();
+    await queue.destroy();
   });
 
   it('ignores blank text', async () => {
@@ -82,7 +82,7 @@ describe('DebounceChatQueue', () => {
     await wait(40);
 
     expect(onFlush).not.toHaveBeenCalled();
-    queue.destroy();
+    await queue.destroy();
   });
 
   it('merges context across enqueues', async () => {
@@ -105,7 +105,7 @@ describe('DebounceChatQueue', () => {
       userId: 5,
       linkContext: 'ctx',
     });
-    queue.destroy();
+    await queue.destroy();
   });
 
   it('queues messages arriving while a flush is in progress and flushes them after', async () => {
@@ -137,7 +137,7 @@ describe('DebounceChatQueue', () => {
 
     expect(onFlush).toHaveBeenCalledTimes(2);
     expect(calls[1].texts).toEqual(['second']);
-    queue.destroy();
+    await queue.destroy();
   });
 
   it('flushNow flushes immediately without waiting for the debounce timer', async () => {
@@ -149,7 +149,7 @@ describe('DebounceChatQueue', () => {
     await queue.flushNow('u1');
 
     expect(onFlush).toHaveBeenCalledTimes(1);
-    queue.destroy();
+    await queue.destroy();
   });
 
   it('keeps separate debounce state per user', async () => {
@@ -168,7 +168,7 @@ describe('DebounceChatQueue', () => {
     }
     expect(byUser.u1).toEqual(['from u1']);
     expect(byUser.u2).toEqual(['from u2']);
-    queue.destroy();
+    await queue.destroy();
   });
 
   it('calls onPendingQueued when message arrives during processing', async () => {
@@ -206,7 +206,7 @@ describe('DebounceChatQueue', () => {
 
     resolveFirstFlush();
     await wait(50);
-    queueWithCallbacks.destroy();
+    await queueWithCallbacks.destroy();
   });
 
   it('calls onPendingDropped when maxPendingSize is exceeded', async () => {
@@ -246,7 +246,7 @@ describe('DebounceChatQueue', () => {
 
     resolveFirstFlush();
     await wait(50);
-    queue.destroy();
+    await queue.destroy();
   });
 
   it('retains only the newest maxPendingSize messages when cap is exceeded', async () => {
@@ -287,6 +287,21 @@ describe('DebounceChatQueue', () => {
 
     expect(capturedBatches).toHaveLength(2);
     expect(capturedBatches[1].texts).toEqual(['p2', 'p3']);
-    queue.destroy();
+    await queue.destroy();
+  });
+
+  it('drains buffered messages on destroy (graceful shutdown)', async () => {
+    const onFlush =
+      makeFlushMock<Record<string, unknown>>().mockResolvedValue(undefined);
+    const queue = makeQueue(onFlush);
+
+    queue.enqueue({ externalUserId: 'u1', text: 'not yet debounced' });
+    await queue.destroy();
+
+    expect(onFlush).toHaveBeenCalledTimes(1);
+    expect(onFlush.mock.calls[0][0]).toMatchObject({
+      externalUserId: 'u1',
+      texts: ['not yet debounced'],
+    });
   });
 });

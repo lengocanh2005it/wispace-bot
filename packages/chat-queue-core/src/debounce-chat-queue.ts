@@ -117,8 +117,22 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
     await this.flush(externalUserId);
   }
 
-  destroy(): void {
+  /** Flushes every buffered user (best-effort) — used on graceful shutdown. */
+  async drain(): Promise<void> {
+    // Each flush can promote pendingWhileProcessing texts, so loop a few times
+    // to drain those too; bounded so shutdown never spins forever.
+    for (let round = 0; round < 3; round++) {
+      const users = [...this.queues.keys()];
+      if (users.length === 0) {
+        return;
+      }
+      await Promise.allSettled(users.map((user) => this.flush(user)));
+    }
+  }
+
+  async destroy(): Promise<void> {
     clearInterval(this.cleanupTimer);
+    await this.drain();
     for (const state of this.queues.values()) {
       if (state.debounceTimer) {
         clearTimeout(state.debounceTimer);
