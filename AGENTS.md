@@ -45,6 +45,9 @@ Read this file before modifying code. In-depth details are in `docs/` — only r
 - Webhook dedupe R2: `CHAT_DEDUPE_STORE=redis` \| `memory` (no longer using postgres / `messenger_chat_webhook_seen` table).
 - Burst counter R3: `CHAT_BURST_STORE=redis` \| `memory` \| `postgres` (default `postgres`).
 - Chat queue R4: `CHAT_QUEUE_STORE=redis` \| `memory` — debounce buffer; `CHAT_QUEUE_SHARED=true` maps to `redis` (H7 legacy). `CHAT_MAX_PENDING_MESSAGES` (0 = no cap) limits messages queued while bot is processing (Discord/Zalo).
+- Auto-recovery crons: `chat-quota-stuck-recovery` (5 min, advisory-locked) refunds quota slots stuck `reserved` past `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS`; `report-claims-stale-reset` (30 min, advisory-locked, `REPORT_CLAIM_STALE_RESET_MS`=2h) releases `scheduled_report_claims` stuck `claimed` (pod crash between claim and mark-sent).
+- Webhook dedupe fails open: Redis error → in-process dedupe fallback (never drops the event); failed events forget their mid on dead-letter save so replay re-processes. Discord/Zalo dead-letter retry replays **outbound** failures only (`webhook_dead_letters.direction`, migration `1751029200011`).
+- Graceful shutdown drains debounce buffers before clearing (no lost messages on restart); shutdown timeout 25s.
 - Bootstrap jobs on first run: `npm run study-reminder:sync`.
 - **Prod hardening** (see `deploy/`): nightly `pg_dump` backup cron on VPS (`deploy/postgres-backup.sh`, 02:00, giữ 14 ngày); deploy tự chạy migrations (advisory-locked, `MIGRATION_CMD`) + health check (`health_path`) + tự rollback về image cũ nếu không healthy; Prometheus scrape cả 3 bot + Alertmanager → Telegram (`deploy/monitoring/`, keys trong `monitoring/.env`: `INTERNAL_API_KEY_*`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`).
 
