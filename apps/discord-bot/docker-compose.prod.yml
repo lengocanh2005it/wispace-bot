@@ -10,6 +10,12 @@ services:
       HOME: /tmp
     ports:
       - '127.0.0.1:${PORT:-3001}:${PORT:-3001}'
+    group_add:
+      - '${DOCKER_GID:?DOCKER_GID is required}'
+    volumes:
+      - ./.env:/deploy/.env
+      - ./docker-compose.prod.yml:/deploy/docker-compose.prod.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     mem_limit: 256M
     mem_reservation: 128M
     cpus: '0.5'

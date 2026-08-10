@@ -114,7 +114,7 @@ jobs:
           build-args: |
             APP_NAME=${{ inputs.app }}
             APP_PORT=${{ inputs.app == 'messenger-bot' && '5007' || (inputs.app == 'discord-bot' && '3001' || '3002') }}
-            WITH_DOPPLER=${{ inputs.app == 'messenger-bot' && 'true' || 'false' }}
+            WITH_DOPPLER=true
           push: true
           tags: |
             ${{ env.IMAGE }}

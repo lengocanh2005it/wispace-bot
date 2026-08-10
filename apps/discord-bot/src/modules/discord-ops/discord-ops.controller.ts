@@ -1,6 +1,15 @@
-import { Controller, HttpCode, Logger, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Logger,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { InternalApiKeyGuard } from '@wispace/bot-common';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
+import { DopplerRuntimeSyncService } from '@wispace/doppler-sync';
+import type { DopplerWebhookPayload } from '@wispace/doppler-sync';
 import { DiscordReportCronService } from '../discord-chat/application/services/discord-report-cron.service';
 
 @Controller('discord')
@@ -11,7 +20,14 @@ export class DiscordOpsController {
   constructor(
     private readonly reportCronService: DiscordReportCronService,
     private readonly studyReminderSyncService: StudyReminderSyncService,
+    private readonly dopplerRuntimeSyncService: DopplerRuntimeSyncService,
   ) {}
+
+  @Post('ops/doppler-sync')
+  @HttpCode(202)
+  dopplerRuntimeSync(@Body() body?: DopplerWebhookPayload) {
+    return this.dopplerRuntimeSyncService.scheduleSync(body);
+  }
 
   @Post('send-reports')
   @HttpCode(200)

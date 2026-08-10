@@ -2,6 +2,8 @@ import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { IsNumber, IsPositive } from 'class-validator';
 import { InternalApiKeyGuard } from '@wispace/bot-common';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
+import { DopplerRuntimeSyncService } from '@wispace/doppler-sync';
+import type { DopplerWebhookPayload } from '@wispace/doppler-sync';
 import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
 
 class SyncStudyCalendarBody {
@@ -16,7 +18,14 @@ export class ZaloOpsController {
   constructor(
     private readonly reportCronService: ZaloReportCronService,
     private readonly studyReminderSyncService: StudyReminderSyncService,
+    private readonly dopplerRuntimeSyncService: DopplerRuntimeSyncService,
   ) {}
+
+  @Post('ops/doppler-sync')
+  @HttpCode(202)
+  dopplerRuntimeSync(@Body() body?: DopplerWebhookPayload) {
+    return this.dopplerRuntimeSyncService.scheduleSync(body);
+  }
 
   @Post('send-reports')
   @HttpCode(200)
