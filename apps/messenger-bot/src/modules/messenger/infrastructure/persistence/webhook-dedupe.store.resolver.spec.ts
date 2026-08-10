@@ -31,7 +31,7 @@ describe('WebhookDedupeStoreResolver', () => {
     expect(createResolver('redis', true).resolveStoreKind()).toBe('redis');
   });
 
-  it('uses redis store even when unavailable (fail-closed, no memory fallback)', () => {
+  it('keeps routing to the redis store when unavailable (store falls back to in-process dedupe)', () => {
     expect(createResolver('redis', false).resolveStoreKind()).toBe('redis');
   });
 });
