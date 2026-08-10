@@ -116,19 +116,24 @@ describe('StudyReminderSyncService', () => {
       });
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.upsertPendingJobs).toHaveBeenCalledWith([
+      expect(jobRepo.upsertPendingJobs).toHaveBeenCalledWith(
+        [
+          {
+            platform: 'messenger',
+            externalUserId: 'ext-1',
+            userId: 1,
+            sessionKey: 'calendar:42',
+            scheduledAt: session.scheduledAt,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            remindAt: expect.any(Date),
+            topic: 'Toán',
+            maxRetries: 3,
+          },
+        ],
         {
-          platform: 'messenger',
-          externalUserId: 'ext-1',
-          userId: 1,
-          sessionKey: 'calendar:42',
-          scheduledAt: session.scheduledAt,
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          remindAt: expect.any(Date),
-          topic: 'Toán',
-          maxRetries: 3,
+          reopenOnlyOnScheduleChange: true,
         },
-      ]);
+      );
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.upsertPendingJob).not.toHaveBeenCalled();
       // eslint-disable-next-line @typescript-eslint/unbound-method

@@ -143,7 +143,12 @@ export class StudyReminderSyncService {
 
         if (batch.length > 0) {
           // One SELECT + batched save instead of findOne+save per session.
-          await this.jobRepository.upsertPendingJobs(batch);
+          await this.jobRepository.upsertPendingJobs(batch, {
+            // Leave in-flight `processing` jobs alone unless the schedule
+            // actually changed — prevents a 30-min sync from reopening a job
+            // mid-send and causing duplicate reminders on multi-pod setups.
+            reopenOnlyOnScheduleChange: true,
+          });
         }
         upserted += batch.length;
 
