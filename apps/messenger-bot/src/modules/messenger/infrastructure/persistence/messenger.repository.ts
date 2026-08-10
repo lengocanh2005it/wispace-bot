@@ -7,6 +7,7 @@ import {
   ScheduledReportClaimEntity,
   UserPlatformMappingEntity,
 } from '@messenger/infrastructure/database/entities';
+import { listUserIdsWithSentReport } from '@wispace/database';
 import { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
@@ -311,13 +312,7 @@ export class MessengerRepository
   }
 
   async listUserIdsWithSentReportToday(reportDate: string): Promise<number[]> {
-    const rows = await this.reportClaimRepo.find({
-      select: { userId: true },
-      where: { reportDate, status: 'sent' },
-    });
-    return rows
-      .map((row) => row.userId)
-      .filter((userId): userId is number => userId !== null);
+    return listUserIdsWithSentReport(this.reportClaimRepo, reportDate);
   }
 
   async countMessageLogsByTypeSince(

@@ -70,7 +70,7 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     for (const input of inputs) {
       const existing = existingByKey.get(this.inputKey(input));
       if (!existing) {
-        toCreate.push(this.buildNewEntity(input));
+        toCreate.push(this.buildNewEntity(manager, input));
       } else {
         this.applyExisting(existing, input, options);
         toUpdate.push(existing);
@@ -103,7 +103,7 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     if (!existing) {
       const saved = await manager.save(
         StudyReminderJobEntity,
-        this.buildNewEntity(input),
+        this.buildNewEntity(manager, input),
       );
       return this.mapEntity(saved);
     }
@@ -114,9 +114,10 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
   }
 
   private buildNewEntity(
+    manager: EntityManager,
     input: UpsertStudyReminderJobInput,
   ): StudyReminderJobEntity {
-    return this.repo.manager.create(StudyReminderJobEntity, {
+    return manager.create(StudyReminderJobEntity, {
       platform: input.platform,
       externalUserId: input.externalUserId,
       userId: input.userId ?? null,

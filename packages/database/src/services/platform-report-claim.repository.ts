@@ -5,6 +5,7 @@ import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import { todayReportDate } from '@wispace/scheduler-core';
 import { ScheduledReportClaimEntity } from '../entities/scheduled-report-claim.entity';
 import type { Platform } from '../types';
+import { listUserIdsWithSentReport } from './list-user-ids-with-sent-report';
 
 /**
  * Report claim idempotency for the 08:00 scheduled report cron — shared by
@@ -43,13 +44,7 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
   }
 
   async listUserIdsWithSentReportToday(reportDate: string): Promise<number[]> {
-    const rows = await this.claimRepo.find({
-      select: { userId: true },
-      where: { reportDate, status: 'sent' },
-    });
-    return rows
-      .map((row) => row.userId)
-      .filter((userId): userId is number => userId !== null);
+    return listUserIdsWithSentReport(this.claimRepo, reportDate);
   }
 
   async tryClaimScheduledReport(params: {
