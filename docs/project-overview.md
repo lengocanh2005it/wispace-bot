@@ -62,7 +62,7 @@ flowchart TB
 
   subgraph App["wispace-bot (Turborepo)"]
     subgraph Messenger["apps/messenger-bot"]
-      WH["MessengerController\n/webhook"]
+      WH["MessengerController\n/v1/webhook"]
       MS["MessengerService\nwebhook orchestration"]
       OUT["MessengerOutbound\nSend API + mapping"]
       SR["StudentReportService"]
@@ -262,9 +262,11 @@ Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/webhook` | Meta webhook verification |
-| POST | `/webhook` | Receive messaging events (guard `X-Hub-Signature-256` when `MESSENGER_WEBHOOK_SIGNATURE_VERIFY` enabled) |
-| POST | `/messenger/profile/setup` | Configure get started + persistent menu (requires `INTERNAL_API_KEY`) |
+| GET | `/v1/webhook` | Meta webhook verification |
+| POST | `/v1/webhook` | Receive messaging events (guard `X-Hub-Signature-256` when `MESSENGER_WEBHOOK_SIGNATURE_VERIFY` enabled) |
+| POST | `/v1/messenger/profile/setup` | Configure get started + persistent menu (requires `INTERNAL_API_KEY`) |
+
+All bot HTTP APIs are versioned under `/v1` (global prefix). Infra endpoints (`/health*`, `/metrics`) are excluded and stay unversioned.
 
 `m.me` links are only issued by the **WISPACE backend** (opaque token) — no more `GET /messenger/m-me-link`.
 
@@ -274,17 +276,17 @@ All endpoints below require header **`X-Internal-Api-Key`** (or `Authorization: 
 
 | Method | Path | Body | Description |
 |--------|------|------|-------------|
-| POST | `/messenger/study-calendar/sync` | `{ "userId": number }` | **Called by WISPACE** after POST/DELETE `UserCalendar` |
-| POST | `/messenger/send-reports` | `{ "psid"?: string, "allowDuplicate"?: boolean }` | Ops send reports: bypass exam window; defaults to skip already sent today |
-| POST | `/messenger/send-reports/retry-dispatch` | — | Manually dispatch outbox R5 |
-| POST | `/messenger/sync-study-reminders` | — | Sync all users (ops / fallback cron) |
-| POST | `/messenger/send-study-reminders` | — | Sync + dispatch due jobs |
-| POST | `/messenger/study-reminder/evening-rollover` | — | Trigger evening rollover job state transitions |
-| POST | `/messenger/profile/setup` | — | Configure bot menu (ops) |
-| POST | `/messenger/mapping/relink` | `{ "psid": string, "userId": number, "allowRelink"?: boolean }` | Ops relink PSID to userId |
-| POST | `/messenger/ops/doppler-sync` | — | Doppler webhook runtime sync + container restart |
-| GET | `/messenger/ops/llm-usage/summary` | Query: `psid` **or** `userId`; `from`/`to` (YYYY-MM-DD, default today) | Total tokens + estimated USD per feature for one student |
-| GET | `/messenger/ops/llm-usage/fleet` | Query: `date` (YYYY-MM-DD, default today) | Total tokens + estimated USD fleet-wide by feature |
+| POST | `/v1/messenger/study-calendar/sync` | `{ "userId": number }` | **Called by WISPACE** after POST/DELETE `UserCalendar` |
+| POST | `/v1/messenger/send-reports` | `{ "psid"?: string, "allowDuplicate"?: boolean }` | Ops send reports: bypass exam window; defaults to skip already sent today |
+| POST | `/v1/messenger/send-reports/retry-dispatch` | — | Manually dispatch outbox R5 |
+| POST | `/v1/messenger/sync-study-reminders` | — | Sync all users (ops / fallback cron) |
+| POST | `/v1/messenger/send-study-reminders` | — | Sync + dispatch due jobs |
+| POST | `/v1/messenger/study-reminder/evening-rollover` | — | Trigger evening rollover job state transitions |
+| POST | `/v1/messenger/profile/setup` | — | Configure bot menu (ops) |
+| POST | `/v1/messenger/mapping/relink` | `{ "psid": string, "userId": number, "allowRelink"?: boolean }` | Ops relink PSID to userId |
+| POST | `/v1/messenger/ops/doppler-sync` | — | Doppler webhook runtime sync + container restart |
+| GET | `/v1/messenger/ops/llm-usage/summary` | Query: `psid` **or** `userId`; `from`/`to` (YYYY-MM-DD, default today) | Total tokens + estimated USD per feature for one student |
+| GET | `/v1/messenger/ops/llm-usage/fleet` | Query: `date` (YYYY-MM-DD, default today) | Total tokens + estimated USD fleet-wide by feature |
 | GET | `/health/db` | — | DB health check |
 | GET | `/health/redis` | — | Redis health check (503 when enabled but unreachable) |
 | GET | `/metrics` | — | Prometheus metrics scrape |
@@ -499,9 +501,9 @@ npm run start:dev
 
 Or **Doppler** (no `.env` on disk): see [doppler-secrets.md](./doppler-secrets.md) → `doppler setup` + `npm run start:dev:doppler`.
 
-Meta webhook points to public URL (ngrok / tunnel) → `POST /webhook`.
+Meta webhook points to public URL (ngrok / tunnel) → `POST /v1/webhook`.
 
-After first menu deploy: `POST /messenger/profile/setup`.
+After first menu deploy: `POST /v1/messenger/profile/setup`.
 
 Bootstrap reminder jobs: `npm run study-reminder:sync`.
 
@@ -521,7 +523,7 @@ Image: `ghcr.io/<owner>/messenger-ai-for-student:latest` (tagged with `:commit-s
 
 On VPS: `docker-compose.prod.yml` + `.env` at `/home/ngoc_anh/messenger-bot/`. Legacy PM2 `publish/` no longer used after migration.
 
-**Prod public URL:** `https://aiassist.aihubproduction.com` (Nginx → `127.0.0.1:5007`). Docker binds **localhost only** — does not expose `:5007` to the internet. Nginx: `client_max_body_size` + rate limit on `POST /webhook` — see [`deploy/nginx/README.md`](../deploy/nginx/README.md).
+**Prod public URL:** `https://aiassist.aihubproduction.com` (Nginx → `127.0.0.1:5007`). Docker binds **localhost only** — does not expose `:5007` to the internet. Nginx: `client_max_body_size` + rate limit on `POST /v1/webhook` — see [`deploy/nginx/README.md`](../deploy/nginx/README.md).
 
 When `DOPPLER_TOKEN` is present: CI runs `doppler secrets download` → SCP `production.env` → `.env`. No need to SSH-edit env manually.
 

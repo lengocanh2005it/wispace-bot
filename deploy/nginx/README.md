@@ -39,5 +39,5 @@ curl -sf --connect-timeout 3 http://$(curl -s ifconfig.me):5007/health/db && ech
 
 ## Rate limit
 
-- Zone `messenger_webhook`: 20 req/s per IP, burst 80 — only `location = /webhook`
+- Zone `messenger_webhook`: 20 req/s per IP, burst 80 — only `location = /v1/webhook`
 - Body: 256k for webhook, 1m for other paths (matches `HTTP_JSON_BODY_LIMIT` in the app)

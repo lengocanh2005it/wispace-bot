@@ -9,7 +9,7 @@ See the full plan at [docs/turborepo-migration-plan.md](../../docs/turborepo-mig
 **Already done:**
 - Bot online via Necord, receives DMs + @mentions in server channels (replies via DM), prompt-injection protection, redirects out-of-scope WISPACE requests, in-memory conversation history per process.
 - Quota/rate-limit + LLM usage/safety event persistence shared via `@wispace/chat-metering` (platform='discord') — see `modules/chat-metering/`.
-- Account-linking Discord ↔ WISPACE userId via OAuth2 (`GET /discord/oauth/callback`) — see [docs/discord-account-linking.md](docs/discord-account-linking.md).
+- Account-linking Discord ↔ WISPACE userId via OAuth2 (`GET /v1/discord/oauth/callback`) — see [docs/discord-account-linking.md](docs/discord-account-linking.md).
 - 6/7 WISPACE tools call real Wispace API via `@wispace/wispace-client` (header `x-discordid`): `get_user_goals`, `get_learning_progress_report`, `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder`, `reschedule_study_session` (confirm/cancel via Discord button).
 - `GET /health` for deploy health check.
 - Custom prompt: `src/shared/prompts/discord-chat.system.txt`.
@@ -32,7 +32,7 @@ The bot needs the following intents enabled in the Discord Developer Portal (Bot
 - `MESSAGE CONTENT INTENT` — read DM content and messages with @mentions ✅
 - `SERVER MEMBERS INTENT` — receive `guildMemberAdd` event for auto-complete account link ✅
 
-The app runs as an HTTP server (`PORT`, default `3001`) to expose `GET /discord/oauth/callback` for account-linking.
+The app runs as an HTTP server (`PORT`, default `3001`) to expose `GET /v1/discord/oauth/callback` for account-linking.
 
 ## Common commands (in `apps/discord-bot/`)
 

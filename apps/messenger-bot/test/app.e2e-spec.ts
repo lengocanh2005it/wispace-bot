@@ -67,16 +67,16 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/ (GET)', () => {
+  it('/v1 (GET)', () => {
     return request(app.getHttpServer())
-      .get('/')
+      .get('/v1')
       .expect(200)
       .expect('Messenger AI Notification API is running');
   });
 
-  it('/webhook (GET) verifies Meta challenge', () => {
+  it('/v1/webhook (GET) verifies Meta challenge', () => {
     return request(app.getHttpServer())
-      .get('/webhook')
+      .get('/v1/webhook')
       .query({
         'hub.verify_token': 'wispace_verify_token',
         'hub.challenge': 'challenge-123',
@@ -85,9 +85,9 @@ describe('AppController (e2e)', () => {
       .expect('challenge-123');
   });
 
-  it('/webhook (POST) handles Get Started referral and sends welcome message', async () => {
+  it('/v1/webhook (POST) handles Get Started referral and sends welcome message', async () => {
     await request(app.getHttpServer())
-      .post('/webhook')
+      .post('/v1/webhook')
       .send({
         object: 'page',
         entry: [
@@ -149,9 +149,9 @@ describe('AppController (e2e)', () => {
     });
   });
 
-  it('/messenger/profile/setup configures Get Started, greeting, and menu', async () => {
+  it('/v1/messenger/profile/setup configures Get Started, greeting, and menu', async () => {
     await request(app.getHttpServer())
-      .post('/messenger/profile/setup')
+      .post('/v1/messenger/profile/setup')
       .expect(200)
       .expect({
         ok: true,

@@ -62,9 +62,9 @@ npm run migration:run
 npm run start:dev
 ```
 
-Meta webhook: `GET/POST /webhook`
-Bot menu configuration: `POST /messenger/profile/setup`
-Wispace schedule sync: `POST /messenger/study-calendar/sync` + header `X-Internal-Api-Key` (see `apps/messenger-bot/.env` `INTERNAL_API_KEY`)
+Meta webhook: `GET/POST /v1/webhook`
+Bot menu configuration: `POST /v1/messenger/profile/setup`
+Wispace schedule sync: `POST /v1/messenger/study-calendar/sync` + header `X-Internal-Api-Key` (see `apps/messenger-bot/.env` `INTERNAL_API_KEY`)
 
 ## Useful scripts (run in `apps/messenger-bot/`)
 

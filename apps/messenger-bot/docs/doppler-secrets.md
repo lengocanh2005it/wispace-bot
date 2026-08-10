@@ -69,9 +69,9 @@ Every `main` deploy (or workflow_dispatch):
 docker build → push ghcr.io/... → SCP + SSH to VPS (Doppler env when DOPPLER_TOKEN present)
 ```
 
-Current CI deploy uses SSH/SCP only (no more `POST /messenger/ops/ci-deploy` endpoint).
+Current CI deploy uses SSH/SCP only (no more `POST /v1/messenger/ops/ci-deploy` endpoint).
 
-Prod env changed on Doppler: webhook → `POST /messenger/ops/doppler-sync` (no GitHub needed).
+Prod env changed on Doppler: webhook → `POST /v1/messenger/ops/doppler-sync` (no GitHub needed).
 
 **Required GitHub Secrets for SSH Deploy:**
 
@@ -114,7 +114,7 @@ Still possible to use `.env` + `npm run start:dev` if Doppler isn't installed.
 ## 4. Change Prod Secret — Full-Auto (VPS Webhook)
 
 1. Edit on Doppler config **`prd`** (dashboard or CLI).
-2. Doppler webhook → `POST https://aiassist.aihubproduction.com/messenger/ops/doppler-sync` (auto sync + restart).
+2. Doppler webhook → `POST https://aiassist.aihubproduction.com/v1/messenger/ops/doppler-sync` (auto sync + restart).
 
 Runtime sync writes temp `/tmp/.env.sync.tmp` then `copyFile` to `/deploy/.env` (host `.env` bind mount), **merges back** `DEPLOY_*` / `DOCKER_GID` (Doppler doesn't contain deploy keys). Recreates via sidecar `docker:29-cli` mounting host deploy dir (avoids `cwd` host path not existing in container).
 
@@ -135,7 +135,7 @@ Docker build still uses **GHA layer cache** (`cache-from/to: type=gha`).
 ### Webhook Setup (One-Time)
 
 1. Doppler → **messenger-bot** → **prd** → **Webhooks** → Add.
-2. **URL:** `https://aiassist.aihubproduction.com/messenger/ops/doppler-sync`
+2. **URL:** `https://aiassist.aihubproduction.com/v1/messenger/ops/doppler-sync`
 3. **Custom header:** `x-internal-api-key: <INTERNAL_API_KEY>` (value from `prd` config).
 4. On Doppler `prd`, add secret:
    - `DOPPLER_RUNTIME_TOKEN` = read-only service token for `prd` (same value as GitHub secret `DOPPLER_TOKEN`).
@@ -143,7 +143,7 @@ Docker build still uses **GHA layer cache** (`cache-from/to: type=gha`).
 After image with this feature is deployed, test manually:
 
 ```bash
-curl -sS -X POST https://aiassist.aihubproduction.com/messenger/ops/doppler-sync \
+curl -sS -X POST https://aiassist.aihubproduction.com/v1/messenger/ops/doppler-sync \
   -H "x-internal-api-key: YOUR_INTERNAL_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"project":"messenger-bot","config":"prd"}'
@@ -169,7 +169,7 @@ No need to SSH-edit `.env` manually.
 - [ ] Deploy succeeds; CI log shows `Applied .env from Doppler` and `Deployment complete — container messenger-bot is healthy`
 - [x] Repo: `.doppler.yaml` + `doppler setup` (dev)
 
-- [ ] Doppler webhook → `POST /messenger/ops/doppler-sync` + `DOPPLER_RUNTIME_TOKEN` on `prd`
+- [ ] Doppler webhook → `POST /v1/messenger/ops/doppler-sync` + `DOPPLER_RUNTIME_TOKEN` on `prd`
 
 ---
 

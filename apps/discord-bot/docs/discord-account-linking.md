@@ -33,7 +33,7 @@ no extra WISPACE backend endpoint needed.
 
 ## What this repo does after the user authorizes
 
-`GET /discord/oauth/callback?code=...&state=...` (`DiscordOauthController`):
+`GET /v1/discord/oauth/callback?code=...&state=...` (`DiscordOauthController`):
 1. Exchange `code` for a Discord access token, then fetch the Discord user id
    via `GET /users/@me` (`DiscordAccountLinkService.exchangeCodeForDiscordUserId`).
 2. Call WISPACE's **shared** account-link verify API

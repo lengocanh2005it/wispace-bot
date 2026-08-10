@@ -105,7 +105,7 @@ Replace the values:
 | Placeholder | Actual value | Notes |
 |-------------|-------------|-------|
 | `{DISCORD_CLIENT_ID}` | Discord Application ID | Get from the bot team |
-| `{DISCORD_OAUTH_REDIRECT_URI}` | `https://<domain-bot>/discord/oauth/callback` | Get from the bot team |
+| `{DISCORD_OAUTH_REDIRECT_URI}` | `https://<domain-bot>/v1/discord/oauth/callback` | Get from the bot team |
 | `{LINK_TOKEN}` | Token created by WISPACE in Step 1 | **Pass as-is into `state`** |
 
 > **Important:** `state` must be the original link token (no additional encoding). The bot will read `state` and send it directly to the WISPACE API for verification.
