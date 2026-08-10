@@ -10,8 +10,14 @@ set -euo pipefail
 # One-time VPS setup:
 #   git clone https://github.com/lengocanh2005it/wispace-bot.git ~/wispace-bot-src
 #   crontab -e
-#   */2 * * * * GHCR_USER=<owner> GHCR_PULL_TOKEN=<PAT read:packages> \
-#     bash ~/wispace-bot-src/.github/scripts/vps-self-pull-deploy.sh >> ~/vps-self-pull-deploy.log 2>&1
+#   */2 * * * * cd ~/wispace-bot-src && git fetch origin main --quiet && git reset --hard origin/main --quiet && \
+#     GHCR_USER=<owner> GHCR_PULL_TOKEN=<PAT read:packages> \
+#     bash .github/scripts/vps-self-pull-deploy.sh >> ~/vps-self-pull-deploy.log 2>&1
+#
+# The git fetch/reset MUST happen in the crontab line, not inside this
+# script: cron invokes this file by path, so if the file doesn't exist yet
+# in the clone (first bootstrap, or after the clone dir is recreated), the
+# script itself can never run to pull the update that would create it.
 #
 # .env for each app is NOT touched here — Doppler webhook → each bot's
 # /v1/*/ops/doppler-sync endpoint already keeps .env current independently
@@ -35,15 +41,8 @@ if ! flock -n 9; then
   exit 0
 fi
 
-if [ ! -d "$REPO_DIR/.git" ]; then
-  echo "ERROR: $REPO_DIR is not a git clone — see one-time setup in this file's header" >&2
-  exit 1
-fi
-
 cd "$REPO_DIR"
-git fetch origin main --quiet
-NEW_SHA=$(git rev-parse origin/main)
-git reset --hard origin/main --quiet
+NEW_SHA=$(git rev-parse HEAD)
 
 echo "$GHCR_PULL_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || true
 
