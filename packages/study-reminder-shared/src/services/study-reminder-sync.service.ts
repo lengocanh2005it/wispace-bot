@@ -7,6 +7,7 @@ import {
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
+  type UpsertStudyReminderJobInput,
 } from '../ports/study-reminder-job.repository.port';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { hoursFromNow } from '@wispace/date-utils';
@@ -114,9 +115,7 @@ export class StudyReminderSyncService {
           : [];
 
         const activeSessionKeys: string[] = [];
-        const batch: Parameters<
-          StudyReminderJobRepositoryPort['upsertPendingJobs']
-        >[0] = [];
+        const batch: UpsertStudyReminderJobInput[] = [];
 
         for (const session of sessions) {
           if (session.scheduledAt > horizonEnd) {
