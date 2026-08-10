@@ -223,8 +223,11 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
   }
 
   async claimJob(jobId: number): Promise<StudyReminderJob | null> {
+    // Bump updated_at so the stuck-processing reset (anchored on updated_at)
+    // measures the lease from CLAIM time, not from the last upsert — otherwise
+    // a job claimed ~9.5 min after upsert could be reset mid-send (double-send).
     const rows: Array<Record<string, unknown>> = await this.repo.query(
-      `UPDATE study_reminder_jobs SET status = 'processing' WHERE id = $1 AND status IN ('pending', 'failed') RETURNING *`,
+      `UPDATE study_reminder_jobs SET status = 'processing', updated_at = now() WHERE id = $1 AND status IN ('pending', 'failed') RETURNING *`,
       [jobId],
     );
     if (!rows.length) return null;
