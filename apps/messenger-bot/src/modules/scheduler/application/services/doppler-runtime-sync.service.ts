@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import {
@@ -115,12 +116,37 @@ export class DopplerRuntimeSyncService {
     return raw;
   }
 
+  private async resolveContainerName(): Promise<string> {
+    const configured = this.configService
+      .get<string>('DEPLOY_CONTAINER_NAME')
+      ?.trim();
+    if (configured) {
+      return configured;
+    }
+
+    // The container is renamed to ${APP_NAME}-old after each deploy, so a
+    // hardcoded name goes stale. Resolve the real name via docker.sock:
+    // inside the container, hostname = container ID.
+    try {
+      const { stdout } = await execFileAsync(
+        'docker',
+        ['inspect', os.hostname(), '--format', '{{.Name}}'],
+        { cwd: '/tmp' },
+      );
+      const name = stdout.trim().replace(/^\//, '');
+      if (name) {
+        return name;
+      }
+    } catch {
+      // docker.sock unavailable — fall back to default below
+    }
+    return 'messenger-bot';
+  }
+
   private async runSync(): Promise<void> {
     const envFile = this.requireConfig('DEPLOY_ENV_FILE');
     const composeFile = this.requireConfig('DEPLOY_COMPOSE_FILE');
-    const containerName =
-      this.configService.get<string>('DEPLOY_CONTAINER_NAME')?.trim() ??
-      'messenger-bot';
+    const containerName = await this.resolveContainerName();
     const project =
       this.configService.get<string>('DOPPLER_PROJECT')?.trim() ??
       'messenger-bot';
