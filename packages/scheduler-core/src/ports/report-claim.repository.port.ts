@@ -21,4 +21,10 @@ export interface ReportClaimRepositoryPort {
     externalUserId: string;
     reportDate: string;
   }): Promise<void>;
+  /**
+   * Releases claims stuck in `claimed` past the given age (pod crash between
+   * claim and mark-sent would otherwise burn the day's slot forever).
+   * Messenger-only for now — Discord/Zalo release on every error path.
+   */
+  resetStaleScheduledReportClaims?(olderThan: Date): Promise<number>;
 }

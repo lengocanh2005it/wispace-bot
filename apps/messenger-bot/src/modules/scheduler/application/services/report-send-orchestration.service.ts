@@ -7,6 +7,10 @@ import {
 import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/entities/messenger.types';
 import { MessengerReportDeliveryService } from '@messenger/modules/messenger/application/services/messenger-report-delivery.service';
 import {
+  MessengerApiError,
+  MessengerPartialSendError,
+} from '@messenger/modules/messenger/application/services/messenger-outbound.service';
+import {
   REPORT_SEND_JOB_REPOSITORY,
   type ReportSendJobRepositoryPort,
 } from '@wispace/scheduler-core';
@@ -24,6 +28,17 @@ export const ZERO: ClaimAndSendResult = {
   retryQueued: 0,
   failures: [],
 };
+
+/** Meta Send API 5xx / 408 timeout / network-level 0 — retryable via R5 outbox. */
+function isMessengerApiRetryable(error: unknown): boolean {
+  if (error instanceof MessengerPartialSendError) {
+    return false;
+  }
+  if (error instanceof MessengerApiError) {
+    return error.status >= 500 || error.status === 408 || error.status === 0;
+  }
+  return false;
+}
 
 /**
  * Shared orchestration for report send — claim → send → mark → error classify.
@@ -125,19 +140,40 @@ export class ReportSendOrchestrationService {
       }
       return { ...ZERO, windowClosed: 1 };
     } catch (error) {
-      if (claimedForSend) {
-        if (
-          error instanceof StudentReportRetryableError ||
-          error instanceof ProactiveMessenger24hSkippedError
-        ) {
-          await this.messengerRepository.releaseScheduledReportClaim({
+      // Partial send: user already received ≥1 bubble — treat as delivered so
+      // the claim stays 'sent' (no re-send, cross-platform dedupe works).
+      if (error instanceof MessengerPartialSendError) {
+        this.logger.warn(
+          `Partial report send for PSID ${mapping.psid}: ${error.bubblesSent} bubble(s) delivered before failure — marking sent`,
+        );
+        if (claimedForSend) {
+          await this.messengerRepository.markScheduledReportClaimSent({
             externalUserId: mapping.psid,
             reportDate,
           });
         }
+        if (examDateForOutbox) {
+          await this.reportSendJobRepository.markSentByExternalUserExamDate(
+            mapping.psid,
+            examDateForOutbox,
+          );
+        }
+        return { ...ZERO, sent: 1 };
       }
 
-      if (error instanceof StudentReportRetryableError) {
+      // Release the claim on EVERY other failure — a leak here would silently
+      // block same-day re-sends and burn the day's slot.
+      if (claimedForSend) {
+        await this.messengerRepository.releaseScheduledReportClaim({
+          externalUserId: mapping.psid,
+          reportDate,
+        });
+      }
+
+      if (
+        error instanceof StudentReportRetryableError ||
+        isMessengerApiRetryable(error)
+      ) {
         let retryQueued = 0;
         if (examDateForOutbox) {
           const settings = this.reportSendScheduleService.getOutboxSettings();
@@ -159,7 +195,7 @@ export class ReportSendOrchestrationService {
           if (job.nextRetryAt) retryQueued = 1;
         }
         this.logger.warn(
-          `Deferred scheduled report for PSID ${mapping.psid} (Wispace API retryable, R3/R5)`,
+          `Deferred scheduled report for PSID ${mapping.psid} (retryable ${error.constructor.name}, R3/R5)`,
         );
         return { ...ZERO, deferred: 1, retryQueued };
       }

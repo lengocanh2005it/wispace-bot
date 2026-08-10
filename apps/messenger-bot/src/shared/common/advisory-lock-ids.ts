@@ -23,4 +23,7 @@ export const ADVISORY_LOCK = {
 
   /** H2: auto-refund quota slots stuck in `reserved` (every 5 min). */
   CHAT_QUOTA_STUCK_RECOVERY: 884_200_906,
+
+  /** Release scheduled_report_claims stuck in `claimed` (every 30 min). */
+  REPORT_CLAIM_STALE_RESET: 884_200_907,
 } as const;

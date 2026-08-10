@@ -1,6 +1,10 @@
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
 import { StudentReportRetryableError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
 import { ProactiveMessenger24hSkippedError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
+import {
+  MessengerApiError,
+  MessengerPartialSendError,
+} from '@messenger/modules/messenger/application/services/messenger-outbound.service';
 
 describe('ReportSendOrchestrationService.claimAndSend', () => {
   const mapping = {
@@ -223,6 +227,102 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     });
     expect(
       messengerRepository.releaseScheduledReportClaim,
+    ).toHaveBeenCalledWith({
+      externalUserId: 'psid-1',
+      reportDate: '2026-07-11',
+    });
+  });
+
+  it('Meta Send API 5xx → release claim + queue R5 outbox job', async () => {
+    const { service, messengerRepository, reportSendJobRepository } =
+      buildService({
+        sendError: new MessengerApiError(
+          'Meta down',
+          500,
+          'Internal Server Error',
+          '{"error":{"code":190}}',
+        ),
+      });
+
+    const result = await service.claimAndSend(mapping, {
+      reportDate: '2026-07-11',
+      skipAlreadySentToday: true,
+      examDateForOutbox: '2026-07-15',
+    });
+
+    expect(result.deferred).toBe(1);
+    expect(result.retryQueued).toBe(1);
+    expect(
+      messengerRepository.releaseScheduledReportClaim,
+    ).toHaveBeenCalledWith({
+      externalUserId: 'psid-1',
+      reportDate: '2026-07-11',
+    });
+    expect(reportSendJobRepository.recordRetryableFailure).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalUserId: 'psid-1',
+        examDate: '2026-07-15',
+      }),
+    );
+  });
+
+  it('Meta Send API 4xx → release claim, no outbox job', async () => {
+    const { service, messengerRepository, reportSendJobRepository } =
+      buildService({
+        sendError: new MessengerApiError(
+          'Invalid PSID',
+          400,
+          'Bad Request',
+          '{"error":{"code":100}}',
+        ),
+      });
+
+    const result = await service.claimAndSend(mapping, {
+      reportDate: '2026-07-11',
+      skipAlreadySentToday: true,
+      examDateForOutbox: '2026-07-15',
+    });
+
+    expect(result.failures).toHaveLength(1);
+    expect(reportSendJobRepository.recordRetryableFailure).not.toHaveBeenCalled();
+    expect(
+      messengerRepository.releaseScheduledReportClaim,
+    ).toHaveBeenCalledWith({
+      externalUserId: 'psid-1',
+      reportDate: '2026-07-11',
+    });
+  });
+
+  it('partial bubble send → mark sent, no re-send, no release', async () => {
+    const { service, messengerRepository, reportSendJobRepository } =
+      buildService({
+        sendError: new MessengerPartialSendError(
+          2,
+          new MessengerApiError(
+            'bubble 3 failed',
+            500,
+            'Internal Server Error',
+            '{}',
+          ),
+        ),
+      });
+
+    const result = await service.claimAndSend(mapping, {
+      reportDate: '2026-07-11',
+      skipAlreadySentToday: true,
+      examDateForOutbox: '2026-07-15',
+    });
+
+    expect(result.sent).toBe(1);
+    expect(
+      messengerRepository.markScheduledReportClaimSent,
+    ).toHaveBeenCalledWith({
+      externalUserId: 'psid-1',
+      reportDate: '2026-07-11',
+    });
+    expect(
+      messengerRepository.releaseScheduledReportClaim,
     ).not.toHaveBeenCalled();
+    expect(reportSendJobRepository.recordRetryableFailure).not.toHaveBeenCalled();
   });
 });

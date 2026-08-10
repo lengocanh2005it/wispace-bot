@@ -387,6 +387,19 @@ export class MessengerRepository
     );
   }
 
+  async resetStaleScheduledReportClaims(olderThan: Date): Promise<number> {
+    const result = await this.reportClaimRepo
+      .createQueryBuilder()
+      .update()
+      .set({ status: 'released', updatedAt: new Date() })
+      .where('platform = :platform', { platform: PLATFORM })
+      .andWhere('status = :status', { status: 'claimed' })
+      .andWhere('updated_at < :olderThan', { olderThan })
+      .execute();
+
+    return result.affected ?? 0;
+  }
+
   async logMessage(params: {
     userId?: number;
     psid?: string;
