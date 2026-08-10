@@ -50,9 +50,16 @@ export class HealthController {
       result.status = 'error';
     }
 
-    // Redis check
-    if (!this.redisClient.isEnabled()) {
+    // Redis check — a configured-but-unreachable Redis at boot is an ERROR,
+    // not "disabled" (deploy health gates would otherwise go green degraded).
+    if (!this.redisClient.isConfiguredEnabled()) {
       result.redis = 'disabled';
+    } else if (!this.redisClient.isEnabled()) {
+      this.logger.warn(
+        'Redis health check failed: configured (REDIS_ENABLED=true) but not connected',
+      );
+      result.redis = 'error';
+      result.status = 'error';
     } else {
       try {
         const pingResult: string = await this.redisClient.ping();
@@ -76,8 +83,17 @@ export class HealthController {
 
   @Get('redis')
   async checkRedis() {
-    if (!this.redisClient.isEnabled()) {
+    if (!this.redisClient.isConfiguredEnabled()) {
       return { ok: true, redis: 'disabled' };
+    }
+    if (!this.redisClient.isEnabled()) {
+      this.logger.warn(
+        'Redis health check failed: configured (REDIS_ENABLED=true) but not connected',
+      );
+      throw new ServiceUnavailableException({
+        ok: false,
+        redis: 'error',
+      });
     }
     try {
       const result: string = await this.redisClient.ping();

@@ -16,6 +16,7 @@ describe('HealthController', () => {
     } as unknown as DataSource;
     const redisClient = {
       isEnabled: jest.fn().mockReturnValue(false),
+      isConfiguredEnabled: jest.fn().mockReturnValue(false),
       ping: jest.fn().mockResolvedValue('PONG'),
       ...overrides.redisClient,
     } as unknown as RedisClientPort;
@@ -60,6 +61,7 @@ describe('HealthController', () => {
     const { controller } = build({
       redisClient: {
         isEnabled: jest.fn().mockReturnValue(true),
+        isConfiguredEnabled: jest.fn().mockReturnValue(true),
         ping: jest.fn().mockResolvedValue('PONG'),
       },
     });
@@ -69,10 +71,27 @@ describe('HealthController', () => {
     });
   });
 
+  it('throws ServiceUnavailableException when redis is configured but not connected at boot', async () => {
+    const { controller } = build({
+      redisClient: {
+        isEnabled: jest.fn().mockReturnValue(false),
+        isConfiguredEnabled: jest.fn().mockReturnValue(true),
+      },
+    });
+
+    await expect(controller.check()).rejects.toHaveProperty('status', 503);
+    const error = await controller.checkRedis().catch((e: unknown) => e);
+    expect((error as { getResponse(): unknown }).getResponse()).toEqual({
+      ok: false,
+      redis: 'error',
+    });
+  });
+
   it('throws ServiceUnavailableException with detail when redis is unreachable', async () => {
     const { controller } = build({
       redisClient: {
         isEnabled: jest.fn().mockReturnValue(true),
+        isConfiguredEnabled: jest.fn().mockReturnValue(true),
         ping: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
       },
     });
