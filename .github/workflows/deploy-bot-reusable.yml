@@ -192,7 +192,7 @@ jobs:
       VPS_HOST: ${{ secrets.vps_host }}
       VPS_KNOWN_HOSTS: ${{ secrets.vps_known_hosts }}
       VPS_USER: ${{ secrets.vps_user }}
-      VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT || '8443' }}
+      VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT || '22' }}
       MIGRATION_CMD: ${{ !inputs.env_only && inputs.app == 'messenger-bot' && 'npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js' || '' }}
     steps:
       - name: Checkout code
