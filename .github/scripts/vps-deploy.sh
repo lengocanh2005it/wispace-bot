@@ -30,41 +30,52 @@ set -euo pipefail
 COMPOSE_FILE="docker-compose.prod.yml"
 
 # ─── Per-app config: port pairs + docker run resources ─────────────────────────
-# Format: ACTIVE:STANDBY:MEM:CPUS:EXTRA_VOLUMES(;separated):GROUP_DOCKER
+# Format: ACTIVE:STANDBY;MEM;CPUS;VOL1;VOL2;...;GROUP_DOCKER
+# (volumes are ';'-separated so the ':' inside volume specs is safe)
 declare -A APP_CFG=(
-  [messenger-bot]="5007:5008:512m:1.0:./.env:/deploy/.env;./docker-compose.prod.yml:/deploy/docker-compose.prod.yml:ro;/var/run/docker.sock:/var/run/docker.sock:yes"
-  [discord-bot]="3001:3004:256m:0.5::no"
-  [zalo-bot]="3002:3003:256m:0.5::no"
+  [messenger-bot]="5007:5008;512m;1.0;./.env:/deploy/.env;./docker-compose.prod.yml:/deploy/docker-compose.prod.yml:ro;/var/run/docker.sock:/var/run/docker.sock;yes"
+  [discord-bot]="3001:3004;256m;0.5;;no"
+  [zalo-bot]="3002:3003;256m;0.5;;no"
 )
 
 get_standalone_port() {
-  local app="$1"
-  echo "${APP_CFG[$app]%%:*}"
+  local app="$1" ports
+  ports="${APP_CFG[$app]%%;*}"
+  echo "${ports%%:*}"
 }
 
 get_standby_port() {
-  local app="$1"
-  echo "${APP_CFG[$app]#*:}" | cut -d: -f1
+  local app="$1" ports
+  ports="${APP_CFG[$app]%%;*}"
+  echo "${ports##*:}"
 }
 
 get_mem() {
-  local app="$1"
-  echo "${APP_CFG[$app]#*:*:}" | cut -d: -f1
+  local app="$1" rest
+  rest="${APP_CFG[$app]#*;}"
+  echo "${rest%%;*}"
 }
 
 get_cpus() {
-  local app="$1"
-  echo "${APP_CFG[$app]#*:*:*:}" | cut -d: -f1
+  local app="$1" rest
+  rest="${APP_CFG[$app]#*;}"
+  rest="${rest#*;}"
+  echo "${rest%%;*}"
 }
 
 get_extra_volumes() {
-  local app="$1"
-  echo "${APP_CFG[$app]#*:*:*:*:}" | cut -d: -f1
+  local app="$1" rest vols
+  rest="${APP_CFG[$app]#*;}"
+  rest="${rest#*;}"
+  rest="${rest#*;}"
+  vols="${rest%;yes}"
+  vols="${vols%;no}"
+  echo "$vols"
 }
 
 get_group_docker() {
   local app="$1"
-  echo "${APP_CFG[$app]##*:}"
+  echo "${APP_CFG[$app]##*;}"
 }
 
 # ─── Prepare .env from production.env (Doppler download from CI) ─────────────
