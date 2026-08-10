@@ -205,7 +205,7 @@ export class DopplerRuntimeSyncService {
         throw new Error(`empty image from docker inspect ${containerName}`);
       }
 
-      await this.recreateContainer(hostCompose, image);
+      await this.recreateContainer(containerName, image, hostCompose);
 
       this.logger.log(
         `DOPPLER_RUNTIME_SYNC complete image=${image} env=${envFile}`,
@@ -217,9 +217,17 @@ export class DopplerRuntimeSyncService {
   }
 
   private async recreateContainer(
-    hostCompose: { deployDir: string; composeFile: string },
+    containerName: string,
     image: string,
+    hostCompose: { deployDir: string },
   ): Promise<void> {
+    // docker compose up -d <service> does NOT work here: the running
+    // container was created by the zero-downtime deploy script (name
+    // <app>-old, toggled port), not by compose — compose would recreate a
+    // brand-new <app> container on the default port and collide.
+    // Instead, clone the current container's config (name, port, mounts,
+    // groups, resources, env) via the recreate-container.sh script in the
+    // deploy dir, which the sidecar mounts along with docker.sock.
     await execFileAsync(
       'docker',
       [
@@ -232,15 +240,13 @@ export class DopplerRuntimeSyncService {
         '-w',
         hostCompose.deployDir,
         '-e',
-        `IMAGE=${image}`,
+        `RECREATE_NAME=${containerName}`,
+        '-e',
+        `RECREATE_IMAGE=${image}`,
         DOPPLER_RUNTIME_COMPOSE_SIDECAR_IMAGE,
-        'compose',
-        '-f',
-        hostCompose.composeFile,
-        'up',
-        '-d',
-        '--force-recreate',
-        'messenger-bot',
+        'sh',
+        '-c',
+        'apk add --no-cache bash >/dev/null 2>&1; bash recreate-container.sh "$RECREATE_NAME" "$RECREATE_IMAGE"',
       ],
       {
         cwd: '/tmp',

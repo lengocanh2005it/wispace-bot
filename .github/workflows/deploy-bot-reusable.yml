@@ -229,6 +229,7 @@ jobs:
           mkdir -p upload-bundle
           cp apps/${{ inputs.app }}/docker-compose.prod.yml upload-bundle/
           cp .github/scripts/vps-deploy.sh upload-bundle/
+          cp .github/scripts/recreate-container.sh upload-bundle/
           # Copy nginx upstream config for zero-downtime deploy
           mkdir -p upload-bundle/upstreams
           cp deploy/nginx/upstreams/${{ inputs.app }}.conf upload-bundle/upstreams/ 2>/dev/null || true
