@@ -49,8 +49,8 @@ for m in "${MO[@]}"; do
   [ -n "$m" ] && args+=(-v "$m")
 done
 for p in $CFG_PORTS; do
-  # strip /tcp suffix: 127.0.0.1:5007:5007/tcp -> -p 127.0.0.1:5007:5007
-  [ -n "$p" ] && args+=(-p "${p%:*}")
+  # strip /tcp suffix: 127.0.0.1:5008:5008/tcp -> -p 127.0.0.1:5008:5008
+  [ -n "$p" ] && args+=(-p "${p%/tcp}")
 done
 for g in $CFG_GID; do
   [ -n "$g" ] && args+=(--group-add "$g")
