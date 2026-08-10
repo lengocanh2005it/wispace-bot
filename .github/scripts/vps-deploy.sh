@@ -142,6 +142,8 @@ fi
 
 DEPLOY_UID=${DEPLOY_UID:-$(id -u)}
 DEPLOY_GID=${DEPLOY_GID:-$(id -g)}
+# ensure_env_var wrote these into .env, but they are not shell variables yet
+DOCKER_GID=$(grep -E '^DOCKER_GID=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '\r')
 
 # ─── Prepare env file for docker run (strip quotes) ───────────────────────────
 # docker run --env-file does NOT strip surrounding quotes like compose does,
