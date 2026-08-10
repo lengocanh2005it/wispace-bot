@@ -54,12 +54,7 @@ function readDailyLimit() {
 }
 
 const args = parseArgs(process.argv.slice(2), {
-  defaults: {
-    warnOnly: false,
-    failedHours: 24,
-    stuckMinutes: 10,
-    denyHours: 24,
-  },
+  defaults: { warnOnly: false, failedHours: 24, stuckMinutes: 10, denyHours: 24 },
   help: HELP,
   handle: (a, arg) => {
     if (arg === '--warn-only') {
@@ -90,7 +85,8 @@ const args = parseArgs(process.argv.slice(2), {
     return false;
   },
 });
-const timezone = process.env.CHAT_USAGE_TIMEZONE?.trim() ?? 'Asia/Ho_Chi_Minh';
+const timezone =
+  process.env.CHAT_USAGE_TIMEZONE?.trim() ?? 'Asia/Ho_Chi_Minh';
 const usageDate = todayUsageDate(timezone);
 const dailyLimit = readDailyLimit();
 const stuckReservedMs = readStuckReservedMs();
@@ -205,10 +201,7 @@ try {
 
   const minFailedJobs = readPositiveEnv('OPS_ALERT_MIN_FAILED_JOBS', 1);
   const minStuckReserved = readPositiveEnv('OPS_ALERT_MIN_STUCK_RESERVED', 1);
-  const minStuckProcessing = readPositiveEnv(
-    'OPS_ALERT_MIN_STUCK_PROCESSING',
-    1,
-  );
+  const minStuckProcessing = readPositiveEnv('OPS_ALERT_MIN_STUCK_PROCESSING', 1);
 
   const terminalFailedCount = terminalFailed.rows[0]?.count ?? 0;
   const stuckProcessingCount = stuckProcessing.rows[0]?.count ?? 0;
@@ -295,9 +288,7 @@ try {
     }
 
     for (const alert of alerts) {
-      console.log(
-        `[${alert.severity.toUpperCase()}] ${alert.code}: ${alert.message}`,
-      );
+      console.log(`[${alert.severity.toUpperCase()}] ${alert.code}: ${alert.message}`);
     }
 
     process.exit(1);

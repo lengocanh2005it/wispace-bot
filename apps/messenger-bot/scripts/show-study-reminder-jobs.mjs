@@ -63,10 +63,7 @@ const args = parseArgs(process.argv.slice(2), {
       return true;
     }
     if (arg.startsWith('--user-id=')) {
-      a.userId = readPositiveNumber(
-        arg.slice('--user-id='.length),
-        '--user-id',
-      );
+      a.userId = readPositiveNumber(arg.slice('--user-id='.length), '--user-id');
       return true;
     }
     if (arg === '--failed') {

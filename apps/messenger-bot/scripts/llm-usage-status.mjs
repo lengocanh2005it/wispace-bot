@@ -23,13 +23,7 @@ function todayUsageDate(timezone, now = new Date()) {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2), {
-    defaults: {
-      psid: null,
-      userId: null,
-      date: null,
-      feature: null,
-      ops: false,
-    },
+    defaults: { psid: null, userId: null, date: null, feature: null, ops: false },
     help: HELP,
     handle: (a, arg) => {
       if (arg.startsWith('--psid=')) {
@@ -59,7 +53,8 @@ async function main() {
       return false;
     },
   });
-  const timezone = process.env.LLM_USAGE_TIMEZONE?.trim() ?? 'Asia/Ho_Chi_Minh';
+  const timezone =
+    process.env.LLM_USAGE_TIMEZONE?.trim() ?? 'Asia/Ho_Chi_Minh';
   const usageDate = args.date ?? todayUsageDate(timezone);
 
   const client = new pg.Client({
@@ -77,7 +72,7 @@ async function main() {
   await client.connect();
 
   try {
-    if (args.ops) {
+        if (args.ops) {
       const summary = await client.query(
         `
           SELECT
@@ -95,9 +90,7 @@ async function main() {
         [usageDate],
       );
 
-      console.log(
-        `LLM usage ops summary date=${usageDate} timezone=${timezone}`,
-      );
+      console.log(`LLM usage ops summary date=${usageDate} timezone=${timezone}`);
       if (summary.rows.length === 0) {
         console.log('  (no rows)');
       } else {
