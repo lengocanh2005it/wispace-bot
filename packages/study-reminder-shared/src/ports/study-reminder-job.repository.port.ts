@@ -37,6 +37,14 @@ export interface StudyReminderJobRepositoryPort {
     input: UpsertStudyReminderJobInput,
     options?: UpsertStudyReminderJobOptions,
   ): Promise<StudyReminderJob>;
+  /**
+   * Batch upsert — one SELECT for all keys, then in-memory reopen logic and
+   * batched save. Same per-row semantics as `upsertPendingJob` (no lockKey).
+   */
+  upsertPendingJobs(
+    inputs: UpsertStudyReminderJobInput[],
+    options?: UpsertStudyReminderJobOptions,
+  ): Promise<StudyReminderJob[]>;
   findDueJobs(now: Date, minLeadMinutes: number): Promise<StudyReminderJob[]>;
   claimJob(jobId: number): Promise<StudyReminderJob | null>;
   markSent(jobId: number): Promise<void>;

@@ -47,13 +47,19 @@ export class ZaloReportCronService {
       `Sending daily reports to ${links.length} Zalo users (reportDate=${reportDate})`,
     );
 
+    // Pre-query userIds that already got a report on another platform today —
+    // avoids one SELECT per linked user inside the batched loop.
+    const sentUserIds = new Set(
+      await this.claimRepo.listUserIdsWithSentReportToday(reportDate),
+    );
+
     let sent = 0;
     let skipped = 0;
     let failed = 0;
     const errors: string[] = [];
 
     const results = await runBatched(links, CONCURRENCY, (link) =>
-      this.sendReportForUser(link, reportDate),
+      this.sendReportForUser(link, reportDate, sentUserIds),
     );
     for (const r of results) {
       if (r.status === 'fulfilled') {
@@ -75,13 +81,10 @@ export class ZaloReportCronService {
   private async sendReportForUser(
     link: ZaloAccountLinkEntity,
     reportDate: string,
+    sentUserIds: Set<number>,
   ): Promise<'sent' | 'skipped' | 'error'> {
     if (link.userId) {
-      const alreadySent = await this.claimRepo.hasAnyPlatformSentReportToday(
-        link.userId,
-        reportDate,
-      );
-      if (alreadySent) {
+      if (sentUserIds.has(link.userId)) {
         this.logger.log(
           `Report already sent on another platform for userId=${link.userId}, skipping Zalo`,
         );

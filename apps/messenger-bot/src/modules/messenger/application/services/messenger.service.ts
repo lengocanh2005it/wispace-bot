@@ -150,11 +150,13 @@ export class MessengerService {
           this.resolveLinkContextForChat.bind(this),
         );
       } else {
-        await this.signalTyping(psid);
+        // Fire-and-forget — the typing roundtrip must not block the webhook.
+        this.signalTyping(psid);
         await this.actionExecutor.executeAction(
           action,
           event,
-          this.resolveLinkContextForChat.bind(this),
+          (eventPsid, eventObj) =>
+            this.resolveLinkContextForChat(eventPsid, eventObj, ctx),
         );
       }
     }
@@ -221,6 +223,7 @@ export class MessengerService {
   private async resolveLinkContextForChat(
     psid: string,
     event: MessengerWebhookEvent,
+    preResolved?: RouterContext,
   ): Promise<MessengerLinkContext | undefined> {
     const ref = extractRefFromEvent(event);
     if (ref) {
@@ -237,6 +240,12 @@ export class MessengerService {
       }
     }
 
+    if (preResolved?.linkContext) {
+      // Reuse the mapping already fetched in preResolveContext — avoids a
+      // second identical DB lookup per chat message.
+      return preResolved.linkContext;
+    }
+
     return this.resolveLinkContextFromMapping(psid);
   }
 
@@ -244,8 +253,8 @@ export class MessengerService {
     void this.outbound.sendSenderActionOptional(psid, 'mark_seen');
   }
 
-  private async signalTyping(psid: string): Promise<void> {
-    await this.outbound.sendSenderActionOptional(psid, 'typing_on');
+  private signalTyping(psid: string): void {
+    void this.outbound.sendSenderActionOptional(psid, 'typing_on');
   }
 
   private isDuplicateMessageMid(mid: string, psid: string): Promise<boolean> {

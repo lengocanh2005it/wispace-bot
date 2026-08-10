@@ -169,4 +169,54 @@ describe('StudentReportService', () => {
       'Bạn còn 4 ngày nữa',
     );
   });
+
+  it('caches the daily report and serves repeats without a second LLM call', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const studentCapacityService = {
+      getCapacityData: jest.fn(() => Promise.resolve(capacityInput)),
+    } as unknown as TaskScoreAverageApiService;
+
+    const llmRun = jest.fn(() =>
+      Promise.resolve(makeJsonResponse('{"headline":"ok"}')),
+    );
+    const service = new StudentReportService(
+      {
+        get: jest.fn((key: string) =>
+          key === 'OPENAI_API_KEY' ? 'sk-test' : undefined,
+        ),
+      } as unknown as ConfigService,
+      studentCapacityService,
+      { recordFromCompletion: jest.fn() } as never,
+      { run: llmRun } as never,
+      mockAdapter,
+    );
+
+    const first = await service.generateReport('psid-1');
+    const second = await service.generateReport('psid-1');
+
+    expect(second).toBe(first);
+    expect(llmRun).toHaveBeenCalledTimes(1);
+    expect(service.getCachedReport('psid-1')).toBe(first);
+  });
+
+  it('generateReportStatic builds a deterministic report without any LLM call', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const studentCapacityService = {
+      getCapacityData: jest.fn(() => Promise.resolve(capacityInput)),
+    } as unknown as TaskScoreAverageApiService;
+
+    const llmRun = jest.fn();
+    const service = new StudentReportService(
+      { get: () => undefined } as unknown as ConfigService,
+      studentCapacityService,
+      { recordFromCompletion: jest.fn() } as never,
+      { run: llmRun } as never,
+      mockAdapter,
+    );
+
+    const text = await service.generateReportStatic('psid-1');
+
+    expect(text).toContain('Bạn còn 4 ngày nữa');
+    expect(llmRun).not.toHaveBeenCalled();
+  });
 });

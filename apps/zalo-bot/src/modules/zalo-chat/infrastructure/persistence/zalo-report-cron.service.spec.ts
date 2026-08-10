@@ -20,7 +20,7 @@ const link = {
 } as unknown as ZaloAccountLinkEntity;
 
 function buildService(overrides: {
-  hasAnyPlatformSentReportToday?: jest.Mock;
+  listUserIdsWithSentReportToday?: jest.Mock;
   tryClaimScheduledReport?: jest.Mock;
   markScheduledReportClaimSent?: jest.Mock;
   releaseScheduledReportClaim?: jest.Mock;
@@ -30,9 +30,8 @@ function buildService(overrides: {
   const linkRepo = {
     find: jest.fn().mockResolvedValue([link]),
   } as unknown as Repository<ZaloAccountLinkEntity>;
-  const hasAnyPlatformSentReportToday =
-    overrides.hasAnyPlatformSentReportToday ??
-    jest.fn().mockResolvedValue(false);
+  const listUserIdsWithSentReportToday =
+    overrides.listUserIdsWithSentReportToday ?? jest.fn().mockResolvedValue([]);
   const tryClaimScheduledReport =
     overrides.tryClaimScheduledReport ?? jest.fn().mockResolvedValue(true);
   const markScheduledReportClaimSent =
@@ -42,7 +41,7 @@ function buildService(overrides: {
     overrides.releaseScheduledReportClaim ??
     jest.fn().mockResolvedValue(undefined);
   const claimRepo = {
-    hasAnyPlatformSentReportToday,
+    listUserIdsWithSentReportToday,
     tryClaimScheduledReport,
     markScheduledReportClaimSent,
     releaseScheduledReportClaim,
@@ -62,7 +61,7 @@ function buildService(overrides: {
   );
   return {
     service,
-    hasAnyPlatformSentReportToday,
+    listUserIdsWithSentReportToday,
     tryClaimScheduledReport,
     markScheduledReportClaimSent,
     releaseScheduledReportClaim,
@@ -75,18 +74,18 @@ describe('ZaloReportCronService', () => {
   it('skips without sending or claiming when user already sent on another platform', async () => {
     const {
       service,
-      hasAnyPlatformSentReportToday,
+      listUserIdsWithSentReportToday,
       tryClaimScheduledReport,
       markScheduledReportClaimSent,
       sendText,
       generateReport,
     } = buildService({
-      hasAnyPlatformSentReportToday: jest.fn().mockResolvedValue(true),
+      listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([42]),
     });
 
     await service.sendDailyReports();
 
-    expect(hasAnyPlatformSentReportToday).toHaveBeenCalledWith(42, reportDate);
+    expect(listUserIdsWithSentReportToday).toHaveBeenCalledWith(reportDate);
     expect(generateReport).not.toHaveBeenCalled();
     expect(sendText).not.toHaveBeenCalled();
     expect(tryClaimScheduledReport).not.toHaveBeenCalled();

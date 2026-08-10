@@ -432,6 +432,13 @@ Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global ski
 | Zalo Redis burst counter | ✓ `PostgresBurstCounter` (was `MemoryBurstCounter`) |
 | Zalo LLM report enrichment | ✓ Report cron uses `ZaloStudentReportService` (LLM); tool still raw |
 | Discord/Zalo chat queue (H7) | ✓ `DebounceChatQueue` + `ChatPipeline` + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator + user feedback |
+| LLM cost: double retry trên Discord/Zalo | ✓ `maxLlmRetries: 0` (1 retry layer: `retryWithBackoff` ngoài); `0` giờ disable inner retry thật sự (`llm-agent` `getMaxLlmRetries` sửa `>0` → `>=0`) |
+| LLM cost: cap output token report/reminder | ✓ `maxOutputTokens: 500` cho JSON report + reminder (shape cố định) |
+| LLM cost: Messenger tool `get_learning_progress_report` không còn gọi LLM lồng nhau | ✓ Cache report theo ngày (`psid:YYYY-MM-DD`, in-memory, 5k entries) → cron 08:00 pre-warm; tool dùng cache, miss → static report (`generateReportStatic`, không LLM); menu postback reuse cache |
+| DB: missing indexes | ✓ migration `1751029200010` — `chat_idempotency(platform,status,reserved_at)`, `scheduled_report_claims(user_id,report_date,status)+created_at`, `message_logs(created_at)` |
+| DB: report claims retention | ✓ `${platform}-report-claims-cleanup` (Discord/Zalo, 03:45 ICT, advisory-lock, 90 ngày) — AGENTS.md dev tip đã spec sẵn |
+| DB: batch study-reminder sync | ✓ `upsertPendingJobs` — 1 SELECT cho cả user thay vì findOne+save per session |
+| DB: Zalo report cron pre-query | ✓ `listUserIdsWithSentReportToday` → 1 query thay N query per user |
 | Discord/Zalo multi-pod chat history | ❌ In-memory only (Redis optional for Messenger) |
 | Project-wide gaps (link, reports, reminders, ops) | Roadmap — [edge-cases-roadmap.md](docs/edge-cases-roadmap.md) |
 

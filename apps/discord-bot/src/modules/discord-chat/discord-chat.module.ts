@@ -45,6 +45,7 @@ import {
   PlatformDeadLetterService,
   WebhookDeadLetterEntity,
   ReportSendJobEntity,
+  ScheduledReportClaimEntity,
 } from '@wispace/database';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 import { DiscordCalendarPort } from './infrastructure/adapters/discord-calendar.port';
@@ -73,6 +74,7 @@ const REGISTER_REPORT_MESSAGE =
       DiscordMessageLogEntity,
       ReportSendJobEntity,
       ChatIdempotencyEntity,
+      ScheduledReportClaimEntity,
     ]),
   ],
   providers: [
@@ -154,6 +156,8 @@ const REGISTER_REPORT_MESSAGE =
           {
             promptDir: join(__dirname, '../../shared/prompts'),
             promptFile: 'discord-chat.system.txt',
+            // Single retry layer — retryWithBackoff in PlatformAgentService
+            maxLlmRetries: 0,
           },
         ),
       inject: [
@@ -252,6 +256,7 @@ const REGISTER_REPORT_MESSAGE =
         messageLogRepo: Repository<DiscordMessageLogEntity>,
         deadLetterRepo: Repository<WebhookDeadLetterEntity>,
         idempotencyRepo: Repository<ChatIdempotencyEntity>,
+        reportClaimRepo: Repository<ScheduledReportClaimEntity>,
         rateLimitService: PlatformChatRateLimitService,
       ) =>
         new PlatformCleanupCronService(cleanupService, configService, {
@@ -262,10 +267,12 @@ const REGISTER_REPORT_MESSAGE =
             deadLetter: 884_200_912,
             idempotencyRecovery: 884_200_914,
             idempotencyCleanup: 884_200_915,
+            reportClaim: 884_200_920,
           },
           messageLogRepo,
           deadLetterRepo,
           idempotencyRepo,
+          reportClaimRepo,
           rateLimitService,
         }),
       inject: [
@@ -274,6 +281,7 @@ const REGISTER_REPORT_MESSAGE =
         getRepositoryToken(DiscordMessageLogEntity),
         getRepositoryToken(WebhookDeadLetterEntity),
         getRepositoryToken(ChatIdempotencyEntity),
+        getRepositoryToken(ScheduledReportClaimEntity),
         PlatformChatRateLimitService,
       ],
     },

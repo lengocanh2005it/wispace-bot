@@ -42,6 +42,16 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
     return !!claim;
   }
 
+  async listUserIdsWithSentReportToday(reportDate: string): Promise<number[]> {
+    const rows = await this.claimRepo.find({
+      select: { userId: true },
+      where: { reportDate, status: 'sent' },
+    });
+    return rows
+      .map((row) => row.userId)
+      .filter((userId): userId is number => userId !== null);
+  }
+
   async tryClaimScheduledReport(params: {
     externalUserId: string;
     userId?: number;

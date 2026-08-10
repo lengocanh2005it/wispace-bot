@@ -310,6 +310,16 @@ export class MessengerRepository
     return !!claim;
   }
 
+  async listUserIdsWithSentReportToday(reportDate: string): Promise<number[]> {
+    const rows = await this.reportClaimRepo.find({
+      select: { userId: true },
+      where: { reportDate, status: 'sent' },
+    });
+    return rows
+      .map((row) => row.userId)
+      .filter((userId): userId is number => userId !== null);
+  }
+
   async countMessageLogsByTypeSince(
     messageType: string,
     since: Date,

@@ -44,6 +44,49 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     });
   }
 
+  async upsertPendingJobs(
+    inputs: UpsertStudyReminderJobInput[],
+    options?: UpsertStudyReminderJobOptions,
+  ): Promise<StudyReminderJob[]> {
+    if (inputs.length === 0) {
+      return [];
+    }
+
+    const manager = this.repo.manager;
+    const existingRows = await manager.findBy(
+      StudyReminderJobEntity,
+      inputs.map((input) => ({
+        platform: input.platform,
+        externalUserId: input.externalUserId,
+        sessionKey: input.sessionKey,
+      })),
+    );
+    const existingByKey = new Map(
+      existingRows.map((row) => [this.entityKey(row), row]),
+    );
+
+    const toCreate: StudyReminderJobEntity[] = [];
+    const toUpdate: StudyReminderJobEntity[] = [];
+    for (const input of inputs) {
+      const existing = existingByKey.get(this.inputKey(input));
+      if (!existing) {
+        toCreate.push(this.buildNewEntity(input));
+      } else {
+        this.applyExisting(existing, input, options);
+        toUpdate.push(existing);
+      }
+    }
+
+    const saved: StudyReminderJobEntity[] = [];
+    if (toCreate.length > 0) {
+      saved.push(...(await manager.save(StudyReminderJobEntity, toCreate)));
+    }
+    if (toUpdate.length > 0) {
+      saved.push(...(await manager.save(StudyReminderJobEntity, toUpdate)));
+    }
+    return saved.map((entity) => this.mapEntity(entity));
+  }
+
   private async doUpsert(
     manager: EntityManager,
     input: UpsertStudyReminderJobInput,
@@ -58,25 +101,43 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     });
 
     if (!existing) {
-      const created = manager.create(StudyReminderJobEntity, {
-        platform: input.platform,
-        externalUserId: input.externalUserId,
-        userId: input.userId ?? null,
-        sessionKey: input.sessionKey,
-        scheduledAt: input.scheduledAt,
-        remindAt: input.remindAt,
-        topic: input.topic ?? null,
-        status: 'pending',
-        retryCount: 0,
-        maxRetries: input.maxRetries,
-        nextRetryAt: null,
-        lastError: null,
-        sentAt: null,
-      });
-      const saved = await manager.save(StudyReminderJobEntity, created);
+      const saved = await manager.save(
+        StudyReminderJobEntity,
+        this.buildNewEntity(input),
+      );
       return this.mapEntity(saved);
     }
 
+    this.applyExisting(existing, input, options);
+    const saved = await manager.save(StudyReminderJobEntity, existing);
+    return this.mapEntity(saved);
+  }
+
+  private buildNewEntity(
+    input: UpsertStudyReminderJobInput,
+  ): StudyReminderJobEntity {
+    return this.repo.manager.create(StudyReminderJobEntity, {
+      platform: input.platform,
+      externalUserId: input.externalUserId,
+      userId: input.userId ?? null,
+      sessionKey: input.sessionKey,
+      scheduledAt: input.scheduledAt,
+      remindAt: input.remindAt,
+      topic: input.topic ?? null,
+      status: 'pending',
+      retryCount: 0,
+      maxRetries: input.maxRetries,
+      nextRetryAt: null,
+      lastError: null,
+      sentAt: null,
+    });
+  }
+
+  private applyExisting(
+    existing: StudyReminderJobEntity,
+    input: UpsertStudyReminderJobInput,
+    options?: UpsertStudyReminderJobOptions,
+  ): void {
     const reopenOnlyOnScheduleChange =
       options?.reopenOnlyOnScheduleChange ?? false;
 
@@ -85,11 +146,10 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
         !reopenOnlyOnScheduleChange ||
         !this.hasScheduleChanged(existing, input)
       ) {
-        return this.mapEntity(existing);
+        return;
       }
       this.reopenToPending(existing, input);
-      const saved = await manager.save(StudyReminderJobEntity, existing);
-      return this.mapEntity(saved);
+      return;
     }
 
     if (existing.status === 'processing') {
@@ -97,17 +157,15 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
         reopenOnlyOnScheduleChange &&
         !this.hasScheduleChanged(existing, input)
       ) {
-        return this.mapEntity(existing);
+        return;
       }
       this.reopenToPending(existing, input);
-      const saved = await manager.save(StudyReminderJobEntity, existing);
-      return this.mapEntity(saved);
+      return;
     }
 
     if (existing.status === 'cancelled') {
       this.reopenToPending(existing, input);
-      const saved = await manager.save(StudyReminderJobEntity, existing);
-      return this.mapEntity(saved);
+      return;
     }
 
     // pending / failed — update in place
@@ -129,8 +187,14 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
       existing.lastError = null;
       existing.nextRetryAt = null;
     }
-    const saved = await manager.save(StudyReminderJobEntity, existing);
-    return this.mapEntity(saved);
+  }
+
+  private inputKey(input: UpsertStudyReminderJobInput): string {
+    return `${input.platform}|${input.externalUserId}|${input.sessionKey}`;
+  }
+
+  private entityKey(entity: StudyReminderJobEntity): string {
+    return `${entity.platform}|${entity.externalUserId}|${entity.sessionKey}`;
   }
 
   async findDueJobs(

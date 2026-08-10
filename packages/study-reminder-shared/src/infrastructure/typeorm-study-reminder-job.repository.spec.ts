@@ -99,6 +99,19 @@ describe('TypeormStudyReminderJobRepository', () => {
             store.get(`${where.externalUserId}:${where.sessionKey}`) ?? null,
           ),
       ),
+      findBy: jest.fn(
+        (
+          _entity: typeof StudyReminderJobEntity,
+          conditions: Array<Record<string, string>>,
+        ) =>
+          Promise.resolve(
+            conditions
+              .map((where) =>
+                store.get(`${where.externalUserId}:${where.sessionKey}`),
+              )
+              .filter((job): job is StudyReminderJobEntity => job != null),
+          ),
+      ),
       create: jest.fn(
         (
           _entity: typeof StudyReminderJobEntity,
@@ -114,11 +127,16 @@ describe('TypeormStudyReminderJobRepository', () => {
       save: jest.fn(
         (
           _entity: typeof StudyReminderJobEntity,
-          entity: StudyReminderJobEntity,
+          entity: StudyReminderJobEntity | StudyReminderJobEntity[],
         ) => {
-          const saved = { ...entity, updatedAt: new Date() };
-          store.set(`${saved.externalUserId}:${saved.sessionKey}`, saved);
-          return Promise.resolve(saved);
+          const wasArray = Array.isArray(entity);
+          const entities = wasArray ? entity : [entity];
+          const saved = entities.map((item) => {
+            const row = { ...item, updatedAt: new Date() };
+            store.set(`${row.externalUserId}:${row.sessionKey}`, row);
+            return row;
+          });
+          return Promise.resolve(wasArray ? saved : saved[0]);
         },
       ),
     };
@@ -134,6 +152,7 @@ describe('TypeormStudyReminderJobRepository', () => {
       manager: {
         transaction: transactionMock,
         findOne: transactionManager.findOne,
+        findBy: transactionManager.findBy,
         create: transactionManager.create,
         save: transactionManager.save,
         query: transactionManager.query,
@@ -289,6 +308,62 @@ describe('TypeormStudyReminderJobRepository', () => {
 
         expect(transactionMock).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('upsertPendingJobs (batch)', () => {
+    it('creates new jobs and updates existing ones in one batch', async () => {
+      seedJob({ status: 'pending', retryCount: 1 });
+
+      const results = await repository.upsertPendingJobs([
+        baseInput({ sessionKey: 'calendar:5' }),
+        baseInput({ sessionKey: 'calendar:6' }),
+      ]);
+
+      expect(results).toHaveLength(2);
+      const byKey = new Map(results.map((job) => [job.sessionKey, job]));
+      const updated = byKey.get('calendar:5')!;
+      const created = byKey.get('calendar:6')!;
+      expect(updated.retryCount).toBe(0);
+      expect(created.status).toBe('pending');
+      expect(created.id).toBeDefined();
+    });
+
+    it('keeps a sent job untouched when schedule is unchanged', async () => {
+      const existing = seedJob({
+        status: 'sent',
+        sentAt: new Date('2026-06-11T08:00:00+07:00'),
+      });
+
+      const results = await repository.upsertPendingJobs(
+        [baseInput({ sessionKey: 'calendar:5' })],
+        { reopenOnlyOnScheduleChange: true },
+      );
+
+      expect(results[0].status).toBe('sent');
+      expect(existing.status).toBe('sent');
+    });
+
+    it('reopens a sent job when the schedule changed', async () => {
+      seedJob({ status: 'sent' });
+
+      const results = await repository.upsertPendingJobs(
+        [
+          baseInput({
+            sessionKey: 'calendar:5',
+            scheduledAt: new Date('2026-06-13T10:30:00+07:00'),
+          }),
+        ],
+        { reopenOnlyOnScheduleChange: true },
+      );
+
+      expect(results[0].status).toBe('pending');
+      expect(results[0].sentAt).toBeUndefined();
+    });
+
+    it('returns an empty array for no inputs', async () => {
+      const results = await repository.upsertPendingJobs([]);
+      expect(results).toEqual([]);
     });
   });
 

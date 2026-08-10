@@ -43,6 +43,7 @@ import {
   PlatformDeadLetterService,
   WebhookDeadLetterEntity,
   DeliveryLogService,
+  ScheduledReportClaimEntity,
 } from '@wispace/database';
 import {
   CleanupCronService,
@@ -73,6 +74,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       ZaloMessageLogEntity,
       WebhookDeadLetterEntity,
       ZaloOauthStateEntity,
+      ScheduledReportClaimEntity,
     ]),
   ],
   providers: [
@@ -186,6 +188,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           {
             promptDir: join(__dirname, '../../shared/prompts'),
             promptFile: 'zalo-chat.system.txt',
+            // Single retry layer — retryWithBackoff in PlatformAgentService
+            maxLlmRetries: 0,
           },
         ),
       inject: [
@@ -285,6 +289,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         messageLogRepo: Repository<ZaloMessageLogEntity>,
         deadLetterRepo: Repository<WebhookDeadLetterEntity>,
         idempotencyRepo: Repository<ChatIdempotencyEntity>,
+        reportClaimRepo: Repository<ScheduledReportClaimEntity>,
         rateLimitService: PlatformChatRateLimitService,
       ) =>
         new PlatformCleanupCronService(cleanupService, configService, {
@@ -296,11 +301,13 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             idempotencyRecovery: 884_200_918,
             idempotencyCleanup: 884_200_919,
             oauthState: 884_200_913,
+            reportClaim: 884_200_921,
           },
           messageLogRepo,
           deadLetterRepo,
           idempotencyRepo,
           oauthStateRepo,
+          reportClaimRepo,
           rateLimitService,
         }),
       inject: [
@@ -310,6 +317,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         getRepositoryToken(ZaloMessageLogEntity),
         getRepositoryToken(WebhookDeadLetterEntity),
         getRepositoryToken(ChatIdempotencyEntity),
+        getRepositoryToken(ScheduledReportClaimEntity),
         PlatformChatRateLimitService,
       ],
     },

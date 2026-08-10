@@ -6,6 +6,8 @@ export interface ReportClaimRepositoryPort {
     userId: number,
     reportDate: string,
   ): Promise<boolean>;
+  /** All userIds with a 'sent' claim for the date — lets crons skip per-user checks. */
+  listUserIdsWithSentReportToday(reportDate: string): Promise<number[]>;
   tryClaimScheduledReport(params: {
     externalUserId: string;
     userId?: number;
