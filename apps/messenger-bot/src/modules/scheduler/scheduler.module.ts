@@ -1,14 +1,20 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 import {
   ReportScheduleService,
   ReportSendScheduleService,
   ReportCronLeaderService,
   ReportCronLockService,
+  CronLeaderHeartbeatService,
   REPORT_SEND_JOB_REPOSITORY,
   GOALS_DATA_PORT,
 } from '@wispace/scheduler-core';
 import { ReportSendJobEntity } from '@wispace/database';
+import {
+  CronLeaderLeaseService,
+  CronLeaderLeaseEntity,
+} from '@wispace/database';
 import { LlmSafetyEventEntity } from '@wispace/chat-metering';
 import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
@@ -34,7 +40,11 @@ import { SchedulerController } from './presentation/controllers/scheduler.contro
   imports: [
     CommonModule,
     DatabaseModule,
-    TypeOrmModule.forFeature([ReportSendJobEntity, LlmSafetyEventEntity]),
+    TypeOrmModule.forFeature([
+      ReportSendJobEntity,
+      LlmSafetyEventEntity,
+      CronLeaderLeaseEntity,
+    ]),
     ChatRateLimitModule,
     MessengerOutboundModule,
     MessengerReportModule,
@@ -52,7 +62,16 @@ import { SchedulerController } from './presentation/controllers/scheduler.contro
       inject: [UserGoalsApiService],
     },
     ReportScheduleService,
-    ReportCronLeaderService,
+    CronLeaderLeaseService,
+    {
+      provide: ReportCronLeaderService,
+      useFactory: (
+        configService: ConfigService,
+        leaseService: CronLeaderLeaseService,
+      ) => new ReportCronLeaderService(configService, leaseService),
+      inject: [ConfigService, CronLeaderLeaseService],
+    },
+    CronLeaderHeartbeatService,
     ReportCronLockService,
     ReportSendOrchestrationService,
     ReportCronService,

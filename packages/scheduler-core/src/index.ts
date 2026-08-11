@@ -6,6 +6,7 @@ export * from './ports/report-send-job.repository.port';
 export * from './ports/report-claim.repository.port';
 export * from './ports/report-delivery.port';
 export * from './ports/goals-data.port';
+export * from './ports/cron-leader-lease.port';
 
 // Utils
 export * from './utils/report-date.utils';
@@ -21,6 +22,7 @@ export * from './utils/batch.utils';
 export { ReportScheduleService } from './services/report-schedule.service';
 export { ReportSendScheduleService } from './services/report-send-schedule.service';
 export { ReportCronLeaderService } from './services/report-cron-leader.service';
+export { CronLeaderHeartbeatService } from './services/cron-leader-heartbeat.service';
 export {
   ReportCronLockService,
   REPORT_CRON_ADVISORY_LOCK_ID,

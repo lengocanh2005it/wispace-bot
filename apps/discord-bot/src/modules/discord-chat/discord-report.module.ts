@@ -11,6 +11,7 @@ import {
   ReportSendScheduleService,
   ReportCronLeaderService,
   ReportCronLockService,
+  CronLeaderHeartbeatService,
   REPORT_SEND_JOB_REPOSITORY,
   REPORT_CLAIM_REPOSITORY,
   GOALS_DATA_PORT,
@@ -20,6 +21,8 @@ import {
   ReportSendJobEntity,
   ScheduledReportClaimEntity,
   PlatformReportClaimRepository,
+  CronLeaderLeaseEntity,
+  CronLeaderLeaseService,
 } from '@wispace/database';
 import { ChatMeteringModule } from '@wispace/chat-metering';
 import { WispaceGoalsService } from '@wispace/wispace-client';
@@ -40,6 +43,7 @@ import { WispaceModule } from '../wispace/wispace.module';
       ReportSendJobEntity,
       ScheduledReportClaimEntity,
       DiscordAccountLinkEntity,
+      CronLeaderLeaseEntity,
     ]),
     DiscordOutboundModule,
     DiscordSharedModule,
@@ -96,7 +100,16 @@ import { WispaceModule } from '../wispace/wispace.module';
     },
     ReportScheduleService,
     ReportSendScheduleService,
-    ReportCronLeaderService,
+    CronLeaderLeaseService,
+    {
+      provide: ReportCronLeaderService,
+      useFactory: (
+        configService: ConfigService,
+        leaseService: CronLeaderLeaseService,
+      ) => new ReportCronLeaderService(configService, leaseService),
+      inject: [ConfigService, CronLeaderLeaseService],
+    },
+    CronLeaderHeartbeatService,
     ReportCronLockService,
     DiscordReportDeliveryService,
     DiscordReportSendJobRepository,

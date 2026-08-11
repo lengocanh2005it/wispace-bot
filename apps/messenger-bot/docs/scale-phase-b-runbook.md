@@ -146,7 +146,6 @@ Add or change when scaling:
 CHAT_QUEUE_SHARED=true
 
 CRON_LEADER_ENABLED=true
-CRON_LEADER_INSTANCE_ID=messenger-bot-1
 ```
 
 Keep unchanged (already in prod):
@@ -169,27 +168,22 @@ CHAT_RATE_LIMIT_ENABLED=true
 | `messenger-bot-1` | `messenger-bot-1` | `5007` | `127.0.0.1:5007` |
 | `messenger-bot-2` | `messenger-bot-2` | `5008` | `127.0.0.1:5008` |
 
-### 6.3. Cron Leader — Reading the Code Correctly
+### 6.3. Cron Leader — Lease-Based Election
 
-`ReportCronLeaderService` compares:
-
-```text
-INSTANCE_ID (current pod) === CRON_LEADER_INSTANCE_ID (leader name)
-```
+Leader election is now lease-based (`cron_leader_leases` table): `CRON_LEADER_ENABLED=true` makes every pod race for a lease keyed by `INSTANCE_ID`; the current leader heartbeats it every minute, and any pod takes over ≤3 min after the leader dies. No static `CRON_LEADER_INSTANCE_ID` — identity is `INSTANCE_ID`/hostname.
 
 | Variable | Pod 1 | Pod 2 |
 |----------|-------|-------|
 | `CRON_LEADER_ENABLED` | `true` | `true` |
-| `CRON_LEADER_INSTANCE_ID` | `messenger-bot-1` | `messenger-bot-1` (**same**) |
 | `INSTANCE_ID` | `messenger-bot-1` | `messenger-bot-2` (**different**) |
 
-→ Only pod 1 runs **08:00 report cron** and **`*/15` retry dispatch**. Pod 2 logs: `Report cron skipped on non-leader instance`.
+→ Exactly one pod runs **08:00 report cron** and **`*/15` retry dispatch** at a time; the other takes over automatically if the leader dies.
 
-**Warning:** `CRON_LEADER_ENABLED=true` without `CRON_LEADER_INSTANCE_ID` → **both pods** still run cron (with warn log; R4 claim still prevents duplicates but wastes resources).
+**Warning:** leaving `CRON_LEADER_ENABLED=false` (default) means **both pods** run cron — the R4 advisory lock/claim still prevents duplicates but wastes resources.
 
 ### 6.4. Doppler
 
-- Shared secrets: `CHAT_QUEUE_SHARED`, `CRON_LEADER_*` — upload to `prd` config.
+- Shared secrets: `CHAT_QUEUE_SHARED`, `CRON_LEADER_ENABLED` — upload to `prd` config.
 - `INSTANCE_ID` / pod 2 port: **don't** put in shared Doppler — override in `docker-compose` per service.
 - After Doppler deploy: webhook `/messenger/ops/doppler-sync` recreates container — ensure compose 2 services still keep `INSTANCE_ID` override.
 
@@ -290,7 +284,7 @@ Needs expansion for real implementation:
 
 1. Snapshot Doppler `prd` + backup `~/messenger-bot/.env`
 2. Merge ops PR (compose + nginx + deploy script) — when code is ready
-3. Set Doppler: `CHAT_QUEUE_SHARED=true`, `CRON_LEADER_ENABLED=true`, `CRON_LEADER_INSTANCE_ID=messenger-bot-1`
+3. Set Doppler: `CHAT_QUEUE_SHARED=true`, `CRON_LEADER_ENABLED=true`
 4. Deploy new image + compose 2 services
 5. Update Nginx upstream → `nginx -t` → reload
 

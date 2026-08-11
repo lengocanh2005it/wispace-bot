@@ -5,6 +5,7 @@ import { WebhookDeadLetterEntity } from './entities/webhook-dead-letter.entity';
 import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
 import { ReportSendJobEntity } from './entities/report-send-job.entity';
 import { RescheduleConfirmationEntity } from './entities/reschedule-confirmation.entity';
+import { CronLeaderLeaseEntity } from './entities/cron-leader-lease.entity';
 
 export type EntityClass = new (...args: unknown[]) => unknown;
 
@@ -34,6 +35,7 @@ export const SHARED_ENTITIES: EntityClass[] = [
   ScheduledReportClaimEntity,
   ReportSendJobEntity,
   RescheduleConfirmationEntity,
+  CronLeaderLeaseEntity,
 ];
 
 /**

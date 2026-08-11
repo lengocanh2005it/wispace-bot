@@ -49,7 +49,7 @@ export class DiscordReportCronService {
     timeZone: 'Asia/Ho_Chi_Minh',
   })
   async handleDailyReportCron(): Promise<void> {
-    if (!this.reportCronLeaderService.shouldRunScheduledReportCron()) {
+    if (!(await this.reportCronLeaderService.shouldRunScheduledReportCron())) {
       return;
     }
 
