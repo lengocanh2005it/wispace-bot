@@ -4,6 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import type {
   WispaceLinkVerifyFailureReason,
   WispaceLinkVerifyResult,
@@ -36,8 +37,11 @@ export class WispaceTokenVerifyService {
   async verifyToken(
     token: string,
     value: string,
+    options?: { signal?: AbortSignal },
   ): Promise<WispaceLinkVerifyResult> {
     const url = this.getVerifyUrl();
+    const fetchSignal = mergeWithTimeout(options?.signal, 10_000);
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -49,7 +53,7 @@ export class WispaceTokenVerifyService {
         value: value.trim(),
         platform: this.platform,
       }),
-      signal: AbortSignal.timeout(10_000),
+      signal: fetchSignal,
     });
 
     const payload: unknown = await this.readJsonBody(response);

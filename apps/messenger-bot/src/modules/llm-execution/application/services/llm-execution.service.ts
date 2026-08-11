@@ -91,6 +91,14 @@ export class LlmExecutionService {
     const feature = context?.feature ?? 'unknown';
     const correlation = context?.correlationId ?? 'n/a';
 
+    // Per-call deadline + optional caller signal: cancels retries and backoff
+    // sleeps immediately, so a timeout never leaves the original request
+    // running while a retry starts.
+    const deadlineSignal = AbortSignal.timeout(timeoutMs);
+    const signal = context?.signal
+      ? AbortSignal.any([context.signal, deadlineSignal])
+      : deadlineSignal;
+
     // ponytail: shared retry helper from llm-agent (was a local sleep+backoff copy)
     return retryWithBackoff(
       () =>
@@ -111,6 +119,7 @@ export class LlmExecutionService {
               error,
             )}`,
           ),
+        signal,
       },
     );
   }

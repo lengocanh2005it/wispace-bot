@@ -3,9 +3,11 @@ import { WispaceApiError } from '../errors/wispace-api.error';
 import {
   isWispaceRetryable,
   createCircuitBreaker,
+  computeCircuitBreakerTimeout,
   withRetry,
 } from '../utils/with-retry';
 import type { CircuitBreaker } from '../utils/with-retry';
+import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import {
   buildWispaceHeaders,
   type WispaceIdHeader,
@@ -24,40 +26,57 @@ export class TaskScoreAverageApiClient {
     private readonly config: WispaceApiClientConfig,
     private readonly logger: WispaceClientLogger = NOOP_WISPACE_LOGGER,
   ) {
+    const maxRetries = this.config.maxRetries ?? 3;
+    const reqTimeout = this.config.requestTimeoutMs ?? 10_000;
+    const circuitTimeout = computeCircuitBreakerTimeout(reqTimeout, maxRetries);
+
     this.breaker = createCircuitBreaker(
-      (idHeader: WispaceIdHeader, externalId: string) =>
-        withRetry(() => this.fetchTaskScoreAverages(idHeader, externalId), {
-          maxRetries: this.config.maxRetries ?? 3,
-          baseDelayMs: this.config.baseDelayMs ?? 500,
-          shouldRetry: isWispaceRetryable,
-          onRetry: (attempt, max, err) =>
-            this.logger.warn(
-              `TaskScoreAverage retry ${attempt}/${max} (${idHeader}=${externalId}): ${errorMessage(err)}`,
-            ),
-        }),
-      { timeout: this.config.requestTimeoutMs ?? 10_000 },
+      (
+        idHeader: WispaceIdHeader,
+        externalId: string,
+        options?: { signal?: AbortSignal },
+      ) =>
+        withRetry(
+          () =>
+            this.fetchTaskScoreAverages(idHeader, externalId, options?.signal),
+          {
+            maxRetries,
+            baseDelayMs: this.config.baseDelayMs ?? 500,
+            shouldRetry: isWispaceRetryable,
+            signal: options?.signal,
+            onRetry: (attempt, max, err) =>
+              this.logger.warn(
+                `TaskScoreAverage retry ${attempt}/${max} (${idHeader}=${externalId}): ${errorMessage(err)}`,
+              ),
+          },
+        ),
+      { timeout: circuitTimeout },
     );
   }
 
   async getTaskScoreAverages(
     idHeader: WispaceIdHeader,
     externalId: string,
+    options?: { signal?: AbortSignal },
   ): Promise<TaskScoreAverageRecord[]> {
-    return this.breaker.fire(idHeader, externalId);
+    return this.breaker.fire(idHeader, externalId, options);
   }
 
   private async fetchTaskScoreAverages(
     idHeader: WispaceIdHeader,
     externalId: string,
+    signal?: AbortSignal,
   ): Promise<TaskScoreAverageRecord[]> {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
+    const fetchSignal = mergeWithTimeout(signal, timeoutMs);
+
     const response = await fetch(this.config.url, {
       headers: buildWispaceHeaders(
         idHeader,
         externalId,
         this.config.internalKey,
       ),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: fetchSignal,
     });
 
     if (!response.ok) {

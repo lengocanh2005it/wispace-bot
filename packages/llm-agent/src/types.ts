@@ -30,6 +30,8 @@ export interface LlmAgentInput {
   history?: ChatHistoryMessage[];
   /** Correlation id (e.g. platform message id) for LLM usage telemetry. */
   correlationId?: string;
+  /** Optional signal to cancel the entire agent loop when caller times out or disconnects. */
+  signal?: AbortSignal;
 }
 
 export interface LlmAgentReply {

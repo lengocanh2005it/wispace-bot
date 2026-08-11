@@ -1,4 +1,7 @@
 import CircuitBreaker from 'opossum';
+import { isAbortError, sleep } from '@wispace/bot-common';
+
+export { isAbortError, sleep } from '@wispace/bot-common';
 
 export interface WithRetryOptions {
   /** Total retry attempts after the initial call (maxRetries=3 → 4 total calls). */
@@ -9,6 +12,8 @@ export interface WithRetryOptions {
   shouldRetry?: (error: unknown) => boolean;
   /** Called before each retry sleep — useful for logging. */
   onRetry?: (attempt: number, maxRetries: number, error: unknown) => void;
+  /** Optional signal to cancel retries immediately. */
+  signal?: AbortSignal;
 }
 
 export async function withRetry<T>(
@@ -19,25 +24,36 @@ export async function withRetry<T>(
 
   let lastError: unknown;
   for (let attempt = 0; attempt <= opts.maxRetries; attempt++) {
+    if (opts.signal?.aborted) {
+      throw opts.signal.reason ?? lastError ?? new Error('Aborted');
+    }
     try {
       return await fn();
     } catch (error) {
       lastError = error;
       const hasRetriesLeft = attempt < opts.maxRetries;
-      if (!hasRetriesLeft || !shouldRetry(error)) {
+      if (
+        opts.signal?.aborted ||
+        isAbortError(error) ||
+        !hasRetriesLeft ||
+        !shouldRetry(error)
+      ) {
         throw error;
       }
       opts.onRetry?.(attempt + 1, opts.maxRetries, error);
       const delay =
         opts.baseDelayMs * Math.pow(2, attempt) * (0.5 + Math.random() * 0.5);
-      await new Promise<void>((resolve) => setTimeout(resolve, delay));
+      await sleep(delay, opts.signal);
     }
   }
   throw lastError;
 }
 
-/** Retry on 5xx Wispace errors or transient network failures. Never retry 4xx. */
+/** Retry on 5xx Wispace errors or transient network failures. Never retry 4xx or cancellation. */
 export function isWispaceRetryable(error: unknown): boolean {
+  if (isAbortError(error)) {
+    return false;
+  }
   if (
     error !== null &&
     typeof error === 'object' &&
@@ -56,8 +72,21 @@ export interface CircuitBreakerOptions {
   threshold?: number;
   /** Time in ms to wait before trying again after circuit opens. Default: 60000. */
   cooldown?: number;
-  /** Timeout per call in ms. Default: 10000. */
+  /** Timeout per call in ms. Default: 60000 (total budget — see computeCircuitBreakerTimeout). */
   timeout?: number;
+}
+
+/**
+ * Total time budget for a breaker-wrapped call: one request per attempt
+ * (initial + maxRetries retries) plus a small buffer. The breaker times out
+ * the whole call, while each individual attempt has its own per-request
+ * timeout — so the original request is never left running while a retry starts.
+ */
+export function computeCircuitBreakerTimeout(
+  requestTimeoutMs: number,
+  maxRetries: number,
+): number {
+  return requestTimeoutMs * (maxRetries + 1) + 10_000;
 }
 
 /**
@@ -71,7 +100,7 @@ export function createCircuitBreaker<T>(
   opts: CircuitBreakerOptions = {},
 ): CircuitBreaker<any[], T> {
   const breaker = new CircuitBreaker(fn, {
-    timeout: opts.timeout ?? 10_000,
+    timeout: opts.timeout ?? 60_000,
     errorThresholdPercentage: 50,
     resetTimeout: opts.cooldown ?? 60_000,
     volumeThreshold: opts.threshold ?? 5,

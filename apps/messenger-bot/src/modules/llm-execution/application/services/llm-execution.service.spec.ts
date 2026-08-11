@@ -208,4 +208,58 @@ describe('LlmExecutionService', () => {
       );
     });
   });
+
+  describe('AbortSignal propagation', () => {
+    function createService() {
+      const config = createConfig({
+        enabled: true,
+        maxConcurrent: 1,
+        retryMaxAttempts: 3,
+        retryBackoffMs: 1,
+      });
+      return new LlmExecutionService(config, noopMetrics, mockAdapter);
+    }
+
+    it('does not invoke fn when the caller signal is pre-aborted', async () => {
+      const service = createService();
+      const fn = jest.fn().mockResolvedValue('ok');
+      const controller = new AbortController();
+      controller.abort(new Error('caller gone'));
+
+      await expect(
+        service.run(fn, {
+          feature: 'STUDENT_REPORT',
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow('caller gone');
+      expect(fn).not.toHaveBeenCalled();
+    });
+
+    it('stops retrying when the caller signal aborts between attempts', async () => {
+      const service = createService();
+      const controller = new AbortController();
+      let attempts = 0;
+      const fn = jest.fn().mockImplementation(() => {
+        attempts += 1;
+        if (attempts === 1) {
+          controller.abort();
+          return Promise.reject(
+            Object.assign(new Error('rate limit'), {
+              name: 'RateLimitError',
+              status: 429,
+            }),
+          );
+        }
+        return Promise.resolve('ok');
+      });
+
+      await expect(
+        service.run(fn, {
+          feature: 'FREE_FORM_CHAT',
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow();
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+  });
 });

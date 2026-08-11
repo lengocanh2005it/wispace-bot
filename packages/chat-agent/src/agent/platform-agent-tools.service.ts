@@ -96,6 +96,7 @@ export class PlatformAgentToolsService {
           ctx.privateDataFetched = true;
           return this.goalsService!.getUserGoals(
             this.options.wispaceExternalId(ctx),
+            { signal },
           );
         });
       case 'get_learning_progress_report':
@@ -104,9 +105,11 @@ export class PlatformAgentToolsService {
           const [goals, taskScores] = await Promise.all([
             this.goalsService!.getUserGoals(
               this.options.wispaceExternalId(ctx),
+              { signal },
             ),
             this.goalsService!.getTaskScoreAverages(
               this.options.wispaceExternalId(ctx),
+              { signal },
             ),
           ]);
           return this.formatReport(goals, taskScores);
@@ -117,7 +120,7 @@ export class PlatformAgentToolsService {
           const limit = readPositiveLimit(args.limit, 5);
           const sessions = await this.calendarService!.getCalendarSessions(
             this.options.wispaceExternalId(ctx),
-            { timeRange: 'upcoming', limit },
+            { timeRange: 'upcoming', limit, signal },
           );
           return {
             count: sessions.length,
@@ -134,6 +137,7 @@ export class PlatformAgentToolsService {
               timeRange,
               limit: readPositiveLimit(args.limit, 10),
               pastDays: readPastDays(args.pastDays),
+              signal,
             },
           );
           return { timeRange, entries: this.mapSessions(sessions) };
@@ -143,7 +147,7 @@ export class PlatformAgentToolsService {
           ctx.privateDataFetched = true;
           const sessions = await this.calendarService!.getCalendarSessions(
             this.options.wispaceExternalId(ctx),
-            { timeRange: 'upcoming', limit: 1 },
+            { timeRange: 'upcoming', limit: 1, signal },
           );
           const session = sessions[0];
           return session

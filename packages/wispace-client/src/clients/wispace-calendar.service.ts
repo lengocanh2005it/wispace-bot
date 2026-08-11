@@ -36,6 +36,7 @@ export class WispaceCalendarService {
       timeRange?: CalendarSessionTimeRange;
       pastDays?: number;
       limit?: number;
+      signal?: AbortSignal;
     } = {},
   ): Promise<NormalizedStudySession[]> {
     const horizonEnd = hoursFromNow(this.horizonHours());
@@ -48,25 +49,34 @@ export class WispaceCalendarService {
     );
   }
 
-  listCalendars(externalUserId: string): Promise<UserCalendarRecord[]> {
-    return this.getApiClient().listCalendars(this.idHeader, externalUserId);
+  listCalendars(
+    externalUserId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<UserCalendarRecord[]> {
+    return this.getApiClient().listCalendars(
+      this.idHeader,
+      externalUserId,
+      options,
+    );
   }
 
   findCalendarRecord(
     externalUserId: string,
     calendarId: number,
+    options?: { signal?: AbortSignal },
   ): Promise<UserCalendarRecord | null> {
     return this.getScheduleClient().findCalendarRecord(
       this.idHeader,
       externalUserId,
       calendarId,
+      options,
     );
   }
 
   createCalendar(
     externalUserId: string,
     input: CreateUserCalendarInput,
-    options?: { userId?: number },
+    options?: { userId?: number; signal?: AbortSignal },
   ): Promise<UserCalendarRecord> {
     return this.getApiClient().createCalendar(
       this.idHeader,
@@ -76,11 +86,16 @@ export class WispaceCalendarService {
     );
   }
 
-  deleteCalendar(externalUserId: string, calendarId: number): Promise<void> {
+  deleteCalendar(
+    externalUserId: string,
+    calendarId: number,
+    options?: { signal?: AbortSignal },
+  ): Promise<void> {
     return this.getApiClient().deleteCalendar(
       this.idHeader,
       externalUserId,
       calendarId,
+      options,
     );
   }
 

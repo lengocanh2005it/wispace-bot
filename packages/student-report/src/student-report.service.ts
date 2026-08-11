@@ -72,14 +72,21 @@ export class StudentReportCore {
 
   async generateReport(
     externalUserId: string,
-    options?: { correlationId?: string },
+    options?: { correlationId?: string; signal?: AbortSignal },
   ): Promise<string> {
     const correlationId = options?.correlationId ?? externalUserId;
 
-    return this.runReportFlow(externalUserId, correlationId, (input) =>
-      this.generateAiReport(externalUserId, input, correlationId).then(
-        formatReport,
-      ),
+    return this.runReportFlow(
+      externalUserId,
+      correlationId,
+      (input) =>
+        this.generateAiReport(
+          externalUserId,
+          input,
+          correlationId,
+          options?.signal,
+        ).then(formatReport),
+      options?.signal,
     );
   }
 
@@ -112,7 +119,7 @@ export class StudentReportCore {
 
     try {
       this.throwIfAborted(signal);
-      const input = await this.fetchCapacityData(externalUserId);
+      const input = await this.fetchCapacityData(externalUserId, signal);
       this.throwIfAborted(signal);
       return await generate(input);
     } catch (error) {
@@ -149,16 +156,18 @@ export class StudentReportCore {
 
   private async fetchCapacityData(
     externalUserId: string,
+    signal?: AbortSignal,
   ): Promise<StudentCapacityInput> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
 
     return retryWithBackoff(
-      () => this.ports.capacityData.getCapacityData(externalUserId),
+      () => this.ports.capacityData.getCapacityData(externalUserId, { signal }),
       {
         maxAttempts: CAPACITY_FETCH_MAX_ATTEMPTS,
         baseDelayMs: CAPACITY_FETCH_BACKOFF_MS,
         isRetryable: (error) =>
           isRetryableApiError(error) && error.isRetryable(),
+        signal,
         onRetry: (attempt, delayMs, error) => {
           logger.warn(
             `Retrying capacity fetch for report externalUserId=${externalUserId} attempt=${attempt}/${CAPACITY_FETCH_MAX_ATTEMPTS} status=${(error as RetryableApiError).statusCode} endpoint=${(error as RetryableApiError).endpoint}`,
@@ -172,6 +181,7 @@ export class StudentReportCore {
     externalUserId: string,
     input: StudentCapacityInput,
     correlationId: string,
+    signal?: AbortSignal,
   ): Promise<StudentCapacityReport> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
     const adapter = this.config.adapter;
@@ -192,6 +202,7 @@ export class StudentReportCore {
           userContent: JSON.stringify(input),
           correlationId,
           maxOutputTokens: REPORT_MAX_OUTPUT_TOKENS,
+          signal,
         }),
       { feature: FEATURE, correlationId },
     );

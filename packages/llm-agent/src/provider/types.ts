@@ -83,6 +83,7 @@ export interface LlmJsonRequest {
   userContent: string;
   temperature?: number;
   maxOutputTokens?: number;
+  signal?: AbortSignal;
 }
 
 export interface LlmJsonResponse {
