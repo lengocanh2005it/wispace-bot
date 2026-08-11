@@ -2,8 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { CronLeaderLeasePort } from '../ports/cron-leader-lease.port';
 
-const LEASE_TTL_MS = 3 * 60 * 1000;
-
 @Injectable()
 export class ReportCronLeaderService {
   private readonly logger = new Logger(ReportCronLeaderService.name);
@@ -74,5 +72,3 @@ export class ReportCronLeaderService {
     );
   }
 }
-
-export { LEASE_TTL_MS };

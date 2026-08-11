@@ -5,5 +5,3 @@ export interface CronLeaderLeasePort {
   /** Refreshes the lease if it is still owned by this instance. */
   heartbeat(name: string, instanceId: string): Promise<void>;
 }
-
-export const CRON_LEADER_LEASE = Symbol('CRON_LEADER_LEASE');

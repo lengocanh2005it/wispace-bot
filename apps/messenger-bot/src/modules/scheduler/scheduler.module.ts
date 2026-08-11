@@ -7,7 +7,6 @@ import {
   ReportCronLeaderService,
   ReportCronLockService,
   CronLeaderHeartbeatService,
-  CRON_LEADER_LEASE,
   REPORT_SEND_JOB_REPOSITORY,
   GOALS_DATA_PORT,
 } from '@wispace/scheduler-core';
@@ -64,10 +63,6 @@ import { SchedulerController } from './presentation/controllers/scheduler.contro
     },
     ReportScheduleService,
     CronLeaderLeaseService,
-    {
-      provide: CRON_LEADER_LEASE,
-      useExisting: CronLeaderLeaseService,
-    },
     {
       provide: ReportCronLeaderService,
       useFactory: (

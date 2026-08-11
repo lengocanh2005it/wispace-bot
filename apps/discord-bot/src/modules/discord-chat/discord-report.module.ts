@@ -12,7 +12,6 @@ import {
   ReportCronLeaderService,
   ReportCronLockService,
   CronLeaderHeartbeatService,
-  CRON_LEADER_LEASE,
   REPORT_SEND_JOB_REPOSITORY,
   REPORT_CLAIM_REPOSITORY,
   GOALS_DATA_PORT,
@@ -102,10 +101,6 @@ import { WispaceModule } from '../wispace/wispace.module';
     ReportScheduleService,
     ReportSendScheduleService,
     CronLeaderLeaseService,
-    {
-      provide: CRON_LEADER_LEASE,
-      useExisting: CronLeaderLeaseService,
-    },
     {
       provide: ReportCronLeaderService,
       useFactory: (
