@@ -78,11 +78,11 @@ export class StudentReportService {
   }
 
   /** Deterministic report — no LLM call. Chat-tool fallback when no cache. */
-  generateReportStatic(psid: string): Promise<string> {
+  generateReportStatic(psid: string, signal?: AbortSignal): Promise<string> {
     if (!this.core) {
       this.core = this.buildCore();
     }
-    return this.core.generateReportStatic(psid);
+    return this.core.generateReportStatic(psid, signal);
   }
 
   private evictStaleReports(): void {

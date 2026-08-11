@@ -87,8 +87,8 @@ export class MessengerAgentToolsService {
         confirmSender: async () => {},
       },
       toolOverrides: {
-        get_learning_progress_report: (ctx) =>
-          this.getLearningProgressReport(ctx.externalUserId),
+        get_learning_progress_report: (ctx, _args, signal) =>
+          this.getLearningProgressReport(ctx.externalUserId, signal),
         get_user_goals: async (ctx) => {
           const goals = await this.userGoalsApiService.getUserGoals(
             ctx.externalUserId,
@@ -160,12 +160,15 @@ export class MessengerAgentToolsService {
     };
   }
 
-  private async getLearningProgressReport(psid: string): Promise<unknown> {
+  private async getLearningProgressReport(
+    psid: string,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
     const cached = this.studentReportService.getCachedReport(psid);
     const report =
       cached ??
       (await withTimeout(
-        this.studentReportService.generateReportStatic(psid),
+        this.studentReportService.generateReportStatic(psid, signal),
         15_000,
         `Tool get_learning_progress_report`,
       ));

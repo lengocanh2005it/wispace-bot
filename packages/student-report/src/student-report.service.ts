@@ -86,10 +86,19 @@ export class StudentReportCore {
   /**
    * Deterministic report (no LLM call) with the same shape as the AI report —
    * used by chat tools to answer progress questions without extra LLM cost.
+   * `signal` aborts the remaining work (Wispace capacity fetch + formatting)
+   * when the agent already timed out — the tool must not keep burning API
+   * calls after the caller gave up.
    */
-  async generateReportStatic(externalUserId: string): Promise<string> {
-    return this.runReportFlow(externalUserId, externalUserId, (input) =>
-      Promise.resolve(formatReport(buildFallbackReport(input))),
+  async generateReportStatic(
+    externalUserId: string,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    return this.runReportFlow(
+      externalUserId,
+      externalUserId,
+      (input) => Promise.resolve(formatReport(buildFallbackReport(input))),
+      signal,
     );
   }
 
@@ -97,11 +106,14 @@ export class StudentReportCore {
     externalUserId: string,
     correlationId: string,
     generate: (input: StudentCapacityInput) => Promise<string>,
+    signal?: AbortSignal,
   ): Promise<string> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
 
     try {
+      this.throwIfAborted(signal);
       const input = await this.fetchCapacityData(externalUserId);
+      this.throwIfAborted(signal);
       return await generate(input);
     } catch (error) {
       if (error instanceof StudentReportNoScoreDataError) {
@@ -126,6 +138,12 @@ export class StudentReportCore {
       }
 
       throw error;
+    }
+  }
+
+  private throwIfAborted(signal?: AbortSignal): void {
+    if (signal?.aborted) {
+      throw new Error('Tool execution aborted (timeout)');
     }
   }
 
