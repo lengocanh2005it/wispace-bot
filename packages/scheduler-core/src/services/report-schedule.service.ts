@@ -7,6 +7,15 @@ import type { GoalsDataPort } from '../ports/goals-data.port';
 
 const DEFAULT_TIMEZONE = 'Asia/Ho_Chi_Minh';
 
+/** Result of the days-before-exam window check used by the report crons. */
+export interface ExamWindowResult {
+  shouldSend: boolean;
+  daysUntilExam: number;
+  examDate: string;
+  minDays: number;
+  maxDays: number;
+}
+
 @Injectable()
 export class ReportScheduleService {
   constructor(
@@ -20,13 +29,10 @@ export class ReportScheduleService {
     return this.calculateDaysUntilExam(examDateIso);
   }
 
-  async shouldSendReportToday(externalUserId: string): Promise<{
-    shouldSend: boolean;
-    daysUntilExam: number;
-    examDate: string;
-    minDays: number;
-    maxDays: number;
-  }> {
+  /** Exam-window decision used by the 08:00 report crons. */
+  async shouldSendReportToday(
+    externalUserId: string,
+  ): Promise<ExamWindowResult> {
     const goals = await this.goalsDataPort.getUserGoals(externalUserId);
     const examDate = this.goalsDataPort.parseExamDate(goals.examDate);
     const daysUntilExam = this.calculateDaysUntilExam(examDate);

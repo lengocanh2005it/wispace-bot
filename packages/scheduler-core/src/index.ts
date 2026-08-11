@@ -17,6 +17,10 @@ export {
   rawDaysUntilExam,
 } from './utils/exam-date.utils';
 export * from './utils/batch.utils';
+export {
+  resolveExamWindow,
+  evaluateExamWindow,
+} from './utils/exam-window.utils';
 
 // Services
 export { ReportScheduleService } from './services/report-schedule.service';

@@ -5,6 +5,7 @@ import {
   ReportCronLeaderService,
   ReportCronLockService,
   ReportScheduleService,
+  evaluateExamWindow,
   todayReportDate,
   runBatched,
 } from '@wispace/scheduler-core';
@@ -98,34 +99,22 @@ export class DiscordReportCronService {
         // Window gate: only auto-send inside the days-before-exam window
         // (same as Messenger). forceSend bypasses the window but still
         // respects already-sent-today unless the caller clears it.
-        let examDateForOutbox: string | undefined;
-        try {
-          const userSchedule =
-            await this.reportScheduleService.shouldSendReportToday(
-              link.externalUserId,
-            );
-          examDateForOutbox = userSchedule.examDate;
-
-          if (!opts.forceSend && !userSchedule.shouldSend) {
-            this.logger.log(
-              `Skip Discord user ${link.externalUserId}: examDate=${userSchedule.examDate}, daysUntilExam=${userSchedule.daysUntilExam}, window=${userSchedule.minDays}-${userSchedule.maxDays}`,
-            );
-            return { ...ZERO, skipped: 1 };
-          }
-        } catch (err) {
-          if (!opts.forceSend) {
-            this.logger.warn(
-              `Skip Discord user ${link.externalUserId}: could not resolve exam schedule`,
-              err,
-            );
-            return { ...ZERO, skipped: 1 };
-          }
+        const window = await evaluateExamWindow(
+          link.externalUserId,
+          this.reportScheduleService,
+          opts.forceSend === true,
+        );
+        if (window.skip) {
+          this.logger.log(
+            `Skip Discord user ${link.externalUserId}: outside exam window or schedule unavailable`,
+          );
+          return { ...ZERO, skipped: 1 };
         }
 
         return this.orchestrationService.claimAndSend(mapping, {
           reportDate,
           skipAlreadySentToday: !opts.forceSend,
-          examDateForOutbox,
+          examDateForOutbox: window.examDate,
         });
       },
     );
