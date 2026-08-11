@@ -71,20 +71,48 @@ export class MessengerRepository
   }): Promise<UserMessengerMapping> {
     const token = buildPocPsidToken(params.psid);
 
-    // Atomic upsert against the partial unique index
-    // (external_user_id WHERE status='ACTIVE'): concurrent link events
-    // (opt-ins have no mid, so dedupe never filters them) can no longer
-    // race findOne→save into a unique-violation 500.
+    // 1. Re-activate a previously deactivated mapping (keeps its id) — the
+    //    INSERT below can only conflict with ACTIVE rows, so an INACTIVE row
+    //    would otherwise be left behind while a duplicate ACTIVE row is created.
+    await this.mappingRepo.manager.query(
+      `
+      UPDATE user_platform_mappings
+      SET
+        user_id = $3,
+        notification_messages_token = COALESCE(notification_messages_token, $4),
+        topic = COALESCE($5, topic),
+        cadence = COALESCE($6, cadence),
+        status = 'ACTIVE',
+        updated_at = now()
+      WHERE platform = $1
+        AND external_user_id = $2
+        AND status = 'INACTIVE'
+    `,
+      [
+        PLATFORM,
+        params.psid,
+        params.userId,
+        token,
+        params.topic ?? null,
+        params.cadence ?? null,
+      ],
+    );
+
+    // 2. Atomic upsert against the partial unique index
+    //    (platform, external_user_id WHERE status='ACTIVE'): concurrent link
+    //    events (opt-ins have no mid, so dedupe never filters them) can no
+    //    longer race findOne→save into a unique-violation 500. The conflict
+    //    target must match the index columns exactly or Postgres raises 42P10.
     const rows: Array<Record<string, unknown>> =
       await this.mappingRepo.manager.query(
         `
         INSERT INTO user_platform_mappings
           (platform, external_user_id, user_id, notification_messages_token, topic, cadence, status)
         VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE')
-        ON CONFLICT (external_user_id) WHERE status = 'ACTIVE' AND external_user_id IS NOT NULL
+        ON CONFLICT (platform, external_user_id)
+          WHERE status = 'ACTIVE' AND external_user_id IS NOT NULL
         DO UPDATE SET
           user_id = EXCLUDED.user_id,
-          platform = EXCLUDED.platform,
           notification_messages_token = COALESCE(
             user_platform_mappings.notification_messages_token,
             EXCLUDED.notification_messages_token
@@ -105,44 +133,7 @@ export class MessengerRepository
         ],
       );
 
-    if (rows.length > 0) {
-      return this.mapEntity(this.mapRawRow(rows[0]));
-    }
-
-    // No ACTIVE row: re-activate a previously deactivated mapping (keeps its
-    // id) or create a fresh one.
-    const inactive = await this.mappingRepo.findOne({
-      where: {
-        platform: PLATFORM,
-        externalUserId: params.psid,
-        status: 'INACTIVE',
-      },
-    });
-
-    if (inactive) {
-      inactive.userId = params.userId;
-      inactive.notificationMessagesToken =
-        inactive.notificationMessagesToken || token;
-      inactive.topic = params.topic ?? inactive.topic;
-      inactive.cadence = params.cadence ?? inactive.cadence;
-      inactive.status = 'ACTIVE';
-
-      const saved = await this.mappingRepo.save(inactive);
-      return this.mapEntity(saved);
-    }
-
-    const created = this.mappingRepo.create({
-      userId: params.userId,
-      platform: PLATFORM,
-      externalUserId: params.psid,
-      notificationMessagesToken: token,
-      topic: params.topic ?? null,
-      cadence: params.cadence ?? null,
-      status: 'ACTIVE',
-    });
-
-    const saved = await this.mappingRepo.save(created);
-    return this.mapEntity(saved);
+    return this.mapEntity(this.mapRawRow(rows[0]));
   }
 
   async upsertPocSubscription(params: {

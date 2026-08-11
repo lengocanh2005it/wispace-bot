@@ -10,12 +10,10 @@ import { MessengerRepository } from './messenger.repository';
 describe('MessengerRepository.upsertPsidUserLink', () => {
   const buildRepo = () => {
     const managerQuery = jest.fn();
-    const findOneMock = jest.fn();
-    const saveMock = jest.fn();
     const mappingRepo = {
       manager: { query: managerQuery },
-      findOne: findOneMock,
-      save: saveMock,
+      findOne: jest.fn(),
+      save: jest.fn(),
       create: jest.fn((input: Partial<UserPlatformMappingEntity>) => input),
       update: jest.fn(),
       createQueryBuilder: jest.fn(),
@@ -23,25 +21,27 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
     const logRepo = {} as unknown as Repository<MessageLogEntity>;
     const claimRepo = {} as unknown as Repository<ScheduledReportClaimEntity>;
     const repo = new MessengerRepository(mappingRepo, logRepo, claimRepo);
-    return { repo, managerQuery, findOneMock, saveMock };
+    return { repo, managerQuery };
   };
 
-  it('upserts atomically via ON CONFLICT when an ACTIVE row exists', async () => {
-    const { repo, managerQuery, findOneMock } = buildRepo();
-    managerQuery.mockResolvedValue([
-      {
-        id: 7,
-        user_id: 143,
-        platform: 'messenger',
-        external_user_id: 'psid-1',
-        notification_messages_token: buildPocPsidToken('psid-1'),
-        topic: 'ielts',
-        cadence: 'weekly',
-        status: 'ACTIVE',
-        created_at: new Date('2026-01-01T00:00:00.000Z'),
-        updated_at: new Date('2026-01-01T00:00:00.000Z'),
-      },
-    ]);
+  it('reactivates an INACTIVE row, then upserts atomically via ON CONFLICT', async () => {
+    const { repo, managerQuery } = buildRepo();
+    managerQuery
+      .mockResolvedValueOnce([]) // UPDATE INACTIVE (no-op)
+      .mockResolvedValueOnce([
+        {
+          id: 7,
+          user_id: 143,
+          platform: 'messenger',
+          external_user_id: 'psid-1',
+          notification_messages_token: buildPocPsidToken('psid-1'),
+          topic: 'ielts',
+          cadence: 'weekly',
+          status: 'ACTIVE',
+          created_at: new Date('2026-01-01T00:00:00.000Z'),
+          updated_at: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ]);
 
     const result = await repo.upsertPsidUserLink({
       psid: 'psid-1',
@@ -52,40 +52,17 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
 
     expect(result.psid).toBe('psid-1');
     expect(result.userId).toBe(143);
-    expect(managerQuery).toHaveBeenCalledWith(
-      expect.stringContaining('ON CONFLICT (external_user_id)'),
+    expect(managerQuery).toHaveBeenNthCalledWith(
+      1,
+      expect.stringContaining('UPDATE user_platform_mappings'),
       expect.any(Array),
     );
-    expect(findOneMock).not.toHaveBeenCalled();
-  });
-
-  it('re-activates an INACTIVE mapping when no ACTIVE row exists', async () => {
-    const { repo, managerQuery, findOneMock, saveMock } = buildRepo();
-    managerQuery.mockResolvedValue([]);
-    findOneMock.mockResolvedValue({
-      id: 3,
-      userId: 100,
-      platform: 'messenger',
-      externalUserId: 'psid-1',
-      notificationMessagesToken: 'old-token',
-      topic: null,
-      cadence: null,
-      status: 'INACTIVE',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-    saveMock.mockImplementation((entity: UserPlatformMappingEntity) =>
-      Promise.resolve(entity),
-    );
-
-    const result = await repo.upsertPsidUserLink({
-      psid: 'psid-1',
-      userId: 143,
-    });
-
-    expect(result.userId).toBe(143);
-    expect(saveMock).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 3, status: 'ACTIVE' }),
+    expect(managerQuery).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining(
+        "ON CONFLICT (platform, external_user_id)\n          WHERE status = 'ACTIVE' AND external_user_id IS NOT NULL",
+      ),
+      expect.any(Array),
     );
   });
 });
