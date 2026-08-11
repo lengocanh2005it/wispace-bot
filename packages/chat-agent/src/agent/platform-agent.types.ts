@@ -125,6 +125,7 @@ export interface PlatformAgentToolsOptions {
       (
         ctx: PlatformAgentToolContext,
         args: Record<string, unknown>,
+        signal?: AbortSignal,
       ) => Promise<unknown>
     >
   >;

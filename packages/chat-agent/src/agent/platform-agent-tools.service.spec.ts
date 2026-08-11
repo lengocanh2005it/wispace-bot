@@ -540,7 +540,7 @@ describe('PlatformAgentToolsService', () => {
         ctx,
       );
 
-      expect(override).toHaveBeenCalledWith(ctx, { limit: 1 });
+      expect(override).toHaveBeenCalledWith(ctx, { limit: 1 }, undefined);
       expect(result).toEqual({ report: 'LLM report' });
       expect(goalsService.getUserGoals).not.toHaveBeenCalled();
     });
