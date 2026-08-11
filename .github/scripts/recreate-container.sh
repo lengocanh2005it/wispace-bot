@@ -6,7 +6,8 @@ set -euo pipefail
 # sync to restart a bot after its env changed on Doppler.
 #
 # Usage: recreate-container.sh <container-name> <image>
-# Runs inside a docker:29-cli sidecar that mounts the deploy dir + docker.sock.
+# Optional env: HEALTH_PATH (default /health), HEALTH_TIMEOUT (default 60s).
+# Runs on the VPS host (or a docker-cli sidecar) with docker.sock mounted.
 
 NAME="${1:?container name required}"
 IMAGE="${2:?image required}"
@@ -70,11 +71,13 @@ docker run "${args[@]}"
 
 # Health gate: wait for /health (default path, overridable) before dropping
 # the old container. On failure, roll back to the previous container.
+# Runs via `docker exec node -e fetch(...)` INSIDE the new container — the
+# sidecar image (docker:29-cli) has no curl, but the bot image is node-based.
 HEALTH_PATH="${HEALTH_PATH:-/health}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-60}"
 health_ok=""
 for attempt in $(seq 1 "$HEALTH_TIMEOUT"); do
-  if curl -fsS "http://127.0.0.1:${CFG_PORT}${HEALTH_PATH}" >/dev/null 2>&1; then
+  if docker exec "$NAME" node -e "fetch('http://127.0.0.1:${CFG_PORT}${HEALTH_PATH}').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))" >/dev/null 2>&1; then
     health_ok=1
     break
   fi

@@ -230,4 +230,26 @@ describe('StudentReportCore', () => {
     const result = await core.generateReport('user-1');
     expect(result).toContain('còn 31 ngày');
   });
+
+  it('aborts generateReportStatic when the signal is already aborted (agent timed out)', async () => {
+    const capacityData = {
+      getCapacityData: jest.fn().mockResolvedValue(baseInput),
+    };
+    const core = new StudentReportCore(
+      { adapter: {} as LlmProviderAdapter, systemPrompt: 'prompt' },
+      {
+        llmExecution: { run: jest.fn() },
+        usageRecorder: { recordFromCompletion: jest.fn() },
+        capacityData,
+      },
+    );
+    const aborted = new AbortController();
+    aborted.abort();
+
+    await expect(
+      core.generateReportStatic('user-1', aborted.signal),
+    ).rejects.toThrow('aborted');
+    // No capacity fetch after the caller gave up.
+    expect(capacityData.getCapacityData).not.toHaveBeenCalled();
+  });
 });
