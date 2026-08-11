@@ -30,6 +30,9 @@ import { UserDisplayNameService } from '@messenger/modules/display-name/applicat
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudySessionSourceService } from './study-session-source.service';
 
+/** Fixed 6-field JSON shape (chars capped in reminder-formatter) — bounds output tokens. */
+const REMINDER_MAX_OUTPUT_TOKENS = 500;
+
 @Injectable()
 export class StudyReminderService {
   private readonly logger = new Logger(StudyReminderService.name);
@@ -170,6 +173,7 @@ export class StudyReminderService {
           systemPrompt: loadSystemPrompt('studyReminder'),
           userContent: JSON.stringify(input),
           correlationId,
+          maxOutputTokens: REMINDER_MAX_OUTPUT_TOKENS,
         }),
       {
         feature: 'STUDY_REMINDER',

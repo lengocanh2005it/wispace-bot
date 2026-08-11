@@ -161,11 +161,14 @@ export class MessengerAgentToolsService {
   }
 
   private async getLearningProgressReport(psid: string): Promise<unknown> {
-    const report = await withTimeout(
-      this.studentReportService.generateReport(psid),
-      30_000,
-      `Tool get_learning_progress_report`,
-    );
+    const cached = this.studentReportService.getCachedReport(psid);
+    const report =
+      cached ??
+      (await withTimeout(
+        this.studentReportService.generateReportStatic(psid),
+        15_000,
+        `Tool get_learning_progress_report`,
+      ));
     return { report };
   }
 

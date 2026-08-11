@@ -23,6 +23,7 @@ import { DopplerRuntimeSyncService } from './application/services/doppler-runtim
 import { OpsHealthCronService } from './application/services/ops-health-cron.service';
 import { OpsHealthService } from './application/services/ops-health.service';
 import { ReportCronService } from './application/services/report-cron.service';
+import { ReportClaimStaleResetCronService } from './application/services/report-claim-stale-reset-cron.service';
 import { ReportSendOrchestrationService } from './application/services/report-send-orchestration.service';
 import { ReportSendRetryDispatchService } from './application/services/report-send-retry-dispatch.service';
 import { ReportSendJobRepository } from './infrastructure/persistence/report-send-job.repository';
@@ -58,6 +59,7 @@ import { SchedulerController } from './presentation/controllers/scheduler.contro
     ReportSendScheduleService,
     ReportSendRetryDispatchService,
     ReportSendJobRepository,
+    ReportClaimStaleResetCronService,
     {
       provide: REPORT_SEND_JOB_REPOSITORY,
       useExisting: ReportSendJobRepository,

@@ -25,6 +25,7 @@ describe('DiscordReportCronService', () => {
     links?: unknown[];
     results?: unknown[];
     claimAndSendError?: Error;
+    shouldSendReportToday?: jest.Mock;
   }) => {
     const reportCronLeaderService = {
       shouldRunScheduledReportCron: jest
@@ -37,6 +38,18 @@ describe('DiscordReportCronService', () => {
         .fn()
         .mockResolvedValue(overrides?.lockAcquired ?? true),
       releaseDailyLock: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const reportScheduleService = {
+      shouldSendReportToday:
+        overrides?.shouldSendReportToday ??
+        jest.fn().mockResolvedValue({
+          shouldSend: true,
+          daysUntilExam: 3,
+          examDate: '2026-08-14',
+          minDays: 2,
+          maxDays: 3,
+        }),
     };
 
     const orchestrationService = {
@@ -60,7 +73,7 @@ describe('DiscordReportCronService', () => {
       { get: jest.fn().mockReturnValue(undefined) } as never,
       reportCronLeaderService as never,
       reportCronLockService as never,
-      {} as never,
+      reportScheduleService as never,
       orchestrationService as never,
       accountLinkRepo as never,
     );
@@ -69,6 +82,7 @@ describe('DiscordReportCronService', () => {
       service,
       reportCronLeaderService,
       reportCronLockService,
+      reportScheduleService,
       orchestrationService,
       accountLinkRepo,
     };
@@ -95,6 +109,7 @@ describe('DiscordReportCronService', () => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
         skipAlreadySentToday: true,
+        examDateForOutbox: '2026-08-14',
       },
     );
     expect(orchestrationService.claimAndSend).toHaveBeenNthCalledWith(
@@ -104,6 +119,51 @@ describe('DiscordReportCronService', () => {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
         skipAlreadySentToday: true,
+        examDateForOutbox: '2026-08-14',
+      },
+    );
+  });
+
+  it('skips users outside the exam window without claiming', async () => {
+    const { service, orchestrationService } = buildService({
+      links: [LINK],
+      shouldSendReportToday: jest.fn().mockResolvedValue({
+        shouldSend: false,
+        daysUntilExam: 30,
+        examDate: '2026-09-10',
+        minDays: 2,
+        maxDays: 3,
+      }),
+    });
+
+    const result = await service.sendScheduledReports();
+
+    expect(result.skipped).toBe(1);
+    expect(orchestrationService.claimAndSend).not.toHaveBeenCalled();
+  });
+
+  it('bypasses the window when forceSend is set', async () => {
+    const { service, orchestrationService } = buildService({
+      links: [LINK],
+      shouldSendReportToday: jest.fn().mockResolvedValue({
+        shouldSend: false,
+        daysUntilExam: 30,
+        examDate: '2026-09-10',
+        minDays: 2,
+        maxDays: 3,
+      }),
+      results: [{ ...ZERO_RESULT, sent: 1 }],
+    });
+
+    await service.sendScheduledReports({ forceSend: true });
+
+    expect(orchestrationService.claimAndSend).toHaveBeenCalledWith(
+      expect.objectContaining({ externalUserId: 'discord-1' }),
+      {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+        reportDate: expect.any(String),
+        skipAlreadySentToday: false,
+        examDateForOutbox: '2026-09-10',
       },
     );
   });

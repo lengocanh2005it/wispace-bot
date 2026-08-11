@@ -5,6 +5,7 @@ import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import { todayReportDate } from '@wispace/scheduler-core';
 import { ScheduledReportClaimEntity } from '../entities/scheduled-report-claim.entity';
 import type { Platform } from '../types';
+import { listUserIdsWithSentReport } from './list-user-ids-with-sent-report';
 
 /**
  * Report claim idempotency for the 08:00 scheduled report cron — shared by
@@ -42,23 +43,34 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
     return !!claim;
   }
 
+  async listUserIdsWithSentReportToday(reportDate: string): Promise<number[]> {
+    return listUserIdsWithSentReport(this.claimRepo, reportDate);
+  }
+
   async tryClaimScheduledReport(params: {
     externalUserId: string;
     userId?: number;
     reportDate: string;
   }): Promise<boolean> {
-    try {
-      await this.claimRepo.save({
-        platform: this.platform,
-        externalUserId: params.externalUserId,
-        userId: params.userId ?? null,
-        reportDate: params.reportDate,
-        status: 'claimed',
-      });
-      return true;
-    } catch {
-      return false;
-    }
+    // ON CONFLICT DO NOTHING: only a genuine duplicate claim returns false.
+    // Any other DB failure propagates instead of masquerading as "already
+    // claimed" (a DB blip during the 08:00 cron must not silently skip users).
+    const rows: Array<{ id: number }> = await this.claimRepo.manager.query(
+      `
+      INSERT INTO scheduled_report_claims (platform, external_user_id, report_date, user_id, status)
+      VALUES ($1, $2, $3::date, $4, 'claimed')
+      ON CONFLICT (platform, external_user_id, report_date) DO NOTHING
+      RETURNING id
+    `,
+      [
+        this.platform,
+        params.externalUserId,
+        params.reportDate,
+        params.userId ?? null,
+      ],
+    );
+
+    return rows.length > 0;
   }
 
   async markScheduledReportClaimSent(params: {

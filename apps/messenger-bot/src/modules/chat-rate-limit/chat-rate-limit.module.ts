@@ -11,6 +11,7 @@ import { CleanupCronService } from '@wispace/cleanup-cron';
 import { ChatQuotaEventEntity } from '../../infrastructure/database/entities/chat-quota-event.entity';
 import { ChatQuotaEventCleanupCronService } from './application/services/chat-quota-event-cleanup-cron.service';
 import { ChatQuotaEventRecorderService } from './application/services/chat-quota-event-recorder.service';
+import { ChatQuotaStuckRecoveryCronService } from './application/services/chat-quota-stuck-recovery-cron.service';
 import { ChatRateLimitConfigService } from './application/services/chat-rate-limit-config.service';
 import { ChatRateLimitStartupService } from './application/services/chat-rate-limit-startup.service';
 import { ChatRateLimitService } from './application/services/chat-rate-limit.service';
@@ -117,6 +118,7 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
     ChatQuotaEventCleanupCronService,
     ChatRateLimitService,
     ChatQuotaOpsService,
+    ChatQuotaStuckRecoveryCronService,
     ChatRateLimitRepository,
     {
       provide: CHAT_QUOTA_REPOSITORY,

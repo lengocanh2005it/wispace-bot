@@ -13,6 +13,11 @@ import type { Platform, ChatIdempotencyStatus } from '@wispace/database';
   'externalUserId',
   'usageDate',
 ])
+@Index('idx_chat_idempotency_platform_status_reserved', [
+  'platform',
+  'status',
+  'reservedAt',
+])
 export class ChatIdempotencyEntity {
   @PrimaryColumn({ name: 'idempotency_key', type: 'varchar', length: 128 })
   idempotencyKey: string;

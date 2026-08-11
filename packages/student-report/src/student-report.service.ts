@@ -28,6 +28,9 @@ const FEATURE = 'STUDENT_REPORT';
 const CAPACITY_FETCH_MAX_ATTEMPTS = 3;
 const CAPACITY_FETCH_BACKOFF_MS = 5_000;
 
+/** Fixed 4-field JSON shape (600 chars max each) — cap bounds output tokens. */
+const REPORT_MAX_OUTPUT_TOKENS = 500;
+
 export interface StudentReportConfig {
   adapter: LlmProviderAdapter;
   systemPrompt: string;
@@ -71,17 +74,35 @@ export class StudentReportCore {
     externalUserId: string,
     options?: { correlationId?: string },
   ): Promise<string> {
-    const logger = this.ports.logger ?? NOOP_LOGGER;
     const correlationId = options?.correlationId ?? externalUserId;
+
+    return this.runReportFlow(externalUserId, correlationId, (input) =>
+      this.generateAiReport(externalUserId, input, correlationId).then(
+        formatReport,
+      ),
+    );
+  }
+
+  /**
+   * Deterministic report (no LLM call) with the same shape as the AI report —
+   * used by chat tools to answer progress questions without extra LLM cost.
+   */
+  async generateReportStatic(externalUserId: string): Promise<string> {
+    return this.runReportFlow(externalUserId, externalUserId, (input) =>
+      Promise.resolve(formatReport(buildFallbackReport(input))),
+    );
+  }
+
+  private async runReportFlow(
+    externalUserId: string,
+    correlationId: string,
+    generate: (input: StudentCapacityInput) => Promise<string>,
+  ): Promise<string> {
+    const logger = this.ports.logger ?? NOOP_LOGGER;
 
     try {
       const input = await this.fetchCapacityData(externalUserId);
-      const report = await this.generateAiReport(
-        externalUserId,
-        input,
-        correlationId,
-      );
-      return formatReport(report);
+      return await generate(input);
     } catch (error) {
       if (error instanceof StudentReportNoScoreDataError) {
         logger.log(
@@ -152,6 +173,7 @@ export class StudentReportCore {
           systemPrompt: this.config.systemPrompt,
           userContent: JSON.stringify(input),
           correlationId,
+          maxOutputTokens: REPORT_MAX_OUTPUT_TOKENS,
         }),
       { feature: FEATURE, correlationId },
     );

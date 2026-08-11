@@ -3,7 +3,7 @@ import { parseArgs } from './_args.mjs';
 
 const HELP = `Usage: npm run chat-quota:cleanup -- [options]
 
-Delete terminal messenger_chat_idempotency rows (completed/refunded) older than
+Delete terminal chat_idempotency rows (completed/refunded) older than
 CHAT_IDEMPOTENCY_RETENTION_DAYS (default 90). Does not delete status=reserved.
 
 Options:
@@ -63,8 +63,8 @@ try {
         COUNT(*)::int AS count,
         MIN(reserved_at) AS oldest_reserved_at,
         MAX(reserved_at) AS newest_reserved_at
-      FROM messenger_chat_idempotency
-      WHERE status IN ('completed', 'refunded')
+      FROM chat_idempotency
+      WHERE platform = 'messenger' AND status IN ('completed', 'refunded')
         AND reserved_at < NOW() - ($1::int * INTERVAL '1 day')
       GROUP BY status
       ORDER BY status ASC
@@ -77,9 +77,9 @@ try {
   if (args.dryRun) {
     const sample = await pool.query(
       `
-        SELECT idempotency_key, psid, status, reserved_at
-        FROM messenger_chat_idempotency
-        WHERE status IN ('completed', 'refunded')
+        SELECT idempotency_key, external_user_id AS psid, status, reserved_at
+        FROM chat_idempotency
+        WHERE platform = 'messenger' AND status IN ('completed', 'refunded')
           AND reserved_at < NOW() - ($1::int * INTERVAL '1 day')
         ORDER BY reserved_at ASC
         LIMIT 20
@@ -105,10 +105,10 @@ try {
 
   const deleted = await pool.query(
     `
-      DELETE FROM messenger_chat_idempotency
-      WHERE status IN ('completed', 'refunded')
+      DELETE FROM chat_idempotency
+      WHERE platform = 'messenger' AND status IN ('completed', 'refunded')
         AND reserved_at < NOW() - ($1::int * INTERVAL '1 day')
-      RETURNING idempotency_key, psid, status, reserved_at
+      RETURNING idempotency_key, external_user_id AS psid, status, reserved_at
     `,
     [retentionDays],
   );

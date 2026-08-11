@@ -19,14 +19,14 @@ export class WebhookDedupeStoreStartupService implements OnModuleInit {
 
     if (configured === 'redis' && !this.redisClient.isEnabled()) {
       this.logger.warn(
-        'CHAT_DEDUPE_STORE=redis but REDIS_ENABLED=false — using memory fallback',
+        'CHAT_DEDUPE_STORE=redis but REDIS_ENABLED=false — using in-process dedupe fallback',
       );
       return;
     }
 
     if (configured === 'redis' && active === 'memory') {
       this.logger.warn(
-        'CHAT_DEDUPE_STORE=redis but Redis client unavailable — using memory fallback',
+        'CHAT_DEDUPE_STORE=redis but Redis client unavailable — using in-process dedupe fallback',
       );
       return;
     }

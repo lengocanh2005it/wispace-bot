@@ -14,6 +14,12 @@ import type { Platform, ScheduledReportClaimStatus } from '../types';
   ['platform', 'externalUserId', 'reportDate'],
   { unique: true },
 )
+@Index('idx_scheduled_report_claims_user_date_status', [
+  'userId',
+  'reportDate',
+  'status',
+])
+@Index('idx_scheduled_report_claims_created_at', ['createdAt'])
 export class ScheduledReportClaimEntity {
   @PrimaryGeneratedColumn()
   id: number;

@@ -7,7 +7,11 @@ import {
   CleanupCronService,
   PlatformCleanupCronService,
 } from '@wispace/cleanup-cron';
-import { BotCommonModule, REDIS_CLIENT } from '@wispace/bot-common';
+import {
+  BotCommonModule,
+  PgAdvisoryLockService,
+  REDIS_CLIENT,
+} from '@wispace/bot-common';
 import {
   ChatMeteringModule,
   PlatformChatRateLimitService,
@@ -45,6 +49,7 @@ import {
   PlatformDeadLetterService,
   WebhookDeadLetterEntity,
   ReportSendJobEntity,
+  ScheduledReportClaimEntity,
 } from '@wispace/database';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 import { DiscordCalendarPort } from './infrastructure/adapters/discord-calendar.port';
@@ -55,7 +60,7 @@ const NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';
 
 const REGISTER_REPORT_MESSAGE =
-  'Bạn đã đăng ký nhận báo cáo học tập. WISPACE sẽ gửi báo cáo AI qua Discord vào mỗi buổi sáng — khoảng 2–3 ngày trước ngày thi bạn sẽ nhận được báo cáo chi tiết.';
+  'Báo cáo học tập là tự động — WISPACE gửi báo cáo AI qua Discord vào mỗi buổi sáng, khoảng 2–3 ngày trước ngày thi bạn sẽ nhận được báo cáo chi tiết. Bạn không cần đăng ký riêng.';
 
 @Module({
   imports: [
@@ -73,6 +78,7 @@ const REGISTER_REPORT_MESSAGE =
       DiscordMessageLogEntity,
       ReportSendJobEntity,
       ChatIdempotencyEntity,
+      ScheduledReportClaimEntity,
     ]),
   ],
   providers: [
@@ -154,6 +160,8 @@ const REGISTER_REPORT_MESSAGE =
           {
             promptDir: join(__dirname, '../../shared/prompts'),
             promptFile: 'discord-chat.system.txt',
+            // Single retry layer — retryWithBackoff in PlatformAgentService
+            maxLlmRetries: 0,
           },
         ),
       inject: [
@@ -226,22 +234,30 @@ const REGISTER_REPORT_MESSAGE =
         deadLetterService: PlatformDeadLetterService,
         configService: ConfigService,
         outboundService: DiscordOutboundService,
+        pgLock: PgAdvisoryLockService,
       ) =>
-        new PlatformDeadLetterCronService(deadLetterService, configService, {
-          extractPayload: (payload) => ({
-            externalUserId: payload.discordUserId as string | undefined,
-            text: payload.text as string | undefined,
-          }),
-          abandonReason: 'Missing discordUserId or text in payload',
-          sendText: (externalUserId, text) =>
-            outboundService.sendText(externalUserId, text, {
-              skipDeadLetter: true,
+        new PlatformDeadLetterCronService(
+          deadLetterService,
+          configService,
+          pgLock,
+          {
+            lockId: 884_200_930,
+            extractPayload: (payload) => ({
+              externalUserId: payload.discordUserId as string | undefined,
+              text: payload.text as string | undefined,
             }),
-        }),
+            abandonReason: 'Missing discordUserId or text in payload',
+            sendText: (externalUserId, text) =>
+              outboundService.sendText(externalUserId, text, {
+                skipDeadLetter: true,
+              }),
+          },
+        ),
       inject: [
         PlatformDeadLetterService,
         ConfigService,
         DiscordOutboundService,
+        PgAdvisoryLockService,
       ],
     },
     {
@@ -252,6 +268,7 @@ const REGISTER_REPORT_MESSAGE =
         messageLogRepo: Repository<DiscordMessageLogEntity>,
         deadLetterRepo: Repository<WebhookDeadLetterEntity>,
         idempotencyRepo: Repository<ChatIdempotencyEntity>,
+        reportClaimRepo: Repository<ScheduledReportClaimEntity>,
         rateLimitService: PlatformChatRateLimitService,
       ) =>
         new PlatformCleanupCronService(cleanupService, configService, {
@@ -262,10 +279,12 @@ const REGISTER_REPORT_MESSAGE =
             deadLetter: 884_200_912,
             idempotencyRecovery: 884_200_914,
             idempotencyCleanup: 884_200_915,
+            reportClaim: 884_200_920,
           },
           messageLogRepo,
           deadLetterRepo,
           idempotencyRepo,
+          reportClaimRepo,
           rateLimitService,
         }),
       inject: [
@@ -274,6 +293,7 @@ const REGISTER_REPORT_MESSAGE =
         getRepositoryToken(DiscordMessageLogEntity),
         getRepositoryToken(WebhookDeadLetterEntity),
         getRepositoryToken(ChatIdempotencyEntity),
+        getRepositoryToken(ScheduledReportClaimEntity),
         PlatformChatRateLimitService,
       ],
     },

@@ -8,6 +8,7 @@ import { PlatformStudentReportService } from '@wispace/student-report';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import {
   REPORT_CLAIM_REPOSITORY,
+  ReportScheduleService,
   runBatched,
   todayReportDate,
 } from '@wispace/scheduler-core';
@@ -30,13 +31,14 @@ export class ZaloReportCronService {
     private readonly claimRepo: ReportClaimRepositoryPort,
     private readonly outbound: ZaloOutboundService,
     private readonly reportService: PlatformStudentReportService,
+    private readonly reportScheduleService: ReportScheduleService,
   ) {}
 
   @Cron('0 8 * * *', {
     name: 'zalo-report-cron',
     timeZone: 'Asia/Ho_Chi_Minh',
   })
-  async sendDailyReports(): Promise<void> {
+  async sendDailyReports(opts: { forceSend?: boolean } = {}): Promise<void> {
     const links = await this.linkRepo.find({ where: { platform: 'zalo' } });
     if (links.length === 0) {
       this.logger.log('No linked accounts found for daily report');
@@ -44,7 +46,13 @@ export class ZaloReportCronService {
     }
     const reportDate = todayReportDate();
     this.logger.log(
-      `Sending daily reports to ${links.length} Zalo users (reportDate=${reportDate})`,
+      `Sending daily reports to ${links.length} Zalo users (reportDate=${reportDate}, forceSend=${opts.forceSend === true})`,
+    );
+
+    // Pre-query userIds that already got a report on another platform today —
+    // avoids one SELECT per linked user inside the batched loop.
+    const sentUserIds = new Set(
+      await this.claimRepo.listUserIdsWithSentReportToday(reportDate),
     );
 
     let sent = 0;
@@ -53,7 +61,12 @@ export class ZaloReportCronService {
     const errors: string[] = [];
 
     const results = await runBatched(links, CONCURRENCY, (link) =>
-      this.sendReportForUser(link, reportDate),
+      this.sendReportForUser(
+        link,
+        reportDate,
+        sentUserIds,
+        opts.forceSend === true,
+      ),
     );
     for (const r of results) {
       if (r.status === 'fulfilled') {
@@ -68,20 +81,40 @@ export class ZaloReportCronService {
     }
 
     this.logger.log(
-      `Daily report done: sent=${sent}, skipped(already-sent/claimed/48h)=${skipped}, failed=${failed}${errors.length > 0 ? ', errors=' + errors.join('; ') : ''}`,
+      `Daily report done: sent=${sent}, skipped(already-sent/claimed/48h/window)=${skipped}, failed=${failed}${errors.length > 0 ? ', errors=' + errors.join('; ') : ''}`,
     );
   }
 
   private async sendReportForUser(
     link: ZaloAccountLinkEntity,
     reportDate: string,
+    sentUserIds: Set<number>,
+    forceSend: boolean,
   ): Promise<'sent' | 'skipped' | 'error'> {
+    // Window gate: only auto-send inside the days-before-exam window
+    // (same as Messenger/Discord). forceSend bypasses the window.
+    if (!forceSend) {
+      try {
+        const userSchedule =
+          await this.reportScheduleService.shouldSendReportToday(
+            link.externalUserId,
+          );
+        if (!userSchedule.shouldSend) {
+          this.logger.log(
+            `Skip Zalo user ${link.externalUserId}: examDate=${userSchedule.examDate}, daysUntilExam=${userSchedule.daysUntilExam}, window=${userSchedule.minDays}-${userSchedule.maxDays}`,
+          );
+          return 'skipped';
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Skip Zalo user ${link.externalUserId}: could not resolve exam schedule: ${errorMessage(error)}`,
+        );
+        return 'skipped';
+      }
+    }
+
     if (link.userId) {
-      const alreadySent = await this.claimRepo.hasAnyPlatformSentReportToday(
-        link.userId,
-        reportDate,
-      );
-      if (alreadySent) {
+      if (sentUserIds.has(link.userId)) {
         this.logger.log(
           `Report already sent on another platform for userId=${link.userId}, skipping Zalo`,
         );

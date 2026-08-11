@@ -1,18 +1,19 @@
 import type { RedisClientPort } from '@wispace/bot-common';
 import { RedisChatQueueStore } from './redis-chat-queue.store';
 
+interface MockClient {
+  set: jest.Mock;
+  get: jest.Mock;
+  del: jest.Mock;
+  sadd: jest.Mock;
+  srem: jest.Mock;
+  smembers: jest.Mock;
+  eval: jest.Mock;
+  exists: jest.Mock;
+}
+
 describe('RedisChatQueueStore', () => {
-  const createStore = (
-    client: {
-      set: jest.Mock;
-      get: jest.Mock;
-      del: jest.Mock;
-      sadd: jest.Mock;
-      srem: jest.Mock;
-      smembers: jest.Mock;
-      eval: jest.Mock;
-    } | null,
-  ) => {
+  const createStore = (client: MockClient | null) => {
     const redisClient = {
       isEnabled: () => client !== null,
       getNativeClient: () => client,
@@ -24,16 +25,20 @@ describe('RedisChatQueueStore', () => {
     } as never);
   };
 
+  const createClient = (overrides: Partial<MockClient> = {}): MockClient => ({
+    set: jest.fn().mockResolvedValue('OK'),
+    get: jest.fn().mockResolvedValue(null),
+    del: jest.fn(),
+    sadd: jest.fn().mockResolvedValue(1),
+    srem: jest.fn().mockResolvedValue(1),
+    smembers: jest.fn().mockResolvedValue([]),
+    eval: jest.fn().mockResolvedValue(1),
+    exists: jest.fn().mockResolvedValue(1),
+    ...overrides,
+  });
+
   it('appends text to buffer under psid lock', async () => {
-    const client = {
-      set: jest.fn().mockResolvedValueOnce('OK').mockResolvedValueOnce('OK'),
-      get: jest.fn().mockResolvedValue(null),
-      del: jest.fn(),
-      sadd: jest.fn().mockResolvedValue(1),
-      srem: jest.fn(),
-      smembers: jest.fn(),
-      eval: jest.fn().mockResolvedValue(1),
-    };
+    const client = createClient();
 
     const store = createStore(client);
     await store.appendChatBuffer({
@@ -63,19 +68,87 @@ describe('RedisChatQueueStore', () => {
   });
 
   it('returns null from claim when buffer is empty', async () => {
-    const client = {
-      set: jest.fn().mockResolvedValue('OK'),
-      get: jest.fn().mockResolvedValue(null),
-      del: jest.fn(),
-      sadd: jest.fn(),
-      srem: jest.fn(),
-      smembers: jest.fn(),
-      eval: jest.fn().mockResolvedValue(1),
-    };
+    const client = createClient();
 
     const store = createStore(client);
     const snapshot = await store.claimReadyBuffer('psid-1', 2000, 300_000);
 
     expect(snapshot).toBeNull();
+  });
+
+  it('claims a wedged buffer: processing stuck promotes pendingTexts', async () => {
+    const state = {
+      texts: [],
+      pendingTexts: ['msg-while-stuck'],
+      processing: true,
+      processingStartedAt: Date.now() - 301_000,
+      flushAfterAt: null,
+      lastIdempotencyKey: null,
+      lastPendingIdempotencyKey: 'mid-2',
+    };
+    const client = createClient({
+      get: jest.fn().mockResolvedValue(JSON.stringify(state)),
+    });
+
+    const store = createStore(client);
+    const snapshot = await store.claimReadyBuffer('psid-1', 2000, 300_000);
+
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.texts).toEqual(['msg-while-stuck']);
+    expect(snapshot?.lastIdempotencyKey).toBe('mid-2');
+  });
+
+  it('does not claim a processing buffer that is not stuck yet', async () => {
+    const state = {
+      texts: [],
+      pendingTexts: ['msg'],
+      processing: true,
+      processingStartedAt: Date.now() - 10_000,
+      flushAfterAt: null,
+    };
+    const client = createClient({
+      get: jest.fn().mockResolvedValue(JSON.stringify(state)),
+    });
+
+    const store = createStore(client);
+    const snapshot = await store.claimReadyBuffer('psid-1', 2000, 300_000);
+
+    expect(snapshot).toBeNull();
+  });
+
+  it('lists a wedged psid as ready even when texts are empty', async () => {
+    const wedgedState = {
+      texts: [],
+      pendingTexts: ['msg'],
+      processing: true,
+      processingStartedAt: Date.now() - 301_000,
+      flushAfterAt: null,
+    };
+    const client = createClient({
+      smembers: jest.fn().mockResolvedValue(['psid-1']),
+      get: jest.fn().mockResolvedValue(JSON.stringify(wedgedState)),
+    });
+
+    const store = createStore(client);
+    const ready = await store.listPsidsReadyForFlush(25, 300_000);
+
+    expect(ready).toEqual(['psid-1']);
+  });
+
+  it('drops stale active-set members whose buffer key expired', async () => {
+    const client = createClient({
+      smembers: jest.fn().mockResolvedValue(['psid-1']),
+      exists: jest.fn().mockResolvedValue(0),
+      get: jest.fn().mockResolvedValue(null),
+    });
+
+    const store = createStore(client);
+    const ready = await store.listPsidsReadyForFlush(25, 300_000);
+
+    expect(ready).toEqual([]);
+    expect(client.srem).toHaveBeenCalledWith(
+      'chat:queue:active-psids',
+      'psid-1',
+    );
   });
 });

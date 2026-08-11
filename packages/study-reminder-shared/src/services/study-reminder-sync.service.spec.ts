@@ -46,6 +46,7 @@ describe('StudyReminderSyncService', () => {
     };
 
     jobRepo = {
+      upsertPendingJobs: jest.fn().mockResolvedValue([]),
       upsertPendingJob: jest.fn(),
       cancelStaleJobsForExternalUserId: jest.fn().mockResolvedValue(0),
       cancelJobsFromOtherPlatforms: jest.fn().mockResolvedValue(0),
@@ -115,17 +116,26 @@ describe('StudyReminderSyncService', () => {
       });
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.upsertPendingJob).toHaveBeenCalledWith({
-        platform: 'messenger',
-        externalUserId: 'ext-1',
-        userId: 1,
-        sessionKey: 'calendar:42',
-        scheduledAt: session.scheduledAt,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-        remindAt: expect.any(Date),
-        topic: 'Toán',
-        maxRetries: 3,
-      });
+      expect(jobRepo.upsertPendingJobs).toHaveBeenCalledWith(
+        [
+          {
+            platform: 'messenger',
+            externalUserId: 'ext-1',
+            userId: 1,
+            sessionKey: 'calendar:42',
+            scheduledAt: session.scheduledAt,
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+            remindAt: expect.any(Date),
+            topic: 'Toán',
+            maxRetries: 3,
+          },
+        ],
+        {
+          reopenOnlyOnScheduleChange: true,
+        },
+      );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(jobRepo.upsertPendingJob).not.toHaveBeenCalled();
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.cancelStaleJobsForExternalUserId).toHaveBeenCalledWith(
         'messenger',
@@ -152,7 +162,7 @@ describe('StudyReminderSyncService', () => {
       mappingReader.findActiveMappings.mockResolvedValue([
         { externalUserId: 'ext-err', userId: 99, platform: 'messenger' },
       ]);
-      jobRepo.upsertPendingJob.mockRejectedValue(new Error('Wispace timeout'));
+      jobRepo.upsertPendingJobs.mockRejectedValue(new Error('Wispace timeout'));
 
       const result = await service.syncUpcomingSessions({
         getSessions: jest.fn().mockResolvedValue([makeSession()]),

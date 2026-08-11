@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { subtractMs } from '@wispace/date-utils';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, PgAdvisoryLockService } from '@wispace/bot-common';
 import { PlatformDeadLetterService } from './platform-dead-letter.service';
 
 const DEFAULT_MAX_RETRIES = 3;
@@ -10,6 +10,8 @@ const DEFAULT_MIN_RETRY_AGE_MS = 60_000;
 const DEFAULT_RETRY_LIMIT = 10;
 
 export interface DeadLetterCronOptions {
+  /** Advisory lock id — only one pod retries the dead letter per tick. */
+  lockId: number;
   /** Extract the retry target (external user id + text) from a saved raw webhook payload. */
   extractPayload: (payload: Record<string, unknown>) => {
     externalUserId?: string;
@@ -22,9 +24,10 @@ export interface DeadLetterCronOptions {
 }
 
 /**
- * Retries failed platform message deliveries from the dead letter queue.
- * Runs every 5 minutes. Single-pod safe (Discord uses WebSocket, Zalo uses
- * pull-based delivery — neither depends on webhook reachability).
+ * Retries failed platform outbound deliveries from the dead letter queue.
+ * Only `outbound` entries are replayed — inbound webhook events are never
+ * re-sent via `sendText` (that used to echo the user's own text back).
+ * Runs every 5 minutes under an advisory lock (multi-pod safe).
  */
 @Injectable()
 export class PlatformDeadLetterCronService {
@@ -33,20 +36,36 @@ export class PlatformDeadLetterCronService {
   constructor(
     private readonly deadLetterService: PlatformDeadLetterService,
     private readonly configService: ConfigService,
+    private readonly pgLock: PgAdvisoryLockService,
     private readonly options: DeadLetterCronOptions,
   ) {}
 
   @Cron('0 */5 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async handleRetry(): Promise<void> {
-    const maxRetries =
-      this.configService.get<number>('WEBHOOK_DEAD_LETTER_MAX_RETRIES') ??
-      DEFAULT_MAX_RETRIES;
-    const minRetryAgeMs =
-      this.configService.get<number>('WEBHOOK_DEAD_LETTER_MIN_RETRY_AGE_MS') ??
-      DEFAULT_MIN_RETRY_AGE_MS;
-    const retryLimit =
-      this.configService.get<number>('WEBHOOK_DEAD_LETTER_RETRY_LIMIT') ??
-      DEFAULT_RETRY_LIMIT;
+    const result = await this.pgLock.withLock(this.options.lockId, () =>
+      this.runRetryBatch(),
+    );
+
+    if (result === null) {
+      this.logger.debug(
+        'webhook-dead-letter-retry skipped — lock held by another pod',
+      );
+    }
+  }
+
+  private async runRetryBatch(): Promise<void> {
+    const maxRetries = this.readPositiveInt(
+      'WEBHOOK_DEAD_LETTER_MAX_RETRIES',
+      DEFAULT_MAX_RETRIES,
+    );
+    const minRetryAgeMs = this.readPositiveInt(
+      'WEBHOOK_DEAD_LETTER_MIN_RETRY_AGE_MS',
+      DEFAULT_MIN_RETRY_AGE_MS,
+    );
+    const retryLimit = this.readPositiveInt(
+      'WEBHOOK_DEAD_LETTER_RETRY_LIMIT',
+      DEFAULT_RETRY_LIMIT,
+    );
 
     const olderThan = subtractMs(new Date(), minRetryAgeMs);
     const entries = await this.deadLetterService.listPendingForRetry({
@@ -83,5 +102,13 @@ export class PlatformDeadLetterCronService {
         }
       }
     }
+  }
+
+  private readPositiveInt(key: string, fallback: number): number {
+    const raw = this.configService.get<string>(key);
+    const parsed = raw ? Number(raw) : NaN;
+    return Number.isFinite(parsed) && parsed > 0
+      ? Math.floor(parsed)
+      : fallback;
   }
 }

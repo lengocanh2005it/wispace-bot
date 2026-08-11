@@ -7,6 +7,7 @@ import {
   ScheduledReportClaimEntity,
   UserPlatformMappingEntity,
 } from '@messenger/infrastructure/database/entities';
+import { listUserIdsWithSentReport } from '@wispace/database';
 import { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
@@ -310,6 +311,10 @@ export class MessengerRepository
     return !!claim;
   }
 
+  async listUserIdsWithSentReportToday(reportDate: string): Promise<number[]> {
+    return listUserIdsWithSentReport(this.reportClaimRepo, reportDate);
+  }
+
   async countMessageLogsByTypeSince(
     messageType: string,
     since: Date,
@@ -380,6 +385,19 @@ export class MessengerRepository
       },
       { status: 'released' },
     );
+  }
+
+  async resetStaleScheduledReportClaims(olderThan: Date): Promise<number> {
+    const result = await this.reportClaimRepo
+      .createQueryBuilder()
+      .update()
+      .set({ status: 'released', updatedAt: new Date() })
+      .where('platform = :platform', { platform: PLATFORM })
+      .andWhere('status = :status', { status: 'claimed' })
+      .andWhere('updated_at < :olderThan', { olderThan })
+      .execute();
+
+    return result.affected ?? 0;
   }
 
   async logMessage(params: {

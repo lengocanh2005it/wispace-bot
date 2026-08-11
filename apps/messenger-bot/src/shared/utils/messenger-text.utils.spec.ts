@@ -35,6 +35,28 @@ describe('splitMessengerBubbles', () => {
       ['Đoạn 1', 'Đoạn 2', 'Đoạn 3'],
     );
   });
+
+  it('marks the last bubble when paragraphs exceed maxBubbles', () => {
+    expect(
+      splitMessengerBubbles(
+        'Đoạn 1\n\nĐoạn 2\n\nĐoạn 3\n\nĐoạn 4\n\nĐoạn 5',
+        4,
+        200,
+      ),
+    ).toEqual(['Đoạn 1', 'Đoạn 2', 'Đoạn 3', 'Đoạn 4…']);
+  });
+
+  it('marks the last bubble when a long paragraph is cut mid-way', () => {
+    const bubbles = splitMessengerBubbles('a'.repeat(300), 2, 100);
+    expect(bubbles).toHaveLength(2);
+    expect(bubbles[1]).toMatch(/…$/);
+  });
+
+  it('marks the single bubble when the whole text exceeds the cap', () => {
+    const bubbles = splitMessengerBubbles('a'.repeat(150), 1, 100);
+    expect(bubbles).toHaveLength(1);
+    expect(bubbles[0]).toMatch(/…$/);
+  });
 });
 
 describe('mergeChatUserTexts', () => {

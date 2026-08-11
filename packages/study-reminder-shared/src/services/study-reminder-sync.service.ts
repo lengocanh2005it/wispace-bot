@@ -7,6 +7,7 @@ import {
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
+  type UpsertStudyReminderJobInput,
 } from '../ports/study-reminder-job.repository.port';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { hoursFromNow } from '@wispace/date-utils';
@@ -114,6 +115,7 @@ export class StudyReminderSyncService {
           : [];
 
         const activeSessionKeys: string[] = [];
+        const batch: UpsertStudyReminderJobInput[] = [];
 
         for (const session of sessions) {
           if (session.scheduledAt > horizonEnd) {
@@ -125,7 +127,7 @@ export class StudyReminderSyncService {
             session.scheduledAt,
           );
 
-          await this.jobRepository.upsertPendingJob({
+          batch.push({
             platform,
             externalUserId: mapping.externalUserId,
             userId: mapping.userId,
@@ -136,9 +138,19 @@ export class StudyReminderSyncService {
             maxRetries: settings.maxRetries,
           });
 
-          upserted += 1;
           activeSessionKeys.push(session.sessionKey);
         }
+
+        if (batch.length > 0) {
+          // One SELECT + batched save instead of findOne+save per session.
+          await this.jobRepository.upsertPendingJobs(batch, {
+            // Leave in-flight `processing` jobs alone unless the schedule
+            // actually changed — prevents a 30-min sync from reopening a job
+            // mid-send and causing duplicate reminders on multi-pod setups.
+            reopenOnlyOnScheduleChange: true,
+          });
+        }
+        upserted += batch.length;
 
         const cancelledCount =
           await this.jobRepository.cancelStaleJobsForExternalUserId(

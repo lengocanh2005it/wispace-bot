@@ -69,6 +69,7 @@ When adding a new migration (Discord, Zalo, or new shared table):
 | Shared (`packages/chat-metering`) | `1751029200003-AddLlmUsageEventsCachedTokens` | alter `llm_usage_events` |
 | Cross-platform (generalized) | `1751029200001-GeneralizePlatformIdentifiers` | alter `user_messenger_mappings` → `user_platform_mappings`, rename chat-metering tables to generic (`chat_daily_usage`, `chat_idempotency`, `chat_quota_events`) |
 | Discord | `1751029200002-CreateDiscordAccountLinksTable` | `discord_account_links` |
+| Shared (cleanup/ops hot queries) | `1751029200010-AddCleanupAndClaimIndexes` | index-only on `chat_idempotency` (`platform, status, reserved_at`), `scheduled_report_claims` (`user_id, report_date, status` + `created_at`), `message_logs` (`created_at`) |
 
 ## Notes
 

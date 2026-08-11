@@ -25,6 +25,18 @@ export class StudentReportService {
   private readonly logger = new Logger(StudentReportService.name);
   private core?: StudentReportCore;
 
+  /**
+   * Daily report cache (key `psid:YYYY-MM-DD`): the 08:00 cron, the menu
+   * postback, and the chat tool all generate the same per-user daily report —
+   * cache it so only one LLM call happens per user per day. Self-expiring via
+   * date-keyed entries; no timers.
+   */
+  private readonly reportCache = new Map<
+    string,
+    { date: string; text: string }
+  >();
+  private static readonly CACHE_MAX_ENTRIES = 5_000;
+
   constructor(
     private readonly configService: ConfigService,
     private readonly taskScoreAverageApi: TaskScoreAverageApiService,
@@ -41,8 +53,58 @@ export class StudentReportService {
 
     const timezone = resolveAppTimezone(this.configService);
     const correlationId = `${psid}:${todayUsageDate(timezone)}`;
+    const cached = this.reportCache.get(correlationId);
+    if (cached) {
+      this.logger.debug(`Report cache hit psid=${psid}`);
+      return Promise.resolve(cached.text);
+    }
 
-    return this.core.generateReport(psid, { correlationId });
+    return this.core.generateReport(psid, { correlationId }).then((text) => {
+      this.reportCache.set(correlationId, {
+        date: todayUsageDate(resolveAppTimezone(this.configService)),
+        text,
+      });
+      this.evictStaleReports();
+      return text;
+    });
+  }
+
+  /** Cached AI report for today, or null — used by chat tools to avoid LLM calls. */
+  getCachedReport(psid: string): string | null {
+    const timezone = resolveAppTimezone(this.configService);
+    return (
+      this.reportCache.get(`${psid}:${todayUsageDate(timezone)}`)?.text ?? null
+    );
+  }
+
+  /** Deterministic report — no LLM call. Chat-tool fallback when no cache. */
+  generateReportStatic(psid: string): Promise<string> {
+    if (!this.core) {
+      this.core = this.buildCore();
+    }
+    return this.core.generateReportStatic(psid);
+  }
+
+  private evictStaleReports(): void {
+    if (this.reportCache.size <= StudentReportService.CACHE_MAX_ENTRIES) {
+      return;
+    }
+    const today = todayUsageDate(resolveAppTimezone(this.configService));
+    for (const [key, entry] of this.reportCache) {
+      if (this.reportCache.size <= StudentReportService.CACHE_MAX_ENTRIES) {
+        break;
+      }
+      if (entry.date !== today) {
+        this.reportCache.delete(key);
+      }
+    }
+    while (this.reportCache.size > StudentReportService.CACHE_MAX_ENTRIES) {
+      const oldestKey = this.reportCache.keys().next().value;
+      if (oldestKey === undefined) {
+        break;
+      }
+      this.reportCache.delete(oldestKey);
+    }
   }
 
   private buildCore(): StudentReportCore {

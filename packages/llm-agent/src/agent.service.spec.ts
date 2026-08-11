@@ -778,6 +778,49 @@ describe('LlmAgentService', () => {
       // Non-retryable → only 1 attempt, still wrapped in LlmRetryExhaustedError
       expect(chatWithToolsImpl).toHaveBeenCalledTimes(1);
     });
+
+    it('maxLlmRetries=0 performs a single attempt and rethrows the raw error', async () => {
+      const rateLimitErr = Object.assign(new Error('rate limit'), {
+        status: 429,
+      });
+      const chatWithToolsImpl = jest.fn().mockRejectedValue(rateLimitErr);
+      const service = new LlmAgentService<StubToolContext>(
+        { maxLlmRetries: 0 },
+        {
+          llmExecution: {
+            run: jest
+              .fn()
+              .mockImplementation((_fn: () => Promise<unknown>) => _fn()),
+          },
+          usageRecorder: { recordFromCompletion: jest.fn() },
+          safetyEvents: { recordGroundingWarning: jest.fn() },
+          toolExecutor: { execute: jest.fn().mockResolvedValue({}) },
+          adapter: {
+            providerName: 'openai',
+            isConfigured: () => true,
+            getDefaultModel: () => 'gpt-5.4',
+            generateJson: jest.fn(),
+            chatWithTools: chatWithToolsImpl,
+            chatStream: jest.fn(),
+            isRetryableError: () => true,
+            isRateLimitError: () => false,
+            normalizeError: () => ({
+              provider: 'openai',
+              retryable: true,
+              reason: 'rate_limit',
+            }),
+          },
+          metrics: NOOP_METRICS_PORT,
+          logger: { warn: jest.fn(), debug: jest.fn() },
+        },
+      );
+
+      await expect(service.reply(BASE_INPUT, TOOL_CONTEXT)).rejects.toBe(
+        rateLimitErr,
+      );
+      // Single attempt — no wrapping, no backoff delay
+      expect(chatWithToolsImpl).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('replyStream()', () => {

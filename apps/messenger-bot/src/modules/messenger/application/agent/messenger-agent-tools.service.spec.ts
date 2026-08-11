@@ -22,6 +22,8 @@ describe('MessengerAgentToolsService', () => {
 
     const studentReportService: jest.Mocked<StudentReportService> = {
       generateReport: overrides.generateReport ?? jest.fn(),
+      getCachedReport: overrides.getCachedReport ?? jest.fn(),
+      generateReportStatic: overrides.generateReportStatic ?? jest.fn(),
     } as unknown as jest.Mocked<StudentReportService>;
 
     const userGoalsApiService: jest.Mocked<UserGoalsApiService> = {
@@ -97,7 +99,9 @@ describe('MessengerAgentToolsService', () => {
 
     it('handles tool execution error', async () => {
       const { service, ctx } = createService({
-        generateReport: jest.fn().mockRejectedValue(new Error('API error')),
+        generateReportStatic: jest
+          .fn()
+          .mockRejectedValue(new Error('API error')),
       });
       const result = await service.execute(
         'get_learning_progress_report',
@@ -109,10 +113,27 @@ describe('MessengerAgentToolsService', () => {
   });
 
   describe('get_learning_progress_report', () => {
-    it('calls studentReportService.generateReport', async () => {
+    it('serves the cached AI report when available (no LLM call)', async () => {
+      const { service, ctx, studentReportService } = createService({
+        getCachedReport: jest.fn().mockReturnValue('Cached report'),
+      });
+
+      const result = await service.execute(
+        'get_learning_progress_report',
+        '{}',
+        ctx,
+      );
+
+      expect(result).toEqual({ report: 'Cached report' });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(studentReportService.generateReportStatic).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the static report when no cache (no LLM call)', async () => {
       const report = { text: 'Report content', scores: [] };
-      const { service, ctx } = createService({
-        generateReport: jest.fn().mockResolvedValue(report),
+      const { service, ctx, studentReportService } = createService({
+        getCachedReport: jest.fn().mockReturnValue(null),
+        generateReportStatic: jest.fn().mockResolvedValue(report),
       });
 
       const result = await service.execute(
@@ -122,6 +143,8 @@ describe('MessengerAgentToolsService', () => {
       );
 
       expect(result).toEqual({ report });
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(studentReportService.generateReport).not.toHaveBeenCalled();
     });
   });
 

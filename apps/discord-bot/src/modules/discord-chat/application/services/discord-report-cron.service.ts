@@ -20,6 +20,16 @@ import type {
 const PLATFORM = 'discord' as const;
 const DEFAULT_SEND_CONCURRENCY = 3;
 
+const ZERO: ClaimAndSendResult = {
+  sent: 0,
+  skipped: 0,
+  deferred: 0,
+  windowClosed: 0,
+  claimSkipped: 0,
+  retryQueued: 0,
+  failures: [],
+};
+
 @Injectable()
 export class DiscordReportCronService {
   private readonly logger = new Logger(DiscordReportCronService.name);
@@ -84,9 +94,38 @@ export class DiscordReportCronService {
           notificationCadence: 'daily',
           status: 'ACTIVE',
         };
+
+        // Window gate: only auto-send inside the days-before-exam window
+        // (same as Messenger). forceSend bypasses the window but still
+        // respects already-sent-today unless the caller clears it.
+        let examDateForOutbox: string | undefined;
+        try {
+          const userSchedule =
+            await this.reportScheduleService.shouldSendReportToday(
+              link.externalUserId,
+            );
+          examDateForOutbox = userSchedule.examDate;
+
+          if (!opts.forceSend && !userSchedule.shouldSend) {
+            this.logger.log(
+              `Skip Discord user ${link.externalUserId}: examDate=${userSchedule.examDate}, daysUntilExam=${userSchedule.daysUntilExam}, window=${userSchedule.minDays}-${userSchedule.maxDays}`,
+            );
+            return { ...ZERO, skipped: 1 };
+          }
+        } catch (err) {
+          if (!opts.forceSend) {
+            this.logger.warn(
+              `Skip Discord user ${link.externalUserId}: could not resolve exam schedule`,
+              err,
+            );
+            return { ...ZERO, skipped: 1 };
+          }
+        }
+
         return this.orchestrationService.claimAndSend(mapping, {
           reportDate,
           skipAlreadySentToday: !opts.forceSend,
+          examDateForOutbox,
         });
       },
     );

@@ -3,6 +3,7 @@ import { WispaceApiError } from '@wispace/wispace-client';
 import { PlatformStudentReportService } from '@wispace/student-report';
 import {
   ReportClaimRepositoryPort,
+  ReportScheduleService,
   todayReportDate,
 } from '@wispace/scheduler-core';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
@@ -20,19 +21,19 @@ const link = {
 } as unknown as ZaloAccountLinkEntity;
 
 function buildService(overrides: {
-  hasAnyPlatformSentReportToday?: jest.Mock;
+  listUserIdsWithSentReportToday?: jest.Mock;
   tryClaimScheduledReport?: jest.Mock;
   markScheduledReportClaimSent?: jest.Mock;
   releaseScheduledReportClaim?: jest.Mock;
   sendText?: jest.Mock;
   generateReport?: jest.Mock;
+  shouldSendReportToday?: jest.Mock;
 }) {
   const linkRepo = {
     find: jest.fn().mockResolvedValue([link]),
   } as unknown as Repository<ZaloAccountLinkEntity>;
-  const hasAnyPlatformSentReportToday =
-    overrides.hasAnyPlatformSentReportToday ??
-    jest.fn().mockResolvedValue(false);
+  const listUserIdsWithSentReportToday =
+    overrides.listUserIdsWithSentReportToday ?? jest.fn().mockResolvedValue([]);
   const tryClaimScheduledReport =
     overrides.tryClaimScheduledReport ?? jest.fn().mockResolvedValue(true);
   const markScheduledReportClaimSent =
@@ -42,7 +43,7 @@ function buildService(overrides: {
     overrides.releaseScheduledReportClaim ??
     jest.fn().mockResolvedValue(undefined);
   const claimRepo = {
-    hasAnyPlatformSentReportToday,
+    listUserIdsWithSentReportToday,
     tryClaimScheduledReport,
     markScheduledReportClaimSent,
     releaseScheduledReportClaim,
@@ -54,39 +55,89 @@ function buildService(overrides: {
   const reportService = {
     generateReport,
   } as unknown as PlatformStudentReportService;
+  const shouldSendReportToday =
+    overrides.shouldSendReportToday ??
+    jest.fn().mockResolvedValue({
+      shouldSend: true,
+      daysUntilExam: 3,
+      examDate: '2026-08-14',
+      minDays: 2,
+      maxDays: 3,
+    });
+  const reportScheduleService = {
+    shouldSendReportToday,
+  } as unknown as ReportScheduleService;
   const service = new ZaloReportCronService(
     linkRepo,
     claimRepo,
     outbound,
     reportService,
+    reportScheduleService,
   );
   return {
     service,
-    hasAnyPlatformSentReportToday,
+    listUserIdsWithSentReportToday,
     tryClaimScheduledReport,
     markScheduledReportClaimSent,
     releaseScheduledReportClaim,
     sendText,
     generateReport,
+    shouldSendReportToday,
   };
 }
 
 describe('ZaloReportCronService', () => {
+  it('skips without generating when outside the exam window', async () => {
+    const shouldSendReportToday = jest.fn().mockResolvedValue({
+      shouldSend: false,
+      daysUntilExam: 30,
+      examDate: '2026-09-10',
+      minDays: 2,
+      maxDays: 3,
+    });
+    const { service, generateReport, sendText, tryClaimScheduledReport } =
+      buildService({ shouldSendReportToday });
+
+    await service.sendDailyReports();
+
+    expect(generateReport).not.toHaveBeenCalled();
+    expect(sendText).not.toHaveBeenCalled();
+    expect(tryClaimScheduledReport).not.toHaveBeenCalled();
+  });
+
+  it('forces through the window when forceSend is set', async () => {
+    const shouldSendReportToday = jest.fn().mockResolvedValue({
+      shouldSend: false,
+      daysUntilExam: 30,
+      examDate: '2026-09-10',
+      minDays: 2,
+      maxDays: 3,
+    });
+    const { service, generateReport, sendText } = buildService({
+      shouldSendReportToday,
+    });
+
+    await service.sendDailyReports({ forceSend: true });
+
+    expect(generateReport).toHaveBeenCalledWith('zalo-1');
+    expect(sendText).toHaveBeenCalledWith('zalo-1', 'report');
+  });
+
   it('skips without sending or claiming when user already sent on another platform', async () => {
     const {
       service,
-      hasAnyPlatformSentReportToday,
+      listUserIdsWithSentReportToday,
       tryClaimScheduledReport,
       markScheduledReportClaimSent,
       sendText,
       generateReport,
     } = buildService({
-      hasAnyPlatformSentReportToday: jest.fn().mockResolvedValue(true),
+      listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([42]),
     });
 
     await service.sendDailyReports();
 
-    expect(hasAnyPlatformSentReportToday).toHaveBeenCalledWith(42, reportDate);
+    expect(listUserIdsWithSentReportToday).toHaveBeenCalledWith(reportDate);
     expect(generateReport).not.toHaveBeenCalled();
     expect(sendText).not.toHaveBeenCalled();
     expect(tryClaimScheduledReport).not.toHaveBeenCalled();

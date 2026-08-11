@@ -1,5 +1,5 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
-import { IsNumber, IsPositive } from 'class-validator';
+import { IsBoolean, IsNumber, IsOptional, IsPositive } from 'class-validator';
 import { InternalApiKeyGuard } from '@wispace/bot-common';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
 import { DopplerRuntimeSyncService } from '@wispace/doppler-sync';
@@ -10,6 +10,12 @@ class SyncStudyCalendarBody {
   @IsNumber()
   @IsPositive()
   userId!: number;
+}
+
+class SendReportsBody {
+  @IsOptional()
+  @IsBoolean()
+  forceSend?: boolean;
 }
 
 @Controller('zalo')
@@ -29,8 +35,10 @@ export class ZaloOpsController {
 
   @Post('send-reports')
   @HttpCode(200)
-  sendReports() {
-    return this.reportCronService.sendDailyReports();
+  sendReports(@Body() body?: SendReportsBody) {
+    return this.reportCronService.sendDailyReports({
+      forceSend: body?.forceSend === true,
+    });
   }
 
   @Post('study-calendar/sync')

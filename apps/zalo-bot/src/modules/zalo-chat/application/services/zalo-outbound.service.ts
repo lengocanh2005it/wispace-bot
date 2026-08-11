@@ -1,7 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
-import { DeliveryLogService } from '@wispace/database';
+import {
+  DeliveryLogService,
+  PlatformDeadLetterService,
+} from '@wispace/database';
 import { withRetry } from '@wispace/wispace-client';
 
 const SEND_TEXT_ENDPOINT = 'https://openapi.zalo.me/v3.0/oa/message/cs';
@@ -58,9 +61,16 @@ export class ZaloOutboundService {
   constructor(
     private readonly tokenService: ZaloTokenService,
     private readonly deliveryLogService: DeliveryLogService,
+    @Optional()
+    @Inject(PlatformDeadLetterService)
+    private readonly deadLetter?: PlatformDeadLetterService,
   ) {}
 
-  async sendText(zaloUserId: string, text: string): Promise<void> {
+  async sendText(
+    zaloUserId: string,
+    text: string,
+    options?: { skipDeadLetter?: boolean },
+  ): Promise<void> {
     try {
       await withRetry(() => this.sendTextOnce(zaloUserId, text), {
         maxRetries: 1,
@@ -85,6 +95,14 @@ export class ZaloOutboundService {
         messageType: 'chat',
         error: errorMessage(error),
       });
+      if (options?.skipDeadLetter !== true) {
+        await this.deadLetter?.save({
+          externalUserId: zaloUserId,
+          rawPayload: { zaloUserId, text },
+          errorMessage: errorMessage(error),
+          direction: 'outbound',
+        });
+      }
       throw error;
     }
   }

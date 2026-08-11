@@ -25,7 +25,11 @@ import {
   WispaceConfigService,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
-import { BotCommonModule, REDIS_CLIENT } from '@wispace/bot-common';
+import {
+  BotCommonModule,
+  PgAdvisoryLockService,
+  REDIS_CLIENT,
+} from '@wispace/bot-common';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
@@ -43,6 +47,7 @@ import {
   PlatformDeadLetterService,
   WebhookDeadLetterEntity,
   DeliveryLogService,
+  ScheduledReportClaimEntity,
 } from '@wispace/database';
 import {
   CleanupCronService,
@@ -73,6 +78,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       ZaloMessageLogEntity,
       WebhookDeadLetterEntity,
       ZaloOauthStateEntity,
+      ScheduledReportClaimEntity,
     ]),
   ],
   providers: [
@@ -186,6 +192,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           {
             promptDir: join(__dirname, '../../shared/prompts'),
             promptFile: 'zalo-chat.system.txt',
+            // Single retry layer — retryWithBackoff in PlatformAgentService
+            maxLlmRetries: 0,
           },
         ),
       inject: [
@@ -260,21 +268,31 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         deadLetterService: PlatformDeadLetterService,
         configService: ConfigService,
         outboundService: ZaloOutboundService,
+        pgLock: PgAdvisoryLockService,
       ) =>
-        new PlatformDeadLetterCronService(deadLetterService, configService, {
-          extractPayload: (payload) => ({
-            externalUserId:
-              (payload.zaloUserId as string | undefined) ??
-              (payload.sender as { id?: string } | undefined)?.id,
-            text:
-              (payload.text as string | undefined) ??
-              (payload.message as { text?: string } | undefined)?.text,
-          }),
-          abandonReason: 'Missing zaloUserId or text in payload',
-          sendText: (externalUserId, text) =>
-            outboundService.sendText(externalUserId, text),
-        }),
-      inject: [PlatformDeadLetterService, ConfigService, ZaloOutboundService],
+        new PlatformDeadLetterCronService(
+          deadLetterService,
+          configService,
+          pgLock,
+          {
+            lockId: 884_200_931,
+            extractPayload: (payload) => ({
+              externalUserId: payload.zaloUserId as string | undefined,
+              text: payload.text as string | undefined,
+            }),
+            abandonReason: 'Missing zaloUserId or text in payload',
+            sendText: (externalUserId, text) =>
+              outboundService.sendText(externalUserId, text, {
+                skipDeadLetter: true,
+              }),
+          },
+        ),
+      inject: [
+        PlatformDeadLetterService,
+        ConfigService,
+        ZaloOutboundService,
+        PgAdvisoryLockService,
+      ],
     },
     {
       provide: PlatformCleanupCronService,
@@ -285,6 +303,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         messageLogRepo: Repository<ZaloMessageLogEntity>,
         deadLetterRepo: Repository<WebhookDeadLetterEntity>,
         idempotencyRepo: Repository<ChatIdempotencyEntity>,
+        reportClaimRepo: Repository<ScheduledReportClaimEntity>,
         rateLimitService: PlatformChatRateLimitService,
       ) =>
         new PlatformCleanupCronService(cleanupService, configService, {
@@ -296,11 +315,13 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             idempotencyRecovery: 884_200_918,
             idempotencyCleanup: 884_200_919,
             oauthState: 884_200_913,
+            reportClaim: 884_200_921,
           },
           messageLogRepo,
           deadLetterRepo,
           idempotencyRepo,
           oauthStateRepo,
+          reportClaimRepo,
           rateLimitService,
         }),
       inject: [
@@ -310,6 +331,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         getRepositoryToken(ZaloMessageLogEntity),
         getRepositoryToken(WebhookDeadLetterEntity),
         getRepositoryToken(ChatIdempotencyEntity),
+        getRepositoryToken(ScheduledReportClaimEntity),
         PlatformChatRateLimitService,
       ],
     },

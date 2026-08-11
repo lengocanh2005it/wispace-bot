@@ -7,7 +7,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 const SHUTDOWN_LOGGER = new Logger('Shutdown');
-const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 10_000;
+const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 25_000;
 
 process.on('unhandledRejection', (reason) => {
   SHUTDOWN_LOGGER.error(

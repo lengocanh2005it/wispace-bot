@@ -103,9 +103,6 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
 
     return this.withPsidLock(psid, async (client) => {
       const state = await this.readState(client, psid);
-      if (state.texts.length === 0) {
-        return null;
-      }
 
       if (state.processing) {
         const startedAt = state.processingStartedAt ?? 0;
@@ -116,8 +113,23 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
           return null;
         }
 
+        // Crash recovery: a pod died mid-flush leaving texts=[], processing=true.
+        // Reset the flag and promote messages accumulated while it was stuck.
         state.processing = false;
         state.processingStartedAt = null;
+
+        if (state.pendingTexts.length > 0) {
+          state.texts = [...state.pendingTexts];
+          state.pendingTexts = [];
+          state.lastIdempotencyKey = state.lastPendingIdempotencyKey ?? null;
+          state.lastPendingIdempotencyKey = null;
+          // Claim immediately — the stuck job already consumed the debounce wait.
+          state.flushAfterAt = Date.now();
+        }
+      }
+
+      if (state.texts.length === 0) {
+        return null;
       }
 
       if (
@@ -184,8 +196,32 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       const ready: Array<{ psid: string; flushAfterAt: number }> = [];
 
       for (const psid of psids) {
+        // Buffer key expired (crash left no final writeState): drop the set
+        // member so the 2s poll stops GET-ing a missing key forever.
+        const keyExists = await client.exists(this.bufferKey(psid));
+        if (!keyExists) {
+          await client.srem(RedisChatQueueStore.ACTIVE_SET, psid);
+          continue;
+        }
+
         const state = await this.readState(client, psid);
+
+        const stuckProcessing =
+          state.processing &&
+          state.processingStartedAt !== null &&
+          state.processingStartedAt !== undefined &&
+          Date.now() - state.processingStartedAt >= processingStuckMs;
+
+        // A wedged psid (processing=true, texts cleared by a crashed pod) is
+        // ready too — claimReadyBuffer promotes pendingTexts on reset.
         if (state.texts.length === 0) {
+          if (!stuckProcessing) {
+            continue;
+          }
+          ready.push({
+            psid,
+            flushAfterAt: state.processingStartedAt ?? state.updatedAt,
+          });
           continue;
         }
 
@@ -194,12 +230,6 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
           state.flushAfterAt !== null &&
           state.flushAfterAt !== undefined &&
           state.flushAfterAt <= Date.now();
-
-        const stuckProcessing =
-          state.processing &&
-          state.processingStartedAt !== null &&
-          state.processingStartedAt !== undefined &&
-          Date.now() - state.processingStartedAt >= processingStuckMs;
 
         if (flushReady || stuckProcessing) {
           ready.push({

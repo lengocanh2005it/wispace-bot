@@ -10,7 +10,12 @@ import {
 } from '@wispace/chat-metering';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { WispaceGoalsService } from '@wispace/wispace-client';
-import { REPORT_CLAIM_REPOSITORY } from '@wispace/scheduler-core';
+import {
+  GOALS_DATA_PORT,
+  REPORT_CLAIM_REPOSITORY,
+  ReportScheduleService,
+  parseExamDateToIso,
+} from '@wispace/scheduler-core';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import {
   ScheduledReportClaimEntity,
@@ -32,6 +37,17 @@ import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-
   ],
   providers: [
     ZaloReportCronService,
+    {
+      provide: GOALS_DATA_PORT,
+      useFactory: (goalsService: WispaceGoalsService) => ({
+        getUserGoals: async (externalUserId: string) => ({
+          examDate: (await goalsService.getUserGoals(externalUserId)).examDate,
+        }),
+        parseExamDate: (examDate: string) => parseExamDateToIso(examDate),
+      }),
+      inject: [WispaceGoalsService],
+    },
+    ReportScheduleService,
     {
       provide: REPORT_CLAIM_REPOSITORY,
       useFactory: (repo: Repository<ScheduledReportClaimEntity>) =>

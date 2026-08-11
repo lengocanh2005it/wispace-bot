@@ -16,10 +16,17 @@ export interface RedisWebhookDedupeStoreOptions {
  * Shared Redis webhook dedupe store. Keys are platform-scoped
  * (`dedupe:mid:{platform}:{id}`) so multiple bots sharing one Redis instance
  * never collide.
+ *
+ * Failure philosophy: fail-open with an in-process fallback. When Redis errors
+ * mid-run we mark the key in a local map instead of dropping the event — a
+ * lost user message is worse than a rare duplicate, and the per-platform
+ * idempotency layer catches true duplicates. The fallback is per-instance
+ * (single-pod dedupe) until Redis recovers.
  */
 @Injectable()
 export class RedisWebhookDedupeStore {
   private readonly logger = new Logger(RedisWebhookDedupeStore.name);
+  private readonly fallbackSeen = new Map<string, number>();
 
   constructor(
     @Inject(REDIS_CLIENT)
@@ -51,10 +58,30 @@ export class RedisWebhookDedupeStore {
     );
   }
 
+  /**
+   * Forget a message mid (Redis key + in-process fallback) so a dead-letter
+   * replay can re-process the event.
+   */
+  async forgetMessageMid(mid: string): Promise<void> {
+    const key = `dedupe:mid:${this.options.platform}:${mid}`;
+    this.fallbackSeen.delete(key);
+
+    const client = this.redisClient.getNativeClient();
+    if (client) {
+      try {
+        await client.del(key);
+      } catch (error) {
+        this.logger.warn(
+          `Redis webhook dedupe forget failed key=${key}: ${errorMessage(error)}`,
+        );
+      }
+    }
+  }
+
   private async tryMarkKey(key: string, ttlSeconds: number): Promise<boolean> {
     const client = this.redisClient.getNativeClient();
     if (!client) {
-      return false;
+      return this.markInMemory(key, ttlSeconds);
     }
 
     try {
@@ -62,10 +89,29 @@ export class RedisWebhookDedupeStore {
       return result !== 'OK';
     } catch (error) {
       this.logger.warn(
-        `Redis webhook dedupe failed key=${key}: ${errorMessage(error)}`,
+        `Redis webhook dedupe failed key=${key}: ${errorMessage(error)} — falling back to in-memory dedupe`,
       );
-      // Fail closed: reprocessing is safer than accepting an unbounded burst.
+      // Fail-open: dedupe in this process only; never drop the event.
+      return this.markInMemory(key, ttlSeconds);
+    }
+  }
+
+  private markInMemory(key: string, ttlSeconds: number): boolean {
+    const now = Date.now();
+    this.evictStaleFallback(now);
+    const expiry = this.fallbackSeen.get(key);
+    if (expiry !== undefined && expiry > now) {
       return true;
+    }
+    this.fallbackSeen.set(key, now + ttlSeconds * 1000);
+    return false;
+  }
+
+  private evictStaleFallback(now: number): void {
+    for (const [key, expiry] of this.fallbackSeen) {
+      if (expiry <= now) {
+        this.fallbackSeen.delete(key);
+      }
     }
   }
 }

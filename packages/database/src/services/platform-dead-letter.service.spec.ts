@@ -21,7 +21,7 @@ describe('PlatformDeadLetterService', () => {
     };
   };
 
-  it('saves dead letter entry with pending status and platform', async () => {
+  it('saves dead letter entry with pending status, platform and inbound direction', async () => {
     const { service, saveMock } = buildService('zalo');
 
     await service.save({
@@ -33,8 +33,29 @@ describe('PlatformDeadLetterService', () => {
     expect(saveMock).toHaveBeenCalledWith({
       platform: 'zalo',
       externalUserId: 'u1',
+      direction: 'inbound',
       rawPayload: { event: 'test' },
       errorMessage: 'something failed',
+      status: 'pending',
+    });
+  });
+
+  it('persists outbound direction when saving a send failure', async () => {
+    const { service, saveMock } = buildService('discord');
+
+    await service.save({
+      externalUserId: 'u1',
+      rawPayload: { discordUserId: 'u1', text: 'hi' },
+      errorMessage: 'send failed',
+      direction: 'outbound',
+    });
+
+    expect(saveMock).toHaveBeenCalledWith({
+      platform: 'discord',
+      externalUserId: 'u1',
+      direction: 'outbound',
+      rawPayload: { discordUserId: 'u1', text: 'hi' },
+      errorMessage: 'send failed',
       status: 'pending',
     });
   });

@@ -40,7 +40,33 @@ Related: [project-overview.md](./project-overview.md), [study-session-reminder.m
 | **DISCORD** ✓ | Discord bot (functional) | 3–5 days | Chat + quota + pending cap + typing indicator + 6/7 tool handlers |
 | **ZALO** ✓ | Zalo bot (fully functional) | 3–5 days | Chat + quota + account linking + 6/7 tool handlers + 08:00 report cron + study reminders + dead letter + ops endpoints + CI/CD + chat queue + pending cap + typing indicator + Redis burst counter + LLM report enrichment + Doppler webhook |
 
-**Recommended order:** ~~Q1/S0/I1/S1/L1/R1/L2/R2/R3/L3/R4/R5/S2~~ (✓) → `CHAT_QUEUE_SHARED` at scale → remaining items per user feedback.
+**Recommended order:** ~~Q1/S0/I1/S1/L1/R1/L2/R2/R3/L3/R4/R5/S2~~ (✓) → **Batch 1 edge-case hardening (✓, branch `fix/edge-cases-batch1`)** → `CHAT_QUEUE_SHARED` at scale → remaining items per user feedback.
+
+## Batch 1 — Edge-case hardening (Done ✓, `fix/edge-cases-batch1`)
+
+New edge cases found in a full codebase scan (beyond the roadmap below) and fixed in one PR:
+
+| Fix | Finding | Change |
+|-----|---------|--------|
+| **A** | Redis dedupe fail-closed **dropped messages** when Redis errored mid-run | Fail-open + in-process fallback (`RedisWebhookDedupeStore`) — never drop; duplicate risk bounded by DB idempotency |
+| **B** | Dead-letter replay was a no-op: mid marked before execution → replay hit dedupe → `replayed` without processing | Forget the mid when saving the DL entry (`forgetMessageMid` on port + memory + Redis stores) |
+| **C** | Redis chat queue wedged after pod crash: stuck-recovery was dead code (empty-texts check ran first) | Stuck check runs first; wedged state promotes `pendingTexts`; leaked `active-psids` set members dropped |
+| **D** | 30-min sync reopened in-flight `processing` jobs → duplicate reminders | Sync passes `reopenOnlyOnScheduleChange: true` (schedule change reopens; unchanged keeps processing/sent) |
+| **E** | Calendar API failures swallowed → sync **cancelled the whole outbox** + tools told users "no sessions" | Swallow removed (throw is default); sync skips cancellation on failure; agent tools surface errors; unlinked users still get `[]` |
+| **F** | Discord/Zalo 08:00 crons ignored the 2–3 day exam window (daily reports for everyone) | Window gate added (same as Messenger) + checked **before** LLM generate; Zalo ops `send-reports` accepts `forceSend` |
+| **G** | Zalo dead-letter retry **echoed the user's own text** (inbound events retried as outbound) | `direction` column (migration `1751029200011`); cron replays `outbound` only; Zalo dead-letters outbound failures; advisory lock + validated env parsing |
+| **H** | Stuck `reserved` quota slots never auto-recovered; ops scripts queried pre-rename tables | `chat-quota-stuck-recovery` cron (5 min, advisory lock 884200906); scripts updated to `chat_idempotency`/`chat_daily_usage`/`chat_quota_events` |
+| **I** | Report claim leaked on non-retryable errors; Meta Send 5xx never entered R5 outbox; crash between claim and send burned the day | Claim released on **every** error; `MessengerApiError` 5xx/408 → R5 job; partial bubble send marked sent; `report-claims-stale-reset` cron (30 min, 884200907, `REPORT_CLAIM_STALE_RESET_MS`) |
+| **J** | Graceful shutdown dropped debounced/in-flight messages | `DebounceChatQueue.destroy()` drains buffers first; shutdown timeout 10s → 25s |
+| **K** | Grounding check false positives blocked generic advice ("bạn có thể đạt 6.5…", "lúc 19:30") | Regexes tightened (score keyword + decimal; schedule context + time); user-echoed dates suppressed |
+| **M1** | `register_exam_report_notifications` lied on Discord/Zalo (`registered:true`, no side effect) | Returns `automatic:true, registered:false` + honest message ("không cần đăng ký riêng") |
+| **M2** | Discord retry dispatch could double-send after an ops resend | `skipAlreadySentToday: true`; `skipped` → job marked sent |
+| **M3** | Discord/Zalo claim catch-all made DB outages look like "already claimed" (silent skip) | `ON CONFLICT DO NOTHING` — only genuine duplicates return false |
+| **M4** | Redis configured but down at boot → `/health` said `disabled` (200, deploy passed degraded) | New `isConfiguredEnabled()`; health reports `error` + 503 |
+| **M5** | Dead-letter cleanup on the shared table purged **all platforms'** entries | Delete filtered by `platform` |
+| **M6** | Reminder `claimJob` didn't bump `updated_at` → stuck-reset could re-claim a live job (double-send) | `updated_at = now()` in the claim UPDATE |
+| **M8** | (Already fixed) Discord/Zalo `maxLlmRetries: 0` — nested 9× retry stack avoided | — |
+| **M10** | Bubble splitting silently truncated reports past `maxBubbles` | Last bubble gets `…` continuation marker |
 
 ```mermaid
 flowchart LR

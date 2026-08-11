@@ -98,7 +98,7 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
       {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
-        skipAlreadySentToday: false,
+        skipAlreadySentToday: true,
         examDateForOutbox: '2026-08-20',
       },
     );

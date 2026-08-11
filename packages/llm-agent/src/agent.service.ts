@@ -319,7 +319,11 @@ export class LlmAgentService<TToolContext> {
             throw new Error('LLM provider returned empty content');
           }
 
-          const groundingCheck = checkLlmGrounding(text, groundedToolsThisTurn);
+          const groundingCheck = checkLlmGrounding(
+            text,
+            groundedToolsThisTurn,
+            input.userText,
+          );
           if (groundingCheck.suspicious) {
             logger.warn(
               `LLM_GROUNDING_WARNING feature=${FEATURE} externalUserId=${input.externalUserId} reason=${groundingCheck.reason} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
@@ -505,6 +509,11 @@ export class LlmAgentService<TToolContext> {
     logger: { warn: (msg: string) => void },
   ): Promise<T> {
     const maxRetries = this.getMaxLlmRetries();
+    if (maxRetries === 0) {
+      // Retries disabled — single attempt, throw the raw error so the outer
+      // llmExecution layer (retryWithBackoff) can classify it itself.
+      return fn();
+    }
     const baseDelay = this.getRetryBaseDelayMs();
     let lastErr: unknown;
 
@@ -535,7 +544,9 @@ export class LlmAgentService<TToolContext> {
 
   private getMaxLlmRetries(): number {
     const v = this.config.maxLlmRetries;
-    if (v && Number.isFinite(v) && v > 0) return Math.floor(v);
+    if (v !== undefined && v !== null && Number.isFinite(v) && v >= 0) {
+      return Math.floor(v);
+    }
     return DEFAULT_MAX_LLM_RETRIES;
   }
 

@@ -26,12 +26,16 @@ export interface CleanupCronJobsConfig {
     idempotencyCleanup: number;
     /** Zalo-only 5th cron (oauth state cleanup). */
     oauthState?: number;
+    /** Report claims retention cleanup. */
+    reportClaim?: number;
   };
   messageLogRepo: Repository<{ createdAt: Date }>;
   deadLetterRepo: Repository<WebhookDeadLetterEntity>;
   idempotencyRepo: Repository<ChatIdempotencyEntity>;
   /** Zalo-only oauth state cleanup repo. */
   oauthStateRepo?: Repository<{ createdAt: Date }>;
+  /** Report claims (scheduled_report_claims) retention cleanup repo. */
+  reportClaimRepo?: Repository<{ createdAt: Date }>;
   rateLimitService: {
     isEnabled(): boolean;
     recoverStuckReservedSlots(): Promise<{ recovered: string[] }>;
@@ -92,6 +96,13 @@ export class PlatformCleanupCronService
         () => this.handleOAuthStateCleanup(),
       );
     }
+    if (this.config.reportClaimRepo && this.config.lockIds.reportClaim) {
+      this.register(
+        `${this.config.platform}-report-claims-cleanup`,
+        '0 45 3 * * *',
+        () => this.handleReportClaimsCleanup(),
+      );
+    }
   }
 
   onModuleDestroy(): void {
@@ -135,6 +146,7 @@ export class PlatformCleanupCronService
       (cutoff) =>
         this.config.deadLetterRepo
           .delete({
+            platform: this.config.platform as never,
             status: ['replayed', 'abandoned'] as never,
             createdAt: LessThan(cutoff),
           })
@@ -220,6 +232,35 @@ export class PlatformCleanupCronService
       },
       () => true,
       () => 0,
+    );
+  }
+
+  /**
+   * scheduled_report_claims grows one row per user per day (all platforms) —
+   * delete rows older than the retention window. Runs in all bots; the
+   * advisory lock makes it a single effective execution per run.
+   */
+  async handleReportClaimsCleanup(): Promise<void> {
+    const { envPrefix } = this.config;
+    const retentionDays = this.parseRetentionDays(
+      `${envPrefix}REPORT_CLAIMS_RETENTION_DAYS`,
+      90,
+    )();
+    await this.cleanupService.execute(
+      {
+        name: `${this.config.platform}-report-claims-cleanup`,
+        advisoryLockId: this.config.lockIds.reportClaim!,
+        cronExpression: '0 45 3 * * *',
+        enabledConfigKey: `${envPrefix}REPORT_CLAIMS_CLEANUP_ENABLED`,
+        retentionDaysConfigKey: `${envPrefix}REPORT_CLAIMS_RETENTION_DAYS`,
+        defaultRetentionDays: 90,
+      },
+      (cutoff) =>
+        this.config
+          .reportClaimRepo!.delete({ createdAt: LessThan(cutoff) })
+          .then((r) => r.affected ?? 0),
+      this.parseEnabled(`${envPrefix}REPORT_CLAIMS_CLEANUP_ENABLED`),
+      () => retentionDays,
     );
   }
 

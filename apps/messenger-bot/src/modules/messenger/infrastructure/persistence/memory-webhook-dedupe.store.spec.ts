@@ -32,4 +32,13 @@ describe('MemoryWebhookDedupeStore', () => {
       store.isDuplicatePostback('psid-1', 'MENU_REPORT'),
     ).resolves.toBe(true);
   });
+
+  it('re-processes a mid after forgetMessageMid (dead-letter replay path)', async () => {
+    const store = createStore();
+    await store.isDuplicateMessageMid('mid-1', 'psid-1');
+    await store.forgetMessageMid('mid-1', 'psid-1');
+    await expect(store.isDuplicateMessageMid('mid-1', 'psid-1')).resolves.toBe(
+      false,
+    );
+  });
 });

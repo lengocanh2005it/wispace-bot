@@ -114,8 +114,8 @@ export class PlatformChatQueueService implements OnModuleDestroy {
     );
   }
 
-  onModuleDestroy(): void {
-    this.queue.destroy();
+  async onModuleDestroy(): Promise<void> {
+    await this.queue.destroy();
   }
 
   enqueue(

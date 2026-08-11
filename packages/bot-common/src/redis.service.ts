@@ -30,6 +30,10 @@ export class RedisService
     return this.enabled && this.client !== null;
   }
 
+  isConfiguredEnabled(): boolean {
+    return this.enabled;
+  }
+
   getHost(): string {
     return this.configService.get<string>('REDIS_HOST')?.trim() || '127.0.0.1';
   }

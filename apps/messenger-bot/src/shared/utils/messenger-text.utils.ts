@@ -24,7 +24,10 @@ export function splitMessengerBubbles(
     paragraphs.length > 1 &&
     paragraphs.every((part) => part.length <= maxCharsPerBubble)
   ) {
-    return paragraphs.slice(0, maxBubbles);
+    return markTruncated(
+      paragraphs.slice(0, maxBubbles),
+      paragraphs.length > maxBubbles,
+    );
   }
 
   if (paragraphs.length === 1 && trimmed.length <= maxCharsPerBubble) {
@@ -33,6 +36,7 @@ export function splitMessengerBubbles(
 
   const bubbles: string[] = [];
   let current = '';
+  let droppedTail = false;
 
   const pushCurrent = () => {
     if (!current) {
@@ -44,6 +48,7 @@ export function splitMessengerBubbles(
 
   for (const paragraph of paragraphs) {
     if (bubbles.length >= maxBubbles) {
+      droppedTail = true;
       break;
     }
 
@@ -55,6 +60,7 @@ export function splitMessengerBubbles(
 
     pushCurrent();
     if (bubbles.length >= maxBubbles) {
+      droppedTail = true;
       break;
     }
 
@@ -63,28 +69,41 @@ export function splitMessengerBubbles(
       continue;
     }
 
-    for (
-      let offset = 0;
-      offset < paragraph.length;
-      offset += maxCharsPerBubble
-    ) {
+    let offset = 0;
+    for (; offset < paragraph.length; offset += maxCharsPerBubble) {
       if (bubbles.length >= maxBubbles) {
+        droppedTail = true;
         break;
       }
       bubbles.push(paragraph.slice(offset, offset + maxCharsPerBubble));
     }
+    droppedTail = offset < paragraph.length;
   }
 
   pushCurrent();
 
   if (!bubbles.length) {
-    return [trimmed.slice(0, maxCharsPerBubble)];
+    return [
+      trimmed.length > maxCharsPerBubble
+        ? `${trimmed.slice(0, maxCharsPerBubble - 1).trimEnd()}…`
+        : trimmed,
+    ];
   }
 
   if (bubbles.length > maxBubbles) {
-    return bubbles.slice(0, maxBubbles);
+    return markTruncated(bubbles.slice(0, maxBubbles), true);
   }
 
+  return markTruncated(bubbles, droppedTail);
+}
+
+/** Appends a continuation marker to the last bubble when content was dropped. */
+function markTruncated(bubbles: string[], truncated: boolean): string[] {
+  if (!truncated || bubbles.length === 0) {
+    return bubbles;
+  }
+  const last = bubbles[bubbles.length - 1];
+  bubbles[bubbles.length - 1] = `${last.replace(/\s+$/, '')}…`;
   return bubbles;
 }
 

@@ -112,6 +112,7 @@ export class DiscordOutboundService {
           externalUserId: discordUserId,
           rawPayload: { discordUserId, text },
           errorMessage: errorMsg,
+          direction: 'outbound',
         });
       }
       return undefined;
