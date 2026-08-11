@@ -70,20 +70,64 @@ export class MessengerRepository
     cadence?: NotificationCadence;
   }): Promise<UserMessengerMapping> {
     const token = buildPocPsidToken(params.psid);
-    const existing = await this.mappingRepo.findOne({
-      where: { platform: PLATFORM, externalUserId: params.psid },
+
+    // Atomic upsert against the partial unique index
+    // (external_user_id WHERE status='ACTIVE'): concurrent link events
+    // (opt-ins have no mid, so dedupe never filters them) can no longer
+    // race findOne→save into a unique-violation 500.
+    const rows: Array<Record<string, unknown>> =
+      await this.mappingRepo.manager.query(
+        `
+        INSERT INTO user_platform_mappings
+          (platform, external_user_id, user_id, notification_messages_token, topic, cadence, status)
+        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE')
+        ON CONFLICT (external_user_id) WHERE status = 'ACTIVE' AND external_user_id IS NOT NULL
+        DO UPDATE SET
+          user_id = EXCLUDED.user_id,
+          platform = EXCLUDED.platform,
+          notification_messages_token = COALESCE(
+            user_platform_mappings.notification_messages_token,
+            EXCLUDED.notification_messages_token
+          ),
+          topic = COALESCE(EXCLUDED.topic, user_platform_mappings.topic),
+          cadence = COALESCE(EXCLUDED.cadence, user_platform_mappings.cadence),
+          status = 'ACTIVE',
+          updated_at = now()
+        RETURNING *
+      `,
+        [
+          PLATFORM,
+          params.psid,
+          params.userId,
+          token,
+          params.topic ?? null,
+          params.cadence ?? null,
+        ],
+      );
+
+    if (rows.length > 0) {
+      return this.mapEntity(this.mapRawRow(rows[0]));
+    }
+
+    // No ACTIVE row: re-activate a previously deactivated mapping (keeps its
+    // id) or create a fresh one.
+    const inactive = await this.mappingRepo.findOne({
+      where: {
+        platform: PLATFORM,
+        externalUserId: params.psid,
+        status: 'INACTIVE',
+      },
     });
 
-    if (existing) {
-      existing.userId = params.userId;
-      existing.externalUserId = params.psid;
-      existing.notificationMessagesToken =
-        existing.notificationMessagesToken || token;
-      existing.topic = params.topic ?? existing.topic;
-      existing.cadence = params.cadence ?? existing.cadence;
-      existing.status = 'ACTIVE';
+    if (inactive) {
+      inactive.userId = params.userId;
+      inactive.notificationMessagesToken =
+        inactive.notificationMessagesToken || token;
+      inactive.topic = params.topic ?? inactive.topic;
+      inactive.cadence = params.cadence ?? inactive.cadence;
+      inactive.status = 'ACTIVE';
 
-      const saved = await this.mappingRepo.save(existing);
+      const saved = await this.mappingRepo.save(inactive);
       return this.mapEntity(saved);
     }
 
@@ -420,6 +464,26 @@ export class MessengerRepository
 
     const saved = await this.logRepo.save(created);
     return this.mapLogEntity(saved);
+  }
+
+  /** Raw query rows come back snake_case — normalize to the entity shape. */
+  private mapRawRow(row: Record<string, unknown>): UserPlatformMappingEntity {
+    return {
+      id: Number(row.id),
+      userId:
+        row.user_id === null || row.user_id === undefined
+          ? null
+          : Number(row.user_id),
+      platform: String(row.platform),
+      externalUserId:
+        typeof row.external_user_id === 'string' ? row.external_user_id : null,
+      notificationMessagesToken: String(row.notification_messages_token),
+      cadence: (row.cadence as NotificationCadence | null) ?? null,
+      topic: (row.topic as string | null) ?? null,
+      status: (row.status as 'ACTIVE' | 'INACTIVE') ?? 'ACTIVE',
+      createdAt: new Date(String(row.created_at)),
+      updatedAt: new Date(String(row.updated_at)),
+    };
   }
 
   private mapEntity(entity: UserPlatformMappingEntity): UserMessengerMapping {

@@ -12,6 +12,7 @@ import { ChatQuotaEventEntity } from '../../infrastructure/database/entities/cha
 import { ChatQuotaEventCleanupCronService } from './application/services/chat-quota-event-cleanup-cron.service';
 import { ChatQuotaEventRecorderService } from './application/services/chat-quota-event-recorder.service';
 import { ChatQuotaStuckRecoveryCronService } from './application/services/chat-quota-stuck-recovery-cron.service';
+import { ChatIdempotencyCleanupCronService } from './application/services/chat-idempotency-cleanup-cron.service';
 import { ChatRateLimitConfigService } from './application/services/chat-rate-limit-config.service';
 import { ChatRateLimitStartupService } from './application/services/chat-rate-limit-startup.service';
 import { ChatRateLimitService } from './application/services/chat-rate-limit.service';
@@ -119,6 +120,7 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
     ChatRateLimitService,
     ChatQuotaOpsService,
     ChatQuotaStuckRecoveryCronService,
+    ChatIdempotencyCleanupCronService,
     ChatRateLimitRepository,
     {
       provide: CHAT_QUOTA_REPOSITORY,
