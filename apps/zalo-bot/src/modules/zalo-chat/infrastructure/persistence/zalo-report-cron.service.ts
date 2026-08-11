@@ -9,7 +9,7 @@ import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import {
   REPORT_CLAIM_REPOSITORY,
   ReportScheduleService,
-  resolveExamWindowOrNull,
+  evaluateExamWindow,
   runBatched,
   todayReportDate,
 } from '@wispace/scheduler-core';
@@ -95,7 +95,7 @@ export class ZaloReportCronService {
     // Window gate: only auto-send inside the days-before-exam window
     // (same as Messenger/Discord). forceSend bypasses the window.
     if (!forceSend) {
-      const window = await resolveExamWindowOrNull(
+      const window = await evaluateExamWindow(
         link.externalUserId,
         this.reportScheduleService,
         false,

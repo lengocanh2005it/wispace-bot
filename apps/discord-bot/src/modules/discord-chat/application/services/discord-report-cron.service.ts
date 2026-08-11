@@ -5,7 +5,7 @@ import {
   ReportCronLeaderService,
   ReportCronLockService,
   ReportScheduleService,
-  resolveExamWindowOrNull,
+  evaluateExamWindow,
   todayReportDate,
   runBatched,
 } from '@wispace/scheduler-core';
@@ -99,7 +99,7 @@ export class DiscordReportCronService {
         // Window gate: only auto-send inside the days-before-exam window
         // (same as Messenger). forceSend bypasses the window but still
         // respects already-sent-today unless the caller clears it.
-        const window = await resolveExamWindowOrNull(
+        const window = await evaluateExamWindow(
           link.externalUserId,
           this.reportScheduleService,
           opts.forceSend === true,

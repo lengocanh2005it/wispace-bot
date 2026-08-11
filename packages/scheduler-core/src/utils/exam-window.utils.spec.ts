@@ -1,7 +1,7 @@
-import { resolveExamWindowOrNull } from './exam-window.utils';
+import { evaluateExamWindow } from './exam-window.utils';
 import type { ReportScheduleService } from '../services/report-schedule.service';
 
-describe('resolveExamWindowOrNull', () => {
+describe('evaluateExamWindow', () => {
   const buildSchedule = (
     overrides: {
       shouldSend?: boolean;
@@ -21,7 +21,7 @@ describe('resolveExamWindowOrNull', () => {
     }) as unknown as ReportScheduleService;
 
   it('allows send inside the window and returns the exam date', async () => {
-    const result = await resolveExamWindowOrNull(
+    const result = await evaluateExamWindow(
       'user-1',
       buildSchedule({ shouldSend: true }),
       false,
@@ -30,7 +30,7 @@ describe('resolveExamWindowOrNull', () => {
   });
 
   it('skips outside the window', async () => {
-    const result = await resolveExamWindowOrNull(
+    const result = await evaluateExamWindow(
       'user-1',
       buildSchedule({ shouldSend: false }),
       false,
@@ -39,7 +39,7 @@ describe('resolveExamWindowOrNull', () => {
   });
 
   it('skips when the exam schedule cannot be resolved', async () => {
-    const result = await resolveExamWindowOrNull(
+    const result = await evaluateExamWindow(
       'user-1',
       buildSchedule({ reject: true }),
       false,
@@ -48,7 +48,7 @@ describe('resolveExamWindowOrNull', () => {
   });
 
   it('forceSend bypasses the window but keeps the exam date', async () => {
-    const result = await resolveExamWindowOrNull(
+    const result = await evaluateExamWindow(
       'user-1',
       buildSchedule({ shouldSend: false }),
       true,
@@ -57,7 +57,7 @@ describe('resolveExamWindowOrNull', () => {
   });
 
   it('forceSend with an unresolvable schedule still sends (no exam date for outbox)', async () => {
-    const result = await resolveExamWindowOrNull(
+    const result = await evaluateExamWindow(
       'user-1',
       buildSchedule({ reject: true }),
       true,

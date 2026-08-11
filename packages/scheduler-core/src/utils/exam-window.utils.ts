@@ -1,12 +1,7 @@
-import type { ReportScheduleService } from '../services/report-schedule.service';
-
-export interface ExamWindowResult {
-  examDate: string;
-  shouldSend: boolean;
-  daysUntilExam: number;
-  minDays: number;
-  maxDays: number;
-}
+import type {
+  ExamWindowResult,
+  ReportScheduleService,
+} from '../services/report-schedule.service';
 
 /**
  * Resolves the exam window for a user, or null when the exam schedule cannot
@@ -29,9 +24,9 @@ export async function resolveExamWindow(
  * - `forceSend` bypasses the window entirely.
  * - Otherwise the report is skipped when the exam schedule is unknown or the
  *   exam is outside the configured days-before-exam window.
- * Returns the exam date (for the R5 outbox) or null.
+ * Returns the exam date (for the R5 outbox) or undefined when skipped.
  */
-export async function resolveExamWindowOrNull(
+export async function evaluateExamWindow(
   externalUserId: string,
   reportScheduleService: ReportScheduleService,
   forceSend: boolean,

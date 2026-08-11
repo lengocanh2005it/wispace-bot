@@ -19,8 +19,7 @@ export {
 export * from './utils/batch.utils';
 export {
   resolveExamWindow,
-  resolveExamWindowOrNull,
-  type ExamWindowResult,
+  evaluateExamWindow,
 } from './utils/exam-window.utils';
 
 // Services
