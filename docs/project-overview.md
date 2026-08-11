@@ -337,6 +337,16 @@ LLM safety:
 - External data from WISPACE/user profile entering reminders/reports must be sanitized via `src/shared/utils/prompt-injection.utils.ts`.
 - JSON output from OpenAI must be parsed + shape-validated via `src/shared/utils/llm-json-output.utils.ts`; invalid shape falls back to template, no direct type casting for formatting.
 
+## 7.1. AbortSignal propagation (LLM + WISPACE calls)
+
+Timeout/cancellation now aborts the underlying request instead of only rejecting the caller:
+
+- **Shared utils** — `packages/bot-common/src/abort.utils.ts`: `isAbortError` (matches `AbortError` + `TimeoutError` deadlines) and signal-aware `sleep(ms, signal)` (rejects on abort). Re-exported by `packages/llm-agent/src/utils/retry.utils.ts` and `packages/wispace-client/src/utils/with-retry.ts`.
+- **LLM** — `LlmAgentInput.signal` / `LlmJsonRequest.signal` propagate through `agent.service` → OpenAI adapter (`completions.create` second arg) → failover loop stops on abort. The agent loop aborts the in-flight provider call on its own `globalAgentTimeoutMs` deadline; retry backoff sleeps abort when the signal fires. `LlmExecutionService` (messenger) accepts `LlmExecutionContext.signal` and merges it with a per-call deadline for `retryWithBackoff`.
+- **WISPACE clients** — each fetch attempt uses `mergeWithTimeout(callerSignal, requestTimeoutMs)` (`packages/wispace-client/src/utils/abort-signal.utils.ts`): the caller signal cancels the whole call, the per-attempt timeout aborts the in-flight fetch so no retry overlaps a timed-out request. `AbortError`/`TimeoutError` are never retried (`isWispaceRetryable` / retry-loop guards).
+- **Budgets** — circuit-breaker timeout = total budget: `computeCircuitBreakerTimeout(requestTimeoutMs, maxRetries)` = `requestTimeoutMs * (maxRetries + 1) + 10_000` (see `packages/wispace-client/src/utils/with-retry.ts`).
+- `UserCalendarScheduleClient.getCalendarSessions({ swallowErrors: true })` rethrows abort errors — cancellation is never masked as "no sessions".
+
 ---
 
 ## 8. `.env` Configuration

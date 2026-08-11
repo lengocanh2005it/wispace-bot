@@ -1,10 +1,22 @@
-import { withRetry, isAbortError, isWispaceRetryable } from './with-retry';
+import {
+  withRetry,
+  isAbortError,
+  isWispaceRetryable,
+  createCircuitBreaker,
+  computeCircuitBreakerTimeout,
+} from './with-retry';
 
 describe('wispace-client/with-retry', () => {
   describe('isAbortError', () => {
     it('returns true for error with name=AbortError', () => {
       const err = new Error('aborted');
       err.name = 'AbortError';
+      expect(isAbortError(err)).toBe(true);
+    });
+
+    it('returns true for error with name=TimeoutError (deadline)', () => {
+      const err = new Error('timed out');
+      err.name = 'TimeoutError';
       expect(isAbortError(err)).toBe(true);
     });
 
@@ -137,6 +149,76 @@ describe('wispace-client/with-retry', () => {
         }),
       ).rejects.toThrow(err);
       expect(fn).toHaveBeenCalledTimes(3); // initial + 2 retries
+    });
+
+    it('aborts the in-flight attempt before any retry starts (no overlap)', async () => {
+      const controller = new AbortController();
+      let inFlightSettled = false;
+      const fn = jest.fn().mockImplementation(() => {
+        if (!inFlightSettled) {
+          return new Promise((_, reject) => {
+            controller.signal.addEventListener(
+              'abort',
+              () => {
+                inFlightSettled = true;
+                reject(
+                  controller.signal.reason instanceof Error
+                    ? controller.signal.reason
+                    : new Error('Aborted'),
+                );
+              },
+              { once: true },
+            );
+          });
+        }
+        return Promise.resolve('ok');
+      });
+
+      const promise = withRetry(fn, {
+        maxRetries: 3,
+        baseDelayMs: 0,
+        shouldRetry: isWispaceRetryable,
+        signal: controller.signal,
+      });
+      controller.abort(new Error('caller aborted'));
+
+      await expect(promise).rejects.toThrow('caller aborted');
+      expect(inFlightSettled).toBe(true);
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it('never retries a deadline error (TimeoutError)', async () => {
+      const timeoutErr = new Error('deadline exceeded');
+      timeoutErr.name = 'TimeoutError';
+      const fn = jest.fn().mockRejectedValue(timeoutErr);
+
+      await expect(
+        withRetry(fn, {
+          maxRetries: 3,
+          baseDelayMs: 10,
+          shouldRetry: () => true,
+        }),
+      ).rejects.toThrow(timeoutErr);
+
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('computeCircuitBreakerTimeout', () => {
+    it('covers one request per attempt plus a buffer', () => {
+      expect(computeCircuitBreakerTimeout(10_000, 3)).toBe(50_000);
+      expect(computeCircuitBreakerTimeout(5_000, 0)).toBe(15_000);
+    });
+  });
+
+  describe('createCircuitBreaker', () => {
+    it('rejects with a TimeoutError when the total budget is exceeded', async () => {
+      const breaker = createCircuitBreaker(
+        () => new Promise((resolve) => setTimeout(() => resolve('late'), 500)),
+        { threshold: 1, cooldown: 1_000, timeout: 30 },
+      );
+
+      await expect(breaker.fire()).rejects.toThrow('Timed out after 30ms');
     });
   });
 });

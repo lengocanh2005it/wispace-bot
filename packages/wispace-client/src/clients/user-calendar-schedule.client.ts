@@ -1,4 +1,4 @@
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, isAbortError } from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import { resolveScheduledAtFromEventDate } from '../utils/study-calendar.utils';
 import type { UserCalendarApiClient } from './user-calendar-api.client';
@@ -83,6 +83,9 @@ export class UserCalendarScheduleClient {
 
       return sessions;
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
       if (!options.swallowErrors) {
         throw error;
       }

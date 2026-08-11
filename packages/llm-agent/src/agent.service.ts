@@ -113,6 +113,22 @@ function withTimeout<T>(
   });
 }
 
+function linkAbortSignal(
+  source: AbortSignal | undefined,
+  target: AbortController,
+): void {
+  if (!source) {
+    return;
+  }
+  if (source.aborted) {
+    target.abort(source.reason);
+    return;
+  }
+  source.addEventListener('abort', () => target.abort(source.reason), {
+    once: true,
+  });
+}
+
 /**
  * Framework-agnostic LLM function-calling orchestration loop, shared across
  * all WISPACE bot platforms. Tool business logic (Wispace API calls, DB reads...)
@@ -131,17 +147,7 @@ export class LlmAgentService<TToolContext> {
     toolContext: TToolContext,
   ): Promise<LlmAgentReply> {
     const controller = new AbortController();
-    if (input.signal) {
-      if (input.signal.aborted) {
-        controller.abort(input.signal.reason);
-      } else {
-        input.signal.addEventListener(
-          'abort',
-          () => controller.abort(input.signal?.reason),
-          { once: true },
-        );
-      }
-    }
+    linkAbortSignal(input.signal, controller);
     return withTimeout(
       this.ports.metrics?.timeAgentLoop
         ? this.ports.metrics.timeAgentLoop(FEATURE, () =>
@@ -190,17 +196,7 @@ export class LlmAgentService<TToolContext> {
     toolContext: TToolContext,
   ): AsyncIterable<LlmAgentStreamEvent> {
     const controller = new AbortController();
-    if (input.signal) {
-      if (input.signal.aborted) {
-        controller.abort(input.signal.reason);
-      } else {
-        input.signal.addEventListener(
-          'abort',
-          () => controller.abort(input.signal?.reason),
-          { once: true },
-        );
-      }
-    }
+    linkAbortSignal(input.signal, controller);
     const iterator = this.runRounds(input, toolContext, controller.signal)[
       Symbol.asyncIterator
     ]();

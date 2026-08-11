@@ -3,9 +3,11 @@ import { WispaceApiError } from '../errors/wispace-api.error';
 import {
   isWispaceRetryable,
   createCircuitBreaker,
+  computeCircuitBreakerTimeout,
   withRetry,
 } from '../utils/with-retry';
 import type { CircuitBreaker } from '../utils/with-retry';
+import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import {
   buildWispaceHeaders,
   type WispaceIdHeader,
@@ -34,7 +36,7 @@ export class UserCalendarApiClient {
   ) {
     const maxRetries = this.config.maxRetries ?? 3;
     const reqTimeout = this.config.requestTimeoutMs ?? 10_000;
-    const circuitTimeout = reqTimeout * (maxRetries + 1) + 10_000;
+    const circuitTimeout = computeCircuitBreakerTimeout(reqTimeout, maxRetries);
 
     this.listBreaker = createCircuitBreaker(
       (
@@ -73,10 +75,7 @@ export class UserCalendarApiClient {
     signal?: AbortSignal,
   ): Promise<UserCalendarRecord[]> {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
-    const timeoutSignal = AbortSignal.timeout(timeoutMs);
-    const fetchSignal = signal
-      ? AbortSignal.any([signal, timeoutSignal])
-      : timeoutSignal;
+    const fetchSignal = mergeWithTimeout(signal, timeoutMs);
 
     const response = await fetch(this.config.url, {
       headers: buildWispaceHeaders(
@@ -114,10 +113,7 @@ export class UserCalendarApiClient {
     options?: { userId?: number; signal?: AbortSignal },
   ): Promise<UserCalendarRecord> {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
-    const timeoutSignal = AbortSignal.timeout(timeoutMs);
-    const fetchSignal = options?.signal
-      ? AbortSignal.any([options.signal, timeoutSignal])
-      : timeoutSignal;
+    const fetchSignal = mergeWithTimeout(options?.signal, timeoutMs);
 
     const response = await fetch(this.config.url, {
       method: 'POST',
@@ -168,10 +164,7 @@ export class UserCalendarApiClient {
     options?: { signal?: AbortSignal },
   ): Promise<void> {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
-    const timeoutSignal = AbortSignal.timeout(timeoutMs);
-    const fetchSignal = options?.signal
-      ? AbortSignal.any([options.signal, timeoutSignal])
-      : timeoutSignal;
+    const fetchSignal = mergeWithTimeout(options?.signal, timeoutMs);
 
     const response = await fetch(`${this.config.url}/${calendarId}`, {
       method: 'DELETE',

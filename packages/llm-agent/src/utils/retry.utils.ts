@@ -1,39 +1,6 @@
-/** Returns true if the error represents an AbortSignal cancellation. */
-export function isAbortError(error: unknown): boolean {
-  if (error !== null && typeof error === 'object' && 'name' in error) {
-    return (error as { name?: string }).name === 'AbortError';
-  }
-  return false;
-}
+import { isAbortError, sleep } from '@wispace/bot-common';
 
-/** Sleep for `ms` milliseconds, resolving early or aborting if `signal` fires. */
-export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const rejectWithReason = (reason: unknown) => {
-      reject(reason instanceof Error ? reason : new Error('Aborted'));
-    };
-
-    if (signal?.aborted) {
-      return rejectWithReason(signal.reason);
-    }
-
-    const timer = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
-
-    const onAbort = () => {
-      clearTimeout(timer);
-      rejectWithReason(signal?.reason);
-    };
-
-    const cleanup = () => {
-      signal?.removeEventListener('abort', onAbort);
-    };
-
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-}
+export { isAbortError, sleep } from '@wispace/bot-common';
 
 export interface RetryBackoffOptions {
   maxAttempts: number;

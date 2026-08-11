@@ -156,9 +156,10 @@ describe('PlatformAgentToolsService', () => {
         userId: 143,
       });
 
-      expect(goalsService.getUserGoals).toHaveBeenCalledWith('discord-1', {
-        signal: undefined,
-      });
+      expect(goalsService.getUserGoals).toHaveBeenCalledWith(
+        'discord-1',
+        expect.any(Object),
+      );
       expect(result).toEqual({ targetScore: 7, examDate: '2026-08-01' });
     });
 
@@ -435,7 +436,7 @@ describe('PlatformAgentToolsService', () => {
         userId: 42,
       });
 
-      expect(goalsSpy).toHaveBeenCalledWith('42', { signal: undefined });
+      expect(goalsSpy).toHaveBeenCalledWith('42', expect.any(Object));
     });
 
     it('returns formatted report for learning progress', async () => {
@@ -564,9 +565,10 @@ describe('PlatformAgentToolsService', () => {
         userId: 42,
       });
 
-      expect(goalsService.getUserGoals).toHaveBeenCalledWith('psid-1', {
-        signal: undefined,
-      });
+      expect(goalsService.getUserGoals).toHaveBeenCalledWith(
+        'psid-1',
+        expect.any(Object),
+      );
       expect(result).toEqual({ targetBand: '7.0' });
     });
 

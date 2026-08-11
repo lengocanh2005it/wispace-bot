@@ -1,8 +1,13 @@
 import { errorMessage } from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
-import { isWispaceRetryable, createCircuitBreaker } from '../utils/with-retry';
+import {
+  isWispaceRetryable,
+  createCircuitBreaker,
+  computeCircuitBreakerTimeout,
+} from '../utils/with-retry';
 import type { CircuitBreaker } from '../utils/with-retry';
 import { withRetry } from '../utils/with-retry';
+import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import {
   buildWispaceHeaders,
   type WispaceIdHeader,
@@ -23,7 +28,7 @@ export class UserGoalsApiClient {
   ) {
     const maxRetries = this.config.maxRetries ?? 3;
     const reqTimeout = this.config.requestTimeoutMs ?? 10_000;
-    const circuitTimeout = reqTimeout * (maxRetries + 1) + 10_000;
+    const circuitTimeout = computeCircuitBreakerTimeout(reqTimeout, maxRetries);
 
     this.breaker = createCircuitBreaker(
       (
@@ -62,10 +67,7 @@ export class UserGoalsApiClient {
     signal?: AbortSignal,
   ): Promise<UserGoalsRecord> {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
-    const timeoutSignal = AbortSignal.timeout(timeoutMs);
-    const fetchSignal = signal
-      ? AbortSignal.any([signal, timeoutSignal])
-      : timeoutSignal;
+    const fetchSignal = mergeWithTimeout(signal, timeoutMs);
 
     const response = await fetch(this.config.url, {
       headers: buildWispaceHeaders(

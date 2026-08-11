@@ -1181,4 +1181,94 @@ describe('LlmAgentService', () => {
       expect(doneEvent.reply.toolSummary).toContain('get_user_goals');
     });
   });
+
+  describe('reply() — AbortSignal propagation', () => {
+    function makeAbortAwareAdapter(capturedSignals: AbortSignal[]) {
+      return {
+        providerName: 'openai',
+        isConfigured: () => true,
+        getDefaultModel: () => 'gpt-5.4',
+        generateJson: jest.fn(),
+        chatWithTools: jest
+          .fn()
+          .mockImplementation((request: { signal?: AbortSignal }) => {
+            capturedSignals.push(request.signal as AbortSignal);
+            if (request.signal?.aborted) {
+              return Promise.reject(
+                request.signal.reason instanceof Error
+                  ? request.signal.reason
+                  : new Error('Aborted'),
+              );
+            }
+            return new Promise((_resolve, reject) => {
+              request.signal?.addEventListener(
+                'abort',
+                () =>
+                  reject(
+                    request.signal?.reason instanceof Error
+                      ? request.signal.reason
+                      : new Error('Aborted'),
+                  ),
+                { once: true },
+              );
+            });
+          }),
+        chatStream: jest.fn(),
+        isRetryableError: () => false,
+        isRateLimitError: () => false,
+        normalizeError: () => ({
+          provider: 'openai',
+          retryable: false,
+          reason: 'unknown',
+        }),
+      };
+    }
+
+    function makePorts(adapter: LlmProviderAdapter) {
+      return {
+        llmExecution: {
+          run: jest
+            .fn()
+            .mockImplementation((fn: () => Promise<unknown>) => fn()),
+        },
+        usageRecorder: { recordFromCompletion: jest.fn() },
+        safetyEvents: { recordGroundingWarning: jest.fn() },
+        toolExecutor: { execute: jest.fn().mockResolvedValue({ ok: true }) },
+        adapter,
+        metrics: NOOP_METRICS_PORT,
+        logger: { warn: jest.fn(), debug: jest.fn() },
+      };
+    }
+
+    it('propagates a pre-aborted caller signal to the LLM call', async () => {
+      const capturedSignals: AbortSignal[] = [];
+      const adapter = makeAbortAwareAdapter(capturedSignals);
+      const service = new LlmAgentService<StubToolContext>(
+        {},
+        makePorts(adapter),
+      );
+
+      const controller = new AbortController();
+      controller.abort(new Error('caller gone'));
+
+      await expect(
+        service.reply(
+          { ...BASE_INPUT, signal: controller.signal },
+          TOOL_CONTEXT,
+        ),
+      ).rejects.toThrow('caller gone');
+      expect(adapter.chatWithTools).not.toHaveBeenCalled();
+    });
+
+    it('aborts the underlying LLM call when the agent loop times out', async () => {
+      const capturedSignals: AbortSignal[] = [];
+      const service = new LlmAgentService<StubToolContext>(
+        { globalAgentTimeoutMs: 50, maxToolRounds: 2 },
+        makePorts(makeAbortAwareAdapter(capturedSignals)),
+      );
+
+      await expect(service.reply(BASE_INPUT, TOOL_CONTEXT)).rejects.toThrow();
+      expect(capturedSignals[0]?.aborted).toBe(true);
+    });
+  });
 });

@@ -1,35 +1,7 @@
 import CircuitBreaker from 'opossum';
+import { isAbortError, sleep } from '@wispace/bot-common';
 
-export function isAbortError(error: unknown): boolean {
-  if (error !== null && typeof error === 'object' && 'name' in error) {
-    return (error as { name?: string }).name === 'AbortError';
-  }
-  return false;
-}
-
-export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const rejectWithReason = (reason: unknown) => {
-      reject(reason instanceof Error ? reason : new Error('Aborted'));
-    };
-
-    if (signal?.aborted) {
-      return rejectWithReason(signal.reason);
-    }
-    const timer = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      rejectWithReason(signal?.reason);
-    };
-    const cleanup = () => {
-      signal?.removeEventListener('abort', onAbort);
-    };
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
-}
+export { isAbortError, sleep } from '@wispace/bot-common';
 
 export interface WithRetryOptions {
   /** Total retry attempts after the initial call (maxRetries=3 → 4 total calls). */
@@ -74,9 +46,6 @@ export async function withRetry<T>(
       await sleep(delay, opts.signal);
     }
   }
-  if (opts.signal?.aborted || isAbortError(lastError)) {
-    throw lastError ?? opts.signal?.reason ?? new Error('Aborted');
-  }
   throw lastError;
 }
 
@@ -103,8 +72,21 @@ export interface CircuitBreakerOptions {
   threshold?: number;
   /** Time in ms to wait before trying again after circuit opens. Default: 60000. */
   cooldown?: number;
-  /** Timeout per call in ms. Default: 60000 (total budget). False to disable opossum internal timer. */
-  timeout?: number | false;
+  /** Timeout per call in ms. Default: 60000 (total budget — see computeCircuitBreakerTimeout). */
+  timeout?: number;
+}
+
+/**
+ * Total time budget for a breaker-wrapped call: one request per attempt
+ * (initial + maxRetries retries) plus a small buffer. The breaker times out
+ * the whole call, while each individual attempt has its own per-request
+ * timeout — so the original request is never left running while a retry starts.
+ */
+export function computeCircuitBreakerTimeout(
+  requestTimeoutMs: number,
+  maxRetries: number,
+): number {
+  return requestTimeoutMs * (maxRetries + 1) + 10_000;
 }
 
 /**

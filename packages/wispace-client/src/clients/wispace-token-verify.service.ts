@@ -4,6 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import type {
   WispaceLinkVerifyFailureReason,
   WispaceLinkVerifyResult,
@@ -39,10 +40,7 @@ export class WispaceTokenVerifyService {
     options?: { signal?: AbortSignal },
   ): Promise<WispaceLinkVerifyResult> {
     const url = this.getVerifyUrl();
-    const timeoutSignal = AbortSignal.timeout(10_000);
-    const fetchSignal = options?.signal
-      ? AbortSignal.any([options.signal, timeoutSignal])
-      : timeoutSignal;
+    const fetchSignal = mergeWithTimeout(options?.signal, 10_000);
 
     const response = await fetch(url, {
       method: 'POST',

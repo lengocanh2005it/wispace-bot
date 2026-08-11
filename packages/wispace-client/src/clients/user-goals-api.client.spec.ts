@@ -80,4 +80,50 @@ describe('UserGoalsApiClient', () => {
     ).rejects.toBeInstanceOf(WispaceApiError);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it('does not fetch when the caller signal is already aborted', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue({ ok: true, json: () => Promise.resolve({}) });
+    global.fetch = fetchMock;
+
+    const client = new UserGoalsApiClient({
+      url: 'https://backend.example.com/api/User/goals',
+      internalKey: 'internal-key',
+    });
+
+    const controller = new AbortController();
+    controller.abort(new Error('caller gone'));
+
+    await expect(
+      client.getUserGoals('x-psid', 'psid-1', { signal: controller.signal }),
+    ).rejects.toThrow('caller gone');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('aborts the in-flight fetch on per-attempt timeout and does not retry', async () => {
+    const fetchMock = jest.fn().mockImplementation(
+      (_url: unknown, init: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () =>
+            reject(
+              init.signal?.reason instanceof Error
+                ? init.signal.reason
+                : new Error('aborted'),
+            ),
+          );
+        }),
+    );
+    global.fetch = fetchMock;
+
+    const client = new UserGoalsApiClient({
+      url: 'https://backend.example.com/api/User/goals',
+      internalKey: 'internal-key',
+      requestTimeoutMs: 30,
+      baseDelayMs: 1,
+    });
+
+    await expect(client.getUserGoals('x-psid', 'psid-1')).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
