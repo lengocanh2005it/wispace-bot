@@ -1,7 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { errorMessage } from '@wispace/bot-common';
 import type {
   PendingRescheduleRecord,
   RescheduleStorePort,
@@ -27,9 +26,10 @@ export class TypeormRescheduleStore<
 
   async save(pending: PendingRescheduleRecord<TExternalId>): Promise<void> {
     const key = this.key(pending.externalId);
-    try {
-      await this.repo.query(
-        `
+    // Do NOT swallow — a failed persist must not report
+    // pendingConfirmation: true while nothing was stored.
+    await this.repo.query(
+      `
         INSERT INTO reschedule_confirmations
           (external_id, user_id, calendar_id, scheduling_mode, new_local_date, new_time, session_label, status, expires_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
@@ -44,22 +44,17 @@ export class TypeormRescheduleStore<
           expires_at = EXCLUDED.expires_at,
           updated_at = now()
       `,
-        [
-          key,
-          pending.userId,
-          pending.calendarId,
-          pending.schedulingMode,
-          pending.newLocalDate ?? null,
-          pending.newTime ?? null,
-          pending.sessionLabel,
-          new Date(pending.expiresAt),
-        ],
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Failed to save reschedule confirmation ${key}: ${errorMessage(error)}`,
-      );
-    }
+      [
+        key,
+        pending.userId,
+        pending.calendarId,
+        pending.schedulingMode,
+        pending.newLocalDate ?? null,
+        pending.newTime ?? null,
+        pending.sessionLabel,
+        new Date(pending.expiresAt),
+      ],
+    );
   }
 
   async takeValid(
@@ -117,6 +112,23 @@ export class TypeormRescheduleStore<
     return `${this.platform}:${String(externalId)}`;
   }
 
+  /**
+   * Strips the `${platform}:` prefix so the returned record carries the raw
+   * external id — confirm() must hand the platform's own id to the reschedule
+   * port, not the storage key.
+   */
+  private stripKeyPrefix(externalId: unknown): TExternalId {
+    if (typeof externalId !== 'string') {
+      return '' as TExternalId;
+    }
+    const prefix = `${this.platform}:`;
+    return (
+      externalId.startsWith(prefix)
+        ? externalId.slice(prefix.length)
+        : externalId
+    ) as TExternalId;
+  }
+
   private mapRow(
     row: Record<string, unknown>,
   ): PendingRescheduleRecord<TExternalId> {
@@ -125,10 +137,7 @@ export class TypeormRescheduleStore<
     const sessionLabel = row.session_label;
     const expiresAt = row.expires_at;
     return {
-      externalId:
-        typeof externalId === 'string'
-          ? (externalId as TExternalId)
-          : ('' as TExternalId),
+      externalId: this.stripKeyPrefix(externalId),
       userId: Number(row.user_id),
       calendarId: Number(row.calendar_id),
       schedulingMode:
