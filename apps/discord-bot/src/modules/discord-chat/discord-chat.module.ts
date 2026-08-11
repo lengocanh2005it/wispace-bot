@@ -8,6 +8,7 @@ import {
   PlatformCleanupCronService,
 } from '@wispace/cleanup-cron';
 import {
+  ADVISORY_LOCKS,
   BotCommonModule,
   PgAdvisoryLockService,
   REDIS_CLIENT,
@@ -256,7 +257,7 @@ const REGISTER_REPORT_MESSAGE =
           configService,
           pgLock,
           {
-            lockId: 884_200_930,
+            lockId: ADVISORY_LOCKS.DISCORD_DEAD_LETTER_RETRY,
             extractPayload: (payload) => ({
               externalUserId: payload.discordUserId as string | undefined,
               text: payload.text as string | undefined,

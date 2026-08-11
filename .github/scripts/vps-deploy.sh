@@ -315,13 +315,21 @@ fi
 # ─── Post-switch health monitor (2 minutes) ──────────────────────────────────
 echo "Monitoring health on port $STANDBY_PORT for $(( POST_SWITCH_MONITOR_ATTEMPTS * POST_SWITCH_MONITOR_INTERVAL ))s ..."
 monitor_healthy=""
+monitor_failures=0
+MONITOR_MAX_FAILURES="${MONITOR_MAX_FAILURES:-3}"
 for attempt in $(seq 1 "${POST_SWITCH_MONITOR_ATTEMPTS}"); do
   if curl -sf --max-time 3 "http://127.0.0.1:${STANDBY_PORT}${HEALTH_PATH}" >/dev/null 2>&1; then
     monitor_healthy=1
+    monitor_failures=0
   else
-    echo "  Monitor check failed (attempt ${attempt}/${POST_SWITCH_MONITOR_ATTEMPTS})"
-    monitor_healthy=""
-    break
+    # Tolerate transient blips (e.g. a short Redis hiccup making /health 503)
+    # — only roll back after MONITOR_MAX_FAILURES consecutive failures.
+    monitor_failures=$((monitor_failures + 1))
+    echo "  Monitor check failed (attempt ${attempt}/${POST_SWITCH_MONITOR_ATTEMPTS}, consecutive=${monitor_failures}/${MONITOR_MAX_FAILURES})"
+    if [ "$monitor_failures" -ge "$MONITOR_MAX_FAILURES" ]; then
+      monitor_healthy=""
+      break
+    fi
   fi
   sleep "${POST_SWITCH_MONITOR_INTERVAL}"
 done

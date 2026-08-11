@@ -27,11 +27,34 @@ fi
 mkdir -p "$BACKUP_DIR"
 STAMP=$(date +%Y%m%d-%H%M%S)
 OUT="$BACKUP_DIR/${DB_NAME}-${STAMP}.sql.gz"
+TMP="$OUT.tmp"
+FAILURE_MARKER="$BACKUP_DIR/.last-backup-failed"
 
-docker exec -e PGPASSWORD="$DB_PASSWORD" "$DB_CONTAINER" \
-  pg_dump -U "$DB_USER" -d "$DB_NAME" -h localhost --no-owner 2>/dev/null | gzip > "$OUT"
-
-echo "Backup written: $OUT ($(du -h "$OUT" | cut -f1))"
+# Keep stderr for failure detection (no 2>/dev/null) — a failed pg_dump must
+# not leave a silent half-written gzip on disk.
+if docker exec -e PGPASSWORD="$DB_PASSWORD" "$DB_CONTAINER" \
+  pg_dump -U "$DB_USER" -d "$DB_NAME" -h localhost --no-owner 2>"$BACKUP_DIR/.pgdump.err" | gzip > "$TMP"; then
+  # Validate the archive is a complete gzip before promoting it.
+  if gzip -t "$TMP" 2>/dev/null && [ -s "$TMP" ]; then
+    mv "$TMP" "$OUT"
+    rm -f "$FAILURE_MARKER"
+    echo "Backup written: $OUT ($(du -h "$OUT" | cut -f1))"
+  else
+    echo "ERROR: gzip validation failed for $TMP — backup discarded" >&2
+    rm -f "$TMP"
+    touch "$FAILURE_MARKER"
+    exit 1
+  fi
+else
+  echo "ERROR: pg_dump failed — see $BACKUP_DIR/.pgdump.err" >&2
+  rm -f "$TMP"
+  touch "$FAILURE_MARKER"
+  exit 1
+fi
 
 find "$BACKUP_DIR" -name "${DB_NAME}-*.sql.gz" -mtime +"$KEEP_DAYS" -delete
 echo "Old backups (older than ${KEEP_DAYS}d) pruned"
+
+if [ -f "$FAILURE_MARKER" ]; then
+  echo "WARN: previous backup run failed (marker present) — check backups" >&2
+fi
