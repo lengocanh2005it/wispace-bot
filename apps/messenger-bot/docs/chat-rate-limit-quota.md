@@ -861,6 +861,8 @@ flowchart LR
 
 **Tests:** `chat-rate-limit.service.spec.ts`, `chat-rate-limit.repository.spec.ts`.
 
+**Implementation note:** TypeORM returns raw `UPDATE`/`DELETE` results as `[rows, affected]`; unwrap this tuple before processing `RETURNING` rows in the shared `packages/chat-metering` repository.
+
 **Depends on:** H1.
 
 #### H3 — Hard Cap Daily in Transaction (≈ 1 day) — ✓ done

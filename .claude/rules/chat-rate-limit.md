@@ -9,6 +9,8 @@ FREE_FORM quota for bidirectional AI chat. V1 + hardening **H1–H7 ✓**.
 
 **Core reserve/refund/daily-limit** (SQL atomic, `chat_daily_usage`/`chat_idempotency`) has been moved to `packages/chat-metering` (`ChatRateLimitCore` + `ChatRateLimitRepository`), shared with `apps/discord-bot` (platform='discord'). Files in this module (`ChatRateLimitRepository` infra) are now a **thin wrapper** around the core package (platform='messenger') — whitelist, quota-event audit (`chat_quota_events`), burst Redis, ops recovery/CLI **remain in messenger-bot**, not present in Discord. See `.claude/rules/clean-architecture.md` section `packages/chat-metering`.
 
+Raw TypeORM `UPDATE`/`DELETE` results are `[rows, affected]`; repository code that reads `RETURNING` rows must unwrap that tuple before indexing or iterating.
+
 ## Flow (hook reserve)
 
 ```

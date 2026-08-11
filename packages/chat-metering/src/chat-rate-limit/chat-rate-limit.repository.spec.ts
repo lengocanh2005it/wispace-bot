@@ -25,6 +25,8 @@ type IdempotencyRow = {
 
 const PLATFORM = 'messenger';
 
+const updateResult = <T>(rows: T[]): [T[], number] => [rows, rows.length];
+
 describe('ChatRateLimitRepository', () => {
   let repository: ChatRateLimitRepository;
   let dailyUsageStore: Map<string, DailyUsageRow>;
@@ -91,11 +93,35 @@ describe('ChatRateLimitRepository', () => {
             usageKey(externalUserId, usageDate),
           );
           if (!existing) {
-            return [];
+            return updateResult([]);
           }
 
           existing.freeFormCount = Math.max(existing.freeFormCount - 1, 0);
-          return [{ free_form_count: existing.freeFormCount }];
+          return updateResult([{ free_form_count: existing.freeFormCount }]);
+        }
+
+        if (
+          normalized.startsWith(
+            'UPDATE chat_daily_usage SET free_form_count = GREATEST(0, free_form_count - v.delta)',
+          )
+        ) {
+          let updatedRows = 0;
+          for (let index = 0; index < params.length; index += 4) {
+            const usageDate = params[index + 1] as string;
+            const userId = params[index + 2] as number | null;
+            const delta = params[index + 3] as number;
+
+            for (const row of dailyUsageStore.values()) {
+              if (row.usageDate !== usageDate || row.userId !== userId) {
+                continue;
+              }
+
+              row.freeFormCount = Math.max(row.freeFormCount - delta, 0);
+              updatedRows += 1;
+            }
+          }
+
+          return [[], updatedRows] as [unknown[], number];
         }
 
         if (
@@ -125,26 +151,53 @@ describe('ChatRateLimitRepository', () => {
         }
 
         if (normalized.startsWith('UPDATE chat_idempotency SET status = ')) {
+          if (
+            normalized.includes(
+              "WHERE platform = $1 AND status = 'reserved' AND reserved_at < $2",
+            )
+          ) {
+            const [, stuckBefore] = params as [string, Date];
+            const staleRows = [...idempotencyStore.values()].filter(
+              (row) =>
+                row.status === 'reserved' && row.reservedAt < stuckBefore,
+            );
+
+            staleRows.forEach((row) => {
+              row.status = 'refunded';
+            });
+
+            return updateResult(
+              staleRows.map((row) => ({
+                idempotency_key: row.idempotencyKey,
+                external_user_id: row.externalUserId,
+                user_id: row.userId,
+                usage_date: row.usageDate,
+                status: row.status,
+                reserved_at: row.reservedAt,
+              })),
+            );
+          }
+
           const [, idempotencyKey] = params as [string, string];
           const row = idempotencyStore.get(idempotencyKey);
           if (!row) {
-            return [];
+            return updateResult([]);
           }
 
           if (normalized.includes("SET status = 'refunded'")) {
             if (row.status !== 'reserved') {
-              return [];
+              return updateResult([]);
             }
             row.status = 'refunded';
-            return [{ idempotency_key: idempotencyKey }];
+            return updateResult([{ idempotency_key: idempotencyKey }]);
           }
 
           if (normalized.includes("SET status = 'completed'")) {
             if (row.status !== 'reserved') {
-              return [];
+              return updateResult([]);
             }
             row.status = 'completed';
-            return [{ idempotency_key: idempotencyKey }];
+            return updateResult([{ idempotency_key: idempotencyKey }]);
           }
         }
 
@@ -212,27 +265,6 @@ describe('ChatRateLimitRepository', () => {
           const [, idempotencyKey] = params as [string, string];
           idempotencyStore.delete(idempotencyKey);
           return [];
-        }
-
-        if (
-          normalized.includes(
-            "WHERE platform = $1 AND status = 'reserved' AND reserved_at < $2",
-          )
-        ) {
-          const [, stuckBefore] = params as [string, Date];
-          return [...idempotencyStore.values()]
-            .filter(
-              (row) =>
-                row.status === 'reserved' && row.reservedAt < stuckBefore,
-            )
-            .map((row) => ({
-              idempotency_key: row.idempotencyKey,
-              external_user_id: row.externalUserId,
-              user_id: row.userId,
-              usage_date: row.usageDate,
-              status: row.status,
-              reserved_at: row.reservedAt,
-            }));
         }
 
         throw new Error(`Unexpected SQL in test: ${normalized}`);
@@ -486,6 +518,31 @@ describe('ChatRateLimitRepository', () => {
         includeRefunded: true,
       }),
     ).resolves.toBe(2);
+  });
+
+  it('recovers stale rows when TypeORM wraps UPDATE results', async () => {
+    const staleAt = new Date('2026-06-15T07:00:00+07:00');
+    idempotencyStore.set('mid-stuck-bulk', {
+      idempotencyKey: 'mid-stuck-bulk',
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      status: 'reserved',
+      reservedAt: staleAt,
+    });
+    dailyUsageStore.set('ext-1:2026-06-15', {
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      freeFormCount: 1,
+    });
+
+    await expect(
+      repository.recoverAllStuckReserved(new Date('2026-06-15T08:00:00+07:00')),
+    ).resolves.toEqual(['mid-stuck-bulk']);
+
+    expect(idempotencyStore.get('mid-stuck-bulk')?.status).toBe('refunded');
+    expect(dailyUsageStore.get('ext-1:2026-06-15')?.freeFormCount).toBe(0);
   });
 
   it('reopens stale reserved idempotency and refunds usage', async () => {

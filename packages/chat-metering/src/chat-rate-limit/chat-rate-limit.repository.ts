@@ -24,6 +24,13 @@ class BurstLimitExceededError extends Error {
   }
 }
 
+type QueryRows<T> = T[] | [T[], number];
+
+function extractQueryRows<T>(result: QueryRows<T>): T[] {
+  // TypeORM returns UPDATE/DELETE results as [rows, affected], unlike SELECT/INSERT.
+  return Array.isArray(result[0]) ? result[0] : (result as T[]);
+}
+
 /**
  * Optional hooks so a caller (e.g. messenger-bot's quota-event audit trail)
  * can persist extra telemetry inside the SAME DB transaction as the
@@ -219,7 +226,7 @@ export class ChatRateLimitRepository {
     const releaseReason = params.releaseReason ?? 'send_failed';
 
     return this.dailyUsageRepo.manager.transaction(async (manager) => {
-      const refundedRows: Array<{ idempotency_key: string }> =
+      const refundedRows = extractQueryRows<{ idempotency_key: string }>(
         await manager.query(
           `
             UPDATE chat_idempotency
@@ -228,14 +235,16 @@ export class ChatRateLimitRepository {
             RETURNING idempotency_key
           `,
           [this.platform, params.idempotencyKey],
-        );
+        ),
+      );
 
       if (!refundedRows[0]) {
         return false;
       }
 
-      const usageRows: Array<{ free_form_count: number }> = await manager.query(
-        `
+      const usageRows = extractQueryRows<{ free_form_count: number }>(
+        await manager.query(
+          `
           UPDATE chat_daily_usage
           SET
             free_form_count = GREATEST(free_form_count - 1, 0),
@@ -243,7 +252,8 @@ export class ChatRateLimitRepository {
           WHERE platform = $1 AND external_user_id = $2 AND usage_date = $3::date
           RETURNING free_form_count
         `,
-        [this.platform, params.externalUserId, params.usageDate],
+          [this.platform, params.externalUserId, params.usageDate],
+        ),
       );
 
       const usedAfter = usageRows[0]?.free_form_count ?? 0;
@@ -261,7 +271,7 @@ export class ChatRateLimitRepository {
   }
 
   async completeReservedSlot(idempotencyKey: string): Promise<boolean> {
-    const rows: Array<{ idempotency_key: string }> =
+    const rows = extractQueryRows<{ idempotency_key: string }>(
       await this.idempotencyRepo.manager.query(
         `
           UPDATE chat_idempotency
@@ -270,7 +280,8 @@ export class ChatRateLimitRepository {
           RETURNING idempotency_key
         `,
         [this.platform, idempotencyKey],
-      );
+      ),
+    );
 
     return rows.length > 0;
   }
@@ -368,7 +379,7 @@ export class ChatRateLimitRepository {
           return 'in_flight';
         }
 
-        const refundedRows: Array<{ idempotency_key: string }> =
+        const refundedRows = extractQueryRows<{ idempotency_key: string }>(
           await manager.query(
             `
               UPDATE chat_idempotency
@@ -377,13 +388,14 @@ export class ChatRateLimitRepository {
               RETURNING idempotency_key
             `,
             [this.platform, idempotencyKey],
-          );
+          ),
+        );
 
         if (!refundedRows[0]) {
           return 'not_found';
         }
 
-        const usageRows: Array<{ free_form_count: number }> =
+        const usageRows = extractQueryRows<{ free_form_count: number }>(
           await manager.query(
             `
             UPDATE chat_daily_usage
@@ -392,9 +404,10 @@ export class ChatRateLimitRepository {
               updated_at = now()
             WHERE platform = $1 AND external_user_id = $2 AND usage_date = $3::date
             RETURNING free_form_count
-          `,
+            `,
             [this.platform, row.external_user_id, row.usage_date],
-          );
+          ),
+        );
 
         const usedAfter = usageRows[0]?.free_form_count ?? 0;
         await this.hooks.onReleased?.(manager, {
@@ -435,12 +448,13 @@ export class ChatRateLimitRepository {
 
   async recoverAllStuckReserved(stuckBefore: Date): Promise<string[]> {
     return this.idempotencyRepo.manager.transaction(async (manager) => {
-      const rows: Array<{
+      const rows = extractQueryRows<{
         idempotency_key: string;
         usage_date: string;
         user_id: number | null;
-      }> = await manager.query(
-        `
+      }>(
+        await manager.query(
+          `
             UPDATE chat_idempotency
             SET status = 'refunded', updated_at = NOW()
             WHERE platform = $1
@@ -448,7 +462,8 @@ export class ChatRateLimitRepository {
               AND reserved_at < $2
             RETURNING idempotency_key, usage_date, user_id
           `,
-        [this.platform, stuckBefore],
+          [this.platform, stuckBefore],
+        ),
       );
 
       if (rows.length === 0) return [];
