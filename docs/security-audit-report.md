@@ -1,7 +1,7 @@
 # Security Audit Report — wispace-bot Monorepo
 
 **Date:** 2026-08-08
-**Scope:** All apps (messenger-bot, discord-bot, zalo-bot) and 17 shared packages
+**Scope:** All apps (messenger-bot, discord-bot, zalo-bot) and 18 shared packages
 **Auditor:** AI Security Audit Agent
 
 ---

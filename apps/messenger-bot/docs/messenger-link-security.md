@@ -1,14 +1,16 @@
-# Messenger ↔ WISPACE Link Security (`ref` / `userId`)
+# Messenger ↔ WISPACE Link Security (Token-Verified Linking)
 
-Document describing the **vulnerability** when passing raw `userId` via the `ref` parameter on `m.me` links, possible **solutions**, **trade-offs**, and **recommended roadmap** for production use.
+Document describing the historical raw-`userId` vulnerability, the current token-only implementation, and the remaining ownership boundary with WISPACE.
 
-Related: [project-overview.md](../../docs/project-overview.md) (link flow), [edge-cases-roadmap.md §1](../../docs/edge-cases-roadmap.md#1-messenger--wispace-linking), code `src/shared/config/poc.constants.ts`, `MessengerMappingService`.
+Related: [project-overview.md](../../../docs/project-overview.md) (link flow), [edge-cases-roadmap.md §1](../../../docs/edge-cases-roadmap.md#1-messenger--wispace-linking), code `src/shared/config/poc.constants.ts`, `MessengerMappingService`.
 
 ---
 
-## 1. Problem
+## 1. Current State
 
-### 1.1 Current State
+The Messenger bot is in `MESSENGER_LINK_MODE=token`. WISPACE issues an opaque `ref` token; the bot sends `{ token, value: psid, platform: 'messenger' }` to `WISPACE_API_VERIFY_TOKEN_URL` with `X-Internal-Key` before saving a mapping. The returned WISPACE `userId` is authoritative. Webhook relinking to a different `userId` is blocked; support changes use the protected ops relink path.
+
+### 1.1 Historical Raw-Ref Flow (Reference Only)
 
 Messenger links from WISPACE have this format:
 
@@ -54,7 +56,7 @@ Need **proof of issuance from WISPACE** (server-side signature or token), not ju
 
 ## 2. Solutions & Trade-offs
 
-### 2.1 Keep `ref = userId` (Status Quo)
+### 2.1 Keep `ref = userId` (Historical, Not Deployed)
 
 **Description:** No change; trusts all positive `ref` numbers from webhook.
 
@@ -64,7 +66,7 @@ Need **proof of issuance from WISPACE** (server-side signature or token), not ju
 | No WISPACE coordination needed | userId enumeration, account takeover via relink |
 | Easy debugging | No audit/revoke for links |
 
-**Verdict:** Only acceptable for internal demos; **not** for real user go-live.
+**Verdict:** This is the retired design and must not be enabled for production.
 
 ---
 
@@ -177,19 +179,19 @@ CREATE INDEX idx_messenger_link_tokens_user ON messenger_link_tokens (user_id);
 
 ---
 
-## 4. Recommended Roadmap
+## 4. Current Implementation Status
 
-### Phase L4 — Link Security (Not Yet Implemented)
+### L4 — Link Security (Implemented in the Messenger Bot)
 
 | Step | Work | Owner |
 |------|------|-------|
-| **L4.1** | `messenger_link_tokens` table + token creation API (login required) | WISPACE |
-| **L4.2** | `POST /internal/messenger/verify-link-token` or shared DB query | WISPACE / Bot |
-| **L4.3** | Bot: replace `parseUserIdFromRef` → verify token; reject raw numeric ref (feature flag) | Bot |
-| **L4.4** | Block relink PSID → different userId (except ops endpoint) | Bot |
-| **L4.5** | Log `LINK_TOKEN_OK` / `LINK_TOKEN_REJECT` / `MAPPING_RELINK_BLOCKED`; alert ops | Bot |
+| **L4.1** | Issue opaque linking tokens and expose the verify contract | WISPACE-owned dependency |
+| **L4.2** | Bot calls `WISPACE_API_VERIFY_TOKEN_URL` with `{ token, value, platform }` | Implemented |
+| **L4.3** | Token-only startup validation; no raw numeric linking path | Implemented |
+| **L4.4** | Block relink PSID → different userId except ops endpoint | Implemented |
+| **L4.5** | Record verification and relink outcomes in application logs | Implemented |
 
-**Emergency hotfix (before L4):** HMAC signed ref + block relink — max 1 day, with plan to remove when L4 is complete.
+The former HMAC/raw-ref emergency path is historical and is not part of the active implementation.
 
 ### Suggested Feature Flag
 
@@ -203,32 +205,33 @@ Bot **only** supports `token` — `legacy` / `signed` already removed; startup f
 
 ---
 
-## 5. Code Changes (When Implementing L4)
+## 5. Current Code and Contract
 
 | File / Module | Change |
 |---------------|--------|
-| `src/shared/config/poc.constants.ts` | `parseMessengerLinkContext` calls verify token instead of `parseInt(ref)` |
-| `MessengerMappingService` | Reject relink if PSID is ACTIVE and `userId` differs |
-| `MessengerService.handleEvent` | Link only when verify OK; message `MISSING_USER_REF` / `LINK_TOKEN_INVALID` |
-| `.env.example` | `MESSENGER_LINK_*` variables |
-| WISPACE app | Generate `m.me` only via backend API, not client-side `userId` URL building |
+| `MessengerLinkContextService` | Resolves webhook ref through WISPACE token verification before linking |
+| `WispaceMessengerTokenVerifyService` | Calls `WISPACE_API_VERIFY_TOKEN_URL` with `{ token, value, platform }` |
+| `MessengerMappingService` | Rejects webhook relink if PSID is ACTIVE and `userId` differs |
+| `MessengerService` / webhook router | Links only after a successful verification outcome |
+| `.env.example` | `MESSENGER_LINK_MODE=token`, `WISPACE_API_VERIFY_TOKEN_URL`, `WISPACE_INTERNAL_KEY` |
+| WISPACE app | Must generate `m.me` URLs with opaque tokens, not client-side `userId` values |
 
-**Internal verify API (suggestion):**
+**WISPACE verify API contract:**
 
 ```http
-POST /internal/messenger/verify-link-token
-Authorization: Bearer {INTERNAL_API_KEY}
+POST {WISPACE_API_VERIFY_TOKEN_URL}
+X-Internal-Key: {WISPACE_INTERNAL_KEY}
 Content-Type: application/json
 
-{ "token": "8f3c...", "psid": "1234567890" }
+{ "token": "8f3c...", "value": "1234567890", "platform": "messenger" }
 ```
 
 ```json
 // 200
-{ "valid": true, "userId": 143 }
+{ "success": true, "userId": 143 }
 
 // 400 / 409
-{ "valid": false, "reason": "EXPIRED|USED|NOT_FOUND|PSID_ALREADY_LINKED" }
+{ "valid": false, "reason": "EXPIRED|USED|NOT_FOUND|INVALID_FORMAT" }
 ```
 
 ---
@@ -248,9 +251,9 @@ Content-Type: application/json
 
 ---
 
-## 7. Design Decisions (Discussion)
+## 7. Design Decisions (Implemented)
 
-Team alignment notes after reviewing link flow — supplementing sections above, **not yet implemented** (L4).
+Team alignment notes after reviewing the implemented token-only link flow.
 
 ### 7.1 Two Phases: Binding vs Daily Behavior
 
@@ -290,11 +293,11 @@ Verifying at menu tap **doesn't help** users who never linked — there's no tok
 
 *Optional future phase:* stale mapping (too old) → send message to re-open app link — still **no** verify call from postback menu.
 
-### 7.4 Relink Policy — Current L3 vs L4
+### 7.4 Relink Policy — Historical L3 vs Current Token-Only Flow
 
-**Current (L3):** `MessengerMappingService.relinkPsidToUserId` **allows** changing `userId` for same PSID when webhook carries `ref`/new token → logs `MAPPING_USER_ID_RELINK`. This is an IDOR vector when `ref=userId` is raw.
+**Historical L3:** `MessengerMappingService.relinkPsidToUserId` allowed changing `userId` for the same PSID when the webhook carried a raw `ref`/new token. That behavior was an IDOR vector and is no longer the webhook path.
 
-**L4 (recommended):**
+**Current token-only behavior:**
 
 | Situation | Behavior |
 |-----------|----------|
@@ -348,4 +351,4 @@ Detailed event flow per webhook type: [messenger-link-integration.md §9](./mess
 
 ## 8. One-Line Summary
 
-**Production:** use **opaque one-time tokens** issued by WISPACE when user is logged in, Bot verifies before mapping; **don't** trust `ref=userId` and **don't** allow free relinking. **HMAC** is only a bridge if fast shipping is needed before L4.
+**Production:** the bot uses **opaque WISPACE-issued tokens**, verifies before mapping, and blocks free webhook relinking. **HMAC** and raw `ref=userId` are historical alternatives, not active modes.

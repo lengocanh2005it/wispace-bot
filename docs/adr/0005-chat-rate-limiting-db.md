@@ -1,5 +1,7 @@
 # Chat rate limiting via DB instead of Redis
 
+> Status note: this decision describes the PostgreSQL source of truth. Redis is now an optional acceleration/store for selected counters and queue features; quota audit events are retained by the monthly cleanup cron.
+
 FREE_FORM chat quota (daily usage + burst limit) is tracked via PostgreSQL tables (`chat_daily_usage`, `chat_idempotency`, `chat_quota_events`) instead of Redis counters. Reserve/refund/markCompleted are DB transactions.
 
 ## Rationale
@@ -8,7 +10,7 @@ FREE_FORM chat quota (daily usage + burst limit) is tracked via PostgreSQL table
 - **Audit trail**: The `chat_quota_events` table records all state changes (reserved, released, denied). Redis only holds counters, no history.
 - **Natural idempotency**: The `chat_idempotency` table with unique constraint on message ID ensures each message is counted only once. Redis would need additional logic to achieve this.
 - **Transaction safety**: Reserve + idempotency check in the same transaction. No race conditions between pods.
-- **No Redis infrastructure needed**: Single pod, Redis not yet needed. Can migrate later (R3 phase).
+- **No Redis dependency for quota correctness**: PostgreSQL remains the durable source of truth. Redis is optional for burst/queue scale-out.
 
 ## Alternatives considered
 
@@ -23,5 +25,5 @@ FREE_FORM chat quota (daily usage + burst limit) is tracked via PostgreSQL table
 
 - Each chat request requires 1 DB round-trip for reserve. If DB latency is high (>50ms), user experience is affected.
 - The burst counter currently uses postgres (default) but can be switched to memory or Redis (R3) when performance is needed.
-- When scaling to multi-pod, DB becomes a bottleneck. Need to migrate to Redis counters (R3 phase) or a distributed rate limiter.
-- The `chat_quota_events` table will grow quickly. Needs a retention policy (currently no cleanup cron for events, only for `messenger_message_logs`).
+- When scaling to multi-pod, use the existing Redis-backed options where appropriate; quota reservation and audit correctness remain database-backed.
+- The `chat_quota_events` table is retained by `ChatQuotaEventCleanupCronService` when `CHAT_QUOTA_EVENTS_CLEANUP_ENABLED=true`.

@@ -1,8 +1,8 @@
-# Messenger ↔ WISPACE Linking — Current Flow, Secure Flow & WISPACE API
+# Messenger ↔ WISPACE Linking — Token-Verified Flow & WISPACE API
 
-Document explaining **what's currently happening**, **what happens after L4**, who is responsible for each part, and the **API contract** the WISPACE team needs to implement.
+Documenting the current token-verified linking flow, the WISPACE API contract, and the ownership boundary between WISPACE and the Messenger bot. The raw `ref=userId` flow below is retained only as a historical threat model.
 
-Related: [messenger-link-security.md](./messenger-link-security.md) (solution trade-offs), [edge-cases-roadmap.md §1](../../docs/edge-cases-roadmap.md#1-messenger--wispace-linking) (phase **L4**).
+Related: [messenger-link-security.md](./messenger-link-security.md) (solution trade-offs), [edge-cases-roadmap.md §1](../../../docs/edge-cases-roadmap.md#1-messenger--wispace-linking) (phase **L4**).
 
 ---
 
@@ -17,7 +17,13 @@ Related: [messenger-link-security.md](./messenger-link-security.md) (solution tr
 
 ---
 
-## 1. What's Currently Happening? (Not Yet Secure)
+## 1. Current Flow (Token-Verified)
+
+The bot is already in token-only mode. WISPACE issues an opaque token in the `m.me` URL; the bot never derives `userId` from that token. On a webhook carrying a new referral token, `MessengerLinkContextService` calls `WispaceMessengerTokenVerifyService`, which posts `{ token, value: psid, platform: 'messenger' }` to `WISPACE_API_VERIFY_TOKEN_URL` with `X-Internal-Key`. Only a successful response can produce the `userId` used to save the mapping.
+
+Webhook relinking to a different `userId` is rejected. Support can change a mapping only through the protected ops relink flow with `allowRelink`.
+
+### 1.1 Historical raw-ref flow (reference only)
 
 ### Step 1 — WISPACE Creates Link
 
@@ -55,7 +61,7 @@ Consequences may include: victim's reminders / reports reaching Hung's Messenger
 
 ---
 
-## 2. After Security — Core Idea
+## 2. Security Invariants
 
 > **Bot no longer trusts `ref` as `userId`.**
 > `ref` is just a **temporary pass (token)** issued by WISPACE to **exactly one logged-in user**.
@@ -106,21 +112,21 @@ Lan taps link → opens Facebook Messenger → Meta sends webhook to Bot (same a
 
 ### Part C — Bot Verifies BEFORE Saving Mapping (Main Change)
 
-**Before (current code):**
+**Historical pre-token flow:**
 
 ```text
-ref "143" → parseInt → userId=143 → save to DB
+ref "143" → parseInt → userId=143 → save to DB (removed from the active linking path)
 ```
 
-**After (new code):**
+**Current code:**
 
 ```text
 ref "abc-xyz-random"
     │
     ▼
-POST WISPACE /internal/messenger/verify-link-token
-Body: { "token": "abc-xyz-random", "psid": "PSID_LAN" }
-Header: X-Internal-Api-Key: {secret}
+POST WISPACE_API_VERIFY_TOKEN_URL
+Body: { "token": "abc-xyz-random", "value": "PSID_LAN", "platform": "messenger" }
+Header: X-Internal-Key: {WISPACE_INTERNAL_KEY}
     │
     ▼
 WISPACE checks:
@@ -129,32 +135,26 @@ WISPACE checks:
   ✓ used_at = NULL? (not yet used — one-time)
     │
     ▼
-Return: { "valid": true, "userId": 143, "topic": "IELTS", "cadence": "WEEKLY" }
-     + set used_at = now()
+Return: { "success": true, "userId": 143 }
     │
     ▼
 Bot: linkPsidFromContext("PSID_LAN", { userId: 143, ... })
      → save user_platform_mappings
 ```
 
-**Implementation idea** (not yet implemented — phase L4):
+**Current implementation shape:**
 
 ```typescript
 async function resolveLinkFromRef(ref: string, psid: string) {
-  const result = await wispaceClient.verifyLinkToken({ token: ref, psid });
-  if (!result.valid) {
-    return undefined; // don't link; send "link expired, reopen from app" message
+  const result = await linkContextService.resolveFromRef(psid, { ref });
+  if (!result.context) {
+    return undefined; // don't link; guide the user to create a new WISPACE link
   }
-  return {
-    userId: result.userId,
-    topic: result.topic,
-    cadence: result.cadence,
-    ref,
-  };
+  return result.context;
 }
 ```
 
-Plug into all `parseMessengerLinkContext` / `linkPsidFromContext` call sites in `messenger.service.ts` (webhook opt-in, referral, messages with referral).
+This runs through `MessengerLinkContextService` for webhook referral/opt-in events before `linkPsidFromContext` persists the mapping.
 
 ---
 
@@ -191,21 +191,21 @@ Modify `relinkPsidToUserId` — **don't** upsert freely when `previousUserId !==
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│  WISPACE (must implement)                                    │
-│  • API to create token when user LOGINS                      │
-│  • messenger_link_tokens table                               │
-│  • Verify API: receives token + psid → returns userId, marks used │
-│  • App: don't build ref=userId on frontend                    │
+│  WISPACE (external contract)                                 │
+│  • Issue an opaque token when the user is authenticated       │
+│  • Verify token + Messenger value + platform                 │
+│  • Return the owning userId                                  │
+│  • App: don't build ref=userId on frontend                   │
 └─────────────────────────────────────────────────────────────┘
                             ▲
-                            │ POST verify { token, psid }
+                            │ POST verify { token, value, platform }
                             │
 ┌─────────────────────────────────────────────────────────────┐
 │  Messenger Bot (our side)                                    │
-│  • Webhook receives ref as before                            │
-│  • REPLACE parseInt(ref) → call WISPACE verify API           │
-│  • Block relink PSID to different user                       │
-│  • Save mapping psid ↔ userId as before                        │
+│  • Webhook receives the opaque ref token                     │
+│  • Call WISPACE verify API before linking                    │
+│  • Block webhook relink PSID to different user               │
+│  • Save mapping psid ↔ userId after verification              │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -215,12 +215,12 @@ Messenger **doesn't** issue tokens itself — it doesn't know who's logged into 
 
 ## 6. Comparison with Current Code
 
-| | Current | After Security (L4) |
+| | Historical raw-ref flow | Current token-verified flow |
 |--|---------|---------------------|
-| What does `ref` mean? | `userId` | Temporary pass (token) |
+| What does `ref` mean? | `userId` | Opaque WISPACE-issued token |
 | Who decides `userId`? | Bot `parseInt` itself | **WISPACE** returns after verify |
-| What does Bot send to WISPACE when linking? | Nothing | `{ token, psid }` |
-| When is verify API called? | — | **Once** when webhook has `referral.ref` |
+| What does Bot send to WISPACE when linking? | Nothing | `{ token, value, platform }` |
+| When is verify API called? | — | **Once** when webhook has a referral token |
 | Chat / reports / reminders after that | Read DB mapping | **No change** |
 
 ---
@@ -327,8 +327,8 @@ Used **once** when Meta webhook reports user just opened link (`referral.ref`).
 
 | | |
 |--|--|
-| **Method / path** | `POST /internal/messenger/verify-link-token` |
-| **Auth** | `X-Internal-Api-Key: {INTERNAL_API_KEY}` or `Authorization: Bearer {INTERNAL_API_KEY}` |
+| **Method / path** | `POST WISPACE_API_VERIFY_TOKEN_URL` |
+| **Auth** | `X-Internal-Key: {WISPACE_INTERNAL_KEY}` |
 | **Who calls** | **Messenger Bot** |
 | **Content-Type** | `application/json` |
 
@@ -337,14 +337,16 @@ Used **once** when Meta webhook reports user just opened link (`referral.ref`).
 ```json
 {
   "token": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "psid": "1234567890123456"
+  "value": "1234567890123456",
+  "platform": "messenger"
 }
 ```
 
 | Field | Required | Source (Messenger side) |
 |-------|----------|-------------------------|
 | `token` | Yes | `event.referral.ref` (or `optin.ref`, `message.referral.ref`) from Meta webhook |
-| `psid` | Yes | `event.sender.id` from Meta webhook |
+| `value` | Yes | `event.sender.id` from Meta webhook |
+| `platform` | Yes | Constant `messenger` |
 
 **Messenger doesn't send `userId`** — WISPACE looks it up from the token table.
 
@@ -394,7 +396,7 @@ HTTP `400 Bad Request` or `409 Conflict` — unified body:
 
 | `reason` | Meaning |
 |----------|---------|
-| `NOT_FOUND` | Token doesn't exist or `ref` is old numeric userId (legacy) |
+| `NOT_FOUND` | Token doesn't exist or `ref` is an old numeric userId |
 | `EXPIRED` | `now() > expires_at` |
 | `USED` | `used_at` already set — token consumed |
 | `INVALID_FORMAT` | Token empty / wrong format |
@@ -413,30 +415,30 @@ Messenger Bot maps `reason` → user-facing message (e.g. 「Link expired, pleas
 
 ```env
 MESSENGER_LINK_MODE=token
-WISPACE_API_VERIFY_MESSENGER_TOKEN_URL=https://backend.aihubproduction.com/api/User/verify-messenger-token
+WISPACE_API_VERIFY_TOKEN_URL=https://backend.aihubproduction.com/api/User/verify-messenger-token
 WISPACE_INTERNAL_KEY=...
 ```
 
-Bot calls verify at points in `MessengerService.handleEvent` before `linkPsidFromContext`.
+Bot calls verify through `MessengerLinkContextService` before `linkPsidFromContext`.
 
 ---
 
 ### 8.5 Two-Team Communication Checklist
 
-**WISPACE:**
+**WISPACE (external system):**
 
 - [ ] `POST /api/messenger/link-token` (session auth)
 - [ ] `messenger_link_tokens` table
-- [ ] `POST /internal/messenger/verify-link-token` (API key)
-- [ ] App uses `url` from API — doesn't build `ref={userId}` client-side
+- [ ] WISPACE exposes `WISPACE_API_VERIFY_TOKEN_URL` with `{ token, value, platform }`
+- [ ] App uses the URL from WISPACE — doesn't build `ref={userId}` client-side
 - [ ] Issues `INTERNAL_API_KEY` to Messenger service (or separate secret)
 
-**Messenger Bot (L4):**
+**Messenger Bot (implemented):**
 
-- [ ] HTTP client calls verify with `{ token, psid }`
-- [ ] Replace `parseUserIdFromRef` when `MESSENGER_LINK_MODE=token`
-- [ ] Block relink PSID → different userId
-- [ ] Feature flag `legacy` → `token` when WISPACE is ready
+- [x] HTTP client calls verify with `{ token, value, platform }`
+- [x] Token-only startup validation rejects missing verification configuration
+- [x] Block webhook relink PSID → different userId
+- [x] `MESSENGER_LINK_MODE=token` is enforced
 
 ---
 
@@ -491,10 +493,10 @@ Persistent menu (`messenger-profile.service.ts` — payload `REGISTER_LEARNING_R
 
 ### 9.4 Relink — Current vs L4
 
-| | Current Code (L3) | After L4 |
+| | Historical L3 behavior | Current token-only behavior |
 |--|-------------------|----------|
 | PSID mapped to A, webhook ref/token of user B | **Upsert** to B + `MAPPING_USER_ID_RELINK` | **Reject** + log `MAPPING_RELINK_BLOCKED` |
-| Support changing account | `POST /messenger/mapping/relink` | Unchanged (ops-only) |
+| Support changing account | Not available through webhook | `POST /messenger/mapping/relink` with ops authorization |
 | User self-change (production) | Not safe | WISPACE app: unlink → new token → re-link |
 
 See [messenger-link-security.md §7.4](./messenger-link-security.md#74-relink-policy--current-l3-vs-l4) for three relink approaches (ops / self-service / confirm).
@@ -533,4 +535,4 @@ Webhook event
 
 ## 10. One-Line Summary
 
-**WISPACE** issues a pass (`token`) when user logs in; **Messenger** receives `ref` from Meta then sends `{ token, psid }` to WISPACE for verification — **once at link time**; afterwards chat / menu / cron only read DB mapping.
+**WISPACE** issues a pass (`token`) when user logs in; **Messenger** receives `ref` from Meta then sends `{ token, value, platform }` to WISPACE for verification — **once at link time**; afterwards chat / menu / cron only read DB mapping.

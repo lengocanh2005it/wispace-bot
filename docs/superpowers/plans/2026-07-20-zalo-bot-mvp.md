@@ -307,7 +307,7 @@ ZALO_CHAT_HISTORY_MAX_MESSAGES=20
 
 Zalo Official Account bot — chat via `@wispace/llm-agent`, account-linking Zalo Login ↔ WISPACE userId, auto-refreshing OA token lifecycle.
 
-See the full design at [docs/superpowers/specs/2026-07-20-zalo-bot-mvp-design.md](../../docs/superpowers/specs/2026-07-20-zalo-bot-mvp-design.md) and the implementation plan at [docs/superpowers/plans/2026-07-20-zalo-bot-mvp.md](../../docs/superpowers/plans/2026-07-20-zalo-bot-mvp.md).
+See the full design at [docs/superpowers/specs/2026-07-20-zalo-bot-mvp-design.md](../specs/2026-07-20-zalo-bot-mvp-design.md) and the implementation plan at [docs/superpowers/plans/2026-07-20-zalo-bot-mvp.md](./2026-07-20-zalo-bot-mvp.md).
 ```
 
 - [ ] **Step 7: Install workspace deps and run the test**

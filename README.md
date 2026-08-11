@@ -1,6 +1,6 @@
 # wispace-bots
 
-Turborepo monorepo — WISPACE student bots across multiple messaging platforms. Currently features **Facebook Messenger** (fully functional), **Discord** (fully functional), and **Zalo** (fully functional), sharing 17 common packages.
+Turborepo monorepo — WISPACE student bots across multiple messaging platforms. Currently features **Facebook Messenger** (fully functional), **Discord** (fully functional), and **Zalo** (fully functional), sharing 18 common packages.
 
 ## Structure
 
@@ -25,6 +25,7 @@ packages/ops-health/            Ops health snapshot + alerts
 packages/reschedule-confirm/    Generic reschedule confirmation service
 packages/bot-common/            Shared NestJS infrastructure: ops API guard, advisory locks
 packages/database/              Shared TypeORM entities + migrations
+packages/doppler-sync/          Doppler runtime secret sync helpers
 packages/date-utils/            Timezone-aware date helpers (date-fns)
 ```
 

@@ -1,6 +1,6 @@
 # WISPACE BOTS
 
-NestJS Turborepo monorepo for IELTS student bots — AI reports, study reminders, rate-limited AI chat. Currently features `apps/messenger-bot` (fully functional), `apps/discord-bot` (fully functional), `apps/zalo-bot` (fully functional), with shared packages: `llm-agent`, `chat-metering`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `study-reminder-shared`.
+NestJS Turborepo monorepo for IELTS student bots — AI reports, study reminders, and rate-limited AI chat across Messenger, Discord, and Zalo.
 
 ## Language
 
@@ -19,15 +19,15 @@ Platform-specific user identifier (`psid` for Messenger, Discord user ID, Zalo U
 _Avoid_: platform user ID, bot user ID
 
 **userId**:
-Internal numeric WISPACE identifier (integer). Obtained after linking a Messenger account via `ref` or token verification.
+Internal numeric WISPACE identifier (integer). Obtained after token verification during account linking or from an active platform mapping.
 _Avoid_: ambiguous "user ID" — always write "WISPACE userId"
 
 **ref**:
-Query parameter in `m.me` links. Contains the WISPACE `userId` as a string. Parsed by `parseUserIdFromRef()`.
+Query parameter in `m.me` links. Contains an opaque, WISPACE-issued linking token; it does not contain the WISPACE `userId`. The Messenger bot sends it to `WISPACE_API_VERIFY_TOKEN_URL` for verification.
 _Avoid_: reference
 
 **m.me**:
-Facebook's short link domain for Messenger. `m.me/{page}?ref={userId}&topic=...&cadence=...` is how Wispace initiates the account-linking flow.
+Facebook's short link domain for Messenger. `m.me/{page}?ref={token}&topic=...&cadence=...` is how WISPACE initiates the account-linking flow.
 _Avoid_: Messenger link
 
 **platform**:
@@ -37,11 +37,11 @@ _Avoid_: channel, service
 ### Account Linking
 
 **linking / link**:
-The process of pairing a PSID (Messenger) with a WISPACE `userId`. Occurs when a user opens an `m.me` link and the webhook receives the `ref` parameter.
+The process of pairing a PSID (Messenger) with a WISPACE `userId`. Occurs when a user opens an `m.me` link, the bot verifies the opaque `ref` token with WISPACE, and the mapping is saved.
 _Avoid_: registration, signup
 
 **MessengerLinkContext**:
-Parsed context from an `m.me` link: `{ ref, topic, cadence, userId }`.
+Verified context from an `m.me` link: `{ ref, topic, cadence, userId }`. `userId` comes from WISPACE verification, not from parsing `ref`.
 _Avoid_: link params, ref context
 
 **NotificationCadence**:
@@ -65,7 +65,7 @@ Preferred linking mode (`MESSENGER_LINK_MODE=token`). User verifies via `WISPACE
 _Avoid_: ref-only linking
 
 **allowRelink**:
-Ops flag that allows relinking a PSID to a different WISPACE userId (handles L3).
+Ops-only flag that allows relinking a PSID to a different WISPACE userId. Webhook linking blocks this change by default.
 _Avoid_: reassign, rebind
 
 ### Study Reminder
@@ -274,9 +274,9 @@ _Avoid_: callback, event receiver
 Webhook events that failed processing are stored here for later replay. Entity: `WebhookDeadLetterEntity`. States: `pending`, `replayed`, `abandoned`.
 _Avoid_: failed webhook, dead queue
 
-**messenger_message_logs** (DB table):
+**message_logs** (DB table):
 Audit log of all sent/received messages. Entity: `MessageLogEntity`. Cleaned up by cron (default 90 days).
-_Avoid_: message history (that is `CHAT_HISTORY_STORE`)
+_Avoid_: messenger_message_logs (old name), message history (that is `CHAT_HISTORY_STORE`)
 
 **MessageSenderPort**:
 Cross-module port token (`MESSAGE_SENDER`) for sending messages. Implemented by `MessengerOutboundService`. Used by `StudyReminderModule` to avoid circular dependency.

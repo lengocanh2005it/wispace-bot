@@ -22,4 +22,4 @@ Account linking between Messenger and WISPACE uses token-based verification: use
 - User must click the `m.me` link from within the WISPACE app (cannot share the link with others).
 - If the user wants to link to a different account, ops intervention is required (`POST /messenger/mapping/relink`).
 - When multi-device support is needed (same WISPACE account on multiple Messenger accounts), the L4 constraint will need to be reconsidered.
-- Token expiry and rotation are not yet implemented — currently tokens are single-use but have no expiry time limit.
+- Token lifecycle is owned by WISPACE. The bot treats the WISPACE verification response as authoritative and does not create or rotate tokens locally.

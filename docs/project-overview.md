@@ -8,7 +8,7 @@ Turborepo monorepo connecting **WISPACE** (IELTS Writing learning platform) with
 | `apps/discord-bot` | Fully functional — chat, quota, pending cap + typing indicator, 6/7 tool handlers, report cron |
 | `apps/zalo-bot` | Fully functional — chat, quota, pending cap, account linking, report cron, study reminders, CI/CD |
 
-Shared packages (`packages/`): `llm-agent`, `chat-metering`, `chat-agent`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `chat-pipeline`, `study-reminder-shared`, `scheduler-core`, `ops-health`, `bot-metrics`, `cleanup-cron`, `reschedule-confirm`, `bot-common`, `database`, `date-utils`.
+Shared packages (`packages/`): `llm-agent`, `chat-metering`, `chat-agent`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `chat-pipeline`, `study-reminder-shared`, `scheduler-core`, `ops-health`, `bot-metrics`, `cleanup-cron`, `reschedule-confirm`, `bot-common`, `database`, `doppler-sync`, `date-utils`.
 
 This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_chat_bot_db`) + WISPACE HTTP API, not yet separated into a standalone microservice.
 
@@ -18,7 +18,7 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 
 ### 1.1. Platform ↔ WISPACE Linking
 
-- Students open `m.me/{page}?ref={userId}&topic=...&cadence=...` links from WISPACE (Messenger), Discord OAuth2, or Zalo OAuth.
+- Students open `m.me/{page}?ref={token}&topic=...&cadence=...` links issued by WISPACE (Messenger), or use Discord/Zalo OAuth linking.
 - Webhook/OAuth receives the event → saves `user_id` ↔ `external_user_id` + `platform` to `user_platform_mappings`.
 - Bot menu (Messenger persistent menu, Discord slash commands): register reports, view progress, preview study reminders.
 
@@ -34,16 +34,16 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 - **On schedule change:** WISPACE calls `POST /messenger/study-calendar/sync` with `{ userId }` immediately after POST/DELETE `UserCalendar`.
 - **Preview:** menu **"Upcoming Study Reminders"**.
 - Schedule source: `UserCalendar` API (`x-psid`) — API-only (I3 ✓).
-- Details: [study-session-reminder.md](./study-session-reminder.md).
+- Details: [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md).
 
 ### 1.4. Free-form Chat + Rate Limit (FREE_FORM)
 
 - WISPACE-linked users can **send text messages** → bot replies via LLM agent (`MessengerChatEnqueueService` debounce → `MessengerChatProcessorService` → `MessengerAgentService`).
-- **Daily quota** per `(psid, usage_date)` ICT — `messenger_chat_daily_usage`; idempotency `message.mid` — `messenger_chat_idempotency`.
+- **Daily quota** per `(platform, external_user_id, usage_date)` ICT — `chat_daily_usage`; idempotency `message.mid` — `chat_idempotency`.
 - **Burst** `CHAT_BURST_PER_MINUTE`/min; **hard cap** concurrent (H3); **hint** "X remaining" (Phase 6).
 - Menu postback, reminder cron, proactive reports — **no** quota deduction.
 - **Single instance:** `CHAT_QUEUE_STORE=memory` (RAM debounce). **≥2 pods:** `CHAT_QUEUE_STORE=redis` (requires `REDIS_ENABLED=true`; `CHAT_QUEUE_SHARED=true` maps to `redis`).
-- Details + runbook: [chat-rate-limit-quota.md](./chat-rate-limit-quota.md), section 12 below.
+- Details + runbook: [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), section 12 below.
 
 ---
 
@@ -394,14 +394,14 @@ npm run chat-quota:rebuild         # Q1: rebuild daily counter from events
 ## 10. Scope & Limitations
 
 - **Single instance** — `CRON_LEADER_ENABLED=false` (default); enable `CHAT_RATE_LIMIT_ENABLED=true` on prod.
-- **Scaling ≥2 instances** — chat: `CHAT_QUEUE_SHARED=true` (H7); 08:00 reports: `CRON_LEADER_ENABLED` + `scheduled_report_claims` table (R4 ✓). Preparation runbook: [scale-phase-b-runbook.md](./scale-phase-b-runbook.md).
+- **Scaling ≥2 instances** — chat: `CHAT_QUEUE_SHARED=true` (H7); 08:00 reports: `CRON_LEADER_ENABLED` + `scheduled_report_claims` table (R4 ✓). Preparation runbook: [scale-phase-b-runbook.md](../apps/messenger-bot/docs/scale-phase-b-runbook.md).
 - **Multi-platform** — Messenger (fully functional), Discord (fully functional), Zalo (fully functional). Shared packages in `packages/`.
 - **Schedule integration** — WISPACE calls `POST /messenger/study-calendar/sync` on schedule change (S0 ✓); 30-minute cron is a fallback.
 - **UserCalendar API** — requires `WISPACE_API_USER_CALENDAR_URL`; no more DB fallback.
 - **Chat rate limit** — V1 + H1–H7 ✓; remaining project-wide gaps: [edge-cases-roadmap.md](./edge-cases-roadmap.md)
 - **LLM Provider Abstraction** — adapter pattern with OpenAI + OpenRouter + MiniMax failover (PR #32).
 
-Detailed study reminder trade-offs: section 11 in [study-session-reminder.md](./study-session-reminder.md).
+Detailed study reminder trade-offs: section 11 in [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md).
 
 ---
 
@@ -427,7 +427,7 @@ npm run chat-quota:status -- --user-id=143 --date=2026-06-15
 
 **No quota deduction:** menu postback, reminder cron, 08:00 reports, `CHAT_QUOTA_DENIED` messages / system errors.
 
-**Hardening H1–H7:** ✓ done — H2 recover stuck, H3 hard cap, H4 send semantics, H5 abuse caps, H6 retention/logs, H7 shared queue. Details: [§5.10](./chat-rate-limit-quota.md#510-edge-cases-thực-tế--roadmap-hardening-h1h7).
+**Hardening H1–H7:** ✓ done — H2 recover stuck, H3 hard cap, H4 send semantics, H5 abuse caps, H6 retention/logs, H7 shared queue. Details: [§5.10](../apps/messenger-bot/docs/chat-rate-limit-quota.md#510-edge-cases-thực-tế--roadmap-hardening-h1h7).
 
 **Recover stuck reserved (H2):**
 
@@ -486,7 +486,7 @@ npm run migration:run
 
 Each pod runs a 2s cron poll buffer; debounce/history/`mid` dedupe stored in PostgreSQL.
 
-Architecture details: [chat-rate-limit-quota.md](./chat-rate-limit-quota.md).
+Architecture details: [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md).
 
 ---
 
@@ -499,7 +499,7 @@ npm run migration:run
 npm run start:dev
 ```
 
-Or **Doppler** (no `.env` on disk): see [doppler-secrets.md](./doppler-secrets.md) → `doppler setup` + `npm run start:dev:doppler`.
+Or **Doppler** (no `.env` on disk): see [doppler-secrets.md](../apps/messenger-bot/docs/doppler-secrets.md) → `doppler setup` + `npm run start:dev:doppler`.
 
 Meta webhook points to public URL (ngrok / tunnel) → `POST /v1/webhook`.
 
@@ -531,4 +531,4 @@ On VPS: `docker-compose.prod.yml` + `.env` at `/home/ngoc_anh/<app>/`. Legacy PM
 
 **Prod public URL:** `https://aiassist.aihubproduction.com` (Nginx → `127.0.0.1:5007`). Docker binds **localhost only** — does not expose `:5007` to the internet. Nginx: `client_max_body_size` + rate limit on `POST /v1/webhook` — see [`deploy/nginx/README.md`](../deploy/nginx/README.md).
 
-Setup details for project/config `dev` + `prd`: [doppler-secrets.md](./doppler-secrets.md).
+Setup details for project/config `dev` + `prd`: [doppler-secrets.md](../apps/messenger-bot/docs/doppler-secrets.md).

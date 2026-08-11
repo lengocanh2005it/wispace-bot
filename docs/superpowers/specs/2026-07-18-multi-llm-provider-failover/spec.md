@@ -5,10 +5,10 @@
 
 ## Problem
 
-Currently each app only configures **one** `LlmProviderAdapter` at boot time (`LLM_PROVIDER` env → `createLlmProviderAdapter()`, see ADR [0006](../../adr/0006-llm-provider-adapter.md)). When that provider has a runtime failure (out of credits, rate limit, 5xx):
+Currently each app only configures **one** `LlmProviderAdapter` at boot time (`LLM_PROVIDER` env → `createLlmProviderAdapter()`, see ADR [0006](../../../adr/0006-llm-provider-adapter.md)). When that provider has a runtime failure (out of credits, rate limit, 5xx):
 
 1. `LlmAgentService.withRetry()` (packages/llm-agent) and/or `LlmExecutionService.runWithRetry()` (messenger-bot) or `DiscordAgentService.runWithRetry()` (discord-bot) **retries the same provider** with exponential backoff (default 3–4 attempts).
-2. If the error is **out of credits / quota**, retry will definitely fail again — just wastes wait time (actual log: `LLM call failed after 4 attempts` — user waits ~several seconds before receiving fallback message, see [chat fallback thread](../../../CLAUDE.md) earlier in this session).
+2. If the error is **out of credits / quota**, retry will definitely fail again — just wastes wait time (actual log: `LLM call failed after 4 attempts` — user waits ~several seconds before receiving fallback message, see [chat fallback thread](../../../../CLAUDE.md) earlier in this session).
 3. No second provider is attempted — all chat/report/reminder features are completely dead until an operator tops up credits or changes `.env` + restarts.
 4. **Additional bug discovered**: `apps/discord-bot/src/modules/discord-chat/discord-chat.module.ts` hardcodes `new OpenAiAdapter(...)` directly, **not** going through `createLlmProviderAdapter()` — Discord bot currently does not respect the `LLM_PROVIDER` env var even though Messenger bot does. Needs to be fixed at the same time.
 

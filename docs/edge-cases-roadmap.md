@@ -2,7 +2,7 @@
 
 Document recording **weaknesses / unhandled items** in the WISPACE bots (all functionality, not just rate limit) and **how to fix them** in **small phases** — independent PR merges.
 
-**Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. DB **separated** to `ai_chat_bot_db` (✓). LLM Provider Abstraction **done** (PR #32). Shared packages **extracted** (14 packages). Discord bot **functional** (chat + quota + 6/7 tool handlers). Items below are remaining gaps or scale-dependent improvements.
+**Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. DB **separated** to `ai_chat_bot_db` (✓). LLM Provider Abstraction **done** (PR #32). Shared packages **extracted** (18 packages). Discord bot **functional** (chat + quota + 6/7 tool handlers). Items below are remaining gaps or scale-dependent improvements.
 
 Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md), [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), [AGENTS.md](../AGENTS.md) (Integration gaps table).
 
@@ -36,7 +36,7 @@ Related: [project-overview.md](./project-overview.md), [study-session-reminder.m
 | **SAFETY** ✓ | LLM safety event tracking + cleanup | 1 day | Hallucination detection, daily alert |
 | **METRICS** ✓ | Prometheus `/metrics` endpoint | 0.5 days | `MetricsModule` |
 | **DOPPLER** ✓ | Doppler runtime sync | 1 day | `POST /messenger/ops/doppler-sync` |
-| **PKG** ✓ | Shared packages extraction | 3–5 days | 14 packages in `packages/` |
+| **PKG** ✓ | Shared packages extraction | 3–5 days | 18 packages in `packages/` |
 | **DISCORD** ✓ | Discord bot (functional) | 3–5 days | Chat + quota + pending cap + typing indicator + 6/7 tool handlers |
 | **ZALO** ✓ | Zalo bot (fully functional) | 3–5 days | Chat + quota + account linking + 6/7 tool handlers + 08:00 report cron + study reminders + dead letter + ops endpoints + CI/CD + chat queue + pending cap + typing indicator + Redis burst counter + LLM report enrichment + Doppler webhook |
 
@@ -121,7 +121,7 @@ flowchart LR
 
 | Gap | Impact | Fix | Phase |
 |-----|--------|-----|-------|
-| ~~**`ref` = raw `userId` — no account owner verification**~~ | ~~IDOR~~ | **Done** — token-only + startup validator; `m.me` links only from WISPACE — [messenger-link-security.md](./messenger-link-security.md) | **L4** ✓ |
+| ~~**`ref` = raw `userId` — no account owner verification**~~ | ~~IDOR~~ | **Done** — token-only + startup validator; `m.me` links only from WISPACE — [messenger-link-security.md](../apps/messenger-bot/docs/messenger-link-security.md) | **L4** ✓ |
 | ~~POST `/webhook` no Meta signature verification~~ | Fake payload if webhook URL leaked | **Done** — `MessengerWebhookSignatureGuard`, `MESSENGER_APP_SECRET`, `rawBody` | Done |
 | ~~App port public / flood bypasses Nginx~~ | Bypasses rate limit + body cap | **Done** — Docker `127.0.0.1:PORT`; Nginx `deploy/nginx/` on VPS | Done |
 | ~~Webhook Meta retry; 1 event error~~ | ~~Other events still processed (correct); errored event lost~~ | **DL** ✓ — `messenger_webhook_dead_letters` + 5-min auto-retry cron + advisory lock + ops script | Done |
@@ -240,7 +240,7 @@ Instead of fixed **1-minute** cron, worker uses adaptive loop:
 - **Job due in 10 minutes** → poll again ~9 minutes later
 - Multi-pod: each pod runs own loop; `claimJob` is atomic — no advisory lock needed for dispatch
 
-Details: [study-session-reminder.md §11.6](./study-session-reminder.md#116-worker-dispatch-polling--db-load-concerns--risk-mitigation).
+Details: [study-session-reminder.md §11.6](../apps/messenger-bot/docs/study-session-reminder.md#116-worker-dispatch-polling--db-load-concerns--risk-mitigation).
 
 ---
 
@@ -261,7 +261,7 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 
 | Gap | Impact | Fix | Phase |
 |-----|--------|-----|-------|
-| Tier per WISPACE package | All users same `CHAT_FREE_FORM_DAILY_LIMIT` | Phase 7: limit by `user_id` / package API — [§5.8](./chat-rate-limit-quota.md) | **C1** |
+| Tier per WISPACE package | All users same `CHAT_FREE_FORM_DAILY_LIMIT` | Phase 7: limit by `user_id` / package API — [§5.8](../apps/messenger-bot/docs/chat-rate-limit-quota.md) | **C1** |
 | Event store / billing | Hard to audit monthly LLM costs | `chat_quota_events` + `llm_usage_events` tables ✓ | **C2** ✓ MVP |
 | Schedule change tool via chat | **Confirm postback** — `reschedule_study_session` only stages; WISPACE API runs on "Confirm Reschedule" tap | Done (Messenger + Discord button confirm/cancel) |
 | `register_exam_report_notifications` | Not available on Discord/Zalo | **Skip** — Discord has no 24h limit; Zalo 48h window covers active users; ZNS deferred to post-product if users complain | **Done** (decided) |
@@ -278,7 +278,7 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 | **≥2 reminder cron pods** | `claimJob` ✓ + **cron pg_advisory_lock** ✓ | `upsertPendingJob` TOCTOU fixed ✓ (`pg_advisory_xact_lock`) | Done |
 | Multi-pod webhook dedupe cleanup cron | N×DELETE | **pg_advisory_lock** ✓ — only 1 pod runs every 15 minutes | Done |
 | Monitor / alert | Logs + scripts | **I1** ✓ runbook + `ops:health`; **S1** ✓ failed/stuck jobs; **DL** ✓ dead-letter cron; **I2** Slack alert | **I2** |
-| **Manual VPS prod env sync** | local/prod drift; secret rotation requires SSH | **Doppler** + `DOPPLER_TOKEN` on CI — [doppler-secrets.md](./doppler-secrets.md) | Done (code) |
+| **Manual VPS prod env sync** | local/prod drift; secret rotation requires SSH | **Doppler** + `DOPPLER_TOKEN` on CI — [doppler-secrets.md](../apps/messenger-bot/docs/doppler-secrets.md) | Done (code) |
 | WISPACE **schema** change | ~~`UserCalendars` DB fallback~~ | **I3** ✓ — API-only `UserCalendar` via `x-psid` | **I3** ✓ |
 | **LLM provider down** | Single provider failure | **LLM-AB** ✓ — adapter failover across OpenAI/OpenRouter/MiniMax |
 | **LLM safety events** | No tracking | **SAFETY** ✓ — `llm_safety_events` + cleanup cron + daily threshold alert |
@@ -309,7 +309,7 @@ Ran manual tests before go-live (Messenger + prod `.env`).
 
 ### Q1.1 Link
 
-- [x] Open `m.me` with `ref={userId}` from WISPACE
+- [x] Open `m.me` with an opaque WISPACE-issued `ref` token
 - [x] Verify `user_platform_mappings` has `external_user_id` + `user_id` + `platform`
 - [x] Persistent menu displayed (ran `profile/setup`)
 

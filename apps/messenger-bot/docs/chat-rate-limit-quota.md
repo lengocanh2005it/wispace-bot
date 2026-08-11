@@ -2,7 +2,7 @@
 
 Research document covering **3 quota storage approaches** for enabling two-way chatbot (user messages ↔ bot replies via LLM), analyzing trade-offs and **proposed implementation** for WISPACE.
 
-Related: [project-overview.md](../../docs/project-overview.md), [study-session-reminder.md](./study-session-reminder.md) (similar outbox pattern to `study_reminder_jobs`).
+Related: [project-overview.md](../../../docs/project-overview.md), [study-session-reminder.md](./study-session-reminder.md) (similar outbox pattern to `study_reminder_jobs`).
 
 ---
 
@@ -21,8 +21,8 @@ Related: [project-overview.md](../../docs/project-overview.md), [study-session-r
 | Two-way chat AI (`MessengerChatEnqueueService` → `MessengerChatProcessorService` → agent + tools) | ✓ |
 | Webhook dedupe `message.mid` | ✓ RAM (default) or Redis when `CHAT_DEDUPE_STORE=redis` |
 | Postback dedupe (`psid:payload`, TTL 15s) | ✓ |
-| Rate limit / `messenger_chat_daily_usage` | ✓ `ChatRateLimitModule` |
-| DB idempotency quota (`message.mid`) | ✓ `messenger_chat_idempotency` |
+| Rate limit / `chat_daily_usage` | ✓ `ChatRateLimitModule` |
+| DB idempotency quota (`message.mid`) | ✓ `chat_idempotency` |
 | Hard cap daily in transaction (H3) | ✓ |
 | Stuck `reserved` / retry `mid` (H2) | ✓ |
 | LLM vs Send semantics, abuse caps (H4–H5) | ✓ |
@@ -39,7 +39,7 @@ webhook → dedupe mid → enqueue (RAM or DB buffer)
 
 Enable enforcement: `CHAT_RATE_LIMIT_ENABLED=true`. Quick disable: `false` or `CHAT_RATE_LIMIT_WHITELIST_PSIDS`.
 
-The `messenger_message_logs` table already exists — used for sent/received message audit (`message_type`, `psid`, `user_id`, `created_at`).
+The `message_logs` table already exists — used for sent/received message audit (`message_type`, `external_user_id`, `user_id`, `created_at`).
 
 ### 1.3. What Does Meta (Facebook) Limit?
 
@@ -85,7 +85,7 @@ CHAT_USAGE_TIMEZONE=Asia/Ho_Chi_Minh
 
 ## 3. Three Quota Storage Approaches
 
-### Option A — Daily Counter Table `messenger_chat_daily_usage` (Proposed)
+### Option A — Daily Counter Table `chat_daily_usage` (Proposed)
 
 #### Concept
 
@@ -94,7 +94,7 @@ Each user (`psid`) has **one row per ICT day** with a `free_form_count` column. 
 #### Proposed Schema
 
 ```sql
-CREATE TABLE messenger_chat_daily_usage (
+CREATE TABLE chat_daily_usage (
   id               SERIAL PRIMARY KEY,
   psid             VARCHAR(64) NOT NULL,
   user_id          INT NULL,
@@ -106,7 +106,7 @@ CREATE TABLE messenger_chat_daily_usage (
 );
 
 CREATE INDEX idx_chat_daily_usage_user_date
-  ON messenger_chat_daily_usage (user_id, usage_date)
+  ON chat_daily_usage (user_id, usage_date)
   WHERE user_id IS NOT NULL;
 ```
 
@@ -148,12 +148,12 @@ sequenceDiagram
 #### Atomic UPSERT (race protection)
 
 ```sql
-INSERT INTO messenger_chat_daily_usage (psid, user_id, usage_date, free_form_count)
+INSERT INTO chat_daily_usage (psid, user_id, usage_date, free_form_count)
 VALUES ($1, $2, $3, 1)
 ON CONFLICT (psid, usage_date)
 DO UPDATE SET
-  free_form_count = messenger_chat_daily_usage.free_form_count + 1,
-  user_id = COALESCE(EXCLUDED.user_id, messenger_chat_daily_usage.user_id),
+  free_form_count = chat_daily_usage.free_form_count + 1,
+  user_id = COALESCE(EXCLUDED.user_id, chat_daily_usage.user_id),
   updated_at = now()
 RETURNING free_form_count;
 ```
@@ -214,7 +214,7 @@ Hook: **`MessengerChatProcessorService.flush()`** — before LLM; webhook keeps 
 
 #### Integration with Existing Logs
 
-Counter = **fast reads** for quota. `messenger_message_logs` = **audit** of content:
+Counter = **fast reads** for quota. `message_logs` = **audit** of content:
 
 | message_type | When |
 |--------------|------|
@@ -245,7 +245,7 @@ type ChatEventType =
 #### Event Store Schema
 
 ```sql
-CREATE TABLE messenger_chat_events (
+CREATE TABLE chat_quota_events (
   id              BIGSERIAL PRIMARY KEY,
   aggregate_id    VARCHAR(64) NOT NULL,   -- psid
   aggregate_type  VARCHAR(32) NOT NULL DEFAULT 'chat_quota',
@@ -256,7 +256,7 @@ CREATE TABLE messenger_chat_events (
 );
 
 CREATE INDEX idx_chat_events_aggregate_time
-  ON messenger_chat_events (aggregate_id, occurred_at);
+  ON chat_quota_events (aggregate_id, occurred_at);
 ```
 
 #### Replay (derive state)
@@ -277,8 +277,8 @@ function projectDailyUsage(events: ChatEvent[], usageDate: string): number {
 
 ```mermaid
 flowchart LR
-  WH[Webhook] --> ES[messenger_chat_events]
-  ES --> PROJ[messenger_chat_daily_usage projection]
+  WH[Webhook] --> ES[chat_quota_events]
+  ES --> PROJ[chat_daily_usage projection]
   WH --> PROJ
   PROJ --> READ[Check quota O1]
   OPS[Replay script] --> ES
@@ -295,7 +295,7 @@ Runtime **still needs projection** (Option A) for O(1) quota checks. Event store
 
 ---
 
-### Option C — Count from `messenger_message_logs`
+### Option C — Count from `message_logs`
 
 #### Concept
 
@@ -305,7 +305,7 @@ No counter table. Each chat message logged with a fixed `message_type`. Today's 
 
 ```sql
 SELECT COUNT(*)::int AS used_today
-FROM messenger_message_logs
+FROM message_logs
 WHERE psid = $1
   AND message_type = 'FREE_FORM_CHAT_IN'
   AND status = 'SENT'
@@ -315,7 +315,7 @@ WHERE psid = $1
 1-minute burst:
 
 ```sql
-SELECT COUNT(*) FROM messenger_message_logs
+SELECT COUNT(*) FROM message_logs
 WHERE psid = $1
   AND message_type = 'FREE_FORM_CHAT_IN'
   AND created_at > NOW() - INTERVAL '1 minute';
@@ -335,7 +335,7 @@ No UPSERT counter — each action only appends a log.
 
 ### 4.1. Summary Table
 
-| Criterion | **A. `messenger_chat_daily_usage`** | **B. Event sourcing** | **C. Count from logs** |
+| Criterion | **A. `chat_daily_usage`** | **B. Event sourcing** | **C. Count from logs** |
 |-----------|-------------------------------------|------------------------|------------------------|
 | **Implementation complexity** | Low | High (store + projection + replay) | Lowest (no new migration) |
 | **Operational complexity** | Low | High — team must understand replay | Medium — log grows over time |
@@ -364,7 +364,7 @@ Only when **at least two** of the following:
 2. Need frequent rebuild after changing business rules
 3. Compliance requires proving each deny/grant decision
 
-Then: add `messenger_chat_events` **alongside** `messenger_chat_daily_usage`, don't change the hot path.
+Then: add `chat_quota_events` **alongside** `chat_daily_usage`, don't change the hot path.
 
 ### 4.4. Why Not C for Production
 
@@ -377,19 +377,19 @@ Then: add `messenger_chat_events` **alongside** `messenger_chat_daily_usage`, do
 
 ---
 
-## 5. Official Proposal: Option A — `messenger_chat_daily_usage`
+## 5. Official Proposal: Option A — `chat_daily_usage`
 
 ### 5.1. Decision Summary
 
 | Decision | Choice |
 |----------|--------|
-| Quota storage | **`messenger_chat_daily_usage`** table |
+| Quota storage | **`chat_daily_usage`** table |
 | Key | `(psid, usage_date)` unique |
 | Timezone | `CHAT_USAGE_TIMEZONE` = `Asia/Ho_Chi_Minh` |
 | Counter | `free_form_count` — FREE_FORM bucket only |
 | Write | Atomic UPSERT; reserve before LLM, refund on fail |
 | Idempotency | **DB** — `message.mid` unique at reserve (§5.3); keep RAM dedupe at webhook |
-| Audit | Keep `messenger_message_logs` with standard `message_type` |
+| Audit | Keep `message_logs` with standard `message_type` |
 | Event sourcing | **Not** in phase 1; may add later |
 | Count from logs | **Not** on hot path |
 
@@ -425,7 +425,7 @@ Meta may **retry webhooks** with the same payload (same `message.mid`). The syst
 | Layer | When | Mechanism |
 |-------|------|-----------|
 | Webhook dedupe | Before enqueue | RAM or Redis (`CHAT_DEDUPE_STORE`) |
-| Quota idempotency | At flush | `messenger_chat_idempotency` — unique `idempotency_key = message.mid` |
+| Quota idempotency | At flush | `chat_idempotency` — unique `idempotency_key = message.mid` |
 
 Postback: separate dedupe `psid:payload` (15s) — **not** related to chat quota.
 
@@ -439,7 +439,7 @@ Postback: separate dedupe `psid:payload` (15s) — **not** related to chat quota
 #### Schema — Idempotency Table (migrated)
 
 ```sql
-CREATE TABLE messenger_chat_idempotency (
+CREATE TABLE chat_idempotency (
   idempotency_key  VARCHAR(128) PRIMARY KEY,  -- message.mid from Meta
   psid             VARCHAR(64) NOT NULL,
   user_id          INT NULL,
@@ -450,7 +450,7 @@ CREATE TABLE messenger_chat_idempotency (
 );
 
 CREATE INDEX idx_chat_idempotency_psid_date
-  ON messenger_chat_idempotency (psid, usage_date);
+  ON chat_idempotency (psid, usage_date);
 ```
 
 | Column | Meaning |
@@ -458,7 +458,7 @@ CREATE INDEX idx_chat_idempotency_psid_date
 | `idempotency_key` | `message.mid` — globally unique |
 | `status` | `reserved` → LLM running; `completed` → reply sent; `refunded` → turn returned after error |
 
-**Simpler approach:** unique `(idempotency_key)` on `messenger_message_logs` when `message_type = 'FREE_FORM_CHAT_IN'` — reserve + insert log in one transaction. Insert failure → mid already processed, skip LLM.
+**Simpler approach:** unique `(idempotency_key)` on `message_logs` when `message_type = 'FREE_FORM_CHAT_IN'` — reserve + insert log in one transaction. Insert failure → mid already processed, skip LLM.
 
 #### Reserve Flow with Idempotency
 
@@ -524,7 +524,7 @@ Students typically message the bot from **computer** (Messenger web / desktop) a
 | **Debounce** | Messages from PC + phone arriving **within** `CHAT_DEBOUNCE_MS` (before flush) → merge `texts[]` → **one** bot reply → **deducts 1 turn**. |
 | **Pending while processing** | Message arrives **while** bot is calling LLM (`processing = true`) → enters `pendingWhileProcessing` → after flush completes, **flushes again** → **deducts 1 more turn** (two legitimate messages). |
 | **Quota DB** | Reserve by `idempotency_key` = `mid` of last message in flush batch; counter `free_form_count` by PSID + ICT day. |
-| **Burst** | Counts `messenger_chat_idempotency` records with `reserved_at` in last 60 seconds — **all devices** combined for same PSID. |
+| **Burst** | Counts `chat_idempotency` records with `reserved_at` in last 60 seconds — **all devices** combined for same PSID. |
 
 **Illustrative scenario:**
 
@@ -609,8 +609,8 @@ class ChatRateLimitService {
 
 ### 5.7. Implementation Checklist (V1 — done)
 
-- [x] Migration `messenger_chat_daily_usage`
-- [x] Migration `messenger_chat_idempotency` (or unique `message.mid` on log IN)
+- [x] Migration `chat_daily_usage`
+- [x] Migration `chat_idempotency` (or unique `message.mid` on log IN)
 - [x] Entity + repository + `ChatRateLimitService` (`reserve` / `refund` / `markCompleted`)
 - [x] Wire **`MessengerChatProcessorService.flush()`** — reserve + idempotency **before** LLM; refund in `catch`
 - [x] Keep RAM dedupe `isDuplicateMessageMid` at webhook (fast path)
@@ -620,7 +620,7 @@ class ChatRateLimitService {
 - [x] Env: `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_USAGE_TIMEZONE`
 - [x] Ops scripts: `npm run chat-quota:status` — query usage + idempotency by `psid` / `user_id` / date
 - [x] Tests: retry webhook with same `mid` → count doesn't increase; LLM fail → refund
-- [x] Update [project-overview.md](../../docs/project-overview.md) on merge
+- [x] Update [project-overview.md](../../../docs/project-overview.md) on merge
 
 ### 5.8. Post-V1 Roadmap (optional — after V1 production)
 
@@ -635,7 +635,7 @@ class ChatRateLimitService {
 
 ### 5.9. Phased Implementation Plan (full rate limit)
 
-Implementation roadmap for **V1 (Phase 0–5 ✓)** and hardening **H1–H7 ✓** — kept as historical / onboarding documentation. Phase 7–8 (tier, event store) not yet implemented.
+Implementation roadmap for **V1 (Phase 0–5 ✓)** and hardening **H1–H7 ✓** — kept as historical / onboarding documentation. V2 and V4 are implemented; only tiered quotas (V3 / Phase 7) remain deferred.
 
 ```mermaid
 flowchart LR
@@ -671,8 +671,8 @@ flowchart LR
 
 | Task | Done when |
 |------|-----------|
-| Migration `messenger_chat_daily_usage` | `npm run migration:run` OK |
-| Migration `messenger_chat_idempotency` | Unique `idempotency_key` |
+| Migration `chat_daily_usage` | `npm run migration:run` OK |
+| Migration `chat_idempotency` | Unique `idempotency_key` |
 | TypeORM entity + repository (UPSERT daily, INSERT idempotency) | Spec: concurrent UPSERT → correct count |
 | Index `(psid, usage_date)` | Explain query fast |
 
@@ -710,7 +710,7 @@ flowchart LR
 | Pass `idempotencyKey` = `message.mid` of **last** message in debounce batch (convention §5.3) | 5-message burst → 1 turn |
 | Quota exhausted → `sendTextViaPsid` message §5.5, `message_type=CHAT_QUOTA_DENIED` | No OpenAI call |
 | Success → `markCompleted`; `catch` → `refund` | LLM error doesn't waste turns |
-| Log `FREE_FORM_CHAT_IN` (optional) before LLM | Audit in `messenger_message_logs` |
+| Log `FREE_FORM_CHAT_IN` (optional) before LLM | Audit in `message_logs` |
 | Keep `isDuplicateMessageMid` RAM at webhook | Fast path unchanged |
 
 **Manual tests:**
@@ -744,7 +744,7 @@ flowchart LR
 | Task | Done when |
 |------|-----------|
 | Script `npm run chat-quota:status` (psid / userId / date) | Ops query usage |
-| Update [project-overview.md](../../docs/project-overview.md), gap `AGENTS.md` | Docs match code |
+| Update [project-overview.md](../../../docs/project-overview.md), gap `AGENTS.md` | Docs match code |
 | Checklist §5.7 all V1 items ticked | Review merge |
 | Document recommended prod limits (15–20/day, burst 3) in runbook | Wispace knows the numbers |
 
@@ -776,7 +776,7 @@ flowchart LR
 
 | Task | Done when |
 |------|-----------|
-| `messenger_chat_events` table + replay rebuild projection | Audit & quota rule changes |
+| `chat_quota_events` table + replay rebuild projection | Audit & quota rule changes |
 | Per-token billing (if product requires) | Outside scope |
 
 ---
@@ -825,7 +825,7 @@ flowchart LR
 | Debounce merges many long messages → 1 turn, high LLM tokens | Medium | **H5** | Quota counts turns, not length |
 | Burst counts `refunded` in 60s | Medium | **H5** | User retry after error easily hits burst |
 | Webhook missing `message.mid` → skip reserve, still LLM | Medium | **H5** | Gap if Meta doesn't send `mid` |
-| `messenger_chat_idempotency` grows forever, no retention | Low | **H6** | Ops / storage |
+| `chat_idempotency` grows forever, no retention | Low | **H6** | Ops / storage |
 | Queue + history RAM not shared across pods | Low | **H7** | Only on horizontal scale |
 | Multiple devices same PSID | — | *(doc §5.3)* | Documented; H3 if multi-pod |
 | Exactly midnight ICT, pending when quota exhausted, sticker-only | Low | **H1** (runbook) | Document QA, no code needed |

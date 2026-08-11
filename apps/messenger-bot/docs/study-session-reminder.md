@@ -103,7 +103,7 @@ stateDiagram-v2
 
 ### 3.3. Cleanup & Evening Rollover
 
-The `study_reminder_jobs` table is a **snapshot outbox** (send queue), not a history store. Message audit is in `messenger_message_logs`.
+The `study_reminder_jobs` table is a **snapshot outbox** (send queue), not a history store. Message audit is in `message_logs`.
 
 #### Evening Rollover (23:00, timezone `STUDY_REMINDER_TIMEZONE`)
 
@@ -354,7 +354,7 @@ Cố lên nhé! 💪
 
 ## 7. Code Structure
 
-The `study-reminder` module follows Clean Architecture (see [AGENTS.md](../AGENTS.md#clean-architecture)):
+The `study-reminder` module follows Clean Architecture (see [AGENTS.md](../../../AGENTS.md#clean-architecture)):
 
 ```
 src/modules/study-reminder/
@@ -455,7 +455,7 @@ POST /messenger/profile/setup
 | `STUDY_SESSION_REMINDER_PREVIEW` | Menu test |
 | `STUDY_SESSION_REMINDER_EMPTY` | No upcoming classes |
 
-Primary send status: `study_reminder_jobs.status`. `messenger_message_logs` used for audit.
+Primary send status: `study_reminder_jobs.status`. `message_logs` used for audit.
 
 ---
 
@@ -623,7 +623,7 @@ For **IELTS students + 30-minute advance reminders**, the combination of **small
 
 #### 11.6.8. Relation to Chat Rate Limit (Future)
 
-The proposed `messenger_chat_daily_usage` table (see [chat-rate-limit-quota.md](./chat-rate-limit-quota.md)) does **not** use dispatch poll — it only reads **1 row** when a user messages. Polling concerns **only apply** to the **automatic reminder dispatch** flow, not menu preview or chat AI.
+The `chat_daily_usage` table (see [chat-rate-limit-quota.md](./chat-rate-limit-quota.md)) does **not** use dispatch poll — it only reads **1 row** when a user messages. Polling concerns **only apply** to the **automatic reminder dispatch** flow, not menu preview or chat AI.
 
 ### 11.7. Short Conclusion
 

@@ -2,7 +2,7 @@
 
 Production env on VPS is **synced from Doppler** on every GitHub Actions deploy (when `DOPPLER_TOKEN` is present). Local dev can use `doppler run` instead of copying `.env` manually.
 
-Related: [project-overview.md](../../docs/project-overview.md) § deploy, `.github/workflows/deploy-bots.yml`, `.env.example` (variable names only, no values).
+Related: [project-overview.md](../../../docs/project-overview.md) § deploy, `.github/workflows/deploy-bots.yml`, `.env.example` (variable names only, no values).
 
 ---
 
