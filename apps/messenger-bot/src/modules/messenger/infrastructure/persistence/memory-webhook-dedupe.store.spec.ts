@@ -41,4 +41,20 @@ describe('MemoryWebhookDedupeStore', () => {
       false,
     );
   });
+
+  it('bounded: drops oldest mids once the map exceeds the cap', async () => {
+    const store = createStore();
+    for (let i = 0; i < 10_005; i++) {
+      await store.isDuplicateMessageMid(`mid-${i}`, 'psid-1');
+    }
+
+    // The first entries were evicted — their mids are no longer deduped.
+    await expect(store.isDuplicateMessageMid('mid-0', 'psid-1')).resolves.toBe(
+      false,
+    );
+    // Recent entries still dedupe.
+    await expect(
+      store.isDuplicateMessageMid('mid-10004', 'psid-1'),
+    ).resolves.toBe(true);
+  });
 });

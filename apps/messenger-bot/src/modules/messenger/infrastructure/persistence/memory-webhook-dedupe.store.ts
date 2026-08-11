@@ -5,6 +5,10 @@ import { MessengerChatSharedConfigService } from '../../application/services/mes
 
 @Injectable()
 export class MemoryWebhookDedupeStore implements WebhookDedupeStorePort {
+  /** Bounded LRU-ish cap — a mid flood must not grow memory unboundedly. */
+  private static readonly MAX_MESSAGE_MIDS = 10_000;
+  private static readonly MAX_POSTBACKS = 1_000;
+
   private readonly messageMids = new Map<string, number>();
   private readonly postbacks = new Map<string, number>();
 
@@ -25,6 +29,10 @@ export class MemoryWebhookDedupeStore implements WebhookDedupeStorePort {
     }
 
     this.messageMids.set(mid, now);
+    this.evictOverflow(
+      this.messageMids,
+      MemoryWebhookDedupeStore.MAX_MESSAGE_MIDS,
+    );
     return Promise.resolve(false);
   }
 
@@ -40,6 +48,7 @@ export class MemoryWebhookDedupeStore implements WebhookDedupeStorePort {
     }
 
     this.postbacks.set(key, now);
+    this.evictOverflow(this.postbacks, MemoryWebhookDedupeStore.MAX_POSTBACKS);
     return Promise.resolve(false);
   }
 
@@ -47,6 +56,17 @@ export class MemoryWebhookDedupeStore implements WebhookDedupeStorePort {
     void _psid;
     this.messageMids.delete(mid);
     return Promise.resolve();
+  }
+
+  /** Drops the oldest entries once the map exceeds the cap (Map preserves insertion order). */
+  private evictOverflow(map: Map<string, number>, max: number): void {
+    while (map.size > max) {
+      const oldest = map.keys().next().value;
+      if (oldest === undefined) {
+        return;
+      }
+      map.delete(oldest);
+    }
   }
 
   private evictStaleMessageMids(): void {

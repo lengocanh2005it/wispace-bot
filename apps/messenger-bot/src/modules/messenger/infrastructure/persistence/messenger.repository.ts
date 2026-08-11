@@ -70,35 +70,70 @@ export class MessengerRepository
     cadence?: NotificationCadence;
   }): Promise<UserMessengerMapping> {
     const token = buildPocPsidToken(params.psid);
-    const existing = await this.mappingRepo.findOne({
-      where: { platform: PLATFORM, externalUserId: params.psid },
-    });
 
-    if (existing) {
-      existing.userId = params.userId;
-      existing.externalUserId = params.psid;
-      existing.notificationMessagesToken =
-        existing.notificationMessagesToken || token;
-      existing.topic = params.topic ?? existing.topic;
-      existing.cadence = params.cadence ?? existing.cadence;
-      existing.status = 'ACTIVE';
+    // 1. Re-activate a previously deactivated mapping (keeps its id) — the
+    //    INSERT below can only conflict with ACTIVE rows, so an INACTIVE row
+    //    would otherwise be left behind while a duplicate ACTIVE row is created.
+    await this.mappingRepo.manager.query(
+      `
+      UPDATE user_platform_mappings
+      SET
+        user_id = $3,
+        notification_messages_token = COALESCE(notification_messages_token, $4),
+        topic = COALESCE($5, topic),
+        cadence = COALESCE($6, cadence),
+        status = 'ACTIVE',
+        updated_at = now()
+      WHERE platform = $1
+        AND external_user_id = $2
+        AND status = 'INACTIVE'
+    `,
+      [
+        PLATFORM,
+        params.psid,
+        params.userId,
+        token,
+        params.topic ?? null,
+        params.cadence ?? null,
+      ],
+    );
 
-      const saved = await this.mappingRepo.save(existing);
-      return this.mapEntity(saved);
-    }
+    // 2. Atomic upsert against the partial unique index
+    //    (platform, external_user_id WHERE status='ACTIVE'): concurrent link
+    //    events (opt-ins have no mid, so dedupe never filters them) can no
+    //    longer race findOne→save into a unique-violation 500. The conflict
+    //    target must match the index columns exactly or Postgres raises 42P10.
+    const rows: Array<Record<string, unknown>> =
+      await this.mappingRepo.manager.query(
+        `
+        INSERT INTO user_platform_mappings
+          (platform, external_user_id, user_id, notification_messages_token, topic, cadence, status)
+        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE')
+        ON CONFLICT (platform, external_user_id)
+          WHERE status = 'ACTIVE' AND external_user_id IS NOT NULL
+        DO UPDATE SET
+          user_id = EXCLUDED.user_id,
+          notification_messages_token = COALESCE(
+            user_platform_mappings.notification_messages_token,
+            EXCLUDED.notification_messages_token
+          ),
+          topic = COALESCE(EXCLUDED.topic, user_platform_mappings.topic),
+          cadence = COALESCE(EXCLUDED.cadence, user_platform_mappings.cadence),
+          status = 'ACTIVE',
+          updated_at = now()
+        RETURNING *
+      `,
+        [
+          PLATFORM,
+          params.psid,
+          params.userId,
+          token,
+          params.topic ?? null,
+          params.cadence ?? null,
+        ],
+      );
 
-    const created = this.mappingRepo.create({
-      userId: params.userId,
-      platform: PLATFORM,
-      externalUserId: params.psid,
-      notificationMessagesToken: token,
-      topic: params.topic ?? null,
-      cadence: params.cadence ?? null,
-      status: 'ACTIVE',
-    });
-
-    const saved = await this.mappingRepo.save(created);
-    return this.mapEntity(saved);
+    return this.mapEntity(this.mapRawRow(rows[0]));
   }
 
   async upsertPocSubscription(params: {
@@ -420,6 +455,26 @@ export class MessengerRepository
 
     const saved = await this.logRepo.save(created);
     return this.mapLogEntity(saved);
+  }
+
+  /** Raw query rows come back snake_case — normalize to the entity shape. */
+  private mapRawRow(row: Record<string, unknown>): UserPlatformMappingEntity {
+    return {
+      id: Number(row.id),
+      userId:
+        row.user_id === null || row.user_id === undefined
+          ? null
+          : Number(row.user_id),
+      platform: String(row.platform),
+      externalUserId:
+        typeof row.external_user_id === 'string' ? row.external_user_id : null,
+      notificationMessagesToken: String(row.notification_messages_token),
+      cadence: (row.cadence as NotificationCadence | null) ?? null,
+      topic: (row.topic as string | null) ?? null,
+      status: (row.status as 'ACTIVE' | 'INACTIVE') ?? 'ACTIVE',
+      createdAt: new Date(String(row.created_at)),
+      updatedAt: new Date(String(row.updated_at)),
+    };
   }
 
   private mapEntity(entity: UserPlatformMappingEntity): UserMessengerMapping {
