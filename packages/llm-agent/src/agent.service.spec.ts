@@ -384,13 +384,13 @@ describe('LlmAgentService', () => {
           reason: 'unknown',
         }),
       };
-      const execute = jest
-        .fn()
-        .mockResolvedValue({ big: 'x'.repeat(150) });
+      const execute = jest.fn().mockResolvedValue({ big: 'x'.repeat(150) });
       const usageRecorder = { recordFromCompletion: jest.fn() };
       const safetyEvents = { recordGroundingWarning: jest.fn() };
       const llmExecution = {
-        run: jest.fn().mockImplementation((_fn: () => Promise<unknown>) => _fn()),
+        run: jest
+          .fn()
+          .mockImplementation((_fn: () => Promise<unknown>) => _fn()),
       };
       const service = new LlmAgentService<StubToolContext>(
         { maxContextChars: 500 },
