@@ -691,4 +691,67 @@ describe('FailoverLlmProviderAdapter', () => {
       );
     });
   });
+
+  describe('AbortSignal propagation', () => {
+    it('does not try candidate B when signal is already aborted', async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const generateJsonA = jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('Aborted'), { name: 'AbortError' }),
+        );
+      const generateJsonB = jest.fn().mockResolvedValue({
+        content: '{}',
+        metadata: { provider: 'b', model: 'model-b' },
+      });
+      const candidateA = makeCandidate({
+        name: 'a',
+        generateJson: generateJsonA,
+      });
+      const candidateB = makeCandidate({
+        name: 'b',
+        generateJson: generateJsonB,
+      });
+
+      const adapter = new FailoverLlmProviderAdapter([candidateA, candidateB]);
+
+      await expect(
+        adapter.generateJson({
+          ...makeJsonRequest(),
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow();
+
+      expect(generateJsonB).not.toHaveBeenCalled();
+    });
+
+    it('does not try candidate B when candidate A throws AbortError mid-request', async () => {
+      const abortErr = Object.assign(new Error('aborted'), {
+        name: 'AbortError',
+      });
+      const generateJsonA = jest.fn().mockRejectedValue(abortErr);
+      const generateJsonB = jest.fn().mockResolvedValue({
+        content: '{}',
+        metadata: { provider: 'b', model: 'model-b' },
+      });
+      const candidateA = makeCandidate({
+        name: 'a',
+        generateJson: generateJsonA,
+      });
+      const candidateB = makeCandidate({
+        name: 'b',
+        generateJson: generateJsonB,
+      });
+
+      const adapter = new FailoverLlmProviderAdapter([candidateA, candidateB]);
+
+      await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+        abortErr,
+      );
+
+      expect(generateJsonB).not.toHaveBeenCalled();
+    });
+  });
 });

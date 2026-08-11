@@ -32,40 +32,59 @@ export class UserCalendarApiClient {
     private readonly config: WispaceApiClientConfig,
     private readonly logger: WispaceClientLogger = NOOP_WISPACE_LOGGER,
   ) {
+    const maxRetries = this.config.maxRetries ?? 3;
+    const reqTimeout = this.config.requestTimeoutMs ?? 10_000;
+    const circuitTimeout = reqTimeout * (maxRetries + 1) + 10_000;
+
     this.listBreaker = createCircuitBreaker(
-      (idHeader: WispaceIdHeader, externalId: string) =>
-        withRetry(() => this.doListCalendars(idHeader, externalId), {
-          maxRetries: this.config.maxRetries ?? 3,
-          baseDelayMs: this.config.baseDelayMs ?? 500,
-          shouldRetry: isWispaceRetryable,
-          onRetry: (attempt, max, err) =>
-            this.logger.warn(
-              `UserCalendar retry ${attempt}/${max} (${idHeader}=${externalId}): ${errorMessage(err)}`,
-            ),
-        }),
-      { timeout: this.config.requestTimeoutMs ?? 10_000 },
+      (
+        idHeader: WispaceIdHeader,
+        externalId: string,
+        options?: { signal?: AbortSignal },
+      ) =>
+        withRetry(
+          () => this.doListCalendars(idHeader, externalId, options?.signal),
+          {
+            maxRetries,
+            baseDelayMs: this.config.baseDelayMs ?? 500,
+            shouldRetry: isWispaceRetryable,
+            signal: options?.signal,
+            onRetry: (attempt, max, err) =>
+              this.logger.warn(
+                `UserCalendar retry ${attempt}/${max} (${idHeader}=${externalId}): ${errorMessage(err)}`,
+              ),
+          },
+        ),
+      { timeout: circuitTimeout },
     );
   }
 
   async listCalendars(
     idHeader: WispaceIdHeader,
     externalId: string,
+    options?: { signal?: AbortSignal },
   ): Promise<UserCalendarRecord[]> {
-    return this.listBreaker.fire(idHeader, externalId);
+    return this.listBreaker.fire(idHeader, externalId, options);
   }
 
   private async doListCalendars(
     idHeader: WispaceIdHeader,
     externalId: string,
+    signal?: AbortSignal,
   ): Promise<UserCalendarRecord[]> {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const fetchSignal = signal
+      ? AbortSignal.any([signal, timeoutSignal])
+      : timeoutSignal;
+
     const response = await fetch(this.config.url, {
       headers: buildWispaceHeaders(
         idHeader,
         externalId,
         this.config.internalKey,
       ),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: fetchSignal,
     });
 
     if (!response.ok) {
@@ -92,9 +111,14 @@ export class UserCalendarApiClient {
     idHeader: WispaceIdHeader,
     externalId: string,
     input: CreateUserCalendarInput,
-    options?: { userId?: number },
+    options?: { userId?: number; signal?: AbortSignal },
   ): Promise<UserCalendarRecord> {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const fetchSignal = options?.signal
+      ? AbortSignal.any([options.signal, timeoutSignal])
+      : timeoutSignal;
+
     const response = await fetch(this.config.url, {
       method: 'POST',
       headers: {
@@ -105,7 +129,7 @@ export class UserCalendarApiClient {
         eventDate: formatEventDateForApiWrite(input.eventDate),
         time: input.time,
       }),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: fetchSignal,
     });
 
     if (!response.ok) {
@@ -141,8 +165,14 @@ export class UserCalendarApiClient {
     idHeader: WispaceIdHeader,
     externalId: string,
     calendarId: number,
+    options?: { signal?: AbortSignal },
   ): Promise<void> {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const fetchSignal = options?.signal
+      ? AbortSignal.any([options.signal, timeoutSignal])
+      : timeoutSignal;
+
     const response = await fetch(`${this.config.url}/${calendarId}`, {
       method: 'DELETE',
       headers: buildWispaceHeaders(
@@ -150,7 +180,7 @@ export class UserCalendarApiClient {
         externalId,
         this.config.internalKey,
       ),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: fetchSignal,
     });
 
     if (!response.ok) {

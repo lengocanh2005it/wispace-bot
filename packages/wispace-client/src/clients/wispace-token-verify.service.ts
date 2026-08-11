@@ -36,8 +36,14 @@ export class WispaceTokenVerifyService {
   async verifyToken(
     token: string,
     value: string,
+    options?: { signal?: AbortSignal },
   ): Promise<WispaceLinkVerifyResult> {
     const url = this.getVerifyUrl();
+    const timeoutSignal = AbortSignal.timeout(10_000);
+    const fetchSignal = options?.signal
+      ? AbortSignal.any([options.signal, timeoutSignal])
+      : timeoutSignal;
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -49,7 +55,7 @@ export class WispaceTokenVerifyService {
         value: value.trim(),
         platform: this.platform,
       }),
-      signal: AbortSignal.timeout(10_000),
+      signal: fetchSignal,
     });
 
     const payload: unknown = await this.readJsonBody(response);

@@ -15,6 +15,7 @@ import {
   isOpenAiRateLimitError,
   isOpenAiServerError,
 } from '../../utils/openai-error.utils';
+import { isAbortError } from '../../utils/retry.utils';
 import {
   toOpenAiTools,
   toOpenAiMessages,
@@ -58,20 +59,23 @@ export class OpenAiAdapter implements LlmProviderAdapter {
     const client = this.getClientOrThrow();
     const model = request.model ?? this.getDefaultModel();
 
-    const response = await client.chat.completions.create({
-      model,
-      response_format: { type: 'json_object' },
-      messages: [
-        { role: 'system', content: request.systemPrompt },
-        { role: 'user', content: request.userContent },
-      ],
-      ...(request.temperature !== undefined && {
-        temperature: request.temperature,
-      }),
-      ...(request.maxOutputTokens !== undefined && {
-        max_completion_tokens: request.maxOutputTokens,
-      }),
-    });
+    const response = await client.chat.completions.create(
+      {
+        model,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: request.systemPrompt },
+          { role: 'user', content: request.userContent },
+        ],
+        ...(request.temperature !== undefined && {
+          temperature: request.temperature,
+        }),
+        ...(request.maxOutputTokens !== undefined && {
+          max_completion_tokens: request.maxOutputTokens,
+        }),
+      },
+      request.signal ? { signal: request.signal } : undefined,
+    );
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -237,6 +241,7 @@ export class OpenAiAdapter implements LlmProviderAdapter {
   // -----------------------------------------------------------------------
 
   isRetryableError(error: unknown): boolean {
+    if (isAbortError(error)) return false;
     return this.isRateLimitError(error) || this.isServerError(error);
   }
 

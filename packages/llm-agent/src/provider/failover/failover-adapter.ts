@@ -8,7 +8,7 @@ import type {
 } from '../types';
 import type { LlmProviderAdapter } from '../llm-provider.adapter';
 import { LlmAllProvidersExhaustedError } from './failover.errors';
-import { sleep } from '../../utils/retry.utils';
+import { sleep, isAbortError } from '../../utils/retry.utils';
 
 interface CircuitState {
   healthyAgainAt: number;
@@ -70,12 +70,18 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     let lastError: unknown;
 
     for (const candidate of ordered) {
+      if (request.signal?.aborted) {
+        throw request.signal.reason ?? new Error('Aborted');
+      }
       const req = { ...request, model: candidate.getDefaultModel() };
       try {
         yield* candidate.chatStream(req);
         return; // Stream completed successfully
       } catch (err) {
         lastError = err;
+        if (request.signal?.aborted || isAbortError(err)) {
+          throw err;
+        }
         const { reason } = candidate.normalizeError(err);
         const isFastFail = reason === 'quota_exceeded' || reason === 'auth';
         this.circuit.set(candidate.providerName, {
@@ -115,7 +121,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     return healthy.length > 0 ? healthy : this.candidates;
   }
 
-  private async runFailover<Req, Res>(
+  private async runFailover<Req extends { signal?: AbortSignal }, Res>(
     call: (c: LlmProviderAdapter, req: Req) => Promise<Res>,
     request: Req & { model?: string },
   ): Promise<Res> {
@@ -123,10 +129,16 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     let lastError: unknown;
 
     for (const candidate of ordered) {
+      if (request.signal?.aborted) {
+        throw request.signal.reason ?? new Error('Aborted');
+      }
       const req = { ...request, model: candidate.getDefaultModel() };
       const maxAttempts = this.maxAttemptsFor(candidate, undefined);
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (request.signal?.aborted) {
+          throw request.signal.reason ?? new Error('Aborted');
+        }
         try {
           const result = await call(candidate, req);
           if (this.circuit.has(candidate.providerName)) {
@@ -139,6 +151,9 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
           return result;
         } catch (err) {
           lastError = err;
+          if (request.signal?.aborted || isAbortError(err)) {
+            throw err;
+          }
           const { reason } = candidate.normalizeError(err);
           const isFastFail = reason === 'quota_exceeded' || reason === 'auth';
           const isLastAttempt = attempt >= maxAttempts;
@@ -160,7 +175,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
             break;
           }
 
-          await sleep(this.quickRetryDelayMs);
+          await sleep(this.quickRetryDelayMs, request.signal);
         }
       }
     }

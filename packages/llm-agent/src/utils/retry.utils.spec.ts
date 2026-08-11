@@ -100,5 +100,38 @@ describe('retry.utils', () => {
       expect(backoff).toHaveBeenCalledWith(1);
       jest.useRealTimers();
     });
+
+    it('stops retrying immediately when signal is aborted', async () => {
+      const controller = new AbortController();
+      controller.abort();
+      const fn = jest.fn().mockRejectedValue(new Error('err'));
+
+      await expect(
+        retryWithBackoff(fn, {
+          maxAttempts: 3,
+          baseDelayMs: 100,
+          isRetryable: () => true,
+          signal: controller.signal,
+        }),
+      ).rejects.toThrow();
+
+      expect(fn).toHaveBeenCalledTimes(0);
+    });
+
+    it('stops retrying when fn throws an AbortError', async () => {
+      const abortError = new Error('Aborted');
+      abortError.name = 'AbortError';
+      const fn = jest.fn().mockRejectedValue(abortError);
+
+      await expect(
+        retryWithBackoff(fn, {
+          maxAttempts: 3,
+          baseDelayMs: 10,
+          isRetryable: () => true,
+        }),
+      ).rejects.toThrow(abortError);
+
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
   });
 });

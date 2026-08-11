@@ -1,5 +1,36 @@
 import CircuitBreaker from 'opossum';
 
+export function isAbortError(error: unknown): boolean {
+  if (error !== null && typeof error === 'object' && 'name' in error) {
+    return (error as { name?: string }).name === 'AbortError';
+  }
+  return false;
+}
+
+export function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const rejectWithReason = (reason: unknown) => {
+      reject(reason instanceof Error ? reason : new Error('Aborted'));
+    };
+
+    if (signal?.aborted) {
+      return rejectWithReason(signal.reason);
+    }
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      rejectWithReason(signal?.reason);
+    };
+    const cleanup = () => {
+      signal?.removeEventListener('abort', onAbort);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 export interface WithRetryOptions {
   /** Total retry attempts after the initial call (maxRetries=3 → 4 total calls). */
   maxRetries: number;
@@ -9,6 +40,8 @@ export interface WithRetryOptions {
   shouldRetry?: (error: unknown) => boolean;
   /** Called before each retry sleep — useful for logging. */
   onRetry?: (attempt: number, maxRetries: number, error: unknown) => void;
+  /** Optional signal to cancel retries immediately. */
+  signal?: AbortSignal;
 }
 
 export async function withRetry<T>(
@@ -19,25 +52,39 @@ export async function withRetry<T>(
 
   let lastError: unknown;
   for (let attempt = 0; attempt <= opts.maxRetries; attempt++) {
+    if (opts.signal?.aborted) {
+      throw opts.signal.reason ?? lastError ?? new Error('Aborted');
+    }
     try {
       return await fn();
     } catch (error) {
       lastError = error;
       const hasRetriesLeft = attempt < opts.maxRetries;
-      if (!hasRetriesLeft || !shouldRetry(error)) {
+      if (
+        opts.signal?.aborted ||
+        isAbortError(error) ||
+        !hasRetriesLeft ||
+        !shouldRetry(error)
+      ) {
         throw error;
       }
       opts.onRetry?.(attempt + 1, opts.maxRetries, error);
       const delay =
         opts.baseDelayMs * Math.pow(2, attempt) * (0.5 + Math.random() * 0.5);
-      await new Promise<void>((resolve) => setTimeout(resolve, delay));
+      await sleep(delay, opts.signal);
     }
+  }
+  if (opts.signal?.aborted || isAbortError(lastError)) {
+    throw lastError ?? opts.signal?.reason ?? new Error('Aborted');
   }
   throw lastError;
 }
 
-/** Retry on 5xx Wispace errors or transient network failures. Never retry 4xx. */
+/** Retry on 5xx Wispace errors or transient network failures. Never retry 4xx or cancellation. */
 export function isWispaceRetryable(error: unknown): boolean {
+  if (isAbortError(error)) {
+    return false;
+  }
   if (
     error !== null &&
     typeof error === 'object' &&
@@ -56,8 +103,8 @@ export interface CircuitBreakerOptions {
   threshold?: number;
   /** Time in ms to wait before trying again after circuit opens. Default: 60000. */
   cooldown?: number;
-  /** Timeout per call in ms. Default: 10000. */
-  timeout?: number;
+  /** Timeout per call in ms. Default: 60000 (total budget). False to disable opossum internal timer. */
+  timeout?: number | false;
 }
 
 /**
@@ -71,7 +118,7 @@ export function createCircuitBreaker<T>(
   opts: CircuitBreakerOptions = {},
 ): CircuitBreaker<any[], T> {
   const breaker = new CircuitBreaker(fn, {
-    timeout: opts.timeout ?? 10_000,
+    timeout: opts.timeout ?? 60_000,
     errorThresholdPercentage: 50,
     resetTimeout: opts.cooldown ?? 60_000,
     volumeThreshold: opts.threshold ?? 5,

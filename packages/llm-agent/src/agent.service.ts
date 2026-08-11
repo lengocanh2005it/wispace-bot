@@ -8,6 +8,7 @@ import {
 } from './utils/prompt-injection.utils';
 import { isObviouslyOffTopic } from './utils/scope.utils';
 import { sanitizeReplyText } from './utils/text.utils';
+import { sleep, isAbortError } from './utils/retry.utils';
 import {
   buildPromptInjectionBlockedMessage,
   buildWispaceScopeRedirectMessage,
@@ -130,6 +131,17 @@ export class LlmAgentService<TToolContext> {
     toolContext: TToolContext,
   ): Promise<LlmAgentReply> {
     const controller = new AbortController();
+    if (input.signal) {
+      if (input.signal.aborted) {
+        controller.abort(input.signal.reason);
+      } else {
+        input.signal.addEventListener(
+          'abort',
+          () => controller.abort(input.signal?.reason),
+          { once: true },
+        );
+      }
+    }
     return withTimeout(
       this.ports.metrics?.timeAgentLoop
         ? this.ports.metrics.timeAgentLoop(FEATURE, () =>
@@ -178,6 +190,17 @@ export class LlmAgentService<TToolContext> {
     toolContext: TToolContext,
   ): AsyncIterable<LlmAgentStreamEvent> {
     const controller = new AbortController();
+    if (input.signal) {
+      if (input.signal.aborted) {
+        controller.abort(input.signal.reason);
+      } else {
+        input.signal.addEventListener(
+          'abort',
+          () => controller.abort(input.signal?.reason),
+          { once: true },
+        );
+      }
+    }
     const iterator = this.runRounds(input, toolContext, controller.signal)[
       Symbol.asyncIterator
     ]();
@@ -285,6 +308,7 @@ export class LlmAgentService<TToolContext> {
                   }),
                 round,
                 logger,
+                signal,
               ),
             { feature: FEATURE, correlationId: input.correlationId },
           ),
@@ -543,6 +567,7 @@ export class LlmAgentService<TToolContext> {
     fn: () => Promise<T>,
     round: number,
     logger: { warn: (msg: string) => void },
+    signal?: AbortSignal,
   ): Promise<T> {
     const maxRetries = this.getMaxLlmRetries();
     if (maxRetries === 0) {
@@ -554,11 +579,16 @@ export class LlmAgentService<TToolContext> {
     let lastErr: unknown;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (signal?.aborted) {
+        throw signal.reason ?? lastErr ?? new Error('Aborted');
+      }
       try {
         return await fn();
       } catch (err) {
         lastErr = err;
         if (
+          signal?.aborted ||
+          isAbortError(err) ||
           !this.ports.adapter.isRetryableError(err) ||
           attempt === maxRetries
         ) {
@@ -571,10 +601,13 @@ export class LlmAgentService<TToolContext> {
         logger.warn(
           `LLM_RETRY attempt=${attempt + 1}/${maxRetries} round=${round} delay=${Math.round(delay)}ms`,
         );
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await sleep(delay, signal);
       }
     }
 
+    if (signal?.aborted || isAbortError(lastErr)) {
+      throw lastErr ?? signal?.reason ?? new Error('Aborted');
+    }
     throw new LlmRetryExhaustedError(maxRetries + 1, lastErr);
   }
 

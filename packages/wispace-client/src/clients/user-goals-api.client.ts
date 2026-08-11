@@ -21,40 +21,59 @@ export class UserGoalsApiClient {
     private readonly config: WispaceApiClientConfig,
     private readonly logger: WispaceClientLogger = NOOP_WISPACE_LOGGER,
   ) {
+    const maxRetries = this.config.maxRetries ?? 3;
+    const reqTimeout = this.config.requestTimeoutMs ?? 10_000;
+    const circuitTimeout = reqTimeout * (maxRetries + 1) + 10_000;
+
     this.breaker = createCircuitBreaker(
-      (idHeader: WispaceIdHeader, externalId: string) =>
-        withRetry(() => this.fetchUserGoals(idHeader, externalId), {
-          maxRetries: this.config.maxRetries ?? 3,
-          baseDelayMs: this.config.baseDelayMs ?? 500,
-          shouldRetry: isWispaceRetryable,
-          onRetry: (attempt, max, err) =>
-            this.logger.warn(
-              `User/goals retry ${attempt}/${max} (${idHeader}=${externalId}): ${errorMessage(err)}`,
-            ),
-        }),
-      { timeout: this.config.requestTimeoutMs ?? 10_000 },
+      (
+        idHeader: WispaceIdHeader,
+        externalId: string,
+        options?: { signal?: AbortSignal },
+      ) =>
+        withRetry(
+          () => this.fetchUserGoals(idHeader, externalId, options?.signal),
+          {
+            maxRetries,
+            baseDelayMs: this.config.baseDelayMs ?? 500,
+            shouldRetry: isWispaceRetryable,
+            signal: options?.signal,
+            onRetry: (attempt, max, err) =>
+              this.logger.warn(
+                `User/goals retry ${attempt}/${max} (${idHeader}=${externalId}): ${errorMessage(err)}`,
+              ),
+          },
+        ),
+      { timeout: circuitTimeout },
     );
   }
 
   async getUserGoals(
     idHeader: WispaceIdHeader,
     externalId: string,
+    options?: { signal?: AbortSignal },
   ): Promise<UserGoalsRecord> {
-    return this.breaker.fire(idHeader, externalId);
+    return this.breaker.fire(idHeader, externalId, options);
   }
 
   private async fetchUserGoals(
     idHeader: WispaceIdHeader,
     externalId: string,
+    signal?: AbortSignal,
   ): Promise<UserGoalsRecord> {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
+    const timeoutSignal = AbortSignal.timeout(timeoutMs);
+    const fetchSignal = signal
+      ? AbortSignal.any([signal, timeoutSignal])
+      : timeoutSignal;
+
     const response = await fetch(this.config.url, {
       headers: buildWispaceHeaders(
         idHeader,
         externalId,
         this.config.internalKey,
       ),
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: fetchSignal,
     });
 
     if (!response.ok) {

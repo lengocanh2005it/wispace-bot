@@ -21,16 +21,25 @@ export class WispaceGoalsService {
     private readonly configService: WispaceConfigService,
   ) {}
 
-  getUserGoals(externalUserId: string): Promise<UserGoalsRecord> {
-    return this.getGoalsClient().getUserGoals(this.idHeader, externalUserId);
+  getUserGoals(
+    externalUserId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<UserGoalsRecord> {
+    return this.getGoalsClient().getUserGoals(
+      this.idHeader,
+      externalUserId,
+      options,
+    );
   }
 
   getTaskScoreAverages(
     externalUserId: string,
+    options?: { signal?: AbortSignal },
   ): Promise<TaskScoreAverageRecord[]> {
     return this.getTaskScoreClient().getTaskScoreAverages(
       this.idHeader,
       externalUserId,
+      options,
     );
   }
 

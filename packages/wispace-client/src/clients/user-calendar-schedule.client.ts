@@ -28,11 +28,12 @@ export class UserCalendarScheduleClient {
     idHeader: WispaceIdHeader,
     externalId: string,
     horizonEnd: Date,
-    options?: { swallowErrors?: boolean },
+    options?: { swallowErrors?: boolean; signal?: AbortSignal },
   ): Promise<NormalizedStudySession[]> {
     return this.getCalendarSessions(idHeader, externalId, horizonEnd, {
       timeRange: 'upcoming',
       swallowErrors: options?.swallowErrors,
+      signal: options?.signal,
     });
   }
 
@@ -40,8 +41,9 @@ export class UserCalendarScheduleClient {
     idHeader: WispaceIdHeader,
     externalId: string,
     calendarId: number,
+    options?: { signal?: AbortSignal },
   ): Promise<UserCalendarRecord | null> {
-    const records = await this.listCalendars(idHeader, externalId);
+    const records = await this.listCalendars(idHeader, externalId, options);
     return records.find((record) => record.id === calendarId) ?? null;
   }
 
@@ -54,13 +56,14 @@ export class UserCalendarScheduleClient {
       pastDays?: number;
       limit?: number;
       swallowErrors?: boolean;
+      signal?: AbortSignal;
     } = {},
   ): Promise<NormalizedStudySession[]> {
     const timeRange = options.timeRange ?? 'upcoming';
     const pastDays = options.pastDays ?? 90;
 
     try {
-      const records = await this.listCalendars(idHeader, externalId);
+      const records = await this.listCalendars(idHeader, externalId, options);
       let sessions = records
         .map((record) => this.buildSession(record))
         .filter(

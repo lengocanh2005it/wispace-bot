@@ -173,6 +173,48 @@ describe('OpenAiAdapter', () => {
       const err = makeError(402, 'Payment Required');
       expect(adapter.isRetryableError(err)).toBe(false);
     });
+
+    it('returns false for AbortError', () => {
+      const adapter = makeAdapter();
+      const err = new Error('The operation was aborted');
+      err.name = 'AbortError';
+      expect(adapter.isRetryableError(err)).toBe(false);
+    });
+  });
+
+  describe('generateJson', () => {
+    it('passes signal to OpenAI completions client when provided', async () => {
+      const adapter = makeAdapter();
+      const createMock = jest.fn().mockResolvedValue({
+        id: 'resp-1',
+        choices: [{ message: { content: '{"ok":true}' } }],
+        usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+      });
+      (
+        adapter as unknown as {
+          client: { chat: { completions: { create: typeof createMock } } };
+        }
+      ).client = {
+        chat: {
+          completions: {
+            create: createMock,
+          },
+        },
+      };
+
+      const controller = new AbortController();
+      const res = await adapter.generateJson({
+        feature: 'STUDENT_REPORT',
+        systemPrompt: 'prompt',
+        userContent: 'content',
+        signal: controller.signal,
+      });
+
+      expect(res.content).toBe('{"ok":true}');
+      expect(createMock).toHaveBeenCalledWith(expect.any(Object), {
+        signal: controller.signal,
+      });
+    });
   });
 
   describe('isConfigured / getDefaultModel / providerName', () => {
