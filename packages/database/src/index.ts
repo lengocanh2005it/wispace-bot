@@ -5,6 +5,7 @@ export {
 export { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
 export { ReportSendJobEntity } from './entities/report-send-job.entity';
 export { RescheduleConfirmationEntity } from './entities/reschedule-confirmation.entity';
+export { CronLeaderLeaseEntity } from './entities/cron-leader-lease.entity';
 export {
   SHARED_ENTITIES,
   getTypeOrmOptions,
@@ -38,4 +39,5 @@ export {
 } from './services/delivery-log.service';
 export { PlatformReportClaimRepository } from './services/platform-report-claim.repository';
 export { TypeormRescheduleStore } from './services/typeorm-reschedule-store';
+export { CronLeaderLeaseService } from './services/cron-leader-lease.service';
 export { listUserIdsWithSentReport } from './services/list-user-ids-with-sent-report';

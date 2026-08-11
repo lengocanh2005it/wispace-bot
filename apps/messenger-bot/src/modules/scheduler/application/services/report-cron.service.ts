@@ -57,7 +57,7 @@ export class ReportCronService {
     timeZone: 'Asia/Ho_Chi_Minh',
   })
   async handleExamReminderCron(): Promise<void> {
-    if (!this.reportCronLeaderService.shouldRunScheduledReportCron()) {
+    if (!(await this.reportCronLeaderService.shouldRunScheduledReportCron())) {
       return;
     }
 

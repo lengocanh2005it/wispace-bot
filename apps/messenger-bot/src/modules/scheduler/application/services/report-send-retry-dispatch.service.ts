@@ -37,7 +37,7 @@ export class ReportSendRetryDispatchService {
     timeZone: 'Asia/Ho_Chi_Minh',
   })
   async handleReportSendRetryCron(): Promise<void> {
-    if (!this.reportCronLeaderService.shouldRunScheduledReportCron()) {
+    if (!(await this.reportCronLeaderService.shouldRunScheduledReportCron())) {
       return;
     }
 
