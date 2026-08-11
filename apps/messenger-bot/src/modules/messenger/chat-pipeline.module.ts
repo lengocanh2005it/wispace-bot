@@ -18,6 +18,10 @@ import {
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { sanitizeUntrustedTextForLlm } from '@wispace/llm-agent';
 import { REDIS_CLIENT } from '@wispace/bot-common';
+import {
+  RescheduleConfirmationEntity,
+  TypeormRescheduleStore,
+} from '@wispace/database';
 import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
@@ -67,7 +71,11 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     StudentReportModule,
     StudyReminderModule,
     DisplayNameModule,
-    TypeOrmModule.forFeature([LlmUsageEventEntity, LlmSafetyEventEntity]),
+    TypeOrmModule.forFeature([
+      LlmUsageEventEntity,
+      LlmSafetyEventEntity,
+      RescheduleConfirmationEntity,
+    ]),
   ],
   providers: [
     MessengerChatSharedConfigService,
@@ -210,9 +218,32 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     },
     MessengerCalendarPort,
     MessengerReschedulePort,
+    {
+      provide: TypeormRescheduleStore,
+      useFactory: (repo: Repository<RescheduleConfirmationEntity>) =>
+        new TypeormRescheduleStore<string>('messenger', repo),
+      inject: [getRepositoryToken(RescheduleConfirmationEntity)],
+    },
     MessengerAgentService,
     MessengerAgentToolsService,
-    MessengerRescheduleConfirmationService,
+    {
+      provide: MessengerRescheduleConfirmationService,
+      useFactory: (
+        calendarPort: MessengerCalendarPort,
+        reschedulePort: MessengerReschedulePort,
+        store: TypeormRescheduleStore<string>,
+      ) =>
+        new MessengerRescheduleConfirmationService(
+          calendarPort,
+          reschedulePort,
+          store,
+        ),
+      inject: [
+        MessengerCalendarPort,
+        MessengerReschedulePort,
+        TypeormRescheduleStore,
+      ],
+    },
     MessengerChatProcessorService,
     MessengerChatEnqueueService,
     MessengerChatQueueWorkerService,

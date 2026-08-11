@@ -75,8 +75,16 @@ export class ReportSendRetryDispatchService {
     const failures: Array<{ jobId: number; psid: string; error: string }> = [];
 
     for (const job of dueJobs) {
-      const daysUntilExam = this.reportScheduleService.calculateDaysUntilExam(
+      // The job's examDate is frozen at failure time — re-resolve it so an
+      // exam reschedule is honored (a moved-up exam otherwise expires the job
+      // even though the new exam is still upcoming, and a moved-back exam
+      // keeps stale retries).
+      const examDate = await this.resolveFreshExamDate(
+        job.externalUserId,
         job.examDate,
+      );
+      const daysUntilExam = this.reportScheduleService.calculateDaysUntilExam(
+        examDate,
         now,
       );
 
@@ -89,7 +97,7 @@ export class ReportSendRetryDispatchService {
         });
         expired += 1;
         this.logger.warn(
-          `Report send job expired jobId=${job.id} psid=${job.externalUserId} examDate=${job.examDate}`,
+          `Report send job expired jobId=${job.id} psid=${job.externalUserId} examDate=${examDate}`,
         );
         continue;
       }
@@ -120,7 +128,7 @@ export class ReportSendRetryDispatchService {
         await this.reportSendOrchestrationService.claimAndSend(mapping, {
           reportDate,
           skipAlreadySentToday: true,
-          examDateForOutbox: claimedJob.examDate,
+          examDateForOutbox: examDate,
         });
 
       if (orchestrationResult.sent > 0) {
@@ -210,5 +218,23 @@ export class ReportSendRetryDispatchService {
       resetStuck,
       failures,
     };
+  }
+
+  /**
+   * Latest exam date for the user (Wispace goals), falling back to the job's
+   * frozen date when Wispace is unreachable — a rescheduled exam must not
+   * expire or prolong the outbox based on stale data.
+   */
+  private async resolveFreshExamDate(
+    psid: string,
+    fallback: string,
+  ): Promise<string> {
+    try {
+      const schedule =
+        await this.reportScheduleService.shouldSendReportToday(psid);
+      return schedule.examDate;
+    } catch {
+      return fallback;
+    }
   }
 }
