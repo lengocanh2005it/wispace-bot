@@ -119,7 +119,7 @@ export class PlatformAgentService {
       toolContext,
     );
 
-    if (this.options.appendHistory !== false) {
+    if (this.options.appendHistory !== false && input.history === undefined) {
       await this.historyService.appendTurn(
         input.externalUserId,
         input.userText,
