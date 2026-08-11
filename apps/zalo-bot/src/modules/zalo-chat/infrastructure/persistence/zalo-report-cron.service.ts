@@ -9,6 +9,7 @@ import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import {
   REPORT_CLAIM_REPOSITORY,
   ReportScheduleService,
+  resolveExamWindowOrNull,
   runBatched,
   todayReportDate,
 } from '@wispace/scheduler-core';
@@ -94,20 +95,14 @@ export class ZaloReportCronService {
     // Window gate: only auto-send inside the days-before-exam window
     // (same as Messenger/Discord). forceSend bypasses the window.
     if (!forceSend) {
-      try {
-        const userSchedule =
-          await this.reportScheduleService.shouldSendReportToday(
-            link.externalUserId,
-          );
-        if (!userSchedule.shouldSend) {
-          this.logger.log(
-            `Skip Zalo user ${link.externalUserId}: examDate=${userSchedule.examDate}, daysUntilExam=${userSchedule.daysUntilExam}, window=${userSchedule.minDays}-${userSchedule.maxDays}`,
-          );
-          return 'skipped';
-        }
-      } catch (error) {
-        this.logger.warn(
-          `Skip Zalo user ${link.externalUserId}: could not resolve exam schedule: ${errorMessage(error)}`,
+      const window = await resolveExamWindowOrNull(
+        link.externalUserId,
+        this.reportScheduleService,
+        false,
+      );
+      if (window.skip) {
+        this.logger.log(
+          `Skip Zalo user ${link.externalUserId}: outside exam window or schedule unavailable`,
         );
         return 'skipped';
       }
