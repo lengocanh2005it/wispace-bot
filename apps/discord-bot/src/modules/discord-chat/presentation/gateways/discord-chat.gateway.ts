@@ -232,7 +232,8 @@ export class DiscordChatGateway {
   @Button(RESCHEDULE_CANCEL_CUSTOM_ID)
   async onRescheduleCancel(@Context() [interaction]: ButtonContext) {
     const discordUserId = interaction.user.id;
-    const message = this.rescheduleConfirmationService.cancel(discordUserId);
+    const message =
+      await this.rescheduleConfirmationService.cancel(discordUserId);
 
     await interaction.update({ content: message, components: [] });
   }

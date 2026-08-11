@@ -40,7 +40,17 @@ Related: [project-overview.md](./project-overview.md), [study-session-reminder.m
 | **DISCORD** ✓ | Discord bot (functional) | 3–5 days | Chat + quota + pending cap + typing indicator + 6/7 tool handlers |
 | **ZALO** ✓ | Zalo bot (fully functional) | 3–5 days | Chat + quota + account linking + 6/7 tool handlers + 08:00 report cron + study reminders + dead letter + ops endpoints + CI/CD + chat queue + pending cap + typing indicator + Redis burst counter + LLM report enrichment + Doppler webhook |
 
-**Recommended order:** ~~Q1/S0/I1/S1/L1/R1/L2/R2/R3/L3/R4/R5/S2~~ (✓) → **Batch 1 edge-case hardening (✓, branch `fix/edge-cases-batch1`)** → `CHAT_QUEUE_SHARED` at scale → remaining items per user feedback.
+**Recommended order:** ~~Q1/S0/I1/S1/L1/R1/L2/R2/R3/L3/R4/R5/S2~~ (✓) → **Batch 1 edge-case hardening (✓, branch `fix/edge-cases-batch1`)** → **Batch 2 (✓, stacked PRs #71/#73/#75/#77)** → remaining items per user feedback.
+
+## Batch 2 — stacked hardening (Done ✓, `fix/edge-cases-batch2-*`)
+
+Follow-up batch, delivered as a stack of PRs on top of batch 1:
+
+| PR | Fix | Change |
+|----|-----|--------|
+| **batch2-llm** (#71) | **M9** cumulative tool-result context budget — trims the oldest loop-generated messages so tool results across rounds cannot exceed the model context; **M9b** abort signal now propagates to tool executors (no side effects after the agent gave up); **M12** an identical tool re-call is allowed when the previous round failed (legitimate retry) — only true stuck loops stop early |
+| **batch2-db** (#73) | **M11** `upsertPsidUserLink` is now an atomic `INSERT … ON CONFLICT` (concurrent link events can no longer 500 on the partial unique index; INACTIVE rows are re-activated); **M13a** memory webhook dedupe bounded (10k mids / 1k postbacks, oldest evicted); **M13b** `chat-idempotency-cleanup` cron (03:30 daily, advisory lock 202) purges terminal idempotency rows (`CHAT_IDEMPOTENCY_CLEANUP_ENABLED`/`RETENTION_DAYS`) |
+| **batch2-reminder** | **M7** R5 outbox re-resolves the exam date on every retry (a rescheduled exam no longer expires or prolongs jobs on stale data, with fallback to the frozen date when Wispace is down); **reschedule→DB** — pending reschedule confirmations persist in `reschedule_confirmations` (migration `1751029200012`, `TypeormRescheduleStore` per platform) instead of a per-instance Map: confirmations survive restarts/multi-pod, confirm claims atomically, and a failed confirm stays pending so the user can retry |
 
 ## Batch 1 — Edge-case hardening (Done ✓, `fix/edge-cases-batch1`)
 

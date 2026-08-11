@@ -48,6 +48,8 @@ import {
   WebhookDeadLetterEntity,
   DeliveryLogService,
   ScheduledReportClaimEntity,
+  RescheduleConfirmationEntity,
+  TypeormRescheduleStore,
 } from '@wispace/database';
 import {
   CleanupCronService,
@@ -79,6 +81,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       WebhookDeadLetterEntity,
       ZaloOauthStateEntity,
       ScheduledReportClaimEntity,
+      RescheduleConfirmationEntity,
     ]),
   ],
   providers: [
@@ -253,12 +256,20 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     ZaloCalendarPort,
     ZaloReschedulePort,
     {
+      provide: TypeormRescheduleStore,
+      useFactory: (repo: Repository<RescheduleConfirmationEntity>) =>
+        new TypeormRescheduleStore<string>('zalo', repo),
+      inject: [getRepositoryToken(RescheduleConfirmationEntity)],
+    },
+    {
       provide: RescheduleConfirmationService,
       useFactory: (
         calendar: CalendarPort<string>,
         reschedule: ReschedulePort<string>,
-      ) => new RescheduleConfirmationService<string>(calendar, reschedule),
-      inject: [ZaloCalendarPort, ZaloReschedulePort],
+        store: TypeormRescheduleStore<string>,
+      ) =>
+        new RescheduleConfirmationService<string>(calendar, reschedule, store),
+      inject: [ZaloCalendarPort, ZaloReschedulePort, TypeormRescheduleStore],
     },
     ZaloOutboundService,
     CleanupCronService,

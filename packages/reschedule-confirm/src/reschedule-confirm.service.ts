@@ -4,9 +4,12 @@ import type {
   RescheduleSchedulingMode,
   UserCalendarRecord,
 } from '@wispace/wispace-client';
+import {
+  MemoryRescheduleStore,
+  type RescheduleStorePort,
+} from './reschedule-store.port';
 
 export const PENDING_RESCHEDULE_TTL_MS = 10 * 60 * 1000;
-const MAX_PENDING_RESCHEDULES = 10_000;
 
 export interface CalendarEntryView {
   calendarId: number;
@@ -86,41 +89,33 @@ export interface ReschedulePort<TExternalId> {
   }): Promise<RescheduleResult>;
 }
 
-interface PendingReschedule<TExternalId> {
-  externalId: TExternalId;
-  userId: number;
-  calendarId: number;
-  schedulingMode: RescheduleSchedulingMode;
-  newLocalDate?: string;
-  newTime?: string;
-  sessionLabel: string;
-  expiresAt: number;
-}
-
 /**
  * Generic reschedule confirmation service — handles the stage/confirm/cancel
  * flow for rescheduling study sessions. Platform-specific bots provide
  * CalendarPort and ReschedulePort implementations.
+ *
+ * Pending confirmations live in a `RescheduleStorePort` — the in-memory
+ * default is per-instance; production wiring passes a DB-backed store so a
+ * restart or another pod does not lose the pending confirmation.
  *
  * @template TExternalId - Platform-specific user ID type (psid, discordUserId, zaloUserId)
  */
 @Injectable()
 export class RescheduleConfirmationService<TExternalId> {
   private readonly logger = new Logger(RescheduleConfirmationService.name);
-  private readonly pendingByExternalId = new Map<
-    string,
-    PendingReschedule<TExternalId>
-  >();
+  private readonly store: RescheduleStorePort<TExternalId>;
 
   constructor(
     private readonly calendarPort: CalendarPort<TExternalId>,
     private readonly reschedulePort: ReschedulePort<TExternalId>,
-  ) {}
+    store?: RescheduleStorePort<TExternalId>,
+  ) {
+    this.store = store ?? new MemoryRescheduleStore<TExternalId>();
+  }
 
   async stage(
     input: StageInput<TExternalId>,
   ): Promise<StageResult | { error: string }> {
-    this.prunePending();
     const upcoming = await this.calendarPort.listUpcomingEntries(
       input.externalId,
       input.userId,
@@ -140,18 +135,7 @@ export class RescheduleConfirmationService<TExternalId> {
     const sessionLabel = matchedEntry.scheduledTimeLabel;
     const summary = this.buildSummary(input, sessionLabel);
 
-    const key = String(input.externalId);
-    if (
-      !this.pendingByExternalId.has(key) &&
-      this.pendingByExternalId.size >= MAX_PENDING_RESCHEDULES
-    ) {
-      const oldestKey = Array.from(this.pendingByExternalId.keys())[0];
-      if (oldestKey !== undefined) {
-        this.pendingByExternalId.delete(oldestKey);
-      }
-    }
-
-    this.pendingByExternalId.set(key, {
+    await this.store.save({
       externalId: input.externalId,
       userId: input.userId,
       calendarId: matchedEntry.calendarId,
@@ -173,7 +157,7 @@ export class RescheduleConfirmationService<TExternalId> {
     externalId: TExternalId,
     userId?: number,
   ): Promise<ConfirmResult | ConfirmError> {
-    const pending = this.takePendingIfValid(externalId, userId);
+    const pending = await this.store.takeValid(externalId, userId);
     if (!pending) {
       return {
         confirmed: false,
@@ -192,6 +176,8 @@ export class RescheduleConfirmationService<TExternalId> {
         newTime: pending.newTime,
       });
 
+      await this.store.cancel(externalId);
+
       this.logger.log(
         `RESCHEDULE_CONFIRMED externalId=${String(externalId)} calendarId=${pending.calendarId}`,
       );
@@ -205,6 +191,9 @@ export class RescheduleConfirmationService<TExternalId> {
       this.logger.warn(
         `RESCHEDULE_CONFIRM_FAILED externalId=${String(externalId)}: ${message}`,
       );
+      // Keep the confirmation pending so the user can tap confirm again —
+      // a transient Wispace failure must not burn the staged request.
+      await this.store.revertToPending(externalId);
       return {
         confirmed: false,
         message:
@@ -213,54 +202,15 @@ export class RescheduleConfirmationService<TExternalId> {
     }
   }
 
-  cancel(externalId: TExternalId): string {
-    this.pendingByExternalId.delete(String(externalId));
+  async cancel(externalId: TExternalId): Promise<string> {
+    await this.store.cancel(externalId);
     this.logger.log(`RESCHEDULE_CANCELLED externalId=${String(externalId)}`);
     return 'Đã hủy yêu cầu đổi lịch. Lịch học giữ nguyên nhé.';
   }
 
   /** Whether a valid (unexpired) pending reschedule exists for this user. */
-  hasPending(externalId: TExternalId): boolean {
-    const pending = this.pendingByExternalId.get(String(externalId));
-    if (!pending) {
-      return false;
-    }
-    if (pending.expiresAt <= Date.now()) {
-      this.pendingByExternalId.delete(String(externalId));
-      return false;
-    }
-    return true;
-  }
-
-  private takePendingIfValid(
-    externalId: TExternalId,
-    userId?: number,
-  ): PendingReschedule<TExternalId> | undefined {
-    const pending = this.pendingByExternalId.get(String(externalId));
-    if (!pending) {
-      return undefined;
-    }
-
-    if (pending.expiresAt <= Date.now()) {
-      this.pendingByExternalId.delete(String(externalId));
-      return undefined;
-    }
-
-    if (userId != null && pending.userId !== userId) {
-      return undefined;
-    }
-
-    this.pendingByExternalId.delete(String(externalId));
-    return pending;
-  }
-
-  private prunePending(): void {
-    const now = Date.now();
-    for (const [key, pending] of this.pendingByExternalId) {
-      if (pending.expiresAt <= now) {
-        this.pendingByExternalId.delete(key);
-      }
-    }
+  hasPending(externalId: TExternalId): Promise<boolean> {
+    return this.store.hasPending(externalId);
   }
 
   private buildSummary(

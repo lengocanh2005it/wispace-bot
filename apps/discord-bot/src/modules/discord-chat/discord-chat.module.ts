@@ -50,6 +50,8 @@ import {
   WebhookDeadLetterEntity,
   ReportSendJobEntity,
   ScheduledReportClaimEntity,
+  RescheduleConfirmationEntity,
+  TypeormRescheduleStore,
 } from '@wispace/database';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 import { DiscordCalendarPort } from './infrastructure/adapters/discord-calendar.port';
@@ -79,6 +81,7 @@ const REGISTER_REPORT_MESSAGE =
       ReportSendJobEntity,
       ChatIdempotencyEntity,
       ScheduledReportClaimEntity,
+      RescheduleConfirmationEntity,
     ]),
   ],
   providers: [
@@ -219,12 +222,24 @@ const REGISTER_REPORT_MESSAGE =
     DiscordCalendarPort,
     DiscordReschedulePort,
     {
+      provide: TypeormRescheduleStore,
+      useFactory: (repo: Repository<RescheduleConfirmationEntity>) =>
+        new TypeormRescheduleStore<string>('discord', repo),
+      inject: [getRepositoryToken(RescheduleConfirmationEntity)],
+    },
+    {
       provide: RescheduleConfirmationService,
       useFactory: (
         calendar: CalendarPort<string>,
         reschedule: ReschedulePort<string>,
-      ) => new RescheduleConfirmationService<string>(calendar, reschedule),
-      inject: [DiscordCalendarPort, DiscordReschedulePort],
+        store: TypeormRescheduleStore<string>,
+      ) =>
+        new RescheduleConfirmationService<string>(calendar, reschedule, store),
+      inject: [
+        DiscordCalendarPort,
+        DiscordReschedulePort,
+        TypeormRescheduleStore,
+      ],
     },
     DiscordMenuService,
     CleanupCronService,

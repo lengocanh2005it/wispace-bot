@@ -127,7 +127,7 @@ export class WebhookActionExecutorService {
         break;
 
       case 'cancel_reschedule': {
-        const message = this.rescheduleConfirmationService.cancel(psid!);
+        const message = await this.rescheduleConfirmationService.cancel(psid!);
         await this.outbound.sendTextViaPsid({
           psid: psid!,
           userId: action.userId,

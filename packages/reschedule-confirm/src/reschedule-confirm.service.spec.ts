@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access -- Jest mock internal access */
+
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest mock internal access */
-/* eslint-disable @typescript-eslint/no-unsafe-call -- Jest mock internal access */
+
 import {
   RescheduleConfirmationService,
   type CalendarPort,
@@ -186,7 +186,7 @@ describe('RescheduleConfirmationService', () => {
         schedulingMode: 'explicit',
       });
 
-      const msg = service.cancel('user-1');
+      const msg = await service.cancel('user-1');
       expect(msg).toContain('hủy');
 
       const confirm = await service.confirm('user-1');
@@ -199,8 +199,39 @@ describe('RescheduleConfirmationService', () => {
 
   describe('TTL expiry', () => {
     it('rejects confirm after TTL expires', async () => {
+      jest.useFakeTimers();
+      try {
+        const calendar = mockCalendarPort();
+        const reschedule = mockReschedulePort();
+        const service = new RescheduleConfirmationService(calendar, reschedule);
+
+        await service.stage({
+          externalId: 'user-1',
+          userId: 42,
+          calendarId: 1,
+          schedulingMode: 'explicit',
+        });
+
+        jest.setSystemTime(new Date(Date.now() + 11 * 60 * 1000));
+
+        const result = await service.confirm('user-1');
+        expect(result).toEqual({
+          confirmed: false,
+          message: expect.any(String),
+        });
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  describe('confirm failure keeps the request pending (retryable)', () => {
+    it('lets the user confirm again after a transient reschedule failure', async () => {
       const calendar = mockCalendarPort();
       const reschedule = mockReschedulePort();
+      (reschedule.rescheduleSession as jest.Mock)
+        .mockRejectedValueOnce(new Error('Wispace down'))
+        .mockResolvedValueOnce({ scheduledTimeLabel: 'Ngày mai lúc 19:00' });
       const service = new RescheduleConfirmationService(calendar, reschedule);
 
       await service.stage({
@@ -210,17 +241,13 @@ describe('RescheduleConfirmationService', () => {
         schedulingMode: 'explicit',
       });
 
-      // Simulate TTL expiry by manipulating the internal map
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const pending = (service as any).pendingByExternalId.get('user-1');
-      if (pending) {
-        pending.expiresAt = Date.now() - 1000;
-      }
+      const first = await service.confirm('user-1');
+      expect(first.confirmed).toBe(false);
 
-      const result = await service.confirm('user-1');
-      expect(result).toEqual({
-        confirmed: false,
-        message: expect.any(String),
+      const second = await service.confirm('user-1');
+      expect(second).toEqual({
+        confirmed: true,
+        scheduledTimeLabel: 'Ngày mai lúc 19:00',
       });
     });
   });

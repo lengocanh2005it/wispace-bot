@@ -66,10 +66,10 @@ export class ZaloChatService {
       const userId =
         await this.accountLinkService.findUserIdByZaloId(zaloUserId);
 
-      if (
-        this.rescheduleConfirmationService.hasPending(zaloUserId) &&
-        this.isConfirmKeyword(text.trim())
-      ) {
+      const hasPending =
+        await this.rescheduleConfirmationService.hasPending(zaloUserId);
+
+      if (hasPending && this.isConfirmKeyword(text.trim())) {
         const result = await this.rescheduleConfirmationService.confirm(
           zaloUserId,
           userId,
@@ -85,11 +85,9 @@ export class ZaloChatService {
         return;
       }
 
-      if (
-        this.rescheduleConfirmationService.hasPending(zaloUserId) &&
-        this.isCancelKeyword(text.trim())
-      ) {
-        const message = this.rescheduleConfirmationService.cancel(zaloUserId);
+      if (hasPending && this.isCancelKeyword(text.trim())) {
+        const message =
+          await this.rescheduleConfirmationService.cancel(zaloUserId);
         await this.outboundService.sendText(zaloUserId, message);
         return;
       }

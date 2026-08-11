@@ -134,7 +134,7 @@ describe('MessengerRescheduleConfirmationService', () => {
       schedulingMode: 'default_next_day_same_time',
     });
 
-    const cancelResult = service.cancel('psid-1');
+    const cancelResult = await service.cancel('psid-1');
 
     expect(cancelResult).toContain('hủy');
   });
