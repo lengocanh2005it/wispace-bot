@@ -87,7 +87,7 @@ export interface PlatformAgentOptions {
   toolExecutionTimeoutMs?: number;
   /**
    * When true (default), the service appends the turn to chat history itself.
-   * Apps whose pipeline appends (Messenger queue) set false to avoid doubles.
+   * Callers that provide preloaded history own the append after delivery.
    */
   appendHistory?: boolean;
 }

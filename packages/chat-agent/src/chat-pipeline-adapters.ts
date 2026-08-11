@@ -83,6 +83,7 @@ export function createChatPipelineAdapters(
         externalUserId: input.externalUserId,
         userId: input.userId,
         userText: input.userText,
+        history: input.history,
         correlationId: input.correlationId,
         ...(options?.isServerChannel ? { isServerChannel: true } : {}),
       });
