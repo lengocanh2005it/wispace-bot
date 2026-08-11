@@ -18,6 +18,9 @@ describe('AppModule boot smoke', () => {
     process.env.OPENAI_API_KEY = 'test-key';
     process.env.OPENAI_MODEL = 'test-model';
     process.env.DISCORD_BOT_TOKEN = 'fake-token';
+    process.env.CHAT_FREE_FORM_DAILY_LIMIT = '15';
+    process.env.CHAT_BURST_PER_MINUTE = '3';
+    process.env.CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
     const loginSpy = jest
       .spyOn(Client.prototype, 'login')
       .mockResolvedValue('fake-token');

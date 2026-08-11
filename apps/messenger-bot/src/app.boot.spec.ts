@@ -12,6 +12,15 @@ describe('AppModule boot smoke', () => {
   it('boots without DI errors', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     process.env.OPENAI_MODEL = 'test-model';
+    process.env.CHAT_FREE_FORM_DAILY_LIMIT = '15';
+    process.env.CHAT_BURST_PER_MINUTE = '3';
+    process.env.CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
+    process.env.STUDY_REMINDER_MINUTES_BEFORE = '30';
+    process.env.STUDY_REMINDER_MIN_LEAD_MINUTES = '5';
+    process.env.STUDY_REMINDER_SYNC_HORIZON_HOURS = '48';
+    process.env.STUDY_REMINDER_MAX_RETRIES = '3';
+    process.env.STUDY_REMINDER_RETRY_BACKOFF_MINUTES = '2';
+    process.env.STUDY_REMINDER_JOB_RETENTION_DAYS = '7';
 
     const stubRepo = {} as Repository<unknown>;
     const dataSourceMock = new Proxy({} as DataSource, {
