@@ -284,6 +284,7 @@ describe('MessengerAgentService', () => {
         'get_learning_progress_report',
         '{}',
         expect.objectContaining({ externalUserId: BASE_INPUT.psid }),
+        expect.any(AbortSignal),
       );
       expect(result.text).toBe('Đây là kết quả của bạn.');
       expect(chatWithTools).toHaveBeenCalledTimes(2);

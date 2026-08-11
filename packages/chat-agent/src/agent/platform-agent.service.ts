@@ -138,8 +138,8 @@ export class PlatformAgentService {
 
   private buildAgent(): LlmAgentService<PlatformAgentToolContext> {
     const toolExecutor: ToolExecutorPort<PlatformAgentToolContext> = {
-      execute: (toolName, argsJson, ctx) =>
-        this.toolsService.execute(toolName, argsJson, ctx),
+      execute: (toolName, argsJson, ctx, signal) =>
+        this.toolsService.execute(toolName, argsJson, ctx, signal),
     };
 
     const ports: LlmAgentPorts<PlatformAgentToolContext> = {

@@ -47,6 +47,7 @@ export class PlatformAgentToolsService {
     toolName: string,
     argsJson: string,
     ctx: PlatformAgentToolContext,
+    signal?: AbortSignal,
   ): Promise<unknown> {
     if (!isAgentToolName(toolName)) {
       return { error: `Unknown tool: ${toolName}` };
@@ -62,7 +63,7 @@ export class PlatformAgentToolsService {
     }
 
     try {
-      return await this.dispatch(toolName, args, ctx);
+      return await this.dispatch(toolName, args, ctx, signal);
     } catch (error) {
       this.logger.warn(
         `Tool ${toolName} failed for externalUserId=${ctx.externalUserId}: ${errorMessage(error)}`,
@@ -77,10 +78,16 @@ export class PlatformAgentToolsService {
     toolName: AgentToolName,
     args: Record<string, unknown>,
     ctx: PlatformAgentToolContext,
+    signal?: AbortSignal,
   ): Promise<unknown> {
+    // Tool execution timed out (agent moved on) — do not start new side effects.
+    if (signal?.aborted) {
+      return { error: 'Tool execution aborted (timeout)' };
+    }
+
     const override = this.options.toolOverrides?.[toolName];
     if (override) {
-      return override(ctx, args);
+      return override(ctx, args, signal);
     }
 
     switch (toolName) {

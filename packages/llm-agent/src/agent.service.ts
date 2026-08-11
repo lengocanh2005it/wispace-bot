@@ -261,6 +261,10 @@ export class LlmAgentService<TToolContext> {
     const groundedToolsThisTurn = new Set<string>();
     const maxToolRounds = this.getMaxToolRounds();
     let previousToolCallSignature: string | null = null;
+    // Loop-generated assistant/tool messages start here — trimming below only
+    // drops these, never the system prompt, history or user turn.
+    const loopMessagesStart = messages.length;
+    let previousRoundFailed = false;
 
     for (let round = 0; round < maxToolRounds; round++) {
       try {
@@ -364,7 +368,13 @@ export class LlmAgentService<TToolContext> {
         }
 
         const signature = this.buildToolCallSignature(toolCalls);
-        if (signature === previousToolCallSignature) {
+        if (
+          signature === previousToolCallSignature &&
+          !previousRoundFailed
+        ) {
+          // Same calls twice AND the previous round succeeded — the LLM is
+          // stuck in a loop. A failed round re-calling the same tool is a
+          // legitimate retry and must not be cut off.
           metrics.llmRoundOutcomeInc(FEATURE, 'duplicate_tool_calls');
           logger.warn(
             `LLM agent detected duplicate tool calls, stopping early round=${round} externalUserId=${input.externalUserId} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
@@ -390,6 +400,10 @@ export class LlmAgentService<TToolContext> {
           signal,
         );
 
+        previousRoundFailed = toolResults.some(
+          (result) => !result.succeeded,
+        );
+
         for (const result of toolResults) {
           if (result.succeeded) {
             groundedToolsThisTurn.add(result.toolName);
@@ -400,6 +414,11 @@ export class LlmAgentService<TToolContext> {
             content: result.content,
           });
         }
+
+        // Cumulative tool-result budget: individual results are sanitized per
+        // string, but across rounds they can exceed the model context. Drop
+        // the oldest loop-generated messages until the total fits.
+        this.trimLoopMessages(messages, loopMessagesStart);
       } catch (err) {
         yield { type: 'error', error: err };
         return;
@@ -437,6 +456,28 @@ export class LlmAgentService<TToolContext> {
       '',
       'Bạn có thể hỏi tự do về tiến độ, lịch học — WISPACE cũng gửi báo cáo và nhắc lịch tự động.',
     ].join('\n');
+  }
+
+  /**
+   * Drops the oldest loop-generated messages (assistant tool-call frames and
+   * their tool results) until the whole `messages` array fits the context
+   * budget. Never touches messages before `loopStartIndex` (system prompt,
+   * history, user turn).
+   */
+  private trimLoopMessages(
+    messages: LlmMessage[],
+    loopStartIndex: number,
+  ): void {
+    const budget = this.getMaxContextChars();
+    let total = 0;
+    for (const message of messages) {
+      total += message.content?.length ?? 0;
+    }
+
+    while (total > budget && messages.length > loopStartIndex) {
+      const removed = messages.splice(loopStartIndex, 1)[0];
+      total -= removed?.content?.length ?? 0;
+    }
   }
 
   /**

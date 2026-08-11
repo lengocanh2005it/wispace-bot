@@ -328,6 +328,97 @@ describe('LlmAgentService', () => {
       expect(adapter.chatWithTools).toHaveBeenCalledTimes(2);
     });
 
+    it('allows an identical tool re-call when the previous round failed (legitimate retry)', async () => {
+      const toolResponse = makeToolCallResponse('get_user_goals');
+      const adapter = makeAdapter([
+        toolResponse,
+        toolResponse,
+        makeTextResponse('xong'),
+      ]);
+      const execute = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('Wispace down'))
+        .mockResolvedValueOnce({ goals: [] });
+
+      const { service } = buildService({ adapter, execute });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(result.text).toBe('xong');
+      expect(execute).toHaveBeenCalledTimes(2);
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(3);
+    });
+
+    it('trims loop tool messages to the cumulative context budget', async () => {
+      const textResponse = makeTextResponse('xong');
+      const seenMessages: Array<Array<{ role: string; content?: string }>> = [];
+      const adapter: LlmProviderAdapter = {
+        providerName: 'openai',
+        isConfigured: () => true,
+        getDefaultModel: () => 'gpt-5.4',
+        generateJson: jest.fn(),
+        chatWithTools: jest
+          .fn()
+          .mockImplementation((_req: { messages: unknown }) => {
+            seenMessages.push(
+              (_req.messages as Array<{ role: string; content?: string }>).map(
+                (m) => ({ role: m.role, content: m.content }),
+              ),
+            );
+            if (seenMessages.length <= 2) {
+              return Promise.resolve(
+                makeToolCallResponse(
+                  'list_study_calendar_entries',
+                  `{"limit":${seenMessages.length}}`,
+                ),
+              );
+            }
+            return Promise.resolve(textResponse);
+          }),
+        chatStream: jest.fn(),
+        isRetryableError: () => false,
+        isRateLimitError: () => false,
+        normalizeError: () => ({
+          provider: 'openai',
+          retryable: false,
+          reason: 'unknown',
+        }),
+      };
+      const execute = jest
+        .fn()
+        .mockResolvedValue({ big: 'x'.repeat(150) });
+      const usageRecorder = { recordFromCompletion: jest.fn() };
+      const safetyEvents = { recordGroundingWarning: jest.fn() };
+      const llmExecution = {
+        run: jest.fn().mockImplementation((_fn: () => Promise<unknown>) => _fn()),
+      };
+      const service = new LlmAgentService<StubToolContext>(
+        { maxContextChars: 500 },
+        {
+          llmExecution,
+          usageRecorder,
+          safetyEvents,
+          toolExecutor: { execute },
+          adapter,
+          logger: { warn: jest.fn(), debug: jest.fn() },
+        },
+      );
+
+      await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      // Round 3's request must fit the 500-char budget — the oldest
+      // loop-generated messages (round 1's tool result) were dropped.
+      const thirdRequest = seenMessages[2];
+      const totalChars = thirdRequest.reduce(
+        (sum, m) => sum + (m.content?.length ?? 0),
+        0,
+      );
+      expect(totalChars).toBeLessThanOrEqual(500);
+      expect(
+        thirdRequest.some((m) => m.content?.includes('xxx') === true),
+      ).toBe(false);
+    });
+
     it('returns graceful exhaustion reply after maxToolRounds (default = 6) when tool args genuinely differ each round', async () => {
       const responses = Array.from({ length: 6 }, (_, i) =>
         makeToolCallResponse(
