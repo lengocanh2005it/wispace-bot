@@ -12,6 +12,11 @@ describe('AppModule boot smoke', () => {
   it('boots without DI errors', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     process.env.OPENAI_MODEL = 'test-model';
+    process.env.DB_HOST = 'localhost';
+    process.env.DB_PORT = '5432';
+    process.env.DB_USER = 'test';
+    process.env.DB_PASSWORD = 'test';
+    process.env.DB_NAME = 'test';
 
     const stubRepo = {} as Repository<unknown>;
     const dataSourceMock = new Proxy({} as DataSource, {
