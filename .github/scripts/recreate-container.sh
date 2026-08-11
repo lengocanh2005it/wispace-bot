@@ -36,7 +36,10 @@ fi
 # Current host port (e.g. 127.0.0.1:5007:5007/tcp -> 5007)
 CFG_PORT=$(echo "$CFG_PORTS" | awk '{print $1}' | cut -d: -f2)
 
-docker rm -f "$NAME" >/dev/null 2>&1 || true
+# Keep the old container around until the replacement is healthy — a bad env
+# sync must not take the bot down with no recovery.
+BACKUP_NAME="${NAME}-old"
+docker rename "$NAME" "$BACKUP_NAME" >/dev/null 2>&1 || true
 
 args=(-d --name "$NAME" --restart "${CFG_RESTART:-unless-stopped}")
 [ -n "$CFG_USER" ] && args+=(--user "$CFG_USER")
@@ -64,3 +67,27 @@ args+=(-e HOME=/tmp)
 args+=("$IMAGE")
 
 docker run "${args[@]}"
+
+# Health gate: wait for /health (default path, overridable) before dropping
+# the old container. On failure, roll back to the previous container.
+HEALTH_PATH="${HEALTH_PATH:-/health}"
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-60}"
+health_ok=""
+for attempt in $(seq 1 "$HEALTH_TIMEOUT"); do
+  if curl -fsS "http://127.0.0.1:${CFG_PORT}${HEALTH_PATH}" >/dev/null 2>&1; then
+    health_ok=1
+    break
+  fi
+  sleep 1
+done
+
+if [ -n "$health_ok" ]; then
+  docker rm -f "$BACKUP_NAME" >/dev/null 2>&1 || true
+  echo "Container $NAME healthy — old container removed"
+else
+  echo "ERROR: new container $NAME failed health check — rolling back" >&2
+  docker rm -f "$NAME" >/dev/null 2>&1 || true
+  docker rename "$BACKUP_NAME" "$NAME" >/dev/null 2>&1 || true
+  docker start "$NAME" >/dev/null 2>&1 || true
+  exit 1
+fi

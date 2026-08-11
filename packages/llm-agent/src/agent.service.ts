@@ -368,10 +368,7 @@ export class LlmAgentService<TToolContext> {
         }
 
         const signature = this.buildToolCallSignature(toolCalls);
-        if (
-          signature === previousToolCallSignature &&
-          !previousRoundFailed
-        ) {
+        if (signature === previousToolCallSignature && !previousRoundFailed) {
           // Same calls twice AND the previous round succeeded — the LLM is
           // stuck in a loop. A failed round re-calling the same tool is a
           // legitimate retry and must not be cut off.
@@ -400,9 +397,7 @@ export class LlmAgentService<TToolContext> {
           signal,
         );
 
-        previousRoundFailed = toolResults.some(
-          (result) => !result.succeeded,
-        );
+        previousRoundFailed = toolResults.some((result) => !result.succeeded);
 
         for (const result of toolResults) {
           if (result.succeeded) {

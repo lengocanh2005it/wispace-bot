@@ -26,6 +26,7 @@ import {
   WispaceGoalsService,
 } from '@wispace/wispace-client';
 import {
+  ADVISORY_LOCKS,
   BotCommonModule,
   PgAdvisoryLockService,
   REDIS_CLIENT,
@@ -286,7 +287,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           configService,
           pgLock,
           {
-            lockId: 884_200_931,
+            lockId: ADVISORY_LOCKS.ZALO_DEAD_LETTER_RETRY,
             extractPayload: (payload) => ({
               externalUserId: payload.zaloUserId as string | undefined,
               text: payload.text as string | undefined,
