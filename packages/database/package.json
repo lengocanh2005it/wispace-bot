@@ -15,22 +15,23 @@
     "test": "jest --maxWorkers=50%"
   },
   "dependencies": {
-    "@wispace/bot-common": "*",
-    "@wispace/scheduler-core": "*",
-    "@wispace/date-utils": "*",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/schedule": "^6.0.0",
     "@nestjs/typeorm": "^11.0.1",
+    "@wispace/bot-common": "*",
+    "@wispace/date-utils": "*",
+    "@wispace/reschedule-confirm": "*",
+    "@wispace/scheduler-core": "*",
     "typeorm": "^1.0.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
+    "eslint": "^9.18.0",
     "jest": "^30.0.0",
-    "reflect-metadata": "^0.2.2",
-    "ts-jest": "^29.2.5",
     "prettier": "^3.4.2",
-    "eslint": "^9.18.0"
+    "reflect-metadata": "^0.2.2",
+    "ts-jest": "^29.2.5"
   },
   "jest": {
     "moduleFileExtensions": [
