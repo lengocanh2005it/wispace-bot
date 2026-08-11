@@ -140,7 +140,7 @@ try {
     ),
     pool.query(
       `
-        SELECT id, psid, user_id, session_key, remind_at, status, retry_count, max_retries, last_error, updated_at
+        SELECT id, external_user_id AS psid, user_id, session_key, remind_at, status, retry_count, max_retries, last_error, updated_at
         FROM study_reminder_jobs
         WHERE status = 'failed'
           AND retry_count >= max_retries
@@ -152,7 +152,7 @@ try {
     ),
     pool.query(
       `
-        SELECT id, psid, user_id, session_key, remind_at, status, updated_at
+        SELECT id, external_user_id AS psid, user_id, session_key, remind_at, status, updated_at
         FROM study_reminder_jobs
         WHERE status = 'processing'
           AND updated_at <= $1::timestamptz
@@ -164,7 +164,7 @@ try {
     pool.query(
       `
         SELECT COUNT(*)::int AS count
-        FROM messenger_chat_idempotency
+        FROM chat_idempotency
         WHERE status = 'reserved' AND reserved_at < $1::timestamptz
       `,
       [stuckBefore],
@@ -172,7 +172,7 @@ try {
     pool.query(
       `
         SELECT status, COUNT(*)::int AS count
-        FROM messenger_chat_idempotency
+        FROM chat_idempotency
         WHERE usage_date = $1::date
         GROUP BY status
         ORDER BY status ASC
@@ -182,7 +182,7 @@ try {
     pool.query(
       `
         SELECT COUNT(*)::int AS count
-        FROM messenger_chat_daily_usage
+        FROM chat_daily_usage
         WHERE usage_date = $1::date
           AND free_form_count >= $2::int
       `,
@@ -191,7 +191,7 @@ try {
     pool.query(
       `
         SELECT COUNT(*)::int AS count
-        FROM messenger_message_logs
+        FROM message_logs
         WHERE message_type = 'CHAT_QUOTA_DENIED'
           AND created_at >= $1::timestamptz
       `,

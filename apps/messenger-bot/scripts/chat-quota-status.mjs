@@ -142,7 +142,7 @@ try {
       pool.query(
         `
           SELECT COUNT(*)::int AS count
-          FROM messenger_chat_idempotency
+          FROM chat_idempotency
           WHERE status = 'reserved' AND reserved_at < $1::timestamptz
         `,
         [stuckBefore],
@@ -150,7 +150,7 @@ try {
       pool.query(
         `
           SELECT COUNT(*)::int AS count
-          FROM messenger_chat_daily_usage
+          FROM chat_daily_usage
           WHERE usage_date = $1::date
             AND free_form_count >= $2::int
         `,
@@ -159,7 +159,7 @@ try {
       pool.query(
         `
           SELECT COUNT(*)::int AS count
-          FROM messenger_message_logs
+          FROM message_logs
           WHERE message_type = 'CHAT_QUOTA_DENIED'
             AND created_at >= $1::timestamptz
         `,
@@ -168,7 +168,7 @@ try {
       pool.query(
         `
           SELECT status, COUNT(*)::int AS count
-          FROM messenger_chat_idempotency
+          FROM chat_idempotency
           WHERE usage_date = $1::date
           GROUP BY status
           ORDER BY status ASC
@@ -180,7 +180,7 @@ try {
           SELECT
             COUNT(*)::int AS users_with_usage,
             COALESCE(SUM(free_form_count), 0)::int AS total_messages
-          FROM messenger_chat_daily_usage
+          FROM chat_daily_usage
           WHERE usage_date = $1::date
         `,
         [usageDate],
@@ -233,17 +233,17 @@ try {
     `
       SELECT
         id,
-        psid,
+        external_user_id AS psid,
         user_id,
         usage_date,
         free_form_count,
         created_at,
         updated_at
-      FROM messenger_chat_daily_usage
-      WHERE ($1::varchar IS NULL OR psid = $1)
+      FROM chat_daily_usage
+      WHERE ($1::varchar IS NULL OR external_user_id = $1)
         AND ($2::int IS NULL OR user_id = $2)
         AND usage_date = $3::date
-      ORDER BY psid ASC
+      ORDER BY external_user_id ASC
     `,
     [args.psid, args.userId, usageDate],
   );
@@ -252,13 +252,13 @@ try {
     `
       SELECT
         idempotency_key,
-        psid,
+        external_user_id AS psid,
         user_id,
         usage_date,
         status,
         reserved_at
-      FROM messenger_chat_idempotency
-      WHERE ($1::varchar IS NULL OR psid = $1)
+      FROM chat_idempotency
+      WHERE ($1::varchar IS NULL OR external_user_id = $1)
         AND ($2::int IS NULL OR user_id = $2)
         AND usage_date = $3::date
       ORDER BY reserved_at DESC
@@ -270,8 +270,8 @@ try {
   const burstResult = await pool.query(
     `
       SELECT COUNT(*)::int AS recent_count
-      FROM messenger_chat_idempotency
-      WHERE ($1::varchar IS NULL OR psid = $1)
+      FROM chat_idempotency
+      WHERE ($1::varchar IS NULL OR external_user_id = $1)
         AND reserved_at > NOW() - INTERVAL '1 minute'
         AND status IN ('reserved', 'completed')
     `,
@@ -282,14 +282,14 @@ try {
     `
       SELECT
         idempotency_key,
-        psid,
+        external_user_id AS psid,
         user_id,
         usage_date,
         reserved_at
-      FROM messenger_chat_idempotency
+      FROM chat_idempotency
       WHERE status = 'reserved'
         AND reserved_at < $1
-        AND ($2::varchar IS NULL OR psid = $2)
+        AND ($2::varchar IS NULL OR external_user_id = $2)
       ORDER BY reserved_at ASC
       LIMIT 50
     `,
@@ -299,8 +299,8 @@ try {
   const idempotencyStatsResult = await pool.query(
     `
       SELECT status, COUNT(*)::int AS count
-      FROM messenger_chat_idempotency
-      WHERE ($1::varchar IS NULL OR psid = $1)
+      FROM chat_idempotency
+      WHERE ($1::varchar IS NULL OR external_user_id = $1)
         AND ($2::int IS NULL OR user_id = $2)
         AND usage_date = $3::date
       GROUP BY status
@@ -312,7 +312,7 @@ try {
   const retentionEligibleResult = await pool.query(
     `
       SELECT COUNT(*)::int AS count
-      FROM messenger_chat_idempotency
+      FROM chat_idempotency
       WHERE status IN ('completed', 'refunded')
         AND reserved_at < NOW() - ($1::int * INTERVAL '1 day')
     `,
@@ -322,16 +322,16 @@ try {
   const idempotencyTotalResult = await pool.query(
     `
       SELECT COUNT(*)::int AS count
-      FROM messenger_chat_idempotency
+      FROM chat_idempotency
     `,
   );
 
   const denyLogsResult = await pool.query(
     `
       SELECT COUNT(*)::int AS count
-      FROM messenger_message_logs
+      FROM message_logs
       WHERE message_type = 'CHAT_QUOTA_DENIED'
-        AND ($1::varchar IS NULL OR psid = $1)
+        AND ($1::varchar IS NULL OR external_user_id = $1)
         AND ($2::int IS NULL OR user_id = $2)
         AND created_at::date = $3::date
     `,
