@@ -10,6 +10,7 @@ interface MockClient {
   smembers: jest.Mock;
   eval: jest.Mock;
   exists: jest.Mock;
+  multi: jest.Mock;
 }
 
 describe('RedisChatQueueStore', () => {
@@ -34,11 +35,34 @@ describe('RedisChatQueueStore', () => {
     smembers: jest.fn().mockResolvedValue([]),
     eval: jest.fn().mockResolvedValue(1),
     exists: jest.fn().mockResolvedValue(1),
+    multi: jest.fn(() => createTransaction()),
     ...overrides,
   });
 
+  const createTransaction = (
+    execResult: Array<[Error | null, unknown]> | null = [
+      [null, 'OK'],
+      [null, 1],
+    ],
+  ) => {
+    const transaction = {
+      set: jest.fn(),
+      sadd: jest.fn(),
+      del: jest.fn(),
+      srem: jest.fn(),
+      exec: jest.fn().mockResolvedValue(execResult),
+    };
+    transaction.set.mockReturnValue(transaction);
+    transaction.sadd.mockReturnValue(transaction);
+    transaction.del.mockReturnValue(transaction);
+    transaction.srem.mockReturnValue(transaction);
+    return transaction;
+  };
+
   it('appends text to buffer under psid lock', async () => {
     const client = createClient();
+    const transaction = createTransaction();
+    client.multi.mockReturnValue(transaction);
 
     const store = createStore(client);
     await store.appendChatBuffer({
@@ -55,16 +79,188 @@ describe('RedisChatQueueStore', () => {
       30_000,
       'NX',
     );
-    expect(client.set).toHaveBeenCalledWith(
+    expect(transaction.set).toHaveBeenCalledWith(
       'chat:queue:buffer:psid-1',
       expect.stringContaining('"hello"'),
       'EX',
       86_400,
     );
+    expect(transaction.sadd).toHaveBeenCalledWith(
+      'chat:queue:active-psids',
+      'psid-1',
+    );
+  });
+
+  it('writes the buffer and active-set membership atomically', async () => {
+    const transaction = createTransaction();
+    const client = createClient({
+      multi: jest.fn().mockReturnValue(transaction),
+    });
+
+    const store = createStore(client);
+    await store.appendChatBuffer({
+      psid: 'psid-1',
+      userText: 'hello',
+      debounceMs: 2000,
+    });
+
+    expect(client.multi).toHaveBeenCalledTimes(1);
+    expect(transaction.exec).toHaveBeenCalledTimes(1);
+    expect(transaction.set.mock.invocationCallOrder[0]).toBeLessThan(
+      transaction.sadd.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('rejects append when the psid lock is busy', async () => {
+    const client = createClient({
+      set: jest.fn().mockResolvedValue(null),
+    });
+
+    const store = createStore(client);
+
+    await expect(
+      store.appendChatBuffer({
+        psid: 'psid-1',
+        userText: 'hello',
+        debounceMs: 2000,
+      }),
+    ).rejects.toThrow('Redis chat queue lock busy');
+  });
+
+  it('rejects append when Redis write fails', async () => {
+    const client = createClient({
+      multi: jest.fn().mockReturnValue(
+        createTransaction([
+          [new Error('Redis write failed'), null],
+          [null, 1],
+        ]),
+      ),
+    });
+
+    const store = createStore(client);
+
+    await expect(
+      store.appendChatBuffer({
+        psid: 'psid-1',
+        userText: 'hello',
+        debounceMs: 2000,
+      }),
+    ).rejects.toThrow('Redis write failed');
+  });
+
+  it('does not duplicate an append when a persisted write reports failure', async () => {
+    let persistedState: string | null = null;
+    const transaction = createTransaction();
+    const client = createClient({
+      get: jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+      set: jest.fn().mockImplementation((key: string, value?: string) => {
+        if (key.startsWith('chat:queue:lock:')) {
+          return Promise.resolve('OK');
+        }
+        return Promise.resolve(value);
+      }),
+      multi: jest.fn().mockReturnValue(transaction),
+    });
+    transaction.set.mockImplementation((_key: string, value: string) => {
+      persistedState = value;
+      return transaction;
+    });
+    transaction.exec
+      .mockResolvedValueOnce([
+        [new Error('Redis write failed after persist'), null],
+        [null, 1],
+      ])
+      .mockResolvedValueOnce([
+        [null, 'OK'],
+        [null, 1],
+      ]);
+
+    const store = createStore(client);
+
+    await expect(
+      store.appendChatBuffer({
+        psid: 'psid-1',
+        userText: 'hello',
+        debounceMs: 2000,
+        idempotencyKey: 'mid-1',
+      }),
+    ).rejects.toThrow('Redis write failed after persist');
+
+    await store.appendChatBuffer({
+      psid: 'psid-1',
+      userText: 'hello',
+      debounceMs: 2000,
+      idempotencyKey: 'mid-1',
+    });
+
+    const parsedState = JSON.parse(persistedState ?? '{}') as {
+      texts?: string[];
+    };
+    expect(parsedState.texts).toEqual(['hello']);
+    expect(
+      transaction.set.mock.calls.filter(([key]) =>
+        String(key).startsWith('chat:queue:buffer:'),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('deduplicates against the legacy last idempotency key', async () => {
+    const client = createClient({
+      get: jest.fn().mockResolvedValue(
+        JSON.stringify({
+          texts: ['hello'],
+          pendingTexts: [],
+          processing: false,
+          lastIdempotencyKey: 'mid-1',
+        }),
+      ),
+    });
+
+    const store = createStore(client);
+    await store.appendChatBuffer({
+      psid: 'psid-1',
+      userText: 'hello',
+      debounceMs: 2000,
+      idempotencyKey: 'mid-1',
+    });
+
+    expect(
+      client.set.mock.calls.filter(([key]) =>
+        String(key).startsWith('chat:queue:buffer:'),
+      ),
+    ).toHaveLength(0);
     expect(client.sadd).toHaveBeenCalledWith(
       'chat:queue:active-psids',
       'psid-1',
     );
+  });
+
+  it('rejects append when lock release fails', async () => {
+    const client = createClient({
+      eval: jest.fn().mockRejectedValue(new Error('Redis release failed')),
+    });
+
+    const store = createStore(client);
+
+    await expect(
+      store.appendChatBuffer({
+        psid: 'psid-1',
+        userText: 'hello',
+        debounceMs: 2000,
+      }),
+    ).rejects.toThrow('Redis release failed');
+  });
+
+  it('rejects append when Redis is unavailable', async () => {
+    const store = createStore(null);
+
+    await expect(
+      store.appendChatBuffer({
+        psid: 'psid-1',
+        userText: 'hello',
+        debounceMs: 2000,
+      }),
+    ).rejects.toThrow('Redis chat queue unavailable');
   });
 
   it('returns null from claim when buffer is empty', async () => {
@@ -146,9 +342,36 @@ describe('RedisChatQueueStore', () => {
     const ready = await store.listPsidsReadyForFlush(25, 300_000);
 
     expect(ready).toEqual([]);
-    expect(client.srem).toHaveBeenCalledWith(
+    expect(client.srem).not.toHaveBeenCalled();
+    expect(client.eval).toHaveBeenCalledWith(
+      expect.stringContaining('redis.call("exists", KEYS[1])'),
+      2,
+      'chat:queue:buffer:psid-1',
       'chat:queue:active-psids',
       'psid-1',
     );
+  });
+
+  it('does not remove an active member restored after the stale read', async () => {
+    let bufferRestored = false;
+    const activePsids = new Set(['psid-1']);
+    const client = createClient({
+      smembers: jest.fn().mockResolvedValue(['psid-1']),
+      exists: jest.fn().mockImplementation(() => {
+        bufferRestored = true;
+        return 0;
+      }),
+      eval: jest.fn().mockImplementation(() => {
+        if (!bufferRestored) {
+          activePsids.delete('psid-1');
+        }
+      }),
+    });
+
+    const store = createStore(client);
+    await store.listPsidsReadyForFlush(25, 300_000);
+
+    expect(activePsids.has('psid-1')).toBe(true);
+    expect(client.srem).not.toHaveBeenCalled();
   });
 });

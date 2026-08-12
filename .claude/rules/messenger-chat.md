@@ -50,6 +50,13 @@ Port: `CHAT_HISTORY_STORE` → `ChatHistoryStoreResolver`.
 
 Port: `PlatformWebhookInboundEventService` (`@wispace/database`) — `ingest` / `claim` / `markCompleted` / `markFailed` / `listDue`.
 
+Distributed enqueue is fail-safe: Redis lock contention, unavailable Redis, or
+an append error is surfaced by `RedisChatQueueStore`, retried briefly (3
+attempts, 25 ms between attempts), then propagated through
+`WebhookActionExecutorService`. The durable webhook inbox marks the event
+failed and its 30-second retry cron replays it after Redis recovers; the
+webhook must not mark such an event completed.
+
 ## Main files
 
 | File | Role |

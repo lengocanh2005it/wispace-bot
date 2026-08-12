@@ -75,7 +75,7 @@ export class WebhookActionExecutorService {
 
       case 'enqueue_chat': {
         const linkContext = await resolveLinkContextForChat(psid!, event);
-        this.messengerChatQueueService.enqueue({
+        await this.messengerChatQueueService.enqueue({
           psid: psid!,
           userId: action.userId,
           userText: action.userText,
