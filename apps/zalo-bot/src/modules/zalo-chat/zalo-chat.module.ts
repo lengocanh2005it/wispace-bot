@@ -97,7 +97,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     {
       provide: DeliveryLogService,
       useFactory: (repo: Repository<ZaloMessageLogEntity>) =>
-        new DeliveryLogService(repo),
+        new DeliveryLogService(repo, 'zalo'),
       inject: [getRepositoryToken(ZaloMessageLogEntity)],
     },
     {

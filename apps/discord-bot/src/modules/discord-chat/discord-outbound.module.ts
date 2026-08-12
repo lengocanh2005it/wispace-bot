@@ -26,7 +26,7 @@ import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/
     {
       provide: DeliveryLogService,
       useFactory: (repo: Repository<DiscordMessageLogEntity>) =>
-        new DeliveryLogService(repo),
+        new DeliveryLogService(repo, 'discord'),
       inject: [getRepositoryToken(DiscordMessageLogEntity)],
     },
     {

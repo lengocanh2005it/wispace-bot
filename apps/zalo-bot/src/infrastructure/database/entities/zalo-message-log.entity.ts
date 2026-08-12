@@ -5,10 +5,13 @@ import {
   CreateDateColumn,
 } from 'typeorm';
 
-@Entity('zalo_message_logs')
+@Entity('message_logs')
 export class ZaloMessageLogEntity {
   @PrimaryGeneratedColumn()
   id!: number;
+
+  @Column({ type: 'varchar', length: 16, default: 'zalo' })
+  platform!: string;
 
   @Column({ type: 'varchar', length: 64, name: 'external_user_id' })
   externalUserId!: string;
@@ -16,8 +19,11 @@ export class ZaloMessageLogEntity {
   @Column({ type: 'varchar', length: 20 })
   status!: string;
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ name: 'error_message', type: 'text', nullable: true })
   error!: string | null;
+
+  @Column({ name: 'message_text', type: 'text' })
+  messageText!: string;
 
   @Column({ type: 'varchar', length: 50, default: 'chat' })
   messageType!: string;

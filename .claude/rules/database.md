@@ -8,7 +8,7 @@ paths: apps/messenger-bot/src/infrastructure/database/**, packages/database/**
 ## Tables (migrations in repo)
 
 - `user_platform_mappings` — `user_id` ↔ `(platform, external_user_id)` (renamed from `user_messenger_mappings` in Phase 2)
-- `message_logs` — sent/received message audit; cron `messenger-message-log-cleanup` deletes rows older than `MESSENGER_MESSAGE_LOG_RETENTION_DAYS` (default 90) at 03:00 ICT every Monday
+- `message_logs` — sent/received message audit for all platforms; Discord/Zalo delivery entities must map to this table and always write their `platform` value (no `discord_message_logs`/`zalo_message_logs` tables). Cron `messenger-message-log-cleanup` deletes rows older than `MESSENGER_MESSAGE_LOG_RETENTION_DAYS` (default 90) at 03:00 ICT every Monday
 - `chat_daily_usage`, `chat_idempotency` — FREE_FORM chat quota + idempotency reserve/refund (renamed from `messenger_chat_*` in Phase 2) — entity + core logic owned by `packages/chat-metering` (shared with `apps/discord-bot`), messenger-bot is now just a thin wrapper
 - `llm_usage_events`, `llm_safety_events` — token/cost + grounding-warning tracking — also owned by `packages/chat-metering`
 - `study_reminder_jobs` — reminder outbox

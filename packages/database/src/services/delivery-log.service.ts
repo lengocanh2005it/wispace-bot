@@ -8,6 +8,8 @@ export interface MessageLogRow {
   status: string;
   error: string | null;
   messageType: string;
+  platform?: string;
+  messageText?: string;
 }
 
 /**
@@ -19,13 +21,17 @@ export interface MessageLogRow {
 export class DeliveryLogService<Entity extends MessageLogRow = MessageLogRow> {
   private readonly logger = new Logger(DeliveryLogService.name);
 
-  constructor(private readonly repo: Repository<Entity>) {}
+  constructor(
+    private readonly repo: Repository<Entity>,
+    private readonly platform?: string,
+  ) {}
 
   async logDelivery(input: {
     externalUserId: string;
     status: 'SENT' | 'FAILED';
     error?: string;
     messageType?: string;
+    messageText?: string;
   }): Promise<void> {
     try {
       await this.repo.save({
@@ -33,6 +39,12 @@ export class DeliveryLogService<Entity extends MessageLogRow = MessageLogRow> {
         status: input.status,
         error: input.error ?? null,
         messageType: input.messageType ?? 'chat',
+        ...(this.platform
+          ? {
+              platform: this.platform,
+              messageText: input.messageText ?? '',
+            }
+          : {}),
       } as DeepPartial<Entity>);
     } catch (error) {
       this.logger.warn(`Failed to log delivery: ${errorMessage(error)}`);

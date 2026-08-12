@@ -111,7 +111,7 @@ export class DiscordOauthController {
 
       await this.accountLinkService.upsertLink(wispaceUserId, discordUserId);
 
-      const dmChannelId = await this.outboundService.sendTextAndGetChannelId(
+      const dmChannelId = await this.outboundService.sendMenuButtons(
         discordUserId,
         buildDiscordLinkWelcomeMessage(discordUsername),
       );

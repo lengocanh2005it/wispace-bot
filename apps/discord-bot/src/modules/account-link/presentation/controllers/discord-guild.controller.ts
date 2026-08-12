@@ -113,7 +113,7 @@ export class DiscordGuildController {
         entry.discordUserId,
       );
 
-      const dmChannelId = await this.outboundService.sendTextAndGetChannelId(
+      const dmChannelId = await this.outboundService.sendMenuButtons(
         entry.discordUserId,
         buildDiscordLinkWelcomeMessage(entry.discordUsername),
       );

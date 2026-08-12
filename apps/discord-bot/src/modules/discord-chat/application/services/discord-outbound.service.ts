@@ -103,6 +103,7 @@ export class DiscordOutboundService {
         externalUserId: discordUserId,
         status: 'SENT',
         messageType: 'chat',
+        messageText: text,
       });
       return msg.channelId;
     } catch (error) {
@@ -117,6 +118,7 @@ export class DiscordOutboundService {
         status: 'FAILED',
         error: errorMsg,
         messageType: 'chat',
+        messageText: text,
       });
       if (options?.skipDeadLetter !== true) {
         await this.deadLetter?.save({

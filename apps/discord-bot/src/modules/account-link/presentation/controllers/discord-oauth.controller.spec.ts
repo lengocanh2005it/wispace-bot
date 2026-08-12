@@ -132,7 +132,7 @@ describe('DiscordOauthController', () => {
       upsertLink: jest.fn().mockResolvedValue(undefined),
     } as unknown as DiscordAccountLinkService;
     const outboundService = {
-      sendTextAndGetChannelId: jest.fn().mockResolvedValue('dm-channel-123'),
+      sendMenuButtons: jest.fn().mockResolvedValue('dm-channel-123'),
     } as unknown as DiscordOutboundService;
     const controller = new DiscordOauthController(
       buildConfigService(),
@@ -153,7 +153,7 @@ describe('DiscordOauthController', () => {
       143,
       'discord-user-1',
     );
-    expect(outboundService.sendTextAndGetChannelId).toHaveBeenCalledWith(
+    expect(outboundService.sendMenuButtons).toHaveBeenCalledWith(
       'discord-user-1',
       expect.any(String),
     );
@@ -210,7 +210,7 @@ describe('DiscordOauthController', () => {
       upsertLink: jest.fn().mockResolvedValue(undefined),
     } as unknown as DiscordAccountLinkService;
     const outboundService = {
-      sendTextAndGetChannelId: jest.fn().mockResolvedValue('dm-channel-123'),
+      sendMenuButtons: jest.fn().mockResolvedValue('dm-channel-123'),
     } as unknown as DiscordOutboundService;
     const controller = new DiscordOauthController(
       buildConfigService({

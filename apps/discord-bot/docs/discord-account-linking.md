@@ -60,8 +60,8 @@ no extra WISPACE backend endpoint needed.
 3. Upsert `(platform='discord', external_user_id=discordUserId, user_id)`
    into `discord_account_links` (1:1 both directions — matches Messenger's
    L4 mapping uniqueness).
-4. Send a Vietnamese welcome DM to the student, and show a small HTML
-   success page in the browser tab.
+4. Send a Vietnamese welcome DM with the quick-action menu buttons to the
+   student, and show a small HTML success page in the browser tab.
 
 ## Not yet done (follow-up)
 
