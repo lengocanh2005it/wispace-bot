@@ -108,6 +108,28 @@ describe('MessengerService (durable webhook ingestion)', () => {
     expect(result.failures).toHaveLength(0);
   });
 
+  it('assigns a stable enqueue key when Messenger omits message.mid', async () => {
+    const { service, actionExecutor, repository } = buildService();
+    repository.findActiveMappingByPsid.mockResolvedValue({ userId: 143 });
+
+    await service.handleWebhook(
+      payloadWith([
+        textEvent({
+          message: { text: 'xem lich hoc cua minh' },
+        }),
+      ]),
+    );
+
+    expect(actionExecutor.executeAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'enqueue_chat',
+        idempotencyKey: 'evt:psid-1:1700000000000',
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
   it('claims the event before processing (single-writer)', async () => {
     const { service, inboundEvents } = buildService();
 

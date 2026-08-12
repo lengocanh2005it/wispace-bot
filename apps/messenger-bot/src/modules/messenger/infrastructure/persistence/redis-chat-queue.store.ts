@@ -380,6 +380,10 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
 
     try {
       const parsed = JSON.parse(raw) as RedisChatQueueBufferState;
+      const legacyIdempotencyKeys = [
+        parsed.lastIdempotencyKey,
+        parsed.lastPendingIdempotencyKey,
+      ].filter((key): key is string => typeof key === 'string');
       return {
         ...this.emptyState(),
         ...parsed,
@@ -389,7 +393,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
           : [],
         idempotencyKeys: Array.isArray(parsed.idempotencyKeys)
           ? parsed.idempotencyKeys
-          : [],
+          : legacyIdempotencyKeys,
       };
     } catch {
       return this.emptyState();

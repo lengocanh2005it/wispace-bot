@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
@@ -34,7 +35,13 @@ function buildEventId(event: MessengerWebhookEvent, psid: string): string {
   if (event.postback?.payload) {
     return `pb:${psid}:${event.postback.payload}:${event.timestamp ?? Date.now()}`;
   }
-  return `evt:${psid}:${event.timestamp ?? Date.now()}`;
+  if (event.timestamp !== undefined) {
+    return `evt:${psid}:${event.timestamp}`;
+  }
+  const fingerprint = createHash('sha256')
+    .update(JSON.stringify(event))
+    .digest('hex');
+  return `evt:${psid}:${fingerprint}`;
 }
 
 function buildEventType(event: MessengerWebhookEvent): string {
@@ -218,12 +225,20 @@ export class MessengerService {
     const actions = routeWebhookEvent(event, ctx);
 
     for (const action of actions) {
-      if (action.type === 'send_text' || action.type === 'ignore') {
-        if (action.type === 'send_text') {
+      const actionForExecution =
+        action.type === 'enqueue_chat' && !action.idempotencyKey
+          ? { ...action, idempotencyKey: buildEventId(event, psid) }
+          : action;
+
+      if (
+        actionForExecution.type === 'send_text' ||
+        actionForExecution.type === 'ignore'
+      ) {
+        if (actionForExecution.type === 'send_text') {
           this.signalMessageSeen(psid);
         }
         await this.actionExecutor.executeAction(
-          action,
+          actionForExecution,
           event,
           this.resolveLinkContextForChat.bind(this),
         );
@@ -231,7 +246,7 @@ export class MessengerService {
         // Fire-and-forget — the typing roundtrip must not block the webhook.
         this.signalTyping(psid);
         await this.actionExecutor.executeAction(
-          action,
+          actionForExecution,
           event,
           (eventPsid, eventObj) =>
             this.resolveLinkContextForChat(eventPsid, eventObj, ctx),

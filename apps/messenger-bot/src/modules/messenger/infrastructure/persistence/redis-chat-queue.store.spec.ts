@@ -145,6 +145,33 @@ describe('RedisChatQueueStore', () => {
     ).toHaveLength(1);
   });
 
+  it('deduplicates against the legacy last idempotency key', async () => {
+    const client = createClient({
+      get: jest.fn().mockResolvedValue(
+        JSON.stringify({
+          texts: ['hello'],
+          pendingTexts: [],
+          processing: false,
+          lastIdempotencyKey: 'mid-1',
+        }),
+      ),
+    });
+
+    const store = createStore(client);
+    await store.appendChatBuffer({
+      psid: 'psid-1',
+      userText: 'hello',
+      debounceMs: 2000,
+      idempotencyKey: 'mid-1',
+    });
+
+    expect(
+      client.set.mock.calls.filter(([key]) =>
+        String(key).startsWith('chat:queue:buffer:'),
+      ),
+    ).toHaveLength(0);
+  });
+
   it('rejects append when lock release fails', async () => {
     const client = createClient({
       eval: jest.fn().mockRejectedValue(new Error('Redis release failed')),
