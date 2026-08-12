@@ -7,7 +7,6 @@ import {
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
 
@@ -17,17 +16,21 @@ import {
   verifyZaloWebhookSignature,
 } from '../../application/utils/zalo-webhook-signature.utils';
 import type { ZaloWebhookEvent } from '../../domain/entities/zalo-webhook-event.types';
-import { ZaloChatService } from '../../../zalo-chat/application/services/zalo-chat.service';
-import { ZaloWebhookDedupeService } from '../../application/zalo-webhook-dedupe.service';
+import { ZaloWebhookIngestService } from '../../application/zalo-webhook-ingest.service';
 
+/**
+ * Thin presentation layer: authenticate the webhook request, then delegate
+ * durable ingestion (persist → claim → dispatch → mark) to the application
+ * service. A persistence failure propagates → non-2xx → the platform
+ * redelivers instead of acknowledging an event that was never stored.
+ */
 @Controller('zalo/webhook')
 export class ZaloWebhookController {
   private readonly logger = new Logger(ZaloWebhookController.name);
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly handler: ZaloChatService,
-    private readonly dedupeService: ZaloWebhookDedupeService,
+    private readonly ingestService: ZaloWebhookIngestService,
   ) {}
 
   @Post()
@@ -64,56 +67,7 @@ export class ZaloWebhookController {
       throw new UnauthorizedException('Stale webhook timestamp');
     }
 
-    try {
-      await this.dispatch(body);
-    } catch (error) {
-      // Inbound webhook events are never dead-lettered for replay — the retry
-      // cron only replays outbound sends. Logging is the audit trail here;
-      // Zalo does not retry webhook callbacks after we answer 200.
-      this.logger.warn(`Webhook event failed: ${errorMessage(error)}`);
-    }
+    await this.ingestService.processEvent(body);
     return { received: true };
-  }
-
-  private async dispatch(event: ZaloWebhookEvent): Promise<void> {
-    switch (event.event_name) {
-      case 'user_send_text': {
-        const senderId = event.sender?.id;
-        const text = event.message?.text;
-        const msgId = event.message?.msg_id;
-        if (senderId && text) {
-          if (msgId && (await this.dedupeService.isDuplicate(msgId))) {
-            this.logger.debug(`Skipping duplicate webhook msg_id=${msgId}`);
-            return;
-          }
-          await this.handler.handleIncomingMessage(senderId, text, msgId);
-        }
-        return;
-      }
-      case 'follow': {
-        const followerId = event.follower?.id;
-        if (followerId) {
-          await this.handler.handleFollow(followerId);
-        }
-        return;
-      }
-      case 'unfollow':
-        this.logger.log(`User unfollowed: ${event.follower?.id ?? 'unknown'}`);
-        return;
-      default:
-        if (event.event_name.startsWith('oa_send_')) {
-          // Echo of our own outbound message — ignore to avoid loops.
-          return;
-        }
-        if (event.event_name.startsWith('user_send_')) {
-          const senderId = event.sender?.id;
-          if (senderId) {
-            await this.handler.handleUnsupportedMessage(senderId);
-          }
-          return;
-        }
-        this.logger.debug(`Unhandled event_name=${event.event_name}`);
-        return;
-    }
   }
 }

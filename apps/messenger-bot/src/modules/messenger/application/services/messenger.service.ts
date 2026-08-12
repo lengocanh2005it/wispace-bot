@@ -1,19 +1,13 @@
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  Logger,
-  Optional,
-} from '@nestjs/common';
+import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import {
+  PlatformWebhookInboundEventService,
+  readInboundRetryConfig,
+} from '@wispace/database';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
-import { WEBHOOK_DEDUPE_STORE } from '../../domain/repositories/webhook-dedupe.store.port';
-import type { WebhookDedupeStorePort } from '../../domain/repositories/webhook-dedupe.store.port';
-import { MESSENGER_WEBHOOK_DEAD_LETTER_REPOSITORY } from '../../domain/repositories/messenger-webhook-dead-letter.repository.port';
-import type { MessengerWebhookDeadLetterRepositoryPort } from '../../domain/repositories/messenger-webhook-dead-letter.repository.port';
 import {
   MessengerWebhookEvent,
   MessengerWebhookPayload,
@@ -22,6 +16,7 @@ import {
 import { MessengerLinkContextService } from './messenger-link-context.service';
 import { MessengerOutboundService } from './messenger-outbound.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
+import { WEBHOOK_POSTBACK_DEDUPE_MS } from '../../domain/entities/messenger-store.types';
 import {
   extractRefFromEvent,
   routeWebhookEvent,
@@ -31,9 +26,31 @@ import { WebhookActionExecutorService } from './webhook-action-executor.service'
 
 export { MessengerApiError } from './messenger-outbound.service';
 
+/** Stable per-delivery event id for the durable inbox. */
+function buildEventId(event: MessengerWebhookEvent, psid: string): string {
+  if (event.message?.mid) {
+    return event.message.mid;
+  }
+  if (event.postback?.payload) {
+    return `pb:${psid}:${event.postback.payload}:${event.timestamp ?? Date.now()}`;
+  }
+  return `evt:${psid}:${event.timestamp ?? Date.now()}`;
+}
+
+function buildEventType(event: MessengerWebhookEvent): string {
+  if (event.postback) return 'postback';
+  if (event.message) return 'message';
+  if (event.referral) return 'referral';
+  if (event.optin) return 'optin';
+  return 'unsupported';
+}
+
 @Injectable()
 export class MessengerService {
   private readonly logger = new Logger(MessengerService.name);
+
+  /** In-memory double-tap debounce for postbacks (non-durable by design). */
+  private readonly recentPostbacks = new Map<string, number>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -43,11 +60,7 @@ export class MessengerService {
     private readonly messengerLinkContextService: MessengerLinkContextService,
     private readonly chatRateLimitConfig: ChatRateLimitConfigService,
     private readonly actionExecutor: WebhookActionExecutorService,
-    @Inject(WEBHOOK_DEDUPE_STORE)
-    private readonly webhookDedupeStore: WebhookDedupeStorePort,
-    @Optional()
-    @Inject(MESSENGER_WEBHOOK_DEAD_LETTER_REPOSITORY)
-    private readonly deadLetterRepository?: MessengerWebhookDeadLetterRepositoryPort,
+    private readonly inboundEvents: PlatformWebhookInboundEventService,
   ) {}
 
   verifyWebhook(token?: string, challenge?: string): string {
@@ -58,6 +71,13 @@ export class MessengerService {
     return challenge ?? '';
   }
 
+  /**
+   * Durable ingestion: every authenticated event is persisted to the inbox
+   * (`webhook_inbound_events`) BEFORE processing. A duplicate delivery is
+   * skipped (idempotent), a processing failure is recorded with bounded
+   * backoff for the retry cron, and a persistence failure propagates so the
+   * endpoint answers non-2xx and the platform redelivers.
+   */
   async handleWebhook(payload: MessengerWebhookPayload): Promise<{
     processed: number;
     failures: Array<{ psid?: string; error: string }>;
@@ -70,39 +90,83 @@ export class MessengerService {
         ? entry.messaging
         : []) {
         this.logIncomingWebhookEvent(event);
+
+        // Double-tap debounce for postbacks (identical payload within 15s).
+        if (event.postback?.payload && this.isRecentPostback(event)) {
+          this.logger.debug(
+            `Skipping recent postback ${event.postback.payload} for ${maskExternalId(event.sender?.id)}`,
+          );
+          continue;
+        }
+
+        const eventId = buildEventId(event, event.sender?.id ?? '');
+        const { inserted, id } = await this.inboundEvents.ingest({
+          eventId,
+          externalUserId: event.sender?.id ?? null,
+          eventType: buildEventType(event),
+          rawPayload: event,
+        });
+
+        if (!inserted) {
+          this.logger.debug(`Skipping duplicate webhook event id=${eventId}`);
+          continue;
+        }
+
+        // Claim before processing — the retry cron claims too, so an event is
+        // never processed twice. If the cron grabbed it first, skip (it will
+        // process the event on its tick).
+        if (id !== undefined && !(await this.inboundEvents.claim(id))) {
+          this.logger.debug(
+            `Webhook event id=${eventId} already claimed — deferring to retry cron`,
+          );
+          continue;
+        }
+
+        let processingError: unknown;
         try {
-          const handled = await this.handleEvent(event);
+          const handled = await this.processEvent(event);
           processed += handled ? 1 : 0;
         } catch (error) {
-          const errorMessageValue = errorMessage(error);
+          processingError = error;
+        }
 
+        if (processingError !== undefined) {
+          const errorMessageValue = errorMessage(processingError);
           failures.push({ psid: event.sender?.id, error: errorMessageValue });
 
           this.logger.warn(
-            `Webhook event for PSID ${maskExternalId(event.sender?.id)} failed — saving to dead-letter: ${errorMessageValue}`,
+            `Webhook event for PSID ${maskExternalId(event.sender?.id)} failed — scheduled for retry: ${errorMessageValue}`,
           );
 
-          if (this.deadLetterRepository) {
-            await this.deadLetterRepository
-              .save({
-                psid: event.sender?.id ?? null,
-                messageMid: event.message?.mid ?? null,
-                rawPayload: event,
-                errorMessage: errorMessageValue,
-              })
+          if (id !== undefined) {
+            await this.inboundEvents
+              .markFailed(
+                id,
+                errorMessageValue,
+                readInboundRetryConfig((key) =>
+                  this.configService.get<string>(key),
+                ),
+              )
               .catch((saveErr: unknown) => {
                 this.logger.error(
-                  `Failed to save dead-letter entry: ${errorMessage(saveErr)}`,
+                  `Failed to record inbound event failure: ${errorMessage(saveErr)}`,
                 );
               });
           }
+          continue;
+        }
 
-          // Forget the mid so a dead-letter replay re-processes the event —
-          // otherwise the mid (marked before execution) makes replay a no-op.
-          const mid = event.message?.mid;
-          if (mid) {
-            await this.forgetMessageMid(mid, event.sender?.id ?? '');
-          }
+        // Completion is best-effort: side effects already ran, so a failure to
+        // mark must NOT schedule a retry (it would re-execute the event).
+        // The stale-`processing` recovery in the retry cron re-claims the row.
+        if (id !== undefined) {
+          await this.inboundEvents
+            .markCompleted(id)
+            .catch((markErr: unknown) => {
+              this.logger.error(
+                `Failed to mark inbound event id=${id} completed: ${errorMessage(markErr)}`,
+              );
+            });
         }
       }
     }
@@ -110,19 +174,22 @@ export class MessengerService {
     return { processed, failures };
   }
 
-  async replayWebhookEvent(
-    rawPayload: object,
-  ): Promise<{ handled: boolean; error?: string }> {
-    const event = rawPayload as MessengerWebhookEvent;
-    try {
-      const handled = await this.handleEvent(event);
-      return { handled };
-    } catch (error) {
-      return {
-        handled: false,
-        error: errorMessage(error),
-      };
+  private isRecentPostback(event: MessengerWebhookEvent): boolean {
+    const psid = event.sender?.id ?? '';
+    const payload = event.postback?.payload ?? '';
+    const key = `${psid}:${payload}`;
+    const now = Date.now();
+    const last = this.recentPostbacks.get(key);
+
+    if (last !== undefined && now - last < WEBHOOK_POSTBACK_DEDUPE_MS) {
+      return true;
     }
+
+    this.recentPostbacks.set(key, now);
+    if (this.recentPostbacks.size > 1000) {
+      this.recentPostbacks.clear();
+    }
+    return false;
   }
 
   private logIncomingWebhookEvent(event: MessengerWebhookEvent): void {
@@ -136,7 +203,11 @@ export class MessengerService {
     this.logger.log(`Webhook event: ${eventTypes.join(', ') || 'unknown'}`);
   }
 
-  private async handleEvent(event: MessengerWebhookEvent): Promise<boolean> {
+  /**
+   * Re-process a stored inbound event (retry cron). Duplicate detection is
+   * already handled by the inbox — this bypasses `ingest`.
+   */
+  async processEvent(event: MessengerWebhookEvent): Promise<boolean> {
     const psid = event.sender?.id;
     if (!psid) {
       this.logger.warn('Ignored Messenger event without sender.id');
@@ -175,16 +246,7 @@ export class MessengerService {
     psid: string,
     event: MessengerWebhookEvent,
   ): Promise<RouterContext> {
-    const [isDuplicateMid, isDuplicatePostback, existingMapping] =
-      await Promise.all([
-        event.message?.mid
-          ? this.isDuplicateMessageMid(event.message.mid, psid)
-          : undefined,
-        event.postback?.payload
-          ? this.isDuplicatePostback(psid, event.postback.payload)
-          : undefined,
-        this.repository.findActiveMappingByPsid(psid),
-      ]);
+    const existingMapping = await this.repository.findActiveMappingByPsid(psid);
 
     const shouldEnforceRateLimit =
       this.chatRateLimitConfig.shouldEnforceForPsid(psid);
@@ -202,8 +264,6 @@ export class MessengerService {
     }
 
     return {
-      isDuplicateMid,
-      isDuplicatePostback,
       userId: existingMapping?.userId,
       linkContext,
       shouldEnforceRateLimit,
@@ -262,17 +322,5 @@ export class MessengerService {
 
   private signalTyping(psid: string): void {
     void this.outbound.sendSenderActionOptional(psid, 'typing_on');
-  }
-
-  private isDuplicateMessageMid(mid: string, psid: string): Promise<boolean> {
-    return this.webhookDedupeStore.isDuplicateMessageMid(mid, psid);
-  }
-
-  private isDuplicatePostback(psid: string, payload: string): Promise<boolean> {
-    return this.webhookDedupeStore.isDuplicatePostback(psid, payload);
-  }
-
-  private forgetMessageMid(mid: string, psid: string): Promise<void> {
-    return this.webhookDedupeStore.forgetMessageMid(mid, psid);
   }
 }

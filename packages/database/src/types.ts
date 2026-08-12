@@ -35,6 +35,14 @@ export type ScheduledReportClaimStatus = 'claimed' | 'sent' | 'released';
 /** Webhook dead letter status. */
 export type WebhookDeadLetterStatus = 'pending' | 'replayed' | 'abandoned';
 
+/** Durable inbound webhook inbox status — `abandoned` is terminal after bounded retries. */
+export type WebhookInboundEventStatus =
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'abandoned';
+
 /** Study reminder job status. */
 export type StudyReminderJobStatus =
   | 'pending'

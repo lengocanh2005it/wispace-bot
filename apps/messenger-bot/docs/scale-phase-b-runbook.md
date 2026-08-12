@@ -154,7 +154,6 @@ Keep unchanged (already in prod):
 REDIS_ENABLED=true
 REDIS_HOST=redis.aihubproduction.com
 CHAT_QUEUE_STORE=redis
-CHAT_DEDUPE_STORE=redis
 CHAT_HISTORY_STORE=redis
 CHAT_RATE_LIMIT_ENABLED=true
 ```

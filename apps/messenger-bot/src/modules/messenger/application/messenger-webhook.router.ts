@@ -164,9 +164,6 @@ function routeTextMessage(
   }
 
   const messageMid = message.mid;
-  if (messageMid && ctx.isDuplicateMid) {
-    return [{ type: 'ignore' }];
-  }
 
   if (!ctx.userId) {
     return [
@@ -232,11 +229,6 @@ function routeUnsupportedMessage(
   message: NonNullable<MessengerWebhookEvent['message']>,
   ctx: RouterContext,
 ): WebhookAction[] {
-  const messageMid = message.mid;
-  if (messageMid && ctx.isDuplicateMid) {
-    return [{ type: 'ignore' }];
-  }
-
   return [
     {
       type: 'send_text',
@@ -253,10 +245,6 @@ function routePostback(
   payload: string,
   ctx: RouterContext,
 ): WebhookAction[] {
-  if (ctx.isDuplicatePostback) {
-    return [{ type: 'ignore' }];
-  }
-
   const context = resolveLinkContext(ctx);
   const userId = ctx.userId;
 

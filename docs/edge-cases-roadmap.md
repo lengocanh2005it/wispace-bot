@@ -69,8 +69,8 @@ New edge cases found in a full codebase scan (beyond the roadmap below) and fixe
 
 | Fix | Finding | Change |
 |-----|---------|--------|
-| **A** | Redis dedupe fail-closed **dropped messages** when Redis errored mid-run | Fail-open + in-process fallback (`RedisWebhookDedupeStore`) — never drop; duplicate risk bounded by DB idempotency |
-| **B** | Dead-letter replay was a no-op: mid marked before execution → replay hit dedupe → `replayed` without processing | Forget the mid when saving the DL entry (`forgetMessageMid` on port + memory + Redis stores) |
+| **A** | Redis dedupe fail-closed **dropped messages** when Redis errored mid-run | ~~Fail-open + in-process fallback~~ **Superseded (PR #88)** — dedupe stores removed; durable inbox `webhook_inbound_events` (unique `platform+event_id`, Postgres) is the single idempotency source; persistence failure → non-2xx → platform redelivers |
+| **B** | Dead-letter replay was a no-op: mid marked before execution → replay hit dedupe → `replayed` without processing | ~~Forget the mid when saving the DL entry~~ **Superseded (PR #88)** — messenger inbound dead-letter removed; inbox retry cron re-processes the stored event directly (no dedupe round-trip) |
 | **C** | Redis chat queue wedged after pod crash: stuck-recovery was dead code (empty-texts check ran first) | Stuck check runs first; wedged state promotes `pendingTexts`; leaked `active-psids` set members dropped |
 | **D** | 30-min sync reopened in-flight `processing` jobs → duplicate reminders | Sync passes `reopenOnlyOnScheduleChange: true` (schedule change reopens; unchanged keeps processing/sent) |
 | **E** | Calendar API failures swallowed → sync **cancelled the whole outbox** + tools told users "no sessions" | Swallow removed (throw is default); sync skips cancellation on failure; agent tools surface errors; unlinked users still get `[]` |
@@ -124,7 +124,7 @@ flowchart LR
 | ~~**`ref` = raw `userId` — no account owner verification**~~ | ~~IDOR~~ | **Done** — token-only + startup validator; `m.me` links only from WISPACE — [messenger-link-security.md](../apps/messenger-bot/docs/messenger-link-security.md) | **L4** ✓ |
 | ~~POST `/webhook` no Meta signature verification~~ | Fake payload if webhook URL leaked | **Done** — `MessengerWebhookSignatureGuard`, `MESSENGER_APP_SECRET`, `rawBody` | Done |
 | ~~App port public / flood bypasses Nginx~~ | Bypasses rate limit + body cap | **Done** — Docker `127.0.0.1:PORT`; Nginx `deploy/nginx/` on VPS | Done |
-| ~~Webhook Meta retry; 1 event error~~ | ~~Other events still processed (correct); errored event lost~~ | **DL** ✓ — `messenger_webhook_dead_letters` + 5-min auto-retry cron + advisory lock + ops script | Done |
+| ~~Webhook Meta retry; 1 event error~~ | ~~Other events still processed (correct); errored event lost~~ | **Durable inbox** — `webhook_inbound_events` persisted before 200; bounded-backoff retry cron; `abandoned` terminal state (PR #88) | Done |
 
 ---
 

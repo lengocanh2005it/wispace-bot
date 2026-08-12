@@ -18,7 +18,7 @@ Related: [project-overview.md](../../../docs/project-overview.md), [study-sessio
 
 | Component | Status |
 |-----------|--------|
-| Two-way chat AI (`MessengerChatEnqueueService` → `MessengerChatProcessorService` → agent + tools) | ✓ |
+| Webhook dedupe \message.mid\ | Durable inbox \webhook_inbound_events\ (unique \platform+event_id\) — no RAM/Redis dedupe store |
 | Webhook dedupe `message.mid` | ✓ RAM (default) or Redis when `CHAT_DEDUPE_STORE=redis` |
 | Postback dedupe (`psid:payload`, TTL 15s) | ✓ |
 | Rate limit / `chat_daily_usage` | ✓ `ChatRateLimitModule` |
@@ -162,7 +162,7 @@ RETURNING free_form_count;
 
 #### Meta Webhook Idempotency
 
-Facebook may send **duplicate** webhooks with the same `message.mid`. The system uses **webhook dedupe** (RAM or DB H7) + **quota idempotency** at reserve — details [§5.3](#53-idempotency--already-implemented-v1--h2).
+Facebook may send **duplicate** webhooks with the same \message.mid\. The durable inbox (\webhook_inbound_events\, unique \platform+event_id\) makes redeliveries idempotent + **quota idempotency** at reserve � details [�5.3](#53-idempotency--already-implemented-v1--h2).
 
 Summary: reserve attaches `idempotency_key = message.mid` (unique) before LLM; conflict → skip or recover (H2). Multi-pod: `CHAT_QUEUE_SHARED=true`.
 
@@ -424,7 +424,7 @@ Meta may **retry webhooks** with the same payload (same `message.mid`). The syst
 
 | Layer | When | Mechanism |
 |-------|------|-----------|
-| Webhook dedupe | Before enqueue | RAM or Redis (`CHAT_DEDUPE_STORE`) |
+| Webhook dedupe | Before enqueue | Durable inbox \webhook_inbound_events\ (unique \platform+event_id\) |
 | Quota idempotency | At flush | `chat_idempotency` — unique `idempotency_key = message.mid` |
 
 Postback: separate dedupe `psid:payload` (15s) — **not** related to chat quota.
@@ -932,7 +932,7 @@ flowchart LR
 | Cron poll flush (2s) + stuck processing recovery | `MessengerChatQueueWorkerService` |
 | Claim buffer (Redis lock) | One pod flushes / PSID |
 
-**Env:** `CHAT_QUEUE_SHARED`, `CHAT_QUEUE_PROCESSING_STUCK_MS`, `CHAT_WEBHOOK_DEDUPE_RETENTION_MS`, `CHAT_HISTORY_TTL_MS`, `CHAT_HISTORY_MAX_MESSAGES`.
+**Env:** \CHAT_QUEUE_SHARED\, \CHAT_QUEUE_PROCESSING_STUCK_MS\, \CHAT_HISTORY_TTL_MS\, \CHAT_HISTORY_MAX_MESSAGES\.
 
 **Depends on:** H3 before scaling; H2 recommended.
 

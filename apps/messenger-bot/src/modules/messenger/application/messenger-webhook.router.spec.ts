@@ -177,18 +177,6 @@ describe('routeWebhookEvent', () => {
       ]);
     });
 
-    it('returns ignore for duplicate message mid', () => {
-      const actions = routeWebhookEvent(
-        textEvent('xem lich hoc cua minh', 'mid-1'),
-        {
-          ...defaultCtx,
-          userId: 42,
-          isDuplicateMid: true,
-        },
-      );
-      expect(actions).toEqual([{ type: 'ignore' }]);
-    });
-
     it('ignores echo messages', () => {
       const actions = routeWebhookEvent(
         event({ message: { text: 'echo', is_echo: true, mid: 'mid-1' } }),
@@ -243,14 +231,6 @@ describe('routeWebhookEvent', () => {
           messageType: 'UNSUPPORTED_MESSAGE_TYPE',
         }),
       ]);
-    });
-
-    it('returns ignore for duplicate unsupported message mid', () => {
-      const actions = routeWebhookEvent(
-        event({ message: { sticker_id: 123, mid: 'mid-1' } }),
-        { ...defaultCtx, userId: 42, isDuplicateMid: true },
-      );
-      expect(actions).toEqual([{ type: 'ignore' }]);
     });
 
     it('does not treat text messages as unsupported', () => {
@@ -430,15 +410,6 @@ describe('routeWebhookEvent', () => {
           userId: 42,
         }),
       ]);
-    });
-
-    it('returns ignore for duplicate postback', () => {
-      const actions = routeWebhookEvent(postbackEvent('GET_LEARNING_REPORT'), {
-        ...defaultCtx,
-        isDuplicatePostback: true,
-        userId: 42,
-      });
-      expect(actions).toEqual([{ type: 'ignore' }]);
     });
   });
 
