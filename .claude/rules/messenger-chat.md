@@ -38,16 +38,17 @@ Port: `CHAT_QUEUE_STORE` → `ChatQueueStoreResolver` (redis when distributed).
 
 Port: `CHAT_HISTORY_STORE` → `ChatHistoryStoreResolver`.
 
-## Webhook dedupe store (R2)
+## Webhook ingestion (R2 — durable inbox)
 
-| Backend | Env | Notes |
-|---------|-----|-------|
-| Memory | `CHAT_DEDUPE_STORE=memory` (default) | `message.mid` + postback 15s in RAM |
-| Redis | `CHAT_DEDUPE_STORE=redis` + `REDIS_ENABLED=true` | `dedupe:mid:{mid}`, `dedupe:postback:{psid}:{payload}` |
+| Concern | Where | Notes |
+|---------|-------|-------|
+| Persist before ack | `webhook_inbound_events` (shared table) | Messenger/Zalo persist every authenticated event before 200; persistence failure → non-2xx → platform redelivers |
+| Idempotency | Unique `(platform, event_id)` | Messenger `mid`, Zalo `msg_id`; postbacks/follows use `{type}:{userId}:{timestamp}` — replaces the removed `CHAT_DEDUPE_STORE` memory/Redis stores |
+| Postback double-tap | In-memory 15s debounce in `MessengerService` | `WEBHOOK_POSTBACK_DEDUPE_MS` — non-durable by design |
+| Retry | Inbound retry cron (30s, advisory-locked) | `pending`/`failed` rows with bounded backoff → `abandoned` (terminal) after `WEBHOOK_INBOUND_MAX_RETRIES`; stale `processing` rows re-claimed (crash recovery) |
+| Claim | `status='processing'` transition | Both the request path and the cron claim before processing — an event is never processed twice |
 
-`CHAT_DEDUPE_STORE=postgres` **removed** (`messenger_chat_webhook_seen` table dropped) — use `redis` for multi-pod.
-
-Port: `CHAT_DEDUPE_STORE` → `WebhookDedupeStoreResolver` — `MessengerService` no longer has internal Map dedupe.
+Port: `PlatformWebhookInboundEventService` (`@wispace/database`) — `ingest` / `claim` / `markCompleted` / `markFailed` / `listDue`.
 
 ## Main files
 
@@ -58,7 +59,6 @@ Port: `CHAT_DEDUPE_STORE` → `WebhookDedupeStoreResolver` — `MessengerService
 | `infrastructure/persistence/redis-chat-queue.store.ts` | Redis queue buffer (R4) |
 | `infrastructure/persistence/chat-queue.store.resolver.ts` | Redis store when distributed |
 | `infrastructure/persistence/*-chat-history.store.ts` | memory / redis stores (R1) |
-| `infrastructure/persistence/*-webhook-dedupe.store.ts` | memory / redis dedupe (R2) |
 | `messenger-chat-shared-config.service.ts` | `CHAT_QUEUE_STORE`, `CHAT_QUEUE_SHARED`, TTL, stuck ms |
 | `messenger-chat-queue-worker.service.ts` | Cron poll Redis buffer (2s) |
 
@@ -68,7 +68,7 @@ Queue port: `CHAT_QUEUE_STORE`. History port: `CHAT_HISTORY_STORE`.
 
 - `messenger_chat_queue_buffer` — dropped by migration `1717747200010`
 - `messenger_chat_history` — dropped by migration `1717747200010`
-- Webhook dedupe `mid` — Redis (`CHAT_DEDUPE_STORE=redis`) or RAM; **no** DB table remains
+- `messenger_chat_webhook_seen` — dropped (dedupe is now the durable `webhook_inbound_events` unique index)
 
 ## Flush conventions
 

@@ -8,6 +8,7 @@ import {
 } from './platform-webhook-inbound-event.service';
 
 const DEFAULT_RETRY_LIMIT = 20;
+const DEFAULT_PROCESSING_STUCK_MS = 5 * 60_000;
 
 export interface WebhookInboundRetryCronOptions {
   /** Advisory lock id — only one pod retries the inbox per tick. */
@@ -58,8 +59,15 @@ export class PlatformWebhookInboundRetryCronService {
       'WEBHOOK_INBOUND_RETRY_LIMIT',
       DEFAULT_RETRY_LIMIT,
     );
+    const processingStuckMs = this.readPositiveInt(
+      'WEBHOOK_INBOUND_PROCESSING_STUCK_MS',
+      DEFAULT_PROCESSING_STUCK_MS,
+    );
 
-    const rows = await this.inboundEvents.listDue({ limit: retryLimit });
+    const rows = await this.inboundEvents.listDue({
+      limit: retryLimit,
+      processingStuckMs,
+    });
     if (rows.length === 0) {
       return;
     }
@@ -69,8 +77,17 @@ export class PlatformWebhookInboundRetryCronService {
     let completed = 0;
     let failed = 0;
     let abandoned = 0;
+    let skipped = 0;
 
     for (const row of rows) {
+      // Claim before processing — the request path claims too, so a row is
+      // never processed by two workers at once.
+      const claimed = await this.inboundEvents.claim(row.id);
+      if (!claimed) {
+        skipped += 1;
+        continue;
+      }
+
       try {
         await this.options.processEvent(row.rawPayload as object);
         await this.inboundEvents.markCompleted(row.id);
@@ -99,7 +116,7 @@ export class PlatformWebhookInboundRetryCronService {
     }
 
     this.logger.log(
-      `Inbound retry done: completed=${completed}, failed=${failed}, abandoned=${abandoned}`,
+      `Inbound retry done: completed=${completed}, failed=${failed}, abandoned=${abandoned}, skipped=${skipped}`,
     );
   }
 

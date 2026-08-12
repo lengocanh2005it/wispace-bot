@@ -38,6 +38,7 @@ export type WebhookDeadLetterStatus = 'pending' | 'replayed' | 'abandoned';
 /** Durable inbound webhook inbox status — `abandoned` is terminal after bounded retries. */
 export type WebhookInboundEventStatus =
   | 'pending'
+  | 'processing'
   | 'completed'
   | 'failed'
   | 'abandoned';

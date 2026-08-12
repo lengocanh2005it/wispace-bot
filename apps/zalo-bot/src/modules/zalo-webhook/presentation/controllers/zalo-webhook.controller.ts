@@ -7,12 +7,7 @@ import {
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
-import {
-  PlatformWebhookInboundEventService,
-  readInboundRetryConfig,
-} from '@wispace/database';
 import type { Request } from 'express';
 
 type ZaloWebhookRequest = Request & { rawBody?: Buffer };
@@ -21,25 +16,21 @@ import {
   verifyZaloWebhookSignature,
 } from '../../application/utils/zalo-webhook-signature.utils';
 import type { ZaloWebhookEvent } from '../../domain/entities/zalo-webhook-event.types';
-import { ZaloWebhookDispatchService } from '../../application/zalo-webhook-dispatch.service';
+import { ZaloWebhookIngestService } from '../../application/zalo-webhook-ingest.service';
 
-/** Stable per-delivery event id for the durable inbox. */
-function buildEventId(event: ZaloWebhookEvent): string {
-  if (event.event_name === 'user_send_text' && event.message?.msg_id) {
-    return event.message.msg_id;
-  }
-  const userId = event.sender?.id ?? event.follower?.id ?? 'unknown';
-  return `${event.event_name}:${userId}:${event.timestamp ?? Date.now()}`;
-}
-
+/**
+ * Thin presentation layer: authenticate the webhook request, then delegate
+ * durable ingestion (persist → claim → dispatch → mark) to the application
+ * service. A persistence failure propagates → non-2xx → the platform
+ * redelivers instead of acknowledging an event that was never stored.
+ */
 @Controller('zalo/webhook')
 export class ZaloWebhookController {
   private readonly logger = new Logger(ZaloWebhookController.name);
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly dispatcher: ZaloWebhookDispatchService,
-    private readonly inboundEvents: PlatformWebhookInboundEventService,
+    private readonly ingestService: ZaloWebhookIngestService,
   ) {}
 
   @Post()
@@ -76,48 +67,7 @@ export class ZaloWebhookController {
       throw new UnauthorizedException('Stale webhook timestamp');
     }
 
-    // Durable ingestion: persist before acknowledging. A duplicate delivery
-    // is skipped; a persistence failure propagates (non-2xx) so the event is
-    // not lost. Processing failures are recorded for the retry cron.
-    const eventId = buildEventId(body);
-    const { inserted, id } = await this.inboundEvents.ingest({
-      eventId,
-      externalUserId: body.sender?.id ?? body.follower?.id ?? null,
-      eventType: body.event_name,
-      rawPayload: body,
-    });
-
-    if (!inserted) {
-      this.logger.debug(`Skipping duplicate webhook event id=${eventId}`);
-      return { received: true };
-    }
-
-    try {
-      await this.dispatcher.dispatch(body);
-      if (id !== undefined) {
-        await this.inboundEvents.markCompleted(id);
-      }
-    } catch (error) {
-      const errorMessageValue = errorMessage(error);
-      this.logger.warn(
-        `Webhook event failed — scheduled for retry: ${errorMessageValue}`,
-      );
-      if (id !== undefined) {
-        await this.inboundEvents
-          .markFailed(
-            id,
-            errorMessageValue,
-            readInboundRetryConfig((key) =>
-              this.configService.get<string>(key),
-            ),
-          )
-          .catch((saveErr: unknown) => {
-            this.logger.error(
-              `Failed to record inbound event failure: ${errorMessage(saveErr)}`,
-            );
-          });
-      }
-    }
+    await this.ingestService.processEvent(body);
     return { received: true };
   }
 }

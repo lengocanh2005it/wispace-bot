@@ -123,6 +123,26 @@ export class PlatformWebhookInboundEventService {
   }
 
   /**
+   * Atomically claim an event for processing: `pending`/`failed` → `processing`.
+   * Both the request path (right after ingest) and the retry cron claim before
+   * processing, so an event can never be processed by two workers at once.
+   * Returns `false` when another worker already claimed it.
+   */
+  async claim(id: number): Promise<boolean> {
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(WebhookInboundEventEntity)
+      .set({ status: 'processing' })
+      .where('id = :id', { id })
+      .andWhere('status IN (:...statuses)', {
+        statuses: ['pending', 'failed'],
+      })
+      .execute();
+
+    return (result.affected ?? 0) > 0;
+  }
+
+  /**
    * Record a processing failure with bounded exponential backoff:
    * `next_retry_at = now + min(base * 2^(retry_count), cap)`.
    * When the retry budget is exhausted the event becomes `abandoned`
@@ -157,23 +177,30 @@ export class PlatformWebhookInboundEventService {
 
   /**
    * Rows due for processing: never-processed (`pending`, no backoff gate)
-   * or failed with `next_retry_at` in the past. Bounded by `limit`.
+   * or failed with `next_retry_at` in the past, or `processing` stuck longer
+   * than `processingStuckMs` (crash between claim and mark). Bounded by `limit`.
    */
   async listDue(opts: {
     limit: number;
     now?: Date;
+    processingStuckMs?: number;
   }): Promise<InboundEventRow[]> {
     const now = opts.now ?? new Date();
+    const staleBefore = new Date(
+      now.getTime() - (opts.processingStuckMs ?? 300_000),
+    );
 
     const rows = await this.repo
       .createQueryBuilder('evt')
       .where('evt.platform = :platform', { platform: this.platform })
-      .andWhere('evt.status IN (:...statuses)', {
-        statuses: ['pending', 'failed'],
-      })
-      .andWhere('(evt.next_retry_at IS NULL OR evt.next_retry_at <= :now)', {
-        now,
-      })
+      .andWhere(
+        `(
+          evt.status IN (:...statuses)
+          AND (evt.next_retry_at IS NULL OR evt.next_retry_at <= :now)
+        )
+        OR (evt.status = 'processing' AND evt.updated_at < :staleBefore)`,
+        { statuses: ['pending', 'failed'], now, staleBefore },
+      )
       .orderBy('evt.id', 'ASC')
       .limit(opts.limit)
       .getMany();

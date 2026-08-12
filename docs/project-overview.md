@@ -317,7 +317,7 @@ Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP �
 | `study-reminder-evening-rollover` | Dynamic (config hour, ICT) | `StudyReminderWorkerService` — rollover job states |
 | `messenger-message-log-cleanup` | `0 0 3 * * 1` (Monday 03:00 ICT) | `MessengerMessageLogCleanupService` — purge old message_logs |
 | `messenger-chat-queue-flush` | `*/2 * * * * *` (every 2 sec) | `MessengerChatQueueWorkerService` — flush debounced queue (distributed mode) |
-| `webhook-dead-letter-retry` | `0 */5 * * * *` (every 5 min) | `MessengerWebhookDeadLetterCronService` — retry dead-letter webhooks |
+| `webhook-inbound-retry` | `*/30 * * * * *` (every 30 sec) | `PlatformWebhookInboundRetryCronService` — replay `webhook_inbound_events` (bounded backoff, per-platform advisory lock) |
 | `chat-quota-events-cleanup` | `0 30 3 1 * *` (1st of month 03:30 ICT) | `ChatQuotaEventCleanupCronService` — purge old chat_quota_events |
 | `llm-usage-cleanup` | `0 0 4 1 * *` (1st of month 04:00 ICT) | `LlmUsageCleanupCronService` — purge old llm_usage_events |
 | `llm-safety-cleanup` | `0 3 * * *` (daily 03:00 ICT) | `LlmSafetyCleanupService` — purge old llm_safety_events |
@@ -373,7 +373,7 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 - **Study reminder (shared):** `STUDY_REMINDER_*` — **required**, no hardcoded fallbacks in code; `STUDY_REMINDER_STUCK_PROCESSING_MS`
 - **Chat rate limit:** `CHAT_RATE_LIMIT_ENABLED`, `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_BURST_STORE` (R3: `postgres` | `memory` | `redis`), `CHAT_USAGE_TIMEZONE` (shared), `CHAT_RATE_LIMIT_WHITELIST_PSIDS`, `CHAT_QUOTA_REMAINING_HINT_THRESHOLD`, `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS` (H2), `CHAT_MERGED_TEXT_MAX_CHARS` / `CHAT_BURST_COUNT_REFUNDED` (H5), `CHAT_IDEMPOTENCY_RETENTION_DAYS` (H6)
 - **Chat quota events:** `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`, `CHAT_QUOTA_EVENTS_CLEANUP_ENABLED`
-- **Chat queue:** `CHAT_DEBOUNCE_MS`, `CHAT_MAX_BUBBLES`, `CHAT_BUBBLE_MAX_CHARS`, `CHAT_QUEUE_STORE` (R4), `CHAT_QUEUE_SHARED` (H7 legacy), `CHAT_HISTORY_STORE` (R1), `CHAT_DEDUPE_STORE` (R2), `CHAT_QUEUE_PROCESSING_STUCK_MS`, `CHAT_QUEUE_STALE_TTL_MS`, `CHAT_QUEUE_CLEANUP_INTERVAL_MS`, `CHAT_WEBHOOK_DEDUPE_RETENTION_MS`, `CHAT_HISTORY_TTL_MS`, `CHAT_HISTORY_MAX_MESSAGES`
+- **Chat queue:** `CHAT_DEBOUNCE_MS`, `CHAT_MAX_BUBBLES`, `CHAT_BUBBLE_MAX_CHARS`, `CHAT_QUEUE_STORE` (R4), `CHAT_QUEUE_SHARED` (H7 legacy), `CHAT_HISTORY_STORE` (R1), `CHAT_QUEUE_PROCESSING_STUCK_MS`, `CHAT_QUEUE_STALE_TTL_MS`, `CHAT_QUEUE_CLEANUP_INTERVAL_MS`, `CHAT_HISTORY_TTL_MS`, `CHAT_HISTORY_MAX_MESSAGES`
 - **Ops API:** `INTERNAL_API_KEY` — header `X-Internal-Api-Key` for sync / send-reports / profile setup
 - **Doppler runtime sync:** `DOPPLER_RUNTIME_SYNC_ENABLED`, `DOPPLER_RUNTIME_TOKEN`, `DOPPLER_PROJECT`, `DOPPLER_CONFIG`, `DOPPLER_RUNTIME_SYNC_DEBOUNCE_SECONDS`
 - **Deploy:** `DEPLOY_DIR`, `DEPLOY_ENV_FILE`, `DEPLOY_COMPOSE_FILE`, `DEPLOY_CONTAINER_NAME`, `GHCR_PULL_TOKEN`, `GHCR_USER`, `DEPLOY_UID`, `DEPLOY_GID`, `DOCKER_GID`

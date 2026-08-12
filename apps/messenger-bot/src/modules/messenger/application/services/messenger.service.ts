@@ -16,6 +16,7 @@ import {
 import { MessengerLinkContextService } from './messenger-link-context.service';
 import { MessengerOutboundService } from './messenger-outbound.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
+import { WEBHOOK_POSTBACK_DEDUPE_MS } from '../../domain/entities/messenger-store.types';
 import {
   extractRefFromEvent,
   routeWebhookEvent,
@@ -47,6 +48,9 @@ function buildEventType(event: MessengerWebhookEvent): string {
 @Injectable()
 export class MessengerService {
   private readonly logger = new Logger(MessengerService.name);
+
+  /** In-memory double-tap debounce for postbacks (non-durable by design). */
+  private readonly recentPostbacks = new Map<string, number>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -87,6 +91,14 @@ export class MessengerService {
         : []) {
         this.logIncomingWebhookEvent(event);
 
+        // Double-tap debounce for postbacks (identical payload within 15s).
+        if (event.postback?.payload && this.isRecentPostback(event)) {
+          this.logger.debug(
+            `Skipping recent postback ${event.postback.payload} for ${maskExternalId(event.sender?.id)}`,
+          );
+          continue;
+        }
+
         const eventId = buildEventId(event, event.sender?.id ?? '');
         const { inserted, id } = await this.inboundEvents.ingest({
           eventId,
@@ -100,14 +112,26 @@ export class MessengerService {
           continue;
         }
 
+        // Claim before processing — the retry cron claims too, so an event is
+        // never processed twice. If the cron grabbed it first, skip (it will
+        // process the event on its tick).
+        if (id !== undefined && !(await this.inboundEvents.claim(id))) {
+          this.logger.debug(
+            `Webhook event id=${eventId} already claimed — deferring to retry cron`,
+          );
+          continue;
+        }
+
+        let processingError: unknown;
         try {
           const handled = await this.processEvent(event);
           processed += handled ? 1 : 0;
-          if (id !== undefined) {
-            await this.inboundEvents.markCompleted(id);
-          }
         } catch (error) {
-          const errorMessageValue = errorMessage(error);
+          processingError = error;
+        }
+
+        if (processingError !== undefined) {
+          const errorMessageValue = errorMessage(processingError);
           failures.push({ psid: event.sender?.id, error: errorMessageValue });
 
           this.logger.warn(
@@ -129,11 +153,43 @@ export class MessengerService {
                 );
               });
           }
+          continue;
+        }
+
+        // Completion is best-effort: side effects already ran, so a failure to
+        // mark must NOT schedule a retry (it would re-execute the event).
+        // The stale-`processing` recovery in the retry cron re-claims the row.
+        if (id !== undefined) {
+          await this.inboundEvents
+            .markCompleted(id)
+            .catch((markErr: unknown) => {
+              this.logger.error(
+                `Failed to mark inbound event id=${id} completed: ${errorMessage(markErr)}`,
+              );
+            });
         }
       }
     }
 
     return { processed, failures };
+  }
+
+  private isRecentPostback(event: MessengerWebhookEvent): boolean {
+    const psid = event.sender?.id ?? '';
+    const payload = event.postback?.payload ?? '';
+    const key = `${psid}:${payload}`;
+    const now = Date.now();
+    const last = this.recentPostbacks.get(key);
+
+    if (last !== undefined && now - last < WEBHOOK_POSTBACK_DEDUPE_MS) {
+      return true;
+    }
+
+    this.recentPostbacks.set(key, now);
+    if (this.recentPostbacks.size > 1000) {
+      this.recentPostbacks.clear();
+    }
+    return false;
   }
 
   private logIncomingWebhookEvent(event: MessengerWebhookEvent): void {

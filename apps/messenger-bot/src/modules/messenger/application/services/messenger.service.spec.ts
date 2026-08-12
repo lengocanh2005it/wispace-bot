@@ -58,6 +58,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
     } as unknown as WebhookActionExecutorService;
     const inboundEvents = {
       ingest: jest.fn().mockResolvedValue({ inserted: true, id: 7 }),
+      claim: jest.fn().mockResolvedValue(true),
       markCompleted: jest.fn().mockResolvedValue(undefined),
       markFailed: jest.fn().mockResolvedValue(undefined),
     } as unknown as PlatformWebhookInboundEventService;
@@ -107,6 +108,25 @@ describe('MessengerService (durable webhook ingestion)', () => {
     expect(result.failures).toHaveLength(0);
   });
 
+  it('claims the event before processing (single-writer)', async () => {
+    const { service, inboundEvents } = buildService();
+
+    await service.handleWebhook(payloadWith([textEvent()]));
+
+    expect(inboundEvents.claim).toHaveBeenCalledWith(7);
+  });
+
+  it('defers to the retry cron when the event is already claimed', async () => {
+    const { service, inboundEvents, actionExecutor } = buildService();
+    inboundEvents.claim.mockResolvedValue(false);
+
+    await service.handleWebhook(payloadWith([textEvent()]));
+
+    expect(actionExecutor.executeAction).not.toHaveBeenCalled();
+    expect(inboundEvents.markCompleted).not.toHaveBeenCalled();
+    expect(inboundEvents.markFailed).not.toHaveBeenCalled();
+  });
+
   it('skips duplicate deliveries without processing (idempotent)', async () => {
     const { service, inboundEvents, actionExecutor } = buildService();
     inboundEvents.ingest.mockResolvedValue({ inserted: false });
@@ -133,6 +153,17 @@ describe('MessengerService (durable webhook ingestion)', () => {
     );
   });
 
+  it('debounces identical postbacks within the 15s window (double-tap)', async () => {
+    const { service, inboundEvents, actionExecutor } = buildService();
+
+    const event = postbackEvent();
+    await service.handleWebhook(payloadWith([event]));
+    await service.handleWebhook(payloadWith([event]));
+
+    expect(inboundEvents.ingest).toHaveBeenCalledTimes(1);
+    expect(actionExecutor.executeAction).toHaveBeenCalledTimes(1);
+  });
+
   it('marks the event failed with backoff when processing throws (retryable)', async () => {
     const { service, inboundEvents, actionExecutor } = buildService();
     actionExecutor.executeAction = jest
@@ -149,6 +180,16 @@ describe('MessengerService (durable webhook ingestion)', () => {
     expect(result.failures).toEqual([
       { psid: 'psid-1', error: 'WISPACE down' },
     ]);
+  });
+
+  it('does not schedule a retry when markCompleted fails (side effects already ran)', async () => {
+    const { service, inboundEvents } = buildService();
+    inboundEvents.markCompleted.mockRejectedValue(new Error('DB hiccup'));
+
+    const result = await service.handleWebhook(payloadWith([textEvent()]));
+
+    expect(inboundEvents.markFailed).not.toHaveBeenCalled();
+    expect(result.failures).toHaveLength(0);
   });
 
   it('propagates a persistence failure so the endpoint does not acknowledge', async () => {

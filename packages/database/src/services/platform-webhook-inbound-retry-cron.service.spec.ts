@@ -18,7 +18,11 @@ function buildOptions(
 function buildService(options: WebhookInboundRetryCronOptions): {
   service: PlatformWebhookInboundRetryCronService;
   inboundEvents: {
-    listDue: jest.Mock<Promise<InboundEventRow[]>, [{ limit: number }]>;
+    listDue: jest.Mock<
+      Promise<InboundEventRow[]>,
+      [{ limit: number; processingStuckMs: number }]
+    >;
+    claim: jest.Mock<Promise<boolean>, [number]>;
     markCompleted: jest.Mock;
     markFailed: jest.Mock;
   };
@@ -27,8 +31,12 @@ function buildService(options: WebhookInboundRetryCronOptions): {
 } {
   const inboundEvents = {
     listDue: jest
-      .fn<Promise<InboundEventRow[]>, [{ limit: number }]>()
+      .fn<
+        Promise<InboundEventRow[]>,
+        [{ limit: number; processingStuckMs: number }]
+      >()
       .mockResolvedValue([]),
+    claim: jest.fn<Promise<boolean>, [number]>().mockResolvedValue(true),
     markCompleted: jest.fn().mockResolvedValue(undefined),
     markFailed: jest.fn().mockResolvedValue(undefined),
   };
@@ -133,6 +141,38 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     await service.handleRetry();
 
     expect(inboundEvents.listDue).not.toHaveBeenCalled();
+  });
+
+  it('claims each event before processing and skips already-claimed rows', async () => {
+    const options = buildOptions();
+    const { service, inboundEvents } = buildService(options);
+    inboundEvents.listDue.mockResolvedValue([row({ id: 1 }), row({ id: 2 })]);
+    inboundEvents.claim
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    await service.handleRetry();
+
+    expect(inboundEvents.claim).toHaveBeenCalledTimes(2);
+    expect(options.processEvent).toHaveBeenCalledTimes(1);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1);
+    expect(inboundEvents.markCompleted).not.toHaveBeenCalledWith(2);
+  });
+
+  it('re-claims stale processing rows (crash recovery)', async () => {
+    const options = buildOptions();
+    const { service, inboundEvents } = buildService(options);
+    inboundEvents.listDue.mockResolvedValue([
+      row({ id: 9, status: 'processing' }),
+    ]);
+
+    await service.handleRetry();
+
+    expect(inboundEvents.listDue).toHaveBeenCalledWith(
+      expect.objectContaining({ processingStuckMs: 300_000 }),
+    );
+    expect(inboundEvents.claim).toHaveBeenCalledWith(9);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(9);
   });
 
   it('reads retry config from env with defaults', async () => {

@@ -17,12 +17,17 @@ describe('PlatformWebhookInboundEventService', () => {
     const getManyMock = jest.fn().mockResolvedValue([]);
     const limitMock = jest.fn(() => ({ getMany: getManyMock }));
     const orderByMock = jest.fn(() => ({ limit: limitMock }));
-    const andWhere2Mock = jest.fn(() => ({ orderBy: orderByMock }));
-    const andWhere1Mock = jest.fn(() => ({ andWhere: andWhere2Mock }));
+    const andWhere1Mock = jest.fn(() => ({ orderBy: orderByMock }));
     const whereMock = jest.fn(() => ({ andWhere: andWhere1Mock }));
+    const claimExecuteMock = jest.fn().mockResolvedValue({ affected: 1 });
+    const claimAndWhereMock = jest.fn(() => ({ execute: claimExecuteMock }));
+    const claimWhereMock = jest.fn(() => ({ andWhere: claimAndWhereMock }));
+    const claimSetMock = jest.fn(() => ({ where: claimWhereMock }));
+    const claimUpdateMock = jest.fn(() => ({ set: claimSetMock }));
     const createQueryBuilderMock = jest.fn(() => ({
       insert: insertMock,
       where: whereMock,
+      update: claimUpdateMock,
     }));
     const findOneMock = jest.fn().mockResolvedValue({ id: 1, retryCount: 0 });
     const updateMock = jest
@@ -41,6 +46,9 @@ describe('PlatformWebhookInboundEventService', () => {
       whereMock,
       findOneMock,
       updateMock,
+      claimExecuteMock,
+      claimWhereMock,
+      claimAndWhereMock,
     };
   };
 
@@ -69,6 +77,32 @@ describe('PlatformWebhookInboundEventService', () => {
       });
 
       expect(result).toEqual({ inserted: false });
+    });
+  });
+
+  describe('claim', () => {
+    it('claims a pending/failed event (pending/failed → processing)', async () => {
+      const { service, claimExecuteMock, claimWhereMock, claimAndWhereMock } =
+        buildService();
+      claimExecuteMock.mockResolvedValue({ affected: 1 });
+
+      const claimed = await service.claim(7);
+
+      expect(claimed).toBe(true);
+      expect(claimWhereMock).toHaveBeenCalledWith('id = :id', { id: 7 });
+      expect(claimAndWhereMock).toHaveBeenCalledWith(
+        'status IN (:...statuses)',
+        { statuses: ['pending', 'failed'] },
+      );
+    });
+
+    it('returns false when another worker already claimed the event', async () => {
+      const { service, claimExecuteMock } = buildService();
+      claimExecuteMock.mockResolvedValue({ affected: 0 });
+
+      const claimed = await service.claim(7);
+
+      expect(claimed).toBe(false);
     });
   });
 
@@ -179,6 +213,31 @@ describe('PlatformWebhookInboundEventService', () => {
       });
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ eventId: 'mid-1', status: 'failed' });
+    });
+
+    it('includes stale processing rows (crash between claim and mark)', async () => {
+      const { service, getManyMock } = buildService();
+      getManyMock.mockResolvedValue([
+        {
+          id: 2,
+          platform: 'messenger',
+          eventId: 'mid-2',
+          externalUserId: 'psid-1',
+          eventType: 'message',
+          rawPayload: { message: { mid: 'mid-2' } },
+          status: 'processing',
+          retryCount: 0,
+          nextRetryAt: null,
+        },
+      ]);
+
+      const rows = await service.listDue({
+        limit: 20,
+        processingStuckMs: 300_000,
+      });
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ eventId: 'mid-2', status: 'processing' });
     });
   });
 });

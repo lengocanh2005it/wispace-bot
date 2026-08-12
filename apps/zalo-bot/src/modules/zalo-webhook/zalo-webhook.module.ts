@@ -15,6 +15,7 @@ import {
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloWebhookController } from './presentation/controllers/zalo-webhook.controller';
 import { ZaloWebhookDispatchService } from './application/zalo-webhook-dispatch.service';
+import { ZaloWebhookIngestService } from './application/zalo-webhook-ingest.service';
 import type { ZaloWebhookEvent } from './domain/entities/zalo-webhook-event.types';
 
 @Module({
@@ -32,6 +33,7 @@ import type { ZaloWebhookEvent } from './domain/entities/zalo-webhook-event.type
         new PlatformWebhookInboundEventService('zalo', repo),
       inject: [getRepositoryToken(WebhookInboundEventEntity)],
     },
+    ZaloWebhookIngestService,
     {
       provide: PlatformWebhookInboundRetryCronService,
       useFactory: (

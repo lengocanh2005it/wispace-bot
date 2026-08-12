@@ -13,7 +13,7 @@ export class CreateWebhookInboundEvents1751029200014 implements MigrationInterfa
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      CREATE TABLE "webhook_inbound_events" (
+      CREATE TABLE IF NOT EXISTS "webhook_inbound_events" (
         "id" SERIAL NOT NULL,
         "platform" varchar(16) NOT NULL,
         "event_id" varchar(255) NOT NULL,
@@ -31,11 +31,11 @@ export class CreateWebhookInboundEvents1751029200014 implements MigrationInterfa
       )
     `);
     await queryRunner.query(`
-      CREATE UNIQUE INDEX "idx_webhook_inbound_events_platform_event_id"
+      CREATE UNIQUE INDEX IF NOT EXISTS "idx_webhook_inbound_events_platform_event_id"
       ON "webhook_inbound_events" ("platform", "event_id")
     `);
     await queryRunner.query(`
-      CREATE INDEX "idx_webhook_inbound_events_status_due"
+      CREATE INDEX IF NOT EXISTS "idx_webhook_inbound_events_status_due"
       ON "webhook_inbound_events" ("platform", "status", "next_retry_at")
     `);
   }
