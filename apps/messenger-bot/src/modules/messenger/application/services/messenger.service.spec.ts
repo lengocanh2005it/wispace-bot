@@ -182,6 +182,25 @@ describe('MessengerService (durable webhook ingestion)', () => {
     ]);
   });
 
+  it('does not acknowledge an event when distributed enqueue fails', async () => {
+    const { service, inboundEvents, actionExecutor } = buildService();
+    actionExecutor.executeAction = jest
+      .fn()
+      .mockRejectedValue(new Error('Redis chat queue unavailable'));
+
+    const result = await service.handleWebhook(payloadWith([textEvent()]));
+
+    expect(inboundEvents.markCompleted).not.toHaveBeenCalled();
+    expect(inboundEvents.markFailed).toHaveBeenCalledWith(
+      7,
+      'Redis chat queue unavailable',
+      expect.objectContaining({ maxRetries: 5, baseRetryMs: 60_000 }),
+    );
+    expect(result.failures).toEqual([
+      { psid: 'psid-1', error: 'Redis chat queue unavailable' },
+    ]);
+  });
+
   it('does not schedule a retry when markCompleted fails (side effects already ran)', async () => {
     const { service, inboundEvents } = buildService();
     inboundEvents.markCompleted.mockRejectedValue(new Error('DB hiccup'));

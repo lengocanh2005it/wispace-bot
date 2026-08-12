@@ -102,6 +102,65 @@ describe('RedisChatQueueStore', () => {
     ).rejects.toThrow('Redis write failed');
   });
 
+  it('does not duplicate an append when a persisted write reports failure', async () => {
+    let persistedState: string | null = null;
+    const client = createClient({
+      get: jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+      set: jest.fn().mockImplementation((key: string, value?: string) => {
+        if (key.startsWith('chat:queue:lock:')) {
+          return Promise.resolve('OK');
+        }
+
+        persistedState = value ?? null;
+        return Promise.reject(new Error('Redis write failed after persist'));
+      }),
+    });
+
+    const store = createStore(client);
+
+    await expect(
+      store.appendChatBuffer({
+        psid: 'psid-1',
+        userText: 'hello',
+        debounceMs: 2000,
+        idempotencyKey: 'mid-1',
+      }),
+    ).rejects.toThrow('Redis write failed after persist');
+
+    await store.appendChatBuffer({
+      psid: 'psid-1',
+      userText: 'hello',
+      debounceMs: 2000,
+      idempotencyKey: 'mid-1',
+    });
+
+    const parsedState = JSON.parse(persistedState ?? '{}') as {
+      texts?: string[];
+    };
+    expect(parsedState.texts).toEqual(['hello']);
+    expect(
+      client.set.mock.calls.filter(([key]) =>
+        String(key).startsWith('chat:queue:buffer:'),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('rejects append when lock release fails', async () => {
+    const client = createClient({
+      eval: jest.fn().mockRejectedValue(new Error('Redis release failed')),
+    });
+
+    const store = createStore(client);
+
+    await expect(
+      store.appendChatBuffer({
+        psid: 'psid-1',
+        userText: 'hello',
+        debounceMs: 2000,
+      }),
+    ).rejects.toThrow('Redis release failed');
+  });
+
   it('rejects append when Redis is unavailable', async () => {
     const store = createStore(null);
 

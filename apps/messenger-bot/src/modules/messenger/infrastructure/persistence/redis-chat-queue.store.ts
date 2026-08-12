@@ -20,6 +20,7 @@ interface RedisChatQueueBufferState {
   linkContext?: MessengerLinkContext | null;
   lastIdempotencyKey?: string | null;
   lastPendingIdempotencyKey?: string | null;
+  idempotencyKeys: string[];
   processing: boolean;
   processingStartedAt?: number | null;
   flushAfterAt?: number | null;
@@ -62,6 +63,21 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       input.psid,
       async (client) => {
         const state = await this.readState(client, input.psid);
+
+        if (
+          input.idempotencyKey &&
+          state.idempotencyKeys.includes(input.idempotencyKey)
+        ) {
+          return;
+        }
+
+        if (input.idempotencyKey) {
+          state.idempotencyKeys = [
+            ...state.idempotencyKeys,
+            input.idempotencyKey,
+          ].slice(-RedisChatQueueStore.MAX_BUFFERED_MESSAGES * 2);
+        }
+
         const flushAfterAt = Date.now() + input.debounceMs;
 
         if (state.processing) {
@@ -287,25 +303,36 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       return null;
     }
 
+    let operationFailed = false;
+    let operationError: unknown;
+    let result: T | null = null;
+
     try {
-      return await fn(client);
+      result = await fn(client);
     } catch (error) {
+      operationFailed = true;
+      operationError = error;
       this.logger.warn(
         `Redis queue operation failed psid=${psid}: ${errorMessage(error)}`,
       );
-      if (failOnError) {
+    }
+
+    try {
+      await this.releaseLock(client, lockKey, lockValue);
+    } catch (error) {
+      this.logger.error(
+        `Redis queue lock release failed psid=${psid}: ${errorMessage(error)}`,
+      );
+      if (!operationFailed) {
         throw error;
       }
-      return null;
-    } finally {
-      await this.releaseLock(client, lockKey, lockValue).catch((error) => {
-        this.logger.error(
-          `Redis queue lock release failed psid=${psid}: ${errorMessage(
-            error,
-          )}`,
-        );
-      });
     }
+
+    if (operationFailed && failOnError) {
+      throw operationError;
+    }
+
+    return result;
   }
 
   private async releaseLock(
@@ -337,6 +364,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       linkContext: null,
       lastIdempotencyKey: null,
       lastPendingIdempotencyKey: null,
+      idempotencyKeys: [],
       updatedAt: Date.now(),
     };
   }
@@ -358,6 +386,9 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         texts: Array.isArray(parsed.texts) ? parsed.texts : [],
         pendingTexts: Array.isArray(parsed.pendingTexts)
           ? parsed.pendingTexts
+          : [],
+        idempotencyKeys: Array.isArray(parsed.idempotencyKeys)
+          ? parsed.idempotencyKeys
           : [],
       };
     } catch {
@@ -382,12 +413,12 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       return;
     }
 
+    await client.sadd(RedisChatQueueStore.ACTIVE_SET, psid);
     await client.set(
       key,
       JSON.stringify(state),
       'EX',
       CHAT_QUEUE_BUFFER_TTL_SECONDS,
     );
-    await client.sadd(RedisChatQueueStore.ACTIVE_SET, psid);
   }
 }
