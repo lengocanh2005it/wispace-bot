@@ -13,6 +13,16 @@ export function maskExternalId(id?: string | number | null): string {
   return `${value.slice(0, 4)}…${value.slice(-4)}`;
 }
 
+/** Replace an external id in an error/log string without changing other text. */
+export function maskExternalIdInText(
+  text: string,
+  externalUserId?: string | number | null,
+): string {
+  if (externalUserId === undefined || externalUserId === null) return text;
+  const value = String(externalUserId);
+  return value ? text.split(value).join(maskExternalId(value)) : text;
+}
+
 /**
  * Mask an external id that is embedded inside a composite key/event id
  * (e.g. the durable inbox event id `pb:<psid>:<payload>:<ts>` built for

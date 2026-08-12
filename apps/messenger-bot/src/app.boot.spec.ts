@@ -1,6 +1,9 @@
 import { Test } from '@nestjs/testing';
 import { DataSource, Repository } from 'typeorm';
+import request from 'supertest';
+import type { App } from 'supertest/types';
 import { AppModule } from './app.module';
+import { InternalApiKeyGuard } from '@wispace/bot-common';
 
 /**
  * Boot smoke test: compiles AppModule and runs app.init() so Nest resolves
@@ -12,6 +15,7 @@ describe('AppModule boot smoke', () => {
   it('boots without DI errors', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     process.env.OPENAI_MODEL = 'test-model';
+    process.env.INTERNAL_API_KEY = 'test-internal-key';
     process.env.CHAT_FREE_FORM_DAILY_LIMIT = '15';
     process.env.CHAT_BURST_PER_MINUTE = '3';
     process.env.CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
@@ -55,8 +59,21 @@ describe('AppModule boot smoke', () => {
       .useValue(dataSourceMock)
       .compile();
 
+    expect(moduleRef.get(InternalApiKeyGuard)).toBeInstanceOf(
+      InternalApiKeyGuard,
+    );
+
     const app = moduleRef.createNestApplication({ logger: false });
     await app.init();
+
+    await request(app.getHttpServer() as App)
+      .get('/health/detail')
+      .expect(401);
+    await request(app.getHttpServer() as App)
+      .get('/health/detail')
+      .set('X-Internal-Api-Key', 'wrong-key')
+      .expect(401);
+
     await app.close();
   }, 30_000);
 });

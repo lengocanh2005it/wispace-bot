@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { errorMessage, maskEventId, maskExternalId } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskEventId,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common';
 import {
   PlatformWebhookInboundEventService,
   readInboundRetryConfig,
@@ -162,7 +167,10 @@ export class MessengerService {
         }
 
         if (processingError !== undefined) {
-          const errorMessageValue = errorMessage(processingError);
+          const errorMessageValue = maskExternalIdInText(
+            errorMessage(processingError),
+            event.sender?.id,
+          );
           failures.push({ psid: event.sender?.id, error: errorMessageValue });
 
           this.logger.warn(

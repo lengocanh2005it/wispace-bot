@@ -1,5 +1,15 @@
 import { createPool } from './_db.mjs';
 import { parseArgs } from './_args.mjs';
+import { maskExternalId } from '@wispace/bot-common';
+
+function maskMapping(row) {
+  if (!row) return row;
+  return {
+    ...row,
+    psid: maskExternalId(row.psid),
+    user_id: maskExternalId(row.user_id),
+  };
+}
 
 const HELP = `Usage: npm run messenger:relink -- --psid=<PSID> --user-id=<number> [--dry-run]
 
@@ -56,7 +66,9 @@ try {
   );
 
   if (!current.rows[0]) {
-    console.log(JSON.stringify({ found: false, psid: args.psid }, null, 2));
+    console.log(
+      JSON.stringify({ found: false, psid: maskExternalId(args.psid) }, null, 2),
+    );
     process.exit(1);
   }
 
@@ -65,7 +77,7 @@ try {
       JSON.stringify(
         {
           dryRun: true,
-          current: current.rows[0],
+          current: maskMapping(current.rows[0]),
           targetUserId: args.userId,
         },
         null,
@@ -89,8 +101,8 @@ try {
     JSON.stringify(
       {
         relinked: current.rows[0].user_id !== args.userId,
-        previousUserId: current.rows[0].user_id,
-        mapping: updated.rows[0],
+        previousUserId: maskExternalId(current.rows[0].user_id),
+        mapping: maskMapping(updated.rows[0]),
         note: 'Call POST /messenger/mapping/relink or open m.me?ref= to sync study reminders + notify user.',
       },
       null,

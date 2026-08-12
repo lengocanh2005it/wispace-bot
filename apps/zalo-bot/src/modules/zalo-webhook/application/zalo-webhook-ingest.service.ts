@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { errorMessage, maskEventId } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskEventId,
+  maskExternalIdInText,
+} from '@wispace/bot-common';
 import {
   PlatformWebhookInboundEventService,
   readInboundRetryConfig,
@@ -74,7 +78,10 @@ export class ZaloWebhookIngestService {
     }
 
     if (processingError !== undefined) {
-      const errorMessageValue = errorMessage(processingError);
+      const errorMessageValue = maskExternalIdInText(
+        errorMessage(processingError),
+        externalUserId,
+      );
       this.logger.warn(
         `Webhook event failed — scheduled for retry: ${errorMessageValue}`,
       );

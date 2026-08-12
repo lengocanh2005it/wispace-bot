@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   errorMessage,
   maskEventId,
+  maskExternalIdInText,
   PgAdvisoryLockService,
 } from '@wispace/bot-common';
 import {
@@ -103,7 +104,10 @@ export class PlatformWebhookInboundRetryCronService {
           )} processed successfully`,
         );
       } catch (error) {
-        const errorMsg = errorMessage(error);
+        const errorMsg = maskExternalIdInText(
+          errorMessage(error),
+          row.externalUserId,
+        );
         const nextRetryCount = row.retryCount + 1;
         const maskedEventId = maskEventId(row.eventId, row.externalUserId);
 

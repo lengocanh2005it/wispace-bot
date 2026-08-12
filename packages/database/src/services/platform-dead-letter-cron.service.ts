@@ -2,7 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { subtractMs } from '@wispace/date-utils';
-import { errorMessage, PgAdvisoryLockService } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskExternalIdInText,
+  PgAdvisoryLockService,
+} from '@wispace/bot-common';
 import { PlatformDeadLetterService } from './platform-dead-letter.service';
 
 const DEFAULT_MAX_RETRIES = 3;
@@ -86,6 +90,7 @@ export class PlatformDeadLetterCronService {
           await this.deadLetterService.markAbandoned(
             entry.id,
             this.options.abandonReason,
+            entry.externalUserId,
           );
           continue;
         }
@@ -93,12 +98,23 @@ export class PlatformDeadLetterCronService {
         await this.options.sendText(externalUserId, text);
         await this.deadLetterService.markReplayed(entry.id);
       } catch (error) {
-        const errorMsg = errorMessage(error);
+        const errorMsg = maskExternalIdInText(
+          errorMessage(error),
+          entry.externalUserId,
+        );
 
         if ((entry.retryCount ?? 0) + 1 >= maxRetries) {
-          await this.deadLetterService.markAbandoned(entry.id, errorMsg);
+          await this.deadLetterService.markAbandoned(
+            entry.id,
+            errorMsg,
+            entry.externalUserId,
+          );
         } else {
-          await this.deadLetterService.incrementRetry(entry.id, errorMsg);
+          await this.deadLetterService.incrementRetry(
+            entry.id,
+            errorMsg,
+            entry.externalUserId,
+          );
         }
       }
     }

@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
@@ -98,7 +102,7 @@ export class ZaloChatService {
       this.logger.error(
         `Chat enqueue failed for zaloUserId=${maskExternalId(
           zaloUserId,
-        )}: ${errorMessage(error)}`,
+        )}: ${maskExternalIdInText(errorMessage(error), zaloUserId)}`,
       );
       try {
         await this.outboundService.sendText(

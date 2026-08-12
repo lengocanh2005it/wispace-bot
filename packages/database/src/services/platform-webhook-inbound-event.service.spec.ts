@@ -128,10 +128,14 @@ describe('PlatformWebhookInboundEventService', () => {
   describe('markFailed', () => {
     it('schedules a bounded backoff retry', async () => {
       const { service, updateMock, findOneMock } = buildService();
-      findOneMock.mockResolvedValue({ id: 1, retryCount: 0 });
+      findOneMock.mockResolvedValue({
+        id: 1,
+        retryCount: 0,
+        externalUserId: 'psid-1234567890',
+      });
       const now = Date.now();
 
-      await service.markFailed(1, 'boom', {
+      await service.markFailed(1, 'failed for psid-1234567890', {
         maxRetries: 5,
         baseRetryMs: 60_000,
         capRetryMs: 8 * 60_000,
@@ -142,7 +146,7 @@ describe('PlatformWebhookInboundEventService', () => {
         expect.objectContaining({
           status: 'failed',
           retryCount: 1,
-          lastError: 'boom',
+          lastError: 'failed for psid…7890',
         }),
       );
       const patch = updateMock.mock.calls[0][1];

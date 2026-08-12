@@ -1,5 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
 import {
   DeliveryLogService,
@@ -89,17 +93,18 @@ export class ZaloOutboundService {
         messageType: 'chat',
       });
     } catch (error) {
+      const errorMsg = maskExternalIdInText(errorMessage(error), zaloUserId);
       await this.deliveryLogService.logDelivery({
         externalUserId: zaloUserId,
         status: 'FAILED',
         messageType: 'chat',
-        error: errorMessage(error),
+        error: errorMsg,
       });
       if (options?.skipDeadLetter !== true) {
         await this.deadLetter?.save({
           externalUserId: zaloUserId,
           rawPayload: { zaloUserId, text },
-          errorMessage: errorMessage(error),
+          errorMessage: errorMsg,
           direction: 'outbound',
         });
       }
@@ -125,7 +130,7 @@ export class ZaloOutboundService {
         signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
       });
     } catch (error) {
-      const msg = errorMessage(error);
+      const msg = maskExternalIdInText(errorMessage(error), zaloUserId);
       this.logger.warn(
         `Zalo send network error for zaloUserId=${maskExternalId(
           zaloUserId,
@@ -146,6 +151,7 @@ export class ZaloOutboundService {
       payload = undefined;
     }
     const body = payload === undefined ? '' : JSON.stringify(payload);
+    const safeBody = maskExternalIdInText(body, zaloUserId);
     const applicationError =
       payload && typeof payload === 'object' && 'error' in payload
         ? Number((payload as { error?: unknown }).error)
@@ -156,15 +162,15 @@ export class ZaloOutboundService {
       (Number.isFinite(applicationError) && applicationError !== 0)
     ) {
       this.logger.warn(
-        `Zalo send message failed HTTP ${response.status} for zaloUserId=${maskExternalId(zaloUserId)}: ${body}`,
+        `Zalo send message failed HTTP ${response.status} for zaloUserId=${maskExternalId(zaloUserId)}: ${safeBody}`,
       );
       throw new ZaloSendError(
         `Zalo Send API failed for ${maskExternalId(
           zaloUserId,
-        )}: HTTP ${response.status} ${response.statusText} - ${body}`,
+        )}: HTTP ${response.status} ${response.statusText} - ${safeBody}`,
         applicationError || response.status,
         response.statusText,
-        body,
+        safeBody,
         response.status,
       );
     }

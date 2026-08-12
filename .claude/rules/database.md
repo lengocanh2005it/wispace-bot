@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-paths: apps/messenger-bot/src/infrastructure/database/**
+paths: apps/messenger-bot/src/infrastructure/database/**, packages/database/**
 ---
 
 # Database & migrations
@@ -13,6 +13,8 @@ paths: apps/messenger-bot/src/infrastructure/database/**
 - `llm_usage_events`, `llm_safety_events` — token/cost + grounding-warning tracking — also owned by `packages/chat-metering`
 - `study_reminder_jobs` — reminder outbox
 - `users` + view `"Users"` — display name / exam date cache; only `user_id` entries with Messenger mapping
+- `webhook_inbound_events` — durable authenticated Messenger/Zalo inbox; `raw_payload` is retained only for recovery and terminal rows are cleaned after `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30)
+- `webhook_dead_letters` — outbound delivery retry payloads; terminal rows are cleaned by the shared dead-letter cleanup
 
 **Prod DB:** `ai_chat_bot_db`. Old hub `writing_ai_hub_db` — Tables already dropped (ops script). All tables above have been generalized to `(platform, external_user_id)` since Phase 2 — see `docs/turborepo-migration-plan.md`.
 
@@ -31,11 +33,11 @@ H7 migration created `messenger_chat_queue_buffer` + `messenger_chat_history` �
 
 ## Adding a migration
 
-1. Modify/add entity in `apps/messenger-bot/src/infrastructure/database/entities/`.
-2. Create migration file in `apps/messenger-bot/src/infrastructure/database/migrations/` (timestamp prefix).
-3. Run `npm run migration:run` (in `apps/messenger-bot/`).
+1. Modify/add the entity in the owning package (`packages/database/src/entities/` for shared tables, or `apps/messenger-bot/src/infrastructure/database/entities/` for Messenger-only tables).
+2. Create the migration in the owning package (`packages/database/src/migrations/` for shared tables, or `apps/messenger-bot/src/infrastructure/database/migrations/` for Messenger-only tables) with a timestamp prefix.
+3. Run `npm run migration:run` in `apps/messenger-bot/`; its TypeORM options include the shared package migrations.
 
-CLI generate (if needed): `npm run migration:generate -- src/infrastructure/database/migrations/TenMigration` (run in `apps/messenger-bot/`).
+CLI generate (if needed): `npm run migration:generate -- src/infrastructure/database/migrations/TenMigration` (run in `apps/messenger-bot/`), then move shared-table entities/migrations to `packages/database/` when appropriate.
 
 DB is shared across bots (Messenger, Discord now, Zalo later) — keys generalized to `(platform, external_user_id)` in Phase 2, see `docs/turborepo-migration-plan.md`. Entities for the 4 chat-metering tables (`chat_daily_usage`, `chat_idempotency`, `llm_usage_events`, `llm_safety_events`) live in `packages/chat-metering` — **do not** add duplicate entities in `apps/*/infrastructure/database/entities/` — only migrations (run by messenger-bot) modify these tables' schemas.
 
@@ -70,6 +72,8 @@ When adding a new migration (Discord, Zalo, or new shared table):
 | Cross-platform (generalized) | `1751029200001-GeneralizePlatformIdentifiers` | alter `user_messenger_mappings` → `user_platform_mappings`, rename chat-metering tables to generic (`chat_daily_usage`, `chat_idempotency`, `chat_quota_events`) |
 | Discord | `1751029200002-CreateDiscordAccountLinksTable` | `discord_account_links` |
 | Shared (cleanup/ops hot queries) | `1751029200010-AddCleanupAndClaimIndexes` | index-only on `chat_idempotency` (`platform, status, reserved_at`), `scheduled_report_claims` (`user_id, report_date, status` + `created_at`), `message_logs` (`created_at`) |
+| Shared (durable webhook inbox) | `1751029200014-CreateWebhookInboundEvents` | `webhook_inbound_events` — authenticated inbound payloads, retry state, unique `(platform, event_id)` |
+| Shared (durable webhook inbox) | `1751029200015-AddWebhookInboundCleanupIndex` | cleanup index on `webhook_inbound_events` (`platform, status, created_at`) |
 
 ## Notes
 
@@ -77,3 +81,4 @@ When adding a new migration (Discord, Zalo, or new shared table):
 - App uses `typeorm.options.ts` via `DatabaseModule`.
 - `DB_MIGRATIONS_RUN=true` → auto migrate on start.
 - ORM entities are **not** placed in `modules/*/domain/` — domain is for pure types only.
+- `raw_payload` is intentionally kept intact for replay; logs and persisted error strings must mask external IDs. Ops scripts may read recovery payloads but must print only masked identifiers and sanitized errors.

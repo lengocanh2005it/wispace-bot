@@ -4,7 +4,11 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import CircuitBreaker from 'opossum';
 import { isMessenger24hWindowError } from '../messages/chat-delivery.messages';
@@ -106,7 +110,7 @@ export class MessengerOutboundService {
       this.logger.debug(
         `Sender action ${senderAction} skipped psid=${maskExternalId(
           psid,
-        )}: ${errorMessage(error)}`,
+        )}: ${maskExternalIdInText(errorMessage(error), psid)}`,
       );
     }
   }
@@ -223,7 +227,7 @@ export class MessengerOutboundService {
         status: 'SENT',
       });
     } catch (error) {
-      const errorText = errorMessage(error);
+      const errorText = maskExternalIdInText(errorMessage(error), params.psid);
       await this.repository.logMessage({
         userId: params.userId,
         psid: params.psid,
@@ -274,7 +278,7 @@ export class MessengerOutboundService {
         status: 'SENT',
       });
     } catch (error) {
-      const errorText = errorMessage(error);
+      const errorText = maskExternalIdInText(errorMessage(error), params.psid);
       void this.repository.logMessage({
         userId: params.userId,
         psid: params.psid,
@@ -367,10 +371,15 @@ export class MessengerOutboundService {
 
   private toMessengerApiError(psid: string, error: unknown): MessengerApiError {
     if (error instanceof MessengerApiError) {
-      return error;
+      return new MessengerApiError(
+        maskExternalIdInText(error.message, psid),
+        error.status,
+        error.statusText,
+        maskExternalIdInText(error.responseBody, psid),
+      );
     }
 
-    const message = errorMessage(error);
+    const message = maskExternalIdInText(errorMessage(error), psid);
     return new MessengerApiError(
       `Messenger Send API failed for PSID ${maskExternalId(psid)}: ${message}`,
       0,
@@ -449,7 +458,7 @@ export class MessengerOutboundService {
     }
 
     if (!response.ok) {
-      const body = await response.text();
+      const body = maskExternalIdInText(await response.text(), psid);
       throw new MessengerApiError(
         `Messenger Send API failed for PSID ${maskExternalId(
           psid,

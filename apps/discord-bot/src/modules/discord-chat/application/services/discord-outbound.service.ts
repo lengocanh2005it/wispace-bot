@@ -1,5 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common';
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -85,7 +89,10 @@ export class DiscordOutboundService {
           maxRetries: 1,
           baseDelayMs: 1_000,
           onRetry: (attempt, maxRetries, error) => {
-            const errorMsg = errorMessage(error);
+            const errorMsg = maskExternalIdInText(
+              errorMessage(error),
+              discordUserId,
+            );
             this.logger.warn(
               `DM send attempt ${attempt}/${maxRetries + 1} failed for discordUserId=${maskExternalId(discordUserId)}, retrying: ${errorMsg}`,
             );
@@ -99,7 +106,7 @@ export class DiscordOutboundService {
       });
       return msg.channelId;
     } catch (error) {
-      const errorMsg = errorMessage(error);
+      const errorMsg = maskExternalIdInText(errorMessage(error), discordUserId);
       this.logger.warn(
         `Failed to send DM to discordUserId=${maskExternalId(
           discordUserId,
@@ -146,7 +153,7 @@ export class DiscordOutboundService {
       this.logger.warn(
         `Failed to send menu buttons to discordUserId=${maskExternalId(
           discordUserId,
-        )}: ${errorMessage(error)}`,
+        )}: ${maskExternalIdInText(errorMessage(error), discordUserId)}`,
       );
       return undefined;
     }
@@ -160,12 +167,14 @@ export class DiscordOutboundService {
         await channel.send(text);
       } else {
         this.logger.warn(
-          `Channel ${channelId} is not a TextChannel — skipping server welcome`,
+          `Channel ${maskExternalId(channelId)} is not a TextChannel — skipping server welcome`,
         );
       }
     } catch (error) {
       this.logger.warn(
-        `Failed to send to channelId=${channelId}: ${errorMessage(error)}`,
+        `Failed to send to channelId=${maskExternalId(
+          channelId,
+        )}: ${maskExternalIdInText(errorMessage(error), channelId)}`,
       );
     }
   }
@@ -192,7 +201,7 @@ export class DiscordOutboundService {
       this.logger.warn(
         `Failed to send reschedule confirmation to discordUserId=${maskExternalId(
           discordUserId,
-        )}: ${errorMessage(error)}`,
+        )}: ${maskExternalIdInText(errorMessage(error), discordUserId)}`,
       );
     }
   }

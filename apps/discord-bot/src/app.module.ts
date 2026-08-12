@@ -5,7 +5,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { IntentsBitField, Partials } from 'discord.js';
 import { NecordModule } from 'necord';
 import { DatabaseModule } from './infrastructure/database/database.module';
-import { RedisModule } from '@wispace/bot-common';
+import { BotCommonModule, RedisModule } from '@wispace/bot-common';
 import { DiscordChatModule } from './modules/discord-chat/discord-chat.module';
 import { DiscordStudyReminderModule } from './modules/discord-study-reminder/discord-study-reminder.module';
 import { DiscordOpsModule } from './modules/discord-ops/discord-ops.module';
@@ -38,6 +38,7 @@ import { HealthController } from '@wispace/bot-common';
     }),
     ScheduleModule.forRoot(),
     DatabaseModule,
+    BotCommonModule,
     RedisModule,
     DiscordChatModule,
     DiscordStudyReminderModule,

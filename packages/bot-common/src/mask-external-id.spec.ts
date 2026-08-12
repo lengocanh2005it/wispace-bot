@@ -1,4 +1,8 @@
-import { maskEventId, maskExternalId } from './mask-external-id';
+import {
+  maskEventId,
+  maskExternalId,
+  maskExternalIdInText,
+} from './mask-external-id';
 
 describe('maskExternalId', () => {
   it('returns ??? for falsy input', () => {
@@ -50,5 +54,22 @@ describe('maskEventId', () => {
     const eventId = 'evt:12345678901234:1699000000000';
     maskEventId(eventId, '12345678901234');
     expect(eventId).toBe('evt:12345678901234:1699000000000');
+  });
+});
+
+describe('maskExternalIdInText', () => {
+  it('masks every occurrence of the external id in text', () => {
+    expect(
+      maskExternalIdInText(
+        'failed for psid-1234567890; retrying psid-1234567890',
+        'psid-1234567890',
+      ),
+    ).toBe('failed for psid…7890; retrying psid…7890');
+  });
+
+  it('leaves text unchanged when no external id is supplied', () => {
+    expect(maskExternalIdInText('failed for unknown', null)).toBe(
+      'failed for unknown',
+    );
   });
 });
