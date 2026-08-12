@@ -130,6 +130,48 @@ describe('MessengerService (durable webhook ingestion)', () => {
     );
   });
 
+  it('uses a bounded hash enqueue key without a Messenger timestamp', async () => {
+    const { service, actionExecutor, repository } = buildService();
+    repository.findActiveMappingByPsid.mockResolvedValue({ userId: 143 });
+
+    await service.handleWebhook(
+      payloadWith([
+        textEvent({
+          timestamp: undefined,
+          message: { text: 'xem lich hoc cua minh' },
+        }),
+      ]),
+    );
+
+    expect(actionExecutor.executeAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'enqueue_chat',
+        idempotencyKey: expect.stringMatching(/^evt:[a-f0-9]{64}$/),
+      }),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it('uses a bounded hash enqueue key for timestamp-less postbacks', async () => {
+    const { service, inboundEvents } = buildService();
+
+    await service.handleWebhook(
+      payloadWith([
+        postbackEvent({
+          timestamp: undefined,
+          postback: { payload: 'GET_LEARNING_REPORT' },
+        }),
+      ]),
+    );
+
+    expect(inboundEvents.ingest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: expect.stringMatching(/^pb:[a-f0-9]{64}$/),
+      }),
+    );
+  });
+
   it('claims the event before processing (single-writer)', async () => {
     const { service, inboundEvents } = buildService();
 

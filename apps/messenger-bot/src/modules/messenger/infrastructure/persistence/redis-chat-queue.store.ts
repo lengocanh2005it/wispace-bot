@@ -68,6 +68,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
           input.idempotencyKey &&
           state.idempotencyKeys.includes(input.idempotencyKey)
         ) {
+          await client.sadd(RedisChatQueueStore.ACTIVE_SET, input.psid);
           return;
         }
 

@@ -170,6 +170,10 @@ describe('RedisChatQueueStore', () => {
         String(key).startsWith('chat:queue:buffer:'),
       ),
     ).toHaveLength(0);
+    expect(client.sadd).toHaveBeenCalledWith(
+      'chat:queue:active-psids',
+      'psid-1',
+    );
   });
 
   it('rejects append when lock release fails', async () => {

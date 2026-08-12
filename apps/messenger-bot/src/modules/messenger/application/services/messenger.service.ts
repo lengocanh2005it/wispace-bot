@@ -32,16 +32,32 @@ function buildEventId(event: MessengerWebhookEvent, psid: string): string {
   if (event.message?.mid) {
     return event.message.mid;
   }
-  if (event.postback?.payload) {
-    return `pb:${psid}:${event.postback.payload}:${event.timestamp ?? Date.now()}`;
-  }
   if (event.timestamp !== undefined) {
+    if (event.postback?.payload) {
+      return `pb:${psid}:${event.postback.payload}:${event.timestamp}`;
+    }
     return `evt:${psid}:${event.timestamp}`;
   }
   const fingerprint = createHash('sha256')
-    .update(JSON.stringify(event))
+    .update(canonicalize({ psid, event }))
     .digest('hex');
-  return `evt:${psid}:${fingerprint}`;
+  return `${event.postback?.payload ? 'pb' : 'evt'}:${fingerprint}`;
+}
+
+function canonicalize(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value) ?? 'undefined';
+  }
+
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalize).join(',')}]`;
+  }
+
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalize(record[key])}`)
+    .join(',')}}`;
 }
 
 function buildEventType(event: MessengerWebhookEvent): string {
