@@ -1,35 +1,61 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import type { Repository } from 'typeorm';
 import {
-  REDIS_CLIENT,
-  RedisWebhookDedupeStore,
-  type RedisClientPort,
+  ADVISORY_LOCKS,
+  BotCommonModule,
+  PgAdvisoryLockService,
 } from '@wispace/bot-common';
+import {
+  PlatformWebhookInboundEventService,
+  PlatformWebhookInboundRetryCronService,
+  WebhookInboundEventEntity,
+} from '@wispace/database';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloWebhookController } from './presentation/controllers/zalo-webhook.controller';
-import { ZaloWebhookDedupeService } from './application/zalo-webhook-dedupe.service';
+import { ZaloWebhookDispatchService } from './application/zalo-webhook-dispatch.service';
+import type { ZaloWebhookEvent } from './domain/entities/zalo-webhook-event.types';
 
 @Module({
-  imports: [ZaloChatModule],
+  imports: [
+    ZaloChatModule,
+    BotCommonModule,
+    TypeOrmModule.forFeature([WebhookInboundEventEntity]),
+  ],
   controllers: [ZaloWebhookController],
   providers: [
-    ZaloWebhookDedupeService,
+    ZaloWebhookDispatchService,
     {
-      provide: RedisWebhookDedupeStore,
+      provide: PlatformWebhookInboundEventService,
+      useFactory: (repo: Repository<WebhookInboundEventEntity>) =>
+        new PlatformWebhookInboundEventService('zalo', repo),
+      inject: [getRepositoryToken(WebhookInboundEventEntity)],
+    },
+    {
+      provide: PlatformWebhookInboundRetryCronService,
       useFactory: (
-        redisClient: RedisClientPort,
+        inboundEvents: PlatformWebhookInboundEventService,
         configService: ConfigService,
+        pgLock: PgAdvisoryLockService,
+        dispatcher: ZaloWebhookDispatchService,
       ) =>
-        new RedisWebhookDedupeStore(redisClient, {
-          platform: 'zalo',
-          midTtlSeconds: () =>
-            Math.max(
-              1,
-              configService.get<number>('ZALO_WEBHOOK_DEDUPE_TTL_SECONDS') ??
-                60,
-            ),
-        }),
-      inject: [REDIS_CLIENT, ConfigService],
+        new PlatformWebhookInboundRetryCronService(
+          inboundEvents,
+          configService,
+          pgLock,
+          {
+            lockId: ADVISORY_LOCKS.ZALO_WEBHOOK_INBOUND_RETRY,
+            processEvent: (rawPayload) =>
+              dispatcher.dispatch(rawPayload as ZaloWebhookEvent),
+          },
+        ),
+      inject: [
+        PlatformWebhookInboundEventService,
+        ConfigService,
+        PgAdvisoryLockService,
+        ZaloWebhookDispatchService,
+      ],
     },
   ],
 })

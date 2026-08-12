@@ -268,6 +268,15 @@ Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 
 All bot HTTP APIs are versioned under `/v1` (global prefix). Infra endpoints (`/health*`, `/metrics`) are excluded and stay unversioned.
 
+### Webhook ingestion semantics (durable — Messenger + Zalo)
+
+Both bots use a **write-ahead inbox** (`webhook_inbound_events`, shared table in `packages/database`):
+
+1. After signature/authentication succeeds, **every inbound event is persisted to `webhook_inbound_events` before the endpoint acknowledges it** (returns 200). A persistence failure propagates → non-2xx → the platform redelivers (Meta does; Zalo does not guarantee it, but the bot never acks what it could not store).
+2. **Duplicate deliveries are idempotent**: the unique `(platform, event_id)` index makes a re-delivery a no-op (Messenger mid / Zalo msg_id; postbacks/follows use a composite `{type}:{userId}:{timestamp}` id). This replaces the old in-memory/Redis `CHAT_DEDUPE_STORE` (removed).
+3. **Processing retries are bounded**: a handler failure marks the row `failed` with exponential backoff (`next_retry_at = now + min(base * 2^n, cap)`); a crash between persist and process leaves the row `pending`, picked up the same way. The inbound retry cron (every 30 s, advisory-locked per platform — `MESSENGER_WEBHOOK_INBOUND_RETRY`, `ZALO_WEBHOOK_INBOUND_RETRY`) replays due rows; after `WEBHOOK_INBOUND_MAX_RETRIES` failures the row becomes `abandoned` (terminal failure state, audit trail in `last_error`).
+4. Config: `WEBHOOK_INBOUND_MAX_RETRIES` (5), `WEBHOOK_INBOUND_BASE_RETRY_MS` (60 s), `WEBHOOK_INBOUND_CAP_RETRY_MS` (8 min), `WEBHOOK_INBOUND_RETRY_LIMIT` (20). Messenger's old inbound dead-letter table flow (`messenger_webhook_dead_letters` + 5-min retry cron) was replaced by this inbox; `webhook_dead_letters` remains for **outbound** send retries (Discord/Zalo).
+
 `m.me` links are only issued by the **WISPACE backend** (opaque token) — no more `GET /messenger/m-me-link`.
 
 ### Operations & WISPACE Integration

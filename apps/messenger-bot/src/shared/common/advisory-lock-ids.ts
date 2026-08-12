@@ -15,8 +15,8 @@ export const ADVISORY_LOCK = {
   /** Evening rollover: purge sent jobs + full sync. */
   STUDY_REMINDER_ROLLOVER: 884_200_903,
 
-  /** Auto-retry cron for messenger_webhook_dead_letters. */
-  MESSENGER_WEBHOOK_DEAD_LETTER_RETRY: 884_200_905,
+  /** Inbound webhook inbox retry cron (every 30s, `webhook_inbound_events`). */
+  MESSENGER_WEBHOOK_INBOUND_RETRY: 884_200_905,
 
   /** R5: report send retry dispatch (every 15 min). */
   REPORT_SEND_RETRY_DISPATCH: 884_200_909,

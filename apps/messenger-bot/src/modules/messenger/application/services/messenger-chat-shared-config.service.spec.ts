@@ -30,26 +30,6 @@ describe('MessengerChatSharedConfigService', () => {
     expect(service.getHistoryStore()).toBe('redis');
   });
 
-  it('defaults dedupe store to memory', () => {
-    const service = createService({});
-    expect(service.getDedupeStore()).toBe('memory');
-  });
-
-  it('defaults dedupe store to memory when shared queue is enabled', () => {
-    const service = createService({
-      CHAT_QUEUE_SHARED: 'true',
-    });
-    expect(service.getDedupeStore()).toBe('memory');
-  });
-
-  it('reads explicit CHAT_DEDUPE_STORE', () => {
-    const service = createService({
-      CHAT_DEDUPE_STORE: 'redis',
-      CHAT_QUEUE_SHARED: 'true',
-    });
-    expect(service.getDedupeStore()).toBe('redis');
-  });
-
   it('defaults queue store to memory', () => {
     const service = createService({});
     expect(service.getQueueStore()).toBe('memory');

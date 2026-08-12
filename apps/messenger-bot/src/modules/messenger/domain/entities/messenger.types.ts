@@ -21,6 +21,8 @@ export interface MessengerWebhookEvent {
   sender?: {
     id?: string;
   };
+  /** Millisecond timestamp of the delivery — stable across Meta redeliveries. */
+  timestamp?: number;
   message?: {
     mid?: string;
     text?: string;

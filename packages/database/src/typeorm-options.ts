@@ -2,6 +2,7 @@ import { join } from 'path';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { WebhookDeadLetterEntity } from './entities/webhook-dead-letter.entity';
+import { WebhookInboundEventEntity } from './entities/webhook-inbound-event.entity';
 import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
 import { ReportSendJobEntity } from './entities/report-send-job.entity';
 import { RescheduleConfirmationEntity } from './entities/reschedule-confirmation.entity';
@@ -32,6 +33,7 @@ export function getPostgresSsl(
 /** Shared entities used by all bots — import and spread into each bot's entity list. */
 export const SHARED_ENTITIES: EntityClass[] = [
   WebhookDeadLetterEntity,
+  WebhookInboundEventEntity,
   ScheduledReportClaimEntity,
   ReportSendJobEntity,
   RescheduleConfirmationEntity,

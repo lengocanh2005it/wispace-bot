@@ -10,4 +10,6 @@ export const ADVISORY_LOCKS = {
   DISCORD_DEAD_LETTER_RETRY: 884_200_930,
   /** Zalo: dead-letter retry cron (every 5 min). */
   ZALO_DEAD_LETTER_RETRY: 884_200_931,
+  /** Zalo: inbound webhook inbox retry cron (every 30s, `webhook_inbound_events`). */
+  ZALO_WEBHOOK_INBOUND_RETRY: 884_200_932,
 } as const;

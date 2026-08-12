@@ -7,7 +7,6 @@ import {
 import type {
   ChatHistoryStoreKind,
   ChatQueueStoreKind,
-  WebhookDedupeStoreKind,
 } from '../../domain/entities/messenger-store.types';
 
 @Injectable()
@@ -42,28 +41,11 @@ export class MessengerChatSharedConfigService {
     return 'memory';
   }
 
-  getDedupeStore(): WebhookDedupeStoreKind {
-    const raw = this.configService
-      .get<string>('CHAT_DEDUPE_STORE')
-      ?.trim()
-      .toLowerCase();
-    if (raw === 'memory' || raw === 'redis') return raw;
-    return 'memory';
-  }
-
   getProcessingStuckMs(): number {
     return readEnvPositiveInt(
       this.configService,
       'CHAT_QUEUE_PROCESSING_STUCK_MS',
       300_000,
-    );
-  }
-
-  getWebhookDedupeRetentionMs(): number {
-    return readEnvPositiveInt(
-      this.configService,
-      'CHAT_WEBHOOK_DEDUPE_RETENTION_MS',
-      86_400_000,
     );
   }
 

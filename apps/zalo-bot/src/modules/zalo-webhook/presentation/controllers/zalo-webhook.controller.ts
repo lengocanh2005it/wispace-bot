@@ -9,6 +9,10 @@ import {
 } from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
+import {
+  PlatformWebhookInboundEventService,
+  readInboundRetryConfig,
+} from '@wispace/database';
 import type { Request } from 'express';
 
 type ZaloWebhookRequest = Request & { rawBody?: Buffer };
@@ -17,8 +21,16 @@ import {
   verifyZaloWebhookSignature,
 } from '../../application/utils/zalo-webhook-signature.utils';
 import type { ZaloWebhookEvent } from '../../domain/entities/zalo-webhook-event.types';
-import { ZaloChatService } from '../../../zalo-chat/application/services/zalo-chat.service';
-import { ZaloWebhookDedupeService } from '../../application/zalo-webhook-dedupe.service';
+import { ZaloWebhookDispatchService } from '../../application/zalo-webhook-dispatch.service';
+
+/** Stable per-delivery event id for the durable inbox. */
+function buildEventId(event: ZaloWebhookEvent): string {
+  if (event.event_name === 'user_send_text' && event.message?.msg_id) {
+    return event.message.msg_id;
+  }
+  const userId = event.sender?.id ?? event.follower?.id ?? 'unknown';
+  return `${event.event_name}:${userId}:${event.timestamp ?? Date.now()}`;
+}
 
 @Controller('zalo/webhook')
 export class ZaloWebhookController {
@@ -26,8 +38,8 @@ export class ZaloWebhookController {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly handler: ZaloChatService,
-    private readonly dedupeService: ZaloWebhookDedupeService,
+    private readonly dispatcher: ZaloWebhookDispatchService,
+    private readonly inboundEvents: PlatformWebhookInboundEventService,
   ) {}
 
   @Post()
@@ -64,56 +76,48 @@ export class ZaloWebhookController {
       throw new UnauthorizedException('Stale webhook timestamp');
     }
 
+    // Durable ingestion: persist before acknowledging. A duplicate delivery
+    // is skipped; a persistence failure propagates (non-2xx) so the event is
+    // not lost. Processing failures are recorded for the retry cron.
+    const eventId = buildEventId(body);
+    const { inserted, id } = await this.inboundEvents.ingest({
+      eventId,
+      externalUserId: body.sender?.id ?? body.follower?.id ?? null,
+      eventType: body.event_name,
+      rawPayload: body,
+    });
+
+    if (!inserted) {
+      this.logger.debug(`Skipping duplicate webhook event id=${eventId}`);
+      return { received: true };
+    }
+
     try {
-      await this.dispatch(body);
+      await this.dispatcher.dispatch(body);
+      if (id !== undefined) {
+        await this.inboundEvents.markCompleted(id);
+      }
     } catch (error) {
-      // Inbound webhook events are never dead-lettered for replay — the retry
-      // cron only replays outbound sends. Logging is the audit trail here;
-      // Zalo does not retry webhook callbacks after we answer 200.
-      this.logger.warn(`Webhook event failed: ${errorMessage(error)}`);
+      const errorMessageValue = errorMessage(error);
+      this.logger.warn(
+        `Webhook event failed — scheduled for retry: ${errorMessageValue}`,
+      );
+      if (id !== undefined) {
+        await this.inboundEvents
+          .markFailed(
+            id,
+            errorMessageValue,
+            readInboundRetryConfig((key) =>
+              this.configService.get<string>(key),
+            ),
+          )
+          .catch((saveErr: unknown) => {
+            this.logger.error(
+              `Failed to record inbound event failure: ${errorMessage(saveErr)}`,
+            );
+          });
+      }
     }
     return { received: true };
-  }
-
-  private async dispatch(event: ZaloWebhookEvent): Promise<void> {
-    switch (event.event_name) {
-      case 'user_send_text': {
-        const senderId = event.sender?.id;
-        const text = event.message?.text;
-        const msgId = event.message?.msg_id;
-        if (senderId && text) {
-          if (msgId && (await this.dedupeService.isDuplicate(msgId))) {
-            this.logger.debug(`Skipping duplicate webhook msg_id=${msgId}`);
-            return;
-          }
-          await this.handler.handleIncomingMessage(senderId, text, msgId);
-        }
-        return;
-      }
-      case 'follow': {
-        const followerId = event.follower?.id;
-        if (followerId) {
-          await this.handler.handleFollow(followerId);
-        }
-        return;
-      }
-      case 'unfollow':
-        this.logger.log(`User unfollowed: ${event.follower?.id ?? 'unknown'}`);
-        return;
-      default:
-        if (event.event_name.startsWith('oa_send_')) {
-          // Echo of our own outbound message — ignore to avoid loops.
-          return;
-        }
-        if (event.event_name.startsWith('user_send_')) {
-          const senderId = event.sender?.id;
-          if (senderId) {
-            await this.handler.handleUnsupportedMessage(senderId);
-          }
-          return;
-        }
-        this.logger.debug(`Unhandled event_name=${event.event_name}`);
-        return;
-    }
   }
 }

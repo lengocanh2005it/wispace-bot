@@ -2,6 +2,7 @@ export {
   WebhookDeadLetterEntity,
   type WebhookDeadLetterEntry,
 } from './entities/webhook-dead-letter.entity';
+export { WebhookInboundEventEntity } from './entities/webhook-inbound-event.entity';
 export { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
 export { ReportSendJobEntity } from './entities/report-send-job.entity';
 export { RescheduleConfirmationEntity } from './entities/reschedule-confirmation.entity';
@@ -24,6 +25,7 @@ export {
   type ReportSendJobStatus,
   type ScheduledReportClaimStatus,
   type WebhookDeadLetterStatus,
+  type WebhookInboundEventStatus,
   type StudyReminderJobStatus,
   MessageType,
 } from './types';
@@ -33,6 +35,18 @@ export {
   PlatformDeadLetterCronService,
   type DeadLetterCronOptions,
 } from './services/platform-dead-letter-cron.service';
+export {
+  PlatformWebhookInboundEventService,
+  readInboundRetryConfig,
+  type IngestInboundEventInput,
+  type IngestInboundEventResult,
+  type InboundEventRow,
+  type InboundRetryConfig,
+} from './services/platform-webhook-inbound-event.service';
+export {
+  PlatformWebhookInboundRetryCronService,
+  type WebhookInboundRetryCronOptions,
+} from './services/platform-webhook-inbound-retry-cron.service';
 export {
   DeliveryLogService,
   type MessageLogRow,
