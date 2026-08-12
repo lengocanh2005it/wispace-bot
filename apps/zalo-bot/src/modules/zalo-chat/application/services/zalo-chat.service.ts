@@ -9,10 +9,10 @@ import {
   RESCHEDULE_CONFIRM_KEYWORDS,
   RESCHEDULE_CANCEL_KEYWORDS,
 } from '../constants/zalo-reschedule.constants';
-import { IntentDetector } from '@wispace/llm-agent';
-
-const FALLBACK_ERROR_MESSAGE =
-  'Xin lỗi, mình gặp sự cố khi xử lý tin nhắn. Bạn thử lại sau ít phút nhé.';
+import {
+  CHAT_FAILURE_FALLBACK_MESSAGE,
+  IntentDetector,
+} from '@wispace/llm-agent';
 
 const UNSUPPORTED_MESSAGE_TYPE_MESSAGE =
   'Hiện mình chỉ hỗ trợ tin nhắn văn bản thôi nhé. Bạn gõ câu hỏi bằng chữ giúp mình nha!';
@@ -101,7 +101,10 @@ export class ZaloChatService {
         )}`,
       );
       try {
-        await this.outboundService.sendText(zaloUserId, FALLBACK_ERROR_MESSAGE);
+        await this.outboundService.sendText(
+          zaloUserId,
+          CHAT_FAILURE_FALLBACK_MESSAGE,
+        );
       } catch {
         // ignore
       }

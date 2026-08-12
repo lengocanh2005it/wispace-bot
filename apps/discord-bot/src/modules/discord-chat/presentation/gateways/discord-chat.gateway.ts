@@ -25,10 +25,10 @@ import { DiscordMenuService } from '../../application/services/discord-menu.serv
 import { DiscordPendingJoinService } from '@discord/modules/account-link/application/services/discord-pending-join.service';
 import { buildDiscordLinkWelcomeMessage } from '@discord/modules/account-link/application/messages/account-link.messages';
 import { WispaceApiError } from '@wispace/wispace-client';
-import { IntentDetector } from '@wispace/llm-agent';
-
-const FALLBACK_ERROR_MESSAGE =
-  'Xin lỗi, mình gặp sự cố khi xử lý tin nhắn. Bạn thử lại sau ít phút nhé.';
+import {
+  CHAT_FAILURE_FALLBACK_MESSAGE,
+  IntentDetector,
+} from '@wispace/llm-agent';
 
 const GREETING_TEMPLATE =
   'Chào {name}! 👋 Mình là trợ lý WISPACE — hỗ trợ bạn học IELTS Writing. Bạn có thể hỏi về lịch học, tiến độ hoặc mục tiêu band nhé!';
@@ -201,11 +201,11 @@ export class DiscordChatGateway {
         formatError(error),
       );
       if (isServerChannel) {
-        await message.reply(FALLBACK_ERROR_MESSAGE);
+        await message.reply(CHAT_FAILURE_FALLBACK_MESSAGE);
       } else {
         await this.outboundService.sendText(
           discordUserId,
-          FALLBACK_ERROR_MESSAGE,
+          CHAT_FAILURE_FALLBACK_MESSAGE,
         );
       }
     }
@@ -252,7 +252,7 @@ export class DiscordChatGateway {
       await interaction.editReply(text);
     } catch (error) {
       this.logger.error(`menu_upcoming failed`, formatError(error));
-      await interaction.editReply(FALLBACK_ERROR_MESSAGE);
+      await interaction.editReply(CHAT_FAILURE_FALLBACK_MESSAGE);
     }
   }
 
@@ -270,7 +270,7 @@ export class DiscordChatGateway {
       await interaction.editReply(text);
     } catch (error) {
       this.logger.error(`menu_progress failed`, formatError(error));
-      await interaction.editReply(FALLBACK_ERROR_MESSAGE);
+      await interaction.editReply(CHAT_FAILURE_FALLBACK_MESSAGE);
     }
   }
 }

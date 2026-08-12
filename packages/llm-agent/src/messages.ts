@@ -1,3 +1,6 @@
+export const CHAT_FAILURE_FALLBACK_MESSAGE =
+  'Xin lỗi, mình gặp sự cố khi xử lý tin nhắn. Bạn thử lại sau ít phút nhé.';
+
 export function buildPromptInjectionBlockedMessage(): string {
   return (
     'Mình không thể xử lý tin nhắn này.\n\n' +

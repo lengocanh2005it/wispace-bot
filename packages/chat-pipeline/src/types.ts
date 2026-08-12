@@ -85,6 +85,7 @@ export interface PipelineContext {
   usageDate?: string;
   reply?: AgentReply;
   error?: unknown;
+  refundError?: unknown;
 }
 
 // ── Hooks ───────────────────────────────────────────────────────────────────
