@@ -31,7 +31,7 @@ async function bootstrap() {
   }
 
   app.use(helmet());
-  app.setGlobalPrefix('v1', { exclude: ['health', 'health/(.*)', 'metrics'] });
+  app.setGlobalPrefix('v1', { exclude: ['health', 'health/*path', 'metrics'] });
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
   );
