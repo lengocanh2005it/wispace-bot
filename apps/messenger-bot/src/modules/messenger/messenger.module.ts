@@ -5,6 +5,7 @@ import type { Repository } from 'typeorm';
 import { CleanupCronService } from '@wispace/cleanup-cron';
 import { PgAdvisoryLockService } from '@wispace/bot-common';
 import {
+  PlatformWebhookInboundCleanupService,
   PlatformWebhookInboundEventService,
   PlatformWebhookInboundRetryCronService,
   WebhookInboundEventEntity,
@@ -91,6 +92,25 @@ import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
     },
     CleanupCronService,
     MessengerMessageLogCleanupService,
+    {
+      provide: PlatformWebhookInboundCleanupService,
+      useFactory: (
+        inboundEvents: PlatformWebhookInboundEventService,
+        configService: ConfigService,
+        pgLock: PgAdvisoryLockService,
+      ) =>
+        new PlatformWebhookInboundCleanupService(
+          inboundEvents,
+          configService,
+          pgLock,
+          { lockId: ADVISORY_LOCK.MESSENGER_WEBHOOK_INBOUND_CLEANUP },
+        ),
+      inject: [
+        PlatformWebhookInboundEventService,
+        ConfigService,
+        PgAdvisoryLockService,
+      ],
+    },
     MessengerCalendarPort,
     MessengerReschedulePort,
     MessengerReminderDeliveryService,

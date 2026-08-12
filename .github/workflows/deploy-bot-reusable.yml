@@ -18,7 +18,7 @@ on:
       health_path:
         required: false
         type: string
-        description: Health check path on the deployed bot, e.g. /health/db (empty = skip)
+        description: Readiness check path on the deployed bot, e.g. /health/ready (empty = skip)
         default: ''
       env_only:
         required: false

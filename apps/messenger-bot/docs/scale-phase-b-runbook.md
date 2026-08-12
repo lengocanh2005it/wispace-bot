@@ -127,7 +127,7 @@ On a **2-core** VPS with **~0% CPU** load (prod reference) → benefits are **ne
 
 ## 5. Prerequisites (Pre-Cutover Checklist)
 
-- [ ] Redis stable: `curl -sf http://127.0.0.1:5007/health/redis` → `{"ok":true,...}`
+- [ ] Redis stable: `curl -sf http://127.0.0.1:5007/health/ready` → `{"status":"ok"}` (fails while Redis configured but unreachable)
 - [ ] Prod has: `REDIS_ENABLED=true`, `CHAT_QUEUE_STORE=redis`, `CHAT_DEDUPE_STORE=redis`, `CHAT_HISTORY_STORE=redis`
 - [ ] `CHAT_RATE_LIMIT_ENABLED=true`, `ENFORCE_PROD_CHAT_QUOTA=true`
 - [ ] Backup `.env` / Doppler config `prd` (snapshot before change)
@@ -255,7 +255,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 Needs expansion for real implementation:
 
-- Health check **both** `:5007` and `:5008` (`/health/db`, `/health/redis`)
+- Health check **both** `:5007` and `:5008` (`/health/ready`; detailed DB/Redis status via internal `/health/detail` with `X-Internal-Api-Key`)
 - `docker compose ps` — 2 services healthy
 - Log tail both containers
 
@@ -290,14 +290,12 @@ Needs expansion for real implementation:
 ### 9.2. Post-Cutover (15–30 minutes)
 
 ```bash
-# Health per pod
-curl -sf http://127.0.0.1:5007/health/db
-curl -sf http://127.0.0.1:5008/health/db
-curl -sf http://127.0.0.1:5007/health/redis
-curl -sf http://127.0.0.1:5008/health/redis
+# Health per pod (readiness; detail via internal /health/detail + X-Internal-Api-Key)
+curl -sf http://127.0.0.1:5007/health/ready
+curl -sf http://127.0.0.1:5008/health/ready
 
 # Through Nginx
-curl -sf https://aiassist.aihubproduction.com/health/db
+curl -sf https://aiassist.aihubproduction.com/health/ready
 
 # Leader
 docker logs messenger-bot-2 2>&1 | tail -50 | grep -i "Report cron skipped" || true

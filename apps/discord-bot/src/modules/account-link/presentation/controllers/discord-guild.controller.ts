@@ -8,7 +8,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
@@ -130,9 +130,9 @@ export class DiscordGuildController {
       });
     } catch (error) {
       this.logger.error(
-        `complete-link failed for discordUserId=${entry.discordUserId}: ${errorMessage(
-          error,
-        )}`,
+        `complete-link failed for discordUserId=${maskExternalId(
+          entry.discordUserId,
+        )}: ${errorMessage(error)}`,
       );
       res.status(500).json({ error: 'SERVER_ERROR' });
     }

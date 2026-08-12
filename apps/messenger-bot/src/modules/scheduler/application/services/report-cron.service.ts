@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
+import { maskExternalId } from '@wispace/bot-common';
 import {
   ReportCronLeaderService,
   ReportCronLockService,
@@ -88,7 +89,9 @@ export class ReportCronService {
     );
 
     if (forceSend) {
-      const scope = psidFilter ? `psid=${psidFilter}` : 'all subscribed';
+      const scope = psidFilter
+        ? `psid=${maskExternalId(psidFilter)}`
+        : 'all subscribed';
       this.logger.log(
         `Ops send-reports (${scope}): bypass exam window ${schedule.minDays}-${schedule.maxDays} days` +
           (allowDuplicate
@@ -104,7 +107,7 @@ export class ReportCronService {
       mappings = mappings.filter((m) => m.psid === psidFilter);
       if (mappings.length === 0) {
         throw new BadRequestException(
-          `No active subscribed mapping for psid=${psidFilter}`,
+          `No active subscribed mapping for psid=${maskExternalId(psidFilter)}`,
         );
       }
     }
@@ -180,14 +183,20 @@ export class ReportCronService {
 
       if (!forceSend && !userSchedule.shouldSend) {
         this.logger.log(
-          `Skip PSID ${mapping.psid}: examDate=${userSchedule.examDate}, daysUntilExam=${userSchedule.daysUntilExam}, window=${userSchedule.minDays}-${userSchedule.maxDays}`,
+          `Skip PSID ${maskExternalId(mapping.psid)}: examDate=${
+            userSchedule.examDate
+          }, daysUntilExam=${userSchedule.daysUntilExam}, window=${
+            userSchedule.minDays
+          }-${userSchedule.maxDays}`,
         );
         return { ...ZERO, skipped: 1 };
       }
     } catch (err) {
       if (!forceSend) {
         this.logger.warn(
-          `Skip PSID ${mapping.psid}: could not resolve exam schedule`,
+          `Skip PSID ${maskExternalId(
+            mapping.psid,
+          )}: could not resolve exam schedule`,
           err,
         );
         return { ...ZERO, skipped: 1 };

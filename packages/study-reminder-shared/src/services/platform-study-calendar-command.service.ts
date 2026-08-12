@@ -1,4 +1,5 @@
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
+import { maskExternalId } from '@wispace/bot-common';
 import {
   WispaceCalendarService,
   WispaceConfigService,
@@ -130,7 +131,9 @@ export class PlatformStudyCalendarCommandService {
       );
     } catch (error) {
       this.logger.error(
-        `Reschedule recreate failed after delete calendarId=${params.calendarId} ${this.options.platform}UserId=${params.externalUserId}`,
+        `Reschedule recreate failed after delete calendarId=${params.calendarId} ${this.options.platform}UserId=${maskExternalId(
+          params.externalUserId,
+        )}`,
       );
       throw error;
     }

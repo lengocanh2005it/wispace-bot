@@ -95,9 +95,9 @@ export class WebhookActionExecutorService {
           })
           .catch((error) => {
             this.logger.error(
-              `Failed to send text action to psid=${psid}: ${errorMessage(
-                error,
-              )}`,
+              `Failed to send text action to psid=${maskExternalId(
+                psid,
+              )}: ${errorMessage(error)}`,
             );
             return undefined;
           });

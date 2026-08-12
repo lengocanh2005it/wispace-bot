@@ -1,4 +1,8 @@
-import { errorMessage, isAbortError } from '@wispace/bot-common';
+import {
+  errorMessage,
+  isAbortError,
+  maskExternalId,
+} from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import { resolveScheduledAtFromEventDate } from '../utils/study-calendar.utils';
 import type { UserCalendarApiClient } from './user-calendar-api.client';
@@ -182,13 +186,17 @@ export class UserCalendarScheduleClient {
 
     if (unknownId) {
       this.logger.log(
-        `UserCalendar skipped for ${idHeader}=${externalId} — Wispace does not recognize this id`,
+        `UserCalendar skipped for ${idHeader}=${maskExternalId(
+          externalId,
+        )} — Wispace does not recognize this id`,
       );
       return;
     }
 
     this.logger.warn(
-      `UserCalendar API failed for ${idHeader}=${externalId}: ${message}`,
+      `UserCalendar API failed for ${idHeader}=${maskExternalId(
+        externalId,
+      )}: ${message}`,
     );
   }
 }

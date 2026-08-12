@@ -16,8 +16,8 @@ The wispace-bot monorepo demonstrates **strong security fundamentals** in its co
 |---|----------|---------|--------|
 | 1 | ~~**HIGH**~~ | ~~No Helmet/security headers middleware~~ | **Fixed** — `helmet` installed and used in all 3 apps (`app.use(helmet())`) |
 | 2 | **HIGH** | No global ValidationPipe / DTO validation | Incoming request bodies are not schema-validated; malformed or malicious payloads reach business logic unchecked |
-| 3 | **MEDIUM** | Health endpoints expose DB/Redis connection status without auth | `/health` and `/health/redis` leak infrastructure details to unauthenticated callers |
-| 4 | **MEDIUM** | PSIDs logged in error messages and dead-letter entries | Platform user identifiers are persisted in plaintext logs and dead-letter tables |
+| 3 | ~~**MEDIUM**~~ | ~~Health endpoints expose DB/Redis connection status without auth~~ | **Fixed** (#82) — public `/health` is generic liveness, public `/health/ready` is status-only; full detail moved to internal `/health/detail` (`InternalApiKeyGuard`) |
+| 4 | ~~**MEDIUM**~~ | ~~PSIDs logged in error messages and dead-letter entries~~ | **Fixed** (#82) — `maskExternalId` (first4…last4) applied across all bots/packages; outbound error messages and inbox/dead-letter log lines masked; `webhook_inbound_events` raw payloads get daily retention cleanup |
 | 5 | **MEDIUM** | Metrics endpoints unprotected in some configurations | `/metrics` (Prometheus) can leak operational metrics to unauthorized parties |
 
 ---
@@ -28,8 +28,8 @@ The wispace-bot monorepo demonstrates **strong security fundamentals** in its co
 |----|----------|----------|---------|-------------|
 | A-01 | ~~HIGH~~ | HTTP Security | `apps/*/src/main.ts` | **Fixed** — `helmet` installed and used in all 3 apps |
 | A-02 | HIGH | Input Validation | `apps/*/src/main.ts` | No global `ValidationPipe` — no DTO/class-validator validation on any endpoint |
-| A-03 | MEDIUM | Auth | `packages/bot-common/src/health.controller.ts:30-78` | `/health` and `/health/redis` endpoints are unprotected — expose DB and Redis connection status |
-| A-04 | MEDIUM | Data Exposure | `apps/messenger-bot/src/modules/messenger/application/services/messenger.service.ts:79-82` | PSIDs logged in webhook error messages and dead-letter entries |
+| A-03 | ~~MEDIUM~~ | Auth | `packages/bot-common/src/health.controller.ts:30-78` | **Fixed** (#82) — public liveness/readiness expose no dependency details; full detail is internal-only (`/health/detail` + `InternalApiKeyGuard`) |
+| A-04 | ~~MEDIUM~~ | Data Exposure | `apps/messenger-bot/src/modules/messenger/application/services/messenger.service.ts:79-82` | **Fixed** (#82) — all external IDs (PSID / Discord / Zalo / WISPACE) masked in logs and error messages via `maskExternalId` |
 | A-05 | MEDIUM | Auth | `packages/bot-metrics/src/metrics.module.ts:50` | `/metrics` endpoint unprotected — Prometheus metrics visible to unauthorized callers |
 | A-06 | LOW | Config | `apps/*/src/main.ts` | `HTTP_JSON_BODY_LIMIT` configurable via env — could be set to unsafe values |
 | A-07 | INFO | Crypto | `packages/bot-common/src/internal-api-key.guard.ts:9,36` | ✅ `timingSafeEqual` used correctly for API key comparison |
@@ -128,11 +128,11 @@ class SyncStudyCalendarBody {
 
 ### A-03: Health Endpoints Expose Infrastructure Details Without Auth
 
-**Severity:** MEDIUM
+**Severity:** ~~MEDIUM~~ **FIXED** (#82)
 **Category:** Auth / Information Disclosure
-**File:** `packages/bot-common/src/health.controller.ts:30-78`
+**File:** `packages/bot-common/src/health.controller.ts`
 
-**Description:**
+**Description (original):**
 The `/health` and `/health/redis` endpoints are not protected by `InternalApiKeyGuard`. They expose:
 - Database connection status (`connected` / `disconnected`)
 - Redis connection status (`connected` / `disabled` / `unreachable`)
@@ -142,33 +142,23 @@ The `/health` and `/health/redis` endpoints are not protected by `InternalApiKey
 - Status changes could reveal operational state (e.g., during attacks or maintenance)
 - Load balancer health checks are legitimate use case, but the detailed error info should be restricted
 
-**Fix:**
-Option 1: Keep health endpoints unauthenticated but remove detail on failure:
-```typescript
-// Return generic "error" without connection details to unauthenticated callers
-if (result.status === 'error') {
-  throw new ServiceUnavailableException({ status: 'error' });
-}
-```
-
-Option 2: Add a lightweight auth check for detailed health:
-```typescript
-@Get('health/detail')
-@UseGuards(InternalApiKeyGuard)
-async detailedCheck() { /* ... */ }
-```
+**Resolution (#82):**
+- `GET /health` — public liveness, generic `{ "status": "ok" }` only (never leaks dependency details).
+- `GET /health/ready` — public readiness, status-only `{ "status": "ok" }` / 503 `{ "status": "error" }` (no detail about which dependency failed).
+- `GET /health/detail` — internal-only, `@UseGuards(InternalApiKeyGuard)`: full DB/Redis detail for ops.
+- Removed the duplicate per-app routes (`/health/db`, `/health/redis`) — all 3 bots now share this controller with identical semantics; deploy gates use `/health/ready`.
 
 ---
 
 ### A-04: PSIDs Logged in Error Messages and Dead-Letter Entries
 
-**Severity:** MEDIUM
+**Severity:** ~~MEDIUM~~ **FIXED** (#82)
 **Category:** Data Exposure / PII
 **Files:**
-- `apps/messenger-bot/src/modules/messenger/application/services/messenger.service.ts:79-82`
-- `apps/messenger-bot/src/modules/messenger/application/services/messenger-link-context.service.ts:51`
-- `apps/messenger-bot/src/modules/messenger/application/services/webhook-action-executor.service.ts:57`
-- Dead-letter tables (`messenger_webhook_dead_letter`, `platform_dead_letter`)
+- `apps/messenger-bot/src/modules/messenger/application/services/messenger.service.ts`
+- `apps/messenger-bot/src/modules/messenger/application/services/messenger-link-context.service.ts`
+- `apps/messenger-bot/src/modules/messenger/application/services/webhook-action-executor.service.ts`
+- Dead-letter tables (`webhook_dead_letters`, `webhook_inbound_events`)
 
 **Description:**
 Messenger PSIDs (Platform-scoped User IDs) are logged in plaintext in:
@@ -183,10 +173,12 @@ While PSIDs are not high-entropy secrets (they are visible in message URLs), the
 - Dead-letter tables store PSIDs alongside raw payloads
 - Correlating PSIDs across logs could enable user tracking
 
-**Fix:**
-- Hash PSIDs before logging: `sha256(psid).slice(0, 12)` for correlation without exposure
-- Or use a truncated/masked form: `psid=${psid.slice(0, 4)}...${psid.slice(-4)}`
-- Consider retention policies for dead-letter tables
+**Resolution (#82):**
+- `maskExternalId` (first-4…last-4 convention, `???` for missing) applied consistently across all 3 apps and shared packages for Messenger PSID, Discord ID, Zalo ID and WISPACE userId.
+- Thrown outbound error messages are masked too (previously they defeated caller-side masking via `errorMessage`).
+- Composite inbox event ids (`pb:<psid>:<payload>:<ts>`) are masked in log output via `maskEventId` — the dedupe key itself is unchanged.
+- Raw payloads in `webhook_inbound_events` now have a retention policy: terminal rows (`completed`/`abandoned`) are purged daily after `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30) by `webhook-inbound-cleanup`; `webhook_dead_letters` already had the 30-day `replayed`/`abandoned` cleanup.
+- Deliberately NOT masked (documented): structured ops API response bodies (`failures` arrays — internal endpoints), DB correlation keys (`mid`, `correlationId`, idempotency keys), trace span attributes.
 
 ---
 

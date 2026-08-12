@@ -255,7 +255,7 @@ export class DopplerRuntimeSyncService {
         '-e',
         `RECREATE_IMAGE=${image}`,
         '-e',
-        `HEALTH_PATH=${this.resolveHealthPath(containerName)}`,
+        `HEALTH_PATH=${this.healthPath}`,
         DOPPLER_RUNTIME_COMPOSE_SIDECAR_IMAGE,
         'sh',
         '-c',
@@ -268,13 +268,8 @@ export class DopplerRuntimeSyncService {
     );
   }
 
-  /** Health path per app — Messenger exposes /health/db, others /health. */
-  private resolveHealthPath(containerName: string): string {
-    if (containerName.includes('messenger')) {
-      return '/health/db';
-    }
-    return '/health';
-  }
+  /** Readiness gate for all bots — /health/ready (public, status-only). */
+  private readonly healthPath = '/health/ready';
 
   private async mergeDeployRuntimeVars(
     content: string,

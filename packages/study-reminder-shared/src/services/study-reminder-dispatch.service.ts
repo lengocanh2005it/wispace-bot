@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
@@ -200,7 +200,9 @@ export class StudyReminderDispatchService {
             error: errorMessage,
           });
           this.logger.warn(
-            `Study reminder job failed terminal jobId=${claimedJob.id} externalUserId=${claimedJob.externalUserId}: ${errorMessage}`,
+            `Study reminder job failed terminal jobId=${claimedJob.id} externalUserId=${maskExternalId(
+              claimedJob.externalUserId,
+            )}: ${errorMessage}`,
           );
         } else {
           retried += 1;
@@ -210,7 +212,9 @@ export class StudyReminderDispatchService {
             retryCount: nextRetryCount,
           });
           this.logger.warn(
-            `Study reminder job retry jobId=${claimedJob.id} externalUserId=${claimedJob.externalUserId} retry=${nextRetryCount}/${claimedJob.maxRetries}: ${errorMessage}`,
+            `Study reminder job retry jobId=${claimedJob.id} externalUserId=${maskExternalId(
+              claimedJob.externalUserId,
+            )} retry=${nextRetryCount}/${claimedJob.maxRetries}: ${errorMessage}`,
           );
         }
       }

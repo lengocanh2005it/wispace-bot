@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskEventId } from '@wispace/bot-common';
 import {
   PlatformWebhookInboundEventService,
   readInboundRetryConfig,
@@ -35,15 +35,21 @@ export class ZaloWebhookIngestService {
 
   async processEvent(body: ZaloWebhookEvent): Promise<void> {
     const eventId = buildZaloEventId(body);
+    const externalUserId = body.sender?.id ?? body.follower?.id ?? null;
     const { inserted, id } = await this.inboundEvents.ingest({
       eventId,
-      externalUserId: body.sender?.id ?? body.follower?.id ?? null,
+      externalUserId,
       eventType: body.event_name,
       rawPayload: body,
     });
 
     if (!inserted) {
-      this.logger.debug(`Skipping duplicate webhook event id=${eventId}`);
+      this.logger.debug(
+        `Skipping duplicate webhook event id=${maskEventId(
+          eventId,
+          externalUserId,
+        )}`,
+      );
       return;
     }
 
@@ -52,7 +58,10 @@ export class ZaloWebhookIngestService {
     // process the event on its tick).
     if (id !== undefined && !(await this.inboundEvents.claim(id))) {
       this.logger.debug(
-        `Webhook event id=${eventId} already claimed — deferring to retry cron`,
+        `Webhook event id=${maskEventId(
+          eventId,
+          externalUserId,
+        )} already claimed — deferring to retry cron`,
       );
       return;
     }

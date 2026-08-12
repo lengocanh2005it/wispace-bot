@@ -240,4 +240,41 @@ describe('PlatformWebhookInboundEventService', () => {
       expect(rows[0]).toMatchObject({ eventId: 'mid-2', status: 'processing' });
     });
   });
+
+  describe('deleteTerminalOlderThan', () => {
+    it('deletes only terminal rows older than the cutoff for the platform', async () => {
+      const deleteExecuteMock = jest.fn().mockResolvedValue({ affected: 3 });
+      const deleteAndWhere2Mock = jest.fn(() => ({
+        execute: deleteExecuteMock,
+      }));
+      const deleteAndWhere1Mock = jest.fn(() => ({
+        andWhere: deleteAndWhere2Mock,
+      }));
+      const deleteWhereMock = jest.fn(() => ({
+        andWhere: deleteAndWhere1Mock,
+      }));
+      const deleteFromMock = jest.fn(() => ({ where: deleteWhereMock }));
+      const deleteMock = jest.fn(() => ({ from: deleteFromMock }));
+      const createQueryBuilderMock = jest.fn(() => ({ delete: deleteMock }));
+      const repo = {
+        createQueryBuilder: createQueryBuilderMock,
+      } as unknown as Repository<WebhookInboundEventEntity>;
+
+      const service = new PlatformWebhookInboundEventService('messenger', repo);
+      const cutoff = new Date('2026-01-01T00:00:00Z');
+      const deleted = await service.deleteTerminalOlderThan(cutoff);
+
+      expect(deleted).toBe(3);
+      expect(deleteWhereMock).toHaveBeenCalledWith('platform = :platform', {
+        platform: 'messenger',
+      });
+      expect(deleteAndWhere1Mock).toHaveBeenCalledWith(
+        'status IN (:...statuses)',
+        { statuses: ['completed', 'abandoned'] },
+      );
+      expect(deleteAndWhere2Mock).toHaveBeenCalledWith('created_at < :cutoff', {
+        cutoff,
+      });
+    });
+  });
 });

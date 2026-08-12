@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import type { InboundEventRow } from './platform-webhook-inbound-event.service';
 import {
   PlatformWebhookInboundRetryCronService,
@@ -192,5 +193,36 @@ describe('PlatformWebhookInboundRetryCronService', () => {
       'boom',
       expect.objectContaining({ maxRetries: 2 }),
     );
+  });
+
+  it('logs eventId with the embedded external id masked (redaction)', async () => {
+    const options = buildOptions({
+      processEvent: jest.fn().mockRejectedValue(new Error('WISPACE down')),
+    });
+    const { service, inboundEvents } = buildService(options);
+    inboundEvents.listDue.mockResolvedValue([
+      row({
+        id: 5,
+        eventId: 'pb:psid-123456789:GET_STARTED:1699000000000',
+        externalUserId: 'psid-123456789',
+      }),
+    ]);
+
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    await service.handleRetry();
+    // Capture calls BEFORE restoring — mockRestore() clears mock state.
+    const warnCalls = warnSpy.mock.calls;
+    warnSpy.mockRestore();
+
+    for (const [message] of warnCalls) {
+      expect(String(message)).not.toContain('psid-123456789');
+      expect(String(message)).not.toContain(
+        'pb:psid-123456789:GET_STARTED:1699000000000',
+      );
+    }
+    // Masked form still allows correlation across logs.
+    expect(
+      warnCalls.some(([message]) => String(message).includes('pb:psid…6789')),
+    ).toBe(true);
   });
 });

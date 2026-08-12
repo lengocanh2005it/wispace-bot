@@ -1,4 +1,4 @@
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import {
   isWispaceRetryable,
@@ -53,7 +53,9 @@ export class UserCalendarApiClient {
             signal: options?.signal,
             onRetry: (attempt, max, err) =>
               this.logger.warn(
-                `UserCalendar retry ${attempt}/${max} (${idHeader}=${externalId}): ${errorMessage(err)}`,
+                `UserCalendar retry ${attempt}/${max} (${idHeader}=${maskExternalId(
+                  externalId,
+                )}): ${errorMessage(err)}`,
               ),
           },
         ),
@@ -100,7 +102,9 @@ export class UserCalendarApiClient {
     const records = normalizeUserCalendarRecords(payload);
 
     this.logger.log(
-      `UserCalendar API returned ${records.length} record(s) (${idHeader}=${externalId})`,
+      `UserCalendar API returned ${records.length} record(s) (${idHeader}=${maskExternalId(
+        externalId,
+      )})`,
     );
 
     return records;
@@ -151,7 +155,9 @@ export class UserCalendarApiClient {
     }
 
     this.logger.log(
-      `UserCalendar API created id=${created.id} (${idHeader}=${externalId})`,
+      `UserCalendar API created id=${created.id} (${idHeader}=${maskExternalId(
+        externalId,
+      )})`,
     );
 
     return created;

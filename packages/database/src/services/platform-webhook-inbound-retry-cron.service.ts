@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { errorMessage, PgAdvisoryLockService } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskEventId,
+  PgAdvisoryLockService,
+} from '@wispace/bot-common';
 import {
   PlatformWebhookInboundEventService,
   readInboundRetryConfig,
@@ -93,23 +97,27 @@ export class PlatformWebhookInboundRetryCronService {
         await this.inboundEvents.markCompleted(row.id);
         completed += 1;
         this.logger.log(
-          `Inbound event id=${row.id} eventId=${row.eventId} processed successfully`,
+          `Inbound event id=${row.id} eventId=${maskEventId(
+            row.eventId,
+            row.externalUserId,
+          )} processed successfully`,
         );
       } catch (error) {
         const errorMsg = errorMessage(error);
         const nextRetryCount = row.retryCount + 1;
+        const maskedEventId = maskEventId(row.eventId, row.externalUserId);
 
         await this.inboundEvents.markFailed(row.id, errorMsg, retryConfig);
 
         if (nextRetryCount >= retryConfig.maxRetries) {
           abandoned += 1;
           this.logger.warn(
-            `Inbound event id=${row.id} eventId=${row.eventId} abandoned after ${retryConfig.maxRetries} attempts: ${errorMsg}`,
+            `Inbound event id=${row.id} eventId=${maskedEventId} abandoned after ${retryConfig.maxRetries} attempts: ${errorMsg}`,
           );
         } else {
           failed += 1;
           this.logger.warn(
-            `Inbound event id=${row.id} eventId=${row.eventId} retry ${nextRetryCount}/${retryConfig.maxRetries} failed: ${errorMsg}`,
+            `Inbound event id=${row.id} eventId=${maskedEventId} retry ${nextRetryCount}/${retryConfig.maxRetries} failed: ${errorMsg}`,
           );
         }
       }

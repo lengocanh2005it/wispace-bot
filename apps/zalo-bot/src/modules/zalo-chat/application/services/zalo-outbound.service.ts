@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
 import {
   DeliveryLogService,
@@ -79,7 +79,7 @@ export class ZaloOutboundService {
           !(error instanceof ZaloSendError && !error.isRetryable()),
         onRetry: (attempt, maxRetries) => {
           this.logger.warn(
-            `Zalo send attempt ${attempt}/${maxRetries + 1} failed for zaloUserId=${zaloUserId}, retrying`,
+            `Zalo send attempt ${attempt}/${maxRetries + 1} failed for zaloUserId=${maskExternalId(zaloUserId)}, retrying`,
           );
         },
       });
@@ -127,10 +127,12 @@ export class ZaloOutboundService {
     } catch (error) {
       const msg = errorMessage(error);
       this.logger.warn(
-        `Zalo send network error for zaloUserId=${zaloUserId}: ${msg}`,
+        `Zalo send network error for zaloUserId=${maskExternalId(
+          zaloUserId,
+        )}: ${msg}`,
       );
       throw new ZaloSendError(
-        `Zalo Send API network error for ${zaloUserId}: ${msg}`,
+        `Zalo Send API network error for ${maskExternalId(zaloUserId)}: ${msg}`,
         0,
         'Network Error',
         msg,
@@ -154,10 +156,12 @@ export class ZaloOutboundService {
       (Number.isFinite(applicationError) && applicationError !== 0)
     ) {
       this.logger.warn(
-        `Zalo send message failed HTTP ${response.status} for zaloUserId=${zaloUserId}: ${body}`,
+        `Zalo send message failed HTTP ${response.status} for zaloUserId=${maskExternalId(zaloUserId)}: ${body}`,
       );
       throw new ZaloSendError(
-        `Zalo Send API failed for ${zaloUserId}: HTTP ${response.status} ${response.statusText} - ${body}`,
+        `Zalo Send API failed for ${maskExternalId(
+          zaloUserId,
+        )}: HTTP ${response.status} ${response.statusText} - ${body}`,
         applicationError || response.status,
         response.statusText,
         body,

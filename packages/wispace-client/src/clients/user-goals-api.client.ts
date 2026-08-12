@@ -1,4 +1,4 @@
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import {
   isWispaceRetryable,
@@ -45,7 +45,9 @@ export class UserGoalsApiClient {
             signal: options?.signal,
             onRetry: (attempt, max, err) =>
               this.logger.warn(
-                `User/goals retry ${attempt}/${max} (${idHeader}=${externalId}): ${errorMessage(err)}`,
+                `User/goals retry ${attempt}/${max} (${idHeader}=${maskExternalId(
+                  externalId,
+                )}): ${errorMessage(err)}`,
               ),
           },
         ),
@@ -90,7 +92,9 @@ export class UserGoalsApiClient {
 
     const data = (await response.json()) as UserGoalsRecord;
     this.logger.log(
-      `User goals API returned targetScore=${data.targetScore}, examDate=${data.examDate} (${idHeader}=${externalId})`,
+      `User goals API returned targetScore=${data.targetScore}, examDate=${data.examDate} (${idHeader}=${maskExternalId(
+        externalId,
+      )})`,
     );
     return data;
   }

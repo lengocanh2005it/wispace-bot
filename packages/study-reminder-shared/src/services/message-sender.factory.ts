@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import type { MessageSenderPort } from '../ports/message-sender.port';
 import type { SendMessageInput } from '../types/study-reminder.types';
 
@@ -30,7 +30,9 @@ export function wrapMessageSender(
         await outbound.sendText(input.externalUserId, input.text, input);
       } catch (error) {
         logger.warn(
-          `Failed to send study reminder to externalUserId=${input.externalUserId}: ${errorMessage(error)}`,
+          `Failed to send study reminder to externalUserId=${maskExternalId(
+            input.externalUserId,
+          )}: ${errorMessage(error)}`,
         );
         throw error;
       }

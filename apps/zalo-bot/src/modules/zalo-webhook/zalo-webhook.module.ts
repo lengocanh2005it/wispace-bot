@@ -8,6 +8,7 @@ import {
   PgAdvisoryLockService,
 } from '@wispace/bot-common';
 import {
+  PlatformWebhookInboundCleanupService,
   PlatformWebhookInboundEventService,
   PlatformWebhookInboundRetryCronService,
   WebhookInboundEventEntity,
@@ -57,6 +58,25 @@ import type { ZaloWebhookEvent } from './domain/entities/zalo-webhook-event.type
         ConfigService,
         PgAdvisoryLockService,
         ZaloWebhookDispatchService,
+      ],
+    },
+    {
+      provide: PlatformWebhookInboundCleanupService,
+      useFactory: (
+        inboundEvents: PlatformWebhookInboundEventService,
+        configService: ConfigService,
+        pgLock: PgAdvisoryLockService,
+      ) =>
+        new PlatformWebhookInboundCleanupService(
+          inboundEvents,
+          configService,
+          pgLock,
+          { lockId: ADVISORY_LOCKS.ZALO_WEBHOOK_INBOUND_CLEANUP },
+        ),
+      inject: [
+        PlatformWebhookInboundEventService,
+        ConfigService,
+        PgAdvisoryLockService,
       ],
     },
   ],

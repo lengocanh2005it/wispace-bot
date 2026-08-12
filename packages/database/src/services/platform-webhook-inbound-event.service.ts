@@ -176,6 +176,27 @@ export class PlatformWebhookInboundEventService {
   }
 
   /**
+   * Retention cleanup for raw payloads: delete terminal rows
+   * (`completed`/`abandoned`) older than `cutoff`. Non-terminal rows
+   * (`pending`/`failed`/`processing`) are never touched — the durable inbox
+   * recovery flow must keep working.
+   */
+  async deleteTerminalOlderThan(cutoff: Date): Promise<number> {
+    const result = await this.repo
+      .createQueryBuilder()
+      .delete()
+      .from(WebhookInboundEventEntity)
+      .where('platform = :platform', { platform: this.platform })
+      .andWhere('status IN (:...statuses)', {
+        statuses: ['completed', 'abandoned'],
+      })
+      .andWhere('created_at < :cutoff', { cutoff })
+      .execute();
+
+    return result.affected ?? 0;
+  }
+
+  /**
    * Rows due for processing: never-processed (`pending`, no backoff gate)
    * or failed with `next_retry_at` in the past, or `processing` stuck longer
    * than `processingStuckMs` (crash between claim and mark). Bounded by `limit`.

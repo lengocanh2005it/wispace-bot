@@ -48,6 +48,10 @@ export {
   type WebhookInboundRetryCronOptions,
 } from './services/platform-webhook-inbound-retry-cron.service';
 export {
+  PlatformWebhookInboundCleanupService,
+  type WebhookInboundCleanupOptions,
+} from './services/platform-webhook-inbound-cleanup.service';
+export {
   DeliveryLogService,
   type MessageLogRow,
 } from './services/delivery-log.service';

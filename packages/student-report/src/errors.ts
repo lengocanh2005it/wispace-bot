@@ -1,7 +1,13 @@
+import { maskExternalId } from '@wispace/bot-common';
+
 /** Thrown by `CapacityDataPort` when the platform has no scored Writing tasks yet. */
 export class StudentReportNoScoreDataError extends Error {
   constructor(externalUserId: string) {
-    super(`No TaskScoreAverage data for externalUserId=${externalUserId}`);
+    super(
+      `No TaskScoreAverage data for externalUserId=${maskExternalId(
+        externalUserId,
+      )}`,
+    );
     this.name = 'StudentReportNoScoreDataError';
   }
 }

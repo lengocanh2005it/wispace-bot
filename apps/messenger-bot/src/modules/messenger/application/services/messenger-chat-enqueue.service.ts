@@ -5,7 +5,7 @@ import {
   OnModuleDestroy,
   Optional,
 } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import type { ChatQueueBatch } from '@wispace/chat-queue-core';
@@ -81,16 +81,18 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
               })
               .catch((error) => {
                 this.logger.error(
-                  `Failed to send pending feedback to psid=${externalUserId}: ${errorMessage(
-                    error,
-                  )}`,
+                  `Failed to send pending feedback to psid=${maskExternalId(
+                    externalUserId,
+                  )}: ${errorMessage(error)}`,
                 );
               });
           }
         },
         onPendingDropped: (externalUserId, droppedCount) => {
           this.logger.warn(
-            `Dropped ${droppedCount} pending message(s) for ${externalUserId} (cap exceeded)`,
+            `Dropped ${droppedCount} pending message(s) for ${maskExternalId(
+              externalUserId,
+            )} (cap exceeded)`,
           );
         },
       },
@@ -178,7 +180,9 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
         lastError = error;
         if (attempt < DISTRIBUTED_ENQUEUE_MAX_ATTEMPTS) {
           this.logger.warn(
-            `Distributed chat enqueue retry psid=${input.psid} attempt=${attempt}/${DISTRIBUTED_ENQUEUE_MAX_ATTEMPTS}: ${errorMessage(
+            `Distributed chat enqueue retry psid=${maskExternalId(
+              input.psid,
+            )} attempt=${attempt}/${DISTRIBUTED_ENQUEUE_MAX_ATTEMPTS}: ${errorMessage(
               error,
             )}`,
           );
@@ -190,7 +194,9 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
     }
 
     this.logger.error(
-      `Distributed chat enqueue failed psid=${input.psid} attempts=${DISTRIBUTED_ENQUEUE_MAX_ATTEMPTS}: ${errorMessage(
+      `Distributed chat enqueue failed psid=${maskExternalId(
+        input.psid,
+      )} attempts=${DISTRIBUTED_ENQUEUE_MAX_ATTEMPTS}: ${errorMessage(
         lastError,
       )}`,
     );
@@ -207,7 +213,9 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
       this.sharedFlushTimers.delete(psid);
       void this.processor.flushReady(psid).catch((error) => {
         this.logger.error(
-          `Distributed chat flush failed psid=${psid}: ${errorMessage(error)}`,
+          `Distributed chat flush failed psid=${maskExternalId(
+            psid,
+          )}: ${errorMessage(error)}`,
         );
       });
     }, this.getDebounceMs());

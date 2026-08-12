@@ -26,7 +26,7 @@ jobs:
       app: messenger-bot
       vps_target_dir: /home/ngoc_anh/messenger-bot
       force_build: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build }}
-      health_path: /health/db
+      health_path: /health/ready
     secrets:
       doppler_token: ${{ secrets.DOPPLER_TOKEN_MESSENGER }}
       ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
@@ -44,7 +44,7 @@ jobs:
       app: discord-bot
       vps_target_dir: /home/ngoc_anh/discord-bot
       force_build: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build }}
-      health_path: /health
+      health_path: /health/ready
     secrets:
       doppler_token: ${{ secrets.DOPPLER_TOKEN_DISCORD }}
       ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
@@ -59,7 +59,7 @@ jobs:
       app: zalo-bot
       vps_target_dir: /home/ngoc_anh/zalo-bot
       force_build: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build }}
-      health_path: /health
+      health_path: /health/ready
     secrets:
       doppler_token: ${{ secrets.DOPPLER_TOKEN_ZALO }}
       ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}

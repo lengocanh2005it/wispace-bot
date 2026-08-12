@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
@@ -69,7 +69,9 @@ export class MessengerChatProcessorService {
     // Memory mode: flushNow is called from the EnqueueService's debounce queue.
     // This path should not be reached in memory mode, but handle gracefully.
     this.logger.warn(
-      `flushReady called in memory mode for psid=${psid}; ignoring`,
+      `flushReady called in memory mode for psid=${maskExternalId(
+        psid,
+      )}; ignoring`,
     );
   }
 
@@ -116,7 +118,7 @@ export class MessengerChatProcessorService {
         }
       } catch (completeError) {
         this.logger.error(
-          `completeChatBuffer failed psid=${psid}: ${errorMessage(
+          `completeChatBuffer failed psid=${maskExternalId(psid)}: ${errorMessage(
             completeError,
           )}`,
         );
@@ -185,7 +187,7 @@ export class MessengerChatProcessorService {
         if (!quota.allowed) {
           if (quota.reason === 'IDEMPOTENCY_CONFLICT') {
             this.logger.log(
-              `Skipping duplicate chat flush mid=${idempotencyKey} psid=${psid}`,
+              `Skipping duplicate chat flush mid=${idempotencyKey} psid=${maskExternalId(psid)}`,
             );
             return;
           }
@@ -217,12 +219,16 @@ export class MessengerChatProcessorService {
         }
       } else if (this.chatRateLimitConfig.shouldEnforceForPsid(psid)) {
         this.logger.error(
-          `Chat flush without message.mid psid=${psid}; skipped (H5)`,
+          `Chat flush without message.mid psid=${maskExternalId(
+            psid,
+          )}; skipped (H5)`,
         );
         return;
       } else {
         this.logger.warn(
-          `Chat flush without message.mid psid=${psid}; rate limit reserve skipped`,
+          `Chat flush without message.mid psid=${maskExternalId(
+            psid,
+          )}; rate limit reserve skipped`,
         );
       }
 
@@ -277,7 +283,7 @@ export class MessengerChatProcessorService {
         }
 
         this.logger.error(
-          `Chat queue failed before delivery psid=${psid}: ${errorMessage(
+          `Chat queue failed before delivery psid=${maskExternalId(psid)}: ${errorMessage(
             error,
           )}`,
         );
@@ -285,7 +291,7 @@ export class MessengerChatProcessorService {
         await this.sendChatDeliveryFallback(psid, userId, error, mergedText);
       } else {
         this.logger.error(
-          `Chat queue failed after partial delivery psid=${psid}: ${errorMessage(
+          `Chat queue failed after partial delivery psid=${maskExternalId(psid)}: ${errorMessage(
             error,
           )}`,
         );
@@ -326,7 +332,9 @@ export class MessengerChatProcessorService {
     } catch (error) {
       if (error instanceof MessengerPartialSendError && error.bubblesSent > 0) {
         this.logger.warn(
-          `Partial main reply delivery psid=${params.psid} bubblesSent=${error.bubblesSent}`,
+          `Partial main reply delivery psid=${maskExternalId(
+            params.psid,
+          )} bubblesSent=${error.bubblesSent}`,
         );
         return true;
       }
@@ -352,9 +360,9 @@ export class MessengerChatProcessorService {
         });
       } catch (error) {
         this.logger.warn(
-          `Rich follow-up delivery failed psid=${params.psid}: ${errorMessage(
-            error,
-          )}`,
+          `Rich follow-up delivery failed psid=${maskExternalId(
+            params.psid,
+          )}: ${errorMessage(error)}`,
         );
       }
     }
@@ -368,9 +376,9 @@ export class MessengerChatProcessorService {
         );
       } catch (error) {
         this.logger.warn(
-          `Quota hint delivery failed psid=${params.psid}: ${errorMessage(
-            error,
-          )}`,
+          `Quota hint delivery failed psid=${maskExternalId(
+            params.psid,
+          )}: ${errorMessage(error)}`,
         );
       }
     }
@@ -391,7 +399,7 @@ export class MessengerChatProcessorService {
       });
     } catch (sendError) {
       this.logger.error(
-        `Failed to send chat error fallback psid=${psid}: ${errorMessage(
+        `Failed to send chat error fallback psid=${maskExternalId(psid)}: ${errorMessage(
           sendError,
         )}`,
       );

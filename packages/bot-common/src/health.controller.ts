@@ -4,16 +4,34 @@ import {
   Inject,
   Logger,
   ServiceUnavailableException,
+  UseGuards,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
+import { InternalApiKeyGuard } from './internal-api-key.guard';
 import { REDIS_CLIENT, type RedisClientPort } from './redis.client.port';
 import { errorMessage } from './error-message';
+
+export interface HealthDetail {
+  status: 'ok' | 'error';
+  database: 'connected' | 'disconnected' | 'unknown';
+  redis: 'connected' | 'disabled' | 'error' | 'unreachable' | 'unknown';
+}
 
 /**
  * Health endpoints shared by all WISPACE bots — consolidated from the
  * per-app controllers (unified on the richer behavior: DB error detail +
  * Redis `isEnabled()` guard).
+ *
+ * Route semantics (identical across Messenger/Discord/Zalo):
+ * - `GET /health`        — public liveness: process is up. Returns a generic
+ *   payload only; never exposes DB/Redis/config/version details to external
+ *   probes or load balancers.
+ * - `GET /health/ready`  — public readiness: 200 only when DB and (if
+ *   configured) Redis are reachable, 503 otherwise. Status-only — no
+ *   dependency details.
+ * - `GET /health/detail` — internal (requires `X-Internal-Api-Key`): full
+ *   DB/Redis detail for ops debugging.
  */
 @Controller('health')
 export class HealthController {
@@ -25,16 +43,40 @@ export class HealthController {
   ) {}
 
   /**
-   * Combined health endpoint — checks both DB and Redis.
-   * Use this for load balancers / k8s probes.
+   * Public liveness — generic process health only. Never 503s and never
+   * leaks dependency details (load balancer / k8s liveness probe).
    */
   @Get()
-  async check(): Promise<{
-    status: string;
-    database: string;
-    redis: string;
-  }> {
-    const result: { status: string; database: string; redis: string } = {
+  liveness(): { status: 'ok' } {
+    return { status: 'ok' };
+  }
+
+  /**
+   * Public readiness — 200 only when every configured dependency is
+   * reachable. Status-only response: the 503 body carries no details about
+   * which dependency failed (deploy gates / k8s readiness probe).
+   */
+  @Get('ready')
+  async readiness(): Promise<{ status: 'ok' }> {
+    const detail = await this.checkDetail();
+    if (detail.status === 'error') {
+      throw new ServiceUnavailableException({ status: 'error' });
+    }
+    return { status: 'ok' };
+  }
+
+  /**
+   * Internal readiness detail — full DB/Redis status for ops. Guarded by
+   * `InternalApiKeyGuard`; public probes must use `/health/ready`.
+   */
+  @Get('detail')
+  @UseGuards(InternalApiKeyGuard)
+  async detail(): Promise<HealthDetail> {
+    return this.checkDetail();
+  }
+
+  private async checkDetail(): Promise<HealthDetail> {
+    const result: HealthDetail = {
       status: 'ok',
       database: 'unknown',
       redis: 'unknown',
@@ -74,42 +116,6 @@ export class HealthController {
       }
     }
 
-    if (result.status === 'error') {
-      throw new ServiceUnavailableException({ status: 'error' });
-    }
-
     return result;
-  }
-
-  @Get('redis')
-  async checkRedis() {
-    if (!this.redisClient.isConfiguredEnabled()) {
-      return { ok: true, redis: 'disabled' };
-    }
-    if (!this.redisClient.isEnabled()) {
-      this.logger.warn(
-        'Redis health check failed: configured (REDIS_ENABLED=true) but not connected',
-      );
-      throw new ServiceUnavailableException({
-        ok: false,
-        redis: 'error',
-      });
-    }
-    try {
-      const result: string = await this.redisClient.ping();
-      if (result === 'PONG') return { ok: true, redis: 'connected' };
-      this.logger.warn(`Redis health check failed: unexpected response`);
-      throw new ServiceUnavailableException({
-        ok: false,
-        redis: 'error',
-      });
-    } catch (error) {
-      if (error instanceof ServiceUnavailableException) throw error;
-      this.logger.warn(`Redis health check failed: ${errorMessage(error)}`);
-      throw new ServiceUnavailableException({
-        ok: false,
-        redis: 'unreachable',
-      });
-    }
   }
 }

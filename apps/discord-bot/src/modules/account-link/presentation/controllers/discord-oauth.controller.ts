@@ -1,5 +1,5 @@
 import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
@@ -92,7 +92,9 @@ export class DiscordOauthController {
       const inGuild = await this.guildMembershipService.isMember(discordUserId);
       if (!inGuild) {
         this.logger.warn(
-          `Guild check failed: discordUserId=${discordUserId} not in guild — issuing pending token`,
+          `Guild check failed: discordUserId=${maskExternalId(
+            discordUserId,
+          )} not in guild — issuing pending token`,
         );
         const pendingToken = this.pendingJoinService.create(
           discordUserId,

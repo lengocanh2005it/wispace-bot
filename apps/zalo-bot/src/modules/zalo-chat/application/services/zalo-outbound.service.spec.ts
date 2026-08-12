@@ -1,4 +1,4 @@
-import { ZaloOutboundService } from './zalo-outbound.service';
+import { ZaloOutboundService, ZaloSendError } from './zalo-outbound.service';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
 
 describe('ZaloOutboundService', () => {
@@ -57,6 +57,35 @@ describe('ZaloOutboundService', () => {
     await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow(
       'Zalo Send API network error',
     );
+
+    delete global.fetch;
+  });
+
+  it('redacts the raw user id from thrown error messages and dead-letter payloads', async () => {
+    const tokenService = {
+      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
+    } as unknown as ZaloTokenService;
+    global.fetch = jest.fn().mockRejectedValue(new Error('network down'));
+    const deadLetter = {
+      save: jest
+        .fn<Promise<void>, [{ errorMessage: string }]>()
+        .mockResolvedValue(undefined),
+    };
+    const service = new ZaloOutboundService(
+      tokenService,
+      deliveryLog as never,
+      deadLetter as never,
+    );
+
+    await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow(
+      ZaloSendError,
+    );
+    const err = await service
+      .sendText('zalo-1', 'hello')
+      .catch((e: unknown) => e);
+    expect((err as Error).message).not.toContain('zalo-1');
+    const saved = deadLetter.save.mock.calls[0]?.[0];
+    expect(saved?.errorMessage).not.toContain('zalo-1');
 
     delete global.fetch;
   });

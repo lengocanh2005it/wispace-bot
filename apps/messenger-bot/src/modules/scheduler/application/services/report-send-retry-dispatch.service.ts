@@ -11,7 +11,7 @@ import {
 import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
-import { PgAdvisoryLockService } from '@wispace/bot-common';
+import { maskExternalId, PgAdvisoryLockService } from '@wispace/bot-common';
 import { subtractMs, minutesFromNow } from '@wispace/date-utils';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 
@@ -97,7 +97,9 @@ export class ReportSendRetryDispatchService {
         });
         expired += 1;
         this.logger.warn(
-          `Report send job expired jobId=${job.id} psid=${job.externalUserId} examDate=${examDate}`,
+          `Report send job expired jobId=${job.id} psid=${maskExternalId(
+            job.externalUserId,
+          )} examDate=${examDate}`,
         );
         continue;
       }
@@ -172,7 +174,9 @@ export class ReportSendRetryDispatchService {
         }
 
         this.logger.warn(
-          `Report send retry Wispace 5xx jobId=${claimedJob.id} psid=${claimedJob.externalUserId} retry=${nextRetryCount}/${claimedJob.maxRetries}`,
+          `Report send retry Wispace 5xx jobId=${claimedJob.id} psid=${maskExternalId(
+            claimedJob.externalUserId,
+          )} retry=${nextRetryCount}/${claimedJob.maxRetries}`,
         );
       } else if (orchestrationResult.windowClosed > 0) {
         await this.reportSendJobRepository.markFailed({
@@ -197,7 +201,9 @@ export class ReportSendRetryDispatchService {
           error,
         });
         this.logger.error(
-          `Report send retry failed jobId=${claimedJob.id} psid=${claimedJob.externalUserId}`,
+          `Report send retry failed jobId=${claimedJob.id} psid=${maskExternalId(
+            claimedJob.externalUserId,
+          )}`,
         );
       }
     }

@@ -4,7 +4,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { DatabaseModule } from './infrastructure/database/database.module';
-import { RedisModule } from '@wispace/bot-common';
+import { HealthController, RedisModule } from '@wispace/bot-common';
 import { MessengerModule } from './modules/messenger/messenger.module';
 import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { StudentReportModule } from './modules/student-report/student-report.module';
@@ -35,6 +35,6 @@ import { MetricsModule } from './modules/metrics/metrics.module';
     LlmUsageModule,
     MetricsModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, HealthController],
 })
 export class AppModule {}

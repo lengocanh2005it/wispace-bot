@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import {
   REPORT_CLAIM_REPOSITORY,
   type ReportClaimRepositoryPort,
@@ -84,7 +84,9 @@ export class ReportSendOrchestrationService {
         );
       if (alreadySentToday) {
         this.logger.log(
-          `Skip PSID ${mapping.psid}: scheduled report already sent today`,
+          `Skip PSID ${maskExternalId(
+            mapping.psid,
+          )}: scheduled report already sent today`,
         );
         if (examDateForOutbox) {
           await this.reportSendJobRepository.markSentByExternalUserExamDate(
@@ -105,7 +107,9 @@ export class ReportSendOrchestrationService {
       });
       if (!claimed) {
         this.logger.log(
-          `Skip PSID ${mapping.psid}: report claim exists for ${reportDate} (R4)`,
+          `Skip PSID ${maskExternalId(
+            mapping.psid,
+          )}: report claim exists for ${reportDate} (R4)`,
         );
         return { ...ZERO, claimSkipped: 1 };
       }
@@ -144,7 +148,9 @@ export class ReportSendOrchestrationService {
       // the claim stays 'sent' (no re-send, cross-platform dedupe works).
       if (error instanceof MessengerPartialSendError) {
         this.logger.warn(
-          `Partial report send for PSID ${mapping.psid}: ${error.bubblesSent} bubble(s) delivered before failure — marking sent`,
+          `Partial report send for PSID ${maskExternalId(
+            mapping.psid,
+          )}: ${error.bubblesSent} bubble(s) delivered before failure — marking sent`,
         );
         if (claimedForSend) {
           await this.messengerRepository.markScheduledReportClaimSent({
@@ -195,21 +201,25 @@ export class ReportSendOrchestrationService {
           if (job.nextRetryAt) retryQueued = 1;
         }
         this.logger.warn(
-          `Deferred scheduled report for PSID ${mapping.psid} (retryable, R3/R5)`,
+          `Deferred scheduled report for PSID ${maskExternalId(
+            mapping.psid,
+          )} (retryable, R3/R5)`,
         );
         return { ...ZERO, deferred: 1, retryQueued };
       }
 
       if (error instanceof ProactiveMessenger24hSkippedError) {
         this.logger.warn(
-          `Skipped scheduled report for PSID ${mapping.psid} (Messenger 24h window, L2)`,
+          `Skipped scheduled report for PSID ${maskExternalId(
+            mapping.psid,
+          )} (Messenger 24h window, L2)`,
         );
         return { ...ZERO, windowClosed: 1 };
       }
 
       const message = errorMessage(error);
       this.logger.error(
-        `Failed to send report for PSID ${mapping.psid}`,
+        `Failed to send report for PSID ${maskExternalId(mapping.psid)}`,
         error,
       );
       return {

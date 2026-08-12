@@ -48,9 +48,9 @@ echo "$GHCR_PULL_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USER" --password-st
 
 # app -> "target_dir:health_path:run_migrations"
 declare -A APPS=(
-  [messenger-bot]="/home/ngoc_anh/messenger-bot:/health/db:true"
-  [discord-bot]="/home/ngoc_anh/discord-bot:/health:false"
-  [zalo-bot]="/home/ngoc_anh/zalo-bot:/health:false"
+  [messenger-bot]="/home/ngoc_anh/messenger-bot:/health/ready:true"
+  [discord-bot]="/home/ngoc_anh/discord-bot:/health/ready:false"
+  [zalo-bot]="/home/ngoc_anh/zalo-bot:/health/ready:false"
 )
 
 for app in "${!APPS[@]}"; do

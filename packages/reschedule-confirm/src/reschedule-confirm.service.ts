@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import type {
   RescheduleSchedulingMode,
   UserCalendarRecord,
@@ -147,7 +147,9 @@ export class RescheduleConfirmationService<TExternalId> {
     });
 
     this.logger.log(
-      `RESCHEDULE_PENDING externalId=${String(input.externalId)} calendarId=${matchedEntry.calendarId} mode=${input.schedulingMode}`,
+      `RESCHEDULE_PENDING externalId=${maskExternalId(
+        String(input.externalId),
+      )} calendarId=${matchedEntry.calendarId} mode=${input.schedulingMode}`,
     );
 
     return { pendingConfirmation: true, sessionLabel, summary };
@@ -179,7 +181,9 @@ export class RescheduleConfirmationService<TExternalId> {
       await this.store.cancel(externalId);
 
       this.logger.log(
-        `RESCHEDULE_CONFIRMED externalId=${String(externalId)} calendarId=${pending.calendarId}`,
+        `RESCHEDULE_CONFIRMED externalId=${maskExternalId(
+          String(externalId),
+        )} calendarId=${pending.calendarId}`,
       );
 
       return {
@@ -189,7 +193,9 @@ export class RescheduleConfirmationService<TExternalId> {
     } catch (error) {
       const message = errorMessage(error);
       this.logger.warn(
-        `RESCHEDULE_CONFIRM_FAILED externalId=${String(externalId)}: ${message}`,
+        `RESCHEDULE_CONFIRM_FAILED externalId=${maskExternalId(
+          String(externalId),
+        )}: ${message}`,
       );
       // Keep the confirmation pending so the user can tap confirm again —
       // a transient Wispace failure must not burn the staged request.
@@ -204,7 +210,9 @@ export class RescheduleConfirmationService<TExternalId> {
 
   async cancel(externalId: TExternalId): Promise<string> {
     await this.store.cancel(externalId);
-    this.logger.log(`RESCHEDULE_CANCELLED externalId=${String(externalId)}`);
+    this.logger.log(
+      `RESCHEDULE_CANCELLED externalId=${maskExternalId(String(externalId))}`,
+    );
     return 'Đã hủy yêu cầu đổi lịch. Lịch học giữ nguyên nhé.';
   }
 

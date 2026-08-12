@@ -14,7 +14,7 @@ import {
   buildWispaceScopeRedirectMessage,
   buildGroundingBlockedMessage,
 } from './messages';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import {
   AgentMetricsPort,
   LlmExecutionPort,
@@ -350,7 +350,9 @@ export class LlmAgentService<TToolContext> {
           );
           if (groundingCheck.suspicious) {
             logger.warn(
-              `LLM_GROUNDING_WARNING feature=${FEATURE} externalUserId=${input.externalUserId} reason=${groundingCheck.reason} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
+              `LLM_GROUNDING_WARNING feature=${FEATURE} externalUserId=${maskExternalId(
+                input.externalUserId,
+              )} reason=${groundingCheck.reason} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
             );
             this.ports.safetyEvents.recordGroundingWarning({
               externalUserId: input.externalUserId,
@@ -394,7 +396,9 @@ export class LlmAgentService<TToolContext> {
           // legitimate retry and must not be cut off.
           metrics.llmRoundOutcomeInc(FEATURE, 'duplicate_tool_calls');
           logger.warn(
-            `LLM agent detected duplicate tool calls, stopping early round=${round} externalUserId=${input.externalUserId} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
+            `LLM agent detected duplicate tool calls, stopping early round=${round} externalUserId=${maskExternalId(
+              input.externalUserId,
+            )} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
           );
           break;
         }
@@ -443,7 +447,9 @@ export class LlmAgentService<TToolContext> {
     // Exhausted all rounds without a final text reply
     metrics.llmRoundOutcomeInc(FEATURE, 'exhausted');
     logger.warn(
-      `LLM agent exhausted maxToolRounds=${this.getMaxToolRounds()} externalUserId=${input.externalUserId} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
+      `LLM agent exhausted maxToolRounds=${this.getMaxToolRounds()} externalUserId=${maskExternalId(
+        input.externalUserId,
+      )} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
     );
     const toolList = [...toolsCalledThisTurn].join(', ') || 'không có';
     const toolSummary =
@@ -513,7 +519,9 @@ export class LlmAgentService<TToolContext> {
       const check = detectPromptInjection(entry.content);
       if (check.isInjection) {
         logger.warn(
-          `History entry redacted externalUserId=${externalUserId} reason=${check.reason}`,
+          `History entry redacted externalUserId=${maskExternalId(
+            externalUserId,
+          )} reason=${check.reason}`,
         );
         return { ...entry, content: '[redacted]' };
       }
@@ -534,7 +542,9 @@ export class LlmAgentService<TToolContext> {
         budget -= entryTokens;
       } else {
         logger.debug(
-          `History truncated at index ${i} to stay within token budget externalUserId=${externalUserId}`,
+          `History truncated at index ${i} to stay within token budget externalUserId=${maskExternalId(
+            externalUserId,
+          )}`,
         );
         break;
       }
@@ -678,7 +688,9 @@ export class LlmAgentService<TToolContext> {
     const injectionCheck = detectPromptInjection(input.userText);
     if (injectionCheck.isInjection) {
       logger.warn(
-        `Prompt injection blocked externalUserId=${input.externalUserId} reason=${injectionCheck.reason}`,
+        `Prompt injection blocked externalUserId=${maskExternalId(
+          input.externalUserId,
+        )} reason=${injectionCheck.reason}`,
       );
       return {
         blocked: true,
@@ -765,7 +777,9 @@ export class LlmAgentService<TToolContext> {
           const sanitized = sanitizeToolResultContent(raw);
           if (sanitized.wasSanitized) {
             logger.warn(
-              `Tool result sanitized externalUserId=${input.externalUserId} tool=${toolName} reason=${sanitized.reason}`,
+              `Tool result sanitized externalUserId=${maskExternalId(
+                input.externalUserId,
+              )} tool=${toolName} reason=${sanitized.reason}`,
             );
           }
           content = sanitized.content;
@@ -778,7 +792,9 @@ export class LlmAgentService<TToolContext> {
         } catch (err) {
           const message = errorMessage(err);
           logger.warn(
-            `Tool execution failed externalUserId=${input.externalUserId} tool=${toolName} error=${message}`,
+            `Tool execution failed externalUserId=${maskExternalId(
+              input.externalUserId,
+            )} tool=${toolName} error=${message}`,
           );
           content = JSON.stringify({ ok: false, error: message });
           return {
