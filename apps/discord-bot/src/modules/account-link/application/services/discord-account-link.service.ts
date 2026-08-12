@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { maskExternalId } from '@wispace/bot-common';
 import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
 
 const PLATFORM = 'discord' as const;
@@ -94,7 +95,9 @@ export class DiscordAccountLinkService {
     });
 
     this.logger.log(
-      `Linked Discord account discordUserId=${discordUserId} userId=${userId}`,
+      `Linked Discord account discordUserId=${maskExternalId(
+        discordUserId,
+      )} userId=${maskExternalId(userId)}`,
     );
   }
 

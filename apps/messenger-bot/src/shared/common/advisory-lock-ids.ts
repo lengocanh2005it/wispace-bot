@@ -18,6 +18,9 @@ export const ADVISORY_LOCK = {
   /** Inbound webhook inbox retry cron (every 30s, `webhook_inbound_events`). */
   MESSENGER_WEBHOOK_INBOUND_RETRY: 884_200_905,
 
+  /** Inbound webhook inbox raw-payload retention cleanup (03:15 ICT daily). */
+  MESSENGER_WEBHOOK_INBOUND_CLEANUP: 884_200_910,
+
   /** R5: report send retry dispatch (every 15 min). */
   REPORT_SEND_RETRY_DISPATCH: 884_200_909,
 

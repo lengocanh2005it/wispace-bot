@@ -4,7 +4,7 @@ import type {
   LlmUsageRecorderPort,
 } from '@wispace/llm-agent';
 import { retryWithBackoff } from '@wispace/llm-agent';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import type { CapacityDataPort } from './ports';
 import {
   StudentReportNoScoreDataError,
@@ -125,7 +125,9 @@ export class StudentReportCore {
     } catch (error) {
       if (error instanceof StudentReportNoScoreDataError) {
         logger.log(
-          `No score data for report externalUserId=${externalUserId}; sending guidance message`,
+          `No score data for report externalUserId=${maskExternalId(
+            externalUserId,
+          )}; sending guidance message`,
         );
         return buildStudentReportNoScoreDataMessage();
       }
@@ -133,13 +135,17 @@ export class StudentReportCore {
       if (isRetryableApiError(error)) {
         if (error.isRetryable()) {
           logger.warn(
-            `Retryable API error for report externalUserId=${externalUserId} status=${error.statusCode} endpoint=${error.endpoint}`,
+            `Retryable API error for report externalUserId=${maskExternalId(
+              externalUserId,
+            )} status=${error.statusCode} endpoint=${error.endpoint}`,
           );
           throw new StudentReportRetryableError(externalUserId, error);
         }
 
         logger.warn(
-          `API unavailable for report externalUserId=${externalUserId} status=${error.statusCode} endpoint=${error.endpoint}`,
+          `API unavailable for report externalUserId=${maskExternalId(
+            externalUserId,
+          )} status=${error.statusCode} endpoint=${error.endpoint}`,
         );
         return buildStudentReportApiUnavailableMessage();
       }
@@ -170,7 +176,9 @@ export class StudentReportCore {
         signal,
         onRetry: (attempt, delayMs, error) => {
           logger.warn(
-            `Retrying capacity fetch for report externalUserId=${externalUserId} attempt=${attempt}/${CAPACITY_FETCH_MAX_ATTEMPTS} status=${(error as RetryableApiError).statusCode} endpoint=${(error as RetryableApiError).endpoint}`,
+            `Retrying capacity fetch for report externalUserId=${maskExternalId(
+              externalUserId,
+            )} attempt=${attempt}/${CAPACITY_FETCH_MAX_ATTEMPTS} status=${(error as RetryableApiError).statusCode} endpoint=${(error as RetryableApiError).endpoint}`,
           );
         },
       },
@@ -234,7 +242,9 @@ export class StudentReportCore {
       return parseReportOutput(content, this.config.sanitizeText);
     } catch (error) {
       logger.warn(
-        `Invalid student report LLM output externalUserId=${externalUserId}: ${errorMessage(error)}`,
+        `Invalid student report LLM output externalUserId=${maskExternalId(
+          externalUserId,
+        )}: ${errorMessage(error)}`,
       );
       return buildFallbackReport(input);
     }

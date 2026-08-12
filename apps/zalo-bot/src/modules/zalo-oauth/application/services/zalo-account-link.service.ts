@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
+import { maskExternalId } from '@wispace/bot-common';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 
 const PLATFORM = 'zalo' as const;
@@ -116,7 +117,9 @@ export class ZaloAccountLinkService {
     });
 
     this.logger.log(
-      `Linked Zalo account zaloUserId=${zaloUserId} userId=${userId}`,
+      `Linked Zalo account zaloUserId=${maskExternalId(
+        zaloUserId,
+      )} userId=${maskExternalId(userId)}`,
     );
   }
 

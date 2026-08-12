@@ -8,7 +8,11 @@ export { PgAdvisoryLockService } from './pg-advisory-lock.service';
 export { ADVISORY_LOCKS } from './advisory-lock-ids';
 export { BotCommonModule } from './bot-common.module';
 export { HealthController } from './health.controller';
-export { maskExternalId } from './mask-external-id';
+export {
+  maskExternalId,
+  maskEventId,
+  maskExternalIdInText,
+} from './mask-external-id';
 export { REDIS_CLIENT, type RedisClientPort } from './redis.client.port';
 export { RedisService } from './redis.service';
 export { RedisModule } from './redis.module';

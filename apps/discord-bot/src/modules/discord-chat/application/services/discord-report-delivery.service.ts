@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type {
@@ -46,7 +50,9 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
 
       if (!hasLink) {
         this.logger.warn(
-          `No Discord account link for externalUserId=${mapping.externalUserId}`,
+          `No Discord account link for externalUserId=${maskExternalId(
+            mapping.externalUserId,
+          )}`,
         );
         return { ok: false, reason: 'NOT_LINKED' };
       }
@@ -58,9 +64,14 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
 
       return { ok: true };
     } catch (error) {
-      const msg = errorMessage(error);
+      const msg = maskExternalIdInText(
+        errorMessage(error),
+        mapping.externalUserId,
+      );
       this.logger.warn(
-        `Failed to send report to externalUserId=${mapping.externalUserId}: ${msg}`,
+        `Failed to send report to externalUserId=${maskExternalId(
+          mapping.externalUserId,
+        )}: ${msg}`,
       );
 
       if (msg.includes('429') || msg.includes('rate limit')) {

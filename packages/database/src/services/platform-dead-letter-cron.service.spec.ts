@@ -88,6 +88,7 @@ describe('PlatformDeadLetterCronService', () => {
     expect(deadLetterService.markAbandoned).toHaveBeenCalledWith(
       1,
       'Missing discordUserId or text in payload',
+      'user-1',
     );
     expect(options.sendText).not.toHaveBeenCalled();
   });
@@ -133,10 +134,12 @@ describe('PlatformDeadLetterCronService', () => {
     expect(deadLetterService.incrementRetry).toHaveBeenCalledWith(
       1,
       'send failed',
+      'user-1',
     );
     expect(deadLetterService.markAbandoned).toHaveBeenCalledWith(
       2,
       'send failed',
+      'user-1',
     );
   });
 

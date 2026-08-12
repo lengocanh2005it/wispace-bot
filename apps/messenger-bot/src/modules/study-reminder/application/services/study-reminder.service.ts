@@ -4,7 +4,7 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { type LlmProviderAdapter } from '@wispace/llm-agent';
 import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
 import {
@@ -129,9 +129,9 @@ export class StudyReminderService {
       input.targetScore = goals.targetScore;
     } catch (error) {
       this.logger.warn(
-        `Could not load user goals for study reminder (psid=${psid}): ${errorMessage(
-          error,
-        )}`,
+        `Could not load user goals for study reminder (psid=${maskExternalId(
+          psid,
+        )}): ${errorMessage(error)}`,
       );
     }
 
@@ -144,9 +144,9 @@ export class StudyReminderService {
       }
     } catch (error) {
       this.logger.warn(
-        `Could not load capacity data for study reminder (psid=${psid}): ${errorMessage(
-          error,
-        )}`,
+        `Could not load capacity data for study reminder (psid=${maskExternalId(
+          psid,
+        )}): ${errorMessage(error)}`,
       );
     }
 
@@ -210,9 +210,9 @@ export class StudyReminderService {
       return parseReminderOutput(content);
     } catch (error) {
       this.logger.warn(
-        `Invalid study reminder LLM output psid=${context.psid}: ${errorMessage(
-          error,
-        )}`,
+        `Invalid study reminder LLM output psid=${maskExternalId(
+          context.psid,
+        )}: ${errorMessage(error)}`,
       );
       return buildFallbackReminder(input);
     }
@@ -225,7 +225,9 @@ export class StudyReminderService {
     });
     if (sanitized.wasSanitized) {
       this.logger.warn(
-        `Display name sanitized for study reminder psid=${psid} reason=${sanitized.reason ?? 'format'}`,
+        `Display name sanitized for study reminder psid=${maskExternalId(
+          psid,
+        )} reason=${sanitized.reason ?? 'format'}`,
       );
     }
 
@@ -239,7 +241,9 @@ export class StudyReminderService {
     });
     if (sanitized.wasSanitized) {
       this.logger.warn(
-        `Session topic sanitized for study reminder psid=${psid} reason=${sanitized.reason ?? 'format'}`,
+        `Session topic sanitized for study reminder psid=${maskExternalId(
+          psid,
+        )} reason=${sanitized.reason ?? 'format'}`,
       );
     }
 

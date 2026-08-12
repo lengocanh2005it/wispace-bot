@@ -16,7 +16,7 @@ jobs:
     with:
       app: messenger-bot
       vps_target_dir: /home/ngoc_anh/messenger-bot
-      health_path: /health/db
+      health_path: /health/ready
       env_only: true
     secrets:
       doppler_token: ${{ secrets.DOPPLER_TOKEN_MESSENGER }}

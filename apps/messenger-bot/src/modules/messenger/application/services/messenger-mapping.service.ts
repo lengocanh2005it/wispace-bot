@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { maskExternalId } from '@wispace/bot-common';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
@@ -64,7 +65,11 @@ export class MessengerMappingService {
 
     if (relinked && !params.allowRelink) {
       this.logger.warn(
-        `MAPPING_RELINK_BLOCKED psid=${params.psid} from=${previousUserId} to=${params.userId}`,
+        `MAPPING_RELINK_BLOCKED psid=${maskExternalId(
+          params.psid,
+        )} from=${maskExternalId(previousUserId)} to=${maskExternalId(
+          params.userId,
+        )}`,
       );
 
       if (params.notifyUser !== false) {
@@ -87,7 +92,11 @@ export class MessengerMappingService {
 
     if (userLinkedOtherPsid && !params.allowRelink) {
       this.logger.warn(
-        `MAPPING_USER_PSID_CONFLICT userId=${params.userId} existingPsid=${existingByUserId.psid} newPsid=${params.psid}`,
+        `MAPPING_USER_PSID_CONFLICT userId=${maskExternalId(
+          params.userId,
+        )} existingPsid=${maskExternalId(
+          existingByUserId.psid,
+        )} newPsid=${maskExternalId(params.psid)}`,
       );
 
       if (params.notifyUser !== false) {
@@ -123,11 +132,19 @@ export class MessengerMappingService {
 
     if (relinked) {
       this.logger.warn(
-        `MAPPING_USER_ID_RELINK psid=${params.psid} from=${previousUserId} to=${params.userId}`,
+        `MAPPING_USER_ID_RELINK psid=${maskExternalId(
+          params.psid,
+        )} from=${maskExternalId(previousUserId)} to=${maskExternalId(
+          params.userId,
+        )}`,
       );
     } else {
       this.logger.log(
-        `Linked PSID ${params.psid} to userId=${params.userId}, topic=${params.topic ?? mapping.topic}, cadence=${params.cadence ?? mapping.cadence}`,
+        `Linked PSID ${maskExternalId(params.psid)} to userId=${maskExternalId(
+          params.userId,
+        )}, topic=${params.topic ?? mapping.topic}, cadence=${
+          params.cadence ?? mapping.cadence
+        }`,
       );
     }
 
@@ -140,7 +157,9 @@ export class MessengerMappingService {
         syncedStudyReminders = true;
       } catch (error) {
         this.logger.error(
-          `Study reminder sync after relink failed userId=${params.userId}`,
+          `Study reminder sync after relink failed userId=${maskExternalId(
+            params.userId,
+          )}`,
           error,
         );
       }

@@ -4,7 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { CalendarSessionTimeRange } from '../../domain/entities/study-schedule.types';
 import { UserCalendarRecord } from '../../domain/entities/user-calendar.types';
 import { UserCalendarApiService } from '../../infrastructure/wispace/user-calendar-api.service';
@@ -136,7 +136,9 @@ export class StudyCalendarCommandService {
       );
     } catch (error) {
       this.logger.error(
-        `Reschedule recreate failed after delete calendarId=${params.calendarId} psid=${params.psid}`,
+        `Reschedule recreate failed after delete calendarId=${
+          params.calendarId
+        } psid=${maskExternalId(params.psid)}`,
       );
       throw error;
     }
@@ -164,14 +166,16 @@ export class StudyCalendarCommandService {
       .syncUpcomingSessions({ userId })
       .then((sync) => {
         this.logger.log(
-          `Background outbox sync userId=${userId}: upserted=${sync.upserted}, cancelled=${sync.cancelled}`,
+          `Background outbox sync userId=${maskExternalId(
+            userId,
+          )}: upserted=${sync.upserted}, cancelled=${sync.cancelled}`,
         );
       })
       .catch((error) => {
         this.logger.error(
-          `Background outbox sync failed userId=${userId}: ${errorMessage(
-            error,
-          )}`,
+          `Background outbox sync failed userId=${maskExternalId(
+            userId,
+          )}: ${errorMessage(error)}`,
         );
       });
   }

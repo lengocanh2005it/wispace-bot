@@ -96,7 +96,7 @@ response instead of the literals above if they differ.
 
 Restart (or start) `apps/zalo-bot`, then confirm the token is usable:
 
-- `GET /health` returns `{ "status": "ok" }` (app booted, DB reachable).
+- `GET /health/ready` returns `{ "status": "ok" }` (app booted, DB reachable; 503 status-only otherwise).
 - Trigger any outbound send (e.g. follow the OA from a test Zalo account) and
   confirm `ZaloOutboundService` doesn't log a `Zalo send message failed`
   warning.

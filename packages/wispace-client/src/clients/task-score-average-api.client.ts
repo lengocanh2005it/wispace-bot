@@ -1,4 +1,4 @@
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import {
   isWispaceRetryable,
@@ -46,7 +46,9 @@ export class TaskScoreAverageApiClient {
             signal: options?.signal,
             onRetry: (attempt, max, err) =>
               this.logger.warn(
-                `TaskScoreAverage retry ${attempt}/${max} (${idHeader}=${externalId}): ${errorMessage(err)}`,
+                `TaskScoreAverage retry ${attempt}/${max} (${idHeader}=${maskExternalId(
+                  externalId,
+                )}): ${errorMessage(err)}`,
               ),
           },
         ),
@@ -91,7 +93,9 @@ export class TaskScoreAverageApiClient {
 
     const data = (await response.json()) as TaskScoreAverageRecord[];
     this.logger.log(
-      `TaskScoreAverage API returned ${data.length} record(s) (${idHeader}=${externalId})`,
+      `TaskScoreAverage API returned ${data.length} record(s) (${idHeader}=${maskExternalId(
+        externalId,
+      )})`,
     );
     return data;
   }

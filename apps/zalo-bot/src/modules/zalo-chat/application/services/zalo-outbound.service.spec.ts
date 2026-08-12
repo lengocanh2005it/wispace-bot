@@ -1,4 +1,4 @@
-import { ZaloOutboundService } from './zalo-outbound.service';
+import { ZaloOutboundService, ZaloSendError } from './zalo-outbound.service';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
 
 describe('ZaloOutboundService', () => {
@@ -57,6 +57,74 @@ describe('ZaloOutboundService', () => {
     await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow(
       'Zalo Send API network error',
     );
+
+    delete global.fetch;
+  });
+
+  it('redacts error strings while retaining raw payload for replay', async () => {
+    const tokenService = {
+      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
+    } as unknown as ZaloTokenService;
+    global.fetch = jest.fn().mockRejectedValue(new Error('network down'));
+    const deadLetter = {
+      save: jest
+        .fn<Promise<void>, [{ errorMessage: string; rawPayload: unknown }]>()
+        .mockResolvedValue(undefined),
+    };
+    const service = new ZaloOutboundService(
+      tokenService,
+      deliveryLog as never,
+      deadLetter as never,
+    );
+
+    await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow(
+      ZaloSendError,
+    );
+    const err = await service
+      .sendText('zalo-1', 'hello')
+      .catch((e: unknown) => e);
+    expect((err as Error).message).not.toContain('zalo-1');
+    const saved = deadLetter.save.mock.calls[0]?.[0];
+    expect(saved?.errorMessage).not.toContain('zalo-1');
+    expect(saved?.rawPayload).toEqual({ zaloUserId: 'zalo-1', text: 'hello' });
+
+    delete global.fetch;
+  });
+
+  it('redacts external ids echoed by the Zalo API error body', async () => {
+    const tokenService = {
+      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
+    } as unknown as ZaloTokenService;
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Server Error',
+      json: () =>
+        Promise.resolve({
+          error: 500,
+          message: 'failed for zalo-1234567890',
+        }),
+    });
+    const deadLetter = {
+      save: jest
+        .fn<Promise<void>, [{ errorMessage: string; rawPayload: unknown }]>()
+        .mockResolvedValue(undefined),
+    };
+    const service = new ZaloOutboundService(
+      tokenService,
+      deliveryLog as never,
+      deadLetter as never,
+    );
+
+    await expect(service.sendText('zalo-1234567890', 'hello')).rejects.toThrow(
+      'zalo…7890',
+    );
+    const saved = deadLetter.save.mock.calls[0]?.[0];
+    expect(saved.errorMessage).not.toContain('zalo-1234567890');
+    expect(saved.rawPayload).toEqual({
+      zaloUserId: 'zalo-1234567890',
+      text: 'hello',
+    });
 
     delete global.fetch;
   });

@@ -267,7 +267,7 @@ Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 | POST | `/v1/webhook` | Receive messaging events (guard `X-Hub-Signature-256` when `MESSENGER_WEBHOOK_SIGNATURE_VERIFY` enabled) |
 | POST | `/v1/messenger/profile/setup` | Configure get started + persistent menu (requires `INTERNAL_API_KEY`) |
 
-All bot HTTP APIs are versioned under `/v1` (global prefix). Infra endpoints (`/health*`, `/metrics`) are excluded and stay unversioned.
+All bot HTTP APIs are versioned under `/v1` (global prefix). Infra endpoints (`/health`, `/health/ready`, `/health/detail`, `/metrics`) are excluded and stay unversioned. `/health` (liveness) and `/health/ready` (readiness, status-only) are public; `/health/detail` requires `X-Internal-Api-Key`.
 
 ### Webhook ingestion semantics (durable — Messenger + Zalo)
 
@@ -277,6 +277,7 @@ Both bots use a **write-ahead inbox** (`webhook_inbound_events`, shared table in
 2. **Duplicate deliveries are idempotent**: the unique `(platform, event_id)` index makes a re-delivery a no-op (Messenger mid / Zalo msg_id; postbacks/follows use a composite `{type}:{userId}:{timestamp}` id). This replaces the old in-memory/Redis `CHAT_DEDUPE_STORE` (removed).
 3. **Processing retries are bounded**: a handler failure marks the row `failed` with exponential backoff (`next_retry_at = now + min(base * 2^n, cap)`); a crash between persist and process leaves the row `pending`, picked up the same way. The inbound retry cron (every 30 s, advisory-locked per platform — `MESSENGER_WEBHOOK_INBOUND_RETRY`, `ZALO_WEBHOOK_INBOUND_RETRY`) replays due rows; after `WEBHOOK_INBOUND_MAX_RETRIES` failures the row becomes `abandoned` (terminal failure state, audit trail in `last_error`).
 4. Config: `WEBHOOK_INBOUND_MAX_RETRIES` (5), `WEBHOOK_INBOUND_BASE_RETRY_MS` (60 s), `WEBHOOK_INBOUND_CAP_RETRY_MS` (8 min), `WEBHOOK_INBOUND_RETRY_LIMIT` (20). Messenger's old inbound dead-letter table flow (`messenger_webhook_dead_letters` + 5-min retry cron) was replaced by this inbox; `webhook_dead_letters` remains for **outbound** send retries (Discord/Zalo).
+5. **Raw-payload retention**: the daily `webhook-inbound-cleanup` cron (03:15 ICT, advisory-locked per platform) deletes terminal (`completed`/`abandoned`) rows older than `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30). Non-terminal rows (`pending`/`failed`/`processing`) are never deleted — retry/recovery keeps working. External IDs in logs are masked via `maskExternalId` (`packages/bot-common`); composite event ids are masked in log output with `maskEventId` (dedupe keys unchanged).
 
 `m.me` links are only issued by the **WISPACE backend** (opaque token) — no more `GET /messenger/m-me-link`.
 
@@ -297,8 +298,9 @@ All endpoints below require header **`X-Internal-Api-Key`** (or `Authorization: 
 | POST | `/v1/messenger/ops/doppler-sync` | — | Doppler webhook runtime sync + container restart |
 | GET | `/v1/messenger/ops/llm-usage/summary` | Query: `psid` **or** `userId`; `from`/`to` (YYYY-MM-DD, default today) | Total tokens + estimated USD per feature for one student |
 | GET | `/v1/messenger/ops/llm-usage/fleet` | Query: `date` (YYYY-MM-DD, default today) | Total tokens + estimated USD fleet-wide by feature |
-| GET | `/health/db` | — | DB health check |
-| GET | `/health/redis` | — | Redis health check (503 when enabled but unreachable) |
+| GET | `/health` | — | **Public liveness** — generic `{ "status": "ok" }` only, never leaks dependency details |
+| GET | `/health/ready` | — | **Public readiness** — 200 only when DB and (if configured) Redis are reachable; 503 `{ "status": "error" }` status-only (deploy gate uses this path) |
+| GET | `/health/detail` | — | **Internal** (`X-Internal-Api-Key`) — full DB/Redis connection detail for ops |
 | GET | `/metrics` | — | Prometheus metrics scrape |
 
 Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP — no API key needed.
@@ -319,6 +321,7 @@ Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP �
 | `messenger-message-log-cleanup` | `0 0 3 * * 1` (Monday 03:00 ICT) | `MessengerMessageLogCleanupService` — purge old message_logs |
 | `messenger-chat-queue-flush` | `*/2 * * * * *` (every 2 sec) | `MessengerChatQueueWorkerService` — flush debounced queue (distributed mode) |
 | `webhook-inbound-retry` | `*/30 * * * * *` (every 30 sec) | `PlatformWebhookInboundRetryCronService` — replay `webhook_inbound_events` (bounded backoff, per-platform advisory lock) |
+| `webhook-inbound-cleanup` | `0 15 3 * * *` (03:15 ICT daily) | `PlatformWebhookInboundCleanupService` — purge terminal (`completed`/`abandoned`) raw-payload rows older than `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30; `WEBHOOK_INBOUND_CLEANUP_ENABLED=false` disables) |
 | `chat-quota-events-cleanup` | `0 30 3 1 * *` (1st of month 03:30 ICT) | `ChatQuotaEventCleanupCronService` — purge old chat_quota_events |
 | `llm-usage-cleanup` | `0 0 4 1 * *` (1st of month 04:00 ICT) | `LlmUsageCleanupCronService` — purge old llm_usage_events |
 | `llm-safety-cleanup` | `0 3 * * *` (daily 03:00 ICT) | `LlmSafetyCleanupService` — purge old llm_safety_events |
@@ -380,7 +383,7 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 - **Deploy:** `DEPLOY_DIR`, `DEPLOY_ENV_FILE`, `DEPLOY_COMPOSE_FILE`, `DEPLOY_CONTAINER_NAME`, `GHCR_PULL_TOKEN`, `GHCR_USER`, `DEPLOY_UID`, `DEPLOY_GID`, `DOCKER_GID`
 - **Exam reports:** `WISPACE_REPORT_DAYS_BEFORE_EXAM_MIN/MAX`, `REPORT_SEND_CONCURRENCY`
 - **DB:** `DB_HOST`, `DB_PORT`, `DB_NAME` (`ai_chat_bot_db`), `DB_USER`, `DB_PASSWORD`, `DB_MIGRATIONS_RUN`, `DB_POOL_SIZE`, `DB_POOL_IDLE_TIMEOUT_MS`, `DB_POOL_CONNECTION_TIMEOUT_MS`
-- **Redis (optional, VPS):** `REDIS_ENABLED`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` — R0–R4 stores + R5 user display cache; `GET /health/redis` when enabled
+- **Redis (optional, VPS):** `REDIS_ENABLED`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` — R0–R4 stores + R5 user display cache; readiness via `GET /health/ready` when enabled
   - Redis runs **standalone on VPS** (folder `~/redis`, Docker publish `6379`) — not in the app repo. Local + prod share `REDIS_HOST` = VPS IP.
 - **User display cache (R5):** `USER_DISPLAY_NAME_CACHE_ENABLED`, `USER_DISPLAY_NAME_CACHE_TTL_SECONDS`
 

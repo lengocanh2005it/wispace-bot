@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import {
   MAPPING_READER,
   type MappingReaderPort,
@@ -170,7 +170,9 @@ export class StudyReminderSyncService {
           error: this.toErrorMessage(error),
         });
         this.logger.warn(
-          `Failed to sync for externalUserId=${mapping.externalUserId}: ${this.toErrorMessage(error)}`,
+          `Failed to sync for externalUserId=${maskExternalId(
+            mapping.externalUserId,
+          )}: ${this.toErrorMessage(error)}`,
         );
       }
     }

@@ -4,6 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { maskExternalId } from '@wispace/bot-common';
 import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import type {
   WispaceLinkVerifyFailureReason,
@@ -140,7 +141,9 @@ export class WispaceTokenVerifyService {
     }
 
     this.logger.log(
-      `WISPACE verify-${this.platform}-token OK userId=${userId} token=${token.slice(0, 8)}…`,
+      `WISPACE verify-${this.platform}-token OK userId=${maskExternalId(
+        userId,
+      )} token=${token.slice(0, 8)}…`,
     );
 
     return { valid: true, userId };

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalIdInText } from '@wispace/bot-common';
 import {
   WebhookDeadLetterEntity,
   type WebhookDeadLetterEntry,
@@ -36,7 +36,10 @@ export class PlatformDeadLetterService {
         externalUserId: input.externalUserId,
         direction: input.direction ?? 'inbound',
         rawPayload: input.rawPayload as object,
-        errorMessage: input.errorMessage,
+        errorMessage: maskExternalIdInText(
+          input.errorMessage,
+          input.externalUserId,
+        ),
         status: 'pending',
       });
     } catch (error) {
@@ -70,20 +73,28 @@ export class PlatformDeadLetterService {
     });
   }
 
-  async markAbandoned(id: number, reason: string): Promise<void> {
+  async markAbandoned(
+    id: number,
+    reason: string,
+    externalUserId?: string,
+  ): Promise<void> {
     await this.repo.update(id, {
       status: 'abandoned',
-      errorMessage: reason,
+      errorMessage: maskExternalIdInText(reason, externalUserId),
     });
   }
 
-  async incrementRetry(id: number, errorMessage: string): Promise<void> {
+  async incrementRetry(
+    id: number,
+    errorMessage: string,
+    externalUserId?: string,
+  ): Promise<void> {
     await this.repo
       .createQueryBuilder()
       .update(WebhookDeadLetterEntity)
       .set({
         retryCount: () => 'retry_count + 1',
-        errorMessage,
+        errorMessage: maskExternalIdInText(errorMessage, externalUserId),
       })
       .where('id = :id', { id })
       .execute();

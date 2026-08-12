@@ -41,4 +41,14 @@ describe('InternalApiKeyGuard', () => {
       guard.canActivate(createContext({ 'x-internal-api-key': 'wrong' })),
     ).toThrow(UnauthorizedException);
   });
+
+  it('rejects request without a key', () => {
+    const guard = new InternalApiKeyGuard({
+      get: () => 'secret-key',
+    } as unknown as ConfigService);
+
+    expect(() => guard.canActivate(createContext({}))).toThrow(
+      UnauthorizedException,
+    );
+  });
 });

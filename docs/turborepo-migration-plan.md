@@ -113,7 +113,7 @@ Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 6/7 real WISPA
 - LLM report enrichment via `ZaloStudentReportService`
 - Webhook dedupe via Redis (`@wispace/bot-common`)
 - Chat history via `@wispace/chat-history` (memory + Redis)
-- Health/redis endpoint (`GET /health/redis`)
+- Health endpoints via shared `HealthController` (`GET /health` liveness, `GET /health/ready` readiness, `GET /health/detail` internal)
 - Doppler webhook endpoint (`POST /zalo/ops/doppler-sync`)
 
 **Recently added (commits 9b9ff9a, 66352b7, ad8a196):**
@@ -141,5 +141,5 @@ Single `deploy-bots.yml` with 3 jobs (messenger/discord/zalo) + shared `deploy-b
 | 1 | Turborepo scaffold + extract `packages/llm-agent` + discord/zalo placeholders | ✅ Completed |
 | 2 | Generalize DB key `(platform, external_user_id)` | ✅ Completed — migration ran on VPS production, verified via SSH |
 | 3 | Implement Discord bot | ✅ Features complete (chat + quota + account-linking OAuth2 + 6/7 real tools + reschedule + 08:00 report cron + leader-election + retry dispatch + study reminders + dead letter + message log + CI/CD workflow + deploy scripts) — no real end-to-end testing yet |
-| 4 | Implement Zalo bot | ✅ Features complete (chat + quota + account-linking + 6/7 tools + LLM report + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD + Doppler webhook + health/redis + Redis dedupe + chat queue) |
+| 4 | Implement Zalo bot | ✅ Features complete (chat + quota + account-linking + 6/7 tools + LLM report + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD + Doppler webhook + health endpoints + Redis dedupe + chat queue) |
 | 5 | Fully independent CI/CD | ✅ Single `deploy-bots.yml` with 3 jobs (messenger/discord/zalo) + shared `deploy-bot-reusable.yml` + `deploy/Dockerfile.bot` |

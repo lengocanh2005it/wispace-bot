@@ -5,6 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { maskExternalId } from '@wispace/bot-common';
 import { StudentReportService } from '@messenger/modules/student-report/application/services/student-report.service';
 import { StudentReportRetryableError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
 import { buildStudentReportApiRetryMessage } from '@messenger/modules/student-report/application/messages/student-report.messages';
@@ -97,7 +98,9 @@ export class MessengerReportDeliveryService {
     });
 
     this.logger.log(
-      `Registered PSID ${psid} (userId=${context.userId}, topic=${context.topic}, cadence=${context.cadence})`,
+      `Registered PSID ${maskExternalId(psid)} (userId=${maskExternalId(
+        context.userId,
+      )}, topic=${context.topic}, cadence=${context.cadence})`,
     );
 
     await this.outbound.sendTextViaPsid({
@@ -148,7 +151,9 @@ export class MessengerReportDeliveryService {
     } catch (error) {
       if (isProactiveMessenger24hError(error)) {
         this.logger.warn(
-          `MESSENGER_24H_WINDOW psid=${params.psid} messageType=${params.messageType}`,
+          `MESSENGER_24H_WINDOW psid=${maskExternalId(
+            params.psid,
+          )} messageType=${params.messageType}`,
         );
         throw new ProactiveMessenger24hSkippedError(
           params.psid,

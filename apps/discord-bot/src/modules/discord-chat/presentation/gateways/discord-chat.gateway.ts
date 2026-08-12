@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelType } from 'discord.js';
 import { Button, Context, On, Once } from 'necord';
@@ -39,7 +39,7 @@ const SELF_INTRO_TEMPLATE =
 function formatError(error: unknown): string {
   if (error instanceof WispaceApiError) {
     return (
-      `WispaceApiError: statusCode=${error.statusCode} endpoint=${error.endpoint} externalId=${error.externalId}\n` +
+      `WispaceApiError: statusCode=${error.statusCode} endpoint=${error.endpoint} externalId=${maskExternalId(error.externalId)}\n` +
       (error.stack ?? error.message)
     );
   }
@@ -90,13 +90,15 @@ export class DiscordChatGateway {
         );
         this.pendingJoinService.markCompleted(pending.token, dmChannelId);
         this.logger.log(
-          `Auto-completed account link for discordUserId=${discordUserId} wispaceUserId=${pending.entry.wispaceUserId}`,
+          `Auto-completed account link for discordUserId=${maskExternalId(
+            discordUserId,
+          )} wispaceUserId=${maskExternalId(pending.entry.wispaceUserId)}`,
         );
       } catch (error) {
         this.logger.error(
-          `Auto-complete link failed for discordUserId=${discordUserId}: ${errorMessage(
-            error,
-          )}`,
+          `Auto-complete link failed for discordUserId=${maskExternalId(
+            discordUserId,
+          )}: ${errorMessage(error)}`,
         );
       }
     }
@@ -124,7 +126,9 @@ export class DiscordChatGateway {
     }
 
     this.logger.log(
-      `Welcome sent to new member discordUserId=${discordUserId} displayName=${displayName} channelId=${welcomeChannelId ?? 'none'}`,
+      `Welcome sent to new member discordUserId=${maskExternalId(
+        discordUserId,
+      )} displayName=${displayName} channelId=${welcomeChannelId ?? 'none'}`,
     );
   }
 
@@ -197,7 +201,9 @@ export class DiscordChatGateway {
       );
     } catch (error) {
       this.logger.error(
-        `Chat enqueue failed for discordUserId=${discordUserId}`,
+        `Chat enqueue failed for discordUserId=${maskExternalId(
+          discordUserId,
+        )}`,
         formatError(error),
       );
       if (isServerChannel) {

@@ -27,6 +27,18 @@ describe('DiscordOutboundService', () => {
     );
   });
 
+  it('redacts the raw discord id from thrown delivery errors', async () => {
+    const fetch = jest.fn().mockRejectedValue(new Error('cannot DM user'));
+
+    const service = new DiscordOutboundService(buildClientStub(fetch));
+
+    const err = await service
+      .sendText('discord-1', 'hello')
+      .catch((e: unknown) => e);
+    expect((err as Error).message).not.toContain('discord-1');
+    expect((err as Error).message).toContain('di…');
+  });
+
   it('sends a reschedule confirmation DM with confirm/cancel buttons', async () => {
     const send = jest
       .fn<Promise<void>, [{ content: string; components: unknown[] }]>()

@@ -10,6 +10,7 @@
 
 import { createPool } from './_db.mjs';
 import { parseArgs, printHelp } from './_args.mjs';
+import { maskExternalId, maskExternalIdInText } from '@wispace/bot-common';
 
 const DEFAULT_BASE_URL = 'http://localhost:3000';
 const DEFAULT_LIMIT = 20;
@@ -72,10 +73,12 @@ async function cmdList(pool, limit) {
   console.log(`Pending dead-letter entries (up to ${limit}):\n`);
   for (const row of rows) {
     console.log(
-      `  id=${row.id}  psid=${row.psid ?? 'n/a'}  mid=${row.message_mid ?? 'n/a'}` +
+      `  id=${row.id}  psid=${maskExternalId(row.psid)}  mid=${row.message_mid ?? 'n/a'}` +
       `  retries=${row.retry_count}  created=${row.created_at.toISOString()}`,
     );
-    console.log(`    error: ${row.error_message}`);
+    console.log(
+      `    error: ${maskExternalIdInText(row.error_message ?? '', row.psid)}`,
+    );
   }
   console.log(`\nTotal: ${rows.length}`);
 }
@@ -130,7 +133,10 @@ async function cmdReplay(pool, limit, baseUrl) {
       const eventFailed = result?.failures?.length > 0;
 
       if (eventFailed) {
-        const errMsg = result.failures[0]?.error ?? 'unknown error';
+        const errMsg = maskExternalIdInText(
+          result.failures[0]?.error ?? 'unknown error',
+          row.psid,
+        );
         await pool.query(
           `UPDATE messenger_webhook_dead_letters
            SET retry_count = retry_count + 1,
@@ -139,7 +145,9 @@ async function cmdReplay(pool, limit, baseUrl) {
            WHERE id = $1`,
           [row.id, errMsg],
         );
-        console.log(`  [FAIL] id=${row.id} psid=${row.psid ?? 'n/a'}: ${errMsg}`);
+        console.log(
+          `  [FAIL] id=${row.id} psid=${maskExternalId(row.psid)}: ${errMsg}`,
+        );
         failed += 1;
       } else {
         await pool.query(
@@ -148,11 +156,14 @@ async function cmdReplay(pool, limit, baseUrl) {
            WHERE id = $1`,
           [row.id],
         );
-        console.log(`  [OK]   id=${row.id} psid=${row.psid ?? 'n/a'}`);
+        console.log(`  [OK]   id=${row.id} psid=${maskExternalId(row.psid)}`);
         replayed += 1;
       }
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      const errMsg = maskExternalIdInText(
+        err instanceof Error ? err.message : String(err),
+        row.psid,
+      );
       await pool.query(
         `UPDATE messenger_webhook_dead_letters
          SET retry_count = retry_count + 1,
@@ -161,7 +172,9 @@ async function cmdReplay(pool, limit, baseUrl) {
          WHERE id = $1`,
         [row.id, errMsg],
       );
-      console.log(`  [ERR]  id=${row.id} psid=${row.psid ?? 'n/a'}: ${errMsg}`);
+      console.log(
+        `  [ERR]  id=${row.id} psid=${maskExternalId(row.psid)}: ${errMsg}`,
+      );
       failed += 1;
     }
   }

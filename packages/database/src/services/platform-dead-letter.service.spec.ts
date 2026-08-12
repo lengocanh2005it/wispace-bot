@@ -44,18 +44,18 @@ describe('PlatformDeadLetterService', () => {
     const { service, saveMock } = buildService('discord');
 
     await service.save({
-      externalUserId: 'u1',
-      rawPayload: { discordUserId: 'u1', text: 'hi' },
-      errorMessage: 'send failed',
+      externalUserId: 'u1234567890',
+      rawPayload: { discordUserId: 'u1234567890', text: 'hi' },
+      errorMessage: 'send failed for u1234567890',
       direction: 'outbound',
     });
 
     expect(saveMock).toHaveBeenCalledWith({
       platform: 'discord',
-      externalUserId: 'u1',
+      externalUserId: 'u1234567890',
       direction: 'outbound',
-      rawPayload: { discordUserId: 'u1', text: 'hi' },
-      errorMessage: 'send failed',
+      rawPayload: { discordUserId: 'u1234567890', text: 'hi' },
+      errorMessage: 'send failed for u123…7890',
       status: 'pending',
     });
   });
@@ -93,6 +93,21 @@ describe('PlatformDeadLetterService', () => {
     expect(updateMock).toHaveBeenCalledWith(42, {
       status: 'abandoned',
       errorMessage: 'max retries exceeded',
+    });
+  });
+
+  it('masks external ids in persisted abandoned reasons', async () => {
+    const { service, updateMock } = buildService('discord');
+
+    await service.markAbandoned(
+      42,
+      'failed for user-1234567890',
+      'user-1234567890',
+    );
+
+    expect(updateMock).toHaveBeenCalledWith(42, {
+      status: 'abandoned',
+      errorMessage: 'failed for user…7890',
     });
   });
 

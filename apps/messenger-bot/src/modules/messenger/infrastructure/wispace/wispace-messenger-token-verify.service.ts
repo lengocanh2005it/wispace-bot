@@ -4,6 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { maskExternalId } from '@wispace/bot-common';
 import {
   isValidCadence,
   normalizeCadence,
@@ -148,11 +149,15 @@ export class WispaceMessengerTokenVerifyService {
       typeof record.username === 'string' ? record.username.trim() : undefined;
     if (username) {
       this.logger.log(
-        `WISPACE verify-messenger-token OK userId=${userId} username=${username} token=${token.slice(0, 8)}…`,
+        `WISPACE verify-messenger-token OK userId=${maskExternalId(
+          userId,
+        )} username=${username} token=${token.slice(0, 8)}…`,
       );
     } else {
       this.logger.log(
-        `WISPACE verify-messenger-token OK userId=${userId} token=${token.slice(0, 8)}…`,
+        `WISPACE verify-messenger-token OK userId=${maskExternalId(
+          userId,
+        )} token=${token.slice(0, 8)}…`,
       );
     }
 

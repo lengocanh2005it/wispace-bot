@@ -3,6 +3,7 @@ import {
   todayInTimezone as todayUsageDate,
   subtractMs,
 } from '@wispace/date-utils';
+import { maskExternalId } from '@wispace/bot-common';
 import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
 import type {
   BurstCounterPort,
@@ -114,7 +115,9 @@ export class ChatRateLimitCore {
       }
 
       this.logger.warn(
-        `CHAT_QUOTA_REFUND externalUserId=${externalUserId} idempotencyKey=${idempotencyKey} usageDate=${usageDate}`,
+        `CHAT_QUOTA_REFUND externalUserId=${maskExternalId(
+          externalUserId,
+        )} idempotencyKey=${idempotencyKey} usageDate=${usageDate}`,
       );
     }
   }
@@ -266,7 +269,9 @@ export class ChatRateLimitCore {
 
     if (recovery === 'reopened') {
       this.logger.log(
-        `Reopened idempotency key=${input.idempotencyKey} externalUserId=${externalUserId} for retry`,
+        `Reopened idempotency key=${input.idempotencyKey} externalUserId=${maskExternalId(
+          externalUserId,
+        )} for retry`,
       );
       outcome = await this.repository.reserveFreeFormSlotInTransaction({
         externalUserId,
@@ -295,14 +300,18 @@ export class ChatRateLimitCore {
   ): void {
     if (recovery === 'in_flight') {
       this.logger.log(
-        `Idempotency in flight key=${idempotencyKey} externalUserId=${externalUserId}; skip duplicate`,
+        `Idempotency in flight key=${idempotencyKey} externalUserId=${maskExternalId(
+          externalUserId,
+        )}; skip duplicate`,
       );
       return;
     }
 
     if (recovery === 'completed') {
       this.logger.log(
-        `Idempotency already completed key=${idempotencyKey} externalUserId=${externalUserId}; skip duplicate`,
+        `Idempotency already completed key=${idempotencyKey} externalUserId=${maskExternalId(
+          externalUserId,
+        )}; skip duplicate`,
       );
     }
   }
@@ -315,7 +324,9 @@ export class ChatRateLimitCore {
     limit: number,
   ): void {
     this.logger.warn(
-      `CHAT_QUOTA_DENY reason=${reason} externalUserId=${externalUserId} idempotencyKey=${idempotencyKey} used=${used} limit=${limit}`,
+      `CHAT_QUOTA_DENY reason=${reason} externalUserId=${maskExternalId(
+        externalUserId,
+      )} idempotencyKey=${idempotencyKey} used=${used} limit=${limit}`,
     );
   }
 

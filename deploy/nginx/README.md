@@ -31,10 +31,10 @@ docker compose -f docker-compose.prod.yml up -d --force-recreate
 ## Verify
 
 ```bash
-curl -sf https://aiassist.aihubproduction.com/health/db
-curl -sf --connect-timeout 3 http://127.0.0.1:5007/health/db
+curl -sf https://aiassist.aihubproduction.com/health/ready
+curl -sf --connect-timeout 3 http://127.0.0.1:5007/health/ready
 # Public IP:5007 should fail / timeout
-curl -sf --connect-timeout 3 http://$(curl -s ifconfig.me):5007/health/db && echo UNEXPECTED || echo OK_blocked
+curl -sf --connect-timeout 3 http://$(curl -s ifconfig.me):5007/health/ready && echo UNEXPECTED || echo OK_blocked
 ```
 
 ## Rate limit

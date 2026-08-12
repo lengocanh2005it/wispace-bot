@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { maskExternalIdInText } from '@wispace/bot-common';
 import { WebhookInboundEventEntity } from '../entities/webhook-inbound-event.entity';
 import type { Platform } from '../types';
 
@@ -154,7 +155,7 @@ export class PlatformWebhookInboundEventService {
     opts: InboundRetryConfig,
   ): Promise<void> {
     const row = await this.repo.findOne({
-      select: { id: true, retryCount: true },
+      select: { id: true, retryCount: true, externalUserId: true },
       where: { id },
     });
     const nextRetryCount = (row?.retryCount ?? 0) + 1;
@@ -169,10 +170,31 @@ export class PlatformWebhookInboundEventService {
     await this.repo.update(id, {
       status: nextRetryCount >= opts.maxRetries ? 'abandoned' : 'failed',
       retryCount: nextRetryCount,
-      lastError: errorMessage,
+      lastError: maskExternalIdInText(errorMessage, row?.externalUserId),
       nextRetryAt: nextRetryCount >= opts.maxRetries ? null : nextRetryAt,
       processedAt: new Date(),
     });
+  }
+
+  /**
+   * Retention cleanup for raw payloads: delete terminal rows
+   * (`completed`/`abandoned`) older than `cutoff`. Non-terminal rows
+   * (`pending`/`failed`/`processing`) are never touched — the durable inbox
+   * recovery flow must keep working.
+   */
+  async deleteTerminalOlderThan(cutoff: Date): Promise<number> {
+    const result = await this.repo
+      .createQueryBuilder()
+      .delete()
+      .from(WebhookInboundEventEntity)
+      .where('platform = :platform', { platform: this.platform })
+      .andWhere('status IN (:...statuses)', {
+        statuses: ['completed', 'abandoned'],
+      })
+      .andWhere('created_at < :cutoff', { cutoff })
+      .execute();
+
+    return result.affected ?? 0;
   }
 
   /**

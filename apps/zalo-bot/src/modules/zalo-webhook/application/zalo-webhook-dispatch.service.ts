@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { maskExternalId } from '@wispace/bot-common';
 import type { ZaloWebhookEvent } from '../domain/entities/zalo-webhook-event.types';
 import { ZaloChatService } from '../../zalo-chat/application/services/zalo-chat.service';
 
@@ -33,7 +34,9 @@ export class ZaloWebhookDispatchService {
         return;
       }
       case 'unfollow':
-        this.logger.log(`User unfollowed: ${event.follower?.id ?? 'unknown'}`);
+        this.logger.log(
+          `User unfollowed: ${maskExternalId(event.follower?.id ?? 'unknown')}`,
+        );
         return;
       default:
         if (event.event_name.startsWith('oa_send_')) {

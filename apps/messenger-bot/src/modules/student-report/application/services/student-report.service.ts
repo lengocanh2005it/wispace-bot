@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { maskExternalId } from '@wispace/bot-common';
 import {
   StudentReportCore,
   type StudentReportPorts,
@@ -55,7 +56,7 @@ export class StudentReportService {
     const correlationId = `${psid}:${todayUsageDate(timezone)}`;
     const cached = this.reportCache.get(correlationId);
     if (cached) {
-      this.logger.debug(`Report cache hit psid=${psid}`);
+      this.logger.debug(`Report cache hit psid=${maskExternalId(psid)}`);
       return Promise.resolve(cached.text);
     }
 

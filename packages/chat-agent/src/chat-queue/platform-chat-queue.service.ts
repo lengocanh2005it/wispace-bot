@@ -11,7 +11,7 @@ import type {
   RateLimiterPort,
 } from '@wispace/chat-pipeline';
 import { ChatPipeline } from '@wispace/chat-pipeline';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { CHAT_FAILURE_FALLBACK_MESSAGE } from '@wispace/llm-agent';
 import type { PlatformChatQueueOptions } from '../agent/platform-agent.types';
 
@@ -67,7 +67,9 @@ export class PlatformChatQueueService implements OnModuleDestroy {
           ? ` refundError=${errorMessage(ctx.refundError)}`
           : '';
         this.logger.error(
-          `chat_failure phase=original externalUserId=${ctx.externalUserId} error=${errorMessage(ctx.error)}${refundError}`,
+          `chat_failure phase=original externalUserId=${maskExternalId(
+            ctx.externalUserId,
+          )} error=${errorMessage(ctx.error)}${refundError}`,
         );
         try {
           await directTextSender.sendText(
@@ -76,7 +78,9 @@ export class PlatformChatQueueService implements OnModuleDestroy {
           );
         } catch (fallbackError) {
           this.logger.error(
-            `chat_failure phase=fallback_delivery externalUserId=${ctx.externalUserId} error=${errorMessage(fallbackError)}`,
+            `chat_failure phase=fallback_delivery externalUserId=${maskExternalId(
+              ctx.externalUserId,
+            )} error=${errorMessage(fallbackError)}`,
           );
         }
       },
@@ -126,7 +130,9 @@ export class PlatformChatQueueService implements OnModuleDestroy {
         },
         onPendingDropped: (externalUserId, droppedCount) => {
           this.logger.warn(
-            `Dropped ${droppedCount} pending message(s) for ${externalUserId} (cap exceeded)`,
+            `Dropped ${droppedCount} pending message(s) for ${maskExternalId(
+              externalUserId,
+            )} (cap exceeded)`,
           );
         },
       },

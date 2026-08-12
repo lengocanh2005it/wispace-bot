@@ -12,4 +12,6 @@ export const ADVISORY_LOCKS = {
   ZALO_DEAD_LETTER_RETRY: 884_200_931,
   /** Zalo: inbound webhook inbox retry cron (every 30s, `webhook_inbound_events`). */
   ZALO_WEBHOOK_INBOUND_RETRY: 884_200_932,
+  /** Zalo: inbound webhook inbox raw-payload retention cleanup (03:15 ICT daily). */
+  ZALO_WEBHOOK_INBOUND_CLEANUP: 884_200_933,
 } as const;

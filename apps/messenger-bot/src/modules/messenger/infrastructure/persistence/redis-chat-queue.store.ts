@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
-import { errorMessage, REDIS_CLIENT } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskExternalId,
+  REDIS_CLIENT,
+} from '@wispace/bot-common';
 import type { RedisClientPort } from '@wispace/bot-common';
 import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { CHAT_QUEUE_BUFFER_TTL_SECONDS } from '../../domain/entities/messenger-store.types';
@@ -299,7 +303,9 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
 
     if (acquired !== 'OK') {
       if (failOnError) {
-        throw new Error(`Redis chat queue lock busy for psid=${psid}`);
+        throw new Error(
+          `Redis chat queue lock busy for psid=${maskExternalId(psid)}`,
+        );
       }
       return null;
     }
@@ -314,7 +320,9 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       operationFailed = true;
       operationError = error;
       this.logger.warn(
-        `Redis queue operation failed psid=${psid}: ${errorMessage(error)}`,
+        `Redis queue operation failed psid=${maskExternalId(
+          psid,
+        )}: ${errorMessage(error)}`,
       );
     }
 
@@ -322,7 +330,9 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       await this.releaseLock(client, lockKey, lockValue);
     } catch (error) {
       this.logger.error(
-        `Redis queue lock release failed psid=${psid}: ${errorMessage(error)}`,
+        `Redis queue lock release failed psid=${maskExternalId(
+          psid,
+        )}: ${errorMessage(error)}`,
       );
       if (!operationFailed) {
         throw error;

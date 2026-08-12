@@ -1,6 +1,7 @@
 import { Test } from '@nestjs/testing';
 import { DataSource, Repository } from 'typeorm';
 import { AppModule } from './app.module';
+import { InternalApiKeyGuard } from '@wispace/bot-common';
 
 /**
  * Boot smoke test: compiles AppModule and runs app.init() so Nest resolves
@@ -58,6 +59,10 @@ describe('AppModule boot smoke', () => {
       .overrideProvider(DataSource)
       .useValue(dataSourceMock)
       .compile();
+
+    expect(moduleRef.get(InternalApiKeyGuard)).toBeInstanceOf(
+      InternalApiKeyGuard,
+    );
 
     const app = moduleRef.createNestApplication({ logger: false });
     await app.init();

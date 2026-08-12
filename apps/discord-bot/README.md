@@ -11,7 +11,7 @@ See the full plan at [docs/turborepo-migration-plan.md](../../docs/turborepo-mig
 - Quota/rate-limit + LLM usage/safety event persistence shared via `@wispace/chat-metering` (platform='discord') — see `modules/chat-metering/`.
 - Account-linking Discord ↔ WISPACE userId via OAuth2 (`GET /v1/discord/oauth/callback`) — see [docs/discord-account-linking.md](docs/discord-account-linking.md).
 - 6/7 WISPACE tools call real Wispace API via `@wispace/wispace-client` (header `x-discordid`): `get_user_goals`, `get_learning_progress_report`, `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder`, `reschedule_study_session` (confirm/cancel via Discord button).
-- `GET /health` for deploy health check.
+- `GET /health/ready` for deploy readiness gate (public, status-only).
 - Custom prompt: `src/shared/prompts/discord-chat.system.txt`.
 
 **Not yet done / TODO:**

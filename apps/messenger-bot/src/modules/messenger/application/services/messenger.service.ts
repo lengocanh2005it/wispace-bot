@@ -1,7 +1,12 @@
 import { createHash } from 'node:crypto';
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskEventId,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common';
 import {
   PlatformWebhookInboundEventService,
   readInboundRetryConfig,
@@ -131,7 +136,12 @@ export class MessengerService {
         });
 
         if (!inserted) {
-          this.logger.debug(`Skipping duplicate webhook event id=${eventId}`);
+          this.logger.debug(
+            `Skipping duplicate webhook event id=${maskEventId(
+              eventId,
+              event.sender?.id,
+            )}`,
+          );
           continue;
         }
 
@@ -140,7 +150,10 @@ export class MessengerService {
         // process the event on its tick).
         if (id !== undefined && !(await this.inboundEvents.claim(id))) {
           this.logger.debug(
-            `Webhook event id=${eventId} already claimed — deferring to retry cron`,
+            `Webhook event id=${maskEventId(
+              eventId,
+              event.sender?.id,
+            )} already claimed — deferring to retry cron`,
           );
           continue;
         }
@@ -154,7 +167,10 @@ export class MessengerService {
         }
 
         if (processingError !== undefined) {
-          const errorMessageValue = errorMessage(processingError);
+          const errorMessageValue = maskExternalIdInText(
+            errorMessage(processingError),
+            event.sender?.id,
+          );
           failures.push({ psid: event.sender?.id, error: errorMessageValue });
 
           this.logger.warn(

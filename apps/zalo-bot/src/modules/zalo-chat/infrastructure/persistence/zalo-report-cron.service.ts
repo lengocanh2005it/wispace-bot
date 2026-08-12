@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -102,7 +102,9 @@ export class ZaloReportCronService {
       );
       if (window.skip) {
         this.logger.log(
-          `Skip Zalo user ${link.externalUserId}: outside exam window or schedule unavailable`,
+          `Skip Zalo user ${maskExternalId(
+            link.externalUserId,
+          )}: outside exam window or schedule unavailable`,
         );
         return 'skipped';
       }
@@ -111,7 +113,9 @@ export class ZaloReportCronService {
     if (link.userId) {
       if (sentUserIds.has(link.userId)) {
         this.logger.log(
-          `Report already sent on another platform for userId=${link.userId}, skipping Zalo`,
+          `Report already sent on another platform for userId=${maskExternalId(
+            link.userId,
+          )}, skipping Zalo`,
         );
         return 'skipped';
       }
@@ -122,7 +126,9 @@ export class ZaloReportCronService {
       });
       if (!claimed) {
         this.logger.log(
-          `Report already claimed by another instance for Zalo user ${link.externalUserId}, skipping`,
+          `Report already claimed by another instance for Zalo user ${maskExternalId(
+            link.externalUserId,
+          )}, skipping`,
         );
         return 'skipped';
       }
@@ -139,7 +145,9 @@ export class ZaloReportCronService {
           reportDate,
         });
       }
-      this.logger.log(`Report sent to Zalo user ${link.externalUserId}`);
+      this.logger.log(
+        `Report sent to Zalo user ${maskExternalId(link.externalUserId)}`,
+      );
       return 'sent';
     } catch (error) {
       if (link.userId) {
@@ -150,13 +158,17 @@ export class ZaloReportCronService {
           })
           .catch((releaseError) => {
             this.logger.error(
-              `Failed to release report claim for Zalo user ${link.externalUserId}: ${errorMessage(releaseError)}`,
+              `Failed to release report claim for Zalo user ${maskExternalId(
+                link.externalUserId,
+              )}: ${errorMessage(releaseError)}`,
             );
           });
       }
       if (error instanceof ZaloSendError && error.is48hWindowError()) {
         this.logger.warn(
-          `48h window closed for Zalo user ${link.externalUserId}, report not delivered`,
+          `48h window closed for Zalo user ${maskExternalId(
+            link.externalUserId,
+          )}, report not delivered`,
         );
         return 'skipped';
       }
@@ -165,12 +177,16 @@ export class ZaloReportCronService {
         (error.statusCode === 401 || error.statusCode === 403)
       ) {
         this.logger.warn(
-          `Wispace access denied for Zalo user ${link.externalUserId}: ${error.message}`,
+          `Wispace access denied for Zalo user ${maskExternalId(
+            link.externalUserId,
+          )}: ${error.message}`,
         );
         return 'skipped';
       }
       this.logger.error(
-        `Failed to send report to Zalo user ${link.externalUserId}: ${errorMessage(error)}`,
+        `Failed to send report to Zalo user ${maskExternalId(
+          link.externalUserId,
+        )}: ${errorMessage(error)}`,
       );
       return 'error';
     }

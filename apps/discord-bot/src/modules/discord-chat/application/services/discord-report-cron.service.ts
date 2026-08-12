@@ -9,6 +9,7 @@ import {
   todayReportDate,
   runBatched,
 } from '@wispace/scheduler-core';
+import { maskExternalId } from '@wispace/bot-common';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
 import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -106,7 +107,9 @@ export class DiscordReportCronService {
         );
         if (window.skip) {
           this.logger.log(
-            `Skip Discord user ${link.externalUserId}: outside exam window or schedule unavailable`,
+            `Skip Discord user ${maskExternalId(
+              link.externalUserId,
+            )}: outside exam window or schedule unavailable`,
           );
           return { ...ZERO, skipped: 1 };
         }
