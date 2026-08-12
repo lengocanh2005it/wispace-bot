@@ -15,6 +15,36 @@ describe('PlatformChatHistoryService', () => {
     await expect(service.getHistory('user-1')).resolves.toEqual([]);
   });
 
+  it('uses Redis when it becomes available after construction', async () => {
+    let nativeClient: {
+      get: jest.Mock;
+      set: jest.Mock;
+      del: jest.Mock;
+    } | null = null;
+    const configService = {
+      get: (key: string) =>
+        key === 'CHAT_HISTORY_STORE' ? 'redis' : undefined,
+    } as unknown as ConfigService;
+    const redisClient = {
+      getNativeClient: () => nativeClient,
+    };
+    const service = new PlatformChatHistoryService(
+      configService,
+      { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat-history:discord:' },
+      redisClient,
+    );
+
+    nativeClient = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue('OK'),
+      del: jest.fn().mockResolvedValue(1),
+    };
+
+    await service.appendTurn('user-1', 'hello', 'hi there');
+
+    expect(nativeClient.set).toHaveBeenCalled();
+  });
+
   it('appends user + assistant messages in order', async () => {
     const service = buildService('ZALO_CHAT_HISTORY_', 'chat-history:zalo:');
     await service.appendTurn('user-1', 'hello', 'hi there');

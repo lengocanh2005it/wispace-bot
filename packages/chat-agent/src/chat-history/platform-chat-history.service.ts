@@ -21,7 +21,14 @@ const DEFAULT_TTL_MS = 30 * 60 * 1000;
 @Injectable()
 export class PlatformChatHistoryService {
   private readonly logger = new Logger(PlatformChatHistoryService.name);
-  private readonly store: ChatHistoryStorePort;
+  private readonly memory: MemoryChatHistoryStore;
+  private readonly storeType: string;
+  private readonly ttlMs: number;
+  private readonly maxMessages: number;
+  private readonly options: PlatformChatHistoryOptions;
+  private readonly redisClient?: { getNativeClient(): unknown } | null;
+  private redis?: RedisChatHistoryStore;
+  private redisUnavailableLogged = false;
 
   constructor(
     configService: ConfigService,
@@ -35,33 +42,17 @@ export class PlatformChatHistoryService {
       Number(configService.get<string>(`${options.envPrefix}MAX_MESSAGES`)) ||
       DEFAULT_MAX_MESSAGES;
 
-    const storeType =
+    this.storeType =
       configService.get<string>('CHAT_HISTORY_STORE')?.trim() ?? 'memory';
-
-    const nativeClient = redisClient?.getNativeClient() ?? null;
-
-    if (storeType === 'redis' && nativeClient) {
-      this.store = new RedisChatHistoryStore(
-        nativeClient as unknown as RedisChatHistoryClient,
-        {
-          ttlSec: Math.floor(ttlMs / 1000),
-          maxMessages,
-          keyPrefix: options.keyPrefix,
-        },
-      );
-      this.logger.log('Chat history: Redis backend');
-    } else {
-      this.store = new MemoryChatHistoryStore({ ttlMs, maxMessages });
-      if (storeType === 'redis') {
-        this.logger.warn(
-          'CHAT_HISTORY_STORE=redis but Redis unavailable — falling back to memory',
-        );
-      }
-    }
+    this.ttlMs = ttlMs;
+    this.maxMessages = maxMessages;
+    this.options = options;
+    this.redisClient = redisClient;
+    this.memory = new MemoryChatHistoryStore({ ttlMs, maxMessages });
   }
 
   getHistory(externalUserId: string): Promise<ChatHistoryMessage[]> {
-    return this.store.getHistory(externalUserId);
+    return this.resolveStore().getHistory(externalUserId);
   }
 
   appendTurn(
@@ -69,6 +60,42 @@ export class PlatformChatHistoryService {
     userText: string,
     assistantText: string,
   ): Promise<void> {
-    return this.store.appendTurn(externalUserId, userText, assistantText);
+    return this.resolveStore().appendTurn(
+      externalUserId,
+      userText,
+      assistantText,
+    );
+  }
+
+  private resolveStore(): ChatHistoryStorePort {
+    if (this.storeType !== 'redis') {
+      return this.memory;
+    }
+
+    if (this.redis) {
+      return this.redis;
+    }
+
+    const nativeClient = this.redisClient?.getNativeClient() ?? null;
+    if (!nativeClient) {
+      if (!this.redisUnavailableLogged) {
+        this.redisUnavailableLogged = true;
+        this.logger.warn(
+          'CHAT_HISTORY_STORE=redis but Redis unavailable — falling back to memory',
+        );
+      }
+      return this.memory;
+    }
+
+    this.redis = new RedisChatHistoryStore(
+      nativeClient as unknown as RedisChatHistoryClient,
+      {
+        ttlSec: Math.floor(this.ttlMs / 1000),
+        maxMessages: this.maxMessages,
+        keyPrefix: this.options.keyPrefix,
+      },
+    );
+    this.logger.log('Chat history: Redis backend');
+    return this.redis;
   }
 }
