@@ -221,7 +221,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         // member so the 2s poll stops GET-ing a missing key forever.
         const keyExists = await client.exists(this.bufferKey(psid));
         if (!keyExists) {
-          await client.srem(RedisChatQueueStore.ACTIVE_SET, psid);
+          await this.removeStaleActiveMember(client, psid);
           continue;
         }
 
@@ -349,6 +349,26 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     `;
 
     await client.eval(script, 1, lockKey, lockValue);
+  }
+
+  private async removeStaleActiveMember(
+    client: Redis,
+    psid: string,
+  ): Promise<void> {
+    const script = `
+      if redis.call("exists", KEYS[1]) == 0 then
+        return redis.call("srem", KEYS[2], ARGV[1])
+      end
+      return 0
+    `;
+
+    await client.eval(
+      script,
+      2,
+      this.bufferKey(psid),
+      RedisChatQueueStore.ACTIVE_SET,
+      psid,
+    );
   }
 
   private bufferKey(psid: string): string {

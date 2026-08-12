@@ -342,9 +342,36 @@ describe('RedisChatQueueStore', () => {
     const ready = await store.listPsidsReadyForFlush(25, 300_000);
 
     expect(ready).toEqual([]);
-    expect(client.srem).toHaveBeenCalledWith(
+    expect(client.srem).not.toHaveBeenCalled();
+    expect(client.eval).toHaveBeenCalledWith(
+      expect.stringContaining('redis.call("exists", KEYS[1])'),
+      2,
+      'chat:queue:buffer:psid-1',
       'chat:queue:active-psids',
       'psid-1',
     );
+  });
+
+  it('does not remove an active member restored after the stale read', async () => {
+    let bufferRestored = false;
+    const activePsids = new Set(['psid-1']);
+    const client = createClient({
+      smembers: jest.fn().mockResolvedValue(['psid-1']),
+      exists: jest.fn().mockImplementation(() => {
+        bufferRestored = true;
+        return 0;
+      }),
+      eval: jest.fn().mockImplementation(() => {
+        if (!bufferRestored) {
+          activePsids.delete('psid-1');
+        }
+      }),
+    });
+
+    const store = createStore(client);
+    await store.listPsidsReadyForFlush(25, 300_000);
+
+    expect(activePsids.has('psid-1')).toBe(true);
+    expect(client.srem).not.toHaveBeenCalled();
   });
 });
