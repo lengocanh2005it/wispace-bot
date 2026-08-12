@@ -5,8 +5,8 @@ Turborepo monorepo connecting **WISPACE** (IELTS Writing learning platform) with
 | App | Status |
 |-----|--------|
 | `apps/messenger-bot` | Fully functional — chat, reports, reminders, rate limit |
-| `apps/discord-bot` | Fully functional — chat, quota, pending cap + typing indicator, 6/7 tool handlers, report cron |
-| `apps/zalo-bot` | Fully functional — chat, quota, pending cap, account linking, report cron, study reminders, CI/CD |
+| `apps/discord-bot` | Fully functional — chat, quota, pending cap + typing indicator, queued-failure fallback, 6/7 tool handlers, report cron |
+| `apps/zalo-bot` | Fully functional — chat, quota, pending cap, queued-failure fallback, account linking, report cron, study reminders, CI/CD |
 
 Shared packages (`packages/`): `llm-agent`, `chat-metering`, `chat-agent`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `chat-pipeline`, `study-reminder-shared`, `scheduler-core`, `ops-health`, `bot-metrics`, `cleanup-cron`, `reschedule-confirm`, `bot-common`, `database`, `doppler-sync`, `date-utils`.
 
@@ -43,6 +43,7 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 - **Burst** `CHAT_BURST_PER_MINUTE`/min; **hard cap** concurrent (H3); **hint** "X remaining" (Phase 6).
 - Menu postback, reminder cron, proactive reports — **no** quota deduction.
 - **Single instance:** `CHAT_QUEUE_STORE=memory` (RAM debounce). **≥2 pods:** `CHAT_QUEUE_STORE=redis` (requires `REDIS_ENABLED=true`; `CHAT_QUEUE_SHARED=true` maps to `redis`). Distributed append retries briefly and propagates persistent Redis failures to the durable webhook inbox for recovery.
+- **Discord/Zalo queued failures:** a failure before the main reply is delivered sends one direct generic Vietnamese fallback through the outbound service. The fallback never re-enters the chat queue; original pipeline failures and fallback delivery failures are logged separately, while outbound retry/dead-letter behavior remains unchanged.
 - Details + runbook: [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), section 12 below.
 
 ---

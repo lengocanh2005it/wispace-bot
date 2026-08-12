@@ -33,6 +33,7 @@ export type {
   LlmAgentExecuteCallbacks,
 } from './types';
 export {
+  CHAT_FAILURE_FALLBACK_MESSAGE,
   buildPromptInjectionBlockedMessage,
   buildWispaceScopeRedirectMessage,
   buildGroundingBlockedMessage,

@@ -4,12 +4,15 @@ import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import type { ChatQueueBatch } from '@wispace/chat-queue-core';
 import type {
   AgentPort,
+  ChatPipelineHooks,
   HistoryPort,
   OutboundPort,
+  PipelineContext,
   RateLimiterPort,
 } from '@wispace/chat-pipeline';
 import { ChatPipeline } from '@wispace/chat-pipeline';
 import { errorMessage } from '@wispace/bot-common';
+import { CHAT_FAILURE_FALLBACK_MESSAGE } from '@wispace/llm-agent';
 import type { PlatformChatQueueOptions } from '../agent/platform-agent.types';
 
 const DEFAULT_DEBOUNCE_MS = 2000;
@@ -28,7 +31,7 @@ interface QueueCtx {
  * Debounce chat queue + flush pipeline shared by Discord and Zalo (replaces
  * their near-identical per-app queue services). Platform extras (merged-text
  * cap, typing indicator, server-channel context) are optional — Zalo uses
- * none, so its pipeline gets exactly 4 constructor args like before.
+ * none, but both platforms get the same direct failure fallback.
  */
 @Injectable()
 export class PlatformChatQueueService implements OnModuleDestroy {
@@ -42,7 +45,7 @@ export class PlatformChatQueueService implements OnModuleDestroy {
     history: HistoryPort,
     agent: AgentPort,
     outbound: OutboundPort,
-    pendingTextSender: {
+    directTextSender: {
       sendText(externalUserId: string, text: string): Promise<void>;
     },
     private readonly options: PlatformChatQueueOptions = {},
@@ -58,18 +61,34 @@ export class PlatformChatQueueService implements OnModuleDestroy {
               20,
           );
 
-    const hooks =
-      options.typingIndicator !== undefined
-        ? {
-            onStep: async (step: string, ctx: { externalUserId: string }) => {
-              if (step === 'before_agent') {
-                await options.typingIndicator!(ctx.externalUserId).catch(
-                  () => {},
-                );
-              }
-            },
-          }
-        : undefined;
+    const hooks: ChatPipelineHooks = {
+      onError: async (ctx: PipelineContext) => {
+        const refundError = ctx.refundError
+          ? ` refundError=${errorMessage(ctx.refundError)}`
+          : '';
+        this.logger.error(
+          `chat_failure phase=original externalUserId=${ctx.externalUserId} error=${errorMessage(ctx.error)}${refundError}`,
+        );
+        try {
+          await directTextSender.sendText(
+            ctx.externalUserId,
+            CHAT_FAILURE_FALLBACK_MESSAGE,
+          );
+        } catch (fallbackError) {
+          this.logger.error(
+            `chat_failure phase=fallback_delivery externalUserId=${ctx.externalUserId} error=${errorMessage(fallbackError)}`,
+          );
+        }
+      },
+    };
+
+    if (options.typingIndicator !== undefined) {
+      hooks.onStep = async (step: string, ctx: PipelineContext) => {
+        if (step === 'before_agent') {
+          await options.typingIndicator!(ctx.externalUserId).catch(() => {});
+        }
+      };
+    }
 
     const config =
       options.mergedTextMaxChars !== undefined
@@ -77,9 +96,9 @@ export class PlatformChatQueueService implements OnModuleDestroy {
         : undefined;
 
     this.pipeline =
-      hooks !== undefined && config !== undefined
+      config !== undefined
         ? new ChatPipeline(rateLimiter, history, agent, outbound, hooks, config)
-        : new ChatPipeline(rateLimiter, history, agent, outbound);
+        : new ChatPipeline(rateLimiter, history, agent, outbound, hooks);
 
     this.queue = new DebounceChatQueue<QueueCtx>(
       {
@@ -100,7 +119,7 @@ export class PlatformChatQueueService implements OnModuleDestroy {
       {
         onPendingQueued: (externalUserId, _text, pendingCount) => {
           if (pendingCount === 1) {
-            pendingTextSender
+            directTextSender
               .sendText(externalUserId, PENDING_MESSAGE)
               .catch(() => {});
           }

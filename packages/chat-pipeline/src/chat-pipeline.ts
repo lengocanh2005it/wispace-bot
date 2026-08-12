@@ -58,6 +58,8 @@ export class ChatPipeline {
 
     let delivered = false;
     let usageDate: string | undefined;
+    let refundAttempted = false;
+    let errorHookCalled = false;
 
     try {
       // ── Reserve quota ─────────────────────────────────────────────────────
@@ -113,11 +115,24 @@ export class ChatPipeline {
 
       if (!delivered) {
         if (input.idempotencyKey && usageDate) {
-          await this.rateLimiter.refund(
-            input.externalUserId,
-            usageDate,
-            input.idempotencyKey,
-          );
+          refundAttempted = true;
+          try {
+            await this.rateLimiter.refund(
+              input.externalUserId,
+              usageDate,
+              input.idempotencyKey,
+            );
+          } catch (refundError) {
+            ctx.refundError = refundError;
+          }
+        }
+
+        ctx.error = new Error('Chat response delivery was not confirmed');
+        errorHookCalled = true;
+        try {
+          await this.hooks.onError?.(ctx);
+        } catch {
+          // Error hooks own their delivery-failure logging; preserve the false result.
         }
         return false;
       }
@@ -141,16 +156,28 @@ export class ChatPipeline {
       return delivered;
     } catch (error) {
       // ── Refund on error before delivery ──────────────────────────────────
-      if (!delivered && input.idempotencyKey && usageDate) {
-        await this.rateLimiter.refund(
-          input.externalUserId,
-          usageDate,
-          input.idempotencyKey,
-        );
+      if (!delivered && input.idempotencyKey && usageDate && !refundAttempted) {
+        refundAttempted = true;
+        try {
+          await this.rateLimiter.refund(
+            input.externalUserId,
+            usageDate,
+            input.idempotencyKey,
+          );
+        } catch (refundError) {
+          ctx.refundError = refundError;
+        }
       }
 
       ctx.error = error;
-      await this.hooks.onError?.(ctx);
+      if (!delivered && !errorHookCalled) {
+        errorHookCalled = true;
+        try {
+          await this.hooks.onError?.(ctx);
+        } catch {
+          // Error hooks own their delivery-failure logging; preserve the original error.
+        }
+      }
 
       throw error;
     }

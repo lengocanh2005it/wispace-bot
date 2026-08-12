@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import { ChatPipeline } from '@wispace/chat-pipeline';
 import { PlatformChatQueueService } from './platform-chat-queue.service';
@@ -92,6 +93,9 @@ describe('PlatformChatQueueService', () => {
       expect.anything(),
       expect.anything(),
       expect.anything(),
+      expect.objectContaining({
+        onError: expect.any(Function) as (context: unknown) => Promise<void>,
+      }),
     );
   });
 
@@ -109,6 +113,7 @@ describe('PlatformChatQueueService', () => {
       expect.anything(),
       expect.anything(),
       expect.objectContaining({
+        onError: expect.any(Function) as (context: unknown) => Promise<void>,
         onStep: expect.any(Function) as (
           stage: string,
           context: unknown,
@@ -127,6 +132,64 @@ describe('PlatformChatQueueService', () => {
 
     await onStep('before_send', { externalUserId: 'discord-1' });
     expect(typingIndicator).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends one direct fallback for a queued failure without re-enqueueing', async () => {
+    const pendingTextSender = {
+      sendText: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = buildService(pendingTextSender);
+    const hooks = jest.mocked(ChatPipeline).mock.calls[0][4] as {
+      onError: (context: {
+        externalUserId: string;
+        error: Error;
+      }) => Promise<void>;
+    };
+
+    await hooks.onError({
+      externalUserId: 'discord-1',
+      error: new Error('LLM failed'),
+    });
+
+    expect(pendingTextSender.sendText).toHaveBeenCalledTimes(1);
+    expect(pendingTextSender.sendText).toHaveBeenCalledWith(
+      'discord-1',
+      'Xin lỗi, mình gặp sự cố khi xử lý tin nhắn. Bạn thử lại sau ít phút nhé.',
+    );
+    expect(getQueueMock(service).enqueue).not.toHaveBeenCalled();
+  });
+
+  it('distinguishes the original failure from a fallback delivery failure', async () => {
+    const originalError = new Error('history failed');
+    const fallbackError = new Error('DM unavailable');
+    const pendingTextSender = {
+      sendText: jest.fn().mockRejectedValue(fallbackError),
+    };
+    const service = buildService(pendingTextSender);
+    const hooks = jest.mocked(ChatPipeline).mock.calls[0][4] as {
+      onError: (context: {
+        externalUserId: string;
+        error: Error;
+      }) => Promise<void>;
+    };
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+
+    await expect(
+      hooks.onError({ externalUserId: 'zalo-1', error: originalError }),
+    ).resolves.toBeUndefined();
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('chat_failure phase=original'),
+    );
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('chat_failure phase=fallback_delivery'),
+    );
+    expect(pendingTextSender.sendText).toHaveBeenCalledTimes(1);
+
+    errorSpy.mockRestore();
+    expect(getQueueMock(service).enqueue).not.toHaveBeenCalled();
   });
 
   it('enqueue delegates to queue.enqueue', () => {

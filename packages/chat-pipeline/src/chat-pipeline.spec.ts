@@ -310,6 +310,184 @@ describe('ChatPipeline', () => {
     });
   });
 
+  it('calls onError for an outbound failure before delivery', async () => {
+    const onError = jest.fn().mockResolvedValue(undefined);
+    const outboundError = new Error('outbound failed');
+    const outbound = mockOutbound({
+      sendText: jest.fn().mockRejectedValue(outboundError),
+    });
+    const pipeline = new ChatPipeline(
+      mockRateLimiter(),
+      mockHistory(),
+      mockAgent(),
+      outbound,
+      { onError },
+    );
+
+    await expect(
+      pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['Hello'],
+        idempotencyKey: 'msg-1',
+      }),
+    ).rejects.toThrow('outbound failed');
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ error: outboundError }),
+    );
+  });
+
+  it('calls onError when outbound delivery is explicitly unconfirmed', async () => {
+    const onError = jest.fn().mockResolvedValue(undefined);
+    const rateLimiter = mockRateLimiter();
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      mockHistory(),
+      mockAgent(),
+      mockOutbound({
+        sendText: jest.fn().mockResolvedValue({ delivered: false }),
+      }),
+      { onError },
+    );
+
+    await expect(
+      pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['Hello'],
+        idempotencyKey: 'msg-1',
+      }),
+    ).resolves.toBe(false);
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.any(Error) }),
+    );
+    expect(rateLimiter.refund).toHaveBeenCalledWith(
+      'user-1',
+      '2026-07-29',
+      'msg-1',
+    );
+  });
+
+  it('calls onError and refunds when history loading fails', async () => {
+    const onError = jest.fn().mockResolvedValue(undefined);
+    const historyError = new Error('history unavailable');
+    const rateLimiter = mockRateLimiter();
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      mockHistory({
+        getHistory: jest.fn().mockRejectedValue(historyError),
+      }),
+      mockAgent(),
+      mockOutbound(),
+      { onError },
+    );
+
+    await expect(
+      pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['Hello'],
+        idempotencyKey: 'msg-1',
+      }),
+    ).rejects.toThrow('history unavailable');
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ error: historyError }),
+    );
+    expect(rateLimiter.refund).toHaveBeenCalledWith(
+      'user-1',
+      '2026-07-29',
+      'msg-1',
+    );
+  });
+
+  it('still calls onError when the quota refund itself fails', async () => {
+    const onError = jest.fn().mockResolvedValue(undefined);
+    const originalError = new Error('history unavailable');
+    const refundError = new Error('refund unavailable');
+    const rateLimiter = mockRateLimiter({
+      refund: jest.fn().mockRejectedValue(refundError),
+    });
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      mockHistory({
+        getHistory: jest.fn().mockRejectedValue(originalError),
+      }),
+      mockAgent(),
+      mockOutbound(),
+      { onError },
+    );
+
+    await expect(
+      pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['Hello'],
+        idempotencyKey: 'msg-1',
+      }),
+    ).rejects.toThrow('history unavailable');
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: originalError,
+        refundError,
+      }),
+    );
+    expect(rateLimiter.refund).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats an agent tool failure like any other pre-delivery failure', async () => {
+    const onError = jest.fn().mockResolvedValue(undefined);
+    const toolError = new Error('tool failed');
+    const rateLimiter = mockRateLimiter();
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      mockHistory(),
+      mockAgent({ reply: jest.fn().mockRejectedValue(toolError) }),
+      mockOutbound(),
+      { onError },
+    );
+
+    await expect(
+      pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['Check my schedule'],
+        idempotencyKey: 'msg-1',
+      }),
+    ).rejects.toThrow('tool failed');
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ error: toolError }),
+    );
+    expect(rateLimiter.refund).toHaveBeenCalled();
+  });
+
+  it('does not call onError or refund after the main reply was delivered', async () => {
+    const onError = jest.fn().mockResolvedValue(undefined);
+    const appendError = new Error('history append failed');
+    const rateLimiter = mockRateLimiter();
+    const history = mockHistory({
+      appendTurn: jest.fn().mockRejectedValue(appendError),
+    });
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      history,
+      mockAgent(),
+      mockOutbound(),
+      { onError },
+    );
+
+    await expect(
+      pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['Hello'],
+        idempotencyKey: 'msg-1',
+      }),
+    ).rejects.toThrow('history append failed');
+
+    expect(onError).not.toHaveBeenCalled();
+    expect(rateLimiter.refund).not.toHaveBeenCalled();
+    expect(rateLimiter.markCompleted).toHaveBeenCalledWith('msg-1');
+  });
+
   it('calls onStep hook at each pipeline step', async () => {
     const onStep = jest.fn().mockResolvedValue(undefined);
     const hooks: ChatPipelineHooks = { onStep };

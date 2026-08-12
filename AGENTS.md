@@ -435,7 +435,7 @@ Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global ski
 | Zalo chat queue / debounce | ✓ DebounceChatQueue wrapping `@wispace/chat-queue-core` — same as Messenger |
 | Zalo Redis burst counter | ✓ `PostgresBurstCounter` (was `MemoryBurstCounter`) |
 | Zalo LLM report enrichment | ✓ Report cron uses `ZaloStudentReportService` (LLM); tool still raw |
-| Discord/Zalo chat queue (H7) | ✓ `DebounceChatQueue` + `ChatPipeline` + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator + user feedback |
+| Discord/Zalo chat queue (H7) | ✓ `DebounceChatQueue` + `ChatPipeline` + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator + user feedback + one direct fallback for pre-delivery failures; original/fallback delivery failures are logged separately |
 | LLM cost: double retry trên Discord/Zalo | ✓ `maxLlmRetries: 0` (1 retry layer: `retryWithBackoff` ngoài); `0` giờ disable inner retry thật sự (`llm-agent` `getMaxLlmRetries` sửa `>0` → `>=0`) |
 | LLM cost: cap output token report/reminder | ✓ `maxOutputTokens: 500` cho JSON report + reminder (shape cố định) |
 | LLM cost: Messenger tool `get_learning_progress_report` không còn gọi LLM lồng nhau | ✓ Cache report theo ngày (`psid:YYYY-MM-DD`, in-memory, 5k entries) → cron 08:00 pre-warm; tool dùng cache, miss → static report (`generateReportStatic`, không LLM); menu postback reuse cache |
