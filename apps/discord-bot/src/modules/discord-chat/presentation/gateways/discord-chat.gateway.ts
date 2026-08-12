@@ -220,28 +220,51 @@ export class DiscordChatGateway {
   @Button(RESCHEDULE_CONFIRM_CUSTOM_ID)
   async onRescheduleConfirm(@Context() [interaction]: ButtonContext) {
     const discordUserId = interaction.user.id;
-    const userId =
-      await this.accountLinkService.findUserIdByDiscordId(discordUserId);
-    const result = await this.rescheduleConfirmationService.confirm(
-      discordUserId,
-      userId,
-    );
+    await interaction.deferUpdate();
 
-    await interaction.update({
-      content: result.confirmed
+    let content: string;
+    try {
+      const userId =
+        await this.accountLinkService.findUserIdByDiscordId(discordUserId);
+      const result = await this.rescheduleConfirmationService.confirm(
+        discordUserId,
+        userId,
+      );
+      content = result.confirmed
         ? `Đã dời lịch sang ${result.scheduledTimeLabel}.`
-        : result.message,
-      components: [],
-    });
+        : result.message;
+    } catch (error) {
+      this.logger.error(
+        `Reschedule confirm failed for discordUserId=${maskExternalId(
+          discordUserId,
+        )}`,
+        formatError(error),
+      );
+      content = CHAT_FAILURE_FALLBACK_MESSAGE;
+    }
+
+    await interaction.editReply({ content, components: [] });
   }
 
   @Button(RESCHEDULE_CANCEL_CUSTOM_ID)
   async onRescheduleCancel(@Context() [interaction]: ButtonContext) {
     const discordUserId = interaction.user.id;
-    const message =
-      await this.rescheduleConfirmationService.cancel(discordUserId);
+    await interaction.deferUpdate();
 
-    await interaction.update({ content: message, components: [] });
+    let content: string;
+    try {
+      content = await this.rescheduleConfirmationService.cancel(discordUserId);
+    } catch (error) {
+      this.logger.error(
+        `Reschedule cancel failed for discordUserId=${maskExternalId(
+          discordUserId,
+        )}`,
+        formatError(error),
+      );
+      content = CHAT_FAILURE_FALLBACK_MESSAGE;
+    }
+
+    await interaction.editReply({ content, components: [] });
   }
 
   @Button(MENU_UPCOMING_SESSIONS_CUSTOM_ID)
