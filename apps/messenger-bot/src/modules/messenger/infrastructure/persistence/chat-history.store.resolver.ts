@@ -21,28 +21,18 @@ const KEY_PREFIX = 'chat:history:';
 export class ChatHistoryStoreResolver implements ChatHistoryStorePort {
   private readonly logger = new Logger(ChatHistoryStoreResolver.name);
   private readonly memory: MemoryChatHistoryStore;
-  private readonly redis?: RedisChatHistoryStore;
+  private redis?: RedisChatHistoryStore;
+  private readonly redisClient?: RedisClientPort | null;
 
   constructor(
     private readonly sharedConfig: MessengerChatSharedConfigService,
     @Inject(REDIS_CLIENT)
     redisClient?: RedisClientPort | null,
   ) {
+    this.redisClient = redisClient;
     const ttlMs = sharedConfig.getHistoryTtlMs();
     const maxMessages = sharedConfig.getHistoryMaxMessages();
     this.memory = new MemoryChatHistoryStore({ ttlMs, maxMessages });
-
-    const nativeClient = redisClient?.getNativeClient();
-    if (nativeClient) {
-      this.redis = new RedisChatHistoryStore(
-        nativeClient as unknown as RedisChatHistoryClient,
-        {
-          ttlSec: Math.max(1, Math.ceil(ttlMs / 1000)),
-          maxMessages,
-          keyPrefix: KEY_PREFIX,
-        },
-      );
-    }
   }
 
   async getHistory(psid: string): Promise<ChatHistoryMessage[]> {
@@ -72,10 +62,28 @@ export class ChatHistoryStoreResolver implements ChatHistoryStorePort {
 
   resolveStoreKind(): 'memory' | 'redis' {
     const configured = this.sharedConfig.getHistoryStore();
-    if (configured === 'redis' && this.redis) {
+    if (configured === 'redis' && this.getRedisStore()) {
       return 'redis';
     }
     return 'memory';
+  }
+
+  private getRedisStore(): RedisChatHistoryStore | undefined {
+    if (this.redis) return this.redis;
+
+    const nativeClient = this.redisClient?.getNativeClient();
+    if (!nativeClient) return undefined;
+
+    const ttlMs = this.sharedConfig.getHistoryTtlMs();
+    this.redis = new RedisChatHistoryStore(
+      nativeClient as unknown as RedisChatHistoryClient,
+      {
+        ttlSec: Math.max(1, Math.ceil(ttlMs / 1000)),
+        maxMessages: this.sharedConfig.getHistoryMaxMessages(),
+        keyPrefix: KEY_PREFIX,
+      },
+    );
+    return this.redis;
   }
 
   private resolveStore(): ChatHistoryStorePort {

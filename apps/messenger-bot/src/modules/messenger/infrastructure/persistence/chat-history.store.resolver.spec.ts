@@ -32,6 +32,33 @@ describe('ChatHistoryStoreResolver', () => {
     expect(createResolver('redis', true).resolveStoreKind()).toBe('redis');
   });
 
+  it('adopts redis when it becomes available after construction', async () => {
+    let available = false;
+    const nativeClient = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue('OK'),
+      del: jest.fn(),
+    };
+    const redisClient = {
+      isEnabled: () => available,
+      getNativeClient: () => (available ? nativeClient : null),
+    } as unknown as RedisClientPort;
+    const sharedConfig = {
+      getHistoryStore: () => 'redis',
+      getHistoryTtlMs: () => 1_800_000,
+      getHistoryMaxMessages: () => 12,
+    } as MessengerChatSharedConfigService;
+    const resolver = new ChatHistoryStoreResolver(sharedConfig, redisClient);
+
+    expect(resolver.resolveStoreKind()).toBe('memory');
+
+    available = true;
+    await resolver.appendTurn('psid-1', 'hi', 'hello');
+
+    expect(resolver.resolveStoreKind()).toBe('redis');
+    expect(nativeClient.set).toHaveBeenCalled();
+  });
+
   it('falls back to memory when redis configured but unavailable', () => {
     expect(createResolver('redis', false).resolveStoreKind()).toBe('memory');
   });
