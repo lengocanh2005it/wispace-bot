@@ -10,6 +10,7 @@ interface MockClient {
   smembers: jest.Mock;
   eval: jest.Mock;
   exists: jest.Mock;
+  multi: jest.Mock;
 }
 
 describe('RedisChatQueueStore', () => {
@@ -34,11 +35,34 @@ describe('RedisChatQueueStore', () => {
     smembers: jest.fn().mockResolvedValue([]),
     eval: jest.fn().mockResolvedValue(1),
     exists: jest.fn().mockResolvedValue(1),
+    multi: jest.fn(() => createTransaction()),
     ...overrides,
   });
 
+  const createTransaction = (
+    execResult: Array<[Error | null, unknown]> | null = [
+      [null, 'OK'],
+      [null, 1],
+    ],
+  ) => {
+    const transaction = {
+      set: jest.fn(),
+      sadd: jest.fn(),
+      del: jest.fn(),
+      srem: jest.fn(),
+      exec: jest.fn().mockResolvedValue(execResult),
+    };
+    transaction.set.mockReturnValue(transaction);
+    transaction.sadd.mockReturnValue(transaction);
+    transaction.del.mockReturnValue(transaction);
+    transaction.srem.mockReturnValue(transaction);
+    return transaction;
+  };
+
   it('appends text to buffer under psid lock', async () => {
     const client = createClient();
+    const transaction = createTransaction();
+    client.multi.mockReturnValue(transaction);
 
     const store = createStore(client);
     await store.appendChatBuffer({
@@ -55,15 +79,35 @@ describe('RedisChatQueueStore', () => {
       30_000,
       'NX',
     );
-    expect(client.set).toHaveBeenCalledWith(
+    expect(transaction.set).toHaveBeenCalledWith(
       'chat:queue:buffer:psid-1',
       expect.stringContaining('"hello"'),
       'EX',
       86_400,
     );
-    expect(client.sadd).toHaveBeenCalledWith(
+    expect(transaction.sadd).toHaveBeenCalledWith(
       'chat:queue:active-psids',
       'psid-1',
+    );
+  });
+
+  it('writes the buffer and active-set membership atomically', async () => {
+    const transaction = createTransaction();
+    const client = createClient({
+      multi: jest.fn().mockReturnValue(transaction),
+    });
+
+    const store = createStore(client);
+    await store.appendChatBuffer({
+      psid: 'psid-1',
+      userText: 'hello',
+      debounceMs: 2000,
+    });
+
+    expect(client.multi).toHaveBeenCalledTimes(1);
+    expect(transaction.exec).toHaveBeenCalledTimes(1);
+    expect(transaction.set.mock.invocationCallOrder[0]).toBeLessThan(
+      transaction.sadd.mock.invocationCallOrder[0],
     );
   });
 
@@ -85,10 +129,12 @@ describe('RedisChatQueueStore', () => {
 
   it('rejects append when Redis write fails', async () => {
     const client = createClient({
-      set: jest
-        .fn()
-        .mockResolvedValueOnce('OK')
-        .mockRejectedValueOnce(new Error('Redis write failed')),
+      multi: jest.fn().mockReturnValue(
+        createTransaction([
+          [new Error('Redis write failed'), null],
+          [null, 1],
+        ]),
+      ),
     });
 
     const store = createStore(client);
@@ -104,17 +150,30 @@ describe('RedisChatQueueStore', () => {
 
   it('does not duplicate an append when a persisted write reports failure', async () => {
     let persistedState: string | null = null;
+    const transaction = createTransaction();
     const client = createClient({
       get: jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
       set: jest.fn().mockImplementation((key: string, value?: string) => {
         if (key.startsWith('chat:queue:lock:')) {
           return Promise.resolve('OK');
         }
-
-        persistedState = value ?? null;
-        return Promise.reject(new Error('Redis write failed after persist'));
+        return Promise.resolve(value);
       }),
+      multi: jest.fn().mockReturnValue(transaction),
     });
+    transaction.set.mockImplementation((_key: string, value: string) => {
+      persistedState = value;
+      return transaction;
+    });
+    transaction.exec
+      .mockResolvedValueOnce([
+        [new Error('Redis write failed after persist'), null],
+        [null, 1],
+      ])
+      .mockResolvedValueOnce([
+        [null, 'OK'],
+        [null, 1],
+      ]);
 
     const store = createStore(client);
 
@@ -139,7 +198,7 @@ describe('RedisChatQueueStore', () => {
     };
     expect(parsedState.texts).toEqual(['hello']);
     expect(
-      client.set.mock.calls.filter(([key]) =>
+      transaction.set.mock.calls.filter(([key]) =>
         String(key).startsWith('chat:queue:buffer:'),
       ),
     ).toHaveLength(1);

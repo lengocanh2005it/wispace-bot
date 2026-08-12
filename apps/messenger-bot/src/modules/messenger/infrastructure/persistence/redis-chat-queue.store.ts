@@ -413,17 +413,33 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       state.processing;
 
     if (!hasBufferedWork) {
-      await client.del(key);
-      await client.srem(RedisChatQueueStore.ACTIVE_SET, psid);
+      const result = await client
+        .multi()
+        .del(key)
+        .srem(RedisChatQueueStore.ACTIVE_SET, psid)
+        .exec();
+      this.assertTransactionSucceeded(result);
       return;
     }
 
-    await client.sadd(RedisChatQueueStore.ACTIVE_SET, psid);
-    await client.set(
-      key,
-      JSON.stringify(state),
-      'EX',
-      CHAT_QUEUE_BUFFER_TTL_SECONDS,
-    );
+    const result = await client
+      .multi()
+      .set(key, JSON.stringify(state), 'EX', CHAT_QUEUE_BUFFER_TTL_SECONDS)
+      .sadd(RedisChatQueueStore.ACTIVE_SET, psid)
+      .exec();
+    this.assertTransactionSucceeded(result);
+  }
+
+  private assertTransactionSucceeded(
+    result: Array<[Error | null, unknown]> | null,
+  ): void {
+    if (!result) {
+      throw new Error('Redis queue transaction aborted');
+    }
+
+    const commandError = result.find(([error]) => error)?.[0];
+    if (commandError) {
+      throw commandError;
+    }
   }
 }
