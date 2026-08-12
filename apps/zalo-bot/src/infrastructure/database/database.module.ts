@@ -15,6 +15,7 @@ import {
 import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
 import {
   ScheduledReportClaimEntity,
+  WebhookInboundEventEntity,
   WebhookDeadLetterEntity,
   getPostgresSsl,
 } from '@wispace/database';
@@ -25,7 +26,7 @@ import {
  * migrations — see `docs/turborepo-migration-plan.md` Phase 5: only
  * messenger-bot's pipeline is allowed to run `migration:run`.
  */
-function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
+export function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
   return {
     type: 'postgres',
     host: config.getOrThrow<string>('DB_HOST'),
@@ -45,6 +46,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       LlmSafetyEventEntity,
       StudyReminderJobEntity,
       ScheduledReportClaimEntity,
+      WebhookInboundEventEntity,
       WebhookDeadLetterEntity,
     ],
     synchronize: false,
@@ -70,6 +72,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       LlmSafetyEventEntity,
       StudyReminderJobEntity,
       ScheduledReportClaimEntity,
+      WebhookInboundEventEntity,
       WebhookDeadLetterEntity,
     ]),
   ],
