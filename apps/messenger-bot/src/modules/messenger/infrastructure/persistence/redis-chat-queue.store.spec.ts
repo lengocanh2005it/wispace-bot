@@ -67,6 +67,53 @@ describe('RedisChatQueueStore', () => {
     );
   });
 
+  it('rejects append when the psid lock is busy', async () => {
+    const client = createClient({
+      set: jest.fn().mockResolvedValue(null),
+    });
+
+    const store = createStore(client);
+
+    await expect(
+      store.appendChatBuffer({
+        psid: 'psid-1',
+        userText: 'hello',
+        debounceMs: 2000,
+      }),
+    ).rejects.toThrow('Redis chat queue lock busy');
+  });
+
+  it('rejects append when Redis write fails', async () => {
+    const client = createClient({
+      set: jest
+        .fn()
+        .mockResolvedValueOnce('OK')
+        .mockRejectedValueOnce(new Error('Redis write failed')),
+    });
+
+    const store = createStore(client);
+
+    await expect(
+      store.appendChatBuffer({
+        psid: 'psid-1',
+        userText: 'hello',
+        debounceMs: 2000,
+      }),
+    ).rejects.toThrow('Redis write failed');
+  });
+
+  it('rejects append when Redis is unavailable', async () => {
+    const store = createStore(null);
+
+    await expect(
+      store.appendChatBuffer({
+        psid: 'psid-1',
+        userText: 'hello',
+        debounceMs: 2000,
+      }),
+    ).rejects.toThrow('Redis chat queue unavailable');
+  });
+
   it('returns null from claim when buffer is empty', async () => {
     const client = createClient();
 

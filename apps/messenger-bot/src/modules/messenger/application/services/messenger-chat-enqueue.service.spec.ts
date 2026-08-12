@@ -76,8 +76,9 @@ describe('MessengerChatEnqueueService', () => {
       },
     } as ConfigService;
 
+    const appendChatBuffer = jest.fn(() => Promise.resolve());
     const chatQueueStore = {
-      appendChatBuffer: jest.fn(() => Promise.resolve()),
+      appendChatBuffer,
       claimReadyBuffer: jest.fn(() => Promise.resolve(null)),
       completeChatBuffer: jest.fn(() => Promise.resolve(false)),
     } as unknown as ChatQueueStorePort;
@@ -99,8 +100,8 @@ describe('MessengerChatEnqueueService', () => {
       process,
       // eslint-disable-next-line @typescript-eslint/unbound-method
       flushReady: processor.flushReady,
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      appendChatBuffer: chatQueueStore.appendChatBuffer,
+
+      appendChatBuffer,
     };
   };
 
@@ -146,15 +147,11 @@ describe('MessengerChatEnqueueService', () => {
     const { service, appendChatBuffer, sendSenderActionOptional } =
       createService({ distributedMode: true });
 
-    service.enqueue({
+    await service.enqueue({
       psid: 'psid-1',
       userText: 'Hello',
       idempotencyKey: 'mid-1',
     });
-
-    // Let the async enqueueDistributed run
-    await Promise.resolve();
-    await Promise.resolve();
 
     expect(sendSenderActionOptional).toHaveBeenCalledWith(
       'psid-1',
@@ -167,6 +164,44 @@ describe('MessengerChatEnqueueService', () => {
         idempotencyKey: 'mid-1',
       }),
     );
+  });
+
+  it('retries a failed distributed append and succeeds when Redis recovers', async () => {
+    const { service, appendChatBuffer } = createService({
+      distributedMode: true,
+    });
+    appendChatBuffer
+      .mockRejectedValueOnce(new Error('Redis unavailable'))
+      .mockResolvedValueOnce(undefined);
+
+    const enqueuePromise = service.enqueue({
+      psid: 'psid-1',
+      userText: 'Hello',
+      idempotencyKey: 'mid-1',
+    });
+
+    await jest.advanceTimersByTimeAsync(100);
+    await expect(enqueuePromise).resolves.toBeUndefined();
+    expect(appendChatBuffer).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects after the bounded distributed append retry budget is exhausted', async () => {
+    const { service, appendChatBuffer } = createService({
+      distributedMode: true,
+    });
+    appendChatBuffer.mockRejectedValue(new Error('Redis unavailable'));
+
+    const enqueuePromise = service.enqueue({
+      psid: 'psid-1',
+      userText: 'Hello',
+      idempotencyKey: 'mid-1',
+    });
+    const rejection =
+      expect(enqueuePromise).rejects.toThrow('Redis unavailable');
+
+    await jest.advanceTimersByTimeAsync(100);
+    await rejection;
+    expect(appendChatBuffer).toHaveBeenCalledTimes(3);
   });
 
   it('ignores empty text', () => {

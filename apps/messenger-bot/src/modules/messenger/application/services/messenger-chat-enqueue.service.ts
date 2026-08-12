@@ -22,6 +22,9 @@ import { MessengerOutboundService } from './messenger-outbound.service';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import { MessengerChatProcessorService } from './messenger-chat-processor.service';
 
+const DISTRIBUTED_ENQUEUE_MAX_ATTEMPTS = 3;
+const DISTRIBUTED_ENQUEUE_RETRY_DELAY_MS = 25;
+
 export type { EnqueueChatMessageInput };
 
 interface MemoryQueueContext {
@@ -103,7 +106,7 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
     this.sharedFlushTimers.clear();
   }
 
-  enqueue(input: EnqueueChatMessageInput): void {
+  async enqueue(input: EnqueueChatMessageInput): Promise<void> {
     const text = input.userText.trim();
     if (!text) {
       return;
@@ -112,7 +115,7 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
     void this.outbound.sendSenderActionOptional(input.psid, 'mark_seen');
 
     if (this.isDistributedMode()) {
-      void this.enqueueDistributed(input, text);
+      await this.enqueueDistributed(input, text);
       return;
     }
 
@@ -153,23 +156,45 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
     input: EnqueueChatMessageInput,
     text: string,
   ): Promise<void> {
-    try {
-      await this.getChatQueueStore().appendChatBuffer({
-        psid: input.psid,
-        userText: text,
-        userId: input.userId,
-        linkContext: input.linkContext,
-        idempotencyKey: input.idempotencyKey,
-        debounceMs: this.getDebounceMs(),
-      });
-      this.scheduleDistributedFlush(input.psid);
-    } catch (error) {
-      this.logger.error(
-        `Distributed chat enqueue failed psid=${input.psid}: ${errorMessage(
-          error,
-        )}`,
-      );
+    let lastError: unknown;
+
+    for (
+      let attempt = 1;
+      attempt <= DISTRIBUTED_ENQUEUE_MAX_ATTEMPTS;
+      attempt += 1
+    ) {
+      try {
+        await this.getChatQueueStore().appendChatBuffer({
+          psid: input.psid,
+          userText: text,
+          userId: input.userId,
+          linkContext: input.linkContext,
+          idempotencyKey: input.idempotencyKey,
+          debounceMs: this.getDebounceMs(),
+        });
+        this.scheduleDistributedFlush(input.psid);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < DISTRIBUTED_ENQUEUE_MAX_ATTEMPTS) {
+          this.logger.warn(
+            `Distributed chat enqueue retry psid=${input.psid} attempt=${attempt}/${DISTRIBUTED_ENQUEUE_MAX_ATTEMPTS}: ${errorMessage(
+              error,
+            )}`,
+          );
+          await new Promise((resolve) =>
+            setTimeout(resolve, DISTRIBUTED_ENQUEUE_RETRY_DELAY_MS),
+          );
+        }
+      }
     }
+
+    this.logger.error(
+      `Distributed chat enqueue failed psid=${input.psid} attempts=${DISTRIBUTED_ENQUEUE_MAX_ATTEMPTS}: ${errorMessage(
+        lastError,
+      )}`,
+    );
+    throw lastError;
   }
 
   private scheduleDistributedFlush(psid: string): void {

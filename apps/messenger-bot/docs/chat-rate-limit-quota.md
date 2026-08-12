@@ -431,7 +431,7 @@ Postback: separate dedupe `psid:payload` (15s) — **not** related to chat quota
 
 | Dedupe | Single instance (`CHAT_QUEUE_STORE=memory`) | Multi-pod (`CHAT_QUEUE_STORE=redis` or `CHAT_QUEUE_SHARED=true`) |
 |--------|---------------------------------------------|------------------------------------------------------------------|
-| Webhook `mid` | RAM Map | Redis `dedupe:mid:*` |
+| Webhook `mid` | Durable inbox `webhook_inbound_events` | Same shared PostgreSQL inbox |
 | Debounce queue | RAM `Map` per process | Redis `chat:queue:buffer:{psid}` |
 | Chat history LLM | RAM 30 minutes | Redis `chat:history:{psid}` |
 | Quota reserve | DB idempotency + hard cap H3 | Same — shared PostgreSQL |
@@ -931,6 +931,12 @@ flowchart LR
 | Redis `dedupe:mid:*` | Cross-pod `mid` dedupe |
 | Cron poll flush (2s) + stuck processing recovery | `MessengerChatQueueWorkerService` |
 | Claim buffer (Redis lock) | One pod flushes / PSID |
+
+Redis append is fail-safe: lock contention, Redis unavailability, and append
+errors are retried 3 times with a 25 ms delay. If all attempts fail, the
+enqueue error propagates to the durable webhook inbox, which marks the event
+failed for bounded-backoff retry; it is never acknowledged as successfully
+queued.
 
 **Env:** \CHAT_QUEUE_SHARED\, \CHAT_QUEUE_PROCESSING_STUCK_MS\, \CHAT_HISTORY_TTL_MS\, \CHAT_HISTORY_MAX_MESSAGES\.
 

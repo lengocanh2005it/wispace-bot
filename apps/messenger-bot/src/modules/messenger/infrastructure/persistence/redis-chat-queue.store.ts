@@ -58,40 +58,44 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
   }
 
   async appendChatBuffer(input: AppendChatBufferInput): Promise<void> {
-    await this.withPsidLock(input.psid, async (client) => {
-      const state = await this.readState(client, input.psid);
-      const flushAfterAt = Date.now() + input.debounceMs;
+    await this.withPsidLock(
+      input.psid,
+      async (client) => {
+        const state = await this.readState(client, input.psid);
+        const flushAfterAt = Date.now() + input.debounceMs;
 
-      if (state.processing) {
-        state.pendingTexts.push(input.userText);
-        state.pendingTexts = state.pendingTexts.slice(
-          -RedisChatQueueStore.MAX_BUFFERED_MESSAGES,
-        );
-        if (input.idempotencyKey) {
-          state.lastPendingIdempotencyKey = input.idempotencyKey;
+        if (state.processing) {
+          state.pendingTexts.push(input.userText);
+          state.pendingTexts = state.pendingTexts.slice(
+            -RedisChatQueueStore.MAX_BUFFERED_MESSAGES,
+          );
+          if (input.idempotencyKey) {
+            state.lastPendingIdempotencyKey = input.idempotencyKey;
+          }
+        } else {
+          state.texts.push(input.userText);
+          state.texts = state.texts.slice(
+            -RedisChatQueueStore.MAX_BUFFERED_MESSAGES,
+          );
+          if (input.idempotencyKey) {
+            state.lastIdempotencyKey = input.idempotencyKey;
+          }
+          state.flushAfterAt = flushAfterAt;
         }
-      } else {
-        state.texts.push(input.userText);
-        state.texts = state.texts.slice(
-          -RedisChatQueueStore.MAX_BUFFERED_MESSAGES,
-        );
-        if (input.idempotencyKey) {
-          state.lastIdempotencyKey = input.idempotencyKey;
+
+        if (input.userId !== undefined) {
+          state.userId = input.userId;
         }
-        state.flushAfterAt = flushAfterAt;
-      }
 
-      if (input.userId !== undefined) {
-        state.userId = input.userId;
-      }
+        if (input.linkContext !== undefined) {
+          state.linkContext = input.linkContext;
+        }
 
-      if (input.linkContext !== undefined) {
-        state.linkContext = input.linkContext;
-      }
-
-      state.updatedAt = Date.now();
-      await this.writeState(client, input.psid, state);
-    });
+        state.updatedAt = Date.now();
+        await this.writeState(client, input.psid, state);
+      },
+      true,
+    );
   }
 
   async claimReadyBuffer(
@@ -256,9 +260,13 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
   private async withPsidLock<T>(
     psid: string,
     fn: (client: Redis) => Promise<T>,
+    failOnError = false,
   ): Promise<T | null> {
     const client = this.redisClient.getNativeClient();
     if (!client) {
+      if (failOnError) {
+        throw new Error('Redis chat queue unavailable');
+      }
       return null;
     }
 
@@ -273,6 +281,9 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     );
 
     if (acquired !== 'OK') {
+      if (failOnError) {
+        throw new Error(`Redis chat queue lock busy for psid=${psid}`);
+      }
       return null;
     }
 
@@ -282,9 +293,18 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       this.logger.warn(
         `Redis queue operation failed psid=${psid}: ${errorMessage(error)}`,
       );
+      if (failOnError) {
+        throw error;
+      }
       return null;
     } finally {
-      await this.releaseLock(client, lockKey, lockValue);
+      await this.releaseLock(client, lockKey, lockValue).catch((error) => {
+        this.logger.error(
+          `Redis queue lock release failed psid=${psid}: ${errorMessage(
+            error,
+          )}`,
+        );
+      });
     }
   }
 
