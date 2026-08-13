@@ -54,7 +54,7 @@ jobs:
       deploy: ${{ steps.filter.outputs.deploy }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Detect changed paths
         uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
@@ -70,6 +70,7 @@ jobs:
             deploy:
               - 'apps/${{ inputs.app }}/docker-compose.prod.yml'
               - 'deploy/Dockerfile.bot'
+              - 'deploy/verify-runtime-image.mjs'
               - '.github/workflows/**'
               - '.github/scripts/**'
 
@@ -85,7 +86,7 @@ jobs:
       image: ${{ steps.prep.outputs.image }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
@@ -140,7 +141,7 @@ jobs:
       image: ${{ needs.build-image.outputs.image }}
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:16-alpine@sha256:7a396fd264a2067788b6551122b50f162bf6136312c7fc9d74381cb92c648382
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -164,6 +165,7 @@ jobs:
         run: |
           cd /app
           npx --no-install typeorm migration:show -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
+
       - name: Apply migrations
         run: |
           cd /app
@@ -172,6 +174,31 @@ jobs:
         run: |
           cd /app
           npx --no-install typeorm migration:show -d apps/${{ inputs.app }}/dist/infrastructure/database/data-source.js
+
+  runtime-image-check:
+    needs: build-image
+    if: |
+      always() &&
+      !cancelled() &&
+      inputs.env_only != true &&
+      needs.build-image.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify runtime image contents and size
+        run: |
+          docker pull "${{ needs.build-image.outputs.image }}"
+          node deploy/verify-runtime-image.mjs "${{ needs.build-image.outputs.image }}" "${{ inputs.app }}"
 
   deploy:
     # SSH deploy now only runs for the env-only path (manual sync-env.yml
@@ -198,7 +225,7 @@ jobs:
       MIGRATION_CMD: ${{ !inputs.env_only && inputs.app == 'messenger-bot' && 'npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js' || '' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Resolve deploy image
         run: |

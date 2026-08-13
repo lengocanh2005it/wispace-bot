@@ -1,16 +1,8 @@
 import { createHash } from 'node:crypto';
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  errorMessage,
-  maskEventId,
-  maskExternalId,
-  maskExternalIdInText,
-} from '@wispace/bot-common';
-import {
-  PlatformWebhookInboundEventService,
-  readInboundRetryConfig,
-} from '@wispace/database';
+import { maskEventId } from '@wispace/bot-common';
+import { PlatformWebhookInboundEventService } from '@wispace/database';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
@@ -22,7 +14,6 @@ import {
 import { MessengerLinkContextService } from './messenger-link-context.service';
 import { MessengerOutboundService } from './messenger-outbound.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
-import { WEBHOOK_POSTBACK_DEDUPE_MS } from '../../domain/entities/messenger-store.types';
 import {
   extractRefFromEvent,
   routeWebhookEvent,
@@ -77,9 +68,6 @@ function buildEventType(event: MessengerWebhookEvent): string {
 export class MessengerService {
   private readonly logger = new Logger(MessengerService.name);
 
-  /** In-memory double-tap debounce for postbacks (non-durable by design). */
-  private readonly recentPostbacks = new Map<string, number>();
-
   constructor(
     private readonly configService: ConfigService,
     @Inject(MESSENGER_REPOSITORY)
@@ -101,17 +89,17 @@ export class MessengerService {
 
   /**
    * Durable ingestion: every authenticated event is persisted to the inbox
-   * (`webhook_inbound_events`) BEFORE processing. A duplicate delivery is
-   * skipped (idempotent), a processing failure is recorded with bounded
-   * backoff for the retry cron, and a persistence failure propagates so the
+   * (`webhook_inbound_events`) BEFORE acknowledging. Downstream processing is
+   * owned by the retry cron after the endpoint returns. A duplicate delivery
+   * is skipped (idempotent), and a persistence failure propagates so the
    * endpoint answers non-2xx and the platform redelivers.
    */
   async handleWebhook(payload: MessengerWebhookPayload): Promise<{
-    processed: number;
-    failures: Array<{ psid?: string; error: string }>;
+    accepted: number;
+    duplicates: number;
   }> {
-    const failures: Array<{ psid?: string; error: string }> = [];
-    let processed = 0;
+    let accepted = 0;
+    let duplicates = 0;
 
     for (const entry of Array.isArray(payload.entry) ? payload.entry : []) {
       for (const event of Array.isArray(entry.messaging)
@@ -119,16 +107,8 @@ export class MessengerService {
         : []) {
         this.logIncomingWebhookEvent(event);
 
-        // Double-tap debounce for postbacks (identical payload within 15s).
-        if (event.postback?.payload && this.isRecentPostback(event)) {
-          this.logger.debug(
-            `Skipping recent postback ${event.postback.payload} for ${maskExternalId(event.sender?.id)}`,
-          );
-          continue;
-        }
-
         const eventId = buildEventId(event, event.sender?.id ?? '');
-        const { inserted, id } = await this.inboundEvents.ingest({
+        const { inserted } = await this.inboundEvents.ingest({
           eventId,
           externalUserId: event.sender?.id ?? null,
           eventType: buildEventType(event),
@@ -136,6 +116,7 @@ export class MessengerService {
         });
 
         if (!inserted) {
+          duplicates += 1;
           this.logger.debug(
             `Skipping duplicate webhook event id=${maskEventId(
               eventId,
@@ -144,91 +125,11 @@ export class MessengerService {
           );
           continue;
         }
-
-        // Claim before processing — the retry cron claims too, so an event is
-        // never processed twice. If the cron grabbed it first, skip (it will
-        // process the event on its tick).
-        if (id !== undefined && !(await this.inboundEvents.claim(id))) {
-          this.logger.debug(
-            `Webhook event id=${maskEventId(
-              eventId,
-              event.sender?.id,
-            )} already claimed — deferring to retry cron`,
-          );
-          continue;
-        }
-
-        let processingError: unknown;
-        try {
-          const handled = await this.processEvent(event);
-          processed += handled ? 1 : 0;
-        } catch (error) {
-          processingError = error;
-        }
-
-        if (processingError !== undefined) {
-          const errorMessageValue = maskExternalIdInText(
-            errorMessage(processingError),
-            event.sender?.id,
-          );
-          failures.push({ psid: event.sender?.id, error: errorMessageValue });
-
-          this.logger.warn(
-            `Webhook event for PSID ${maskExternalId(event.sender?.id)} failed — scheduled for retry: ${errorMessageValue}`,
-          );
-
-          if (id !== undefined) {
-            await this.inboundEvents
-              .markFailed(
-                id,
-                errorMessageValue,
-                readInboundRetryConfig((key) =>
-                  this.configService.get<string>(key),
-                ),
-              )
-              .catch((saveErr: unknown) => {
-                this.logger.error(
-                  `Failed to record inbound event failure: ${errorMessage(saveErr)}`,
-                );
-              });
-          }
-          continue;
-        }
-
-        // Completion is best-effort: side effects already ran, so a failure to
-        // mark must NOT schedule a retry (it would re-execute the event).
-        // The stale-`processing` recovery in the retry cron re-claims the row.
-        if (id !== undefined) {
-          await this.inboundEvents
-            .markCompleted(id)
-            .catch((markErr: unknown) => {
-              this.logger.error(
-                `Failed to mark inbound event id=${id} completed: ${errorMessage(markErr)}`,
-              );
-            });
-        }
+        accepted += 1;
       }
     }
 
-    return { processed, failures };
-  }
-
-  private isRecentPostback(event: MessengerWebhookEvent): boolean {
-    const psid = event.sender?.id ?? '';
-    const payload = event.postback?.payload ?? '';
-    const key = `${psid}:${payload}`;
-    const now = Date.now();
-    const last = this.recentPostbacks.get(key);
-
-    if (last !== undefined && now - last < WEBHOOK_POSTBACK_DEDUPE_MS) {
-      return true;
-    }
-
-    this.recentPostbacks.set(key, now);
-    if (this.recentPostbacks.size > 1000) {
-      this.recentPostbacks.clear();
-    }
-    return false;
+    return { accepted, duplicates };
   }
 
   private logIncomingWebhookEvent(event: MessengerWebhookEvent): void {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return -- fluent Jest query-builder fake */
 import { PlatformWebhookInboundEventService } from './platform-webhook-inbound-event.service';
 import type { Repository } from 'typeorm';
 import type { WebhookInboundEventEntity } from '../entities/webhook-inbound-event.entity';
@@ -242,6 +243,147 @@ describe('PlatformWebhookInboundEventService', () => {
 
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({ eventId: 'mid-2', status: 'processing' });
+    });
+  });
+
+  describe('stale processing recovery', () => {
+    it('atomically terminalizes a stale processing row', async () => {
+      const { service, claimExecuteMock, claimWhereMock, claimAndWhereMock } =
+        buildService();
+      const staleBefore = new Date('2026-08-13T00:00:00Z');
+      claimExecuteMock.mockResolvedValue({ affected: 1 });
+
+      const abandoned = await service.abandonStaleProcessing(9, staleBefore);
+
+      expect(abandoned).toBe(true);
+      expect(claimWhereMock).toHaveBeenCalledWith('id = :id', { id: 9 });
+      expect(claimAndWhereMock).toHaveBeenCalledWith(
+        'status = :status AND updated_at < :staleBefore',
+        { status: 'processing', staleBefore },
+      );
+    });
+
+    it('marks processing completion as unknown without replaying it', async () => {
+      const { service, claimExecuteMock, claimWhereMock, claimAndWhereMock } =
+        buildService();
+      claimExecuteMock.mockResolvedValue({ affected: 1 });
+
+      const abandoned = await service.markProcessingAbandoned(
+        9,
+        'completion write failed',
+      );
+
+      expect(abandoned).toBe(true);
+      expect(claimWhereMock).toHaveBeenCalledWith('id = :id', { id: 9 });
+      expect(claimAndWhereMock).toHaveBeenCalledWith('status = :status', {
+        status: 'processing',
+      });
+    });
+
+    it('lists only stale processing rows and terminalizes the same row atomically', async () => {
+      const now = new Date('2026-08-13T01:00:00Z');
+      const staleBefore = new Date('2026-08-13T00:55:00Z');
+      const rows = [
+        {
+          id: 1,
+          platform: 'messenger' as const,
+          eventId: 'stale',
+          externalUserId: 'psid-stale',
+          eventType: 'message',
+          rawPayload: {},
+          status: 'processing',
+          retryCount: 0,
+          nextRetryAt: null,
+          updatedAt: new Date('2026-08-13T00:50:00Z'),
+        },
+        {
+          id: 2,
+          platform: 'messenger' as const,
+          eventId: 'fresh',
+          externalUserId: 'psid-fresh',
+          eventType: 'message',
+          rawPayload: {},
+          status: 'processing',
+          retryCount: 0,
+          nextRetryAt: null,
+          updatedAt: new Date('2026-08-13T00:59:00Z'),
+        },
+        {
+          id: 3,
+          platform: 'messenger' as const,
+          eventId: 'pending',
+          externalUserId: 'psid-pending',
+          eventType: 'message',
+          rawPayload: {},
+          status: 'pending',
+          retryCount: 0,
+          nextRetryAt: null,
+          updatedAt: new Date('2026-08-13T00:59:00Z'),
+        },
+      ];
+
+      const listBuilder = {
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockReturnThis(),
+        getMany: jest
+          .fn()
+          .mockImplementation(() =>
+            rows.filter(
+              (row) =>
+                (['pending', 'failed'].includes(row.status) &&
+                  (row.nextRetryAt === null || row.nextRetryAt <= now)) ||
+                (row.status === 'processing' && row.updatedAt < staleBefore),
+            ),
+          ),
+      };
+      let updateId: number | undefined;
+      let updateStaleBefore: Date | undefined;
+      const updateBuilder = {
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn((_condition: string, parameters: { id: number }) => {
+          updateId = parameters.id;
+          return updateBuilder;
+        }),
+        andWhere: jest.fn(
+          (_condition: string, parameters: { staleBefore: Date }) => {
+            updateStaleBefore = parameters.staleBefore;
+            return updateBuilder;
+          },
+        ),
+        execute: jest.fn(() => {
+          const row = rows.find((candidate) => candidate.id === updateId);
+          const canAbandon =
+            row?.status === 'processing' &&
+            updateStaleBefore !== undefined &&
+            row.updatedAt < updateStaleBefore;
+          if (canAbandon) row.status = 'abandoned';
+          return { affected: canAbandon ? 1 : 0 };
+        }),
+      };
+      const repo = {
+        createQueryBuilder: jest.fn((alias?: string) =>
+          alias
+            ? listBuilder
+            : {
+                update: jest.fn(() => updateBuilder),
+              },
+        ),
+      } as unknown as Repository<WebhookInboundEventEntity>;
+      const service = new PlatformWebhookInboundEventService('messenger', repo);
+
+      const due = await service.listDue({
+        limit: 20,
+        now,
+        processingStuckMs: 5 * 60_000,
+      });
+
+      expect(due.map((row) => row.id)).toEqual([1, 3]);
+      expect(await service.abandonStaleProcessing(1, staleBefore)).toBe(true);
+      expect(rows[0].status).toBe('abandoned');
+      expect(await service.abandonStaleProcessing(2, staleBefore)).toBe(false);
+      expect(rows[1].status).toBe('processing');
     });
   });
 

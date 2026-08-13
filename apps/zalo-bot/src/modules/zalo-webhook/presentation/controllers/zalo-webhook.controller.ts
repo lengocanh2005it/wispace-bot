@@ -1,77 +1,22 @@
-import {
-  Body,
-  Controller,
-  Headers,
-  Logger,
-  Post,
-  Req,
-  UnauthorizedException,
-  UseGuards,
-} from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import type { Request } from 'express';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
-
-type ZaloWebhookRequest = Request & { rawBody?: Buffer };
-import {
-  isZaloWebhookTimestampFresh,
-  verifyZaloWebhookSignature,
-} from '../../application/utils/zalo-webhook-signature.utils';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
+import { WebhookThrottle } from '@wispace/bot-common';
 import type { ZaloWebhookEvent } from '../../domain/entities/zalo-webhook-event.types';
 import { ZaloWebhookIngestService } from '../../application/zalo-webhook-ingest.service';
+import { ZaloWebhookSignatureGuard } from '../guards/zalo-webhook-signature.guard';
 
-/**
- * Thin presentation layer: authenticate the webhook request, then delegate
- * durable ingestion (persist → claim → dispatch → mark) to the application
- * service. A persistence failure propagates → non-2xx → the platform
- * redelivers instead of acknowledging an event that was never stored.
- */
+/** Thin presentation layer: authenticate, durably ingest, then acknowledge. */
 @Controller('zalo/webhook')
-@UseGuards(ThrottlerGuard)
+@UseGuards(ZaloWebhookSignatureGuard, ThrottlerGuard)
 export class ZaloWebhookController {
-  private readonly logger = new Logger(ZaloWebhookController.name);
-
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly ingestService: ZaloWebhookIngestService,
-  ) {}
+  constructor(private readonly ingestService: ZaloWebhookIngestService) {}
 
   @Post()
-  @Throttle({ default: { limit: 120, ttl: 60_000 } })
+  @WebhookThrottle()
   async handleWebhook(
     @Body() body: ZaloWebhookEvent,
-    @Req() req: ZaloWebhookRequest,
-    @Headers('x-zevent-signature') signatureHeader: string | undefined,
-    @Headers('x-zevent-timestamp') timestampHeader: string | undefined,
   ): Promise<{ received: true }> {
-    const appId = this.configService.getOrThrow<string>('ZALO_APP_ID');
-    const appSecretKey = this.configService.getOrThrow<string>(
-      'ZALO_APP_SECRET_KEY',
-    );
-    const rawBody = (req.rawBody ?? Buffer.from(JSON.stringify(body))).toString(
-      'utf8',
-    );
-    const timestamp = timestampHeader ?? body.timestamp;
-
-    const valid = verifyZaloWebhookSignature({
-      appId,
-      rawBody,
-      timestamp,
-      appSecretKey,
-      signatureHeader,
-    });
-
-    if (!valid) {
-      this.logger.warn('Rejected webhook request — signature mismatch');
-      throw new UnauthorizedException('Invalid webhook signature');
-    }
-
-    if (!isZaloWebhookTimestampFresh(timestamp)) {
-      this.logger.warn('Rejected webhook request — stale timestamp');
-      throw new UnauthorizedException('Stale webhook timestamp');
-    }
-
-    await this.ingestService.processEvent(body);
+    await this.ingestService.ingestEvent(body);
     return { received: true };
   }
 }

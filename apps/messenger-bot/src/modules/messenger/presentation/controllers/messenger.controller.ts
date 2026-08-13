@@ -9,7 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { InternalApiKeyGuard } from '@wispace/bot-common';
+import { InternalApiKeyGuard, WebhookThrottle } from '@wispace/bot-common';
 import { MessengerWebhookSignatureGuard } from '@messenger/shared/common/guards/messenger-webhook-signature.guard';
 import { MessengerService } from '../../application/services/messenger.service';
 import type { MessengerWebhookPayload } from '../../domain/entities/messenger.types';
@@ -31,7 +31,8 @@ export class MessengerController {
   }
 
   @Post('webhook')
-  @UseGuards(ThrottlerGuard, MessengerWebhookSignatureGuard)
+  @UseGuards(MessengerWebhookSignatureGuard, ThrottlerGuard)
+  @WebhookThrottle()
   @HttpCode(200)
   async receiveWebhook(@Body() payload: MessengerWebhookPayload) {
     if (payload.object !== 'page') {
@@ -39,14 +40,6 @@ export class MessengerController {
     }
 
     const result = await this.messengerService.handleWebhook(payload);
-
-    if (result.failures.length > 0) {
-      return {
-        ok: false,
-        ...result,
-      };
-    }
-
     return {
       ok: true,
       ...result,

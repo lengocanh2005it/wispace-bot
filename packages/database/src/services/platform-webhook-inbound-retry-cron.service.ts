@@ -25,10 +25,12 @@ export interface WebhookInboundRetryCronOptions {
 /**
  * Retries due inbound webhook events from the durable inbox
  * (`webhook_inbound_events`): `pending` rows (crash between ingest and
- * processing) and `failed` rows whose backoff has elapsed. Every run is
- * claim-based and advisory-locked (multi-pod safe). Processing retries use
- * bounded exponential backoff; after `maxRetries` failures the event is
- * marked `abandoned` — the terminal failure state.
+ * processing) and `failed` rows whose backoff has elapsed. Stale
+ * `processing` rows are terminalized without replay because their side
+ * effects may already have completed. Every run is claim-based and
+ * advisory-locked (multi-pod safe). Processing retries use bounded
+ * exponential backoff; after `maxRetries` failures the event is marked
+ * `abandoned` — the terminal failure state.
  */
 @Injectable()
 export class PlatformWebhookInboundRetryCronService {
@@ -83,10 +85,30 @@ export class PlatformWebhookInboundRetryCronService {
     let failed = 0;
     let abandoned = 0;
     let skipped = 0;
+    const staleBefore = new Date(Date.now() - processingStuckMs);
 
     for (const row of rows) {
-      // Claim before processing — the request path claims too, so a row is
-      // never processed by two workers at once.
+      if (row.status === 'processing') {
+        const terminalized = await this.inboundEvents.abandonStaleProcessing(
+          row.id,
+          staleBefore,
+        );
+        if (terminalized) {
+          abandoned += 1;
+          this.logger.warn(
+            `Inbound event id=${row.id} eventId=${maskEventId(
+              row.eventId,
+              row.externalUserId,
+            )} abandoned after stale processing lease; automatic replay skipped`,
+          );
+        } else {
+          skipped += 1;
+        }
+        continue;
+      }
+
+      // The retry worker claims before processing, so one row is handled by
+      // only one retry worker at a time.
       const claimed = await this.inboundEvents.claim(row.id);
       if (!claimed) {
         skipped += 1;
@@ -95,14 +117,6 @@ export class PlatformWebhookInboundRetryCronService {
 
       try {
         await this.options.processEvent(row.rawPayload as object);
-        await this.inboundEvents.markCompleted(row.id);
-        completed += 1;
-        this.logger.log(
-          `Inbound event id=${row.id} eventId=${maskEventId(
-            row.eventId,
-            row.externalUserId,
-          )} processed successfully`,
-        );
       } catch (error) {
         const errorMsg = maskExternalIdInText(
           errorMessage(error),
@@ -124,6 +138,38 @@ export class PlatformWebhookInboundRetryCronService {
             `Inbound event id=${row.id} eventId=${maskedEventId} retry ${nextRetryCount}/${retryConfig.maxRetries} failed: ${errorMsg}`,
           );
         }
+        continue;
+      }
+
+      try {
+        await this.inboundEvents.markCompleted(row.id);
+        completed += 1;
+        this.logger.log(
+          `Inbound event id=${row.id} eventId=${maskEventId(
+            row.eventId,
+            row.externalUserId,
+          )} processed successfully`,
+        );
+      } catch (error) {
+        const completionError = maskExternalIdInText(
+          errorMessage(error),
+          row.externalUserId,
+        );
+        const terminalized = await this.inboundEvents.markProcessingAbandoned(
+          row.id,
+          completionError,
+        );
+        if (terminalized) {
+          abandoned += 1;
+        } else {
+          skipped += 1;
+        }
+        this.logger.error(
+          `Inbound event id=${row.id} eventId=${maskEventId(
+            row.eventId,
+            row.externalUserId,
+          )} completion failed; automatic replay skipped: ${completionError}`,
+        );
       }
     }
 

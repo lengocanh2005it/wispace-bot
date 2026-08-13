@@ -17,6 +17,12 @@ export {
 export { REDIS_CLIENT, type RedisClientPort } from './redis.client.port';
 export { RedisService } from './redis.service';
 export { RedisModule } from './redis.module';
+export { RedisThrottlerStorage } from './redis-throttler-storage';
+export {
+  WebhookThrottle,
+  createBotThrottlerOptions,
+  readWebhookThrottleConfig,
+} from './throttling';
 export { RedisUserDisplayNameCache } from './redis-user-display-name.cache';
 export type {
   RedisUserDisplayNameCacheOptions,

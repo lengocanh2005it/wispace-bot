@@ -1,6 +1,6 @@
 services:
   prometheus:
-    image: prom/prometheus:v2.53.0
+    image: prom/prometheus:v2.53.0@sha256:b8e8cec4bfdfda676f4334f4f2aab9d8758f51d76ac41fc35224f6ae79b79f54
     container_name: prometheus
     restart: unless-stopped
     environment:
@@ -25,7 +25,7 @@ services:
       - zalo-bot_default
 
   alertmanager:
-    image: prom/alertmanager:v0.27.0
+    image: prom/alertmanager:v0.27.0@sha256:45c3a586d4332d710bef92b06e90380c0b1f588968c00100d4b5e4e44c40ca5f
     container_name: alertmanager
     restart: unless-stopped
     volumes:

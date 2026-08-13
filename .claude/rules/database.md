@@ -74,6 +74,7 @@ When adding a new migration (Discord, Zalo, or new shared table):
 | Shared (cleanup/ops hot queries) | `1751029200010-AddCleanupAndClaimIndexes` | index-only on `chat_idempotency` (`platform, status, reserved_at`), `scheduled_report_claims` (`user_id, report_date, status` + `created_at`), `message_logs` (`created_at`) |
 | Shared (durable webhook inbox) | `1751029200014-CreateWebhookInboundEvents` | `webhook_inbound_events` — authenticated inbound payloads, retry state, unique `(platform, event_id)` |
 | Shared (durable webhook inbox) | `1751029200015-AddWebhookInboundCleanupIndex` | cleanup index on `webhook_inbound_events` (`platform, status, created_at`) |
+| Zalo OAuth cleanup | `1751029200016-AddZaloOauthStateCleanupIndex` | cleanup index on `zalo_oauth_states` (`created_at`) |
 
 ## Notes
 
@@ -82,3 +83,4 @@ When adding a new migration (Discord, Zalo, or new shared table):
 - `DB_MIGRATIONS_RUN=true` → auto migrate on start.
 - ORM entities are **not** placed in `modules/*/domain/` — domain is for pure types only.
 - `raw_payload` is intentionally kept intact for replay; logs and persisted error strings must mask external IDs. Ops scripts may read recovery payloads but must print only masked identifiers and sanitized errors.
+- A stale `processing` webhook inbox lease is terminalized instead of replayed automatically; replaying after an uncertain side effect could send a duplicate outbound message.

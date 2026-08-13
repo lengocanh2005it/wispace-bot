@@ -44,9 +44,9 @@ Port: `CHAT_HISTORY_STORE` → `ChatHistoryStoreResolver`.
 |---------|-------|-------|
 | Persist before ack | `webhook_inbound_events` (shared table) | Messenger/Zalo persist every authenticated event before 200; persistence failure → non-2xx → platform redelivers |
 | Idempotency | Unique `(platform, event_id)` | Messenger `mid`, Zalo `msg_id`; postbacks/follows use `{type}:{userId}:{timestamp}` — replaces the removed `CHAT_DEDUPE_STORE` memory/Redis stores |
-| Postback double-tap | In-memory 15s debounce in `MessengerService` | `WEBHOOK_POSTBACK_DEDUPE_MS` — non-durable by design |
-| Retry | Inbound retry cron (30s, advisory-locked) | `pending`/`failed` rows with bounded backoff → `abandoned` (terminal) after `WEBHOOK_INBOUND_MAX_RETRIES`; stale `processing` rows re-claimed (crash recovery) |
-| Claim | `status='processing'` transition | Both the request path and the cron claim before processing — an event is never processed twice |
+| Postback double-tap | Durable unique `(platform, event_id)` index | No process-local debounce; a failed inbox write is retried normally |
+| Retry | Inbound retry cron (30s, advisory-locked) | `pending`/`failed` rows with bounded backoff → `abandoned` (terminal) after `WEBHOOK_INBOUND_MAX_RETRIES`; stale `processing` rows are terminalized, not replayed, because side effects may already have completed |
+| Claim | `status='processing'` transition | The retry worker claims before processing; the request path only persists and acknowledges |
 
 Port: `PlatformWebhookInboundEventService` (`@wispace/database`) — `ingest` / `claim` / `markCompleted` / `markFailed` / `listDue`.
 

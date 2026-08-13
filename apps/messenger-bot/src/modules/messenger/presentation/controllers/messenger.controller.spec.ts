@@ -1,26 +1,26 @@
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { readWebhookThrottleConfig } from '@wispace/bot-common';
-import { ZaloWebhookSignatureGuard } from '../guards/zalo-webhook-signature.guard';
-import { ZaloWebhookController } from './zalo-webhook.controller';
+import { MessengerWebhookSignatureGuard } from '@messenger/shared/common/guards/messenger-webhook-signature.guard';
+import { MessengerController } from './messenger.controller';
 
-describe('ZaloWebhookController webhook guards', () => {
+describe('MessengerController webhook guards', () => {
   it('authenticates before applying the provider-safe throttle', () => {
-    const handleWebhook = Object.getOwnPropertyDescriptor(
-      ZaloWebhookController.prototype,
-      'handleWebhook',
+    const receiveWebhook = Object.getOwnPropertyDescriptor(
+      MessengerController.prototype,
+      'receiveWebhook',
     )?.value as object;
 
-    expect(Reflect.getMetadata('__guards__', ZaloWebhookController)).toEqual([
-      ZaloWebhookSignatureGuard,
+    expect(Reflect.getMetadata('__guards__', receiveWebhook)).toEqual([
+      MessengerWebhookSignatureGuard,
       ThrottlerGuard,
     ]);
     const limit = Reflect.getMetadata(
       'THROTTLER:LIMITdefault',
-      handleWebhook,
+      receiveWebhook,
     ) as () => number;
     const ttl = Reflect.getMetadata(
       'THROTTLER:TTLdefault',
-      handleWebhook,
+      receiveWebhook,
     ) as () => number;
     const config = readWebhookThrottleConfig((key) => process.env[key]);
     expect(limit()).toBe(config.limit);

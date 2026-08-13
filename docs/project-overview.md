@@ -275,7 +275,7 @@ Both bots use a **write-ahead inbox** (`webhook_inbound_events`, shared table in
 
 1. After signature/authentication succeeds, **every inbound event is persisted to `webhook_inbound_events` before the endpoint acknowledges it** (returns 200). A persistence failure propagates → non-2xx → the platform redelivers (Meta does; Zalo does not guarantee it, but the bot never acks what it could not store).
 2. **Duplicate deliveries are idempotent**: the unique `(platform, event_id)` index makes a re-delivery a no-op (Messenger mid / Zalo msg_id; postbacks/follows use a composite `{type}:{userId}:{timestamp}` id). This replaces the old in-memory/Redis `CHAT_DEDUPE_STORE` (removed).
-3. **Processing retries are bounded**: a handler failure marks the row `failed` with exponential backoff (`next_retry_at = now + min(base * 2^n, cap)`); a crash between persist and process leaves the row `pending`, picked up the same way. The inbound retry cron (every 30 s, advisory-locked per platform — `MESSENGER_WEBHOOK_INBOUND_RETRY`, `ZALO_WEBHOOK_INBOUND_RETRY`) replays due rows; after `WEBHOOK_INBOUND_MAX_RETRIES` failures the row becomes `abandoned` (terminal failure state, audit trail in `last_error`).
+3. **Processing retries are bounded**: a handler failure marks the row `failed` with exponential backoff (`next_retry_at = now + min(base * 2^n, cap)`); a crash between persist and process leaves the row `pending`, picked up the same way. The inbound retry cron (every 30 s, advisory-locked per platform — `MESSENGER_WEBHOOK_INBOUND_RETRY`, `ZALO_WEBHOOK_INBOUND_RETRY`) replays due rows; after `WEBHOOK_INBOUND_MAX_RETRIES` failures the row becomes `abandoned` (terminal failure state, audit trail in `last_error`). A stale `processing` lease is abandoned without automatic replay to avoid duplicating outbound side effects.
 4. Config: `WEBHOOK_INBOUND_MAX_RETRIES` (5), `WEBHOOK_INBOUND_BASE_RETRY_MS` (60 s), `WEBHOOK_INBOUND_CAP_RETRY_MS` (8 min), `WEBHOOK_INBOUND_RETRY_LIMIT` (20). Messenger's old inbound dead-letter table flow (`messenger_webhook_dead_letters` + 5-min retry cron) was replaced by this inbox; `webhook_dead_letters` remains for **outbound** send retries (Discord/Zalo).
 5. **Raw-payload retention**: the daily `webhook-inbound-cleanup` cron (03:15 ICT, advisory-locked per platform) deletes terminal (`completed`/`abandoned`) rows older than `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30). Non-terminal rows (`pending`/`failed`/`processing`) are never deleted — retry/recovery keeps working. External IDs in logs are masked via `maskExternalId` (`packages/bot-common`); composite event ids are masked in log output with `maskEventId` (dedupe keys unchanged).
 
@@ -376,6 +376,7 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 - **WISPACE API (shared):** `WISPACE_API_USER_CALENDAR_URL`, `WISPACE_API_USER_GOALS_URL`, `WISPACE_API_TASK_SCORE_URL`, `WISPACE_INTERNAL_KEY` — auth: platform header (`x-psid`, `x-discordid`, or `x-zaloid`) + `X-Internal-Key`
 - **Study reminder (shared):** `STUDY_REMINDER_*` — **required**, no hardcoded fallbacks in code; `STUDY_REMINDER_STUCK_PROCESSING_MS`
 - **Chat rate limit:** `CHAT_RATE_LIMIT_ENABLED`, `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_BURST_STORE` (R3: `postgres` | `memory` | `redis`), `CHAT_USAGE_TIMEZONE` (shared), `CHAT_RATE_LIMIT_WHITELIST_PSIDS`, `CHAT_QUOTA_REMAINING_HINT_THRESHOLD`, `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS` (H2), `CHAT_MERGED_TEXT_MAX_CHARS` / `CHAT_BURST_COUNT_REFUNDED` (H5), `CHAT_IDEMPOTENCY_RETENTION_DAYS` (H6)
+- **HTTP throttling:** `WEBHOOK_RATE_LIMIT_PER_MINUTE` / `WEBHOOK_RATE_LIMIT_TTL_MS` control authenticated Messenger/Zalo webhook bursts; `THROTTLE_DEFAULT_LIMIT` / `THROTTLE_DEFAULT_TTL_MS` control other throttled routes. `REDIS_ENABLED=true` uses one atomic Redis window across pods; disabled Redis uses the existing in-process store, while configured-but-unavailable Redis fails closed.
 - **Chat quota events:** `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`, `CHAT_QUOTA_EVENTS_CLEANUP_ENABLED`
 - **Chat queue:** `CHAT_DEBOUNCE_MS`, `CHAT_MAX_BUBBLES`, `CHAT_BUBBLE_MAX_CHARS`, `CHAT_QUEUE_STORE` (R4), `CHAT_QUEUE_SHARED` (H7 legacy), `CHAT_HISTORY_STORE` (R1), `CHAT_QUEUE_PROCESSING_STUCK_MS`, `CHAT_QUEUE_STALE_TTL_MS`, `CHAT_QUEUE_CLEANUP_INTERVAL_MS`, `CHAT_HISTORY_TTL_MS`, `CHAT_HISTORY_MAX_MESSAGES`
 - **Ops API:** `INTERNAL_API_KEY` — header `X-Internal-Api-Key` for sync / send-reports / profile setup
@@ -410,6 +411,7 @@ npm run chat-quota:recover-stuck   # H2: refund stuck reserved
 npm run chat-quota:cleanup         # H6: delete old completed/refunded idempotency records
 npm run llm-usage:status           # Query LLM tokens (--psid, --user-id, --ops)
 npm run chat-quota:rebuild         # Q1: rebuild daily counter from events
+npm run --workspace=@wispace/zalo-bot db:explain-oauth-cleanup  # EXPLAIN indexed OAuth-state expiry predicate
 ```
 
 ---
@@ -536,6 +538,8 @@ Bootstrap reminder jobs: `npm run study-reminder:sync`.
 
 GitHub Actions (push to `main`): [`.github/workflows/deploy-bots.yml`](../.github/workflows/deploy-bots.yml) (1 file, 3 jobs: messenger/discord/zalo → `deploy-bot-reusable.yml`) **only builds + pushes the image to GHCR** — it no longer SSHes into the VPS for normal deploys. Shared image build: [`deploy/Dockerfile.bot`](../deploy/Dockerfile.bot) (`ARG APP_NAME`).
 
+The shared Dockerfile pins base/action images by digest, prunes the Turborepo to the selected app, installs production dependencies only, and copies only runtime `dist/` plus dependencies into the final image.
+
 **Why no SSH from CI:** the VPS provider's edge network intermittently drops inbound SSH from GitHub Actions runner IPs (`Connection timed out`, independent of port or retry count — confirmed the VPS's own `ufw`/`iptables`/`sshd` show nothing, so the drop happens upstream of the box). Retrying from CI doesn't help since it's not a rate limit.
 
 **VPS self-pull instead:** a cron job on the VPS runs [`.github/scripts/vps-self-pull-deploy.sh`](../.github/scripts/vps-self-pull-deploy.sh) every few minutes — `git fetch`/`reset` a local clone, check GHCR for an image tagged with the new commit SHA, and if published, run the existing [`vps-deploy.sh`](../.github/scripts/vps-deploy.sh) (unchanged: blue-green swap, health check, migrations, nginx switch). All outbound from the VPS, so the inbound edge-filter never applies. One-time setup (git clone + crontab entry + `GHCR_USER`/`GHCR_PULL_TOKEN`) is documented in the script's header comment.
@@ -555,3 +559,8 @@ On VPS: `docker-compose.prod.yml` + `.env` at `/home/ngoc_anh/<app>/`. Legacy PM
 **Prod public URL:** `https://aiassist.aihubproduction.com` (Nginx → `127.0.0.1:5007`). Docker binds **localhost only** — does not expose `:5007` to the internet. Nginx: `client_max_body_size` + rate limit on `POST /v1/webhook` — see [`deploy/nginx/README.md`](../deploy/nginx/README.md).
 
 Setup details for project/config `dev` + `prd`: [doppler-secrets.md](../apps/messenger-bot/docs/doppler-secrets.md).
+### Runtime image verification
+
+Before publishing a runtime image, build with --pull, record its size with docker image inspect, and run node deploy/verify-runtime-image.mjs <image> <app>. The verifier checks the app entrypoint and shared package artifacts and fails if typescript, ts-node, or jest remains anywhere under node_modules. Refresh a pinned base/tool image only from a reviewed release digest, then rerun this check and the normal quality gate in the same PR.
+
+Measured locally on 2026-08-13 for messenger-bot with docker image inspect: pre-PR image 175,111,524 bytes; PR runtime image 123,265,651 bytes; reduction 51,845,873 bytes (29.6%). The runtime verifier passed on the PR image and rejected the pre-PR image because its production stage still contained development toolchain packages.

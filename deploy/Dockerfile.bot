@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
 # Build context: repo root (needs access to shared packages)
 # docker build -f deploy/Dockerfile.bot --build-arg APP_NAME=messenger-bot .
 # ARG APP_NAME must be redeclared in each stage that uses it.
@@ -6,34 +6,51 @@
 ARG APP_NAME=messenger-bot
 ARG APP_PORT=5007
 
-FROM node:22.23.2-alpine AS build
+FROM node:22.23.2-alpine@sha256:76789712cd1ae89a1225eac9077010d68987a423588042dac30446f502f1858c AS pruner
+WORKDIR /src
+ARG APP_NAME
+
+COPY . .
+RUN npx --yes turbo@2.10.2 prune @wispace/${APP_NAME} --docker --out-dir /tmp/pruned
+
+FROM node:22.23.2-alpine@sha256:76789712cd1ae89a1225eac9077010d68987a423588042dac30446f502f1858c AS build
 WORKDIR /app
 ARG APP_NAME
 
-COPY package.json package-lock.json ./
-COPY apps/$APP_NAME/package.json apps/$APP_NAME/package.json
-# Package manifests only (keep structure for npm workspace resolution);
-# exclude source so npm ci cache survives package code changes.
-COPY --exclude='*/src' --exclude='*/dist' --exclude='*/coverage' --exclude='*/node_modules' packages packages
+COPY --from=pruner /tmp/pruned/json/ ./
+COPY --from=pruner /tmp/pruned/package-lock.json ./package-lock.json
+COPY --from=pruner /src/tsconfig.base.json ./tsconfig.base.json
+COPY --from=pruner /src/tsconfig.base-loose.json ./tsconfig.base-loose.json
 RUN --mount=type=cache,target=/root/.npm HUSKY=0 npm ci
-# Some apps have no non-hoisted deps, so npm ci skips creating their
-# workspace node_modules dir — keep the path present for the COPY below.
-RUN mkdir -p apps/$APP_NAME/node_modules
 
-# Source layer: exclude CI/deploy/docs — keeps cache when only those change.
-COPY --exclude=.git --exclude=node_modules --exclude=.github --exclude=deploy --exclude=docs --exclude='*.md' --exclude='.env*' --exclude='docker-compose*' . .
-RUN npx turbo run build
+COPY --from=pruner /tmp/pruned/full/ ./
+RUN npx turbo run build --filter=@wispace/${APP_NAME}...
 
-# Flatten: replace workspace symlinks with actual built packages
+# Install the runtime dependency graph in a clean workspace after the build.
+FROM node:22.23.2-alpine@sha256:76789712cd1ae89a1225eac9077010d68987a423588042dac30446f502f1858c AS production-deps
+WORKDIR /app
+ARG APP_NAME
+
+COPY --from=pruner /tmp/pruned/json/ ./
+COPY --from=pruner /tmp/pruned/package-lock.json ./package-lock.json
+RUN --mount=type=cache,target=/root/.npm HUSKY=0 npm ci --omit=dev --ignore-scripts
+# TypeORM's CLI peer dependencies are not needed by the compiled app.
+RUN rm -rf node_modules/typescript node_modules/ts-node
+
+COPY --from=build /app/packages ./packages
+
+# Flatten only the pruned dependency closure and keep runtime artifacts only.
 RUN for pkg in packages/*/; do \
       name=$(node -p "require('./${pkg}package.json').name" 2>/dev/null || true); \
       if [ -n "$name" ] && [ -d "node_modules/$name" ]; then \
         rm -rf "node_modules/$name"; \
-        cp -r "$pkg" "node_modules/$name"; \
+        mkdir -p "node_modules/$name"; \
+        cp "$pkg/package.json" "node_modules/$name/package.json"; \
+        cp -r "$pkg/dist" "node_modules/$name/dist"; \
       fi; \
     done
 
-FROM node:22.23.2-alpine AS production
+FROM node:22.23.2-alpine@sha256:76789712cd1ae89a1225eac9077010d68987a423588042dac30446f502f1858c AS production
 WORKDIR /app
 
 # Global ARGs are out of scope after FROM — redeclare per stage that uses them.
@@ -47,8 +64,7 @@ RUN addgroup -g 1001 -S app \
   && adduser -S app -u 1001 -G app
 
 COPY --from=build --chown=app:app /app/apps/$APP_NAME/dist ./apps/$APP_NAME/dist
-COPY --from=build --chown=app:app /app/apps/$APP_NAME/node_modules ./apps/$APP_NAME/node_modules
-COPY --from=build --chown=app:app /app/node_modules ./node_modules
+COPY --from=production-deps --chown=app:app /app/node_modules ./node_modules
 
 USER app
 
