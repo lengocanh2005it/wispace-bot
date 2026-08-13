@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import {
   WispaceCalendarService,
   WispaceConfigService,
+  WispaceExerciseService,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
 
@@ -20,7 +21,18 @@ import {
         new WispaceCalendarService('x-zaloid', configService),
       inject: [WispaceConfigService],
     },
+    {
+      provide: WispaceExerciseService,
+      useFactory: (configService: WispaceConfigService) =>
+        new WispaceExerciseService('x-zaloid', configService),
+      inject: [WispaceConfigService],
+    },
   ],
-  exports: [WispaceConfigService, WispaceGoalsService, WispaceCalendarService],
+  exports: [
+    WispaceConfigService,
+    WispaceGoalsService,
+    WispaceCalendarService,
+    WispaceExerciseService,
+  ],
 })
 export class ZaloWispaceModule {}

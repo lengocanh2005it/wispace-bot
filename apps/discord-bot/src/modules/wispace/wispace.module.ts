@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import {
   WispaceCalendarService,
   WispaceConfigService,
+  WispaceExerciseService,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
 import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
@@ -24,6 +25,12 @@ import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-sha
       inject: [WispaceConfigService],
     },
     {
+      provide: WispaceExerciseService,
+      useFactory: (configService: WispaceConfigService) =>
+        new WispaceExerciseService('x-discordid', configService),
+      inject: [WispaceConfigService],
+    },
+    {
       provide: PlatformStudyCalendarCommandService,
       useFactory: (
         calendarService: WispaceCalendarService,
@@ -40,6 +47,7 @@ import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-sha
   exports: [
     WispaceGoalsService,
     WispaceCalendarService,
+    WispaceExerciseService,
     PlatformStudyCalendarCommandService,
   ],
 })

@@ -23,6 +23,7 @@ import {
 import {
   WispaceCalendarService,
   WispaceConfigService,
+  WispaceExerciseService,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
 import {
@@ -125,6 +126,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         configService: ConfigService,
         goalsService: WispaceGoalsService,
         calendarService: WispaceCalendarService,
+        exerciseService: WispaceExerciseService,
         rescheduleConfirmationService: RescheduleConfirmationService<string>,
         outboundService: ZaloOutboundService,
       ) => {
@@ -166,12 +168,14 @@ const RESCHEDULE_CONFIRM_SUFFIX =
                 ),
             },
           },
+          exerciseService,
         );
       },
       inject: [
         ConfigService,
         WispaceGoalsService,
         WispaceCalendarService,
+        WispaceExerciseService,
         RescheduleConfirmationService,
         ZaloOutboundService,
       ],
@@ -198,6 +202,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             promptFile: 'zalo-chat.system.txt',
             // Single retry layer — retryWithBackoff in PlatformAgentService
             maxLlmRetries: 0,
+            toolExecutionTimeoutMs: 35_000,
           },
         ),
       inject: [
