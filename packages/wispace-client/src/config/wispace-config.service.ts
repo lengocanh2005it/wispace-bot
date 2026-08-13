@@ -29,6 +29,17 @@ export class WispaceConfigService {
     return this.buildClientConfig('WISPACE_API_USER_CALENDAR_URL');
   }
 
+  buildPrecreateExerciseClientConfig(): WispaceApiClientConfig {
+    return {
+      ...this.buildClientConfig('WISPACE_API_PRECREATE_EXERCISE_URL'),
+      maxRetries: 0,
+      requestTimeoutMs: this.readPositiveInt(
+        'WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS',
+        30_000,
+      ),
+    };
+  }
+
   getTimezone(): string {
     return (
       this.configService.get<string>('STUDY_REMINDER_TIMEZONE')?.trim() ??

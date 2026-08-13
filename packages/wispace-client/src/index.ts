@@ -21,6 +21,10 @@ export {
 export type { UserGoalsRecord } from './types/user-goals.types';
 export type { TaskScoreAverageRecord } from './types/task-score-average.types';
 export type {
+  PrecreateExerciseResult,
+  PrecreateExerciseStatus,
+} from './types/precreate-exercise.types';
+export type {
   CreateUserCalendarInput,
   UserCalendarRecord,
 } from './types/user-calendar.types';
@@ -42,6 +46,8 @@ export type { ListCalendarsFn } from './clients/user-calendar-schedule.client';
 export { WispaceGoalsService } from './clients/wispace-goals.service';
 export { WispaceCalendarService } from './clients/wispace-calendar.service';
 export { WispaceTokenVerifyService } from './clients/wispace-token-verify.service';
+export { PrecreateExerciseApiClient } from './clients/precreate-exercise-api.client';
+export { WispaceExerciseService } from './clients/wispace-exercise.service';
 export type {
   WispaceLinkVerifyFailureReason,
   WispaceLinkVerifyResult,
