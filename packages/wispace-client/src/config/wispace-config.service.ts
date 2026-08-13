@@ -1,6 +1,7 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { WispaceApiClientConfig } from '../clients/wispace-client-types';
+import type { PrecreateExerciseClientConfig } from '../types/precreate-exercise.types';
 
 /**
  * Wispace API client config — shared by Discord and Zalo (consolidation of
@@ -29,13 +30,12 @@ export class WispaceConfigService {
     return this.buildClientConfig('WISPACE_API_USER_CALENDAR_URL');
   }
 
-  buildPrecreateExerciseClientConfig(): WispaceApiClientConfig {
+  buildPrecreateExerciseClientConfig(): PrecreateExerciseClientConfig {
     return {
       ...this.buildClientConfig('WISPACE_API_PRECREATE_EXERCISE_URL'),
       maxRetries: 0,
-      requestTimeoutMs: this.readPositiveInt(
+      requestTimeoutMs: this.readRequiredPositiveInt(
         'WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS',
-        30_000,
       ),
     };
   }
@@ -124,5 +124,21 @@ export class WispaceConfigService {
     return Number.isFinite(value) && value >= 0
       ? Math.floor(value)
       : defaultValue;
+  }
+
+  private readRequiredPositiveInt(key: string): number {
+    const raw = this.configService.get<string>(key)?.trim();
+    if (!raw) {
+      throw new InternalServerErrorException(`${key} must be set in .env`);
+    }
+
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new InternalServerErrorException(
+        `${key} must be a positive number in .env`,
+      );
+    }
+
+    return Math.floor(value);
   }
 }

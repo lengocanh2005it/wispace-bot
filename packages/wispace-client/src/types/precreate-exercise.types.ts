@@ -1,3 +1,5 @@
+import type { WispaceApiClientConfig } from '../clients/wispace-client-types';
+
 export type PrecreateExerciseStatus =
   | 'created'
   | 'already_exists'
@@ -9,3 +11,7 @@ export interface PrecreateExerciseResult {
   exerciseUrl?: string;
   message?: string;
 }
+
+export type PrecreateExerciseClientConfig = WispaceApiClientConfig & {
+  requestTimeoutMs: number;
+};

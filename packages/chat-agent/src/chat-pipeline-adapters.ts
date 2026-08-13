@@ -87,7 +87,10 @@ export function createChatPipelineAdapters(
         correlationId: input.correlationId,
         ...(options?.isServerChannel ? { isServerChannel: true } : {}),
       });
-      return { text: result.text };
+      return {
+        text: result.text,
+        ...(result.privateDataFetched ? { privateDataFetched: true } : {}),
+      };
     },
   };
 

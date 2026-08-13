@@ -10,6 +10,10 @@ import {
   PlatformChatHistoryService,
 } from '@wispace/chat-agent';
 import {
+  WispaceConfigService,
+  WispaceExerciseService,
+} from '@wispace/wispace-client';
+import {
   LlmSafetyEventEntity,
   LlmUsageEventEntity,
   PlatformLlmSafetyEventAdapter,
@@ -79,6 +83,16 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
   ],
   providers: [
     MessengerChatSharedConfigService,
+    WispaceConfigService,
+    {
+      provide: WispaceExerciseService,
+      useFactory: (configService: WispaceConfigService) =>
+        new WispaceExerciseService(
+          'x-psid',
+          configService.buildPrecreateExerciseClientConfig(),
+        ),
+      inject: [WispaceConfigService],
+    },
     ChatHistoryStoreResolver,
     ChatHistoryStoreStartupService,
     {

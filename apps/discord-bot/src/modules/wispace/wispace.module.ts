@@ -27,7 +27,10 @@ import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-sha
     {
       provide: WispaceExerciseService,
       useFactory: (configService: WispaceConfigService) =>
-        new WispaceExerciseService('x-discordid', configService),
+        new WispaceExerciseService(
+          'x-discordid',
+          configService.buildPrecreateExerciseClientConfig(),
+        ),
       inject: [WispaceConfigService],
     },
     {

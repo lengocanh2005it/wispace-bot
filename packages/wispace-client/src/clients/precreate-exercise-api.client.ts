@@ -6,10 +6,10 @@ import {
   type WispaceIdHeader,
 } from '../utils/wispace-headers';
 import type { PrecreateExerciseResult } from '../types/precreate-exercise.types';
-import type { WispaceApiClientConfig } from './wispace-client-types';
+import type { PrecreateExerciseClientConfig } from '../types/precreate-exercise.types';
 
 export class PrecreateExerciseApiClient {
-  constructor(private readonly config: WispaceApiClientConfig) {}
+  constructor(private readonly config: PrecreateExerciseClientConfig) {}
 
   async precreateNextExercise(
     idHeader: WispaceIdHeader,
@@ -23,10 +23,7 @@ export class PrecreateExerciseApiClient {
         externalUserId,
         this.config.internalKey,
       ),
-      signal: mergeWithTimeout(
-        options?.signal,
-        this.config.requestTimeoutMs ?? 30_000,
-      ),
+      signal: mergeWithTimeout(options?.signal, this.config.requestTimeoutMs),
     });
 
     if (!response.ok) {

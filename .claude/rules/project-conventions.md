@@ -26,7 +26,7 @@ Turborepo monorepo: `apps/messenger-bot` (NestJS, full-featured) + `apps/discord
 
 ## Auth & API
 
-- Wispace API: headers `x-psid` (Messenger PSID) + `X-Internal-Key` (`WISPACE_INTERNAL_KEY`).
+- Wispace API: send `x-psid` (Messenger), `x-discordid` (Discord), or `x-zaloid` (Zalo) plus `X-Internal-Key` (`WISPACE_INTERNAL_KEY`).
 - Ops HTTP: `X-Internal-Api-Key` or `Authorization: Bearer` = `INTERNAL_API_KEY`.
 - Do not commit `.env`.
 

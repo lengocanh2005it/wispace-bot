@@ -28,7 +28,7 @@ Read this file before modifying code. In-depth details are in `docs/` — only r
 - After first deploy: call `POST /v1/messenger/profile/setup` (header `X-Internal-Api-Key`) — prod menu only has **Register Report** (bot sends reports/reminders automatically).
 - Editing files in `apps/messenger-bot/src/shared/prompts/*.system.txt` → **requires** `npm run build` (Nest copies assets to `dist/shared/prompts/`).
 - Study reminder: `STUDY_REMINDER_*` variables are **required** — use `readRequiredPositiveNumber`, do not hardcode fallbacks in code.
-- Wispace API auth: header **`x-psid`** (Messenger PSID) + **`X-Internal-Key`** (`WISPACE_INTERNAL_KEY`); mapping linkage **requires** token verification via **`POST WISPACE_API_VERIFY_TOKEN_URL`** (shared across 3 bots, body `{token, value, platform}`; `MESSENGER_LINK_MODE=token`; startup fails if config is missing).
+- Wispace API auth: platform identity header **`x-psid`** (Messenger), **`x-discordid`** (Discord), or **`x-zaloid`** (Zalo) + **`X-Internal-Key`** (`WISPACE_INTERNAL_KEY`); mapping linkage **requires** token verification via **`POST WISPACE_API_VERIFY_TOKEN_URL`** (shared across 3 bots, body `{token, value, platform}`; `MESSENGER_LINK_MODE=token`; startup fails if config is missing).
 - Next roadmap exercise chat tool: `POST WISPACE_API_PRECREATE_EXERCISE_URL` with an empty body, timeout `WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS=30000`, no automatic retry, and `X-Internal-Key`; identity header is `x-psid` (Messenger), `x-discordid` (Discord), or `x-zaloid` (Zalo). It requires a linked account and creates only the next roadmap exercise.
 - Ops HTTP (`/messenger/study-calendar/sync`, `send-reports`, …) require header **`X-Internal-Api-Key`** or `Authorization: Bearer …` matching `INTERNAL_API_KEY`.
 - Internal cron (30-minute sync, adaptive S2 dispatch) runs in-process — no API key required.
@@ -385,7 +385,7 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 
 - **Never** commit secrets: `.env`, Meta/OpenAI/LLM provider tokens, `INTERNAL_API_KEY`, DB password.
 - Ops endpoints are protected by `InternalApiKeyGuard` — do not remove the guard when adding operational endpoints.
-- Wispace API: only the `x-psid` header, do not store/log the user's full access token.
+- Wispace API: send the platform identity header (`x-psid` for Messenger, `x-discordid` for Discord, or `x-zaloid` for Zalo) plus `X-Internal-Key`; do not store/log the user's full access token.
 - Meta webhook: verified via `VERIFY_TOKEN` (GET `/v1/webhook`); POST `/v1/webhook` verifies `X-Hub-Signature-256` with `MESSENGER_APP_SECRET` (disable: `MESSENGER_WEBHOOK_SIGNATURE_VERIFY=false`). `ENFORCE_PROD_CHAT_QUOTA=true` or `NODE_ENV=production` → startup fails if secret is missing / verify is disabled / `CHAT_RATE_LIMIT_ENABLED=false`.
 - LLM prompt injection: do not pass user/Wispace strings directly into prompts or tool results. Use `sanitizeUntrustedTextForLlm` / `sanitizeToolResultContent`; JSON output from LLM providers must be parsed + shape-validated, with template fallback on error.
 

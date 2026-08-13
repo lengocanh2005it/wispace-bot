@@ -21,6 +21,7 @@ export {
 export type { UserGoalsRecord } from './types/user-goals.types';
 export type { TaskScoreAverageRecord } from './types/task-score-average.types';
 export type {
+  PrecreateExerciseClientConfig,
   PrecreateExerciseResult,
   PrecreateExerciseStatus,
 } from './types/precreate-exercise.types';

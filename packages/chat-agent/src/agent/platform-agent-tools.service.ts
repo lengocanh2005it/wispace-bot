@@ -9,7 +9,6 @@ import {
   readSchedulingMode,
   readValidatedDate,
   readValidatedTime,
-  sanitizeUntrustedTextForLlm,
 } from '@wispace/llm-agent';
 import {
   WispaceCalendarService,
@@ -21,12 +20,15 @@ import {
   isAbortError,
   maskExternalId,
 } from '@wispace/bot-common';
-import type { PrecreateExerciseResult } from '@wispace/wispace-client';
 import type {
   PlatformAgentToolContext,
   PlatformAgentToolsOptions,
   RescheduleStagePort,
 } from './platform-agent.types';
+import {
+  normalizePrecreateExerciseResult,
+  unavailablePrecreateExerciseResult,
+} from './precreate-exercise-result';
 
 /**
  * Wires the WISPACE tools to real Wispace API calls once the platform
@@ -204,14 +206,14 @@ export class PlatformAgentToolsService {
               ctx.externalUserId,
             )}: missing_client`,
           );
-          return this.unavailableExerciseResult();
+          return unavailablePrecreateExerciseResult();
         }
 
         const result = await this.exerciseService.precreateNextExercise(
           ctx.externalUserId,
           { signal },
         );
-        return this.normalizeExerciseResult(ctx, result);
+        return normalizePrecreateExerciseResult(ctx, result);
       } catch (error) {
         const category = isAbortError(error) ? 'timeout' : 'request_failed';
         this.logger.warn(
@@ -219,58 +221,9 @@ export class PlatformAgentToolsService {
             ctx.externalUserId,
           )}: ${category}`,
         );
-        return this.unavailableExerciseResult();
+        return unavailablePrecreateExerciseResult();
       }
     });
-  }
-
-  private normalizeExerciseResult(
-    ctx: PlatformAgentToolContext,
-    result: PrecreateExerciseResult,
-  ): unknown {
-    const messageHint =
-      typeof result.message === 'string' && result.message.trim()
-        ? sanitizeUntrustedTextForLlm(result.message, { maxChars: 500 }).text
-        : undefined;
-
-    if (result.status === 'created' || result.status === 'already_exists') {
-      const exerciseUrl = this.readHttpsUrl(result.exerciseUrl);
-      ctx.precreatedExerciseUrl = exerciseUrl;
-      return {
-        status: result.status,
-        exerciseUrl,
-        ...(messageHint ? { messageHint } : {}),
-      };
-    }
-
-    return {
-      status: result.status,
-      ...(messageHint ? { messageHint } : {}),
-    };
-  }
-
-  private unavailableExerciseResult(): {
-    status: 'unavailable';
-    messageHint: string;
-  } {
-    return {
-      status: 'unavailable',
-      messageHint:
-        'Hiện chưa thể tạo bài tập mới. Bạn thử lại sau ít phút nhé.',
-    };
-  }
-
-  private readHttpsUrl(value: unknown): string {
-    if (typeof value !== 'string') throw new Error('invalid exercise URL');
-
-    const url = value.trim();
-    try {
-      if (new URL(url).protocol !== 'https:') throw new Error();
-    } catch {
-      throw new Error('invalid exercise URL');
-    }
-
-    return url;
   }
 
   private async withLinkedAccount(

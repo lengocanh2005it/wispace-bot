@@ -5,6 +5,10 @@ import type {
   PlatformAgentToolsOptions,
 } from '@wispace/chat-agent';
 import {
+  normalizePrecreateExerciseResult,
+  unavailablePrecreateExerciseResult,
+} from '@wispace/chat-agent';
+import {
   readCalendarTimeRange,
   readPastDays,
   readPositiveInteger,
@@ -12,7 +16,6 @@ import {
   readSchedulingMode,
   readValidatedDate,
   readValidatedTime,
-  sanitizeUntrustedTextForLlm,
 } from '@wispace/llm-agent';
 import { isAbortError, maskExternalId } from '@wispace/bot-common';
 import {
@@ -46,10 +49,7 @@ import {
 } from '@messenger/shared/utils/messenger-chat-intent.utils';
 import { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
 import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
-import {
-  WispaceExerciseService,
-  type PrecreateExerciseResult,
-} from '@wispace/wispace-client';
+import { WispaceExerciseService } from '@wispace/wispace-client';
 
 export const MESSENGER_NOT_LINKED_MESSAGE =
   'Chưa liên kết tài khoản WISPACE. Học viên cần mở Messenger từ link trong app WISPACE.';
@@ -202,57 +202,15 @@ export class MessengerAgentToolsService {
         ctx.externalUserId,
         { signal },
       );
-      return this.normalizeExerciseResult(ctx, result);
+      return normalizePrecreateExerciseResult(ctx, result);
     } catch (error) {
       this.logger.warn(
         `Tool precreate_next_exercise unavailable for externalUserId=${maskExternalId(
           ctx.externalUserId,
         )}: ${isAbortError(error) ? 'timeout' : 'request_failed'}`,
       );
-      return {
-        status: 'unavailable',
-        messageHint:
-          'Hiện chưa thể tạo bài tập mới. Bạn thử lại sau ít phút nhé.',
-      };
+      return unavailablePrecreateExerciseResult();
     }
-  }
-
-  private normalizeExerciseResult(
-    ctx: PlatformAgentToolContext,
-    result: PrecreateExerciseResult,
-  ): unknown {
-    const messageHint =
-      typeof result.message === 'string' && result.message.trim()
-        ? sanitizeUntrustedTextForLlm(result.message, { maxChars: 500 }).text
-        : undefined;
-
-    if (result.status === 'created' || result.status === 'already_exists') {
-      const exerciseUrl = this.readHttpsUrl(result.exerciseUrl);
-      ctx.precreatedExerciseUrl = exerciseUrl;
-      return {
-        status: result.status,
-        exerciseUrl,
-        ...(messageHint ? { messageHint } : {}),
-      };
-    }
-
-    return {
-      status: result.status,
-      ...(messageHint ? { messageHint } : {}),
-    };
-  }
-
-  private readHttpsUrl(value: unknown): string {
-    if (typeof value !== 'string') throw new Error('invalid exercise URL');
-
-    const url = value.trim();
-    try {
-      if (new URL(url).protocol !== 'https:') throw new Error();
-    } catch {
-      throw new Error('invalid exercise URL');
-    }
-
-    return url;
   }
 
   private async listStudyCalendarEntries(

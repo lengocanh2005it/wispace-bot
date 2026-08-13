@@ -24,7 +24,10 @@ import {
     {
       provide: WispaceExerciseService,
       useFactory: (configService: WispaceConfigService) =>
-        new WispaceExerciseService('x-zaloid', configService),
+        new WispaceExerciseService(
+          'x-zaloid',
+          configService.buildPrecreateExerciseClientConfig(),
+        ),
       inject: [WispaceConfigService],
     },
   ],
