@@ -18,8 +18,7 @@ Related: [project-overview.md](../../../docs/project-overview.md), [study-sessio
 
 | Component | Status |
 |-----------|--------|
-| Webhook dedupe \message.mid\ | Durable inbox \webhook_inbound_events\ (unique \platform+event_id\) — no RAM/Redis dedupe store |
-| Webhook dedupe `message.mid` | ✓ RAM (default) or Redis when `CHAT_DEDUPE_STORE=redis` |
+| Webhook delivery dedupe | ✓ Durable `webhook_inbound_events` inbox with unique `(platform, event_id)` — no RAM/Redis dedupe store |
 | Postback dedupe (`psid:payload`, TTL 15s) | ✓ |
 | Rate limit / `chat_daily_usage` | ✓ `ChatRateLimitModule` |
 | DB idempotency quota (`message.mid`) | ✓ `chat_idempotency` |
@@ -32,7 +31,7 @@ Related: [project-overview.md](../../../docs/project-overview.md), [study-sessio
 Chat text flow:
 
 ```
-webhook → dedupe mid → enqueue (RAM or DB buffer)
+webhook → durable inbox (`event_id`) → enqueue (RAM or Redis buffer)
   → debounce flush → reserve quota (DB) → LLM → Send API
   → markCompleted; error before send → refund
 ```
@@ -210,7 +209,7 @@ src/modules/chat-rate-limit/
 
 > **Note:** Core rate-limit logic (`ChatRateLimitCore`, `ChatRateLimitRepository`, `MemoryBurstCounter`, `PostgresBurstCounter`) now lives in `@wispace/chat-metering` package, shared across Messenger, Discord, and Zalo bots.
 
-Hook: **`MessengerChatProcessorService.flush()`** — before LLM; webhook keeps RAM dedupe. Postback does **not** go through rate limit.
+Hook: **`MessengerChatProcessorService.flush()`** — before LLM; webhook delivery dedupe is handled by the durable inbox. Postback does **not** go through rate limit.
 
 #### Integration with Existing Logs
 
@@ -388,7 +387,7 @@ Then: add `chat_quota_events` **alongside** `chat_daily_usage`, don't change the
 | Timezone | `CHAT_USAGE_TIMEZONE` = `Asia/Ho_Chi_Minh` |
 | Counter | `free_form_count` — FREE_FORM bucket only |
 | Write | Atomic UPSERT; reserve before LLM, refund on fail |
-| Idempotency | **DB** — `message.mid` unique at reserve (§5.3); keep RAM dedupe at webhook |
+| Idempotency | **DB** — `message.mid` unique at reserve (§5.3); durable inbox dedupes webhook delivery |
 | Audit | Keep `message_logs` with standard `message_type` |
 | Event sourcing | **Not** in phase 1; may add later |
 | Count from logs | **Not** on hot path |
@@ -519,7 +518,7 @@ Students typically message the bot from **computer** (Messenger web / desktop) a
 
 | Layer | Behavior |
 |-------|----------|
-| **Webhook** | Each message = one unique `message.mid` (PC and phone always have different `mid`). RAM dedupe only drops **duplicate retries** with same `mid`, doesn't merge two devices. |
+| **Webhook** | Each message = one unique `message.mid` (PC and phone always have different `mid`). The durable inbox drops duplicate deliveries with the same event id; it does not merge two devices. |
 | **Queue** (`MessengerChatProcessorService`) | One `Map` entry **per PSID** — no device source distinction. `processing` flag ensures **at most one flush** (one reserve + LLM) runs for that PSID on the **same instance**. |
 | **Debounce** | Messages from PC + phone arriving **within** `CHAT_DEBOUNCE_MS` (before flush) → merge `texts[]` → **one** bot reply → **deducts 1 turn**. |
 | **Pending while processing** | Message arrives **while** bot is calling LLM (`processing = true`) → enters `pendingWhileProcessing` → after flush completes, **flushes again** → **deducts 1 more turn** (two legitimate messages). |
@@ -613,7 +612,7 @@ class ChatRateLimitService {
 - [x] Migration `chat_idempotency` (or unique `message.mid` on log IN)
 - [x] Entity + repository + `ChatRateLimitService` (`reserve` / `refund` / `markCompleted`)
 - [x] Wire **`MessengerChatProcessorService.flush()`** — reserve + idempotency **before** LLM; refund in `catch`
-- [x] Keep RAM dedupe `isDuplicateMessageMid` at webhook (fast path)
+- [x] Persist authenticated webhook events in `webhook_inbound_events` before acknowledgement; unique `(platform, event_id)` prevents duplicate delivery processing
 - [x] Debounce convention: **1 turn / 1 flush**; document idempotency key when merging burst
 - [x] Document **multiple devices** same account (§5.3) — shared PSID/quota, debounce vs pending
 - [x] New `message_type`: `FREE_FORM_CHAT_IN`, `FREE_FORM_CHAT_OUT`, `CHAT_QUOTA_DENIED`

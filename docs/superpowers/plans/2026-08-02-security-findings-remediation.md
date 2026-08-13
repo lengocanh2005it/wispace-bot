@@ -4,6 +4,8 @@
 
 **Goal:** Remediate the actionable security findings from the incomplete Codex Security scan while preserving existing bot behavior.
 
+> **Current-source note (2026-08-13):** This remains a historical remediation plan and does not by itself assert that findings are cleared. Current health is provided by the shared `packages/bot-common/src/health.controller.ts`; authenticated webhook dedupe/ack gating is the durable inbox in `packages/database/src/services/platform-webhook-inbound-event.service.ts`, not a Redis dedupe store. Normal image deploys are pulled by the VPS self-pull path; the reusable workflow's SSH deploy path is retained for the env-only/manual flow and uses `VPS_KNOWN_HOSTS` with strict checking.
+
 **Architecture:** Reuse existing shared ports, stores, repositories, and configuration patterns. Fix shared root causes once, then add focused regression tests at the affected package/app boundaries. Treat deployment trust anchors and production certificates as runtime configuration, not source-controlled secrets.
 
 **Tech Stack:** NestJS, TypeScript, TypeORM, PostgreSQL, Redis/ioredis, Jest, Docker, GitHub Actions.
@@ -37,8 +39,8 @@
 **Files:**
 - Modify: `apps/zalo-bot/src/modules/zalo-webhook/application/utils/zalo-webhook-signature.utils.ts`
 - Modify: `apps/zalo-bot/src/modules/zalo-webhook/presentation/controllers/zalo-webhook.controller.ts`
-- Modify: `packages/bot-common/src/redis-webhook-dedupe.store.ts`
-- Modify: `apps/zalo-bot/src/health.controller.ts`
+- Review/modify if needed: `packages/database/src/services/platform-webhook-inbound-event.service.ts` (durable inbox replaces the former Redis webhook-dedupe path)
+- Modify: `packages/bot-common/src/health.controller.ts`
 - Modify: `apps/messenger-bot/src/shared/common/guards/messenger-webhook-signature.guard.ts`
 - Modify: `apps/messenger-bot/src/shared/common/utils/messenger-webhook-signature.config.ts`
 - Modify: `apps/messenger-bot/src/modules/messenger/application/services/messenger-webhook-startup.service.ts`
@@ -46,7 +48,7 @@
 - Modify: `deploy/nginx/aiassist.aihubproduction.com.conf`
 - Test: existing webhook/signature/health/metrics specs
 
-**Deliverable:** Reject stale Zalo signatures, fail closed on Redis dedupe errors, return generic health errors, make Messenger webhook signature verification fail closed outside tests, and protect or remove public metrics exposure.
+**Deliverable:** Reject stale Zalo signatures, keep durable inbox persistence/claim failures fail closed, return generic health errors, make Messenger webhook signature verification fail closed outside tests, and protect or remove public metrics exposure.
 
 ---
 

@@ -90,6 +90,8 @@ type LlmStreamEvent =
   | { type: 'error'; error: unknown };
 ```
 
+Implementation note: the shipped interface names the synchronous operations `generateJson()` and `chatWithTools()` and also includes `isConfigured()`, `getDefaultModel()`, and `normalizeError()`. The sketch above records the provider-neutral contract shape; these are the current method names.
+
 ### Adapter responsibilities
 
 Each adapter handles:
@@ -128,13 +130,15 @@ Loop behavior:
 5. Append tool results to messages, continue loop (max `maxToolRounds`)
 6. Guard: if stream errors mid-tool-call → yield `error`, return
 
+Implementation status: provider adapters expose `chatStream()`. `LlmAgentService.replyStream()` currently reuses the non-streaming agent rounds and emits the final text as one `delta`; native token-by-token agent-loop streaming remains Phase 2.
+
 ### Agentic loop changes
 
 - `LlmAgentService` receives `LlmProviderAdapter` via constructor (no more `apiKey`)
 - `AGENT_TOOLS` type changes from `ChatCompletionTool[]` to `LlmToolDefinition[]`
-- Response handling uses `LlmResponse` instead of `ChatCompletion`
+- Response handling uses provider-agnostic response types instead of `ChatCompletion`
 - Tool result messages constructed as `LlmMessage` with `role: 'tool'`
-- Both sync (`chat()`) and streaming (`chatStream()`) modes supported per request
+- `LlmAgentService` exposes sync `reply()` and a `replyStream()` API; adapters expose sync `chatWithTools()` and streaming `chatStream()` operations.
 
 ### Config
 
@@ -154,21 +158,21 @@ Loop behavior:
 ## Consequences
 
 - **Positive**: Adding a new LLM provider requires only implementing `LlmProviderAdapter` — no changes to `LlmAgentService` or tool executors
-- **Positive**: `packages/llm-agent` no longer depends on the `openai` npm package in its core (only the OpenAI adapter does)
+- **Positive**: `LlmAgentService` and provider-agnostic types no longer import OpenAI SDK types. The `@wispace/llm-agent` package still declares `openai` because its OpenAI adapter ships in the same package.
 - **Positive**: Stronger guarantee for ADR-0002's "framework-agnostic" claim
 - **Positive**: Provider-specific error handling is encapsulated, not scattered across utils
-- **Positive**: Streaming support enables real-time user experience (typing indicators, progressive text display)
-- **Positive**: Agent event stream decouples core loop from transport — Messenger, Discord, or WebSocket consumers can subscribe independently
+- **Positive**: Adapter-level streaming support normalizes provider streams; native token-by-token agent-loop streaming remains a follow-up.
+- **Positive**: The `replyStream()`/agent-event API decouples the core loop from transport consumers.
 - **Negative**: One more interface to maintain; slightly more indirection in the call chain
 - **Negative**: Existing tests in `agent.service.spec.ts` need mock adapter instead of mock OpenAI response
-- **Negative**: `LlmExecutionPort` retry logic needs to use adapter's `isRetryableError()` instead of the current `isOpenAiRetryableError()` import
+- **Negative**: Provider/failover adapter error classification and execution-layer retry policies must remain aligned.
 - **Negative**: Streaming adds edge cases: tool JSON errors mid-stream, partial tool arguments, loop termination detection
 - **Negative**: `AsyncIterable` consumption requires careful cleanup (abort signals) when stream is interrupted
 
 ## Scope
 
-- **Phase 1** (this ADR): `LlmProviderAdapter` interface + types + OpenAI adapter (`chat()` sync) + refactor `LlmAgentService`
-- **Phase 2** (follow-up): Add `chatStream()` to adapter + `LlmStreamEvent` + `AgentEvent` stream in `LlmAgentService`
+- **Phase 1** (this ADR): `LlmProviderAdapter` interface + types + OpenAI adapter (`generateJson()` / `chatWithTools()` sync) + refactor `LlmAgentService`
+- **Phase 2** (follow-up): Wire adapter `chatStream()` into `LlmAgentService` for native token/tool-call streaming plus the `LlmStreamEvent` / `AgentEvent` stream.
 - **Phase 3** (follow-up): `@wispace/student-report` abstraction + streaming consumers in Messenger/Discord
 - **Phase 4** (implemented): Multi-provider failover routing — see [spec: 2026-07-18-multi-llm-provider-failover](../superpowers/specs/2026-07-18-multi-llm-provider-failover/spec.md)
   - `OpenRouterAdapter` + `MiniMaxAdapter` extending `OpenAiAdapter`

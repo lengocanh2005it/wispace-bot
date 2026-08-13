@@ -128,7 +128,7 @@ On a **2-core** VPS with **~0% CPU** load (prod reference) → benefits are **ne
 ## 5. Prerequisites (Pre-Cutover Checklist)
 
 - [ ] Redis stable: `curl -sf http://127.0.0.1:5007/health/ready` → `{"status":"ok"}` (fails while Redis configured but unreachable)
-- [ ] Prod has: `REDIS_ENABLED=true`, `CHAT_QUEUE_STORE=redis`, `CHAT_DEDUPE_STORE=redis`, `CHAT_HISTORY_STORE=redis`
+- [ ] Prod has: `REDIS_ENABLED=true`, `CHAT_QUEUE_STORE=redis`, `CHAT_HISTORY_STORE=redis`; webhook delivery dedupe is handled by the durable `webhook_inbound_events` inbox (there is no `CHAT_DEDUPE_STORE`)
 - [ ] `CHAT_RATE_LIMIT_ENABLED=true`, `ENFORCE_PROD_CHAT_QUOTA=true`
 - [ ] Backup `.env` / Doppler config `prd` (snapshot before change)
 - [ ] Deploy window: **outside peak chat hours** (avoid evenings after announcements)
@@ -268,7 +268,7 @@ Needs expansion for real implementation:
 | Flow | 2 Instances |
 |------|-------------|
 | Chat text | Webhook → any pod → Redis buffer (`CHAT_QUEUE_SHARED`) → worker poll 2s flush |
-| `mid` dedupe | Redis — cross-pod |
+| `mid` dedupe | Durable PostgreSQL `webhook_inbound_events` inbox — cross-pod |
 | Daily quota | PostgreSQL atomic (H3) |
 | 08:00 reports | Only leader `INSTANCE_ID=messenger-bot-1` |
 | Report retry `*/15` | Only leader |

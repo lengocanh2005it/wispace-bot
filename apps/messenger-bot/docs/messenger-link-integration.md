@@ -415,7 +415,7 @@ Messenger Bot maps `reason` → user-facing message (e.g. 「Link expired, pleas
 
 ```env
 MESSENGER_LINK_MODE=token
-WISPACE_API_VERIFY_TOKEN_URL=https://backend.aihubproduction.com/api/User/verify-messenger-token
+WISPACE_API_VERIFY_TOKEN_URL=https://testbackend.aihubproduction.com/api/User/verify-bot-token
 WISPACE_INTERNAL_KEY=...
 ```
 

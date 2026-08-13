@@ -35,10 +35,10 @@ Related: [project-overview.md](./project-overview.md), [study-session-reminder.m
 | **LLM-AB** ✓ | LLM Provider Abstraction (adapter + failover) | 2–3 days | OpenAI + OpenRouter + MiniMax (PR #32) |
 | **SAFETY** ✓ | LLM safety event tracking + cleanup | 1 day | Hallucination detection, daily alert |
 | **METRICS** ✓ | Prometheus `/metrics` endpoint | 0.5 days | `MetricsModule` |
-| **DOPPLER** ✓ | Doppler runtime sync | 1 day | `POST /messenger/ops/doppler-sync` |
+| **DOPPLER** ✓ | Production env sync via Doppler | 1 day | Manual `sync-env.yml` workflow; legacy runtime endpoint disabled in hardened containers |
 | **PKG** ✓ | Shared packages extraction | 3–5 days | 18 packages in `packages/` |
 | **DISCORD** ✓ | Discord bot (functional) | 3–5 days | Chat + quota + pending cap + typing indicator + 6/7 tool handlers |
-| **ZALO** ✓ | Zalo bot (fully functional) | 3–5 days | Chat + quota + account linking + 6/7 tool handlers + 08:00 report cron + study reminders + dead letter + ops endpoints + CI/CD + chat queue + pending cap + typing indicator + Redis burst counter + LLM report enrichment + Doppler webhook |
+| **ZALO** ✓ | Zalo bot (fully functional) | 3–5 days | Chat + quota + account linking + 6/7 tool handlers + 08:00 report cron + study reminders + dead letter + ops endpoints + CI/CD + chat queue + pending cap + typing indicator + Redis burst counter + LLM report enrichment; production env sync uses the manual workflow and the legacy Doppler webhook is disabled |
 
 **Recommended order:** ~~Q1/S0/I1/S1/L1/R1/L2/R2/R3/L3/R4/R5/S2~~ (✓) → **Batch 1 edge-case hardening (✓, branch `fix/edge-cases-batch1`)** → **Batch 2 (✓, stacked PRs #71/#73/#75/#77)** → **Batch 3 (✓, stacked PRs #76/#77/#78)** → remaining items per user feedback.
 
@@ -278,7 +278,7 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 | **≥2 reminder cron pods** | `claimJob` ✓ + **cron pg_advisory_lock** ✓ | `upsertPendingJob` TOCTOU fixed ✓ (`pg_advisory_xact_lock`) | Done |
 | Multi-pod webhook dedupe cleanup cron | N×DELETE | **pg_advisory_lock** ✓ — only 1 pod runs every 15 minutes | Done |
 | Monitor / alert | Logs + scripts | **I1** ✓ runbook + `ops:health`; **S1** ✓ failed/stuck jobs; **DL** ✓ dead-letter cron; **I2** Slack alert | **I2** |
-| **Manual VPS prod env sync** | local/prod drift; secret rotation requires SSH | **Doppler** + `DOPPLER_TOKEN` on CI — [doppler-secrets.md](../apps/messenger-bot/docs/doppler-secrets.md) | Done (code) |
+| **Manual VPS prod env sync** | local/prod drift; secret rotation requires SSH | **Doppler** + per-bot `DOPPLER_TOKEN_*` on CI — [doppler-secrets.md](../apps/messenger-bot/docs/doppler-secrets.md) | Done (code) |
 | WISPACE **schema** change | ~~`UserCalendars` DB fallback~~ | **I3** ✓ — API-only `UserCalendar` via `x-psid` | **I3** ✓ |
 | **LLM provider down** | Single provider failure | **LLM-AB** ✓ — adapter failover across OpenAI/OpenRouter/MiniMax |
 | **LLM safety events** | No tracking | **SAFETY** ✓ — `llm_safety_events` + cleanup cron + daily threshold alert |

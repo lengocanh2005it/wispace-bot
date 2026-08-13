@@ -61,7 +61,7 @@ X-Internal-Key: {WISPACE_INTERNAL_KEY}
 
 `userId` is the student ID in the WISPACE system — the bot uses this to store the mapping `(platform, externalUserId) ↔ userId`.
 
-> **Messenger note:** In addition to `userId`, the Messenger response currently returns `topic` and `cadence` for configuring study reports. Discord does not need these 2 fields (no periodic report feature yet).
+> **Messenger note:** In addition to `userId`, the Messenger response currently returns `topic` and `cadence` for configuring study reports. Discord and Zalo use their own report configuration/cron paths and do not depend on these Messenger-specific fields.
 
 ### Failure response (HTTP 4xx)
 

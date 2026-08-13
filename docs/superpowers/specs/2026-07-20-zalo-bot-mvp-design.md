@@ -4,6 +4,8 @@ Date: 2026-07-20
 Phase: Turborepo migration plan — Phase 4 (`apps/zalo-bot`)
 Reference: `docs/turborepo-migration-plan.md`, `apps/discord-bot` (Phase 3, used as the adapter-into-shared-package template).
 
+> **Status note (2026-08-13):** This is a historical design snapshot from 2026-07-20. The current `apps/zalo-bot` implementation has since added `@wispace/chat-metering` quota/rate limiting, the shared `@wispace/chat-agent` queue/history/agent services (with Redis support when enabled), real WISPACE goals/calendar/reschedule handlers, scheduled reports and study reminders, durable webhook ingestion, dead-letter/cleanup recovery, OAuth/ops modules, shared health/metrics wiring, and env-driven LLM failover. The MVP scope and future-work decisions below are preserved as dated design context, not as a complete description of current capabilities.
+
 ## 1. MVP Goals & Scope
 
 Implement `apps/zalo-bot` (new NestJS app in the monorepo) with MVP scope:
@@ -128,7 +130,7 @@ No changes to existing tables (shared DB, the `(platform, external_user_id)` key
 
 `ZALO_APP_ID`, `ZALO_APP_SECRET_KEY`, `ZALO_OA_SECRET_KEY` (used to verify webhook signature, different from `APP_SECRET_KEY` used for OAuth token), `ZALO_CHAT_HISTORY_TTL_MS`, `ZALO_CHAT_HISTORY_MAX_MESSAGES`, `WISPACE_API_VERIFY_TOKEN_URL` (already exists, shared across 3 bots).
 
-## 11. Future Improvements (Out of MVP Scope, Prioritized by Suggestion)
+## 11. Historical Future Improvements (Out of the 2026-07-20 MVP Scope)
 
 This list expands item 1 ("out of MVP scope") into a more concrete roadmap — each item should be a separate spec/plan when actually starting work, not bundled into the current MVP to avoid scope creep.
 

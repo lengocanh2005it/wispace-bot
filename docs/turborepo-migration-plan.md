@@ -4,6 +4,8 @@ End goal: 3 bots (Messenger, Discord, Zalo) in one Turborepo monorepo, **indepen
 
 This document describes the migration phases — which phases are complete and which remain.
 
+> **Current-status note (2026-08-13):** The dated phase notes below preserve the original migration trail. Phase 3 (Discord) and Phase 4 (Zalo) are implemented, their shared test/build gates pass, and the SSH/SCP blue-green deployment path has been exercised on the production VPS. Runtime health was verified through `/health/ready`; real Discord OAuth/user journeys remain separate external-integration checks.
+
 ---
 
 ## Phase 0 — Pre-migration state (completed, reference)
@@ -66,8 +68,8 @@ Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB 
 - `DiscordChatGateway` (`modules/discord-chat/presentation/gateways/`) — `@Once('ready')` logs bot online, `@On('messageCreate')` is the chat entrypoint (only processes DMs, ignores bots/non-DMs).
 - `DiscordOutboundService` — equivalent to `MessageSenderPort`, sends DMs via `client.users.fetch(id).send(text)` (extracted from gateway for reuse in proactive sends later).
 - `DiscordAgentService` (`application/agent/`) — thin adapter around `LlmAgentService` from `@wispace/llm-agent`, similar to `MessengerAgentService`: retries transient OpenAI errors (`isOpenAiRetryableError`), usage/safety events persisted via `@wispace/chat-metering` (platform='discord').
-- `DiscordAgentToolsService` — **stub**: returns `{ available: false, message: '...' }` for all tools in `AGENT_TOOLS` (no Discord ↔ WISPACE userId account-linking yet, so no real Wispace API calls).
-- `DiscordChatHistoryService` — **in-memory only** conversation history (Map in process, lost on restart, no multi-pod) — different from Messenger's `CHAT_HISTORY_STORE` (which has Redis mode).
+- `DiscordAgentToolsService` — **historical MVP stub** at the time of this phase snapshot; the current implementation has 6/7 real WISPACE tool handlers plus OAuth account linking (see the current Phase 3 implementation below).
+- `DiscordChatHistoryService` — historical MVP in-memory implementation; current Discord/Zalo apps use the shared `@wispace/chat-agent` history service, with Redis enabled by `CHAT_HISTORY_STORE=redis`.
 - Dedicated prompt `apps/discord-bot/src/shared/prompts/discord-chat.system.txt` (not shared with Messenger's file).
 - **`packages/chat-metering`** (new framework-agnostic package, second after `llm-agent`) — extracted core quota/rate-limit (`ChatRateLimitCore`, atomic reserve/refund/daily-limit via `chat_daily_usage`/`chat_idempotency`) + LLM usage/safety event recorder (`LlmUsageRecorderCore`, `LlmSafetyCore`) shared by Messenger + Discord, `platform` passed via constructor. `apps/messenger-bot`'s existing repositories (`ChatRateLimitRepository`, `LlmUsageRepository`, `LlmSafetyEventRepository`) refactored into thin wrappers around the package — **no behavior change** (321 → 308 tests because SQL tests moved to 18 dedicated package tests, combined coverage is complete). Boundary details: `.claude/rules/clean-architecture.md`.
 - `apps/discord-bot`'s `DiscordChatRateLimitService`/`DiscordLlmUsageRecorderService`/`DiscordLlmSafetyEventService` (`modules/chat-metering/`) — uses `MemoryBurstCounter` + `DirectUsageWriter` (no BullMQ, no quota-event audit table, no whitelist — different from Messenger, see rules). `DiscordChatGateway` reserves before calling agent, refunds on error, completes after sending; denial sends Vietnamese quota/burst message.
@@ -79,12 +81,12 @@ Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB 
 - Unit tests for `DiscordChatHistoryService`, `DiscordAgentToolsService` (including linked/not-linked cases for all tools + valid/error reschedule cases), `DiscordOutboundService` (including button confirmation DMs), `WispaceDiscordTokenVerifyService`, `DiscordAccountLinkService`, `DiscordOauthController`, and `packages/wispace-client` (`UserGoalsApiClient`, `user-calendar-record.normalizer`, `buildWispaceHeaders`).
 
 **Remaining / technical debt:**
-- **CI/CD VPS deploy** — `deploy-discord-bot.yml`, `Dockerfile`, `docker-compose.prod.yml`, all 3 deploy shell scripts committed. Not yet run on VPS.
+- **CI/CD VPS deploy** — `deploy-discord-bot.yml`, shared `deploy/Dockerfile.bot`, `docker-compose.prod.yml`, and SSH/SCP blue-green scripts are implemented and have been exercised on the VPS.
 - **End-to-end testing not done** — needs real Discord Application OAuth2 client + public HTTPS redirect URI + WISPACE backend displaying "Connect Discord" link.
-- Persistent / multi-pod chat history (Redis) + chat queue (debounce) if scaling to multiple instances.
+- Multi-pod chat history/queue is implemented; enable the Redis-backed stores when scaling beyond a single instance.
 - `apps/messenger-bot`'s local `study-reminder/application/utils/study-calendar.utils.ts` duplicates `packages/wispace-client` — not yet deduplicated.
 
-**Verification done:** `npx turbo run format:check lint typecheck test build --filter=@wispace/messenger-bot... --filter=@wispace/discord-bot... --filter=@wispace/chat-metering... --filter=@wispace/wispace-client...` passed all (messenger-bot 304 tests + chat-metering 18 tests + wispace-client 10 tests + discord-bot 26 tests). Not yet tested with real Discord server (needs real `DISCORD_BOT_TOKEN` + `MESSAGE CONTENT INTENT` enabled in Developer Portal), not yet tested with real DB connection (`DB_*` env) or real Wispace API (`WISPACE_API_*_URL` + `x-discordid`) for Discord, and not yet tested with real OAuth flow (needs public redirect URI + WISPACE backend displaying "Connect Discord" link).
+**Verification snapshot:** The original phase verification command passed at that time. A later full-repo verification on 2026-08-13 passed format, lint, typecheck, tests, build, and `npm audit` reported zero vulnerabilities. Production health/deployment was also verified; real Discord OAuth/user journeys still require external provider credentials and user interaction.
 
 ---
 
@@ -111,10 +113,10 @@ Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 6/7 real WISPA
 **All features implemented:**
 - Chat queue (debounce/merge) via `@wispace/chat-queue-core`
 - LLM report enrichment via `ZaloStudentReportService`
-- Webhook dedupe via Redis (`@wispace/bot-common`)
+- Durable webhook inbox via PostgreSQL `webhook_inbound_events` with unique `(platform, event_id)`
 - Chat history via `@wispace/chat-history` (memory + Redis)
 - Health endpoints via shared `HealthController` (`GET /health` liveness, `GET /health/ready` readiness, `GET /health/detail` internal)
-- Doppler webhook endpoint (`POST /zalo/ops/doppler-sync`)
+- Legacy Doppler webhook endpoint (`POST /zalo/ops/doppler-sync`) retained for compatibility; production env sync uses the manual workflow
 
 **Recently added (commits 9b9ff9a, 66352b7, ad8a196):**
 - Study reminder sync fixed: `getSessions` callback wired via `ZaloWispaceCalendarService`
@@ -141,5 +143,5 @@ Single `deploy-bots.yml` with 3 jobs (messenger/discord/zalo) + shared `deploy-b
 | 1 | Turborepo scaffold + extract `packages/llm-agent` + discord/zalo placeholders | ✅ Completed |
 | 2 | Generalize DB key `(platform, external_user_id)` | ✅ Completed — migration ran on VPS production, verified via SSH |
 | 3 | Implement Discord bot | ✅ Features complete (chat + quota + account-linking OAuth2 + 6/7 real tools + reschedule + 08:00 report cron + leader-election + retry dispatch + study reminders + dead letter + message log + CI/CD workflow + deploy scripts) — no real end-to-end testing yet |
-| 4 | Implement Zalo bot | ✅ Features complete (chat + quota + account-linking + 6/7 tools + LLM report + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD + Doppler webhook + health endpoints + Redis dedupe + chat queue) |
+| 4 | Implement Zalo bot | ✅ Features complete (chat + quota + account-linking + 6/7 tools + LLM report + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD + health endpoints + Redis queue/history options + chat queue; legacy Doppler webhook retained but disabled in hardened production containers) |
 | 5 | Fully independent CI/CD | ✅ Single `deploy-bots.yml` with 3 jobs (messenger/discord/zalo) + shared `deploy-bot-reusable.yml` + `deploy/Dockerfile.bot` |
