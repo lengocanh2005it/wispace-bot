@@ -50,7 +50,7 @@ no extra WISPACE backend endpoint needed.
 
    Unified payload shape shared by all 3 bots — `value` carries whatever the
    platform's external user id is (`psid` for Messenger, `discordId` for
-   Discord, `zaloId` for Zalo later), `platform` says which one calling.
+   Discord, `zaloId` for Zalo), `platform` says which one calling.
    Messenger's `WispaceMessengerTokenVerifyService` sends the same shape
    (`{ token, value, platform: 'messenger' }`) to the same URL.
 
@@ -63,9 +63,11 @@ no extra WISPACE backend endpoint needed.
 4. Send a Vietnamese welcome DM with the quick-action menu buttons to the
    student, and show a small HTML success page in the browser tab.
 
-## Not yet done (follow-up)
+## Remaining follow-up
 
-The 7 WISPACE tools (`get_learning_progress_report`, `get_user_goals`, ...)
-still return `available: false` for every Discord chat — `ctx.userId` is now
-resolvable via `DiscordAccountLinkService.findUserIdByDiscordId`, but wiring
-each tool to the real Wispace API endpoints is separate follow-up work.
+Six of the seven WISPACE tool handlers now call the real Wispace API when
+`ctx.userId` is resolved: goals, progress, upcoming sessions, calendar
+entries, reminder preview, and rescheduling. The remaining
+`register_exam_report_notifications` handler is intentionally unnecessary for
+Discord because Discord has no Messenger-style 24-hour messaging limit; the
+08:00 report cron sends reports to linked accounts instead.

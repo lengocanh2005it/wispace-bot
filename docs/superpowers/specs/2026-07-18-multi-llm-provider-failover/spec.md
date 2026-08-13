@@ -3,14 +3,16 @@
 **Date:** 2026-07-18
 **Scope:** `packages/llm-agent` (provider layer) + wiring in `apps/messenger-bot`, `apps/discord-bot`
 
+> **Status note (2026-08-13):** This design is implemented, with two intentional implementation differences from the July proposal: `packages/llm-agent/src/provider/factory.ts` uses provider-labelled `OpenAiAdapter` entries rather than separate OpenRouter/MiniMax classes, and `createLlmProviderAdapterFromEnv` in `from-env.factory.ts` is shared by Discord and Zalo. The current `FailoverLlmProviderAdapter.chatStream()` attempts another candidate when stream iteration fails; the dated non-goal below is therefore historical. The open questions are resolved by the current env defaults and factory wiring described in source.
+
 ## Problem
 
-Currently each app only configures **one** `LlmProviderAdapter` at boot time (`LLM_PROVIDER` env → `createLlmProviderAdapter()`, see ADR [0006](../../../adr/0006-llm-provider-adapter.md)). When that provider has a runtime failure (out of credits, rate limit, 5xx):
+At design time (2026-07-18), each app only configured **one** `LlmProviderAdapter` at boot time (`LLM_PROVIDER` env → `createLlmProviderAdapter()`, see ADR [0006](../../../adr/0006-llm-provider-adapter.md)). When that provider had a runtime failure (out of credits, rate limit, 5xx):
 
 1. `LlmAgentService.withRetry()` (packages/llm-agent) and/or `LlmExecutionService.runWithRetry()` (messenger-bot) or `DiscordAgentService.runWithRetry()` (discord-bot) **retries the same provider** with exponential backoff (default 3–4 attempts).
 2. If the error is **out of credits / quota**, retry will definitely fail again — just wastes wait time (actual log: `LLM call failed after 4 attempts` — user waits ~several seconds before receiving fallback message, see [chat fallback thread](../../../../CLAUDE.md) earlier in this session).
 3. No second provider is attempted — all chat/report/reminder features are completely dead until an operator tops up credits or changes `.env` + restarts.
-4. **Additional bug discovered**: `apps/discord-bot/src/modules/discord-chat/discord-chat.module.ts` hardcodes `new OpenAiAdapter(...)` directly, **not** going through `createLlmProviderAdapter()` — Discord bot currently does not respect the `LLM_PROVIDER` env var even though Messenger bot does. Needs to be fixed at the same time.
+4. **Additional bug discovered at design time**: `apps/discord-bot/src/modules/discord-chat/discord-chat.module.ts` hardcoded `new OpenAiAdapter(...)` directly, **not** going through `createLlmProviderAdapter()` — Discord bot did not respect the `LLM_PROVIDER` env var even though Messenger bot did. This was fixed during implementation; the current provider binding is in `discord-shared.module.ts`.
 
 ## Goals
 
@@ -22,7 +24,7 @@ Currently each app only configures **one** `LlmProviderAdapter` at boot time (`L
 
 ## Non-goals
 
-- No mid-stream streaming failover for a response already being streamed (`chatStream`) — if a stream has started and fails midway, it is treated as a failure for that turn (failover applies to the *next* turn, not resuming a stream on a different provider mid-way — too complex, risk of half-baked responses spliced from 2 different models).
+- Historical non-goal: no mid-stream streaming failover for a response already being streamed (`chatStream`). Current `FailoverLlmProviderAdapter` tries the next healthy candidate when stream iteration throws, but cannot retract events already emitted by the failed stream.
 - No multi-"round" retry across the full provider list (try A→B→C then loop back to A again). A single failover pass goes through the list **exactly once**. If all fail → throw, existing consumers (chat gateway/dispatch service) already have fallback messages ready.
 - No Anthropic/Gemini addition in this scope (ADR-0006 Phase 4 mentions them but user only requested OpenRouter + MiniMax this time).
 
@@ -277,11 +279,13 @@ export function createFailoverLlmProviderAdapter(
 
 When failover occurs, log `LLM_FAILOVER provider=<X> failed, trying next` (already in the pseudo-code above) — combined with existing `response.metadata.provider` in `LlmUsageRecorder`, sufficient to know which provider actually responded to each chat turn without adding new DB tables/columns.
 
-## Open Questions (need verification before coding error handling details)
+## Historical Open Questions (resolved or changed in the implementation)
 
-1. **MiniMax base URL + exact error shape**: MiniMax has an OpenAI-compatible endpoint (`ChatCompletion v2`) but need to confirm the current base URL (`api.minimax.io` or `api.minimaxi.com`, differs by region/global vs China) and the out-of-credits error structure (`base_resp.status_code` or standard HTTP status) — should look up official docs or test with a real API key before hardcoding defaults.
-2. **OpenRouter default model id**: OpenRouter uses `vendor/model` format (e.g. `openai/gpt-4o-mini`, `anthropic/claude-3.5-sonnet`) — need to choose a default model appropriate for budget/latency of the student chatbot use case, not make this decision on behalf of the user.
-3. Should there be retry-within-same-provider **before** failover for transient rate_limit errors (temporary 429, not out of credits), or always failover immediately as the user requested? This spec chooses **always failover immediately**, simpler and matches the literal requirement — if failover later feels "too sensitive" (switching providers due to a single transient network error), a quick retry (no backoff) before failover can be added, but that is an optimization deferred for later.
+1. **MiniMax base URL + exact error shape**: Current wiring is env-driven through `MINIMAX_BASE_URL` (the shared example uses `https://api.minimax.chat/v1`) and `MINIMAX_MODEL` falls back to `MiniMax-Text-01`; provider-specific normalization is handled by the shared OpenAI-compatible adapter.
+2. **OpenRouter default model id**: Current wiring defaults `OPENROUTER_MODEL` to `openai/gpt-4o-mini`; `OPENROUTER_BASE_URL` is env-driven and the shared example uses `https://openrouter.ai/api/v1`.
+3. Retry policy: the implementation uses one quick retry for transient `rate_limit`/`server_error`/`unknown` errors before failover, while `quota_exceeded`/`auth` fast-fail. This supersedes the proposal's earlier "always failover immediately" option.
+
+**Current implementation map:** `packages/llm-agent/src/provider/factory.ts`, `packages/llm-agent/src/provider/from-env.factory.ts`, and `packages/llm-agent/src/provider/failover/failover-adapter.ts`; app bindings are `apps/messenger-bot/src/modules/llm-execution/llm-execution.module.ts`, `apps/discord-bot/src/modules/discord-chat/discord-shared.module.ts`, and `apps/zalo-bot/src/modules/zalo-chat/zalo-chat.module.ts`. The historical file list below is retained as the original design breakdown.
 
 ## Files Changed
 

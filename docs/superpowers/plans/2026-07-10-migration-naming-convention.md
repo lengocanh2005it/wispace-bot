@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Update `.claude/rules/database.md` to (a) document the naming convention for new TypeORM migrations (Discord/Zalo/shared) going forward, and (b) add an ownership lookup table for the 18 existing migrations in `apps/messenger-bot/src/infrastructure/database/migrations/`, without modifying any existing migration files.
+**Goal:** Update `.claude/rules/database.md` to (a) document the naming convention for new TypeORM migrations (Discord/Zalo/shared) going forward, and (b) add an ownership lookup table for the 18 migrations in the historical baseline, without modifying any existing migration files.
+
+> **Historical-plan status (2026-08-13):** This plan records the 2026-07-10 documentation change. The shared migration source is now `packages/database/src/migrations/` (27 files at audit time); `apps/messenger-bot` still owns the only `migration:run` pipeline. The 18-row lookup requested here remains a dated baseline, not a complete current migration inventory.
 
 **Architecture:** This is a documentation-only change (1 `.md` file), no runnable code, no automated tests. "Test" here = re-reading the file to ensure it doesn't contradict existing content and the ownership table matches the actual migration content (verified via `grep` during brainstorming).
 
@@ -10,7 +12,7 @@
 
 ## Global Constraints
 
-- Do not rename/modify the 18 existing migration files in `apps/messenger-bot/src/infrastructure/database/migrations/` — TypeORM tracks executed migrations by class name in the `migrations` table in the prod DB (`ai_chat_bot_db`); renaming would cause production to re-run old migrations.
+- Do not rename/modify the historical migration files enumerated in this plan — TypeORM tracks executed migrations by class name in the `migrations` table in the prod DB (`ai_chat_bot_db`); renaming would cause production to re-run old migrations.
 - Do not create a new package (`@wispace/migrations` or similar).
 - Do not create physical subfolders in `migrations/`.
 - Do not change the pipeline mechanism — only `messenger-bot` runs `migration:run` for all bots.
@@ -80,7 +82,7 @@ When adding new migrations (Discord, Zalo, or new shared tables):
 Read `E:\wispace-bot\.claude\rules\database.md` from start to finish. Confirm:
 - Content on lines 1–40 and 42–47 (the `## Lưu ý` section) remains exactly as the original.
 - The 2 new sections are in the correct position (after `## Thêm migration`, before `## Lưu ý`).
-- The ownership table has exactly 18 rows (matching the actual number of migration files in `apps/messenger-bot/src/infrastructure/database/migrations/`).
+- The historical ownership table has exactly 18 rows; current `packages/database/src/migrations/` contains additional migrations and must not be inferred from this table.
 - No misaligned Markdown table columns (each row has exactly 3 columns `| Group | File | Tables Touched |`).
 
 If there are discrepancies, fix them with Edit tool before proceeding to the next step.
@@ -90,7 +92,7 @@ If there are discrepancies, fix them with Edit tool before proceeding to the nex
 Run:
 
 ```bash
-cd "E:/wispace-bot" && git status apps/messenger-bot/src/infrastructure/database/migrations/
+cd "E:/wispace-bot" && git status packages/database/src/migrations/
 ```
 
 Expected: no output (working tree clean, no files in `migrations/` were changed).

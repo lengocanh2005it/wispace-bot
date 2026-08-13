@@ -1,11 +1,13 @@
 # Design: TypeORM Migration Naming Convention & Ownership (multi-bot)
 
 **Date:** 2026-07-10
-**Scope:** `apps/messenger-bot/src/infrastructure/database/migrations/`, `.claude/rules/database.md`
+**Scope:** `packages/database/src/migrations/`, `.claude/rules/database.md`
 
 ## Context
 
-The repo currently has 18 migration files in `apps/messenger-bot/src/infrastructure/database/migrations/`, running through a single pipeline (`messenger-bot` — `docs/turborepo-migration-plan.md` Phase 5 specifies discord-bot does **not** run `migration:run` independently to avoid race conditions). Entities shared across bots (chat-metering: `chat_daily_usage`, `chat_idempotency`, `llm_usage_events`, `llm_safety_events`) have already been moved to `packages/chat-metering/src/entities/` — no duplication.
+At design time (2026-07-10), the repo had 18 migration files in `apps/messenger-bot/src/infrastructure/database/migrations/`, running through a single pipeline (`messenger-bot` — `docs/turborepo-migration-plan.md` Phase 5 specifies discord-bot does **not** run `migration:run` independently to avoid race conditions). Entities shared across bots (chat-metering: `chat_daily_usage`, `chat_idempotency`, `llm_usage_events`, `llm_safety_events`) had already been moved to `packages/chat-metering/src/entities/` — no duplication.
+
+> **Current status (2026-08-13):** Shared migrations now live in `packages/database/src/migrations/`; that directory contains 27 migration files, including the later Zalo, idempotency, cleanup, dead-letter, reschedule, leader-lease, and durable-inbox migrations. The centralized `apps/messenger-bot` migration pipeline remains current. The 18-file ownership table below is intentionally preserved as the historical design baseline.
 
 Pain point: migration file/class names do not consistently reflect platform ownership. Most have a `Messenger...` prefix even though some later migrations (`CreateC2QuotaAndLlmUsageTables`, `GeneralizePlatformIdentifiers`) are cross-platform tables; `CreateDiscordAccountLinksTable` has a `Discord` prefix but lives in the same flat folder with no visual distinction. When the Zalo bot is deployed (Phase 4) and the team adds new migrations, this will become harder to trace.
 

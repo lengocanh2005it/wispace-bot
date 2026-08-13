@@ -130,7 +130,7 @@ Delete terminal **`cancelled`** / **`failed`** (retries exhausted) jobs older th
 | Flow | Update Method |
 |------|---------------|
 | **Outbox (T-30)** | `POST /messenger/study-calendar/sync` `{ "userId": 143 }` immediately after schedule commit |
-| **Preview (menu)** | Read directly from UserCalendar API/DB — always sees new schedule, no job sync needed |
+| **Preview (menu)** | Read directly from the UserCalendar API — always sees the new schedule, no job sync needed |
 
 Per-user sync will upsert `pending` jobs, cancel stale jobs, and **reopen `pending` jobs** when:
 
@@ -402,7 +402,7 @@ src/shared/prompts/
 ## 8. `.env` Configuration
 
 ```env
-WISPACE_API_USER_CALENDAR_URL=https://backend.aihubproduction.com/api/UserCalendar
+WISPACE_API_USER_CALENDAR_URL=https://testbackend.aihubproduction.com/api/UserCalendar
 
 STUDY_REMINDER_MINUTES_BEFORE=30
 STUDY_REMINDER_MIN_LEAD_MINUTES=1
@@ -535,7 +535,7 @@ Multi-pod: each instance runs its own loop; `claimJob` (atomic `UPDATE … WHERE
 
 | Concept | Current |
 |---------|--------|
-| **Outbox** | `study_reminder_jobs` table — snapshot of "T-30 reminder tasks to send", not yet calling Messenger |
+| **Outbox** | `study_reminder_jobs` table — snapshot of "T-30 reminder tasks to send"; the dispatch worker sends due jobs through `MESSAGE_SENDER` |
 | **Sync worker** | Writes/updates outbox from `UserCalendar` (30-min cron, API sync, 23:00 rollover) |
 | **Dispatch worker** | **Adaptive poll** reads outbox: any job with `remind_at <= now` gets sent |
 

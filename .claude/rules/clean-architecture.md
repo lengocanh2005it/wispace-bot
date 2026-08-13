@@ -34,11 +34,11 @@ Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (re
 
 ## Monorepo boundary: `packages/chat-history`
 
-`packages/chat-history` (`@wispace/chat-history`) is the fourth framework-agnostic package — `MemoryChatHistoryStore` (in-memory, TTL + turn cap) + `ChatHistoryStorePort`/`ChatHistoryMessage` shared across all bots.
+`packages/chat-history` (`@wispace/chat-history`) is the fourth framework-agnostic package — memory and Redis history stores (TTL + turn cap) + `ChatHistoryStorePort`/`ChatHistoryMessage` shared across all bots.
 
 - **Do not** import NestJS in the package — plain class, constructor accepts `{ ttlMs, maxMessages }`.
-- Each app decides whether to wrap `MemoryChatHistoryStore` behind a distributed backend: `apps/messenger-bot`'s `MemoryChatHistoryStore` (infrastructure, Nest `@Injectable`) is a **thin wrapper** around the package core, reading TTL/maxMessages from `MessengerChatSharedConfigService`; `ChatHistoryStoreResolver` still selects Redis when `CHAT_HISTORY_STORE=redis` (Redis store is **not** in the package — it's infrastructure-specific to each app).
-- `apps/discord-bot`'s `DiscordChatHistoryService` uses the package core directly (reads TTL/maxMessages via `CHAT_HISTORY_TTL_MS`/`CHAT_HISTORY_MAX_MESSAGES`, default 30 minutes / 20 messages) — no distributed backend yet, see `docs/turborepo-migration-plan.md` Phase 3.
+- `apps/messenger-bot`'s `ChatHistoryStoreResolver` selects memory or Redis using `CHAT_HISTORY_STORE` (Redis requires `REDIS_ENABLED=true`); the app supplies TTL/maxMessages from `MessengerChatSharedConfigService`.
+- `apps/discord-bot` and `apps/zalo-bot` use the platform history service from `@wispace/chat-agent`; `CHAT_HISTORY_STORE=redis` enables the shared Redis backend, while memory remains the default.
 - Modify package → rebuild + test both apps (`npx turbo run build test --filter=@wispace/messenger-bot... --filter=@wispace/discord-bot... --filter=@wispace/chat-history`).
 
 ## Monorepo boundary: `packages/student-report`
@@ -57,8 +57,8 @@ Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (re
 
 - **Do not** import NestJS — plain class. All content logic (merge/cap text, reserve quota, call LLM, send outbound) lives in `ChatQueueFlushHandler` injected by the app, **not** in the core.
 - **Idempotency key**: the package exports type `IdempotencyKeyPort<TRawMessage>` — this is a **contract**, not logic running in the core. Idempotency key (Messenger: `message.mid`, Discord: `message.id`) is resolved by each platform at the ingestion layer (webhook/gateway) **before** calling `enqueue()`; core only carries that string through `ChatQueueBatch.idempotencyKey`, not interpreting it.
-- `apps/messenger-bot`'s `MessengerChatEnqueueService` uses `DebounceChatQueue` for **memory mode** (`CHAT_QUEUE_STORE=memory`); Redis/distributed mode (`enqueueDistributed`, `flushDistributed`, `ChatQueueStorePort`) is **not** in the package — infrastructure-specific, kept in app (same pattern as `@wispace/chat-history`: only memory backend is split out, Redis stays in app).
-- Modify package → rebuild + test `apps/messenger-bot` (`npx turbo run build test --filter=@wispace/messenger-bot... --filter=@wispace/chat-queue-core`). `apps/discord-bot` doesn't have debounce/queue yet — when adding, use this package directly instead of rewriting the state machine.
+- `apps/messenger-bot`'s `MessengerChatEnqueueService` uses `DebounceChatQueue` for memory mode and its Redis-backed queue adapter for distributed mode; platform queue wiring remains in the app.
+- Modify package → rebuild + test `apps/messenger-bot` (`npx turbo run build test --filter=@wispace/messenger-bot... --filter=@wispace/chat-queue-core`). `apps/discord-bot` and `apps/zalo-bot` use the platform-parameterized queue services from `@wispace/chat-agent`; update the shared state machine/package first when changing queue behavior.
 
 ## Monorepo boundary: `packages/study-reminder-shared`
 
@@ -85,7 +85,7 @@ presentation → application → domain ← infrastructure
 - `shared/config/` — Constants (`poc.constants.ts`)
 - `shared/common/` — guards, shared modules
 - `shared/prompts/` — `*.system.txt` (Messenger-specific content), loaded via `loadSystemPromptFile()` from `@wispace/llm-agent`
-- `infrastructure/database/` — TypeORM entities, migrations, `DatabaseModule` (shared DB, not yet split into package — see `docs/turborepo-migration-plan.md` Phase 2)
+- `infrastructure/database/` — Messenger app wiring and migration CLI; shared TypeORM entities/migrations live in `packages/database/` (see `docs/turborepo-migration-plan.md` Phase 2)
 
 ## Feature module structure
 

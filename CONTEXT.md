@@ -196,7 +196,7 @@ _Avoid_: finalize, commit
 
 **chat_idempotency** (DB table):
 Ensures each `message.mid` (or platform message ID) is counted only once. Entity: `ChatIdempotencyEntity`. States: `reserved`, `completed`, `refunded`.
-_Avoid_: dedup table (deduplication is a separate concern — `CHAT_DEDUPE_STORE`)
+_Avoid_: dedup table (webhook delivery deduplication is owned by the durable `webhook_inbound_events` inbox)
 
 **idempotencyKey**:
 Platform-specific message identifier (`message.mid` on Messenger, `message.id` on Discord) used for double-count prevention.
@@ -407,7 +407,7 @@ _Avoid_: database lock — specifically advisory lock
 ### Wispace API
 
 **UserCalendar API**:
-Wispace API endpoint for reading a user's study sessions. Authenticated via `x-psid` header. Returns `UserCalendarRecord[]`.
+Wispace API endpoint for reading a user's study sessions. Authenticated via the platform header (`x-psid`, `x-discordid`, or `x-zaloid`). Returns `UserCalendarRecord[]`.
 _Avoid_: calendar API without "User" prefix
 
 **User/goals API**:

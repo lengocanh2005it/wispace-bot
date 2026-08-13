@@ -66,7 +66,7 @@ Modify `agent.tools.ts` — only 2 tool descriptions:
 |------|--------|
 | `packages/llm-agent/src/tool-cache/tool-result-cache.port.ts` | New — port interface + noop implementation |
 | `packages/llm-agent/src/tool-cache/in-memory-tool-result-cache.ts` | New — Map-based implementation |
-| `packages/llm-agent/src/ports.ts` | Add `toolResultCache?: ToolResultCachePort` to `LlmAgentPorts` |
+| `packages/llm-agent/src/agent.service.ts` | Add `toolResultCache?: ToolResultCachePort` to `LlmAgentPorts` |
 | `packages/llm-agent/src/types.ts` | Add `toolCacheTtlMs?: number` to `LlmAgentConfig` |
 | `packages/llm-agent/src/agent.service.ts` | Cache lookup/set/invalidate in tool execution block |
 | `packages/llm-agent/src/agent.tools.ts` | 2 description updates |

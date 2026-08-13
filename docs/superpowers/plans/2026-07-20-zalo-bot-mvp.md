@@ -6,7 +6,9 @@
 
 **Architecture:** NestJS HTTP app (`NestFactory.create`, not `createApplicationContext` — needs to expose both the webhook and the OAuth callback over HTTP), 4 feature modules (`zalo-webhook`, `zalo-chat`, `zalo-oauth`, `wispace` stub), each following the repo's 4-layer Clean Architecture convention. Reuses `@wispace/llm-agent` and `@wispace/chat-history` exactly as `apps/discord-bot` does. Migrations live in `apps/messenger-bot` (only that pipeline is allowed to run `migration:run` — see `.claude/rules/database.md`).
 
-**Tech Stack:** NestJS 11, TypeORM, `@nestjs/config`, `@wispace/llm-agent`, `@wispace/chat-history`, `openai` (OpenAI-compatible provider adapter), Jest.
+> **Historical-plan status (2026-08-13):** The task breakdown below records the July MVP implementation target and is retained for its historical decisions and execution trail. Current shared migrations live in `packages/database/src/migrations/` and are still run only by the `apps/messenger-bot` TypeORM pipeline. Current Zalo wiring uses `@wispace/chat-agent`, `@wispace/chat-metering`, `@wispace/llm-agent`, `@wispace/database`, `zalo-study-reminder`, `zalo-report`, and `zalo-ops`; it is no longer limited to the stub tools, no-quota, immediate-processing, in-memory-history scope described below.
+
+**Tech Stack (historical snapshot):** NestJS 11, TypeORM, `@nestjs/config`, `@wispace/llm-agent`, `@wispace/chat-history`, `openai` (OpenAI-compatible provider adapter), Jest.
 
 ## Global Constraints
 
@@ -3052,7 +3054,7 @@ import { ZaloChatService } from './application/services/zalo-chat.service';
 export class ZaloChatModule {}
 ```
 
-**Note (future work):** no multi-provider failover here — if `apps/zalo-bot` later needs it, copy the `LLM_PROVIDER_FAILOVER_ORDER` factory from `apps/discord-bot/src/modules/discord-chat/discord-chat.module.ts` (see also `discord-chat-factory.spec.ts` for its test pattern).
+**Historical plan note:** this MVP plan did not include multi-provider failover. Current `apps/zalo-bot` wiring uses `createLlmProviderAdapterFromEnv` from `@wispace/llm-agent`, including `LLM_PROVIDER_FAILOVER_ORDER` when configured; the factory lives in `packages/llm-agent`, not in `discord-chat.module.ts`.
 
 - [ ] **Step 7: Update `ZaloWebhookModule` to bind the real handler**
 
@@ -3128,4 +3130,4 @@ After Task 13, run the full cross-app verify to confirm nothing else broke:
 npx turbo run format:check lint typecheck test build --filter=@wispace/messenger-bot... --filter=@wispace/zalo-bot...
 ```
 
-Expected: all green. This closes out the MVP scope from `docs/superpowers/specs/2026-07-20-zalo-bot-mvp-design.md` §§2–7 (webhook, OA token lifecycle, account-linking, chat via LLM agent, stub tools). Real WISPACE tools, quota, ZNS, and the rest of §11's future work remain out of scope — track them as separate specs/plans when picked up.
+Expected: all green. At the time of this plan, this closed the MVP scope from `docs/superpowers/specs/2026-07-20-zalo-bot-mvp-design.md` §§2–7 (webhook, OA token lifecycle, account-linking, chat via LLM agent, stub tools). Real WISPACE tools and quota were then out of scope; current implementation status is recorded in the historical-plan note above.

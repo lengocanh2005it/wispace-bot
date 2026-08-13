@@ -2,6 +2,8 @@
 
 Full design in [spec.md](./spec.md). Each task = 1 small commit, with accompanying tests (per `.claude/rules/project-conventions.md` — small diffs, correct layer).
 
+> **Status note (2026-08-13):** Phases 1–4 and the automated verification items are implemented. The remaining unchecked 5.3 item is intentionally a manual test requiring live provider credentials. The implementation consolidates OpenRouter/MiniMax into provider-labelled `OpenAiAdapter` entries in `packages/llm-agent/src/provider/factory.ts` and shared env wiring in `packages/llm-agent/src/provider/from-env.factory.ts`; it does not contain the separate adapter files proposed by the historical task breakdown. Current Discord/Zalo wiring is in `discord-shared.module.ts`/`zalo-chat.module.ts`, while Messenger wiring remains in `llm-execution.module.ts`.
+
 Before starting: resolve the 2 open questions in the spec (MiniMax base URL/error shape, OpenRouter model default) — if official docs cannot be verified yet, implement with clear placeholder values + `// TODO verify` comment and note in PR, do not guess critical data (auth/billing).
 
 ## Phase 1 — `packages/llm-agent` provider layer
@@ -22,8 +24,8 @@ Before starting: resolve the 2 open questions in the spec (MiniMax base URL/erro
   - **Circuit breaker skip**: candidate is in cooldown (set `healthyAgainAt` in future via injected `clock`) → `pickHealthy()` removes that candidate from retry list, **no** `call()` made to it (assert via spy not being invoked) — proves no network round-trip wasted on known-dead provider.
   - Circuit breaker reset: candidate succeeds on a subsequent call → `circuit.delete()`, next turn that candidate is tried normally (not stuck in permanent cooldown before natural expiry).
   - All candidates in cooldown simultaneously → `pickHealthy()` falls back to full `candidates` list (retry first candidate) instead of throwing immediately without trying — avoids false outage if cooldown estimation is wrong.
-  - `chatStream`: no failover mid-stream — if first configured candidate throws at start of iteration, **no** automatic switch to candidate 2 (documented in test as a known limitation, see Non-goals) — but circuit breaker is still respected when *selecting* the initial candidate.
-- [x] **1.7** `provider/factory.ts` — add `case 'openrouter'`, `case 'minimax'` to `createLlmProviderAdapter()`; add `createFailoverLlmProviderAdapter(entries, order, logger?)`. Test `factory.spec.ts`:
+  - `chatStream`: current implementation attempts the next healthy candidate if stream iteration throws; already-emitted events cannot be withdrawn. Circuit-breaker selection and stream fallback are covered in the current failover adapter tests.
+- [x] **1.7** `provider/factory.ts` — add provider entries for `openrouter`/`minimax` and `createFailoverLlmProviderAdapter(entries, order, logger?)`. Test `factory.spec.ts`:
   - `order` empty/1 provider configured → return single adapter directly (no `FailoverLlmProviderAdapter` wrapper) — assert via `instanceof`.
   - `order` ≥2 providers configured → return `FailoverLlmProviderAdapter` with correct order.
   - Provider in `order` but missing key (`isConfigured()===false`) → filtered out of candidate list.

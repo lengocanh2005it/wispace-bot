@@ -38,8 +38,8 @@ packages/date-utils/            Timezone-aware date helpers (date-fns)
 - Multi-LLM provider failover (OpenAI → OpenRouter → MiniMax)
 
 **Messenger:** Webhook routing, Get Started referral, persistent menu, `m.me` linking
-**Discord:** Slash commands, OAuth2 account linking, guild-only access
-**Zalo:** OA account linking, webhook signature verification
+**Discord:** DMs and `@mentions`, OAuth2 account linking, report/study quick actions
+**Zalo:** OA account linking, OAuth2, webhook signature verification, reports/reminders
 
 ## Documentation
 
@@ -66,6 +66,10 @@ npm run start:dev
 Meta webhook: `GET/POST /v1/webhook`
 Bot menu configuration: `POST /v1/messenger/profile/setup`
 Wispace schedule sync: `POST /v1/messenger/study-calendar/sync` + header `X-Internal-Api-Key` (see `apps/messenger-bot/.env` `INTERNAL_API_KEY`)
+
+Production binds each bot to localhost only: Messenger `5007`/`5008`, Discord `3001`/`3004`, and Zalo `3002`/`3003` for blue-green deploys. Nginx exposes the public HTTPS endpoints; direct container ports are not internet-facing. `GET /health` is public liveness, `GET /health/ready` is public status-only readiness, and `GET /health/detail` plus `/metrics` require `X-Internal-Api-Key`.
+
+Normal deploys build and push a shared `deploy/Dockerfile.bot` image to GHCR; the VPS self-pull cron deploys the commit image. Production environment changes use the manual `sync-env.yml` workflow with Doppler. Containers do not mount the host Docker socket.
 
 ## Useful scripts (run in `apps/messenger-bot/`)
 

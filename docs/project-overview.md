@@ -5,8 +5,8 @@ Turborepo monorepo connecting **WISPACE** (IELTS Writing learning platform) with
 | App | Status |
 |-----|--------|
 | `apps/messenger-bot` | Fully functional — chat, reports, reminders, rate limit |
-| `apps/discord-bot` | Fully functional — chat, quota, pending cap + typing indicator, queued-failure fallback, 6/7 tool handlers, report cron |
-| `apps/zalo-bot` | Fully functional — chat, quota, pending cap, queued-failure fallback, account linking, report cron, study reminders, CI/CD |
+| `apps/discord-bot` | Fully functional — chat, quota, pending cap + typing indicator, queued-failure fallback, OAuth account linking, 6/7 real tool handlers, report cron, study reminders, and CI/CD |
+| `apps/zalo-bot` | Fully functional — chat, quota, pending cap, queued-failure fallback, account linking, 6/7 real tool handlers, report cron, study reminders, CI/CD, and shared health/ops hardening |
 
 Shared packages (`packages/`): `llm-agent`, `chat-metering`, `chat-agent`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `chat-pipeline`, `study-reminder-shared`, `scheduler-core`, `ops-health`, `bot-metrics`, `cleanup-cron`, `reschedule-confirm`, `bot-common`, `database`, `doppler-sync`, `date-utils`.
 
@@ -373,7 +373,7 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 - **LLM global concurrency:** `LLM_GLOBAL_CONCURRENCY_ENABLED`, `LLM_GLOBAL_MAX_CONCURRENT`
 - **LLM usage (C2):** `LLM_USAGE_*`; USD estimate: `LLM_COST_USD_PER_1M_INPUT_TOKENS_<MODEL>` / `LLM_COST_USD_PER_1M_OUTPUT_TOKENS_<MODEL>` (e.g. `gpt-5.4` → `GPT_5_4`: input `2.50`, output `15.00` per [OpenAI pricing](https://developers.openai.com/api/docs/pricing); ≠ actual invoice)
 - **LLM safety:** `LLM_SAFETY_EVENTS_ENABLED`, `LLM_SAFETY_WARNING_DAILY_THRESHOLD`, `LLM_SAFETY_EVENT_RETENTION_DAYS`
-- **WISPACE API (shared):** `WISPACE_API_USER_CALENDAR_URL`, `WISPACE_API_USER_GOALS_URL`, `WISPACE_API_TASK_SCORE_URL`, `WISPACE_INTERNAL_KEY` — auth: `x-psid` + `X-Internal-Key`
+- **WISPACE API (shared):** `WISPACE_API_USER_CALENDAR_URL`, `WISPACE_API_USER_GOALS_URL`, `WISPACE_API_TASK_SCORE_URL`, `WISPACE_INTERNAL_KEY` — auth: platform header (`x-psid`, `x-discordid`, or `x-zaloid`) + `X-Internal-Key`
 - **Study reminder (shared):** `STUDY_REMINDER_*` — **required**, no hardcoded fallbacks in code; `STUDY_REMINDER_STUCK_PROCESSING_MS`
 - **Chat rate limit:** `CHAT_RATE_LIMIT_ENABLED`, `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_BURST_STORE` (R3: `postgres` | `memory` | `redis`), `CHAT_USAGE_TIMEZONE` (shared), `CHAT_RATE_LIMIT_WHITELIST_PSIDS`, `CHAT_QUOTA_REMAINING_HINT_THRESHOLD`, `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS` (H2), `CHAT_MERGED_TEXT_MAX_CHARS` / `CHAT_BURST_COUNT_REFUNDED` (H5), `CHAT_IDEMPOTENCY_RETENTION_DAYS` (H6)
 - **Chat quota events:** `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`, `CHAT_QUOTA_EVENTS_CLEANUP_ENABLED`
@@ -546,7 +546,7 @@ GitHub Actions (push to `main`): [`.github/workflows/deploy-bots.yml`](../.githu
 |---------------|---------|
 | `GHCR_PULL_TOKEN` | PAT `read:packages` — image build/push, and VPS `docker login ghcr.io` to pull |
 | `VPS_HOST`, `VPS_USER`, `SSH_PRIVATE_KEY` | Only used by [`sync-env.yml`](../.github/workflows/sync-env.yml) (`env_only=true`, manual `workflow_dispatch`) — legacy env-only SSH path, kept as a fallback since it's rarely triggered |
-| `DOPPLER_TOKEN` | Service token for **prd** config — used by `sync-env.yml` |
+| `DOPPLER_TOKEN_MESSENGER`, `DOPPLER_TOKEN_DISCORD`, `DOPPLER_TOKEN_ZALO` | Per-bot service tokens for **prd** config — passed to the reusable deploy workflow; `sync-env.yml` uses the Messenger token for manual env sync |
 
 Image: `ghcr.io/lengocanh2005it/wispace-bot/<app>:<commit-sha>` (also tagged `:latest`).
 

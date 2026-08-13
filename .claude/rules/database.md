@@ -29,7 +29,7 @@ H7 migration created `messenger_chat_queue_buffer` + `messenger_chat_history` �
 ## Wispace hub (no migrations in repo)
 
 - Sole HTTP API for calendar (`UserCalendar`, goals, scores) — **I3 ✓** no more `UserCalendars` DB fallback in app.
-- `"Users"` view on `ai_chat_bot_db` (migration `1717747200008`) — read by the user display-name cache (`users` table / `"Users"` view, Redis R5 cache first). `UserCalendars` on `writing_ai_hub_db` — owned by Wispace; bot does not read it (I3 removed the DB fallback).
+- `"Users"` view on `ai_chat_bot_db` (migration `1717747200008`) — read by the user display-name cache (`users` table / `"Users"` view, Redis R5 cache first). Calendar data is owned by Wispace and fetched through its HTTP API; the bot does not read the old `writing_ai_hub_db`.
 
 ## Adding a migration
 
@@ -39,7 +39,7 @@ H7 migration created `messenger_chat_queue_buffer` + `messenger_chat_history` �
 
 CLI generate (if needed): `npm run migration:generate -- src/infrastructure/database/migrations/TenMigration` (run in `apps/messenger-bot/`), then move shared-table entities/migrations to `packages/database/` when appropriate.
 
-DB is shared across bots (Messenger, Discord now, Zalo later) — keys generalized to `(platform, external_user_id)` in Phase 2, see `docs/turborepo-migration-plan.md`. Entities for the 4 chat-metering tables (`chat_daily_usage`, `chat_idempotency`, `llm_usage_events`, `llm_safety_events`) live in `packages/chat-metering` — **do not** add duplicate entities in `apps/*/infrastructure/database/entities/` — only migrations (run by messenger-bot) modify these tables' schemas.
+DB is shared across bots (Messenger, Discord, and Zalo) — keys generalized to `(platform, external_user_id)` in Phase 2, see `docs/turborepo-migration-plan.md`. Entities for the 4 chat-metering tables (`chat_daily_usage`, `chat_idempotency`, `llm_usage_events`, `llm_safety_events`) live in `packages/chat-metering` — **do not** add duplicate entities in `apps/*/infrastructure/database/entities/` — only migrations (run by messenger-bot) modify these tables' schemas.
 
 ## Naming convention for new migrations (applied going forward, not retroactively)
 
