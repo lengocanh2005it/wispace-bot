@@ -1,7 +1,8 @@
-import { Column, Entity, PrimaryColumn } from 'typeorm';
+import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 
 /** Maps the `zalo_oauth_states` table — see migration in apps/messenger-bot. */
 @Entity('zalo_oauth_states')
+@Index('idx_zalo_oauth_states_created_at', ['createdAt'])
 export class ZaloOauthStateEntity {
   @PrimaryColumn({ type: 'varchar', length: 64 })
   state: string;

@@ -1,10 +1,8 @@
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-call -- jest.fn() mocks */
-import { ConfigService } from '@nestjs/config';
+/* eslint-disable @typescript-eslint/unbound-method -- jest.fn() mocks */
 import {
   ZaloWebhookIngestService,
   buildZaloEventId,
 } from './zalo-webhook-ingest.service';
-import { ZaloWebhookDispatchService } from './zalo-webhook-dispatch.service';
 import type { ZaloWebhookEvent } from '../domain/entities/zalo-webhook-event.types';
 import type { PlatformWebhookInboundEventService } from '@wispace/database';
 
@@ -23,32 +21,21 @@ function textEvent(
 
 describe('ZaloWebhookIngestService (durable webhook ingestion)', () => {
   const buildService = () => {
-    const configService = {
-      get: jest.fn(() => undefined),
-    } as unknown as ConfigService;
-    const dispatch = jest.fn().mockResolvedValue(undefined);
-    const dispatcher = { dispatch } as unknown as ZaloWebhookDispatchService;
     const inboundEvents = {
       ingest: jest.fn().mockResolvedValue({ inserted: true, id: 7 }),
-      claim: jest.fn().mockResolvedValue(true),
-      markCompleted: jest.fn().mockResolvedValue(undefined),
-      markFailed: jest.fn().mockResolvedValue(undefined),
     } as unknown as PlatformWebhookInboundEventService;
 
-    const service = new ZaloWebhookIngestService(
-      configService,
-      dispatcher,
-      inboundEvents,
-    );
+    const service = new ZaloWebhookIngestService(inboundEvents);
 
-    return { service, inboundEvents, dispatch };
+    return { service, inboundEvents };
   };
 
-  it('persists the event before dispatch and marks it completed', async () => {
-    const { service, inboundEvents, dispatch } = buildService();
+  it('persists an event without dispatching downstream work', async () => {
+    const { service, inboundEvents } = buildService();
 
-    await service.processEvent(textEvent());
+    const accepted = await service.ingestEvent(textEvent());
 
+    expect(accepted).toBe(true);
     expect(inboundEvents.ingest).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: 'm1',
@@ -56,59 +43,15 @@ describe('ZaloWebhookIngestService (durable webhook ingestion)', () => {
         eventType: 'user_send_text',
       }),
     );
-    expect(dispatch).toHaveBeenCalled();
-    expect(inboundEvents.claim).toHaveBeenCalledWith(7);
-    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(7);
   });
 
-  it('skips duplicate deliveries without dispatch (idempotent)', async () => {
-    const { service, inboundEvents, dispatch } = buildService();
-    inboundEvents.ingest.mockResolvedValue({ inserted: false });
-
-    await service.processEvent(textEvent());
-
-    expect(dispatch).not.toHaveBeenCalled();
-    expect(inboundEvents.markCompleted).not.toHaveBeenCalled();
-  });
-
-  it('defers to the retry cron when the event is already claimed', async () => {
-    const { service, inboundEvents, dispatch } = buildService();
-    inboundEvents.claim.mockResolvedValue(false);
-
-    await service.processEvent(textEvent());
-
-    expect(dispatch).not.toHaveBeenCalled();
-  });
-
-  it('records a bounded-backoff failure when dispatch throws', async () => {
-    const { service, inboundEvents, dispatch } = buildService();
-    dispatch.mockRejectedValue(new Error('WISPACE down'));
-
-    await service.processEvent(textEvent());
-
-    expect(inboundEvents.markFailed).toHaveBeenCalledWith(
-      7,
-      'WISPACE down',
-      expect.objectContaining({ maxRetries: 5, baseRetryMs: 60_000 }),
-    );
-    expect(inboundEvents.markCompleted).not.toHaveBeenCalled();
-  });
-
-  it('does not schedule a retry when markCompleted fails (side effects already ran)', async () => {
+  it('skips duplicate deliveries without claiming or dispatching', async () => {
     const { service, inboundEvents } = buildService();
-    inboundEvents.markCompleted.mockRejectedValue(new Error('DB hiccup'));
+    (inboundEvents.ingest as jest.Mock).mockResolvedValue({ inserted: false });
 
-    await service.processEvent(textEvent());
+    const accepted = await service.ingestEvent(textEvent());
 
-    expect(inboundEvents.markFailed).not.toHaveBeenCalled();
-  });
-
-  it('propagates a persistence failure so the endpoint does not acknowledge', async () => {
-    const { service, inboundEvents, dispatch } = buildService();
-    inboundEvents.ingest.mockRejectedValue(new Error('DB down'));
-
-    await expect(service.processEvent(textEvent())).rejects.toThrow('DB down');
-    expect(dispatch).not.toHaveBeenCalled();
+    expect(accepted).toBe(false);
   });
 
   it('uses msg_id as the event id for any user_send_* event carrying one', () => {
@@ -127,5 +70,12 @@ describe('ZaloWebhookIngestService (durable webhook ingestion)', () => {
       message: undefined,
     });
     expect(buildZaloEventId(event)).toMatch(/^follow:u2:\d+$/);
+  });
+
+  it('propagates an inbox persistence failure so the endpoint does not acknowledge', async () => {
+    const { service, inboundEvents } = buildService();
+    (inboundEvents.ingest as jest.Mock).mockRejectedValue(new Error('DB down'));
+
+    await expect(service.ingestEvent(textEvent())).rejects.toThrow('DB down');
   });
 });

@@ -245,6 +245,41 @@ describe('PlatformWebhookInboundEventService', () => {
     });
   });
 
+  describe('stale processing recovery', () => {
+    it('atomically terminalizes a stale processing row', async () => {
+      const { service, claimExecuteMock, claimWhereMock, claimAndWhereMock } =
+        buildService();
+      const staleBefore = new Date('2026-08-13T00:00:00Z');
+      claimExecuteMock.mockResolvedValue({ affected: 1 });
+
+      const abandoned = await service.abandonStaleProcessing(9, staleBefore);
+
+      expect(abandoned).toBe(true);
+      expect(claimWhereMock).toHaveBeenCalledWith('id = :id', { id: 9 });
+      expect(claimAndWhereMock).toHaveBeenCalledWith(
+        'status = :status AND updated_at < :staleBefore',
+        { status: 'processing', staleBefore },
+      );
+    });
+
+    it('marks processing completion as unknown without replaying it', async () => {
+      const { service, claimExecuteMock, claimWhereMock, claimAndWhereMock } =
+        buildService();
+      claimExecuteMock.mockResolvedValue({ affected: 1 });
+
+      const abandoned = await service.markProcessingAbandoned(
+        9,
+        'completion write failed',
+      );
+
+      expect(abandoned).toBe(true);
+      expect(claimWhereMock).toHaveBeenCalledWith('id = :id', { id: 9 });
+      expect(claimAndWhereMock).toHaveBeenCalledWith('status = :status', {
+        status: 'processing',
+      });
+    });
+  });
+
   describe('deleteTerminalOlderThan', () => {
     it('deletes only terminal rows older than the cutoff for the platform', async () => {
       const deleteExecuteMock = jest.fn().mockResolvedValue({ affected: 3 });

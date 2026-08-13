@@ -26,6 +26,8 @@ function buildService(options: WebhookInboundRetryCronOptions): {
     claim: jest.Mock<Promise<boolean>, [number]>;
     markCompleted: jest.Mock;
     markFailed: jest.Mock;
+    abandonStaleProcessing: jest.Mock;
+    markProcessingAbandoned: jest.Mock;
   };
   configGet: jest.Mock<unknown, [string]>;
   pgLock: { withLock: jest.Mock };
@@ -40,6 +42,8 @@ function buildService(options: WebhookInboundRetryCronOptions): {
     claim: jest.fn<Promise<boolean>, [number]>().mockResolvedValue(true),
     markCompleted: jest.fn().mockResolvedValue(undefined),
     markFailed: jest.fn().mockResolvedValue(undefined),
+    abandonStaleProcessing: jest.fn().mockResolvedValue(true),
+    markProcessingAbandoned: jest.fn().mockResolvedValue(true),
   };
   const configGet = jest.fn<unknown, [string]>(() => undefined);
   const configService = { get: configGet } as never as ConfigService;
@@ -160,7 +164,7 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     expect(inboundEvents.markCompleted).not.toHaveBeenCalledWith(2);
   });
 
-  it('re-claims stale processing rows (crash recovery)', async () => {
+  it('terminalizes stale processing rows without replaying side effects', async () => {
     const options = buildOptions();
     const { service, inboundEvents } = buildService(options);
     inboundEvents.listDue.mockResolvedValue([
@@ -172,8 +176,28 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     expect(inboundEvents.listDue).toHaveBeenCalledWith(
       expect.objectContaining({ processingStuckMs: 300_000 }),
     );
-    expect(inboundEvents.claim).toHaveBeenCalledWith(9);
-    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(9);
+    expect(inboundEvents.abandonStaleProcessing).toHaveBeenCalledWith(
+      9,
+      expect.any(Date),
+    );
+    expect(inboundEvents.claim).not.toHaveBeenCalled();
+    expect(options.processEvent).not.toHaveBeenCalled();
+    expect(inboundEvents.markProcessingAbandoned).not.toHaveBeenCalled();
+  });
+
+  it('terminalizes an event when completion cannot be recorded', async () => {
+    const options = buildOptions();
+    const { service, inboundEvents } = buildService(options);
+    inboundEvents.listDue.mockResolvedValue([row()]);
+    inboundEvents.markCompleted.mockRejectedValue(new Error('DB hiccup'));
+
+    await service.handleRetry();
+
+    expect(inboundEvents.markFailed).not.toHaveBeenCalled();
+    expect(inboundEvents.markProcessingAbandoned).toHaveBeenCalledWith(
+      1,
+      'DB hiccup',
+    );
   });
 
   it('reads retry config from env with defaults', async () => {

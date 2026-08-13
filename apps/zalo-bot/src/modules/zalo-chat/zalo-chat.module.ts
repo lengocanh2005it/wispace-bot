@@ -1,4 +1,4 @@
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { join } from 'path';
@@ -73,7 +73,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
 @Module({
   imports: [
     BotCommonModule,
-    forwardRef(() => ZaloOauthModule),
+    ZaloOauthModule,
     ZaloWispaceModule,
     ChatMeteringModule.forPlatform('zalo'),
     TypeOrmModule.forFeature([

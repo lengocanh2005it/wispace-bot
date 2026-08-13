@@ -15,6 +15,7 @@ import {
 } from '@wispace/database';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloWebhookController } from './presentation/controllers/zalo-webhook.controller';
+import { ZaloWebhookSignatureGuard } from './presentation/guards/zalo-webhook-signature.guard';
 import { ZaloWebhookDispatchService } from './application/zalo-webhook-dispatch.service';
 import { ZaloWebhookIngestService } from './application/zalo-webhook-ingest.service';
 import type { ZaloWebhookEvent } from './domain/entities/zalo-webhook-event.types';
@@ -28,6 +29,7 @@ import type { ZaloWebhookEvent } from './domain/entities/zalo-webhook-event.type
   controllers: [ZaloWebhookController],
   providers: [
     ZaloWebhookDispatchService,
+    ZaloWebhookSignatureGuard,
     {
       provide: PlatformWebhookInboundEventService,
       useFactory: (repo: Repository<WebhookInboundEventEntity>) =>

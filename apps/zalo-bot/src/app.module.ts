@@ -5,7 +5,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { BotCommonModule, HealthController } from '@wispace/bot-common';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { RedisModule } from '@wispace/bot-common';
-import { ZaloOauthModule } from './modules/zalo-oauth/zalo-oauth.module';
+import { ZaloOauthHttpModule } from './modules/zalo-oauth/zalo-oauth-http.module';
 import { ZaloChatModule } from './modules/zalo-chat/zalo-chat.module';
 import { ZaloWebhookModule } from './modules/zalo-webhook/zalo-webhook.module';
 import { ZaloStudyReminderModule } from './modules/zalo-study-reminder/zalo-study-reminder.module';
@@ -27,7 +27,7 @@ import { createMetricsModule } from '@wispace/bot-metrics';
     DatabaseModule,
     BotCommonModule,
     RedisModule,
-    ZaloOauthModule,
+    ZaloOauthHttpModule,
     ZaloChatModule,
     ZaloWebhookModule,
     ZaloStudyReminderModule,

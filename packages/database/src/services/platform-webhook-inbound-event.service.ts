@@ -144,6 +144,60 @@ export class PlatformWebhookInboundEventService {
   }
 
   /**
+   * Terminalize a processing lease that outlived the worker lease. Replaying
+   * is intentionally avoided because outbound side effects may already have
+   * happened before the worker crashed.
+   */
+  async abandonStaleProcessing(
+    id: number,
+    staleBefore: Date,
+  ): Promise<boolean> {
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(WebhookInboundEventEntity)
+      .set({
+        status: 'abandoned',
+        lastError:
+          'Processing lease expired; event was not replayed automatically to avoid duplicate side effects',
+        nextRetryAt: null,
+        processedAt: new Date(),
+      })
+      .where('id = :id', { id })
+      .andWhere('status = :status AND updated_at < :staleBefore', {
+        status: 'processing',
+        staleBefore,
+      })
+      .execute();
+
+    return (result.affected ?? 0) > 0;
+  }
+
+  /**
+   * Mark a claimed event terminal when its downstream side effect completed
+   * but the completion write itself failed. This prevents an automatic retry
+   * from duplicating an outbound message.
+   */
+  async markProcessingAbandoned(
+    id: number,
+    errorMessage: string,
+  ): Promise<boolean> {
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(WebhookInboundEventEntity)
+      .set({
+        status: 'abandoned',
+        lastError: errorMessage,
+        nextRetryAt: null,
+        processedAt: new Date(),
+      })
+      .where('id = :id', { id })
+      .andWhere('status = :status', { status: 'processing' })
+      .execute();
+
+    return (result.affected ?? 0) > 0;
+  }
+
+  /**
    * Record a processing failure with bounded exponential backoff:
    * `next_retry_at = now + min(base * 2^(retry_count), cap)`.
    * When the retry budget is exhausted the event becomes `abandoned`
