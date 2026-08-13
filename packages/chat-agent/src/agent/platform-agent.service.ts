@@ -27,6 +27,14 @@ const FEATURE = 'FREE_FORM_CHAT';
 
 const DEFAULT_MAX_CONCURRENT = 3;
 
+function ensurePrecreatedExerciseUrl(text: string, url?: string): string {
+  if (!url || text.includes(url)) return text;
+  const prefix = text.trim();
+  return prefix
+    ? `${prefix}\n\nMở bài tập tại đây: ${url}`
+    : `Mở bài tập tại đây: ${url}`;
+}
+
 /**
  * Thin NestJS adapter around `@wispace/llm-agent`'s platform-agnostic
  * orchestration loop — shared by Discord and Zalo (replaces their
@@ -118,17 +126,21 @@ export class PlatformAgentService {
       },
       toolContext,
     );
+    const text = ensurePrecreatedExerciseUrl(
+      result.text,
+      toolContext.precreatedExerciseUrl,
+    );
 
     if (this.options.appendHistory !== false && input.history === undefined) {
       await this.historyService.appendTurn(
         input.externalUserId,
         input.userText,
-        result.text,
+        text,
       );
     }
 
     return {
-      text: result.text,
+      text,
       privateDataFetched: toolContext.privateDataFetched === true,
       richFollowUps: toolContext.richFollowUps ?? [],
       exhausted: result.exhausted,

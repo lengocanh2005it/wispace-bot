@@ -9,12 +9,19 @@ import {
   readSchedulingMode,
   readValidatedDate,
   readValidatedTime,
+  sanitizeUntrustedTextForLlm,
 } from '@wispace/llm-agent';
 import {
   WispaceCalendarService,
   WispaceGoalsService,
+  WispaceExerciseService,
 } from '@wispace/wispace-client';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import {
+  errorMessage,
+  isAbortError,
+  maskExternalId,
+} from '@wispace/bot-common';
+import type { PrecreateExerciseResult } from '@wispace/wispace-client';
 import type {
   PlatformAgentToolContext,
   PlatformAgentToolsOptions,
@@ -41,6 +48,8 @@ export class PlatformAgentToolsService {
     private readonly calendarService: WispaceCalendarService | undefined,
     private readonly stagePort: RescheduleStagePort,
     private readonly options: PlatformAgentToolsOptions,
+    @Optional()
+    private readonly exerciseService?: WispaceExerciseService,
   ) {}
 
   async execute(
@@ -172,11 +181,96 @@ export class PlatformAgentToolsService {
             message: this.options.registerReportMessage,
           }),
         );
+      case 'precreate_next_exercise':
+        return this.precreateNextExercise(ctx, signal);
       default: {
         const unknownTool = toolName as string;
         return { error: `Unhandled tool: ${unknownTool}` };
       }
     }
+  }
+
+  private async precreateNextExercise(
+    ctx: PlatformAgentToolContext,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.withLinkedAccount(ctx, async () => {
+      ctx.privateDataFetched = true;
+
+      try {
+        if (!this.exerciseService) {
+          this.logger.warn(
+            `Tool precreate_next_exercise unavailable for externalUserId=${maskExternalId(
+              ctx.externalUserId,
+            )}: missing_client`,
+          );
+          return this.unavailableExerciseResult();
+        }
+
+        const result = await this.exerciseService.precreateNextExercise(
+          ctx.externalUserId,
+          { signal },
+        );
+        return this.normalizeExerciseResult(ctx, result);
+      } catch (error) {
+        const category = isAbortError(error) ? 'timeout' : 'request_failed';
+        this.logger.warn(
+          `Tool precreate_next_exercise unavailable for externalUserId=${maskExternalId(
+            ctx.externalUserId,
+          )}: ${category}`,
+        );
+        return this.unavailableExerciseResult();
+      }
+    });
+  }
+
+  private normalizeExerciseResult(
+    ctx: PlatformAgentToolContext,
+    result: PrecreateExerciseResult,
+  ): unknown {
+    const messageHint =
+      typeof result.message === 'string' && result.message.trim()
+        ? sanitizeUntrustedTextForLlm(result.message, { maxChars: 500 }).text
+        : undefined;
+
+    if (result.status === 'created' || result.status === 'already_exists') {
+      const exerciseUrl = this.readHttpsUrl(result.exerciseUrl);
+      ctx.precreatedExerciseUrl = exerciseUrl;
+      return {
+        status: result.status,
+        exerciseUrl,
+        ...(messageHint ? { messageHint } : {}),
+      };
+    }
+
+    return {
+      status: result.status,
+      ...(messageHint ? { messageHint } : {}),
+    };
+  }
+
+  private unavailableExerciseResult(): {
+    status: 'unavailable';
+    messageHint: string;
+  } {
+    return {
+      status: 'unavailable',
+      messageHint:
+        'Hiện chưa thể tạo bài tập mới. Bạn thử lại sau ít phút nhé.',
+    };
+  }
+
+  private readHttpsUrl(value: unknown): string {
+    if (typeof value !== 'string') throw new Error('invalid exercise URL');
+
+    const url = value.trim();
+    try {
+      if (new URL(url).protocol !== 'https:') throw new Error();
+    } catch {
+      throw new Error('invalid exercise URL');
+    }
+
+    return url;
   }
 
   private async withLinkedAccount(
