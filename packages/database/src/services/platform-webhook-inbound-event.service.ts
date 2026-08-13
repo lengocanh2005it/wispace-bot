@@ -125,8 +125,8 @@ export class PlatformWebhookInboundEventService {
 
   /**
    * Atomically claim an event for processing: `pending`/`failed` → `processing`.
-   * Both the request path (right after ingest) and the retry cron claim before
-   * processing, so an event can never be processed by two workers at once.
+   * The retry worker claims before processing, so an event can never be
+   * processed by two workers at once.
    * Returns `false` when another worker already claimed it.
    */
   async claim(id: number): Promise<boolean> {
@@ -152,24 +152,12 @@ export class PlatformWebhookInboundEventService {
     id: number,
     staleBefore: Date,
   ): Promise<boolean> {
-    const result = await this.repo
-      .createQueryBuilder()
-      .update(WebhookInboundEventEntity)
-      .set({
-        status: 'abandoned',
-        lastError:
-          'Processing lease expired; event was not replayed automatically to avoid duplicate side effects',
-        nextRetryAt: null,
-        processedAt: new Date(),
-      })
-      .where('id = :id', { id })
-      .andWhere('status = :status AND updated_at < :staleBefore', {
-        status: 'processing',
-        staleBefore,
-      })
-      .execute();
-
-    return (result.affected ?? 0) > 0;
+    return this.terminalizeProcessing(
+      id,
+      'Processing lease expired; event was not replayed automatically to avoid duplicate side effects',
+      'status = :status AND updated_at < :staleBefore',
+      { status: 'processing', staleBefore },
+    );
   }
 
   /**
@@ -181,17 +169,28 @@ export class PlatformWebhookInboundEventService {
     id: number,
     errorMessage: string,
   ): Promise<boolean> {
+    return this.terminalizeProcessing(id, errorMessage, 'status = :status', {
+      status: 'processing',
+    });
+  }
+
+  private async terminalizeProcessing(
+    id: number,
+    errorMessage: string,
+    condition: string,
+    parameters: Record<string, unknown>,
+  ): Promise<boolean> {
     const result = await this.repo
       .createQueryBuilder()
       .update(WebhookInboundEventEntity)
       .set({
         status: 'abandoned',
-        lastError: errorMessage,
+        lastError: maskExternalIdInText(errorMessage),
         nextRetryAt: null,
         processedAt: new Date(),
       })
       .where('id = :id', { id })
-      .andWhere('status = :status', { status: 'processing' })
+      .andWhere(condition, parameters)
       .execute();
 
     return (result.affected ?? 0) > 0;

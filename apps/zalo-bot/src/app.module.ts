@@ -1,8 +1,13 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
-import { BotCommonModule, HealthController } from '@wispace/bot-common';
+import {
+  BotCommonModule,
+  createBotThrottlerOptions,
+  HealthController,
+  RedisService,
+} from '@wispace/bot-common';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import { RedisModule } from '@wispace/bot-common';
 import { ZaloOauthHttpModule } from './modules/zalo-oauth/zalo-oauth-http.module';
@@ -20,8 +25,11 @@ import { createMetricsModule } from '@wispace/bot-metrics';
       isGlobal: true,
       envFilePath: ['.env', '../../.env.shared'],
     }),
-    ThrottlerModule.forRoot({
-      throttlers: [{ ttl: 60_000, limit: 20 }],
+    ThrottlerModule.forRootAsync({
+      imports: [RedisModule],
+      inject: [ConfigService, RedisService],
+      useFactory: (configService: ConfigService, redisService: RedisService) =>
+        createBotThrottlerOptions(configService, redisService),
     }),
     ScheduleModule.forRoot(),
     DatabaseModule,

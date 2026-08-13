@@ -93,7 +93,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
       }),
     );
     expect(actionExecutor.executeAction).not.toHaveBeenCalled();
-    expect(result).toEqual({ accepted: 1, duplicates: 0, failures: [] });
+    expect(result).toEqual({ accepted: 1, duplicates: 0 });
   });
 
   it('skips duplicate deliveries without dispatching them', async () => {
@@ -103,18 +103,40 @@ describe('MessengerService (durable webhook ingestion)', () => {
     const result = await service.handleWebhook(payloadWith([textEvent()]));
 
     expect(actionExecutor.executeAction).not.toHaveBeenCalled();
-    expect(result).toEqual({ accepted: 0, duplicates: 1, failures: [] });
+    expect(result).toEqual({ accepted: 0, duplicates: 1 });
   });
 
-  it('keeps postback deduplication before the inbox write', async () => {
+  it('delegates postback deduplication to the durable inbox', async () => {
     const { service, inboundEvents, actionExecutor } = buildService();
     const event = postbackEvent();
+    (inboundEvents.ingest as jest.Mock)
+      .mockResolvedValueOnce({ inserted: true, id: 7 })
+      .mockResolvedValueOnce({ inserted: false });
 
-    await service.handleWebhook(payloadWith([event]));
-    await service.handleWebhook(payloadWith([event]));
+    const first = await service.handleWebhook(payloadWith([event]));
+    const second = await service.handleWebhook(payloadWith([event]));
 
-    expect(inboundEvents.ingest).toHaveBeenCalledTimes(1);
+    expect(inboundEvents.ingest).toHaveBeenCalledTimes(2);
+    expect(first).toEqual({ accepted: 1, duplicates: 0 });
+    expect(second).toEqual({ accepted: 0, duplicates: 1 });
     expect(actionExecutor.executeAction).not.toHaveBeenCalled();
+  });
+
+  it('allows a postback to retry after the first inbox write fails', async () => {
+    const { service, inboundEvents } = buildService();
+    const event = postbackEvent();
+    (inboundEvents.ingest as jest.Mock)
+      .mockRejectedValueOnce(new Error('DB down'))
+      .mockResolvedValueOnce({ inserted: true, id: 7 });
+
+    await expect(service.handleWebhook(payloadWith([event]))).rejects.toThrow(
+      'DB down',
+    );
+    await expect(service.handleWebhook(payloadWith([event]))).resolves.toEqual({
+      accepted: 1,
+      duplicates: 0,
+    });
+    expect(inboundEvents.ingest).toHaveBeenCalledTimes(2);
   });
 
   it('uses stable event ids for timestamped postbacks', async () => {

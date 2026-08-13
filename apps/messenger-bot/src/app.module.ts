@@ -1,13 +1,15 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { DatabaseModule } from './infrastructure/database/database.module';
 import {
   BotCommonModule,
+  createBotThrottlerOptions,
   HealthController,
   RedisModule,
+  RedisService,
 } from '@wispace/bot-common';
 import { MessengerModule } from './modules/messenger/messenger.module';
 import { SchedulerModule } from './modules/scheduler/scheduler.module';
@@ -27,7 +29,12 @@ import { MetricsModule } from './modules/metrics/metrics.module';
       // shared file doesn't exist (e.g. production containers).
       envFilePath: ['.env', '../../.env.shared'],
     }),
-    ThrottlerModule.forRoot(),
+    ThrottlerModule.forRootAsync({
+      imports: [RedisModule],
+      inject: [ConfigService, RedisService],
+      useFactory: (configService: ConfigService, redisService: RedisService) =>
+        createBotThrottlerOptions(configService, redisService),
+    }),
     DatabaseModule,
     BotCommonModule,
     RedisModule,

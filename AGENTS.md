@@ -469,3 +469,5 @@ When closing a gap: update `apps/messenger-bot/docs/study-session-reminder.md` a
 - Do not commit `.env` or files containing secrets.
 - Commit messages: short, describe **why** more than **what**.
 - Before PR: run all 5 CI commands in order `format:check → lint → typecheck → test → build`; local verification recommended: `npm run verify`.
+
+HTTP throttling: `WEBHOOK_RATE_LIMIT_PER_MINUTE` / `WEBHOOK_RATE_LIMIT_TTL_MS` configure authenticated Messenger/Zalo webhook bursts; `THROTTLE_DEFAULT_LIMIT` / `THROTTLE_DEFAULT_TTL_MS` configure other throttled routes. Redis provides the shared atomic window when enabled; configured-but-unavailable Redis fails closed.

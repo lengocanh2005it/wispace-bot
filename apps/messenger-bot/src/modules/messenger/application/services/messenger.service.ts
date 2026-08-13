@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { maskEventId, maskExternalId } from '@wispace/bot-common';
+import { maskEventId } from '@wispace/bot-common';
 import { PlatformWebhookInboundEventService } from '@wispace/database';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
@@ -14,7 +14,6 @@ import {
 import { MessengerLinkContextService } from './messenger-link-context.service';
 import { MessengerOutboundService } from './messenger-outbound.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
-import { WEBHOOK_POSTBACK_DEDUPE_MS } from '../../domain/entities/messenger-store.types';
 import {
   extractRefFromEvent,
   routeWebhookEvent,
@@ -69,9 +68,6 @@ function buildEventType(event: MessengerWebhookEvent): string {
 export class MessengerService {
   private readonly logger = new Logger(MessengerService.name);
 
-  /** In-memory double-tap debounce for postbacks (non-durable by design). */
-  private readonly recentPostbacks = new Map<string, number>();
-
   constructor(
     private readonly configService: ConfigService,
     @Inject(MESSENGER_REPOSITORY)
@@ -101,9 +97,7 @@ export class MessengerService {
   async handleWebhook(payload: MessengerWebhookPayload): Promise<{
     accepted: number;
     duplicates: number;
-    failures: Array<{ psid?: string; error: string }>;
   }> {
-    const failures: Array<{ psid?: string; error: string }> = [];
     let accepted = 0;
     let duplicates = 0;
 
@@ -112,14 +106,6 @@ export class MessengerService {
         ? entry.messaging
         : []) {
         this.logIncomingWebhookEvent(event);
-
-        // Double-tap debounce for postbacks (identical payload within 15s).
-        if (event.postback?.payload && this.isRecentPostback(event)) {
-          this.logger.debug(
-            `Skipping recent postback ${event.postback.payload} for ${maskExternalId(event.sender?.id)}`,
-          );
-          continue;
-        }
 
         const eventId = buildEventId(event, event.sender?.id ?? '');
         const { inserted } = await this.inboundEvents.ingest({
@@ -143,25 +129,7 @@ export class MessengerService {
       }
     }
 
-    return { accepted, duplicates, failures };
-  }
-
-  private isRecentPostback(event: MessengerWebhookEvent): boolean {
-    const psid = event.sender?.id ?? '';
-    const payload = event.postback?.payload ?? '';
-    const key = `${psid}:${payload}`;
-    const now = Date.now();
-    const last = this.recentPostbacks.get(key);
-
-    if (last !== undefined && now - last < WEBHOOK_POSTBACK_DEDUPE_MS) {
-      return true;
-    }
-
-    this.recentPostbacks.set(key, now);
-    if (this.recentPostbacks.size > 1000) {
-      this.recentPostbacks.clear();
-    }
-    return false;
+    return { accepted, duplicates };
   }
 
   private logIncomingWebhookEvent(event: MessengerWebhookEvent): void {
