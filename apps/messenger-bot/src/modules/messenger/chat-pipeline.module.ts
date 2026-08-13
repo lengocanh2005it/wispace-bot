@@ -161,7 +161,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
             promptFile: 'messenger-chat.system.txt',
             appendHistory: false,
             maxLlmRetries: 0,
-            toolExecutionTimeoutMs: 30_000,
+            toolExecutionTimeoutMs: 35_000,
             metrics: {
               timeLlmCall: (feature, model, round, fn) =>
                 metrics.timeLlmCall(feature, model, round, fn),
