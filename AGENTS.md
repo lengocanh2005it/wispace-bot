@@ -29,6 +29,7 @@ Read this file before modifying code. In-depth details are in `docs/` — only r
 - Editing files in `apps/messenger-bot/src/shared/prompts/*.system.txt` → **requires** `npm run build` (Nest copies assets to `dist/shared/prompts/`).
 - Study reminder: `STUDY_REMINDER_*` variables are **required** — use `readRequiredPositiveNumber`, do not hardcode fallbacks in code.
 - Wispace API auth: header **`x-psid`** (Messenger PSID) + **`X-Internal-Key`** (`WISPACE_INTERNAL_KEY`); mapping linkage **requires** token verification via **`POST WISPACE_API_VERIFY_TOKEN_URL`** (shared across 3 bots, body `{token, value, platform}`; `MESSENGER_LINK_MODE=token`; startup fails if config is missing).
+- Next roadmap exercise chat tool: `POST WISPACE_API_PRECREATE_EXERCISE_URL` with an empty body, timeout `WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS=30000`, no automatic retry, and `X-Internal-Key`; identity header is `x-psid` (Messenger), `x-discordid` (Discord), or `x-zaloid` (Zalo). It requires a linked account and creates only the next roadmap exercise.
 - Ops HTTP (`/messenger/study-calendar/sync`, `send-reports`, …) require header **`X-Internal-Api-Key`** or `Authorization: Bearer …` matching `INTERNAL_API_KEY`.
 - Internal cron (30-minute sync, adaptive S2 dispatch) runs in-process — no API key required.
 - Debug study reminder jobs: `npm run study-reminder:jobs` (`--failed`, `--stuck`, `--summary`).
@@ -324,6 +325,7 @@ domain/entities|repositories/ → application/services|ports/ → infrastructure
 | Add table migration | `infrastructure/database/migrations/`, `entities/` |
 | Wispace schedule change → sync | `scheduler/.../scheduler.controller.ts` → `StudyReminderSyncService` |
 | UserCalendar API client | `study-reminder/infrastructure/wispace/user-calendar-api.service.ts` |
+| Create next roadmap exercise | `@wispace/wispace-client` `WispaceExerciseService` + `precreate_next_exercise` agent tool; no taskType/exerciseTopic/topic/difficulty selection yet |
 | Send message from another module | Inject `MESSAGE_SENDER`, not `MessengerService` |
 | Full sync (ops) | `POST /messenger/sync-study-reminders`, `scripts/sync-study-reminder-jobs.mjs` |
 | Chat rate limit | `ChatRateLimitService`, `MessengerChatEnqueueService`, `MessengerChatProcessorService`, [chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md) |
@@ -372,6 +374,8 @@ Webhook text → persist to `webhook_inbound_events` (idempotent event_id; failu
 ```
 
 Menu postback and proactive messages do **not** go through `ChatRateLimitService`. Enforcement: `CHAT_RATE_LIMIT_ENABLED=true`.
+
+Clear requests to create a new exercise may call `precreate_next_exercise`; it has no arguments, uses the linked platform external ID, requires an HTTPS URL for created/existing exercises, and returns a generic Vietnamese failure on API/network errors. If WISPACE later exposes selection parameters, taskType/exerciseTopic support can be added as a separate extension.
 
 Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30-minute cron is only a fallback — it does not replace the webhook/event bus.
 
