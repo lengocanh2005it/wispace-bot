@@ -5,9 +5,8 @@
 
 ARG APP_NAME=messenger-bot
 ARG APP_PORT=5007
-ARG WITH_DOPPLER=true
 
-FROM node:22-alpine AS build
+FROM node:22.23.2-alpine AS build
 WORKDIR /app
 ARG APP_NAME
 
@@ -34,7 +33,7 @@ RUN for pkg in packages/*/; do \
       fi; \
     done
 
-FROM node:22-alpine AS production
+FROM node:22.23.2-alpine AS production
 WORKDIR /app
 
 # Global ARGs are out of scope after FROM — redeclare per stage that uses them.
@@ -44,13 +43,7 @@ ARG APP_PORT
 ENV NODE_ENV=production
 ENV APP_NAME=$APP_NAME
 
-ARG WITH_DOPPLER
-RUN apk add --no-cache curl bash \
-  && if [ "$WITH_DOPPLER" = "true" ]; then \
-       apk add --no-cache docker-cli docker-cli-compose gnupg \
-       && curl -LsSf https://cli.doppler.com/install.sh | sh -s -- --install-path /usr/local/bin; \
-     fi \
-  && addgroup -g 1001 -S app \
+RUN addgroup -g 1001 -S app \
   && adduser -S app -u 1001 -G app
 
 COPY --from=build --chown=app:app /app/apps/$APP_NAME/dist ./apps/$APP_NAME/dist

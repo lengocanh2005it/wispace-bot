@@ -37,16 +37,27 @@ export class ZaloOauthStateService {
 
   /** Deletes the row regardless of outcome (single-use, even if expired). */
   async consume(state: string): Promise<ConsumedZaloOauthState | undefined> {
-    const row = await this.repo.findOne({ where: { state } });
+    const rows = await this.repo.query<
+      Array<{
+        code_verifier: string;
+        link_token: string;
+        created_at: Date;
+      }>
+    >(
+      `DELETE FROM "zalo_oauth_states"
+       WHERE "state" = $1
+       RETURNING "code_verifier", "link_token", "created_at"`,
+      [state],
+    );
+    const row = rows[0];
     if (!row) {
       return undefined;
     }
 
-    await this.repo.delete({ state });
-
-    const isExpired = Date.now() - row.createdAt.getTime() > STATE_TTL_MS;
+    const isExpired =
+      Date.now() - new Date(row.created_at).getTime() > STATE_TTL_MS;
     return isExpired
       ? undefined
-      : { codeVerifier: row.codeVerifier, linkToken: row.linkToken };
+      : { codeVerifier: row.code_verifier, linkToken: row.link_token };
   }
 }

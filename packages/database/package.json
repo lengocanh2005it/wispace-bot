@@ -23,7 +23,7 @@
     "@wispace/date-utils": "*",
     "@wispace/reschedule-confirm": "*",
     "@wispace/scheduler-core": "*",
-    "typeorm": "^1.0.0"
+    "typeorm": "^1.1.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

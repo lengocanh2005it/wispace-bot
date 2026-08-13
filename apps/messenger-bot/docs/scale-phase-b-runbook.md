@@ -152,7 +152,9 @@ Keep unchanged (already in prod):
 
 ```env
 REDIS_ENABLED=true
-REDIS_HOST=redis.aihubproduction.com
+REDIS_HOST=172.24.0.1
+REDIS_PRIVATE_NETWORK=true
+REDIS_TLS=false
 CHAT_QUEUE_STORE=redis
 CHAT_HISTORY_STORE=redis
 CHAT_RATE_LIMIT_ENABLED=true
@@ -184,7 +186,7 @@ Leader election is now lease-based (`cron_leader_leases` table): `CRON_LEADER_EN
 
 - Shared secrets: `CHAT_QUEUE_SHARED`, `CRON_LEADER_ENABLED` — upload to `prd` config.
 - `INSTANCE_ID` / pod 2 port: **don't** put in shared Doppler — override in `docker-compose` per service.
-- After Doppler deploy: webhook `/messenger/ops/doppler-sync` recreates container — ensure compose 2 services still keep `INSTANCE_ID` override.
+- After changing Doppler: run the manual **Sync production env** workflow. Bot containers do not receive the host Docker socket.
 
 ---
 
@@ -210,7 +212,7 @@ services:
       PORT: "5007"
     ports:
       - "127.0.0.1:5007:5007"
-    # volumes, user, group_add — same as current service
+    # no host mounts or Docker socket; run as the unprivileged image user
 
   messenger-bot-2:
     image: ${IMAGE}

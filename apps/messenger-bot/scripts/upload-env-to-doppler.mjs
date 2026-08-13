@@ -12,7 +12,6 @@ const skip = new Set([
   'DEPLOY_COMPOSE_FILE',
   'DEPLOY_UID',
   'DEPLOY_GID',
-  'DOCKER_GID',
   'HOME',
   'DOPPLER_CONFIG',
   'DOPPLER_ENVIRONMENT',
@@ -74,7 +73,7 @@ function buildConfigEntries(config, baseEntries) {
 
   if (config === 'prd') {
     entries.set('PORT', '5007');
-    entries.set('DOPPLER_RUNTIME_SYNC_ENABLED', 'true');
+    entries.set('DOPPLER_RUNTIME_SYNC_ENABLED', 'false');
     return entries;
   }
 

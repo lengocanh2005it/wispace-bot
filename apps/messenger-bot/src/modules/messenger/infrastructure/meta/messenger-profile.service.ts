@@ -1,5 +1,6 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { readResponseText } from '@wispace/bot-common';
 import { keepAliveFetch } from '@messenger/shared/http/http-agent';
 
 const PERSISTENT_MENU_ACTIONS = [
@@ -51,12 +52,11 @@ export class MessengerProfileService {
     const url = new URL(
       `https://graph.facebook.com/${graphApiVersion}/me/messenger_profile`,
     );
-    url.searchParams.set('access_token', pageAccessToken);
-
     const response = await keepAliveFetch(url, {
       method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${pageAccessToken}`,
       },
       body: JSON.stringify({
         fields: ['persistent_menu'],
@@ -65,7 +65,7 @@ export class MessengerProfileService {
     });
 
     if (!response.ok) {
-      const body = await response.text();
+      const body = await readResponseText(response);
       throw new InternalServerErrorException(
         `Messenger Profile DELETE failed: HTTP ${response.status} ${response.statusText} - ${body}`,
       );
@@ -84,19 +84,18 @@ export class MessengerProfileService {
     const url = new URL(
       `https://graph.facebook.com/${graphApiVersion}/me/messenger_profile`,
     );
-    url.searchParams.set('access_token', pageAccessToken);
-
     const response = await keepAliveFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: `Bearer ${pageAccessToken}`,
       },
       body: JSON.stringify(payload),
       timeoutMs: 10_000,
     });
 
     if (!response.ok) {
-      const body = await response.text();
+      const body = await readResponseText(response);
       throw new InternalServerErrorException(
         `Messenger Profile API failed: HTTP ${response.status} ${response.statusText} - ${body}`,
       );

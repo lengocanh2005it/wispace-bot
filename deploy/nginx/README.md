@@ -39,5 +39,5 @@ curl -sf --connect-timeout 3 http://$(curl -s ifconfig.me):5007/health/ready && 
 
 ## Rate limit
 
-- Zone `messenger_webhook`: 20 req/s per IP, burst 80 — only `location = /v1/webhook`
+- Zones: Messenger webhook 20 req/s, Zalo webhook 20 req/s, readiness 5 req/s; all are exact-match locations
 - Body: 256k for webhook, 1m for other paths (matches `HTTP_JSON_BODY_LIMIT` in the app)

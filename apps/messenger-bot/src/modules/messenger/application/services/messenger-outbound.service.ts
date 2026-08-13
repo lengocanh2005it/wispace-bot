@@ -8,6 +8,7 @@ import {
   errorMessage,
   maskExternalId,
   maskExternalIdInText,
+  readResponseText,
 } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import CircuitBreaker from 'opossum';
@@ -426,14 +427,13 @@ export class MessengerOutboundService {
     const url = new URL(
       `https://graph.facebook.com/${graphApiVersion}/me/messages`,
     );
-    url.searchParams.set('access_token', pageAccessToken);
-
     let response: Response;
     try {
       response = await keepAliveFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          Authorization: `Bearer ${pageAccessToken}`,
         },
         body: JSON.stringify({
           recipient: {
@@ -458,7 +458,7 @@ export class MessengerOutboundService {
     }
 
     if (!response.ok) {
-      const body = maskExternalIdInText(await response.text(), psid);
+      const body = maskExternalIdInText(await readResponseText(response), psid);
       throw new MessengerApiError(
         `Messenger Send API failed for PSID ${maskExternalId(
           psid,

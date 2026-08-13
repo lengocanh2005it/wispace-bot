@@ -3,6 +3,7 @@ import {
   errorMessage,
   maskExternalId,
   maskExternalIdInText,
+  readResponseText,
 } from '@wispace/bot-common';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
 import {
@@ -146,13 +147,13 @@ export class ZaloOutboundService {
       );
     }
 
+    const body = await readResponseText(response);
     let payload: unknown;
     try {
-      payload = await response.json();
+      payload = body ? (JSON.parse(body) as unknown) : undefined;
     } catch {
       payload = undefined;
     }
-    const body = payload === undefined ? '' : JSON.stringify(payload);
     const safeBody = maskExternalIdInText(body, zaloUserId);
     const applicationError =
       payload && typeof payload === 'object' && 'error' in payload

@@ -5,6 +5,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { parseJsonBodyLimit } from './shared/config/body-limit';
 
 const SHUTDOWN_LOGGER = new Logger('Shutdown');
 const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 25_000;
@@ -26,7 +27,7 @@ async function bootstrap() {
     rawBody: true,
   });
 
-  const bodyLimit = process.env.HTTP_JSON_BODY_LIMIT?.trim() || '256kb';
+  const bodyLimit = parseJsonBodyLimit(process.env.HTTP_JSON_BODY_LIMIT);
   app.useBodyParser('json', { limit: bodyLimit });
   app.useBodyParser('urlencoded', { limit: bodyLimit, extended: true });
 

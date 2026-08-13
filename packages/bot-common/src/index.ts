@@ -1,4 +1,5 @@
 export { errorMessage } from './error-message';
+export { readResponseText } from './read-response-text';
 export { isAbortError, sleep } from './abort.utils';
 export {
   INTERNAL_API_KEY_HEADER,

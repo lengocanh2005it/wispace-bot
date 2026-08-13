@@ -1,4 +1,8 @@
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskExternalId,
+  readResponseText,
+} from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import {
   isWispaceRetryable,
@@ -81,7 +85,7 @@ export class UserGoalsApiClient {
     });
 
     if (!response.ok) {
-      const body = await response.text();
+      const body = await readResponseText(response);
       throw new WispaceApiError(
         `User goals API failed: HTTP ${response.status} ${response.statusText} - ${body}`,
         response.status,

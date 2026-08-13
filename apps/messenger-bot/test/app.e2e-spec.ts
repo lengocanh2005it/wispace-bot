@@ -124,7 +124,12 @@ describe('AppController (e2e)', () => {
     expect(String(url)).toContain(
       'https://graph.facebook.com/v25.0/me/messages',
     );
-    expect(String(url)).toContain('access_token=test-page-access-token');
+    expect(String(url)).not.toContain('access_token=');
+    expect(options.headers).toEqual(
+      expect.objectContaining({
+        Authorization: 'Bearer test-page-access-token',
+      }),
+    );
     expect(JSON.parse(options.body as string)).toEqual({
       recipient: {
         id: '123456789',

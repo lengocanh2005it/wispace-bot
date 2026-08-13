@@ -6,9 +6,11 @@ import {
   Post,
   Req,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 
 type ZaloWebhookRequest = Request & { rawBody?: Buffer };
 import {
@@ -25,6 +27,7 @@ import { ZaloWebhookIngestService } from '../../application/zalo-webhook-ingest.
  * redelivers instead of acknowledging an event that was never stored.
  */
 @Controller('zalo/webhook')
+@UseGuards(ThrottlerGuard)
 export class ZaloWebhookController {
   private readonly logger = new Logger(ZaloWebhookController.name);
 
@@ -34,6 +37,7 @@ export class ZaloWebhookController {
   ) {}
 
   @Post()
+  @Throttle({ default: { limit: 120, ttl: 60_000 } })
   async handleWebhook(
     @Body() body: ZaloWebhookEvent,
     @Req() req: ZaloWebhookRequest,

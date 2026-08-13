@@ -31,6 +31,7 @@ async function bootstrap() {
   }
 
   app.use(helmet());
+  app.useBodyParser('json', { limit: '256kb' });
   app.setGlobalPrefix('v1', { exclude: ['health', 'health/*path', 'metrics'] });
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),

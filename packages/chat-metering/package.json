@@ -21,7 +21,7 @@
     "@wispace/bot-common": "*",
     "@wispace/database": "*",
     "@wispace/date-utils": "*",
-    "typeorm": "^1.0.0"
+    "typeorm": "^1.1.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

@@ -102,51 +102,17 @@ describe('DopplerRuntimeSyncService', () => {
     unlink.mockRestore();
   });
 
-  it('resolves host compose dir from DEPLOY_HOST_DIR or docker mount inspect', async () => {
-    const service = createService({
-      DEPLOY_HOST_DIR: '/home/ngoc_anh/messenger-bot',
-    });
-
-    await expect(
-      (
-        service as unknown as {
-          resolveHostComposeContext: (
-            containerName: string,
-            envFile: string,
-            composeFile: string,
-          ) => Promise<{ deployDir: string; composeFile: string }>;
-        }
-      ).resolveHostComposeContext(
-        'messenger-bot',
-        '/deploy/.env',
-        '/deploy/docker-compose.prod.yml',
-      ),
-    ).resolves.toEqual({
-      deployDir: '/home/ngoc_anh/messenger-bot',
-      composeFile: '/home/ngoc_anh/messenger-bot/docker-compose.prod.yml',
-    });
-  });
-
-  it('merges deploy runtime vars after Doppler download', async () => {
+  it('merges safe runtime defaults after Doppler download', () => {
     const service = createService({});
     const instance = service as unknown as {
-      readDockerSocketGid: () => Promise<number>;
-      mergeDeployRuntimeVars: (
-        content: string,
-        hostDeployDir: string,
-      ) => Promise<string>;
+      mergeEnv: (content: string) => string;
     };
 
-    jest.spyOn(instance, 'readDockerSocketGid').mockResolvedValue(114);
-
-    const merged = await instance.mergeDeployRuntimeVars(
-      'FOO=bar\n',
-      '/home/ngoc_anh/messenger-bot',
-    );
+    const merged = instance.mergeEnv('FOO=bar\n');
 
     expect(merged).toContain('FOO=bar');
-    expect(merged).toContain('DEPLOY_HOST_DIR=/home/ngoc_anh/messenger-bot');
-    expect(merged).toContain('DOCKER_GID=114');
-    expect(merged).toContain('DOPPLER_RUNTIME_SYNC_ENABLED=true');
+    expect(merged).toContain('DOPPLER_RUNTIME_SYNC_ENABLED=false');
+    expect(merged).not.toContain('DOCKER_GID');
+    expect(merged).not.toContain('DEPLOY_HOST_DIR');
   });
 });

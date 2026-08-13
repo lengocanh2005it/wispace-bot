@@ -4,7 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId, readResponseText } from '@wispace/bot-common';
 import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import type {
   WispaceLinkVerifyFailureReason,
@@ -101,7 +101,7 @@ export class WispaceTokenVerifyService {
   }
 
   private async readJsonBody(response: Response): Promise<unknown> {
-    const text = await response.text();
+    const text = await readResponseText(response);
     if (!text.trim()) {
       return undefined;
     }

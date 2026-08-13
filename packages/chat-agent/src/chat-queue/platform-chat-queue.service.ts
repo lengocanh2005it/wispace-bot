@@ -11,7 +11,11 @@ import type {
   RateLimiterPort,
 } from '@wispace/chat-pipeline';
 import { ChatPipeline } from '@wispace/chat-pipeline';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common';
 import { CHAT_FAILURE_FALLBACK_MESSAGE } from '@wispace/llm-agent';
 import type { PlatformChatQueueOptions } from '../agent/platform-agent.types';
 
@@ -185,7 +189,9 @@ export class PlatformChatQueueService implements OnModuleDestroy {
     } catch (error) {
       const msg = errorMessage(error);
       this.logger.error(
-        `Chat queue flush failed for ${batch.externalUserId}: ${msg}`,
+        `Chat queue flush failed for ${maskExternalId(
+          batch.externalUserId,
+        )}: ${maskExternalIdInText(msg, batch.externalUserId)}`,
       );
     } finally {
       this.droppedNotified.delete(batch.externalUserId);

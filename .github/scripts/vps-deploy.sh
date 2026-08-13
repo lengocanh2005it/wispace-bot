@@ -30,12 +30,12 @@ set -euo pipefail
 COMPOSE_FILE="docker-compose.prod.yml"
 
 # ─── Per-app config: port pairs + docker run resources ─────────────────────────
-# Format: ACTIVE:STANDBY;MEM;CPUS;VOL1;VOL2;...;GROUP_DOCKER
+# Format: ACTIVE:STANDBY;MEM;CPUS;VOL1;VOL2;...
 # (volumes are ';'-separated so the ':' inside volume specs is safe)
 declare -A APP_CFG=(
-  [messenger-bot]="5007:5008;512m;1.0;./.env:/deploy/.env;./docker-compose.prod.yml:/deploy/docker-compose.prod.yml:ro;/var/run/docker.sock:/var/run/docker.sock;yes"
-  [discord-bot]="3001:3004;256m;0.5;./.env:/deploy/.env;./docker-compose.prod.yml:/deploy/docker-compose.prod.yml:ro;/var/run/docker.sock:/var/run/docker.sock;yes"
-  [zalo-bot]="3002:3003;256m;0.5;./.env:/deploy/.env;./docker-compose.prod.yml:/deploy/docker-compose.prod.yml:ro;/var/run/docker.sock:/var/run/docker.sock;yes"
+  [messenger-bot]="5007:5008;512m;1.0;"
+  [discord-bot]="3001:3004;256m;0.5;"
+  [zalo-bot]="3002:3003;256m;0.5;"
 )
 
 get_standalone_port() {
@@ -64,18 +64,11 @@ get_cpus() {
 }
 
 get_extra_volumes() {
-  local app="$1" rest vols
+  local app="$1" rest
   rest="${APP_CFG[$app]#*;}"
   rest="${rest#*;}"
   rest="${rest#*;}"
-  vols="${rest%;yes}"
-  vols="${vols%;no}"
-  echo "$vols"
-}
-
-get_group_docker() {
-  local app="$1"
-  echo "${APP_CFG[$app]##*;}"
+  echo "$rest"
 }
 
 # ─── Prepare .env from production.env (Doppler download from CI) ─────────────
@@ -109,16 +102,9 @@ ensure_env_var() {
 
 ensure_env_var CHAT_RATE_LIMIT_ENABLED true
 ensure_env_var ENFORCE_PROD_CHAT_QUOTA true
-ensure_env_var DOPPLER_RUNTIME_SYNC_ENABLED true
-ensure_env_var DEPLOY_DIR /deploy
-ensure_env_var DEPLOY_HOST_DIR "$DEPLOY_HOST_DIR"
-ensure_env_var DEPLOY_ENV_FILE /deploy/.env
-ensure_env_var DEPLOY_COMPOSE_FILE /deploy/docker-compose.prod.yml
+ensure_env_var DOPPLER_RUNTIME_SYNC_ENABLED false
 ensure_env_var DEPLOY_UID "$(id -u)"
 ensure_env_var DEPLOY_GID "$(id -g)"
-if [ -S /var/run/docker.sock ]; then
-  ensure_env_var DOCKER_GID "$(stat -c '%g' /var/run/docker.sock)"
-fi
 if ! grep -q '^HOME=' .env; then
   ensure_env_var HOME /tmp
 fi
@@ -143,8 +129,6 @@ fi
 DEPLOY_UID=${DEPLOY_UID:-$(id -u)}
 DEPLOY_GID=${DEPLOY_GID:-$(id -g)}
 # ensure_env_var wrote these into .env, but they are not shell variables yet
-DOCKER_GID=$(grep -E '^DOCKER_GID=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '\r')
-
 # ─── Prepare env file for docker run (strip quotes) ───────────────────────────
 # docker run --env-file does NOT strip surrounding quotes like compose does,
 # and Doppler downloads values as KEY="value" — strip them here.
@@ -219,9 +203,7 @@ if [ -n "$EXTRA_VOLUMES" ]; then
   done
 fi
 
-if [ "$(get_group_docker "$APP_NAME")" = "yes" ] && [ -n "${DOCKER_GID:-}" ]; then
-  RUN_ARGS+=(--group-add "${DOCKER_GID}")
-fi
+RUN_ARGS+=(--cap-drop ALL --security-opt no-new-privileges:true)
 
 if ! docker run "${RUN_ARGS[@]}" "$IMAGE"; then
   echo "ERROR: docker run failed for $NEW_CONTAINER" >&2
@@ -275,7 +257,18 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ -n "${MIGRATION_CMD:-}" ]; then
       > "$PRE_MIGRATE_DUMP" 2>/dev/null || echo "WARNING: pre-migration dump failed — proceeding anyway"
     find "$PRE_MIGRATE_DIR" -name 'pre-migrate-*.dump' -mtime +1 -delete 2>/dev/null || true
 
-    if docker exec "$NEW_CONTAINER" sh -c "cd /app && $MIGRATION_CMD"; then
+    case "$MIGRATION_CMD" in
+      'npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
+        migration_status=0
+        docker exec "$NEW_CONTAINER" npx --no-install typeorm migration:run \
+          -d apps/messenger-bot/dist/infrastructure/database/data-source.js || migration_status=$?
+        ;;
+      *)
+        echo "ERROR: unsupported migration command" >&2
+        migration_status=1
+        ;;
+    esac
+    if [ "$migration_status" -eq 0 ]; then
       echo "Migrations applied OK"
     else
       echo "ERROR: migrations failed — rolling back" >&2

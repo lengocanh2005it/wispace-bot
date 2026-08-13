@@ -295,7 +295,7 @@ All endpoints below require header **`X-Internal-Api-Key`** (or `Authorization: 
 | POST | `/v1/messenger/study-reminder/evening-rollover` | — | Trigger evening rollover job state transitions |
 | POST | `/v1/messenger/profile/setup` | — | Configure bot menu (ops) |
 | POST | `/v1/messenger/mapping/relink` | `{ "psid": string, "userId": number, "allowRelink"?: boolean }` | Ops relink PSID to userId |
-| POST | `/v1/messenger/ops/doppler-sync` | — | Doppler webhook runtime sync + container restart |
+| POST | `/v1/messenger/ops/doppler-sync` | — | Legacy endpoint; disabled in production containers without Docker socket |
 | GET | `/v1/messenger/ops/llm-usage/summary` | Query: `psid` **or** `userId`; `from`/`to` (YYYY-MM-DD, default today) | Total tokens + estimated USD per feature for one student |
 | GET | `/v1/messenger/ops/llm-usage/fleet` | Query: `date` (YYYY-MM-DD, default today) | Total tokens + estimated USD fleet-wide by feature |
 | GET | `/health` | — | **Public liveness** — generic `{ "status": "ok" }` only, never leaks dependency details |
@@ -379,12 +379,12 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 - **Chat quota events:** `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`, `CHAT_QUOTA_EVENTS_CLEANUP_ENABLED`
 - **Chat queue:** `CHAT_DEBOUNCE_MS`, `CHAT_MAX_BUBBLES`, `CHAT_BUBBLE_MAX_CHARS`, `CHAT_QUEUE_STORE` (R4), `CHAT_QUEUE_SHARED` (H7 legacy), `CHAT_HISTORY_STORE` (R1), `CHAT_QUEUE_PROCESSING_STUCK_MS`, `CHAT_QUEUE_STALE_TTL_MS`, `CHAT_QUEUE_CLEANUP_INTERVAL_MS`, `CHAT_HISTORY_TTL_MS`, `CHAT_HISTORY_MAX_MESSAGES`
 - **Ops API:** `INTERNAL_API_KEY` — header `X-Internal-Api-Key` for sync / send-reports / profile setup
-- **Doppler runtime sync:** `DOPPLER_RUNTIME_SYNC_ENABLED`, `DOPPLER_RUNTIME_TOKEN`, `DOPPLER_PROJECT`, `DOPPLER_CONFIG`, `DOPPLER_RUNTIME_SYNC_DEBOUNCE_SECONDS`
-- **Deploy:** `DEPLOY_DIR`, `DEPLOY_ENV_FILE`, `DEPLOY_COMPOSE_FILE`, `DEPLOY_CONTAINER_NAME`, `GHCR_PULL_TOKEN`, `GHCR_USER`, `DEPLOY_UID`, `DEPLOY_GID`, `DOCKER_GID`
+- **Doppler:** production env is applied by the manual `sync-env.yml` workflow; `DOPPLER_RUNTIME_SYNC_ENABLED=false` in deployed containers.
+- **Deploy:** `GHCR_PULL_TOKEN`, `GHCR_USER`, `DEPLOY_UID`, `DEPLOY_GID`
 - **Exam reports:** `WISPACE_REPORT_DAYS_BEFORE_EXAM_MIN/MAX`, `REPORT_SEND_CONCURRENCY`
 - **DB:** `DB_HOST`, `DB_PORT`, `DB_NAME` (`ai_chat_bot_db`), `DB_USER`, `DB_PASSWORD`, `DB_MIGRATIONS_RUN`, `DB_POOL_SIZE`, `DB_POOL_IDLE_TIMEOUT_MS`, `DB_POOL_CONNECTION_TIMEOUT_MS`
-- **Redis (optional, VPS):** `REDIS_ENABLED`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` — R0–R4 stores + R5 user display cache; readiness via `GET /health/ready` when enabled
-  - Redis runs **standalone on VPS** (folder `~/redis`, Docker publish `6379`) — not in the app repo. Local + prod share `REDIS_HOST` = VPS IP.
+- **Redis (optional, VPS):** `REDIS_ENABLED`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_TLS`, `REDIS_CA`, `REDIS_PRIVATE_NETWORK` — R0–R4 stores + R5 user display cache; readiness via `GET /health/ready` when enabled
+  - Redis runs **standalone on VPS** (folder `~/redis`, Docker publish restricted to the private Docker bridge) — not in the app repo. Do not use the VPS public IP as `REDIS_HOST`.
 - **User display cache (R5):** `USER_DISPLAY_NAME_CACHE_ENABLED`, `USER_DISPLAY_NAME_CACHE_TTL_SECONDS`
 
 ---
@@ -540,13 +540,13 @@ GitHub Actions (push to `main`): [`.github/workflows/deploy-bots.yml`](../.githu
 
 **VPS self-pull instead:** a cron job on the VPS runs [`.github/scripts/vps-self-pull-deploy.sh`](../.github/scripts/vps-self-pull-deploy.sh) every few minutes — `git fetch`/`reset` a local clone, check GHCR for an image tagged with the new commit SHA, and if published, run the existing [`vps-deploy.sh`](../.github/scripts/vps-deploy.sh) (unchanged: blue-green swap, health check, migrations, nginx switch). All outbound from the VPS, so the inbound edge-filter never applies. One-time setup (git clone + crontab entry + `GHCR_USER`/`GHCR_PULL_TOKEN`) is documented in the script's header comment.
 
-`.env` sync is separate and unaffected: Doppler webhook → each bot's `/v1/*/ops/doppler-sync` HTTP endpoint (see `packages/doppler-sync`) keeps `.env` current independently of image deploys — no SSH involved either.
+`.env` sync is separate: run the manual **Sync production env** workflow. Bot containers do not mount `.env` or `/var/run/docker.sock`; this keeps production secrets and the Docker host outside the application trust boundary.
 
 | GitHub Secret | Purpose |
 |---------------|---------|
 | `GHCR_PULL_TOKEN` | PAT `read:packages` — image build/push, and VPS `docker login ghcr.io` to pull |
 | `VPS_HOST`, `VPS_USER`, `SSH_PRIVATE_KEY` | Only used by [`sync-env.yml`](../.github/workflows/sync-env.yml) (`env_only=true`, manual `workflow_dispatch`) — legacy env-only SSH path, kept as a fallback since it's rarely triggered |
-| `DOPPLER_TOKEN` | Service token for **prd** config — used by `sync-env.yml` and the Doppler webhook sync |
+| `DOPPLER_TOKEN` | Service token for **prd** config — used by `sync-env.yml` |
 
 Image: `ghcr.io/lengocanh2005it/wispace-bot/<app>:<commit-sha>` (also tagged `:latest`).
 

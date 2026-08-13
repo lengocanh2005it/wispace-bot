@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { maskExternalId } from '@wispace/bot-common';
 import { parseArgs } from './_args.mjs';
 
 const HELP = `Usage: npm run chat-quota:rebuild -- [options]
@@ -143,7 +144,7 @@ async function main() {
       }
 
       console.log(
-        `${args.dryRun ? '[dry-run] ' : ''}externalUserId=${pair.external_user_id} date=${pair.usage_date} ${before} -> ${capped} (raw=${used}, limit=${dailyLimit})`,
+        `${args.dryRun ? '[dry-run] ' : ''}externalUserId=${maskExternalId(pair.external_user_id)} date=${pair.usage_date} ${before} -> ${capped} (raw=${used}, limit=${dailyLimit})`,
       );
 
       if (!args.dryRun) {

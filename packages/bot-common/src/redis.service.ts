@@ -64,6 +64,21 @@ export class RedisService
         this.configService.get<string>('REDIS_TLS')?.trim().toLowerCase() ?? '',
       );
       const redisCa = this.configService.get<string>('REDIS_CA')?.trim();
+      const allowPrivatePlaintext = ['true', '1', 'yes'].includes(
+        this.configService
+          .get<string>('REDIS_PRIVATE_NETWORK')
+          ?.trim()
+          .toLowerCase() ?? '',
+      );
+
+      if (
+        !redisTlsEnabled &&
+        !(allowPrivatePlaintext && isPrivateNetworkHost(this.getHost()))
+      ) {
+        throw new Error(
+          'REDIS_TLS=true is required unless REDIS_PRIVATE_NETWORK=true and REDIS_HOST is private/local',
+        );
+      }
 
       this.client = new IORedis({
         host: this.getHost(),
@@ -103,4 +118,29 @@ export class RedisService
       this.client = null;
     }
   }
+}
+
+function isPrivateNetworkHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  if (
+    normalized === 'localhost' ||
+    normalized === '::1' ||
+    normalized === '127.0.0.1'
+  ) {
+    return true;
+  }
+
+  const octets = normalized.split('.').map(Number);
+  if (
+    octets.length !== 4 ||
+    octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
+  ) {
+    return false;
+  }
+
+  return (
+    octets[0] === 10 ||
+    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+    (octets[0] === 192 && octets[1] === 168)
+  );
 }

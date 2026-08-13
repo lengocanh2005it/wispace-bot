@@ -1,6 +1,6 @@
 # Doppler — Secret Management (prod + dev)
 
-Production env on VPS is **synced from Doppler** on every GitHub Actions deploy (when `DOPPLER_TOKEN` is present). Local dev can use `doppler run` instead of copying `.env` manually.
+Production env on VPS is **synced from Doppler** by the manual `sync-env.yml` workflow. Bot containers do not mount the host Docker socket or host `.env`; this prevents an application compromise from becoming a host compromise. Local dev can use `doppler run` instead of copying `.env` manually.
 
 Related: [project-overview.md](../../../docs/project-overview.md) § deploy, `.github/workflows/deploy-bots.yml`, `.env.example` (variable names only, no values).
 
@@ -44,13 +44,13 @@ Or paste individual keys on the dashboard. **Don't** commit the prod file to git
 ```bash
 doppler login
 npm run env:upload-doppler
-# → upload .env to dev config (PORT=3001) + prd (PORT=5007, DOPPLER_RUNTIME_SYNC_ENABLED=true)
+# → upload .env to dev config (PORT=3001) + prd (PORT=5007, runtime sync disabled)
 
 # Only one config:
 node scripts/upload-env-to-doppler.mjs .env prd
 ```
 
-After editing secrets on Doppler: webhook auto-syncs VPS, or `npm run env:sync-prod` / Re-run **Sync production env** workflow.
+After editing secrets on Doppler: run `npm run env:sync-prod` / re-run **Sync production env** workflow.
 
 4. Dev config: copy from `prd` then adjust `PORT=3001`, local URLs, disable ops if needed.
 
@@ -71,7 +71,7 @@ docker build → push ghcr.io/... → SCP + SSH to VPS (Doppler env when DOPPLER
 
 Current CI deploy uses SSH/SCP only (no more `POST /v1/messenger/ops/ci-deploy` endpoint).
 
-Prod env changed on Doppler: webhook → `POST /v1/messenger/ops/doppler-sync` (no GitHub needed).
+Prod env changed on Doppler: run **Sync production env (no image build)**.
 
 **Required GitHub Secrets for SSH Deploy:**
 
@@ -89,7 +89,7 @@ Prod env changed on Doppler: webhook → `POST /v1/messenger/ops/doppler-sync` (
 
 If `SSH_PRIVATE_KEY` / `VPS_*` **not yet** set, SCP/SSH step fails — add secret then re-run workflow.
 
-If `DOPPLER_TOKEN` **not yet** set, workflow still deploys image; env on VPS stays unchanged (or use doppler-sync webhook when secrets change).
+If `DOPPLER_TOKEN` **not yet** set, workflow still deploys image; env on VPS stays unchanged.
 
 ---
 
@@ -111,16 +111,11 @@ Still possible to use `.env` + `npm run start:dev` if Doppler isn't installed.
 
 ---
 
-## 4. Change Prod Secret — Full-Auto (VPS Webhook)
+## 4. Change Prod Secret — Manual Sync
 
 1. Edit on Doppler config **`prd`** (dashboard or CLI).
-2. Doppler webhook → `POST https://aiassist.aihubproduction.com/v1/messenger/ops/doppler-sync` (auto sync + restart).
-
-Runtime sync writes temp `/tmp/.env.sync.tmp` then `copyFile` to `/deploy/.env` (host `.env` bind mount), **merges back** `DEPLOY_*` / `DOCKER_GID` (Doppler doesn't contain deploy keys). Recreates via sidecar `docker:29-cli` mounting host deploy dir (avoids `cwd` host path not existing in container).
-
-**No GitHub Actions needed** when only changing env.
-
-**Manual (no webhook):** `npm run env:sync-prod` or Actions → **Sync production env (no image build)**.
+2. Run `npm run env:sync-prod` or Actions → **Sync production env (no image build)**.
+3. The workflow writes the env file through the existing SSH deploy path and recreates the container without exposing the Docker socket to the bot.
 
 ### CI Deploy Code (`deploy-bots.yml` → `deploy-bot-reusable.yml`)
 
@@ -132,30 +127,14 @@ Runtime sync writes temp `/tmp/.env.sync.tmp` then `copyFile` to `/deploy/.env` 
 
 Docker build still uses **GHA layer cache** (`cache-from/to: type=gha`).
 
-### Webhook Setup (One-Time)
-
-1. Doppler → **messenger-bot** → **prd** → **Webhooks** → Add.
-2. **URL:** `https://aiassist.aihubproduction.com/v1/messenger/ops/doppler-sync`
-3. **Custom header:** `x-internal-api-key: <INTERNAL_API_KEY>` (value from `prd` config).
-4. On Doppler `prd`, add secret:
-   - `DOPPLER_RUNTIME_TOKEN` = read-only service token for `prd` (same value as GitHub secret `DOPPLER_TOKEN`).
-
-After image with this feature is deployed, test manually:
-
-```bash
-curl -sS -X POST https://aiassist.aihubproduction.com/v1/messenger/ops/doppler-sync \
-  -H "x-internal-api-key: YOUR_INTERNAL_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"project":"messenger-bot","config":"prd"}'
-# → HTTP 202 {"accepted":true}
-```
+The legacy `/v1/*/ops/doppler-sync` endpoints remain for compatibility but are disabled in production containers.
 
 ---
 
 ## 5. Rotate Secret (e.g. Meta App Secret)
 
-1. Change value on Doppler dashboard (config `prd`) — webhook auto-syncs VPS.
-2. Or push `main` / Re-run Deploy — CI still writes `.env` when deploying code.
+1. Change value on Doppler dashboard (config `prd`).
+2. Run **Sync production env (no image build)**.
 
 No need to SSH-edit `.env` manually.
 
@@ -169,7 +148,7 @@ No need to SSH-edit `.env` manually.
 - [ ] Deploy succeeds; CI log shows `Applied .env from Doppler` and `Deployment complete — container messenger-bot is healthy`
 - [x] Repo: `.doppler.yaml` + `doppler setup` (dev)
 
-- [ ] Doppler webhook → `POST /v1/messenger/ops/doppler-sync` + `DOPPLER_RUNTIME_TOKEN` on `prd`
+- [x] Production env sync uses `sync-env.yml`; bot containers have no Docker socket access
 
 ---
 

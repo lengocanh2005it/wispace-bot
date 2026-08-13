@@ -23,11 +23,43 @@ export function getPostgresSsl(
   source: EnvSource,
 ): false | { rejectUnauthorized: true; ca?: string } {
   if (readEnv(source, 'DB_SSL') !== 'true') {
+    const nodeEnv = readEnv(source, 'NODE_ENV')?.trim().toLowerCase();
+    const host = readEnv(source, 'DB_HOST')?.trim() ?? '';
+    if (nodeEnv === 'production' && !isPrivateNetworkHost(host)) {
+      throw new Error(
+        'DB_SSL=true is required for production database hosts outside a private/local network',
+      );
+    }
     return false;
   }
 
   const ca = readEnv(source, 'DB_SSL_CA')?.trim();
   return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
+}
+
+function isPrivateNetworkHost(host: string): boolean {
+  const normalized = host.toLowerCase();
+  if (
+    normalized === 'localhost' ||
+    normalized === '127.0.0.1' ||
+    normalized === '::1'
+  ) {
+    return true;
+  }
+
+  const octets = normalized.split('.').map(Number);
+  if (
+    octets.length !== 4 ||
+    octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
+  ) {
+    return false;
+  }
+
+  return (
+    octets[0] === 10 ||
+    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
+    (octets[0] === 192 && octets[1] === 168)
+  );
 }
 
 /** Shared entities used by all bots — import and spread into each bot's entity list. */
