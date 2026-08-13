@@ -406,6 +406,30 @@ _Avoid_: database lock — specifically advisory lock
 
 ### Wispace API
 
+**roadmap**:
+WISPACE's ordered learning path for a learner. WISPACE is the source of truth for which exercise is next and whether the roadmap is complete.
+_Avoid_: lesson plan, course plan
+
+**next exercise**:
+The exercise selected by the learner's current roadmap for the next practice step. It is not an arbitrary Task 1/Task 2, topic, or difficulty selected by the bot.
+_Avoid_: custom exercise, requested exercise type
+
+**exercise precreation**:
+The WISPACE command that generates or prepares the next roadmap exercise and returns its practice link. It does not mean the learner has opened, attempted, or completed the exercise.
+_Avoid_: exercise attempt, exercise completion, exercise assignment
+
+**exercise precreation status**:
+The outcome of a precreation request: `created`, `already_exists`, `finished_all`, or `no_roadmap`. The status flags are authoritative; the backend `message` is only explanatory context.
+_Avoid_: exercise state (which may mean the learner's practice state)
+
+**exerciseUrl**:
+The HTTPS link returned by WISPACE for opening the generated or already-existing next exercise.
+_Avoid_: exercise link without the `exerciseUrl` field name
+
+**idempotent exercise precreation**:
+Repeated precreation requests for the same roadmap position do not create duplicate exercises; WISPACE returns the existing exercise instead.
+_Avoid_: duplicate prevention in the bot
+
 **UserCalendar API**:
 Wispace API endpoint for reading a user's study sessions. Authenticated via the platform header (`x-psid`, `x-discordid`, or `x-zaloid`). Returns `UserCalendarRecord[]`.
 _Avoid_: calendar API without "User" prefix
@@ -470,6 +494,7 @@ _Avoid_: monorepo without "Turborepo"
 | `sessionKey` | `sessionId`, `calendarId` | Composite key, not a DB PK |
 | `remindAt` | `sendAt`, `notifyAt` | Domain-specific: when the reminder fires |
 | `scheduledAt` | `startTime`, `eventTime` | Matches UserCalendar API field |
+| `exerciseTopic` | `topic` when referring to a future exercise parameter | `topic` already means notification topic in account linking |
 | `quota` | `limit`, `allowance` | Distinguishes daily cap from burst limit |
 | `reserve` / `refund` | `allocate` / `rollback` | Financial metaphor, domain-specific |
 | `flush` | `process`, `drain` | Specific to debounce queue |
