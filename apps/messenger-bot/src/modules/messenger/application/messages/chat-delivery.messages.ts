@@ -121,3 +121,8 @@ export function buildUnsupportedMessageTypeReply(): string {
     'Bạn gửi lại câu hỏi bằng chữ để mình hỗ trợ bạn.'
   );
 }
+
+/** Chat queue cap exceeded: oldest buffered messages were dropped. */
+export function buildChatDroppedMessage(): string {
+  return 'Bạn gửi hơi nhiều tin quá, mình chỉ xử lý được phần đầu thôi nhé';
+}

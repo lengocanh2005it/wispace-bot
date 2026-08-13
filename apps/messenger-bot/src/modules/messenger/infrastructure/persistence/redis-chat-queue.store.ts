@@ -28,6 +28,7 @@ interface RedisChatQueueBufferState {
   processing: boolean;
   processingStartedAt?: number | null;
   flushAfterAt?: number | null;
+  droppedNoticePending?: boolean | null;
   updatedAt: number;
 }
 
@@ -87,17 +88,26 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
 
         if (state.processing) {
           state.pendingTexts.push(input.userText);
-          state.pendingTexts = state.pendingTexts.slice(
-            -RedisChatQueueStore.MAX_BUFFERED_MESSAGES,
-          );
+          if (
+            state.pendingTexts.length >
+            RedisChatQueueStore.MAX_BUFFERED_MESSAGES
+          ) {
+            state.pendingTexts = state.pendingTexts.slice(
+              -RedisChatQueueStore.MAX_BUFFERED_MESSAGES,
+            );
+            state.droppedNoticePending = true;
+          }
           if (input.idempotencyKey) {
             state.lastPendingIdempotencyKey = input.idempotencyKey;
           }
         } else {
           state.texts.push(input.userText);
-          state.texts = state.texts.slice(
-            -RedisChatQueueStore.MAX_BUFFERED_MESSAGES,
-          );
+          if (state.texts.length > RedisChatQueueStore.MAX_BUFFERED_MESSAGES) {
+            state.texts = state.texts.slice(
+              -RedisChatQueueStore.MAX_BUFFERED_MESSAGES,
+            );
+            state.droppedNoticePending = true;
+          }
           if (input.idempotencyKey) {
             state.lastIdempotencyKey = input.idempotencyKey;
           }
@@ -171,6 +181,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         lastIdempotencyKey: state.lastIdempotencyKey ?? undefined,
         userId: state.userId,
         linkContext: state.linkContext ?? undefined,
+        droppedNoticePending: state.droppedNoticePending === true,
       };
 
       state.texts = [];
@@ -199,6 +210,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         state.lastIdempotencyKey = state.lastPendingIdempotencyKey ?? null;
         state.lastPendingIdempotencyKey = null;
         state.flushAfterAt = flushAfterAt;
+        state.droppedNoticePending = null;
         state.updatedAt = Date.now();
 
         await this.writeState(client, input.psid, state);
@@ -396,6 +408,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       lastIdempotencyKey: null,
       lastPendingIdempotencyKey: null,
       idempotencyKeys: [],
+      droppedNoticePending: null,
       updatedAt: Date.now(),
     };
   }

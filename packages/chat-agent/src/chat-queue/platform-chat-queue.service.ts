@@ -22,6 +22,9 @@ const CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
 const PENDING_MESSAGE =
   'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...';
 
+const DROPPED_MESSAGE =
+  'Bạn gửi hơi nhiều tin quá, mình chỉ xử lý được phần đầu thôi nhé';
+
 interface QueueCtx {
   userId?: number;
   isServerChannel?: boolean;
@@ -38,6 +41,8 @@ export class PlatformChatQueueService implements OnModuleDestroy {
   private readonly logger = new Logger(PlatformChatQueueService.name);
   private readonly queue: DebounceChatQueue<QueueCtx>;
   private readonly pipeline: ChatPipeline;
+  /** Users already told their messages were dropped this cycle (reset on flush). */
+  private readonly droppedNotified = new Set<string>();
 
   constructor(
     configService: ConfigService,
@@ -134,6 +139,12 @@ export class PlatformChatQueueService implements OnModuleDestroy {
               externalUserId,
             )} (cap exceeded)`,
           );
+          if (!this.droppedNotified.has(externalUserId)) {
+            this.droppedNotified.add(externalUserId);
+            directTextSender
+              .sendText(externalUserId, DROPPED_MESSAGE)
+              .catch(() => {});
+          }
         },
       },
     );
@@ -176,6 +187,8 @@ export class PlatformChatQueueService implements OnModuleDestroy {
       this.logger.error(
         `Chat queue flush failed for ${batch.externalUserId}: ${msg}`,
       );
+    } finally {
+      this.droppedNotified.delete(batch.externalUserId);
     }
   }
 }

@@ -294,6 +294,68 @@ describe('RedisChatQueueStore', () => {
     expect(snapshot?.lastIdempotencyKey).toBe('mid-2');
   });
 
+  it('flags droppedNoticePending when the buffer cap is exceeded and clears it on completion', async () => {
+    jest.useFakeTimers();
+
+    let persistedState: string | null = null;
+    const transaction = createTransaction();
+    const client = createClient({
+      get: jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+      set: jest.fn().mockImplementation((key: string, value?: string) => {
+        if (key.startsWith('chat:queue:lock:')) {
+          return Promise.resolve('OK');
+        }
+        return Promise.resolve(value);
+      }),
+      multi: jest.fn().mockReturnValue(transaction),
+    });
+    transaction.set.mockImplementation((_key: string, value: string) => {
+      persistedState = value;
+      return transaction;
+    });
+    transaction.exec.mockResolvedValue([
+      [null, 'OK'],
+      [null, 1],
+    ]);
+
+    const store = createStore(client);
+    const fullTexts = Array.from({ length: 20 }, (_, i) => `msg-${i}`);
+
+    persistedState = JSON.stringify({
+      texts: fullTexts,
+      pendingTexts: ['pending-1'],
+      processing: false,
+      flushAfterAt: Date.now() - 1000,
+    });
+
+    await store.appendChatBuffer({
+      psid: 'psid-1',
+      userText: 'msg-overflow',
+      debounceMs: 2000,
+    });
+
+    const afterAppend = JSON.parse(persistedState ?? '{}') as {
+      texts: string[];
+      droppedNoticePending?: boolean | null;
+    };
+    expect(afterAppend.texts).toHaveLength(20);
+    expect(afterAppend.texts[0]).toBe('msg-1');
+    expect(afterAppend.droppedNoticePending).toBe(true);
+
+    await jest.advanceTimersByTimeAsync(2500);
+
+    const snapshot = await store.claimReadyBuffer('psid-1', 2000, 300_000);
+    expect(snapshot?.droppedNoticePending).toBe(true);
+
+    await store.completeChatBuffer({ psid: 'psid-1', debounceMs: 2000 });
+    const afterComplete = JSON.parse(persistedState ?? '{}') as {
+      droppedNoticePending?: boolean | null;
+    };
+    expect(afterComplete.droppedNoticePending).toBe(null);
+
+    jest.useRealTimers();
+  });
+
   it('does not claim a processing buffer that is not stuck yet', async () => {
     const state = {
       texts: [],

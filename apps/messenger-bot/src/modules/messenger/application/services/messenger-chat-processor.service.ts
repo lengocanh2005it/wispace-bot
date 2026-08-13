@@ -21,6 +21,7 @@ import {
   MessengerPartialSendError,
 } from './messenger-outbound.service';
 import { buildChatDeliveryErrorMessage } from '../messages/chat-delivery.messages';
+import { buildChatDroppedMessage } from '../messages/chat-delivery.messages';
 import { readMessengerBubbleLimits } from '../utils/messenger-bubble-config.utils';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import { MetricsService } from '@messenger/modules/metrics/metrics.service';
@@ -89,6 +90,22 @@ export class MessengerChatProcessorService {
 
     if (!snapshot || snapshot.texts.length === 0) {
       return;
+    }
+
+    if (snapshot.droppedNoticePending) {
+      await this.outbound
+        .sendTextViaPsid({
+          psid,
+          text: buildChatDroppedMessage(),
+          messageType: 'PENDING_FEEDBACK',
+        })
+        .catch((error) => {
+          this.logger.error(
+            `Failed to send drop notice to psid=${maskExternalId(
+              psid,
+            )}: ${errorMessage(error)}`,
+          );
+        });
     }
 
     const mergedText = capMergedChatUserText(

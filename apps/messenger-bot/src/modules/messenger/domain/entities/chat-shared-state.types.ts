@@ -15,6 +15,8 @@ export interface ChatQueueBufferSnapshot {
   lastIdempotencyKey?: string;
   userId?: number;
   linkContext?: MessengerLinkContext;
+  /** True when buffered messages were dropped (cap exceeded) since last flush. */
+  droppedNoticePending?: boolean;
 }
 
 export interface CompleteChatBufferInput {

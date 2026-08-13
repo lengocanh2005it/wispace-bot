@@ -15,6 +15,7 @@ import {
   capMergedChatUserText,
   mergeChatUserTexts,
 } from '@messenger/shared/utils/messenger-text.utils';
+import { buildChatDroppedMessage } from '../messages/chat-delivery.messages';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import { CHAT_QUEUE_STORE } from '../../domain/repositories/chat-queue.store.port';
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
@@ -40,6 +41,8 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
     string,
     ReturnType<typeof setTimeout>
   >();
+  /** PSIDs already told their messages were dropped this cycle (reset on flush). */
+  private readonly droppedNotified = new Set<string>();
 
   constructor(
     private readonly configService: ConfigService,
@@ -94,6 +97,22 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
               externalUserId,
             )} (cap exceeded)`,
           );
+          if (!this.droppedNotified.has(externalUserId)) {
+            this.droppedNotified.add(externalUserId);
+            void this.outbound
+              .sendTextViaPsid({
+                psid: externalUserId,
+                text: buildChatDroppedMessage(),
+                messageType: 'PENDING_FEEDBACK',
+              })
+              .catch((error) => {
+                this.logger.error(
+                  `Failed to send drop notice to psid=${maskExternalId(
+                    externalUserId,
+                  )}: ${errorMessage(error)}`,
+                );
+              });
+          }
         },
       },
     );
@@ -140,18 +159,22 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
   private async handleMemoryFlush(
     batch: ChatQueueBatch<MemoryQueueContext>,
   ): Promise<void> {
-    const mergedText = capMergedChatUserText(
-      mergeChatUserTexts(batch.texts),
-      this.getMergedTextMaxChars(),
-    );
+    try {
+      const mergedText = capMergedChatUserText(
+        mergeChatUserTexts(batch.texts),
+        this.getMergedTextMaxChars(),
+      );
 
-    await this.processor.process({
-      psid: batch.externalUserId,
-      mergedText,
-      userId: batch.context?.userId,
-      linkContext: batch.context?.linkContext,
-      idempotencyKey: batch.idempotencyKey,
-    });
+      await this.processor.process({
+        psid: batch.externalUserId,
+        mergedText,
+        userId: batch.context?.userId,
+        linkContext: batch.context?.linkContext,
+        idempotencyKey: batch.idempotencyKey,
+      });
+    } finally {
+      this.droppedNotified.delete(batch.externalUserId);
+    }
   }
 
   private async enqueueDistributed(

@@ -7,6 +7,22 @@ import type { MessengerChatProcessorService } from './messenger-chat-processor.s
 import type { MessengerOutboundService } from './messenger-outbound.service';
 
 const mockQueueConfigs: Array<{ maxPendingSize?: number }> = [];
+const mockQueueCallbacks: Array<{
+  onPendingQueued: (
+    externalUserId: string,
+    text: string,
+    pendingCount: number,
+  ) => void;
+  onPendingDropped: (externalUserId: string, droppedCount: number) => void;
+}> = [];
+const mockQueueFlushCallbacks: Array<
+  (batch: {
+    externalUserId: string;
+    texts: string[];
+    context?: { userId?: number };
+    idempotencyKey?: string;
+  }) => Promise<void>
+> = [];
 
 jest.mock('@wispace/chat-queue-core', () => {
   const actual = jest.requireActual<typeof import('@wispace/chat-queue-core')>(
@@ -19,6 +35,8 @@ jest.mock('@wispace/chat-queue-core', () => {
       ...args: unknown[]
     ) {
       mockQueueConfigs.push(args[0] as { maxPendingSize?: number });
+      mockQueueCallbacks.push(args[2] as never);
+      mockQueueFlushCallbacks.push(args[1] as never);
       return new actual.DebounceChatQueue(...(args as never[]));
     }),
   };
@@ -239,6 +257,35 @@ describe('MessengerChatEnqueueService', () => {
     // This is handled by the DebounceChatQueue callback
     // We verify the service was created and enqueue was called
     expect(sendTextViaPsid).not.toHaveBeenCalled(); // not called during enqueue itself
+  });
+
+  it('sends the drop notice once per flush cycle', async () => {
+    const { sendTextViaPsid, process } = createService();
+    const callbacks = mockQueueCallbacks[mockQueueCallbacks.length - 1];
+    const flushCb = mockQueueFlushCallbacks[mockQueueFlushCallbacks.length - 1];
+
+    callbacks.onPendingDropped('psid-1', 5);
+    callbacks.onPendingDropped('psid-1', 3);
+
+    expect(sendTextViaPsid).toHaveBeenCalledTimes(1);
+    expect(sendTextViaPsid).toHaveBeenCalledWith(
+      expect.objectContaining({
+        psid: 'psid-1',
+        text: 'Bạn gửi hơi nhiều tin quá, mình chỉ xử lý được phần đầu thôi nhé',
+        messageType: 'PENDING_FEEDBACK',
+      }),
+    );
+
+    await flushCb({
+      externalUserId: 'psid-1',
+      texts: ['hi'],
+      idempotencyKey: 'mid-1',
+    });
+
+    expect(process).toHaveBeenCalled();
+
+    callbacks.onPendingDropped('psid-1', 2);
+    expect(sendTextViaPsid).toHaveBeenCalledTimes(2);
   });
 
   it('cleans up timers on destroy', () => {

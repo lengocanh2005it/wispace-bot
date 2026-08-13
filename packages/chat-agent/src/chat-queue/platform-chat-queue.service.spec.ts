@@ -318,6 +318,51 @@ describe('PlatformChatQueueService', () => {
     );
   });
 
+  it('sends the drop notice once per flush cycle', async () => {
+    const pendingTextSender = {
+      sendText: jest.fn().mockResolvedValue(undefined),
+    };
+    buildService(pendingTextSender);
+
+    const callbacks = jest.mocked(DebounceChatQueue).mock.calls[0][2] as {
+      onPendingDropped: (externalUserId: string, count: number) => void;
+    };
+
+    callbacks.onPendingDropped('discord-1', 5);
+    callbacks.onPendingDropped('discord-1', 3);
+
+    expect(pendingTextSender.sendText).toHaveBeenCalledTimes(1);
+    expect(pendingTextSender.sendText).toHaveBeenCalledWith(
+      'discord-1',
+      'Bạn gửi hơi nhiều tin quá, mình chỉ xử lý được phần đầu thôi nhé',
+    );
+
+    await getFlushCallback()({
+      externalUserId: 'discord-1',
+      texts: ['hi'],
+      context: {},
+      idempotencyKey: 'k',
+    });
+
+    callbacks.onPendingDropped('discord-1', 2);
+    expect(pendingTextSender.sendText).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not notify the user when sendText fails', async () => {
+    const pendingTextSender = {
+      sendText: jest.fn().mockRejectedValue(new Error('DM unavailable')),
+    };
+    buildService(pendingTextSender);
+
+    const callbacks = jest.mocked(DebounceChatQueue).mock.calls[0][2] as {
+      onPendingDropped: (externalUserId: string, count: number) => void;
+    };
+
+    callbacks.onPendingDropped('zalo-1', 4);
+    await Promise.resolve();
+    expect(pendingTextSender.sendText).toHaveBeenCalledTimes(1);
+  });
+
   it('defaults maxPendingSize to 20 when CHAT_MAX_PENDING_MESSAGES is unset', () => {
     buildService();
     const cfg = jest.mocked(DebounceChatQueue).mock.calls[0][0] as {
