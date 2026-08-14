@@ -35,6 +35,8 @@ function buildResponse(): Response {
   res.send = jest.fn().mockReturnValue(res);
   res.redirect = jest.fn().mockReturnValue(res);
   res.json = jest.fn().mockReturnValue(res);
+  res.setHeader = jest.fn().mockReturnValue(res);
+  res.cookie = jest.fn().mockReturnValue(res);
   return res as Response;
 }
 
@@ -162,7 +164,7 @@ describe('DiscordOauthController', () => {
     );
   });
 
-  it('issues a pending token when user is not in the guild', async () => {
+  it('issues a pending capability via HttpOnly cookie when user is not in the guild', async () => {
     const tokenVerifyService = {
       verifyToken: jest.fn().mockResolvedValue({ valid: true, userId: 143 }),
     } as unknown as WispaceTokenVerifyService;
@@ -194,8 +196,50 @@ describe('DiscordOauthController', () => {
       'TestUser',
     );
     expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith(
-      expect.stringContaining('pendingToken=pending-token-123'),
+    expect(res.cookie).toHaveBeenCalledWith(
+      'pending_link',
+      'pending-token-123',
+      expect.objectContaining({
+        httpOnly: true,
+        secure: true,
+        sameSite: 'none',
+      }),
+    );
+    const redirectUrl = String(
+      ((res.redirect as jest.Mock).mock.calls as string[][])[0]?.[0],
+    );
+    expect(redirectUrl).not.toContain('pendingToken');
+    expect(redirectUrl).toContain('discordUsername=TestUser');
+  });
+
+  it('sets a restrictive Referrer-Policy on every linking redirect', async () => {
+    const tokenVerifyService = {
+      verifyToken: jest.fn().mockResolvedValue({ valid: true, userId: 143 }),
+    } as unknown as WispaceTokenVerifyService;
+    const accountLinkService = {
+      exchangeCodeForDiscordUser: jest
+        .fn()
+        .mockResolvedValue({ id: 'discord-user-1', username: 'TestUser' }),
+      upsertLink: jest.fn().mockResolvedValue(undefined),
+    } as unknown as DiscordAccountLinkService;
+    const outboundService = {
+      sendMenuButtons: jest.fn().mockResolvedValue('dm-channel-123'),
+    } as unknown as DiscordOutboundService;
+    const controller = new DiscordOauthController(
+      buildConfigService(),
+      tokenVerifyService,
+      accountLinkService,
+      outboundService,
+      buildGuildMembershipService(true),
+      buildPendingJoinService(),
+    );
+    const res = buildResponse();
+
+    await controller.callback('code', 'good-token', undefined, res);
+
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'Referrer-Policy',
+      'no-referrer',
     );
   });
 

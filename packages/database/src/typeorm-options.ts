@@ -19,15 +19,25 @@ export function readEnv(source: EnvSource, key: string): string | undefined {
   return source[key];
 }
 
+/**
+ * TLS policy — enforced independent of NODE_ENV: any host that is not
+ * localhost/a private IPv4 address requires DB_SSL=true (startup + migration
+ * CLI both fail via this shared builder). Hostnames cannot be IP-classified,
+ * so `DB_ALLOW_INSECURE_HOSTS` (comma-separated) is the only explicit
+ * plaintext exception for private-network hosts that are not IP literals
+ * (e.g. Docker-internal `postgres`). TLS connections always verify the peer.
+ */
 export function getPostgresSsl(
   source: EnvSource,
 ): false | { rejectUnauthorized: true; ca?: string } {
   if (readEnv(source, 'DB_SSL') !== 'true') {
-    const nodeEnv = readEnv(source, 'NODE_ENV')?.trim().toLowerCase();
     const host = readEnv(source, 'DB_HOST')?.trim() ?? '';
-    if (nodeEnv === 'production' && !isPrivateNetworkHost(host)) {
+    if (
+      !isPrivateNetworkHost(host) &&
+      !isInsecureHostAllowlisted(source, host)
+    ) {
       throw new Error(
-        'DB_SSL=true is required for production database hosts outside a private/local network',
+        'DB_SSL=true is required for database hosts outside a private/local network (or list the host in DB_ALLOW_INSECURE_HOSTS)',
       );
     }
     return false;
@@ -35,6 +45,15 @@ export function getPostgresSsl(
 
   const ca = readEnv(source, 'DB_SSL_CA')?.trim();
   return ca ? { rejectUnauthorized: true, ca } : { rejectUnauthorized: true };
+}
+
+function isInsecureHostAllowlisted(source: EnvSource, host: string): boolean {
+  const raw = readEnv(source, 'DB_ALLOW_INSECURE_HOSTS') ?? '';
+  const normalizedHost = host.toLowerCase();
+  return raw
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .some((entry) => entry !== '' && entry === normalizedHost);
 }
 
 function isPrivateNetworkHost(host: string): boolean {

@@ -6,6 +6,10 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { maskExternalId, readResponseText } from '@wispace/bot-common';
 import { mergeWithTimeout } from '../utils/abort-signal.utils';
+import {
+  validateUpstreamUrl,
+  buildUpstreamUrlPolicy,
+} from '../utils/upstream-url.utils';
 import type {
   WispaceLinkVerifyFailureReason,
   WispaceLinkVerifyResult,
@@ -86,7 +90,12 @@ export class WispaceTokenVerifyService {
       );
     }
 
-    return url;
+    return validateUpstreamUrl(
+      url,
+      buildUpstreamUrlPolicy('WISPACE_API_VERIFY_TOKEN_URL', {
+        get: (key) => this.configService.get<string>(key),
+      }),
+    );
   }
 
   private getInternalKey(): string {

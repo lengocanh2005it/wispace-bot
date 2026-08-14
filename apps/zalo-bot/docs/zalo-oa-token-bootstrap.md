@@ -20,6 +20,8 @@ counterpart (`zalo_account_links`, which *is* fully automated via
   API** product added and linked to the OA you manage.
 - `ZALO_APP_ID` / `ZALO_APP_SECRET_KEY` from that app's settings, already set
   in `apps/zalo-bot/.env` (see `.env.example`).
+- `ZALO_TOKEN_ENCRYPTION_KEY` set (32-byte base64) — tokens are encrypted at
+  rest; without it the app cannot read `zalo_oa_tokens` at all.
 - A redirect URI registered on the app's OAuth settings (can reuse
   `ZALO_OAUTH_REDIRECT_URI`, or register a second one dedicated to this
   bootstrap — either works, it's only used once here).
@@ -71,26 +73,22 @@ and add `code_verifier` to the step 2 body — this bootstrap call is unrelated
 to end-user Zalo Login, so any verifier value works as long as both steps use
 the same one.
 
-### 3. Seed `zalo_oa_tokens`
+### 3. Seed `zalo_oa_tokens` (encrypted)
 
-Insert the pair directly (this table has no seed migration — only this
-manual step populates it):
+Tokens are **encrypted at rest** (AES-256-GCM, `ZALO_TOKEN_ENCRYPTION_KEY`) —
+a raw plaintext `INSERT` would fail closed on read. Seed through the script
+(after `npm run build`, with the app env loaded: `DB_*`, `ZALO_TOKEN_ENCRYPTION_KEY`):
 
-```sql
-INSERT INTO zalo_oa_tokens
-  (access_token, refresh_token, access_token_expires_at, refresh_token_expires_at, updated_at)
-VALUES
-  (
-    '<access_token from step 2>',
-    '<refresh_token from step 2>',
-    now() + interval '3600 seconds',   -- from expires_in
-    now() + interval '2592000 seconds', -- from refresh_token_expires_in
-    now()
-  );
+```bash
+node scripts/seed-oa-token.mjs \
+  --access-token='<access_token from step 2>' \
+  --refresh-token='<refresh_token from step 2>' \
+  --expires-in=3600 \
+  --refresh-expires-in=2592000
 ```
 
 Use the exact `expires_in`/`refresh_token_expires_in` values from the step 2
-response instead of the literals above if they differ.
+response instead of the defaults above if they differ.
 
 ### 4. Verify
 

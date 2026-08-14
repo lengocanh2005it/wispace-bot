@@ -24,6 +24,11 @@ Read this file before modifying code. In-depth details are in `docs/` — only r
 
 - Copy `.env.example` → `.env` and fill in real tokens before running sync/cron — or use [Doppler](apps/messenger-bot/docs/doppler-secrets.md): `doppler setup` + `npm run start:dev:doppler`.
 - **Prod DB:** `DB_NAME=ai_chat_bot_db` (no longer `writing_ai_hub_db`).
+- **DB TLS is enforced independent of `NODE_ENV`** (`packages/database/src/typeorm-options.ts`): startup + migration fail when `DB_SSL != true` for any host that is not localhost/a private IPv4. Non-IP hostnames (e.g. Docker-internal `postgres`) need `DB_ALLOW_INSECURE_HOSTS=postgres,db.internal` — the only plaintext exception. TLS always verifies the peer; supply the CA via `DB_SSL_CA`. CI test job uses `DB_ALLOW_INSECURE_HOSTS=postgres`.
+- **WISPACE upstream URLs fail closed** (`packages/wispace-client/src/utils/upstream-url.utils.ts`): HTTPS required (dev-only `http://localhost` when `NODE_ENV != production`), credentials/fragments rejected, private targets rejected in production, optional `WISPACE_ALLOWED_HOSTS` allowlist. Applied to every WISPACE client config + verify-token URL at startup — do not bypass with a raw URL.
+- **Zalo OA tokens are encrypted at rest** (AES-256-GCM, per-row IV, `v1.<iv>.<tag>.<cipher>` in `zalo_oa_tokens`): `ZALO_TOKEN_ENCRYPTION_KEY` (32-byte base64, Doppler) is required; legacy plaintext rows fail closed — re-bootstrap via `apps/zalo-bot/docs/zalo-oa-token-bootstrap.md`. Zalo refresh is serialized (transaction + `FOR UPDATE`, re-read after lock) — single-use refresh tokens are never submitted twice.
+- **Discord pending-link capability is cookie-bound** (`pending_link` HttpOnly/Secure/SameSite=None, 15 min): never appears in URL query/fragment; `GET /discord/guild/join-status` + `POST /discord/guild/complete-link` read the cookie (frontend must use `credentials: 'include'`; CORS credentials enabled). `Referrer-Policy: no-referrer` on the linking flow.
+- **CI secret scanning:** Gitleaks runs on push + PR (failing policy). Exposed-local-`.env` recovery procedure: `docs/project-overview.md` §13.
 - Meta webhook needs a public URL (ngrok/tunnel) pointing to `POST /v1/webhook`.
 - After first deploy: call `POST /v1/messenger/profile/setup` (header `X-Internal-Api-Key`) — prod menu only has **Register Report** (bot sends reports/reminders automatically).
 - Editing files in `apps/messenger-bot/src/shared/prompts/*.system.txt` → **requires** `npm run build` (Nest copies assets to `dist/shared/prompts/`).
@@ -384,6 +389,8 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 ## Security
 
 - **Never** commit secrets: `.env`, Meta/OpenAI/LLM provider tokens, `INTERNAL_API_KEY`, DB password.
+- CI runs Gitleaks on push + PR — a new secret fails the build; local env files are excluded from Docker/backup/deploy. Exposed-env recovery: `docs/project-overview.md` §13.
+- Fail-closed config (do not loosen): PostgreSQL TLS for public hosts (`DB_ALLOW_INSECURE_HOSTS` is the only exception, for non-IP hostnames), WISPACE upstream URL validation (`WISPACE_ALLOWED_HOSTS` optional allowlist), Zalo OA token at-rest encryption (`ZALO_TOKEN_ENCRYPTION_KEY`).
 - Ops endpoints are protected by `InternalApiKeyGuard` — do not remove the guard when adding operational endpoints.
 - Wispace API: send the platform identity header (`x-psid` for Messenger, `x-discordid` for Discord, or `x-zaloid` for Zalo) plus `X-Internal-Key`; do not store/log the user's full access token.
 - Meta webhook: verified via `VERIFY_TOKEN` (GET `/v1/webhook`); POST `/v1/webhook` verifies `X-Hub-Signature-256` with `MESSENGER_APP_SECRET` (disable: `MESSENGER_WEBHOOK_SIGNATURE_VERIFY=false`). `ENFORCE_PROD_CHAT_QUOTA=true` or `NODE_ENV=production` → startup fails if secret is missing / verify is disabled / `CHAT_RATE_LIMIT_ENABLED=false`.

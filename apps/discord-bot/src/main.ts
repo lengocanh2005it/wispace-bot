@@ -24,7 +24,12 @@ async function bootstrap() {
 
   const corsOrigin = process.env.CORS_ORIGIN?.trim();
   if (corsOrigin) {
-    app.enableCors({ origin: corsOrigin.split(',') });
+    // credentials: true — the account-link pending capability rides an
+    // HttpOnly cookie from the cross-origin frontend (fetch credentials:'include')
+    app.enableCors({
+      origin: corsOrigin.split(','),
+      credentials: true,
+    });
   }
 
   app.use(helmet());

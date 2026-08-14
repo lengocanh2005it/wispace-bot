@@ -1,5 +1,9 @@
 import type { WispaceApiClientConfig } from '../clients/wispace-client-types';
 import type { PrecreateExerciseClientConfig } from '../types/precreate-exercise.types';
+import {
+  validateUpstreamUrl,
+  buildUpstreamUrlPolicy,
+} from '../utils/upstream-url.utils';
 
 export type WispaceConfigGetter = (key: string) => string | undefined;
 
@@ -86,6 +90,11 @@ export class WispaceConfigService {
     if (!url) {
       throw new Error(`${urlKey} must be set in .env`);
     }
+
+    validateUpstreamUrl(
+      url,
+      buildUpstreamUrlPolicy(urlKey, { get: this.getConfig }),
+    );
 
     return {
       url,
