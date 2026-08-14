@@ -232,7 +232,7 @@ const bodyLimit = Math.min(parseBytes(rawLimit), 1024 * 1024); // Cap at 1MB
 | HMAC-SHA256 webhook sig | `messenger-webhook-signature.utils.ts:12,47` | Meta webhook verification with timing-safe compare |
 | SHA-256 webhook sig | `zalo-webhook-signature.utils.ts:36-47` | Zalo webhook verification with timing-safe compare |
 | PKCE for OAuth | `zalo-account-link.service.ts:31-36` | `randomBytes(32)` + SHA-256 code challenge |
-| Secure random tokens | `discord-pending-join.service.ts:24` | `randomUUID()` for pending join tokens |
+| Secure random tokens | ~~`discord-pending-join.service.ts:24`~~ | ~~`randomUUID()` for pending join tokens~~ — **superseded:** the pending-join flow was removed (PR #138); Discord links commit at OAuth callback with no pending capability |
 | OAuth state tokens | `zalo-oauth-state.service.ts:28` | `randomBytes(24).toString('hex')` |
 
 ### SQL Injection Prevention (EXCELLENT)
