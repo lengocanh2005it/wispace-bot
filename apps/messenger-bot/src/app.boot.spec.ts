@@ -16,6 +16,7 @@ describe('AppModule boot smoke', () => {
     process.env.OPENAI_API_KEY = 'test-key';
     process.env.OPENAI_MODEL = 'test-model';
     process.env.INTERNAL_API_KEY = 'test-internal-key';
+    process.env.DB_HOST = 'localhost'; // TLS enforcement — local/private exception
     process.env.WISPACE_INTERNAL_KEY = 'test-wispace-key';
     process.env.WISPACE_API_PRECREATE_EXERCISE_URL =
       'https://testbackend.example.com/precreate-exercise';

@@ -158,6 +158,9 @@ jobs:
       DB_USER: postgres
       DB_PASSWORD: postgres
       NODE_ENV: test
+      # Docker-internal hostname cannot be IP-classified — explicit plaintext
+      # exception required by the NODE_ENV-independent TLS enforcement.
+      DB_ALLOW_INSECURE_HOSTS: postgres
     steps:
       # The container job runs with CWD=/github/workspace, but the image's
       # typeorm CLI lives in /app/node_modules/.bin — cd into /app first.

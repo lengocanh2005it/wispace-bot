@@ -17,6 +17,7 @@ import { WispaceExerciseService } from '@wispace/wispace-client';
  */
 describe('AppModule boot smoke', () => {
   it('boots without DI errors', async () => {
+    process.env.DB_HOST = 'localhost'; // TLS enforcement — local/private exception
     process.env.OPENAI_API_KEY = 'test-key';
     process.env.OPENAI_MODEL = 'test-model';
     process.env.WISPACE_INTERNAL_KEY = 'test-wispace-key';

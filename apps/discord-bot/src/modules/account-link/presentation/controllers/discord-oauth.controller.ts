@@ -9,6 +9,7 @@ import { DiscordOutboundService } from '@discord/modules/discord-chat/applicatio
 import { buildDiscordLinkWelcomeMessage } from '../../application/messages/account-link.messages';
 import { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
 import { DiscordPendingJoinService } from '../../application/services/discord-pending-join.service';
+import { setPendingLinkCookie } from '../cookies/pending-link-cookie';
 
 @Controller('discord/oauth')
 @UseGuards(ThrottlerGuard)
@@ -94,16 +95,17 @@ export class DiscordOauthController {
         this.logger.warn(
           `Guild check failed: discordUserId=${maskExternalId(
             discordUserId,
-          )} not in guild — issuing pending token`,
+          )} not in guild — issuing pending cookie`,
         );
         const pendingToken = this.pendingJoinService.create(
           discordUserId,
           wispaceUserId,
           discordUsername,
         );
+        // Capability travels in an HttpOnly cookie, never in the redirect URL.
+        setPendingLinkCookie(res, pendingToken);
         this.sendResult(res, {
           type: 'pending',
-          pendingToken,
           discordUsername,
         });
         return;
@@ -143,7 +145,7 @@ export class DiscordOauthController {
           dmChannelId?: string;
           discordUsername: string;
         }
-      | { type: 'pending'; pendingToken: string; discordUsername: string }
+      | { type: 'pending'; discordUsername: string }
       | { type: 'error'; message: string }
       | { type: 'cancelled' },
   ): void {
@@ -153,6 +155,10 @@ export class DiscordOauthController {
     const inviteUrl =
       this.configService.get<string>('DISCORD_INVITE_URL') ?? '';
 
+    // Never leak the query string (or any secret) through referrers of the
+    // linking flow — the pending capability is cookie-bound server-side.
+    res.setHeader('Referrer-Policy', 'no-referrer');
+
     if (frontendUrl) {
       const url = new URL(frontendUrl);
       if (result.type === 'cancelled') {
@@ -160,7 +166,6 @@ export class DiscordOauthController {
       } else if (result.type === 'error') {
         url.searchParams.set('error', result.message);
       } else if (result.type === 'pending') {
-        url.searchParams.set('pendingToken', result.pendingToken);
         url.searchParams.set('discordUsername', result.discordUsername);
         if (inviteUrl) url.searchParams.set('inviteUrl', inviteUrl);
       } else {

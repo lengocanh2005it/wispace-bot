@@ -381,7 +381,7 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 - **LLM global concurrency:** `LLM_GLOBAL_CONCURRENCY_ENABLED`, `LLM_GLOBAL_MAX_CONCURRENT`
 - **LLM usage (C2):** `LLM_USAGE_*`; USD estimate: `LLM_COST_USD_PER_1M_INPUT_TOKENS_<MODEL>` / `LLM_COST_USD_PER_1M_OUTPUT_TOKENS_<MODEL>` (e.g. `gpt-5.4` → `GPT_5_4`: input `2.50`, output `15.00` per [OpenAI pricing](https://developers.openai.com/api/docs/pricing); ≠ actual invoice)
 - **LLM safety:** `LLM_SAFETY_EVENTS_ENABLED`, `LLM_SAFETY_WARNING_DAILY_THRESHOLD`, `LLM_SAFETY_EVENT_RETENTION_DAYS`
-- **WISPACE API (shared):** `WISPACE_API_USER_CALENDAR_URL`, `WISPACE_API_USER_GOALS_URL`, `WISPACE_API_TASK_SCORE_URL`, `WISPACE_API_PRECREATE_EXERCISE_URL`, `WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS`, `WISPACE_INTERNAL_KEY` — auth: platform header (`x-psid`, `x-discordid`, or `x-zaloid`) + `X-Internal-Key`; next-exercise POST is idempotent and has no automatic retry
+- **WISPACE API (shared):** `WISPACE_API_USER_CALENDAR_URL`, `WISPACE_API_USER_GOALS_URL`, `WISPACE_API_TASK_SCORE_URL`, `WISPACE_API_PRECREATE_EXERCISE_URL`, `WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS`, `WISPACE_INTERNAL_KEY` — auth: platform header (`x-psid`, `x-discordid`, or `x-zaloid`) + `X-Internal-Key`; next-exercise POST is idempotent and has no automatic retry. **Every upstream URL is validated fail-closed at startup** (`packages/wispace-client`): HTTPS required (dev-only `http://localhost` exception when `NODE_ENV != production`), no embedded credentials/fragments, no localhost/private targets in production, optional `WISPACE_ALLOWED_HOSTS` allowlist — a violation fails the app instead of sending the internal key/link tokens elsewhere.
 - **Study reminder (shared):** `STUDY_REMINDER_*` — **required**, no hardcoded fallbacks in code; `STUDY_REMINDER_STUCK_PROCESSING_MS`
 - **Chat rate limit:** `CHAT_RATE_LIMIT_ENABLED`, `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_BURST_STORE` (R3: `postgres` | `memory` | `redis`), `CHAT_USAGE_TIMEZONE` (shared), `CHAT_RATE_LIMIT_WHITELIST_PSIDS`, `CHAT_QUOTA_REMAINING_HINT_THRESHOLD`, `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS` (H2), `CHAT_MERGED_TEXT_MAX_CHARS` / `CHAT_BURST_COUNT_REFUNDED` (H5), `CHAT_IDEMPOTENCY_RETENTION_DAYS` (H6)
 - **HTTP throttling:** `WEBHOOK_RATE_LIMIT_PER_MINUTE` / `WEBHOOK_RATE_LIMIT_TTL_MS` control authenticated Messenger/Zalo webhook bursts; `THROTTLE_DEFAULT_LIMIT` / `THROTTLE_DEFAULT_TTL_MS` control other throttled routes. `REDIS_ENABLED=true` uses one atomic Redis window across pods; disabled Redis uses the existing in-process store, while configured-but-unavailable Redis fails closed.
@@ -391,7 +391,7 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 - **Doppler:** production env is applied by the manual `sync-env.yml` workflow; `DOPPLER_RUNTIME_SYNC_ENABLED=false` in deployed containers.
 - **Deploy:** `GHCR_PULL_TOKEN`, `GHCR_USER`, `DEPLOY_UID`, `DEPLOY_GID`
 - **Exam reports:** `WISPACE_REPORT_DAYS_BEFORE_EXAM_MIN/MAX`, `REPORT_SEND_CONCURRENCY`
-- **DB:** `DB_HOST`, `DB_PORT`, `DB_NAME` (`ai_chat_bot_db`), `DB_USER`, `DB_PASSWORD`, `DB_MIGRATIONS_RUN`, `DB_POOL_SIZE`, `DB_POOL_IDLE_TIMEOUT_MS`, `DB_POOL_CONNECTION_TIMEOUT_MS`
+- **DB:** `DB_HOST`, `DB_PORT`, `DB_NAME` (`ai_chat_bot_db`), `DB_USER`, `DB_PASSWORD`, `DB_MIGRATIONS_RUN`, `DB_POOL_SIZE`, `DB_POOL_IDLE_TIMEOUT_MS`, `DB_POOL_CONNECTION_TIMEOUT_MS` — **TLS is enforced independent of `NODE_ENV`**: any host that is not localhost/a private IPv4 address fails startup and migration commands when `DB_SSL != true`. `DB_ALLOW_INSECURE_HOSTS` (comma-separated) is the only plaintext exception — for hostnames that cannot be IP-classified (e.g. Docker-internal `postgres`). TLS always verifies the peer (`rejectUnauthorized: true`); supply the CA via `DB_SSL_CA`.
 - **Redis (optional, VPS):** `REDIS_ENABLED`, `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_TLS`, `REDIS_CA`, `REDIS_PRIVATE_NETWORK` — R0–R4 stores + R5 user display cache; readiness via `GET /health/ready` when enabled
   - Redis runs **standalone on VPS** (folder `~/redis`, Docker publish restricted to the private Docker bridge) — not in the app repo. Do not use the VPS public IP as `REDIS_HOST`.
 - **User display cache (R5):** `USER_DISPLAY_NAME_CACHE_ENABLED`, `USER_DISPLAY_NAME_CACHE_TTL_SECONDS`
@@ -572,3 +572,37 @@ Setup details for project/config `dev` + `prd`: [doppler-secrets.md](../apps/mes
 Before publishing a runtime image, build with --pull, record its size with docker image inspect, and run node deploy/verify-runtime-image.mjs <image> <app>. The verifier checks the app entrypoint and shared package artifacts and fails if typescript, ts-node, or jest remains anywhere under node_modules. Refresh a pinned base/tool image only from a reviewed release digest, then rerun this check and the normal quality gate in the same PR.
 
 Measured locally on 2026-08-13 for messenger-bot with docker image inspect: pre-PR image 175,111,524 bytes; PR runtime image 123,265,651 bytes; reduction 51,845,873 bytes (29.6%). The runtime verifier passed on the PR image and rejected the pre-PR image because its production stage still contained development toolchain packages.
+
+---
+
+## 13. Security
+
+### Secrets & local env files
+
+- Local `.env` / `.env.shared` (and `apps/*/.env`) are git-ignored and excluded from Docker build contexts (`.dockerignore`), deployment bundles (built from the git checkout), and backups. Runtime secrets live in Doppler; containers never mount `.env`.
+- **CI secret scanning:** the PR workflow runs [Gitleaks](https://github.com/gitleaks/gitleaks-action) on every push and pull request — a new secret fails the build.
+- Production image hygiene is verified by `deploy/verify-runtime-image.mjs` (no TypeScript toolchain in the runtime image).
+
+### Recovery procedure — exposed local `.env` file
+
+If a local env file (`.env`, `.env.shared`, `apps/*/.env`) is believed to be exposed (backup leak, archive, accidental upload, screenshot, etc.):
+
+1. **Rotate immediately** — every credential in that file: DB password, `INTERNAL_API_KEY`, `WISPACE_INTERNAL_KEY`, Meta/Discord/Zalo tokens and secrets, OpenAI/LLM provider keys, Doppler tokens. Treat them as compromised regardless of git status (git-ignore prevents commits, not leaks).
+2. **Check exposure scope** — `git log --all --oneline` + `git log -S '<value-prefix>' --all` for accidental commits, GitHub secret-scanning alerts, PR artifact uploads, `ghcrawler`-style caches; verify no backup/archive pipeline ever ingested the repo directory *including* ignored files (`.dockerignore`/`.gitignore` are the gates).
+3. **Update Doppler** — push the rotated values to the `prd` config and run the manual **Sync production env** workflow so deployed bots pick them up.
+4. **Re-bootstrap Zalo OA tokens** — `zalo_oa_tokens` are now encrypted at rest with `ZALO_TOKEN_ENCRYPTION_KEY`; after any key rotation, re-run the manual OA bootstrap (`apps/zalo-bot/docs/zalo-oa-token-bootstrap.md`). If the key itself was exposed, generate a new one first.
+5. **Document the incident** — record what was exposed, what was rotated, and confirm the leak vector is closed (e.g. delete the stray backup, restrict the archive job).
+
+### Fail-closed configuration
+
+| Surface | Enforcement |
+|---|---|
+| PostgreSQL | TLS required for every non-local/private host, **independent of `NODE_ENV`** — startup + migration fail; `DB_ALLOW_INSECURE_HOSTS` is the only narrow, tested plaintext exception for non-IP hostnames |
+| WISPACE upstream URLs | HTTPS only (dev loopback exception), no credentials/fragments, no private targets in production, optional `WISPACE_ALLOWED_HOSTS` allowlist — validated at startup for every client |
+| Zalo OA tokens (at rest) | AES-256-GCM with per-row IV, key `ZALO_TOKEN_ENCRYPTION_KEY` (Doppler); legacy plaintext rows fail closed → re-bootstrap |
+| Zalo OA refresh | Single-row transaction + `SELECT … FOR UPDATE`, re-read after lock, retries use the current persisted token — no double-spend of the single-use refresh token across workers |
+| Discord pending-link | Capability is an HttpOnly cookie on the bot domain (never in URL query/fragment); single-use consume; `Referrer-Policy: no-referrer` on the linking flow; CORS `credentials: true` for the frontend origin |
+
+### Discord pending-link flow (cookie)
+
+`GET /v1/discord/oauth/callback` → user not in guild → server stores the pending entry and sets `pending_link` (HttpOnly, Secure, `SameSite=None`, 15 min). The frontend redirect URL carries **no secret** (only username/invite). The frontend then polls `GET /v1/discord/guild/join-status` and calls `POST /v1/discord/guild/complete-link` with `credentials: 'include'`; completion consumes the capability exactly once. The frontend portal must be updated in tandem (stop reading `pendingToken` from the URL).

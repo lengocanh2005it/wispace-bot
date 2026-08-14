@@ -12,6 +12,11 @@ export type {
 export { buildWispaceHeaders } from './utils/wispace-headers';
 export type { WispaceIdHeader } from './utils/wispace-headers';
 export { readHttpsUrl } from './utils/https-url';
+export {
+  validateUpstreamUrl,
+  buildUpstreamUrlPolicy,
+  type UpstreamUrlPolicy,
+} from './utils/upstream-url.utils';
 export * from './utils/study-calendar.utils';
 export {
   formatLocalDate,

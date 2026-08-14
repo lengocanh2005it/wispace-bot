@@ -22,6 +22,36 @@ describe('WispaceTokenVerifyService', () => {
     jest.restoreAllMocks();
   });
 
+  it('fails closed when the configured verify URL is unsafe', async () => {
+    const configWithUnsafeUrl: ConfigService = {
+      get: (key: string) =>
+        key === 'WISPACE_API_VERIFY_TOKEN_URL'
+          ? 'http://backend.example.com/api/verify-token'
+          : CONFIG_VALUES[key],
+    } as unknown as ConfigService;
+
+    const service = new WispaceTokenVerifyService(configWithUnsafeUrl, 'zalo');
+
+    await expect(
+      service.verifyToken('link-token', 'zalo-user-1'),
+    ).rejects.toThrow('must use HTTPS');
+  });
+
+  it('fails closed when the verify host is not in WISPACE_ALLOWED_HOSTS', async () => {
+    const configWithAllowlist: ConfigService = {
+      get: (key: string) =>
+        key === 'WISPACE_ALLOWED_HOSTS'
+          ? 'allowed.example.com'
+          : CONFIG_VALUES[key],
+    } as unknown as ConfigService;
+
+    const service = new WispaceTokenVerifyService(configWithAllowlist, 'zalo');
+
+    await expect(
+      service.verifyToken('link-token', 'zalo-user-1'),
+    ).rejects.toThrow('is not in WISPACE_ALLOWED_HOSTS');
+  });
+
   it.each(['discord', 'zalo'] as const)(
     'sends token, value and platform=%s to the verify URL',
     async (platform) => {

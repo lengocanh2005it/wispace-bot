@@ -25,6 +25,36 @@ describe('production-runtime.utils', () => {
     expect(readWispaceVerifyTokenUrl(config({}))).toBeUndefined();
   });
 
+  it('fails closed on an unsafe verify URL', () => {
+    expect(() =>
+      readWispaceVerifyTokenUrl(
+        config({
+          WISPACE_API_VERIFY_TOKEN_URL:
+            'http://backend.example.com/api/verify-token',
+        }),
+      ),
+    ).toThrow('must use HTTPS');
+
+    expect(() =>
+      readWispaceVerifyTokenUrl(
+        config({
+          WISPACE_API_VERIFY_TOKEN_URL: 'https://localhost/api/verify-token',
+          NODE_ENV: 'production',
+        }),
+      ),
+    ).toThrow('must not target localhost or a private network');
+
+    expect(() =>
+      readWispaceVerifyTokenUrl(
+        config({
+          WISPACE_API_VERIFY_TOKEN_URL:
+            'https://other.example.com/api/verify-token',
+          WISPACE_ALLOWED_HOSTS: 'backend.example.com',
+        }),
+      ),
+    ).toThrow('is not in WISPACE_ALLOWED_HOSTS');
+  });
+
   it('detects strict production via ENFORCE_PROD_CHAT_QUOTA', () => {
     expect(
       isStrictProductionRuntime(config({ ENFORCE_PROD_CHAT_QUOTA: 'true' })),
