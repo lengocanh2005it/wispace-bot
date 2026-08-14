@@ -9,16 +9,17 @@ See the full plan at [docs/turborepo-migration-plan.md](../../docs/turborepo-mig
 **Already done:**
 - Bot online via Necord, receives DMs + @mentions in server channels (replies via DM), prompt-injection protection, redirects out-of-scope WISPACE requests, and configurable memory/Redis conversation history.
 - Quota/rate-limit + LLM usage/safety event persistence shared via `@wispace/chat-metering` (platform='discord') — see `modules/chat-metering/`.
-- Account-linking Discord ↔ WISPACE userId via OAuth2 (`GET /v1/discord/oauth/callback`) — see [docs/discord-account-linking.md](docs/discord-account-linking.md).
+- Account-linking Discord ↔ WISPACE userId via OAuth2 (`GET /v1/discord/oauth/callback`), committed at callback independent of guild membership; portal join hint via `GET /v1/discord/link-status?userId=` — see [docs/discord-account-linking.md](docs/discord-account-linking.md).
 - 7/7 WISPACE tools call real Wispace API via `@wispace/wispace-client` (header `x-discordid`): `get_user_goals`, `get_learning_progress_report`, `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder`, `reschedule_study_session`, and `precreate_next_exercise` (confirm/cancel via Discord button where applicable).
-- `GET /health/ready` for deploy readiness gate (public, status-only).
+- `GET /health/ready` for deploy readiness gate (public, status-only); `/health/detail` + `/metrics` guarded by `X-Internal-Api-Key`.
 - Custom prompt: `src/shared/prompts/discord-chat.system.txt`.
+- CI/CD deploy VPS — shared GHCR image + VPS self-pull blue-green workflow (`deploy-bots.yml` + `deploy/Dockerfile.bot`), exercised in production.
+- 08:00 report cron + `*/15` retry dispatch (lease-based leader election), study reminders (shared `@wispace/study-reminder-shared`), outbound dead-letter retry, message-log cleanup, idempotency stuck recovery/cleanup, report-claims retention — all advisory-locked.
+- Queued chat failure fallback + pending-message cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator + user feedback ("Đang xử lý tin nhắn trước...").
 
 **Not yet done / TODO:**
 - `register_exam_report_notifications` — intentionally not implemented; Discord has no 24h messaging limit so the 08:00 report cron works without opt-in.
-- CI/CD deploy VPS — shared GHCR image + SSH/SCP blue-green workflow is implemented and has been exercised in production.
-- Persistent chat history (Redis/multi-pod) — supported with `CHAT_HISTORY_STORE=redis`; the default remains in-memory for a single instance.
-- Whitelist, quota-event audit table, stuck-reserved recovery, ops CLI (Messenger-only for now).
+- Whitelist (`CHAT_RATE_LIMIT_WHITELIST_PSIDS`) and quota-event audit table remain Messenger-only.
 
 ## Run dev
 

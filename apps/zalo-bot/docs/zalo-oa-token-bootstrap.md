@@ -1,7 +1,7 @@
 # Zalo OA token bootstrap (one-time, manual)
 
 `zalo_oa_tokens` (see migration `1751029200004-CreateZaloOaTokensTable` in
-`apps/messenger-bot`) starts empty — `ZaloTokenService.getValidAccessToken()`
+`packages/database/src/migrations`) starts empty — `ZaloTokenService.getValidAccessToken()`
 throws `zalo_oa_tokens is empty` until the first `access_token`/`refresh_token`
 pair is seeded manually. After that, `ZaloTokenRefreshService`'s cron
 (every 45 min) keeps the pair fresh automatically — this is **not** something

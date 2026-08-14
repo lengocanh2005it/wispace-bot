@@ -4,7 +4,7 @@ Date: 2026-07-20
 Phase: Turborepo migration plan — Phase 4 (`apps/zalo-bot`)
 Reference: `docs/turborepo-migration-plan.md`, `apps/discord-bot` (Phase 3, used as the adapter-into-shared-package template).
 
-> **Status note (2026-08-13):** This is a historical design snapshot from 2026-07-20. The current `apps/zalo-bot` implementation has since added `@wispace/chat-metering` quota/rate limiting, the shared `@wispace/chat-agent` queue/history/agent services (with Redis support when enabled), real WISPACE goals/calendar/reschedule handlers, scheduled reports and study reminders, durable webhook ingestion, dead-letter/cleanup recovery, OAuth/ops modules, shared health/metrics wiring, and env-driven LLM failover. The MVP scope and future-work decisions below are preserved as dated design context, not as a complete description of current capabilities.
+> **Status note (2026-08-14):** This is a historical design snapshot from 2026-07-20. The current `apps/zalo-bot` implementation has since added `@wispace/chat-metering` quota/rate limiting, the shared `@wispace/chat-agent` queue/history/agent services (with Redis support when enabled), real WISPACE goals/calendar/reschedule handlers plus the `precreate_next_exercise` tool, scheduled reports and study reminders, durable webhook ingestion, dead-letter/cleanup recovery, OAuth/ops modules, shared health/metrics wiring, and env-driven LLM failover. The MVP scope and future-work decisions below are preserved as dated design context, not as a complete description of current capabilities.
 
 ## 1. MVP Goals & Scope
 

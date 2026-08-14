@@ -2,7 +2,7 @@
 
 Document recording **weaknesses / unhandled items** in the WISPACE bots (all functionality, not just rate limit) and **how to fix them** in **small phases** — independent PR merges.
 
-**Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. DB **separated** to `ai_chat_bot_db` (✓). LLM Provider Abstraction **done** (PR #32). Shared packages **extracted** (18 packages). Discord bot **functional** (chat + quota + 6/7 tool handlers). Items below are remaining gaps or scale-dependent improvements.
+**Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. DB **separated** to `ai_chat_bot_db` (✓). LLM Provider Abstraction **done** (PR #32). Shared packages **extracted** (18 packages). Discord/Zalo bots **functional** (chat + quota + 7/7 real tool handlers incl. `precreate_next_exercise`). Items below are remaining gaps or scale-dependent improvements.
 
 Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md), [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), [AGENTS.md](../AGENTS.md) (Integration gaps table).
 
@@ -37,8 +37,8 @@ Related: [project-overview.md](./project-overview.md), [study-session-reminder.m
 | **METRICS** ✓ | Prometheus `/metrics` endpoint | 0.5 days | `MetricsModule` |
 | **DOPPLER** ✓ | Production env sync via Doppler | 1 day | Manual `sync-env.yml` workflow; legacy runtime endpoint disabled in hardened containers |
 | **PKG** ✓ | Shared packages extraction | 3–5 days | 18 packages in `packages/` |
-| **DISCORD** ✓ | Discord bot (functional) | 3–5 days | Chat + quota + pending cap + typing indicator + 6/7 tool handlers |
-| **ZALO** ✓ | Zalo bot (fully functional) | 3–5 days | Chat + quota + account linking + 6/7 tool handlers + 08:00 report cron + study reminders + dead letter + ops endpoints + CI/CD + chat queue + pending cap + typing indicator + Redis burst counter + LLM report enrichment; production env sync uses the manual workflow and the legacy Doppler webhook is disabled |
+| **DISCORD** ✓ | Discord bot (functional) | 3–5 days | Chat + quota + pending cap + typing indicator + 7/7 real tool handlers (incl. `precreate_next_exercise`) |
+| **ZALO** ✓ | Zalo bot (fully functional) | 3–5 days | Chat + quota + account linking + 7/7 real tool handlers (incl. `precreate_next_exercise`) + 08:00 report cron + study reminders + dead letter + ops endpoints + CI/CD + chat queue + pending cap + typing indicator + Redis burst counter + LLM report enrichment; production env sync uses the manual workflow and the legacy Doppler webhook is disabled |
 
 **Recommended order:** ~~Q1/S0/I1/S1/L1/R1/L2/R2/R3/L3/R4/R5/S2~~ (✓) → **Batch 1 edge-case hardening (✓, branch `fix/edge-cases-batch1`)** → **Batch 2 (✓, stacked PRs #71/#73/#75/#77)** → **Batch 3 (✓, stacked PRs #76/#77/#78)** → remaining items per user feedback.
 
@@ -254,8 +254,8 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 - **LLM Safety** — `LlmSafetyModule` tracks hallucination/safety events, cleanup cron, daily threshold alert.
 - **Metrics** — `MetricsModule` exposes `GET /metrics` for Prometheus scraping.
 - **Shared packages** — `@wispace/llm-agent`, `@wispace/chat-metering`, `@wispace/wispace-client`, etc.
-- **Discord bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator (`ChatPipelineHooks.onStep`) + user feedback ("Đang xử lý tin nhắn trước...") + 6/7 tool handlers (reschedule via button confirm/cancel). `register_exam_report_notifications` not needed (no 24h limit).
-- **Zalo bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + user feedback ("Đang xử lý tin nhắn trước...") + account linking + 6/7 tools wired + 08:00 report cron + study reminders + dead letter + chat queue + ops endpoints + CI/CD. `register_exam_report_notifications` not needed (48h window covers active users; ZNS deferred).
+- **Discord bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator (`ChatPipelineHooks.onStep`) + user feedback ("Đang xử lý tin nhắn trước...") + 7/7 real tool handlers (reschedule via button confirm/cancel, `precreate_next_exercise` wired). `register_exam_report_notifications` not needed (no 24h limit).
+- **Zalo bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + user feedback ("Đang xử lý tin nhắn trước...") + account linking + 7/7 real tools wired (incl. `precreate_next_exercise`) + 08:00 report cron + study reminders + dead letter + chat queue + ops endpoints + CI/CD. `register_exam_report_notifications` not needed (48h window covers active users; ZNS deferred).
 
 ### Gaps & Remediation
 

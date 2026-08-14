@@ -13,7 +13,7 @@ packages/llm-agent/    @wispace/llm-agent — shared LLM function-calling orches
 
 ## Stack
 
-NestJS 11 · TypeScript · TypeORM · PostgreSQL (`ai_chat_bot_db`, shared across bots) · Redis (optional R0–R4) · LLM Provider Abstraction (adapter pattern) · Meta Graph API · Turborepo + npm workspaces
+NestJS 11 · TypeScript · TypeORM · PostgreSQL (`ai_chat_bot_db`, shared across bots) · Redis (optional R0–R5) · LLM Provider Abstraction (adapter pattern) · Meta Graph API · Turborepo + npm workspaces
 
 ## Common commands
 

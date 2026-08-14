@@ -92,6 +92,8 @@ Each user (`psid`) has **one row per ICT day** with a `free_form_count` column. 
 
 #### Proposed Schema
 
+> **Current schema note:** since migration `1751029200001-GeneralizePlatformIdentifiers`, the tables below are multi-platform: `psid` → `external_user_id` + `platform` (`'messenger' | 'discord' | 'zalo'`), and unique keys include `platform` (`uq_chat_daily_usage_platform_external_date`, composite PK `(platform, idempotency_key)` on `chat_idempotency`). The `psid`-based DDL below is the original proposal, kept for reference.
+
 ```sql
 CREATE TABLE chat_daily_usage (
   id               SERIAL PRIMARY KEY,
@@ -436,6 +438,8 @@ Postback: separate dedupe `psid:payload` (15s) — **not** related to chat quota
 | Quota reserve | DB idempotency + hard cap H3 | Same — shared PostgreSQL |
 
 #### Schema — Idempotency Table (migrated)
+
+> **Current schema note:** `psid` → `external_user_id` + `platform`; PK is now composite `(platform, idempotency_key)` (migration `1751029200008`), plus `updated_at` for stuck-reserved recovery (`1751029200009`) and recovery/cleanup indexes (`1751029200010`).
 
 ```sql
 CREATE TABLE chat_idempotency (

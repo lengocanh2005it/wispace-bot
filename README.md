@@ -12,7 +12,7 @@ apps/zalo-bot/         NestJS — AI chat, OAuth2 account linking, report cron, 
 packages/llm-agent/             LLM function-calling + provider abstraction (OpenAI, OpenRouter, MiniMax)
 packages/chat-metering/         Quota/rate-limit + LLM usage/safety event tracking
 packages/chat-agent/            Platform-parameterized agent, queue, history services (Discord, Zalo)
-packages/wispace-client/        Wispace API HTTP clients (goals, scores, calendar, token verify)
+packages/wispace-client/        Wispace API HTTP clients (goals, scores, calendar, token verify, next-exercise precreate)
 packages/chat-history/          In-memory chat history store with TTL + turn cap
 packages/student-report/        Student capacity report generation (LLM + fallback)
 packages/chat-queue-core/       Per-user debounce/merge state machine
@@ -36,10 +36,11 @@ packages/date-utils/            Timezone-aware date helpers (date-fns)
 - AI progress reports (cron 08:00 + menu)
 - Study session reminders (outbox jobs + LLM + cron)
 - Multi-LLM provider failover (OpenAI → OpenRouter → MiniMax)
+- Next roadmap exercise creation via chat (`precreate_next_exercise` tool → WISPACE `roadmap/precreate-exercise` API)
 
-**Messenger:** Webhook routing, Get Started referral, persistent menu, `m.me` linking
-**Discord:** DMs and `@mentions`, OAuth2 account linking, report/study quick actions
-**Zalo:** OA account linking, OAuth2, webhook signature verification, reports/reminders
+**Messenger:** Webhook routing, Get Started referral, persistent menu, `m.me` linking, daily report cache (no nested LLM calls)
+**Discord:** DMs and `@mentions`, OAuth2 account linking (committed at callback), link-status endpoint, report/study quick actions
+**Zalo:** OA account linking, OAuth2 (PKCE), webhook signature verification, OA token at-rest encryption, reports/reminders
 
 ## Documentation
 

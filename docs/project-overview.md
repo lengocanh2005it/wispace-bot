@@ -320,7 +320,9 @@ Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP �
 | Name | Schedule | Service |
 |------|----------|---------|
 | `exam-reminder-report` | `0 8 * * *` (08:00 ICT) | `ReportCronService` — daily student reports |
+| `weekly-cleanup-duplicate-mappings` | `0 3 * * 1` (Monday 03:00 ICT) | `ReportCronService` — deactivate duplicate ACTIVE mappings |
 | `report-send-retry` | `*/15 * * * *` | `ReportSendRetryDispatchService` — outbox R5 retry |
+| `report-claims-stale-reset` | `*/30 * * * *` | `ReportClaimStaleResetCronService` — release claims stuck `claimed` (`REPORT_CLAIM_STALE_RESET_MS`=2h) |
 | `ops-health-daily` | `0 0 9 * * *` (09:00 ICT) | `OpsHealthCronService` — ops health alert |
 | `study-reminder-sync` | `0 */30 * * * *` (every 30 min) | `StudyReminderWorkerService` — sync upcoming sessions |
 | `study-reminder-dispatch` | Adaptive 30s–3.5min (`STUDY_REMINDER_POLL_*`) | `StudyReminderWorkerService` — S2 adaptive dispatch |
@@ -330,9 +332,12 @@ Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP �
 | `messenger-chat-queue-flush` | `*/2 * * * * *` (every 2 sec) | `MessengerChatQueueWorkerService` — flush debounced queue (distributed mode) |
 | `webhook-inbound-retry` | `*/30 * * * * *` (every 30 sec) | `PlatformWebhookInboundRetryCronService` — replay `webhook_inbound_events` (bounded backoff, per-platform advisory lock) |
 | `webhook-inbound-cleanup` | `0 15 3 * * *` (03:15 ICT daily) | `PlatformWebhookInboundCleanupService` — purge terminal (`completed`/`abandoned`) raw-payload rows older than `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30; `WEBHOOK_INBOUND_CLEANUP_ENABLED=false` disables) |
+| `chat-quota-stuck-recovery` | `*/5 * * * *` | `ChatQuotaStuckRecoveryCronService` — H2: refund slots stuck `reserved` (`CHAT_IDEMPOTENCY_STUCK_RESERVED_MS`) |
 | `chat-quota-events-cleanup` | `0 30 3 1 * *` (1st of month 03:30 ICT) | `ChatQuotaEventCleanupCronService` — purge old chat_quota_events |
+| `chat-idempotency-cleanup` | `0 30 3 * * *` (03:30 ICT daily) | `ChatIdempotencyCleanupCronService` — H6: purge terminal `chat_idempotency` rows (`CHAT_IDEMPOTENCY_RETENTION_DAYS`) |
 | `llm-usage-cleanup` | `0 0 4 1 * *` (1st of month 04:00 ICT) | `LlmUsageCleanupCronService` — purge old llm_usage_events |
 | `llm-safety-cleanup` | `0 3 * * *` (daily 03:00 ICT) | `LlmSafetyCleanupService` — purge old llm_safety_events |
+| `cron-leader-heartbeat` | `*/1 * * * *` | `CronLeaderHeartbeatService` — refresh lease (`cron_leader_leases`) when `CRON_LEADER_ENABLED` |
 
 Study reminder sync also runs **on server start** (`onModuleInit`).
 
@@ -513,11 +518,11 @@ Combined I1+S1 snapshot: `npm run ops:health`.
 **Scale ≥2 instances (H7):**
 
 ```env
-CHAT_QUEUE_SHARED=true
+CHAT_QUEUE_SHARED=true   # maps to CHAT_QUEUE_STORE=redis (requires REDIS_ENABLED=true)
 npm run migration:run
 ```
 
-Each pod runs a 2s cron poll buffer; debounce/history/`mid` dedupe stored in PostgreSQL.
+Each pod runs a 2s cron poll buffer against the shared Redis queue (`chat:queue:buffer:{psid}` + per-PSID locks); debounce buffers/history live in Redis, and webhook dedupe is the durable `webhook_inbound_events` inbox in PostgreSQL (no `CHAT_DEDUPE_STORE`).
 
 Architecture details: [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md).
 

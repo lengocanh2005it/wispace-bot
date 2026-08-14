@@ -89,9 +89,10 @@ user is linked but not in the guild. See
 
 ## Remaining follow-up
 
-Six of the seven WISPACE tool handlers now call the real Wispace API when
+All seven real WISPACE tool handlers call the real Wispace API when
 `ctx.userId` is resolved: goals, progress, upcoming sessions, calendar
-entries, reminder preview, and rescheduling. The remaining
-`register_exam_report_notifications` handler is intentionally unnecessary for
-Discord because Discord has no Messenger-style 24-hour messaging limit; the
-08:00 report cron sends reports to linked accounts instead.
+entries, reminder preview, rescheduling, and `precreate_next_exercise` (next
+roadmap exercise creation). The remaining `register_exam_report_notifications`
+handler is intentionally unnecessary for Discord because Discord has no
+Messenger-style 24-hour messaging limit; the 08:00 report cron sends reports
+to linked accounts instead.

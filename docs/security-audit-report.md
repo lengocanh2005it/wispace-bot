@@ -15,10 +15,10 @@ The wispace-bot monorepo demonstrates **strong security fundamentals** in its co
 | # | Severity | Finding | Impact |
 |---|----------|---------|--------|
 | 1 | ~~**HIGH**~~ | ~~No Helmet/security headers middleware~~ | **Fixed** — `helmet` installed and used in all 3 apps (`app.use(helmet())`) |
-| 2 | **HIGH** | No global ValidationPipe / DTO validation | Incoming request bodies are not schema-validated; malformed or malicious payloads reach business logic unchecked |
+| 2 | ~~**HIGH**~~ | ~~No global ValidationPipe / DTO validation~~ | **Fixed** — all 3 apps register `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true })`; ops body DTOs use class-validator (`SyncStudyCalendarBody`, `RelinkMappingBody`, `SendReportsBody`) |
 | 3 | ~~**MEDIUM**~~ | ~~Health endpoints expose DB/Redis connection status without auth~~ | **Fixed** (#82) — public `/health` is generic liveness, public `/health/ready` is status-only; full detail moved to internal `/health/detail` (`InternalApiKeyGuard`) |
 | 4 | ~~**MEDIUM**~~ | ~~PSIDs logged in error messages and dead-letter entries~~ | **Fixed** (#82) — `maskExternalId` (first4…last4) applied across all bots/packages; outbound error messages and inbox/dead-letter log lines masked; `webhook_inbound_events` raw payloads get daily retention cleanup |
-| 5 | **MEDIUM** | Metrics endpoints unprotected in some configurations | `/metrics` (Prometheus) can leak operational metrics to unauthorized parties |
+| 5 | ~~**MEDIUM**~~ | ~~Metrics endpoints unprotected in some configurations~~ | **Fixed** — `createMetricsModule` controller is `@UseGuards(InternalApiKeyGuard)`; `/metrics` requires `X-Internal-Api-Key` on all 3 bots |
 
 ---
 
@@ -27,11 +27,11 @@ The wispace-bot monorepo demonstrates **strong security fundamentals** in its co
 | ID | Severity | Category | File(s) | Description |
 |----|----------|----------|---------|-------------|
 | A-01 | ~~HIGH~~ | HTTP Security | `apps/*/src/main.ts` | **Fixed** — `helmet` installed and used in all 3 apps |
-| A-02 | HIGH | Input Validation | `apps/*/src/main.ts` | No global `ValidationPipe` — no DTO/class-validator validation on any endpoint |
+| A-02 | ~~HIGH~~ | Input Validation | `apps/*/src/main.ts` | **Fixed** — global `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true })` in all 3 apps; ops endpoints use class-validator DTOs |
 | A-03 | ~~MEDIUM~~ | Auth | `packages/bot-common/src/health.controller.ts:30-78` | **Fixed** (#82) — public liveness/readiness expose no dependency details; full detail is internal-only (`/health/detail` + `InternalApiKeyGuard`) |
 | A-04 | ~~MEDIUM~~ | Data Exposure | `apps/messenger-bot/src/modules/messenger/application/services/messenger.service.ts:79-82` | **Fixed** (#82) — all external IDs (PSID / Discord / Zalo / WISPACE) masked in logs and error messages via `maskExternalId` |
-| A-05 | MEDIUM | Auth | `packages/bot-metrics/src/metrics.module.ts:50` | `/metrics` endpoint unprotected — Prometheus metrics visible to unauthorized callers |
-| A-06 | LOW | Config | `apps/*/src/main.ts` | `HTTP_JSON_BODY_LIMIT` configurable via env — could be set to unsafe values |
+| A-05 | ~~MEDIUM~~ | Auth | `packages/bot-metrics/src/metrics.module.ts` | **Fixed** — `createMetricsModule` controller guarded with `InternalApiKeyGuard` (`/metrics` requires `X-Internal-Api-Key`) |
+| A-06 | ~~LOW~~ | Config | `apps/*/src/main.ts` | **Fixed** — `parseJsonBodyLimit` caps `HTTP_JSON_BODY_LIMIT` at 1 MB (`apps/messenger-bot/src/shared/config/body-limit.ts`) |
 | A-07 | INFO | Crypto | `packages/bot-common/src/internal-api-key.guard.ts:9,36` | ✅ `timingSafeEqual` used correctly for API key comparison |
 | A-08 | INFO | Crypto | `apps/messenger-bot/src/shared/common/utils/messenger-webhook-signature.utils.ts:47` | ✅ HMAC-SHA256 with `timingSafeEqual` for Meta webhook verification |
 | A-09 | INFO | Crypto | `apps/zalo-bot/src/modules/zalo-webhook/application/utils/zalo-webhook-signature.utils.ts:36-47` | ✅ SHA-256 with `timingSafeEqual` for Zalo webhook verification |
@@ -92,37 +92,16 @@ app.use((req, res, next) => {
 
 ### A-02: No Global ValidationPipe / DTO Validation
 
-**Severity:** HIGH
+**Severity:** ~~HIGH~~ **FIXED**
 **Category:** Input Validation
 **Files:** All `apps/*/src/main.ts`, all controller files
 
-**Description:**
+**Description (original):**
 No `ValidationPipe` is configured globally, and no DTOs with `class-validator` decorators are used anywhere in the codebase. Incoming request bodies reach controller methods without schema validation.
 
-**Impact:**
-- Malformed or oversized payloads reach business logic
-- Type coercion issues (e.g., `userId` as string vs number)
-- Missing required fields not caught at the HTTP layer
-- Potential for unexpected data shapes causing runtime errors
-
-**Observation:**
-The codebase does use manual validation in some controllers (e.g., `scheduler.controller.ts:82-91` validates `userId` as a positive number). However, this is ad-hoc and inconsistent.
-
-**Fix:**
-```typescript
-// In each app's main.ts:
-import { ValidationPipe } from '@nestjs/common';
-app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));
-```
-Then add DTOs with decorators:
-```typescript
-import { IsNumber, IsPositive, IsOptional, IsString } from 'class-validator';
-class SyncStudyCalendarBody {
-  @IsNumber()
-  @IsPositive()
-  userId: number;
-}
-```
+**Resolution:**
+- All 3 apps register a global `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true })` (`main.ts`).
+- Ops body DTOs use class-validator: `SyncStudyCalendarBody`, `RelinkMappingBody`, `SendReportsBody` (Messenger/Zalo/Discord ops controllers).
 
 ---
 
@@ -184,41 +163,33 @@ While PSIDs are not high-entropy secrets (they are visible in message URLs), the
 
 ### A-05: Metrics Endpoints Unprotected
 
-**Severity:** MEDIUM
+**Severity:** ~~MEDIUM~~ **FIXED**
 **Category:** Auth / Information Disclosure
-**File:** `packages/bot-metrics/src/metrics.module.ts:50`
+**File:** `packages/bot-metrics/src/metrics.module.ts`
 
-**Description:**
+**Description (original):**
 The `/metrics` endpoint (Prometheus format) is exposed without authentication in some configurations. While the `BotMetricsService` has `@UseGuards(InternalApiKeyGuard)` in its controller, the health controller in `bot-common` is shared and may be mounted differently.
 
 **Impact:**
 - Prometheus metrics can reveal request rates, error rates, queue depths, and LLM usage
 - Could assist an attacker in understanding system behavior and finding weaknesses
 
-**Fix:**
-Ensure all `/metrics` endpoints are behind `InternalApiKeyGuard` consistently across all apps.
+**Resolution:**
+The `createMetricsModule` controller is annotated `@UseGuards(InternalApiKeyGuard)` (`metrics.module.ts:39`); `/metrics` requires `X-Internal-Api-Key` on all 3 bots. The shared `HealthController` keeps `/health` + `/health/ready` public (liveness/status-only) and `/health/detail` internal.
 
 ---
 
 ### A-06: Body Parser Limit Configurable via Environment Variable
 
-**Severity:** LOW
+**Severity:** ~~LOW~~ **FIXED**
 **Category:** Configuration
-**File:** `apps/messenger-bot/src/main.ts:27-29`
+**File:** `apps/messenger-bot/src/main.ts:30-32`, `apps/messenger-bot/src/shared/config/body-limit.ts`
 
-**Description:**
+**Description (original):**
 `HTTP_JSON_BODY_LIMIT` is read from `process.env` and defaults to `256kb`. If set to a very large value, it could enable memory exhaustion via large payloads.
 
-**Impact:**
-- Misconfiguration could allow extremely large request bodies
-- Default of `256kb` is reasonable
-
-**Fix:**
-Add a maximum cap:
-```typescript
-const rawLimit = process.env.HTTP_JSON_BODY_LIMIT?.trim() || '256kb';
-const bodyLimit = Math.min(parseBytes(rawLimit), 1024 * 1024); // Cap at 1MB
-```
+**Resolution:**
+`parseJsonBodyLimit` caps the value at 1 MB (`MAX_BODY_LIMIT_BYTES = 1024 * 1024`) and rejects non-numeric/oversized input; applied to both `json` and `urlencoded` body parsers in all 3 apps.
 
 ---
 
@@ -282,7 +253,7 @@ No string interpolation or concatenation was found in any SQL query.
 ### Graceful Shutdown (GOOD)
 
 - All three apps implement signal handlers (SIGTERM, SIGINT)
-- 10-second force-exit timeout prevents hanging
+- Force-exit timeout: 25 s (Messenger), 10 s (Discord/Zalo); debounce buffers drain before exit
 - `app.close()` called before exit for cleanup
 - `OnModuleDestroy` implemented by timer-owning services
 
@@ -290,15 +261,18 @@ No string interpolation or concatenation was found in any SQL query.
 
 ## Recommendations Summary
 
-| Priority | Action | Effort |
-|----------|--------|--------|
-| **HIGH** | Add `helmet` middleware to all 3 apps | Low — 3 lines per app |
-| **HIGH** | Add global `ValidationPipe` + DTOs for ops endpoints | Medium — DTOs for each controller |
-| **MEDIUM** | Restrict health endpoint detail for unauthenticated callers | Low — 5 lines |
-| **MEDIUM** | Hash/mask PSIDs in logs and dead-letter entries | Low — utility function |
-| **MEDIUM** | Ensure `/metrics` is consistently guarded | Low — verify each app |
-| **LOW** | Cap `HTTP_JSON_BODY_LIMIT` at 1MB | Low — 3 lines |
-| **INFO** | Add HSTS header when HTTPS is enforced | Low — helmet or manual header |
+All findings from the original audit are resolved as of 2026-08-14. Tracked as continuous-hardening items:
+
+| Priority | Action | Effort | Status |
+|----------|--------|--------|--------|
+| ~~HIGH~~ | ~~Add `helmet` middleware to all 3 apps~~ | Low — 3 lines per app | ✅ Done |
+| ~~HIGH~~ | ~~Add global `ValidationPipe` + DTOs for ops endpoints~~ | Medium — DTOs for each controller | ✅ Done (`whitelist` + `forbidNonWhitelisted` + class-validator DTOs) |
+| ~~MEDIUM~~ | ~~Restrict health endpoint detail for unauthenticated callers~~ | Low — 5 lines | ✅ Done (#82) |
+| ~~MEDIUM~~ | ~~Hash/mask PSIDs in logs and dead-letter entries~~ | Low — utility function | ✅ Done (#82) |
+| ~~MEDIUM~~ | ~~Ensure `/metrics` is consistently guarded~~ | Low — verify each app | ✅ Done (`createMetricsModule` → `InternalApiKeyGuard`) |
+| ~~LOW~~ | ~~Cap `HTTP_JSON_BODY_LIMIT` at 1MB~~ | Low — 3 lines | ✅ Done (`parseJsonBodyLimit`) |
+| **INFO** | HSTS header when HTTPS is enforced | Low — helmet or manual header | Continue verifying via Nginx (public TLS terminated at Nginx) |
+| **INFO** | Periodic re-audit: dependency vulns (`npm audit`), DTO coverage on new endpoints, LLM injection surface | Ongoing | Continuous — extend the table above as new surfaces appear |
 
 ---
 

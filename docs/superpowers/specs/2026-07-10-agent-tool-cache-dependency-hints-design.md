@@ -3,6 +3,8 @@
 **Date:** 2026-07-10
 **Scope:** `packages/llm-agent` only — framework-agnostic, no app-layer changes
 
+> **Current status (2026-08-14):** The generic per-turn tool result cache (TTL `tool-cache`) was **not** implemented. Instead, the hot path is covered by Messenger's per-day student-report cache (`StudentReportService`, key `psid:YYYY-MM-DD`, 5k entries, pre-warmed by the 08:00 cron — the `get_learning_progress_report` tool reuses it, miss → static report, no LLM). Dependency hints between `list_study_calendar_entries` and `reschedule_study_session` are enforced in the reschedule confirm service (calendarId must exist in the upcoming list) rather than via schema-level dependency metadata.
+
 ## Problem
 
 1. **Cross-turn tool redundancy** — Each conversation turn, the agent re-fetches data from tools even though the user has not changed anything (goals, study schedule). Causes unnecessary latency and wastes API calls.

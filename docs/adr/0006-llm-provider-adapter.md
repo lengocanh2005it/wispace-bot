@@ -6,7 +6,7 @@ Implemented (PR #32 — `LlmProviderAdapter` pattern with OpenAI, OpenRouter, Mi
 
 ## Context
 
-`packages/llm-agent` is the core agentic loop shared across Messenger and Discord bots. It handles function calling (tool definitions, tool call parsing, tool result round-trips) with LLM providers.
+`packages/llm-agent` is the core agentic loop shared across all 3 bots (Messenger, Discord, Zalo). It handles function calling (tool definitions, tool call parsing, tool result round-trips) with LLM providers.
 
 Currently, the entire agentic loop is tightly coupled to OpenAI:
 
@@ -177,5 +177,5 @@ Implementation status: provider adapters expose `chatStream()`. `LlmAgentService
 - **Phase 4** (implemented): Multi-provider failover routing — see [spec: 2026-07-18-multi-llm-provider-failover](../superpowers/specs/2026-07-18-multi-llm-provider-failover/spec.md)
   - `OpenRouterAdapter` + `MiniMaxAdapter` extending `OpenAiAdapter`
   - `FailoverLlmProviderAdapter` — greedy failover by priority, circuit breaker, quick-retry (150ms × 1) for transient errors, fast-fail (quota/auth) with long cooldown
-  - Wired into `LlmExecutionModule` (messenger-bot) and `DiscordChatModule` (discord-bot) via `LLM_PROVIDER_FAILOVER_ORDER` env var
+  - Wired into `LlmExecutionModule` (messenger-bot) and the shared `@wispace/chat-agent` provider wiring (discord-bot/zalo-bot) via `LLM_PROVIDER_FAILOVER_ORDER` env var
   - Default behavior unchanged when env var is unset (single adapter, no failover wrapper)

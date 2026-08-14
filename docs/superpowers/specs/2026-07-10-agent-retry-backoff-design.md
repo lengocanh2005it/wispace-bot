@@ -3,6 +3,8 @@
 **Date:** 2026-07-10
 **Scope:** `packages/llm-agent` only
 
+> **Current status (2026-08-14):** Implemented in `LlmAgentService.withRetry()` (`packages/llm-agent/src/agent.service.ts`) with `maxLlmRetries` / `retryBaseDelayMs` config. All 3 bots set `maxLlmRetries: 0` (inner retry disabled — the outer `retryWithBackoff` in `@wispace/chat-agent`'s `PlatformAgentService` is the single active retry layer; retry also respects `AbortSignal`, never retrying aborted calls).
+
 ## Problem
 
 When `adapter.chatWithTools()` fails with a retryable error (429 rate limit, 5xx server error), `LlmAgentService.reply()` throws immediately — the user receives an error when waiting a few hundred ms would suffice. `LlmProviderAdapter.isRetryableError()` already exists but is not used in the agent loop.

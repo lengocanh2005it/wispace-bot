@@ -52,8 +52,8 @@ Meta webhook
             → messenger-bot-1  127.0.0.1:5007
             → messenger-bot-2  127.0.0.1:5008
                     ↓
-            Redis (dedupe, queue, history)
-            PostgreSQL (ai_chat_bot_db)
+            Redis (chat queue, history, burst counter, throttling window)
+            PostgreSQL (ai_chat_bot_db — durable inbox, quota, jobs)
             OpenAI / Wispace API / Meta Send API
 ```
 
@@ -275,7 +275,7 @@ Needs expansion for real implementation:
 | Reminder dispatch | **Both pods** adaptive loop; `claimJob` — no duplicates |
 | 30-min study sync | Advisory lock — 1 pod/run |
 | Evening rollover / cleanup | Advisory lock — 1 pod/run |
-| Dead-letter webhook 5-min | Advisory lock — 1 pod/run |
+| Webhook-inbound retry (30s) | Advisory lock — 1 pod/run |
 
 ---
 

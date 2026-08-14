@@ -76,7 +76,7 @@ npm run study-reminder:sync
 
 ### 3.2. Dispatch — Send Messages on Time
 
-Every minute, fetch jobs matching:
+On each adaptive poll tick (30s–3.5min, S2 — see §11.6), fetch jobs matching:
 
 - `status` = `pending` or `failed` (still has retries)
 - `remind_at <= now`
@@ -295,7 +295,8 @@ Both Messenger and WISPACE API need **`external_user_id`** (was `psid`). The `us
 ```sql
 CREATE TABLE study_reminder_jobs (
   id              SERIAL PRIMARY KEY,
-  psid            VARCHAR(64) NOT NULL,
+  platform        VARCHAR(16) NOT NULL DEFAULT 'messenger',
+  external_user_id VARCHAR(64) NOT NULL,
   user_id         INTEGER,
   session_key     VARCHAR(128) NOT NULL,
   scheduled_at    TIMESTAMPTZ NOT NULL,
@@ -309,9 +310,14 @@ CREATE TABLE study_reminder_jobs (
   sent_at         TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (psid, session_key)
+  UNIQUE (platform, external_user_id, session_key)
 );
 ```
+
+> The table is shared by all 3 bots (multi-platform since migration
+> `1751029200001-GeneralizePlatformIdentifiers`): `external_user_id` replaces
+> the legacy `psid` column, and `platform` discriminates `messenger` /
+> `discord` / `zalo`. Dispatch index: `(status, remind_at)`.
 
 | `status` | Meaning |
 |----------|---------|
@@ -354,48 +360,32 @@ Cố lên nhé! 💪
 
 ## 7. Code Structure
 
-The `study-reminder` module follows Clean Architecture (see [AGENTS.md](../../../AGENTS.md#clean-architecture)):
+The reminder core lives in **`@wispace/study-reminder-shared`** (framework-agnostic, shared by Messenger/Discord/Zalo); `apps/messenger-bot` wires it via `StudyReminderModule` and the `MESSAGE_SENDER` port. Clean Architecture — see [AGENTS.md](../../../AGENTS.md#clean-architecture):
 
 ```
-src/modules/study-reminder/
-├── study-reminder.module.ts
-├── domain/
-│   ├── entities/                      # study-schedule.types, study-reminder-job.types, …
-│   └── repositories/
-│       └── study-reminder-job.repository.port.ts
-├── application/
-│   ├── ports/
-│   │   └── messenger-mapping.port.ts  # MESSENGER_MAPPING_READER — no MessengerModule import
-│   ├── services/
-│   │   ├── study-reminder-sync.service.ts       # Sync schedule → jobs (all | per userId)
-│   │   ├── study-reminder-dispatch.service.ts   # Dispatch + retry (MESSAGE_SENDER)
-│   │   ├── study-reminder-cleanup.service.ts
-│   │   ├── study-reminder-worker.service.ts     # Cron sync / dispatch / rollover
-│   │   ├── study-reminder.service.ts            # LLM
-│   │   ├── study-reminder-schedule.service.ts   # Calculate remind_at
-│   │   ├── study-session-source.service.ts
-│   │   └── user-display-name.service.ts
-│   ├── messages/study-reminder.messages.ts
-│   └── utils/study-reminder.utils.ts
-└── infrastructure/
-    ├── persistence/study-reminder-job.repository.ts
-    └── wispace/
-        ├── user-calendar-api.service.ts         # GET UserCalendar (x-psid)
-        └── user-calendar-schedule.service.ts    # Normalize schedule from API (I3 API-only)
+packages/study-reminder-shared/src/
+├── services/
+│   ├── study-reminder-sync.service.ts       # Sync schedule → jobs (all | per userId)
+│   ├── study-reminder-dispatch.service.ts   # Dispatch + retry (MESSAGE_SENDER port)
+│   ├── study-reminder-worker.service.ts     # Cron sync / cleanup / rollover + adaptive poll
+│   ├── study-reminder-schedule.service.ts   # Calculate remind_at
+│   └── study-reminder-providers.factory.ts  # DI factory for app modules
+├── entities/study-reminder-job.entity.ts    # TypeORM entity (shared table)
+└── repositories/study-reminder-job.repository.port.ts
 
-src/modules/scheduler/presentation/controllers/
-  scheduler.controller.ts                # POST study-calendar/sync, sync-study-reminders, …
-
-src/modules/messenger/
-  application/services/messenger.service.ts      # Webhook + menu preview reminders
-  application/services/messenger-outbound.service.ts  # Send API (MESSAGE_SENDER)
-  infrastructure/meta/messenger-profile.service.ts
-
-src/shared/prompts/
-  study-reminder.system.txt              # OpenAI system prompt
+apps/messenger-bot/src/
+├── modules/study-reminder/                  # thin NestJS wiring (module + providers)
+├── modules/study-reminder/application/services/study-reminder.service.ts  # LLM content (app-specific)
+├── modules/scheduler/presentation/controllers/
+│   └── scheduler.controller.ts              # POST study-calendar/sync, sync-study-reminders, …
+├── modules/messenger/
+│   ├── application/services/messenger.service.ts          # Webhook + menu preview reminders
+│   └── application/services/messenger-outbound.service.ts # Send API (MESSAGE_SENDER)
+└── shared/prompts/
+    └── study-reminder.system.txt            # OpenAI system prompt
 ```
 
-**Dispatch:** `StudyReminderDispatchService` calls `StudyReminderService.generateReminderForSession` then `MESSAGE_SENDER.sendTextViaPsid` — does not import `MessengerService`.
+**Dispatch:** `StudyReminderDispatchService` (shared) calls `StudyReminderService.generateReminderForSession` (app) then `MESSAGE_SENDER.sendTextViaPsid` — does not import `MessengerService`.
 
 ---
 

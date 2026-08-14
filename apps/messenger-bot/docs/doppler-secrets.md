@@ -83,9 +83,9 @@ Prod env changed on Doppler: run **Sync production env (no image build)**.
 | `DOPPLER_TOKEN_MESSENGER` / `DOPPLER_TOKEN_DISCORD` / `DOPPLER_TOKEN_ZALO` | (recommended) Downloads that bot's `production.env` during deploy/sync |
 | `GHCR_PULL_TOKEN` | (recommended) `docker pull` on VPS |
 
-**Repository variable (optional):** `VPS_SSH_PORT` — default `8443` in workflow. Port **22** on OS (UFW) is open; GitHub Actions runners usually **timeout** connecting to `:22` due to Hostinger hPanel firewall blocking cloud IPs. `sshd` listens on **8443** as well (allowed on UFW) — CI uses this port.
+**Repository variable (optional):** `VPS_SSH_PORT` — default `22` in workflow (`vars.VPS_SSH_PORT || '22'`). The provider dropped inbound SSH on port `8443`, so CI now uses port 22.
 
-**Open port 22 for GitHub (Hostinger hPanel):** VPS → **Security** → **Firewall** → rule **TCP 22** **Accept** from **Anywhere** (or whitelist Actions IPs from `https://api.github.com/meta` → `actions[]`). Then you can set `VPS_SSH_PORT=22`.
+**Open port 22 for GitHub (Hostinger hPanel):** VPS → **Security** → **Firewall** → rule **TCP 22** **Accept** from **Anywhere** (or whitelist Actions IPs from `https://api.github.com/meta` → `actions[]`). This is the port CI's env-only SSH path uses.
 
 If `SSH_PRIVATE_KEY` / `VPS_*` **not yet** set, SCP/SSH step fails — add secret then re-run workflow.
 

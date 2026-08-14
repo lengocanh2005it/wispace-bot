@@ -16,7 +16,7 @@ All 3 bots use **the same API endpoint** to verify link tokens — the WISPACE t
 
 ---
 
-## Part 1 — Token verification API (shared for Messenger & Discord)
+## Part 1 — Token verification API (shared by Messenger, Discord & Zalo)
 
 ### Endpoint
 
@@ -245,6 +245,6 @@ Bot team provides `INTERNAL_API_KEY` (same header used for ops endpoints).
 | 6 | Provide `DISCORD_CLIENT_ID` and `DISCORD_OAUTH_REDIRECT_URI` to WISPACE | **Bot team** |
 | 7 | Entire OAuth2 callback flow, verification, DB storage, welcome DM | **Bot team (completed)** |
 
-> If the token verification API (`/verify-token`) already exists for Messenger, supporting Discord only requires adding the `platform === "discord"` condition — no new endpoint needed.
+> If the token verification API (`/verify-token`) already exists for Messenger, supporting Discord and Zalo only requires adding the `platform === "discord"` / `platform === "zalo"` conditions — no new endpoint needed.
 
 > **Discord limitation note:** If the student has not joined a shared server with the bot, the bot cannot send the welcome DM (Discord limitation, not an error). The account is still successfully linked — the student can still message the bot normally after joining the server later.

@@ -458,7 +458,7 @@ Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global ski
 | DB: report claims retention | ✓ `${platform}-report-claims-cleanup` (Discord/Zalo, 03:45 ICT, advisory-lock, 90 ngày) — AGENTS.md dev tip đã spec sẵn |
 | DB: batch study-reminder sync | ✓ `upsertPendingJobs` — 1 SELECT cho cả user thay vì findOne+save per session |
 | DB: Zalo report cron pre-query | ✓ `listUserIdsWithSentReportToday` → 1 query thay N query per user |
-| Discord/Zalo multi-pod chat history | ❌ In-memory only (Redis optional for Messenger) |
+| Discord/Zalo multi-pod chat history | ✓ `CHAT_HISTORY_STORE=redis` via shared `PlatformChatHistoryService` (`chat-history:discord:` / `chat-history:zalo:` keys) — memory default, Redis optional (same as Messenger) |
 | Project-wide gaps (link, reports, reminders, ops) | Roadmap — [edge-cases-roadmap.md](docs/edge-cases-roadmap.md) |
 
 When closing a gap: update `apps/messenger-bot/docs/study-session-reminder.md` and the table above.
