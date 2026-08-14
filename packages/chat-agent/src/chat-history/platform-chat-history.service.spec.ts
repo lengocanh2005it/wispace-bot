@@ -15,21 +15,21 @@ describe('PlatformChatHistoryService', () => {
     await expect(service.getHistory('user-1')).resolves.toEqual([]);
   });
 
-  it('fails closed when Redis history is configured but the client is unavailable', () => {
+  it('fails closed on init when Redis history is configured but the client is unavailable', async () => {
     const configService = {
       get: (key: string) =>
         key === 'CHAT_HISTORY_STORE' ? 'redis' : undefined,
     } as unknown as ConfigService;
+    const service = new PlatformChatHistoryService(
+      configService,
+      { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat-history:discord:' },
+      { getNativeClient: () => null },
+    );
 
-    expect(
-      () =>
-        new PlatformChatHistoryService(
-          configService,
-          { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat-history:discord:' },
-          { getNativeClient: () => null },
-        ),
-    ).toThrow(/refusing to silently fall back to memory/);
-  });
+    await expect(service.onModuleInit()).rejects.toThrow(
+      /refusing to silently fall back to memory/,
+    );
+  }, 15_000);
 
   it('uses Redis when the client is available at construction', async () => {
     const nativeClient = {

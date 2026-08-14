@@ -18,6 +18,12 @@ describe('ChatHistoryStoreStartupService', () => {
     } as MessengerChatSharedConfigService;
     const redisClient = {
       isEnabled: () => overrides.redisEnabled ?? false,
+      getNativeClient: () =>
+        overrides.redisEnabled
+          ? overrides.active === 'redis'
+            ? {}
+            : null
+          : null,
     } as unknown as RedisClientPort;
     const resolver = {
       resolveStoreKind: () => overrides.active ?? 'memory',
@@ -29,30 +35,32 @@ describe('ChatHistoryStoreStartupService', () => {
     );
   };
 
-  it('fails closed when redis history is configured but Redis is disabled', () => {
-    expect(() =>
+  it('fails closed when redis history is configured but Redis is disabled', async () => {
+    await expect(
       build({ configured: 'redis', redisEnabled: false }).onModuleInit(),
-    ).toThrow(/refusing to silently fall back to memory/);
-  });
+    ).rejects.toThrow(/refusing to silently fall back to memory/);
+  }, 15_000);
 
-  it('fails closed when redis history is configured but the client is unavailable', () => {
-    expect(() =>
+  it('fails closed when redis history is configured but the client is unavailable', async () => {
+    await expect(
       build({
         configured: 'redis',
         redisEnabled: true,
         active: 'memory',
       }).onModuleInit(),
-    ).toThrow(/refusing to silently fall back to memory/);
-  });
+    ).rejects.toThrow(/refusing to silently fall back to memory/);
+  }, 15_000);
 
-  it('logs the active store when configuration is honoured', () => {
-    expect(() =>
+  it('logs the active store when configuration is honoured', async () => {
+    await expect(
       build({
         configured: 'redis',
         redisEnabled: true,
         active: 'redis',
       }).onModuleInit(),
-    ).not.toThrow();
-    expect(() => build({ configured: 'memory' }).onModuleInit()).not.toThrow();
+    ).resolves.toBeUndefined();
+    await expect(
+      build({ configured: 'memory' }).onModuleInit(),
+    ).resolves.toBeUndefined();
   });
 });
