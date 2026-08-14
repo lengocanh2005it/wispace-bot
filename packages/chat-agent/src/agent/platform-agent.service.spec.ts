@@ -88,6 +88,35 @@ describe('PlatformAgentService', () => {
     );
   });
 
+  it('appends the exact exercise URL when the final LLM text omits it', async () => {
+    const exerciseUrl =
+      'https://testfrontend.aihubproduction.com/my-roadmap?sequenceIndex=8';
+    mockLlmReply.mockImplementation(
+      (_request: unknown, context: { precreatedExerciseUrl?: string }) => {
+        context.precreatedExerciseUrl = exerciseUrl;
+        return { text: 'Mình đã tạo bài tập tiếp theo cho bạn.' };
+      },
+    );
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const service = buildService(historyService);
+
+    const result = await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'Tạo bài tập cho mình',
+    });
+
+    const expected = `Mình đã tạo bài tập tiếp theo cho bạn.\n\nMở bài tập tại đây: ${exerciseUrl}`;
+    expect(result.text).toBe(expected);
+    expect(historyService.appendTurn).toHaveBeenCalledWith(
+      'zalo-user-1',
+      'Tạo bài tập cho mình',
+      expected,
+    );
+  });
+
   it('keeps one read and one append per turn across the full pipeline', async () => {
     const storedHistory: Array<{
       role: 'user' | 'assistant' | 'tool_summary';

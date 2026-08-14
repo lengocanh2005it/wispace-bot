@@ -55,6 +55,7 @@ export interface AgentReply {
   text: string;
   toolSummary?: string;
   richFollowUps?: unknown[];
+  privateDataFetched?: boolean;
 }
 
 export interface AgentPort {

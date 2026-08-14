@@ -9,6 +9,7 @@ import type { StudyReminderOperationsPort } from '@messenger/modules/study-remin
 import type { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
 import type { UserGoalsApiService } from '../../../student-report/infrastructure/wispace/user-goals-api.service';
 import type { StudentReportService } from '../../../student-report/application/services/student-report.service';
+import type { WispaceExerciseService } from '@wispace/wispace-client';
 
 describe('MessengerAgentToolsService', () => {
   const createService = (
@@ -46,12 +47,19 @@ describe('MessengerAgentToolsService', () => {
         stage: overrides.stage ?? jest.fn(),
       } as unknown as jest.Mocked<MessengerRescheduleConfirmationService>;
 
+    const exerciseService: jest.Mocked<
+      Pick<WispaceExerciseService, 'precreateNextExercise'>
+    > = {
+      precreateNextExercise: overrides.precreateNextExercise ?? jest.fn(),
+    };
+
     const messengerTools = new MessengerAgentToolsService(
       repository,
       studentReportService,
       userGoalsApiService,
       studyPort,
       rescheduleConfirmationService,
+      exerciseService as unknown as WispaceExerciseService,
     );
 
     const stagePort = { stage: jest.fn() };
@@ -77,6 +85,7 @@ describe('MessengerAgentToolsService', () => {
       userGoalsApiService,
       studyPort,
       rescheduleConfirmationService,
+      exerciseService,
     };
   };
 
@@ -109,6 +118,39 @@ describe('MessengerAgentToolsService', () => {
         ctx,
       );
       expect(result).toEqual({ error: 'API error' });
+    });
+
+    it('does not call the exercise API when Messenger is unlinked', async () => {
+      const { service, ctx, exerciseService } = createService();
+      ctx.userId = undefined;
+
+      const result = await service.execute(
+        'precreate_next_exercise',
+        '{}',
+        ctx,
+      );
+
+      expect(result).toMatchObject({ available: false });
+      expect(exerciseService.precreateNextExercise).not.toHaveBeenCalled();
+    });
+
+    it('calls the exercise API with the Messenger PSID', async () => {
+      const { service, ctx, exerciseService } = createService({
+        precreateNextExercise: jest.fn().mockResolvedValue({
+          status: 'already_exists',
+          exerciseUrl:
+            'https://testfrontend.aihubproduction.com/my-roadmap?sequenceIndex=8',
+          message: 'already generated',
+        }),
+      });
+
+      await service.execute('precreate_next_exercise', '{}', ctx);
+
+      expect(exerciseService.precreateNextExercise).toHaveBeenCalledWith(
+        'psid-123',
+        expect.any(Object),
+      );
+      expect(ctx.privateDataFetched).toBe(true);
     });
   });
 

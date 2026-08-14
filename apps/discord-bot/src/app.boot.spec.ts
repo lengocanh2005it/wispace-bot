@@ -3,6 +3,7 @@ import { DataSource, Repository } from 'typeorm';
 import { Client } from 'discord.js';
 import { AppModule } from './app.module';
 import { InternalApiKeyGuard } from '@wispace/bot-common';
+import { WispaceExerciseService } from '@wispace/wispace-client';
 
 /**
  * Boot smoke test: compiles AppModule and runs app.init() so Nest resolves
@@ -18,6 +19,10 @@ describe('AppModule boot smoke', () => {
   it('boots without DI errors', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     process.env.OPENAI_MODEL = 'test-model';
+    process.env.WISPACE_INTERNAL_KEY = 'test-wispace-key';
+    process.env.WISPACE_API_PRECREATE_EXERCISE_URL =
+      'https://testbackend.example.com/precreate-exercise';
+    process.env.WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS = '30000';
     process.env.DISCORD_BOT_TOKEN = 'fake-token';
     process.env.CHAT_FREE_FORM_DAILY_LIMIT = '15';
     process.env.CHAT_BURST_PER_MINUTE = '3';
@@ -69,6 +74,9 @@ describe('AppModule boot smoke', () => {
 
     expect(moduleRef.get(InternalApiKeyGuard)).toBeInstanceOf(
       InternalApiKeyGuard,
+    );
+    expect(moduleRef.get(WispaceExerciseService)).toBeInstanceOf(
+      WispaceExerciseService,
     );
 
     const app = moduleRef.createNestApplication({ logger: false });

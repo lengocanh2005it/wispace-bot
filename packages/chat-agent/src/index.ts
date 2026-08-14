@@ -1,5 +1,10 @@
 export { PlatformAgentService } from './agent/platform-agent.service';
 export { PlatformAgentToolsService } from './agent/platform-agent-tools.service';
+export {
+  executePrecreateExerciseTool,
+  normalizePrecreateExerciseResult,
+  unavailablePrecreateExerciseResult,
+} from './agent/precreate-exercise-result';
 export type {
   PlatformAgentInput,
   PlatformAgentOptions,

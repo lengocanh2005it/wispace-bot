@@ -5,8 +5,8 @@ Turborepo monorepo connecting **WISPACE** (IELTS Writing learning platform) with
 | App | Status |
 |-----|--------|
 | `apps/messenger-bot` | Fully functional — chat, reports, reminders, rate limit |
-| `apps/discord-bot` | Fully functional — chat, quota, pending cap + typing indicator, queued-failure fallback, OAuth account linking, 6/7 real tool handlers, report cron, study reminders, and CI/CD |
-| `apps/zalo-bot` | Fully functional — chat, quota, pending cap, queued-failure fallback, account linking, 6/7 real tool handlers, report cron, study reminders, CI/CD, and shared health/ops hardening |
+| `apps/discord-bot` | Fully functional — chat, quota, pending cap + typing indicator, queued-failure fallback, OAuth account linking, 7/7 real tool handlers, report cron, study reminders, and CI/CD |
+| `apps/zalo-bot` | Fully functional — chat, quota, pending cap, queued-failure fallback, account linking, 7/7 real tool handlers, report cron, study reminders, CI/CD, and shared health/ops hardening |
 
 Shared packages (`packages/`): `llm-agent`, `chat-metering`, `chat-agent`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `chat-pipeline`, `study-reminder-shared`, `scheduler-core`, `ops-health`, `bot-metrics`, `cleanup-cron`, `reschedule-confirm`, `bot-common`, `database`, `doppler-sync`, `date-utils`.
 
@@ -43,6 +43,13 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 - **Burst** `CHAT_BURST_PER_MINUTE`/min; **hard cap** concurrent (H3); **hint** "X remaining" (Phase 6).
 - Menu postback, reminder cron, proactive reports — **no** quota deduction.
 - **Single instance:** `CHAT_QUEUE_STORE=memory` (RAM debounce). **≥2 pods:** `CHAT_QUEUE_STORE=redis` (requires `REDIS_ENABLED=true`; `CHAT_QUEUE_SHARED=true` maps to `redis`). Distributed append retries briefly and propagates persistent Redis failures to the durable webhook inbox for recovery.
+
+### 1.5. Precreate Next Roadmap Exercise
+
+- A clear natural-language request such as “tạo bài tập cho mình” may call the no-argument `precreate_next_exercise` tool on Messenger, Discord, or Zalo. It creates only the next exercise in the learner's roadmap and requires a linked account.
+- The tool calls `POST WISPACE_API_PRECREATE_EXERCISE_URL` with an empty body and `X-Internal-Key: WISPACE_INTERNAL_KEY`. The platform identity header is `x-psid`, `x-discordid`, or `x-zaloid` respectively. The API is idempotent, so this POST is never automatically retried.
+- `WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS` is required (the example value is `30000`); LLM tool execution is limited to 35 seconds. Responses require an absolute HTTPS URL for `created` and `already_exists`; status flags are authoritative and advisory `message` text is sanitized before use.
+- The current API accepts no `taskType`, `exerciseTopic`, `topic`, or `difficulty` selection. A future extension may support `taskType`/`exerciseTopic` when WISPACE provides the corresponding API contract.
 - **Discord/Zalo queued failures:** a failure before the main reply is delivered sends one direct generic Vietnamese fallback through the outbound service. The fallback never re-enters the chat queue; original pipeline failures and fallback delivery failures are logged separately, while outbound retry/dead-letter behavior remains unchanged.
 - Details + runbook: [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), section 12 below.
 
@@ -254,6 +261,7 @@ Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 |--------|----------|
 | `UserCalendar` API (`x-psid`) | Upcoming schedules (API-only, I3 ✓) |
 | `User/goals`, `TaskScoreAverage` API | Reports, exam dates |
+| `roadmap/precreate-exercise` API | Create the next roadmap exercise (`x-psid`, `x-discordid`, or `x-zaloid`) |
 
 ---
 
@@ -373,7 +381,7 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 - **LLM global concurrency:** `LLM_GLOBAL_CONCURRENCY_ENABLED`, `LLM_GLOBAL_MAX_CONCURRENT`
 - **LLM usage (C2):** `LLM_USAGE_*`; USD estimate: `LLM_COST_USD_PER_1M_INPUT_TOKENS_<MODEL>` / `LLM_COST_USD_PER_1M_OUTPUT_TOKENS_<MODEL>` (e.g. `gpt-5.4` → `GPT_5_4`: input `2.50`, output `15.00` per [OpenAI pricing](https://developers.openai.com/api/docs/pricing); ≠ actual invoice)
 - **LLM safety:** `LLM_SAFETY_EVENTS_ENABLED`, `LLM_SAFETY_WARNING_DAILY_THRESHOLD`, `LLM_SAFETY_EVENT_RETENTION_DAYS`
-- **WISPACE API (shared):** `WISPACE_API_USER_CALENDAR_URL`, `WISPACE_API_USER_GOALS_URL`, `WISPACE_API_TASK_SCORE_URL`, `WISPACE_INTERNAL_KEY` — auth: platform header (`x-psid`, `x-discordid`, or `x-zaloid`) + `X-Internal-Key`
+- **WISPACE API (shared):** `WISPACE_API_USER_CALENDAR_URL`, `WISPACE_API_USER_GOALS_URL`, `WISPACE_API_TASK_SCORE_URL`, `WISPACE_API_PRECREATE_EXERCISE_URL`, `WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS`, `WISPACE_INTERNAL_KEY` — auth: platform header (`x-psid`, `x-discordid`, or `x-zaloid`) + `X-Internal-Key`; next-exercise POST is idempotent and has no automatic retry
 - **Study reminder (shared):** `STUDY_REMINDER_*` — **required**, no hardcoded fallbacks in code; `STUDY_REMINDER_STUCK_PROCESSING_MS`
 - **Chat rate limit:** `CHAT_RATE_LIMIT_ENABLED`, `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_BURST_STORE` (R3: `postgres` | `memory` | `redis`), `CHAT_USAGE_TIMEZONE` (shared), `CHAT_RATE_LIMIT_WHITELIST_PSIDS`, `CHAT_QUOTA_REMAINING_HINT_THRESHOLD`, `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS` (H2), `CHAT_MERGED_TEXT_MAX_CHARS` / `CHAT_BURST_COUNT_REFUNDED` (H5), `CHAT_IDEMPOTENCY_RETENTION_DAYS` (H6)
 - **HTTP throttling:** `WEBHOOK_RATE_LIMIT_PER_MINUTE` / `WEBHOOK_RATE_LIMIT_TTL_MS` control authenticated Messenger/Zalo webhook bursts; `THROTTLE_DEFAULT_LIMIT` / `THROTTLE_DEFAULT_TTL_MS` control other throttled routes. `REDIS_ENABLED=true` uses one atomic Redis window across pods; disabled Redis uses the existing in-process store, while configured-but-unavailable Redis fails closed.

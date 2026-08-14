@@ -37,6 +37,7 @@ export {
   buildPromptInjectionBlockedMessage,
   buildWispaceScopeRedirectMessage,
   buildGroundingBlockedMessage,
+  buildPrecreateExerciseUnavailableMessage,
 } from './messages';
 export {
   detectPromptInjection,

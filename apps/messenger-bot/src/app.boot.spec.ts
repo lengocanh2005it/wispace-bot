@@ -16,6 +16,10 @@ describe('AppModule boot smoke', () => {
     process.env.OPENAI_API_KEY = 'test-key';
     process.env.OPENAI_MODEL = 'test-model';
     process.env.INTERNAL_API_KEY = 'test-internal-key';
+    process.env.WISPACE_INTERNAL_KEY = 'test-wispace-key';
+    process.env.WISPACE_API_PRECREATE_EXERCISE_URL =
+      'https://testbackend.example.com/precreate-exercise';
+    process.env.WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS = '30000';
     process.env.CHAT_FREE_FORM_DAILY_LIMIT = '15';
     process.env.CHAT_BURST_PER_MINUTE = '3';
     process.env.CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';

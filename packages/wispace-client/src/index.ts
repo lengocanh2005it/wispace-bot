@@ -11,6 +11,7 @@ export type {
 } from './utils/with-retry';
 export { buildWispaceHeaders } from './utils/wispace-headers';
 export type { WispaceIdHeader } from './utils/wispace-headers';
+export { readHttpsUrl } from './utils/https-url';
 export * from './utils/study-calendar.utils';
 export {
   formatLocalDate,
@@ -20,6 +21,11 @@ export {
 
 export type { UserGoalsRecord } from './types/user-goals.types';
 export type { TaskScoreAverageRecord } from './types/task-score-average.types';
+export type {
+  PrecreateExerciseClientConfig,
+  PrecreateExerciseResult,
+  PrecreateExerciseStatus,
+} from './types/precreate-exercise.types';
 export type {
   CreateUserCalendarInput,
   UserCalendarRecord,
@@ -42,8 +48,13 @@ export type { ListCalendarsFn } from './clients/user-calendar-schedule.client';
 export { WispaceGoalsService } from './clients/wispace-goals.service';
 export { WispaceCalendarService } from './clients/wispace-calendar.service';
 export { WispaceTokenVerifyService } from './clients/wispace-token-verify.service';
+export { PrecreateExerciseApiClient } from './clients/precreate-exercise-api.client';
+export { WispaceExerciseService } from './clients/wispace-exercise.service';
 export type {
   WispaceLinkVerifyFailureReason,
   WispaceLinkVerifyResult,
 } from './types/token-verify.types';
-export { WispaceConfigService } from './config/wispace-config.service';
+export {
+  WispaceConfigService,
+  type WispaceConfigGetter,
+} from './config/wispace-config.service';

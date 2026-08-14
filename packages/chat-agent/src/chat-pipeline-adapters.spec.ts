@@ -35,4 +35,28 @@ describe('createChatPipelineAdapters', () => {
       history,
     });
   });
+
+  it('preserves private-data metadata from the platform agent', async () => {
+    const agentService = {
+      reply: jest.fn().mockResolvedValue({
+        text: 'private answer',
+        privateDataFetched: true,
+      }),
+    } as unknown as PlatformAgentService;
+
+    const adapters = createChatPipelineAdapters(
+      {} as never,
+      {} as unknown as PlatformChatHistoryService,
+      agentService,
+      {} as never,
+    );
+
+    await expect(
+      adapters.agent.reply({
+        externalUserId: 'discord-user-1',
+        userText: 'tạo bài tập cho mình',
+        history: [],
+      }),
+    ).resolves.toEqual({ text: 'private answer', privateDataFetched: true });
+  });
 });

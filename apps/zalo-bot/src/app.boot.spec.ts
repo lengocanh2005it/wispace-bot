@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { DataSource, Repository } from 'typeorm';
 import { AppModule } from './app.module';
 import { InternalApiKeyGuard } from '@wispace/bot-common';
+import { WispaceExerciseService } from '@wispace/wispace-client';
 
 /**
  * Boot smoke test: compiles AppModule and runs app.init() so Nest resolves
@@ -18,6 +19,10 @@ describe('AppModule boot smoke', () => {
     process.env.DB_USER = 'test';
     process.env.DB_PASSWORD = 'test';
     process.env.DB_NAME = 'test';
+    process.env.WISPACE_INTERNAL_KEY = 'test-wispace-key';
+    process.env.WISPACE_API_PRECREATE_EXERCISE_URL =
+      'https://testbackend.example.com/precreate-exercise';
+    process.env.WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS = '30000';
 
     const stubRepo = {} as Repository<unknown>;
     const dataSourceMock = new Proxy({} as DataSource, {
@@ -62,6 +67,9 @@ describe('AppModule boot smoke', () => {
 
     expect(moduleRef.get(InternalApiKeyGuard)).toBeInstanceOf(
       InternalApiKeyGuard,
+    );
+    expect(moduleRef.get(WispaceExerciseService)).toBeInstanceOf(
+      WispaceExerciseService,
     );
 
     const app = moduleRef.createNestApplication({ logger: false });

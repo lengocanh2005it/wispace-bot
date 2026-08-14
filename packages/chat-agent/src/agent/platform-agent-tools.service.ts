@@ -13,6 +13,7 @@ import {
 import {
   WispaceCalendarService,
   WispaceGoalsService,
+  WispaceExerciseService,
 } from '@wispace/wispace-client';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import type {
@@ -20,6 +21,7 @@ import type {
   PlatformAgentToolsOptions,
   RescheduleStagePort,
 } from './platform-agent.types';
+import { executePrecreateExerciseTool } from './precreate-exercise-result';
 
 /**
  * Wires the WISPACE tools to real Wispace API calls once the platform
@@ -41,6 +43,8 @@ export class PlatformAgentToolsService {
     private readonly calendarService: WispaceCalendarService | undefined,
     private readonly stagePort: RescheduleStagePort,
     private readonly options: PlatformAgentToolsOptions,
+    @Optional()
+    private readonly exerciseService?: WispaceExerciseService,
   ) {}
 
   async execute(
@@ -171,6 +175,16 @@ export class PlatformAgentToolsService {
             automatic: true,
             message: this.options.registerReportMessage,
           }),
+        );
+      case 'precreate_next_exercise':
+        return executePrecreateExerciseTool(
+          ctx,
+          this.exerciseService,
+          {
+            getNotLinkedMessage: this.options.getNotLinkedMessage,
+            logger: this.logger,
+          },
+          signal,
         );
       default: {
         const unknownTool = toolName as string;

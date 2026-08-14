@@ -8,6 +8,7 @@ export const AGENT_TOOL_NAMES = [
   'reschedule_study_session',
   'preview_next_study_reminder',
   'register_exam_report_notifications',
+  'precreate_next_exercise',
 ] as const;
 
 export type AgentToolName = (typeof AGENT_TOOL_NAMES)[number];
@@ -134,6 +135,16 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
     name: 'register_exam_report_notifications',
     description:
       'Đăng ký nhận báo cáo AI tự động qua Messenger khoảng 2–3 ngày trước ngày thi.',
+    parameters: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'precreate_next_exercise',
+    description:
+      'Chỉ gọi khi học viên yêu cầu rõ ràng tạo hoặc nhận một bài tập mới tiếp theo trong roadmap. Không gọi nếu học viên chọn taskType, exerciseTopic, topic hoặc difficulty; tool này không nhận tham số lựa chọn.',
     parameters: {
       type: 'object',
       properties: {},

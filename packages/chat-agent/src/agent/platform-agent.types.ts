@@ -18,6 +18,8 @@ export interface PlatformAgentToolContext {
    * of the server channel; Zalo ignores it.
    */
   privateDataFetched?: boolean;
+  /** Exact validated URL returned by the next-roadmap-exercise tool. */
+  precreatedExerciseUrl?: string;
   /**
    * Platform-specific quick replies / buttons collected by tools (Messenger
    * rich follow-ups). Optional — Discord/Zalo never fill it.

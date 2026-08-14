@@ -1,15 +1,15 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import type { WispaceApiClientConfig } from '../clients/wispace-client-types';
+import type { PrecreateExerciseClientConfig } from '../types/precreate-exercise.types';
+
+export type WispaceConfigGetter = (key: string) => string | undefined;
 
 /**
  * Wispace API client config — shared by Discord and Zalo (consolidation of
  * their near-identical per-app config services, including the required
  * study-reminder horizon/lead-time getters).
  */
-@Injectable()
 export class WispaceConfigService {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(private readonly getConfig: WispaceConfigGetter) {}
 
   buildGoalsClientConfig(): WispaceApiClientConfig {
     return this.buildClientConfig(
@@ -29,27 +29,32 @@ export class WispaceConfigService {
     return this.buildClientConfig('WISPACE_API_USER_CALENDAR_URL');
   }
 
+  buildPrecreateExerciseClientConfig(): PrecreateExerciseClientConfig {
+    const config = this.buildClientConfig('WISPACE_API_PRECREATE_EXERCISE_URL');
+    return {
+      url: config.url,
+      internalKey: config.internalKey,
+      requestTimeoutMs: this.readRequiredPositiveInt(
+        'WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS',
+      ),
+    };
+  }
+
   getTimezone(): string {
     return (
-      this.configService.get<string>('STUDY_REMINDER_TIMEZONE')?.trim() ??
-      'Asia/Ho_Chi_Minh'
+      this.getConfig('STUDY_REMINDER_TIMEZONE')?.trim() ?? 'Asia/Ho_Chi_Minh'
     );
   }
 
   getMinLeadMinutes(): number {
-    const raw = this.configService
-      .get<string>('STUDY_REMINDER_MIN_LEAD_MINUTES')
-      ?.trim();
-
+    const raw = this.getConfig('STUDY_REMINDER_MIN_LEAD_MINUTES')?.trim();
     if (!raw) {
-      throw new InternalServerErrorException(
-        'STUDY_REMINDER_MIN_LEAD_MINUTES must be set in .env',
-      );
+      throw new Error('STUDY_REMINDER_MIN_LEAD_MINUTES must be set in .env');
     }
 
     const value = Number(raw);
     if (!Number.isFinite(value) || value <= 0) {
-      throw new InternalServerErrorException(
+      throw new Error(
         'STUDY_REMINDER_MIN_LEAD_MINUTES must be a positive number in .env',
       );
     }
@@ -58,19 +63,14 @@ export class WispaceConfigService {
   }
 
   getSyncHorizonHours(): number {
-    const raw = this.configService
-      .get<string>('STUDY_REMINDER_SYNC_HORIZON_HOURS')
-      ?.trim();
-
+    const raw = this.getConfig('STUDY_REMINDER_SYNC_HORIZON_HOURS')?.trim();
     if (!raw) {
-      throw new InternalServerErrorException(
-        'STUDY_REMINDER_SYNC_HORIZON_HOURS must be set in .env',
-      );
+      throw new Error('STUDY_REMINDER_SYNC_HORIZON_HOURS must be set in .env');
     }
 
     const value = Number(raw);
     if (!Number.isFinite(value) || value <= 0) {
-      throw new InternalServerErrorException(
+      throw new Error(
         'STUDY_REMINDER_SYNC_HORIZON_HOURS must be a positive number in .env',
       );
     }
@@ -82,9 +82,9 @@ export class WispaceConfigService {
     urlKey: string,
     fallbackUrl?: string,
   ): WispaceApiClientConfig {
-    const url = this.configService.get<string>(urlKey)?.trim() ?? fallbackUrl;
+    const url = this.getConfig(urlKey)?.trim() ?? fallbackUrl;
     if (!url) {
-      throw new InternalServerErrorException(`${urlKey} must be set in .env`);
+      throw new Error(`${urlKey} must be set in .env`);
     }
 
     return {
@@ -96,22 +96,34 @@ export class WispaceConfigService {
   }
 
   private getInternalKey(): string {
-    const key = this.configService.get<string>('WISPACE_INTERNAL_KEY')?.trim();
+    const key = this.getConfig('WISPACE_INTERNAL_KEY')?.trim();
     if (!key) {
-      throw new InternalServerErrorException(
-        'WISPACE_INTERNAL_KEY must be set in .env',
-      );
+      throw new Error('WISPACE_INTERNAL_KEY must be set in .env');
     }
 
     return key;
   }
 
   private readPositiveInt(key: string, defaultValue: number): number {
-    const raw = this.configService.get<string>(key)?.trim();
+    const raw = this.getConfig(key)?.trim();
     if (!raw) return defaultValue;
     const value = Number(raw);
     return Number.isFinite(value) && value >= 0
       ? Math.floor(value)
       : defaultValue;
+  }
+
+  private readRequiredPositiveInt(key: string): number {
+    const raw = this.getConfig(key)?.trim();
+    if (!raw) {
+      throw new Error(`${key} must be set in .env`);
+    }
+
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value <= 0) {
+      throw new Error(`${key} must be a positive number in .env`);
+    }
+
+    return Math.floor(value);
   }
 }

@@ -32,6 +32,7 @@ import {
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
   WispaceCalendarService,
+  WispaceExerciseService,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
 import { REPORT_DELIVERY_PORT } from '@wispace/scheduler-core';
@@ -105,6 +106,7 @@ const REGISTER_REPORT_MESSAGE =
       useFactory: (
         goalsService: WispaceGoalsService,
         calendarService: WispaceCalendarService,
+        exerciseService: WispaceExerciseService,
         rescheduleConfirmationService: RescheduleConfirmationService<string>,
         outboundService: DiscordOutboundService,
         reportDeliveryPort?: ReportDeliveryPort,
@@ -135,10 +137,12 @@ const REGISTER_REPORT_MESSAGE =
                 ),
             },
           },
+          exerciseService,
         ),
       inject: [
         WispaceGoalsService,
         WispaceCalendarService,
+        WispaceExerciseService,
         RescheduleConfirmationService,
         DiscordOutboundService,
         { token: REPORT_DELIVERY_PORT, optional: true },
@@ -166,6 +170,7 @@ const REGISTER_REPORT_MESSAGE =
             promptFile: 'discord-chat.system.txt',
             // Single retry layer — retryWithBackoff in PlatformAgentService
             maxLlmRetries: 0,
+            toolExecutionTimeoutMs: 35_000,
           },
         ),
       inject: [

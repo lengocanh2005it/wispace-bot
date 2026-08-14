@@ -19,6 +19,10 @@ import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { sanitizeUntrustedTextForLlm } from '@wispace/llm-agent';
 import { REDIS_CLIENT } from '@wispace/bot-common';
 import {
+  WispaceConfigService,
+  WispaceExerciseService,
+} from '@wispace/wispace-client';
+import {
   RescheduleConfirmationEntity,
   TypeormRescheduleStore,
 } from '@wispace/database';
@@ -79,6 +83,21 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
   ],
   providers: [
     MessengerChatSharedConfigService,
+    {
+      provide: WispaceConfigService,
+      useFactory: (configService: ConfigService) =>
+        new WispaceConfigService((key) => configService.get<string>(key)),
+      inject: [ConfigService],
+    },
+    {
+      provide: WispaceExerciseService,
+      useFactory: (configService: WispaceConfigService) =>
+        new WispaceExerciseService(
+          'x-psid',
+          configService.buildPrecreateExerciseClientConfig(),
+        ),
+      inject: [WispaceConfigService],
+    },
     ChatHistoryStoreResolver,
     ChatHistoryStoreStartupService,
     {

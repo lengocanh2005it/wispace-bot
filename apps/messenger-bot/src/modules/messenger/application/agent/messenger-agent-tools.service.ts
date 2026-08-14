@@ -4,6 +4,7 @@ import type {
   PlatformAgentToolContext,
   PlatformAgentToolsOptions,
 } from '@wispace/chat-agent';
+import { executePrecreateExerciseTool } from '@wispace/chat-agent';
 import {
   readCalendarTimeRange,
   readPastDays,
@@ -44,6 +45,7 @@ import {
 } from '@messenger/shared/utils/messenger-chat-intent.utils';
 import { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
 import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
+import { WispaceExerciseService } from '@wispace/wispace-client';
 
 export const MESSENGER_NOT_LINKED_MESSAGE =
   'Chưa liên kết tài khoản WISPACE. Học viên cần mở Messenger từ link trong app WISPACE.';
@@ -66,6 +68,7 @@ export class MessengerAgentToolsService {
     @Inject(STUDY_REMINDER_OPERATIONS_PORT)
     private readonly studyPort: StudyReminderOperationsPort,
     private readonly rescheduleConfirmationService: MessengerRescheduleConfirmationService,
+    private readonly exerciseService: WispaceExerciseService,
   ) {}
 
   buildToolsOptions(): PlatformAgentToolsOptions {
@@ -106,6 +109,8 @@ export class MessengerAgentToolsService {
           this.rescheduleStudySession(ctx, args),
         register_exam_report_notifications: (ctx) =>
           this.registerExamReportNotifications(ctx),
+        precreate_next_exercise: (ctx, _args, signal) =>
+          this.precreateNextExercise(ctx, signal),
       },
     };
   }
@@ -173,6 +178,21 @@ export class MessengerAgentToolsService {
         `Tool get_learning_progress_report`,
       ));
     return { report };
+  }
+
+  private async precreateNextExercise(
+    ctx: PlatformAgentToolContext,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return executePrecreateExerciseTool(
+      ctx,
+      this.exerciseService,
+      {
+        getNotLinkedMessage: () => MESSENGER_NOT_LINKED_MESSAGE,
+        logger: this.logger,
+      },
+      signal,
+    );
   }
 
   private async listStudyCalendarEntries(
