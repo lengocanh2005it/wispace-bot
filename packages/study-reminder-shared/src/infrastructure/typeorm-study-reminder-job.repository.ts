@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import type {
@@ -21,6 +21,8 @@ const DEFAULT_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
  */
 @Injectable()
 export class TypeormStudyReminderJobRepository implements StudyReminderJobRepositoryPort {
+  private readonly logger = new Logger(TypeormStudyReminderJobRepository.name);
+
   constructor(
     @InjectRepository(StudyReminderJobEntity)
     private readonly repo: Repository<StudyReminderJobEntity>,
@@ -222,49 +224,95 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     return rows.map((r) => this.mapEntity(r));
   }
 
-  async claimJob(jobId: number): Promise<StudyReminderJob | null> {
-    // Bump updated_at so the stuck-processing reset (anchored on updated_at)
-    // measures the lease from CLAIM time, not from the last upsert — otherwise
-    // a job claimed ~9.5 min after upsert could be reset mid-send (double-send).
+  async claimJob(
+    jobId: number,
+    leaseMs: number,
+  ): Promise<StudyReminderJob | null> {
+    // Assign a fresh lease token + expiry so recovery (which reopens only
+    // expired leases) and stale owners (whose token no longer matches) can
+    // never double-send or overwrite a newer owner's result.
     const rows: Array<Record<string, unknown>> = await this.repo.query(
-      `UPDATE study_reminder_jobs SET status = 'processing', updated_at = now() WHERE id = $1 AND status IN ('pending', 'failed') RETURNING *`,
-      [jobId],
+      `UPDATE study_reminder_jobs
+       SET status = 'processing',
+           lease_token = gen_random_uuid(),
+           lease_expires_at = now() + ($2::int * interval '1 millisecond')
+       WHERE id = $1 AND status IN ('pending', 'failed')
+       RETURNING *`,
+      [jobId, leaseMs],
     );
     if (!rows.length) return null;
     return this.mapEntity(rows[0] as unknown as StudyReminderJobEntity);
   }
 
-  async markSent(jobId: number): Promise<void> {
-    await this.repo.update(jobId, {
-      status: 'sent',
-      sentAt: new Date(),
-      nextRetryAt: null,
-      lastError: null,
-    });
+  async markSent(jobId: number, leaseToken: string): Promise<void> {
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(StudyReminderJobEntity)
+      .set({
+        status: 'sent',
+        sentAt: new Date(),
+        nextRetryAt: null,
+        lastError: null,
+      })
+      .where('id = :id', { id: jobId })
+      .andWhere('lease_token = :leaseToken', { leaseToken })
+      .execute();
+    if (!result.affected) {
+      this.logger.warn(
+        `markSent ignored for jobId=${jobId}: lease token mismatch (stale owner)`,
+      );
+    }
   }
 
   async markFailed(params: {
     jobId: number;
+    leaseToken: string;
     errorMessage: string;
     retryCount: number;
     nextRetryAt?: Date;
     terminal: boolean;
   }): Promise<void> {
-    await this.repo.update(params.jobId, {
-      status: 'failed',
-      retryCount: params.retryCount,
-      lastError: params.errorMessage,
-      nextRetryAt: params.terminal ? null : (params.nextRetryAt ?? null),
-    });
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(StudyReminderJobEntity)
+      .set({
+        status: 'failed',
+        retryCount: params.retryCount,
+        lastError: params.errorMessage,
+        nextRetryAt: params.terminal ? null : (params.nextRetryAt ?? null),
+      })
+      .where('id = :id', { id: params.jobId })
+      .andWhere('lease_token = :leaseToken', { leaseToken: params.leaseToken })
+      .execute();
+    if (!result.affected) {
+      this.logger.warn(
+        `markFailed ignored for jobId=${params.jobId}: lease token mismatch (stale owner)`,
+      );
+    }
   }
 
-  async markCancelled(jobId: number, reason?: string): Promise<void> {
+  async markCancelled(
+    jobId: number,
+    leaseToken: string,
+    reason?: string,
+  ): Promise<void> {
     const patch: Partial<StudyReminderJobEntity> = { status: 'cancelled' };
     if (reason) {
       patch.lastError = reason;
       patch.nextRetryAt = null;
     }
-    await this.repo.update(jobId, patch);
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(StudyReminderJobEntity)
+      .set(patch)
+      .where('id = :id', { id: jobId })
+      .andWhere('lease_token = :leaseToken', { leaseToken })
+      .execute();
+    if (!result.affected) {
+      this.logger.warn(
+        `markCancelled ignored for jobId=${jobId}: lease token mismatch (stale owner)`,
+      );
+    }
   }
 
   async cancelStaleJobsForExternalUserId(
@@ -338,12 +386,17 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     olderThan: Date,
     targetStatus: 'pending' | 'failed' = 'failed',
   ): Promise<number> {
+    // Reopen only processing rows whose LEASE expired (live lease = worker
+    // still active) or legacy rows (no lease) past the updated_at threshold.
     const result = await this.repo
       .createQueryBuilder()
       .update(StudyReminderJobEntity)
       .set({ status: targetStatus })
       .where('status = :status', { status: 'processing' })
-      .andWhere('updated_at <= :olderThan', { olderThan })
+      .andWhere(
+        '(lease_expires_at < :now OR (lease_expires_at IS NULL AND updated_at <= :olderThan))',
+        { now: new Date(), olderThan },
+      )
       .execute();
     return result.affected ?? 0;
   }
@@ -466,23 +519,37 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
   }
 
   private mapEntity(entity: StudyReminderJobEntity): StudyReminderJob {
+    // Raw query rows (claimJob RETURNING *) arrive with snake_case keys;
+    // entity rows carry camelCase properties — read both.
+    const row = entity as StudyReminderJobEntity & Record<string, unknown>;
     return {
-      id: entity.id,
-      platform: entity.platform,
-      externalUserId: entity.externalUserId,
-      userId: entity.userId ?? undefined,
-      sessionKey: entity.sessionKey,
-      scheduledAt: entity.scheduledAt,
-      remindAt: entity.remindAt,
-      topic: entity.topic ?? undefined,
-      status: entity.status,
-      retryCount: entity.retryCount,
-      maxRetries: entity.maxRetries,
-      nextRetryAt: entity.nextRetryAt ?? undefined,
-      lastError: entity.lastError ?? undefined,
-      sentAt: entity.sentAt ?? undefined,
-      createdAt: entity.createdAt,
-      updatedAt: entity.updatedAt,
+      id: row.id,
+      platform: row.platform,
+      externalUserId: row.externalUserId ?? row.external_user_id,
+      userId:
+        row.userId ?? (row.user_id as number | null | undefined) ?? undefined,
+      sessionKey: row.sessionKey ?? row.session_key,
+      scheduledAt: row.scheduledAt ?? row.scheduled_at,
+      remindAt: row.remindAt ?? row.remind_at,
+      topic: row.topic ?? undefined,
+      status: row.status,
+      retryCount: row.retryCount ?? row.retry_count,
+      maxRetries: row.maxRetries ?? row.max_retries,
+      nextRetryAt: (row.nextRetryAt ?? row.next_retry_at ?? undefined) as
+        | Date
+        | undefined,
+      lastError: (row.lastError ?? row.last_error ?? undefined) as
+        | string
+        | undefined,
+      sentAt: (row.sentAt ?? row.sent_at ?? undefined) as Date | undefined,
+      leaseToken: (row.leaseToken ?? row.lease_token ?? undefined) as
+        | string
+        | undefined,
+      leaseExpiresAt: (row.leaseExpiresAt ??
+        row.lease_expires_at ??
+        undefined) as Date | undefined,
+      createdAt: row.createdAt ?? row.created_at,
+      updatedAt: row.updatedAt ?? row.updated_at,
     };
   }
 }

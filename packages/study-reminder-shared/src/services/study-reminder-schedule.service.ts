@@ -18,6 +18,7 @@ const DEFAULT_POLL_MIN_MS = 30_000;
 const DEFAULT_POLL_MAX_MS = 210_000;
 const DEFAULT_POLL_LEAD_MS = 60_000;
 const DEFAULT_STUCK_PROCESSING_MS = 600_000;
+const DEFAULT_LEASE_MS = 600_000;
 const DEFAULT_JOB_RETENTION_DAYS = 7;
 const DEFAULT_SYNC_HORIZON_HOURS = 48;
 const DEFAULT_EVENING_ROLLOVER_HOUR = 23;
@@ -52,6 +53,7 @@ export class StudyReminderScheduleService {
     syncHorizonHours: number;
     eveningRolloverHour: number;
     stuckProcessingMs: number;
+    leaseMs: number;
     jobRetentionDays: number;
     maxRetries: number;
     retryBackoffMinutes: number;
@@ -63,6 +65,10 @@ export class StudyReminderScheduleService {
       syncHorizonHours: this.getSyncHorizonHours(),
       eveningRolloverHour: this.getEveningRolloverHour(),
       stuckProcessingMs: this.getStuckProcessingMs(),
+      leaseMs: this.getPositiveNumber(
+        'STUDY_REMINDER_LEASE_MS',
+        DEFAULT_LEASE_MS,
+      ),
       jobRetentionDays: this.getJobRetentionDays(),
       maxRetries: this.getMaxRetries(),
       retryBackoffMinutes: this.getRetryBackoffMinutes(),

@@ -1,0 +1,13 @@
+# Gitleaks config for wispace-bot.
+# Extends the default rule set; only repository-specific allowlist entries
+# live here (test fixtures that pattern-match API keys but are not secrets).
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Test fixture idempotency keys in chat-rate-limit.repository.spec.ts (never a real key)"
+regexes = [
+  '''idempotencyKey:\s*'mid-stuck-ext1' ''',
+  '''mid-stuck-ext1''',
+]

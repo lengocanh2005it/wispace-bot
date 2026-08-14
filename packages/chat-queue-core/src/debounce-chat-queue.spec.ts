@@ -304,4 +304,69 @@ describe('DebounceChatQueue', () => {
       texts: ['not yet debounced'],
     });
   });
+
+  it('waits for an active flush on destroy and delivers messages promoted while processing', async () => {
+    let resolveFirstFlush!: () => void;
+    const firstFlushGate = new Promise<void>((resolve) => {
+      resolveFirstFlush = resolve;
+    });
+
+    const calls: ChatQueueBatch<Record<string, unknown>>[] = [];
+    const onFlush = makeFlushMock<Record<string, unknown>>().mockImplementation(
+      async (batch) => {
+        calls.push(batch);
+        if (calls.length === 1) {
+          await firstFlushGate;
+        }
+      },
+    );
+
+    const queue = makeQueue(onFlush);
+    queue.enqueue({ externalUserId: 'u1', text: 'first' });
+    await wait(30); // first flush starts and blocks on the gate
+
+    // Message arrives while the flush is in flight — must NOT be lost when
+    // destroy() drains (regression: old drain skipped processing users).
+    queue.enqueue({ externalUserId: 'u1', text: 'second' });
+
+    const destroyPromise = queue.destroy();
+    resolveFirstFlush();
+    await destroyPromise;
+
+    expect(onFlush).toHaveBeenCalledTimes(2);
+    expect(calls[1].texts).toEqual(['second']);
+  });
+
+  it('rejects new enqueues once shutdown begins (no silent loss)', async () => {
+    const onFlush =
+      makeFlushMock<Record<string, unknown>>().mockResolvedValue(undefined);
+    const onShutdownRejected = jest.fn();
+    const queue = new DebounceChatQueue<Record<string, unknown>>(
+      {
+        getDebounceMs: () => 20,
+        staleTtlMs: 60_000,
+        cleanupIntervalMs: 60_000,
+      },
+      onFlush,
+      { onShutdownRejected },
+    );
+
+    await queue.destroy();
+    queue.enqueue({ externalUserId: 'u1', text: 'too late' });
+
+    expect(onShutdownRejected).toHaveBeenCalledWith('u1', 'too late');
+    expect(onFlush).not.toHaveBeenCalled();
+  });
+
+  it('destroy is idempotent', async () => {
+    const onFlush =
+      makeFlushMock<Record<string, unknown>>().mockResolvedValue(undefined);
+    const queue = makeQueue(onFlush);
+
+    queue.enqueue({ externalUserId: 'u1', text: 'hello' });
+    await queue.destroy();
+    await queue.destroy();
+
+    expect(onFlush).toHaveBeenCalledTimes(1);
+  });
 });

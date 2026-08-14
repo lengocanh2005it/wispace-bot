@@ -57,5 +57,7 @@ export {
 // Factories
 export {
   createStudyReminderProviders,
+  createCalendarGetSessions,
+  createSessionSourceGetSessions,
   type CreateStudyReminderProvidersOptions,
 } from './services/study-reminder-providers.factory';

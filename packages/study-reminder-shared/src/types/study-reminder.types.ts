@@ -21,6 +21,10 @@ export interface StudyReminderJob {
   nextRetryAt?: Date;
   lastError?: string;
   sentAt?: Date;
+  /** Lease owner token — set at claim, required for mark-sent/mark-failed. */
+  leaseToken?: string;
+  /** Claim deadline — recovery only reopens processing rows past this. */
+  leaseExpiresAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }

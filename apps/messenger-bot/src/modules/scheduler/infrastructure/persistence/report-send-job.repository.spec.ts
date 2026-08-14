@@ -33,6 +33,14 @@ describe('ReportSendJobRepository (R5)', () => {
         store.set(key(saved.externalUserId, saved.examDate), saved);
         return Promise.resolve(saved);
       }),
+      query: jest.fn().mockResolvedValue([]),
+      createQueryBuilder: jest.fn().mockReturnValue({
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 1 }),
+      }),
       update: jest.fn(
         (
           criteria: number | Record<string, unknown>,
@@ -52,6 +60,77 @@ describe('ReportSendJobRepository (R5)', () => {
     } as unknown as Repository<ReportSendJobEntity>;
 
     repository = new ReportSendJobRepository(jobRepo);
+  });
+
+  it('claims a job with a fresh lease token and expiry', async () => {
+    const jobRepo = {
+      query: jest.fn().mockResolvedValue([
+        {
+          id: 7,
+          platform: 'messenger',
+          external_user_id: 'psid-1',
+          user_id: null,
+          exam_date: '2026-06-15',
+          first_attempt_date: '2026-06-12',
+          status: 'processing',
+          retry_count: 1,
+          max_retries: 3,
+          next_retry_at: null,
+          last_error: null,
+          sent_at: null,
+          lease_token: 'abc-lease',
+          lease_expires_at: new Date(),
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+      ]),
+      createQueryBuilder: jest.fn(),
+    } as unknown as Repository<ReportSendJobEntity>;
+    const localRepo = new ReportSendJobRepository(jobRepo);
+
+    const job = await localRepo.claimJob(7, 600_000);
+
+    expect(job?.leaseToken).toBe('abc-lease');
+    const [sql, params] = (jobRepo.query as jest.Mock).mock.calls[0] as [
+      string,
+      unknown[],
+    ];
+    expect(sql).toContain('lease_token = gen_random_uuid()');
+    expect(sql).toContain('lease_expires_at = now() + ($2::int');
+    expect(params[1]).toBe(600_000);
+  });
+
+  it('markSent requires the lease token (stale owners no-op)', async () => {
+    interface QbBuilder {
+      update: jest.Mock;
+      set: jest.Mock;
+      where: jest.Mock;
+      andWhere: jest.Mock;
+      execute: jest.Mock;
+    }
+    const andWhere = jest.fn((_sql: string, params: unknown) => {
+      capturedLease = params;
+      return builder;
+    });
+    const builder: QbBuilder = {
+      update: jest.fn(),
+      set: jest.fn(),
+      where: jest.fn(),
+      andWhere,
+      execute: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    builder.update.mockReturnValue(builder);
+    builder.set.mockReturnValue(builder);
+    builder.where.mockReturnValue(builder);
+    const jobRepo = {
+      createQueryBuilder: jest.fn(() => builder),
+    } as unknown as Repository<ReportSendJobEntity>;
+    let capturedLease: unknown;
+
+    const localRepo = new ReportSendJobRepository(jobRepo);
+    await localRepo.markSent(7, 'lease-abc');
+
+    expect(capturedLease).toEqual({ leaseToken: 'lease-abc' });
   });
 
   it('creates retry job on first Wispace 5xx failure', async () => {
@@ -111,6 +190,8 @@ describe('ReportSendJobRepository (R5)', () => {
       nextRetryAt: new Date('2026-06-12T08:00:00+07:00'),
       lastError: 'old',
       sentAt: null,
+      leaseToken: null,
+      leaseExpiresAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     });

@@ -20,10 +20,7 @@ import { StudyReminderSyncService } from './study-reminder-sync.service';
 import { StudyReminderDispatchService } from './study-reminder-dispatch.service';
 import { StudyReminderWorkerService } from './study-reminder-worker.service';
 import { TypeormStudyReminderJobRepository } from '../infrastructure/typeorm-study-reminder-job.repository';
-import type {
-  GetSessionsFn,
-  StudySessionRecord,
-} from '../types/study-reminder.types';
+import type { GetSessionsFn } from '../types/study-reminder.types';
 import type {
   StudyReminderWorkerLockIds,
   StudyReminderWorkerOptions,
@@ -59,13 +56,20 @@ interface GetUpcomingSessionsService {
   getUpcomingSessions(input: {
     psid: string;
     userId?: number;
-  }): Promise<StudySessionRecord[]>;
+  }): Promise<Array<{ sessionKey: string; scheduledAt: Date; topic?: string }>>;
 }
 
-function buildCalendarGetSessions(service: unknown): GetSessionsFn | undefined {
-  if (!service) return undefined;
+/**
+ * Builds the authoritative `getSessions` provider from a Wispace calendar
+ * service (upcoming sessions) — used by the shared worker and by direct
+ * sync entry points (Discord/Zalo ops controllers) so a sync is never
+ * executed against an assumed-empty calendar.
+ */
+export function createCalendarGetSessions(
+  service: WispaceCalendarService,
+): GetSessionsFn {
   return (externalUserId: string) =>
-    (service as WispaceCalendarService)
+    service
       .getCalendarSessions(externalUserId, { timeRange: 'upcoming' })
       .then((sessions) =>
         sessions.map((s) => ({
@@ -77,15 +81,40 @@ function buildCalendarGetSessions(service: unknown): GetSessionsFn | undefined {
       );
 }
 
+function buildCalendarGetSessions(service: unknown): GetSessionsFn | undefined {
+  if (!service) return undefined;
+  return createCalendarGetSessions(service as WispaceCalendarService);
+}
+
+/**
+ * Builds the authoritative `getSessions` provider from a session-source
+ * service (messenger: `StudySessionSourceService` with getUpcomingSessions)
+ * — used by the shared worker and by direct sync entry points (Messenger
+ * ops controllers / relink) so a sync is never executed against an
+ * assumed-empty calendar.
+ */
+export function createSessionSourceGetSessions(
+  service: GetUpcomingSessionsService,
+): GetSessionsFn {
+  return async (externalUserId: string, userId?: number) => {
+    const sessions = await service.getUpcomingSessions({
+      psid: externalUserId,
+      userId,
+    });
+    return sessions.map((s) => ({
+      calendarId: s.sessionKey,
+      sessionKey: s.sessionKey,
+      scheduledAt: s.scheduledAt,
+      topic: s.topic,
+    }));
+  };
+}
+
 function buildSessionSourceGetSessions(
   service: unknown,
 ): GetSessionsFn | undefined {
   if (!service) return undefined;
-  return (externalUserId: string, userId?: number) =>
-    (service as GetUpcomingSessionsService).getUpcomingSessions({
-      psid: externalUserId,
-      userId,
-    });
+  return createSessionSourceGetSessions(service as GetUpcomingSessionsService);
 }
 
 /**

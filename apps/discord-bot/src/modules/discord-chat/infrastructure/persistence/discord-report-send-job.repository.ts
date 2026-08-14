@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { randomUUID } from 'node:crypto';
 import type {
   ReportSendJobRepositoryPort,
   ReportSendJob,
@@ -13,6 +14,8 @@ const PLATFORM = 'discord' as const;
 
 @Injectable()
 export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPort {
+  private readonly logger = new Logger(DiscordReportSendJobRepository.name);
+
   constructor(
     @InjectRepository(ReportSendJobEntity)
     private readonly jobRepo: Repository<ReportSendJobEntity>,
@@ -82,10 +85,24 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
     return rows.map((row) => this.mapEntity(row));
   }
 
-  async claimJob(jobId: number): Promise<ReportSendJob | null> {
+  async claimJob(
+    jobId: number,
+    leaseMs: number,
+  ): Promise<ReportSendJob | null> {
+    // Assign a fresh lease token + expiry so recovery (which reopens only
+    // expired leases) and stale owners (whose token no longer matches) can
+    // never double-send or overwrite a newer owner's result.
     const result = await this.jobRepo.update(
-      { id: jobId, platform: PLATFORM, status: 'failed' },
-      { status: 'processing' },
+      {
+        id: jobId,
+        platform: PLATFORM,
+        status: 'failed',
+      },
+      {
+        status: 'processing',
+        leaseToken: randomUUID(),
+        leaseExpiresAt: new Date(Date.now() + leaseMs),
+      },
     );
 
     if (!result.affected) return null;
@@ -94,22 +111,38 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
     return row ? this.mapEntity(row) : null;
   }
 
-  async markSent(jobId: number): Promise<void> {
-    await this.jobRepo.update(jobId, {
-      status: 'sent',
-      sentAt: new Date(),
-      nextRetryAt: null,
-      lastError: null,
-    });
+  async markSent(jobId: number, leaseToken: string): Promise<void> {
+    const result = await this.jobRepo.update(
+      { id: jobId, leaseToken },
+      {
+        status: 'sent',
+        sentAt: new Date(),
+        nextRetryAt: null,
+        lastError: null,
+      },
+    );
+    if (!result.affected) {
+      this.logger.warn(
+        `markSent ignored for jobId=${jobId}: lease token mismatch (stale owner)`,
+      );
+    }
   }
 
   async markFailed(params: ReportSendJobUpdateParams): Promise<void> {
-    await this.jobRepo.update(params.jobId, {
+    const where = params.leaseToken
+      ? { id: params.jobId, leaseToken: params.leaseToken }
+      : { id: params.jobId };
+    const result = await this.jobRepo.update(where, {
       status: 'failed',
       retryCount: params.retryCount,
       lastError: params.errorMessage,
       nextRetryAt: params.terminal ? null : (params.nextRetryAt ?? null),
     });
+    if (params.leaseToken && !result.affected) {
+      this.logger.warn(
+        `markFailed ignored for jobId=${params.jobId}: lease token mismatch (stale owner)`,
+      );
+    }
   }
 
   async markSentByExternalUserExamDate(
@@ -133,13 +166,18 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
   }
 
   async resetStuckProcessingJobs(olderThan: Date): Promise<number> {
+    // Reopen only processing rows whose LEASE expired (live lease = worker
+    // still active) or legacy rows (no lease) past the updated_at threshold.
     const result = await this.jobRepo
       .createQueryBuilder()
       .update(ReportSendJobEntity)
       .set({ status: 'failed' })
       .where('platform = :platform', { platform: PLATFORM })
       .andWhere('status = :status', { status: 'processing' })
-      .andWhere('updated_at < :olderThan', { olderThan })
+      .andWhere(
+        '(lease_expires_at < :now OR (lease_expires_at IS NULL AND updated_at < :olderThan))',
+        { now: new Date(), olderThan },
+      )
       .execute();
 
     return result.affected ?? 0;
@@ -169,6 +207,8 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
       nextRetryAt: entity.nextRetryAt ?? undefined,
       lastError: entity.lastError ?? undefined,
       sentAt: entity.sentAt ?? undefined,
+      leaseToken: entity.leaseToken ?? undefined,
+      leaseExpiresAt: entity.leaseExpiresAt ?? undefined,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

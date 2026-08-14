@@ -5,7 +5,9 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 const logger = new Logger('Bootstrap');
-const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 10_000;
+// Must cover the longest in-flight work (LLM tool execution can take 35s)
+// plus drain time for the debounce chat queue.
+const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 45_000;
 
 process.on('unhandledRejection', (reason) => {
   logger.error(

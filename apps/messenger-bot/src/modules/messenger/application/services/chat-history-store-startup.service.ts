@@ -17,18 +17,18 @@ export class ChatHistoryStoreStartupService implements OnModuleInit {
     const configured = this.sharedConfig.getHistoryStore();
     const active = this.chatHistoryStoreResolver.resolveStoreKind();
 
+    // Fail closed: the configured contract (Redis history for multi-pod
+    // coherence) must not silently degrade to per-process memory.
     if (configured === 'redis' && !this.redisClient.isEnabled()) {
-      this.logger.warn(
-        'CHAT_HISTORY_STORE=redis but REDIS_ENABLED=false — using memory fallback',
+      throw new Error(
+        'CHAT_HISTORY_STORE=redis but REDIS_ENABLED=false — refusing to silently fall back to memory. Enable Redis or set CHAT_HISTORY_STORE=memory.',
       );
-      return;
     }
 
     if (configured === 'redis' && active === 'memory') {
-      this.logger.warn(
-        'CHAT_HISTORY_STORE=redis but Redis client unavailable — using memory fallback',
+      throw new Error(
+        'CHAT_HISTORY_STORE=redis but Redis client is unavailable — refusing to silently fall back to memory. Check Redis connectivity or set CHAT_HISTORY_STORE=memory.',
       );
-      return;
     }
 
     this.logger.log(

@@ -11,8 +11,13 @@ export interface ReportSendJobRepositoryPort {
     params: ReportSendJobCreateParams,
   ): Promise<ReportSendJob>;
   findDueJobs(now: Date, limit?: number): Promise<ReportSendJob[]>;
-  claimJob(jobId: number): Promise<ReportSendJob | null>;
-  markSent(jobId: number): Promise<void>;
+  /**
+   * Claims the job for this worker: assigns a fresh lease token and expiry.
+   * @param leaseMs how long the claim stays valid (heartbeat-free lease).
+   */
+  claimJob(jobId: number, leaseMs: number): Promise<ReportSendJob | null>;
+  /** Marks sent — requires the current lease token (stale owners no-op). */
+  markSent(jobId: number, leaseToken: string): Promise<void>;
   markFailed(params: ReportSendJobUpdateParams): Promise<void>;
   markSentByExternalUserExamDate(
     externalUserId: string,

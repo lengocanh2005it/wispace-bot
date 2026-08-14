@@ -109,14 +109,19 @@ export class StudyReminderDispatchService {
 
     const CONCURRENCY_LIMIT = 3;
     const processJob = async (job: StudyReminderJob) => {
-      const claimedJob = await this.jobRepository.claimJob(job.id);
+      const claimedJob = await this.jobRepository.claimJob(
+        job.id,
+        settings.leaseMs,
+      );
       if (!claimedJob) return;
 
       claimed += 1;
+      const leaseToken = claimedJob.leaseToken ?? '';
 
       if (this.scheduleService.isSessionStarted(claimedJob.scheduledAt, now)) {
         await this.jobRepository.markCancelled(
           claimedJob.id,
+          leaseToken,
           'session already started',
         );
         this.hooks?.onCancelled?.({
@@ -149,7 +154,7 @@ export class StudyReminderDispatchService {
           userId: claimedJob.userId,
         });
 
-        await this.jobRepository.markSent(claimedJob.id);
+        await this.jobRepository.markSent(claimedJob.id, leaseToken);
         this.hooks?.onSent?.({
           jobId: claimedJob.id,
           externalUserId: claimedJob.externalUserId,
@@ -181,6 +186,7 @@ export class StudyReminderDispatchService {
 
         await this.jobRepository.markFailed({
           jobId: claimedJob.id,
+          leaseToken,
           errorMessage,
           retryCount: nextRetryCount,
           nextRetryAt,

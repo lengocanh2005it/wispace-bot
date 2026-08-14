@@ -45,6 +45,8 @@ describe('TypeormStudyReminderJobRepository', () => {
       nextRetryAt: null,
       lastError: null,
       sentAt: null,
+      leaseToken: null,
+      leaseExpiresAt: null,
       createdAt: new Date('2026-06-10T08:00:00+07:00'),
       updatedAt: new Date('2026-06-10T08:00:00+07:00'),
       ...overrides,
@@ -367,30 +369,135 @@ describe('TypeormStudyReminderJobRepository', () => {
     });
   });
 
+  describe('claimJob', () => {
+    it('assigns a fresh lease token and expiry from the claim deadline', async () => {
+      const query = jest.fn().mockResolvedValue([
+        {
+          id: 9,
+          platform: 'messenger',
+          external_user_id: 'psid-1',
+          user_id: 143,
+          session_key: 'calendar:5',
+          scheduled_at: new Date('2026-06-12T10:30:00+07:00'),
+          remind_at: new Date('2026-06-12T10:00:00+07:00'),
+          topic: 'IELTS Writing',
+          status: 'processing',
+          retry_count: 1,
+          max_retries: 3,
+          next_retry_at: null,
+          last_error: null,
+          sent_at: null,
+          lease_token: 'lease-abc',
+          lease_expires_at: new Date(),
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+      ]);
+      const jobRepo = {
+        query,
+        update: jest.fn(),
+        createQueryBuilder: jest.fn(),
+      } as unknown as Repository<StudyReminderJobEntity>;
+      const localRepo = new TypeormStudyReminderJobRepository(jobRepo);
+
+      const job = await localRepo.claimJob(9, 600_000);
+
+      const [sql, params] = query.mock.calls[0] as [string, unknown[]];
+      expect(sql).toContain("status = 'processing'");
+      expect(sql).toContain('lease_token = gen_random_uuid()');
+      expect(sql).toContain('lease_expires_at = now() + ($2::int');
+      expect(sql).toContain("status IN ('pending', 'failed')");
+      expect(params[0]).toBe(9);
+      expect(params[1]).toBe(600_000);
+      // Raw RETURNING * rows arrive with snake_case keys — mapping must work.
+      expect(job?.externalUserId).toBe('psid-1');
+      expect(job?.sessionKey).toBe('calendar:5');
+      expect(job?.retryCount).toBe(1);
+      expect(job?.leaseToken).toBe('lease-abc');
+      expect(job?.status).toBe('processing');
+    });
+
+    it('returns null when the job is not pending/failed', async () => {
+      const query = jest.fn().mockResolvedValue([]);
+      const jobRepo = {
+        query,
+        update: jest.fn(),
+        createQueryBuilder: jest.fn(),
+      } as unknown as Repository<StudyReminderJobEntity>;
+      const localRepo = new TypeormStudyReminderJobRepository(jobRepo);
+
+      await expect(localRepo.claimJob(9, 600_000)).resolves.toBeNull();
+    });
+  });
+
+  describe('markSent / markFailed', () => {
+    it('markSent requires the lease token (stale owners no-op)', async () => {
+      await repository.markSent(1, 'lease-abc');
+
+      const leaseCondition = queryLog.find(
+        (entry) => entry.method === 'andWhere',
+      );
+      expect(leaseCondition?.args[0]).toContain('lease_token = :leaseToken');
+      expect(leaseCondition?.args[1]).toEqual({ leaseToken: 'lease-abc' });
+    });
+
+    it('markFailed requires the lease token (stale owners no-op)', async () => {
+      await repository.markFailed({
+        jobId: 1,
+        leaseToken: 'lease-abc',
+        errorMessage: 'boom',
+        retryCount: 1,
+        terminal: false,
+      });
+
+      const leaseCondition = queryLog.find(
+        (entry) => entry.method === 'andWhere',
+      );
+      expect(leaseCondition?.args[0]).toContain('lease_token = :leaseToken');
+      expect(leaseCondition?.args[1]).toEqual({ leaseToken: 'lease-abc' });
+    });
+  });
+
   describe('markCancelled', () => {
     it('writes lastError and clears nextRetryAt when a reason is given', async () => {
-      await repository.markCancelled(1, 'session already started');
+      await repository.markCancelled(1, 'lease-abc', 'session already started');
 
-      expect(updateMock).toHaveBeenCalledWith(1, {
+      const setCall = queryLog.find((entry) => entry.method === 'set');
+      expect(setCall?.args[0]).toEqual({
         status: 'cancelled',
         lastError: 'session already started',
         nextRetryAt: null,
       });
+      const leaseCondition = queryLog.find(
+        (entry) => entry.method === 'andWhere',
+      );
+      expect(leaseCondition?.args[1]).toEqual({ leaseToken: 'lease-abc' });
     });
 
     it('only flips status without a reason', async () => {
-      await repository.markCancelled(1);
+      await repository.markCancelled(1, 'lease-abc');
 
-      expect(updateMock).toHaveBeenCalledWith(1, { status: 'cancelled' });
+      const setCall = queryLog.find((entry) => entry.method === 'set');
+      expect(setCall?.args[0]).toEqual({ status: 'cancelled' });
     });
   });
 
   describe('resetStuckProcessingJobs', () => {
-    it('targets failed by default', async () => {
+    it('targets failed by default and reopens only expired leases', async () => {
       await repository.resetStuckProcessingJobs(new Date());
 
       const setCall = queryLog.find((entry) => entry.method === 'set');
       expect(setCall?.args[0]).toEqual({ status: 'failed' });
+      const leaseCondition = queryLog.find(
+        (entry) => entry.method === 'andWhere',
+      );
+      expect(leaseCondition?.args[0]).toContain('lease_expires_at < :now');
+      expect(leaseCondition?.args[0]).toContain('lease_expires_at IS NULL');
+      const leaseParams = leaseCondition?.args[1] as
+        | { now?: Date; olderThan?: Date }
+        | undefined;
+      expect(leaseParams?.now).toBeInstanceOf(Date);
+      expect(leaseParams?.olderThan).toBeInstanceOf(Date);
     });
 
     it('targets pending when requested (Messenger)', async () => {

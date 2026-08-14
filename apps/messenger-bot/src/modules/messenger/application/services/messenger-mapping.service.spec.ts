@@ -33,6 +33,7 @@ describe('MessengerMappingService', () => {
       repository as never,
       outbound as never,
       studyReminderSyncService as never,
+      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
     );
 
     const result = await service.relinkPsidToUserId({
@@ -48,6 +49,8 @@ describe('MessengerMappingService', () => {
     );
     expect(studyReminderSyncService.syncUpcomingSessions).toHaveBeenCalledWith({
       userId: 200,
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+      getSessions: expect.any(Function),
     });
   });
 
@@ -72,6 +75,7 @@ describe('MessengerMappingService', () => {
       repository as never,
       outbound as never,
       studyReminderSyncService as never,
+      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
     );
 
     const result = await service.linkFromContext('psid-1', {
@@ -109,6 +113,7 @@ describe('MessengerMappingService', () => {
       repository as never,
       outbound as never,
       studyReminderSyncService as never,
+      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
     );
 
     const result = await service.linkFromContext('psid-new', {

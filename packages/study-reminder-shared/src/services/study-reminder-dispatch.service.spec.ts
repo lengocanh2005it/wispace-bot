@@ -24,6 +24,7 @@ describe('StudyReminderDispatchService', () => {
     syncHorizonHours: 168,
     eveningRolloverHour: 23,
     stuckProcessingMs: 600_000,
+    leaseMs: 600_000,
     jobRetentionDays: 7,
     maxRetries: 3,
     retryBackoffMinutes: 2,
@@ -293,5 +294,86 @@ describe('StudyReminderDispatchService', () => {
     const result = await service.dispatchDueReminders();
 
     expect(result.nextDueAt).toBeNull();
+  });
+
+  describe('slow-send lease regression (#113)', () => {
+    it('does not double-send while the first worker lease is live', async () => {
+      let resolveSlowSend!: () => void;
+      const slowSendGate = new Promise<void>((resolve) => {
+        resolveSlowSend = resolve;
+      });
+      let sendCalls = 0;
+      const slowJob = {
+        ...makeJob({ id: 1 }),
+        leaseToken: 'lease-a',
+      };
+
+      // First dispatch sees the job; while it is being sent the job is
+      // 'processing', so later dispatches never even see it as due.
+      jobRepo.findDueJobs
+        .mockResolvedValueOnce([slowJob])
+        .mockResolvedValue([]);
+      jobRepo.claimJob.mockResolvedValue(slowJob);
+      jobRepo.resetStuckProcessingJobs.mockResolvedValue(0);
+      messageSender.sendText.mockImplementation(async () => {
+        sendCalls += 1;
+        await slowSendGate;
+      });
+      build();
+
+      const first = service.dispatchDueReminders();
+      // Second dispatch while the first send is still in flight: the lease is
+      // live (resetStuck=0) and the job is 'processing' (not due) — it must
+      // NOT be claimed or sent again.
+      await service.dispatchDueReminders();
+      resolveSlowSend();
+      await first;
+
+      expect(sendCalls).toBe(1);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(jobRepo.claimJob).toHaveBeenCalledTimes(1);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(jobRepo.markSent).toHaveBeenCalledWith(1, 'lease-a');
+    });
+
+    it('reopens only an expired lease and delivers exactly once per owner', async () => {
+      let resolveSlowSend!: () => void;
+      const slowSendGate = new Promise<void>((resolve) => {
+        resolveSlowSend = resolve;
+      });
+      let sendCalls = 0;
+      const firstClaim = { ...makeJob({ id: 1 }), leaseToken: 'lease-a' };
+      const secondClaim = { ...makeJob({ id: 1 }), leaseToken: 'lease-b' };
+
+      jobRepo.resetStuckProcessingJobs.mockResolvedValue(0);
+      jobRepo.findDueJobs
+        .mockResolvedValueOnce([firstClaim]) // first dispatch picks it up
+        .mockResolvedValueOnce([secondClaim]); // second dispatch: reopened
+      jobRepo.claimJob
+        .mockResolvedValueOnce(firstClaim)
+        .mockResolvedValueOnce(secondClaim);
+      messageSender.sendText.mockImplementation(async () => {
+        sendCalls += 1;
+        if (sendCalls === 1) {
+          await slowSendGate;
+        }
+      });
+      build();
+
+      const first = service.dispatchDueReminders();
+      // First worker still sending; its lease expired → recovery reopens the
+      // job, the new worker claims with a fresh token and sends once.
+      await service.dispatchDueReminders();
+      resolveSlowSend();
+      await first;
+
+      // Exactly one delivery per owner — recovery never duplicates a send
+      // while the previous lease was live.
+      expect(sendCalls).toBe(2);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(jobRepo.markSent).toHaveBeenCalledWith(1, 'lease-a');
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(jobRepo.markSent).toHaveBeenCalledWith(1, 'lease-b');
+    });
   });
 });

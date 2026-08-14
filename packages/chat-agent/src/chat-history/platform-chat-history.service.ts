@@ -28,7 +28,6 @@ export class PlatformChatHistoryService {
   private readonly options: PlatformChatHistoryOptions;
   private readonly redisClient?: { getNativeClient(): unknown } | null;
   private redis?: RedisChatHistoryStore;
-  private redisUnavailableLogged = false;
 
   constructor(
     configService: ConfigService,
@@ -49,6 +48,14 @@ export class PlatformChatHistoryService {
     this.options = options;
     this.redisClient = redisClient;
     this.memory = new MemoryChatHistoryStore({ ttlMs, maxMessages });
+
+    // Fail closed: Redis history is the multi-pod coherence contract — never
+    // silently downgrade to per-process memory.
+    if (this.storeType === 'redis' && !this.redisClient?.getNativeClient()) {
+      throw new Error(
+        'CHAT_HISTORY_STORE=redis but Redis client is unavailable — refusing to silently fall back to memory. Enable Redis or set CHAT_HISTORY_STORE=memory.',
+      );
+    }
   }
 
   getHistory(externalUserId: string): Promise<ChatHistoryMessage[]> {
@@ -76,19 +83,9 @@ export class PlatformChatHistoryService {
       return this.redis;
     }
 
-    const nativeClient = this.redisClient?.getNativeClient() ?? null;
-    if (!nativeClient) {
-      if (!this.redisUnavailableLogged) {
-        this.redisUnavailableLogged = true;
-        this.logger.warn(
-          'CHAT_HISTORY_STORE=redis but Redis unavailable — falling back to memory',
-        );
-      }
-      return this.memory;
-    }
-
+    const nativeClient = this.redisClient!.getNativeClient();
     this.redis = new RedisChatHistoryStore(
-      nativeClient as unknown as RedisChatHistoryClient,
+      nativeClient as RedisChatHistoryClient,
       {
         ttlSec: Math.floor(this.ttlMs / 1000),
         maxMessages: this.maxMessages,

@@ -1,7 +1,11 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { IsBoolean, IsNumber, IsOptional, IsPositive } from 'class-validator';
 import { InternalApiKeyGuard } from '@wispace/bot-common';
-import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
+import {
+  createCalendarGetSessions,
+  StudyReminderSyncService,
+} from '@wispace/study-reminder-shared';
+import { WispaceCalendarService } from '@wispace/wispace-client';
 import { DopplerRuntimeSyncService } from '@wispace/doppler-sync';
 import type { DopplerWebhookPayload } from '@wispace/doppler-sync';
 import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
@@ -24,6 +28,7 @@ export class ZaloOpsController {
   constructor(
     private readonly reportCronService: ZaloReportCronService,
     private readonly studyReminderSyncService: StudyReminderSyncService,
+    private readonly calendarService: WispaceCalendarService,
     private readonly dopplerRuntimeSyncService: DopplerRuntimeSyncService,
   ) {}
 
@@ -47,6 +52,8 @@ export class ZaloOpsController {
     return this.studyReminderSyncService.syncUpcomingSessions({
       userId: body.userId,
       platform: 'zalo',
+      // Authoritative calendar fetch before any stale-job cancellation.
+      getSessions: createCalendarGetSessions(this.calendarService),
     });
   }
 
@@ -55,6 +62,8 @@ export class ZaloOpsController {
   syncStudyReminders() {
     return this.studyReminderSyncService.syncUpcomingSessions({
       platform: 'zalo',
+      // Authoritative calendar fetch before any stale-job cancellation.
+      getSessions: createCalendarGetSessions(this.calendarService),
     });
   }
 }

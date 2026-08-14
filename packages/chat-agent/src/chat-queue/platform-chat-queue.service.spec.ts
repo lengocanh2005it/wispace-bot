@@ -62,8 +62,39 @@ describe('PlatformChatQueueService', () => {
     ) => Promise<void>;
   };
 
+  const buildConfigWith = (values: Record<string, string>) => {
+    const config = {
+      get: jest.fn((key: string) => values[key] ?? configGet(key)),
+    } as unknown as ConfigService;
+    const rateLimit = {} as never;
+    const history = {} as never;
+    const agent = {} as never;
+    const outbound = {} as never;
+    return new PlatformChatQueueService(
+      config,
+      rateLimit,
+      history,
+      agent,
+      outbound,
+      { sendText: jest.fn().mockResolvedValue(undefined) },
+      {},
+    );
+  };
+
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('fails closed when CHAT_QUEUE_STORE=redis (unsupported shared queue)', () => {
+    expect(() => buildConfigWith({ CHAT_QUEUE_STORE: 'redis' })).toThrow(
+      /CHAT_QUEUE_STORE=redis .* not supported on Discord\/Zalo/,
+    );
+  });
+
+  it('fails closed when CHAT_QUEUE_SHARED=true (legacy shared flag)', () => {
+    expect(() => buildConfigWith({ CHAT_QUEUE_SHARED: 'true' })).toThrow(
+      /CHAT_QUEUE_STORE=redis .* not supported on Discord\/Zalo/,
+    );
   });
 
   it('creates DebounceChatQueue and ChatPipeline in constructor', () => {

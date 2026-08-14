@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import type {
@@ -14,6 +14,8 @@ const PLATFORM = 'messenger' as const;
 
 @Injectable()
 export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
+  private readonly logger = new Logger(ReportSendJobRepository.name);
+
   constructor(
     @InjectRepository(ReportSendJobEntity)
     private readonly jobRepo: Repository<ReportSendJobEntity>,
@@ -83,10 +85,21 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
     return rows.map((row) => this.mapEntity(row));
   }
 
-  async claimJob(jobId: number): Promise<ReportSendJob | null> {
+  async claimJob(
+    jobId: number,
+    leaseMs: number,
+  ): Promise<ReportSendJob | null> {
+    // Assign a fresh lease token + expiry so recovery (which reopens only
+    // expired leases) and stale owners (whose token no longer matches) can
+    // never double-send or overwrite a newer owner's result.
     const rows: Array<Record<string, unknown>> = await this.jobRepo.query(
-      `UPDATE report_send_jobs SET status = 'processing' WHERE id = $1 AND status = 'failed' RETURNING *`,
-      [jobId],
+      `UPDATE report_send_jobs
+       SET status = 'processing',
+           lease_token = gen_random_uuid(),
+           lease_expires_at = now() + ($2::int * interval '1 millisecond')
+       WHERE id = $1 AND status = 'failed'
+       RETURNING *`,
+      [jobId, leaseMs],
     );
 
     if (!rows.length) {
@@ -96,22 +109,48 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
     return this.mapEntity(rows[0] as unknown as ReportSendJobEntity);
   }
 
-  async markSent(jobId: number): Promise<void> {
-    await this.jobRepo.update(jobId, {
-      status: 'sent',
-      sentAt: new Date(),
-      nextRetryAt: null,
-      lastError: null,
-    });
+  async markSent(jobId: number, leaseToken: string): Promise<void> {
+    const result = await this.jobRepo
+      .createQueryBuilder()
+      .update(ReportSendJobEntity)
+      .set({
+        status: 'sent',
+        sentAt: new Date(),
+        nextRetryAt: null,
+        lastError: null,
+      })
+      .where('id = :id', { id: jobId })
+      .andWhere('lease_token = :leaseToken', { leaseToken })
+      .execute();
+    if (!result.affected) {
+      this.logger.warn(
+        `markSent ignored for jobId=${jobId}: lease token mismatch (stale owner)`,
+      );
+    }
   }
 
   async markFailed(params: ReportSendJobUpdateParams): Promise<void> {
-    await this.jobRepo.update(params.jobId, {
-      status: 'failed',
-      retryCount: params.retryCount,
-      lastError: params.errorMessage,
-      nextRetryAt: params.terminal ? null : (params.nextRetryAt ?? null),
-    });
+    const query = this.jobRepo
+      .createQueryBuilder()
+      .update(ReportSendJobEntity)
+      .set({
+        status: 'failed',
+        retryCount: params.retryCount,
+        lastError: params.errorMessage,
+        nextRetryAt: params.terminal ? null : (params.nextRetryAt ?? null),
+      })
+      .where('id = :id', { id: params.jobId });
+    if (params.leaseToken) {
+      query.andWhere('lease_token = :leaseToken', {
+        leaseToken: params.leaseToken,
+      });
+    }
+    const result = await query.execute();
+    if (params.leaseToken && !result.affected) {
+      this.logger.warn(
+        `markFailed ignored for jobId=${params.jobId}: lease token mismatch (stale owner)`,
+      );
+    }
   }
 
   async markSentByExternalUserExamDate(
@@ -135,12 +174,17 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
   }
 
   async resetStuckProcessingJobs(olderThan: Date): Promise<number> {
+    // Reopen only processing rows whose LEASE expired (live lease = worker
+    // still active) or legacy rows (no lease) past the updated_at threshold.
     const result = await this.jobRepo
       .createQueryBuilder()
       .update(ReportSendJobEntity)
       .set({ status: 'failed' })
       .where('status = :status', { status: 'processing' })
-      .andWhere('updated_at < :olderThan', { olderThan })
+      .andWhere(
+        '(lease_expires_at < :now OR (lease_expires_at IS NULL AND updated_at < :olderThan))',
+        { now: new Date(), olderThan },
+      )
       .execute();
 
     return result.affected ?? 0;
@@ -156,21 +200,35 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
   }
 
   private mapEntity(entity: ReportSendJobEntity): ReportSendJob {
+    // Raw query rows (claimJob RETURNING *) arrive with snake_case keys;
+    // entity rows carry camelCase properties — read both.
+    const row = entity as ReportSendJobEntity & Record<string, unknown>;
     return {
-      id: entity.id,
-      platform: entity.platform,
-      externalUserId: entity.externalUserId,
-      userId: entity.userId ?? undefined,
-      examDate: entity.examDate,
-      firstAttemptDate: entity.firstAttemptDate,
-      status: entity.status,
-      retryCount: entity.retryCount,
-      maxRetries: entity.maxRetries,
-      nextRetryAt: entity.nextRetryAt ?? undefined,
-      lastError: entity.lastError ?? undefined,
-      sentAt: entity.sentAt ?? undefined,
-      createdAt: entity.createdAt,
-      updatedAt: entity.updatedAt,
+      id: row.id,
+      platform: row.platform,
+      externalUserId: row.externalUserId ?? row.external_user_id,
+      userId:
+        row.userId ?? (row.user_id as number | null | undefined) ?? undefined,
+      examDate: row.examDate ?? row.exam_date,
+      firstAttemptDate: row.firstAttemptDate ?? row.first_attempt_date,
+      status: row.status,
+      retryCount: row.retryCount ?? row.retry_count,
+      maxRetries: row.maxRetries ?? row.max_retries,
+      nextRetryAt: (row.nextRetryAt ?? row.next_retry_at ?? undefined) as
+        | Date
+        | undefined,
+      lastError: (row.lastError ?? row.last_error ?? undefined) as
+        | string
+        | undefined,
+      sentAt: (row.sentAt ?? row.sent_at ?? undefined) as Date | undefined,
+      leaseToken: (row.leaseToken ?? row.lease_token ?? undefined) as
+        | string
+        | undefined,
+      leaseExpiresAt: (row.leaseExpiresAt ??
+        row.lease_expires_at ??
+        undefined) as Date | undefined,
+      createdAt: row.createdAt ?? row.created_at,
+      updatedAt: row.updatedAt ?? row.updated_at,
     };
   }
 }

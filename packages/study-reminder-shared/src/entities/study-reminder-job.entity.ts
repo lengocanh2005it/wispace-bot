@@ -58,6 +58,14 @@ export class StudyReminderJobEntity {
   @Column({ name: 'sent_at', type: 'timestamptz', nullable: true })
   sentAt: Date | null;
 
+  /** Lease owner token — set at claim, required for mark-sent/mark-failed. */
+  @Column({ name: 'lease_token', type: 'uuid', nullable: true })
+  leaseToken: string | null;
+
+  /** Claim deadline — recovery only reopens processing rows past this. */
+  @Column({ name: 'lease_expires_at', type: 'timestamptz', nullable: true })
+  leaseExpiresAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

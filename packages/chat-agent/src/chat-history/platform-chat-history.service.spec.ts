@@ -15,34 +15,74 @@ describe('PlatformChatHistoryService', () => {
     await expect(service.getHistory('user-1')).resolves.toEqual([]);
   });
 
-  it('uses Redis when it becomes available after construction', async () => {
-    let nativeClient: {
-      get: jest.Mock;
-      set: jest.Mock;
-      del: jest.Mock;
-    } | null = null;
+  it('fails closed when Redis history is configured but the client is unavailable', () => {
     const configService = {
       get: (key: string) =>
         key === 'CHAT_HISTORY_STORE' ? 'redis' : undefined,
     } as unknown as ConfigService;
-    const redisClient = {
-      getNativeClient: () => nativeClient,
-    };
-    const service = new PlatformChatHistoryService(
-      configService,
-      { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat-history:discord:' },
-      redisClient,
-    );
 
-    nativeClient = {
+    expect(
+      () =>
+        new PlatformChatHistoryService(
+          configService,
+          { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat-history:discord:' },
+          { getNativeClient: () => null },
+        ),
+    ).toThrow(/refusing to silently fall back to memory/);
+  });
+
+  it('uses Redis when the client is available at construction', async () => {
+    const nativeClient = {
       get: jest.fn().mockResolvedValue(null),
       set: jest.fn().mockResolvedValue('OK'),
       del: jest.fn().mockResolvedValue(1),
     };
+    const configService = {
+      get: (key: string) =>
+        key === 'CHAT_HISTORY_STORE' ? 'redis' : undefined,
+    } as unknown as ConfigService;
+    const service = new PlatformChatHistoryService(
+      configService,
+      { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat-history:discord:' },
+      { getNativeClient: () => nativeClient },
+    );
 
     await service.appendTurn('user-1', 'hello', 'hi there');
 
     expect(nativeClient.set).toHaveBeenCalled();
+  });
+
+  it('does NOT silently downgrade to memory when Redis dies after boot (outage is loud)', async () => {
+    const nativeClient = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue('OK'),
+      del: jest.fn().mockResolvedValue(1),
+    };
+    const configService = {
+      get: (key: string) =>
+        key === 'CHAT_HISTORY_STORE' ? 'redis' : undefined,
+    } as unknown as ConfigService;
+    const service = new PlatformChatHistoryService(
+      configService,
+      { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat-history:zalo:' },
+      { getNativeClient: () => nativeClient },
+    );
+
+    // Boot OK → Redis backend in use.
+    await service.appendTurn('user-1', 'hello', 'hi there');
+
+    // Outage: Redis starts failing mid-flight — the request must FAIL LOUD,
+    // never fall back to a per-process memory store with divergent history.
+    nativeClient.set.mockRejectedValue(new Error('Redis connection refused'));
+    nativeClient.get.mockRejectedValue(new Error('Redis connection refused'));
+
+    await expect(service.appendTurn('user-1', 'next', 'reply')).rejects.toThrow(
+      'Redis connection refused',
+    );
+    // The failed turn was NOT written to memory behind the app's back.
+    await expect(service.getHistory('user-1')).rejects.toThrow(
+      'Redis connection refused',
+    );
   });
 
   it('appends user + assistant messages in order', async () => {

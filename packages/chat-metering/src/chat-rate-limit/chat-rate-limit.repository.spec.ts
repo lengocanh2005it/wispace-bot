@@ -108,11 +108,14 @@ describe('ChatRateLimitRepository', () => {
           let updatedRows = 0;
           for (let index = 0; index < params.length; index += 4) {
             const usageDate = params[index + 1] as string;
-            const userId = params[index + 2] as number | null;
+            const externalUserId = params[index + 2] as string;
             const delta = params[index + 3] as number;
 
             for (const row of dailyUsageStore.values()) {
-              if (row.usageDate !== usageDate || row.userId !== userId) {
+              if (
+                row.usageDate !== usageDate ||
+                row.externalUserId !== externalUserId
+              ) {
                 continue;
               }
 
@@ -542,6 +545,68 @@ describe('ChatRateLimitRepository', () => {
     ).resolves.toEqual(['mid-stuck-bulk']);
 
     expect(idempotencyStore.get('mid-stuck-bulk')?.status).toBe('refunded');
+    expect(dailyUsageStore.get('ext-1:2026-06-15')?.freeFormCount).toBe(0);
+  });
+
+  it('refunds exactly one logical user counter when external users share a null user_id', async () => {
+    const staleAt = new Date('2026-06-15T07:00:00+07:00');
+    idempotencyStore.set('mid-stuck-external', {
+      idempotencyKey: 'mid-stuck-external',
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      status: 'reserved',
+      reservedAt: staleAt,
+    });
+    dailyUsageStore.set('ext-1:2026-06-15', {
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      freeFormCount: 1,
+    });
+    dailyUsageStore.set('ext-2:2026-06-15', {
+      externalUserId: 'ext-2',
+      userId: null,
+      usageDate: '2026-06-15',
+      freeFormCount: 1,
+    });
+
+    await expect(
+      repository.recoverAllStuckReserved(new Date('2026-06-15T08:00:00+07:00')),
+    ).resolves.toEqual(['mid-stuck-external']);
+
+    expect(dailyUsageStore.get('ext-1:2026-06-15')?.freeFormCount).toBe(0);
+    expect(dailyUsageStore.get('ext-2:2026-06-15')?.freeFormCount).toBe(1);
+  });
+
+  it('is idempotent when recovery is rerun (no double decrement)', async () => {
+    const staleAt = new Date('2026-06-15T07:00:00+07:00');
+    idempotencyStore.set('mid-rerun', {
+      idempotencyKey: 'mid-rerun',
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      status: 'reserved',
+      reservedAt: staleAt,
+    });
+    dailyUsageStore.set('ext-1:2026-06-15', {
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      freeFormCount: 1,
+    });
+
+    const first = await repository.recoverAllStuckReserved(
+      new Date('2026-06-15T08:00:00+07:00'),
+    );
+    // Rerun: rows were already flipped to 'refunded' in the same transaction —
+    // nothing is re-selected and the counter is NOT decremented again.
+    const second = await repository.recoverAllStuckReserved(
+      new Date('2026-06-15T08:00:00+07:00'),
+    );
+
+    expect(first).toEqual(['mid-rerun']);
+    expect(second).toEqual([]);
     expect(dailyUsageStore.get('ext-1:2026-06-15')?.freeFormCount).toBe(0);
   });
 

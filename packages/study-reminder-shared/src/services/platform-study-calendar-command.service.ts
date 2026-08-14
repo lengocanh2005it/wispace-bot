@@ -1,5 +1,5 @@
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId, sleep } from '@wispace/bot-common';
 import {
   WispaceCalendarService,
   WispaceConfigService,
@@ -117,23 +117,39 @@ export class PlatformStudyCalendarCommandService {
       this.assertFutureSlot(target.eventDate, target.time, timezone);
     }
 
-    await this.calendarService.deleteCalendar(
-      params.externalUserId,
-      params.calendarId,
-    );
-
+    // CREATE-FIRST: the original session is never deleted before the
+    // replacement exists, so a failure can never leave the user with no
+    // session. Retrying converges: an already-created replacement is reused
+    // instead of duplicated (#114).
     let created: UserCalendarRecord;
     try {
-      created = await this.calendarService.createCalendar(
+      created = await this.createTargetIdempotent(
         params.externalUserId,
-        { eventDate: target.eventDate, time: target.time },
-        { userId: params.userId },
+        target.eventDate,
+        target.time,
+        params.userId,
       );
     } catch (error) {
+      // Original session is untouched — the confirmation flow keeps the
+      // request pending so the user can simply try again.
       this.logger.error(
-        `Reschedule recreate failed after delete calendarId=${params.calendarId} ${this.options.platform}UserId=${maskExternalId(
+        `Reschedule create failed calendarId=${params.calendarId} ${this.options.platform}UserId=${maskExternalId(
           params.externalUserId,
         )}`,
+      );
+      throw error;
+    }
+
+    // Only now remove the source, with bounded retries. If deletion still
+    // fails both sessions exist; the replacement is live and a retry of the
+    // confirmation converges (createTargetIdempotent skips the duplicate).
+    try {
+      await this.deleteWithRetry(params.externalUserId, params.calendarId);
+    } catch (error) {
+      this.logger.error(
+        `Reschedule delete failed after create calendarId=${params.calendarId} ${this.options.platform}UserId=${maskExternalId(
+          params.externalUserId,
+        )} — duplicate session may exist on WISPACE`,
       );
       throw error;
     }
@@ -150,6 +166,54 @@ export class PlatformStudyCalendarCommandService {
       schedulingMode: params.schedulingMode,
       scheduledTimeLabel: formatScheduledTimeLabel(scheduledAt, timezone),
     };
+  }
+
+  /**
+   * Creates the replacement slot unless one already exists (idempotent retry
+   * after a crash between create and delete — never a duplicate replacement).
+   */
+  private async createTargetIdempotent(
+    externalUserId: string,
+    eventDate: string,
+    time: string,
+    userId: number,
+  ): Promise<UserCalendarRecord> {
+    const records = await this.calendarService.listCalendars(externalUserId);
+    const existing = records.find(
+      (record) => record.eventDate === eventDate && record.time === time,
+    );
+    if (existing) {
+      this.logger.log(
+        `Reschedule target already exists calendarId=${existing.id} — reusing it (idempotent retry)`,
+      );
+      return existing;
+    }
+    return this.calendarService.createCalendar(
+      externalUserId,
+      { eventDate, time },
+      { userId },
+    );
+  }
+
+  private async deleteWithRetry(
+    externalUserId: string,
+    calendarId: number,
+  ): Promise<void> {
+    let lastError: unknown;
+    for (const delayMs of [0, 300, 700]) {
+      if (delayMs > 0) {
+        await sleep(delayMs);
+      }
+      try {
+        await this.calendarService.deleteCalendar(externalUserId, calendarId);
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('unknown delete error');
   }
 
   private async findCalendarRecord(

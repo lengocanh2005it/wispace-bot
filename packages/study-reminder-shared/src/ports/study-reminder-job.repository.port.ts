@@ -46,16 +46,27 @@ export interface StudyReminderJobRepositoryPort {
     options?: UpsertStudyReminderJobOptions,
   ): Promise<StudyReminderJob[]>;
   findDueJobs(now: Date, minLeadMinutes: number): Promise<StudyReminderJob[]>;
-  claimJob(jobId: number): Promise<StudyReminderJob | null>;
-  markSent(jobId: number): Promise<void>;
+  /**
+   * Claims the job for this worker: assigns a fresh lease token and expiry.
+   * @param leaseMs how long the claim stays valid (heartbeat-free lease).
+   */
+  claimJob(jobId: number, leaseMs: number): Promise<StudyReminderJob | null>;
+  /** Marks sent — requires the current lease token (stale owners no-op). */
+  markSent(jobId: number, leaseToken: string): Promise<void>;
   markFailed(params: {
     jobId: number;
+    leaseToken: string;
     errorMessage: string;
     retryCount: number;
     nextRetryAt?: Date;
     terminal: boolean;
   }): Promise<void>;
-  markCancelled(jobId: number, reason?: string): Promise<void>;
+  /** Marks cancelled — requires the current lease token (stale owners no-op). */
+  markCancelled(
+    jobId: number,
+    leaseToken: string,
+    reason?: string,
+  ): Promise<void>;
   cancelStaleJobsForExternalUserId(
     platform: Platform,
     externalUserId: string,

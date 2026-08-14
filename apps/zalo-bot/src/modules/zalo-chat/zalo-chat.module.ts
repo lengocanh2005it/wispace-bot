@@ -150,7 +150,9 @@ const RESCHEDULE_CONFIRM_SUFFIX =
                 : '';
               return `${NOT_LINKED_MESSAGE}${linkPart}`;
             },
-            wispaceExternalId: (ctx) => String(ctx.userId),
+            // WISPACE expects the inbound Zalo OA user ID in x-zaloid; the
+            // internal WISPACE userId (ctx.userId) stays for local DB ops only.
+            wispaceExternalId: (ctx) => ctx.externalUserId,
             registerReportMessage: REGISTER_REPORT_MESSAGE,
             reschedule: {
               validateDateAndTime: false,

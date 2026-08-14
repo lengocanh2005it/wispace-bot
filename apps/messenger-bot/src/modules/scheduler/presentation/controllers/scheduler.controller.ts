@@ -8,10 +8,12 @@ import {
 } from 'class-validator';
 import { InternalApiKeyGuard } from '@wispace/bot-common';
 import {
+  createSessionSourceGetSessions,
   StudyReminderSyncService,
   StudyReminderWorkerService,
   type StudyReminderSyncResult,
 } from '@wispace/study-reminder-shared';
+import { StudySessionSourceService } from '@messenger/modules/study-reminder/application/services/study-session-source.service';
 import { MessengerMappingService } from '@messenger/modules/messenger/application/services/messenger-mapping.service';
 import { DopplerRuntimeSyncService } from '../../application/services/doppler-runtime-sync.service';
 import type { DopplerWebhookPayload } from '../../domain/entities/doppler-runtime-sync.types';
@@ -54,6 +56,7 @@ export class SchedulerController {
     private readonly reportCronService: ReportCronService,
     private readonly studyReminderSyncService: StudyReminderSyncService,
     private readonly studyReminderWorkerService: StudyReminderWorkerService,
+    private readonly sessionSourceService: StudySessionSourceService,
     private readonly messengerMappingService: MessengerMappingService,
     private readonly reportSendRetryDispatchService: ReportSendRetryDispatchService,
     private readonly dopplerRuntimeSyncService: DopplerRuntimeSyncService,
@@ -96,7 +99,11 @@ export class SchedulerController {
   @HttpCode(200)
   syncStudyCalendarAfterChange(@Body() body: SyncStudyCalendarBody) {
     return this.studyReminderSyncService
-      .syncUpcomingSessions({ userId: body.userId })
+      .syncUpcomingSessions({
+        userId: body.userId,
+        // Authoritative calendar fetch before any stale-job cancellation.
+        getSessions: createSessionSourceGetSessions(this.sessionSourceService),
+      })
       .then((result) => this.toWireSyncResult(result));
   }
 
@@ -104,7 +111,10 @@ export class SchedulerController {
   @HttpCode(200)
   syncStudyReminders() {
     return this.studyReminderSyncService
-      .syncUpcomingSessions()
+      .syncUpcomingSessions({
+        // Authoritative calendar fetch before any stale-job cancellation.
+        getSessions: createSessionSourceGetSessions(this.sessionSourceService),
+      })
       .then((result) => this.toWireSyncResult(result));
   }
 
