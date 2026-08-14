@@ -4,10 +4,7 @@ import type {
   PlatformAgentToolContext,
   PlatformAgentToolsOptions,
 } from '@wispace/chat-agent';
-import {
-  normalizePrecreateExerciseResult,
-  unavailablePrecreateExerciseResult,
-} from '@wispace/chat-agent';
+import { executePrecreateExerciseTool } from '@wispace/chat-agent';
 import {
   readCalendarTimeRange,
   readPastDays,
@@ -17,7 +14,6 @@ import {
   readValidatedDate,
   readValidatedTime,
 } from '@wispace/llm-agent';
-import { isAbortError, maskExternalId } from '@wispace/bot-common';
 import {
   MessengerLinkContext,
   buildPocPsidToken,
@@ -188,29 +184,15 @@ export class MessengerAgentToolsService {
     ctx: PlatformAgentToolContext,
     signal?: AbortSignal,
   ): Promise<unknown> {
-    if (!ctx.userId) {
-      return {
-        available: false,
-        message: MESSENGER_NOT_LINKED_MESSAGE,
-      };
-    }
-
-    ctx.privateDataFetched = true;
-
-    try {
-      const result = await this.exerciseService.precreateNextExercise(
-        ctx.externalUserId,
-        { signal },
-      );
-      return normalizePrecreateExerciseResult(ctx, result);
-    } catch (error) {
-      this.logger.warn(
-        `Tool precreate_next_exercise unavailable for externalUserId=${maskExternalId(
-          ctx.externalUserId,
-        )}: ${isAbortError(error) ? 'timeout' : 'request_failed'}`,
-      );
-      return unavailablePrecreateExerciseResult();
-    }
+    return executePrecreateExerciseTool(
+      ctx,
+      this.exerciseService,
+      {
+        getNotLinkedMessage: () => MESSENGER_NOT_LINKED_MESSAGE,
+        logger: this.logger,
+      },
+      signal,
+    );
   }
 
   private async listStudyCalendarEntries(

@@ -1,17 +1,14 @@
-import { ConfigService } from '@nestjs/config';
 import { WispaceConfigService } from './wispace-config.service';
 
 function buildService(
   values: Record<string, string> = {},
 ): WispaceConfigService {
-  return new WispaceConfigService(
-    new ConfigService({
-      WISPACE_API_PRECREATE_EXERCISE_URL:
-        'https://backend.example.com/precreate',
-      WISPACE_INTERNAL_KEY: 'internal-key',
-      ...values,
-    }),
-  );
+  const config: Record<string, string> = {
+    WISPACE_API_PRECREATE_EXERCISE_URL: 'https://backend.example.com/precreate',
+    WISPACE_INTERNAL_KEY: 'internal-key',
+    ...values,
+  };
+  return new WispaceConfigService((key) => config[key]);
 }
 
 describe('WispaceConfigService precreate exercise config', () => {

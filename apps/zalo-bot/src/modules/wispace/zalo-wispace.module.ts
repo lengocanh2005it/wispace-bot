@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   WispaceCalendarService,
   WispaceConfigService,
@@ -8,7 +9,12 @@ import {
 
 @Module({
   providers: [
-    WispaceConfigService,
+    {
+      provide: WispaceConfigService,
+      useFactory: (configService: ConfigService) =>
+        new WispaceConfigService((key) => configService.get<string>(key)),
+      inject: [ConfigService],
+    },
     {
       provide: WispaceGoalsService,
       useFactory: (configService: WispaceConfigService) =>

@@ -11,6 +11,7 @@ export type {
 } from './utils/with-retry';
 export { buildWispaceHeaders } from './utils/wispace-headers';
 export type { WispaceIdHeader } from './utils/wispace-headers';
+export { readHttpsUrl } from './utils/https-url';
 export * from './utils/study-calendar.utils';
 export {
   formatLocalDate,
@@ -53,4 +54,7 @@ export type {
   WispaceLinkVerifyFailureReason,
   WispaceLinkVerifyResult,
 } from './types/token-verify.types';
-export { WispaceConfigService } from './config/wispace-config.service';
+export {
+  WispaceConfigService,
+  type WispaceConfigGetter,
+} from './config/wispace-config.service';

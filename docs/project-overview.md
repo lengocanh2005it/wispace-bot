@@ -5,8 +5,8 @@ Turborepo monorepo connecting **WISPACE** (IELTS Writing learning platform) with
 | App | Status |
 |-----|--------|
 | `apps/messenger-bot` | Fully functional — chat, reports, reminders, rate limit |
-| `apps/discord-bot` | Fully functional — chat, quota, pending cap + typing indicator, queued-failure fallback, OAuth account linking, 6/7 real tool handlers, report cron, study reminders, and CI/CD |
-| `apps/zalo-bot` | Fully functional — chat, quota, pending cap, queued-failure fallback, account linking, 6/7 real tool handlers, report cron, study reminders, CI/CD, and shared health/ops hardening |
+| `apps/discord-bot` | Fully functional — chat, quota, pending cap + typing indicator, queued-failure fallback, OAuth account linking, 7/7 real tool handlers, report cron, study reminders, and CI/CD |
+| `apps/zalo-bot` | Fully functional — chat, quota, pending cap, queued-failure fallback, account linking, 7/7 real tool handlers, report cron, study reminders, CI/CD, and shared health/ops hardening |
 
 Shared packages (`packages/`): `llm-agent`, `chat-metering`, `chat-agent`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `chat-pipeline`, `study-reminder-shared`, `scheduler-core`, `ops-health`, `bot-metrics`, `cleanup-cron`, `reschedule-confirm`, `bot-common`, `database`, `doppler-sync`, `date-utils`.
 

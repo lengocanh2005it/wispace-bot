@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import {
   WispaceCalendarService,
   WispaceConfigService,
@@ -9,19 +10,16 @@ import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-sha
 
 @Module({
   providers: [
-    WispaceConfigService,
+    {
+      provide: WispaceConfigService,
+      useFactory: (configService: ConfigService) =>
+        new WispaceConfigService((key) => configService.get<string>(key)),
+      inject: [ConfigService],
+    },
     {
       provide: WispaceGoalsService,
       useFactory: (configService: WispaceConfigService) =>
         new WispaceGoalsService('x-discordid', configService),
-      inject: [WispaceConfigService],
-    },
-    {
-      provide: WispaceCalendarService,
-      useFactory: (configService: WispaceConfigService) =>
-        new WispaceCalendarService('x-discordid', configService, () =>
-          configService.getSyncHorizonHours(),
-        ),
       inject: [WispaceConfigService],
     },
     {
@@ -30,6 +28,14 @@ import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-sha
         new WispaceExerciseService(
           'x-discordid',
           configService.buildPrecreateExerciseClientConfig(),
+        ),
+      inject: [WispaceConfigService],
+    },
+    {
+      provide: WispaceCalendarService,
+      useFactory: (configService: WispaceConfigService) =>
+        new WispaceCalendarService('x-discordid', configService, () =>
+          configService.getSyncHorizonHours(),
         ),
       inject: [WispaceConfigService],
     },

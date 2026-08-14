@@ -10,10 +10,6 @@ import {
   PlatformChatHistoryService,
 } from '@wispace/chat-agent';
 import {
-  WispaceConfigService,
-  WispaceExerciseService,
-} from '@wispace/wispace-client';
-import {
   LlmSafetyEventEntity,
   LlmUsageEventEntity,
   PlatformLlmSafetyEventAdapter,
@@ -22,6 +18,10 @@ import {
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import { sanitizeUntrustedTextForLlm } from '@wispace/llm-agent';
 import { REDIS_CLIENT } from '@wispace/bot-common';
+import {
+  WispaceConfigService,
+  WispaceExerciseService,
+} from '@wispace/wispace-client';
 import {
   RescheduleConfirmationEntity,
   TypeormRescheduleStore,
@@ -83,7 +83,12 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
   ],
   providers: [
     MessengerChatSharedConfigService,
-    WispaceConfigService,
+    {
+      provide: WispaceConfigService,
+      useFactory: (configService: ConfigService) =>
+        new WispaceConfigService((key) => configService.get<string>(key)),
+      inject: [ConfigService],
+    },
     {
       provide: WispaceExerciseService,
       useFactory: (configService: WispaceConfigService) =>
@@ -175,7 +180,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
             promptFile: 'messenger-chat.system.txt',
             appendHistory: false,
             maxLlmRetries: 0,
-            toolExecutionTimeoutMs: 35_000,
+            toolExecutionTimeoutMs: 30_000,
             metrics: {
               timeLlmCall: (feature, model, round, fn) =>
                 metrics.timeLlmCall(feature, model, round, fn),

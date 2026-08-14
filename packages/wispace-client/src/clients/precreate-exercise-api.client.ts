@@ -5,6 +5,7 @@ import {
   buildWispaceHeaders,
   type WispaceIdHeader,
 } from '../utils/wispace-headers';
+import { readHttpsUrl } from '../utils/https-url';
 import type { PrecreateExerciseResult } from '../types/precreate-exercise.types';
 import type { PrecreateExerciseClientConfig } from '../types/precreate-exercise.types';
 
@@ -68,26 +69,10 @@ export class PrecreateExerciseApiClient {
     if (record.finishedAllExercises) return { status: 'finished_all', message };
 
     const status = record.alreadyExists ? 'already_exists' : 'created';
-    const exerciseUrl = this.readHttpsUrl(record.exerciseUrl);
+    const exerciseUrl = readHttpsUrl(
+      record.exerciseUrl,
+      'Precreate exercise API returned an invalid exercise URL',
+    );
     return { status, exerciseUrl, message };
-  }
-
-  private readHttpsUrl(value: unknown): string {
-    if (typeof value !== 'string') {
-      throw new Error(
-        'Precreate exercise API returned an invalid exercise URL',
-      );
-    }
-
-    const url = value.trim();
-    try {
-      if (new URL(url).protocol !== 'https:') throw new Error();
-    } catch {
-      throw new Error(
-        'Precreate exercise API returned an invalid exercise URL',
-      );
-    }
-
-    return url;
   }
 }

@@ -12,6 +12,9 @@ export interface PrecreateExerciseResult {
   message?: string;
 }
 
-export type PrecreateExerciseClientConfig = WispaceApiClientConfig & {
+export type PrecreateExerciseClientConfig = Omit<
+  WispaceApiClientConfig,
+  'maxRetries' | 'baseDelayMs'
+> & {
   requestTimeoutMs: number;
 };

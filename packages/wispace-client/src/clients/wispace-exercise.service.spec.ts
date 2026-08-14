@@ -29,8 +29,6 @@ describe('WispaceExerciseService', () => {
     const service = new WispaceExerciseService('x-zaloid', {
       url: 'https://backend.example.com/precreate',
       internalKey: 'internal-key',
-      maxRetries: 0,
-      baseDelayMs: 0,
       requestTimeoutMs: 30_000,
     });
 

@@ -1,6 +1,21 @@
-import { sanitizeUntrustedTextForLlm } from '@wispace/llm-agent';
-import type { PrecreateExerciseResult } from '@wispace/wispace-client';
+import { isAbortError, maskExternalId } from '@wispace/bot-common';
+import {
+  buildPrecreateExerciseUnavailableMessage,
+  sanitizeUntrustedTextForLlm,
+} from '@wispace/llm-agent';
+import {
+  readHttpsUrl,
+  type PrecreateExerciseResult,
+  type WispaceExerciseService,
+} from '@wispace/wispace-client';
 import type { PlatformAgentToolContext } from './platform-agent.types';
+
+type PrecreateExerciseService = Pick<
+  WispaceExerciseService,
+  'precreateNextExercise'
+>;
+
+type PrecreateExerciseLogger = { warn(message: string): void };
 
 export function normalizePrecreateExerciseResult(
   ctx: PlatformAgentToolContext,
@@ -33,19 +48,54 @@ export function unavailablePrecreateExerciseResult(): {
 } {
   return {
     status: 'unavailable',
-    messageHint: 'Hiện chưa thể tạo bài tập mới. Bạn thử lại sau ít phút nhé.',
+    messageHint: buildPrecreateExerciseUnavailableMessage(),
   };
 }
 
-function readHttpsUrl(value: unknown): string {
-  if (typeof value !== 'string') throw new Error('invalid exercise URL');
-
-  const url = value.trim();
-  try {
-    if (new URL(url).protocol !== 'https:') throw new Error();
-  } catch {
-    throw new Error('invalid exercise URL');
+export async function executePrecreateExerciseTool(
+  ctx: PlatformAgentToolContext,
+  exerciseService: PrecreateExerciseService | undefined,
+  options: {
+    getNotLinkedMessage: () => string;
+    logger?: PrecreateExerciseLogger;
+  },
+  signal?: AbortSignal,
+): Promise<unknown> {
+  if (!ctx.userId) {
+    return { available: false, message: options.getNotLinkedMessage() };
   }
 
-  return url;
+  ctx.privateDataFetched = true;
+
+  if (!exerciseService) {
+    logUnavailable(options.logger, ctx.externalUserId, 'missing_client');
+    return unavailablePrecreateExerciseResult();
+  }
+
+  try {
+    const result = await exerciseService.precreateNextExercise(
+      ctx.externalUserId,
+      { signal },
+    );
+    return normalizePrecreateExerciseResult(ctx, result);
+  } catch (error) {
+    logUnavailable(
+      options.logger,
+      ctx.externalUserId,
+      isAbortError(error) ? 'timeout' : 'request_failed',
+    );
+    return unavailablePrecreateExerciseResult();
+  }
+}
+
+function logUnavailable(
+  logger: PrecreateExerciseLogger | undefined,
+  externalUserId: string,
+  reason: string,
+): void {
+  logger?.warn(
+    `Tool precreate_next_exercise unavailable for externalUserId=${maskExternalId(
+      externalUserId,
+    )}: ${reason}`,
+  );
 }

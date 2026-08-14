@@ -15,20 +15,13 @@ import {
   WispaceGoalsService,
   WispaceExerciseService,
 } from '@wispace/wispace-client';
-import {
-  errorMessage,
-  isAbortError,
-  maskExternalId,
-} from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import type {
   PlatformAgentToolContext,
   PlatformAgentToolsOptions,
   RescheduleStagePort,
 } from './platform-agent.types';
-import {
-  normalizePrecreateExerciseResult,
-  unavailablePrecreateExerciseResult,
-} from './precreate-exercise-result';
+import { executePrecreateExerciseTool } from './precreate-exercise-result';
 
 /**
  * Wires the WISPACE tools to real Wispace API calls once the platform
@@ -184,46 +177,20 @@ export class PlatformAgentToolsService {
           }),
         );
       case 'precreate_next_exercise':
-        return this.precreateNextExercise(ctx, signal);
+        return executePrecreateExerciseTool(
+          ctx,
+          this.exerciseService,
+          {
+            getNotLinkedMessage: this.options.getNotLinkedMessage,
+            logger: this.logger,
+          },
+          signal,
+        );
       default: {
         const unknownTool = toolName as string;
         return { error: `Unhandled tool: ${unknownTool}` };
       }
     }
-  }
-
-  private async precreateNextExercise(
-    ctx: PlatformAgentToolContext,
-    signal?: AbortSignal,
-  ): Promise<unknown> {
-    return this.withLinkedAccount(ctx, async () => {
-      ctx.privateDataFetched = true;
-
-      try {
-        if (!this.exerciseService) {
-          this.logger.warn(
-            `Tool precreate_next_exercise unavailable for externalUserId=${maskExternalId(
-              ctx.externalUserId,
-            )}: missing_client`,
-          );
-          return unavailablePrecreateExerciseResult();
-        }
-
-        const result = await this.exerciseService.precreateNextExercise(
-          ctx.externalUserId,
-          { signal },
-        );
-        return normalizePrecreateExerciseResult(ctx, result);
-      } catch (error) {
-        const category = isAbortError(error) ? 'timeout' : 'request_failed';
-        this.logger.warn(
-          `Tool precreate_next_exercise unavailable for externalUserId=${maskExternalId(
-            ctx.externalUserId,
-          )}: ${category}`,
-        );
-        return unavailablePrecreateExerciseResult();
-      }
-    });
   }
 
   private async withLinkedAccount(

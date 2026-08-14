@@ -38,7 +38,6 @@ describe('PrecreateExerciseApiClient', () => {
     const client = new PrecreateExerciseApiClient({
       url: URL,
       internalKey: 'internal-key',
-      maxRetries: 0,
       requestTimeoutMs: 30_000,
     });
 
@@ -98,7 +97,6 @@ describe('PrecreateExerciseApiClient', () => {
     const client = new PrecreateExerciseApiClient({
       url: URL,
       internalKey: 'internal-key',
-      maxRetries: 0,
       requestTimeoutMs: 30_000,
     });
 
@@ -128,7 +126,6 @@ describe('PrecreateExerciseApiClient', () => {
     const client = new PrecreateExerciseApiClient({
       url: URL,
       internalKey: 'internal-key',
-      maxRetries: 0,
       requestTimeoutMs: 30_000,
     });
 
@@ -155,7 +152,6 @@ describe('PrecreateExerciseApiClient', () => {
     const client = new PrecreateExerciseApiClient({
       url: URL,
       internalKey: 'internal-key',
-      maxRetries: 0,
       requestTimeoutMs: 30_000,
     });
 
@@ -175,7 +171,6 @@ describe('PrecreateExerciseApiClient', () => {
     const client = new PrecreateExerciseApiClient({
       url: URL,
       internalKey: 'internal-key',
-      maxRetries: 0,
       requestTimeoutMs: 30_000,
     });
 
@@ -203,7 +198,6 @@ describe('PrecreateExerciseApiClient', () => {
       const client = new PrecreateExerciseApiClient({
         url: URL,
         internalKey: 'internal-key',
-        maxRetries: 0,
         requestTimeoutMs: 1,
       });
 

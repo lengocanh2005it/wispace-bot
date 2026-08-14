@@ -21,3 +21,7 @@ export function buildGroundingBlockedMessage(): string {
     'Bạn vui lòng thử lại nhé.'
   );
 }
+
+export function buildPrecreateExerciseUnavailableMessage(): string {
+  return 'Hiện chưa thể tạo bài tập mới. Bạn thử lại sau ít phút nhé.';
+}
