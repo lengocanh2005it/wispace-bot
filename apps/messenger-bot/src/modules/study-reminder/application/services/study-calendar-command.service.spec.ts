@@ -160,7 +160,7 @@ describe('StudyCalendarCommandService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('deletes old record, creates new one, and triggers background sync', async () => {
+    it('creates the replacement first, deletes the source, and triggers background sync', async () => {
       const record = makeRecord();
       const created = makeRecord({ id: 100 });
       calendarSchedule.findCalendarRecord.mockResolvedValue(record);
@@ -175,14 +175,17 @@ describe('StudyCalendarCommandService', () => {
       });
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(calendarApi.deleteCalendar).toHaveBeenCalledWith('psid-1', 42);
-      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(calendarApi.createCalendar).toHaveBeenCalledWith(
         'psid-1',
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         expect.objectContaining({ eventDate: expect.any(String) }),
         { userId: 1 },
       );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(calendarApi.deleteCalendar).toHaveBeenCalledWith('psid-1', 42);
+      expect(
+        calendarApi.createCalendar.mock.invocationCallOrder[0],
+      ).toBeLessThan(calendarApi.deleteCalendar.mock.invocationCallOrder[0]);
       expect(result).toMatchObject({
         cancelledCalendarId: 42,
         created,
@@ -191,7 +194,7 @@ describe('StudyCalendarCommandService', () => {
       // Background sync is fire-and-forget
     });
 
-    it('throws when createCalendar fails after delete', async () => {
+    it('keeps the original session when creation fails (no delete before create)', async () => {
       const record = makeRecord();
       calendarSchedule.findCalendarRecord.mockResolvedValue(record);
       calendarApi.createCalendar.mockRejectedValue(new Error('API down'));
@@ -205,6 +208,34 @@ describe('StudyCalendarCommandService', () => {
           schedulingMode: 'default_next_day_same_time',
         }),
       ).rejects.toThrow('API down');
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(calendarApi.deleteCalendar).not.toHaveBeenCalled();
+    });
+
+    it('reuses an existing replacement on retry (no duplicate creation)', async () => {
+      const record = makeRecord();
+      calendarSchedule.findCalendarRecord.mockResolvedValue(record);
+      // Crash between create and delete: the replacement already exists.
+      const existing = makeRecord({
+        id: 100,
+        eventDate: '2026-07-16',
+        time: '10:00',
+      });
+      calendarApi.listCalendars.mockResolvedValue([existing]);
+      scheduleService.getMinutesUntilSession.mockReturnValue(120);
+
+      const result = await service.rescheduleSession({
+        psid: 'psid-1',
+        userId: 1,
+        calendarId: 42,
+        schedulingMode: 'default_next_day_same_time',
+      });
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(calendarApi.createCalendar).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(calendarApi.deleteCalendar).toHaveBeenCalledWith('psid-1', 42);
+      expect(result.created).toEqual(existing);
     });
   });
 });

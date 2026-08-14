@@ -60,17 +60,34 @@ describe('PlatformDeadLetterService', () => {
     });
   });
 
-  it('swallows errors when save fails', async () => {
+  it('retries a transient persistence failure and reports success', async () => {
+    const { service, saveMock } = buildService('discord');
+    saveMock
+      .mockRejectedValueOnce(new Error('connection reset'))
+      .mockResolvedValueOnce(undefined);
+
+    const persisted = await service.save({
+      externalUserId: 'u1',
+      rawPayload: {},
+      errorMessage: 'err',
+    });
+
+    expect(persisted).toBe(true);
+    expect(saveMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns false after bounded retries so callers treat the failure as unhandled', async () => {
     const { service, saveMock } = buildService('discord');
     saveMock.mockRejectedValue(new Error('db error'));
 
-    await expect(
-      service.save({
-        externalUserId: 'u1',
-        rawPayload: {},
-        errorMessage: 'err',
-      }),
-    ).resolves.toBeUndefined();
+    const persisted = await service.save({
+      externalUserId: 'u1',
+      rawPayload: {},
+      errorMessage: 'err',
+    });
+
+    expect(persisted).toBe(false);
+    expect(saveMock).toHaveBeenCalledTimes(3);
   });
 
   it('marks entry as replayed', async () => {

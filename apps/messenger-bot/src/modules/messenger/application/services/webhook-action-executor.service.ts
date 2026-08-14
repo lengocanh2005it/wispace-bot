@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common';
 import {
   MessengerLinkContext,
   buildWelcomeMessage,
@@ -86,21 +86,16 @@ export class WebhookActionExecutorService {
       }
 
       case 'send_text':
-        void this.outbound
-          .sendTextViaPsid({
-            psid: psid!,
-            userId: action.userId,
-            text: action.text,
-            messageType: action.messageType,
-          })
-          .catch((error) => {
-            this.logger.error(
-              `Failed to send text action to psid=${maskExternalId(
-                psid,
-              )}: ${errorMessage(error)}`,
-            );
-            return undefined;
-          });
+        // Await delivery: a failure must propagate so the durable inbox
+        // worker marks the event failed and the retry cron replays it —
+        // completing the event before Meta accepted the send would drop
+        // the message with no recovery record.
+        await this.outbound.sendTextViaPsid({
+          psid: psid!,
+          userId: action.userId,
+          text: action.text,
+          messageType: action.messageType,
+        });
         break;
 
       case 'register_report':

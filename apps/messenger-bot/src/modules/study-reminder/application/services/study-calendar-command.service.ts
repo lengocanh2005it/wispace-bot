@@ -20,8 +20,10 @@ import type {
 } from '@wispace/reschedule-confirm';
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
+import { createSessionSourceGetSessions } from '@wispace/study-reminder-shared';
 import { hoursFromNow } from '@wispace/date-utils';
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
+import { StudySessionSourceService } from './study-session-source.service';
 
 @Injectable()
 export class StudyCalendarCommandService {
@@ -32,6 +34,7 @@ export class StudyCalendarCommandService {
     private readonly userCalendarScheduleService: UserCalendarScheduleService,
     private readonly studyReminderScheduleService: StudyReminderScheduleService,
     private readonly studyReminderSyncService: StudyReminderSyncService,
+    private readonly sessionSourceService: StudySessionSourceService,
   ) {}
 
   async listEntries(
@@ -119,26 +122,39 @@ export class StudyCalendarCommandService {
 
     this.assertFutureSlot(target.eventDate, target.time, timezone);
 
-    await this.userCalendarApiService.deleteCalendar(
-      params.psid,
-      params.calendarId,
-    );
-
+    // CREATE-FIRST: the original session is never deleted before the
+    // replacement exists, so a failure can never leave the user with no
+    // session. Retrying converges: an already-created replacement is reused
+    // instead of duplicated (#114).
     let created: UserCalendarRecord;
     try {
-      created = await this.userCalendarApiService.createCalendar(
+      created = await this.createTargetIdempotent(
         params.psid,
-        {
-          eventDate: target.eventDate,
-          time: target.time,
-        },
-        { userId: params.userId },
+        target.eventDate,
+        target.time,
+        params.userId,
       );
     } catch (error) {
+      // Original session is untouched — the confirmation flow keeps the
+      // request pending so the user can simply try again.
       this.logger.error(
-        `Reschedule recreate failed after delete calendarId=${
-          params.calendarId
-        } psid=${maskExternalId(params.psid)}`,
+        `Reschedule create failed calendarId=${params.calendarId} psid=${maskExternalId(
+          params.psid,
+        )}`,
+      );
+      throw error;
+    }
+
+    // Only now remove the source, with bounded retries. If deletion still
+    // fails both sessions exist; the replacement is live and a retry of the
+    // confirmation converges (createTargetIdempotent skips the duplicate).
+    try {
+      await this.deleteWithRetry(params.psid, params.calendarId);
+    } catch (error) {
+      this.logger.error(
+        `Reschedule delete failed after create calendarId=${params.calendarId} psid=${maskExternalId(
+          params.psid,
+        )} — duplicate session may exist on WISPACE`,
       );
       throw error;
     }
@@ -163,7 +179,11 @@ export class StudyCalendarCommandService {
 
   private scheduleOutboxSync(userId: number): void {
     void this.studyReminderSyncService
-      .syncUpcomingSessions({ userId })
+      .syncUpcomingSessions({
+        userId,
+        // Authoritative calendar fetch before any stale-job cancellation.
+        getSessions: createSessionSourceGetSessions(this.sessionSourceService),
+      })
       .then((sync) => {
         this.logger.log(
           `Background outbox sync userId=${maskExternalId(
@@ -178,6 +198,54 @@ export class StudyCalendarCommandService {
           )}: ${errorMessage(error)}`,
         );
       });
+  }
+
+  /**
+   * Creates the replacement slot unless one already exists (idempotent retry
+   * after a crash between create and delete — never a duplicate replacement).
+   */
+  private async createTargetIdempotent(
+    psid: string,
+    eventDate: string,
+    time: string,
+    userId: number,
+  ): Promise<UserCalendarRecord> {
+    const records = await this.userCalendarApiService.listCalendars(psid);
+    const existing = records.find(
+      (record) => record.eventDate === eventDate && record.time === time,
+    );
+    if (existing) {
+      this.logger.log(
+        `Reschedule target already exists calendarId=${existing.id} — reusing it (idempotent retry)`,
+      );
+      return existing;
+    }
+    return this.userCalendarApiService.createCalendar(
+      psid,
+      { eventDate, time },
+      { userId },
+    );
+  }
+
+  private async deleteWithRetry(
+    psid: string,
+    calendarId: number,
+  ): Promise<void> {
+    let lastError: unknown;
+    for (const delayMs of [0, 300, 700]) {
+      if (delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+      try {
+        await this.userCalendarApiService.deleteCalendar(psid, calendarId);
+        return;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('unknown delete error');
   }
 
   private async findCalendarRecord(

@@ -88,8 +88,24 @@ describe('StudyReminderSyncService', () => {
   });
 
   describe('syncUpcomingSessions (all)', () => {
+    it('throws when getSessions is missing (fail closed, jobs unchanged)', async () => {
+      mappingReader.findActiveMappings.mockResolvedValue([
+        { externalUserId: 'ext-1', userId: 1, platform: 'messenger' },
+      ]);
+
+      await expect(service.syncUpcomingSessions()).rejects.toThrow(
+        'requires an authoritative getSessions provider',
+      );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(jobRepo.upsertPendingJobs).not.toHaveBeenCalled();
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(jobRepo.cancelStaleJobsForExternalUserId).not.toHaveBeenCalled();
+    });
+
     it('returns the full result shape with scope=all and no failures', async () => {
-      const result = await service.syncUpcomingSessions();
+      const result = await service.syncUpcomingSessions({
+        getSessions: jest.fn().mockResolvedValue([]),
+      });
 
       expect(result).toMatchObject({
         scope: 'all',
@@ -152,7 +168,9 @@ describe('StudyReminderSyncService', () => {
         { externalUserId: '', userId: 5, platform: 'messenger' },
       ]);
 
-      const result = await service.syncUpcomingSessions();
+      const result = await service.syncUpcomingSessions({
+        getSessions: jest.fn().mockResolvedValue([]),
+      });
 
       expect(result.skipped).toBe(1);
       expect(result.upserted).toBe(0);
@@ -180,6 +198,7 @@ describe('StudyReminderSyncService', () => {
       const result = await service.syncUpcomingSessions({
         userId: 42,
         userIdMappingLookup: jest.fn().mockResolvedValue(null),
+        getSessions: jest.fn().mockResolvedValue([]),
       });
 
       expect(result).toMatchObject({
@@ -243,6 +262,8 @@ describe('StudyReminderSyncService', () => {
 
       await service.syncUpcomingSessions({
         userId: 42,
+        // Authoritative empty calendar — cancelling stale jobs is correct here.
+        getSessions: jest.fn().mockResolvedValue([]),
         staleCancelStatuses: ['pending', 'failed', 'processing'],
       });
 

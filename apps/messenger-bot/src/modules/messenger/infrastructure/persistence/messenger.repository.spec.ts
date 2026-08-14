@@ -66,3 +66,100 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
     );
   });
 });
+
+describe('MessengerRepository.tryClaimScheduledReport', () => {
+  const buildRepo = () => {
+    const managerQuery = jest.fn();
+    const mappingRepo = {} as unknown as Repository<UserPlatformMappingEntity>;
+    const logRepo = {} as unknown as Repository<MessageLogEntity>;
+
+    // Simulates Postgres ON CONFLICT semantics for the claim upsert:
+    // fresh key -> insert claimed (returned); existing released row ->
+    // reclaimed (returned); existing claimed/sent row -> blocked.
+    managerQuery.mockImplementation((_sql: string, params: unknown[]) => {
+      const externalUserId = params[1] as string;
+      const reportDate = params[2] as string;
+      const key = `messenger:${externalUserId}:${reportDate}`;
+      const existing = claimStore.get(key);
+
+      if (existing) {
+        if (existing.status === 'released') {
+          existing.status = 'claimed';
+          return [{ id: existing.id }];
+        }
+        return [];
+      }
+
+      claimStore.set(key, { id: nextId, status: 'claimed' });
+      nextId += 1;
+      return [{ id: nextId - 1 }];
+    });
+
+    const claimRepo = {
+      manager: { query: managerQuery },
+      findOne: jest.fn(),
+      createQueryBuilder: jest.fn(),
+    } as unknown as Repository<ScheduledReportClaimEntity>;
+    const repo = new MessengerRepository(mappingRepo, logRepo, claimRepo);
+    return { repo, managerQuery };
+  };
+
+  let claimStore: Map<string, { id: number; status: string }>;
+  let nextId: number;
+
+  beforeEach(() => {
+    claimStore = new Map();
+    nextId = 1;
+  });
+
+  it('reclaims a released claim after a transient failure', async () => {
+    const { repo } = buildRepo();
+    await repo.tryClaimScheduledReport({
+      externalUserId: 'psid-1',
+      reportDate: '2026-08-14',
+    });
+    claimStore.set('messenger:psid-1:2026-08-14', {
+      id: 1,
+      status: 'released',
+    });
+
+    const reclaimed = await repo.tryClaimScheduledReport({
+      externalUserId: 'psid-1',
+      reportDate: '2026-08-14',
+    });
+
+    expect(reclaimed).toBe(true);
+    expect(claimStore.get('messenger:psid-1:2026-08-14')?.status).toBe(
+      'claimed',
+    );
+  });
+
+  it('does not reclaim a sent claim', async () => {
+    const { repo } = buildRepo();
+    claimStore.set('messenger:psid-1:2026-08-14', {
+      id: 1,
+      status: 'sent',
+    });
+
+    const reclaimed = await repo.tryClaimScheduledReport({
+      externalUserId: 'psid-1',
+      reportDate: '2026-08-14',
+    });
+
+    expect(reclaimed).toBe(false);
+  });
+
+  it('regression: issued SQL only reclaims released rows', async () => {
+    const { repo, managerQuery } = buildRepo();
+    await repo.tryClaimScheduledReport({
+      externalUserId: 'psid-1',
+      reportDate: '2026-08-14',
+    });
+
+    const issuedSql = (managerQuery.mock.calls[0] as unknown[])[0] as string;
+    expect(issuedSql).toContain('DO UPDATE');
+    expect(issuedSql).toContain(
+      "WHERE scheduled_report_claims.status = 'released'",
+    );
+  });
+});

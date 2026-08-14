@@ -13,6 +13,10 @@ export interface ReportSendJob {
   nextRetryAt?: Date;
   lastError?: string;
   sentAt?: Date;
+  /** Lease owner token — set at claim, required for mark-sent/mark-failed. */
+  leaseToken?: string;
+  /** Claim deadline — recovery only reopens processing rows past this. */
+  leaseExpiresAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -30,6 +34,8 @@ export interface ReportSendJobCreateParams {
 
 export interface ReportSendJobUpdateParams {
   jobId: number;
+  /** Lease owner token from the claim; omitted for non-claimed terminal writes. */
+  leaseToken?: string;
   errorMessage: string;
   retryCount: number;
   nextRetryAt?: Date;

@@ -59,7 +59,7 @@ function buildZaloOptions(
         : '';
       return `${ZALO_NOT_LINKED_MESSAGE}${linkPart}`;
     },
-    wispaceExternalId: (ctx) => String(ctx.userId),
+    wispaceExternalId: (ctx) => ctx.externalUserId,
     registerReportMessage: ZALO_REGISTER_MESSAGE,
     reschedule: {
       validateDateAndTime: false,
@@ -519,7 +519,7 @@ describe('PlatformAgentToolsService', () => {
       );
     });
 
-    it('calls the Wispace API with the WISPACE userId (zalo historical behavior)', async () => {
+    it('sends the inbound Zalo external id to the Wispace API (internal userId stays local)', async () => {
       const goalsSpy = jest.spyOn(goalsService, 'getUserGoals');
       const goalsServiceWithSpy = {
         getUserGoals: goalsSpy,
@@ -537,7 +537,9 @@ describe('PlatformAgentToolsService', () => {
         userId: 42,
       });
 
-      expect(goalsSpy).toHaveBeenCalledWith('42', expect.any(Object));
+      // Regression #118: WISPACE matches x-zaloid against the inbound Zalo OA
+      // user id — the internal WISPACE userId must never leak into the header.
+      expect(goalsSpy).toHaveBeenCalledWith('zalo-1', expect.any(Object));
     });
 
     it('returns formatted report for learning progress', async () => {

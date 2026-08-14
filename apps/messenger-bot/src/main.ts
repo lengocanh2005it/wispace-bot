@@ -8,7 +8,9 @@ import { AppModule } from './app.module';
 import { parseJsonBodyLimit } from './shared/config/body-limit';
 
 const SHUTDOWN_LOGGER = new Logger('Shutdown');
-const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 25_000;
+// Must cover the longest in-flight work (LLM tool execution can take 35s)
+// plus drain time for the debounce chat queue.
+const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 45_000;
 
 process.on('unhandledRejection', (reason) => {
   SHUTDOWN_LOGGER.error(

@@ -30,10 +30,14 @@ interface QueueState<TContext> {
  */
 export class DebounceChatQueue<TContext = Record<string, unknown>> {
   private static readonly DEFAULT_MAX_PENDING_SIZE = 20;
+  private static readonly DEFAULT_DRAIN_TIMEOUT_MS = 25_000;
+  private static readonly IDLE_POLL_MS = 50;
   private readonly queues = new Map<string, QueueState<TContext>>();
   private readonly cleanupTimer: ReturnType<typeof setInterval>;
   private readonly maxPendingSize: number;
+  private readonly drainTimeoutMs: number;
   private readonly callbacks: DebounceChatQueueCallbacks<TContext>;
+  private shuttingDown = false;
 
   constructor(
     private readonly config: DebounceChatQueueConfig,
@@ -44,6 +48,10 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
       Number.isFinite(config.maxPendingSize) && (config.maxPendingSize ?? 0) > 0
         ? Math.floor(config.maxPendingSize as number)
         : DebounceChatQueue.DEFAULT_MAX_PENDING_SIZE;
+    this.drainTimeoutMs =
+      Number.isFinite(config.drainTimeoutMs) && (config.drainTimeoutMs ?? 0) > 0
+        ? Math.floor(config.drainTimeoutMs as number)
+        : DebounceChatQueue.DEFAULT_DRAIN_TIMEOUT_MS;
     this.callbacks = callbacks;
     this.cleanupTimer = setInterval(
       () => this.evictStale(),
@@ -55,6 +63,13 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
   enqueue(input: EnqueueInput<TContext>): void {
     const text = input.text.trim();
     if (!text) {
+      return;
+    }
+
+    if (this.shuttingDown) {
+      // Shutdown already drains the queue — accepting more messages here
+      // would silently drop them when the queue is cleared.
+      this.callbacks.onShutdownRejected?.(input.externalUserId, text);
       return;
     }
 
@@ -119,18 +134,40 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
 
   /** Flushes every buffered user (best-effort) — used on graceful shutdown. */
   async drain(): Promise<void> {
-    // Each flush can promote pendingWhileProcessing texts, so loop a few times
-    // to drain those too; bounded so shutdown never spins forever.
-    for (let round = 0; round < 3; round++) {
+    // Each flush can promote pendingWhileProcessing texts, so keep draining
+    // until no user has work left — but WAIT for active flushes instead of
+    // skipping them (a flush in progress can still promote pending messages).
+    const deadline = Date.now() + this.drainTimeoutMs;
+    for (;;) {
       const users = [...this.queues.keys()];
       if (users.length === 0) {
         return;
       }
-      await Promise.allSettled(users.map((user) => this.flush(user)));
+      await Promise.allSettled(users.map((user) => this.flushOrWait(user)));
+
+      const hasWork = [...this.queues.values()].some(
+        (state) =>
+          state.processing ||
+          state.texts.length > 0 ||
+          state.pendingWhileProcessing.length > 0 ||
+          state.debounceTimer != null,
+      );
+      if (!hasWork) {
+        return;
+      }
+      if (Date.now() >= deadline) {
+        return;
+      }
     }
   }
 
   async destroy(): Promise<void> {
+    if (this.shuttingDown) {
+      // Idempotent — destroy may be triggered twice (module + process hooks).
+      await this.drain();
+      return;
+    }
+    this.shuttingDown = true;
     clearInterval(this.cleanupTimer);
     await this.drain();
     for (const state of this.queues.values()) {
@@ -140,6 +177,29 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
       }
     }
     this.queues.clear();
+  }
+
+  private async flushOrWait(externalUserId: string): Promise<void> {
+    const state = this.queues.get(externalUserId);
+    if (!state) {
+      return;
+    }
+    if (state.processing) {
+      // Wait for the active flush — its finally block promotes any
+      // pendingWhileProcessing texts into `texts`, which the next flush
+      // iteration then delivers.
+      await new Promise<void>((resolve) => {
+        const poll = () => {
+          if (!state.processing) {
+            resolve();
+            return;
+          }
+          setTimeout(poll, DebounceChatQueue.IDLE_POLL_MS);
+        };
+        poll();
+      });
+    }
+    await this.flush(externalUserId);
   }
 
   private scheduleFlush(

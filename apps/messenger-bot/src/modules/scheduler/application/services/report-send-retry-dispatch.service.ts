@@ -104,12 +104,16 @@ export class ReportSendRetryDispatchService {
         continue;
       }
 
-      const claimedJob = await this.reportSendJobRepository.claimJob(job.id);
+      const claimedJob = await this.reportSendJobRepository.claimJob(
+        job.id,
+        settings.leaseMs,
+      );
       if (!claimedJob) {
         continue;
       }
 
       claimed += 1;
+      const leaseToken = claimedJob.leaseToken ?? '';
 
       const mapping = await this.messengerRepository.findActiveMappingByPsid(
         claimedJob.externalUserId,
@@ -118,6 +122,7 @@ export class ReportSendRetryDispatchService {
       if (!mapping?.psid) {
         await this.reportSendJobRepository.markFailed({
           jobId: claimedJob.id,
+          leaseToken,
           errorMessage: 'Active mapping not found',
           retryCount: claimedJob.maxRetries,
           terminal: true,
@@ -134,15 +139,16 @@ export class ReportSendRetryDispatchService {
         });
 
       if (orchestrationResult.sent > 0) {
-        await this.reportSendJobRepository.markSent(claimedJob.id);
+        await this.reportSendJobRepository.markSent(claimedJob.id, leaseToken);
         sent += 1;
       } else if (orchestrationResult.skipped > 0) {
-        await this.reportSendJobRepository.markSent(claimedJob.id);
+        await this.reportSendJobRepository.markSent(claimedJob.id, leaseToken);
         sent += 1;
       } else if (orchestrationResult.claimSkipped > 0) {
         const nextRetryAt = minutesFromNow(settings.retryBackoffMinutes);
         await this.reportSendJobRepository.markFailed({
           jobId: claimedJob.id,
+          leaseToken,
           errorMessage: 'Report claim exists for today (R4)',
           retryCount: claimedJob.retryCount,
           nextRetryAt,
@@ -156,6 +162,7 @@ export class ReportSendRetryDispatchService {
 
         await this.reportSendJobRepository.markFailed({
           jobId: claimedJob.id,
+          leaseToken,
           errorMessage: 'Wispace API retryable (R3/R5)',
           retryCount: nextRetryCount,
           nextRetryAt: terminal ? undefined : nextRetryAt,
@@ -181,6 +188,7 @@ export class ReportSendRetryDispatchService {
       } else if (orchestrationResult.windowClosed > 0) {
         await this.reportSendJobRepository.markFailed({
           jobId: claimedJob.id,
+          leaseToken,
           errorMessage: 'Messenger 24h window closed',
           retryCount: claimedJob.maxRetries,
           terminal: true,
@@ -190,6 +198,7 @@ export class ReportSendRetryDispatchService {
         const error = orchestrationResult.failures[0].error;
         await this.reportSendJobRepository.markFailed({
           jobId: claimedJob.id,
+          leaseToken,
           errorMessage: error,
           retryCount: claimedJob.maxRetries,
           terminal: true,

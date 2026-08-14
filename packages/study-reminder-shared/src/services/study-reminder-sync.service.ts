@@ -63,6 +63,17 @@ export class StudyReminderSyncService {
     opts?: StudyReminderSyncOptions,
   ): Promise<StudyReminderSyncResult> {
     const platform = opts?.platform ?? DEFAULT_PLATFORM;
+
+    // Fail closed: without an authoritative session provider we would treat
+    // the calendar as empty and cancel every stale job. Every entry point
+    // must supply a real getSessions — missing = programming error.
+    const getSessions = opts?.getSessions;
+    if (!getSessions) {
+      throw new Error(
+        'Study reminder sync requires an authoritative getSessions provider — refusing to cancel jobs from an empty session list',
+      );
+    }
+
     const settings = this.scheduleService.getOutboxSettings();
     const horizonEnd = hoursFromNow(settings.syncHorizonHours);
 
@@ -110,9 +121,10 @@ export class StudyReminderSyncService {
           }
         }
 
-        const sessions = opts?.getSessions
-          ? await opts.getSessions(mapping.externalUserId, mapping.userId)
-          : [];
+        const sessions = await getSessions(
+          mapping.externalUserId,
+          mapping.userId,
+        );
 
         const activeSessionKeys: string[] = [];
         const batch: UpsertStudyReminderJobInput[] = [];

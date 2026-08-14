@@ -114,6 +114,13 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
               });
           }
         },
+        onShutdownRejected: (externalUserId) => {
+          this.logger.warn(
+            `Enqueue rejected during shutdown for psid=${maskExternalId(
+              externalUserId,
+            )} — queue is draining`,
+          );
+        },
       },
     );
   }

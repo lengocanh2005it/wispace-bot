@@ -7,7 +7,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { InternalApiKeyGuard } from '@wispace/bot-common';
-import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
+import {
+  createCalendarGetSessions,
+  StudyReminderSyncService,
+} from '@wispace/study-reminder-shared';
+import { WispaceCalendarService } from '@wispace/wispace-client';
 import { DopplerRuntimeSyncService } from '@wispace/doppler-sync';
 import type { DopplerWebhookPayload } from '@wispace/doppler-sync';
 import { DiscordReportCronService } from '../discord-chat/application/services/discord-report-cron.service';
@@ -20,6 +24,7 @@ export class DiscordOpsController {
   constructor(
     private readonly reportCronService: DiscordReportCronService,
     private readonly studyReminderSyncService: StudyReminderSyncService,
+    private readonly calendarService: WispaceCalendarService,
     private readonly dopplerRuntimeSyncService: DopplerRuntimeSyncService,
   ) {}
 
@@ -40,6 +45,8 @@ export class DiscordOpsController {
   syncStudyReminders() {
     return this.studyReminderSyncService.syncUpcomingSessions({
       platform: 'discord',
+      // Authoritative calendar fetch before any stale-job cancellation.
+      getSessions: createCalendarGetSessions(this.calendarService),
     });
   }
 }

@@ -121,12 +121,19 @@ export class DiscordOutboundService {
         messageText: text,
       });
       if (options?.skipDeadLetter !== true) {
-        await this.deadLetter?.save({
+        const persisted = await this.deadLetter?.save({
           externalUserId: discordUserId,
           rawPayload: { discordUserId, text },
           errorMessage: errorMsg,
           direction: 'outbound',
         });
+        if (persisted === false) {
+          this.logger.error(
+            `No durable recovery record for failed DM to discordUserId=${maskExternalId(
+              discordUserId,
+            )} — dead-letter persistence failed`,
+          );
+        }
       }
       return undefined;
     }

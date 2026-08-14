@@ -374,12 +374,18 @@ export class MessengerRepository
     userId?: number;
     reportDate: string;
   }): Promise<boolean> {
+    // ON CONFLICT DO UPDATE ... WHERE status = 'released': reclaims a claim
+    // released after a transient failure, while an active `claimed` row is
+    // never stolen by a concurrent worker and a `sent` claim stays
+    // non-reclaimable.
     const rows: Array<{ id: number }> =
       await this.reportClaimRepo.manager.query(
         `
         INSERT INTO scheduled_report_claims (platform, external_user_id, report_date, user_id, status)
         VALUES ($1, $2, $3::date, $4, 'claimed')
-        ON CONFLICT (platform, external_user_id, report_date) DO NOTHING
+        ON CONFLICT (platform, external_user_id, report_date)
+        DO UPDATE SET status = 'claimed', user_id = EXCLUDED.user_id, updated_at = now()
+        WHERE scheduled_report_claims.status = 'released'
         RETURNING id
       `,
         [

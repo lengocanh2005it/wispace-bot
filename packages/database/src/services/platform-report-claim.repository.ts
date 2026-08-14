@@ -52,14 +52,20 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
     userId?: number;
     reportDate: string;
   }): Promise<boolean> {
-    // ON CONFLICT DO NOTHING: only a genuine duplicate claim returns false.
-    // Any other DB failure propagates instead of masquerading as "already
-    // claimed" (a DB blip during the 08:00 cron must not silently skip users).
+    // ON CONFLICT DO UPDATE ... WHERE status = 'released': reclaims a claim
+    // released after a transient failure (claim -> release -> claim must
+    // succeed), while an active `claimed` row is never stolen by a concurrent
+    // worker and a `sent` claim stays non-reclaimable. Only a genuine
+    // duplicate claim returns false — any other DB failure propagates instead
+    // of masquerading as "already claimed" (a DB blip during the 08:00 cron
+    // must not silently skip users).
     const rows: Array<{ id: number }> = await this.claimRepo.manager.query(
       `
       INSERT INTO scheduled_report_claims (platform, external_user_id, report_date, user_id, status)
       VALUES ($1, $2, $3::date, $4, 'claimed')
-      ON CONFLICT (platform, external_user_id, report_date) DO NOTHING
+      ON CONFLICT (platform, external_user_id, report_date)
+      DO UPDATE SET status = 'claimed', user_id = EXCLUDED.user_id, updated_at = now()
+      WHERE scheduled_report_claims.status = 'released'
       RETURNING id
     `,
       [

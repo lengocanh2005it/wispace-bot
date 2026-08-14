@@ -104,12 +104,19 @@ export class ZaloOutboundService {
         messageText: text,
       });
       if (options?.skipDeadLetter !== true) {
-        await this.deadLetter?.save({
+        const persisted = await this.deadLetter?.save({
           externalUserId: zaloUserId,
           rawPayload: { zaloUserId, text },
           errorMessage: errorMsg,
           direction: 'outbound',
         });
+        if (persisted === false) {
+          this.logger.error(
+            `No durable recovery record for failed send to zaloUserId=${maskExternalId(
+              zaloUserId,
+            )} — dead-letter persistence failed`,
+          );
+        }
       }
       throw error;
     }

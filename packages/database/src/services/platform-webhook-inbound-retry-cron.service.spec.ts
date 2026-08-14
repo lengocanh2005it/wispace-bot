@@ -127,6 +127,38 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1);
   });
 
+  it('#115: a failed send_text delivery stays retryable until a later attempt delivers exactly once', async () => {
+    // Messenger's send_text is awaited: a Meta delivery failure propagates and
+    // the event must NOT be completed; the retry cron replays it until one
+    // attempt succeeds — exactly one successful delivery.
+    const options = buildOptions({
+      processEvent: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('Meta Send API 500'))
+        .mockResolvedValueOnce(undefined),
+    });
+    const { service, inboundEvents } = buildService(options);
+    inboundEvents.listDue
+      .mockResolvedValueOnce([row({ id: 1, retryCount: 0 })])
+      .mockResolvedValueOnce([row({ id: 1, retryCount: 1 })]);
+
+    await service.handleRetry();
+
+    // Attempt 1 failed → the event is marked failed (retryable), never
+    // completed, and no delivery was recorded as successful.
+    expect(inboundEvents.markCompleted).not.toHaveBeenCalled();
+    expect(inboundEvents.markFailed).toHaveBeenCalledTimes(1);
+    expect(options.processEvent).toHaveBeenCalledTimes(1);
+
+    await service.handleRetry();
+
+    // Attempt 2 delivered successfully → exactly one completion, one
+    // successful delivery (2 handler runs total: 1 failed + 1 success).
+    expect(options.processEvent).toHaveBeenCalledTimes(2);
+    expect(inboundEvents.markFailed).toHaveBeenCalledTimes(1);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1);
+  });
+
   it('replays pending rows (crash between ingest and processing)', async () => {
     const options = buildOptions();
     const { service, inboundEvents } = buildService(options);

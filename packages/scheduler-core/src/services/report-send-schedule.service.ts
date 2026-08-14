@@ -9,6 +9,7 @@ export class ReportSendScheduleService {
     maxRetries: number;
     retryBackoffMinutes: number;
     retryPollCronMinutes: number;
+    leaseMs: number;
     timezone: string;
   } {
     return {
@@ -21,6 +22,7 @@ export class ReportSendScheduleService {
         'REPORT_SEND_RETRY_POLL_MINUTES',
         15,
       ),
+      leaseMs: this.getPositiveNumber('REPORT_SEND_LEASE_MS', 600_000),
       timezone:
         this.configService.get<string>('CHAT_USAGE_TIMEZONE')?.trim() ||
         'Asia/Ho_Chi_Minh',

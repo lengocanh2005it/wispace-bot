@@ -49,8 +49,10 @@ export class DiscordReportRetryDispatchService {
     const failures: Array<{ externalUserId: string; error: string }> = [];
 
     for (const job of dueJobs) {
-      const claimed = await this.jobRepository.claimJob(job.id);
+      const claimed = await this.jobRepository.claimJob(job.id, this.leaseMs);
       if (!claimed) continue;
+
+      const leaseToken = claimed.leaseToken ?? '';
 
       const link = await this.accountLinkRepo.findOne({
         where: {
@@ -62,6 +64,7 @@ export class DiscordReportRetryDispatchService {
       if (!link) {
         await this.jobRepository.markFailed({
           jobId: job.id,
+          leaseToken,
           errorMessage: 'No active Discord account link',
           retryCount: job.retryCount + 1,
           terminal: true,
@@ -87,17 +90,18 @@ export class DiscordReportRetryDispatchService {
       });
 
       if (result.sent > 0) {
-        await this.jobRepository.markSent(job.id);
+        await this.jobRepository.markSent(job.id, leaseToken);
         sent += 1;
       } else if (result.skipped > 0) {
         // Report already delivered today by another path — outbox job is done.
-        await this.jobRepository.markSent(job.id);
+        await this.jobRepository.markSent(job.id, leaseToken);
         sent += 1;
       } else if (result.failures.length > 0) {
         const error = result.failures[0].error;
         const nextRetryAt = minutesFromNow(15);
         await this.jobRepository.markFailed({
           jobId: job.id,
+          leaseToken,
           errorMessage: error,
           retryCount: job.retryCount + 1,
           nextRetryAt,
@@ -119,5 +123,12 @@ export class DiscordReportRetryDispatchService {
     }
 
     return { sent, retryQueued, failed, failures };
+  }
+
+  private get leaseMs(): number {
+    const raw = this.configService.get<string>('REPORT_SEND_LEASE_MS')?.trim();
+    if (!raw) return 600_000;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? value : 600_000;
   }
 }

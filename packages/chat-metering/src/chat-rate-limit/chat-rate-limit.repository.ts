@@ -450,8 +450,8 @@ export class ChatRateLimitRepository {
     return this.idempotencyRepo.manager.transaction(async (manager) => {
       const rows = extractQueryRows<{
         idempotency_key: string;
+        external_user_id: string;
         usage_date: string;
-        user_id: number | null;
       }>(
         await manager.query(
           `
@@ -460,7 +460,7 @@ export class ChatRateLimitRepository {
             WHERE platform = $1
               AND status = 'reserved'
               AND reserved_at < $2
-            RETURNING idempotency_key, usage_date, user_id
+            RETURNING idempotency_key, external_user_id, usage_date
           `,
           [this.platform, stuckBefore],
         ),
@@ -468,7 +468,11 @@ export class ChatRateLimitRepository {
 
       if (rows.length === 0) return [];
 
-      // Decrement daily usage counters in bulk
+      // Decrement daily usage counters in bulk — scoped by the same
+      // (platform, external_user_id, usage_date) composite key the reserve
+      // path incremented, so one user's refund never changes another user's
+      // counter (multiple external users can share a null/equal internal
+      // user_id on unlinked rows).
       const usageDecrement = new Map<string, number>();
       for (const row of rows) {
         // usage_date comes back as a Date object (TypeORM date parser);
@@ -479,7 +483,7 @@ export class ChatRateLimitRepository {
           rawUsageDate instanceof Date
             ? rawUsageDate.toISOString().slice(0, 10)
             : String(row.usage_date ?? '').slice(0, 10);
-        const key = `${usageDate}:${row.user_id ?? ''}`;
+        const key = `${usageDate}:${row.external_user_id}`;
         usageDecrement.set(key, (usageDecrement.get(key) ?? 0) + 1);
       }
 
@@ -494,15 +498,14 @@ export class ChatRateLimitRepository {
 
         for (let i = 0; i < entries.length; i++) {
           const [key, count] = entries[i];
-          const [usageDateRaw, userIdStr] = key.split(':');
+          const [usageDateRaw, externalUserId] = key.split(':');
           // usage_date is normalized to YYYY-MM-DD when the key was built
           // (see usageDecrement loop), so this is a plain date string.
           const usageDate = String(usageDateRaw ?? '').slice(0, 10);
-          const userId = userIdStr ? Number(userIdStr) : null;
           valuesClauses.push(
-            `($${paramIndex}::varchar, $${paramIndex + 1}::date, $${paramIndex + 2}::int, $${paramIndex + 3}::int)`,
+            `($${paramIndex}::varchar, $${paramIndex + 1}::date, $${paramIndex + 2}::varchar, $${paramIndex + 3}::int)`,
           );
-          params.push(this.platform, usageDate, userId, count);
+          params.push(this.platform, usageDate, externalUserId, count);
           paramIndex += 4;
         }
 
@@ -510,10 +513,10 @@ export class ChatRateLimitRepository {
           `
             UPDATE chat_daily_usage
             SET free_form_count = GREATEST(0, free_form_count - v.delta)
-            FROM (VALUES ${valuesClauses.join(', ')}) AS v(platform, usage_date, user_id, delta)
+            FROM (VALUES ${valuesClauses.join(', ')}) AS v(platform, usage_date, external_user_id, delta)
             WHERE chat_daily_usage.platform = v.platform
               AND chat_daily_usage.usage_date = v.usage_date
-              AND ((v.user_id IS NULL AND chat_daily_usage.user_id IS NULL) OR chat_daily_usage.user_id = v.user_id)
+              AND chat_daily_usage.external_user_id = v.external_user_id
           `,
           params,
         );

@@ -1,7 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
-import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
+import {
+  createSessionSourceGetSessions,
+  StudyReminderSyncService,
+} from '@wispace/study-reminder-shared';
+import { StudySessionSourceService } from '@messenger/modules/study-reminder/application/services/study-session-source.service';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { RelinkMappingResult } from '../types/messenger-mapping.types';
@@ -21,6 +25,7 @@ export class MessengerMappingService {
     private readonly repository: MessengerMappingRepositoryPort,
     private readonly outbound: MessengerOutboundService,
     private readonly studyReminderSyncService: StudyReminderSyncService,
+    private readonly sessionSourceService: StudySessionSourceService,
   ) {}
 
   async linkFromContext(
@@ -153,6 +158,10 @@ export class MessengerMappingService {
       try {
         await this.studyReminderSyncService.syncUpcomingSessions({
           userId: params.userId,
+          // Authoritative calendar fetch before any stale-job cancellation.
+          getSessions: createSessionSourceGetSessions(
+            this.sessionSourceService,
+          ),
         });
         syncedStudyReminders = true;
       } catch (error) {

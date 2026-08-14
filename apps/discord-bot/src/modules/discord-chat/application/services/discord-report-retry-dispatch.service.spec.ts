@@ -10,6 +10,7 @@ const JOB = {
   status: 'pending',
   retryCount: 0,
   maxRetries: 3,
+  leaseToken: 'lease-1',
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -89,7 +90,7 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
 
     expect(jobRepository.resetStuckProcessingJobs).toHaveBeenCalled();
     expect(jobRepository.findDueJobs).toHaveBeenCalledWith(expect.any(Date));
-    expect(jobRepository.claimJob).toHaveBeenCalledWith(1);
+    expect(jobRepository.claimJob).toHaveBeenCalledWith(1, 600_000);
     expect(accountLinkRepo.findOne).toHaveBeenCalledWith({
       where: { platform: 'discord', externalUserId: 'discord-1' },
     });
@@ -102,7 +103,7 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
         examDateForOutbox: '2026-08-20',
       },
     );
-    expect(jobRepository.markSent).toHaveBeenCalledWith(1);
+    expect(jobRepository.markSent).toHaveBeenCalledWith(1, 'lease-1');
     expect(result.sent).toBe(1);
   });
 
@@ -130,6 +131,7 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
     expect(orchestrationService.claimAndSend).not.toHaveBeenCalled();
     expect(jobRepository.markFailed).toHaveBeenCalledWith({
       jobId: 1,
+      leaseToken: 'lease-1',
       errorMessage: 'No active Discord account link',
       retryCount: 1,
       terminal: true,
@@ -180,5 +182,57 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
     expect(result.failures).toEqual([
       { externalUserId: 'discord-1', error: 'delivery down' },
     ]);
+  });
+
+  it('slow-send regression: reopens only an expired lease and delivers exactly once per owner (#113)', async () => {
+    let resolveSlowSend!: () => void;
+    const slowSendGate = new Promise<void>((resolve) => {
+      resolveSlowSend = resolve;
+    });
+    let claimAndSendCalls = 0;
+    const firstClaim = { ...JOB, leaseToken: 'lease-a' };
+    const secondClaim = { ...JOB, leaseToken: 'lease-b' };
+
+    const jobRepository = {
+      resetStuckProcessingJobs: jest.fn().mockResolvedValue(0),
+      findDueJobs: jest
+        .fn()
+        .mockResolvedValueOnce([firstClaim])
+        .mockResolvedValueOnce([secondClaim]),
+      claimJob: jest
+        .fn()
+        .mockResolvedValueOnce(firstClaim)
+        .mockResolvedValueOnce(secondClaim),
+      markSent: jest.fn().mockResolvedValue(undefined),
+      markFailed: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const orchestrationService = {
+      claimAndSend: jest.fn().mockImplementation(async () => {
+        claimAndSendCalls += 1;
+        if (claimAndSendCalls === 1) {
+          await slowSendGate;
+        }
+        return SENT_RESULT;
+      }),
+    };
+
+    const service = new DiscordReportRetryDispatchService(
+      { get: jest.fn() } as never,
+      jobRepository as never,
+      orchestrationService as never,
+      { findOne: jest.fn().mockResolvedValue(LINK) } as never,
+    );
+
+    const first = service.dispatchDueReportRetries();
+    // First worker still sending; its lease expired → recovery reopens the
+    // job, the new worker claims with a fresh token and sends once.
+    await service.dispatchDueReportRetries();
+    resolveSlowSend();
+    await first;
+
+    expect(claimAndSendCalls).toBe(2);
+    expect(jobRepository.markSent).toHaveBeenCalledWith(1, 'lease-a');
+    expect(jobRepository.markSent).toHaveBeenCalledWith(1, 'lease-b');
   });
 });

@@ -23,6 +23,11 @@ describe('AppModule boot smoke', () => {
     process.env.WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS = '30000';
     process.env.CHAT_FREE_FORM_DAILY_LIMIT = '15';
     process.env.CHAT_BURST_PER_MINUTE = '3';
+    // The boot smoke test runs without Redis — force memory stores so the
+    // fail-closed config guards do not trip (a real deploy with
+    // CHAT_HISTORY_STORE=redis requires Redis up, by design).
+    process.env.CHAT_HISTORY_STORE = 'memory';
+    process.env.CHAT_QUEUE_STORE = 'memory';
     process.env.CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
     process.env.STUDY_REMINDER_MINUTES_BEFORE = '30';
     process.env.STUDY_REMINDER_MIN_LEAD_MINUTES = '5';

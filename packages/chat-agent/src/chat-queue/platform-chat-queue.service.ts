@@ -59,6 +59,22 @@ export class PlatformChatQueueService implements OnModuleDestroy {
     },
     private readonly options: PlatformChatQueueOptions = {},
   ) {
+    // Fail closed: the shared Redis debounce queue is NOT implemented on
+    // Discord/Zalo — honouring the setting with an in-memory queue would
+    // debounce the same user independently on each pod (multiple LLM calls).
+    const queueStore = configService
+      .get<string>('CHAT_QUEUE_STORE')
+      ?.trim()
+      .toLowerCase();
+    const sharedQueue =
+      configService.get<string>('CHAT_QUEUE_SHARED')?.trim().toLowerCase() ===
+      'true';
+    if (queueStore === 'redis' || sharedQueue) {
+      throw new Error(
+        'CHAT_QUEUE_STORE=redis (or CHAT_QUEUE_SHARED=true) is not supported on Discord/Zalo — the debounce queue is single-pod. Remove the setting or deploy a single instance.',
+      );
+    }
+
     // 0 = no cap (DebounceChatQueue maps 0 to its default 20, so pass
     // MAX_SAFE_INTEGER to disable the pending-message cap entirely).
     const maxPendingSize =
@@ -149,6 +165,13 @@ export class PlatformChatQueueService implements OnModuleDestroy {
               .sendText(externalUserId, DROPPED_MESSAGE)
               .catch(() => {});
           }
+        },
+        onShutdownRejected: (externalUserId) => {
+          this.logger.warn(
+            `Enqueue rejected during shutdown for ${maskExternalId(
+              externalUserId,
+            )} — queue is draining`,
+          );
         },
       },
     );
