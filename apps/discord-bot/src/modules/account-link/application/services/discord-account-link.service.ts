@@ -111,4 +111,13 @@ export class DiscordAccountLinkService {
 
     return row?.userId;
   }
+
+  async findDiscordIdByUserId(userId: number): Promise<string | undefined> {
+    const row = await this.repo.findOne({
+      where: { platform: PLATFORM, userId },
+      select: { externalUserId: true },
+    });
+
+    return row?.externalUserId;
+  }
 }

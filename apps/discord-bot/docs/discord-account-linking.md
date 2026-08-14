@@ -78,6 +78,15 @@ no extra WISPACE backend endpoint needed.
 > join). See `docs/project-overview.md` §13 and `docs/wispace-integration-guide.md`
 > Part 6 for the contract.
 
+## Link status for the portal UI
+
+`GET /v1/discord/link-status?userId={wispaceUserId}` (guarded by
+`InternalApiKeyGuard` — header `X-Internal-Api-Key`) returns
+`{ linked, inGuild }` so the portal can show the join hint only when the
+user is linked but not in the guild. See
+`DiscordLinkStatusController` (`discord-link-status.controller.ts`) and
+`docs/wispace-integration-guide.md` Part 6 for the full contract.
+
 ## Remaining follow-up
 
 Six of the seven WISPACE tool handlers now call the real Wispace API when

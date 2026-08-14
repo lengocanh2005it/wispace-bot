@@ -7,13 +7,14 @@ import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { DiscordAccountLinkService } from './application/services/discord-account-link.service';
 import { DiscordGuildMembershipService } from './application/services/discord-guild-membership.service';
 import { DiscordOauthController } from './presentation/controllers/discord-oauth.controller';
+import { DiscordLinkStatusController } from './presentation/controllers/discord-link-status.controller';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([DiscordAccountLinkEntity]),
     DiscordOutboundModule,
   ],
-  controllers: [DiscordOauthController],
+  controllers: [DiscordOauthController, DiscordLinkStatusController],
   providers: [
     {
       provide: WispaceTokenVerifyService,

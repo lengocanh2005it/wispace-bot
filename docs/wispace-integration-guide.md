@@ -199,13 +199,30 @@ The bot commits the mapping (`discordUserId ↔ userId`) **immediately at OAuth 
 
 ### Recommended UI hint (frontend copy, no code needed on the bot)
 
-On the portal's Discord linking section, when the user is linked, show a hint that
-joining the server is what unlocks bot messages (reports, reminders, welcome DM).
-The link should point to the Discord Server Invite URL (hidden inline link):
+Show the hint **only** for linked users who are NOT in the guild — query the
+bot's link-status endpoint first, then render:
 
-> **Đã liên kết ✓ — Tham gia server Discord [tại đây](https://discord.gg/xxx) để nhận báo cáo và nhắc nhở học tập.**
+| `link-status` result | UI |
+|---|---|
+| `{ linked: false }` | Nút "Kết nối Discord" (như cũ) |
+| `{ linked: true, inGuild: true }` | "Đã liên kết ✓" — không hint |
+| `{ linked: true, inGuild: false }` | "Đã liên kết ✓ — Tham gia server Discord [tại đây](https://discord.gg/xxx) để nhận báo cáo và nhắc nhở học tập." (link ẩn trỏ invite) |
 
-For users not yet linked, the existing "Kết nối Discord" button stays as-is.
+### Link-status endpoint (contract)
+
+```
+GET {BOT_URL}/v1/discord/link-status?userId={wispaceUserId}
+Headers: X-Internal-Api-Key: {INTERNAL_API_KEY}
+```
+
+| Response | Meaning |
+|---|---|
+| `{ "linked": false, "inGuild": false }` | No Discord mapping for this user |
+| `{ "linked": true, "inGuild": true }` | Linked + already in the guild |
+| `{ "linked": true, "inGuild": false }` | Linked + not in the guild (show the join hint) |
+| HTTP 400 | `userId` missing or not a positive integer |
+
+Bot team provides `INTERNAL_API_KEY` (same header used for ops endpoints).
 
 ### Additional information for the bot team
 
