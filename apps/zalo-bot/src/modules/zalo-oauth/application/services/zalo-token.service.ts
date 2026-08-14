@@ -167,24 +167,46 @@ export class ZaloTokenService {
     }
 
     const payload = (await response.json()) as ZaloAccessTokenResponse;
+
+    const accessToken = payload.access_token;
+    const refreshToken = payload.refresh_token;
+    const expiresInSeconds = Number(payload.expires_in);
+    const refreshExpiresInSeconds = Number(payload.refresh_token_expires_in);
+
+    // Validate before persisting: a 200 response with an unexpected body
+    // (e.g. an error payload without expires_in) must not write NaN dates
+    // into the DB — fail this refresh attempt instead.
+    if (
+      typeof accessToken !== 'string' ||
+      accessToken.trim() === '' ||
+      typeof refreshToken !== 'string' ||
+      refreshToken.trim() === '' ||
+      !Number.isFinite(expiresInSeconds) ||
+      expiresInSeconds <= 0 ||
+      !Number.isFinite(refreshExpiresInSeconds) ||
+      refreshExpiresInSeconds <= 0
+    ) {
+      throw new Error(
+        'Zalo OA token refresh returned an invalid payload (missing access_token/refresh_token/expires_in)',
+      );
+    }
+
     const now = Date.now();
 
     await em.update(
       ZaloOaTokenEntity,
       { id: row.id, version: row.version },
       {
-        accessToken: payload.access_token,
-        refreshToken: payload.refresh_token,
-        accessTokenExpiresAt: new Date(now + Number(payload.expires_in) * 1000),
-        refreshTokenExpiresAt: new Date(
-          now + Number(payload.refresh_token_expires_in) * 1000,
-        ),
+        accessToken,
+        refreshToken,
+        accessTokenExpiresAt: new Date(now + expiresInSeconds * 1000),
+        refreshTokenExpiresAt: new Date(now + refreshExpiresInSeconds * 1000),
         updatedAt: new Date(now),
         version: row.version + 1,
       },
     );
 
     this.logger.log('Zalo OA access_token refreshed');
-    return payload.access_token;
+    return accessToken;
   }
 }

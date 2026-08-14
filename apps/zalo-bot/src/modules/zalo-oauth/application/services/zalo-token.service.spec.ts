@@ -224,4 +224,57 @@ describe('ZaloTokenService', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(em.update).toHaveBeenCalled();
   });
+
+  it.each([
+    'missing expires_in (NaN dates)',
+    'missing refresh_token',
+    'empty access_token',
+  ])(
+    'rejects a 200 response with an invalid payload: %s — never persists NaN dates',
+    async (caseName) => {
+      const payloads: Record<string, unknown> = {
+        'missing expires_in (NaN dates)': {
+          access_token: 'tok',
+          refresh_token: 'ref',
+          refresh_token_expires_in: '2592000',
+        },
+        'missing refresh_token': {
+          access_token: 'tok',
+          expires_in: '3600',
+          refresh_token_expires_in: '2592000',
+        },
+        'empty access_token': {
+          access_token: '',
+          refresh_token: 'ref',
+          expires_in: '3600',
+          refresh_token_expires_in: '2592000',
+        },
+      };
+
+      const expiredRow = buildRow({
+        accessToken: 'stale-token',
+        accessTokenExpiresAt: new Date(Date.now() - 1000),
+      });
+      const em = {
+        findOne: jest.fn().mockResolvedValue(expiredRow),
+        update: jest.fn().mockResolvedValue(undefined),
+      };
+      const repo = {
+        findOne: jest.fn().mockResolvedValue(expiredRow),
+        manager: { transaction: buildTransactionManager(em) },
+      } as unknown as Repository<ZaloOaTokenEntity>;
+
+      global.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(payloads[caseName]),
+      });
+
+      const service = new ZaloTokenService(buildConfig(), repo);
+
+      await expect(service.getValidAccessToken()).rejects.toThrow(
+        'invalid payload',
+      );
+      expect(em.update).not.toHaveBeenCalled();
+    },
+  );
 });
