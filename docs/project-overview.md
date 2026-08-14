@@ -601,8 +601,8 @@ If a local env file (`.env`, `.env.shared`, `apps/*/.env`) is believed to be exp
 | WISPACE upstream URLs | HTTPS only (dev loopback exception), no credentials/fragments, no private targets in production, optional `WISPACE_ALLOWED_HOSTS` allowlist — validated at startup for every client |
 | Zalo OA tokens (at rest) | AES-256-GCM with per-row IV, key `ZALO_TOKEN_ENCRYPTION_KEY` (Doppler); legacy plaintext rows fail closed → re-bootstrap |
 | Zalo OA refresh | Single-row transaction + `SELECT … FOR UPDATE`, re-read after lock, retries use the current persisted token — no double-spend of the single-use refresh token across workers |
-| Discord pending-link | Capability is an HttpOnly cookie on the bot domain (never in URL query/fragment); single-use consume; `Referrer-Policy: no-referrer` on the linking flow; CORS `credentials: true` for the frontend origin |
+| Discord linking | Link commits at OAuth callback (verify → `upsertLink`), independent of guild membership — no pending state, no cookie, no join-status; `Referrer-Policy: no-referrer` on the redirect; redirect targets never carry secrets |
 
-### Discord pending-link flow (cookie)
+### Discord linking flow
 
-`GET /v1/discord/oauth/callback` → user not in guild → server stores the pending entry and sets `pending_link` (HttpOnly, Secure, `SameSite=None`, 15 min). The frontend redirect URL carries **no secret** (only username/invite). The frontend then polls `GET /v1/discord/guild/join-status` and calls `POST /v1/discord/guild/complete-link` with `credentials: 'include'`; completion consumes the capability exactly once. The frontend portal must be updated in tandem (stop reading `pendingToken` from the URL).
+`GET /v1/discord/oauth/callback` → exchange code → verify WISPACE token → **`upsertLink` immediately** (retried, since WISPACE already consumed the single-use token) → in guild? send welcome DM + redirect `DISCORD_LINK_LANDING_URL` : redirect straight to `DISCORD_INVITE_URL`. Joining the server is only needed to *receive* the welcome DM — the bot re-sends it on `guildMemberAdd` for already-linked users (`findUserIdByDiscordId`). The frontend portal has no callback page and needs nothing from the redirect; WISPACE marks the link itself at verify time, which now matches the bot's mapping exactly.

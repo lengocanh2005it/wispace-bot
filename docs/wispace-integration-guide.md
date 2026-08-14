@@ -122,10 +122,10 @@ After the user clicks "Allow" on the Discord page, the entire bot-side flow is a
 
 1. Discord redirects to `{DISCORD_OAUTH_REDIRECT_URI}?code=xxx&state={LINK_TOKEN}`
 2. Bot exchanges `code` → Discord access token → retrieves `discordUserId`
-3. Bot calls `POST {WISPACE_API_VERIFY_TOKEN_URL}` with `{ token, value: discordUserId, platform: "discord" }`
+3. Bot calls `POST {WISPACE_API_VERIFY_TOKEN_URL}` with `{ token, value: discordUserId, platform: "discord" }` — **verify success = link completed** (mapping is committed right after, independent of guild membership)
 4. Bot stores mapping `discordUserId ↔ userId` in the DB
-5. Bot sends a welcome message to the student's Discord DM
-6. Bot redirects the browser to a results page (success / failure)
+5. Bot sends a welcome message to the student's Discord DM (only possible if they share a server; otherwise the welcome is sent when they join — see Part 6)
+6. Bot redirects the browser to the portal landing URL (success/failure), or straight to the Discord server invite if the user is not in the guild yet
 
 **WISPACE does not need to do anything after Step 2.**
 
@@ -185,25 +185,24 @@ The WISPACE API already supports all 3 headers — no changes needed on the WISP
 
 ## Part 6 — Discord server requirements
 
-Discord has a technical limitation: **the bot can only send DMs to a user if they share at least one server**. If the user has not joined any server with the bot, the bot will not be able to send the welcome message after linking.
+Discord has a technical limitation: **the bot can only send DMs to a user if they share at least one server** (welcome message, study reports, reminders). Joining the server is therefore needed to *receive* bot messages — but it is **not** required to complete the account link.
 
-### Recommended solution
+### Important contract note — when "linked" becomes official
 
-WISPACE needs to create **an official Discord server** (e.g., "WISPACE Community") and add the bot to that server. Students should be instructed to join this server before linking their accounts.
+The bot commits the mapping (`discordUserId ↔ userId`) **immediately at OAuth callback**, right after `verify-token` succeeds. WISPACE may mark the user as linked as soon as its verify endpoint returns (the link token is single-use anyway) — this now matches the bot exactly: **`verify-token` success = link completed**, regardless of guild membership. There is no intermediate pending state on the bot side.
 
-### How to integrate into the linking flow
+### What WISPACE needs to do
 
-On the WISPACE app/web Discord linking page, add a clear instruction step before the "Connect" button:
-
-> _"Before connecting, make sure you have joined the **[WISPACE Discord server](https://discord.gg/xxx)** to receive messages from the bot."_
-
-Or provide an **invite link** for the server so the bot FE callback page can display a "Join WISPACE server" button when it detects the bot cannot send DMs.
+1. Create an official Discord server (e.g. "WISPACE Community"), add the bot, and **recommend** (not require) students to join it before/after linking.
+2. No callback page is needed on the frontend: after the OAuth callback the bot redirects the browser either to the portal landing URL (success/error/cancel) or straight to the Discord server invite (user not yet in the guild). The bot delivers the welcome DM on `guildMemberAdd` for users who join later.
+3. Students who link but never join will show as "Đã liên kết" correctly — they simply won't receive bot messages until they join.
 
 ### Additional information for the bot team
 
 | Information | Description |
 |-------------|-------------|
-| Discord Server Invite URL | WISPACE server invite link (format `https://discord.gg/xxx`) to display on the linking results page when needed |
+| Discord Server Invite URL | WISPACE server invite link (format `https://discord.gg/xxx`) used as the post-callback redirect target for users not in the guild |
+| Portal landing URL | Portal root (e.g. `https://testfrontend.aihubproduction.com/`) used as the post-callback redirect target on success/error/cancel |
 
 ---
 
@@ -214,7 +213,7 @@ Or provide an **invite link** for the server so the bot FE callback page can dis
 | 1 | Implement API `POST /verify-token` accepting `{ token, value, platform }`, returning `{ userId }` or `{ valid: false, reason }` | **WISPACE** |
 | 2 | Create link token when user wants to connect Discord, store server-side with userId + expiry | **WISPACE** |
 | 3 | Render button/link with Discord OAuth2 URL, `state` = link token | **WISPACE** |
-| 4 | Create official Discord server, add bot to server, instruct students to join before linking | **WISPACE** |
+| 4 | Create official Discord server, add bot to server, recommend students join to receive bot messages | **WISPACE** |
 | 5 | Provide `WISPACE_API_VERIFY_TOKEN_URL`, `WISPACE_INTERNAL_KEY`, Discord Server Invite URL to the bot team | **WISPACE** |
 | 6 | Provide `DISCORD_CLIENT_ID` and `DISCORD_OAUTH_REDIRECT_URI` to WISPACE | **Bot team** |
 | 7 | Entire OAuth2 callback flow, verification, DB storage, welcome DM | **Bot team (completed)** |

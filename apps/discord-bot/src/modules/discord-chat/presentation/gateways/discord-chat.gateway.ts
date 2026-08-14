@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelType } from 'discord.js';
 import { Button, Context, On, Once } from 'necord';
@@ -22,7 +22,6 @@ import {
 import { PlatformChatRateLimitService } from '@wispace/chat-metering';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import { DiscordMenuService } from '../../application/services/discord-menu.service';
-import { DiscordPendingJoinService } from '@discord/modules/account-link/application/services/discord-pending-join.service';
 import { buildDiscordLinkWelcomeMessage } from '@discord/modules/account-link/application/messages/account-link.messages';
 import { WispaceApiError } from '@wispace/wispace-client';
 import {
@@ -62,7 +61,6 @@ export class DiscordChatGateway {
     private readonly rescheduleConfirmationService: RescheduleConfirmationService<string>,
     private readonly menuService: DiscordMenuService,
     private readonly chatHistoryService: PlatformChatHistoryService,
-    private readonly pendingJoinService: DiscordPendingJoinService,
     private readonly chatQueueService: PlatformChatQueueService,
   ) {}
 
@@ -76,39 +74,19 @@ export class DiscordChatGateway {
     const displayName = member.displayName;
     const discordUserId = member.id;
 
-    // Auto-complete pending account link if user came through OAuth flow
-    const pending = this.pendingJoinService.findByDiscordUserId(discordUserId);
-    if (pending) {
-      try {
-        await this.accountLinkService.upsertLink(
-          pending.entry.wispaceUserId,
-          discordUserId,
-        );
-        const dmChannelId = await this.outboundService.sendMenuButtons(
-          discordUserId,
-          buildDiscordLinkWelcomeMessage(pending.entry.discordUsername),
-        );
-        this.pendingJoinService.markCompleted(pending.token, dmChannelId);
-        this.logger.log(
-          `Auto-completed account link for discordUserId=${maskExternalId(
-            discordUserId,
-          )} wispaceUserId=${maskExternalId(pending.entry.wispaceUserId)}`,
-        );
-      } catch (error) {
-        this.logger.error(
-          `Auto-complete link failed for discordUserId=${maskExternalId(
-            discordUserId,
-          )}: ${errorMessage(error)}`,
-        );
-      }
-    }
+    // Linking already happened at OAuth callback time (independent of guild
+    // membership) — here we only deliver the welcome DM that could not be
+    // sent earlier because Discord DMs require a shared guild.
+    const wispaceUserId =
+      await this.accountLinkService.findUserIdByDiscordId(discordUserId);
+    const isLinked = wispaceUserId !== undefined;
 
     // Public welcome in server channel (if DISCORD_WELCOME_CHANNEL_ID is set)
     const welcomeChannelId = this.configService.get<string>(
       'DISCORD_WELCOME_CHANNEL_ID',
     );
     if (welcomeChannelId) {
-      const serverMsg = pending
+      const serverMsg = isLinked
         ? `Chào mừng <@${discordUserId}> đến với server WISPACE! 👋\n\n` +
           `Tài khoản WISPACE đã được liên kết. Hỏi mình bất cứ điều gì về lịch học, tiến độ IELTS hoặc mục tiêu band nhé 🎓`
         : `Chào mừng <@${discordUserId}> đến với server WISPACE! 👋\n\n` +
@@ -117,18 +95,20 @@ export class DiscordChatGateway {
       await this.outboundService.sendToChannel(welcomeChannelId, serverMsg);
     }
 
-    // Private DM — already sent above when link completed; only send for organic joins
-    if (!pending) {
-      const dmMsg =
-        `Chào ${displayName}! Mình là trợ lý WISPACE. ` +
+    // Private DM — already sent at callback when the user was in the guild;
+    // only send here for users who linked before joining or joined organically.
+    const dmMsg = isLinked
+      ? buildDiscordLinkWelcomeMessage(displayName)
+      : `Chào ${displayName}! Mình là trợ lý WISPACE. ` +
         `Bạn có thể hỏi về tiến độ học, lịch học sắp tới, hoặc mục tiêu band — cứ nhắn tự nhiên nhé 🎓`;
-      await this.outboundService.sendMenuButtons(discordUserId, dmMsg);
-    }
+    await this.outboundService.sendMenuButtons(discordUserId, dmMsg);
 
     this.logger.log(
       `Welcome sent to new member discordUserId=${maskExternalId(
         discordUserId,
-      )} displayName=${displayName} channelId=${welcomeChannelId ?? 'none'}`,
+      )} displayName=${displayName} linked=${isLinked} channelId=${
+        welcomeChannelId ?? 'none'
+      }`,
     );
   }
 
