@@ -6,16 +6,15 @@ import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities
 import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { DiscordAccountLinkService } from './application/services/discord-account-link.service';
 import { DiscordGuildMembershipService } from './application/services/discord-guild-membership.service';
-import { DiscordPendingJoinService } from './application/services/discord-pending-join.service';
 import { DiscordOauthController } from './presentation/controllers/discord-oauth.controller';
-import { DiscordGuildController } from './presentation/controllers/discord-guild.controller';
+import { DiscordLinkStatusController } from './presentation/controllers/discord-link-status.controller';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([DiscordAccountLinkEntity]),
     DiscordOutboundModule,
   ],
-  controllers: [DiscordOauthController, DiscordGuildController],
+  controllers: [DiscordOauthController, DiscordLinkStatusController],
   providers: [
     {
       provide: WispaceTokenVerifyService,
@@ -25,8 +24,7 @@ import { DiscordGuildController } from './presentation/controllers/discord-guild
     },
     DiscordAccountLinkService,
     DiscordGuildMembershipService,
-    DiscordPendingJoinService,
   ],
-  exports: [DiscordAccountLinkService, DiscordPendingJoinService],
+  exports: [DiscordAccountLinkService],
 })
 export class AccountLinkModule {}

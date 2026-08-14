@@ -57,11 +57,35 @@ no extra WISPACE backend endpoint needed.
    Expected response: `{ "userId": 143 }` on success, or
    `{ "valid": false, "reason": "NOT_FOUND" | "EXPIRED" | "USED" | "INVALID_FORMAT" }`
    on failure (mirrors the Messenger verify endpoint's failure reasons).
-3. Upsert `(platform='discord', external_user_id=discordUserId, user_id)`
-   into `discord_account_links` (1:1 both directions — matches Messenger's
-   L4 mapping uniqueness).
-4. Send a Vietnamese welcome DM with the quick-action menu buttons to the
-   student, and show a small HTML success page in the browser tab.
+3. **Commit the mapping immediately** — upsert `(platform='discord',
+   external_user_id=discordUserId, user_id)` into `discord_account_links`
+   (1:1 both directions — matches Messenger's L4 mapping uniqueness) **right
+   after verify, independent of guild membership** (retried 3× because the
+   verify already consumed the single-use token). This keeps WISPACE's
+   "Đã liên kết" state (which it marks at verify time) exactly in sync with
+   the bot's mapping — no pending state, no join required to be linked.
+4. Redirect the browser: if the user is already in the guild → send the
+   welcome DM (Vietnamese quick-action menu buttons) and redirect to
+   `DISCORD_LINK_LANDING_URL`; otherwise redirect straight to
+   `DISCORD_INVITE_URL` — the welcome DM is delivered when `guildMemberAdd`
+   fires (`DiscordChatGateway` re-sends it for already-linked users).
+   The redirect URLs never carry secrets and the frontend needs no callback
+   page (the portal shows the link state itself).
+
+> **Why no "join-before-link"?** Discord DMs need a shared guild, but the
+> *mapping* does not. Linking commits at callback so a user who never joins
+> is still correctly linked (they just don't receive bot messages until they
+> join). See `docs/project-overview.md` §13 and `docs/wispace-integration-guide.md`
+> Part 6 for the contract.
+
+## Link status for the portal UI
+
+`GET /v1/discord/link-status?userId={wispaceUserId}` (guarded by
+`InternalApiKeyGuard` — header `X-Internal-Api-Key`) returns
+`{ linked, inGuild }` so the portal can show the join hint only when the
+user is linked but not in the guild. See
+`DiscordLinkStatusController` (`discord-link-status.controller.ts`) and
+`docs/wispace-integration-guide.md` Part 6 for the full contract.
 
 ## Remaining follow-up
 

@@ -12,7 +12,6 @@ import { DiscordChatGateway } from './discord-chat.gateway';
 import { DiscordOutboundService } from '../../application/services/discord-outbound.service';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import { DiscordMenuService } from '../../application/services/discord-menu.service';
-import { DiscordPendingJoinService } from '@discord/modules/account-link/application/services/discord-pending-join.service';
 import { PlatformAgentService } from '@wispace/chat-agent';
 import {
   PlatformChatHistoryService,
@@ -55,7 +54,6 @@ function createGateway(
     rescheduleConfirmationService as unknown as RescheduleConfirmationService<string>,
     {} as DiscordMenuService,
     {} as PlatformChatHistoryService,
-    {} as DiscordPendingJoinService,
     {} as PlatformChatQueueService,
   );
 }

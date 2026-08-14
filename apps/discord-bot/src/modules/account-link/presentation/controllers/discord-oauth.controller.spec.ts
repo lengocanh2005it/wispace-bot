@@ -6,7 +6,9 @@ import type { DiscordAccountLinkService } from '../../application/services/disco
 import type { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import type { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
 import type { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
-import type { DiscordPendingJoinService } from '../../application/services/discord-pending-join.service';
+
+const LANDING_URL = 'https://testfrontend.aihubproduction.com/';
+const INVITE_URL = 'https://discord.gg/wispace';
 
 function buildConfigService(
   overrides: Record<string, string> = {},
@@ -15,7 +17,8 @@ function buildConfigService(
     DISCORD_CLIENT_ID: 'client-id',
     DISCORD_OAUTH_REDIRECT_URI:
       'https://bot.example.com/discord/oauth/callback',
-    DISCORD_OAUTH_FRONTEND_CALLBACK_URL: 'http://localhost:4321/callback.html',
+    DISCORD_LINK_LANDING_URL: LANDING_URL,
+    DISCORD_INVITE_URL: INVITE_URL,
     ...overrides,
   };
   return {
@@ -36,121 +39,63 @@ function buildResponse(): Response {
   res.redirect = jest.fn().mockReturnValue(res);
   res.json = jest.fn().mockReturnValue(res);
   res.setHeader = jest.fn().mockReturnValue(res);
-  res.cookie = jest.fn().mockReturnValue(res);
   return res as Response;
 }
 
-/** Default mock: user is already in the guild (happy path). */
-function buildGuildMembershipService(
-  inGuild = true,
+function buildMembershipService(
+  inGuild: boolean,
 ): DiscordGuildMembershipService {
   return {
     isMember: jest.fn().mockResolvedValue(inGuild),
   } as unknown as DiscordGuildMembershipService;
 }
 
-function buildPendingJoinService(): DiscordPendingJoinService {
+function buildVerifyService(valid = true): WispaceTokenVerifyService {
   return {
-    create: jest.fn().mockReturnValue('pending-token-123'),
-    get: jest.fn(),
-    delete: jest.fn(),
-  } as unknown as DiscordPendingJoinService;
+    verifyToken: jest
+      .fn()
+      .mockResolvedValue(
+        valid
+          ? { valid: true, userId: 143 }
+          : { valid: false, reason: 'EXPIRED' },
+      ),
+  } as unknown as WispaceTokenVerifyService;
+}
+
+function buildAccountLinkService(
+  options: { upsertFailsFirst?: boolean } = {},
+): DiscordAccountLinkService {
+  const upsertLink = options.upsertFailsFirst
+    ? jest
+        .fn()
+        .mockRejectedValueOnce(new Error('db down'))
+        .mockResolvedValueOnce(undefined)
+    : jest.fn().mockResolvedValue(undefined);
+  return {
+    exchangeCodeForDiscordUser: jest
+      .fn()
+      .mockResolvedValue({ id: 'discord-user-1', username: 'TestUser' }),
+    upsertLink,
+  } as unknown as DiscordAccountLinkService;
 }
 
 describe('DiscordOauthController', () => {
-  it('returns 400 when code or state is missing', async () => {
-    const tokenVerifyService = {
-      verifyToken: jest.fn(),
-    } as unknown as WispaceTokenVerifyService;
-    const accountLinkService = {
-      exchangeCodeForDiscordUser: jest.fn(),
-    } as unknown as DiscordAccountLinkService;
-    const outboundService = {} as DiscordOutboundService;
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      tokenVerifyService,
-      accountLinkService,
-      outboundService,
-      buildGuildMembershipService(),
-      buildPendingJoinService(),
-    );
-    const res = buildResponse();
-
-    await controller.callback(undefined, 'token', undefined, res);
-
-    expect(res.redirect).toHaveBeenCalledWith(
-      expect.stringContaining('error='),
-    );
-    expect(
-      accountLinkService.exchangeCodeForDiscordUser,
-    ).not.toHaveBeenCalled();
-  });
-
-  it('returns 400 when the WISPACE token is invalid', async () => {
-    const tokenVerifyService = {
-      verifyToken: jest
-        .fn()
-        .mockResolvedValue({ valid: false, reason: 'EXPIRED' }),
-    } as unknown as WispaceTokenVerifyService;
-    const accountLinkService = {
-      exchangeCodeForDiscordUser: jest
-        .fn()
-        .mockResolvedValue({ id: 'discord-user-1', username: 'TestUser' }),
-      upsertLink: jest.fn(),
-    } as unknown as DiscordAccountLinkService;
-    const outboundService = {
-      sendTextAndGetChannelId: jest.fn(),
-    } as unknown as DiscordOutboundService;
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      tokenVerifyService,
-      accountLinkService,
-      outboundService,
-      buildGuildMembershipService(),
-      buildPendingJoinService(),
-    );
-    const res = buildResponse();
-
-    await controller.callback('code', 'bad-token', undefined, res);
-
-    expect(tokenVerifyService.verifyToken).toHaveBeenCalledWith(
-      'bad-token',
-      'discord-user-1',
-    );
-    expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith(
-      expect.stringContaining('error='),
-    );
-  });
-
-  it('links the account and sends a welcome DM on success', async () => {
-    const tokenVerifyService = {
-      verifyToken: jest.fn().mockResolvedValue({ valid: true, userId: 143 }),
-    } as unknown as WispaceTokenVerifyService;
-    const accountLinkService = {
-      exchangeCodeForDiscordUser: jest
-        .fn()
-        .mockResolvedValue({ id: 'discord-user-1', username: 'TestUser' }),
-      upsertLink: jest.fn().mockResolvedValue(undefined),
-    } as unknown as DiscordAccountLinkService;
+  it('links immediately and redirects to the landing page when already in the guild', async () => {
+    const accountLinkService = buildAccountLinkService();
     const outboundService = {
       sendMenuButtons: jest.fn().mockResolvedValue('dm-channel-123'),
     } as unknown as DiscordOutboundService;
     const controller = new DiscordOauthController(
       buildConfigService(),
-      tokenVerifyService,
+      buildVerifyService(),
       accountLinkService,
       outboundService,
-      buildGuildMembershipService(true),
-      buildPendingJoinService(),
+      buildMembershipService(true),
     );
     const res = buildResponse();
 
     await controller.callback('code', 'good-token', undefined, res);
 
-    expect(accountLinkService.exchangeCodeForDiscordUser).toHaveBeenCalledWith(
-      'code',
-    );
     expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
       143,
       'discord-user-1',
@@ -159,148 +104,133 @@ describe('DiscordOauthController', () => {
       'discord-user-1',
       expect.any(String),
     );
-    expect(res.redirect).toHaveBeenCalledWith(
-      expect.stringContaining('localhost:4321/callback.html'),
-    );
-  });
-
-  it('issues a pending capability via HttpOnly cookie when user is not in the guild', async () => {
-    const tokenVerifyService = {
-      verifyToken: jest.fn().mockResolvedValue({ valid: true, userId: 143 }),
-    } as unknown as WispaceTokenVerifyService;
-    const accountLinkService = {
-      exchangeCodeForDiscordUser: jest
-        .fn()
-        .mockResolvedValue({ id: 'discord-user-1', username: 'TestUser' }),
-      upsertLink: jest.fn(),
-    } as unknown as DiscordAccountLinkService;
-    const outboundService = {
-      sendTextAndGetChannelId: jest.fn(),
-    } as unknown as DiscordOutboundService;
-    const pendingJoinService = buildPendingJoinService();
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      tokenVerifyService,
-      accountLinkService,
-      outboundService,
-      buildGuildMembershipService(false),
-      pendingJoinService,
-    );
-    const res = buildResponse();
-
-    await controller.callback('code', 'good-token', undefined, res);
-
-    expect(pendingJoinService.create).toHaveBeenCalledWith(
-      'discord-user-1',
-      143,
-      'TestUser',
-    );
-    expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
-    expect(res.cookie).toHaveBeenCalledWith(
-      'pending_link',
-      'pending-token-123',
-      expect.objectContaining({
-        httpOnly: true,
-        secure: true,
-        sameSite: 'none',
-      }),
-    );
-    const redirectUrl = String(
-      ((res.redirect as jest.Mock).mock.calls as string[][])[0]?.[0],
-    );
-    expect(redirectUrl).not.toContain('pendingToken');
-    expect(redirectUrl).toContain('discordUsername=TestUser');
-  });
-
-  it('sets a restrictive Referrer-Policy on every linking redirect', async () => {
-    const tokenVerifyService = {
-      verifyToken: jest.fn().mockResolvedValue({ valid: true, userId: 143 }),
-    } as unknown as WispaceTokenVerifyService;
-    const accountLinkService = {
-      exchangeCodeForDiscordUser: jest
-        .fn()
-        .mockResolvedValue({ id: 'discord-user-1', username: 'TestUser' }),
-      upsertLink: jest.fn().mockResolvedValue(undefined),
-    } as unknown as DiscordAccountLinkService;
-    const outboundService = {
-      sendMenuButtons: jest.fn().mockResolvedValue('dm-channel-123'),
-    } as unknown as DiscordOutboundService;
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      tokenVerifyService,
-      accountLinkService,
-      outboundService,
-      buildGuildMembershipService(true),
-      buildPendingJoinService(),
-    );
-    const res = buildResponse();
-
-    await controller.callback('code', 'good-token', undefined, res);
-
+    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
     expect(res.setHeader).toHaveBeenCalledWith(
       'Referrer-Policy',
       'no-referrer',
     );
   });
 
-  it('redirects to frontend callback URL when DISCORD_OAUTH_FRONTEND_CALLBACK_URL is set', async () => {
-    const tokenVerifyService = {
-      verifyToken: jest.fn().mockResolvedValue({ valid: true, userId: 143 }),
-    } as unknown as WispaceTokenVerifyService;
-    const accountLinkService = {
-      exchangeCodeForDiscordUser: jest
-        .fn()
-        .mockResolvedValue({ id: 'discord-user-1', username: 'TestUser' }),
-      upsertLink: jest.fn().mockResolvedValue(undefined),
-    } as unknown as DiscordAccountLinkService;
+  it('links immediately and redirects to the invite when NOT in the guild (no pending flow)', async () => {
+    const accountLinkService = buildAccountLinkService();
     const outboundService = {
-      sendMenuButtons: jest.fn().mockResolvedValue('dm-channel-123'),
+      sendMenuButtons: jest.fn(),
     } as unknown as DiscordOutboundService;
     const controller = new DiscordOauthController(
-      buildConfigService({
-        DISCORD_OAUTH_FRONTEND_CALLBACK_URL:
-          'http://localhost:4321/callback.html',
-      }),
-      tokenVerifyService,
+      buildConfigService(),
+      buildVerifyService(),
       accountLinkService,
       outboundService,
-      buildGuildMembershipService(true),
-      buildPendingJoinService(),
+      buildMembershipService(false),
     );
     const res = buildResponse();
 
     await controller.callback('code', 'good-token', undefined, res);
 
-    expect(res.redirect).toHaveBeenCalledWith(
-      expect.stringContaining('localhost:4321/callback.html'),
+    // Link is committed regardless of membership — no pending token involved.
+    expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
+      143,
+      'discord-user-1',
     );
+    expect(outboundService.sendMenuButtons).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(INVITE_URL);
+    const redirectUrl = String(
+      ((res.redirect as jest.Mock).mock.calls as string[][])[0]?.[0],
+    );
+    expect(redirectUrl).not.toContain('pendingToken');
   });
 
-  it('returns 400 when the Discord code exchange fails', async () => {
-    const tokenVerifyService = {
-      verifyToken: jest.fn(),
-    } as unknown as WispaceTokenVerifyService;
+  it('does not link when the WISPACE token is invalid', async () => {
+    const accountLinkService = buildAccountLinkService();
+    const controller = new DiscordOauthController(
+      buildConfigService(),
+      buildVerifyService(false),
+      accountLinkService,
+      {} as DiscordOutboundService,
+      buildMembershipService(true),
+    );
+    const res = buildResponse();
+
+    await controller.callback('code', 'bad-token', undefined, res);
+
+    expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
+  });
+
+  it('returns missing-param errors to the landing page', async () => {
+    const accountLinkService = buildAccountLinkService();
+    const controller = new DiscordOauthController(
+      buildConfigService(),
+      buildVerifyService(),
+      accountLinkService,
+      {} as DiscordOutboundService,
+      buildMembershipService(true),
+    );
+    const res = buildResponse();
+
+    await controller.callback(undefined, 'token', undefined, res);
+    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
+
+    await controller.callback('code', undefined, undefined, res);
+    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
+    expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
+  });
+
+  it('redirects cancelled grants to the landing page', async () => {
+    const accountLinkService = buildAccountLinkService();
+    const controller = new DiscordOauthController(
+      buildConfigService(),
+      buildVerifyService(),
+      accountLinkService,
+      {} as DiscordOutboundService,
+      buildMembershipService(true),
+    );
+    const res = buildResponse();
+
+    await controller.callback('code', 'token', 'access_denied', res);
+
+    expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
+  });
+
+  it('retries the link upsert on transient DB failure (token already consumed)', async () => {
+    const accountLinkService = buildAccountLinkService({
+      upsertFailsFirst: true,
+    });
+    const controller = new DiscordOauthController(
+      buildConfigService(),
+      buildVerifyService(),
+      accountLinkService,
+      {} as DiscordOutboundService,
+      buildMembershipService(true),
+    );
+    const res = buildResponse();
+
+    await controller.callback('code', 'good-token', undefined, res);
+
+    expect(accountLinkService.upsertLink).toHaveBeenCalledTimes(2);
+    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
+  });
+
+  it('redirects to the landing page when the Discord code exchange fails', async () => {
     const accountLinkService = {
       exchangeCodeForDiscordUser: jest
         .fn()
         .mockRejectedValue(new Error('Discord token exchange failed: 400')),
+      upsertLink: jest.fn(),
     } as unknown as DiscordAccountLinkService;
-    const outboundService = {} as DiscordOutboundService;
     const controller = new DiscordOauthController(
       buildConfigService(),
-      tokenVerifyService,
+      buildVerifyService(),
       accountLinkService,
-      outboundService,
-      buildGuildMembershipService(),
-      buildPendingJoinService(),
+      {} as DiscordOutboundService,
+      buildMembershipService(true),
     );
     const res = buildResponse();
 
     await controller.callback('code', 'good-token', undefined, res);
 
-    expect(tokenVerifyService.verifyToken).not.toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith(
-      expect.stringContaining('error='),
-    );
+    expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
   });
 });

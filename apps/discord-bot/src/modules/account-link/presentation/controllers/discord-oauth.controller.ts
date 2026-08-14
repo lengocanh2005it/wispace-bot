@@ -1,5 +1,5 @@
 import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
@@ -8,8 +8,9 @@ import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
 import { buildDiscordLinkWelcomeMessage } from '../../application/messages/account-link.messages';
 import { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
-import { DiscordPendingJoinService } from '../../application/services/discord-pending-join.service';
-import { setPendingLinkCookie } from '../cookies/pending-link-cookie';
+
+const UPSERT_MAX_ATTEMPTS = 3;
+const UPSERT_BASE_BACKOFF_MS = 500;
 
 @Controller('discord/oauth')
 @UseGuards(ThrottlerGuard)
@@ -22,7 +23,6 @@ export class DiscordOauthController {
     private readonly accountLinkService: DiscordAccountLinkService,
     private readonly outboundService: DiscordOutboundService,
     private readonly guildMembershipService: DiscordGuildMembershipService,
-    private readonly pendingJoinService: DiscordPendingJoinService,
   ) {}
 
   /**
@@ -50,7 +50,14 @@ export class DiscordOauthController {
     res.json({ url: url.toString() });
   }
 
-  /** `state` carries WISPACE's own link token verbatim (WISPACE owns its expiry/usage state). */
+  /**
+   * `state` carries WISPACE's own link token verbatim (WISPACE owns its expiry/usage state).
+   *
+   * Linking commits IMMEDIATELY after token verification — it does NOT depend
+   * on guild membership or any join event. Joining the server only controls
+   * when the welcome DM can be delivered (Discord DM needs a shared guild);
+   * the welcome is re-sent on `guildMemberAdd` for already-linked users.
+   */
   @Get('callback')
   async callback(
     @Query('code') code: string | undefined,
@@ -59,130 +66,93 @@ export class DiscordOauthController {
     @Res() res: Response,
   ): Promise<void> {
     if (discordError === 'access_denied') {
-      this.sendResult(res, { type: 'cancelled' });
+      this.sendResult(res, 'cancelled');
       return;
     }
 
     if (!code || !token) {
-      this.sendResult(res, {
-        type: 'error',
-        message: 'Thiếu code hoặc token.',
-      });
+      this.sendResult(res, 'error');
       return;
     }
 
     try {
       const discordUser =
         await this.accountLinkService.exchangeCodeForDiscordUser(code);
-      const { id: discordUserId, username: discordUsername } = discordUser;
 
       const verifyResult = await this.tokenVerifyService.verifyToken(
         token,
-        discordUserId,
+        discordUser.id,
       );
       if (!verifyResult.valid) {
-        this.sendResult(res, {
-          type: 'error',
-          message: 'Link đã hết hạn hoặc không hợp lệ.',
-        });
-        return;
-      }
-      const wispaceUserId = verifyResult.userId;
-
-      // Guild membership check — must join server before account can be linked
-      const inGuild = await this.guildMembershipService.isMember(discordUserId);
-      if (!inGuild) {
-        this.logger.warn(
-          `Guild check failed: discordUserId=${maskExternalId(
-            discordUserId,
-          )} not in guild — issuing pending cookie`,
-        );
-        const pendingToken = this.pendingJoinService.create(
-          discordUserId,
-          wispaceUserId,
-          discordUsername,
-        );
-        // Capability travels in an HttpOnly cookie, never in the redirect URL.
-        setPendingLinkCookie(res, pendingToken);
-        this.sendResult(res, {
-          type: 'pending',
-          discordUsername,
-        });
+        this.sendResult(res, 'error');
         return;
       }
 
-      await this.accountLinkService.upsertLink(wispaceUserId, discordUserId);
+      // WISPACE has already consumed the link token (single-use) — the mapping
+      // MUST be committed now, or WISPACE shows "linked" while the bot has no
+      // mapping. Retry transient DB failures; a permanent failure surfaces as
+      // an error redirect and the user retries with a fresh token.
+      await this.upsertLinkWithRetry(verifyResult.userId, discordUser.id);
 
-      const dmChannelId = await this.outboundService.sendMenuButtons(
-        discordUserId,
-        buildDiscordLinkWelcomeMessage(discordUsername),
+      const inGuild = await this.guildMembershipService.isMember(
+        discordUser.id,
       );
-      const botUserId =
-        this.configService.getOrThrow<string>('DISCORD_CLIENT_ID');
-      this.sendResult(res, {
-        type: 'success',
-        botUserId,
-        dmChannelId,
-        discordUsername,
-      });
+      if (inGuild) {
+        await this.outboundService.sendMenuButtons(
+          discordUser.id,
+          buildDiscordLinkWelcomeMessage(discordUser.username),
+        );
+        this.sendResult(res, 'success');
+        return;
+      }
+
+      // Not in the guild yet — send them straight to the invite; the bot
+      // delivers the welcome DM on `guildMemberAdd` (link is already done).
+      this.sendResult(res, 'not-in-guild');
     } catch (error) {
       this.logger.error(
         `Discord OAuth callback failed: ${errorMessage(error)}`,
       );
-      this.sendResult(res, {
-        type: 'error',
-        message: 'Có lỗi xảy ra, vui lòng thử lại.',
-      });
+      this.sendResult(res, 'error');
     }
+  }
+
+  private async upsertLinkWithRetry(
+    userId: number,
+    discordUserId: string,
+  ): Promise<void> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= UPSERT_MAX_ATTEMPTS; attempt++) {
+      try {
+        await this.accountLinkService.upsertLink(userId, discordUserId);
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt < UPSERT_MAX_ATTEMPTS) {
+          await new Promise((r) =>
+            setTimeout(r, UPSERT_BASE_BACKOFF_MS * attempt),
+          );
+        }
+      }
+    }
+    throw lastError;
   }
 
   private sendResult(
     res: Response,
-    result:
-      | {
-          type: 'success';
-          botUserId: string;
-          dmChannelId?: string;
-          discordUsername: string;
-        }
-      | { type: 'pending'; discordUsername: string }
-      | { type: 'error'; message: string }
-      | { type: 'cancelled' },
+    type: 'success' | 'not-in-guild' | 'error' | 'cancelled',
   ): void {
-    const frontendUrl = this.configService.get<string>(
-      'DISCORD_OAUTH_FRONTEND_CALLBACK_URL',
+    const landingUrl = this.configService.getOrThrow<string>(
+      'DISCORD_LINK_LANDING_URL',
     );
-    const inviteUrl =
-      this.configService.get<string>('DISCORD_INVITE_URL') ?? '';
+    const inviteUrl = this.configService.get<string>('DISCORD_INVITE_URL');
 
-    // Never leak the query string (or any secret) through referrers of the
-    // linking flow — the pending capability is cookie-bound server-side.
+    const target =
+      type === 'not-in-guild' ? inviteUrl || landingUrl : landingUrl;
+
+    // No secrets in the URL — the frontend needs nothing from us (WISPACE
+    // shows the link state itself); restrict referrers of the linking flow.
     res.setHeader('Referrer-Policy', 'no-referrer');
-
-    if (frontendUrl) {
-      const url = new URL(frontendUrl);
-      if (result.type === 'cancelled') {
-        url.searchParams.set('cancelled', '1');
-      } else if (result.type === 'error') {
-        url.searchParams.set('error', result.message);
-      } else if (result.type === 'pending') {
-        url.searchParams.set('discordUsername', result.discordUsername);
-        if (inviteUrl) url.searchParams.set('inviteUrl', inviteUrl);
-      } else {
-        if (result.botUserId)
-          url.searchParams.set('botUserId', result.botUserId);
-        if (result.dmChannelId)
-          url.searchParams.set('dmChannelId', result.dmChannelId);
-        if (result.discordUsername)
-          url.searchParams.set('discordUsername', result.discordUsername);
-      }
-      res.redirect(url.toString());
-      return;
-    }
-
-    this.logger.warn('DISCORD_OAUTH_FRONTEND_CALLBACK_URL is not set');
-    res
-      .status(400)
-      .json({ error: 'OAuth frontend callback URL not configured' });
+    res.redirect(target);
   }
 }
