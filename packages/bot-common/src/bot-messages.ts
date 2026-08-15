@@ -1,6 +1,6 @@
 export const FALLBACK_DISPLAY_NAME = 'Chào bạn nha';
 
-const GREETING_INTRO =
+export const GREETING_INTRO =
   'Mình là trợ lý WISPACE — đồng hành học IELTS Writing cùng bạn. Bạn cứ nhắn nhu cầu tự nhiên, ví dụ như xem tiến độ hay tạo bài tập mới — mình sẽ hỗ trợ bạn nhé!';
 
 export function buildGreetingMessage(displayName?: string): string {

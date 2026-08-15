@@ -3,6 +3,7 @@ export { readResponseText } from './read-response-text';
 export { isAbortError, sleep } from './abort.utils';
 export {
   FALLBACK_DISPLAY_NAME,
+  GREETING_INTRO,
   buildGreetingMessage,
   buildLinkSuccessMessage,
   buildSelfIntroMessage,

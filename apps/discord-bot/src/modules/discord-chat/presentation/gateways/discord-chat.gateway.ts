@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  GREETING_INTRO,
   buildGreetingMessage,
   buildSelfIntroMessage,
   maskExternalId,
@@ -94,10 +95,10 @@ export class DiscordChatGateway {
     if (welcomeChannelId) {
       const serverMsg = isLinked
         ? `Chào mừng <@${discordUserId}> đến với server WISPACE! 👋\n\n` +
-          `Tài khoản WISPACE đã được liên kết. Hỏi mình bất cứ điều gì về lịch học, tiến độ IELTS hoặc mục tiêu band nhé 🎓`
+          `Tài khoản WISPACE đã được liên kết. ${GREETING_INTRO} 🎓`
         : `Chào mừng <@${discordUserId}> đến với server WISPACE! 👋\n\n` +
-          `Mình là trợ lý AI của WISPACE — mình có thể giúp bạn xem lịch học, tiến độ IELTS Writing và trả lời các câu hỏi luyện thi.\n\n` +
-          `Để dùng đầy đủ tính năng, bạn cần liên kết tài khoản WISPACE với Discord trước nhé. Vào WISPACE và chọn "Kết nối Discord" để bắt đầu! 🎓`;
+          `${GREETING_INTRO} 🎓\n\n` +
+          `Để dùng đầy đủ tính năng, bạn cần liên kết tài khoản WISPACE với Discord trước nhé. Vào WISPACE và chọn "Kết nối Discord" để bắt đầu!`;
       await this.outboundService.sendToChannel(welcomeChannelId, serverMsg);
     }
 
@@ -124,9 +125,7 @@ export class DiscordChatGateway {
           )} — link callback in flight`,
         );
       } else {
-        const dmMsg =
-          `Chào ${displayName}! Mình là trợ lý WISPACE. ` +
-          `Bạn có thể hỏi về tiến độ học, lịch học sắp tới, hoặc mục tiêu band — cứ nhắn tự nhiên nhé 🎓`;
+        const dmMsg = buildGreetingMessage(displayName);
         await this.outboundService.sendMenuButtons(discordUserId, dmMsg);
       }
     }
