@@ -1,6 +1,7 @@
 import type { ConfigService } from '@nestjs/config';
 
 const DEFAULT_REWELCOME_WINDOW_MS = 86_400_000;
+const DEFAULT_PENDING_ORGANIC_SKIP_MS = 120_000;
 
 /**
  * Welcome-DM dedupe window (#137 items 2+4): a linked user who re-joins (or
@@ -9,9 +10,34 @@ const DEFAULT_REWELCOME_WINDOW_MS = 86_400_000;
  * NaN (a NaN window would suppress re-welcomes forever).
  */
 export function readRewelcomeWindowMs(configService: ConfigService): number {
-  const raw = configService.get<string>('DISCORD_REWELCOME_WINDOW_MS');
+  return readPositiveConfigMs(
+    configService,
+    'DISCORD_REWELCOME_WINDOW_MS',
+    DEFAULT_REWELCOME_WINDOW_MS,
+  );
+}
+
+/**
+ * Freshness window for the join-during-callback race (#137 item 4): when a
+ * `guildMemberAdd` lands before the mapping commit but a verify intent is
+ * pending (callback in flight), the organic welcome is skipped — the callback
+ * owns the welcome. Stale pending intents (callback failed) still get the
+ * organic welcome so no one is left without one.
+ */
+export function readPendingOrganicSkipMs(configService: ConfigService): number {
+  return readPositiveConfigMs(
+    configService,
+    'DISCORD_LINK_PENDING_ORGANIC_SKIP_MS',
+    DEFAULT_PENDING_ORGANIC_SKIP_MS,
+  );
+}
+
+function readPositiveConfigMs(
+  configService: ConfigService,
+  key: string,
+  fallback: number,
+): number {
+  const raw = configService.get<string>(key);
   const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0
-    ? Math.floor(parsed)
-    : DEFAULT_REWELCOME_WINDOW_MS;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }

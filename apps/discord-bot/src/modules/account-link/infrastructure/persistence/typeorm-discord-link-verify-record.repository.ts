@@ -5,6 +5,7 @@ import { subtractMs } from '@wispace/date-utils';
 import { DiscordLinkVerifyRecordEntity } from '@discord/infrastructure/database/entities/discord-link-verify-record.entity';
 import type {
   DiscordLinkVerifyRecordRepositoryPort,
+  PendingVerifyRecord,
   StaleVerifyRecord,
 } from '../../domain/ports/discord-link-verify-record.repository.port';
 
@@ -49,5 +50,16 @@ export class TypeormDiscordLinkVerifyRecordRepository implements DiscordLinkVeri
       userId: row.userId,
       verifiedAt: row.verifiedAt,
     }));
+  }
+
+  /** Pending intent for one Discord id, when the callback is still in flight. */
+  async findPending(
+    discordUserId: string,
+  ): Promise<PendingVerifyRecord | undefined> {
+    const row = await this.repo.findOne({
+      where: { discordUserId },
+      select: { userId: true, verifiedAt: true },
+    });
+    return row ? { userId: row.userId, verifiedAt: row.verifiedAt } : undefined;
   }
 }

@@ -8,7 +8,9 @@ import {
   PgAdvisoryLockService,
 } from '@wispace/bot-common';
 import { DiscordAccountLinkService } from './discord-account-link.service';
+import { DiscordGuildMembershipService } from './discord-guild-membership.service';
 import { DiscordRelinkNotifier } from './discord-relink-notifier.service';
+import { DiscordWelcomeService } from './discord-welcome.service';
 import { retryWithBackoff } from '@discord/shared/utils/retry.utils';
 import {
   DISCORD_LINK_VERIFY_RECORD_REPOSITORY,
@@ -40,6 +42,8 @@ export class DiscordLinkReconcileCronService {
     private readonly configService: ConfigService,
     private readonly pgLock: PgAdvisoryLockService,
     private readonly relinkNotifier: DiscordRelinkNotifier,
+    private readonly guildMembershipService: DiscordGuildMembershipService,
+    private readonly welcomeService: DiscordWelcomeService,
   ) {}
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
@@ -118,6 +122,13 @@ export class DiscordLinkReconcileCronService {
             record.discordUserId,
             result.previousUserId,
           );
+        }
+
+        // #137 item 4: the user may have joined while the mapping was
+        // missing (the gateway skipped the organic welcome because a fresh
+        // verify intent existed) — deliver the linked welcome now.
+        if (await this.guildMembershipService.isMember(record.discordUserId)) {
+          await this.welcomeService.welcomeIfDue(record.discordUserId);
         }
         reconciled += 1;
       } catch (error) {

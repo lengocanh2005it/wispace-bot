@@ -19,11 +19,14 @@ import {
   MENU_LEARNING_PROGRESS_CUSTOM_ID,
   MENU_UPCOMING_SESSIONS_CUSTOM_ID,
 } from '../../application/constants/discord-menu.constants';
-import { readRewelcomeWindowMs } from '@discord/shared/config/discord-link.config';
+import { readPendingOrganicSkipMs } from '@discord/shared/config/discord-link.config';
+import { DISCORD_LINK_VERIFY_RECORD_REPOSITORY } from '@discord/modules/account-link/domain/ports/discord-link-verify-record.repository.port';
+import type { DiscordLinkVerifyRecordRepositoryPort } from '@discord/modules/account-link/domain/ports/discord-link-verify-record.repository.port';
+import { DiscordWelcomeService } from '@discord/modules/account-link/application/services/discord-welcome.service';
+import { Inject } from '@nestjs/common';
 import { PlatformChatRateLimitService } from '@wispace/chat-metering';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import { DiscordMenuService } from '../../application/services/discord-menu.service';
-import { buildDiscordLinkWelcomeMessage } from '@discord/modules/account-link/application/messages/account-link.messages';
 import { WispaceApiError } from '@wispace/wispace-client';
 import {
   CHAT_FAILURE_FALLBACK_MESSAGE,
@@ -63,6 +66,9 @@ export class DiscordChatGateway {
     private readonly menuService: DiscordMenuService,
     private readonly chatHistoryService: PlatformChatHistoryService,
     private readonly chatQueueService: PlatformChatQueueService,
+    @Inject(DISCORD_LINK_VERIFY_RECORD_REPOSITORY)
+    private readonly verifyRecordService: DiscordLinkVerifyRecordRepositoryPort,
+    private readonly welcomeService: DiscordWelcomeService,
   ) {}
 
   @Once('clientReady')
@@ -101,20 +107,29 @@ export class DiscordChatGateway {
     // `last_welcomed_at` dedupes re-joins and the join-during-callback race
     // (#137 items 2+4) — a user welcomed within the window is not welcomed again.
     if (isLinked) {
-      const shouldWelcome = await this.accountLinkService.shouldWelcome(
-        discordUserId,
-        readRewelcomeWindowMs(this.configService),
-      );
-      if (shouldWelcome) {
-        const dmMsg = buildDiscordLinkWelcomeMessage(displayName);
-        await this.outboundService.sendMenuButtons(discordUserId, dmMsg);
-        await this.accountLinkService.markWelcomed(discordUserId);
-      }
+      await this.welcomeService.welcomeIfDue(discordUserId, displayName);
     } else {
-      const dmMsg =
-        `Chào ${displayName}! Mình là trợ lý WISPACE. ` +
-        `Bạn có thể hỏi về tiến độ học, lịch học sắp tới, hoặc mục tiêu band — cứ nhắn tự nhiên nhé 🎓`;
-      await this.outboundService.sendMenuButtons(discordUserId, dmMsg);
+      // Join-during-callback race: the mapping may not be committed yet, but
+      // a fresh verify intent means the callback is in flight and will send
+      // the linked welcome itself — skip the organic one. Stale intents
+      // (callback failed) still get the organic welcome.
+      const pending = await this.verifyRecordService.findPending(discordUserId);
+      const pendingIsFresh =
+        pending !== undefined &&
+        Date.now() - pending.verifiedAt.getTime() <
+          readPendingOrganicSkipMs(this.configService);
+      if (pendingIsFresh) {
+        this.logger.log(
+          `Skipping organic welcome for discordUserId=${maskExternalId(
+            discordUserId,
+          )} — link callback in flight`,
+        );
+      } else {
+        const dmMsg =
+          `Chào ${displayName}! Mình là trợ lý WISPACE. ` +
+          `Bạn có thể hỏi về tiến độ học, lịch học sắp tới, hoặc mục tiêu band — cứ nhắn tự nhiên nhé 🎓`;
+        await this.outboundService.sendMenuButtons(discordUserId, dmMsg);
+      }
     }
 
     this.logger.log(

@@ -1,0 +1,113 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import { WispaceTokenVerifyService } from '@wispace/wispace-client';
+import { retryWithBackoff } from '@discord/shared/utils/retry.utils';
+import {
+  DISCORD_LINK_VERIFY_RECORD_REPOSITORY,
+  type DiscordLinkVerifyRecordRepositoryPort,
+} from '../../domain/ports/discord-link-verify-record.repository.port';
+import { DiscordAccountLinkService } from './discord-account-link.service';
+import { DiscordGuildMembershipService } from './discord-guild-membership.service';
+import { DiscordRelinkNotifier } from './discord-relink-notifier.service';
+import { DiscordWelcomeService } from './discord-welcome.service';
+
+const UPSERT_MAX_ATTEMPTS = 3;
+const UPSERT_BASE_BACKOFF_MS = 500;
+
+/** Result of completing the Discord OAuth link — maps to the landing redirect. */
+export type DiscordLinkCompletionOutcome = 'success' | 'not-in-guild';
+
+/**
+ * Discord OAuth callback use case — the whole link flow lives here so the
+ * presentation layer only redirects:
+ * exchange code → verify WISPACE token → persist verify intent → commit the
+ * mapping (retried, WISPACE already consumed the single-use token) → consume
+ * intent → relink notice → welcome DM (deduped) if already in the guild.
+ */
+@Injectable()
+export class DiscordLinkCompletionService {
+  private readonly logger = new Logger(DiscordLinkCompletionService.name);
+
+  constructor(
+    private readonly accountLinkService: DiscordAccountLinkService,
+    private readonly tokenVerifyService: WispaceTokenVerifyService,
+    @Inject(DISCORD_LINK_VERIFY_RECORD_REPOSITORY)
+    private readonly verifyRecordService: DiscordLinkVerifyRecordRepositoryPort,
+    private readonly guildMembershipService: DiscordGuildMembershipService,
+    private readonly relinkNotifier: DiscordRelinkNotifier,
+    private readonly welcomeService: DiscordWelcomeService,
+  ) {}
+
+  /**
+   * Runs the callback flow. Throws on failure — the controller maps any
+   * error to the landing page (the user retries with a fresh token).
+   */
+  async completeLink(
+    code: string,
+    token: string,
+  ): Promise<DiscordLinkCompletionOutcome> {
+    const discordUser =
+      await this.accountLinkService.exchangeCodeForDiscordUser(code);
+
+    const verifyResult = await this.tokenVerifyService.verifyToken(
+      token,
+      discordUser.id,
+    );
+    if (!verifyResult.valid) {
+      throw new Error('WISPACE link token rejected');
+    }
+
+    // WISPACE has already consumed the link token (single-use) — the mapping
+    // MUST be committed now, or WISPACE shows "linked" while the bot has no
+    // mapping. Persist a durable verify intent BEFORE the upsert so the
+    // reconciliation cron re-commits the mapping if we crash in between
+    // (#137 item 1); retry transient DB failures on the upsert itself.
+    await this.verifyRecordService.recordVerify(
+      discordUser.id,
+      verifyResult.userId,
+    );
+
+    const linkResult = await retryWithBackoff(
+      () =>
+        this.accountLinkService.upsertLink(verifyResult.userId, discordUser.id),
+      UPSERT_MAX_ATTEMPTS,
+      UPSERT_BASE_BACKOFF_MS,
+    );
+
+    // Intent consumed — the mapping is committed (fire-and-forget; a race
+    // leaves a record that the reconcile cron cleans up).
+    await this.verifyRecordService
+      .consumeRecord(discordUser.id)
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `Discord link verify record cleanup failed for discordUserId=${maskExternalId(
+            discordUser.id,
+          )}: ${errorMessage(error)}`,
+        );
+      });
+
+    if (linkResult.relinked) {
+      // #137 item 5: the Discord id was linked to a different WISPACE user
+      // — notify the account holder that the previous link was displaced.
+      await this.relinkNotifier.notify(
+        discordUser.id,
+        linkResult.previousUserId,
+      );
+    }
+
+    const inGuild = await this.guildMembershipService.isMember(discordUser.id);
+    if (inGuild) {
+      // #137 items 2+4: deduped against a `guildMemberAdd` that raced the
+      // callback (whoever runs first welcomes + marks; the other skips).
+      await this.welcomeService.welcomeIfDue(
+        discordUser.id,
+        discordUser.username,
+      );
+      return 'success';
+    }
+
+    // Not in the guild yet — send them straight to the invite; the bot
+    // delivers the welcome DM on `guildMemberAdd` (link is already done).
+    return 'not-in-guild';
+  }
+}

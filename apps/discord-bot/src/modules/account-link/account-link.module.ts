@@ -8,8 +8,10 @@ import { DiscordLinkVerifyRecordEntity } from '../../infrastructure/database/ent
 import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { DiscordAccountLinkService } from './application/services/discord-account-link.service';
 import { DiscordGuildMembershipService } from './application/services/discord-guild-membership.service';
+import { DiscordLinkCompletionService } from './application/services/discord-link-completion.service';
 import { DiscordLinkReconcileCronService } from './application/services/discord-link-reconcile-cron.service';
 import { DiscordRelinkNotifier } from './application/services/discord-relink-notifier.service';
+import { DiscordWelcomeService } from './application/services/discord-welcome.service';
 import { TypeormDiscordAccountLinkRepository } from './infrastructure/persistence/typeorm-discord-account-link.repository';
 import { TypeormDiscordLinkVerifyRecordRepository } from './infrastructure/persistence/typeorm-discord-link-verify-record.repository';
 import { DISCORD_ACCOUNT_LINK_REPOSITORY } from './domain/ports/discord-account-link.repository.port';
@@ -36,8 +38,10 @@ import { DiscordLinkStatusController } from './presentation/controllers/discord-
     },
     DiscordAccountLinkService,
     DiscordGuildMembershipService,
+    DiscordLinkCompletionService,
     DiscordLinkReconcileCronService,
     DiscordRelinkNotifier,
+    DiscordWelcomeService,
     TypeormDiscordAccountLinkRepository,
     TypeormDiscordLinkVerifyRecordRepository,
     {
@@ -49,6 +53,10 @@ import { DiscordLinkStatusController } from './presentation/controllers/discord-
       useExisting: TypeormDiscordLinkVerifyRecordRepository,
     },
   ],
-  exports: [DiscordAccountLinkService],
+  exports: [
+    DiscordAccountLinkService,
+    DiscordWelcomeService,
+    DISCORD_LINK_VERIFY_RECORD_REPOSITORY,
+  ],
 })
 export class AccountLinkModule {}

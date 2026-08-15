@@ -69,6 +69,8 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       buildConfigService(),
       buildPgLock(884_200_934),
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
+      { isMember: jest.fn().mockResolvedValue(false) } as never,
+      { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
     );
 
     await cron.handleReconcile();
@@ -99,6 +101,8 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       buildConfigService(),
       buildPgLock(884_200_934),
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
+      { isMember: jest.fn().mockResolvedValue(false) } as never,
+      { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
     );
 
     await cron.handleReconcile();
@@ -125,6 +129,8 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       buildConfigService(),
       buildPgLock(884_200_934),
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
+      { isMember: jest.fn().mockResolvedValue(false) } as never,
+      { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
     );
 
     await cron.handleReconcile();
@@ -152,6 +158,8 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       buildConfigService(),
       buildPgLock(884_200_934),
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
+      { isMember: jest.fn().mockResolvedValue(false) } as never,
+      { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
     );
 
     await cron.handleReconcile();
@@ -177,6 +185,8 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       buildConfigService(),
       buildPgLock(999_999),
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
+      { isMember: jest.fn().mockResolvedValue(false) } as never,
+      { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
     );
 
     await cron.handleReconcile();
@@ -209,10 +219,44 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       buildConfigService(),
       buildPgLock(884_200_934),
       relinkNotifier,
+      { isMember: jest.fn().mockResolvedValue(false) } as never,
+      { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
     );
 
     await cron.handleReconcile();
 
     expect(relinkNotifier.notify).toHaveBeenCalledWith('discord-user-1', 99);
+  });
+
+  it('#137 item 4: welcomes the user after re-commit when already in the guild (crash case)', async () => {
+    const accountLinkService = {
+      findUserIdByDiscordId: jest.fn().mockResolvedValue(undefined),
+      upsertLink: jest.fn().mockResolvedValue({ relinked: false }),
+    } as unknown as DiscordAccountLinkService;
+    const welcomeService = {
+      welcomeIfDue: jest.fn().mockResolvedValue(true),
+    } as never;
+    const { verifyRecordService } = buildHarness({
+      records: [
+        {
+          discordUserId: 'discord-user-1',
+          userId: 143,
+          verifiedAt: new Date(Date.now() - 120_000),
+        },
+      ],
+    });
+    const cron = new DiscordLinkReconcileCronService(
+      verifyRecordService,
+      accountLinkService,
+      buildConfigService(),
+      buildPgLock(884_200_934),
+      { notify: jest.fn().mockResolvedValue(undefined) } as never,
+      { isMember: jest.fn().mockResolvedValue(true) } as never,
+      welcomeService,
+    );
+
+    await cron.handleReconcile();
+
+    expect(welcomeService.welcomeIfDue).toHaveBeenCalledWith('discord-user-1');
   });
 });

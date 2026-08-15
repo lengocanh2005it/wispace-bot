@@ -1,32 +1,15 @@
-import {
-  Controller,
-  Get,
-  Inject,
-  Logger,
-  Query,
-  Res,
-  UseGuards,
-} from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
+import { errorMessage } from '@wispace/bot-common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
-import { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';
-import {
-  DISCORD_LINK_VERIFY_RECORD_REPOSITORY,
-  type DiscordLinkVerifyRecordRepositoryPort,
-} from '../../domain/ports/discord-link-verify-record.repository.port';
-import { WispaceTokenVerifyService } from '@wispace/wispace-client';
-import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
-import { buildDiscordLinkWelcomeMessage } from '../../application/messages/account-link.messages';
-import { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
-import { DiscordRelinkNotifier } from '../../application/services/discord-relink-notifier.service';
-import { readRewelcomeWindowMs } from '@discord/shared/config/discord-link.config';
-import { retryWithBackoff } from '@discord/shared/utils/retry.utils';
+import { DiscordLinkCompletionService } from '../../application/services/discord-link-completion.service';
 
-const UPSERT_MAX_ATTEMPTS = 3;
-const UPSERT_BASE_BACKOFF_MS = 500;
-
+/**
+ * Thin presentation layer for Discord OAuth — all business logic (verify,
+ * mapping commit, welcome, relink notice) lives in `DiscordLinkCompletionService`;
+ * this controller only builds URLs and maps outcomes to redirects.
+ */
 @Controller('discord/oauth')
 @UseGuards(ThrottlerGuard)
 export class DiscordOauthController {
@@ -34,13 +17,7 @@ export class DiscordOauthController {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly tokenVerifyService: WispaceTokenVerifyService,
-    private readonly accountLinkService: DiscordAccountLinkService,
-    @Inject(DISCORD_LINK_VERIFY_RECORD_REPOSITORY)
-    private readonly verifyRecordService: DiscordLinkVerifyRecordRepositoryPort,
-    private readonly outboundService: DiscordOutboundService,
-    private readonly guildMembershipService: DiscordGuildMembershipService,
-    private readonly relinkNotifier: DiscordRelinkNotifier,
+    private readonly completionService: DiscordLinkCompletionService,
   ) {}
 
   /**
@@ -69,12 +46,9 @@ export class DiscordOauthController {
   }
 
   /**
-   * `state` carries WISPACE's own link token verbatim (WISPACE owns its expiry/usage state).
-   *
-   * Linking commits IMMEDIATELY after token verification — it does NOT depend
-   * on guild membership or any join event. Joining the server only controls
-   * when the welcome DM can be delivered (Discord DM needs a shared guild);
-   * the welcome is re-sent on `guildMemberAdd` for already-linked users.
+   * `state` carries WISPACE's own link token verbatim (WISPACE owns its
+   * expiry/usage state). Delegates the whole flow to the application use case;
+   * linking commits immediately, independent of guild membership.
    */
   @Get('callback')
   async callback(
@@ -94,96 +68,14 @@ export class DiscordOauthController {
     }
 
     try {
-      const discordUser =
-        await this.accountLinkService.exchangeCodeForDiscordUser(code);
-
-      const verifyResult = await this.tokenVerifyService.verifyToken(
-        token,
-        discordUser.id,
-      );
-      if (!verifyResult.valid) {
-        this.sendResult(res, 'error');
-        return;
-      }
-
-      // WISPACE has already consumed the link token (single-use) — the mapping
-      // MUST be committed now, or WISPACE shows "linked" while the bot has no
-      // mapping. Persist a durable verify intent BEFORE the upsert so the
-      // reconciliation cron re-commits the mapping if we crash in between
-      // (#137 item 1); retry transient DB failures on the upsert itself.
-      await this.verifyRecordService.recordVerify(
-        discordUser.id,
-        verifyResult.userId,
-      );
-
-      const linkResult = await this.upsertLinkWithRetry(
-        verifyResult.userId,
-        discordUser.id,
-      );
-
-      // Intent consumed — the mapping is committed (fire-and-forget; a race
-      // leaves a record that the reconcile cron cleans up).
-      await this.verifyRecordService
-        .consumeRecord(discordUser.id)
-        .catch((error: unknown) => {
-          this.logger.warn(
-            `Discord link verify record cleanup failed for discordUserId=${maskExternalId(
-              discordUser.id,
-            )}: ${errorMessage(error)}`,
-          );
-        });
-
-      if (linkResult.relinked) {
-        // #137 item 5: the Discord id was linked to a different WISPACE user
-        // — notify the account holder that the previous link was displaced.
-        await this.relinkNotifier.notify(
-          discordUser.id,
-          linkResult.previousUserId,
-        );
-      }
-
-      const inGuild = await this.guildMembershipService.isMember(
-        discordUser.id,
-      );
-      if (inGuild) {
-        // #137 items 2+4: the welcome is deduped on both paths — if a
-        // `guildMemberAdd` fired while the callback was running and already
-        // welcomed + marked the user, we skip here (and vice versa).
-        const shouldWelcome = await this.accountLinkService.shouldWelcome(
-          discordUser.id,
-          readRewelcomeWindowMs(this.configService),
-        );
-        if (shouldWelcome) {
-          await this.outboundService.sendMenuButtons(
-            discordUser.id,
-            buildDiscordLinkWelcomeMessage(discordUser.username),
-          );
-          await this.accountLinkService.markWelcomed(discordUser.id);
-        }
-        this.sendResult(res, 'success');
-        return;
-      }
-
-      // Not in the guild yet — send them straight to the invite; the bot
-      // delivers the welcome DM on `guildMemberAdd` (link is already done).
-      this.sendResult(res, 'not-in-guild');
+      const outcome = await this.completionService.completeLink(code, token);
+      this.sendResult(res, outcome === 'success' ? 'success' : 'not-in-guild');
     } catch (error) {
       this.logger.error(
         `Discord OAuth callback failed: ${errorMessage(error)}`,
       );
       this.sendResult(res, 'error');
     }
-  }
-
-  private async upsertLinkWithRetry(
-    userId: number,
-    discordUserId: string,
-  ): Promise<{ relinked: boolean; previousUserId?: number }> {
-    return retryWithBackoff(
-      () => this.accountLinkService.upsertLink(userId, discordUserId),
-      UPSERT_MAX_ATTEMPTS,
-      UPSERT_BASE_BACKOFF_MS,
-    );
   }
 
   private sendResult(
