@@ -8,10 +8,11 @@ import { DiscordLinkVerifyRecordEntity } from '../../infrastructure/database/ent
 import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { DiscordAccountLinkService } from './application/services/discord-account-link.service';
 import { DiscordGuildMembershipService } from './application/services/discord-guild-membership.service';
-import { DiscordLinkVerifyRecordService } from './application/services/discord-link-verify-record.service';
-import { DiscordLinkReconcileCron } from './application/services/discord-link-reconcile-cron.service';
+import { DiscordLinkReconcileCronService } from './application/services/discord-link-reconcile-cron.service';
 import { TypeormDiscordAccountLinkRepository } from './infrastructure/persistence/typeorm-discord-account-link.repository';
+import { TypeormDiscordLinkVerifyRecordRepository } from './infrastructure/persistence/typeorm-discord-link-verify-record.repository';
 import { DISCORD_ACCOUNT_LINK_REPOSITORY } from './domain/ports/discord-account-link.repository.port';
+import { DISCORD_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/discord-link-verify-record.repository.port';
 import { DiscordOauthController } from './presentation/controllers/discord-oauth.controller';
 import { DiscordLinkStatusController } from './presentation/controllers/discord-link-status.controller';
 
@@ -34,12 +35,16 @@ import { DiscordLinkStatusController } from './presentation/controllers/discord-
     },
     DiscordAccountLinkService,
     DiscordGuildMembershipService,
-    DiscordLinkVerifyRecordService,
-    DiscordLinkReconcileCron,
+    DiscordLinkReconcileCronService,
     TypeormDiscordAccountLinkRepository,
+    TypeormDiscordLinkVerifyRecordRepository,
     {
       provide: DISCORD_ACCOUNT_LINK_REPOSITORY,
       useExisting: TypeormDiscordAccountLinkRepository,
+    },
+    {
+      provide: DISCORD_LINK_VERIFY_RECORD_REPOSITORY,
+      useExisting: TypeormDiscordLinkVerifyRecordRepository,
     },
   ],
   exports: [DiscordAccountLinkService],

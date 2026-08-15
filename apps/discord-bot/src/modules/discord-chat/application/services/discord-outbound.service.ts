@@ -26,6 +26,10 @@ import {
 } from '../constants/discord-menu.constants';
 import { withRetry } from '@wispace/wispace-client';
 
+const DM_FAILURE_REASON_SEND = 'dm_send_error';
+const DM_FAILURE_REASON_MENU = 'menu_send_error';
+const DM_FAILURE_REASON_RESCHEDULE = 'reschedule_send_error';
+
 /**
  * Discord counterpart to Messenger's `MessageSenderPort` — sends by fetching
  * the DM channel from the Discord user id rather than replying inline on the
@@ -117,7 +121,7 @@ export class DiscordOutboundService {
           discordUserId,
         )} after retries: ${errorMsg}`,
       );
-      this.metrics?.incDmDeliveryFailure('dm_send_error');
+      this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_SEND);
       await this.deliveryLog?.logDelivery({
         externalUserId: discordUserId,
         status: 'FAILED',
@@ -169,7 +173,7 @@ export class DiscordOutboundService {
           discordUserId,
         )}: ${maskExternalIdInText(errorMessage(error), discordUserId)}`,
       );
-      this.metrics?.incDmDeliveryFailure('menu_send_error');
+      this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_MENU);
       return undefined;
     }
   }
@@ -218,7 +222,7 @@ export class DiscordOutboundService {
           discordUserId,
         )}: ${maskExternalIdInText(errorMessage(error), discordUserId)}`,
       );
-      this.metrics?.incDmDeliveryFailure('reschedule_send_error');
+      this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_RESCHEDULE);
     }
   }
 }

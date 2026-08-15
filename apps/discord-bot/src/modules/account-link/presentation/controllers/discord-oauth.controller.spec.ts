@@ -3,7 +3,7 @@ import type { Response } from 'express';
 import { DiscordOauthController } from './discord-oauth.controller';
 import type { ConfigService } from '@nestjs/config';
 import type { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';
-import type { DiscordLinkVerifyRecordService } from '../../application/services/discord-link-verify-record.service';
+import type { DiscordLinkVerifyRecordRepositoryPort } from '../../domain/ports/discord-link-verify-record.repository.port';
 import type { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import type { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
 import type { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
@@ -63,11 +63,11 @@ function buildVerifyService(valid = true): WispaceTokenVerifyService {
   } as unknown as WispaceTokenVerifyService;
 }
 
-function buildVerifyRecordService(): DiscordLinkVerifyRecordService {
+function buildVerifyRecordService(): DiscordLinkVerifyRecordRepositoryPort {
   return {
     recordVerify: jest.fn().mockResolvedValue(undefined),
     consumeRecord: jest.fn().mockResolvedValue(undefined),
-  } as unknown as DiscordLinkVerifyRecordService;
+  };
 }
 
 function buildAccountLinkService(
@@ -89,6 +89,7 @@ function buildAccountLinkService(
       .mockResolvedValue({ id: 'discord-user-1', username: 'TestUser' }),
     upsertLink,
     markWelcomed: jest.fn().mockResolvedValue(undefined),
+    shouldWelcome: jest.fn().mockResolvedValue(true),
   } as unknown as DiscordAccountLinkService;
 }
 
@@ -105,12 +106,12 @@ function buildController(
     valid?: boolean;
     accountLink?: DiscordAccountLinkService;
     outbound?: DiscordOutboundService;
-    verifyRecord?: DiscordLinkVerifyRecordService;
+    verifyRecord?: DiscordLinkVerifyRecordRepositoryPort;
   } = {},
 ): {
   controller: DiscordOauthController;
   accountLinkService: DiscordAccountLinkService;
-  verifyRecordService: DiscordLinkVerifyRecordService;
+  verifyRecordService: DiscordLinkVerifyRecordRepositoryPort;
   outboundService: DiscordOutboundService;
 } {
   const accountLinkService = overrides.accountLink ?? buildAccountLinkService();
@@ -204,6 +205,21 @@ describe('DiscordOauthController', () => {
 
     expect(accountLinkService.markWelcomed).not.toHaveBeenCalled();
     expect(res.redirect).toHaveBeenCalledWith(INVITE_URL);
+  });
+
+  it('#137: skips the welcome DM when the user was welcomed within the window (join raced the callback)', async () => {
+    const accountLinkService = buildAccountLinkService();
+    (accountLinkService.shouldWelcome as jest.Mock).mockResolvedValue(false);
+    const { controller, outboundService } = buildController({
+      accountLink: accountLinkService,
+    });
+    const res = buildResponse();
+
+    await controller.callback('code', 'good-token', undefined, res);
+
+    expect(outboundService.sendMenuButtons).not.toHaveBeenCalled();
+    expect(accountLinkService.markWelcomed).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
   });
 
   it('#137: notifies the Discord account when the link displaced another WISPACE user', async () => {

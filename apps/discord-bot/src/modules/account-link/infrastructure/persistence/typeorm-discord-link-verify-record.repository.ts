@@ -3,15 +3,20 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { subtractMs } from '@wispace/date-utils';
 import { DiscordLinkVerifyRecordEntity } from '@discord/infrastructure/database/entities/discord-link-verify-record.entity';
+import type {
+  DiscordLinkVerifyRecordRepositoryPort,
+  StaleVerifyRecord,
+} from '../../domain/ports/discord-link-verify-record.repository.port';
 
 /**
- * Durable verify-intent outbox for the Discord OAuth callback (#137 item 1).
- * The callback records the verify BEFORE committing the mapping, so a crash
- * between WISPACE token verify and the local upsert leaves a recoverable
- * intent — `DiscordLinkReconcileCron` re-commits the mapping from here.
+ * TypeORM implementation of the verify-intent outbox port (#137 item 1).
+ * The OAuth callback records the verify BEFORE committing the mapping, so a
+ * crash between WISPACE token verify and the local upsert leaves a
+ * recoverable intent — `DiscordLinkReconcileCronService` re-commits the
+ * mapping from here.
  */
 @Injectable()
-export class DiscordLinkVerifyRecordService {
+export class TypeormDiscordLinkVerifyRecordRepository implements DiscordLinkVerifyRecordRepositoryPort {
   constructor(
     @InjectRepository(DiscordLinkVerifyRecordEntity)
     private readonly repo: Repository<DiscordLinkVerifyRecordEntity>,
@@ -30,11 +35,7 @@ export class DiscordLinkVerifyRecordService {
   }
 
   /** Verify intents older than `olderThanMs` — candidates for reconciliation. */
-  async listStaleRecords(
-    olderThanMs: number,
-  ): Promise<
-    Array<{ discordUserId: string; userId: number; verifiedAt: Date }>
-  > {
+  async listStaleRecords(olderThanMs: number): Promise<StaleVerifyRecord[]> {
     const rows = await this.repo
       .createQueryBuilder('record')
       .where('record.verified_at < :cutoff', {

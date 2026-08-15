@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId, sanitizeLogValue } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelType } from 'discord.js';
 import { Button, Context, On, Once } from 'necord';
@@ -123,9 +123,9 @@ export class DiscordChatGateway {
     this.logger.log(
       `Welcome sent to new member discordUserId=${maskExternalId(
         discordUserId,
-      )} displayName=${displayName} linked=${isLinked} channelId=${
-        welcomeChannelId ?? 'none'
-      }`,
+      )} displayName=${maskExternalId(
+        sanitizeLogValue(displayName, 64),
+      )} linked=${isLinked} channelId=${welcomeChannelId ?? 'none'}`,
     );
   }
 

@@ -2,8 +2,8 @@
 import type { ConfigService } from '@nestjs/config';
 import type { PgAdvisoryLockService } from '@wispace/bot-common';
 import type { DiscordAccountLinkService } from './discord-account-link.service';
-import type { DiscordLinkVerifyRecordService } from './discord-link-verify-record.service';
-import { DiscordLinkReconcileCron } from './discord-link-reconcile-cron.service';
+import type { DiscordLinkVerifyRecordRepositoryPort } from '../../domain/ports/discord-link-verify-record.repository.port';
+import { DiscordLinkReconcileCronService } from './discord-link-reconcile-cron.service';
 
 const DEFAULT_CONFIG: Record<string, string> = {
   DISCORD_LINK_RECONCILE_AGE_MS: '60000',
@@ -38,7 +38,7 @@ function buildHarness(options: {
   const verifyRecordService = {
     listStaleRecords: jest.fn().mockResolvedValue(options.records ?? []),
     consumeRecord: jest.fn().mockResolvedValue(undefined),
-  } as unknown as DiscordLinkVerifyRecordService;
+  } as unknown as DiscordLinkVerifyRecordRepositoryPort;
 
   const accountLinkService = {
     findUserIdByDiscordId: jest.fn((discordUserId: string) =>
@@ -52,7 +52,7 @@ function buildHarness(options: {
   return { verifyRecordService, accountLinkService };
 }
 
-describe('DiscordLinkReconcileCron (#137 item 1)', () => {
+describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
   it('re-commits a missing mapping from the verify record, then consumes it', async () => {
     const { verifyRecordService, accountLinkService } = buildHarness({
       records: [
@@ -63,11 +63,12 @@ describe('DiscordLinkReconcileCron (#137 item 1)', () => {
         },
       ],
     });
-    const cron = new DiscordLinkReconcileCron(
+    const cron = new DiscordLinkReconcileCronService(
       verifyRecordService,
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_934),
+      { sendText: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await cron.handleReconcile();
@@ -92,11 +93,12 @@ describe('DiscordLinkReconcileCron (#137 item 1)', () => {
       ],
       findUserId: () => 143,
     });
-    const cron = new DiscordLinkReconcileCron(
+    const cron = new DiscordLinkReconcileCronService(
       verifyRecordService,
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_934),
+      { sendText: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await cron.handleReconcile();
@@ -117,11 +119,12 @@ describe('DiscordLinkReconcileCron (#137 item 1)', () => {
         },
       ],
     });
-    const cron = new DiscordLinkReconcileCron(
+    const cron = new DiscordLinkReconcileCronService(
       verifyRecordService,
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_934),
+      { sendText: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await cron.handleReconcile();
@@ -143,11 +146,12 @@ describe('DiscordLinkReconcileCron (#137 item 1)', () => {
       ],
       upsertError: new Error('db down'),
     });
-    const cron = new DiscordLinkReconcileCron(
+    const cron = new DiscordLinkReconcileCronService(
       verifyRecordService,
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_934),
+      { sendText: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await cron.handleReconcile();
@@ -167,15 +171,51 @@ describe('DiscordLinkReconcileCron (#137 item 1)', () => {
         },
       ],
     });
-    const cron = new DiscordLinkReconcileCron(
+    const cron = new DiscordLinkReconcileCronService(
       verifyRecordService,
       accountLinkService,
       buildConfigService(),
       buildPgLock(999_999),
+      { sendText: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await cron.handleReconcile();
 
     expect(verifyRecordService.listStaleRecords).not.toHaveBeenCalled();
+  });
+
+  it('#137 item 5: notifies the account when the reconciled mapping displaced another user', async () => {
+    const accountLinkService = {
+      findUserIdByDiscordId: jest.fn().mockResolvedValue(undefined),
+      upsertLink: jest
+        .fn()
+        .mockResolvedValue({ relinked: true, previousUserId: 99 }),
+    } as unknown as DiscordAccountLinkService;
+    const outbound = {
+      sendText: jest.fn().mockResolvedValue(undefined),
+    } as never;
+    const { verifyRecordService } = buildHarness({
+      records: [
+        {
+          discordUserId: 'discord-user-1',
+          userId: 143,
+          verifiedAt: new Date(Date.now() - 120_000),
+        },
+      ],
+    });
+    const cron = new DiscordLinkReconcileCronService(
+      verifyRecordService,
+      accountLinkService,
+      buildConfigService(),
+      buildPgLock(884_200_934),
+      outbound,
+    );
+
+    await cron.handleReconcile();
+
+    expect(outbound.sendText).toHaveBeenCalledWith(
+      'discord-user-1',
+      expect.stringContaining('WISPACE khác'),
+    );
   });
 });

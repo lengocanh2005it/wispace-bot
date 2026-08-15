@@ -1,10 +1,21 @@
-import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Inject,
+  Logger,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';
-import { DiscordLinkVerifyRecordService } from '../../application/services/discord-link-verify-record.service';
+import {
+  DISCORD_LINK_VERIFY_RECORD_REPOSITORY,
+  type DiscordLinkVerifyRecordRepositoryPort,
+} from '../../domain/ports/discord-link-verify-record.repository.port';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
 import {
@@ -25,7 +36,8 @@ export class DiscordOauthController {
     private readonly configService: ConfigService,
     private readonly tokenVerifyService: WispaceTokenVerifyService,
     private readonly accountLinkService: DiscordAccountLinkService,
-    private readonly verifyRecordService: DiscordLinkVerifyRecordService,
+    @Inject(DISCORD_LINK_VERIFY_RECORD_REPOSITORY)
+    private readonly verifyRecordService: DiscordLinkVerifyRecordRepositoryPort,
     private readonly outboundService: DiscordOutboundService,
     private readonly guildMembershipService: DiscordGuildMembershipService,
   ) {}
@@ -138,11 +150,24 @@ export class DiscordOauthController {
         discordUser.id,
       );
       if (inGuild) {
-        await this.outboundService.sendMenuButtons(
-          discordUser.id,
-          buildDiscordLinkWelcomeMessage(discordUser.username),
+        // #137 items 2+4: the welcome is deduped on both paths — if a
+        // `guildMemberAdd` fired while the callback was running and already
+        // welcomed + marked the user, we skip here (and vice versa).
+        const reWelcomeWindowMs = Number(
+          this.configService.get<string>('DISCORD_REWELCOME_WINDOW_MS') ??
+            86_400_000,
         );
-        await this.accountLinkService.markWelcomed(discordUser.id);
+        const shouldWelcome = await this.accountLinkService.shouldWelcome(
+          discordUser.id,
+          reWelcomeWindowMs,
+        );
+        if (shouldWelcome) {
+          await this.outboundService.sendMenuButtons(
+            discordUser.id,
+            buildDiscordLinkWelcomeMessage(discordUser.username),
+          );
+          await this.accountLinkService.markWelcomed(discordUser.id);
+        }
         this.sendResult(res, 'success');
         return;
       }

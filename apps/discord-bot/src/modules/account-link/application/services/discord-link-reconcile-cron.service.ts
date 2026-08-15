@@ -7,8 +7,14 @@ import {
   maskExternalId,
   PgAdvisoryLockService,
 } from '@wispace/bot-common';
+import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
+import { buildDiscordRelinkNoticeMessage } from '../messages/account-link.messages';
 import { DiscordAccountLinkService } from './discord-account-link.service';
-import { DiscordLinkVerifyRecordService } from './discord-link-verify-record.service';
+import {
+  DISCORD_LINK_VERIFY_RECORD_REPOSITORY,
+  type DiscordLinkVerifyRecordRepositoryPort,
+} from '../../domain/ports/discord-link-verify-record.repository.port';
+import { Inject } from '@nestjs/common';
 
 const DEFAULT_RECONCILE_AGE_MS = 60_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 3_600_000;
@@ -24,14 +30,16 @@ const RECONCILE_BASE_BACKOFF_MS = 1_000;
  *   user retries the flow with a fresh token next time).
  */
 @Injectable()
-export class DiscordLinkReconcileCron {
-  private readonly logger = new Logger(DiscordLinkReconcileCron.name);
+export class DiscordLinkReconcileCronService {
+  private readonly logger = new Logger(DiscordLinkReconcileCronService.name);
 
   constructor(
-    private readonly verifyRecordService: DiscordLinkVerifyRecordService,
+    @Inject(DISCORD_LINK_VERIFY_RECORD_REPOSITORY)
+    private readonly verifyRecordService: DiscordLinkVerifyRecordRepositoryPort,
     private readonly accountLinkService: DiscordAccountLinkService,
     private readonly configService: ConfigService,
     private readonly pgLock: PgAdvisoryLockService,
+    private readonly outboundService: DiscordOutboundService,
   ) {}
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
@@ -93,13 +101,34 @@ export class DiscordLinkReconcileCron {
       }
 
       try {
-        await this.upsertWithRetry(record.userId, record.discordUserId);
+        const result = await this.upsertWithRetry(
+          record.userId,
+          record.discordUserId,
+        );
         await this.verifyRecordService.consumeRecord(record.discordUserId);
         this.logger.log(
           `Reconciled Discord link discordUserId=${maskExternalId(
             record.discordUserId,
           )} userId=${maskExternalId(record.userId)}`,
         );
+        if (result.relinked) {
+          // #137 item 5: the re-committed mapping displaced a different
+          // WISPACE user — notify the account holder (same as the callback path).
+          this.logger.warn(
+            `Reconcile displaced previous userId=${maskExternalId(
+              result.previousUserId ?? 0,
+            )} for discordUserId=${maskExternalId(record.discordUserId)}`,
+          );
+          await this.outboundService
+            .sendText(record.discordUserId, buildDiscordRelinkNoticeMessage())
+            .catch((error: unknown) => {
+              this.logger.warn(
+                `Discord relink notice DM failed for discordUserId=${maskExternalId(
+                  record.discordUserId,
+                )}: ${errorMessage(error)}`,
+              );
+            });
+        }
         reconciled += 1;
       } catch (error) {
         failed += 1;
@@ -119,12 +148,11 @@ export class DiscordLinkReconcileCron {
   private async upsertWithRetry(
     userId: number,
     discordUserId: string,
-  ): Promise<void> {
+  ): Promise<{ relinked: boolean; previousUserId?: number }> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= RECONCILE_MAX_ATTEMPTS; attempt++) {
       try {
-        await this.accountLinkService.upsertLink(userId, discordUserId);
-        return;
+        return await this.accountLinkService.upsertLink(userId, discordUserId);
       } catch (error) {
         lastError = error;
         if (attempt < RECONCILE_MAX_ATTEMPTS) {
