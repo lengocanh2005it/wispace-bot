@@ -20,6 +20,8 @@ import {
 } from '../../application/services/zalo-outbound.service';
 
 const CONCURRENCY = 3;
+const PAGE_SIZE = 200;
+const MAX_REPORTED_ERRORS = 50;
 
 @Injectable()
 export class ZaloReportCronService {
@@ -40,15 +42,8 @@ export class ZaloReportCronService {
     timeZone: 'Asia/Ho_Chi_Minh',
   })
   async sendDailyReports(opts: { forceSend?: boolean } = {}): Promise<void> {
-    const links = await this.linkRepo.find({ where: { platform: 'zalo' } });
-    if (links.length === 0) {
-      this.logger.log('No linked accounts found for daily report');
-      return;
-    }
     const reportDate = todayReportDate();
-    this.logger.log(
-      `Sending daily reports to ${links.length} Zalo users (reportDate=${reportDate}, forceSend=${opts.forceSend === true})`,
-    );
+    const forceSend = opts.forceSend === true;
 
     // Pre-query userIds that already got a report on another platform today —
     // avoids one SELECT per linked user inside the batched loop.
@@ -56,34 +51,75 @@ export class ZaloReportCronService {
       await this.claimRepo.listUserIdsWithSentReportToday(reportDate),
     );
 
+    this.logger.log(
+      `Sending daily reports (reportDate=${reportDate}, forceSend=${forceSend})`,
+    );
+
+    let total = 0;
     let sent = 0;
     let skipped = 0;
     let failed = 0;
     const errors: string[] = [];
+    let cursor: string | undefined;
+    const startedAt = Date.now();
+    let hasMore = true;
 
-    const results = await runBatched(links, CONCURRENCY, (link) =>
-      this.sendReportForUser(
-        link,
-        reportDate,
-        sentUserIds,
-        opts.forceSend === true,
-      ),
-    );
-    for (const r of results) {
-      if (r.status === 'fulfilled') {
-        const v = r.value as 'sent' | 'skipped' | 'error';
-        if (v === 'sent') sent++;
-        else if (v === 'skipped') skipped++;
-        else failed++;
-      } else {
-        failed++;
-        errors.push(errorMessage(r.reason));
+    while (hasMore) {
+      const page = await this.loadPage(cursor);
+      if (page.length === 0) break;
+      total += page.length;
+
+      const results = await runBatched(page, CONCURRENCY, (link) =>
+        this.sendReportForUser(link, reportDate, sentUserIds, forceSend),
+      );
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          const v = r.value as 'sent' | 'skipped' | 'error';
+          if (v === 'sent') sent++;
+          else if (v === 'skipped') skipped++;
+          else failed++;
+        } else {
+          failed++;
+          this.pushError(errors, errorMessage(r.reason));
+        }
       }
+
+      this.logger.log(
+        `Zalo report batch: total=${total} sent=${sent} skipped=${skipped} failed=${failed}`,
+      );
+      cursor = page[page.length - 1].id;
+      hasMore = page.length === PAGE_SIZE;
     }
 
     this.logger.log(
-      `Daily report done: sent=${sent}, skipped(already-sent/claimed/48h/window)=${skipped}, failed=${failed}${errors.length > 0 ? ', errors=' + errors.join('; ') : ''}`,
+      `Daily report done: total=${total} sent=${sent}, skipped(already-sent/claimed/48h/window)=${skipped}, failed=${failed}${errors.length > 0 ? ', errors=' + errors.join('; ') : ''} (${Date.now() - startedAt}ms)`,
     );
+  }
+
+  private async loadPage(
+    cursor: string | undefined,
+  ): Promise<ZaloAccountLinkEntity[]> {
+    return this.linkRepo
+      .createQueryBuilder('link')
+      .select([
+        'link.id',
+        'link.externalUserId',
+        'link.userId',
+        'link.platform',
+      ])
+      .where('link.platform = :platform', { platform: 'zalo' })
+      .andWhere(cursor !== undefined ? 'link.id > :cursor' : 'TRUE', { cursor })
+      .orderBy('link.id', 'ASC')
+      .take(PAGE_SIZE)
+      .getMany();
+  }
+
+  private pushError(errors: string[], error: string): void {
+    if (errors.length < MAX_REPORTED_ERRORS) {
+      errors.push(error);
+    } else if (errors.length === MAX_REPORTED_ERRORS) {
+      errors.push('… additional errors omitted (see logs)');
+    }
   }
 
   private async sendReportForUser(
