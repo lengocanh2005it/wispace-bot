@@ -26,8 +26,22 @@ export function buildGreetingMessage(
   return `${prefix} 👋 ${GREETING_VARIANTS[index] ?? GREETING_INTRO}`;
 }
 
-export function buildSelfIntroMessage(): string {
-  return 'Mình là WISPACE Bot — trợ lý AI học IELTS Writing. Bạn cứ nhắn nhu cầu tự nhiên, mình sẽ hỗ trợ bạn nhé! 🎓';
+/** Self-intro variants the bot rotates through so repeated "bạn là ai" gets variety. */
+export const SELF_INTRO_VARIANTS: readonly string[] = [
+  'Mình là WISPACE Bot — trợ lý AI học IELTS Writing. Bạn cứ nhắn nhu cầu tự nhiên, mình sẽ hỗ trợ bạn nhé! 🎓',
+  'Mình là WISPACE Bot — trợ lý AI đồng hành học IELTS Writing cùng bạn. Cứ nhắn bất cứ điều gì, mình sẽ giúp bạn nhé! 🎓',
+  'Mình là WISPACE Bot — trợ lý AI hỗ trợ bạn luyện IELTS Writing. Nhắn cho mình nhu cầu của bạn, mình sẽ hỗ trợ tận tình nhé! 🎓',
+  'Mình là WISPACE Bot — trợ lý AI chuyên đồng hành học IELTS Writing. Bạn cứ nhắn tự nhiên, mình sẽ lo phần còn lại nhé! 🎓',
+];
+
+export function buildSelfIntroMessage(
+  random: () => number = Math.random,
+): string {
+  const index = Math.min(
+    SELF_INTRO_VARIANTS.length - 1,
+    Math.floor(random() * SELF_INTRO_VARIANTS.length),
+  );
+  return SELF_INTRO_VARIANTS[index] ?? SELF_INTRO_VARIANTS[0];
 }
 
 export function buildLinkSuccessMessage(): string {

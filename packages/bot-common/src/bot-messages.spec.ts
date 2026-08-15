@@ -1,6 +1,7 @@
 import {
   FALLBACK_DISPLAY_NAME,
   GREETING_VARIANTS,
+  SELF_INTRO_VARIANTS,
   buildGreetingMessage,
   buildLinkSuccessMessage,
   buildSelfIntroMessage,
@@ -50,12 +51,24 @@ describe('buildGreetingMessage', () => {
 
 describe('buildSelfIntroMessage', () => {
   it('introduces the bot without naming any platform', () => {
-    const text = buildSelfIntroMessage();
-    expect(text).toContain('WISPACE Bot');
-    expect(text).toContain('IELTS Writing');
-    expect(text).not.toContain('Messenger');
-    expect(text).not.toContain('Discord');
-    expect(text).not.toContain('Zalo');
+    for (const variant of SELF_INTRO_VARIANTS) {
+      expect(variant).toContain('WISPACE Bot');
+      expect(variant).toContain('IELTS Writing');
+      expect(variant).not.toContain('Messenger');
+      expect(variant).not.toContain('Discord');
+      expect(variant).not.toContain('Zalo');
+    }
+  });
+
+  it('picks one of the predefined variants', () => {
+    expect(SELF_INTRO_VARIANTS).toContain(buildSelfIntroMessage());
+  });
+
+  it('rotates through variants via the injected random', () => {
+    expect(buildSelfIntroMessage(() => 0)).toBe(SELF_INTRO_VARIANTS[0]);
+    expect(buildSelfIntroMessage(() => 0.999)).toBe(
+      SELF_INTRO_VARIANTS[SELF_INTRO_VARIANTS.length - 1],
+    );
   });
 });
 
