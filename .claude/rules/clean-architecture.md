@@ -143,7 +143,7 @@ apps/messenger-bot/src/modules/<feature>/
 4. **Repository** — interface in `domain/repositories/`; class in `infrastructure/persistence/`; bind token in `*.module.ts`.
 5. **HTTP** → `presentation/controllers/` — call application service, do not call repository directly.
 6. **Wispace / Meta / LLM provider** → `infrastructure/` of the corresponding module (in app), or `packages/llm-agent` if it's orchestration/schema shared across all bots.
-7. **Platform-specific LLM prompts** → `apps/<bot>/src/shared/prompts/`; load via `loadSystemPromptFile()` from `@wispace/llm-agent`. **Shared messages** (not platform-specific) → `packages/bot-common/src/bot-messages.ts` (greeting/self-intro/welcome builders shared by all bots).
+7. **Platform-specific LLM prompts** → `apps/<bot>/src/shared/prompts/`; load via `loadSystemPromptFile()` from `@wispace/llm-agent`. **Shared messages** (not platform-specific) → `packages/bot-common/src/bot-messages.ts` (greeting/self-intro/welcome builders shared by all bots). **Chat prompt core** (universal rules) → `packages/llm-agent/src/chat-system-prompt.ts` (`CHAT_SYSTEM_PROMPT_CORE`), composed with the per-bot overlay in `PlatformAgentService.buildSystemPrompt` (`packages/chat-agent`) — do not duplicate core rules in the overlay files.
 8. After modifying prompts: `npx turbo run build --filter=@wispace/messenger-bot...` (assets → `apps/messenger-bot/dist/shared/prompts/`).
 
 ## Anti-patterns
