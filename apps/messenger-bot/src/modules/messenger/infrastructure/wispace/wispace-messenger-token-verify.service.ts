@@ -4,7 +4,11 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { maskExternalId, readResponseText } from '@wispace/bot-common';
+import {
+  maskExternalId,
+  readResponseText,
+  sanitizeLogValue,
+} from '@wispace/bot-common';
 import {
   isValidCadence,
   normalizeCadence,
@@ -53,7 +57,7 @@ export class WispaceMessengerTokenVerifyService {
     const payload: unknown = await this.readJsonBody(response);
 
     if (response.ok) {
-      return this.parseSuccessPayload(payload, token);
+      return this.parseSuccessPayload(payload);
     }
 
     const failure = this.parseFailurePayload(payload);
@@ -62,7 +66,9 @@ export class WispaceMessengerTokenVerifyService {
     }
 
     const bodyText =
-      payload === undefined ? '' : JSON.stringify(payload).slice(0, 500);
+      payload === undefined
+        ? ''
+        : sanitizeLogValue(JSON.stringify(payload), 500);
     throw new InternalServerErrorException(
       `WISPACE verify-messenger-token failed: HTTP ${response.status} ${response.statusText} - ${bodyText}`,
     );
@@ -103,10 +109,7 @@ export class WispaceMessengerTokenVerifyService {
     }
   }
 
-  private parseSuccessPayload(
-    payload: unknown,
-    token: string,
-  ): MessengerLinkVerifyResult {
+  private parseSuccessPayload(payload: unknown): MessengerLinkVerifyResult {
     if (!payload || typeof payload !== 'object') {
       throw new InternalServerErrorException(
         'WISPACE verify-messenger-token returned invalid JSON body',
@@ -151,13 +154,11 @@ export class WispaceMessengerTokenVerifyService {
       this.logger.log(
         `WISPACE verify-messenger-token OK userId=${maskExternalId(
           userId,
-        )} username=${username} token=${token.slice(0, 8)}…`,
+        )} username=${maskExternalId(sanitizeLogValue(username, 64))}`,
       );
     } else {
       this.logger.log(
-        `WISPACE verify-messenger-token OK userId=${maskExternalId(
-          userId,
-        )} token=${token.slice(0, 8)}…`,
+        `WISPACE verify-messenger-token OK userId=${maskExternalId(userId)}`,
       );
     }
 

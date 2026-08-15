@@ -13,6 +13,7 @@ export {
   maskExternalId,
   maskEventId,
   maskExternalIdInText,
+  sanitizeLogValue,
 } from './mask-external-id';
 export { REDIS_CLIENT, type RedisClientPort } from './redis.client.port';
 export { RedisService } from './redis.service';
