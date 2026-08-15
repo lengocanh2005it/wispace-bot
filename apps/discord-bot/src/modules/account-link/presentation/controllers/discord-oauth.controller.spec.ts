@@ -3,6 +3,7 @@ import type { Response } from 'express';
 import { DiscordOauthController } from './discord-oauth.controller';
 import type { ConfigService } from '@nestjs/config';
 import type { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';
+import type { DiscordLinkVerifyRecordService } from '../../application/services/discord-link-verify-record.service';
 import type { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import type { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
 import type { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
@@ -62,36 +63,80 @@ function buildVerifyService(valid = true): WispaceTokenVerifyService {
   } as unknown as WispaceTokenVerifyService;
 }
 
+function buildVerifyRecordService(): DiscordLinkVerifyRecordService {
+  return {
+    recordVerify: jest.fn().mockResolvedValue(undefined),
+    consumeRecord: jest.fn().mockResolvedValue(undefined),
+  } as unknown as DiscordLinkVerifyRecordService;
+}
+
 function buildAccountLinkService(
-  options: { upsertFailsFirst?: boolean } = {},
+  options: {
+    upsertFailsFirst?: boolean;
+    upsertResult?: { relinked: boolean; previousUserId?: number };
+  } = {},
 ): DiscordAccountLinkService {
+  const result = options.upsertResult ?? { relinked: false };
   const upsertLink = options.upsertFailsFirst
     ? jest
         .fn()
         .mockRejectedValueOnce(new Error('db down'))
-        .mockResolvedValueOnce(undefined)
-    : jest.fn().mockResolvedValue(undefined);
+        .mockResolvedValueOnce(result)
+    : jest.fn().mockResolvedValue(result);
   return {
     exchangeCodeForDiscordUser: jest
       .fn()
       .mockResolvedValue({ id: 'discord-user-1', username: 'TestUser' }),
     upsertLink,
+    markWelcomed: jest.fn().mockResolvedValue(undefined),
   } as unknown as DiscordAccountLinkService;
+}
+
+function buildOutboundService(): DiscordOutboundService {
+  return {
+    sendMenuButtons: jest.fn().mockResolvedValue('dm-channel-123'),
+    sendText: jest.fn().mockResolvedValue(undefined),
+  } as unknown as DiscordOutboundService;
+}
+
+function buildController(
+  overrides: {
+    inGuild?: boolean;
+    valid?: boolean;
+    accountLink?: DiscordAccountLinkService;
+    outbound?: DiscordOutboundService;
+    verifyRecord?: DiscordLinkVerifyRecordService;
+  } = {},
+): {
+  controller: DiscordOauthController;
+  accountLinkService: DiscordAccountLinkService;
+  verifyRecordService: DiscordLinkVerifyRecordService;
+  outboundService: DiscordOutboundService;
+} {
+  const accountLinkService = overrides.accountLink ?? buildAccountLinkService();
+  const outboundService = overrides.outbound ?? buildOutboundService();
+  const verifyRecordService =
+    overrides.verifyRecord ?? buildVerifyRecordService();
+  const controller = new DiscordOauthController(
+    buildConfigService(),
+    buildVerifyService(overrides.valid),
+    accountLinkService,
+    verifyRecordService,
+    outboundService,
+    buildMembershipService(overrides.inGuild ?? true),
+  );
+  return {
+    controller,
+    accountLinkService,
+    verifyRecordService,
+    outboundService,
+  };
 }
 
 describe('DiscordOauthController', () => {
   it('links immediately and redirects to the landing page when already in the guild', async () => {
-    const accountLinkService = buildAccountLinkService();
-    const outboundService = {
-      sendMenuButtons: jest.fn().mockResolvedValue('dm-channel-123'),
-    } as unknown as DiscordOutboundService;
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      buildVerifyService(),
-      accountLinkService,
-      outboundService,
-      buildMembershipService(true),
-    );
+    const { controller, accountLinkService, outboundService } =
+      buildController();
     const res = buildResponse();
 
     await controller.callback('code', 'good-token', undefined, res);
@@ -111,27 +156,89 @@ describe('DiscordOauthController', () => {
     );
   });
 
-  it('links immediately and redirects to the invite when NOT in the guild (no pending flow)', async () => {
-    const accountLinkService = buildAccountLinkService();
-    const outboundService = {
-      sendMenuButtons: jest.fn(),
-    } as unknown as DiscordOutboundService;
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      buildVerifyService(),
-      accountLinkService,
-      outboundService,
-      buildMembershipService(false),
+  it('#137: records the verify intent before the upsert and consumes it after', async () => {
+    const { controller, verifyRecordService } = buildController();
+    const res = buildResponse();
+
+    await controller.callback('code', 'good-token', undefined, res);
+
+    expect(verifyRecordService.recordVerify).toHaveBeenCalledWith(
+      'discord-user-1',
+      143,
     );
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith(
+      'discord-user-1',
+    );
+  });
+
+  it('#137: does not record a verify intent when the token is invalid', async () => {
+    const { controller, verifyRecordService } = buildController({
+      valid: false,
+    });
+    const res = buildResponse();
+
+    await controller.callback('code', 'bad-token', undefined, res);
+
+    expect(verifyRecordService.recordVerify).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
+  });
+
+  it('#137: marks the user welcomed when the welcome DM is sent at callback', async () => {
+    const { controller, accountLinkService } = buildController();
+    const res = buildResponse();
+
+    await controller.callback('code', 'good-token', undefined, res);
+
+    expect(accountLinkService.markWelcomed).toHaveBeenCalledWith(
+      'discord-user-1',
+    );
+  });
+
+  it('#137: does not mark welcomed when not in the guild (welcome happens on join)', async () => {
+    const { controller, accountLinkService } = buildController({
+      inGuild: false,
+    });
+    const res = buildResponse();
+
+    await controller.callback('code', 'good-token', undefined, res);
+
+    expect(accountLinkService.markWelcomed).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith(INVITE_URL);
+  });
+
+  it('#137: notifies the Discord account when the link displaced another WISPACE user', async () => {
+    const accountLinkService = buildAccountLinkService({
+      upsertResult: { relinked: true, previousUserId: 99 },
+    });
+    const { controller, outboundService } = buildController({
+      accountLink: accountLinkService,
+    });
+    const res = buildResponse();
+
+    await controller.callback('code', 'good-token', undefined, res);
+
+    expect(outboundService.sendText).toHaveBeenCalledWith(
+      'discord-user-1',
+      expect.stringContaining('WISPACE khác'),
+    );
+  });
+
+  it('#137: no relink notice when the link is new or unchanged', async () => {
+    const { controller, outboundService } = buildController();
+    const res = buildResponse();
+
+    await controller.callback('code', 'good-token', undefined, res);
+
+    expect(outboundService.sendText).not.toHaveBeenCalled();
+  });
+
+  it('links immediately and redirects to the invite when NOT in the guild (no pending flow)', async () => {
+    const { controller, outboundService } = buildController({ inGuild: false });
     const res = buildResponse();
 
     await controller.callback('code', 'good-token', undefined, res);
 
     // Link is committed regardless of membership — no pending token involved.
-    expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
-      143,
-      'discord-user-1',
-    );
     expect(outboundService.sendMenuButtons).not.toHaveBeenCalled();
     expect(res.redirect).toHaveBeenCalledWith(INVITE_URL);
     const redirectUrl = String(
@@ -141,14 +248,9 @@ describe('DiscordOauthController', () => {
   });
 
   it('does not link when the WISPACE token is invalid', async () => {
-    const accountLinkService = buildAccountLinkService();
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      buildVerifyService(false),
-      accountLinkService,
-      {} as DiscordOutboundService,
-      buildMembershipService(true),
-    );
+    const { controller, accountLinkService } = buildController({
+      valid: false,
+    });
     const res = buildResponse();
 
     await controller.callback('code', 'bad-token', undefined, res);
@@ -158,14 +260,7 @@ describe('DiscordOauthController', () => {
   });
 
   it('returns missing-param errors to the landing page', async () => {
-    const accountLinkService = buildAccountLinkService();
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      buildVerifyService(),
-      accountLinkService,
-      {} as DiscordOutboundService,
-      buildMembershipService(true),
-    );
+    const { controller, accountLinkService } = buildController();
     const res = buildResponse();
 
     await controller.callback(undefined, 'token', undefined, res);
@@ -177,14 +272,7 @@ describe('DiscordOauthController', () => {
   });
 
   it('redirects cancelled grants to the landing page', async () => {
-    const accountLinkService = buildAccountLinkService();
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      buildVerifyService(),
-      accountLinkService,
-      {} as DiscordOutboundService,
-      buildMembershipService(true),
-    );
+    const { controller, accountLinkService } = buildController();
     const res = buildResponse();
 
     await controller.callback('code', 'token', 'access_denied', res);
@@ -197,13 +285,7 @@ describe('DiscordOauthController', () => {
     const accountLinkService = buildAccountLinkService({
       upsertFailsFirst: true,
     });
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      buildVerifyService(),
-      accountLinkService,
-      {} as DiscordOutboundService,
-      buildMembershipService(true),
-    );
+    const { controller } = buildController({ accountLink: accountLinkService });
     const res = buildResponse();
 
     await controller.callback('code', 'good-token', undefined, res);
@@ -219,13 +301,7 @@ describe('DiscordOauthController', () => {
         .mockRejectedValue(new Error('Discord token exchange failed: 400')),
       upsertLink: jest.fn(),
     } as unknown as DiscordAccountLinkService;
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      buildVerifyService(),
-      accountLinkService,
-      {} as DiscordOutboundService,
-      buildMembershipService(true),
-    );
+    const { controller } = buildController({ accountLink: accountLinkService });
     const res = buildResponse();
 
     await controller.callback('code', 'good-token', undefined, res);

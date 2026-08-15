@@ -14,4 +14,6 @@ export const ADVISORY_LOCKS = {
   ZALO_WEBHOOK_INBOUND_RETRY: 884_200_932,
   /** Zalo: inbound webhook inbox raw-payload retention cleanup (03:15 ICT daily). */
   ZALO_WEBHOOK_INBOUND_CLEANUP: 884_200_933,
+  /** Discord: link-verify reconciliation cron (every 5 min, `discord_link_verify_records`). */
+  DISCORD_LINK_RECONCILE: 884_200_934,
 } as const;

@@ -4,6 +4,7 @@ import {
   maskExternalId,
   maskExternalIdInText,
 } from '@wispace/bot-common';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   ActionRowBuilder,
   ButtonBuilder,
@@ -43,6 +44,9 @@ export class DiscordOutboundService {
     @Optional()
     @Inject(PlatformDeadLetterService)
     private readonly deadLetter?: PlatformDeadLetterService,
+    @Optional()
+    @Inject(BotMetricsService)
+    private readonly metrics?: BotMetricsService,
   ) {}
 
   async sendText(
@@ -113,6 +117,7 @@ export class DiscordOutboundService {
           discordUserId,
         )} after retries: ${errorMsg}`,
       );
+      this.metrics?.incDmDeliveryFailure('dm_send_error');
       await this.deliveryLog?.logDelivery({
         externalUserId: discordUserId,
         status: 'FAILED',
@@ -164,6 +169,7 @@ export class DiscordOutboundService {
           discordUserId,
         )}: ${maskExternalIdInText(errorMessage(error), discordUserId)}`,
       );
+      this.metrics?.incDmDeliveryFailure('menu_send_error');
       return undefined;
     }
   }
@@ -212,6 +218,7 @@ export class DiscordOutboundService {
           discordUserId,
         )}: ${maskExternalIdInText(errorMessage(error), discordUserId)}`,
       );
+      this.metrics?.incDmDeliveryFailure('reschedule_send_error');
     }
   }
 }

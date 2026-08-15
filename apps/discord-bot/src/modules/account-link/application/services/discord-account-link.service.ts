@@ -76,8 +76,26 @@ export class DiscordAccountLinkService {
     };
   }
 
-  async upsertLink(userId: number, discordUserId: string): Promise<void> {
+  async upsertLink(
+    userId: number,
+    discordUserId: string,
+  ): Promise<{ relinked: boolean; previousUserId?: number }> {
+    let relinked = false;
+    let previousUserId: number | undefined;
+
     await this.repo.manager.transaction(async (em) => {
+      // Detect relink: the Discord id was previously mapped to a different
+      // WISPACE user (the displaced user silently loses the link — #137 item 5).
+      const existing = await em.query<Array<{ user_id: number }>>(
+        `SELECT user_id FROM discord_account_links
+         WHERE platform = $1 AND external_user_id = $2`,
+        [PLATFORM, discordUserId],
+      );
+      if (existing[0] && existing[0].user_id !== userId) {
+        relinked = true;
+        previousUserId = existing[0].user_id;
+      }
+
       // Remove any existing link for this WISPACE user (re-linking with a different Discord account)
       await em.query(
         `DELETE FROM discord_account_links WHERE platform = $1 AND user_id = $2 AND external_user_id != $3`,
@@ -97,8 +115,14 @@ export class DiscordAccountLinkService {
     this.logger.log(
       `Linked Discord account discordUserId=${maskExternalId(
         discordUserId,
-      )} userId=${maskExternalId(userId)}`,
+      )} userId=${maskExternalId(userId)}${
+        relinked && previousUserId !== undefined
+          ? ` relinked=previousUserId=${maskExternalId(previousUserId)}`
+          : ''
+      }`,
     );
+
+    return { relinked, previousUserId };
   }
 
   async findUserIdByDiscordId(
@@ -119,5 +143,35 @@ export class DiscordAccountLinkService {
     });
 
     return row?.externalUserId;
+  }
+
+  /** Records a welcome DM delivery — dedupes re-welcomes within a window (#137). */
+  async markWelcomed(discordUserId: string): Promise<void> {
+    await this.repo.update(
+      { platform: PLATFORM, externalUserId: discordUserId },
+      { lastWelcomedAt: new Date() },
+    );
+  }
+
+  /**
+   * True when no welcome DM was delivered yet, or the last one is older than
+   * `windowMs` — used by the OAuth callback and `guildMemberAdd` so a user
+   * is never welcomed twice within the window (re-join / join-during-callback
+   * races, #137 items 2+4).
+   */
+  async shouldWelcome(
+    discordUserId: string,
+    windowMs: number,
+  ): Promise<boolean> {
+    const row = await this.repo.findOne({
+      where: { platform: PLATFORM, externalUserId: discordUserId },
+      select: { lastWelcomedAt: true },
+    });
+
+    if (!row?.lastWelcomedAt) {
+      return true;
+    }
+
+    return Date.now() - row.lastWelcomedAt.getTime() >= windowMs;
   }
 }

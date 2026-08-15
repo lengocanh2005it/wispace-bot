@@ -1,12 +1,16 @@
 import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';
+import { DiscordLinkVerifyRecordService } from '../../application/services/discord-link-verify-record.service';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
-import { buildDiscordLinkWelcomeMessage } from '../../application/messages/account-link.messages';
+import {
+  buildDiscordLinkWelcomeMessage,
+  buildDiscordRelinkNoticeMessage,
+} from '../../application/messages/account-link.messages';
 import { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
 
 const UPSERT_MAX_ATTEMPTS = 3;
@@ -21,6 +25,7 @@ export class DiscordOauthController {
     private readonly configService: ConfigService,
     private readonly tokenVerifyService: WispaceTokenVerifyService,
     private readonly accountLinkService: DiscordAccountLinkService,
+    private readonly verifyRecordService: DiscordLinkVerifyRecordService,
     private readonly outboundService: DiscordOutboundService,
     private readonly guildMembershipService: DiscordGuildMembershipService,
   ) {}
@@ -90,9 +95,44 @@ export class DiscordOauthController {
 
       // WISPACE has already consumed the link token (single-use) — the mapping
       // MUST be committed now, or WISPACE shows "linked" while the bot has no
-      // mapping. Retry transient DB failures; a permanent failure surfaces as
-      // an error redirect and the user retries with a fresh token.
-      await this.upsertLinkWithRetry(verifyResult.userId, discordUser.id);
+      // mapping. Persist a durable verify intent BEFORE the upsert so the
+      // reconciliation cron re-commits the mapping if we crash in between
+      // (#137 item 1); retry transient DB failures on the upsert itself.
+      await this.verifyRecordService.recordVerify(
+        discordUser.id,
+        verifyResult.userId,
+      );
+
+      const linkResult = await this.upsertLinkWithRetry(
+        verifyResult.userId,
+        discordUser.id,
+      );
+
+      // Intent consumed — the mapping is committed (fire-and-forget; a race
+      // leaves a record that the reconcile cron cleans up).
+      await this.verifyRecordService
+        .consumeRecord(discordUser.id)
+        .catch((error: unknown) => {
+          this.logger.warn(
+            `Discord link verify record cleanup failed for discordUserId=${maskExternalId(
+              discordUser.id,
+            )}: ${errorMessage(error)}`,
+          );
+        });
+
+      if (linkResult.relinked) {
+        // #137 item 5: the Discord id was linked to a different WISPACE user
+        // — notify the account holder that the previous link was displaced.
+        await this.outboundService
+          .sendText(discordUser.id, buildDiscordRelinkNoticeMessage())
+          .catch((error: unknown) => {
+            this.logger.warn(
+              `Discord relink notice DM failed for discordUserId=${maskExternalId(
+                discordUser.id,
+              )}: ${errorMessage(error)}`,
+            );
+          });
+      }
 
       const inGuild = await this.guildMembershipService.isMember(
         discordUser.id,
@@ -102,6 +142,7 @@ export class DiscordOauthController {
           discordUser.id,
           buildDiscordLinkWelcomeMessage(discordUser.username),
         );
+        await this.accountLinkService.markWelcomed(discordUser.id);
         this.sendResult(res, 'success');
         return;
       }
@@ -120,12 +161,11 @@ export class DiscordOauthController {
   private async upsertLinkWithRetry(
     userId: number,
     discordUserId: string,
-  ): Promise<void> {
+  ): Promise<{ relinked: boolean; previousUserId?: number }> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= UPSERT_MAX_ATTEMPTS; attempt++) {
       try {
-        await this.accountLinkService.upsertLink(userId, discordUserId);
-        return;
+        return await this.accountLinkService.upsertLink(userId, discordUserId);
       } catch (error) {
         lastError = error;
         if (attempt < UPSERT_MAX_ATTEMPTS) {

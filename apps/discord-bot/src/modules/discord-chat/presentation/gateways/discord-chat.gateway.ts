@@ -97,11 +97,28 @@ export class DiscordChatGateway {
 
     // Private DM — already sent at callback when the user was in the guild;
     // only send here for users who linked before joining or joined organically.
-    const dmMsg = isLinked
-      ? buildDiscordLinkWelcomeMessage(displayName)
-      : `Chào ${displayName}! Mình là trợ lý WISPACE. ` +
+    // `last_welcomed_at` dedupes re-joins and the join-during-callback race
+    // (#137 items 2+4) — a user welcomed within the window is not welcomed again.
+    const reWelcomeWindowMs = Number(
+      this.configService.get<string>('DISCORD_REWELCOME_WINDOW_MS') ??
+        86_400_000,
+    );
+    if (isLinked) {
+      const shouldWelcome = await this.accountLinkService.shouldWelcome(
+        discordUserId,
+        reWelcomeWindowMs,
+      );
+      if (shouldWelcome) {
+        const dmMsg = buildDiscordLinkWelcomeMessage(displayName);
+        await this.outboundService.sendMenuButtons(discordUserId, dmMsg);
+        await this.accountLinkService.markWelcomed(discordUserId);
+      }
+    } else {
+      const dmMsg =
+        `Chào ${displayName}! Mình là trợ lý WISPACE. ` +
         `Bạn có thể hỏi về tiến độ học, lịch học sắp tới, hoặc mục tiêu band — cứ nhắn tự nhiên nhé 🎓`;
-    await this.outboundService.sendMenuButtons(discordUserId, dmMsg);
+      await this.outboundService.sendMenuButtons(discordUserId, dmMsg);
+    }
 
     this.logger.log(
       `Welcome sent to new member discordUserId=${maskExternalId(
