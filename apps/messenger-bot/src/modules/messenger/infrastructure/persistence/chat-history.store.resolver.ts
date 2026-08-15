@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common';
 import {
   MemoryChatHistoryStore,
@@ -18,7 +18,9 @@ const KEY_PREFIX = 'chat:history:';
  * back to empty/no-op instead of throwing (same resilience as before).
  */
 @Injectable()
-export class ChatHistoryStoreResolver implements ChatHistoryStorePort {
+export class ChatHistoryStoreResolver
+  implements ChatHistoryStorePort, OnModuleDestroy
+{
   private readonly logger = new Logger(ChatHistoryStoreResolver.name);
   private readonly memory: MemoryChatHistoryStore;
   private redis?: RedisChatHistoryStore;
@@ -32,7 +34,15 @@ export class ChatHistoryStoreResolver implements ChatHistoryStorePort {
     this.redisClient = redisClient;
     const ttlMs = sharedConfig.getHistoryTtlMs();
     const maxMessages = sharedConfig.getHistoryMaxMessages();
-    this.memory = new MemoryChatHistoryStore({ ttlMs, maxMessages });
+    this.memory = new MemoryChatHistoryStore({
+      ttlMs,
+      maxMessages,
+      maxUsers: sharedConfig.getHistoryMaxUsers(),
+    });
+  }
+
+  onModuleDestroy(): void {
+    this.memory.dispose();
   }
 
   async getHistory(psid: string): Promise<ChatHistoryMessage[]> {

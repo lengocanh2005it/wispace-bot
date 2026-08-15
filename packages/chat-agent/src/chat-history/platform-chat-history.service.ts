@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   MemoryChatHistoryStore,
@@ -11,6 +16,7 @@ import type { PlatformChatHistoryOptions } from '../agent/platform-agent.types';
 
 const DEFAULT_MAX_MESSAGES = 20; // 10 turns (user + assistant)
 const DEFAULT_TTL_MS = 30 * 60 * 1000;
+const DEFAULT_MAX_USERS = 10_000;
 /** How long to wait for RedisService's async connect (ping) before failing closed. */
 const REDIS_AVAILABILITY_WAIT_MS = 5_000;
 const REDIS_AVAILABILITY_POLL_MS = 50;
@@ -22,7 +28,9 @@ const REDIS_AVAILABILITY_POLL_MS = 50;
  * chat-history:zalo:).
  */
 @Injectable()
-export class PlatformChatHistoryService implements OnModuleInit {
+export class PlatformChatHistoryService
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(PlatformChatHistoryService.name);
   private readonly memory: MemoryChatHistoryStore;
   private readonly storeType: string;
@@ -43,6 +51,9 @@ export class PlatformChatHistoryService implements OnModuleInit {
     const maxMessages =
       Number(configService.get<string>(`${options.envPrefix}MAX_MESSAGES`)) ||
       DEFAULT_MAX_MESSAGES;
+    const maxUsers =
+      Number(configService.get<string>(`${options.envPrefix}MAX_USERS`)) ||
+      DEFAULT_MAX_USERS;
 
     this.storeType =
       configService.get<string>('CHAT_HISTORY_STORE')?.trim() ?? 'memory';
@@ -50,7 +61,11 @@ export class PlatformChatHistoryService implements OnModuleInit {
     this.maxMessages = maxMessages;
     this.options = options;
     this.redisClient = redisClient;
-    this.memory = new MemoryChatHistoryStore({ ttlMs, maxMessages });
+    this.memory = new MemoryChatHistoryStore({ ttlMs, maxMessages, maxUsers });
+  }
+
+  onModuleDestroy(): void {
+    this.memory.dispose();
   }
 
   async onModuleInit(): Promise<void> {
