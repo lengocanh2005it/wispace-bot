@@ -1,16 +1,15 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import pLimit from 'p-limit';
 import {
   PlatformLlmUsageRecorderAdapter,
   todayUsageDate,
 } from '@wispace/chat-metering';
-import { errorMessage } from '@wispace/bot-common';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
 import type { Platform } from '@wispace/database';
 import { WispaceGoalsService } from '@wispace/wispace-client';
 import {
+  createEnvLlmExecutionPort,
   loadSystemPromptFile,
-  retryWithBackoff,
   type LlmProviderAdapter,
 } from '@wispace/llm-agent';
 import {
@@ -20,6 +19,15 @@ import {
 import type { StudentCapacityInput } from './types';
 
 const FEATURE = 'STUDENT_REPORT';
+
+// Execution-control defaults — same contract and env keys as the Messenger
+// app's `LlmExecutionConfigService`, so Discord/Zalo reports share the same
+// documented path as chat and Messenger reports.
+const DEFAULT_MAX_CONCURRENT = 3;
+const DEFAULT_GLOBAL_MAX_CONCURRENT = 10;
+const DEFAULT_RETRY_MAX_ATTEMPTS = 3;
+const DEFAULT_RETRY_BACKOFF_MS = 2_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 /**
  * Thin NestJS adapter around the platform-agnostic `StudentReportCore`
@@ -31,7 +39,6 @@ const FEATURE = 'STUDENT_REPORT';
 export class PlatformStudentReportService {
   private readonly logger = new Logger(PlatformStudentReportService.name);
   private core?: StudentReportCore;
-  private readonly limiter: <T>(fn: () => Promise<T>) => Promise<T>;
 
   constructor(
     private readonly platform: Platform,
@@ -41,15 +48,10 @@ export class PlatformStudentReportService {
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
     private readonly promptDir: string,
-  ) {
-    const maxConcurrent = Number(
-      this.configService.get<string>('LLM_MAX_CONCURRENT') ?? '3',
-    );
-    // ponytail: p-limit instead of a hand-rolled active/queue limiter
-    this.limiter = pLimit(
-      Number.isFinite(maxConcurrent) && maxConcurrent > 0 ? maxConcurrent : 3,
-    );
-  }
+    @Optional()
+    @Inject(REDIS_CLIENT)
+    private readonly redisClient?: RedisClientPort,
+  ) {}
 
   generateReport(externalUserId: string): Promise<string> {
     if (!this.core) {
@@ -61,32 +63,47 @@ export class PlatformStudentReportService {
       'Asia/Ho_Chi_Minh';
     const correlationId = `${externalUserId}:${todayUsageDate(timezone)}`;
 
-    return this.limiter(() =>
-      this.core!.generateReport(externalUserId, { correlationId }),
-    );
+    return this.core.generateReport(externalUserId, { correlationId });
   }
 
   private buildCore(): StudentReportCore {
+    const globalConcurrencyEnabled =
+      process.env.LLM_GLOBAL_CONCURRENCY_ENABLED?.toLowerCase() === 'true';
+
     const ports: StudentReportPorts = {
-      llmExecution: {
-        // ponytail: shared retry helper from llm-agent (was a local sleep+backoff copy)
-        run: (fn) =>
-          retryWithBackoff(fn, {
-            maxAttempts: 3,
-            baseDelayMs: 500,
-            backoff: (attempt) => 500 * 2 ** (attempt - 1),
-            isRetryable: (error) =>
-              error instanceof Error &&
-              (error.message.includes('rate limit') ||
-                error.message.includes('429')),
-            onRetry: (attempt, backoffMs, error) =>
-              this.logger.warn(
-                `LLM provider retry feature=${FEATURE} attempt=${attempt}/3 backoffMs=${backoffMs}: ${errorMessage(
-                  error,
-                )}`,
-              ),
-          }),
-      },
+      // ponytail: shared execution-control port from llm-agent (was a local
+      // hardcoded sleep+backoff copy) — same LLM_EXECUTION_* contract as chat.
+      llmExecution: createEnvLlmExecutionPort(
+        {
+          enabled: this.readEnvBoolean('LLM_EXECUTION_ENABLED', true),
+          maxConcurrent: this.readEnvPositiveInt(
+            'LLM_MAX_CONCURRENT',
+            DEFAULT_MAX_CONCURRENT,
+          ),
+          globalMaxConcurrent: this.readEnvPositiveInt(
+            'LLM_GLOBAL_MAX_CONCURRENT',
+            DEFAULT_GLOBAL_MAX_CONCURRENT,
+          ),
+          maxAttempts: this.readEnvPositiveInt(
+            'LLM_OPENAI_RETRY_MAX_ATTEMPTS',
+            DEFAULT_RETRY_MAX_ATTEMPTS,
+          ),
+          baseBackoffMs: this.readEnvPositiveInt(
+            'LLM_OPENAI_RETRY_BACKOFF_MS',
+            DEFAULT_RETRY_BACKOFF_MS,
+          ),
+          requestTimeoutMs: this.readEnvPositiveInt(
+            'LLM_REQUEST_TIMEOUT_MS',
+            DEFAULT_REQUEST_TIMEOUT_MS,
+          ),
+          globalConcurrencyEnabled,
+          redis: globalConcurrencyEnabled
+            ? (this.redisClient?.getNativeClient() ?? null)
+            : null,
+        },
+        this.adapter,
+        { warn: (message) => this.logger.warn(message) },
+      ),
       usageRecorder: {
         recordFromCompletion: (params) =>
           this.usageRecorder.recordFromCompletion({
@@ -169,5 +186,20 @@ export class PlatformStudentReportService {
       },
       ports,
     );
+  }
+
+  private readEnvBoolean(key: string, defaultValue: boolean): boolean {
+    const raw = this.configService.get<string>(key);
+    if (raw === undefined || raw === null) return defaultValue;
+    return raw.toLowerCase() === 'true';
+  }
+
+  private readEnvPositiveInt(key: string, defaultValue: number): number {
+    const raw = this.configService.get<string>(key);
+    if (raw === undefined || raw === null) return defaultValue;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0
+      ? Math.floor(value)
+      : defaultValue;
   }
 }

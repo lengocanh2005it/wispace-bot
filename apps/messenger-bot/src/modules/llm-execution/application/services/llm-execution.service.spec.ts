@@ -24,6 +24,7 @@ function createConfig(overrides: {
   maxConcurrent?: number;
   retryMaxAttempts?: number;
   retryBackoffMs?: number;
+  requestTimeoutMs?: number;
 }): LlmExecutionConfigService {
   const values: Record<string, string> = {};
   if (overrides.enabled !== undefined) {
@@ -37,6 +38,9 @@ function createConfig(overrides: {
   }
   if (overrides.retryBackoffMs !== undefined) {
     values.LLM_OPENAI_RETRY_BACKOFF_MS = String(overrides.retryBackoffMs);
+  }
+  if (overrides.requestTimeoutMs !== undefined) {
+    values.LLM_REQUEST_TIMEOUT_MS = String(overrides.requestTimeoutMs);
   }
 
   return new LlmExecutionConfigService({
@@ -260,6 +264,44 @@ describe('LlmExecutionService', () => {
         }),
       ).rejects.toThrow();
       expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes the composed signal into fn and aborts the in-flight call on deadline (#121)', async () => {
+      const config = createConfig({
+        enabled: true,
+        maxConcurrent: 3,
+        retryMaxAttempts: 1,
+        requestTimeoutMs: 5,
+      });
+      const service = new LlmExecutionService(config, noopMetrics, mockAdapter);
+      let capturedSignal: AbortSignal | undefined;
+      const fn = jest.fn(
+        (signal?: AbortSignal) =>
+          new Promise<string>((resolve, reject) => {
+            capturedSignal = signal;
+            const timer = setTimeout(resolve, 10_000, 'late');
+            signal?.addEventListener(
+              'abort',
+              () => {
+                clearTimeout(timer);
+                reject(
+                  signal?.reason instanceof Error
+                    ? signal.reason
+                    : new Error('Aborted'),
+                );
+              },
+              { once: true },
+            );
+          }),
+      );
+
+      await expect(
+        service.run(fn, { feature: 'STUDY_REMINDER' }),
+      ).rejects.toThrow(/timed out|aborted/i);
+
+      expect(fn).toHaveBeenCalledTimes(1);
+      expect(capturedSignal).toBeInstanceOf(AbortSignal);
+      expect(capturedSignal?.aborted).toBe(true);
     });
   });
 });

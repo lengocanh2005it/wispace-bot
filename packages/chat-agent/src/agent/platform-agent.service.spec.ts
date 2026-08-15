@@ -20,6 +20,7 @@ jest.mock('@wispace/llm-agent', () => ({
   NOOP_METRICS_PORT: {},
   loadSystemPromptFile: jest.fn().mockReturnValue('system prompt'),
   retryWithBackoff: jest.fn(),
+  createEnvLlmExecutionPort: jest.fn(),
 }));
 
 describe('PlatformAgentService', () => {

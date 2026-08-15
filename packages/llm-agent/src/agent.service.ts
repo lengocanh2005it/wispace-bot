@@ -289,7 +289,7 @@ export class LlmAgentService<TToolContext> {
       try {
         const response = await metrics.timeLlmCall(FEATURE, model, round, () =>
           this.ports.llmExecution.run(
-            () =>
+            (execSignal) =>
               this.withRetry(
                 () =>
                   adapter.chatWithTools({
@@ -300,13 +300,17 @@ export class LlmAgentService<TToolContext> {
                     toolChoice: 'auto',
                     correlationId: input.correlationId,
                     maxOutputTokens: this.getMaxOutputTokens(),
-                    signal,
+                    signal: execSignal,
                   }),
                 round,
                 logger,
-                signal,
+                execSignal,
               ),
-            { feature: FEATURE, correlationId: input.correlationId },
+            {
+              feature: FEATURE,
+              correlationId: input.correlationId,
+              signal,
+            },
           ),
         );
 

@@ -17,6 +17,7 @@ import {
 } from './messages';
 import {
   buildFallbackReport,
+  buildReport,
   formatReport,
   parseReportOutput,
 } from './report-formatter';
@@ -202,7 +203,7 @@ export class StudentReportCore {
     const model = adapter.getDefaultModel();
 
     const response = await this.ports.llmExecution.run(
-      () =>
+      (execSignal) =>
         adapter.generateJson({
           feature: FEATURE,
           model,
@@ -210,9 +211,9 @@ export class StudentReportCore {
           userContent: JSON.stringify(input),
           correlationId,
           maxOutputTokens: REPORT_MAX_OUTPUT_TOKENS,
-          signal,
+          signal: execSignal,
         }),
-      { feature: FEATURE, correlationId },
+      { feature: FEATURE, correlationId, signal },
     );
 
     this.ports.usageRecorder.recordFromCompletion({
@@ -239,7 +240,9 @@ export class StudentReportCore {
     }
 
     try {
-      return parseReportOutput(content, this.config.sanitizeText);
+      const prose = parseReportOutput(content, this.config.sanitizeText);
+      // #124: factual fields come from source data; the LLM only supplies prose.
+      return buildReport(prose, input);
     } catch (error) {
       logger.warn(
         `Invalid student report LLM output externalUserId=${maskExternalId(

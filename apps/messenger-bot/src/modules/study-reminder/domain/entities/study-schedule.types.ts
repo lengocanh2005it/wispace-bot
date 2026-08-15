@@ -40,3 +40,14 @@ export interface StudyReminderLlmOutput {
   motivation: string;
   signoff: string;
 }
+
+/**
+ * LLM-written fields of a reminder. `scheduledTime` is deliberately NOT part
+ * of the model contract — it is always rendered from trusted server data
+ * (`scheduledTimeLabel`), so a hallucinated/injected time can never reach the
+ * user (issue #123).
+ */
+export type StudyReminderLlmProse = Omit<
+  StudyReminderLlmOutput,
+  'scheduledTime'
+>;

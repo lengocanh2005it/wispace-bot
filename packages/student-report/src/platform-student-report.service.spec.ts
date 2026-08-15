@@ -6,6 +6,7 @@ import type { LlmProviderAdapter } from '@wispace/llm-agent';
 
 jest.mock('@wispace/llm-agent', () => ({
   loadSystemPromptFile: jest.fn().mockReturnValue('system prompt'),
+  createEnvLlmExecutionPort: jest.fn(),
 }));
 
 const mockGenerateReport = jest

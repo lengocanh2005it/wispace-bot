@@ -147,6 +147,8 @@ Display name: reads `Users` table by `user_id` (or maps `psid` → `user_id`). F
 
 Both automatic dispatch and menu preview use this same service. Without `OPENAI_API_KEY` → fallback to template.
 
+**Reminder time is server-derived (#123):** the model never controls the displayed time — `formatReminder` always renders `scheduledTimeLabel` computed from the trusted `session.scheduledAt` (`StudyReminderScheduleService.formatScheduledTimeLabel`). The LLM output contract has **no** `scheduledTime` field (5 keys: greeting, intro, tasks, motivation, signoff); if a model emits one anyway it is ignored (mismatch vs the server label is logged). LLM prose is bound to the label via `buildReminderOutput(prose, scheduledTimeLabel)`.
+
 ### 3.5. Quick Testing
 
 | Method | Description |

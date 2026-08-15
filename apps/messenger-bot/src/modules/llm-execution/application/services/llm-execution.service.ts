@@ -59,11 +59,11 @@ export class LlmExecutionService {
    * should pass through here.
    */
   async run<T>(
-    fn: () => Promise<T>,
+    fn: (signal?: AbortSignal) => Promise<T>,
     context?: LlmExecutionContext,
   ): Promise<T> {
     if (!this.config.isEnabled()) {
-      return fn();
+      return fn(undefined);
     }
 
     if (this.globalLimiter) {
@@ -82,7 +82,7 @@ export class LlmExecutionService {
   }
 
   private async runWithRetry<T>(
-    fn: () => Promise<T>,
+    fn: (signal?: AbortSignal) => Promise<T>,
     context?: LlmExecutionContext,
   ): Promise<T> {
     const maxAttempts = this.config.getRetryMaxAttempts();
@@ -92,8 +92,8 @@ export class LlmExecutionService {
     const correlation = context?.correlationId ?? 'n/a';
 
     // Per-call deadline + optional caller signal: cancels retries and backoff
-    // sleeps immediately, so a timeout never leaves the original request
-    // running while a retry starts.
+    // sleeps immediately AND aborts the in-flight provider request — a timeout
+    // never leaves the original request running while a retry starts.
     const deadlineSignal = AbortSignal.timeout(timeoutMs);
     const signal = context?.signal
       ? AbortSignal.any([context.signal, deadlineSignal])
@@ -103,11 +103,7 @@ export class LlmExecutionService {
     return retryWithBackoff(
       () =>
         this.metrics.timeLlmExecution(feature, () =>
-          withTimeout(
-            () => Promise.resolve().then(fn),
-            timeoutMs,
-            'LLM request',
-          ),
+          withTimeout(() => fn(signal), timeoutMs, 'LLM request'),
         ),
       {
         maxAttempts,

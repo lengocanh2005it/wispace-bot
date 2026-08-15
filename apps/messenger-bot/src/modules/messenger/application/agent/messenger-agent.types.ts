@@ -17,4 +17,9 @@ export interface MessengerAgentInput {
   history?: ChatHistoryMessage[];
   /** message.mid — LLM usage correlation id */
   correlationId?: string;
+  /**
+   * Optional caller cancellation signal — aborts the agent loop, in-flight
+   * LLM requests and tool calls immediately. Undefined means no cancellation.
+   */
+  signal?: AbortSignal;
 }

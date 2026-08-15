@@ -7,16 +7,23 @@ import {
 import type {
   StudyReminderLlmInput,
   StudyReminderLlmOutput,
+  StudyReminderLlmProse,
 } from '../entities/study-schedule.types';
 
-export function parseReminderOutput(content: string): StudyReminderLlmOutput {
+export interface ReminderParseResult {
+  prose: StudyReminderLlmProse;
+  /**
+   * The `scheduledTime` value the model emitted, if any — kept only for
+   * mismatch diagnostics. It is never rendered; the server label wins.
+   */
+  modelScheduledTime?: string;
+}
+
+export function parseReminderOutput(content: string): ReminderParseResult {
   const parsed = parseJsonObject(content);
-  return {
+  const prose: StudyReminderLlmProse = {
     greeting: readRequiredStringField(parsed, 'greeting', { maxChars: 120 }),
     intro: readRequiredStringField(parsed, 'intro', { maxChars: 240 }),
-    scheduledTime: readRequiredStringField(parsed, 'scheduledTime', {
-      maxChars: 120,
-    }),
     tasks: readRequiredStringArrayField(parsed, 'tasks', {
       minItems: 3,
       maxItems: 4,
@@ -27,6 +34,26 @@ export function parseReminderOutput(content: string): StudyReminderLlmOutput {
     }),
     signoff: readRequiredStringField(parsed, 'signoff', { maxChars: 120 }),
   };
+  const rawTime = parsed['scheduledTime'];
+  return {
+    prose,
+    modelScheduledTime:
+      typeof rawTime === 'string' && rawTime.trim()
+        ? rawTime.trim()
+        : undefined,
+  };
+}
+
+/**
+ * Binds LLM prose to the trusted server-derived time label. The model value
+ * is never accepted — even on exact equality we render the server label
+ * (issue #123).
+ */
+export function buildReminderOutput(
+  prose: StudyReminderLlmProse,
+  scheduledTimeLabel: string,
+): StudyReminderLlmOutput {
+  return { ...prose, scheduledTime: scheduledTimeLabel };
 }
 
 export function buildFallbackReminder(

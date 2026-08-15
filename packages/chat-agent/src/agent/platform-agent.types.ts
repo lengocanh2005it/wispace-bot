@@ -1,6 +1,10 @@
 import type { ReportDeliveryPort } from '@wispace/scheduler-core';
 import type { StageInput, StageResult } from '@wispace/reschedule-confirm';
-import type { AgentMetricsPort, AgentToolName } from '@wispace/llm-agent';
+import type {
+  AgentMetricsPort,
+  AgentToolName,
+  LlmExecutionPort,
+} from '@wispace/llm-agent';
 
 /**
  * Platform-neutral agent context — Discord sets `isServerChannel` +
@@ -58,6 +62,12 @@ export interface PlatformAgentInput {
   }[];
   /** Platform-specific link context (Messenger ref token). */
   linkContext?: unknown;
+  /**
+   * Optional caller cancellation signal — aborts the whole agent loop,
+   * in-flight LLM requests and tool calls immediately (e.g. platform
+   * disconnect / shutdown). Undefined means no caller cancellation.
+   */
+  signal?: AbortSignal;
 }
 
 /** Per-platform agent options — prompt files are owned by each app. */
@@ -83,6 +93,13 @@ export interface PlatformAgentOptions {
   ) => Promise<PlatformAgentReply | null>;
   /** Prometheus/OTel agent metrics (default: no-op). */
   metrics?: AgentMetricsPort;
+  /**
+   * LLM execution-control port (limiter/deadline/retry). Apps with a full
+   * execution service (Messenger's `LlmExecutionService`) inject it here;
+   * otherwise the service builds one from the shared `LLM_EXECUTION_*` env
+   * contract. One documented execution-control path for free-form chat.
+   */
+  llmExecution?: LlmExecutionPort;
   /** 0 disables agent-level retry when the app's LLM execution already retries. */
   maxLlmRetries?: number;
   /** Per-tool execution timeout in ms (Messenger report tool needs 30s). */
