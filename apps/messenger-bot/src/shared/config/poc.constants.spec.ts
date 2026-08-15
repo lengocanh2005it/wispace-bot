@@ -1,6 +1,4 @@
 import {
-  buildWelcomeMessage,
-  FALLBACK_DISPLAY_NAME,
   POC_DEFAULT_LINK_CADENCE,
   POC_DEFAULT_LINK_TOPIC,
   parseMessengerLinkContext,
@@ -33,18 +31,5 @@ describe('parseMessengerLinkContext', () => {
 
   it('rejects invalid ref', () => {
     expect(parseMessengerLinkContext({ ref: 'abc' })).toBeUndefined();
-  });
-});
-
-describe('buildWelcomeMessage', () => {
-  it('uses fallback greeting when display name is missing', () => {
-    expect(buildWelcomeMessage()).toMatch(/^Chào bạn nha!/);
-    expect(buildWelcomeMessage(FALLBACK_DISPLAY_NAME)).toMatch(
-      /^Chào bạn nha!/,
-    );
-  });
-
-  it('personalizes greeting when display name is set', () => {
-    expect(buildWelcomeMessage('Minh')).toMatch(/^Chào Minh!/);
   });
 });

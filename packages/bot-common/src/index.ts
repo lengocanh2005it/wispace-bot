@@ -2,6 +2,12 @@ export { errorMessage } from './error-message';
 export { readResponseText } from './read-response-text';
 export { isAbortError, sleep } from './abort.utils';
 export {
+  FALLBACK_DISPLAY_NAME,
+  buildGreetingMessage,
+  buildLinkSuccessMessage,
+  buildSelfIntroMessage,
+} from './bot-messages';
+export {
   INTERNAL_API_KEY_HEADER,
   InternalApiKeyGuard,
 } from './internal-api-key.guard';

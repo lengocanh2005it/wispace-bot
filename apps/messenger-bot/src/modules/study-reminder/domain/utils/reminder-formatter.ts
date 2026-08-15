@@ -1,4 +1,4 @@
-import { FALLBACK_DISPLAY_NAME } from '@messenger/shared/config/poc.constants';
+import { FALLBACK_DISPLAY_NAME } from '@wispace/bot-common';
 import {
   parseJsonObject,
   readRequiredStringArrayField,

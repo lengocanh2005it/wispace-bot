@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
+  buildGreetingMessage,
+  buildSelfIntroMessage,
   errorMessage,
   maskExternalId,
   maskExternalIdInText,
@@ -20,12 +22,6 @@ import {
 
 const UNSUPPORTED_MESSAGE_TYPE_MESSAGE =
   'Hiện mình chỉ hỗ trợ tin nhắn văn bản thôi nhé. Bạn gõ câu hỏi bằng chữ giúp mình nha!';
-
-const GREETING_TEMPLATE =
-  'Chào bạn! 👋 Mình là trợ lý WISPACE trên Zalo. Hiện tại một số tính năng chưa khả dụng trên Zalo — bạn có thể dùng Messenger để xem lịch học và tiến độ đầy đủ nhé!';
-
-const SELF_INTRO_TEMPLATE =
-  'Mình là WISPACE Bot — trợ lý AI hỗ trợ học IELTS Writing trên Zalo. Hiện tại một số tính năng cá nhân hoá chưa khả dụng trên Zalo. Bạn có thể dùng Messenger để trải nghiệm đầy đủ! 🎓';
 
 @Injectable()
 export class ZaloChatService {
@@ -58,11 +54,11 @@ export class ZaloChatService {
     // Intent detection: greeting/self-intro → reply directly, skip LLM
     const intent = this.intentDetector.detect(text.trim());
     if (intent.intent === 'greeting') {
-      await this.outboundService.sendText(zaloUserId, GREETING_TEMPLATE);
+      await this.outboundService.sendText(zaloUserId, buildGreetingMessage());
       return;
     }
     if (intent.intent === 'self_intro') {
-      await this.outboundService.sendText(zaloUserId, SELF_INTRO_TEMPLATE);
+      await this.outboundService.sendText(zaloUserId, buildSelfIntroMessage());
       return;
     }
 
@@ -127,7 +123,7 @@ export class ZaloChatService {
     const linkPart = this.oauthAuthorizeUrl
       ? `\n\nLiên kết tài khoản tại đây: ${this.oauthAuthorizeUrl}`
       : '';
-    const message = `Chào bạn! Mình là trợ lý học tập WISPACE. Bạn có thể hỏi mình bất cứ điều gì. Để xem lịch học, tiến độ và các tính năng cá nhân hoá, hãy liên kết tài khoản WISPACE${linkPart}`;
+    const message = `${buildGreetingMessage()}${linkPart}`;
     await this.outboundService.sendText(zaloUserId, message);
   }
 

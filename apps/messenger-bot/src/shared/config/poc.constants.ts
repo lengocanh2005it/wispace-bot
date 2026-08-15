@@ -68,19 +68,6 @@ export function buildPocPsidToken(psid: string): string {
   return `poc:psid:${psid}`;
 }
 
-export const FALLBACK_DISPLAY_NAME = 'Chào bạn nha';
-
-export function buildWelcomeMessage(
-  displayName: string = FALLBACK_DISPLAY_NAME,
-): string {
-  const name = displayName.trim();
-  if (!name || name === FALLBACK_DISPLAY_NAME) {
-    return `Chào bạn nha! Mình là trợ lý WISPACE. Bạn có thể hỏi về tiến độ học, lịch học sắp tới, hoặc đăng ký báo cáo trước ngày thi — cứ nhắn tự nhiên nhé.`;
-  }
-
-  return `Chào ${name}! Mình là trợ lý WISPACE. Bạn có thể hỏi về tiến độ học, lịch học sắp tới, hoặc đăng ký báo cáo trước ngày thi — cứ nhắn tự nhiên nhé.`;
-}
-
 export function getPocSubscriptionConfirmationMessage(): string {
   return 'Bạn đã đăng ký nhận báo cáo học tập. WISPACE sẽ gửi báo cáo AI qua Messenger khoảng 2–3 ngày trước ngày thi của bạn.';
 }

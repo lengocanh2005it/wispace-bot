@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { maskExternalId, sanitizeLogValue } from '@wispace/bot-common';
+import {
+  buildGreetingMessage,
+  buildSelfIntroMessage,
+  maskExternalId,
+  sanitizeLogValue,
+} from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelType } from 'discord.js';
 import { Button, Context, On, Once } from 'necord';
@@ -32,12 +37,6 @@ import {
   CHAT_FAILURE_FALLBACK_MESSAGE,
   IntentDetector,
 } from '@wispace/llm-agent';
-
-const GREETING_TEMPLATE =
-  'Chào {name}! 👋 Mình là trợ lý WISPACE — hỗ trợ bạn học IELTS Writing. Bạn có thể hỏi về lịch học, tiến độ hoặc mục tiêu band nhé!';
-
-const SELF_INTRO_TEMPLATE =
-  'Mình là WISPACE Bot — trợ lý AI hỗ trợ học IELTS Writing trên Discord. Mình có thể giúp bạn xem lịch học, tiến độ và mục tiêu band. Gõ "hi" để bắt đầu! 🎓';
 
 function formatError(error: unknown): string {
   if (error instanceof WispaceApiError) {
@@ -178,8 +177,8 @@ export class DiscordChatGateway {
     const intent = this.intentDetector.detect(resolvedText);
     if (intent.intent === 'greeting') {
       const displayName =
-        message.member?.displayName ?? message.author.displayName ?? 'bạn';
-      const reply = GREETING_TEMPLATE.replace('{name}', displayName);
+        message.member?.displayName ?? message.author.displayName;
+      const reply = buildGreetingMessage(displayName);
       if (isServerChannel) {
         await message.reply(reply);
       } else {
@@ -188,7 +187,7 @@ export class DiscordChatGateway {
       return;
     }
     if (intent.intent === 'self_intro') {
-      const reply = SELF_INTRO_TEMPLATE;
+      const reply = buildSelfIntroMessage();
       if (isServerChannel) {
         await message.reply(reply);
       } else {
