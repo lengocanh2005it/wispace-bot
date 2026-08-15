@@ -1,5 +1,15 @@
 import type { StudentCapacityInput, StudentCapacityReport } from './types';
 
+/**
+ * LLM-written portion of the report. Factual fields (streak, task statuses,
+ * dates, counts, bands) are deliberately NOT part of the model contract —
+ * they are generated deterministically from source data (issue #124), so a
+ * hallucinated/injected number can never reach the student.
+ */
+export interface StudentReportProse {
+  headline: string;
+}
+
 function parseJsonObject(content: string): Record<string, unknown> {
   const parsed = JSON.parse(content) as unknown;
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -30,28 +40,66 @@ function readRequiredStringField(
 }
 
 /**
- * Parses the LLM's JSON report output into a `StudentCapacityReport`.
+ * Parses the LLM's JSON report output. The model may only produce prose
+ * (`headline`); any other key (e.g. old `streak`/`tình trạng task X` fields)
+ * is ignored — factual content is built from source data by `buildReport`.
  * `sanitizeText` lets each platform strip Markdown or other formatting it
  * can't render (Messenger strips it; Discord/Zalo may not need to).
  */
 export function parseReportOutput(
   content: string,
   sanitizeText?: (raw: string) => string,
-): StudentCapacityReport {
+): StudentReportProse {
   const parsed = parseJsonObject(content);
   return {
     headline: readRequiredStringField(parsed, 'headline', {
       sanitize: sanitizeText,
     }),
-    streak: readRequiredStringField(parsed, 'streak', {
-      sanitize: sanitizeText,
-    }),
-    'tình trạng task 2': readRequiredStringField(parsed, 'tình trạng task 2', {
-      sanitize: sanitizeText,
-    }),
-    'tình trạng task 1': readRequiredStringField(parsed, 'tình trạng task 1', {
-      sanitize: sanitizeText,
-    }),
+  };
+}
+
+/** Deterministic factual headline from source data (exam date / days left). */
+export function buildFactualHeadline(input: StudentCapacityInput): string {
+  if (input.exam_has_passed) {
+    return `Kỳ thi ngày ${input.exam_date_display} đã qua. Mục tiêu band ${input.target_band} — hãy xem lại tiến độ và lên kế hoạch tiếp theo.`;
+  }
+  if (input.days_until_exam === 0) {
+    return `Hôm nay là ngày thi ${input.exam_date_display}, mục tiêu band ${input.target_band}.`;
+  }
+  return `Bạn còn ${input.days_until_exam} ngày nữa đến kỳ thi ${input.exam_date_display}, mục tiêu band ${input.target_band}.`;
+}
+
+/** Deterministic factual fields from source data — never model-provided. */
+export function buildFactualFields(
+  input: StudentCapacityInput,
+): Pick<
+  StudentCapacityReport,
+  'streak' | 'tình trạng task 2' | 'tình trạng task 1'
+> {
+  return {
+    streak: `Bạn đã làm ${input.total_essays_task1} bài Task 1 và ${input.total_essays_task2} bài Task 2.`,
+    'tình trạng task 2': `Task 2 đang ở band ${input.task2_band} — khả năng lập luận tốt.`,
+    'tình trạng task 1': `Task 1 đang ở band ${input.task1_band}, thấp hơn mục tiêu ${(
+      input.target_band - input.task1_band
+    ).toFixed(1)} band — cần luyện mô tả biểu đồ.`,
+  };
+}
+
+/**
+ * Combines the LLM's prose headline with the deterministic factual fields.
+ * The factual headline line is always included first, so no model output can
+ * contradict the source data (issue #124).
+ */
+export function buildReport(
+  prose: StudentReportProse,
+  input: StudentCapacityInput,
+): StudentCapacityReport {
+  const factualHeadline = buildFactualHeadline(input);
+  return {
+    headline: [factualHeadline, prose.headline.trim()]
+      .filter(Boolean)
+      .join('\n'),
+    ...buildFactualFields(input),
   };
 }
 
@@ -59,17 +107,9 @@ export function parseReportOutput(
 export function buildFallbackReport(
   input: StudentCapacityInput,
 ): StudentCapacityReport {
-  const headline = input.exam_has_passed
-    ? `Kỳ thi ngày ${input.exam_date_display} đã qua. Mục tiêu band ${input.target_band} — hãy xem lại tiến độ và lên kế hoạch tiếp theo.`
-    : input.days_until_exam === 0
-      ? `Hôm nay là ngày thi ${input.exam_date_display}, mục tiêu band ${input.target_band}.`
-      : `Bạn còn ${input.days_until_exam} ngày nữa đến kỳ thi ${input.exam_date_display}, mục tiêu band ${input.target_band}.`;
-
   return {
-    headline,
-    streak: `Bạn đã làm ${input.total_essays_task1} bài Task 1 và ${input.total_essays_task2} bài Task 2.`,
-    'tình trạng task 2': `Task 2 đang ở band ${input.task2_band} — khả năng lập luận tốt.`,
-    'tình trạng task 1': `Task 1 đang ở band ${input.task1_band}, thấp hơn mục tiêu ${(input.target_band - input.task1_band).toFixed(1)} band — cần luyện mô tả biểu đồ.`,
+    headline: buildFactualHeadline(input),
+    ...buildFactualFields(input),
   };
 }
 

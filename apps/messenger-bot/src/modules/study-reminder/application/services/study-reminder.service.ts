@@ -14,6 +14,7 @@ import {
 import {
   parseReminderOutput,
   buildFallbackReminder,
+  buildReminderOutput,
   formatReminder,
 } from '../../domain/utils/reminder-formatter';
 import { sanitizeUntrustedTextForLlm } from '@wispace/llm-agent';
@@ -166,7 +167,7 @@ export class StudyReminderService {
       context.jobId !== undefined ? String(context.jobId) : context.psid;
 
     const response = await this.llmExecution.run(
-      () =>
+      (execSignal) =>
         this.adapter.generateJson({
           feature: 'STUDY_REMINDER',
           model,
@@ -174,6 +175,7 @@ export class StudyReminderService {
           userContent: JSON.stringify(input),
           correlationId,
           maxOutputTokens: REMINDER_MAX_OUTPUT_TOKENS,
+          signal: execSignal,
         }),
       {
         feature: 'STUDY_REMINDER',
@@ -207,7 +209,20 @@ export class StudyReminderService {
     }
 
     try {
-      return parseReminderOutput(content);
+      const { prose, modelScheduledTime } = parseReminderOutput(content);
+      if (
+        modelScheduledTime &&
+        modelScheduledTime !== input.scheduledTimeLabel
+      ) {
+        this.logger.warn(
+          `Study reminder time mismatch psid=${maskExternalId(
+            context.psid,
+          )} model="${modelScheduledTime}" server="${input.scheduledTimeLabel}" — server label rendered`,
+        );
+      }
+      // #123: the reminder time always comes from trusted server data; the
+      // model's `scheduledTime` (if any) is never rendered.
+      return buildReminderOutput(prose, input.scheduledTimeLabel);
     } catch (error) {
       this.logger.warn(
         `Invalid study reminder LLM output psid=${maskExternalId(

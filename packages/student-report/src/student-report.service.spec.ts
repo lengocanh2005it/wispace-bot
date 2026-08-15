@@ -155,11 +155,54 @@ describe('StudentReportCore', () => {
 
   it('calls the LLM and records usage when adapter is configured', async () => {
     const response: LlmJsonResponse = {
+      content: JSON.stringify({ headline: 'Headline' }),
+      metadata: {
+        provider: 'openai',
+        model: 'gpt-5.4',
+        responseId: 'resp-1',
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      },
+    };
+
+    const llmExecution = {
+      run: jest.fn().mockResolvedValue(response),
+    };
+    const usageRecorder = { recordFromCompletion: jest.fn() };
+    const capacityData = {
+      getCapacityData: jest.fn().mockResolvedValue(baseInput),
+    };
+    const adapter = {
+      isConfigured: () => true,
+      getDefaultModel: () => 'gpt-5.4',
+      generateJson: jest.fn().mockResolvedValue(response),
+    } as unknown as LlmProviderAdapter;
+
+    const core = new StudentReportCore(
+      { adapter, systemPrompt: 'prompt' },
+      { llmExecution, usageRecorder, capacityData },
+    );
+
+    const result = await core.generateReport('user-1');
+
+    // Factual fields are deterministic from source; the LLM only supplies prose.
+    expect(result).toContain('còn 31 ngày');
+    expect(result).toContain('Headline');
+    expect(result).toContain('Bạn đã làm 5 bài Task 1 và 4 bài Task 2.');
+    expect(usageRecorder.recordFromCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        feature: 'STUDENT_REPORT',
+        externalUserId: 'user-1',
+      }),
+    );
+  });
+
+  it('keeps the delivered report factually consistent when the LLM output contradicts the source', async () => {
+    const response: LlmJsonResponse = {
       content: JSON.stringify({
-        headline: 'Headline',
-        streak: 'Streak',
-        'tình trạng task 2': 'T2',
-        'tình trạng task 1': 'T1',
+        headline: 'Cố gắng lên nhé!',
+        streak: 'Bạn đã làm 999 bài Task 1.',
+        'tình trạng task 2': 'Task 2 đang ở band 9.0.',
+        'tình trạng task 1': 'Task 1 đang ở band 9.0.',
       }),
       metadata: {
         provider: 'openai',
@@ -189,13 +232,13 @@ describe('StudentReportCore', () => {
 
     const result = await core.generateReport('user-1');
 
-    expect(result).toBe('Headline\n\nStreak\n\nT2\nT1');
-    expect(usageRecorder.recordFromCompletion).toHaveBeenCalledWith(
-      expect.objectContaining({
-        feature: 'STUDENT_REPORT',
-        externalUserId: 'user-1',
-      }),
-    );
+    // Factual headline + streak/status come from source, never from the model.
+    expect(result).toContain('còn 31 ngày');
+    expect(result).toContain('Cố gắng lên nhé!');
+    expect(result).not.toContain('999 bài');
+    expect(result).not.toContain('band 9.0');
+    expect(result).toContain('Bạn đã làm 5 bài Task 1 và 4 bài Task 2.');
+    expect(result).toContain('Task 1 đang ở band 6, thấp hơn mục tiêu');
   });
 
   it('falls back to a deterministic report when the LLM output is invalid', async () => {

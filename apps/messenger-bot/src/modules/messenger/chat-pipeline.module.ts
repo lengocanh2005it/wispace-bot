@@ -29,6 +29,7 @@ import {
 import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
+import { LlmExecutionService } from '../llm-execution/application/services/llm-execution.service';
 import { LlmUsageModule } from '../llm-usage/llm-usage.module';
 import { LlmUsageConfigService } from '../llm-usage/application/services/llm-usage-config.service';
 import { StudentReportModule } from '../student-report/student-report.module';
@@ -167,6 +168,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
         messengerTools: MessengerAgentToolsService,
         userDisplayNameService: UserDisplayNameService,
         metrics: MetricsService,
+        llmExecution: LlmExecutionService,
       ) =>
         new PlatformAgentService(
           configService,
@@ -181,6 +183,9 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
             appendHistory: false,
             maxLlmRetries: 0,
             toolExecutionTimeoutMs: 30_000,
+            // Chat flows through the same execution-control path as reports
+            // and reminders: limiter + circuit breaker + retry + deadline.
+            llmExecution,
             metrics: {
               timeLlmCall: (feature, model, round, fn) =>
                 metrics.timeLlmCall(feature, model, round, fn),
@@ -227,6 +232,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
         MessengerAgentToolsService,
         UserDisplayNameService,
         MetricsService,
+        LlmExecutionService,
       ],
     },
     RedisChatQueueStore,

@@ -55,6 +55,9 @@ export { isObviouslyOffTopic, isGreetingOnly } from './utils/scope.utils';
 export { sanitizeReplyText } from './utils/text.utils';
 export { sleep, retryWithBackoff } from './utils/retry.utils';
 export { loadSystemPromptFile } from './utils/load-system-prompt';
+export { createEnvLlmExecutionPort } from './execution/env-llm-execution.port';
+export type { EnvLlmExecutionConfig } from './execution/env-llm-execution.port';
+export { acquireRedisSlot } from './execution/redis-slot-limiter';
 export {
   IntentDetector,
   type IntentType,

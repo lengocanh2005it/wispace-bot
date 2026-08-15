@@ -1,6 +1,7 @@
 import { errorMessage } from '@wispace/bot-common';
 import type { LlmSafetyEventRepository } from './llm-safety.repository';
 import type { RecordGroundingWarningInput } from './types';
+import { redactSafetyText } from './redact-safety-text';
 
 export interface LlmSafetyLogger {
   warn(message: string): void;
@@ -23,14 +24,19 @@ export class LlmSafetyCore {
     const payload: Record<string, unknown> = {
       toolNamesUsed: input.toolNamesUsed,
     };
+    // #122: only redacted excerpts + hashes are persisted — never raw
+    // user/assistant text (PII, secrets, prompt content stay out of the DB).
     if (input.userTextPreview) {
-      payload['userTextPreview'] = input.userTextPreview.slice(0, 200);
+      const redacted = redactSafetyText(input.userTextPreview);
+      payload['userTextExcerpt'] = redacted.excerpt;
+      payload['userTextHash'] = redacted.hash;
+      payload['userTextLength'] = redacted.originalLength;
     }
     if (input.assistantTextPreview) {
-      payload['assistantTextPreview'] = input.assistantTextPreview.slice(
-        0,
-        200,
-      );
+      const redacted = redactSafetyText(input.assistantTextPreview);
+      payload['assistantTextExcerpt'] = redacted.excerpt;
+      payload['assistantTextHash'] = redacted.hash;
+      payload['assistantTextLength'] = redacted.originalLength;
     }
 
     this.repository

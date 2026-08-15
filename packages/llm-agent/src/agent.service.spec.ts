@@ -129,7 +129,14 @@ function buildService(
   const usageRecorder = { recordFromCompletion: jest.fn() };
   const safetyEvents = { recordGroundingWarning: jest.fn() };
   const llmExecution = {
-    run: jest.fn().mockImplementation((_fn: () => Promise<unknown>) => _fn()),
+    run: jest
+      .fn()
+      .mockImplementation(
+        (
+          fn: (signal?: AbortSignal) => Promise<unknown>,
+          meta?: { signal?: AbortSignal },
+        ) => fn(meta?.signal),
+      ),
   };
   const toolExecutor = {
     execute: overrides.execute ?? jest.fn().mockResolvedValue({ ok: true }),
@@ -447,7 +454,12 @@ describe('LlmAgentService', () => {
         llmExecution: {
           run: jest
             .fn()
-            .mockImplementation((_fn: () => Promise<unknown>) => _fn()),
+            .mockImplementation(
+              (
+                fn: (signal?: AbortSignal) => Promise<unknown>,
+                meta?: { signal?: AbortSignal },
+              ) => fn(meta?.signal),
+            ),
         },
         usageRecorder: { recordFromCompletion: jest.fn() },
         safetyEvents: { recordGroundingWarning: jest.fn() },
@@ -720,7 +732,12 @@ describe('LlmAgentService', () => {
         llmExecution: {
           run: jest
             .fn()
-            .mockImplementation((_fn: () => Promise<unknown>) => _fn()),
+            .mockImplementation(
+              (
+                fn: (signal?: AbortSignal) => Promise<unknown>,
+                meta?: { signal?: AbortSignal },
+              ) => fn(meta?.signal),
+            ),
         },
         usageRecorder: { recordFromCompletion: jest.fn() },
         safetyEvents: { recordGroundingWarning: jest.fn() },
@@ -800,7 +817,12 @@ describe('LlmAgentService', () => {
         llmExecution: {
           run: jest
             .fn()
-            .mockImplementation((_fn: () => Promise<unknown>) => _fn()),
+            .mockImplementation(
+              (
+                fn: (signal?: AbortSignal) => Promise<unknown>,
+                meta?: { signal?: AbortSignal },
+              ) => fn(meta?.signal),
+            ),
         },
         usageRecorder: { recordFromCompletion: jest.fn() },
         safetyEvents: { recordGroundingWarning: jest.fn() },
@@ -881,7 +903,12 @@ describe('LlmAgentService', () => {
           llmExecution: {
             run: jest
               .fn()
-              .mockImplementation((_fn: () => Promise<unknown>) => _fn()),
+              .mockImplementation(
+                (
+                  fn: (signal?: AbortSignal) => Promise<unknown>,
+                  meta?: { signal?: AbortSignal },
+                ) => fn(meta?.signal),
+              ),
           },
           usageRecorder: { recordFromCompletion: jest.fn() },
           safetyEvents: { recordGroundingWarning: jest.fn() },
@@ -1229,7 +1256,12 @@ describe('LlmAgentService', () => {
         llmExecution: {
           run: jest
             .fn()
-            .mockImplementation((fn: () => Promise<unknown>) => fn()),
+            .mockImplementation(
+              (
+                fn: (signal?: AbortSignal) => Promise<unknown>,
+                meta?: { signal?: AbortSignal },
+              ) => fn(meta?.signal),
+            ),
         },
         usageRecorder: { recordFromCompletion: jest.fn() },
         safetyEvents: { recordGroundingWarning: jest.fn() },

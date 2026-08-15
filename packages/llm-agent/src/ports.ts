@@ -1,7 +1,14 @@
 export interface LlmExecutionPort {
+  /**
+   * Runs an LLM call through the configured execution-control path (limiter,
+   * deadline, retry). `fn` receives the composed signal (caller signal merged
+   * with the execution deadline) and MUST pass it to the underlying provider
+   * request so a timeout/cancellation aborts the in-flight call, not just the
+   * wrapper promise. `meta.signal` is the caller's cancellation signal.
+   */
   run<T>(
-    fn: () => Promise<T>,
-    meta: { feature: string; correlationId?: string },
+    fn: (signal?: AbortSignal) => Promise<T>,
+    meta: { feature: string; correlationId?: string; signal?: AbortSignal },
   ): Promise<T>;
 }
 

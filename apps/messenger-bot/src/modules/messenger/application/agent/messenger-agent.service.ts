@@ -28,6 +28,7 @@ export class MessengerAgentService {
       correlationId: input.correlationId,
       history: input.history,
       linkContext: input.linkContext,
+      signal: input.signal,
     });
 
     return {

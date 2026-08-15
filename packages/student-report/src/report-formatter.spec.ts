@@ -1,5 +1,6 @@
 import {
   buildFallbackReport,
+  buildReport,
   formatReport,
   parseReportOutput,
 } from './report-formatter';
@@ -19,29 +20,19 @@ const baseInput: StudentCapacityInput = {
 };
 
 describe('parseReportOutput', () => {
-  it('parses a valid JSON report', () => {
+  it('parses the LLM prose headline and ignores any other keys', () => {
     const content = JSON.stringify({
       headline: 'Headline',
-      streak: 'Streak',
-      'tình trạng task 2': 'Task 2 status',
-      'tình trạng task 1': 'Task 1 status',
+      streak: 'Fake streak 999',
+      'tình trạng task 2': 'Fake T2',
+      'tình trạng task 1': 'Fake T1',
     });
 
-    expect(parseReportOutput(content)).toEqual({
-      headline: 'Headline',
-      streak: 'Streak',
-      'tình trạng task 2': 'Task 2 status',
-      'tình trạng task 1': 'Task 1 status',
-    });
+    expect(parseReportOutput(content)).toEqual({ headline: 'Headline' });
   });
 
   it('applies the sanitizeText hook when provided', () => {
-    const content = JSON.stringify({
-      headline: '**Headline**',
-      streak: 'Streak',
-      'tình trạng task 2': 'Task 2 status',
-      'tình trạng task 1': 'Task 1 status',
-    });
+    const content = JSON.stringify({ headline: '**Headline**' });
 
     const result = parseReportOutput(content, (raw) =>
       raw.replace(/\*\*/g, ''),
@@ -50,8 +41,8 @@ describe('parseReportOutput', () => {
     expect(result.headline).toBe('Headline');
   });
 
-  it('throws when a required field is missing', () => {
-    const content = JSON.stringify({ headline: 'Headline' });
+  it('throws when the headline field is missing', () => {
+    const content = JSON.stringify({ streak: 'Streak' });
     expect(() => parseReportOutput(content)).toThrow(/missing string field/);
   });
 
@@ -59,6 +50,23 @@ describe('parseReportOutput', () => {
     expect(() => parseReportOutput('[]')).toThrow(
       'LLM JSON output must be an object',
     );
+  });
+});
+
+describe('buildReport', () => {
+  it('always renders deterministic factual fields, ignoring contradictory model output', () => {
+    const report = buildReport({ headline: 'Cố lên nhé!' }, baseInput);
+
+    expect(report.streak).toBe('Bạn đã làm 5 bài Task 1 và 4 bài Task 2.');
+    expect(report['tình trạng task 2']).toContain('band 6.5');
+    expect(report['tình trạng task 1']).toContain('band 6');
+  });
+
+  it('prepends the deterministic factual headline to the LLM prose', () => {
+    const report = buildReport({ headline: 'Cố lên nhé!' }, baseInput);
+
+    expect(report.headline).toContain('còn 31 ngày');
+    expect(report.headline).toContain('Cố lên nhé!');
   });
 });
 

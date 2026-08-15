@@ -1,11 +1,12 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   LlmAgentService,
   LlmAgentPorts,
   NOOP_METRICS_PORT,
   ToolExecutorPort,
-  retryWithBackoff,
+  createEnvLlmExecutionPort,
+  type LlmExecutionPort,
   type LlmProviderAdapter,
   loadSystemPromptFile,
 } from '@wispace/llm-agent';
@@ -13,7 +14,7 @@ import {
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
 } from '@wispace/chat-metering';
-import { errorMessage } from '@wispace/bot-common';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
 import { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
 import { PlatformAgentToolsService } from './platform-agent-tools.service';
 import type {
@@ -25,7 +26,17 @@ import type {
 
 const FEATURE = 'FREE_FORM_CHAT';
 
+// Execution-control defaults — same contract and env keys as the Messenger
+// app's `LlmExecutionConfigService`, so all three bots share one documented
+// configuration surface (`LLM_EXECUTION_ENABLED`, `LLM_MAX_CONCURRENT`,
+// `LLM_GLOBAL_MAX_CONCURRENT`, `LLM_OPENAI_RETRY_MAX_ATTEMPTS`,
+// `LLM_OPENAI_RETRY_BACKOFF_MS`, `LLM_REQUEST_TIMEOUT_MS`,
+// `LLM_GLOBAL_CONCURRENCY_ENABLED`).
 const DEFAULT_MAX_CONCURRENT = 3;
+const DEFAULT_GLOBAL_MAX_CONCURRENT = 10;
+const DEFAULT_RETRY_MAX_ATTEMPTS = 3;
+const DEFAULT_RETRY_BACKOFF_MS = 2_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
 function ensurePrecreatedExerciseUrl(text: string, url?: string): string {
   if (!url || text.includes(url)) return text;
@@ -37,16 +48,19 @@ function ensurePrecreatedExerciseUrl(text: string, url?: string): string {
 
 /**
  * Thin NestJS adapter around `@wispace/llm-agent`'s platform-agnostic
- * orchestration loop — shared by Discord and Zalo (replaces their
+ * orchestration loop — shared by Messenger, Discord and Zalo (replaces their
  * near-identical per-app agent services). Usage/safety events persist via
- * `@wispace/chat-metering` (platform set by the app). Includes p-limit
- * concurrency cap to prevent overwhelming the LLM provider.
+ * `@wispace/chat-metering` (platform set by the app).
+ *
+ * LLM execution control (concurrency cap, request deadline, retry, optional
+ * Redis-distributed global budget) lives in the `llmExecution` port — injected
+ * by the app (Messenger uses `LlmExecutionService`) or built from the shared
+ * `LLM_EXECUTION_*` env contract. Chat no longer maintains a private,
+ * hardcoded limiter/retry path.
  */
 @Injectable()
 export class PlatformAgentService {
   private readonly logger = new Logger(PlatformAgentService.name);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private readonly limiter: (fn: () => Promise<any>) => Promise<any>;
   private agent?: LlmAgentService<PlatformAgentToolContext>;
 
   constructor(
@@ -58,25 +72,13 @@ export class PlatformAgentService {
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
     private readonly options: PlatformAgentOptions,
-  ) {
-    const maxConcurrent = Number(
-      this.configService.get<string>('LLM_MAX_CONCURRENT') ??
-        DEFAULT_MAX_CONCURRENT,
-    );
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pLimit = require('p-limit') as (
-      concurrency: number,
-    ) => <T>(fn: () => Promise<T>) => Promise<T>;
-    this.limiter = pLimit(
-      Number.isFinite(maxConcurrent) && maxConcurrent > 0
-        ? maxConcurrent
-        : DEFAULT_MAX_CONCURRENT,
-    );
-  }
+    @Optional()
+    @Inject(REDIS_CLIENT)
+    private readonly redisClient?: RedisClientPort,
+  ) {}
 
   async reply(input: PlatformAgentInput): Promise<PlatformAgentReply> {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return this.limiter(() => this.replyInternal(input));
+    return this.replyInternal(input);
   }
 
   private async replyInternal(
@@ -123,6 +125,7 @@ export class PlatformAgentService {
           LlmAgentService<PlatformAgentToolContext>['reply']
         >[0]['history'],
         correlationId: input.correlationId,
+        signal: input.signal,
       },
       toolContext,
     );
@@ -156,20 +159,8 @@ export class PlatformAgentService {
 
     const ports: LlmAgentPorts<PlatformAgentToolContext> = {
       // ponytail: shared retry helper from llm-agent (was 3 local copies of sleep+backoff)
-      llmExecution: {
-        run: (fn) =>
-          retryWithBackoff(fn, {
-            maxAttempts: 3,
-            baseDelayMs: 500,
-            isRetryable: (error) => this.adapter.isRetryableError(error),
-            onRetry: (attempt, backoffMs, error) =>
-              this.logger.warn(
-                `LLM provider retry attempt=${attempt}/3 backoffMs=${backoffMs}: ${errorMessage(
-                  error,
-                )}`,
-              ),
-          }),
-      },
+      llmExecution:
+        this.options.llmExecution ?? this.buildEnvLlmExecutionPort(),
       usageRecorder: {
         recordFromCompletion: (params) =>
           this.usageRecorder.recordFromCompletion({
@@ -224,6 +215,64 @@ export class PlatformAgentService {
         metrics: this.options.metrics ?? NOOP_METRICS_PORT,
       },
     );
+  }
+
+  /**
+   * Default `llmExecution` port for apps that do not inject their own
+   * (Messenger injects `LlmExecutionService`). Reads the shared `LLM_EXECUTION_*`
+   * contract: enable flag, per-instance concurrency cap, per-request deadline,
+   * retry budget, and an optional Redis-distributed aggregate budget.
+   */
+  private buildEnvLlmExecutionPort(): LlmExecutionPort {
+    const globalConcurrencyEnabled =
+      process.env.LLM_GLOBAL_CONCURRENCY_ENABLED?.toLowerCase() === 'true';
+
+    return createEnvLlmExecutionPort(
+      {
+        enabled: this.readEnvBoolean('LLM_EXECUTION_ENABLED', true),
+        maxConcurrent: this.readEnvPositiveInt(
+          'LLM_MAX_CONCURRENT',
+          DEFAULT_MAX_CONCURRENT,
+        ),
+        globalMaxConcurrent: this.readEnvPositiveInt(
+          'LLM_GLOBAL_MAX_CONCURRENT',
+          DEFAULT_GLOBAL_MAX_CONCURRENT,
+        ),
+        maxAttempts: this.readEnvPositiveInt(
+          'LLM_OPENAI_RETRY_MAX_ATTEMPTS',
+          DEFAULT_RETRY_MAX_ATTEMPTS,
+        ),
+        baseBackoffMs: this.readEnvPositiveInt(
+          'LLM_OPENAI_RETRY_BACKOFF_MS',
+          DEFAULT_RETRY_BACKOFF_MS,
+        ),
+        requestTimeoutMs: this.readEnvPositiveInt(
+          'LLM_REQUEST_TIMEOUT_MS',
+          DEFAULT_REQUEST_TIMEOUT_MS,
+        ),
+        globalConcurrencyEnabled,
+        redis: globalConcurrencyEnabled
+          ? (this.redisClient?.getNativeClient() ?? null)
+          : null,
+      },
+      this.adapter,
+      this.logger,
+    );
+  }
+
+  private readEnvBoolean(key: string, defaultValue: boolean): boolean {
+    const raw = this.configService.get<string>(key);
+    if (raw === undefined || raw === null) return defaultValue;
+    return raw.toLowerCase() === 'true';
+  }
+
+  private readEnvPositiveInt(key: string, defaultValue: number): number {
+    const raw = this.configService.get<string>(key);
+    if (raw === undefined || raw === null) return defaultValue;
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0
+      ? Math.floor(value)
+      : defaultValue;
   }
 
   private async buildSystemPrompt(input: PlatformAgentInput): Promise<string> {

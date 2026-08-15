@@ -4,7 +4,8 @@ export type LlmExecutionFeature =
   | 'STUDY_REMINDER';
 
 export interface LlmExecutionContext {
-  feature: LlmExecutionFeature;
+  /** Feature label — widened to `string` so it matches the shared port contract. */
+  feature: string;
   correlationId?: string;
   /** Optional caller signal — aborts the LLM call (and stops retries) immediately. */
   signal?: AbortSignal;

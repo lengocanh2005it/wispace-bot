@@ -94,5 +94,28 @@ describe('StudyReminderService', () => {
 
     expect(result).toContain('Chào Mai,');
     expect(result).toContain('Ôn feedback');
+    expect(result).toContain('📅 09:00 01/07/2026');
+  });
+
+  it('always renders the server scheduledTimeLabel, never the model time (#123)', async () => {
+    const service = buildService(
+      JSON.stringify({
+        greeting: 'Chào Mai,',
+        intro: 'mình nhắc bạn về buổi học nhé.',
+        scheduledTime: '23:59 31/12/2099',
+        tasks: ['Ôn feedback', 'Luyện Task 2', 'Soát lỗi ngữ pháp'],
+        motivation: 'Cố thêm một chút là tiến bộ rõ hơn.',
+        signoff: 'Cố lên nhé!',
+      }),
+    );
+
+    const result = await service.generateReminderForSession('psid-1', {
+      ...session,
+      topic: 'Task 2',
+    });
+
+    expect(result).toContain('📅 09:00 01/07/2026');
+    expect(result).not.toContain('23:59');
+    expect(result).not.toContain('31/12/2099');
   });
 });

@@ -11,7 +11,6 @@ import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
 import { sanitizeMessengerText } from '@messenger/shared/utils/messenger-text.utils';
 import { LlmExecutionService } from '@messenger/modules/llm-execution/application/services/llm-execution.service';
-import type { LlmExecutionContext } from '@messenger/modules/llm-execution/application/types/llm-execution.types';
 import { LlmUsageRecorderService } from '@messenger/modules/llm-usage/application/services/llm-usage-recorder.service';
 import { TaskScoreAverageApiService } from '../../infrastructure/wispace/task-score-average-api.service';
 
@@ -111,8 +110,7 @@ export class StudentReportService {
   private buildCore(): StudentReportCore {
     const ports: StudentReportPorts = {
       llmExecution: {
-        run: (fn, meta) =>
-          this.llmExecution.run(fn, meta as LlmExecutionContext),
+        run: (fn, meta) => this.llmExecution.run(fn, meta),
       },
       usageRecorder: {
         recordFromCompletion: (params) =>
