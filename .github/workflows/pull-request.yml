@@ -28,6 +28,25 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  pinned-registry-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Fail on unpinned registry executables in build steps
+        run: |
+          set -euo pipefail
+          HITS="$(grep -RInE 'npx[[:space:]]+(-y|--yes)|npx[[:space:]]+[a-z@][^[:space:]]*@[0-9]|npm[[:space:]]+exec[[:space:]]+-y|npx[[:space:]]+-y[[:space:]]+[a-z@]' \
+            --include='Dockerfile*' --include='*.yml' --include='*.yaml' --include='*.mjs' --include='*.sh' . || true)"
+          if [ -n "$HITS" ]; then
+            echo "Unpinned registry executables found in build steps:"
+            echo "$HITS"
+            exit 1
+          fi
+          echo "No unpinned registry executables in build steps."
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 30
