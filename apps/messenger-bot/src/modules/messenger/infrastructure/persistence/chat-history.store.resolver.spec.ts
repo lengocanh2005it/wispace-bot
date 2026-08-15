@@ -11,6 +11,7 @@ describe('ChatHistoryStoreResolver', () => {
       getHistoryStore: () => configured,
       getHistoryTtlMs: () => 1_800_000,
       getHistoryMaxMessages: () => 12,
+      getHistoryMaxUsers: () => 10_000,
     } as MessengerChatSharedConfigService;
 
     const redisClient = {
@@ -47,6 +48,7 @@ describe('ChatHistoryStoreResolver', () => {
       getHistoryStore: () => 'redis',
       getHistoryTtlMs: () => 1_800_000,
       getHistoryMaxMessages: () => 12,
+      getHistoryMaxUsers: () => 10_000,
     } as MessengerChatSharedConfigService;
     const resolver = new ChatHistoryStoreResolver(sharedConfig, redisClient);
 
