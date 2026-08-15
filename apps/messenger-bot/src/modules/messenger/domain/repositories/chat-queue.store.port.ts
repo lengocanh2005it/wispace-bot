@@ -14,8 +14,5 @@ export interface ChatQueueStorePort {
     processingStuckMs: number,
   ): Promise<ChatQueueBufferSnapshot | null>;
   completeChatBuffer(input: CompleteChatBufferInput): Promise<boolean>;
-  listPsidsReadyForFlush(
-    limit: number,
-    processingStuckMs: number,
-  ): Promise<string[]>;
+  listPsidsReadyForFlush(limit: number): Promise<string[]>;
 }

@@ -73,16 +73,22 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         useFactory: (
           repository: MessengerMappingRepositoryPort,
         ): MappingReaderPort => ({
-          findActiveMappings: (platform) =>
-            repository.findActiveMappingsWithPsid().then((list) =>
-              list
-                .filter((m) => m.psid)
-                .map((m) => ({
-                  externalUserId: m.psid as string,
-                  userId: m.userId,
-                  platform: platform as Platform,
-                })),
-            ),
+          findActiveMappingsPage: (platform, query) =>
+            repository
+              .findActiveMappingsPage(Number(query.afterId ?? 0), query.limit)
+              .then((list) => ({
+                items: list
+                  .filter((m) => m.psid)
+                  .map((m) => ({
+                    externalUserId: m.psid as string,
+                    userId: m.userId,
+                    platform: platform as Platform,
+                  })),
+                nextId:
+                  list.length > 0
+                    ? String(list[list.length - 1].id)
+                    : undefined,
+              })),
           findActiveMappingByExternalUserId: (platform, externalUserId) =>
             repository.findActiveMappingByPsid(externalUserId).then((m) =>
               m?.psid

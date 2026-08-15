@@ -41,7 +41,9 @@ describe('StudyReminderSyncService', () => {
 
   beforeEach(() => {
     mappingReader = {
-      findActiveMappings: jest.fn().mockResolvedValue([]),
+      findActiveMappingsPage: jest
+        .fn()
+        .mockResolvedValue({ items: [], nextId: undefined }),
       findActiveMappingByExternalUserId: jest.fn().mockResolvedValue(null),
     };
 
@@ -89,9 +91,10 @@ describe('StudyReminderSyncService', () => {
 
   describe('syncUpcomingSessions (all)', () => {
     it('throws when getSessions is missing (fail closed, jobs unchanged)', async () => {
-      mappingReader.findActiveMappings.mockResolvedValue([
-        { externalUserId: 'ext-1', userId: 1, platform: 'messenger' },
-      ]);
+      mappingReader.findActiveMappingsPage.mockResolvedValue({
+        items: [{ externalUserId: 'ext-1', userId: 1, platform: 'messenger' }],
+        nextId: undefined,
+      });
 
       await expect(service.syncUpcomingSessions()).rejects.toThrow(
         'requires an authoritative getSessions provider',
@@ -122,9 +125,10 @@ describe('StudyReminderSyncService', () => {
 
     it('upserts jobs and cancels stale jobs', async () => {
       const session = makeSession();
-      mappingReader.findActiveMappings.mockResolvedValue([
-        { externalUserId: 'ext-1', userId: 1, platform: 'messenger' },
-      ]);
+      mappingReader.findActiveMappingsPage.mockResolvedValue({
+        items: [{ externalUserId: 'ext-1', userId: 1, platform: 'messenger' }],
+        nextId: undefined,
+      });
       jobRepo.cancelStaleJobsForExternalUserId.mockResolvedValue(2);
 
       const result = await service.syncUpcomingSessions({
@@ -164,9 +168,10 @@ describe('StudyReminderSyncService', () => {
     });
 
     it('skips mappings without an external id', async () => {
-      mappingReader.findActiveMappings.mockResolvedValue([
-        { externalUserId: '', userId: 5, platform: 'messenger' },
-      ]);
+      mappingReader.findActiveMappingsPage.mockResolvedValue({
+        items: [{ externalUserId: '', userId: 5, platform: 'messenger' }],
+        nextId: undefined,
+      });
 
       const result = await service.syncUpcomingSessions({
         getSessions: jest.fn().mockResolvedValue([]),
@@ -177,9 +182,12 @@ describe('StudyReminderSyncService', () => {
     });
 
     it('collects per-mapping failures', async () => {
-      mappingReader.findActiveMappings.mockResolvedValue([
-        { externalUserId: 'ext-err', userId: 99, platform: 'messenger' },
-      ]);
+      mappingReader.findActiveMappingsPage.mockResolvedValue({
+        items: [
+          { externalUserId: 'ext-err', userId: 99, platform: 'messenger' },
+        ],
+        nextId: undefined,
+      });
       jobRepo.upsertPendingJobs.mockRejectedValue(new Error('Wispace timeout'));
 
       const result = await service.syncUpcomingSessions({
@@ -190,6 +198,41 @@ describe('StudyReminderSyncService', () => {
       expect(result.failures).toEqual([
         { externalUserId: 'ext-err', error: 'Wispace timeout' },
       ]);
+    });
+
+    it('pages mappings with the keyset cursor until a short page', async () => {
+      const session = makeSession();
+      const mappings = Array.from({ length: 150 }, (_, i) => ({
+        externalUserId: `ext-${i}`,
+        userId: i + 1,
+        platform: 'messenger' as const,
+      }));
+      mappingReader.findActiveMappingsPage
+        .mockResolvedValueOnce({
+          items: mappings.slice(0, 100),
+          nextId: '100',
+        })
+        .mockResolvedValueOnce({
+          items: mappings.slice(100),
+          nextId: undefined,
+        });
+      const getSessions = jest.fn().mockResolvedValue([session]);
+
+      const result = await service.syncUpcomingSessions({ getSessions });
+
+      expect(result.mappings).toBe(150);
+      expect(result.upserted).toBe(150);
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(mappingReader.findActiveMappingsPage).toHaveBeenCalledWith(
+        'messenger',
+        { limit: 100, afterId: undefined },
+      );
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(mappingReader.findActiveMappingsPage).toHaveBeenCalledWith(
+        'messenger',
+        { limit: 100, afterId: '100' },
+      );
+      expect(getSessions).toHaveBeenCalledTimes(150);
     });
   });
 

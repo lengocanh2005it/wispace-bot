@@ -62,18 +62,29 @@ export type MessengerSenderAction = 'mark_seen' | 'typing_on' | 'typing_off';
 export class MessengerOutboundService {
   private readonly logger = new Logger(MessengerOutboundService.name);
   private readonly sendBreaker: CircuitBreaker;
+  /**
+   * Single timeout budget shared by the circuit breaker and the Send API
+   * fetch — the breaker can never fire while the fetch keeps running, so a
+   * caller failure is never followed by an untracked late delivery.
+   */
+  private readonly sendApiTimeoutMs: number;
 
   constructor(
     private readonly configService: ConfigService,
     @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
     private readonly repository: MessengerMessageLogRepositoryPort,
   ) {
+    const raw = this.configService.get<string>('MESSENGER_SEND_API_TIMEOUT_MS');
+    const parsed = raw ? Number(raw) : NaN;
+    this.sendApiTimeoutMs =
+      Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 10_000;
+
     this.sendBreaker = new CircuitBreaker(
       async (psid: string, payload: Record<string, unknown>) => {
         await this.doCallSendApi(psid, payload);
       },
       {
-        timeout: 10_000,
+        timeout: this.sendApiTimeoutMs,
         errorThresholdPercentage: 50,
         resetTimeout: 60_000,
         volumeThreshold: 5,
@@ -417,8 +428,7 @@ export class MessengerOutboundService {
     const pageAccessToken = this.configService.get<string>('PAGE_ACCESS_TOKEN');
     const graphApiVersion =
       this.configService.get<string>('GRAPH_API_VERSION') ?? 'v21.0';
-    const sendApiTimeoutMs =
-      this.configService.get<number>('MESSENGER_SEND_API_TIMEOUT_MS') ?? 10_000;
+    const sendApiTimeoutMs = this.sendApiTimeoutMs;
 
     if (!pageAccessToken) {
       throw new InternalServerErrorException('PAGE_ACCESS_TOKEN is missing');

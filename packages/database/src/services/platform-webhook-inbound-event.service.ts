@@ -292,4 +292,31 @@ export class PlatformWebhookInboundEventService {
       nextRetryAt: row.nextRetryAt,
     }));
   }
+
+  /**
+   * Total rows matching the `listDue` predicate (unbounded) — the backlog
+   * measure for monitoring; `listDue` itself stays capped by `limit`.
+   */
+  async countDue(opts: {
+    now?: Date;
+    processingStuckMs?: number;
+  }): Promise<number> {
+    const now = opts.now ?? new Date();
+    const staleBefore = new Date(
+      now.getTime() - (opts.processingStuckMs ?? 300_000),
+    );
+
+    return this.repo
+      .createQueryBuilder('evt')
+      .where('evt.platform = :platform', { platform: this.platform })
+      .andWhere(
+        `(
+          evt.status IN (:...statuses)
+          AND (evt.next_retry_at IS NULL OR evt.next_retry_at <= :now)
+        )
+        OR (evt.status = 'processing' AND evt.updated_at < :staleBefore)`,
+        { statuses: ['pending', 'failed'], now, staleBefore },
+      )
+      .getCount();
+  }
 }

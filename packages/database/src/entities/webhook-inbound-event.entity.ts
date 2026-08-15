@@ -33,6 +33,7 @@ import type { Platform, WebhookInboundEventStatus } from '../types';
   'status',
   'createdAt',
 ])
+@Index('idx_webhook_inbound_events_stale', ['platform', 'status', 'updatedAt'])
 export class WebhookInboundEventEntity {
   @PrimaryGeneratedColumn()
   id: number;

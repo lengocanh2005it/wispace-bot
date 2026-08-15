@@ -22,7 +22,10 @@ export interface MessengerMappingRepositoryPort {
     notificationMessagesToken: string;
   }): Promise<UserMessengerMapping>;
   findActiveSubscribedMappings(): Promise<UserMessengerMapping[]>;
-  findActiveMappingsWithPsid(): Promise<UserMessengerMapping[]>;
+  findActiveMappingsPage(
+    afterId: number,
+    limit: number,
+  ): Promise<UserMessengerMapping[]>;
   cleanupActiveDuplicateMappings(): Promise<number>;
   deactivateConflictingActiveMappings(params: {
     psid: string;

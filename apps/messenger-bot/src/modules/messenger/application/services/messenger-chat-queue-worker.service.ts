@@ -32,10 +32,7 @@ export class MessengerChatQueueWorkerService {
     // No cron lock: claim uses per-psid lock (Redis) or SELECT FOR UPDATE (postgres),
     // so all pods can poll in parallel and safely process different PSIDs.
     try {
-      const psids = await this.chatQueueStore.listPsidsReadyForFlush(
-        25,
-        this.sharedConfig.getProcessingStuckMs(),
-      );
+      const psids = await this.chatQueueStore.listPsidsReadyForFlush(25);
 
       // Parallel flush (bounded) — a serial loop serializes the LLM calls.
       await runBatched(psids, FLUSH_CONCURRENCY, (psid) =>

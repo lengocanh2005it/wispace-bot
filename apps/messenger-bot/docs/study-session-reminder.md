@@ -194,7 +194,7 @@ Sample response:
 
 `linked: false` — user has no Messenger mapping → no jobs (200 OK, not an error).
 
-Sync is **per `userId`** — does not scan all mappings. 30-min cron + `POST /messenger/sync-study-reminders` still used for fallback / ops.
+Sync is **per `userId`** — does not scan all mappings. 30-min cron + `POST /messenger/sync-study-reminders` still used for fallback / ops. The full sync (cron + `sync-study-reminders`) is **keyset-paged** (100 mappings/page, cursor by id) and processed with bounded concurrency (5) — memory and duration stay flat as the account population grows; per-batch progress and total duration are logged.
 
 **Example call from WISPACE (after POST/DELETE `/api/UserCalendar`):**
 

@@ -65,6 +65,14 @@ export class MessengerChatSharedConfigService {
     );
   }
 
+  getHistoryMaxUsers(): number {
+    return readEnvPositiveInt(
+      this.configService,
+      'CHAT_HISTORY_MAX_USERS',
+      10_000,
+    );
+  }
+
   getQueueStaleTtlMs(): number {
     return readEnvPositiveInt(
       this.configService,

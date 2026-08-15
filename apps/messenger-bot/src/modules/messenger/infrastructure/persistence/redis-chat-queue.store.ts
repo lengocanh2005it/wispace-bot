@@ -38,10 +38,18 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
   private static readonly BUFFER_PREFIX = 'chat:queue:buffer:';
   private static readonly LOCK_PREFIX = 'chat:queue:lock:';
   private static readonly ACTIVE_SET = 'chat:queue:active-psids';
+  /** Ready-to-flush members keyed by flushAfterAt (debounce deadline). */
+  private static readonly FLUSH_SET = 'chat:queue:flush';
+  /** Processing members keyed by the time they become stuck (start + stuckMs). */
+  private static readonly STUCK_SET = 'chat:queue:stuck';
+  private static readonly REHYDRATE_LOCK = 'chat:queue:rehydrate-lock';
   private static readonly DEFAULT_LOCK_TTL_MS = 30_000;
+  private static readonly DEFAULT_PROCESSING_STUCK_MS = 300_000;
+  private static readonly REHYDRATE_LOCK_TTL_MS = 60_000;
 
   private readonly logger = new Logger(RedisChatQueueStore.name);
   private readonly lockTtlMs: number;
+  private readonly stuckMs: number;
 
   constructor(
     @Inject(REDIS_CLIENT)
@@ -54,6 +62,15 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       Number.isFinite(parsed) && parsed > 0
         ? Math.floor(parsed)
         : RedisChatQueueStore.DEFAULT_LOCK_TTL_MS;
+
+    const stuckRaw = configService.get<string>(
+      'CHAT_QUEUE_PROCESSING_STUCK_MS',
+    );
+    const stuckParsed = stuckRaw ? Number(stuckRaw) : NaN;
+    this.stuckMs =
+      Number.isFinite(stuckParsed) && stuckParsed > 0
+        ? Math.floor(stuckParsed)
+        : RedisChatQueueStore.DEFAULT_PROCESSING_STUCK_MS;
   }
 
   isAvailable(): boolean {
@@ -160,6 +177,12 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
           state.lastPendingIdempotencyKey = null;
           // Claim immediately — the stuck job already consumed the debounce wait.
           state.flushAfterAt = Date.now();
+        } else {
+          // Wedged with no pending messages: persist the reset so the dead
+          // member leaves the flush/stuck ZSETs instead of being re-picked
+          // by every poll until the buffer key expires.
+          await this.writeState(client, psid, state);
+          return null;
         }
       }
 
@@ -219,67 +242,60 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     );
   }
 
-  async listPsidsReadyForFlush(
-    limit: number,
-    processingStuckMs: number,
-  ): Promise<string[]> {
+  async listPsidsReadyForFlush(limit: number): Promise<string[]> {
     const client = this.redisClient.getNativeClient();
     if (!client) {
       return [];
     }
 
     try {
-      const psids = await client.smembers(RedisChatQueueStore.ACTIVE_SET);
-      const ready: Array<{ psid: string; flushAfterAt: number }> = [];
+      // One-time backfill of pre-ZSET active members (buffer keys expire after
+      // a day, so a missed member only loses a still-pending message).
+      await this.maybeRehydrate(client);
 
-      for (const psid of psids) {
-        // Buffer key expired (crash left no final writeState): drop the set
-        // member so the 2s poll stops GET-ing a missing key forever.
+      const now = Date.now();
+      // Bounded poll: two ordered range reads, never a full-set scan.
+      const [flushEntries, stuckEntries] = await Promise.all([
+        client.zrangebyscore(
+          RedisChatQueueStore.FLUSH_SET,
+          0,
+          now,
+          'WITHSCORES',
+          'LIMIT',
+          0,
+          limit,
+        ),
+        client.zrangebyscore(
+          RedisChatQueueStore.STUCK_SET,
+          0,
+          now,
+          'WITHSCORES',
+          'LIMIT',
+          0,
+          limit,
+        ),
+      ]);
+
+      const ready: string[] = [];
+      for (const psid of this.mergeCandidates(
+        flushEntries,
+        stuckEntries,
+        limit,
+      )) {
+        // Buffer key expired (crash left no final writeState): drop every
+        // membership so the 2s poll stops re-picking a dead member.
         const keyExists = await client.exists(this.bufferKey(psid));
         if (!keyExists) {
           await this.removeStaleActiveMember(client, psid);
           continue;
         }
-
-        const state = await this.readState(client, psid);
-
-        const stuckProcessing =
-          state.processing &&
-          state.processingStartedAt !== null &&
-          state.processingStartedAt !== undefined &&
-          Date.now() - state.processingStartedAt >= processingStuckMs;
-
-        // A wedged psid (processing=true, texts cleared by a crashed pod) is
-        // ready too — claimReadyBuffer promotes pendingTexts on reset.
-        if (state.texts.length === 0) {
-          if (!stuckProcessing) {
-            continue;
-          }
-          ready.push({
-            psid,
-            flushAfterAt: state.processingStartedAt ?? state.updatedAt,
-          });
-          continue;
-        }
-
-        const flushReady =
-          !state.processing &&
-          state.flushAfterAt !== null &&
-          state.flushAfterAt !== undefined &&
-          state.flushAfterAt <= Date.now();
-
-        if (flushReady || stuckProcessing) {
-          ready.push({
-            psid,
-            flushAfterAt: state.flushAfterAt ?? state.updatedAt,
-          });
+        ready.push(psid);
+        if (ready.length >= limit) {
+          break;
         }
       }
 
-      return ready
-        .sort((left, right) => left.flushAfterAt - right.flushAfterAt)
-        .slice(0, limit)
-        .map((entry) => entry.psid);
+      return ready;
     } catch (error) {
       this.logger.error(
         `Redis queue list ready failed — messages may be delayed: ${errorMessage(
@@ -379,18 +395,109 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
   ): Promise<void> {
     const script = `
       if redis.call("exists", KEYS[1]) == 0 then
-        return redis.call("srem", KEYS[2], ARGV[1])
+        redis.call("srem", KEYS[2], ARGV[1])
+        redis.call("zrem", KEYS[3], ARGV[1])
+        redis.call("zrem", KEYS[4], ARGV[1])
+        return 1
       end
       return 0
     `;
 
     await client.eval(
       script,
-      2,
+      4,
       this.bufferKey(psid),
       RedisChatQueueStore.ACTIVE_SET,
+      RedisChatQueueStore.FLUSH_SET,
+      RedisChatQueueStore.STUCK_SET,
       psid,
     );
+  }
+
+  /**
+   * Backfill for the pre-ZSET era: when both ready ZSETs are empty but the
+   * legacy active set still has members, one pod (guarded by a short Redis
+   * lock) scans the set once and repopulates the ZSETs. Idempotent — members
+   * with no buffered work are dropped via the stale-member script.
+   */
+  private async maybeRehydrate(client: Redis): Promise<void> {
+    const flushCount = await client.zcard(RedisChatQueueStore.FLUSH_SET);
+    const stuckCount = await client.zcard(RedisChatQueueStore.STUCK_SET);
+    if (flushCount + stuckCount > 0) {
+      return;
+    }
+
+    const activeCount = await client.scard(RedisChatQueueStore.ACTIVE_SET);
+    if (activeCount === 0) {
+      return;
+    }
+
+    const lockValue = randomUUID();
+    const acquired = await client.set(
+      RedisChatQueueStore.REHYDRATE_LOCK,
+      lockValue,
+      'PX',
+      RedisChatQueueStore.REHYDRATE_LOCK_TTL_MS,
+      'NX',
+    );
+    if (acquired !== 'OK') {
+      return; // another pod is rehydrating — skip this tick
+    }
+
+    try {
+      const psids = await client.smembers(RedisChatQueueStore.ACTIVE_SET);
+      for (const psid of psids) {
+        const state = await this.readState(client, psid);
+        if (state.processing) {
+          const stuckAt =
+            (state.processingStartedAt ?? Date.now()) + this.stuckMs;
+          await client.zadd(RedisChatQueueStore.STUCK_SET, stuckAt, psid);
+        } else if (
+          state.texts.length > 0 &&
+          state.flushAfterAt !== null &&
+          state.flushAfterAt !== undefined
+        ) {
+          await client.zadd(
+            RedisChatQueueStore.FLUSH_SET,
+            state.flushAfterAt,
+            psid,
+          );
+        } else {
+          await this.removeStaleActiveMember(client, psid);
+        }
+      }
+    } finally {
+      await client.del(RedisChatQueueStore.REHYDRATE_LOCK);
+    }
+  }
+
+  /** Merge both ZSET reads, dedupe, sort by due time, cap at the limit. */
+  private mergeCandidates(
+    flushEntries: string[],
+    stuckEntries: string[],
+    limit: number,
+  ): string[] {
+    const seen = new Set<string>();
+    const entries: Array<{ psid: string; score: number }> = [];
+
+    const push = (raw: string[]): void => {
+      for (let i = 0; i + 1 < raw.length; i += 2) {
+        const psid = raw[i];
+        if (psid === undefined || seen.has(psid)) {
+          continue;
+        }
+        seen.add(psid);
+        entries.push({ psid, score: Number(raw[i + 1]) });
+      }
+    };
+
+    push(flushEntries);
+    push(stuckEntries);
+
+    return entries
+      .sort((left, right) => left.score - right.score)
+      .slice(0, limit)
+      .map((entry) => entry.psid);
   }
 
   private bufferKey(psid: string): string {
@@ -460,16 +567,34 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         .multi()
         .del(key)
         .srem(RedisChatQueueStore.ACTIVE_SET, psid)
+        .zrem(RedisChatQueueStore.FLUSH_SET, psid)
+        .zrem(RedisChatQueueStore.STUCK_SET, psid)
         .exec();
       this.assertTransactionSucceeded(result);
       return;
     }
 
-    const result = await client
+    // ZSET membership mirrors the state: processing members wait in the
+    // stuck set (score = when they become stuck), idle members with texts
+    // wait in the flush set (score = debounce deadline).
+    const multi = client
       .multi()
       .set(key, JSON.stringify(state), 'EX', CHAT_QUEUE_BUFFER_TTL_SECONDS)
-      .sadd(RedisChatQueueStore.ACTIVE_SET, psid)
-      .exec();
+      .sadd(RedisChatQueueStore.ACTIVE_SET, psid);
+
+    if (state.processing) {
+      const stuckAt = (state.processingStartedAt ?? Date.now()) + this.stuckMs;
+      multi
+        .zrem(RedisChatQueueStore.FLUSH_SET, psid)
+        .zadd(RedisChatQueueStore.STUCK_SET, stuckAt, psid);
+    } else {
+      const flushAfterAt = state.flushAfterAt ?? Date.now();
+      multi
+        .zadd(RedisChatQueueStore.FLUSH_SET, flushAfterAt, psid)
+        .zrem(RedisChatQueueStore.STUCK_SET, psid);
+    }
+
+    const result = await multi.exec();
     this.assertTransactionSucceeded(result);
   }
 

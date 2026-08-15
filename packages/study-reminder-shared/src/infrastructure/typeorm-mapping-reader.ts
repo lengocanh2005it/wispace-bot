@@ -1,11 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { Repository, type FindOptionsWhere } from 'typeorm';
-import type { MappingReaderPort } from '../ports/mapping-reader.port';
+import type {
+  MappingPage,
+  MappingPageQuery,
+  MappingReaderPort,
+} from '../ports/mapping-reader.port';
 import type { UserLink } from '../types/study-reminder.types';
 import type { Platform } from '@wispace/database';
 
 /** Minimum column shape shared by the per-app account-link entities. */
 export interface AccountLinkRow {
+  id: string;
   platform: string;
   externalUserId: string;
   userId: number;
@@ -25,12 +30,30 @@ export class TypeormMappingReader<
     private readonly tableName: string,
   ) {}
 
-  async findActiveMappings(platform: string): Promise<UserLink[]> {
-    const results = await this.repo.query<UserLink[]>(
-      `SELECT external_user_id as "externalUserId", user_id as "userId", platform FROM ${this.tableName} WHERE platform = $1`,
-      [platform],
+  async findActiveMappingsPage(
+    platform: string,
+    query: MappingPageQuery,
+  ): Promise<MappingPage> {
+    const results = await this.repo.query<AccountLinkRow[]>(
+      `SELECT id, external_user_id as "externalUserId", user_id as "userId", platform
+       FROM ${this.tableName}
+       WHERE platform = $1 AND id > $2
+       ORDER BY id ASC
+       LIMIT $3`,
+      [platform, query.afterId ?? '0', query.limit],
     );
-    return results;
+
+    const items: UserLink[] = results.map((row) => ({
+      externalUserId: row.externalUserId,
+      userId: row.userId,
+      platform: row.platform as Platform,
+    }));
+
+    return {
+      items,
+      nextId:
+        results.length > 0 ? String(results[results.length - 1].id) : undefined,
+    };
   }
 
   async findActiveMappingByExternalUserId(

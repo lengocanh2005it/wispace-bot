@@ -28,9 +28,21 @@ function buildService(overrides: {
   sendText?: jest.Mock;
   generateReport?: jest.Mock;
   shouldSendReportToday?: jest.Mock;
+  pages?: unknown[][];
 }) {
   const linkRepo = {
-    find: jest.fn().mockResolvedValue([link]),
+    createQueryBuilder: jest.fn(() => ({
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(overrides.pages?.shift() ?? [link]),
+        ),
+    })),
   } as unknown as Repository<ZaloAccountLinkEntity>;
   const listUserIdsWithSentReportToday =
     overrides.listUserIdsWithSentReportToday ?? jest.fn().mockResolvedValue([]);
@@ -87,6 +99,25 @@ function buildService(overrides: {
 }
 
 describe('ZaloReportCronService', () => {
+  it('pages accounts with keyset cursor and stops after a short page', async () => {
+    const pageLinks = Array.from({ length: 250 }, (_, i) => ({
+      id: String(i + 1),
+      externalUserId: `zalo-${i + 1}`,
+      userId: 42 + i,
+      platform: 'zalo',
+    })) as unknown as ZaloAccountLinkEntity[];
+    const { service, generateReport, sendText, shouldSendReportToday } =
+      buildService({
+        pages: [pageLinks.slice(0, 200), pageLinks.slice(200)],
+      });
+
+    await service.sendDailyReports();
+
+    expect(shouldSendReportToday).toHaveBeenCalledTimes(250);
+    expect(generateReport).toHaveBeenCalledTimes(250);
+    expect(sendText).toHaveBeenCalledTimes(250);
+  });
+
   it('skips without generating when outside the exam window', async () => {
     const shouldSendReportToday = jest.fn().mockResolvedValue({
       shouldSend: false,

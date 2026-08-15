@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import { runBatched } from '@wispace/scheduler-core';
 import {
   MAPPING_READER,
   type MappingReaderPort,
@@ -21,6 +22,8 @@ import type {
 import type { Platform } from '@wispace/database';
 
 const DEFAULT_PLATFORM = 'messenger';
+const DEFAULT_PAGE_SIZE = 100;
+const DEFAULT_SYNC_CONCURRENCY = 5;
 
 export type OnUserSyncHook = (
   userId: number,
@@ -41,6 +44,29 @@ export interface StudyReminderSyncOptions {
   userIdMappingLookup?: (userId: number) => Promise<UserLink | null>;
   /** Statuses considered stale when cancelling out-of-horizon jobs (Messenger adds 'processing'). */
   staleCancelStatuses?: StudyReminderJobStatus[];
+}
+
+interface SyncSettings {
+  maxRetries: number;
+  syncHorizonHours: number;
+}
+
+interface SyncCounters {
+  mappings: number;
+  skipped: number;
+  upserted: number;
+  cancelled: number;
+  failed: number;
+  cancelledOtherPlatforms: number;
+  failures: StudyReminderSyncFailure[];
+}
+
+interface PerMappingOutcome {
+  upserted: number;
+  cancelled: number;
+  skipped: number;
+  cancelledOtherPlatforms?: number;
+  failure?: StudyReminderSyncFailure;
 }
 
 @Injectable()
@@ -76,10 +102,18 @@ export class StudyReminderSyncService {
 
     const settings = this.scheduleService.getOutboxSettings();
     const horizonEnd = hoursFromNow(settings.syncHorizonHours);
-
-    let mappings: UserLink[];
+    const startedAt = Date.now();
+    const counters: SyncCounters = {
+      mappings: 0,
+      skipped: 0,
+      upserted: 0,
+      cancelled: 0,
+      failed: 0,
+      cancelledOtherPlatforms: 0,
+      failures: [],
+    };
     let linked = true;
-    let skipped = 0;
+
     if (opts?.userId) {
       const mapping = opts.userIdMappingLookup
         ? await opts.userIdMappingLookup(opts.userId)
@@ -87,124 +121,200 @@ export class StudyReminderSyncService {
             platform,
             String(opts.userId),
           );
-      mappings = mapping ? [mapping] : [];
       linked = mapping != null;
       if (!mapping) {
         // Messenger reports an unlinked userId as one skipped mapping.
-        skipped = 1;
+        counters.skipped = 1;
+      } else {
+        counters.mappings = 1;
+        this.accumulate(
+          await this.syncOneMapping(
+            mapping,
+            platform,
+            opts,
+            settings,
+            horizonEnd,
+          ),
+          counters,
+        );
       }
     } else {
-      mappings = await this.mappingReader.findActiveMappings(platform);
-    }
+      // Keyset-paged full sync: bounded memory and bounded concurrency, so
+      // duration no longer grows one serial upstream fetch per user.
+      let afterId: string | undefined;
+      let pageNo = 0;
+      let pageProcessed: number;
+      do {
+        const page = await this.mappingReader.findActiveMappingsPage(platform, {
+          limit: DEFAULT_PAGE_SIZE,
+          afterId,
+        });
+        pageProcessed = page.items.length;
+        counters.mappings += pageProcessed;
+        pageNo += 1;
 
-    let upserted = 0;
-    let cancelled = 0;
-    let failed = 0;
-    let cancelledOtherPlatforms = 0;
-    const failures: StudyReminderSyncFailure[] = [];
-
-    for (const mapping of mappings) {
-      if (!mapping.externalUserId) {
-        skipped += 1;
-        continue;
-      }
-
-      try {
-        // Cross-platform cancel hook (Messenger cancels jobs from other platforms)
-        if (opts?.userId && mapping.userId) {
-          const cancelledCount = await this.onUserSync?.(
-            mapping.userId,
-            platform,
-          );
-          if (typeof cancelledCount === 'number') {
-            cancelledOtherPlatforms += cancelledCount;
-          }
-        }
-
-        const sessions = await getSessions(
-          mapping.externalUserId,
-          mapping.userId,
+        const results = await runBatched(
+          page.items,
+          DEFAULT_SYNC_CONCURRENCY,
+          (mapping) =>
+            this.syncOneMapping(mapping, platform, opts, settings, horizonEnd),
         );
 
-        const activeSessionKeys: string[] = [];
-        const batch: UpsertStudyReminderJobInput[] = [];
-
-        for (const session of sessions) {
-          if (session.scheduledAt > horizonEnd) {
-            skipped += 1;
+        let batchUpserted = 0;
+        let batchCancelled = 0;
+        for (const result of results) {
+          if (result.status !== 'fulfilled') {
+            counters.failed += 1;
             continue;
           }
-
-          const remindAt = this.scheduleService.computeRemindAt(
-            session.scheduledAt,
-          );
-
-          batch.push({
-            platform,
-            externalUserId: mapping.externalUserId,
-            userId: mapping.userId,
-            sessionKey: session.sessionKey,
-            scheduledAt: session.scheduledAt,
-            remindAt,
-            topic: session.topic,
-            maxRetries: settings.maxRetries,
-          });
-
-          activeSessionKeys.push(session.sessionKey);
+          const outcome = result.value as PerMappingOutcome;
+          batchUpserted += outcome.upserted;
+          batchCancelled += outcome.cancelled;
+          this.accumulate(outcome, counters);
         }
 
-        if (batch.length > 0) {
-          // One SELECT + batched save instead of findOne+save per session.
-          await this.jobRepository.upsertPendingJobs(batch, {
-            // Leave in-flight `processing` jobs alone unless the schedule
-            // actually changed — prevents a 30-min sync from reopening a job
-            // mid-send and causing duplicate reminders on multi-pod setups.
-            reopenOnlyOnScheduleChange: true,
-          });
-        }
-        upserted += batch.length;
-
-        const cancelledCount =
-          await this.jobRepository.cancelStaleJobsForExternalUserId(
-            platform,
-            mapping.externalUserId,
-            activeSessionKeys,
-            horizonEnd,
-            opts?.staleCancelStatuses
-              ? { statuses: opts.staleCancelStatuses }
-              : undefined,
-          );
-        cancelled += cancelledCount;
-      } catch (error) {
-        failed += 1;
-        failures.push({
-          externalUserId: mapping.externalUserId,
-          error: this.toErrorMessage(error),
-        });
-        this.logger.warn(
-          `Failed to sync for externalUserId=${maskExternalId(
-            mapping.externalUserId,
-          )}: ${this.toErrorMessage(error)}`,
+        this.logger.log(
+          `Study reminder sync batch ${pageNo} (platform=${platform}): processed=${pageProcessed}, upserted=${batchUpserted}, cancelled=${batchCancelled}, totalProcessed=${counters.mappings}`,
         );
-      }
+
+        afterId = page.nextId;
+      } while (afterId !== undefined && pageProcessed === DEFAULT_PAGE_SIZE);
     }
 
     this.logger.log(
-      `Study reminder sync (all, platform=${platform}): mappings=${mappings.length}, upserted=${upserted}, cancelled=${cancelled}, skipped=${skipped}, failed=${failed}`,
+      `Study reminder sync (all, platform=${platform}): mappings=${counters.mappings}, upserted=${counters.upserted}, cancelled=${counters.cancelled}, skipped=${counters.skipped}, failed=${counters.failed} (${Date.now() - startedAt}ms)`,
     );
 
     return {
-      mappings: mappings.length,
-      upserted,
-      cancelled,
-      skipped,
-      failed,
+      mappings: counters.mappings,
+      upserted: counters.upserted,
+      cancelled: counters.cancelled,
+      skipped: counters.skipped,
+      failed: counters.failed,
       scope: opts?.userId ? 'user' : 'all',
       userId: opts?.userId,
       linked,
-      cancelledOtherPlatforms,
-      failures,
+      cancelledOtherPlatforms: counters.cancelledOtherPlatforms,
+      failures: counters.failures,
     };
+  }
+
+  /**
+   * Sync one mapping: cross-platform cancel hook, upstream session fetch,
+   * batched upsert, stale-job cancellation. Never throws — per-user failures
+   * are isolated and reported through the outcome (same contract as before).
+   */
+  private async syncOneMapping(
+    mapping: UserLink,
+    platform: Platform,
+    opts: StudyReminderSyncOptions,
+    settings: SyncSettings,
+    horizonEnd: Date,
+  ): Promise<PerMappingOutcome> {
+    if (!mapping.externalUserId) {
+      return { upserted: 0, cancelled: 0, skipped: 1 };
+    }
+
+    try {
+      let cancelledOtherPlatforms = 0;
+      // Cross-platform cancel hook (Messenger cancels jobs from other platforms)
+      if (opts.userId && mapping.userId) {
+        const cancelledCount = await this.onUserSync?.(
+          mapping.userId,
+          platform,
+        );
+        if (typeof cancelledCount === 'number') {
+          cancelledOtherPlatforms = cancelledCount;
+        }
+      }
+
+      const sessions = await opts.getSessions!(
+        mapping.externalUserId,
+        mapping.userId,
+      );
+
+      const activeSessionKeys: string[] = [];
+      const batch: UpsertStudyReminderJobInput[] = [];
+      let skipped = 0;
+
+      for (const session of sessions) {
+        if (session.scheduledAt > horizonEnd) {
+          skipped += 1;
+          continue;
+        }
+
+        const remindAt = this.scheduleService.computeRemindAt(
+          session.scheduledAt,
+        );
+
+        batch.push({
+          platform,
+          externalUserId: mapping.externalUserId,
+          userId: mapping.userId,
+          sessionKey: session.sessionKey,
+          scheduledAt: session.scheduledAt,
+          remindAt,
+          topic: session.topic,
+          maxRetries: settings.maxRetries,
+        });
+
+        activeSessionKeys.push(session.sessionKey);
+      }
+
+      if (batch.length > 0) {
+        // One SELECT + batched save instead of findOne+save per session.
+        await this.jobRepository.upsertPendingJobs(batch, {
+          // Leave in-flight `processing` jobs alone unless the schedule
+          // actually changed — prevents a 30-min sync from reopening a job
+          // mid-send and causing duplicate reminders on multi-pod setups.
+          reopenOnlyOnScheduleChange: true,
+        });
+      }
+
+      const cancelledCount =
+        await this.jobRepository.cancelStaleJobsForExternalUserId(
+          platform,
+          mapping.externalUserId,
+          activeSessionKeys,
+          horizonEnd,
+          opts?.staleCancelStatuses
+            ? { statuses: opts.staleCancelStatuses }
+            : undefined,
+        );
+
+      return {
+        upserted: batch.length,
+        cancelled: cancelledCount,
+        skipped,
+        cancelledOtherPlatforms,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Failed to sync for externalUserId=${maskExternalId(
+          mapping.externalUserId,
+        )}: ${this.toErrorMessage(error)}`,
+      );
+      return {
+        upserted: 0,
+        cancelled: 0,
+        skipped: 0,
+        failure: {
+          externalUserId: mapping.externalUserId,
+          error: this.toErrorMessage(error),
+        },
+      };
+    }
+  }
+
+  private accumulate(outcome: PerMappingOutcome, counters: SyncCounters): void {
+    counters.skipped += outcome.skipped;
+    counters.upserted += outcome.upserted;
+    counters.cancelled += outcome.cancelled;
+    counters.cancelledOtherPlatforms += outcome.cancelledOtherPlatforms ?? 0;
+    if (outcome.failure) {
+      counters.failed += 1;
+      counters.failures.push(outcome.failure);
+    }
   }
 
   private toErrorMessage(error: unknown): string {

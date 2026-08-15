@@ -25,7 +25,10 @@ import {
   CronLeaderLeaseService,
 } from '@wispace/database';
 import { ChatMeteringModule } from '@wispace/chat-metering';
-import { WispaceGoalsService } from '@wispace/wispace-client';
+import {
+  MemoizedWispaceGoalsService,
+  WispaceGoalsService,
+} from '@wispace/wispace-client';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
 import { DiscordReportSendJobRepository } from './infrastructure/persistence/discord-report-send-job.repository';
@@ -55,15 +58,27 @@ import { WispaceModule } from '../wispace/wispace.module';
     }),
   ],
   providers: [
+    // Request-scoped goals memoization: exam window, orchestration and report
+    // generation all fetch goals within one report execution — collapse them
+    // into a single upstream call (short TTL, bounded cache).
+    {
+      provide: MemoizedWispaceGoalsService,
+      useFactory: (goalsService: WispaceGoalsService) =>
+        new MemoizedWispaceGoalsService(goalsService, {
+          ttlMs: 60_000,
+          maxEntries: 10_000,
+        }),
+      inject: [WispaceGoalsService],
+    },
     {
       provide: GOALS_DATA_PORT,
-      useFactory: (goalsService: WispaceGoalsService) => ({
+      useFactory: (goalsService: MemoizedWispaceGoalsService) => ({
         getUserGoals: async (externalUserId: string) => ({
           examDate: (await goalsService.getUserGoals(externalUserId)).examDate,
         }),
         parseExamDate: (examDate: string) => parseExamDateToIso(examDate),
       }),
-      inject: [WispaceGoalsService],
+      inject: [MemoizedWispaceGoalsService],
     },
     {
       provide: REPORT_SEND_JOB_REPOSITORY,
@@ -79,7 +94,7 @@ import { WispaceModule } from '../wispace/wispace.module';
       provide: PlatformStudentReportService,
       useFactory: (
         configService: ConfigService,
-        goalsService: WispaceGoalsService,
+        goalsService: MemoizedWispaceGoalsService,
         usageRecorder: PlatformLlmUsageRecorderAdapter,
         adapter: LlmProviderAdapter,
       ) =>
@@ -93,7 +108,7 @@ import { WispaceModule } from '../wispace/wispace.module';
         ),
       inject: [
         ConfigService,
-        WispaceGoalsService,
+        MemoizedWispaceGoalsService,
         PlatformLlmUsageRecorderAdapter,
         'LLM_PROVIDER_ADAPTER',
       ],

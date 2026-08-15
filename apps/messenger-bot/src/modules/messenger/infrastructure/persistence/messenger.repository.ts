@@ -298,12 +298,17 @@ export class MessengerRepository
     );
   }
 
-  async findActiveMappingsWithPsid(): Promise<UserMessengerMapping[]> {
+  async findActiveMappingsPage(
+    afterId: number,
+    limit: number,
+  ): Promise<UserMessengerMapping[]> {
     const rows = await this.mappingRepo
       .createQueryBuilder('mapping')
       .where('mapping.status = :status', { status: 'ACTIVE' })
       .andWhere('mapping.external_user_id IS NOT NULL')
-      .orderBy('mapping.id', 'DESC')
+      .andWhere('mapping.id > :afterId', { afterId })
+      .orderBy('mapping.id', 'ASC')
+      .take(limit)
       .getMany();
 
     return this.dedupeMappingsByPsid(rows.map((row) => this.mapEntity(row)));

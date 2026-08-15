@@ -18,6 +18,23 @@ const ZERO_RESULT = {
   failures: [],
 };
 
+const createPageMock = (pages: unknown[][]) => {
+  const queryBuilder = {
+    select: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    andWhere: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
+    take: jest.fn().mockReturnThis(),
+    getMany: jest
+      .fn()
+      .mockImplementation(() => Promise.resolve(pages.shift() ?? [])),
+  };
+  return {
+    createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
+    queryBuilder,
+  };
+};
+
 describe('DiscordReportCronService', () => {
   const buildService = (overrides?: {
     leaderEnabled?: boolean;
@@ -65,9 +82,9 @@ describe('DiscordReportCronService', () => {
       }),
     };
 
-    const accountLinkRepo = {
-      find: jest.fn().mockResolvedValue(overrides?.links ?? []),
-    };
+    const pageMock = createPageMock(
+      overrides?.links?.length ? [overrides.links] : [],
+    );
 
     const service = new DiscordReportCronService(
       { get: jest.fn().mockReturnValue(undefined) } as never,
@@ -75,7 +92,7 @@ describe('DiscordReportCronService', () => {
       reportCronLockService as never,
       reportScheduleService as never,
       orchestrationService as never,
-      accountLinkRepo as never,
+      pageMock as never,
     );
 
     return {
@@ -84,7 +101,7 @@ describe('DiscordReportCronService', () => {
       reportCronLockService,
       reportScheduleService,
       orchestrationService,
-      accountLinkRepo,
+      accountLinkRepo: pageMock,
     };
   };
 
@@ -122,6 +139,49 @@ describe('DiscordReportCronService', () => {
         examDateForOutbox: '2026-08-14',
       },
     );
+  });
+
+  it('pages accounts with keyset cursor and stops after a short page', async () => {
+    const links = Array.from({ length: 250 }, (_, i) => ({
+      ...LINK,
+      id: String(i + 1),
+      externalUserId: `discord-${i + 1}`,
+    }));
+    const pageMock = createPageMock([links.slice(0, 200), links.slice(200)]);
+    const orchestrationService = {
+      claimAndSend: jest.fn().mockResolvedValue(ZERO_RESULT),
+    };
+    const shouldSendReportToday = jest.fn().mockResolvedValue({
+      shouldSend: true,
+      daysUntilExam: 3,
+      examDate: '2026-08-14',
+      minDays: 2,
+      maxDays: 3,
+    });
+
+    const service = new DiscordReportCronService(
+      { get: jest.fn().mockReturnValue(undefined) } as never,
+      { shouldRunScheduledReportCron: jest.fn() } as never,
+      { tryAcquireDailyLock: jest.fn(), releaseDailyLock: jest.fn() } as never,
+      { shouldSendReportToday } as never,
+      orchestrationService as never,
+      pageMock as never,
+    );
+
+    const result = await service.sendScheduledReports();
+
+    expect(result.total).toBe(250);
+    expect(orchestrationService.claimAndSend).toHaveBeenCalledTimes(250);
+    expect(pageMock.createQueryBuilder).toHaveBeenCalledTimes(2);
+    expect(pageMock.queryBuilder.andWhere).toHaveBeenNthCalledWith(1, 'TRUE', {
+      cursor: undefined,
+    });
+    expect(pageMock.queryBuilder.andWhere).toHaveBeenNthCalledWith(
+      2,
+      'link.id > :cursor',
+      { cursor: '200' },
+    );
+    expect(pageMock.queryBuilder.take).toHaveBeenCalledWith(200);
   });
 
   it('skips users outside the exam window without claiming', async () => {
@@ -189,6 +249,44 @@ describe('DiscordReportCronService', () => {
     expect(orchestrationService.claimAndSend).toHaveBeenCalledTimes(2);
   });
 
+  it('caps reported failures at 50', async () => {
+    const links = Array.from({ length: 3 }, (_, i) => ({
+      ...LINK,
+      id: String(i + 1),
+      externalUserId: `discord-${i + 1}`,
+    }));
+    const orchestrationService = {
+      claimAndSend: jest.fn().mockResolvedValue({
+        ...ZERO_RESULT,
+        failures: Array.from({ length: 40 }, (_, i) => ({
+          externalUserId: `discord-${i + 1}`,
+          error: `err-${i}`,
+        })),
+      }),
+    };
+    const shouldSendReportToday = jest.fn().mockResolvedValue({
+      shouldSend: true,
+      daysUntilExam: 3,
+      examDate: '2026-08-14',
+      minDays: 2,
+      maxDays: 3,
+    });
+
+    const service = new DiscordReportCronService(
+      { get: jest.fn().mockReturnValue(undefined) } as never,
+      { shouldRunScheduledReportCron: jest.fn() } as never,
+      { tryAcquireDailyLock: jest.fn(), releaseDailyLock: jest.fn() } as never,
+      { shouldSendReportToday } as never,
+      orchestrationService as never,
+      createPageMock([links]) as never,
+    );
+
+    const result = await service.sendScheduledReports();
+
+    expect(result.failed).toBe(120);
+    expect(result.failures).toHaveLength(51); // 50 + omission marker
+  });
+
   it('skips the whole run when not the cron leader', async () => {
     const { service, accountLinkRepo, reportCronLockService } = buildService({
       leaderEnabled: false,
@@ -196,7 +294,7 @@ describe('DiscordReportCronService', () => {
 
     await service.handleDailyReportCron();
 
-    expect(accountLinkRepo.find).not.toHaveBeenCalled();
+    expect(accountLinkRepo.createQueryBuilder).not.toHaveBeenCalled();
     expect(reportCronLockService.tryAcquireDailyLock).not.toHaveBeenCalled();
   });
 
@@ -207,7 +305,7 @@ describe('DiscordReportCronService', () => {
 
     await service.handleDailyReportCron();
 
-    expect(accountLinkRepo.find).not.toHaveBeenCalled();
+    expect(accountLinkRepo.createQueryBuilder).not.toHaveBeenCalled();
     expect(reportCronLockService.releaseDailyLock).not.toHaveBeenCalled();
   });
 
@@ -218,8 +316,14 @@ describe('DiscordReportCronService', () => {
 
     expect(reportCronLockService.tryAcquireDailyLock).toHaveBeenCalled();
     expect(reportCronLockService.releaseDailyLock).toHaveBeenCalled();
-    expect(accountLinkRepo.find).toHaveBeenCalledWith({
-      where: { platform: 'discord' },
-    });
+    expect(accountLinkRepo.createQueryBuilder).toHaveBeenCalledWith('link');
+    expect(accountLinkRepo.queryBuilder.where).toHaveBeenCalledWith(
+      'link.platform = :platform',
+      { platform: 'discord' },
+    );
+    expect(accountLinkRepo.queryBuilder.orderBy).toHaveBeenCalledWith(
+      'link.id',
+      'ASC',
+    );
   });
 });

@@ -21,6 +21,8 @@ import type {
 
 const PLATFORM = 'discord' as const;
 const DEFAULT_SEND_CONCURRENCY = 3;
+const PAGE_SIZE = 200;
+const MAX_REPORTED_FAILURES = 50;
 
 const ZERO: ClaimAndSendResult = {
   sent: 0,
@@ -74,83 +76,130 @@ export class DiscordReportCronService {
         DEFAULT_SEND_CONCURRENCY,
     );
 
-    const links = await this.accountLinkRepo.find({
-      where: { platform: PLATFORM },
-    });
-
+    let total = 0;
     let sent = 0;
     let skipped = 0;
     let claimSkipped = 0;
     let failed = 0;
     const failures: Array<{ externalUserId: string; error: string }> = [];
+    let cursor: string | undefined;
+    const startedAt = Date.now();
+    let hasMore = true;
 
-    const results = await runBatched(
-      links,
-      concurrency,
-      async (link): Promise<ClaimAndSendResult> => {
-        const mapping: ReportMapping = {
-          id: link.id,
-          platform: PLATFORM,
-          externalUserId: link.externalUserId,
-          userId: link.userId ?? undefined,
-          notificationCadence: 'daily',
-          status: 'ACTIVE',
-        };
+    while (hasMore) {
+      const page = await this.loadPage(cursor);
+      if (page.length === 0) break;
+      total += page.length;
 
-        // Window gate: only auto-send inside the days-before-exam window
-        // (same as Messenger). forceSend bypasses the window but still
-        // respects already-sent-today unless the caller clears it.
-        const window = await evaluateExamWindow(
-          link.externalUserId,
-          this.reportScheduleService,
-          opts.forceSend === true,
-        );
-        if (window.skip) {
-          this.logger.log(
-            `Skip Discord user ${maskExternalId(
-              link.externalUserId,
-            )}: outside exam window or schedule unavailable`,
+      const results = await runBatched(
+        page,
+        concurrency,
+        async (link): Promise<ClaimAndSendResult> => {
+          const mapping: ReportMapping = {
+            id: link.id,
+            platform: PLATFORM,
+            externalUserId: link.externalUserId,
+            userId: link.userId ?? undefined,
+            notificationCadence: 'daily',
+            status: 'ACTIVE',
+          };
+
+          // Window gate: only auto-send inside the days-before-exam window
+          // (same as Messenger). forceSend bypasses the window but still
+          // respects already-sent-today unless the caller clears it.
+          const window = await evaluateExamWindow(
+            link.externalUserId,
+            this.reportScheduleService,
+            opts.forceSend === true,
           );
-          return { ...ZERO, skipped: 1 };
+          if (window.skip) {
+            this.logger.log(
+              `Skip Discord user ${maskExternalId(
+                link.externalUserId,
+              )}: outside exam window or schedule unavailable`,
+            );
+            return { ...ZERO, skipped: 1 };
+          }
+
+          return this.orchestrationService.claimAndSend(mapping, {
+            reportDate,
+            skipAlreadySentToday: !opts.forceSend,
+            examDateForOutbox: window.examDate,
+          });
+        },
+      );
+
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          const v = result.value as ClaimAndSendResult;
+          sent += v.sent;
+          skipped += v.skipped;
+          claimSkipped += v.claimSkipped;
+          for (const failure of v.failures) {
+            failed += 1;
+            this.pushFailure(failures, failure);
+          }
+        } else {
+          failed += 1;
+          this.pushFailure(failures, {
+            externalUserId: 'unknown',
+            error:
+              (result.reason as Error | undefined)?.message ??
+              String(result.reason),
+          });
         }
-
-        return this.orchestrationService.claimAndSend(mapping, {
-          reportDate,
-          skipAlreadySentToday: !opts.forceSend,
-          examDateForOutbox: window.examDate,
-        });
-      },
-    );
-
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        const v = result.value as ClaimAndSendResult;
-        sent += v.sent;
-        skipped += v.skipped;
-        claimSkipped += v.claimSkipped;
-        failures.push(...v.failures);
-        failed += v.failures.length;
-      } else {
-        failed += 1;
-        const reason = result.reason as Error | undefined;
-        failures.push({
-          externalUserId: 'unknown',
-          error: reason?.message ?? String(reason),
-        });
       }
+
+      this.logger.log(
+        `Discord report batch: total=${total} sent=${sent} skipped=${skipped} claimSkipped=${claimSkipped} failed=${failed}`,
+      );
+      cursor = page[page.length - 1].id;
+      hasMore = page.length === PAGE_SIZE;
     }
 
     this.logger.log(
-      `Discord report cron: total=${links.length} sent=${sent} skipped=${skipped} claimSkipped=${claimSkipped} failed=${failed}`,
+      `Discord report cron: total=${total} sent=${sent} skipped=${skipped} claimSkipped=${claimSkipped} failed=${failed} (${Date.now() - startedAt}ms)`,
     );
 
     return {
-      total: links.length,
+      total,
       sent,
       skipped,
       claimSkipped,
       failed,
       failures,
     };
+  }
+
+  private async loadPage(
+    cursor: string | undefined,
+  ): Promise<DiscordAccountLinkEntity[]> {
+    return this.accountLinkRepo
+      .createQueryBuilder('link')
+      .select([
+        'link.id',
+        'link.externalUserId',
+        'link.userId',
+        'link.platform',
+      ])
+      .where('link.platform = :platform', { platform: PLATFORM })
+      .andWhere(cursor !== undefined ? 'link.id > :cursor' : 'TRUE', { cursor })
+      .orderBy('link.id', 'ASC')
+      .take(PAGE_SIZE)
+      .getMany();
+  }
+
+  private pushFailure(
+    failures: Array<{ externalUserId: string; error: string }>,
+    failure: { externalUserId: string; error: string },
+  ): void {
+    if (failures.length < MAX_REPORTED_FAILURES) {
+      failures.push(failure);
+    } else if (failures.length === MAX_REPORTED_FAILURES) {
+      failures.push({
+        externalUserId: '…',
+        error: 'additional failures omitted (see logs)',
+      });
+    }
   }
 }

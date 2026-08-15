@@ -23,6 +23,7 @@ function buildService(options: WebhookInboundRetryCronOptions): {
       Promise<InboundEventRow[]>,
       [{ limit: number; processingStuckMs: number }]
     >;
+    countDue: jest.Mock<Promise<number>, [{ processingStuckMs: number }]>;
     claim: jest.Mock<Promise<boolean>, [number]>;
     markCompleted: jest.Mock;
     markFailed: jest.Mock;
@@ -39,6 +40,7 @@ function buildService(options: WebhookInboundRetryCronOptions): {
         [{ limit: number; processingStuckMs: number }]
       >()
       .mockResolvedValue([]),
+    countDue: jest.fn().mockResolvedValue(0),
     claim: jest.fn<Promise<boolean>, [number]>().mockResolvedValue(true),
     markCompleted: jest.fn().mockResolvedValue(undefined),
     markFailed: jest.fn().mockResolvedValue(undefined),
@@ -230,6 +232,65 @@ describe('PlatformWebhookInboundRetryCronService', () => {
       1,
       'DB hiccup',
     );
+  });
+
+  it('processes rows with bounded parallelism and reports per-tick stats', async () => {
+    const onTickComplete = jest.fn();
+    const options = buildOptions({ onTickComplete });
+    const { service, inboundEvents } = buildService(options);
+    inboundEvents.listDue.mockResolvedValue([
+      row({ id: 1 }),
+      row({ id: 2 }),
+      row({ id: 3 }),
+    ]);
+    inboundEvents.countDue.mockResolvedValue(3);
+
+    await service.handleRetry();
+
+    expect(options.processEvent).toHaveBeenCalledTimes(3);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(2);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(3);
+    expect(onTickComplete).toHaveBeenCalledWith({
+      due: 3,
+      backlog: 3,
+      completed: 3,
+      failed: 0,
+      abandoned: 0,
+      skipped: 0,
+    });
+  });
+
+  it('reports the unbounded backlog even when the tick is capped by the limit', async () => {
+    const onTickComplete = jest.fn();
+    const options = buildOptions({ onTickComplete });
+    const { service, inboundEvents } = buildService(options);
+    inboundEvents.listDue.mockResolvedValue([row({ id: 1 })]);
+    inboundEvents.countDue.mockResolvedValue(137);
+
+    await service.handleRetry();
+
+    expect(onTickComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ due: 1, backlog: 137 }),
+    );
+  });
+
+  it('reports due=0 stats when the inbox is empty', async () => {
+    const onTickComplete = jest.fn();
+    const options = buildOptions({ onTickComplete });
+    const { service } = buildService(options);
+
+    await service.handleRetry();
+
+    expect(options.processEvent).not.toHaveBeenCalled();
+    expect(onTickComplete).toHaveBeenCalledWith({
+      due: 0,
+      backlog: 0,
+      completed: 0,
+      failed: 0,
+      abandoned: 0,
+      skipped: 0,
+    });
   });
 
   it('reads retry config from env with defaults', async () => {
