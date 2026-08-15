@@ -19,6 +19,7 @@ import {
   MENU_LEARNING_PROGRESS_CUSTOM_ID,
   MENU_UPCOMING_SESSIONS_CUSTOM_ID,
 } from '../../application/constants/discord-menu.constants';
+import { readRewelcomeWindowMs } from '@discord/shared/config/discord-link.config';
 import { PlatformChatRateLimitService } from '@wispace/chat-metering';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import { DiscordMenuService } from '../../application/services/discord-menu.service';
@@ -99,14 +100,10 @@ export class DiscordChatGateway {
     // only send here for users who linked before joining or joined organically.
     // `last_welcomed_at` dedupes re-joins and the join-during-callback race
     // (#137 items 2+4) — a user welcomed within the window is not welcomed again.
-    const reWelcomeWindowMs = Number(
-      this.configService.get<string>('DISCORD_REWELCOME_WINDOW_MS') ??
-        86_400_000,
-    );
     if (isLinked) {
       const shouldWelcome = await this.accountLinkService.shouldWelcome(
         discordUserId,
-        reWelcomeWindowMs,
+        readRewelcomeWindowMs(this.configService),
       );
       if (shouldWelcome) {
         const dmMsg = buildDiscordLinkWelcomeMessage(displayName);

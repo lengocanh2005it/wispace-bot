@@ -7,9 +7,9 @@ import {
   maskExternalId,
   PgAdvisoryLockService,
 } from '@wispace/bot-common';
-import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
-import { buildDiscordRelinkNoticeMessage } from '../messages/account-link.messages';
 import { DiscordAccountLinkService } from './discord-account-link.service';
+import { DiscordRelinkNotifier } from './discord-relink-notifier.service';
+import { retryWithBackoff } from '@discord/shared/utils/retry.utils';
 import {
   DISCORD_LINK_VERIFY_RECORD_REPOSITORY,
   type DiscordLinkVerifyRecordRepositoryPort,
@@ -39,7 +39,7 @@ export class DiscordLinkReconcileCronService {
     private readonly accountLinkService: DiscordAccountLinkService,
     private readonly configService: ConfigService,
     private readonly pgLock: PgAdvisoryLockService,
-    private readonly outboundService: DiscordOutboundService,
+    private readonly relinkNotifier: DiscordRelinkNotifier,
   ) {}
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
@@ -114,20 +114,10 @@ export class DiscordLinkReconcileCronService {
         if (result.relinked) {
           // #137 item 5: the re-committed mapping displaced a different
           // WISPACE user — notify the account holder (same as the callback path).
-          this.logger.warn(
-            `Reconcile displaced previous userId=${maskExternalId(
-              result.previousUserId ?? 0,
-            )} for discordUserId=${maskExternalId(record.discordUserId)}`,
+          await this.relinkNotifier.notify(
+            record.discordUserId,
+            result.previousUserId,
           );
-          await this.outboundService
-            .sendText(record.discordUserId, buildDiscordRelinkNoticeMessage())
-            .catch((error: unknown) => {
-              this.logger.warn(
-                `Discord relink notice DM failed for discordUserId=${maskExternalId(
-                  record.discordUserId,
-                )}: ${errorMessage(error)}`,
-              );
-            });
         }
         reconciled += 1;
       } catch (error) {
@@ -149,20 +139,11 @@ export class DiscordLinkReconcileCronService {
     userId: number,
     discordUserId: string,
   ): Promise<{ relinked: boolean; previousUserId?: number }> {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= RECONCILE_MAX_ATTEMPTS; attempt++) {
-      try {
-        return await this.accountLinkService.upsertLink(userId, discordUserId);
-      } catch (error) {
-        lastError = error;
-        if (attempt < RECONCILE_MAX_ATTEMPTS) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, RECONCILE_BASE_BACKOFF_MS * attempt),
-          );
-        }
-      }
-    }
-    throw lastError;
+    return retryWithBackoff(
+      () => this.accountLinkService.upsertLink(userId, discordUserId),
+      RECONCILE_MAX_ATTEMPTS,
+      RECONCILE_BASE_BACKOFF_MS,
+    );
   }
 
   private readPositiveInt(key: string, fallback: number): number {

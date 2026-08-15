@@ -9,6 +9,7 @@ import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { DiscordAccountLinkService } from './application/services/discord-account-link.service';
 import { DiscordGuildMembershipService } from './application/services/discord-guild-membership.service';
 import { DiscordLinkReconcileCronService } from './application/services/discord-link-reconcile-cron.service';
+import { DiscordRelinkNotifier } from './application/services/discord-relink-notifier.service';
 import { TypeormDiscordAccountLinkRepository } from './infrastructure/persistence/typeorm-discord-account-link.repository';
 import { TypeormDiscordLinkVerifyRecordRepository } from './infrastructure/persistence/typeorm-discord-link-verify-record.repository';
 import { DISCORD_ACCOUNT_LINK_REPOSITORY } from './domain/ports/discord-account-link.repository.port';
@@ -36,6 +37,7 @@ import { DiscordLinkStatusController } from './presentation/controllers/discord-
     DiscordAccountLinkService,
     DiscordGuildMembershipService,
     DiscordLinkReconcileCronService,
+    DiscordRelinkNotifier,
     TypeormDiscordAccountLinkRepository,
     TypeormDiscordLinkVerifyRecordRepository,
     {

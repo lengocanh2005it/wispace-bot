@@ -68,7 +68,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_934),
-      { sendText: jest.fn().mockResolvedValue(undefined) } as never,
+      { notify: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await cron.handleReconcile();
@@ -98,7 +98,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_934),
-      { sendText: jest.fn().mockResolvedValue(undefined) } as never,
+      { notify: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await cron.handleReconcile();
@@ -124,7 +124,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_934),
-      { sendText: jest.fn().mockResolvedValue(undefined) } as never,
+      { notify: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await cron.handleReconcile();
@@ -151,7 +151,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_934),
-      { sendText: jest.fn().mockResolvedValue(undefined) } as never,
+      { notify: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await cron.handleReconcile();
@@ -176,7 +176,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(999_999),
-      { sendText: jest.fn().mockResolvedValue(undefined) } as never,
+      { notify: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     await cron.handleReconcile();
@@ -191,8 +191,8 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
         .fn()
         .mockResolvedValue({ relinked: true, previousUserId: 99 }),
     } as unknown as DiscordAccountLinkService;
-    const outbound = {
-      sendText: jest.fn().mockResolvedValue(undefined),
+    const relinkNotifier = {
+      notify: jest.fn().mockResolvedValue(undefined),
     } as never;
     const { verifyRecordService } = buildHarness({
       records: [
@@ -208,14 +208,11 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_934),
-      outbound,
+      relinkNotifier,
     );
 
     await cron.handleReconcile();
 
-    expect(outbound.sendText).toHaveBeenCalledWith(
-      'discord-user-1',
-      expect.stringContaining('WISPACE khác'),
-    );
+    expect(relinkNotifier.notify).toHaveBeenCalledWith('discord-user-1', 99);
   });
 });

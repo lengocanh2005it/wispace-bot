@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
+/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument -- Jest mock assertions */
 import type { Response } from 'express';
 import { DiscordOauthController } from './discord-oauth.controller';
 import type { ConfigService } from '@nestjs/config';
@@ -100,6 +100,12 @@ function buildOutboundService(): DiscordOutboundService {
   } as unknown as DiscordOutboundService;
 }
 
+function buildRelinkNotifier(): DiscordRelinkNotifier {
+  return {
+    notify: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
 function buildController(
   overrides: {
     inGuild?: boolean;
@@ -107,6 +113,7 @@ function buildController(
     accountLink?: DiscordAccountLinkService;
     outbound?: DiscordOutboundService;
     verifyRecord?: DiscordLinkVerifyRecordRepositoryPort;
+    relinkNotifier?: DiscordRelinkNotifier;
   } = {},
 ): {
   controller: DiscordOauthController;
@@ -125,6 +132,7 @@ function buildController(
     verifyRecordService,
     outboundService,
     buildMembershipService(overrides.inGuild ?? true),
+    overrides.relinkNotifier ?? buildRelinkNotifier(),
   );
   return {
     controller,
@@ -226,26 +234,26 @@ describe('DiscordOauthController', () => {
     const accountLinkService = buildAccountLinkService({
       upsertResult: { relinked: true, previousUserId: 99 },
     });
-    const { controller, outboundService } = buildController({
+    const relinkNotifier = buildRelinkNotifier();
+    const { controller } = buildController({
       accountLink: accountLinkService,
+      relinkNotifier,
     });
     const res = buildResponse();
 
     await controller.callback('code', 'good-token', undefined, res);
 
-    expect(outboundService.sendText).toHaveBeenCalledWith(
-      'discord-user-1',
-      expect.stringContaining('WISPACE khác'),
-    );
+    expect(relinkNotifier.notify).toHaveBeenCalledWith('discord-user-1', 99);
   });
 
   it('#137: no relink notice when the link is new or unchanged', async () => {
-    const { controller, outboundService } = buildController();
+    const relinkNotifier = buildRelinkNotifier();
+    const { controller } = buildController({ relinkNotifier });
     const res = buildResponse();
 
     await controller.callback('code', 'good-token', undefined, res);
 
-    expect(outboundService.sendText).not.toHaveBeenCalled();
+    expect(relinkNotifier.notify).not.toHaveBeenCalled();
   });
 
   it('links immediately and redirects to the invite when NOT in the guild (no pending flow)', async () => {

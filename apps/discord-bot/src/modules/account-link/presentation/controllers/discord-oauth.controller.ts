@@ -18,11 +18,11 @@ import {
 } from '../../domain/ports/discord-link-verify-record.repository.port';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
-import {
-  buildDiscordLinkWelcomeMessage,
-  buildDiscordRelinkNoticeMessage,
-} from '../../application/messages/account-link.messages';
+import { buildDiscordLinkWelcomeMessage } from '../../application/messages/account-link.messages';
 import { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
+import { DiscordRelinkNotifier } from '../../application/services/discord-relink-notifier.service';
+import { readRewelcomeWindowMs } from '@discord/shared/config/discord-link.config';
+import { retryWithBackoff } from '@discord/shared/utils/retry.utils';
 
 const UPSERT_MAX_ATTEMPTS = 3;
 const UPSERT_BASE_BACKOFF_MS = 500;
@@ -40,6 +40,7 @@ export class DiscordOauthController {
     private readonly verifyRecordService: DiscordLinkVerifyRecordRepositoryPort,
     private readonly outboundService: DiscordOutboundService,
     private readonly guildMembershipService: DiscordGuildMembershipService,
+    private readonly relinkNotifier: DiscordRelinkNotifier,
   ) {}
 
   /**
@@ -135,15 +136,10 @@ export class DiscordOauthController {
       if (linkResult.relinked) {
         // #137 item 5: the Discord id was linked to a different WISPACE user
         // — notify the account holder that the previous link was displaced.
-        await this.outboundService
-          .sendText(discordUser.id, buildDiscordRelinkNoticeMessage())
-          .catch((error: unknown) => {
-            this.logger.warn(
-              `Discord relink notice DM failed for discordUserId=${maskExternalId(
-                discordUser.id,
-              )}: ${errorMessage(error)}`,
-            );
-          });
+        await this.relinkNotifier.notify(
+          discordUser.id,
+          linkResult.previousUserId,
+        );
       }
 
       const inGuild = await this.guildMembershipService.isMember(
@@ -153,13 +149,9 @@ export class DiscordOauthController {
         // #137 items 2+4: the welcome is deduped on both paths — if a
         // `guildMemberAdd` fired while the callback was running and already
         // welcomed + marked the user, we skip here (and vice versa).
-        const reWelcomeWindowMs = Number(
-          this.configService.get<string>('DISCORD_REWELCOME_WINDOW_MS') ??
-            86_400_000,
-        );
         const shouldWelcome = await this.accountLinkService.shouldWelcome(
           discordUser.id,
-          reWelcomeWindowMs,
+          readRewelcomeWindowMs(this.configService),
         );
         if (shouldWelcome) {
           await this.outboundService.sendMenuButtons(
@@ -187,20 +179,11 @@ export class DiscordOauthController {
     userId: number,
     discordUserId: string,
   ): Promise<{ relinked: boolean; previousUserId?: number }> {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= UPSERT_MAX_ATTEMPTS; attempt++) {
-      try {
-        return await this.accountLinkService.upsertLink(userId, discordUserId);
-      } catch (error) {
-        lastError = error;
-        if (attempt < UPSERT_MAX_ATTEMPTS) {
-          await new Promise((r) =>
-            setTimeout(r, UPSERT_BASE_BACKOFF_MS * attempt),
-          );
-        }
-      }
-    }
-    throw lastError;
+    return retryWithBackoff(
+      () => this.accountLinkService.upsertLink(userId, discordUserId),
+      UPSERT_MAX_ATTEMPTS,
+      UPSERT_BASE_BACKOFF_MS,
+    );
   }
 
   private sendResult(
