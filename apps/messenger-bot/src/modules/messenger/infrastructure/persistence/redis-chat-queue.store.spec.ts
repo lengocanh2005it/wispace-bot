@@ -11,6 +11,11 @@ interface MockClient {
   eval: jest.Mock;
   exists: jest.Mock;
   multi: jest.Mock;
+  zadd: jest.Mock;
+  zrem: jest.Mock;
+  zrangebyscore: jest.Mock;
+  zcard: jest.Mock;
+  scard: jest.Mock;
 }
 
 describe('RedisChatQueueStore', () => {
@@ -36,6 +41,11 @@ describe('RedisChatQueueStore', () => {
     eval: jest.fn().mockResolvedValue(1),
     exists: jest.fn().mockResolvedValue(1),
     multi: jest.fn(() => createTransaction()),
+    zadd: jest.fn().mockResolvedValue(1),
+    zrem: jest.fn().mockResolvedValue(1),
+    zrangebyscore: jest.fn().mockResolvedValue([]),
+    zcard: jest.fn().mockResolvedValue(0),
+    scard: jest.fn().mockResolvedValue(0),
     ...overrides,
   });
 
@@ -50,16 +60,20 @@ describe('RedisChatQueueStore', () => {
       sadd: jest.fn(),
       del: jest.fn(),
       srem: jest.fn(),
+      zadd: jest.fn(),
+      zrem: jest.fn(),
       exec: jest.fn().mockResolvedValue(execResult),
     };
     transaction.set.mockReturnValue(transaction);
     transaction.sadd.mockReturnValue(transaction);
     transaction.del.mockReturnValue(transaction);
     transaction.srem.mockReturnValue(transaction);
+    transaction.zadd.mockReturnValue(transaction);
+    transaction.zrem.mockReturnValue(transaction);
     return transaction;
   };
 
-  it('appends text to buffer under psid lock', async () => {
+  it('appends text to buffer under psid lock and tracks the flush deadline', async () => {
     const client = createClient();
     const transaction = createTransaction();
     client.multi.mockReturnValue(transaction);
@@ -89,6 +103,12 @@ describe('RedisChatQueueStore', () => {
       'chat:queue:active-psids',
       'psid-1',
     );
+    expect(transaction.zadd).toHaveBeenCalledWith(
+      'chat:queue:flush',
+      expect.any(Number),
+      'psid-1',
+    );
+    expect(transaction.zrem).toHaveBeenCalledWith('chat:queue:stuck', 'psid-1');
   });
 
   it('writes the buffer and active-set membership atomically', async () => {
@@ -98,6 +118,7 @@ describe('RedisChatQueueStore', () => {
     });
 
     const store = createStore(client);
+
     await store.appendChatBuffer({
       psid: 'psid-1',
       userText: 'hello',
@@ -294,6 +315,140 @@ describe('RedisChatQueueStore', () => {
     expect(snapshot?.lastIdempotencyKey).toBe('mid-2');
   });
 
+  it('claim moves the member from the flush set to the stuck set', async () => {
+    let persistedState: string | null = null;
+    const transaction = createTransaction();
+    const client = createClient({
+      get: jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+      set: jest.fn().mockImplementation((key: string, value?: string) => {
+        if (key.startsWith('chat:queue:lock:')) {
+          return Promise.resolve('OK');
+        }
+        return Promise.resolve(value);
+      }),
+      multi: jest.fn().mockReturnValue(transaction),
+    });
+    transaction.set.mockImplementation((_key: string, value: string) => {
+      persistedState = value;
+      return transaction;
+    });
+    transaction.exec.mockResolvedValue([
+      [null, 'OK'],
+      [null, 1],
+    ]);
+
+    const store = createStore(client);
+    persistedState = JSON.stringify({
+      texts: ['hello'],
+      pendingTexts: [],
+      processing: false,
+      flushAfterAt: Date.now() - 1000,
+      lastIdempotencyKey: 'mid-1',
+    });
+
+    const snapshot = await store.claimReadyBuffer('psid-1', 2000, 300_000);
+
+    expect(snapshot?.texts).toEqual(['hello']);
+    expect(transaction.zrem).toHaveBeenCalledWith('chat:queue:flush', 'psid-1');
+    expect(transaction.zadd).toHaveBeenCalledWith(
+      'chat:queue:stuck',
+      expect.any(Number),
+      'psid-1',
+    );
+  });
+
+  it('complete with pending messages returns the member to the flush set', async () => {
+    let persistedState: string | null = null;
+    const transaction = createTransaction();
+    const client = createClient({
+      get: jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+      set: jest.fn().mockImplementation((key: string, value?: string) => {
+        if (key.startsWith('chat:queue:lock:')) {
+          return Promise.resolve('OK');
+        }
+        return Promise.resolve(value);
+      }),
+      multi: jest.fn().mockReturnValue(transaction),
+    });
+    transaction.set.mockImplementation((_key: string, value: string) => {
+      persistedState = value;
+      return transaction;
+    });
+    transaction.exec.mockResolvedValue([
+      [null, 'OK'],
+      [null, 1],
+    ]);
+
+    const store = createStore(client);
+    persistedState = JSON.stringify({
+      texts: [],
+      pendingTexts: ['pending-1'],
+      processing: true,
+      processingStartedAt: Date.now() - 1000,
+      flushAfterAt: null,
+      lastPendingIdempotencyKey: 'mid-2',
+    });
+
+    const result = await store.completeChatBuffer({
+      psid: 'psid-1',
+      debounceMs: 2000,
+    });
+
+    expect(result).toBe(true);
+    expect(transaction.zrem).toHaveBeenCalledWith('chat:queue:stuck', 'psid-1');
+    expect(transaction.zadd).toHaveBeenCalledWith(
+      'chat:queue:flush',
+      expect.any(Number),
+      'psid-1',
+    );
+  });
+
+  it('complete without pending messages drops every membership', async () => {
+    let persistedState: string | null = null;
+    const transaction = createTransaction();
+    const client = createClient({
+      get: jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+      set: jest.fn().mockImplementation((key: string, value?: string) => {
+        if (key.startsWith('chat:queue:lock:')) {
+          return Promise.resolve('OK');
+        }
+        return Promise.resolve(value);
+      }),
+      multi: jest.fn().mockReturnValue(transaction),
+    });
+    transaction.set.mockImplementation((_key: string, value: string) => {
+      persistedState = value;
+      return transaction;
+    });
+    transaction.exec.mockResolvedValue([
+      [null, 'OK'],
+      [null, 1],
+    ]);
+
+    const store = createStore(client);
+    persistedState = JSON.stringify({
+      texts: [],
+      pendingTexts: [],
+      processing: true,
+      processingStartedAt: Date.now() - 1000,
+      flushAfterAt: null,
+    });
+
+    const result = await store.completeChatBuffer({
+      psid: 'psid-1',
+      debounceMs: 2000,
+    });
+
+    expect(result).toBe(false);
+    expect(transaction.del).toHaveBeenCalledWith('chat:queue:buffer:psid-1');
+    expect(transaction.srem).toHaveBeenCalledWith(
+      'chat:queue:active-psids',
+      'psid-1',
+    );
+    expect(transaction.zrem).toHaveBeenCalledWith('chat:queue:flush', 'psid-1');
+    expect(transaction.zrem).toHaveBeenCalledWith('chat:queue:stuck', 'psid-1');
+  });
+
   it('flags droppedNoticePending when the buffer cap is exceeded and clears it on completion', async () => {
     jest.useFakeTimers();
 
@@ -374,28 +529,118 @@ describe('RedisChatQueueStore', () => {
     expect(snapshot).toBeNull();
   });
 
-  it('lists a wedged psid as ready even when texts are empty', async () => {
-    const wedgedState = {
-      texts: [],
-      pendingTexts: ['msg'],
-      processing: true,
-      processingStartedAt: Date.now() - 301_000,
-      flushAfterAt: null,
-    };
+  it('lists a stuck psid from the stuck ZSET without scanning the active set', async () => {
     const client = createClient({
-      smembers: jest.fn().mockResolvedValue(['psid-1']),
-      get: jest.fn().mockResolvedValue(JSON.stringify(wedgedState)),
+      zrangebyscore: jest
+        .fn()
+        .mockImplementation((key: string) =>
+          Promise.resolve(
+            key === 'chat:queue:stuck'
+              ? ['psid-1', String(Date.now() - 1000)]
+              : [],
+          ),
+        ),
+      exists: jest.fn().mockResolvedValue(1),
     });
 
     const store = createStore(client);
     const ready = await store.listPsidsReadyForFlush(25, 300_000);
 
     expect(ready).toEqual(['psid-1']);
+    expect(client.smembers).not.toHaveBeenCalled();
+    expect(client.zrangebyscore).toHaveBeenCalledTimes(2);
   });
 
-  it('drops stale active-set members whose buffer key expired', async () => {
+  it('polls with bounded commands regardless of active-user count', async () => {
     const client = createClient({
+      zcard: jest.fn().mockResolvedValue(10_000),
+      zrangebyscore: jest.fn().mockResolvedValue([]),
+    });
+
+    const store = createStore(client);
+    await store.listPsidsReadyForFlush(25, 300_000);
+
+    expect(client.smembers).not.toHaveBeenCalled();
+    expect(client.zrangebyscore).toHaveBeenCalledWith(
+      'chat:queue:flush',
+      0,
+      expect.any(Number),
+      'WITHSCORES',
+      'LIMIT',
+      0,
+      25,
+    );
+    expect(client.zrangebyscore).toHaveBeenCalledWith(
+      'chat:queue:stuck',
+      0,
+      expect.any(Number),
+      'WITHSCORES',
+      'LIMIT',
+      0,
+      25,
+    );
+    // Candidates are capped by the limit, not by the number of active users.
+    expect(client.exists).not.toHaveBeenCalled();
+  });
+
+  it('rehydrates legacy active-set members once when both ZSETs are empty', async () => {
+    const client = createClient({
+      zcard: jest.fn().mockResolvedValue(0),
+      scard: jest.fn().mockResolvedValue(1),
       smembers: jest.fn().mockResolvedValue(['psid-1']),
+      get: jest.fn().mockResolvedValue(
+        JSON.stringify({
+          texts: ['hello'],
+          pendingTexts: [],
+          processing: false,
+          flushAfterAt: Date.now() - 1000,
+        }),
+      ),
+    });
+
+    const store = createStore(client);
+    await store.listPsidsReadyForFlush(25, 300_000);
+
+    expect(client.set).toHaveBeenCalledWith(
+      'chat:queue:rehydrate-lock',
+      expect.any(String),
+      'PX',
+      60_000,
+      'NX',
+    );
+    expect(client.zadd).toHaveBeenCalledWith(
+      'chat:queue:flush',
+      expect.any(Number),
+      'psid-1',
+    );
+    expect(client.del).toHaveBeenCalledWith('chat:queue:rehydrate-lock');
+  });
+
+  it('skips rehydration when another pod holds the rehydrate lock', async () => {
+    const client = createClient({
+      zcard: jest.fn().mockResolvedValue(0),
+      scard: jest.fn().mockResolvedValue(5),
+      set: jest.fn().mockResolvedValue(null),
+    });
+
+    const store = createStore(client);
+    await store.listPsidsReadyForFlush(25, 300_000);
+
+    expect(client.smembers).not.toHaveBeenCalled();
+    expect(client.zadd).not.toHaveBeenCalled();
+  });
+
+  it('drops stale members whose buffer key expired', async () => {
+    const client = createClient({
+      zrangebyscore: jest
+        .fn()
+        .mockImplementation((key: string) =>
+          Promise.resolve(
+            key === 'chat:queue:stuck'
+              ? ['psid-1', String(Date.now() - 1000)]
+              : [],
+          ),
+        ),
       exists: jest.fn().mockResolvedValue(0),
       get: jest.fn().mockResolvedValue(null),
     });
@@ -407,9 +652,11 @@ describe('RedisChatQueueStore', () => {
     expect(client.srem).not.toHaveBeenCalled();
     expect(client.eval).toHaveBeenCalledWith(
       expect.stringContaining('redis.call("exists", KEYS[1])'),
-      2,
+      4,
       'chat:queue:buffer:psid-1',
       'chat:queue:active-psids',
+      'chat:queue:flush',
+      'chat:queue:stuck',
       'psid-1',
     );
   });
@@ -418,7 +665,15 @@ describe('RedisChatQueueStore', () => {
     let bufferRestored = false;
     const activePsids = new Set(['psid-1']);
     const client = createClient({
-      smembers: jest.fn().mockResolvedValue(['psid-1']),
+      zrangebyscore: jest
+        .fn()
+        .mockImplementation((key: string) =>
+          Promise.resolve(
+            key === 'chat:queue:stuck'
+              ? ['psid-1', String(Date.now() - 1000)]
+              : [],
+          ),
+        ),
       exists: jest.fn().mockImplementation(() => {
         bufferRestored = true;
         return 0;
