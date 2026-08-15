@@ -19,7 +19,10 @@ const DEFAULT_RETRY_CONCURRENCY = 5;
 const DEFAULT_PROCESSING_STUCK_MS = 5 * 60_000;
 
 export interface InboundRetryStats {
+  /** Rows claimed/processed this tick (capped by WEBHOOK_INBOUND_RETRY_LIMIT). */
   due: number;
+  /** Total due rows including those beyond this tick's limit — backlog signal. */
+  backlog: number;
   completed: number;
   failed: number;
   abandoned: number;
@@ -94,8 +97,12 @@ export class PlatformWebhookInboundRetryCronService {
       limit: retryLimit,
       processingStuckMs,
     });
+    // Unbounded backlog (listDue is capped by retryLimit) — the metric that
+    // reveals a backlog growing faster than recovery.
+    const backlog = await this.inboundEvents.countDue({ processingStuckMs });
     const stats: InboundRetryStats = {
       due: rows.length,
+      backlog,
       completed: 0,
       failed: 0,
       abandoned: 0,

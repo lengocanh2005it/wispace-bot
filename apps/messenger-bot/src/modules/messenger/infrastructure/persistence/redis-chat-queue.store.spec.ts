@@ -315,6 +315,33 @@ describe('RedisChatQueueStore', () => {
     expect(snapshot?.lastIdempotencyKey).toBe('mid-2');
   });
 
+  it('drops a wedged buffer with no pending messages from every ZSET', async () => {
+    const state = {
+      texts: [],
+      pendingTexts: [],
+      processing: true,
+      processingStartedAt: Date.now() - 301_000,
+      flushAfterAt: null,
+    };
+    const transaction = createTransaction();
+    const client = createClient({
+      get: jest.fn().mockResolvedValue(JSON.stringify(state)),
+      multi: jest.fn().mockReturnValue(transaction),
+    });
+
+    const store = createStore(client);
+    const snapshot = await store.claimReadyBuffer('psid-1', 2000, 300_000);
+
+    expect(snapshot).toBeNull();
+    expect(transaction.del).toHaveBeenCalledWith('chat:queue:buffer:psid-1');
+    expect(transaction.srem).toHaveBeenCalledWith(
+      'chat:queue:active-psids',
+      'psid-1',
+    );
+    expect(transaction.zrem).toHaveBeenCalledWith('chat:queue:flush', 'psid-1');
+    expect(transaction.zrem).toHaveBeenCalledWith('chat:queue:stuck', 'psid-1');
+  });
+
   it('claim moves the member from the flush set to the stuck set', async () => {
     let persistedState: string | null = null;
     const transaction = createTransaction();
@@ -544,7 +571,7 @@ describe('RedisChatQueueStore', () => {
     });
 
     const store = createStore(client);
-    const ready = await store.listPsidsReadyForFlush(25, 300_000);
+    const ready = await store.listPsidsReadyForFlush(25);
 
     expect(ready).toEqual(['psid-1']);
     expect(client.smembers).not.toHaveBeenCalled();
@@ -558,7 +585,7 @@ describe('RedisChatQueueStore', () => {
     });
 
     const store = createStore(client);
-    await store.listPsidsReadyForFlush(25, 300_000);
+    await store.listPsidsReadyForFlush(25);
 
     expect(client.smembers).not.toHaveBeenCalled();
     expect(client.zrangebyscore).toHaveBeenCalledWith(
@@ -599,7 +626,7 @@ describe('RedisChatQueueStore', () => {
     });
 
     const store = createStore(client);
-    await store.listPsidsReadyForFlush(25, 300_000);
+    await store.listPsidsReadyForFlush(25);
 
     expect(client.set).toHaveBeenCalledWith(
       'chat:queue:rehydrate-lock',
@@ -624,7 +651,7 @@ describe('RedisChatQueueStore', () => {
     });
 
     const store = createStore(client);
-    await store.listPsidsReadyForFlush(25, 300_000);
+    await store.listPsidsReadyForFlush(25);
 
     expect(client.smembers).not.toHaveBeenCalled();
     expect(client.zadd).not.toHaveBeenCalled();
@@ -646,7 +673,7 @@ describe('RedisChatQueueStore', () => {
     });
 
     const store = createStore(client);
-    const ready = await store.listPsidsReadyForFlush(25, 300_000);
+    const ready = await store.listPsidsReadyForFlush(25);
 
     expect(ready).toEqual([]);
     expect(client.srem).not.toHaveBeenCalled();
@@ -686,7 +713,7 @@ describe('RedisChatQueueStore', () => {
     });
 
     const store = createStore(client);
-    await store.listPsidsReadyForFlush(25, 300_000);
+    await store.listPsidsReadyForFlush(25);
 
     expect(activePsids.has('psid-1')).toBe(true);
     expect(client.srem).not.toHaveBeenCalled();

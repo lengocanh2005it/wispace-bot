@@ -177,6 +177,12 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
           state.lastPendingIdempotencyKey = null;
           // Claim immediately — the stuck job already consumed the debounce wait.
           state.flushAfterAt = Date.now();
+        } else {
+          // Wedged with no pending messages: persist the reset so the dead
+          // member leaves the flush/stuck ZSETs instead of being re-picked
+          // by every poll until the buffer key expires.
+          await this.writeState(client, psid, state);
+          return null;
         }
       }
 
@@ -236,11 +242,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     );
   }
 
-  async listPsidsReadyForFlush(
-    limit: number,
-    processingStuckMs: number,
-  ): Promise<string[]> {
-    void processingStuckMs; // stuck scoring is tracked in the ZSET at claim time
+  async listPsidsReadyForFlush(limit: number): Promise<string[]> {
     const client = this.redisClient.getNativeClient();
     if (!client) {
       return [];

@@ -159,6 +159,9 @@ export class MemoryChatHistoryStore implements ChatHistoryStorePort {
           break;
         }
         this.store.delete(externalUserId);
+        // Cap eviction drops the user's pending summaries too — an evicted
+        // user must not retain in-flight tool data until the TTL sweep.
+        this.pendingSummaries.delete(externalUserId);
       }
     }
   }

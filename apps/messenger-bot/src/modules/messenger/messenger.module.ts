@@ -84,7 +84,7 @@ import { MetricsService } from '../metrics/metrics.service';
               await messengerService.processEvent(rawPayload);
             },
             onTickComplete: (stats) =>
-              metrics.setWebhookInboundBacklog(stats.due),
+              metrics.setWebhookInboundBacklog(stats.backlog),
           },
         ),
       inject: [
