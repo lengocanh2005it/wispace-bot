@@ -1,24 +1,29 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Inject } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common';
-import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
-
-const PLATFORM = 'discord' as const;
+import {
+  DISCORD_ACCOUNT_LINK_REPOSITORY,
+  type DiscordAccountLinkRepositoryPort,
+} from '../../domain/ports/discord-account-link.repository.port';
 
 const OAUTH_TIMEOUT_MS = 10_000;
 
 class DiscordOauthError extends Error {}
 
+/**
+ * Discord OAuth account-linking use case. Persistence flows through
+ * `DiscordAccountLinkRepositoryPort` (bound to the TypeORM implementation in
+ * module wiring); the WISPACE/Discord HTTP exchange lives here.
+ */
 @Injectable()
 export class DiscordAccountLinkService {
   private readonly logger = new Logger(DiscordAccountLinkService.name);
 
   constructor(
     private readonly configService: ConfigService,
-    @InjectRepository(DiscordAccountLinkEntity)
-    private readonly repo: Repository<DiscordAccountLinkEntity>,
+    @Inject(DISCORD_ACCOUNT_LINK_REPOSITORY)
+    private readonly repository: DiscordAccountLinkRepositoryPort,
   ) {}
 
   /** Exchanges the OAuth2 `code` for Discord user info (`identify` scope). */
@@ -76,48 +81,50 @@ export class DiscordAccountLinkService {
     };
   }
 
-  async upsertLink(userId: number, discordUserId: string): Promise<void> {
-    await this.repo.manager.transaction(async (em) => {
-      // Remove any existing link for this WISPACE user (re-linking with a different Discord account)
-      await em.query(
-        `DELETE FROM discord_account_links WHERE platform = $1 AND user_id = $2 AND external_user_id != $3`,
-        [PLATFORM, userId, discordUserId],
-      );
-      await em.query(
-        `
-          INSERT INTO discord_account_links (platform, external_user_id, user_id)
-          VALUES ($1, $2, $3)
-          ON CONFLICT (platform, external_user_id)
-          DO UPDATE SET user_id = EXCLUDED.user_id, linked_at = now()
-        `,
-        [PLATFORM, discordUserId, userId],
-      );
-    });
+  async upsertLink(
+    userId: number,
+    discordUserId: string,
+  ): Promise<{ relinked: boolean; previousUserId?: number }> {
+    const result = await this.repository.upsertLink(userId, discordUserId);
 
     this.logger.log(
       `Linked Discord account discordUserId=${maskExternalId(
         discordUserId,
-      )} userId=${maskExternalId(userId)}`,
+      )} userId=${maskExternalId(userId)}${
+        result.relinked && result.previousUserId !== undefined
+          ? ` relinked=previousUserId=${maskExternalId(result.previousUserId)}`
+          : ''
+      }`,
     );
+
+    return result;
   }
 
   async findUserIdByDiscordId(
     discordUserId: string,
   ): Promise<number | undefined> {
-    const row = await this.repo.findOne({
-      where: { platform: PLATFORM, externalUserId: discordUserId },
-      select: { userId: true },
-    });
-
-    return row?.userId;
+    return this.repository.findUserIdByDiscordId(discordUserId);
   }
 
   async findDiscordIdByUserId(userId: number): Promise<string | undefined> {
-    const row = await this.repo.findOne({
-      where: { platform: PLATFORM, userId },
-      select: { externalUserId: true },
-    });
+    return this.repository.findDiscordIdByUserId(userId);
+  }
 
-    return row?.externalUserId;
+  /** Records a welcome DM delivery — dedupes re-welcomes within a window (#137). */
+  async markWelcomed(discordUserId: string): Promise<void> {
+    await this.repository.markWelcomed(discordUserId);
+  }
+
+  /**
+   * True when no welcome DM was delivered yet, or the last one is older than
+   * `windowMs` — used by the OAuth callback and `guildMemberAdd` so a user
+   * is never welcomed twice within the window (re-join / join-during-callback
+   * races, #137 items 2+4).
+   */
+  async shouldWelcome(
+    discordUserId: string,
+    windowMs: number,
+  ): Promise<boolean> {
+    return this.repository.shouldWelcome(discordUserId, windowMs);
   }
 }

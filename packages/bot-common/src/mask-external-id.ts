@@ -1,3 +1,7 @@
+/* eslint-disable no-control-regex -- intentional control-char stripping */
+const CONTROL_CHAR_PATTERN = /[\u0000-\u001F\u007F]/g;
+/* eslint-enable no-control-regex */
+
 /**
  * Mask an external user identifier (PSID, Discord ID, Zalo OA user ID,
  * WISPACE numeric user id) for safe logging. Shows first 4 + last 4
@@ -43,4 +47,13 @@ export function maskEventId(
     return eventId;
   }
   return eventId.split(id).join(maskExternalId(id));
+}
+
+/**
+ * Strip control characters and cap the length of an externally sourced
+ * value before it reaches a log line — prevents log injection from
+ * upstream/user-controlled strings (usernames, API body text).
+ */
+export function sanitizeLogValue(value: string, maxChars = 100): string {
+  return value.replace(CONTROL_CHAR_PATTERN, '?').slice(0, maxChars);
 }

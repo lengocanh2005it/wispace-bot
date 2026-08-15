@@ -2,6 +2,7 @@ import {
   maskEventId,
   maskExternalId,
   maskExternalIdInText,
+  sanitizeLogValue,
 } from './mask-external-id';
 
 describe('maskExternalId', () => {
@@ -71,5 +72,20 @@ describe('maskExternalIdInText', () => {
     expect(maskExternalIdInText('failed for unknown', null)).toBe(
       'failed for unknown',
     );
+  });
+});
+
+describe('sanitizeLogValue', () => {
+  it('strips control characters and keeps the printable text', () => {
+    expect(sanitizeLogValue('a\u0007b\u001b[2Jc\u0000d')).toBe('a?b?[2Jc?d');
+  });
+
+  it('caps the length of untrusted log values', () => {
+    expect(sanitizeLogValue('x'.repeat(300), 100)).toHaveLength(100);
+    expect(sanitizeLogValue('hello', 100)).toBe('hello');
+  });
+
+  it('passes through plain values unchanged', () => {
+    expect(sanitizeLogValue('plain username')).toBe('plain username');
   });
 });

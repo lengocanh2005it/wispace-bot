@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- jest.fn() mock of global.fetch */
+/* eslint-disable no-control-regex -- tests assert control-char stripping */
 import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import { WispaceTokenVerifyService } from './wispace-token-verify.service';
 
 const CONFIG_VALUES: Record<string, string> = {
@@ -188,5 +190,52 @@ describe('WispaceTokenVerifyService', () => {
     await expect(
       service.verifyToken('token', 'discord-user-1'),
     ).rejects.toThrow('missing userId in success response');
+  });
+
+  it('#108: never logs link-token material, including prefixes', async () => {
+    const logSpy = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: () => Promise.resolve(JSON.stringify({ userId: 143 })),
+    });
+
+    const service = new WispaceTokenVerifyService(buildConfigService(), 'zalo');
+    await service.verifyToken('secret-link-token-abc', 'zalo-user-1');
+
+    const logCalls = logSpy.mock.calls.map((call) => String(call[0]));
+    expect(logCalls.some((line) => line.includes('token='))).toBe(false);
+    for (const line of logCalls) {
+      expect(line).not.toContain('secret-link-token-abc');
+      expect(line).not.toContain('link-token');
+    }
+  });
+
+  it('#108: no raw control characters reach the error message from upstream body', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error',
+      text: () =>
+        Promise.resolve(
+          JSON.stringify({ raw: 'boom\u001b[2J\u0000 secret-payload' }),
+        ),
+    });
+
+    const service = new WispaceTokenVerifyService(
+      buildConfigService(),
+      'discord',
+    );
+
+    let message = '';
+    await service
+      .verifyToken('bad-token', 'discord-user-1')
+      .catch((error: unknown) => {
+        message = error instanceof Error ? error.message : String(error);
+      });
+
+    expect(message).toContain('secret-payload');
+    expect(message).not.toMatch(/[\u0000-\u001F\u007F]/);
   });
 });

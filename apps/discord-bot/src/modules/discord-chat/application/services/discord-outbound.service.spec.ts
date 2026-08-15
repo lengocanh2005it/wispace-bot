@@ -1,8 +1,16 @@
+/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import type { Client } from 'discord.js';
+import type { BotMetricsService } from '@wispace/bot-metrics';
 import { DiscordOutboundService } from './discord-outbound.service';
 
 function buildClientStub(fetch: jest.Mock): Client {
   return { users: { fetch } } as unknown as Client;
+}
+
+function buildMetricsStub(): BotMetricsService {
+  return {
+    incDmDeliveryFailure: jest.fn(),
+  } as unknown as BotMetricsService;
 }
 
 describe('DiscordOutboundService', () => {
@@ -83,5 +91,29 @@ describe('DiscordOutboundService', () => {
     await expect(
       service.sendRescheduleConfirmation('discord-1', 'Dời buổi học?'),
     ).resolves.toBeUndefined();
+  });
+
+  it('#137: counts DM delivery failures in metrics (privacy-blocked users)', async () => {
+    const fetch = jest.fn().mockRejectedValue(new Error('cannot DM user'));
+    const metrics = buildMetricsStub();
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      undefined,
+      metrics,
+    );
+
+    await expect(service.sendText('discord-1', 'hello')).rejects.toThrow();
+    await service.sendMenuButtons('discord-1', 'menu');
+    await service.sendRescheduleConfirmation('discord-1', 'confirm?');
+
+    expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith('dm_send_error');
+    expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
+      'menu_send_error',
+    );
+    expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
+      'reschedule_send_error',
+    );
   });
 });

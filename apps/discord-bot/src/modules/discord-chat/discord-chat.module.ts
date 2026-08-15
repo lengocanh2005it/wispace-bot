@@ -35,8 +35,6 @@ import {
   WispaceExerciseService,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
-import { REPORT_DELIVERY_PORT } from '@wispace/scheduler-core';
-import type { ReportDeliveryPort } from '@wispace/scheduler-core';
 import {
   RescheduleConfirmationService,
   type CalendarPort,
@@ -109,7 +107,6 @@ const REGISTER_REPORT_MESSAGE =
         exerciseService: WispaceExerciseService,
         rescheduleConfirmationService: RescheduleConfirmationService<string>,
         outboundService: DiscordOutboundService,
-        reportDeliveryPort?: ReportDeliveryPort,
       ) =>
         new PlatformAgentToolsService(
           goalsService,
@@ -119,7 +116,6 @@ const REGISTER_REPORT_MESSAGE =
             getNotLinkedMessage: () => NOT_LINKED_MESSAGE,
             wispaceExternalId: (ctx) => ctx.externalUserId,
             registerReportMessage: REGISTER_REPORT_MESSAGE,
-            reportDeliveryPort,
             reschedule: {
               validateDateAndTime: true,
               messages: {
@@ -145,7 +141,6 @@ const REGISTER_REPORT_MESSAGE =
         WispaceExerciseService,
         RescheduleConfirmationService,
         DiscordOutboundService,
-        { token: REPORT_DELIVERY_PORT, optional: true },
       ],
     },
     {

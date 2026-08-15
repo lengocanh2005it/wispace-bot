@@ -13,6 +13,7 @@ export type {
   PlatformAgentToolsOptions,
   PlatformChatHistoryOptions,
   PlatformChatQueueOptions,
+  PlatformToolExecutorPort,
   RescheduleStagePort,
 } from './agent/platform-agent.types';
 export { PlatformChatHistoryService } from './chat-history/platform-chat-history.service';

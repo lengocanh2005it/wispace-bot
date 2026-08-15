@@ -252,6 +252,8 @@ wispace-bot/                          # Turborepo root
 | `llm_usage_events` | LLM token usage tracking (from `@wispace/chat-metering`) |
 | `llm_safety_events` | LLM hallucination/safety event tracking (from `@wispace/chat-metering`) |
 | `users` + view `"Users"` | Display name / exam date cache — Redis `cache:user:display:{userId}` when R5 enabled |
+| `discord_account_links` | Discord ↔ WISPACE mapping (`last_welcomed_at` dedupes welcome DMs, #137) |
+| `discord_link_verify_records` | Durable verify-intent outbox — reconciled by the `discord-link-reconcile` cron (#137) |
 
 Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 
@@ -338,6 +340,7 @@ Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP �
 | `llm-usage-cleanup` | `0 0 4 1 * *` (1st of month 04:00 ICT) | `LlmUsageCleanupCronService` — purge old llm_usage_events |
 | `llm-safety-cleanup` | `0 3 * * *` (daily 03:00 ICT) | `LlmSafetyCleanupService` — purge old llm_safety_events |
 | `cron-leader-heartbeat` | `*/1 * * * *` | `CronLeaderHeartbeatService` — refresh lease (`cron_leader_leases`) when `CRON_LEADER_ENABLED` |
+| `discord-link-reconcile` | `*/5 * * * *` | `DiscordLinkReconcileCronService` — re-commit missing Discord mappings from `discord_link_verify_records` (advisory lock `DISCORD_LINK_RECONCILE`; `DISCORD_LINK_RECONCILE_AGE_MS`/`DISCORD_LINK_RECONCILE_MAX_AGE_MS`) |
 
 Study reminder sync also runs **on server start** (`onModuleInit`).
 
@@ -609,8 +612,8 @@ If a local env file (`.env`, `.env.shared`, `apps/*/.env`) is believed to be exp
 | WISPACE upstream URLs | HTTPS only (dev loopback exception), no credentials/fragments, no private targets in production, optional `WISPACE_ALLOWED_HOSTS` allowlist — validated at startup for every client |
 | Zalo OA tokens (at rest) | AES-256-GCM with per-row IV, key `ZALO_TOKEN_ENCRYPTION_KEY` (Doppler); legacy plaintext rows fail closed → re-bootstrap |
 | Zalo OA refresh | Single-row transaction + `SELECT … FOR UPDATE`, re-read after lock, retries use the current persisted token — no double-spend of the single-use refresh token across workers |
-| Discord linking | Link commits at OAuth callback (verify → `upsertLink`), independent of guild membership — no pending state, no cookie, no join-status; `Referrer-Policy: no-referrer` on the redirect; redirect targets never carry secrets |
+| Discord linking | Link commits at OAuth callback (verify → `upsertLink`), independent of guild membership — no pending state, no cookie, no join-status; `Referrer-Policy: no-referrer` on the redirect; redirect targets never carry secrets; verify-intent outbox + reconciliation cron re-commit the mapping after a crash between verify and upsert |
 
 ### Discord linking flow
 
-`GET /v1/discord/oauth/callback` → exchange code → verify WISPACE token → **`upsertLink` immediately** (retried, since WISPACE already consumed the single-use token) → in guild? send welcome DM + redirect `DISCORD_LINK_LANDING_URL` : redirect straight to `DISCORD_INVITE_URL`. Joining the server is only needed to *receive* the welcome DM — the bot re-sends it on `guildMemberAdd` for already-linked users (`findUserIdByDiscordId`). The frontend portal has no callback page and needs nothing from the redirect; WISPACE marks the link itself at verify time, which now matches the bot's mapping exactly. The portal distinguishes "linked + not joined" via `GET /v1/discord/link-status?userId=` (ops-guarded, returns `{ linked, inGuild }`) to show the join hint only when relevant.
+`GET /v1/discord/oauth/callback` → `DiscordLinkCompletionService.completeLink` (controller chỉ redirect — toàn bộ business logic ở application): exchange code → verify WISPACE token → **persist verify intent** (`discord_link_verify_records`) → **`upsertLink` immediately** (retried, since WISPACE already consumed the single-use token) → consume intent (fire-and-forget) → relink notice nếu mapping bị thay thế → in guild? `DiscordWelcomeService.welcomeIfDue` (dedupe qua `last_welcomed_at` + `DISCORD_REWELCOME_WINDOW_MS`, default 24h) : redirect straight to `DISCORD_INVITE_URL`. Joining the server is only needed to *receive* the welcome DM — `guildMemberAdd` re-sends it for already-linked users through the same `welcomeIfDue`; unlinked users get the organic welcome **unless** a fresh pending verify intent exists (`DISCORD_LINK_PENDING_ORGANIC_SKIP_MS`, default 120s — the callback owns the welcome). A crash between verify and upsert is reconciled by the `discord-link-reconcile` cron (5 min, advisory lock `DISCORD_LINK_RECONCILE`) — re-commits the mapping from the stored `userId` and delivers the welcome if the user is already in the guild; records older than `DISCORD_LINK_RECONCILE_MAX_AGE_MS` with no mapping are dropped with an error log (user retries with a fresh token). Relinking the same Discord ID to a different WISPACE user sends a DM notice to the account (`DiscordRelinkNotifier`) and logs a warning — the displaced user silently loses the link (by design). DM delivery failures (e.g. privacy-blocked users) increment `discord_dm_delivery_failures_total{reason}` (Prometheus). The frontend portal has no callback page and needs nothing from the redirect; WISPACE marks the link itself at verify time, which now matches the bot's mapping exactly. The portal distinguishes "linked + not joined" via `GET /v1/discord/link-status?userId=` (ops-guarded, returns `{ linked, inGuild }`) to show the join hint only when relevant.

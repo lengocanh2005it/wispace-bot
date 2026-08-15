@@ -19,19 +19,20 @@ import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import type {
   PlatformAgentToolContext,
   PlatformAgentToolsOptions,
+  PlatformToolExecutorPort,
   RescheduleStagePort,
 } from './platform-agent.types';
 import { executePrecreateExerciseTool } from './precreate-exercise-result';
 
 /**
- * Wires the WISPACE tools to real Wispace API calls once the platform
- * account is linked (`ctx.userId`). Platform-specific behavior (not-linked
- * message, Wispace external id, register-report message, reschedule
- * validation strings + confirmation mechanism) is injected per app — shared
- * by Discord and Zalo (replaces their near-identical per-app tools services).
+ * Shared WISPACE tool executor for the agent loop — implements the Discord
+ * and Zalo tool sets (the platform-neutral behavior). Messenger provides its
+ * own app-owned executor via `PlatformToolExecutorPort` because every tool
+ * there uses Messenger data sources (LLM report, StudyReminderOperationsPort,
+ * real subscription upsert) and pushes Messenger quick-reply follow-ups.
  */
 @Injectable()
-export class PlatformAgentToolsService {
+export class PlatformAgentToolsService implements PlatformToolExecutorPort {
   private readonly logger = new Logger(PlatformAgentToolsService.name);
 
   constructor(
@@ -89,11 +90,6 @@ export class PlatformAgentToolsService {
     // Tool execution timed out (agent moved on) — do not start new side effects.
     if (signal?.aborted) {
       return { error: 'Tool execution aborted (timeout)' };
-    }
-
-    const override = this.options.toolOverrides?.[toolName];
-    if (override) {
-      return override(ctx, args, signal);
     }
 
     switch (toolName) {

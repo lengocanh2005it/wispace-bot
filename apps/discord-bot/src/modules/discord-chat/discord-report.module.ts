@@ -32,6 +32,8 @@ import {
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
 import { DiscordReportSendJobRepository } from './infrastructure/persistence/discord-report-send-job.repository';
+import { TypeormDiscordReportAccountReader } from './infrastructure/persistence/typeorm-discord-report-account.reader';
+import { DISCORD_REPORT_ACCOUNT_READER } from './domain/ports/discord-report-account-reader.port';
 import { DiscordReportCronService } from './application/services/discord-report-cron.service';
 import { DiscordReportRetryDispatchService } from './application/services/discord-report-retry-dispatch.service';
 import { DiscordReportOrchestrationService } from './application/services/discord-report-orchestration.service';
@@ -128,6 +130,11 @@ import { WispaceModule } from '../wispace/wispace.module';
     ReportCronLockService,
     DiscordReportDeliveryService,
     DiscordReportSendJobRepository,
+    TypeormDiscordReportAccountReader,
+    {
+      provide: DISCORD_REPORT_ACCOUNT_READER,
+      useExisting: TypeormDiscordReportAccountReader,
+    },
     DiscordReportCronService,
     DiscordReportRetryDispatchService,
     DiscordReportOrchestrationService,

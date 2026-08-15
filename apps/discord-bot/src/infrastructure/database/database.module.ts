@@ -16,6 +16,7 @@ import {
   getPostgresSsl,
 } from '@wispace/database';
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
+import { DiscordLinkVerifyRecordEntity } from './entities/discord-link-verify-record.entity';
 import { DiscordMessageLogEntity } from './entities/discord-message-log.entity';
 
 /**
@@ -40,6 +41,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       DiscordAccountLinkEntity,
+      DiscordLinkVerifyRecordEntity,
       DiscordMessageLogEntity,
       StudyReminderJobEntity,
       WebhookDeadLetterEntity,
@@ -64,6 +66,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       DiscordAccountLinkEntity,
+      DiscordLinkVerifyRecordEntity,
       DiscordMessageLogEntity,
       WebhookDeadLetterEntity,
       ReportSendJobEntity,

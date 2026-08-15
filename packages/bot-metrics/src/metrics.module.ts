@@ -2,6 +2,7 @@ import {
   Controller,
   DynamicModule,
   Get,
+  Global,
   Header,
   Inject,
   Module,
@@ -52,6 +53,7 @@ export function createMetricsModule(
     }
   }
 
+  @Global()
   @Module({
     controllers: [PlatformMetricsController],
     // useFactory so Nest does not try to resolve the (phantom) constructor
@@ -61,8 +63,14 @@ export function createMetricsModule(
         provide: PlatformMetricsService,
         useFactory: () => new PlatformMetricsService(),
       },
+      // Expose the base token so services can inject BotMetricsService
+      // without importing the platform-specific subclass.
+      {
+        provide: BotMetricsService,
+        useExisting: PlatformMetricsService,
+      },
     ],
-    exports: [PlatformMetricsService],
+    exports: [PlatformMetricsService, BotMetricsService],
   })
   class PlatformMetricsModule {}
 

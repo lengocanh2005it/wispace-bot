@@ -119,6 +119,8 @@ jobs:
           tags: |
             ${{ env.IMAGE }}
             ${{ env.IMAGE_LATEST }}
+          sbom: true
+          provenance: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

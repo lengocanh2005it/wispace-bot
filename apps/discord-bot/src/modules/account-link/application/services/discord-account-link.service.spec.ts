@@ -1,6 +1,6 @@
+/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import { ConfigService } from '@nestjs/config';
-import type { Repository } from 'typeorm';
-import type { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
+import type { DiscordAccountLinkRepositoryPort } from '../../domain/ports/discord-account-link.repository.port';
 import { DiscordAccountLinkService } from './discord-account-link.service';
 
 const CONFIG_VALUES: Record<string, string> = {
@@ -13,6 +13,16 @@ function buildConfigService(): ConfigService {
   return {
     getOrThrow: (key: string) => CONFIG_VALUES[key],
   } as unknown as ConfigService;
+}
+
+function buildRepositoryPort(): DiscordAccountLinkRepositoryPort {
+  return {
+    upsertLink: jest.fn().mockResolvedValue({ relinked: false }),
+    findUserIdByDiscordId: jest.fn(),
+    findDiscordIdByUserId: jest.fn(),
+    markWelcomed: jest.fn().mockResolvedValue(undefined),
+    shouldWelcome: jest.fn().mockResolvedValue(true),
+  };
 }
 
 describe('DiscordAccountLinkService', () => {
@@ -38,8 +48,10 @@ describe('DiscordAccountLinkService', () => {
         });
       global.fetch = fetchMock as typeof fetch;
 
-      const repo = {} as Repository<DiscordAccountLinkEntity>;
-      const service = new DiscordAccountLinkService(buildConfigService(), repo);
+      const service = new DiscordAccountLinkService(
+        buildConfigService(),
+        buildRepositoryPort(),
+      );
 
       const result = await service.exchangeCodeForDiscordUser('auth-code');
 
@@ -73,8 +85,10 @@ describe('DiscordAccountLinkService', () => {
         });
       global.fetch = fetchMock as typeof fetch;
 
-      const repo = {} as Repository<DiscordAccountLinkEntity>;
-      const service = new DiscordAccountLinkService(buildConfigService(), repo);
+      const service = new DiscordAccountLinkService(
+        buildConfigService(),
+        buildRepositoryPort(),
+      );
 
       const result = await service.exchangeCodeForDiscordUser('auth-code');
 
@@ -87,8 +101,10 @@ describe('DiscordAccountLinkService', () => {
         status: 400,
       }) as typeof fetch;
 
-      const repo = {} as Repository<DiscordAccountLinkEntity>;
-      const service = new DiscordAccountLinkService(buildConfigService(), repo);
+      const service = new DiscordAccountLinkService(
+        buildConfigService(),
+        buildRepositoryPort(),
+      );
 
       await expect(
         service.exchangeCodeForDiscordUser('bad-code'),
@@ -97,39 +113,26 @@ describe('DiscordAccountLinkService', () => {
   });
 
   describe('upsertLink / findUserIdByDiscordId', () => {
-    it('upserts via transaction: deletes old link then inserts', async () => {
-      const query = jest.fn().mockResolvedValue([]);
-      const repo = {
-        manager: {
-          transaction: jest.fn((fn: (em: unknown) => Promise<void>) =>
-            fn({ query }),
-          ),
-        },
-      } as unknown as Repository<DiscordAccountLinkEntity>;
-      const service = new DiscordAccountLinkService(buildConfigService(), repo);
-
-      await service.upsertLink(143, 'discord-user-1');
-
-      // First call: DELETE old link for userId
-      expect(query).toHaveBeenNthCalledWith(
-        1,
-        expect.stringContaining('DELETE FROM discord_account_links'),
-        ['discord', 143, 'discord-user-1'],
+    it('delegates the upsert to the repository port and logs the link', async () => {
+      const repository = buildRepositoryPort();
+      const service = new DiscordAccountLinkService(
+        buildConfigService(),
+        repository,
       );
-      // Second call: INSERT new link
-      expect(query).toHaveBeenNthCalledWith(
-        2,
-        expect.stringContaining('INSERT INTO discord_account_links'),
-        ['discord', 'discord-user-1', 143],
-      );
+
+      const result = await service.upsertLink(143, 'discord-user-1');
+
+      expect(repository.upsertLink).toHaveBeenCalledWith(143, 'discord-user-1');
+      expect(result).toEqual({ relinked: false });
     });
 
     it('returns the linked userId when found', async () => {
-      const findOne = jest.fn().mockResolvedValue({ userId: 143 });
-      const repo = {
-        findOne,
-      } as unknown as Repository<DiscordAccountLinkEntity>;
-      const service = new DiscordAccountLinkService(buildConfigService(), repo);
+      const repository = buildRepositoryPort();
+      (repository.findUserIdByDiscordId as jest.Mock).mockResolvedValue(143);
+      const service = new DiscordAccountLinkService(
+        buildConfigService(),
+        repository,
+      );
 
       await expect(
         service.findUserIdByDiscordId('discord-user-1'),
@@ -137,15 +140,49 @@ describe('DiscordAccountLinkService', () => {
     });
 
     it('returns undefined when no link exists', async () => {
-      const findOne = jest.fn().mockResolvedValue(null);
-      const repo = {
-        findOne,
-      } as unknown as Repository<DiscordAccountLinkEntity>;
-      const service = new DiscordAccountLinkService(buildConfigService(), repo);
+      const repository = buildRepositoryPort();
+      (repository.findUserIdByDiscordId as jest.Mock).mockResolvedValue(
+        undefined,
+      );
+      const service = new DiscordAccountLinkService(
+        buildConfigService(),
+        repository,
+      );
 
       await expect(
         service.findUserIdByDiscordId('discord-user-unknown'),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('#137 welcomed marker', () => {
+    it('markWelcomed delegates to the repository port', async () => {
+      const repository = buildRepositoryPort();
+      const service = new DiscordAccountLinkService(
+        buildConfigService(),
+        repository,
+      );
+
+      await service.markWelcomed('discord-user-1');
+
+      expect(repository.markWelcomed).toHaveBeenCalledWith('discord-user-1');
+    });
+
+    it('shouldWelcome delegates to the repository port', async () => {
+      const repository = buildRepositoryPort();
+      (repository.shouldWelcome as jest.Mock).mockResolvedValue(false);
+      const service = new DiscordAccountLinkService(
+        buildConfigService(),
+        repository,
+      );
+
+      await expect(
+        service.shouldWelcome('discord-user-1', 86_400_000),
+      ).resolves.toBe(false);
+      expect(repository.shouldWelcome).toHaveBeenCalledWith(
+        'discord-user-1',
+        86_400_000,
+      );
     });
   });
 });

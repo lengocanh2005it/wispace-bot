@@ -18,8 +18,10 @@ import {
   formatReminder,
 } from '../../domain/utils/reminder-formatter';
 import { sanitizeUntrustedTextForLlm } from '@wispace/llm-agent';
-import { TaskScoreAverageApiService } from '@messenger/modules/student-report/infrastructure/wispace/task-score-average-api.service';
-import { UserGoalsApiService } from '@messenger/modules/student-report/infrastructure/wispace/user-goals-api.service';
+import {
+  REMINDER_STUDENT_DATA_PORT,
+  type ReminderStudentDataPort,
+} from '../../domain/ports/reminder-student-data.port';
 import {
   NormalizedStudySession,
   StudyReminderLlmInput,
@@ -41,8 +43,8 @@ export class StudyReminderService {
   constructor(
     private readonly studySessionSourceService: StudySessionSourceService,
     private readonly studyReminderScheduleService: StudyReminderScheduleService,
-    private readonly userGoalsApiService: UserGoalsApiService,
-    private readonly taskScoreAverageApi: TaskScoreAverageApiService,
+    @Inject(REMINDER_STUDENT_DATA_PORT)
+    private readonly studentData: ReminderStudentDataPort,
     private readonly userDisplayNameService: UserDisplayNameService,
     private readonly llmUsageRecorder: LlmUsageRecorderService,
     private readonly llmExecution: LlmExecutionService,
@@ -126,7 +128,7 @@ export class StudyReminderService {
     };
 
     try {
-      const goals = await this.userGoalsApiService.getUserGoals(psid);
+      const goals = await this.studentData.getUserGoals(psid);
       input.targetScore = goals.targetScore;
     } catch (error) {
       this.logger.warn(
@@ -137,7 +139,7 @@ export class StudyReminderService {
     }
 
     try {
-      const capacity = await this.taskScoreAverageApi.getCapacityData(psid);
+      const capacity = await this.studentData.getCapacityData(psid);
       input.task1Band = capacity.task1_band;
       input.task2Band = capacity.task2_band;
       if (!input.targetScore) {

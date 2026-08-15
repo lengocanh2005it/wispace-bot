@@ -2,10 +2,11 @@ import { createHash } from 'node:crypto';
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { maskEventId } from '@wispace/bot-common';
-import { PlatformWebhookInboundEventService } from '@wispace/database';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
+import { WEBHOOK_INBOUND_EVENTS_PORT } from '../../domain/repositories/webhook-inbound-events.port';
+import type { WebhookInboundEventsPort } from '../../domain/repositories/webhook-inbound-events.port';
 import {
   MessengerWebhookEvent,
   MessengerWebhookPayload,
@@ -76,7 +77,8 @@ export class MessengerService {
     private readonly messengerLinkContextService: MessengerLinkContextService,
     private readonly chatRateLimitConfig: ChatRateLimitConfigService,
     private readonly actionExecutor: WebhookActionExecutorService,
-    private readonly inboundEvents: PlatformWebhookInboundEventService,
+    @Inject(WEBHOOK_INBOUND_EVENTS_PORT)
+    private readonly inboundEvents: WebhookInboundEventsPort,
   ) {}
 
   verifyWebhook(token?: string, challenge?: string): string {

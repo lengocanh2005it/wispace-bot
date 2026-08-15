@@ -50,6 +50,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmRoundOutcome: Counter;
   private quotaDenied: Counter;
   private reminderDispatch: Counter;
+  private dmDeliveryFailures: Counter;
   private webhookInboundBacklog: Gauge;
 
   constructor(config: MetricsConfig) {
@@ -125,6 +126,13 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_reminder_dispatch_total`,
       help: 'Study reminder dispatch outcomes',
       labelNames: ['status'],
+      registers: [this.registry],
+    });
+
+    this.dmDeliveryFailures = new Counter({
+      name: `${this.prefix}_dm_delivery_failures_total`,
+      help: 'Direct-message delivery failures (privacy-blocked DMs, Discord API errors)',
+      labelNames: ['reason'],
       registers: [this.registry],
     });
 
@@ -205,6 +213,11 @@ export class BotMetricsService implements OnModuleDestroy {
 
   incReminderDispatch(status: string): void {
     this.reminderDispatch.inc({ status });
+  }
+
+  /** DM delivery failure (e.g. user privacy settings block DMs) — ops signal. */
+  incDmDeliveryFailure(reason: string): void {
+    this.dmDeliveryFailures.inc({ reason });
   }
 
   /** Backlog gauge for the durable inbound retry cron — set per tick. */

@@ -1,4 +1,6 @@
+/* eslint-disable no-control-regex -- tests assert control-char stripping */
 import { ConfigService } from '@nestjs/config';
+import { Logger } from '@nestjs/common';
 import { WispaceMessengerTokenVerifyService } from './wispace-messenger-token-verify.service';
 
 describe('WispaceMessengerTokenVerifyService', () => {
@@ -92,5 +94,64 @@ describe('WispaceMessengerTokenVerifyService', () => {
     const result = await service.verifyMessengerToken('psid-1', 'token-abc');
 
     expect(result).toEqual({ valid: false, reason: 'EXPIRED' });
+  });
+
+  it('#108: never logs token material or raw usernames', async () => {
+    const logSpy = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: () =>
+        Promise.resolve(
+          JSON.stringify({
+            success: true,
+            userId: 143,
+            username: 'SuperSecretName123',
+          }),
+        ),
+    } as Response);
+
+    const service = createService();
+    await service.verifyMessengerToken('psid-1', 'secret-token-abc');
+
+    const logCalls = logSpy.mock.calls.map((call) => String(call[0]));
+    for (const line of logCalls) {
+      expect(line).not.toContain('token=');
+      expect(line).not.toContain('secret-token-abc');
+      expect(line).not.toContain('SuperSecretName123');
+    }
+    expect(
+      logCalls.some((line) => line.includes(`username=Supe\u2026e123`)),
+    ).toBe(true);
+  });
+
+  it('#108: strips control characters from raw usernames in logs', async () => {
+    const logSpy = jest
+      .spyOn(Logger.prototype, 'log')
+      .mockImplementation(() => undefined);
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      text: () =>
+        Promise.resolve(
+          JSON.stringify({
+            success: true,
+            userId: 143,
+            username: 'Hacker\u0007\u001b[2JName',
+          }),
+        ),
+    } as Response);
+
+    const service = createService();
+    await service.verifyMessengerToken('psid-1', 'token-abc');
+
+    const logCalls = logSpy.mock.calls.map((call) => String(call[0]));
+    for (const line of logCalls) {
+      expect(line).not.toMatch(/[\u0000-\u001F\u007F]/);
+    }
   });
 });
