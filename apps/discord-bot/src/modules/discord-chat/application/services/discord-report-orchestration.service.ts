@@ -16,7 +16,7 @@ import {
   parseExamDateToIso,
 } from '@wispace/scheduler-core';
 import { PlatformStudentReportService } from '@wispace/student-report';
-import { WispaceGoalsService } from '@wispace/wispace-client';
+import { MemoizedWispaceGoalsService } from '@wispace/wispace-client';
 
 const ZERO: ClaimAndSendResult = {
   sent: 0,
@@ -39,7 +39,7 @@ export class DiscordReportOrchestrationService {
     private readonly deliveryService: ReportDeliveryPort,
     @Inject(REPORT_SEND_JOB_REPOSITORY)
     private readonly jobRepository: ReportSendJobRepositoryPort,
-    private readonly goalsService: WispaceGoalsService,
+    private readonly goalsService: MemoizedWispaceGoalsService,
     private readonly reportService: PlatformStudentReportService,
     private readonly reportScheduleService: ReportScheduleService,
     private readonly reportSendScheduleService: ReportSendScheduleService,

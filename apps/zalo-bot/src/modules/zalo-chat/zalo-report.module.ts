@@ -9,7 +9,10 @@ import {
   PlatformLlmUsageRecorderAdapter,
 } from '@wispace/chat-metering';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
-import { WispaceGoalsService } from '@wispace/wispace-client';
+import {
+  MemoizedWispaceGoalsService,
+  WispaceGoalsService,
+} from '@wispace/wispace-client';
 import {
   GOALS_DATA_PORT,
   REPORT_CLAIM_REPOSITORY,
@@ -37,15 +40,26 @@ import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-
   ],
   providers: [
     ZaloReportCronService,
+    // Request-scoped goals memoization: exam-window check and report
+    // generation both fetch goals within one execution — one upstream call.
+    {
+      provide: MemoizedWispaceGoalsService,
+      useFactory: (goalsService: WispaceGoalsService) =>
+        new MemoizedWispaceGoalsService(goalsService, {
+          ttlMs: 60_000,
+          maxEntries: 10_000,
+        }),
+      inject: [WispaceGoalsService],
+    },
     {
       provide: GOALS_DATA_PORT,
-      useFactory: (goalsService: WispaceGoalsService) => ({
+      useFactory: (goalsService: MemoizedWispaceGoalsService) => ({
         getUserGoals: async (externalUserId: string) => ({
           examDate: (await goalsService.getUserGoals(externalUserId)).examDate,
         }),
         parseExamDate: (examDate: string) => parseExamDateToIso(examDate),
       }),
-      inject: [WispaceGoalsService],
+      inject: [MemoizedWispaceGoalsService],
     },
     ReportScheduleService,
     {
@@ -58,7 +72,7 @@ import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-
       provide: PlatformStudentReportService,
       useFactory: (
         configService: ConfigService,
-        goalsService: WispaceGoalsService,
+        goalsService: MemoizedWispaceGoalsService,
         usageRecorder: PlatformLlmUsageRecorderAdapter,
         adapter: LlmProviderAdapter,
       ) =>
@@ -72,7 +86,7 @@ import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-
         ),
       inject: [
         ConfigService,
-        WispaceGoalsService,
+        MemoizedWispaceGoalsService,
         PlatformLlmUsageRecorderAdapter,
         'LLM_PROVIDER_ADAPTER',
       ],

@@ -6,7 +6,10 @@ import {
 } from '@wispace/chat-metering';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
 import type { Platform } from '@wispace/database';
-import { WispaceGoalsService } from '@wispace/wispace-client';
+import type {
+  UserGoalsRecord,
+  TaskScoreAverageRecord,
+} from '@wispace/wispace-client';
 import {
   createEnvLlmExecutionPort,
   loadSystemPromptFile,
@@ -19,6 +22,19 @@ import {
 import type { StudentCapacityInput } from './types';
 
 const FEATURE = 'STUDENT_REPORT';
+
+/** Structural goals-port accepted by the report service — satisfied by both
+ * `WispaceGoalsService` and the request-scoped memoized wrapper. */
+export interface ReportGoalsPort {
+  getUserGoals(
+    externalUserId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<UserGoalsRecord>;
+  getTaskScoreAverages(
+    externalUserId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<TaskScoreAverageRecord[]>;
+}
 
 // Execution-control defaults — same contract and env keys as the Messenger
 // app's `LlmExecutionConfigService`, so Discord/Zalo reports share the same
@@ -43,7 +59,7 @@ export class PlatformStudentReportService {
   constructor(
     private readonly platform: Platform,
     private readonly configService: ConfigService,
-    private readonly goalsService: WispaceGoalsService,
+    private readonly goalsService: ReportGoalsPort,
     private readonly usageRecorder: PlatformLlmUsageRecorderAdapter,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
