@@ -135,7 +135,7 @@ describe('AppController (e2e)', () => {
         id: '123456789',
       },
       message: {
-        text: 'Chào bạn! 👋 Mình là trợ lý WISPACE — đồng hành học IELTS Writing cùng bạn. Bạn cứ nhắn nhu cầu tự nhiên, ví dụ như xem tiến độ hay tạo bài tập mới — mình sẽ hỗ trợ bạn nhé!',
+        text: expect.stringContaining('Chào bạn! 👋'),
       },
     });
 

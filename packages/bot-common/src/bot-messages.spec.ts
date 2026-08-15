@@ -1,5 +1,6 @@
 import {
   FALLBACK_DISPLAY_NAME,
+  GREETING_VARIANTS,
   buildGreetingMessage,
   buildLinkSuccessMessage,
   buildSelfIntroMessage,
@@ -23,11 +24,27 @@ describe('buildGreetingMessage', () => {
     expect(buildGreetingMessage('  Minh  ')).toMatch(/^Chào Minh! 👋/);
   });
 
-  it('introduces the assistant and invites a natural request', () => {
+  it('picks one of the predefined variants', () => {
     const text = buildGreetingMessage();
-    expect(text).toContain('trợ lý WISPACE');
-    expect(text).toContain('IELTS Writing');
-    expect(text).toContain('tạo bài tập mới');
+    expect(
+      GREETING_VARIANTS.some((variant) => text === `Chào bạn! 👋 ${variant}`),
+    ).toBe(true);
+  });
+
+  it('rotates through variants via the injected random', () => {
+    expect(buildGreetingMessage('Minh', () => 0)).toBe(
+      `Chào Minh! 👋 ${GREETING_VARIANTS[0]}`,
+    );
+    expect(buildGreetingMessage('Minh', () => 0.999)).toBe(
+      `Chào Minh! 👋 ${GREETING_VARIANTS[GREETING_VARIANTS.length - 1]}`,
+    );
+  });
+
+  it('keeps the assistant intro and invites a natural request', () => {
+    for (const variant of GREETING_VARIANTS) {
+      expect(variant).toContain('WISPACE');
+      expect(variant).toContain('IELTS Writing');
+    }
   });
 });
 

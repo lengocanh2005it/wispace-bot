@@ -4,6 +4,7 @@ export { isAbortError, sleep } from './abort.utils';
 export {
   FALLBACK_DISPLAY_NAME,
   GREETING_INTRO,
+  GREETING_VARIANTS,
   buildGreetingMessage,
   buildLinkSuccessMessage,
   buildSelfIntroMessage,

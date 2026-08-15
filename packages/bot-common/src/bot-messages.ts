@@ -1,14 +1,29 @@
 export const FALLBACK_DISPLAY_NAME = 'Chào bạn nha';
 
+/** Canonical greeting intro — also used for one-time announcements (e.g. Discord join welcome). */
 export const GREETING_INTRO =
   'Mình là trợ lý WISPACE — đồng hành học IELTS Writing cùng bạn. Bạn cứ nhắn nhu cầu tự nhiên, ví dụ như xem tiến độ hay tạo bài tập mới — mình sẽ hỗ trợ bạn nhé!';
 
-export function buildGreetingMessage(displayName?: string): string {
+/** Greeting intros the bot rotates through so repeated hellos get variety. */
+export const GREETING_VARIANTS: readonly string[] = [
+  GREETING_INTRO,
+  'Mình là trợ lý WISPACE — luôn sẵn sàng đồng hành cùng bạn học IELTS Writing. Cứ nhắn bất cứ điều gì, ví dụ như xem tiến độ hay tạo bài tập mới, mình sẽ lo phần còn lại!',
+  'Mình là trợ lý WISPACE — hỗ trợ bạn học IELTS Writing mỗi ngày. Bạn cần gì cứ nhắn tự nhiên, mình sẽ giúp ngay nhé!',
+  'Mình là trợ lý WISPACE — đồng hành cùng bạn trên hành trình IELTS Writing. Nhắn cho mình nhu cầu của bạn, ví dụ như kiểm tra tiến độ hay làm bài tập mới — mình sẽ hỗ trợ nhiệt tình!',
+];
+
+export function buildGreetingMessage(
+  displayName?: string,
+  random: () => number = Math.random,
+): string {
   const name = displayName?.trim();
-  if (!name || name === FALLBACK_DISPLAY_NAME) {
-    return `Chào bạn! 👋 ${GREETING_INTRO}`;
-  }
-  return `Chào ${name}! 👋 ${GREETING_INTRO}`;
+  const prefix =
+    !name || name === FALLBACK_DISPLAY_NAME ? 'Chào bạn!' : `Chào ${name}!`;
+  const index = Math.min(
+    GREETING_VARIANTS.length - 1,
+    Math.floor(random() * GREETING_VARIANTS.length),
+  );
+  return `${prefix} 👋 ${GREETING_VARIANTS[index] ?? GREETING_INTRO}`;
 }
 
 export function buildSelfIntroMessage(): string {
