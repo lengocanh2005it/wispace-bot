@@ -30,6 +30,15 @@ Loaded via `@wispace/llm-agent`'s `loadSystemPromptFile()` (apps pass their own 
 
 Shared messages (not platform-specific) — `buildPromptInjectionBlockedMessage`, `buildWispaceScopeRedirectMessage` — live in `packages/llm-agent/src/messages.ts`, shared across all bots.
 
+## Adding a new tool (convention)
+
+The tool schema (name + `description` + parameters in `packages/llm-agent/src/agent.tools.ts`) is injected into every LLM request automatically — the model always sees it. Use it as the primary guidance surface:
+
+1. **Put "when to use / when not to use" in the schema `description`** (e.g. trigger phrases, "do not call when..."). Simple tools need **no prompt edit at all**.
+2. **Edit the prompt core only for cross-cutting rules**: result phrasing constraints (e.g. precreate URL copy-verbatim, status paraphrase), cross-tool coordination (e.g. no `get_upcoming_study_sessions` inside a reschedule flow), or general no-tool rules.
+3. **Platform-specific tool behavior → the platform overlay** (buttons vs keywords, DM privacy), never the core.
+4. A new rule in the core must also be reflected in `packages/llm-agent/src/chat-system-prompt.spec.ts` (section-presence guards).
+
 ## After modifying a prompt
 
 ```bash
