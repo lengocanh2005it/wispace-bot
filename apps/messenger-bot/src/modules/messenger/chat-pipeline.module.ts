@@ -140,21 +140,11 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
       inject: [getRepositoryToken(LlmSafetyEventEntity), ConfigService],
     },
     {
+      // Messenger owns its tool executor (LLM report, StudyDataPort calendar
+      // tools, subscription upsert, quick-reply follow-ups) — the shared
+      // PlatformAgentToolsService stays the Discord/Zalo implementation.
       provide: PlatformAgentToolsService,
-      useFactory: (
-        rescheduleService: MessengerRescheduleConfirmationService,
-        messengerTools: MessengerAgentToolsService,
-      ) =>
-        new PlatformAgentToolsService(
-          undefined,
-          undefined,
-          rescheduleService,
-          messengerTools.buildToolsOptions(),
-        ),
-      inject: [
-        MessengerRescheduleConfirmationService,
-        MessengerAgentToolsService,
-      ],
+      useExisting: MessengerAgentToolsService,
     },
     {
       provide: PlatformAgentService,

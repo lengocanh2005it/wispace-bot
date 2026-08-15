@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -7,8 +8,10 @@ import {
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { CalendarSessionTimeRange } from '../../domain/entities/study-schedule.types';
 import { UserCalendarRecord } from '../../domain/entities/user-calendar.types';
-import { UserCalendarApiService } from '../../infrastructure/wispace/user-calendar-api.service';
-import { UserCalendarScheduleService } from '../../infrastructure/wispace/user-calendar-schedule.service';
+import {
+  USER_CALENDAR_DATA_PORT,
+  type UserCalendarDataPort,
+} from '../../domain/ports/user-calendar-data.port';
 import {
   type RescheduleSchedulingMode,
   resolveRescheduleSlot,
@@ -30,8 +33,8 @@ export class StudyCalendarCommandService {
   private readonly logger = new Logger(StudyCalendarCommandService.name);
 
   constructor(
-    private readonly userCalendarApiService: UserCalendarApiService,
-    private readonly userCalendarScheduleService: UserCalendarScheduleService,
+    @Inject(USER_CALENDAR_DATA_PORT)
+    private readonly calendarData: UserCalendarDataPort,
     private readonly studyReminderScheduleService: StudyReminderScheduleService,
     private readonly studyReminderSyncService: StudyReminderSyncService,
     private readonly sessionSourceService: StudySessionSourceService,
@@ -50,12 +53,12 @@ export class StudyCalendarCommandService {
     entries: StudyCalendarEntryView[];
   }> {
     const timeRange = options?.timeRange ?? 'upcoming';
-    const records = await this.userCalendarApiService.listCalendars(psid);
+    const records = await this.calendarData.listCalendars(psid);
     const recordById = new Map(records.map((record) => [record.id, record]));
     const { syncHorizonHours } =
       this.studyReminderScheduleService.getOutboxSettings();
     const horizonEnd = hoursFromNow(syncHorizonHours);
-    const sessions = await this.userCalendarScheduleService.getCalendarSessions(
+    const sessions = await this.calendarData.getCalendarSessions(
       psid,
       horizonEnd,
       {
@@ -210,7 +213,7 @@ export class StudyCalendarCommandService {
     time: string,
     userId: number,
   ): Promise<UserCalendarRecord> {
-    const records = await this.userCalendarApiService.listCalendars(psid);
+    const records = await this.calendarData.listCalendars(psid);
     const existing = records.find(
       (record) => record.eventDate === eventDate && record.time === time,
     );
@@ -220,7 +223,7 @@ export class StudyCalendarCommandService {
       );
       return existing;
     }
-    return this.userCalendarApiService.createCalendar(
+    return this.calendarData.createCalendar(
       psid,
       { eventDate, time },
       { userId },
@@ -237,7 +240,7 @@ export class StudyCalendarCommandService {
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
       try {
-        await this.userCalendarApiService.deleteCalendar(psid, calendarId);
+        await this.calendarData.deleteCalendar(psid, calendarId);
         return;
       } catch (error) {
         lastError = error;
@@ -252,10 +255,7 @@ export class StudyCalendarCommandService {
     psid: string,
     calendarId: number,
   ): Promise<UserCalendarRecord> {
-    const source = await this.userCalendarScheduleService.findCalendarRecord(
-      psid,
-      calendarId,
-    );
+    const source = await this.calendarData.findCalendarRecord(psid, calendarId);
 
     if (!source) {
       throw new NotFoundException(

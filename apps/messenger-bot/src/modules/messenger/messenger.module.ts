@@ -29,6 +29,8 @@ import { ChatPipelineModule } from './chat-pipeline.module';
 import { UserLinkingModule } from './user-linking.module';
 import { MessengerCalendarPort } from './infrastructure/adapters/messenger-calendar.port';
 import { MessengerReschedulePort } from './infrastructure/adapters/messenger-reschedule.port';
+import { MessengerWebhookInboundAdapter } from './infrastructure/persistence/messenger-webhook-inbound.adapter';
+import { WEBHOOK_INBOUND_EVENTS_PORT } from './domain/repositories/webhook-inbound-events.port';
 import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
 import { MetricsService } from '../metrics/metrics.service';
 
@@ -64,6 +66,11 @@ import { MetricsService } from '../metrics/metrics.service';
       useFactory: (repo: Repository<WebhookInboundEventEntity>) =>
         new PlatformWebhookInboundEventService('messenger', repo),
       inject: [getRepositoryToken(WebhookInboundEventEntity)],
+    },
+    MessengerWebhookInboundAdapter,
+    {
+      provide: WEBHOOK_INBOUND_EVENTS_PORT,
+      useExisting: MessengerWebhookInboundAdapter,
     },
     {
       provide: PlatformWebhookInboundRetryCronService,

@@ -9,11 +9,13 @@ import {
   todayReportDate,
   runBatched,
 } from '@wispace/scheduler-core';
+import { Inject } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
-import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import {
+  DISCORD_REPORT_ACCOUNT_READER,
+  type DiscordReportAccountPageReaderPort,
+} from '../../domain/ports/discord-report-account-reader.port';
 import type {
   ReportMapping,
   ClaimAndSendResult,
@@ -44,8 +46,8 @@ export class DiscordReportCronService {
     private readonly reportCronLockService: ReportCronLockService,
     private readonly reportScheduleService: ReportScheduleService,
     private readonly orchestrationService: DiscordReportOrchestrationService,
-    @InjectRepository(DiscordAccountLinkEntity)
-    private readonly accountLinkRepo: Repository<DiscordAccountLinkEntity>,
+    @Inject(DISCORD_REPORT_ACCOUNT_READER)
+    private readonly accountReader: DiscordReportAccountPageReaderPort,
   ) {}
 
   @Cron('0 8 * * *', {
@@ -173,20 +175,10 @@ export class DiscordReportCronService {
 
   private async loadPage(
     cursor: string | undefined,
-  ): Promise<DiscordAccountLinkEntity[]> {
-    return this.accountLinkRepo
-      .createQueryBuilder('link')
-      .select([
-        'link.id',
-        'link.externalUserId',
-        'link.userId',
-        'link.platform',
-      ])
-      .where('link.platform = :platform', { platform: PLATFORM })
-      .andWhere(cursor !== undefined ? 'link.id > :cursor' : 'TRUE', { cursor })
-      .orderBy('link.id', 'ASC')
-      .take(PAGE_SIZE)
-      .getMany();
+  ): Promise<
+    Array<{ id: string; externalUserId: string; userId: number | null }>
+  > {
+    return this.accountReader.findActiveAccountsPage(cursor, PAGE_SIZE);
   }
 
   private pushFailure(

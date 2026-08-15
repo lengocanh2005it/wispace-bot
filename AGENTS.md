@@ -246,6 +246,8 @@ Repo uses **feature modules + 4 layers** (presentation → application → domai
 | `REPORT_PORT` | Generate study reports via LLM (replaces `StudentReportService`) |
 | `STUDY_DATA_PORT` | Retrieve study schedule/reminder data (replaces 4 study-reminder services) |
 
+Tool execution: `PlatformAgentService` consumes `PlatformToolExecutorPort` (`packages/chat-agent`) — the shared `PlatformAgentToolsService` implements the Discord/Zalo tool sets; Messenger owns its executor (`MessengerAgentToolsService` implements the same port, wired via `useExisting` — no `toolOverrides` conditional dispatcher). Study-reminder worker wiring is a named typed seam (`createStudyReminderWorker(deps, config)` — no positional `deps[6]`/`unknown`; `createStudyReminderProviders` options take typed `ClassOf<T>` constructors). App-layer ports restored: `USER_CALENDAR_DATA_PORT` + `REMINDER_STUDENT_DATA_PORT` (messenger study-reminder), `DISCORD_ACCOUNT_LINK_REPOSITORY` (discord account-link), `DISCORD_REPORT_ACCOUNT_READER` (discord report cron), `WEBHOOK_INBOUND_EVENTS_PORT` (messenger durable inbox) — concrete TypeORM/WISPACE implementations bound in module wiring.
+
 `StudyReminderModule` imports `MessengerOutboundModule` — **no** `forwardRef` with `MessengerModule`.
 
 `ChatPipelineModule` and `UserLinkingModule` are split from `MessengerModule` — each module is self-contained, importing the modules it needs directly.

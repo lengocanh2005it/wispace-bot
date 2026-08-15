@@ -1,6 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import type { UserCalendarApiService } from '../../infrastructure/wispace/user-calendar-api.service';
-import type { UserCalendarScheduleService } from '../../infrastructure/wispace/user-calendar-schedule.service';
+import type { UserCalendarDataPort } from '../../domain/ports/user-calendar-data.port';
 import type { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import type { StudyReminderSyncService } from '@wispace/study-reminder-shared';
 import type { NormalizedStudySession } from '../../domain/entities/study-schedule.types';
@@ -9,8 +8,7 @@ import { StudyCalendarCommandService } from './study-calendar-command.service';
 
 describe('StudyCalendarCommandService', () => {
   let service: StudyCalendarCommandService;
-  let calendarApi: jest.Mocked<UserCalendarApiService>;
-  let calendarSchedule: jest.Mocked<UserCalendarScheduleService>;
+  let calendarData: jest.Mocked<UserCalendarDataPort>;
   let scheduleService: jest.Mocked<StudyReminderScheduleService>;
   let syncService: jest.Mocked<StudyReminderSyncService>;
 
@@ -50,17 +48,14 @@ describe('StudyCalendarCommandService', () => {
   }
 
   beforeEach(() => {
-    calendarApi = {
+    calendarData = {
       listCalendars: jest.fn().mockResolvedValue([]),
       createCalendar: jest.fn(),
       deleteCalendar: jest.fn().mockResolvedValue(undefined),
-    } as unknown as jest.Mocked<UserCalendarApiService>;
-
-    calendarSchedule = {
       getUpcomingSessions: jest.fn().mockResolvedValue([]),
       getCalendarSessions: jest.fn().mockResolvedValue([]),
       findCalendarRecord: jest.fn().mockResolvedValue(null),
-    } as unknown as jest.Mocked<UserCalendarScheduleService>;
+    } as unknown as jest.Mocked<UserCalendarDataPort>;
 
     scheduleService = {
       getOutboxSettings: jest.fn().mockReturnValue(defaultSettings),
@@ -77,8 +72,7 @@ describe('StudyCalendarCommandService', () => {
     } as unknown as jest.Mocked<StudyReminderSyncService>;
 
     service = new StudyCalendarCommandService(
-      calendarApi,
-      calendarSchedule,
+      calendarData,
       scheduleService,
       syncService,
     );
@@ -96,8 +90,8 @@ describe('StudyCalendarCommandService', () => {
       const record = makeRecord();
       const session = makeSession();
 
-      calendarApi.listCalendars.mockResolvedValue([record]);
-      calendarSchedule.getCalendarSessions.mockResolvedValue([session]);
+      calendarData.listCalendars.mockResolvedValue([record]);
+      calendarData.getCalendarSessions.mockResolvedValue([session]);
 
       const result = await service.listEntries('psid-1');
 
@@ -114,7 +108,7 @@ describe('StudyCalendarCommandService', () => {
 
     it('filters out sessions with non-matching sessionKey format', async () => {
       const session = makeSession({ sessionKey: 'invalid-key' });
-      calendarSchedule.getCalendarSessions.mockResolvedValue([session]);
+      calendarData.getCalendarSessions.mockResolvedValue([session]);
 
       const result = await service.listEntries('psid-1');
 
@@ -123,7 +117,7 @@ describe('StudyCalendarCommandService', () => {
 
     it('uses DEFAULT_TOPIC when session topic is empty', async () => {
       const session = makeSession({ topic: '' });
-      calendarSchedule.getCalendarSessions.mockResolvedValue([session]);
+      calendarData.getCalendarSessions.mockResolvedValue([session]);
 
       const result = await service.listEntries('psid-1');
 
@@ -133,7 +127,7 @@ describe('StudyCalendarCommandService', () => {
 
   describe('rescheduleSession', () => {
     it('throws NotFoundException when calendar record not found', async () => {
-      calendarSchedule.findCalendarRecord.mockResolvedValue(null);
+      calendarData.findCalendarRecord.mockResolvedValue(null);
 
       await expect(
         service.rescheduleSession({
@@ -147,7 +141,7 @@ describe('StudyCalendarCommandService', () => {
 
     it('throws BadRequestException when new slot is too close', async () => {
       const record = makeRecord();
-      calendarSchedule.findCalendarRecord.mockResolvedValue(record);
+      calendarData.findCalendarRecord.mockResolvedValue(record);
       scheduleService.getMinutesUntilSession.mockReturnValue(5); // < minLeadMinutes (10)
 
       await expect(
@@ -163,8 +157,8 @@ describe('StudyCalendarCommandService', () => {
     it('creates the replacement first, deletes the source, and triggers background sync', async () => {
       const record = makeRecord();
       const created = makeRecord({ id: 100 });
-      calendarSchedule.findCalendarRecord.mockResolvedValue(record);
-      calendarApi.createCalendar.mockResolvedValue(created);
+      calendarData.findCalendarRecord.mockResolvedValue(record);
+      calendarData.createCalendar.mockResolvedValue(created);
       scheduleService.getMinutesUntilSession.mockReturnValue(120);
 
       const result = await service.rescheduleSession({
@@ -175,17 +169,17 @@ describe('StudyCalendarCommandService', () => {
       });
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(calendarApi.createCalendar).toHaveBeenCalledWith(
+      expect(calendarData.createCalendar).toHaveBeenCalledWith(
         'psid-1',
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         expect.objectContaining({ eventDate: expect.any(String) }),
         { userId: 1 },
       );
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(calendarApi.deleteCalendar).toHaveBeenCalledWith('psid-1', 42);
+      expect(calendarData.deleteCalendar).toHaveBeenCalledWith('psid-1', 42);
       expect(
-        calendarApi.createCalendar.mock.invocationCallOrder[0],
-      ).toBeLessThan(calendarApi.deleteCalendar.mock.invocationCallOrder[0]);
+        calendarData.createCalendar.mock.invocationCallOrder[0],
+      ).toBeLessThan(calendarData.deleteCalendar.mock.invocationCallOrder[0]);
       expect(result).toMatchObject({
         cancelledCalendarId: 42,
         created,
@@ -196,8 +190,8 @@ describe('StudyCalendarCommandService', () => {
 
     it('keeps the original session when creation fails (no delete before create)', async () => {
       const record = makeRecord();
-      calendarSchedule.findCalendarRecord.mockResolvedValue(record);
-      calendarApi.createCalendar.mockRejectedValue(new Error('API down'));
+      calendarData.findCalendarRecord.mockResolvedValue(record);
+      calendarData.createCalendar.mockRejectedValue(new Error('API down'));
       scheduleService.getMinutesUntilSession.mockReturnValue(120);
 
       await expect(
@@ -209,19 +203,19 @@ describe('StudyCalendarCommandService', () => {
         }),
       ).rejects.toThrow('API down');
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(calendarApi.deleteCalendar).not.toHaveBeenCalled();
+      expect(calendarData.deleteCalendar).not.toHaveBeenCalled();
     });
 
     it('reuses an existing replacement on retry (no duplicate creation)', async () => {
       const record = makeRecord();
-      calendarSchedule.findCalendarRecord.mockResolvedValue(record);
+      calendarData.findCalendarRecord.mockResolvedValue(record);
       // Crash between create and delete: the replacement already exists.
       const existing = makeRecord({
         id: 100,
         eventDate: '2026-07-16',
         time: '10:00',
       });
-      calendarApi.listCalendars.mockResolvedValue([existing]);
+      calendarData.listCalendars.mockResolvedValue([existing]);
       scheduleService.getMinutesUntilSession.mockReturnValue(120);
 
       const result = await service.rescheduleSession({
@@ -232,9 +226,9 @@ describe('StudyCalendarCommandService', () => {
       });
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(calendarApi.createCalendar).not.toHaveBeenCalled();
+      expect(calendarData.createCalendar).not.toHaveBeenCalled();
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(calendarApi.deleteCalendar).toHaveBeenCalledWith('psid-1', 42);
+      expect(calendarData.deleteCalendar).toHaveBeenCalledWith('psid-1', 42);
       expect(result.created).toEqual(existing);
     });
   });

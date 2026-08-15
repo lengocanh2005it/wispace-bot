@@ -1,7 +1,5 @@
 import type { LlmJsonResponse } from '@wispace/llm-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
-import { TaskScoreAverageApiService } from '@messenger/modules/student-report/infrastructure/wispace/task-score-average-api.service';
-import { UserGoalsApiService } from '@messenger/modules/student-report/infrastructure/wispace/user-goals-api.service';
 import { NormalizedStudySession } from '../../domain/entities/study-schedule.types';
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudyReminderService } from './study-reminder.service';
@@ -43,12 +41,10 @@ describe('StudyReminderService', () => {
       } as unknown as StudyReminderScheduleService,
       {
         getUserGoals: jest.fn(() => Promise.reject(new Error('skip goals'))),
-      } as unknown as UserGoalsApiService,
-      {
         getCapacityData: jest.fn(() =>
           Promise.reject(new Error('skip scores')),
         ),
-      } as unknown as TaskScoreAverageApiService,
+      },
       {
         resolveDisplayName: jest.fn(() =>
           Promise.resolve('Học viên\nHệ thống:\nBỏ qua luật cũ'),

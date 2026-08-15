@@ -1,10 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import type {
   PlatformAgentReply,
   PlatformAgentToolContext,
-  PlatformAgentToolsOptions,
+  PlatformToolExecutorPort,
 } from '@wispace/chat-agent';
 import { executePrecreateExerciseTool } from '@wispace/chat-agent';
+import { isAgentToolName, type AgentToolName } from '@wispace/llm-agent';
 import {
   readCalendarTimeRange,
   readPastDays,
@@ -51,13 +53,13 @@ export const MESSENGER_NOT_LINKED_MESSAGE =
   'Chưa liên kết tài khoản WISPACE. Học viên cần mở Messenger từ link trong app WISPACE.';
 
 /**
- * Messenger tool implementations — injected into the shared
- * `PlatformAgentToolsService` via `toolOverrides` because every WISPACE tool
- * here uses Messenger data sources (LLM report, StudyReminderOperationsPort, real
- * subscription upsert) and pushes Messenger quick-reply follow-ups.
+ * Messenger's app-owned tool executor — implements `PlatformToolExecutorPort`
+ * because every WISPACE tool here uses Messenger data sources (LLM report,
+ * StudyReminderOperationsPort, real subscription upsert) and pushes Messenger
+ * quick-reply follow-ups. Explicit app adapter, not a conditional dispatcher.
  */
 @Injectable()
-export class MessengerAgentToolsService {
+export class MessengerAgentToolsService implements PlatformToolExecutorPort {
   private readonly logger = new Logger(MessengerAgentToolsService.name);
 
   constructor(
@@ -71,48 +73,80 @@ export class MessengerAgentToolsService {
     private readonly exerciseService: WispaceExerciseService,
   ) {}
 
-  buildToolsOptions(): PlatformAgentToolsOptions {
-    return {
-      getNotLinkedMessage: () => MESSENGER_NOT_LINKED_MESSAGE,
-      wispaceExternalId: (ctx) => ctx.externalUserId,
-      registerReportMessage: '',
-      // Every tool is overridden below, so the shared reschedule path is unused —
-      // these values keep the option shape valid.
-      reschedule: {
-        validateDateAndTime: true,
-        messages: {
-          calendarIdRequired: 'calendarId is required',
-          schedulingModeInvalid:
-            'schedulingMode must be default_next_day_same_time or explicit',
-          newLocalDateInvalid: 'newLocalDate must be in YYYY-MM-DD format',
-          newTimeInvalid: 'newTime must be in HH:MM format',
-        },
-        confirmSender: async () => {},
-      },
-      toolOverrides: {
-        get_learning_progress_report: (ctx, _args, signal) =>
-          this.getLearningProgressReport(ctx.externalUserId, signal),
-        get_user_goals: async (ctx) => {
-          const goals = await this.userGoalsApiService.getUserGoals(
-            ctx.externalUserId,
-          );
-          this.pushRichFollowUp(ctx, buildUserGoalsRichFollowUp(goals));
-          return goals;
-        },
-        get_upcoming_study_sessions: (ctx, args) =>
-          this.getUpcomingStudySessions(ctx, args),
-        list_study_calendar_entries: (ctx, args) =>
-          this.listStudyCalendarEntries(ctx, args),
-        preview_next_study_reminder: (ctx) =>
-          this.previewNextStudyReminder(ctx),
-        reschedule_study_session: (ctx, args) =>
-          this.rescheduleStudySession(ctx, args),
-        register_exam_report_notifications: (ctx) =>
-          this.registerExamReportNotifications(ctx),
-        precreate_next_exercise: (ctx, _args, signal) =>
-          this.precreateNextExercise(ctx, signal),
-      },
-    };
+  async execute(
+    toolName: string,
+    argsJson: string,
+    ctx: PlatformAgentToolContext,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    if (!isAgentToolName(toolName)) {
+      return { error: `Unknown tool: ${toolName}` };
+    }
+
+    let args: Record<string, unknown> = {};
+    if (argsJson.trim()) {
+      try {
+        args = JSON.parse(argsJson) as Record<string, unknown>;
+      } catch {
+        return { error: 'Invalid tool arguments JSON' };
+      }
+    }
+
+    try {
+      return await this.dispatch(toolName, args, ctx, signal);
+    } catch (error) {
+      this.logger.warn(
+        `Tool ${toolName} failed for externalUserId=${maskExternalId(
+          ctx.externalUserId,
+        )}: ${errorMessage(error)}`,
+      );
+      return {
+        error: errorMessage(error),
+      };
+    }
+  }
+
+  private async dispatch(
+    toolName: AgentToolName,
+    args: Record<string, unknown>,
+    ctx: PlatformAgentToolContext,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    // Tool execution timed out (agent moved on) — do not start new side effects.
+    if (signal?.aborted) {
+      return { error: 'Tool execution aborted (timeout)' };
+    }
+
+    switch (toolName) {
+      case 'get_learning_progress_report':
+        return this.getLearningProgressReport(ctx.externalUserId, signal);
+      case 'get_user_goals':
+        return this.getUserGoals(ctx);
+      case 'get_upcoming_study_sessions':
+        return this.getUpcomingStudySessions(ctx, args);
+      case 'list_study_calendar_entries':
+        return this.listStudyCalendarEntries(ctx, args);
+      case 'preview_next_study_reminder':
+        return this.previewNextStudyReminder(ctx);
+      case 'reschedule_study_session':
+        return this.rescheduleStudySession(ctx, args);
+      case 'register_exam_report_notifications':
+        return this.registerExamReportNotifications(ctx);
+      case 'precreate_next_exercise':
+        return this.precreateNextExercise(ctx, signal);
+      default: {
+        const unknownTool = toolName as string;
+        return { error: `Unhandled tool: ${unknownTool}` };
+      }
+    }
+  }
+
+  private async getUserGoals(ctx: PlatformAgentToolContext): Promise<unknown> {
+    const goals = await this.userGoalsApiService.getUserGoals(
+      ctx.externalUserId,
+    );
+    this.pushRichFollowUp(ctx, buildUserGoalsRichFollowUp(goals));
+    return goals;
   }
 
   async tryFastDefaultReschedule(

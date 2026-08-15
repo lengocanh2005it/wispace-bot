@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- Jest mock assertions */
 import { DiscordReportCronService } from './discord-report-cron.service';
 
 const LINK = {
@@ -30,6 +31,11 @@ const createPageMock = (pages: unknown[][]) => {
       .mockImplementation(() => Promise.resolve(pages.shift() ?? [])),
   };
   return {
+    findActiveAccountsPage: jest
+      .fn()
+      .mockImplementation((_cursor, limit) =>
+        Promise.resolve(queryBuilder.take(limit).getMany()),
+      ),
     createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
     queryBuilder,
   };
@@ -92,7 +98,7 @@ describe('DiscordReportCronService', () => {
       reportCronLockService as never,
       reportScheduleService as never,
       orchestrationService as never,
-      pageMock as never,
+      pageMock,
     );
 
     return {
@@ -165,23 +171,24 @@ describe('DiscordReportCronService', () => {
       { tryAcquireDailyLock: jest.fn(), releaseDailyLock: jest.fn() } as never,
       { shouldSendReportToday } as never,
       orchestrationService as never,
-      pageMock as never,
+      pageMock,
     );
 
     const result = await service.sendScheduledReports();
 
     expect(result.total).toBe(250);
     expect(orchestrationService.claimAndSend).toHaveBeenCalledTimes(250);
-    expect(pageMock.createQueryBuilder).toHaveBeenCalledTimes(2);
-    expect(pageMock.queryBuilder.andWhere).toHaveBeenNthCalledWith(1, 'TRUE', {
-      cursor: undefined,
-    });
-    expect(pageMock.queryBuilder.andWhere).toHaveBeenNthCalledWith(
-      2,
-      'link.id > :cursor',
-      { cursor: '200' },
+    expect(pageMock.findActiveAccountsPage).toHaveBeenCalledTimes(2);
+    expect(pageMock.findActiveAccountsPage).toHaveBeenNthCalledWith(
+      1,
+      undefined,
+      200,
     );
-    expect(pageMock.queryBuilder.take).toHaveBeenCalledWith(200);
+    expect(pageMock.findActiveAccountsPage).toHaveBeenNthCalledWith(
+      2,
+      '200',
+      200,
+    );
   });
 
   it('skips users outside the exam window without claiming', async () => {
@@ -278,7 +285,7 @@ describe('DiscordReportCronService', () => {
       { tryAcquireDailyLock: jest.fn(), releaseDailyLock: jest.fn() } as never,
       { shouldSendReportToday } as never,
       orchestrationService as never,
-      createPageMock([links]) as never,
+      createPageMock([links]),
     );
 
     const result = await service.sendScheduledReports();
@@ -316,14 +323,9 @@ describe('DiscordReportCronService', () => {
 
     expect(reportCronLockService.tryAcquireDailyLock).toHaveBeenCalled();
     expect(reportCronLockService.releaseDailyLock).toHaveBeenCalled();
-    expect(accountLinkRepo.createQueryBuilder).toHaveBeenCalledWith('link');
-    expect(accountLinkRepo.queryBuilder.where).toHaveBeenCalledWith(
-      'link.platform = :platform',
-      { platform: 'discord' },
-    );
-    expect(accountLinkRepo.queryBuilder.orderBy).toHaveBeenCalledWith(
-      'link.id',
-      'ASC',
+    expect(accountLinkRepo.findActiveAccountsPage).toHaveBeenCalledWith(
+      undefined,
+      200,
     );
   });
 });

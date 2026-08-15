@@ -16,12 +16,12 @@ import {
 } from '@wispace/chat-metering';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
 import { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
-import { PlatformAgentToolsService } from './platform-agent-tools.service';
 import type {
   PlatformAgentInput,
   PlatformAgentOptions,
   PlatformAgentReply,
   PlatformAgentToolContext,
+  PlatformToolExecutorPort,
 } from './platform-agent.types';
 
 const FEATURE = 'FREE_FORM_CHAT';
@@ -65,7 +65,7 @@ export class PlatformAgentService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly toolsService: PlatformAgentToolsService,
+    private readonly toolsService: PlatformToolExecutorPort,
     private readonly historyService: PlatformChatHistoryService,
     private readonly usageRecorder: PlatformLlmUsageRecorderAdapter,
     private readonly safetyEventService: PlatformLlmSafetyEventAdapter,

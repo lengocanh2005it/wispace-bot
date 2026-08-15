@@ -1,4 +1,4 @@
-import { PlatformAgentToolsService } from '@wispace/chat-agent';
+/* eslint-disable @typescript-eslint/no-unsafe-assignment -- partial service mocks */
 import type {
   PlatformAgentReply,
   PlatformAgentToolContext,
@@ -53,21 +53,13 @@ describe('MessengerAgentToolsService', () => {
       precreateNextExercise: overrides.precreateNextExercise ?? jest.fn(),
     };
 
-    const messengerTools = new MessengerAgentToolsService(
+    const service = new MessengerAgentToolsService(
       repository,
       studentReportService,
       userGoalsApiService,
       studyPort,
       rescheduleConfirmationService,
       exerciseService as unknown as WispaceExerciseService,
-    );
-
-    const stagePort = { stage: jest.fn() };
-    const service = new PlatformAgentToolsService(
-      undefined,
-      undefined,
-      stagePort,
-      messengerTools.buildToolsOptions(),
     );
 
     const ctx: PlatformAgentToolContext = {
@@ -78,7 +70,7 @@ describe('MessengerAgentToolsService', () => {
 
     return {
       service,
-      messengerTools,
+      messengerTools: service,
       ctx,
       repository,
       studentReportService,
@@ -278,7 +270,7 @@ describe('MessengerAgentToolsService', () => {
       expect(result).toMatchObject({
         entries,
         timeRange: 'upcoming',
-        reminderNotice: expect.any(String), // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+        reminderNotice: expect.any(String),
       });
     });
   });
@@ -296,7 +288,7 @@ describe('MessengerAgentToolsService', () => {
 
       expect(result).toMatchObject({
         rescheduled: false,
-        message: expect.stringContaining('Chưa liên kết'), // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+        message: expect.stringContaining('Chưa liên kết'),
       });
     });
 
@@ -312,7 +304,7 @@ describe('MessengerAgentToolsService', () => {
       );
 
       expect(result).toMatchObject({
-        error: expect.stringContaining('calendarId 999 không có'), // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+        error: expect.stringContaining('calendarId 999 không có'),
       });
     });
 
@@ -357,7 +349,7 @@ describe('MessengerAgentToolsService', () => {
 
       expect(result).toMatchObject({
         hasSession: false,
-        message: expect.any(String), // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+        message: expect.any(String),
       });
     });
 
@@ -403,7 +395,7 @@ describe('MessengerAgentToolsService', () => {
 
       expect(result).toMatchObject({
         registered: false,
-        message: expect.stringContaining('Chưa liên kết'), // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+        message: expect.stringContaining('Chưa liên kết'),
       });
     });
 

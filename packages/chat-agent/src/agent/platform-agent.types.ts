@@ -1,10 +1,5 @@
-import type { ReportDeliveryPort } from '@wispace/scheduler-core';
 import type { StageInput, StageResult } from '@wispace/reschedule-confirm';
-import type {
-  AgentMetricsPort,
-  AgentToolName,
-  LlmExecutionPort,
-} from '@wispace/llm-agent';
+import type { AgentMetricsPort, LlmExecutionPort } from '@wispace/llm-agent';
 
 /**
  * Platform-neutral agent context — Discord sets `isServerChannel` +
@@ -111,9 +106,28 @@ export interface PlatformAgentOptions {
   appendHistory?: boolean;
 }
 
-/** Stage-only view of the shared `RescheduleConfirmationService`. */
+/**
+ * Stage-only view of the shared `RescheduleConfirmationService`.
+ */
 export interface RescheduleStagePort {
   stage(input: StageInput<string>): Promise<StageResult | { error: string }>;
+}
+
+/**
+ * Tool-execution seam for the agent loop. The shared `PlatformAgentToolsService`
+ * implements the Discord/Zalo tool set; platforms whose tools differ (Messenger:
+ * LLM report, StudyDataPort-based calendar tools, real subscription upsert,
+ * quick-reply follow-ups) provide their own app-owned executor implementing this
+ * port — platform-specific execution stays explicit in app adapters instead of
+ * conditional flags in the shared options.
+ */
+export interface PlatformToolExecutorPort {
+  execute(
+    toolName: string,
+    argsJson: string,
+    ctx: PlatformAgentToolContext,
+    signal?: AbortSignal,
+  ): Promise<unknown>;
 }
 
 /**
@@ -130,24 +144,6 @@ export interface PlatformAgentToolsOptions {
   wispaceExternalId: (ctx: PlatformAgentToolContext) => string;
   /** Success text for `register_exam_report_notifications`. */
   registerReportMessage: string;
-  /** Discord injects its report delivery port; Zalo leaves it undefined. */
-  reportDeliveryPort?: ReportDeliveryPort;
-  /**
-   * Per-tool platform overrides — checked before the shared implementations.
-   * Messenger overrides the tools whose data sources/side effects differ
-   * (LLM report, StudyDataPort-based calendar tools, real subscription
-   * upsert, Messenger confirmation follow-ups); Discord/Zalo pass nothing.
-   */
-  toolOverrides?: Partial<
-    Record<
-      AgentToolName,
-      (
-        ctx: PlatformAgentToolContext,
-        args: Record<string, unknown>,
-        signal?: AbortSignal,
-      ) => Promise<unknown>
-    >
-  >;
   reschedule: {
     /** Discord validates newLocalDate/newTime; Zalo does not. */
     validateDateAndTime: boolean;

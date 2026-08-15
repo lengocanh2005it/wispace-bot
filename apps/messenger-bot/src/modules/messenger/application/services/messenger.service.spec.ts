@@ -9,7 +9,7 @@ import type { WebhookActionExecutorService } from './webhook-action-executor.ser
 import type { MessengerOutboundService } from './messenger-outbound.service';
 import type { MessengerLinkContextService } from './messenger-link-context.service';
 import type { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
-import type { PlatformWebhookInboundEventService } from '@wispace/database';
+import type { WebhookInboundEventsPort } from '../../domain/repositories/webhook-inbound-events.port';
 
 function textEvent(
   overrides: Partial<MessengerWebhookEvent> = {},
@@ -58,7 +58,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
     } as unknown as WebhookActionExecutorService;
     const inboundEvents = {
       ingest: jest.fn().mockResolvedValue({ inserted: true, id: 7 }),
-    } as unknown as PlatformWebhookInboundEventService;
+    } as unknown as WebhookInboundEventsPort;
 
     const service = new MessengerService(
       configService,

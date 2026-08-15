@@ -10,6 +10,8 @@ import { DiscordAccountLinkService } from './application/services/discord-accoun
 import { DiscordGuildMembershipService } from './application/services/discord-guild-membership.service';
 import { DiscordLinkVerifyRecordService } from './application/services/discord-link-verify-record.service';
 import { DiscordLinkReconcileCron } from './application/services/discord-link-reconcile-cron.service';
+import { TypeormDiscordAccountLinkRepository } from './infrastructure/persistence/typeorm-discord-account-link.repository';
+import { DISCORD_ACCOUNT_LINK_REPOSITORY } from './domain/ports/discord-account-link.repository.port';
 import { DiscordOauthController } from './presentation/controllers/discord-oauth.controller';
 import { DiscordLinkStatusController } from './presentation/controllers/discord-link-status.controller';
 
@@ -34,6 +36,11 @@ import { DiscordLinkStatusController } from './presentation/controllers/discord-
     DiscordGuildMembershipService,
     DiscordLinkVerifyRecordService,
     DiscordLinkReconcileCron,
+    TypeormDiscordAccountLinkRepository,
+    {
+      provide: DISCORD_ACCOUNT_LINK_REPOSITORY,
+      useExisting: TypeormDiscordAccountLinkRepository,
+    },
   ],
   exports: [DiscordAccountLinkService],
 })

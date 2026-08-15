@@ -1,24 +1,29 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Inject } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common';
-import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
-
-const PLATFORM = 'discord' as const;
+import {
+  DISCORD_ACCOUNT_LINK_REPOSITORY,
+  type DiscordAccountLinkRepositoryPort,
+} from '../../domain/ports/discord-account-link.repository.port';
 
 const OAUTH_TIMEOUT_MS = 10_000;
 
 class DiscordOauthError extends Error {}
 
+/**
+ * Discord OAuth account-linking use case. Persistence flows through
+ * `DiscordAccountLinkRepositoryPort` (bound to the TypeORM implementation in
+ * module wiring); the WISPACE/Discord HTTP exchange lives here.
+ */
 @Injectable()
 export class DiscordAccountLinkService {
   private readonly logger = new Logger(DiscordAccountLinkService.name);
 
   constructor(
     private readonly configService: ConfigService,
-    @InjectRepository(DiscordAccountLinkEntity)
-    private readonly repo: Repository<DiscordAccountLinkEntity>,
+    @Inject(DISCORD_ACCOUNT_LINK_REPOSITORY)
+    private readonly repository: DiscordAccountLinkRepositoryPort,
   ) {}
 
   /** Exchanges the OAuth2 `code` for Discord user info (`identify` scope). */
@@ -80,77 +85,34 @@ export class DiscordAccountLinkService {
     userId: number,
     discordUserId: string,
   ): Promise<{ relinked: boolean; previousUserId?: number }> {
-    let relinked = false;
-    let previousUserId: number | undefined;
-
-    await this.repo.manager.transaction(async (em) => {
-      // Detect relink: the Discord id was previously mapped to a different
-      // WISPACE user (the displaced user silently loses the link — #137 item 5).
-      const existing = await em.query<Array<{ user_id: number }>>(
-        `SELECT user_id FROM discord_account_links
-         WHERE platform = $1 AND external_user_id = $2`,
-        [PLATFORM, discordUserId],
-      );
-      if (existing[0] && existing[0].user_id !== userId) {
-        relinked = true;
-        previousUserId = existing[0].user_id;
-      }
-
-      // Remove any existing link for this WISPACE user (re-linking with a different Discord account)
-      await em.query(
-        `DELETE FROM discord_account_links WHERE platform = $1 AND user_id = $2 AND external_user_id != $3`,
-        [PLATFORM, userId, discordUserId],
-      );
-      await em.query(
-        `
-          INSERT INTO discord_account_links (platform, external_user_id, user_id)
-          VALUES ($1, $2, $3)
-          ON CONFLICT (platform, external_user_id)
-          DO UPDATE SET user_id = EXCLUDED.user_id, linked_at = now()
-        `,
-        [PLATFORM, discordUserId, userId],
-      );
-    });
+    const result = await this.repository.upsertLink(userId, discordUserId);
 
     this.logger.log(
       `Linked Discord account discordUserId=${maskExternalId(
         discordUserId,
       )} userId=${maskExternalId(userId)}${
-        relinked && previousUserId !== undefined
-          ? ` relinked=previousUserId=${maskExternalId(previousUserId)}`
+        result.relinked && result.previousUserId !== undefined
+          ? ` relinked=previousUserId=${maskExternalId(result.previousUserId)}`
           : ''
       }`,
     );
 
-    return { relinked, previousUserId };
+    return result;
   }
 
   async findUserIdByDiscordId(
     discordUserId: string,
   ): Promise<number | undefined> {
-    const row = await this.repo.findOne({
-      where: { platform: PLATFORM, externalUserId: discordUserId },
-      select: { userId: true },
-    });
-
-    return row?.userId;
+    return this.repository.findUserIdByDiscordId(discordUserId);
   }
 
   async findDiscordIdByUserId(userId: number): Promise<string | undefined> {
-    const row = await this.repo.findOne({
-      where: { platform: PLATFORM, userId },
-      select: { externalUserId: true },
-    });
-
-    return row?.externalUserId;
+    return this.repository.findDiscordIdByUserId(userId);
   }
 
   /** Records a welcome DM delivery — dedupes re-welcomes within a window (#137). */
   async markWelcomed(discordUserId: string): Promise<void> {
-    await this.repo.update(
-      { platform: PLATFORM, externalUserId: discordUserId },
-      { lastWelcomedAt: new Date() },
-    );
+    await this.repository.markWelcomed(discordUserId);
   }
 
   /**
@@ -163,15 +125,6 @@ export class DiscordAccountLinkService {
     discordUserId: string,
     windowMs: number,
   ): Promise<boolean> {
-    const row = await this.repo.findOne({
-      where: { platform: PLATFORM, externalUserId: discordUserId },
-      select: { lastWelcomedAt: true },
-    });
-
-    if (!row?.lastWelcomedAt) {
-      return true;
-    }
-
-    return Date.now() - row.lastWelcomedAt.getTime() >= windowMs;
+    return this.repository.shouldWelcome(discordUserId, windowMs);
   }
 }

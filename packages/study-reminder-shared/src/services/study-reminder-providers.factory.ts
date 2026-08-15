@@ -6,7 +6,10 @@ import type { WispaceCalendarService } from '@wispace/wispace-client';
 import type { Repository } from 'typeorm';
 import { MESSAGE_SENDER } from '../ports/message-sender.port';
 import { MAPPING_READER } from '../ports/mapping-reader.port';
-import { STUDY_REMINDER_JOB_REPOSITORY } from '../ports/study-reminder-job.repository.port';
+import {
+  STUDY_REMINDER_JOB_REPOSITORY,
+  type StudyReminderJobRepositoryPort,
+} from '../ports/study-reminder-job.repository.port';
 import {
   wrapMessageSender,
   type OutboundMessageSender,
@@ -21,30 +24,35 @@ import { StudyReminderDispatchService } from './study-reminder-dispatch.service'
 import { StudyReminderWorkerService } from './study-reminder-worker.service';
 import { TypeormStudyReminderJobRepository } from '../infrastructure/typeorm-study-reminder-job.repository';
 import type { GetSessionsFn } from '../types/study-reminder.types';
+import type { Platform } from '@wispace/database';
 import type {
   StudyReminderWorkerLockIds,
   StudyReminderWorkerOptions,
 } from './study-reminder-worker.service';
 
-export type StudyReminderProviderTarget = new (...args: never[]) => unknown;
+/** Constructor usable as a NestJS injection token, typed to its instance. */
+type ClassOf<T> = new (...args: never[]) => T;
+
+/** Any injectable outbound-sender class — `wrapMessageSender` bridges it to `MessageSenderPort`. */
+type OutboundSenderCtor = new (...args: never[]) => unknown;
 
 export interface CreateStudyReminderProvidersOptions {
-  platform: string;
+  platform: Platform;
   /** Required when `mappingReader` is not provided (discord/zalo). */
   mappingTable?: string;
   /** Required when `mappingReader` is not provided (discord/zalo). */
-  mappingEntity?: StudyReminderProviderTarget;
-  outboundService: StudyReminderProviderTarget;
+  mappingEntity?: ClassOf<AccountLinkRow>;
+  outboundService: OutboundSenderCtor;
   /** Required when `getSessionsService` is not provided (discord/zalo). */
-  calendarService?: StudyReminderProviderTarget;
+  calendarService?: ClassOf<WispaceCalendarService>;
   /** Messenger: replaces the TypeormMappingReader factory with a custom provider (backed by MESSENGER_REPOSITORY). */
   mappingReader?: Provider;
   /**
    * Messenger: worker getSessions source. When set, the worker factory
-   * injects this provider (deps[6]) and calls
-   * `getUpcomingSessions({ psid, userId })` instead of the calendar mapping.
+   * injects this provider and calls `getUpcomingSessions({ psid, userId })`
+   * instead of the calendar mapping.
    */
-  getSessionsService?: StudyReminderProviderTarget;
+  getSessionsService?: ClassOf<GetUpcomingSessionsService>;
   /** Messenger: advisory lock ids for sync/cleanup/rollover (shared defaults when absent). */
   workerLockIds?: StudyReminderWorkerLockIds;
   /** Messenger: worker options (logLockSkips, startupSyncSwallowErrors). */
@@ -52,11 +60,48 @@ export interface CreateStudyReminderProvidersOptions {
 }
 
 /** Structural surface of messenger's StudySessionSourceService (no cross-app import). */
-interface GetUpcomingSessionsService {
+export interface GetUpcomingSessionsService {
   getUpcomingSessions(input: {
     psid: string;
     userId?: number;
   }): Promise<Array<{ sessionKey: string; scheduledAt: Date; topic?: string }>>;
+}
+
+/** Named, typed dependency set for the shared worker — replaces positional wiring. */
+export interface StudyReminderWorkerDeps {
+  syncService: StudyReminderSyncService;
+  dispatchService: StudyReminderDispatchService;
+  scheduleService: StudyReminderScheduleService;
+  schedulerRegistry: SchedulerRegistry;
+  pgLock: PgAdvisoryLockService;
+  jobRepository?: StudyReminderJobRepositoryPort;
+  getSessions?: GetSessionsFn;
+}
+
+/** Named, typed worker policy/config — platform + lock ids + worker options. */
+export interface StudyReminderWorkerConfig {
+  platform: Platform;
+  lockIds?: Partial<StudyReminderWorkerLockIds>;
+  options?: StudyReminderWorkerOptions;
+}
+
+/** Constructs the shared worker from a named deps object (typed, no positional unknowns). */
+export function createStudyReminderWorker(
+  deps: StudyReminderWorkerDeps,
+  config: StudyReminderWorkerConfig,
+): StudyReminderWorkerService {
+  return new StudyReminderWorkerService(
+    deps.syncService,
+    deps.dispatchService,
+    deps.scheduleService,
+    deps.schedulerRegistry,
+    deps.pgLock,
+    deps.jobRepository,
+    config.platform,
+    deps.getSessions,
+    config.lockIds,
+    config.options,
+  );
 }
 
 /**
@@ -81,11 +126,6 @@ export function createCalendarGetSessions(
       );
 }
 
-function buildCalendarGetSessions(service: unknown): GetSessionsFn | undefined {
-  if (!service) return undefined;
-  return createCalendarGetSessions(service as WispaceCalendarService);
-}
-
 /**
  * Builds the authoritative `getSessions` provider from a session-source
  * service (messenger: `StudySessionSourceService` with getUpcomingSessions)
@@ -108,13 +148,6 @@ export function createSessionSourceGetSessions(
       topic: s.topic,
     }));
   };
-}
-
-function buildSessionSourceGetSessions(
-  service: unknown,
-): GetSessionsFn | undefined {
-  if (!service) return undefined;
-  return createSessionSourceGetSessions(service as GetUpcomingSessionsService);
 }
 
 /**
@@ -148,22 +181,36 @@ export function createStudyReminderProviders(
     StudyReminderDispatchService,
     {
       provide: StudyReminderWorkerService,
-      useFactory: (...deps: unknown[]) =>
-        new (StudyReminderWorkerService as never as new (
-          ...args: unknown[]
-        ) => StudyReminderWorkerService)(
-          deps[0],
-          deps[1],
-          deps[2],
-          deps[3],
-          deps[4],
-          deps[5],
-          options.platform,
-          options.getSessionsService
-            ? buildSessionSourceGetSessions(deps[6])
-            : buildCalendarGetSessions(deps[6]),
-          options.workerLockIds,
-          options.workerOptions,
+      useFactory: (
+        syncService: StudyReminderSyncService,
+        dispatchService: StudyReminderDispatchService,
+        scheduleService: StudyReminderScheduleService,
+        schedulerRegistry: SchedulerRegistry,
+        pgLock: PgAdvisoryLockService,
+        jobRepository: StudyReminderJobRepositoryPort | undefined,
+        sessionSource: WispaceCalendarService | GetUpcomingSessionsService,
+      ) =>
+        createStudyReminderWorker(
+          {
+            syncService,
+            dispatchService,
+            scheduleService,
+            schedulerRegistry,
+            pgLock,
+            jobRepository,
+            getSessions: options.getSessionsService
+              ? createSessionSourceGetSessions(
+                  sessionSource as GetUpcomingSessionsService,
+                )
+              : createCalendarGetSessions(
+                  sessionSource as WispaceCalendarService,
+                ),
+          },
+          {
+            platform: options.platform,
+            lockIds: options.workerLockIds,
+            options: options.workerOptions,
+          },
         ),
       inject: [
         StudyReminderSyncService,
