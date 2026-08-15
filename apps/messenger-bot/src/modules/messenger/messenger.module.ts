@@ -30,6 +30,7 @@ import { UserLinkingModule } from './user-linking.module';
 import { MessengerCalendarPort } from './infrastructure/adapters/messenger-calendar.port';
 import { MessengerReschedulePort } from './infrastructure/adapters/messenger-reschedule.port';
 import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
+import { MetricsService } from '../metrics/metrics.service';
 
 /**
  * Thin orchestrator module — owns webhook handling, event routing,
@@ -71,6 +72,7 @@ import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
         configService: ConfigService,
         pgLock: PgAdvisoryLockService,
         messengerService: MessengerService,
+        metrics: MetricsService,
       ) =>
         new PlatformWebhookInboundRetryCronService(
           inboundEvents,
@@ -81,6 +83,8 @@ import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
             processEvent: async (rawPayload) => {
               await messengerService.processEvent(rawPayload);
             },
+            onTickComplete: (stats) =>
+              metrics.setWebhookInboundBacklog(stats.due),
           },
         ),
       inject: [
@@ -88,6 +92,7 @@ import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
         ConfigService,
         PgAdvisoryLockService,
         MessengerService,
+        MetricsService,
       ],
     },
     CleanupCronService,

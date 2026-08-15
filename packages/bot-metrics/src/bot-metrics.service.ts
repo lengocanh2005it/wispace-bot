@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import {
   Registry,
   Counter,
+  Gauge,
   Histogram,
   collectDefaultMetrics,
 } from 'prom-client';
@@ -49,6 +50,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmRoundOutcome: Counter;
   private quotaDenied: Counter;
   private reminderDispatch: Counter;
+  private webhookInboundBacklog: Gauge;
 
   constructor(config: MetricsConfig) {
     this.prefix = config.prefix;
@@ -125,6 +127,12 @@ export class BotMetricsService implements OnModuleDestroy {
       labelNames: ['status'],
       registers: [this.registry],
     });
+
+    this.webhookInboundBacklog = new Gauge({
+      name: `${this.prefix}_webhook_inbound_backlog`,
+      help: 'Durable inbound webhook events due for retry (pending/failed/processing-stale)',
+      registers: [this.registry],
+    });
   }
 
   async timeStep<T>(step: string, fn: () => Promise<T>): Promise<T> {
@@ -197,6 +205,11 @@ export class BotMetricsService implements OnModuleDestroy {
 
   incReminderDispatch(status: string): void {
     this.reminderDispatch.inc({ status });
+  }
+
+  /** Backlog gauge for the durable inbound retry cron — set per tick. */
+  setWebhookInboundBacklog(dueCount: number): void {
+    this.webhookInboundBacklog.set(dueCount);
   }
 
   incRoundOutcome(feature: string, outcome: string): void {

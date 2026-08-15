@@ -232,6 +232,48 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     );
   });
 
+  it('processes rows with bounded parallelism and reports per-tick stats', async () => {
+    const onTickComplete = jest.fn();
+    const options = buildOptions({ onTickComplete });
+    const { service, inboundEvents } = buildService(options);
+    inboundEvents.listDue.mockResolvedValue([
+      row({ id: 1 }),
+      row({ id: 2 }),
+      row({ id: 3 }),
+    ]);
+
+    await service.handleRetry();
+
+    expect(options.processEvent).toHaveBeenCalledTimes(3);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(2);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(3);
+    expect(onTickComplete).toHaveBeenCalledWith({
+      due: 3,
+      completed: 3,
+      failed: 0,
+      abandoned: 0,
+      skipped: 0,
+    });
+  });
+
+  it('reports due=0 stats when the inbox is empty', async () => {
+    const onTickComplete = jest.fn();
+    const options = buildOptions({ onTickComplete });
+    const { service } = buildService(options);
+
+    await service.handleRetry();
+
+    expect(options.processEvent).not.toHaveBeenCalled();
+    expect(onTickComplete).toHaveBeenCalledWith({
+      due: 0,
+      completed: 0,
+      failed: 0,
+      abandoned: 0,
+      skipped: 0,
+    });
+  });
+
   it('reads retry config from env with defaults', async () => {
     const options = buildOptions({
       processEvent: jest.fn().mockRejectedValue(new Error('boom')),
