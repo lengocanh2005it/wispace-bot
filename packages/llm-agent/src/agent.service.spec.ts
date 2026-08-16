@@ -458,6 +458,99 @@ describe('LlmAgentService', () => {
       }
     });
 
+    it('counts serialized tool-call arguments in the trim budget (#152)', async () => {
+      const seen: Array<
+        Array<{
+          role: string;
+          content?: string;
+          toolCalls?: Array<{ arguments: string }>;
+        }>
+      > = [];
+      const adapter: LlmProviderAdapter = {
+        providerName: 'openai',
+        isConfigured: () => true,
+        getDefaultModel: () => 'gpt-5.4',
+        generateJson: jest.fn(),
+        chatWithTools: jest.fn().mockImplementation(
+          (_req: {
+            messages: Array<{
+              role: string;
+              content?: string;
+              toolCalls?: Array<{ arguments: string }>;
+            }>;
+          }) => {
+            seen.push(_req.messages);
+            if (seen.length === 1) {
+              // Two parallel calls with oversized serialized arguments —
+              // content-only accounting would fit the budget and skip the
+              // eviction; arguments must count too.
+              return Promise.resolve(
+                makeMultiToolCallResponse([
+                  {
+                    name: 'list_study_calendar_entries',
+                    argsJson: `{"limit":1,"note":"${'x'.repeat(120)}"}`,
+                  },
+                  {
+                    name: 'get_upcoming_study_sessions',
+                    argsJson: `{"limit":2,"note":"${'x'.repeat(120)}"}`,
+                  },
+                ]),
+              );
+            }
+            return Promise.resolve(makeTextResponse('xong'));
+          },
+        ),
+        chatStream: jest.fn(),
+        isRetryableError: () => false,
+        isRateLimitError: () => false,
+        normalizeError: () => ({
+          provider: 'openai',
+          retryable: false,
+          reason: 'unknown',
+        }),
+      };
+      const execute = jest.fn().mockResolvedValue({ entries: [] });
+      const service = new LlmAgentService<StubToolContext>(
+        { maxContextChars: 650 },
+        {
+          llmExecution: {
+            run: jest
+              .fn()
+              .mockImplementation((_fn: () => Promise<unknown>) => _fn()),
+          },
+          usageRecorder: { recordFromCompletion: jest.fn() },
+          safetyEvents: { recordGroundingWarning: jest.fn() },
+          toolExecutor: { execute },
+          adapter,
+          logger: { warn: jest.fn(), debug: jest.fn() },
+        },
+      );
+
+      await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      const secondRequest = seen[1];
+      const totalChars = secondRequest.reduce(
+        (sum, m) =>
+          sum +
+          (m.content?.length ?? 0) +
+          (m.toolCalls?.reduce(
+            (acc, call) => acc + (call.arguments?.length ?? 0),
+            0,
+          ) ?? 0),
+        0,
+      );
+      expect(totalChars).toBeLessThanOrEqual(650);
+      // The oversized-argument group was evicted whole (with its results).
+      expect(
+        secondRequest.some(
+          (m) =>
+            m.toolCalls?.some((call) =>
+              call.arguments.includes('x'.repeat(50)),
+            ) === true,
+        ),
+      ).toBe(false);
+    });
+
     it('returns graceful exhaustion reply after maxToolRounds (default = 6) when tool args genuinely differ each round', async () => {
       const responses = Array.from({ length: 6 }, (_, i) =>
         makeToolCallResponse(
