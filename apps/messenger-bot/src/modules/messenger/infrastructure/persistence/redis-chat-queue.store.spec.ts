@@ -315,6 +315,53 @@ describe('RedisChatQueueStore', () => {
     expect(snapshot?.lastIdempotencyKey).toBe('mid-2');
   });
 
+  it('#176: replays the claimed batch after a crash — claim [m] → expiry → recovery replays m', async () => {
+    let persistedState: string | null = null;
+    const transaction = createTransaction();
+    const client = createClient({
+      get: jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+      set: jest.fn().mockImplementation((key: string, value?: string) => {
+        if (key.startsWith('chat:queue:lock:')) {
+          return Promise.resolve('OK');
+        }
+        return Promise.resolve(value);
+      }),
+      multi: jest.fn().mockReturnValue(transaction),
+    });
+    transaction.set.mockImplementation((_key: string, value: string) => {
+      persistedState = value;
+      return transaction;
+    });
+    const store = createStore(client);
+
+    // Seed a ready batch and claim it: 'm' moves into the persisted
+    // in-flight copy (processingTexts).
+    persistedState = JSON.stringify({
+      texts: ['m'],
+      pendingTexts: [],
+      processingTexts: [],
+      processing: false,
+      processingStartedAt: null,
+      flushAfterAt: Date.now() - 1,
+      lastIdempotencyKey: 'mid-1',
+      lastPendingIdempotencyKey: null,
+    });
+    const claimed = await store.claimReadyBuffer('psid-1', 2000, 300_000);
+    expect(claimed?.texts).toEqual(['m']);
+    const persistedAfterClaim = JSON.parse(persistedState) as {
+      processingTexts: string[];
+      texts: string[];
+    };
+    expect(persistedAfterClaim.processingTexts).toEqual(['m']);
+    expect(persistedAfterClaim.texts).toEqual([]);
+
+    // The worker crashes before completion; a fresh claim after lease
+    // expiry replays the claimed batch (plus anything accumulated while
+    // stuck) — 'm' is never lost.
+    const recovered = await store.claimReadyBuffer('psid-1', 2000, 0);
+    expect(recovered?.texts).toEqual(['m']);
+  });
+
   it('drops a wedged buffer with no pending messages from every ZSET', async () => {
     const state = {
       texts: [],

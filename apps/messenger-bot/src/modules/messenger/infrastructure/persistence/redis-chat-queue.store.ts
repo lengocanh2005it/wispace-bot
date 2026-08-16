@@ -20,6 +20,8 @@ import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.st
 interface RedisChatQueueBufferState {
   texts: string[];
   pendingTexts: string[];
+  /** Claimed batch persisted in-flight — replayable after a worker crash (#176). */
+  processingTexts: string[];
   userId?: number;
   linkContext?: MessengerLinkContext | null;
   lastIdempotencyKey?: string | null;
@@ -165,20 +167,24 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
           return null;
         }
 
-        // Crash recovery: a pod died mid-flush leaving texts=[], processing=true.
-        // Reset the flag and promote messages accumulated while it was stuck.
+        // Crash recovery (#176): a pod died mid-flush with the claimed batch
+        // persisted in processingTexts. Replay the claimed batch FIRST (it
+        // was claimed earlier), then messages accumulated while stuck — no
+        // accepted message is ever lost.
         state.processing = false;
         state.processingStartedAt = null;
 
-        if (state.pendingTexts.length > 0) {
-          state.texts = [...state.pendingTexts];
-          state.pendingTexts = [];
+        const replay = [...state.processingTexts, ...state.pendingTexts];
+        state.processingTexts = [];
+        state.pendingTexts = [];
+        if (replay.length > 0) {
+          state.texts = replay;
           state.lastIdempotencyKey = state.lastPendingIdempotencyKey ?? null;
           state.lastPendingIdempotencyKey = null;
           // Claim immediately — the stuck job already consumed the debounce wait.
           state.flushAfterAt = Date.now();
         } else {
-          // Wedged with no pending messages: persist the reset so the dead
+          // Wedged with nothing to replay: persist the reset so the dead
           // member leaves the flush/stuck ZSETs instead of being re-picked
           // by every poll until the buffer key expires.
           await this.writeState(client, psid, state);
@@ -207,6 +213,10 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         droppedNoticePending: state.droppedNoticePending === true,
       };
 
+      // Persist the claimed batch as recoverable in-flight state (#176): it
+      // stays in processingTexts until completeChatBuffer — a crash between
+      // claim and completion replays it instead of losing it.
+      state.processingTexts = [...state.texts];
       state.texts = [];
       state.lastIdempotencyKey = null;
       state.processing = true;
@@ -228,6 +238,8 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
 
         state.processing = false;
         state.processingStartedAt = null;
+        // The claimed batch was flushed — clear the recoverable in-flight copy (#176).
+        state.processingTexts = [];
         state.texts = pendingTexts;
         state.pendingTexts = [];
         state.lastIdempotencyKey = state.lastPendingIdempotencyKey ?? null;
@@ -508,6 +520,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     return {
       texts: [],
       pendingTexts: [],
+      processingTexts: [],
       processing: false,
       processingStartedAt: null,
       flushAfterAt: null,
@@ -542,6 +555,9 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         pendingTexts: Array.isArray(parsed.pendingTexts)
           ? parsed.pendingTexts
           : [],
+        processingTexts: Array.isArray(parsed.processingTexts)
+          ? parsed.processingTexts
+          : [],
         idempotencyKeys: Array.isArray(parsed.idempotencyKeys)
           ? parsed.idempotencyKeys
           : legacyIdempotencyKeys,
@@ -560,6 +576,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     const hasBufferedWork =
       state.texts.length > 0 ||
       state.pendingTexts.length > 0 ||
+      state.processingTexts.length > 0 ||
       state.processing;
 
     if (!hasBufferedWork) {
