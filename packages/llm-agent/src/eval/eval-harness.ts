@@ -21,15 +21,20 @@ import type {
 import type { LlmAgentReply } from '../types';
 
 /**
- * Golden-conversation eval harness for `LlmAgentService`.
+ * Deterministic offline orchestration regression harness for `LlmAgentService`.
  *
- * Fixtures (JSON, spec-style) declare the *expected* LLM behavior for a
- * scenario — which tools are called in which order, what tool results feed
- * back into the loop, and what the final reply should look like. The harness
- * replays each fixture against a scripted (frozen) LLM adapter and asserts
- * the orchestration loop honors the expectation: tool order, tool args vs
- * the `AGENT_TOOLS` schema, `toolSummary`/`exhausted` flags, and a
- * no-fabrication grounding guard.
+ * This is NOT a live-model evaluation: the LLM is replaced by a frozen
+ * scripted adapter, so no provider/API call ever happens. It proves the
+ * agent loop honors a fixture's expected orchestration — tool order, the
+ * exact serialized tool arguments handed to the executor, request contracts
+ * (system prompt, user message, tool definitions, tool choice), plan
+ * consumption, leak guards, and the no-fabrication grounding guard.
+ * Live model/tool-selection behavior belongs in a separate (manual or
+ * nightly) eval lane — out of scope for CI.
+ *
+ * Fixtures (JSON, spec-style) declare the *expected* loop behavior for a
+ * scenario: which tools are called in which order, what tool results feed
+ * back into the loop, and what the final reply should look like.
  *
  * Fixtures reference the *real* chat system prompts by path + sha256 hash,
  * so any prompt/tool change fails the eval until the fixtures are
@@ -91,17 +96,42 @@ export interface EvalScriptRound {
   text?: string;
 }
 
+export interface EvalRequestContract {
+  /**
+   * 0-based LLM round index this contract applies to. Omitted = the contract
+   * applies to every provider request the loop makes.
+   */
+  round?: number;
+  /** Every fragment must appear in the system message content. */
+  systemPromptContains?: string[];
+  /** Every fragment must appear in the latest user message content. */
+  userMessageContains?: string[];
+  /** Every named tool's JSON schema must be present in the request. */
+  toolsInclude?: string[];
+  /**
+   * Exact `toolChoice` mode the request must carry; null = the request must
+   * not set `toolChoice` at all.
+   */
+  toolChoice?: 'auto' | 'none' | 'required' | null;
+}
+
 export interface EvalExpectation {
   /** Exact ordered list of tool names invoked across all rounds. */
   toolSequence?: string[];
+  /**
+   * Number of scripted tool calls left unconsumed when the loop finished
+   * (default 0). Scenarios that intentionally skip execution (call-cap,
+   * duplicate side effects) declare the leftover count.
+   */
+  planRemainder?: number;
   /** Every fragment must appear in the reply text. */
   replyTextContains?: string[];
   /** Fabrication guard — none of these may appear in the reply text. */
   replyTextNotContains?: string[];
   /**
    * Leak guard — none of these may appear in any tool-result message sent
-   * to the model (e.g. raw error text that must be sanitized before it
-   * reaches the model context, #161).
+   * to the model across ANY round (e.g. raw error text that must be
+   * sanitized before it reaches the model context, #161).
    */
   toolResultsNotContain?: string[];
   exhausted?: boolean;
@@ -109,6 +139,8 @@ export interface EvalExpectation {
   toolSummary?: string | null;
   /** Expected grounding-warning count (default 0). */
   groundingWarnings?: number;
+  /** Request-contract assertions run against the recorded provider requests. */
+  requestContracts?: EvalRequestContract[];
 }
 
 export interface EvalPromptFile {
@@ -414,6 +446,73 @@ export function parseFixture(
     ) {
       errors.push('expected.groundingWarnings must be a non-negative integer');
     }
+    if (
+      expected.planRemainder !== undefined &&
+      (typeof expected.planRemainder !== 'number' ||
+        !Number.isInteger(expected.planRemainder) ||
+        expected.planRemainder < 0)
+    ) {
+      errors.push('expected.planRemainder must be a non-negative integer');
+    }
+    if (expected.requestContracts !== undefined) {
+      if (!Array.isArray(expected.requestContracts)) {
+        errors.push('expected.requestContracts must be an array');
+      } else {
+        for (const [i, contract] of expected.requestContracts.entries()) {
+          if (!isRecord(contract)) {
+            errors.push(`expected.requestContracts[${i}] must be an object`);
+            continue;
+          }
+          if (
+            contract.round !== undefined &&
+            (typeof contract.round !== 'number' ||
+              !Number.isInteger(contract.round) ||
+              contract.round < 0)
+          ) {
+            errors.push(
+              `expected.requestContracts[${i}].round must be a non-negative integer`,
+            );
+          }
+          for (const field of [
+            'systemPromptContains',
+            'userMessageContains',
+          ] as const) {
+            const value = contract[field];
+            if (
+              value !== undefined &&
+              (!Array.isArray(value) ||
+                value.some((t) => typeof t !== 'string'))
+            ) {
+              errors.push(
+                `expected.requestContracts[${i}].${field} must be an array of strings`,
+              );
+            }
+          }
+          if (contract.toolsInclude !== undefined) {
+            if (
+              !Array.isArray(contract.toolsInclude) ||
+              contract.toolsInclude.some(
+                (t) => typeof t !== 'string' || !isAgentToolName(t),
+              )
+            ) {
+              errors.push(
+                `expected.requestContracts[${i}].toolsInclude must be an array of AGENT_TOOLS names`,
+              );
+            }
+          }
+          if (
+            contract.toolChoice !== undefined &&
+            contract.toolChoice !== null &&
+            (typeof contract.toolChoice !== 'string' ||
+              !['auto', 'none', 'required'].includes(contract.toolChoice))
+          ) {
+            errors.push(
+              `expected.requestContracts[${i}].toolChoice must be auto|none|required|null`,
+            );
+          }
+        }
+      }
+    }
   }
 
   if (errors.length > 0) {
@@ -516,13 +615,20 @@ export function loadPromptFiles(
  * Frozen LLM adapter: returns the fixture's scripted responses in round
  * order. Fails loudly when the loop asks for more responses than scripted —
  * an early return (injection/off-topic) or an unexpected extra round shows
- * up as an adapter-call-count mismatch.
+ * up as an adapter-call-count mismatch. Every provider request is retained
+ * (`allRequests`) so leak/plan/contract assertions run across ALL rounds,
+ * not just the last one.
  */
 export class ScriptedAdapter implements LlmProviderAdapter {
   callCount = 0;
 
+  /** Every provider request made by the loop, in round order. */
+  readonly allRequests: LlmToolChatRequest[] = [];
+
   /** The messages array of the most recent `chatWithTools` call. */
-  lastRequestMessages: LlmMessage[] = [];
+  get lastRequestMessages(): LlmMessage[] {
+    return this.allRequests[this.allRequests.length - 1]?.messages ?? [];
+  }
 
   constructor(private readonly script: EvalScriptRound[]) {}
 
@@ -537,7 +643,7 @@ export class ScriptedAdapter implements LlmProviderAdapter {
   }
 
   chatWithTools(request: LlmToolChatRequest): Promise<LlmToolChatResponse> {
-    this.lastRequestMessages = request.messages;
+    this.allRequests.push(request);
     const round = this.script[this.callCount];
     this.callCount += 1;
     if (!round) {
@@ -600,24 +706,35 @@ export class ScriptedAdapter implements LlmProviderAdapter {
 
 /**
  * Fake tool executor: serves the scripted tool results in round order and
- * records every tool actually invoked. Any tool call that does not match the
- * script (or a script that runs out of responses) fails loudly — the loop
- * receives a `{ ok: false }` tool result, and the sequence assertion reports
- * the mismatch.
+ * records every tool actually invoked — name, serialized args (deep-compared
+ * against the scripted args), and any attempt that did not match the script.
+ * An unexpected tool attempt or an args mismatch is an assertion failure,
+ * and any scripted tool call left unconsumed (`remainingPlanCount`) is
+ * reported by the harness.
  */
 export class ScriptedToolExecutor {
   readonly actualTools: string[] = [];
+  readonly unexpectedAttempts: string[] = [];
+  readonly argsMismatches: string[] = [];
   private readonly plan: EvalScriptedToolCall[];
 
   constructor(script: EvalScriptRound[]) {
     this.plan = script.flatMap((round) => round.toolCalls ?? []);
   }
 
+  get remainingPlanCount(): number {
+    return this.plan.length;
+  }
+
   readonly execute: ToolExecutorPort<Record<string, never>>['execute'] = (
     toolName,
+    argsJson,
   ) => {
     const expected = this.plan.shift();
     if (!expected || expected.name !== toolName) {
+      this.unexpectedAttempts.push(
+        `unexpected tool "${toolName}" (scripted next: ${expected?.name ?? 'none'})`,
+      );
       return Promise.reject(
         new Error(
           `eval: unexpected tool "${toolName}" (scripted next: ${expected?.name ?? 'none'})`,
@@ -625,11 +742,38 @@ export class ScriptedToolExecutor {
       );
     }
     this.actualTools.push(toolName);
+    let actualArgs: Record<string, unknown>;
+    try {
+      actualArgs = JSON.parse(argsJson || '{}') as Record<string, unknown>;
+    } catch {
+      actualArgs = { __unparsed: argsJson };
+    }
+    const scriptedArgs = expected.args ?? {};
+    if (
+      JSON.stringify(sortRecord(actualArgs)) !==
+      JSON.stringify(sortRecord(scriptedArgs))
+    ) {
+      this.argsMismatches.push(
+        `tool "${toolName}" args mismatch: scripted ${JSON.stringify(scriptedArgs)} got ${argsJson}`,
+      );
+    }
     if (expected.fail !== undefined) {
       return Promise.reject(new Error(expected.fail));
     }
     return Promise.resolve(expected.result);
   };
+}
+
+/** Recursively sorts object keys so arg comparison is key-order independent. */
+function sortRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+      .map(([key, entry]) => [
+        key,
+        isRecord(entry) ? sortRecord(entry) : entry,
+      ]),
+  );
 }
 
 /**
@@ -725,6 +869,25 @@ export async function runEvalFixture(
         `adapter called ${adapter.callCount}x but the script declares ${fixture.script.length} round(s)`,
       );
     }
+    // Unexpected tool attempts are always assertion failures — the loop must
+    // never call a tool the fixture did not script.
+    for (const attempt of executor.unexpectedAttempts) {
+      failures.push(attempt);
+    }
+    // AC: the serialized tool arguments the loop hands to the executor must
+    // match the scripted args exactly (key-order independent).
+    for (const mismatch of executor.argsMismatches) {
+      failures.push(mismatch);
+    }
+    // The scripted tool plan must be fully consumed unless the fixture
+    // declares a remainder (call-cap / duplicate side effects).
+    const expectedRemainder = fixture.expected.planRemainder ?? 0;
+    const actualRemainder = executor.remainingPlanCount;
+    if (actualRemainder !== expectedRemainder) {
+      failures.push(
+        `scripted tool plan leftover: expected ${expectedRemainder} call(s) unconsumed, got ${actualRemainder}`,
+      );
+    }
     if (!reply) {
       failures.push('no done event with a reply');
     } else {
@@ -769,8 +932,10 @@ export async function runEvalFixture(
         }
       }
       // Tool-result leak guard (#161): nothing in the messages sent to the
-      // model may carry the forbidden fragments (e.g. raw sanitized error text).
-      const serializedToolResults = JSON.stringify(adapter.lastRequestMessages);
+      // model across ANY round may carry the forbidden fragments (e.g. raw
+      // sanitized error text). Retaining every request makes an earlier
+      // round's leak observable, not just the last one.
+      const serializedToolResults = JSON.stringify(adapter.allRequests);
       for (const fragment of fixture.expected.toolResultsNotContain ?? []) {
         if (serializedToolResults.includes(fragment)) {
           failures.push(
@@ -786,8 +951,9 @@ export async function runEvalFixture(
       }
       // Plan step (#207 item 2): a scripted plan line (`content` on a tool
       // round) must survive into the next round's messages — the loop must
-      // not drop the assistant message that accompanies tool calls.
-      const serializedMessages = JSON.stringify(adapter.lastRequestMessages);
+      // not drop the assistant message that accompanies tool calls. Checked
+      // against every request the loop made.
+      const serializedMessages = JSON.stringify(adapter.allRequests);
       for (const round of fixture.script) {
         if (round.content !== undefined) {
           if (!serializedMessages.includes(round.content)) {
@@ -795,6 +961,85 @@ export async function runEvalFixture(
               `plan line "${round.content}" was dropped before the next round`,
             );
           }
+        }
+      }
+      // Request contracts (#227): assert what the loop actually sent — system
+      // prompt, user message, tool definitions and tool choice.
+      const allRequests = adapter.allRequests;
+      const contracts = fixture.expected.requestContracts ?? [];
+      for (const [i, contract] of contracts.entries()) {
+        const matchingRounds =
+          contract.round === undefined
+            ? allRequests.map((_, index) => index)
+            : [contract.round];
+        if (allRequests.length === 0) {
+          failures.push(
+            `requestContracts[${i}] cannot apply: the loop made no provider request`,
+          );
+          continue;
+        }
+        let applied = false;
+        for (const roundIndex of matchingRounds) {
+          const request = allRequests[roundIndex];
+          if (!request) {
+            failures.push(
+              `requestContracts[${i}].round ${roundIndex} has no recorded request (loop made ${allRequests.length})`,
+            );
+            continue;
+          }
+          applied = true;
+          const systemMessage = request.messages.find(
+            (message) => message.role === 'system',
+          );
+          const systemContent = systemMessage?.content ?? '';
+          for (const fragment of contract.systemPromptContains ?? []) {
+            if (!systemContent.includes(fragment)) {
+              failures.push(
+                `requestContracts[${i}] round ${roundIndex}: system prompt is missing "${fragment}"`,
+              );
+            }
+          }
+          const userMessage = [...request.messages]
+            .reverse()
+            .find((message) => message.role === 'user');
+          const userContent = userMessage?.content ?? '';
+          for (const fragment of contract.userMessageContains ?? []) {
+            if (!userContent.includes(fragment)) {
+              failures.push(
+                `requestContracts[${i}] round ${roundIndex}: user message is missing "${fragment}"`,
+              );
+            }
+          }
+          const toolNames = new Set(request.tools.map((tool) => tool.name));
+          for (const toolName of contract.toolsInclude ?? []) {
+            if (!toolNames.has(toolName)) {
+              failures.push(
+                `requestContracts[${i}] round ${roundIndex}: tool definition "${toolName}" is missing from the request`,
+              );
+            }
+          }
+          if (contract.toolChoice !== undefined) {
+            if (
+              contract.toolChoice === null &&
+              request.toolChoice !== undefined
+            ) {
+              failures.push(
+                `requestContracts[${i}] round ${roundIndex}: toolChoice must be absent but is "${request.toolChoice}"`,
+              );
+            } else if (
+              contract.toolChoice !== null &&
+              request.toolChoice !== contract.toolChoice
+            ) {
+              failures.push(
+                `requestContracts[${i}] round ${roundIndex}: toolChoice expected "${contract.toolChoice}" got "${request.toolChoice ?? '(absent)'}"`,
+              );
+            }
+          }
+        }
+        if (!applied) {
+          failures.push(
+            `requestContracts[${i}] matched no recorded request (loop made ${allRequests.length})`,
+          );
         }
       }
     }
