@@ -35,7 +35,7 @@ describe('DiscordWelcomeService (#231/#232/#233)', () => {
       metrics,
     );
 
-    const sent = await service.welcomeIfDue('discord-user-1', 'TestUser');
+    const outcome = await service.welcomeIfDue('discord-user-1', 'TestUser');
 
     expect(outboundService.sendMenuButtons).toHaveBeenCalledWith(
       'discord-user-1',
@@ -46,7 +46,7 @@ describe('DiscordWelcomeService (#231/#232/#233)', () => {
       'linked',
     );
     expect(metrics.incWelcomeAttempt).toHaveBeenCalledWith('success');
-    expect(sent).toBe(true);
+    expect(outcome).toBe('sent');
   });
 
   it('skips the DM and the marker when welcomed within the window', async () => {
@@ -59,12 +59,12 @@ describe('DiscordWelcomeService (#231/#232/#233)', () => {
       metrics,
     );
 
-    const sent = await service.welcomeIfDue('discord-user-1');
+    const outcome = await service.welcomeIfDue('discord-user-1');
 
     expect(outboundService.sendMenuButtons).not.toHaveBeenCalled();
     expect(welcomeRecords.markWelcomed).not.toHaveBeenCalled();
     expect(metrics.incWelcomeAttempt).toHaveBeenCalledWith('skipped');
-    expect(sent).toBe(false);
+    expect(outcome).toBe('skipped');
   });
 
   it('#232: a failed send is not marked welcomed — the next event retries', async () => {
@@ -77,12 +77,12 @@ describe('DiscordWelcomeService (#231/#232/#233)', () => {
       metrics,
     );
 
-    const sent = await service.welcomeIfDue('discord-user-1');
+    const outcome = await service.welcomeIfDue('discord-user-1');
 
     expect(outboundService.sendMenuButtons).toHaveBeenCalledTimes(1);
     expect(welcomeRecords.markWelcomed).not.toHaveBeenCalled();
     expect(metrics.incWelcomeAttempt).toHaveBeenCalledWith('error');
-    expect(sent).toBe(false);
+    expect(outcome).toBe('error');
   });
 
   it('#231: organic welcome uses the greeting copy and marks as organic', async () => {
@@ -94,7 +94,7 @@ describe('DiscordWelcomeService (#231/#232/#233)', () => {
       metrics,
     );
 
-    const sent = await service.sendOrganicWelcomeIfDue(
+    const outcome = await service.sendOrganicWelcomeIfDue(
       'discord-user-1',
       'OrganicUser',
     );
@@ -107,7 +107,7 @@ describe('DiscordWelcomeService (#231/#232/#233)', () => {
       'discord-user-1',
       'organic',
     );
-    expect(sent).toBe(true);
+    expect(outcome).toBe('sent');
   });
 
   it('#233: organic then linked within the window yields exactly one DM', async () => {
@@ -131,8 +131,8 @@ describe('DiscordWelcomeService (#231/#232/#233)', () => {
     );
     const linked = await service.welcomeIfDue('discord-user-1', 'User');
 
-    expect(organic).toBe(true);
-    expect(linked).toBe(false);
+    expect(organic).toBe('sent');
+    expect(linked).toBe('skipped');
     expect(outboundService.sendMenuButtons).toHaveBeenCalledTimes(1);
     expect(welcomeRecords.markWelcomed).toHaveBeenCalledTimes(1);
   });
@@ -147,6 +147,6 @@ describe('DiscordWelcomeService (#231/#232/#233)', () => {
 
     await expect(
       service.sendOrganicWelcomeIfDue('discord-user-1'),
-    ).resolves.toBe(true);
+    ).resolves.toBe('sent');
   });
 });

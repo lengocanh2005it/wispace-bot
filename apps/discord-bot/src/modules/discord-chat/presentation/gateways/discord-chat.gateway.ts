@@ -130,11 +130,10 @@ export class DiscordChatGateway {
     // sending a second DM.
     try {
       if (isLinked) {
-        const sent = await this.welcomeService.welcomeIfDue(
+        dmOutcome = await this.welcomeService.welcomeIfDue(
           discordUserId,
           displayName,
         );
-        dmOutcome = sent ? 'sent' : 'skipped';
       } else {
         // Join-during-callback race: the mapping may not be committed yet, but
         // a fresh verify intent means the callback is in flight and will send
@@ -153,11 +152,10 @@ export class DiscordChatGateway {
             )} — link callback in flight`,
           );
         } else {
-          const sent = await this.welcomeService.sendOrganicWelcomeIfDue(
+          dmOutcome = await this.welcomeService.sendOrganicWelcomeIfDue(
             discordUserId,
             displayName,
           );
-          dmOutcome = sent ? 'sent' : 'skipped';
         }
       }
     } catch (error) {

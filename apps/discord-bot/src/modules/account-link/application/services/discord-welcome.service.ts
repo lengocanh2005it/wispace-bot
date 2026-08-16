@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { buildGreetingMessage } from '@wispace/bot-common';
@@ -21,10 +21,10 @@ import {
  * path share the same record, so a user welcomed organically is not welcomed
  * again at link time within the window (#233).
  */
+export type WelcomeDeliveryOutcome = 'sent' | 'skipped' | 'error';
+
 @Injectable()
 export class DiscordWelcomeService {
-  private readonly logger = new Logger(DiscordWelcomeService.name);
-
   constructor(
     @Inject(DISCORD_WELCOME_RECORD_REPOSITORY)
     private readonly welcomeRecords: DiscordWelcomeRecordRepositoryPort,
@@ -34,11 +34,11 @@ export class DiscordWelcomeService {
     private readonly metrics?: BotMetricsService,
   ) {}
 
-  /** Sends the linked welcome DM (if due) and returns whether it was sent. */
+  /** Sends the linked welcome DM (if due) and reports the delivery outcome. */
   async welcomeIfDue(
     discordUserId: string,
     displayName?: string,
-  ): Promise<boolean> {
+  ): Promise<WelcomeDeliveryOutcome> {
     return this.sendIfDue(
       discordUserId,
       displayName,
@@ -55,7 +55,7 @@ export class DiscordWelcomeService {
   async sendOrganicWelcomeIfDue(
     discordUserId: string,
     displayName?: string,
-  ): Promise<boolean> {
+  ): Promise<WelcomeDeliveryOutcome> {
     return this.sendIfDue(
       discordUserId,
       displayName,
@@ -69,11 +69,11 @@ export class DiscordWelcomeService {
     displayName: string | undefined,
     source: WelcomeSource,
     message: string,
-  ): Promise<boolean> {
+  ): Promise<WelcomeDeliveryOutcome> {
     const windowMs = readRewelcomeWindowMs(this.configService);
     if (!(await this.welcomeRecords.shouldWelcome(discordUserId, windowMs))) {
       this.metrics?.incWelcomeAttempt('skipped');
-      return false;
+      return 'skipped';
     }
 
     const delivered = await this.outboundService.sendMenuButtons(
@@ -84,11 +84,11 @@ export class DiscordWelcomeService {
       // Never mark "welcomed" on a failed send — the next join/callback/
       // reconcile event retries (#232).
       this.metrics?.incWelcomeAttempt('error');
-      return false;
+      return 'error';
     }
 
     await this.welcomeRecords.markWelcomed(discordUserId, source);
     this.metrics?.incWelcomeAttempt('success');
-    return true;
+    return 'sent';
   }
 }

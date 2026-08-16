@@ -40,8 +40,8 @@ function buildGateway(overrides: {
     ...overrides.outbound,
   } as unknown as DiscordOutboundService;
   const welcomeService = {
-    welcomeIfDue: jest.fn().mockResolvedValue(true),
-    sendOrganicWelcomeIfDue: jest.fn().mockResolvedValue(true),
+    welcomeIfDue: jest.fn().mockResolvedValue('sent'),
+    sendOrganicWelcomeIfDue: jest.fn().mockResolvedValue('sent'),
     ...overrides.welcome,
   } as unknown as DiscordWelcomeService;
   const verifyRecordService = {
@@ -84,7 +84,7 @@ describe('DiscordChatGateway onGuildMemberAdd (#137 items 2+4, #231/#232/#234)',
     const accountLink = {
       findUserIdByDiscordId: jest.fn().mockResolvedValue(143),
     };
-    const welcome = { welcomeIfDue: jest.fn().mockResolvedValue(true) };
+    const welcome = { welcomeIfDue: jest.fn().mockResolvedValue('sent') };
     const { gateway, welcomeService } = buildGateway({
       accountLink,
       welcome,
@@ -141,8 +141,8 @@ describe('DiscordChatGateway onGuildMemberAdd (#137 items 2+4, #231/#232/#234)',
     const welcome = {
       sendOrganicWelcomeIfDue: jest
         .fn()
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(false),
+        .mockResolvedValueOnce('sent')
+        .mockResolvedValueOnce('skipped'),
     };
     const outbound = { sendMenuButtons: jest.fn() };
     const { gateway, welcomeService, outboundService } = buildGateway({
@@ -156,6 +156,49 @@ describe('DiscordChatGateway onGuildMemberAdd (#137 items 2+4, #231/#232/#234)',
 
     expect(welcomeService.sendOrganicWelcomeIfDue).toHaveBeenCalledTimes(2);
     // DM delivery happens inside the service; a deduped join sends nothing.
+    expect(outboundService.sendMenuButtons).not.toHaveBeenCalled();
+  });
+
+  it('#231: a re-join after the window is welcomed again', async () => {
+    const accountLink = {
+      findUserIdByDiscordId: jest.fn().mockResolvedValue(undefined),
+    };
+    const welcome = {
+      sendOrganicWelcomeIfDue: jest.fn().mockResolvedValue('sent'),
+    };
+    const { gateway, welcomeService } = buildGateway({
+      accountLink,
+      welcome,
+    });
+
+    await gateway.onGuildMemberAdd(memberArgs);
+    await gateway.onGuildMemberAdd(memberArgs);
+
+    expect(welcomeService.sendOrganicWelcomeIfDue).toHaveBeenCalledTimes(2);
+  });
+
+  it('#233: organic join then link route through the same welcome service — never a second direct DM', async () => {
+    const accountLink = {
+      findUserIdByDiscordId: jest
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(143),
+    };
+    const outbound = { sendMenuButtons: jest.fn() };
+    const { gateway, welcomeService, outboundService } = buildGateway({
+      accountLink,
+      outbound,
+    });
+
+    // 1) Unlinked join → organic welcome path.
+    await gateway.onGuildMemberAdd(memberArgs);
+    // 2) The user completes the OAuth link in-guild → linked welcome path.
+    await gateway.onGuildMemberAdd(memberArgs);
+
+    expect(welcomeService.sendOrganicWelcomeIfDue).toHaveBeenCalledTimes(1);
+    expect(welcomeService.welcomeIfDue).toHaveBeenCalledTimes(1);
+    // Both paths delegate to the shared dedupe service; the gateway itself
+    // never sends the DM a second time.
     expect(outboundService.sendMenuButtons).not.toHaveBeenCalled();
   });
 
