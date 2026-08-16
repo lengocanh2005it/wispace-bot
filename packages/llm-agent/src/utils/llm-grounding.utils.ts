@@ -22,31 +22,33 @@ const SCHEDULE_CONTEXT =
   '(buổi học|lịch học|học vào|đã dời|được dời|chuyển lịch|ca học|giờ học)';
 const TIME_MARKER =
   '\\b\\d{1,2}[/-]\\d{1,2}([/-]\\d{2,4})?\\b|\\b\\d{1,2}:\\d{2}\\b';
-const PERSONAL_SCHEDULE_RE = new RegExp(
-  `${SCHEDULE_CONTEXT}[^.!?\\n]{0,60}(?:${TIME_MARKER})|(?:${TIME_MARKER})[^.!?\\n]{0,60}${SCHEDULE_CONTEXT}`,
+const TIME_MARKER_GLOBAL_RE = new RegExp(TIME_MARKER, 'gi');
+// Per-marker claim windows (mirror the original context distances):
+// schedule context within 60 chars before or 40 chars after the marker.
+const SCHEDULE_CLAIM_BEFORE_RE = new RegExp(
+  `${SCHEDULE_CONTEXT}[^.!?\\n]{0,60}$`,
   'i',
 );
-const TIME_MARKER_RE = new RegExp(TIME_MARKER, 'i');
+const SCHEDULE_CLAIM_AFTER_RE = new RegExp(
+  `^[^.!?\\n]{0,40}${SCHEDULE_CONTEXT}`,
+  'i',
+);
 
 /**
  * Checks whether the LLM response contains specific personal data claims
  * (band scores, session dates/times) without a corresponding tool having
  * been called in this turn. Returns suspicious=true if grounding is missing.
  *
- * `userText` (the user's own message) suppresses the check when the flagged
- * date/time is echoed from what the user just said — e.g. "buổi học 15/08
- * đã được dời" answering a user who typed "15/08" — that is re-statement,
- * not an ungrounded claim.
+ * Echo suppression is claim-scoped (#157): a time marker the user supplied
+ * in their own message suppresses ONLY the schedule claim carrying that
+ * marker (re-statement) — unrelated score/schedule claims in the same
+ * response are still checked.
  */
 export function checkLlmGrounding(
   responseText: string,
   toolsCalledThisTurn: ReadonlySet<string>,
   userText?: string,
 ): LlmGroundingResult {
-  if (echoesUserData(responseText, userText)) {
-    return { suspicious: false };
-  }
-
   if (
     PERSONAL_SCORE_RE.test(responseText) &&
     !hasAny(toolsCalledThisTurn, SCORE_TOOLS)
@@ -55,8 +57,8 @@ export function checkLlmGrounding(
   }
 
   if (
-    PERSONAL_SCHEDULE_RE.test(responseText) &&
-    !hasAny(toolsCalledThisTurn, SCHEDULE_TOOLS)
+    !hasAny(toolsCalledThisTurn, SCHEDULE_TOOLS) &&
+    hasUngroundedScheduleClaim(responseText, userText)
   ) {
     return { suspicious: true, reason: 'schedule_without_tool' };
   }
@@ -64,21 +66,35 @@ export function checkLlmGrounding(
   return { suspicious: false };
 }
 
-function echoesUserData(
+/**
+ * Per-marker schedule grounding: walks every time marker in the response;
+ * a marker echoed from the user's own message is a safe re-statement, any
+ * OTHER marker sitting inside a schedule claim (context word nearby) is
+ * ungrounded.
+ */
+function hasUngroundedScheduleClaim(
   responseText: string,
   userText: string | undefined,
 ): boolean {
-  if (!userText) {
-    return false;
+  for (const match of responseText.matchAll(TIME_MARKER_GLOBAL_RE)) {
+    const marker = match[0];
+    if (userText?.toLowerCase().includes(marker.toLowerCase())) {
+      continue;
+    }
+    const index = match.index ?? 0;
+    const before = responseText.slice(Math.max(0, index - 60), index);
+    const after = responseText.slice(
+      index + marker.length,
+      index + marker.length + 40,
+    );
+    if (
+      SCHEDULE_CLAIM_BEFORE_RE.test(before) ||
+      SCHEDULE_CLAIM_AFTER_RE.test(after)
+    ) {
+      return true;
+    }
   }
-
-  // match() returns capturing groups after [0]; only the full match matters.
-  const marker = responseText.match(TIME_MARKER_RE)?.[0];
-  if (!marker) {
-    return false;
-  }
-
-  return userText.toLowerCase().includes(marker.toLowerCase());
+  return false;
 }
 
 function hasAny(
