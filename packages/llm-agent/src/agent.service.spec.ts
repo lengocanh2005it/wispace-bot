@@ -358,20 +358,27 @@ describe('LlmAgentService', () => {
 
     it('trims loop tool messages to the cumulative context budget', async () => {
       const textResponse = makeTextResponse('xong');
-      const seenMessages: Array<Array<{ role: string; content?: string }>> = [];
+      const seenMessages: Array<
+        Array<{
+          role: string;
+          content?: string;
+          toolCalls?: Array<{ name: string }>;
+        }>
+      > = [];
       const adapter: LlmProviderAdapter = {
         providerName: 'openai',
         isConfigured: () => true,
         getDefaultModel: () => 'gpt-5.4',
         generateJson: jest.fn(),
-        chatWithTools: jest
-          .fn()
-          .mockImplementation((_req: { messages: unknown }) => {
-            seenMessages.push(
-              (_req.messages as Array<{ role: string; content?: string }>).map(
-                (m) => ({ role: m.role, content: m.content }),
-              ),
-            );
+        chatWithTools: jest.fn().mockImplementation(
+          (_req: {
+            messages: Array<{
+              role: string;
+              content?: string;
+              toolCalls?: Array<{ name: string }>;
+            }>;
+          }) => {
+            seenMessages.push(_req.messages);
             if (seenMessages.length <= 2) {
               return Promise.resolve(
                 makeToolCallResponse(
@@ -381,7 +388,8 @@ describe('LlmAgentService', () => {
               );
             }
             return Promise.resolve(textResponse);
-          }),
+          },
+        ),
         chatStream: jest.fn(),
         isRetryableError: () => false,
         isRateLimitError: () => false,
@@ -391,7 +399,15 @@ describe('LlmAgentService', () => {
           reason: 'unknown',
         }),
       };
-      const execute = jest.fn().mockResolvedValue({ big: 'x'.repeat(150) });
+      const execute = jest
+        .fn()
+        .mockImplementation((_toolName: string, argsJson: string) => {
+          const limit = (JSON.parse(argsJson) as { limit: number }).limit;
+          // Round-specific payload: round 1 → 'payload-1', round 2 → 'payload-2'
+          return Promise.resolve({
+            big: `payload-${limit} ${Array.from({ length: 24 }, (_, i) => `item-${limit}-${i}`).join(' ')}`,
+          });
+        });
       const usageRecorder = { recordFromCompletion: jest.fn() };
       const safetyEvents = { recordGroundingWarning: jest.fn() };
       const llmExecution = {
@@ -400,7 +416,7 @@ describe('LlmAgentService', () => {
           .mockImplementation((_fn: () => Promise<unknown>) => _fn()),
       };
       const service = new LlmAgentService<StubToolContext>(
-        { maxContextChars: 500 },
+        { maxContextChars: 800 },
         {
           llmExecution,
           usageRecorder,
@@ -413,17 +429,33 @@ describe('LlmAgentService', () => {
 
       await service.reply(BASE_INPUT, TOOL_CONTEXT);
 
-      // Round 3's request must fit the 500-char budget — the oldest
-      // loop-generated messages (round 1's tool result) were dropped.
+      // Round 3's request must fit the 800-char budget — the oldest
+      // loop-generated group (round 1's assistant frame + its tool result)
+      // was dropped, and the newest tool result (round 2's) survived.
       const thirdRequest = seenMessages[2];
       const totalChars = thirdRequest.reduce(
         (sum, m) => sum + (m.content?.length ?? 0),
         0,
       );
-      expect(totalChars).toBeLessThanOrEqual(500);
+      expect(totalChars).toBeLessThanOrEqual(800);
+      // The newest tool result (round 2's 'payload-2') survives the trim;
+      // the oldest group (round 1's 'payload-1') was dropped entirely.
       expect(
-        thirdRequest.some((m) => m.content?.includes('xxx') === true),
+        thirdRequest.some((m) => m.content?.includes('payload-2') === true),
+      ).toBe(true);
+      expect(
+        thirdRequest.some((m) => m.content?.includes('payload-1') === true),
       ).toBe(false);
+      // A `tool` message must never be orphaned — every tool result keeps a
+      // preceding assistant frame with tool calls.
+      for (let i = 0; i < thirdRequest.length; i++) {
+        if (thirdRequest[i]?.role === 'tool') {
+          expect(thirdRequest[i - 1]?.role).toBe('assistant');
+          expect(thirdRequest[i - 1]?.toolCalls?.length ?? 0).toBeGreaterThan(
+            0,
+          );
+        }
+      }
     });
 
     it('returns graceful exhaustion reply after maxToolRounds (default = 6) when tool args genuinely differ each round', async () => {

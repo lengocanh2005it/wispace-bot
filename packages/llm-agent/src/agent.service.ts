@@ -485,9 +485,16 @@ export class LlmAgentService<TToolContext> {
   }
 
   /**
-   * Drops the oldest loop-generated messages (assistant tool-call frames and
-   * their tool results) until the whole `messages` array fits the context
-   * budget. Never touches messages before `loopStartIndex` (system prompt,
+   * Drops loop-generated messages until the whole `messages` array fits the
+   * context budget.
+   *
+   * Assistant tool-call frames are dropped oldest-first TOGETHER with the
+   * tool results that follow them (a `tool` message without its preceding
+   * `assistant` tool-call frame is rejected by providers). Dropping whole
+   * groups from the front means the NEWEST tool results — the ones the model
+   * has not consumed yet — survive the longest (#207 item 5). Only when no
+   * assistant frame is left does the trim fall back to dropping messages
+   * outright. Never touches messages before `loopStartIndex` (system prompt,
    * history, user turn).
    */
   private trimLoopMessages(
@@ -501,9 +508,41 @@ export class LlmAgentService<TToolContext> {
     }
 
     while (total > budget && messages.length > loopStartIndex) {
-      const removed = messages.splice(loopStartIndex, 1)[0];
+      const assistantIndex = this.findFirstLoopAssistantIndex(
+        messages,
+        loopStartIndex,
+      );
+      const dropIndex = assistantIndex === -1 ? loopStartIndex : assistantIndex;
+      const removed = messages.splice(dropIndex, 1)[0];
       total -= removed?.content?.length ?? 0;
+
+      if (removed?.toolCalls?.length) {
+        // Drop the tool results that followed this frame (they reference its
+        // call ids) so the message list stays valid for the next LLM call.
+        while (
+          messages.length > dropIndex &&
+          messages[dropIndex]?.role === 'tool'
+        ) {
+          const toolMessage = messages[dropIndex];
+          if (toolMessage) {
+            total -= toolMessage.content?.length ?? 0;
+          }
+          messages.splice(dropIndex, 1);
+        }
+      }
     }
+  }
+
+  private findFirstLoopAssistantIndex(
+    messages: LlmMessage[],
+    loopStartIndex: number,
+  ): number {
+    for (let i = loopStartIndex; i < messages.length; i++) {
+      if (messages[i]?.role === 'assistant') {
+        return i;
+      }
+    }
+    return -1;
   }
 
   /**
