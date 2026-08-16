@@ -6,7 +6,6 @@ const promptCache = new Map<string, string>();
 export const SYSTEM_PROMPT_FILES = {
   studyReminder: 'study-reminder.system.txt',
   studentReport: 'student-report.system.txt',
-  messengerChat: 'messenger-chat.system.txt',
 } as const;
 
 export type SystemPromptKey = keyof typeof SYSTEM_PROMPT_FILES;

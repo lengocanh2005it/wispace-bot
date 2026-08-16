@@ -97,7 +97,7 @@ describe('ZaloOauthController', () => {
     expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1');
     expect(sendText).toHaveBeenCalledWith(
       'zalo-user-1',
-      expect.stringContaining('liên kết'),
+      expect.stringContaining('liên kết thành công'),
     );
     expect(res.json).toHaveBeenCalledWith({ success: true });
   });

@@ -7,6 +7,10 @@ import {
 } from './constants/messenger-reschedule.constants';
 import { IntentDetector } from '@wispace/llm-agent';
 import {
+  buildGreetingMessage,
+  buildSelfIntroMessage,
+} from '@wispace/bot-common';
+import {
   buildChatMissingMidMessage,
   buildUnsupportedMessageTypeReply,
 } from './messages/chat-delivery.messages';
@@ -184,7 +188,7 @@ function routeTextMessage(
         type: 'send_text',
         psid,
         userId: ctx.userId,
-        text: 'Chào bạn! 👋 Mình là trợ lý WISPACE — hỗ trợ bạn học IELTS Writing. Bạn có thể hỏi về lịch học, tiến độ hoặc mục tiêu band nhé!',
+        text: buildGreetingMessage(),
         messageType: 'GREETING',
       },
     ];
@@ -195,7 +199,7 @@ function routeTextMessage(
         type: 'send_text',
         psid,
         userId: ctx.userId,
-        text: 'Mình là WISPACE Bot — trợ lý AI hỗ trợ học IELTS Writing trên Messenger. Mình có thể giúp bạn xem lịch học, tiến độ và mục tiêu band. Gõ "hi" để bắt đầu! 🎓',
+        text: buildSelfIntroMessage(),
         messageType: 'SELF_INTRO',
       },
     ];

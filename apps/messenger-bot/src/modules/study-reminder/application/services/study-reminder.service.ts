@@ -4,13 +4,14 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import {
+  errorMessage,
+  FALLBACK_DISPLAY_NAME,
+  maskExternalId,
+} from '@wispace/bot-common';
 import { type LlmProviderAdapter } from '@wispace/llm-agent';
 import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
-import {
-  DEFAULT_TOPIC,
-  FALLBACK_DISPLAY_NAME,
-} from '@messenger/shared/config/poc.constants';
+import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
 import {
   parseReminderOutput,
   buildFallbackReminder,

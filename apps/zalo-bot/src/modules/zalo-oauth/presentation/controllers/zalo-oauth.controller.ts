@@ -1,5 +1,5 @@
 import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { buildLinkSuccessMessage, errorMessage } from '@wispace/bot-common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
@@ -7,9 +7,6 @@ import { ZaloAccountLinkService } from '../../application/services/zalo-account-
 import { ZaloOauthStateService } from '../../application/services/zalo-oauth-state.service';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { ZaloOutboundService } from '@zalo/modules/zalo-chat/application/services/zalo-outbound.service';
-
-const LINK_WELCOME_MESSAGE =
-  'Tài khoản WISPACE của bạn đã liên kết thành công với Zalo! 🎉';
 
 @Controller('zalo/oauth')
 @UseGuards(ThrottlerGuard)
@@ -102,7 +99,10 @@ export class ZaloOauthController {
         verifyResult.userId,
         zaloUser.id,
       );
-      await this.outboundService.sendText(zaloUser.id, LINK_WELCOME_MESSAGE);
+      await this.outboundService.sendText(
+        zaloUser.id,
+        buildLinkSuccessMessage(),
+      );
 
       res.json({ success: true });
     } catch (error) {
