@@ -400,15 +400,18 @@ describe('TypeormStudyReminderJobRepository', () => {
       } as unknown as Repository<StudyReminderJobEntity>;
       const localRepo = new TypeormStudyReminderJobRepository(jobRepo);
 
-      const job = await localRepo.claimJob(9, 600_000);
+      const job = await localRepo.claimJob('messenger', 9, 600_000);
 
       const [sql, params] = query.mock.calls[0] as [string, unknown[]];
       expect(sql).toContain("status = 'processing'");
       expect(sql).toContain('lease_token = gen_random_uuid()');
       expect(sql).toContain('lease_expires_at = now() + ($2::int');
       expect(sql).toContain("status IN ('pending', 'failed')");
+      // The claim is scoped to the worker's platform (#180).
+      expect(sql).toContain('platform = $3');
       expect(params[0]).toBe(9);
       expect(params[1]).toBe(600_000);
+      expect(params[2]).toBe('messenger');
       // Raw RETURNING * rows arrive with snake_case keys — mapping must work.
       expect(job?.externalUserId).toBe('psid-1');
       expect(job?.sessionKey).toBe('calendar:5');
@@ -426,7 +429,9 @@ describe('TypeormStudyReminderJobRepository', () => {
       } as unknown as Repository<StudyReminderJobEntity>;
       const localRepo = new TypeormStudyReminderJobRepository(jobRepo);
 
-      await expect(localRepo.claimJob(9, 600_000)).resolves.toBeNull();
+      await expect(
+        localRepo.claimJob('discord', 9, 600_000),
+      ).resolves.toBeNull();
     });
   });
 
@@ -482,16 +487,101 @@ describe('TypeormStudyReminderJobRepository', () => {
     });
   });
 
+  describe('findDueJobs', () => {
+    it('filters strictly by the worker platform (#180)', async () => {
+      await repository.findDueJobs('messenger', new Date(), 10);
+
+      const platformCondition = queryLog.find(
+        (entry) =>
+          entry.method === 'andWhere' &&
+          String(entry.args[0]).includes('job.platform = :platform'),
+      );
+      expect(platformCondition?.args[1]).toEqual({ platform: 'messenger' });
+    });
+
+    it('never returns another platform job even when the query matched it (mixed-platform)', async () => {
+      const makeRow = (platform: string) =>
+        ({
+          id: nextId++,
+          platform,
+          externalUserId: `user-${platform}-1`,
+          userId: 143,
+          sessionKey: `calendar:${platform}`,
+          scheduledAt: new Date('2026-06-12T10:30:00+07:00'),
+          remindAt: new Date('2026-06-12T10:00:00+07:00'),
+          topic: 'IELTS Writing',
+          status: 'pending',
+          retryCount: 0,
+          maxRetries: 3,
+          nextRetryAt: null,
+          lastError: null,
+          sentAt: null,
+          leaseToken: null,
+          leaseExpiresAt: null,
+          createdAt: new Date('2026-06-10T08:00:00+07:00'),
+          updatedAt: new Date('2026-06-10T08:00:00+07:00'),
+        }) as StudyReminderJobEntity;
+
+      let capturedPlatform: string | undefined;
+      const qb = new Proxy(
+        {
+          getMany: jest
+            .fn()
+            .mockImplementation(() =>
+              Promise.resolve(
+                [
+                  makeRow('messenger'),
+                  makeRow('discord'),
+                  makeRow('zalo'),
+                ].filter((row) => row.platform === capturedPlatform),
+              ),
+            ),
+        },
+        {
+          get: (target, prop: string | symbol) => {
+            if (prop in target) {
+              return target[prop as keyof typeof target];
+            }
+            return (...args: unknown[]) => {
+              if (
+                String(prop) === 'andWhere' &&
+                String(args[0]).includes('platform')
+              ) {
+                capturedPlatform = (args[1] as { platform: string }).platform;
+              }
+              return qb;
+            };
+          },
+        },
+      );
+      const localRepo = new TypeormStudyReminderJobRepository({
+        createQueryBuilder: () => qb,
+      } as unknown as Repository<StudyReminderJobEntity>);
+
+      const jobs = await localRepo.findDueJobs('messenger', new Date(), 10);
+
+      expect(capturedPlatform).toBe('messenger');
+      expect(jobs.map((job) => job.platform)).toEqual(['messenger']);
+    });
+  });
+
   describe('resetStuckProcessingJobs', () => {
-    it('targets failed by default and reopens only expired leases', async () => {
-      await repository.resetStuckProcessingJobs(new Date());
+    it('targets failed by default and reopens only expired leases for the platform', async () => {
+      await repository.resetStuckProcessingJobs('discord', new Date());
 
       const setCall = queryLog.find((entry) => entry.method === 'set');
       expect(setCall?.args[0]).toEqual({ status: 'failed' });
-      const leaseCondition = queryLog.find(
-        (entry) => entry.method === 'andWhere',
+      const platformCondition = queryLog.find(
+        (entry) =>
+          entry.method === 'andWhere' &&
+          String(entry.args[0]).includes('platform = :platform'),
       );
-      expect(leaseCondition?.args[0]).toContain('lease_expires_at < :now');
+      expect(platformCondition?.args[1]).toEqual({ platform: 'discord' });
+      const leaseCondition = queryLog.find(
+        (entry) =>
+          entry.method === 'andWhere' &&
+          String(entry.args[0]).includes('lease_expires_at < :now'),
+      );
       expect(leaseCondition?.args[0]).toContain('lease_expires_at IS NULL');
       const leaseParams = leaseCondition?.args[1] as
         | { now?: Date; olderThan?: Date }
@@ -501,7 +591,11 @@ describe('TypeormStudyReminderJobRepository', () => {
     });
 
     it('targets pending when requested (Messenger)', async () => {
-      await repository.resetStuckProcessingJobs(new Date(), 'pending');
+      await repository.resetStuckProcessingJobs(
+        'messenger',
+        new Date(),
+        'pending',
+      );
 
       const setCall = queryLog.find((entry) => entry.method === 'set');
       expect(setCall?.args[0]).toEqual({ status: 'pending' });

@@ -9,6 +9,7 @@ import type {
   UpsertStudyReminderJobOptions,
 } from '../ports/study-reminder-job.repository.port';
 import { StudyReminderJobEntity } from '../entities/study-reminder-job.entity';
+import type { Platform } from '@wispace/database';
 
 const DEFAULT_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
   'pending',
@@ -201,6 +202,7 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
   }
 
   async findDueJobs(
+    platform: Platform,
     now: Date,
     minLeadMinutes: number,
   ): Promise<StudyReminderJob[]> {
@@ -210,6 +212,7 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
       .where('job.status IN (:...statuses)', {
         statuses: ['pending', 'failed'],
       })
+      .andWhere('job.platform = :platform', { platform })
       .andWhere('job.remind_at <= :now', { now })
       .andWhere('job.scheduled_at > :minLeadAt', { minLeadAt })
       .andWhere('(job.next_retry_at IS NULL OR job.next_retry_at <= :now)', {
@@ -225,20 +228,22 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
   }
 
   async claimJob(
+    platform: Platform,
     jobId: number,
     leaseMs: number,
   ): Promise<StudyReminderJob | null> {
     // Assign a fresh lease token + expiry so recovery (which reopens only
     // expired leases) and stale owners (whose token no longer matches) can
-    // never double-send or overwrite a newer owner's result.
+    // never double-send or overwrite a newer owner's result. The claim is
+    // scoped to the worker's platform (#180).
     const rows: Array<Record<string, unknown>> = await this.repo.query(
       `UPDATE study_reminder_jobs
        SET status = 'processing',
            lease_token = gen_random_uuid(),
            lease_expires_at = now() + ($2::int * interval '1 millisecond')
-       WHERE id = $1 AND status IN ('pending', 'failed')
+       WHERE id = $1 AND platform = $3 AND status IN ('pending', 'failed')
        RETURNING *`,
-      [jobId, leaseMs],
+      [jobId, leaseMs, platform],
     );
     if (!rows.length) return null;
     return this.mapEntity(rows[0] as unknown as StudyReminderJobEntity);
@@ -383,16 +388,19 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
   }
 
   async resetStuckProcessingJobs(
+    platform: Platform,
     olderThan: Date,
     targetStatus: 'pending' | 'failed' = 'failed',
   ): Promise<number> {
     // Reopen only processing rows whose LEASE expired (live lease = worker
     // still active) or legacy rows (no lease) past the updated_at threshold.
+    // Scoped to the worker's platform — never reset another bot's jobs (#180).
     const result = await this.repo
       .createQueryBuilder()
       .update(StudyReminderJobEntity)
       .set({ status: targetStatus })
       .where('status = :status', { status: 'processing' })
+      .andWhere('platform = :platform', { platform })
       .andWhere(
         '(lease_expires_at < :now OR (lease_expires_at IS NULL AND updated_at <= :olderThan))',
         { now: new Date(), olderThan },

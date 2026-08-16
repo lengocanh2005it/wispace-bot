@@ -14,6 +14,7 @@ import {
 } from '../ports/dispatch-hooks.port';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { subtractMs } from '@wispace/date-utils';
+import type { Platform } from '@wispace/database';
 import type { StudyReminderJob } from '../types/study-reminder.types';
 
 export interface StudyReminderDispatchFailure {
@@ -65,6 +66,8 @@ export class StudyReminderDispatchService {
     @Inject(MESSAGE_SENDER)
     private readonly messageSender: MessageSenderPort,
     private readonly scheduleService: StudyReminderScheduleService,
+    /** The worker's own platform — every due/claim/reset query is scoped to it (#180). */
+    private readonly platform: Platform,
     @Optional()
     @Inject(DISPATCH_HOOKS)
     private readonly hooks?: DispatchHooksPort,
@@ -76,10 +79,12 @@ export class StudyReminderDispatchService {
     const now = new Date();
 
     const resetStuck = await this.jobRepository.resetStuckProcessingJobs(
+      this.platform,
       subtractMs(now, settings.stuckProcessingMs),
     );
 
     const dueJobs = await this.jobRepository.findDueJobs(
+      this.platform,
       now,
       settings.minLeadMinutes,
     );
@@ -110,6 +115,7 @@ export class StudyReminderDispatchService {
     const CONCURRENCY_LIMIT = 3;
     const processJob = async (job: StudyReminderJob) => {
       const claimedJob = await this.jobRepository.claimJob(
+        this.platform,
         job.id,
         settings.leaseMs,
       );
