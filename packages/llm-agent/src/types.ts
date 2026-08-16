@@ -3,7 +3,13 @@ export type { ChatHistoryMessage };
 
 export interface LlmAgentConfig {
   model?: string;
+  /** Max tool rounds before the agent gives up. Default: 6. */
   maxToolRounds?: number;
+  /**
+   * Max DISTINCT (tool, args) executions allowed per model round before the
+   * round is blocked fail-closed (#162). Default: 4.
+   */
+  maxToolCallsPerRound?: number;
   maxContextChars?: number;
   /** Max LLM call retries on retryable errors. Default: 3. */
   maxLlmRetries?: number;

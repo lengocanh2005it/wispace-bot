@@ -12,6 +12,7 @@ import { sleep, isAbortError } from './utils/retry.utils';
 import {
   buildExhaustionPartialAnswer,
   buildPromptInjectionBlockedMessage,
+  buildToolCallCapMessage,
   buildWispaceScopeRedirectMessage,
   buildGroundingBlockedMessage,
 } from './messages';
@@ -33,6 +34,7 @@ import type {
 } from './types';
 
 const DEFAULT_MAX_TOOL_ROUNDS = 6;
+const DEFAULT_MAX_TOOL_CALLS_PER_ROUND = 4;
 const DEFAULT_MAX_CONTEXT_CHARS = 24_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 1024;
 const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 10_000;
@@ -394,6 +396,24 @@ export class LlmAgentService<TToolContext> {
           return;
         }
 
+        // Per-round call cap (#162): count DISTINCT (name, args) executions
+        // after dedupe — a model response fanning out beyond the cap is
+        // blocked fail-closed before anything executes.
+        const uniqueCallCount = this.countUniqueToolCalls(toolCalls);
+        if (uniqueCallCount > this.getMaxToolCallsPerRound()) {
+          metrics.llmRoundOutcomeInc(FEATURE, 'duplicate_tool_calls');
+          logger.warn(
+            `LLM agent blocked tool round: ${uniqueCallCount} unique calls exceed cap=${this.getMaxToolCallsPerRound()} externalUserId=${maskExternalId(
+              input.externalUserId,
+            )}`,
+          );
+          yield {
+            type: 'done',
+            reply: { text: buildToolCallCapMessage() },
+          };
+          return;
+        }
+
         const signature = this.buildToolCallSignature(toolCalls);
         if (signature === previousToolCallSignature && !previousRoundFailed) {
           // Same calls twice AND the previous round succeeded — the LLM is
@@ -703,6 +723,14 @@ export class LlmAgentService<TToolContext> {
       : DEFAULT_MAX_TOOL_ROUNDS;
   }
 
+  private getMaxToolCallsPerRound(): number {
+    return this.config.maxToolCallsPerRound &&
+      Number.isFinite(this.config.maxToolCallsPerRound) &&
+      this.config.maxToolCallsPerRound > 0
+      ? Math.floor(this.config.maxToolCallsPerRound)
+      : DEFAULT_MAX_TOOL_CALLS_PER_ROUND;
+  }
+
   private getMaxOutputTokens(): number {
     return this.config.maxOutputTokens &&
       Number.isFinite(this.config.maxOutputTokens) &&
@@ -784,6 +812,13 @@ export class LlmAgentService<TToolContext> {
     ];
   }
 
+  /**
+   * Executes the round's tool calls with in-round deduplication (#162):
+   * identical (name, serialized args) calls execute ONCE and the result is
+   * broadcast to every duplicate call id — repeated side-effectful calls
+   * (e.g. `precreate_next_exercise`) can never run twice in one round, while
+   * the message list stays valid (every tool_calls id gets a tool result).
+   */
   private async executeToolCalls(
     toolCalls: Array<{ id: string; name: string; arguments: string }>,
     input: LlmAgentInput,
@@ -801,8 +836,32 @@ export class LlmAgentService<TToolContext> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
     const metrics = this.ports.metrics ?? NOOP_METRICS_PORT;
 
-    return Promise.all(
-      toolCalls.map(async (toolCall) => {
+    const uniqueByKey = new Map<
+      string,
+      { id: string; name: string; arguments: string }
+    >();
+    for (const call of toolCalls) {
+      const key = this.toolCallKey(call);
+      if (!uniqueByKey.has(key)) {
+        uniqueByKey.set(key, call);
+      }
+    }
+    const uniqueCalls = [...uniqueByKey.values()];
+    if (uniqueCalls.length !== toolCalls.length) {
+      logger.warn(
+        `LLM agent deduped ${toolCalls.length - uniqueCalls.length} duplicate tool call(s) in one round externalUserId=${maskExternalId(
+          input.externalUserId,
+        )}`,
+      );
+    }
+
+    const resultsByKey = new Map<
+      string,
+      { content: string; succeeded: boolean }
+    >();
+
+    await Promise.all(
+      uniqueCalls.map(async (toolCall) => {
         const toolName = toolCall.name;
         toolsCalledThisTurn.add(toolName);
         const argsJson = toolCall.arguments || '{}';
@@ -835,12 +894,10 @@ export class LlmAgentService<TToolContext> {
             );
           }
           content = sanitized.content;
-          return {
-            toolCallId: toolCall.id,
-            toolName,
+          resultsByKey.set(this.toolCallKey(toolCall), {
             content,
             succeeded: true,
-          };
+          });
         } catch (err) {
           const message = errorMessage(err);
           logger.warn(
@@ -855,16 +912,41 @@ export class LlmAgentService<TToolContext> {
           content = sanitizeToolResultContent(
             JSON.stringify({ ok: false, error: message }),
           ).content;
-          return {
-            toolCallId: toolCall.id,
-            toolName,
+          resultsByKey.set(this.toolCallKey(toolCall), {
             content,
             succeeded: false,
-          };
+          });
         } finally {
           parentSignal?.removeEventListener('abort', abort);
         }
       }),
     );
+
+    // Broadcast: every original call id gets its group's result.
+    return toolCalls.map((call) => {
+      const result = resultsByKey.get(this.toolCallKey(call)) ?? {
+        content: JSON.stringify({
+          ok: false,
+          error: 'tool execution did not produce a result',
+        }),
+        succeeded: false,
+      };
+      return {
+        toolCallId: call.id,
+        toolName: call.name,
+        content: result.content,
+        succeeded: result.succeeded,
+      };
+    });
+  }
+
+  private toolCallKey(call: { name: string; arguments: string }): string {
+    return `${call.name}:${call.arguments || '{}'}`;
+  }
+
+  private countUniqueToolCalls(
+    toolCalls: Array<{ name: string; arguments: string }>,
+  ): number {
+    return new Set(toolCalls.map((call) => this.toolCallKey(call))).size;
   }
 }

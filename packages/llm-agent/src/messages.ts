@@ -27,6 +27,14 @@ export function buildPrecreateExerciseUnavailableMessage(): string {
 }
 
 /**
+ * Fail-closed reply when one model round asks for more distinct tool calls
+ * than the per-round cap allows (#162) — nothing is executed.
+ */
+export function buildToolCallCapMessage(): string {
+  return 'Mình chỉ xử lý được tối đa 4 việc cùng lúc. Bạn hỏi lại từng việc nhé.';
+}
+
+/**
  * Learner-friendly labels for tools that returned data — used by the
  * exhaustion partial answer. Server-controlled, never raw tool names.
  */

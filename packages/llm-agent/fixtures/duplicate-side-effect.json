@@ -1,0 +1,48 @@
+{
+  "name": "duplicate-side-effect",
+  "description": "Two identical side-effectful calls in one round execute exactly once — the result is broadcast to both call ids (#162).",
+  "promptFiles": [
+    {
+      "path": "packages/llm-agent/src/chat-system-prompt.ts",
+      "hash": "bae3da004a84005e8f7757533ff5db7d27b8963038200547cbeaf719ef722730"
+    },
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "4888b2923716995b11505ce96ffd33a694e0ef06e7634feac3036cd6b9f4d0ea"
+    }
+  ],
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1012).",
+  "userText": "tạo bài tập mới cho mình",
+  "externalUserId": "eval-dup-side-effect-0012",
+  "userId": 1012,
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "precreate_next_exercise",
+          "args": {},
+          "result": {
+            "exerciseUrl": "https://wispace.example/exercises/999"
+          }
+        },
+        {
+          "name": "precreate_next_exercise",
+          "args": {},
+          "result": {
+            "exerciseUrl": "https://wispace.example/exercises/999"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Mình đã tạo bài tập mới cho bạn. Mở bài tập tại đây: https://wispace.example/exercises/999"
+    }
+  ],
+  "expected": {
+    "toolSequence": ["precreate_next_exercise"],
+    "replyTextContains": ["https://wispace.example/exercises/999"],
+    "exhausted": false,
+    "toolSummary": "[Đã tra cứu: precreate_next_exercise]",
+    "groundingWarnings": 0
+  }
+}
