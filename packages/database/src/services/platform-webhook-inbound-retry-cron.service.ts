@@ -162,8 +162,10 @@ export class PlatformWebhookInboundRetryCronService {
 
     // The retry worker claims before processing, so one row is handled by
     // only one retry worker at a time (parallel batches claim disjoint rows).
-    const claimed = await this.inboundEvents.claim(row.id);
-    if (!claimed) {
+    // The lease token returned by the claim must accompany every state
+    // transition — a stale worker whose lease was recovered no-ops (#149).
+    const leaseToken = await this.inboundEvents.claim(row.id);
+    if (!leaseToken) {
       stats.skipped += 1;
       return;
     }
@@ -178,7 +180,16 @@ export class PlatformWebhookInboundRetryCronService {
       const nextRetryCount = row.retryCount + 1;
       const maskedEventId = maskEventId(row.eventId, row.externalUserId);
 
-      await this.inboundEvents.markFailed(row.id, errorMsg, retryConfig);
+      const marked = await this.inboundEvents.markFailed(
+        row.id,
+        leaseToken,
+        errorMsg,
+        retryConfig,
+      );
+      if (!marked) {
+        stats.skipped += 1;
+        return;
+      }
 
       if (nextRetryCount >= retryConfig.maxRetries) {
         stats.abandoned += 1;
@@ -195,7 +206,14 @@ export class PlatformWebhookInboundRetryCronService {
     }
 
     try {
-      await this.inboundEvents.markCompleted(row.id);
+      const completed = await this.inboundEvents.markCompleted(
+        row.id,
+        leaseToken,
+      );
+      if (!completed) {
+        stats.skipped += 1;
+        return;
+      }
       stats.completed += 1;
       this.logger.log(
         `Inbound event id=${row.id} eventId=${maskEventId(
@@ -210,6 +228,7 @@ export class PlatformWebhookInboundRetryCronService {
       );
       const terminalized = await this.inboundEvents.markProcessingAbandoned(
         row.id,
+        leaseToken,
         completionError,
       );
       if (terminalized) {

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-return -- fluent Jest query-builder fake */
+/* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment -- fluent Jest query-builder fake */
 import { PlatformWebhookInboundEventService } from './platform-webhook-inbound-event.service';
 import type { Repository } from 'typeorm';
 import type { WebhookInboundEventEntity } from '../entities/webhook-inbound-event.entity';
@@ -20,10 +20,20 @@ describe('PlatformWebhookInboundEventService', () => {
     const orderByMock = jest.fn(() => ({ limit: limitMock }));
     const andWhere1Mock = jest.fn(() => ({ orderBy: orderByMock }));
     const whereMock = jest.fn(() => ({ andWhere: andWhere1Mock }));
+    // Update chain: set → where → andWhere (lease token) → andWhere (status) → execute.
+    // Every andWhere returns { andWhere, execute } so both single-condition
+    // (claim, abandonStaleProcessing) and double-condition (transitions) work.
     const claimExecuteMock = jest.fn().mockResolvedValue({ affected: 1 });
-    const claimAndWhereMock = jest.fn(() => ({ execute: claimExecuteMock }));
+    const claimAndWhereMock = jest.fn(() => ({
+      andWhere: claimAndWhereMock,
+      execute: claimExecuteMock,
+    }));
     const claimWhereMock = jest.fn(() => ({ andWhere: claimAndWhereMock }));
-    const claimSetMock = jest.fn(() => ({ where: claimWhereMock }));
+    const claimSetMock: jest.Mock<
+      { where: jest.Mock },
+      [Record<string, unknown>]
+    > = jest.fn();
+    claimSetMock.mockImplementation(() => ({ where: claimWhereMock }));
     const claimUpdateMock = jest.fn(() => ({ set: claimSetMock }));
     const createQueryBuilderMock = jest.fn(() => ({
       insert: insertMock,
@@ -31,13 +41,9 @@ describe('PlatformWebhookInboundEventService', () => {
       update: claimUpdateMock,
     }));
     const findOneMock = jest.fn().mockResolvedValue({ id: 1, retryCount: 0 });
-    const updateMock = jest
-      .fn<Promise<void>, [number, Record<string, unknown>]>()
-      .mockResolvedValue(undefined);
     const repo = {
       createQueryBuilder: createQueryBuilderMock,
       findOne: findOneMock,
-      update: updateMock,
     } as unknown as Repository<WebhookInboundEventEntity>;
 
     return {
@@ -46,10 +52,10 @@ describe('PlatformWebhookInboundEventService', () => {
       getManyMock,
       whereMock,
       findOneMock,
-      updateMock,
       claimExecuteMock,
       claimWhereMock,
       claimAndWhereMock,
+      claimSetMock,
     };
   };
 
@@ -82,14 +88,22 @@ describe('PlatformWebhookInboundEventService', () => {
   });
 
   describe('claim', () => {
-    it('claims a pending/failed event (pending/failed → processing)', async () => {
-      const { service, claimExecuteMock, claimWhereMock, claimAndWhereMock } =
-        buildService();
+    it('claims a pending/failed event and returns a fresh lease token', async () => {
+      const {
+        service,
+        claimExecuteMock,
+        claimWhereMock,
+        claimAndWhereMock,
+        claimSetMock,
+      } = buildService();
       claimExecuteMock.mockResolvedValue({ affected: 1 });
 
-      const claimed = await service.claim(7);
+      const token = await service.claim(7);
 
-      expect(claimed).toBe(true);
+      expect(token).toBeTruthy();
+      expect(claimSetMock).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'processing', leaseToken: token }),
+      );
       expect(claimWhereMock).toHaveBeenCalledWith('id = :id', { id: 7 });
       expect(claimAndWhereMock).toHaveBeenCalledWith(
         'status IN (:...statuses)',
@@ -97,60 +111,157 @@ describe('PlatformWebhookInboundEventService', () => {
       );
     });
 
-    it('returns false when another worker already claimed the event', async () => {
+    it('returns null when another worker already claimed the event', async () => {
       const { service, claimExecuteMock } = buildService();
       claimExecuteMock.mockResolvedValue({ affected: 0 });
 
-      const claimed = await service.claim(7);
-
-      expect(claimed).toBe(false);
+      expect(await service.claim(7)).toBeNull();
     });
   });
 
   describe('markCompleted', () => {
-    it('marks the event completed and clears retry state', async () => {
-      const { service, updateMock } = buildService();
+    it('marks the owned event completed and clears retry state', async () => {
+      const {
+        service,
+        claimExecuteMock,
+        claimWhereMock,
+        claimAndWhereMock,
+        claimSetMock,
+      } = buildService();
+      claimExecuteMock.mockResolvedValue({ affected: 1 });
 
-      await service.markCompleted(42);
+      const done = await service.markCompleted(42, 'token-1');
 
-      expect(updateMock).toHaveBeenCalledWith(
-        42,
+      expect(done).toBe(true);
+      expect(claimWhereMock).toHaveBeenCalledWith('id = :id', { id: 42 });
+      expect(claimAndWhereMock).toHaveBeenCalledWith(
+        'lease_token = :leaseToken',
+        { leaseToken: 'token-1' },
+      );
+      expect(claimAndWhereMock).toHaveBeenCalledWith('status = :status', {
+        status: 'processing',
+      });
+      expect(claimSetMock).toHaveBeenCalledWith(
         expect.objectContaining({
           status: 'completed',
           lastError: null,
           nextRetryAt: null,
         }),
       );
-      const patch = updateMock.mock.calls[0][1];
+      const patch = claimSetMock.mock.calls[0][0];
       expect(patch['processedAt']).toBeInstanceOf(Date);
+    });
+
+    it('no-ops when the lease token does not match (stale worker)', async () => {
+      const { service, claimExecuteMock } = buildService();
+      claimExecuteMock.mockResolvedValue({ affected: 0 });
+
+      expect(await service.markCompleted(42, 'old-token')).toBe(false);
+    });
+
+    it('race: a stale worker completing after abandonment cannot overwrite the terminal state', async () => {
+      const rows = [
+        {
+          id: 9,
+          status: 'processing' as 'processing' | 'abandoned' | 'completed',
+          leaseToken: 'token-1' as string | null,
+        },
+      ];
+      let updateId: number | undefined;
+      let updateToken: string | undefined;
+      let updateStaleBefore: Date | undefined;
+      const updateBuilder = {
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn((_condition: string, parameters: { id: number }) => {
+          updateId = parameters.id;
+          return updateBuilder;
+        }),
+        andWhere: jest.fn(
+          (
+            _condition: string,
+            parameters: {
+              leaseToken?: string;
+              staleBefore?: Date;
+              status?: string;
+            },
+          ) => {
+            if (parameters.leaseToken !== undefined) {
+              updateToken = parameters.leaseToken;
+            }
+            if (parameters.staleBefore !== undefined) {
+              updateStaleBefore = parameters.staleBefore;
+            }
+            return updateBuilder;
+          },
+        ),
+        execute: jest.fn(() => {
+          const row = rows.find((candidate) => candidate.id === updateId);
+          if (!row) return { affected: 0 };
+          // abandonStaleProcessing path: age-based terminalization.
+          if (updateStaleBefore !== undefined && row.status === 'processing') {
+            row.status = 'abandoned';
+            return { affected: 1 };
+          }
+          // Ownership-checked transition path.
+          if (row.status === 'processing' && row.leaseToken === updateToken) {
+            row.status = 'completed';
+            return { affected: 1 };
+          }
+          return { affected: 0 };
+        }),
+      };
+      const repo = {
+        createQueryBuilder: jest.fn(() => ({
+          update: jest.fn(() => updateBuilder),
+        })),
+      } as unknown as Repository<WebhookInboundEventEntity>;
+      const service = new PlatformWebhookInboundEventService('messenger', repo);
+
+      // The row was claimed with token-1, then the stale-recovery cron
+      // terminalized it (the worker appeared dead).
+      const staleBefore = new Date('2026-08-13T00:55:00Z');
+      expect(await service.abandonStaleProcessing(9, staleBefore)).toBe(true);
+      expect(rows[0].status).toBe('abandoned');
+
+      // The slow worker finally completes with its OLD token — it must no-op
+      // and leave the terminal state untouched.
+      expect(await service.markCompleted(9, 'token-1')).toBe(false);
+      expect(rows[0].status).toBe('abandoned');
     });
   });
 
   describe('markFailed', () => {
-    it('schedules a bounded backoff retry', async () => {
-      const { service, updateMock, findOneMock } = buildService();
+    it('schedules a bounded backoff retry for the owned event', async () => {
+      const { service, claimSetMock, findOneMock, claimExecuteMock } =
+        buildService();
       findOneMock.mockResolvedValue({
         id: 1,
         retryCount: 0,
         externalUserId: 'psid-1234567890',
       });
+      claimExecuteMock.mockResolvedValue({ affected: 1 });
       const now = Date.now();
 
-      await service.markFailed(1, 'failed for psid-1234567890', {
-        maxRetries: 5,
-        baseRetryMs: 60_000,
-        capRetryMs: 8 * 60_000,
-      });
-
-      expect(updateMock).toHaveBeenCalledWith(
+      const marked = await service.markFailed(
         1,
+        'token-1',
+        'failed for psid-1234567890',
+        {
+          maxRetries: 5,
+          baseRetryMs: 60_000,
+          capRetryMs: 8 * 60_000,
+        },
+      );
+
+      expect(marked).toBe(true);
+      expect(claimSetMock).toHaveBeenCalledWith(
         expect.objectContaining({
           status: 'failed',
           retryCount: 1,
           lastError: 'failed for psid…7890',
         }),
       );
-      const patch = updateMock.mock.calls[0][1];
+      const patch = claimSetMock.mock.calls[0][0];
       expect(patch['processedAt']).toBeInstanceOf(Date);
       expect((patch['nextRetryAt'] as Date).getTime()).toBeGreaterThanOrEqual(
         now + 60_000,
@@ -158,39 +269,52 @@ describe('PlatformWebhookInboundEventService', () => {
     });
 
     it('caps the backoff at the cap', async () => {
-      const { service, updateMock, findOneMock } = buildService();
+      const { service, claimSetMock, findOneMock } = buildService();
       findOneMock.mockResolvedValue({ id: 1, retryCount: 10 });
 
-      await service.markFailed(1, 'boom', {
+      await service.markFailed(1, 'token-1', 'boom', {
         maxRetries: 15,
         baseRetryMs: 60_000,
         capRetryMs: 8 * 60_000,
       });
 
-      const patch = updateMock.mock.calls[0][1];
+      const patch = claimSetMock.mock.calls[0][0];
       expect((patch['nextRetryAt'] as Date).getTime()).toBeLessThanOrEqual(
         Date.now() + 8 * 60_000,
       );
     });
 
     it('marks the event abandoned (terminal) when the budget is exhausted', async () => {
-      const { service, updateMock, findOneMock } = buildService();
+      const { service, claimSetMock, findOneMock } = buildService();
       findOneMock.mockResolvedValue({ id: 1, retryCount: 4 });
 
-      await service.markFailed(1, 'still broken', {
+      await service.markFailed(1, 'token-1', 'still broken', {
         maxRetries: 5,
         baseRetryMs: 60_000,
         capRetryMs: 8 * 60_000,
       });
 
-      expect(updateMock).toHaveBeenCalledWith(
-        1,
+      expect(claimSetMock).toHaveBeenCalledWith(
         expect.objectContaining({
           status: 'abandoned',
           retryCount: 5,
           nextRetryAt: null,
         }),
       );
+    });
+
+    it('no-ops when the lease token does not match (stale worker)', async () => {
+      const { service, claimExecuteMock, findOneMock } = buildService();
+      findOneMock.mockResolvedValue({ id: 1, retryCount: 0 });
+      claimExecuteMock.mockResolvedValue({ affected: 0 });
+
+      const marked = await service.markFailed(1, 'old-token', 'boom', {
+        maxRetries: 5,
+        baseRetryMs: 60_000,
+        capRetryMs: 8 * 60_000,
+      });
+
+      expect(marked).toBe(false);
     });
   });
 
@@ -263,21 +387,23 @@ describe('PlatformWebhookInboundEventService', () => {
       );
     });
 
-    it('marks processing completion as unknown without replaying it', async () => {
+    it('marks processing completion as unknown only while the lease is owned', async () => {
       const { service, claimExecuteMock, claimWhereMock, claimAndWhereMock } =
         buildService();
       claimExecuteMock.mockResolvedValue({ affected: 1 });
 
       const abandoned = await service.markProcessingAbandoned(
         9,
+        'token-1',
         'completion write failed',
       );
 
       expect(abandoned).toBe(true);
       expect(claimWhereMock).toHaveBeenCalledWith('id = :id', { id: 9 });
-      expect(claimAndWhereMock).toHaveBeenCalledWith('status = :status', {
-        status: 'processing',
-      });
+      expect(claimAndWhereMock).toHaveBeenCalledWith(
+        'status = :status AND lease_token = :leaseToken',
+        { status: 'processing', leaseToken: 'token-1' },
+      );
     });
 
     it('lists only stale processing rows and terminalizes the same row atomically', async () => {

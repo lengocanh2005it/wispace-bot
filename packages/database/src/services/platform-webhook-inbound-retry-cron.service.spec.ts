@@ -24,7 +24,7 @@ function buildService(options: WebhookInboundRetryCronOptions): {
       [{ limit: number; processingStuckMs: number }]
     >;
     countDue: jest.Mock<Promise<number>, [{ processingStuckMs: number }]>;
-    claim: jest.Mock<Promise<boolean>, [number]>;
+    claim: jest.Mock<Promise<string | null>, [number]>;
     markCompleted: jest.Mock;
     markFailed: jest.Mock;
     abandonStaleProcessing: jest.Mock;
@@ -41,9 +41,11 @@ function buildService(options: WebhookInboundRetryCronOptions): {
       >()
       .mockResolvedValue([]),
     countDue: jest.fn().mockResolvedValue(0),
-    claim: jest.fn<Promise<boolean>, [number]>().mockResolvedValue(true),
-    markCompleted: jest.fn().mockResolvedValue(undefined),
-    markFailed: jest.fn().mockResolvedValue(undefined),
+    claim: jest
+      .fn<Promise<string | null>, [number]>()
+      .mockResolvedValue('token-1'),
+    markCompleted: jest.fn().mockResolvedValue(true),
+    markFailed: jest.fn().mockResolvedValue(true),
     abandonStaleProcessing: jest.fn().mockResolvedValue(true),
     markProcessingAbandoned: jest.fn().mockResolvedValue(true),
   };
@@ -89,7 +91,7 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     expect(options.processEvent).toHaveBeenCalledWith({
       message: { mid: 'mid-1' },
     });
-    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1, 'token-1');
     expect(inboundEvents.markFailed).not.toHaveBeenCalled();
   });
 
@@ -105,6 +107,7 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     expect(inboundEvents.markCompleted).not.toHaveBeenCalled();
     expect(inboundEvents.markFailed).toHaveBeenCalledWith(
       1,
+      'token-1',
       'WISPACE down',
       expect.objectContaining({ maxRetries: 5, baseRetryMs: 60_000 }),
     );
@@ -126,7 +129,7 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     expect(inboundEvents.markFailed).toHaveBeenCalledTimes(1);
 
     await service.handleRetry();
-    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1, 'token-1');
   });
 
   it('#115: a failed send_text delivery stays retryable until a later attempt delivers exactly once', async () => {
@@ -158,7 +161,7 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     // successful delivery (2 handler runs total: 1 failed + 1 success).
     expect(options.processEvent).toHaveBeenCalledTimes(2);
     expect(inboundEvents.markFailed).toHaveBeenCalledTimes(1);
-    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1, 'token-1');
   });
 
   it('replays pending rows (crash between ingest and processing)', async () => {
@@ -169,7 +172,7 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     await service.handleRetry();
 
     expect(options.processEvent).toHaveBeenCalledTimes(1);
-    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1, 'token-1');
   });
 
   it('does not run when the advisory lock is held by another pod', async () => {
@@ -187,15 +190,15 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     const { service, inboundEvents } = buildService(options);
     inboundEvents.listDue.mockResolvedValue([row({ id: 1 }), row({ id: 2 })]);
     inboundEvents.claim
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false);
+      .mockResolvedValueOnce('token-1')
+      .mockResolvedValueOnce(null);
 
     await service.handleRetry();
 
     expect(inboundEvents.claim).toHaveBeenCalledTimes(2);
     expect(options.processEvent).toHaveBeenCalledTimes(1);
-    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1);
-    expect(inboundEvents.markCompleted).not.toHaveBeenCalledWith(2);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1, 'token-1');
+    expect(inboundEvents.markCompleted).not.toHaveBeenCalledWith(2, 'token-1');
   });
 
   it('terminalizes stale processing rows without replaying side effects', async () => {
@@ -230,7 +233,27 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     expect(inboundEvents.markFailed).not.toHaveBeenCalled();
     expect(inboundEvents.markProcessingAbandoned).toHaveBeenCalledWith(
       1,
+      'token-1',
       'DB hiccup',
+    );
+  });
+
+  it('counts a no-op completion as skipped when ownership was lost (#149)', async () => {
+    const onTickComplete = jest.fn();
+    const options = buildOptions({ onTickComplete });
+    const { service, inboundEvents } = buildService(options);
+    inboundEvents.listDue.mockResolvedValue([row()]);
+    // The row was claimed with 'token-1', but stale recovery terminalized it
+    // before this worker finished — markCompleted no-ops.
+    inboundEvents.markCompleted.mockResolvedValue(false);
+
+    await service.handleRetry();
+
+    expect(options.processEvent).toHaveBeenCalledTimes(1);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1, 'token-1');
+    expect(inboundEvents.markProcessingAbandoned).not.toHaveBeenCalled();
+    expect(onTickComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ completed: 0, skipped: 1 }),
     );
   });
 
@@ -248,9 +271,9 @@ describe('PlatformWebhookInboundRetryCronService', () => {
     await service.handleRetry();
 
     expect(options.processEvent).toHaveBeenCalledTimes(3);
-    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1);
-    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(2);
-    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(3);
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(1, 'token-1');
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(2, 'token-1');
+    expect(inboundEvents.markCompleted).toHaveBeenCalledWith(3, 'token-1');
     expect(onTickComplete).toHaveBeenCalledWith({
       due: 3,
       backlog: 3,
@@ -307,6 +330,7 @@ describe('PlatformWebhookInboundRetryCronService', () => {
 
     expect(inboundEvents.markFailed).toHaveBeenCalledWith(
       1,
+      'token-1',
       'boom',
       expect.objectContaining({ maxRetries: 2 }),
     );

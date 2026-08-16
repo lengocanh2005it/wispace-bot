@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import { maskExternalIdInText } from '@wispace/bot-common';
 import { WebhookInboundEventEntity } from '../entities/webhook-inbound-event.entity';
@@ -114,8 +115,15 @@ export class PlatformWebhookInboundEventService {
       : { inserted: false };
   }
 
-  async markCompleted(id: number): Promise<void> {
-    await this.repo.update(id, {
+  /**
+   * Mark an owned event completed. Requires the `leaseToken` returned by
+   * `claim` and the row still being `processing` — a worker whose lease was
+   * stale-recovered (or whose row was terminalized) no-ops instead of
+   * overwriting the terminal state (#149).
+   * Returns false when the ownership check failed.
+   */
+  async markCompleted(id: number, leaseToken: string): Promise<boolean> {
+    return this.updateOwnedProcessing(id, leaseToken, {
       status: 'completed',
       lastError: null,
       nextRetryAt: null,
@@ -124,23 +132,25 @@ export class PlatformWebhookInboundEventService {
   }
 
   /**
-   * Atomically claim an event for processing: `pending`/`failed` → `processing`.
-   * The retry worker claims before processing, so an event can never be
-   * processed by two workers at once.
-   * Returns `false` when another worker already claimed it.
+   * Atomically claim an event for processing: `pending`/`failed` → `processing`
+   * with a fresh lease token. The retry worker claims before processing, so an
+   * event can never be processed by two workers at once.
+   * Returns the lease token when claimed; null when another worker already
+   * claimed it.
    */
-  async claim(id: number): Promise<boolean> {
+  async claim(id: number): Promise<string | null> {
+    const leaseToken = randomUUID();
     const result = await this.repo
       .createQueryBuilder()
       .update(WebhookInboundEventEntity)
-      .set({ status: 'processing' })
+      .set({ status: 'processing', leaseToken })
       .where('id = :id', { id })
       .andWhere('status IN (:...statuses)', {
         statuses: ['pending', 'failed'],
       })
       .execute();
 
-    return (result.affected ?? 0) > 0;
+    return (result.affected ?? 0) > 0 ? leaseToken : null;
   }
 
   /**
@@ -163,15 +173,19 @@ export class PlatformWebhookInboundEventService {
   /**
    * Mark a claimed event terminal when its downstream side effect completed
    * but the completion write itself failed. This prevents an automatic retry
-   * from duplicating an outbound message.
+   * from duplicating an outbound message. Requires the lease token (#149).
    */
   async markProcessingAbandoned(
     id: number,
+    leaseToken: string,
     errorMessage: string,
   ): Promise<boolean> {
-    return this.terminalizeProcessing(id, errorMessage, 'status = :status', {
-      status: 'processing',
-    });
+    return this.terminalizeProcessing(
+      id,
+      errorMessage,
+      'status = :status AND lease_token = :leaseToken',
+      { status: 'processing', leaseToken },
+    );
   }
 
   private async terminalizeProcessing(
@@ -200,13 +214,15 @@ export class PlatformWebhookInboundEventService {
    * Record a processing failure with bounded exponential backoff:
    * `next_retry_at = now + min(base * 2^(retry_count), cap)`.
    * When the retry budget is exhausted the event becomes `abandoned`
-   * (terminal failure state).
+   * (terminal failure state). Requires the lease token — a stale worker
+   * whose ownership was lost no-ops (#149). Returns false on no-op.
    */
   async markFailed(
     id: number,
+    leaseToken: string,
     errorMessage: string,
     opts: InboundRetryConfig,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const row = await this.repo.findOne({
       select: { id: true, retryCount: true, externalUserId: true },
       where: { id },
@@ -220,13 +236,35 @@ export class PlatformWebhookInboundEventService {
     );
     const nextRetryAt = new Date(Date.now() + delay);
 
-    await this.repo.update(id, {
+    return this.updateOwnedProcessing(id, leaseToken, {
       status: nextRetryCount >= opts.maxRetries ? 'abandoned' : 'failed',
       retryCount: nextRetryCount,
       lastError: maskExternalIdInText(errorMessage, row?.externalUserId),
       nextRetryAt: nextRetryCount >= opts.maxRetries ? null : nextRetryAt,
       processedAt: new Date(),
     });
+  }
+
+  /**
+   * Applies a patch only while the caller still owns the `processing` lease
+   * (id + lease token + status). Returns false when ownership was lost —
+   * the stale worker must not overwrite a terminal/reclaimed state.
+   */
+  private async updateOwnedProcessing(
+    id: number,
+    leaseToken: string,
+    patch: Record<string, unknown>,
+  ): Promise<boolean> {
+    const result = await this.repo
+      .createQueryBuilder()
+      .update(WebhookInboundEventEntity)
+      .set(patch)
+      .where('id = :id', { id })
+      .andWhere('lease_token = :leaseToken', { leaseToken })
+      .andWhere('status = :status', { status: 'processing' })
+      .execute();
+
+    return (result.affected ?? 0) > 0;
   }
 
   /**
