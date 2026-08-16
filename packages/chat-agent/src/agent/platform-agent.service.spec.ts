@@ -18,6 +18,7 @@ jest.mock('@wispace/llm-agent', () => ({
     reply: mockLlmReply,
   })),
   NOOP_METRICS_PORT: {},
+  CHAT_SYSTEM_PROMPT_CORE: 'core prompt',
   loadSystemPromptFile: jest.fn().mockReturnValue('system prompt'),
   retryWithBackoff: jest.fn(),
   createEnvLlmExecutionPort: jest.fn(),
@@ -46,6 +47,26 @@ describe('PlatformAgentService', () => {
       { promptDir: '/prompts', promptFile: 'chat.system.txt' },
     );
   }
+
+  it('composes the shared chat core with the platform overlay', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const service = buildService(historyService);
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'next question',
+    });
+
+    expect(mockLlmReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        systemPrompt: 'core prompt\n\nsystem prompt',
+      }),
+      expect.anything(),
+    );
+  });
 
   it('does not append when the pipeline supplied preloaded history', async () => {
     const history = [{ role: 'user' as const, content: 'previous question' }];

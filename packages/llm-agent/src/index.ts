@@ -1,5 +1,6 @@
 export { LlmAgentService, LlmRetryExhaustedError } from './agent.service';
 export type { LlmAgentPorts } from './agent.service';
+export { CHAT_SYSTEM_PROMPT_CORE } from './chat-system-prompt';
 export {
   AGENT_TOOLS,
   AGENT_TOOL_NAMES,

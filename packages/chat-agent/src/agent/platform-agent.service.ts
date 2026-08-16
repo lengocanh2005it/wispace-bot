@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  CHAT_SYSTEM_PROMPT_CORE,
   LlmAgentService,
   LlmAgentPorts,
   NOOP_METRICS_PORT,
@@ -276,10 +277,11 @@ export class PlatformAgentService {
   }
 
   private async buildSystemPrompt(input: PlatformAgentInput): Promise<string> {
-    const base = loadSystemPromptFile(
+    const overlay = loadSystemPromptFile(
       this.options.promptDir,
       this.options.promptFile,
     );
+    const base = `${CHAT_SYSTEM_PROMPT_CORE}\n\n${overlay}`;
     const suffix = await this.options.systemPromptSuffix?.(input);
     return suffix ? `${base}\n\n${suffix}` : base;
   }
