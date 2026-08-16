@@ -98,6 +98,12 @@ export interface EvalExpectation {
   replyTextContains?: string[];
   /** Fabrication guard — none of these may appear in the reply text. */
   replyTextNotContains?: string[];
+  /**
+   * Leak guard — none of these may appear in any tool-result message sent
+   * to the model (e.g. raw error text that must be sanitized before it
+   * reaches the model context, #161).
+   */
+  toolResultsNotContain?: string[];
   exhausted?: boolean;
   /** null = must be absent; string = must match exactly. */
   toolSummary?: string | null;
@@ -374,6 +380,16 @@ export function parseFixture(
       ) {
         errors.push(
           'expected.replyTextNotContains must be an array of strings',
+        );
+      }
+    }
+    if (expected.toolResultsNotContain !== undefined) {
+      if (
+        !Array.isArray(expected.toolResultsNotContain) ||
+        expected.toolResultsNotContain.some((t) => typeof t !== 'string')
+      ) {
+        errors.push(
+          'expected.toolResultsNotContain must be an array of strings',
         );
       }
     }
@@ -750,6 +766,16 @@ export async function runEvalFixture(
       for (const fragment of fixture.expected.replyTextNotContains ?? []) {
         if (reply.text.includes(fragment)) {
           failures.push(`reply contains forbidden fragment "${fragment}"`);
+        }
+      }
+      // Tool-result leak guard (#161): nothing in the messages sent to the
+      // model may carry the forbidden fragments (e.g. raw sanitized error text).
+      const serializedToolResults = JSON.stringify(adapter.lastRequestMessages);
+      for (const fragment of fixture.expected.toolResultsNotContain ?? []) {
+        if (serializedToolResults.includes(fragment)) {
+          failures.push(
+            `tool results sent to the model contain forbidden fragment "${fragment}"`,
+          );
         }
       }
       const expectedWarnings = fixture.expected.groundingWarnings ?? 0;
