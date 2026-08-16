@@ -106,7 +106,12 @@
       "register_exam_report_notifications",
       "precreate_next_exercise"
     ],
-    "replyTextContains": ["chưa thể tổng hợp"],
+    "replyTextContains": [
+      "Đã lấy được dữ liệu",
+      "mục tiêu band và ngày thi",
+      "lịch học sắp tới"
+    ],
+    "replyTextNotContains": ["chưa thể tổng hợp"],
     "exhausted": true,
     "toolSummary": "[Đã tra cứu: get_user_goals; get_upcoming_study_sessions; list_study_calendar_entries; preview_next_study_reminder; register_exam_report_notifications; precreate_next_exercise]",
     "groundingWarnings": 0

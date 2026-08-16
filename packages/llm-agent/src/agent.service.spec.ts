@@ -445,6 +445,46 @@ describe('LlmAgentService', () => {
       expect(adapter.chatWithTools).toHaveBeenCalledTimes(6);
     });
 
+    it('exhaustion partial answer lists grounded data labels, never raw tool names (#207 item 4)', async () => {
+      const adapter = makeAdapter([
+        makeToolCallResponse('get_user_goals'),
+        makeToolCallResponse('get_upcoming_study_sessions'),
+      ]);
+      const execute = jest.fn().mockResolvedValue({ goals: [] });
+
+      const ports: LlmAgentPorts<StubToolContext> = {
+        llmExecution: {
+          run: jest
+            .fn()
+            .mockImplementation(
+              (
+                fn: (signal?: AbortSignal) => Promise<unknown>,
+                meta?: { signal?: AbortSignal },
+              ) => fn(meta?.signal),
+            ),
+        },
+        usageRecorder: { recordFromCompletion: jest.fn() },
+        safetyEvents: { recordGroundingWarning: jest.fn() },
+        toolExecutor: { execute },
+        adapter,
+        metrics: NOOP_METRICS_PORT,
+        logger: { warn: jest.fn(), debug: jest.fn() },
+      };
+
+      const service = new LlmAgentService<StubToolContext>(
+        { maxToolRounds: 2 },
+        ports,
+      );
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(result.exhausted).toBe(true);
+      expect(result.text).toContain('Đã lấy được dữ liệu');
+      expect(result.text).toContain('mục tiêu band và ngày thi');
+      expect(result.text).toContain('lịch học sắp tới');
+      expect(result.text).not.toContain('get_user_goals');
+    });
+
     it('respects maxToolRounds config override and returns graceful reply', async () => {
       const toolResponse = makeToolCallResponse('get_user_goals');
       const adapter = makeAdapter([toolResponse]);
