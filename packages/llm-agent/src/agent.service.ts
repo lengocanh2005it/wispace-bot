@@ -848,7 +848,13 @@ export class LlmAgentService<TToolContext> {
               input.externalUserId,
             )} tool=${toolName} error=${message}`,
           );
-          content = JSON.stringify({ ok: false, error: message });
+          // The error envelope goes back into the model context — sanitize it
+          // with the SAME pipeline as successful results (control chars,
+          // credential/injection patterns, size cap) so an upstream error
+          // body can never become an indirect prompt injection (#161).
+          content = sanitizeToolResultContent(
+            JSON.stringify({ ok: false, error: message }),
+          ).content;
           return {
             toolCallId: toolCall.id,
             toolName,
