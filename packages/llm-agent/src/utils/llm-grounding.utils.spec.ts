@@ -75,6 +75,26 @@ describe('checkLlmGrounding', () => {
         expect(result.suspicious).toBe(true);
         expect(result.reason).toBe('schedule_without_tool');
       });
+
+      it('suppresses only the echoed claim, still flags an unrelated schedule claim (#157)', () => {
+        const result = checkLlmGrounding(
+          'Buổi học 15/08 đã được dời và buổi học 20/12 sắp tới.',
+          new Set<string>(),
+          'buổi học 15/08 có bị dời không?',
+        );
+        expect(result.suspicious).toBe(true);
+        expect(result.reason).toBe('schedule_without_tool');
+      });
+
+      it('still checks score claims when a time marker is echoed (#157)', () => {
+        const result = checkLlmGrounding(
+          'Buổi học 15/08 đã được dời. Band của bạn là 7.0.',
+          new Set<string>(),
+          'buổi học 15/08 có bị dời không?',
+        );
+        expect(result.suspicious).toBe(true);
+        expect(result.reason).toBe('score_without_tool');
+      });
     });
   });
 
