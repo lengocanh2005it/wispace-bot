@@ -8,9 +8,11 @@ import {
 } from './utils/prompt-injection.utils';
 import { isObviouslyOffTopic } from './utils/scope.utils';
 import { sanitizeReplyText } from './utils/text.utils';
+import { checkFinalOutputSafety } from './utils/final-output.utils';
 import { sleep, isAbortError } from './utils/retry.utils';
 import {
   buildExhaustionPartialAnswer,
+  buildFinalOutputBlockedMessage,
   buildPromptInjectionBlockedMessage,
   buildToolCallCapMessage,
   buildWispaceScopeRedirectMessage,
@@ -388,6 +390,26 @@ export class LlmAgentService<TToolContext> {
             toolsCalledThisTurn.size > 0
               ? `[Đã tra cứu: ${[...toolsCalledThisTurn].join('; ')}]`
               : undefined;
+
+          // Final-output guardrail (#165): never deliver a reply that leaks
+          // system-prompt material or credential-shaped content — fail
+          // closed to a generic message.
+          const safety = checkFinalOutputSafety(sanitized);
+          if (safety.unsafe) {
+            logger.warn(
+              `LLM final output blocked reason=${safety.reason} externalUserId=${maskExternalId(
+                input.externalUserId,
+              )} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
+            );
+            const blockedText = buildFinalOutputBlockedMessage();
+            yield {
+              type: 'final_text',
+              text: blockedText,
+              reply: { text: blockedText, toolSummary },
+            };
+            return;
+          }
+
           yield {
             type: 'final_text',
             text: sanitized,
