@@ -71,6 +71,15 @@ export class WebhookInboundEventEntity {
   @Column({ name: 'next_retry_at', type: 'timestamptz', nullable: true })
   nextRetryAt: Date | null;
 
+  /**
+   * Ownership token assigned when the retry worker claims the row
+   * (`processing`). `markCompleted`/`markFailed`/`markProcessingAbandoned`
+   * require it, so a worker whose lease was stale-recovered can never
+   * overwrite the terminal state (#149).
+   */
+  @Column({ name: 'lease_token', type: 'varchar', length: 64, nullable: true })
+  leaseToken: string | null;
+
   @Column({ name: 'processed_at', type: 'timestamptz', nullable: true })
   processedAt: Date | null;
 
