@@ -36,6 +36,7 @@ describe('PlatformChatHistoryService', () => {
       get: jest.fn().mockResolvedValue(null),
       set: jest.fn().mockResolvedValue('OK'),
       del: jest.fn().mockResolvedValue(1),
+      eval: jest.fn().mockResolvedValue(1),
     };
     const configService = {
       get: (key: string) =>
@@ -49,7 +50,7 @@ describe('PlatformChatHistoryService', () => {
 
     await service.appendTurn('user-1', 'hello', 'hi there');
 
-    expect(nativeClient.set).toHaveBeenCalled();
+    expect(nativeClient.eval).toHaveBeenCalled();
   });
 
   it('does NOT silently downgrade to memory when Redis dies after boot (outage is loud)', async () => {
@@ -57,6 +58,7 @@ describe('PlatformChatHistoryService', () => {
       get: jest.fn().mockResolvedValue(null),
       set: jest.fn().mockResolvedValue('OK'),
       del: jest.fn().mockResolvedValue(1),
+      eval: jest.fn().mockResolvedValue(1),
     };
     const configService = {
       get: (key: string) =>
@@ -73,7 +75,7 @@ describe('PlatformChatHistoryService', () => {
 
     // Outage: Redis starts failing mid-flight — the request must FAIL LOUD,
     // never fall back to a per-process memory store with divergent history.
-    nativeClient.set.mockRejectedValue(new Error('Redis connection refused'));
+    nativeClient.eval.mockRejectedValue(new Error('Redis connection refused'));
     nativeClient.get.mockRejectedValue(new Error('Redis connection refused'));
 
     await expect(service.appendTurn('user-1', 'next', 'reply')).rejects.toThrow(

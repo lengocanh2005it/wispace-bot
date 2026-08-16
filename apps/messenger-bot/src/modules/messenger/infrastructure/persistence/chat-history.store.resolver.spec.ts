@@ -22,6 +22,7 @@ describe('ChatHistoryStoreResolver', () => {
               get: jest.fn().mockResolvedValue(null),
               set: jest.fn().mockResolvedValue('OK'),
               del: jest.fn(),
+              eval: jest.fn().mockResolvedValue(1),
             }
           : null,
     } as unknown as RedisClientPort;
@@ -39,6 +40,7 @@ describe('ChatHistoryStoreResolver', () => {
       get: jest.fn().mockResolvedValue(null),
       set: jest.fn().mockResolvedValue('OK'),
       del: jest.fn(),
+      eval: jest.fn().mockResolvedValue(1),
     };
     const redisClient = {
       isEnabled: () => available,
@@ -58,7 +60,7 @@ describe('ChatHistoryStoreResolver', () => {
     await resolver.appendTurn('psid-1', 'hi', 'hello');
 
     expect(resolver.resolveStoreKind()).toBe('redis');
-    expect(nativeClient.set).toHaveBeenCalled();
+    expect(nativeClient.eval).toHaveBeenCalled();
   });
 
   it('falls back to memory when redis configured but unavailable', () => {
