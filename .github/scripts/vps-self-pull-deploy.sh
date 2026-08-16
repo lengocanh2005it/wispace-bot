@@ -15,8 +15,9 @@ set -euo pipefail
 #
 # The git fetch + reset run INSIDE this script, after the deploy lock is held
 # (#172): a concurrent cron tick can never reset the checkout mid-deploy.
-# A failed fetch or a stale checkout fails closed with a timestamped ERROR
-# and a Telegram alert via the local Alertmanager (default route) instead of
+# Any failure before the deploy loop (fetch, reset, stale checkout, missing
+# clone dir) fails closed with a timestamped ERROR, a stall marker and a
+# Telegram alert via the local Alertmanager (default route) instead of
 # silently stalling (#144); the next cron tick retries.
 #
 # .env for each app is NOT touched here — Doppler webhook → each bot's
@@ -45,41 +46,65 @@ if ! flock -n 9; then
   exit 0
 fi
 
-cd "$REPO_DIR"
+current_sha() {
+  git rev-parse HEAD 2>/dev/null || echo unknown
+}
 
-notify_alert() { # summary description
-  local summary="$1" detail="$2"
+post_alert() { # annotations_json [ends_at]
+  local body="[{\"labels\":{\"alertname\":\"$STALL_ALERT\",\"severity\":\"critical\"},\"annotations\":$1"
+  if [ -n "${2:-}" ]; then body="$body,\"endsAt\":\"$2\""; fi
+  body="$body}]"
   curl -sf -X POST "$ALERTMANAGER_URL/api/v2/alerts" \
     -H 'Content-Type: application/json' \
-    -d "[{\"labels\":{\"alertname\":\"$STALL_ALERT\",\"severity\":\"critical\"},\"annotations\":{\"summary\":\"$summary\",\"description\":\"$detail\"}}]" \
-    >/dev/null 2>&1 || echo "WARN [$(date -Is)] Alertmanager notify failed (curl)" >&2
+    -d "$body" \
+    >/dev/null 2>&1
+}
+
+notify_stall() { # summary description
+  local summary="$1" detail="$2"
+  post_alert "{\"summary\":\"$summary\",\"description\":\"$detail\"}" \
+    || echo "WARN [$(date -Is)] Alertmanager notify failed (curl)" >&2
 }
 
 resolve_stall() {
-  curl -sf -X POST "$ALERTMANAGER_URL/api/v2/alerts" \
-    -H 'Content-Type: application/json' \
-    -d "[{\"labels\":{\"alertname\":\"$STALL_ALERT\",\"severity\":\"critical\"},\"annotations\":{},\"endsAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}]" \
-    >/dev/null 2>&1 || true
+  post_alert "{}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    || echo "WARN [$(date -Is)] Alertmanager resolve notify failed (curl)" >&2
 }
 
-if ! git fetch origin main; then
-  echo "ERROR [$(date -Is)] git fetch origin main failed — staying on $(git rev-parse HEAD 2>/dev/null || echo unknown)" >&2
-  echo "$(date -Is) fetch_failed $(git rev-parse HEAD 2>/dev/null || echo unknown)" > "$STALL_MARKER"
-  notify_alert \
-    "VPS self-pull stalled (git fetch failed)" \
-    "git fetch origin main failed at $(date -Is); repo stays at $(git rev-parse HEAD 2>/dev/null || echo unknown); next cron tick retries."
+write_stall_marker() { # reason
+  echo "$(date -Is) $1 $(current_sha)" > "$STALL_MARKER"
+}
+
+stall_exit() { # reason summary detail
+  local reason="$1" summary="$2" detail="$3"
+  echo "ERROR [$(date -Is)] $reason" >&2
+  write_stall_marker "$reason"
+  notify_stall "$summary" "$detail"
   exit 1
+}
+
+if ! cd "$REPO_DIR"; then
+  stall_exit "repo dir missing ($REPO_DIR)" \
+    "VPS self-pull stalled (repo dir missing)" \
+    "$REPO_DIR does not exist at $(date -Is) — re-clone per docs/project-overview.md §12."
 fi
 
-git reset --hard origin/main
+if ! git fetch origin main; then
+  stall_exit "git fetch origin main failed — staying on $(current_sha)" \
+    "VPS self-pull stalled (git fetch failed)" \
+    "git fetch origin main failed at $(date -Is); repo stays at $(current_sha); next cron tick retries."
+fi
 
-if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
-  echo "ERROR [$(date -Is)] checkout stale: HEAD=$(git rev-parse HEAD) origin/main=$(git rev-parse origin/main)" >&2
-  echo "$(date -Is) stale_checkout $(git rev-parse HEAD 2>/dev/null || echo unknown)" > "$STALL_MARKER"
-  notify_alert \
+if ! git reset --hard origin/main; then
+  stall_exit "git reset --hard origin/main failed" \
+    "VPS self-pull stalled (git reset failed)" \
+    "git reset failed at $(date -Is) after fetch; repo at $(current_sha)."
+fi
+
+if [ "$(git rev-parse HEAD 2>/dev/null)" != "$(git rev-parse origin/main 2>/dev/null)" ]; then
+  stall_exit "checkout stale: HEAD=$(current_sha) origin/main=$(git rev-parse origin/main 2>/dev/null || echo unknown)" \
     "VPS self-pull stalled (stale checkout)" \
-    "HEAD $(git rev-parse HEAD) != origin/main $(git rev-parse origin/main) after reset at $(date -Is)."
-  exit 1
+    "HEAD != origin/main after reset at $(date -Is)."
 fi
 
 if [ -f "$STALL_MARKER" ]; then
@@ -88,7 +113,7 @@ if [ -f "$STALL_MARKER" ]; then
   resolve_stall
 fi
 
-NEW_SHA=$(git rev-parse HEAD)
+NEW_SHA=$(current_sha)
 
 echo "$GHCR_PULL_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || true
 
