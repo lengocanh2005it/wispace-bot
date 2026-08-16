@@ -13,7 +13,11 @@ import type {
   ToolExecutorPort,
 } from '../ports';
 import type { LlmProviderAdapter } from '../provider/llm-provider.adapter';
-import type { LlmToolChatResponse } from '../provider/types';
+import type {
+  LlmMessage,
+  LlmToolChatRequest,
+  LlmToolChatResponse,
+} from '../provider/types';
 import type { LlmAgentReply } from '../types';
 
 /**
@@ -73,8 +77,16 @@ export interface EvalScriptedToolCall {
 }
 
 export interface EvalScriptRound {
-  /** Scripted parallel tool calls for this round. */
+  /**
+   * Scripted parallel tool calls for this round.
+   */
   toolCalls?: EvalScriptedToolCall[];
+  /**
+   * Assistant text accompanying the tool calls — the model's plan line for
+   * multi-intent requests ("Mình sẽ kiểm tra lịch rồi tạo bài tập mới nhé.").
+   * Must not be combined with `text`.
+   */
+  content?: string;
   /** Scripted final LLM text — must not be combined with toolCalls. */
   text?: string;
 }
@@ -207,6 +219,16 @@ function validateRound(round: unknown, index: number, errors: string[]): void {
   if (!hasToolCalls && !hasText) {
     errors.push(`script[${index}] must declare toolCalls or text`);
     return;
+  }
+  if (round.content !== undefined) {
+    if (!hasToolCalls) {
+      errors.push(`script[${index}].content (plan line) requires toolCalls`);
+    } else if (
+      typeof round.content !== 'string' ||
+      round.content.length === 0
+    ) {
+      errors.push(`script[${index}].content must be a non-empty string`);
+    }
   }
   if (hasText) return;
   const toolCalls = round.toolCalls as unknown[];
@@ -483,6 +505,9 @@ export function loadPromptFiles(
 export class ScriptedAdapter implements LlmProviderAdapter {
   callCount = 0;
 
+  /** The messages array of the most recent `chatWithTools` call. */
+  lastRequestMessages: LlmMessage[] = [];
+
   constructor(private readonly script: EvalScriptRound[]) {}
 
   readonly providerName = 'eval';
@@ -495,7 +520,8 @@ export class ScriptedAdapter implements LlmProviderAdapter {
     return 'eval-model';
   }
 
-  chatWithTools(): Promise<LlmToolChatResponse> {
+  chatWithTools(request: LlmToolChatRequest): Promise<LlmToolChatResponse> {
+    this.lastRequestMessages = request.messages;
     const round = this.script[this.callCount];
     this.callCount += 1;
     if (!round) {
@@ -518,7 +544,11 @@ export class ScriptedAdapter implements LlmProviderAdapter {
       arguments: JSON.stringify(call.args ?? {}),
     }));
     return Promise.resolve({
-      message: { role: 'assistant', toolCalls },
+      message: {
+        role: 'assistant',
+        content: round.content,
+        toolCalls,
+      },
       content: undefined,
       metadata: EVAL_METADATA,
     });
@@ -727,6 +757,19 @@ export async function runEvalFixture(
         failures.push(
           `grounding warnings: expected ${expectedWarnings} got ${groundingWarnings}`,
         );
+      }
+      // Plan step (#207 item 2): a scripted plan line (`content` on a tool
+      // round) must survive into the next round's messages — the loop must
+      // not drop the assistant message that accompanies tool calls.
+      const serializedMessages = JSON.stringify(adapter.lastRequestMessages);
+      for (const round of fixture.script) {
+        if (round.content !== undefined) {
+          if (!serializedMessages.includes(round.content)) {
+            failures.push(
+              `plan line "${round.content}" was dropped before the next round`,
+            );
+          }
+        }
       }
     }
   }
