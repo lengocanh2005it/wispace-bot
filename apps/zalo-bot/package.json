@@ -38,6 +38,7 @@
     "@wispace/database": "*",
       "@wispace/doppler-sync": "*",
     "@wispace/llm-agent": "*",
+    "@wispace/learner-profile": "*",
     "@wispace/ops-health": "*",
     "@wispace/reschedule-confirm": "*",
     "@wispace/student-report": "*",

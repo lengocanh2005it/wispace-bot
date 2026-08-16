@@ -51,8 +51,16 @@ import {
   ReportSendJobEntity,
   ScheduledReportClaimEntity,
   RescheduleConfirmationEntity,
+  LearnerProfileEntity,
   TypeormRescheduleStore,
 } from '@wispace/database';
+import {
+  LEARNER_PROFILE_STORE,
+  TypeOrmLearnerProfileStore,
+  createLearnerProfileRecorder,
+  createLearnerProfileSuffix,
+} from '@wispace/learner-profile';
+import type { LearnerProfileStorePort } from '@wispace/learner-profile';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 import { DiscordCalendarPort } from './infrastructure/adapters/discord-calendar.port';
 import { DiscordReschedulePort } from './infrastructure/adapters/discord-reschedule.port';
@@ -82,6 +90,7 @@ const REGISTER_REPORT_MESSAGE =
       ChatIdempotencyEntity,
       ScheduledReportClaimEntity,
       RescheduleConfirmationEntity,
+      LearnerProfileEntity,
     ]),
   ],
   providers: [
@@ -144,6 +153,10 @@ const REGISTER_REPORT_MESSAGE =
       ],
     },
     {
+      provide: LEARNER_PROFILE_STORE,
+      useClass: TypeOrmLearnerProfileStore,
+    },
+    {
       provide: PlatformAgentService,
       useFactory: (
         configService: ConfigService,
@@ -152,8 +165,13 @@ const REGISTER_REPORT_MESSAGE =
         usageRecorder: PlatformLlmUsageRecorderAdapter,
         safetyEventService: PlatformLlmSafetyEventAdapter,
         adapter: LlmProviderAdapter,
-      ) =>
-        new PlatformAgentService(
+        learnerProfileStore: LearnerProfileStorePort,
+      ) => {
+        const learnerProfileSuffix = createLearnerProfileSuffix(
+          learnerProfileStore,
+          'discord',
+        );
+        return new PlatformAgentService(
           configService,
           toolsService,
           historyService,
@@ -166,8 +184,16 @@ const REGISTER_REPORT_MESSAGE =
             // Single retry layer — retryWithBackoff in PlatformAgentService
             maxLlmRetries: 0,
             toolExecutionTimeoutMs: 35_000,
+            systemPromptSuffix: learnerProfileSuffix,
+            // Learner profile (#207 item 3): persist server-derived facts
+            // (band target, exam date) from successful tool results.
+            onToolResult: createLearnerProfileRecorder(
+              learnerProfileStore,
+              'discord',
+            ),
           },
-        ),
+        );
+      },
       inject: [
         ConfigService,
         PlatformAgentToolsService,
@@ -175,6 +201,7 @@ const REGISTER_REPORT_MESSAGE =
         PlatformLlmUsageRecorderAdapter,
         PlatformLlmSafetyEventAdapter,
         'LLM_PROVIDER_ADAPTER',
+        LEARNER_PROFILE_STORE,
       ],
     },
     {

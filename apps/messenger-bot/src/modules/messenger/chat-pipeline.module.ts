@@ -23,9 +23,17 @@ import {
   WispaceExerciseService,
 } from '@wispace/wispace-client';
 import {
+  LearnerProfileEntity,
   RescheduleConfirmationEntity,
   TypeormRescheduleStore,
 } from '@wispace/database';
+import {
+  LEARNER_PROFILE_STORE,
+  TypeOrmLearnerProfileStore,
+  createLearnerProfileRecorder,
+  createLearnerProfileSuffix,
+} from '@wispace/learner-profile';
+import type { LearnerProfileStorePort } from '@wispace/learner-profile';
 import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
@@ -80,6 +88,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       RescheduleConfirmationEntity,
+      LearnerProfileEntity,
     ]),
   ],
   providers: [
@@ -147,6 +156,10 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
       useExisting: MessengerAgentToolsService,
     },
     {
+      provide: LEARNER_PROFILE_STORE,
+      useClass: TypeOrmLearnerProfileStore,
+    },
+    {
       provide: PlatformAgentService,
       useFactory: (
         configService: ConfigService,
@@ -159,8 +172,13 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
         userDisplayNameService: UserDisplayNameService,
         metrics: MetricsService,
         llmExecution: LlmExecutionService,
-      ) =>
-        new PlatformAgentService(
+        learnerProfileStore: LearnerProfileStorePort,
+      ) => {
+        const learnerProfileSuffix = createLearnerProfileSuffix(
+          learnerProfileStore,
+          'messenger',
+        );
+        return new PlatformAgentService(
           configService,
           toolsService,
           historyService,
@@ -204,14 +222,23 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
                 unsafePlaceholder: 'Chào bạn nha',
               });
               const displayName = sanitized.text || 'Chào bạn nha';
-              return input.userId
+              const base = input.userId
                 ? `Học viên đã liên kết WISPACE (userId=${input.userId}). Tên gọi: ${displayName}.`
                 : `Học viên chưa liên kết WISPACE. Tên gọi: ${displayName}. Nhắc mở Messenger từ link trong app WISPACE nếu cần dữ liệu cá nhân.`;
+              const profileSection = await learnerProfileSuffix(input);
+              return profileSection ? `${base}\n\n${profileSection}` : base;
             },
+            // Learner profile (#207 item 3): persist server-derived facts
+            // (band target, exam date) from successful tool results.
+            onToolResult: createLearnerProfileRecorder(
+              learnerProfileStore,
+              'messenger',
+            ),
             tryFastReschedule: (ctx, userText) =>
               messengerTools.tryFastDefaultReschedule(ctx, userText),
           },
-        ),
+        );
+      },
       inject: [
         ConfigService,
         PlatformAgentToolsService,
@@ -223,6 +250,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
         UserDisplayNameService,
         MetricsService,
         LlmExecutionService,
+        LEARNER_PROFILE_STORE,
       ],
     },
     RedisChatQueueStore,

@@ -1,0 +1,40 @@
+{
+  "name": "@wispace/learner-profile",
+  "version": "0.0.1",
+  "description": "Compact per-learner facts (band target, exam date) sourced only from server-derived tool results, injected into chat prompts with freshness rules",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "lint": "eslint \"src/**/*.ts\" --fix",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "test": "jest --maxWorkers=50%"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/typeorm": "^11.0.0",
+    "@wispace/bot-common": "*",
+    "@wispace/database": "*",
+    "typeorm": "^0.3.20"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.0.0",
+    "ts-jest": "^29.2.5",
+    "prettier": "^3.4.2",
+    "eslint": "^9.18.0"
+  },
+  "jest": {
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": "src",
+    "testRegex": ".*\\.spec\\.ts$",
+    "transform": {
+      "^.+\\.(t|j)s$": "ts-jest"
+    },
+    "testEnvironment": "node"
+  }
+}

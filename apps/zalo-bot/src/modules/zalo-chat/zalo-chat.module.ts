@@ -51,8 +51,16 @@ import {
   DeliveryLogService,
   ScheduledReportClaimEntity,
   RescheduleConfirmationEntity,
+  LearnerProfileEntity,
   TypeormRescheduleStore,
 } from '@wispace/database';
+import {
+  LEARNER_PROFILE_STORE,
+  TypeOrmLearnerProfileStore,
+  createLearnerProfileRecorder,
+  createLearnerProfileSuffix,
+} from '@wispace/learner-profile';
+import type { LearnerProfileStorePort } from '@wispace/learner-profile';
 import {
   CleanupCronService,
   PlatformCleanupCronService,
@@ -84,6 +92,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       ZaloOauthStateEntity,
       ScheduledReportClaimEntity,
       RescheduleConfirmationEntity,
+      LearnerProfileEntity,
     ]),
   ],
   providers: [
@@ -183,6 +192,10 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       ],
     },
     {
+      provide: LEARNER_PROFILE_STORE,
+      useClass: TypeOrmLearnerProfileStore,
+    },
+    {
       provide: PlatformAgentService,
       useFactory: (
         configService: ConfigService,
@@ -191,8 +204,13 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         usageRecorder: PlatformLlmUsageRecorderAdapter,
         safetyEventService: PlatformLlmSafetyEventAdapter,
         adapter: LlmProviderAdapter,
-      ) =>
-        new PlatformAgentService(
+        learnerProfileStore: LearnerProfileStorePort,
+      ) => {
+        const learnerProfileSuffix = createLearnerProfileSuffix(
+          learnerProfileStore,
+          'zalo',
+        );
+        return new PlatformAgentService(
           configService,
           toolsService,
           historyService,
@@ -205,8 +223,16 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             // Single retry layer — retryWithBackoff in PlatformAgentService
             maxLlmRetries: 0,
             toolExecutionTimeoutMs: 35_000,
+            systemPromptSuffix: learnerProfileSuffix,
+            // Learner profile (#207 item 3): persist server-derived facts
+            // (band target, exam date) from successful tool results.
+            onToolResult: createLearnerProfileRecorder(
+              learnerProfileStore,
+              'zalo',
+            ),
           },
-        ),
+        );
+      },
       inject: [
         ConfigService,
         PlatformAgentToolsService,
@@ -214,6 +240,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         PlatformLlmUsageRecorderAdapter,
         PlatformLlmSafetyEventAdapter,
         'LLM_PROVIDER_ADAPTER',
+        LEARNER_PROFILE_STORE,
       ],
     },
     {
