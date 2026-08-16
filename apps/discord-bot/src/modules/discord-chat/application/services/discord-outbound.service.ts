@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   errorMessage,
+  isAbortError,
   maskExternalId,
   maskExternalIdInText,
 } from '@wispace/bot-common';
@@ -29,6 +30,35 @@ import { withRetry } from '@wispace/wispace-client';
 const DM_FAILURE_REASON_SEND = 'dm_send_error';
 const DM_FAILURE_REASON_MENU = 'menu_send_error';
 const DM_FAILURE_REASON_RESCHEDULE = 'reschedule_send_error';
+/** Network/unknown delivery outcome — the provider may have accepted the message (#156). */
+const DM_FAILURE_REASON_AMBIGUOUS = 'dm_send_ambiguous';
+
+/**
+ * Retry predicate for Discord DM sends (#156): retry only rate limits (429),
+ * server errors (5xx) and network-level failures (no numeric HTTP status).
+ * Never retry known 4xx (auth/validation — permanent) or cancellations.
+ */
+export function isDiscordRetryableError(error: unknown): boolean {
+  if (isAbortError(error)) {
+    return false;
+  }
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === 'number') {
+    return status === 429 || status >= 500;
+  }
+  // No numeric status: network/unknown failure — transient by definition.
+  return true;
+}
+
+/** True when the error carries no delivery verdict — the provider may have
+ * accepted the message before the failure (ambiguous outcome, #156). */
+export function isAmbiguousDeliveryError(error: unknown): boolean {
+  if (isAbortError(error)) {
+    return false;
+  }
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status !== 'number';
+}
 
 /**
  * Discord counterpart to Messenger's `MessageSenderPort` — sends by fetching
@@ -96,7 +126,13 @@ export class DiscordOutboundService {
         {
           maxRetries: 1,
           baseDelayMs: 1_000,
+          shouldRetry: isDiscordRetryableError,
           onRetry: (attempt, maxRetries, error) => {
+            // Network/unknown failures have no delivery verdict — the
+            // provider may have accepted the first attempt (#156).
+            if (isAmbiguousDeliveryError(error)) {
+              this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
+            }
             const errorMsg = maskExternalIdInText(
               errorMessage(error),
               discordUserId,

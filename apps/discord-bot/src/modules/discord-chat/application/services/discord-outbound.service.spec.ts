@@ -126,4 +126,67 @@ describe('DiscordOutboundService', () => {
       'reschedule_send_error',
     );
   });
+
+  it('#156: does NOT retry known 4xx API errors', async () => {
+    const fetch = jest
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('Forbidden'), { status: 403 }),
+      );
+    const metrics = buildMetricsStub();
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      undefined,
+      metrics,
+    );
+
+    await expect(service.sendText('discord-1', 'hello')).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith('dm_send_error');
+    expect(metrics.incDmDeliveryFailure).not.toHaveBeenCalledWith(
+      'dm_send_ambiguous',
+    );
+  });
+
+  it('#156: retries 5xx server errors', async () => {
+    const fetch = jest
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('Internal Server Error'), { status: 500 }),
+      );
+    const metrics = buildMetricsStub();
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      undefined,
+      metrics,
+    );
+
+    await expect(service.sendText('discord-1', 'hello')).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(metrics.incDmDeliveryFailure).not.toHaveBeenCalledWith(
+      'dm_send_ambiguous',
+    );
+  });
+
+  it('#156: retries network failures and counts them as ambiguous (delivery outcome unknown)', async () => {
+    const fetch = jest.fn().mockRejectedValue(new Error('fetch failed'));
+    const metrics = buildMetricsStub();
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      undefined,
+      metrics,
+    );
+
+    await expect(service.sendText('discord-1', 'hello')).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
+      'dm_send_ambiguous',
+    );
+  });
 });
