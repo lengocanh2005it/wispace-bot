@@ -114,8 +114,16 @@ describe('PlatformAgentService', () => {
     const exerciseUrl =
       'https://testfrontend.aihubproduction.com/my-roadmap?sequenceIndex=8';
     mockLlmReply.mockImplementation(
-      (_request: unknown, context: { precreatedExerciseUrl?: string }) => {
-        context.precreatedExerciseUrl = exerciseUrl;
+      (
+        _request: unknown,
+        context: { pinnedFacts?: Array<{ key: string; text: string }> },
+      ) => {
+        context.pinnedFacts = [
+          {
+            key: 'precreated_exercise_url',
+            text: `Mở bài tập tại đây: ${exerciseUrl}`,
+          },
+        ];
         return { text: 'Mình đã tạo bài tập tiếp theo cho bạn.' };
       },
     );

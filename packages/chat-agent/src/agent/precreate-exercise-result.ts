@@ -8,6 +8,7 @@ import {
   type PrecreateExerciseResult,
   type WispaceExerciseService,
 } from '@wispace/wispace-client';
+import { buildExerciseUrlFact } from './pinned-facts';
 import type { PlatformAgentToolContext } from './platform-agent.types';
 
 type PrecreateExerciseService = Pick<
@@ -28,7 +29,10 @@ export function normalizePrecreateExerciseResult(
 
   if (result.status === 'created' || result.status === 'already_exists') {
     const exerciseUrl = readHttpsUrl(result.exerciseUrl);
-    ctx.precreatedExerciseUrl = exerciseUrl;
+    ctx.pinnedFacts = [
+      ...(ctx.pinnedFacts ?? []),
+      buildExerciseUrlFact(exerciseUrl),
+    ];
     return {
       status: result.status,
       exerciseUrl,

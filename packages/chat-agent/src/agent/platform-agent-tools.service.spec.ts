@@ -234,7 +234,7 @@ describe('PlatformAgentToolsService', () => {
         expect.any(Object),
       );
       expect(ctx.privateDataFetched).toBe(true);
-      expect(ctx.precreatedExerciseUrl).toContain('sequenceIndex=8');
+      expect(ctx.pinnedFacts?.[0]?.text).toContain('sequenceIndex=8');
       expect(result).toMatchObject({
         status: 'created',
         exerciseUrl: expect.any(String) as string,

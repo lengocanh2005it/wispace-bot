@@ -1,5 +1,6 @@
 import type { StageInput, StageResult } from '@wispace/reschedule-confirm';
 import type { AgentMetricsPort, LlmExecutionPort } from '@wispace/llm-agent';
+import type { PinnedFact } from './pinned-facts';
 
 /**
  * Platform-neutral agent context — Discord sets `isServerChannel` +
@@ -17,8 +18,12 @@ export interface PlatformAgentToolContext {
    * of the server channel; Zalo ignores it.
    */
   privateDataFetched?: boolean;
-  /** Exact validated URL returned by the next-roadmap-exercise tool. */
-  precreatedExerciseUrl?: string;
+  /**
+   * Server-derived facts to deterministically merge into the final reply
+   * (generic pinned-facts mechanism, #207 item 6). Tools push facts here —
+   * the service appends any fact missing from the model's text.
+   */
+  pinnedFacts?: PinnedFact[];
   /**
    * Platform-specific quick replies / buttons collected by tools (Messenger
    * rich follow-ups). Optional — Discord/Zalo never fill it.
