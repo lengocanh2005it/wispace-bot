@@ -601,6 +601,35 @@ describe('LlmAgentService', () => {
       expect(toolMessages[0]?.content).toContain('https://wispace.example/1');
     });
 
+    it('blocks an LLM reply leaking system-prompt material at the final-output guardrail (#165)', async () => {
+      const adapter = makeAdapter([
+        makeTextResponse(
+          'You are the WISPACE assistant — an IELTS Writing coach. When NOT to call tools: greetings only.',
+        ),
+      ]);
+      const { service } = buildService({ adapter });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(result.text).toContain('Mình chưa thể gửi nội dung này');
+      expect(result.text).not.toContain('WISPACE assistant');
+      expect(result.toolSummary).toBeUndefined();
+    });
+
+    it('keeps a normal reply and keeps toolSummary when tools were called (#165)', async () => {
+      const adapter = makeAdapter([
+        makeToolCallResponse('get_user_goals'),
+        makeTextResponse('Bạn cần luyện Task 1 nhé.'),
+      ]);
+      const execute = jest.fn().mockResolvedValue({ goals: [] });
+      const { service } = buildService({ adapter, execute });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(result.text).toBe('Bạn cần luyện Task 1 nhé.');
+      expect(result.toolSummary).toBe('[Đã tra cứu: get_user_goals]');
+    });
+
     it('counts serialized tool-call arguments in the trim budget (#152)', async () => {
       const seen: Array<
         Array<{

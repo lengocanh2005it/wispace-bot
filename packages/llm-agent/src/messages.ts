@@ -35,6 +35,15 @@ export function buildToolCallCapMessage(): string {
 }
 
 /**
+ * Fail-closed reply when the final-output guardrail detects system-prompt
+ * or credential leakage in an LLM reply (#165) — the suspect text is never
+ * sent to the learner.
+ */
+export function buildFinalOutputBlockedMessage(): string {
+  return 'Mình chưa thể gửi nội dung này. Bạn thử lại nhé.';
+}
+
+/**
  * Learner-friendly labels for tools that returned data — used by the
  * exhaustion partial answer. Server-controlled, never raw tool names.
  */
