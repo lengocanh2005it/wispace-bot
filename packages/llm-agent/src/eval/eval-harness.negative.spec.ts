@@ -20,7 +20,8 @@ describe('eval harness self-checks (negative assertions)', () => {
     const fixture = JSON.parse(
       readFileSync(join(__dirname, '../../fixtures/greeting.json'), 'utf8'),
     ) as Record<string, unknown>;
-    fixture.promptHash = 'a'.repeat(64);
+    const promptFiles = fixture.promptFiles as Array<Record<string, unknown>>;
+    promptFiles[0] = { ...promptFiles[0], hash: 'a'.repeat(64) };
     const result = await runEvalFixture(fixture);
     expect(result.ok).toBe(false);
     expect(result.failures.join('\n')).toContain('prompt hash mismatch');

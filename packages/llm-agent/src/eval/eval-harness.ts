@@ -93,14 +93,24 @@ export interface EvalExpectation {
   groundingWarnings?: number;
 }
 
+export interface EvalPromptFile {
+  /** Path relative to the repo root — must point at a real prompt file. */
+  path: string;
+  /** sha256 hex of the file's LF-normalized content. */
+  hash: string;
+}
+
 export interface EvalFixture {
   /** kebab-case id, shown in test output. */
   name: string;
   description?: string;
-  /** Path relative to the repo root — must point at a real prompt file. */
-  promptPath: string;
-  /** sha256 hex of the prompt file's raw content. */
-  promptHash: string;
+  /**
+   * Real prompt files this scenario runs against (e.g. the shared chat core
+   * `packages/llm-agent/src/chat-system-prompt.ts` + a platform overlay),
+   * composed with `\n\n` exactly like `PlatformAgentService.buildSystemPrompt`.
+   * Hashes are of LF-normalized content, so checkouts with CRLF still match.
+   */
+  promptFiles: EvalPromptFile[];
   /** Optional suffix appended to the system prompt (e.g. linkage note). */
   systemPromptSuffix?: string;
   userText: string;
@@ -240,13 +250,28 @@ export function parseFixture(
   if (raw.description !== undefined && typeof raw.description !== 'string') {
     errors.push('description must be a string');
   }
-  const promptPath = raw.promptPath;
-  if (typeof promptPath !== 'string' || promptPath.length === 0) {
-    errors.push('promptPath is required');
-  }
-  const promptHash = raw.promptHash;
-  if (typeof promptHash !== 'string' || !/^[0-9a-f]{64}$/i.test(promptHash)) {
-    errors.push('promptHash must be a sha256 hex string (64 chars)');
+  const promptFiles = raw.promptFiles;
+  if (!Array.isArray(promptFiles) || promptFiles.length === 0) {
+    errors.push('promptFiles must be a non-empty array of { path, hash }');
+  } else {
+    for (const [i, file] of promptFiles.entries()) {
+      if (
+        !isRecord(file) ||
+        typeof file.path !== 'string' ||
+        file.path.length === 0
+      ) {
+        errors.push(`promptFiles[${i}].path must be a non-empty string`);
+      }
+      if (
+        !isRecord(file) ||
+        typeof file.hash !== 'string' ||
+        !/^[0-9a-f]{64}$/i.test(file.hash)
+      ) {
+        errors.push(
+          `promptFiles[${i}].hash must be a sha256 hex string (64 chars)`,
+        );
+      }
+    }
   }
   if (
     raw.systemPromptSuffix !== undefined &&
@@ -362,8 +387,10 @@ export function parseFixture(
       name: String(name),
       description:
         typeof raw.description === 'string' ? raw.description : undefined,
-      promptPath: String(promptPath),
-      promptHash: String(promptHash),
+      promptFiles: (raw.promptFiles as EvalPromptFile[]).map((file) => ({
+        path: String(file.path),
+        hash: String(file.hash).toLowerCase(),
+      })),
       systemPromptSuffix:
         typeof raw.systemPromptSuffix === 'string'
           ? raw.systemPromptSuffix
@@ -392,38 +419,59 @@ export type PromptLoadResult =
   | { ok: true; content: string }
   | { ok: false; error: string };
 
-export function loadPrompt(
-  promptPath: string,
-  promptHash: string,
-): PromptLoadResult {
-  const resolved = resolvePromptPath(promptPath);
+/**
+ * Reads one prompt file and verifies its LF-normalized sha256. Line endings
+ * are normalized (`\r\n` → `\n`) before hashing so the fixture hash matches
+ * regardless of whether the checkout uses CRLF (Windows) or LF (CI).
+ */
+export function loadPrompt(path: string, hash: string): PromptLoadResult {
+  const resolved = resolvePromptPath(path);
   const relativePath = relative(REPO_ROOT, resolved);
   if (relativePath.startsWith('..') || relativePath.startsWith('.')) {
     return {
       ok: false,
-      error: `promptPath "${promptPath}" escapes the repo root`,
+      error: `promptPath "${path}" escapes the repo root`,
     };
   }
-  let content: string;
+  let raw: string;
   try {
-    content = readFileSync(resolved, 'utf8');
+    raw = readFileSync(resolved, 'utf8');
   } catch {
-    return { ok: false, error: `prompt file not found: ${promptPath}` };
+    return { ok: false, error: `prompt file not found: ${path}` };
   }
+  const content = raw.replace(/\r\n/g, '\n');
   const actual = sha256Hex(content);
-  if (actual !== promptHash.toLowerCase()) {
+  if (actual !== hash.toLowerCase()) {
     return {
       ok: false,
       error: [
-        `prompt hash mismatch for ${promptPath}`,
-        `  fixture expects ${promptHash}`,
+        `prompt hash mismatch for ${path}`,
+        `  fixture expects ${hash}`,
         `  actual is      ${actual}`,
         'The prompt changed — re-validate the fixture expected behavior,',
-        'then update promptHash (and the script) deliberately.',
+        'then update the hash (and the script) deliberately.',
       ].join('\n'),
     };
   }
   return { ok: true, content };
+}
+
+/**
+ * Loads all prompt files a fixture depends on and composes them with `\n\n`,
+ * mirroring `PlatformAgentService.buildSystemPrompt` (core + overlay).
+ */
+export function loadPromptFiles(
+  promptFiles: EvalPromptFile[],
+): PromptLoadResult {
+  const parts: string[] = [];
+  for (const file of promptFiles) {
+    const loaded = loadPrompt(file.path, file.hash);
+    if (!loaded.ok) {
+      return loaded;
+    }
+    parts.push(loaded.content);
+  }
+  return { ok: true, content: parts.join('\n\n') };
 }
 
 /**
@@ -555,7 +603,7 @@ export async function runEvalFixture(
   }
   const fixture = parsed.fixture;
 
-  const prompt = loadPrompt(fixture.promptPath, fixture.promptHash);
+  const prompt = loadPromptFiles(fixture.promptFiles);
   if (!prompt.ok) {
     return {
       name: fixture.name,

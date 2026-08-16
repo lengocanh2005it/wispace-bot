@@ -1,8 +1,16 @@
 {
   "name": "multi-tool-calendar-then-exercise",
   "description": "Compound request resolves sequentially: calendar first, then exercise creation — tool order is preserved and visible in toolSummary.",
-  "promptPath": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
-  "promptHash": "ABB28F9DD66C87DFF3AB9811B0C6742531364063CF2EAB3D537C3FB63FA9C9F6",
+  "promptFiles": [
+    {
+      "path": "packages/llm-agent/src/chat-system-prompt.ts",
+      "hash": "80e6f8a537f70d376a4bc94dce3ba5ad66a7d6c61be7d066cece22131d74d60b"
+    },
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "4888b2923716995b11505ce96ffd33a694e0ef06e7634feac3036cd6b9f4d0ea"
+    }
+  ],
   "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1004).",
   "userText": "xem lịch học của mình rồi tạo bài tập mới nhé",
   "externalUserId": "eval-multi-tool-0004",
