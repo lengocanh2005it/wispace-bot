@@ -66,7 +66,7 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
   {
     name: 'list_study_calendar_entries',
     description:
-      'Liệt kê lịch học UserCalendar (calendarId, scheduledTimeLabel). timeRange=upcoming (mặc định) cho lịch sắp tới và đổi lịch; past cho lịch đã qua; all cho cả hai. Dùng tool này (không dùng get_upcoming_study_sessions) khi đổi lịch.',
+      'Liệt kê lịch học UserCalendar (calendarId, scheduledTimeLabel). timeRange=upcoming (mặc định) cho lịch sắp tới và đổi lịch; past cho lịch đã qua; all cho cả hai. Học viên hỏi lịch đã qua/history → timeRange=past hoặc all (mặc định lấy trong 90 ngày gần). Không từ chối khi học viên hỏi lịch quá khứ — dữ liệu lấy từ UserCalendar. Dùng tool này (không dùng get_upcoming_study_sessions) khi đổi lịch.',
     parameters: {
       type: 'object',
       properties: {
@@ -92,7 +92,7 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
   {
     name: 'reschedule_study_session',
     description:
-      'Luôn gọi list_study_calendar_entries trước để lấy calendarId. Sau đó chuẩn bị dời buổi học (gửi nút xác nhận cho học viên; chỉ thực hiện sau khi bấm Xác nhận). default_next_day_same_time = cùng giờ, +1 ngày so với buổi đang dời (buổi ngày mai → ngày kia). explicit khi học viên nêu rõ ngày/giờ mới.',
+      'Luôn gọi list_study_calendar_entries trước để lấy calendarId. Tool KHÔNG đổi lịch ngay — chỉ gửi yêu cầu xác nhận (nút hoặc keyword tùy platform); lịch chỉ thay đổi sau khi học viên xác nhận. Sau khi gọi: báo ngắn gọn đã gửi yêu cầu xác nhận; KHÔNG nói «đã dời» cho tới khi học viên xác nhận (kết quả không về trong cùng lượt tool). Chỉ đúng 1 buổi học và học viên muốn dời mà không nêu ngày/giờ mới → schedulingMode=default_next_day_same_time (cùng giờ, +1 ngày so với buổi đang dời; buổi ngày mai → ngày kia). Nhiều buổi học → hỏi buổi nào (vd "buổi ngày mai", "buổi 15/6") dựa trên scheduledTimeLabel trong danh sách. Học viên không nêu ngày/giờ mới rõ ràng → default_next_day_same_time; nêu rõ ngày/giờ → explicit kèm newLocalDate (YYYY-MM-DD) và/hoặc newTime (HH:mm).',
     parameters: {
       type: 'object',
       properties: {
@@ -124,7 +124,7 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
   {
     name: 'preview_next_study_reminder',
     description:
-      'Chỉ dùng khi học viên TỰ yêu cầu xem trước nội dung tin nhắn nhắc. Không gọi sau khi xem lịch học.',
+      'Chỉ dùng khi học viên TỰ yêu cầu xem trước nội dung tin nhắn nhắc buổi học. Không gọi sau khi xem lịch học; không gọi để xem trước tin nhắn nhắc tự động (reminderNotice) khi tool lịch trả về — lúc đó chỉ nhắc lại đúng nội dung reminderNotice.',
     parameters: {
       type: 'object',
       properties: {},
@@ -144,7 +144,7 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
   {
     name: 'precreate_next_exercise',
     description:
-      'Chỉ gọi khi học viên yêu cầu rõ ràng tạo hoặc nhận một bài tập mới tiếp theo trong roadmap. Không gọi nếu học viên chọn taskType, exerciseTopic, topic hoặc difficulty; tool này không nhận tham số lựa chọn.',
+      'Chỉ gọi khi học viên yêu cầu rõ ràng tạo hoặc nhận một bài tập mới tiếp theo trong roadmap (vd "tạo bài tập cho mình", "cho mình bài tập mới"). Không gọi nếu học viên chọn taskType, exerciseTopic, topic hoặc difficulty; tool này không nhận tham số lựa chọn.',
     parameters: {
       type: 'object',
       properties: {},

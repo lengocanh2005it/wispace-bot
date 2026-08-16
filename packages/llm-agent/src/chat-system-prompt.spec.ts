@@ -6,10 +6,15 @@ describe('CHAT_SYSTEM_PROMPT_CORE', () => {
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('OUT-OF-SCOPE');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('When NOT to call tools');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('never fabricate');
-    expect(CHAT_SYSTEM_PROMPT_CORE).toContain('precreate_next_exercise');
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain('Multi-intent requests');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('General rules');
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain('reminderNotice');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('Rescheduling');
-    expect(CHAT_SYSTEM_PROMPT_CORE).toContain('schedulingMode=explicit');
+    // Cross-tool coordination stays in the core; per-tool "when to use"
+    // guidance lives in the tool schema descriptions (#206).
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain(
+      'Use ONLY list_study_calendar_entries',
+    );
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('你好');
   });
 
@@ -20,7 +25,6 @@ describe('CHAT_SYSTEM_PROMPT_CORE', () => {
     );
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('chưa có roadmap');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('đã hoàn thành toàn bộ bài');
-    expect(CHAT_SYSTEM_PROMPT_CORE).toContain('«đã dời»');
   });
 
   it('does not name any platform', () => {
