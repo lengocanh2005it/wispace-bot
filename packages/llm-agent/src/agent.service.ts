@@ -10,6 +10,7 @@ import { isObviouslyOffTopic } from './utils/scope.utils';
 import { sanitizeReplyText } from './utils/text.utils';
 import { sleep, isAbortError } from './utils/retry.utils';
 import {
+  buildExhaustionPartialAnswer,
   buildPromptInjectionBlockedMessage,
   buildWispaceScopeRedirectMessage,
   buildGroundingBlockedMessage,
@@ -448,14 +449,14 @@ export class LlmAgentService<TToolContext> {
       }
     }
 
-    // Exhausted all rounds without a final text reply
+    // Exhausted all rounds without a final text reply — give a partial
+    // answer listing the grounded data actually retrieved (#207 item 4).
     metrics.llmRoundOutcomeInc(FEATURE, 'exhausted');
     logger.warn(
       `LLM agent exhausted maxToolRounds=${this.getMaxToolRounds()} externalUserId=${maskExternalId(
         input.externalUserId,
       )} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
     );
-    const toolList = [...toolsCalledThisTurn].join(', ') || 'không có';
     const toolSummary =
       toolsCalledThisTurn.size > 0
         ? `[Đã tra cứu: ${[...toolsCalledThisTurn].join('; ')}]`
@@ -463,7 +464,7 @@ export class LlmAgentService<TToolContext> {
     yield {
       type: 'done',
       reply: {
-        text: `Trợ lý đã tra cứu thông tin (${toolList}) nhưng chưa thể tổng hợp kết quả. Bạn vui lòng thử lại hoặc đặt câu hỏi cụ thể hơn nhé.`,
+        text: buildExhaustionPartialAnswer([...groundedToolsThisTurn]),
         exhausted: true,
         toolSummary,
       },
