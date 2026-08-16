@@ -563,6 +563,15 @@ The shared Dockerfile pins base/action images by digest, prunes the Turborepo to
 
 **VPS self-pull instead:** a cron job on the VPS runs [`.github/scripts/vps-self-pull-deploy.sh`](../.github/scripts/vps-self-pull-deploy.sh) every few minutes — `git fetch`/`reset` a local clone, check GHCR for an image tagged with the new commit SHA, and if published, run the existing [`vps-deploy.sh`](../.github/scripts/vps-deploy.sh) (unchanged: blue-green swap, health check, migrations, nginx switch). All outbound from the VPS, so the inbound edge-filter never applies. One-time setup (git clone + crontab entry + `GHCR_USER`/`GHCR_PULL_TOKEN`) is documented in the script's header comment.
 
+The `git fetch`/`reset` run **inside the script, after the deploy lock is held** (#172) — a concurrent cron tick can never reset the checkout mid-deploy. A failed fetch or a stale checkout fails closed with a timestamped `ERROR` in `~/vps-self-pull-deploy.log` and a **Telegram alert via the local Alertmanager** (`vps_self_pull_stall`, default route) instead of silently stalling (#144); the next tick (2 min) retries and posts an alert `resolved` once healthy.
+
+**Recovery when the self-pull stalls** (bots N commits behind, `git fetch` failing silently in the past): run manually on the VPS —
+
+```bash
+cd ~/wispace-bot-src && git fetch origin main && git reset --hard origin/main
+source ~/.ghcr-token && bash .github/scripts/vps-self-pull-deploy.sh
+```
+
 `.env` sync is separate: run the manual **Sync production env** workflow. Bot containers do not mount `.env` or `/var/run/docker.sock`; this keeps production secrets and the Docker host outside the application trust boundary.
 
 | GitHub Secret | Purpose |

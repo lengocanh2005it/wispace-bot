@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# Concurrency + failure-path tests for vps-self-pull-deploy.sh (#144/#172).
+#
+# Self-contained: fakes git/docker/curl via PATH (fake repo with .git refs);
+# requires only bash + flock. Run: bash .github/scripts/tests/vps-self-pull-deploy.test.sh
+set -euo pipefail
+
+SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/vps-self-pull-deploy.sh"
+TEST_ROOT="$(mktemp -d)"
+trap 'rm -rf "$TEST_ROOT"' EXIT
+
+SHA_A="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+SHA_B="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+FAILED=0
+
+fail() { echo "FAIL: $1" >&2; FAILED=1; }
+pass() { echo "  ok: $1"; }
+
+# --- fixtures ---------------------------------------------------------------
+make_env() { # name -> creates fake repo/PATH-fakes/state dirs; prints dir
+  local dir="$TEST_ROOT/$1"
+  mkdir -p "$dir/repo/.git" "$dir/repo/apps/messenger-bot" "$dir/repo/apps/discord-bot" \
+    "$dir/repo/apps/zalo-bot" "$dir/repo/.github/scripts" \
+    "$dir/repo/deploy/nginx/upstreams" "$dir/bin" "$dir/state" "$dir/target" "$dir/upstreams"
+  for app in messenger-bot discord-bot zalo-bot; do
+    printf 'services: {}\n' > "$dir/repo/apps/$app/docker-compose.prod.yml"
+    printf 'server 127.0.0.1:1;\n' > "$dir/repo/deploy/nginx/upstreams/$app.conf"
+  done
+  cat > "$dir/repo/.github/scripts/vps-deploy.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "FAKE vps-deploy ${APP_NAME:-unknown}" >> "${FAKE_DEPLOY_LOG:?}"
+echo "locked" > "${FAKE_DEPLOY_STARTED:?}"
+[ -n "${FAKE_DEPLOY_SLEEP:-}" ] && sleep "$FAKE_DEPLOY_SLEEP"
+exit 0
+STUB
+  chmod +x "$dir/repo/.github/scripts/vps-deploy.sh"
+
+  echo "$SHA_A" > "$dir/repo/.git/HEAD"
+  echo "$SHA_A" > "$dir/repo/.git/origin-main"
+
+  cat > "$dir/bin/git" <<FAKE
+#!/usr/bin/env bash
+echo "git \$*" >> "\${GIT_LOG:?}"
+case "\$1" in
+  fetch)
+    [ -z "\${FAKE_FETCH_FAIL:-}" ] || { echo "fake fetch fail" >&2; exit 1; }
+    echo "$SHA_B" > "\${FAKE_REPO:?}/.git/origin-main"
+    ;;
+  reset)
+    [ -n "\${FAKE_RESET_STALE:-}" ] || cat "\${FAKE_REPO:?}/.git/origin-main" > "\${FAKE_REPO:?}/.git/HEAD"
+    ;;
+  rev-parse)
+    if [ "\${2:-}" = "origin/main" ]; then cat "\${FAKE_REPO:?}/.git/origin-main"; else cat "\${FAKE_REPO:?}/.git/HEAD"; fi
+    ;;
+esac
+FAKE
+  chmod +x "$dir/bin/git"
+
+  cat > "$dir/bin/docker" <<'FAKE'
+#!/usr/bin/env bash
+echo "docker $1" >> "${DOCKER_LOG:?}"
+[ "$1" = "login" ] || [ "$1" = "manifest" ]
+FAKE
+  chmod +x "$dir/bin/docker"
+
+  cat > "$dir/bin/curl" <<'FAKE'
+#!/usr/bin/env bash
+echo "curl $*" >> "${CURL_LOG:?}"
+printf '%s' "$*" > "${CURL_BODY:?}"
+exit 0
+FAKE
+  chmod +x "$dir/bin/curl"
+
+  echo "$dir"
+}
+
+run_script() { # dir [EXTRA_ENV=..]... -> runs the script, echoes exit code
+  local dir="$1"; shift
+  (
+    export REPO_DIR="$dir/repo" STATE_DIR="$dir/state" LOCK_FILE="$dir/lock" \
+      TARGET_BASE_DIR="$dir/target" NGINX_UPSTREAM_DIR="$dir/upstreams" \
+      ALERTMANAGER_URL="http://fake-alertmanager" GHCR_USER="u" GHCR_PULL_TOKEN="t" \
+      GIT_LOG="$dir/git.log" DOCKER_LOG="$dir/docker.log" CURL_LOG="$dir/curl.log" \
+      CURL_BODY="$dir/curl.body" FAKE_REPO="$dir/repo" FAKE_DEPLOY_LOG="$dir/deploy.log" \
+      FAKE_DEPLOY_STARTED="$dir/deploy.started" \
+      PATH="$dir/bin:$PATH"
+    for extra in "$@"; do export "$extra"; done
+    bash "$SCRIPT"
+  ) > "$dir/run.out" 2>&1
+  echo $?
+}
+
+# --- tests -------------------------------------------------------------------
+echo "Test 1: git fetch failure -> ERROR log, no reset, no deploy, alert + marker"
+dir=$(make_env fetch-fail)
+code=$(run_script "$dir" FAKE_FETCH_FAIL=1)
+[ "$code" -ne 0 ] || fail "expected non-zero exit, got $code"
+grep -q "git fetch origin main failed" "$dir/run.out" || fail "missing ERROR log"
+grep -q "^git fetch" "$dir/git.log" || fail "fetch not called"
+grep -q "^git reset" "$dir/git.log" && fail "reset must not run after failed fetch"
+grep -q "curl -sf -X POST" "$dir/curl.log" || fail "alert not posted"
+[ -f "$dir/state/stall" ] || fail "stall marker missing"
+[ ! -f "$dir/deploy.log" ] || fail "deploy ran despite fetch failure"
+pass "fetch failure handled"
+
+echo "Test 2: stale checkout after reset -> ERROR log, no deploy, alert"
+dir=$(make_env stale-checkout)
+code=$(run_script "$dir" FAKE_RESET_STALE=1)
+[ "$code" -ne 0 ] || fail "expected non-zero exit, got $code"
+grep -q "checkout stale" "$dir/run.out" || fail "missing stale ERROR log"
+[ ! -f "$dir/deploy.log" ] || fail "deploy ran despite stale checkout"
+grep -q "curl -sf -X POST" "$dir/curl.log" || fail "alert not posted"
+pass "stale checkout handled"
+
+echo "Test 3: success path -> fetch+reset, 3 deploys, state files, no alert"
+dir=$(make_env success)
+code=$(run_script "$dir")
+[ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
+grep -q "^git fetch" "$dir/git.log" || fail "fetch not called"
+grep -q "^git reset" "$dir/git.log" || fail "reset not called"
+[ "$(grep -c '^FAKE vps-deploy' "$dir/deploy.log")" -eq 3 ] || fail "expected 3 deploys: $(cat "$dir/deploy.log" 2>/dev/null)"
+for app in messenger-bot discord-bot zalo-bot; do
+  [ "$(cat "$dir/state/$app.sha")" = "$SHA_B" ] || fail "$app state sha != $SHA_B"
+done
+[ ! -f "$dir/curl.log" ] || fail "alert should not be posted on success"
+pass "success path"
+
+echo "Test 4: concurrency -> second run skips, no second fetch/reset mid-deploy"
+dir=$(make_env concurrency)
+run_script "$dir" FAKE_DEPLOY_SLEEP=3 >/dev/null 2>&1 &
+bg_pid=$!
+for _ in $(seq 1 50); do
+  [ -f "$dir/deploy.started" ] && break
+  sleep 0.1
+done
+[ -f "$dir/deploy.started" ] || fail "first run never acquired the deploy lock"
+code2=$(run_script "$dir")
+wait "$bg_pid" || true
+[ "$code2" -eq 0 ] || fail "second run should exit 0, got $code2"
+grep -q "Another self-pull run is still in progress" "$dir/run.out" || fail "second run did not report skip"
+[ "$(grep -c '^git fetch' "$dir/git.log")" -eq 1 ] || fail "expected exactly 1 fetch (second run must not fetch/reset under lock)"
+[ "$(grep -c '^git reset' "$dir/git.log")" -eq 1 ] || fail "expected exactly 1 reset"
+[ "$(grep -c '^FAKE vps-deploy' "$dir/deploy.log")" -eq 3 ] || fail "first run deploys incomplete"
+pass "concurrency lock respected"
+
+echo "Test 5: stall recovery -> marker cleared + resolved alert posted"
+dir=$(make_env recovery)
+echo "2026-08-16T00:00:00+07:00 fetch_failed $SHA_A" > "$dir/state/stall"
+code=$(run_script "$dir")
+[ "$code" -eq 0 ] || fail "expected exit 0, got $code"
+[ ! -f "$dir/state/stall" ] || fail "stall marker not cleared"
+grep -q "Recovered from previous stall" "$dir/run.out" || fail "recovery not logged"
+grep -q "endsAt" "$dir/curl.body" || fail "resolved alert not posted"
+pass "stall recovery"
+
+[ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
+exit "$FAILED"
