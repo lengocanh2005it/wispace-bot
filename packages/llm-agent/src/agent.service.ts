@@ -505,6 +505,11 @@ export class LlmAgentService<TToolContext> {
     let total = 0;
     for (const message of messages) {
       total += message.content?.length ?? 0;
+      for (const call of message.toolCalls ?? []) {
+        // Serialized tool-call arguments count against the budget too —
+        // oversized args must not bypass the intended context cap (#152).
+        total += call.arguments?.length ?? 0;
+      }
     }
 
     while (total > budget && messages.length > loopStartIndex) {
@@ -515,6 +520,9 @@ export class LlmAgentService<TToolContext> {
       const dropIndex = assistantIndex === -1 ? loopStartIndex : assistantIndex;
       const removed = messages.splice(dropIndex, 1)[0];
       total -= removed?.content?.length ?? 0;
+      for (const call of removed?.toolCalls ?? []) {
+        total -= call.arguments?.length ?? 0;
+      }
 
       if (removed?.toolCalls?.length) {
         // Drop the tool results that followed this frame (they reference its
