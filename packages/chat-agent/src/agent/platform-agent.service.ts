@@ -28,6 +28,7 @@ import type {
   PlatformAgentToolContext,
   PlatformToolExecutorPort,
 } from './platform-agent.types';
+import { pinFactsToReply } from './pinned-facts';
 
 const FEATURE = 'FREE_FORM_CHAT';
 
@@ -42,14 +43,6 @@ const DEFAULT_GLOBAL_MAX_CONCURRENT = 10;
 const DEFAULT_RETRY_MAX_ATTEMPTS = 3;
 const DEFAULT_RETRY_BACKOFF_MS = 2_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
-
-function ensurePrecreatedExerciseUrl(text: string, url?: string): string {
-  if (!url || text.includes(url)) return text;
-  const prefix = text.trim();
-  return prefix
-    ? `${prefix}\n\nMở bài tập tại đây: ${url}`
-    : `Mở bài tập tại đây: ${url}`;
-}
 
 /**
  * Thin NestJS adapter around `@wispace/llm-agent`'s platform-agnostic
@@ -134,10 +127,10 @@ export class PlatformAgentService {
       },
       toolContext,
     );
-    const text = ensurePrecreatedExerciseUrl(
-      result.text,
-      toolContext.precreatedExerciseUrl,
-    );
+    // Generic pinned-facts merge (#207 item 6): server-derived facts from
+    // tools (e.g. the created exercise URL) are appended deterministically
+    // when the model's reply omits them.
+    const text = pinFactsToReply(result.text, toolContext.pinnedFacts ?? []);
 
     if (this.options.appendHistory !== false && input.history === undefined) {
       await this.historyService.appendTurn(
