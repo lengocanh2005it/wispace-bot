@@ -45,12 +45,25 @@ export interface StudyReminderJobRepositoryPort {
     inputs: UpsertStudyReminderJobInput[],
     options?: UpsertStudyReminderJobOptions,
   ): Promise<StudyReminderJob[]>;
-  findDueJobs(now: Date, minLeadMinutes: number): Promise<StudyReminderJob[]>;
+  /**
+   * Jobs due for THIS platform only — a worker must never see another
+   * platform's jobs (it would send them through the wrong transport, #180).
+   */
+  findDueJobs(
+    platform: Platform,
+    now: Date,
+    minLeadMinutes: number,
+  ): Promise<StudyReminderJob[]>;
   /**
    * Claims the job for this worker: assigns a fresh lease token and expiry.
+   * @param platform the claiming worker's platform — claims are scoped to it.
    * @param leaseMs how long the claim stays valid (heartbeat-free lease).
    */
-  claimJob(jobId: number, leaseMs: number): Promise<StudyReminderJob | null>;
+  claimJob(
+    platform: Platform,
+    jobId: number,
+    leaseMs: number,
+  ): Promise<StudyReminderJob | null>;
   /** Marks sent — requires the current lease token (stale owners no-op). */
   markSent(jobId: number, leaseToken: string): Promise<void>;
   markFailed(params: {
@@ -81,10 +94,13 @@ export interface StudyReminderJobRepositoryPort {
   ): Promise<number>;
   findNextDueTime(now: Date): Promise<Date | null>;
   /**
-   * Resets jobs stuck in `processing` — target status defaults to `failed`
-   * (Discord/Zalo); Messenger passes `pending` so stuck jobs retry the same day.
+   * Resets jobs stuck in `processing` for THIS platform only — a worker must
+   * never reopen another platform's processing job (#180). Target status
+   * defaults to `failed` (Discord/Zalo); Messenger passes `pending` so stuck
+   * jobs retry the same day.
    */
   resetStuckProcessingJobs(
+    platform: Platform,
     olderThan: Date,
     targetStatus?: 'pending' | 'failed',
   ): Promise<number>;

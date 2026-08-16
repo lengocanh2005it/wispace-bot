@@ -99,6 +99,7 @@ describe('StudyReminderDispatchService', () => {
       jobRepo,
       messageSender,
       scheduleService,
+      'messenger',
       hooks,
       options,
     );
@@ -136,6 +137,27 @@ describe('StudyReminderDispatchService', () => {
       userId: 42,
     });
     expect(result).toMatchObject({ claimed: 1, sent: 1, cancelled: 0 });
+  });
+
+  it('scopes every due/claim/reset query to its own platform (#180)', async () => {
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const { findDueJobs, claimJob, resetStuckProcessingJobs } = jobRepo;
+    findDueJobs.mockResolvedValue([makeJob()]);
+    claimJob.mockResolvedValue(makeJob());
+    build();
+
+    await service.dispatchDueReminders();
+
+    expect(findDueJobs).toHaveBeenCalledWith(
+      'messenger',
+      expect.any(Date),
+      expect.any(Number),
+    );
+    expect(claimJob).toHaveBeenCalledWith('messenger', 1, expect.any(Number));
+    expect(resetStuckProcessingJobs).toHaveBeenCalledWith(
+      'messenger',
+      expect.any(Date),
+    );
   });
 
   it('passes jobId to the reminder generator context', async () => {

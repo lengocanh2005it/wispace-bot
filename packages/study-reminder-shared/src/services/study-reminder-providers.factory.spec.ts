@@ -53,7 +53,14 @@ describe('createStudyReminderProviders', () => {
     });
     expect(providers[3]).toBe(StudyReminderScheduleService);
     expect(providers[4]).toBe(StudyReminderSyncService);
-    expect(providers[5]).toBe(StudyReminderDispatchService);
+    expect(p[5]).toMatchObject({
+      provide: StudyReminderDispatchService,
+      inject: [
+        STUDY_REMINDER_JOB_REPOSITORY,
+        MESSAGE_SENDER,
+        StudyReminderScheduleService,
+      ],
+    });
     expect(p[6]).toMatchObject({
       provide: StudyReminderWorkerService,
       inject: [

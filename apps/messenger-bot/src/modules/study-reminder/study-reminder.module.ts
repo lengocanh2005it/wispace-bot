@@ -209,6 +209,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
           jobRepository,
           messageSender,
           scheduleService,
+          'messenger',
           hooks,
           {
             backoffMode: 'flat',

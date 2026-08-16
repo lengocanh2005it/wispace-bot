@@ -5,6 +5,7 @@ import { PgAdvisoryLockService } from '@wispace/bot-common';
 import type { WispaceCalendarService } from '@wispace/wispace-client';
 import type { Repository } from 'typeorm';
 import { MESSAGE_SENDER } from '../ports/message-sender.port';
+import type { MessageSenderPort } from '../ports/message-sender.port';
 import { MAPPING_READER } from '../ports/mapping-reader.port';
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
@@ -178,7 +179,27 @@ export function createStudyReminderProviders(
     },
     StudyReminderScheduleService,
     StudyReminderSyncService,
-    StudyReminderDispatchService,
+    {
+      // Constructed explicitly so the worker's platform is bound to every
+      // due/claim/reset query (#180) — the class provider cannot inject it.
+      provide: StudyReminderDispatchService,
+      useFactory: (
+        jobRepository: StudyReminderJobRepositoryPort,
+        messageSender: MessageSenderPort,
+        scheduleService: StudyReminderScheduleService,
+      ) =>
+        new StudyReminderDispatchService(
+          jobRepository,
+          messageSender,
+          scheduleService,
+          options.platform,
+        ),
+      inject: [
+        STUDY_REMINDER_JOB_REPOSITORY,
+        MESSAGE_SENDER,
+        StudyReminderScheduleService,
+      ],
+    },
     {
       provide: StudyReminderWorkerService,
       useFactory: (
