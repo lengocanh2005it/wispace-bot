@@ -69,3 +69,13 @@ jobs:
 
       - name: Verify (format + lint + typecheck + test + build)
         run: npm run verify
+
+  deploy-scripts-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Test VPS self-pull deploy (concurrency + failure paths, #144/#172)
+        run: bash .github/scripts/tests/vps-self-pull-deploy.test.sh

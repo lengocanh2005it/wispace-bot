@@ -10,14 +10,14 @@ set -euo pipefail
 # One-time VPS setup:
 #   git clone https://github.com/lengocanh2005it/wispace-bot.git ~/wispace-bot-src
 #   crontab -e
-#   */2 * * * * cd ~/wispace-bot-src && git fetch origin main --quiet && git reset --hard origin/main --quiet && \
-#     GHCR_USER=<owner> GHCR_PULL_TOKEN=<PAT read:packages> \
+#   */2 * * * * cd ~/wispace-bot-src && source ~/.ghcr-token && \
 #     bash .github/scripts/vps-self-pull-deploy.sh >> ~/vps-self-pull-deploy.log 2>&1
 #
-# The git fetch/reset MUST happen in the crontab line, not inside this
-# script: cron invokes this file by path, so if the file doesn't exist yet
-# in the clone (first bootstrap, or after the clone dir is recreated), the
-# script itself can never run to pull the update that would create it.
+# The git fetch + reset run INSIDE this script, after the deploy lock is held
+# (#172): a concurrent cron tick can never reset the checkout mid-deploy.
+# A failed fetch or a stale checkout fails closed with a timestamped ERROR
+# and a Telegram alert via the local Alertmanager (default route) instead of
+# silently stalling (#144); the next cron tick retries.
 #
 # .env for each app is NOT touched here — Doppler webhook → each bot's
 # /v1/*/ops/doppler-sync endpoint already keeps .env current independently
@@ -29,6 +29,10 @@ LOCK_FILE="${LOCK_FILE:-/tmp/vps-self-pull-deploy.lock}"
 REGISTRY="ghcr.io"
 REPO_LC="lengocanh2005it/wispace-bot"
 NGINX_UPSTREAM_DIR="${NGINX_UPSTREAM_DIR:-/home/ngoc_anh/infra/nginx/upstreams}"
+TARGET_BASE_DIR="${TARGET_BASE_DIR:-/home/ngoc_anh}"
+ALERTMANAGER_URL="${ALERTMANAGER_URL:-http://127.0.0.1:9093}"
+STALL_ALERT="vps_self_pull_stall"
+STALL_MARKER="$STATE_DIR/stall"
 
 : "${GHCR_USER:?GHCR_USER is required}"
 : "${GHCR_PULL_TOKEN:?GHCR_PULL_TOKEN is required}"
@@ -42,19 +46,62 @@ if ! flock -n 9; then
 fi
 
 cd "$REPO_DIR"
+
+notify_alert() { # summary description
+  local summary="$1" detail="$2"
+  curl -sf -X POST "$ALERTMANAGER_URL/api/v2/alerts" \
+    -H 'Content-Type: application/json' \
+    -d "[{\"labels\":{\"alertname\":\"$STALL_ALERT\",\"severity\":\"critical\"},\"annotations\":{\"summary\":\"$summary\",\"description\":\"$detail\"}}]" \
+    >/dev/null 2>&1 || echo "WARN [$(date -Is)] Alertmanager notify failed (curl)" >&2
+}
+
+resolve_stall() {
+  curl -sf -X POST "$ALERTMANAGER_URL/api/v2/alerts" \
+    -H 'Content-Type: application/json' \
+    -d "[{\"labels\":{\"alertname\":\"$STALL_ALERT\",\"severity\":\"critical\"},\"annotations\":{},\"endsAt\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}]" \
+    >/dev/null 2>&1 || true
+}
+
+if ! git fetch origin main; then
+  echo "ERROR [$(date -Is)] git fetch origin main failed — staying on $(git rev-parse HEAD 2>/dev/null || echo unknown)" >&2
+  echo "$(date -Is) fetch_failed $(git rev-parse HEAD 2>/dev/null || echo unknown)" > "$STALL_MARKER"
+  notify_alert \
+    "VPS self-pull stalled (git fetch failed)" \
+    "git fetch origin main failed at $(date -Is); repo stays at $(git rev-parse HEAD 2>/dev/null || echo unknown); next cron tick retries."
+  exit 1
+fi
+
+git reset --hard origin/main
+
+if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+  echo "ERROR [$(date -Is)] checkout stale: HEAD=$(git rev-parse HEAD) origin/main=$(git rev-parse origin/main)" >&2
+  echo "$(date -Is) stale_checkout $(git rev-parse HEAD 2>/dev/null || echo unknown)" > "$STALL_MARKER"
+  notify_alert \
+    "VPS self-pull stalled (stale checkout)" \
+    "HEAD $(git rev-parse HEAD) != origin/main $(git rev-parse origin/main) after reset at $(date -Is)."
+  exit 1
+fi
+
+if [ -f "$STALL_MARKER" ]; then
+  echo "Recovered from previous stall ($(cat "$STALL_MARKER"))"
+  rm -f "$STALL_MARKER"
+  resolve_stall
+fi
+
 NEW_SHA=$(git rev-parse HEAD)
 
 echo "$GHCR_PULL_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || true
 
-# app -> "target_dir:health_path:run_migrations"
+# app -> "health_path:run_migrations"
 declare -A APPS=(
-  [messenger-bot]="/home/ngoc_anh/messenger-bot:/health/ready:true"
-  [discord-bot]="/home/ngoc_anh/discord-bot:/health/ready:false"
-  [zalo-bot]="/home/ngoc_anh/zalo-bot:/health/ready:false"
+  [messenger-bot]="/health/ready:true"
+  [discord-bot]="/health/ready:false"
+  [zalo-bot]="/health/ready:false"
 )
 
 for app in "${!APPS[@]}"; do
-  IFS=':' read -r target_dir health_path run_migrations <<< "${APPS[$app]}"
+  IFS=':' read -r health_path run_migrations <<< "${APPS[$app]}"
+  target_dir="$TARGET_BASE_DIR/${app}"
   image="${REGISTRY}/${REPO_LC}/${app}:${NEW_SHA}"
   state_file="$STATE_DIR/${app}.sha"
 
