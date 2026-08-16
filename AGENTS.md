@@ -202,6 +202,13 @@ Existing specs (key files, not exhaustive — `apps/*/src/**/*.spec.ts` + `packa
 
 **Shared packages:** spec files across `packages/*/src/` — run `npm run test`
 
+**LLM agent eval harness (`packages/llm-agent`)** — golden-conversation regression for `LlmAgentService` tool-call decisions (issue #207):
+- Spec-style JSON fixtures in `packages/llm-agent/fixtures/*.json` — each declares input (`userText`, `promptFiles` (path + sha256 per real prompt file — chat core `chat-system-prompt.ts` + platform overlay, LF-normalized), optional `history`/`systemPromptSuffix`) + a per-round LLM script (tool calls with args + tool results, or final text) + `expected` (tool order, `toolSummary`/`exhausted` flags, `replyTextContains`/`replyTextNotContains` fabrication guard, `groundingWarnings`).
+- Assertions: scripted tool sequence order, scripted args validated against the `AGENT_TOOLS` schema, no-tool-on-greeting (empty sequence), grounding/fabrication guard, adapter never called for injection early returns.
+- **Prompt changes fail the eval**: fixtures reference the real chat system prompts (core + overlay) by path + sha256 (LF-normalized, so Windows CRLF checkouts match CI) — any prompt edit breaks the hash until the fixture behavior is re-validated and the hash is updated deliberately (no auto-approve).
+- `npm run eval:chat` (in `packages/llm-agent`) runs just the harness; the regular `npm run test` covers it in CI. Privacy guard spec rejects real-looking IDs (`eval-` prefix required; no 15+ digit runs in fixture content).
+- Core: `packages/llm-agent/src/eval/eval-harness.ts` + `eval-harness.spec.ts` (auto-discovery) + `eval-harness.negative.spec.ts` (harness self-checks) + `privacy-guard.spec.ts`.
+
 ---
 
 ## Docs & skills when changing code

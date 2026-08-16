@@ -1,0 +1,63 @@
+{
+  "name": "reschedule-flow",
+  "description": "Reschedule requires the calendar lookup first (calendarId), then the reschedule call with valid args; the schedule claim in the reply is grounded.",
+  "promptFiles": [
+    {
+      "path": "packages/llm-agent/src/chat-system-prompt.ts",
+      "hash": "80e6f8a537f70d376a4bc94dce3ba5ad66a7d6c61be7d066cece22131d74d60b"
+    },
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "4888b2923716995b11505ce96ffd33a694e0ef06e7634feac3036cd6b9f4d0ea"
+    }
+  ],
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1005).",
+  "userText": "đổi buổi học ngày mai sang ngày kia cùng giờ",
+  "externalUserId": "eval-reschedule-0005",
+  "userId": 1005,
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "list_study_calendar_entries",
+          "args": {
+            "timeRange": "upcoming"
+          },
+          "result": {
+            "entries": [
+              {
+                "calendarId": 42,
+                "scheduledTimeLabel": "Ngày mai lúc 19:00"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "reschedule_study_session",
+          "args": {
+            "calendarId": 42,
+            "schedulingMode": "default_next_day_same_time"
+          },
+          "result": {
+            "scheduledTimeLabel": "Ngày kia lúc 19:00"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Đã dời buổi học sang ngày kia lúc 19:00 nhé."
+    }
+  ],
+  "expected": {
+    "toolSequence": ["list_study_calendar_entries", "reschedule_study_session"],
+    "replyTextContains": ["19:00"],
+    "replyTextNotContains": ["chưa thể tổng hợp"],
+    "exhausted": false,
+    "toolSummary": "[Đã tra cứu: list_study_calendar_entries; reschedule_study_session]",
+    "groundingWarnings": 0
+  }
+}

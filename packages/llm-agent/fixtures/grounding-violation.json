@@ -1,0 +1,43 @@
+{
+  "name": "grounding-violation",
+  "description": "A score claim without a score tool in this turn is blocked as fabricated — grounding warning recorded, reply is the grounding-blocked message.",
+  "promptFiles": [
+    {
+      "path": "packages/llm-agent/src/chat-system-prompt.ts",
+      "hash": "80e6f8a537f70d376a4bc94dce3ba5ad66a7d6c61be7d066cece22131d74d60b"
+    },
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "4888b2923716995b11505ce96ffd33a694e0ef06e7634feac3036cd6b9f4d0ea"
+    }
+  ],
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1009).",
+  "userText": "band hiện tại của mình là bao nhiêu?",
+  "externalUserId": "eval-grounding-0009",
+  "userId": 1009,
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": {
+            "limit": 5
+          },
+          "result": {
+            "sessions": []
+          }
+        }
+      ]
+    },
+    {
+      "text": "Band hiện tại của bạn là 7.0."
+    }
+  ],
+  "expected": {
+    "toolSequence": ["get_upcoming_study_sessions"],
+    "replyTextContains": ["Mình cần tra cứu dữ liệu"],
+    "exhausted": false,
+    "toolSummary": "[Đã tra cứu: get_upcoming_study_sessions]",
+    "groundingWarnings": 1
+  }
+}

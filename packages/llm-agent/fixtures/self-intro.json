@@ -1,0 +1,29 @@
+{
+  "name": "self-intro",
+  "description": "Self-introduction requests must resolve to a direct reply with no tool calls.",
+  "promptFiles": [
+    {
+      "path": "packages/llm-agent/src/chat-system-prompt.ts",
+      "hash": "80e6f8a537f70d376a4bc94dce3ba5ad66a7d6c61be7d066cece22131d74d60b"
+    },
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "4888b2923716995b11505ce96ffd33a694e0ef06e7634feac3036cd6b9f4d0ea"
+    }
+  ],
+  "userText": "bạn là ai?",
+  "externalUserId": "eval-self-intro-0002",
+  "userId": 1002,
+  "script": [
+    {
+      "text": "Mình là trợ lý AI của WISPACE, hỗ trợ theo dõi tiến độ học IELTS Writing, lịch học và báo cáo trước ngày thi của bạn."
+    }
+  ],
+  "expected": {
+    "toolSequence": [],
+    "replyTextContains": ["WISPACE"],
+    "exhausted": false,
+    "toolSummary": null,
+    "groundingWarnings": 0
+  }
+}
