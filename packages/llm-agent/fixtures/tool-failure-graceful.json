@@ -4,7 +4,7 @@
   "promptFiles": [
     {
       "path": "packages/llm-agent/src/chat-system-prompt.ts",
-      "hash": "80e6f8a537f70d376a4bc94dce3ba5ad66a7d6c61be7d066cece22131d74d60b"
+      "hash": "07242d300dce1977bb8c1454104ae9ca2e88a90d4385f42a4ff159e8b70d4c02"
     },
     {
       "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
