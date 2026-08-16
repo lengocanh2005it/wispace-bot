@@ -13,7 +13,7 @@ function buildConfigService(): ConfigService {
 
 function buildMocks() {
   const welcomeRecords = {
-    shouldWelcome: jest.fn().mockResolvedValue(true),
+    tryClaimWelcome: jest.fn().mockResolvedValue(true),
     markWelcomed: jest.fn().mockResolvedValue(undefined),
   } as unknown as DiscordWelcomeRecordRepositoryPort;
   const outboundService = {
@@ -49,9 +49,9 @@ describe('DiscordWelcomeService (#231/#232/#233)', () => {
     expect(outcome).toBe('sent');
   });
 
-  it('skips the DM and the marker when welcomed within the window', async () => {
+  it('skips the DM and the marker when the claim is lost (welcomed within the window)', async () => {
     const { welcomeRecords, outboundService, metrics } = buildMocks();
-    welcomeRecords.shouldWelcome = jest.fn().mockResolvedValue(false);
+    welcomeRecords.tryClaimWelcome = jest.fn().mockResolvedValue(false);
     const service = new DiscordWelcomeService(
       welcomeRecords,
       outboundService,
@@ -112,9 +112,10 @@ describe('DiscordWelcomeService (#231/#232/#233)', () => {
 
   it('#233: organic then linked within the window yields exactly one DM', async () => {
     const { welcomeRecords, outboundService, metrics } = buildMocks();
-    // First call (organic join) is due; the shared record then says "recently
-    // welcomed" for the linked path — the callback must not send a second DM.
-    welcomeRecords.shouldWelcome = jest
+    // First call (organic join) wins the claim; the shared record then says
+    // "recently welcomed" for the linked path — the callback loses the claim
+    // and must not send a second DM.
+    welcomeRecords.tryClaimWelcome = jest
       .fn()
       .mockResolvedValueOnce(true)
       .mockResolvedValueOnce(false);
@@ -135,6 +136,33 @@ describe('DiscordWelcomeService (#231/#232/#233)', () => {
     expect(linked).toBe('skipped');
     expect(outboundService.sendMenuButtons).toHaveBeenCalledTimes(1);
     expect(welcomeRecords.markWelcomed).toHaveBeenCalledTimes(1);
+  });
+
+  it('#159: concurrent OAuth callback + guildMemberAdd — only the claim winner sends', async () => {
+    const { welcomeRecords, outboundService, metrics } = buildMocks();
+    // Simulates the atomic conditional upsert: exactly one of the two racing
+    // events wins the claim (the other loses, as the DB predicate decides).
+    welcomeRecords.tryClaimWelcome = jest
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const service = new DiscordWelcomeService(
+      welcomeRecords,
+      outboundService,
+      buildConfigService(),
+      metrics,
+    );
+
+    const [callbackOutcome, joinOutcome] = await Promise.all([
+      service.welcomeIfDue('discord-user-1', 'User'),
+      service.welcomeIfDue('discord-user-1', 'User'),
+    ]);
+
+    expect([callbackOutcome, joinOutcome].sort()).toEqual(['sent', 'skipped']);
+    expect(outboundService.sendMenuButtons).toHaveBeenCalledTimes(1);
+    expect(welcomeRecords.markWelcomed).toHaveBeenCalledTimes(1);
+    expect(metrics.incWelcomeAttempt).toHaveBeenCalledWith('success');
+    expect(metrics.incWelcomeAttempt).toHaveBeenCalledWith('skipped');
   });
 
   it('works without a metrics service (optional dependency)', async () => {

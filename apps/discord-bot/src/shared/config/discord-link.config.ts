@@ -2,6 +2,7 @@ import type { ConfigService } from '@nestjs/config';
 
 const DEFAULT_REWELCOME_WINDOW_MS = 86_400_000;
 const DEFAULT_PENDING_ORGANIC_SKIP_MS = 120_000;
+const DEFAULT_WELCOME_CLAIM_MS = 60_000;
 
 /**
  * Welcome-DM dedupe window (#137 items 2+4): a linked user who re-joins (or
@@ -14,6 +15,20 @@ export function readRewelcomeWindowMs(configService: ConfigService): number {
     configService,
     'DISCORD_REWELCOME_WINDOW_MS',
     DEFAULT_REWELCOME_WINDOW_MS,
+  );
+}
+
+/**
+ * Atomic welcome claim lease (#159): `tryClaimWelcome` reserves the welcome
+ * for this long while the DM is being sent. A concurrent OAuth callback /
+ * `guildMemberAdd` loses the claim, and a claim whose sender crashed or
+ * failed becomes claimable again after the lease expires (retryable).
+ */
+export function readWelcomeClaimMs(configService: ConfigService): number {
+  return readPositiveConfigMs(
+    configService,
+    'DISCORD_WELCOME_CLAIM_MS',
+    DEFAULT_WELCOME_CLAIM_MS,
   );
 }
 

@@ -74,15 +74,19 @@ external_user_id=discordUserId, user_id)` into `discord_account_links`
    The redirect URLs never carry secrets and the frontend needs no callback
    page (the portal shows the link state itself).
 
-> **Welcome-DM dedupe (#231/#232/#233):** both the organic (`guildMemberAdd`
+> **Welcome-DM dedupe (#231/#232/#233/#159):** both the organic (`guildMemberAdd`
 > of an unlinked user, via `sendOrganicWelcomeIfDue`) and the linked path
 > (callback / re-join / reconcile cron, via `welcomeIfDue`) share **one**
 > dedupe record in `discord_welcome_records` (PK `discord_user_id`,
-> `last_welcomed_at`, `source` organic|linked) — an organic join followed by
-> a link within `DISCORD_REWELCOME_WINDOW_MS` (24h default) yields exactly
-> one DM. `sendMenuButtons` returns a boolean; the welcome is marked
-> **only** when Discord acknowledged the send, so a privacy-blocked DM stays
-> retryable by the next join/callback/reconcile event. `isMember` fails
+> `last_welcomed_at`, `source` organic|linked, `claim_expires_at`) — an
+> organic join followed by a link within `DISCORD_REWELCOME_WINDOW_MS` (24h
+> default) yields exactly one DM. The welcome slot is claimed **atomically**
+> (`tryClaimWelcome`, one conditional upsert) so a concurrent OAuth callback
+> vs `guildMemberAdd` sends at most once (#159); the lease
+> `DISCORD_WELCOME_CLAIM_MS` (60s default) makes a crashed/failed sender's
+> claim reclaimable. `sendMenuButtons` returns a boolean; the welcome is
+> marked **only** when Discord acknowledged the send, so a privacy-blocked DM
+> stays retryable by the next join/callback/reconcile event. `isMember` fails
 > closed when `DISCORD_GUILD_ID` is unset (returns false), deferring the
 > callback welcome to `guildMemberAdd`. Attempts are counted in
 > `discord_welcome_attempts_total{outcome=success|error|skipped}`.

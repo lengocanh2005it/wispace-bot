@@ -3,7 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { buildGreetingMessage } from '@wispace/bot-common';
 import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
-import { readRewelcomeWindowMs } from '@discord/shared/config/discord-link.config';
+import {
+  readRewelcomeWindowMs,
+  readWelcomeClaimMs,
+} from '@discord/shared/config/discord-link.config';
 import { buildDiscordLinkWelcomeMessage } from '../messages/account-link.messages';
 import {
   DISCORD_WELCOME_RECORD_REPOSITORY,
@@ -12,14 +15,15 @@ import {
 } from '../../domain/ports/discord-welcome-record.repository.port';
 
 /**
- * Welcome-DM delivery with a single dedupe point keyed by Discord user id
- * alone (`discord_welcome_records`, #231): sends the welcome only when the
- * record says the user has not been welcomed within
- * `DISCORD_REWELCOME_WINDOW_MS`, and marks it only when Discord acknowledged
- * the DM (#232 — a failed send leaves the user unwelcomed so the next
- * join/callback/reconcile event retries). Both the organic and the linked
- * path share the same record, so a user welcomed organically is not welcomed
- * again at link time within the window (#233).
+ * Welcome-DM delivery with a single atomic dedupe point keyed by Discord
+ * user id alone (`discord_welcome_records`, #231): `tryClaimWelcome` reserves
+ * the welcome slot in one conditional upsert (#159) — a concurrent OAuth
+ * callback / `guildMemberAdd` loses the claim instead of sending a duplicate
+ * DM. The record is marked only when Discord acknowledged the DM (#232 — a
+ * failed send leaves the claim to expire and the next join/callback/reconcile
+ * event retries). Both the organic and the linked path share the same
+ * record, so a user welcomed organically is not welcomed again at link time
+ * within the window (#233).
  */
 export type WelcomeDeliveryOutcome = 'sent' | 'skipped' | 'error';
 
@@ -71,7 +75,17 @@ export class DiscordWelcomeService {
     message: string,
   ): Promise<WelcomeDeliveryOutcome> {
     const windowMs = readRewelcomeWindowMs(this.configService);
-    if (!(await this.welcomeRecords.shouldWelcome(discordUserId, windowMs))) {
+    const claimMs = readWelcomeClaimMs(this.configService);
+    // Atomic claim (#159): the winner (this call, under concurrency) proceeds
+    // to send; a concurrent OAuth callback / `guildMemberAdd` loses the claim
+    // and is skipped instead of sending a duplicate DM.
+    if (
+      !(await this.welcomeRecords.tryClaimWelcome(
+        discordUserId,
+        windowMs,
+        claimMs,
+      ))
+    ) {
       this.metrics?.incWelcomeAttempt('skipped');
       return 'skipped';
     }
@@ -81,8 +95,8 @@ export class DiscordWelcomeService {
       message,
     );
     if (!delivered) {
-      // Never mark "welcomed" on a failed send — the next join/callback/
-      // reconcile event retries (#232).
+      // Never mark "welcomed" on a failed send — the claim expires and the
+      // next join/callback/reconcile event retries (#232/#159).
       this.metrics?.incWelcomeAttempt('error');
       return 'error';
     }

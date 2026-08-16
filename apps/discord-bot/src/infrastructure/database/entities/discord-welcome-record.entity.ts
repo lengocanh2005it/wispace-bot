@@ -21,6 +21,14 @@ export class DiscordWelcomeRecordEntity {
   @Column({ name: 'source', type: 'varchar', length: 16, nullable: true })
   source?: WelcomeSource | null;
 
+  /**
+   * In-flight welcome claim lease (#159): set by `tryClaimWelcome`, cleared
+   * by `markWelcomed`. A concurrent event loses the claim; an expired lease
+   * is reclaimable (retry after a crashed/failed sender).
+   */
+  @Column({ name: 'claim_expires_at', type: 'timestamptz', nullable: true })
+  claimExpiresAt?: Date | null;
+
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
   updatedAt: Date;
 }
