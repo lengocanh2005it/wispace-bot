@@ -1,0 +1,62 @@
+{
+  "name": "multi-tool-calendar-then-exercise",
+  "description": "Compound request resolves sequentially: calendar first, then exercise creation — tool order is preserved and visible in toolSummary.",
+  "promptPath": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+  "promptHash": "ABB28F9DD66C87DFF3AB9811B0C6742531364063CF2EAB3D537C3FB63FA9C9F6",
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1004).",
+  "userText": "xem lịch học của mình rồi tạo bài tập mới nhé",
+  "externalUserId": "eval-multi-tool-0004",
+  "userId": 1004,
+  "history": [
+    {
+      "role": "user",
+      "content": "lịch tuần này của mình thế nào?"
+    },
+    {
+      "role": "assistant",
+      "content": "[Đã tra cứu: list_study_calendar_entries] Tuần này bạn có 2 buổi học nhé."
+    }
+  ],
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "list_study_calendar_entries",
+          "args": {
+            "timeRange": "upcoming"
+          },
+          "result": {
+            "entries": [
+              {
+                "calendarId": 10,
+                "scheduledTimeLabel": "Ngày mai lúc 19:00"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "precreate_next_exercise",
+          "args": {},
+          "result": {
+            "exerciseUrl": "https://wispace.example/exercises/123"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Mình đã xem lịch của bạn (tuần này có 2 buổi) và tạo bài tập mới trong roadmap rồi nha. Bạn làm sớm để giữ đà nhé!"
+    }
+  ],
+  "expected": {
+    "toolSequence": ["list_study_calendar_entries", "precreate_next_exercise"],
+    "replyTextContains": ["bài tập"],
+    "replyTextNotContains": ["chưa thể tổng hợp"],
+    "exhausted": false,
+    "toolSummary": "[Đã tra cứu: list_study_calendar_entries; precreate_next_exercise]",
+    "groundingWarnings": 0
+  }
+}

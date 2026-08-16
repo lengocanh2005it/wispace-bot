@@ -1,0 +1,35 @@
+{
+  "name": "single-tool-user-goals",
+  "description": "A single-intent request resolves via exactly one tool call; score claims in the reply are grounded by that tool.",
+  "promptPath": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+  "promptHash": "ABB28F9DD66C87DFF3AB9811B0C6742531364063CF2EAB3D537C3FB63FA9C9F6",
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1003).",
+  "userText": "xem mục tiêu band của mình",
+  "externalUserId": "eval-single-tool-0003",
+  "userId": 1003,
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "get_user_goals",
+          "args": {},
+          "result": {
+            "targetBand": 7.0,
+            "examDate": "2026-11-20"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Mục tiêu band của bạn là 7.0, ngày thi 20/11/2026. Cố gắng duy trì lộ trình nha!"
+    }
+  ],
+  "expected": {
+    "toolSequence": ["get_user_goals"],
+    "replyTextContains": ["7.0"],
+    "replyTextNotContains": ["chưa thể tổng hợp"],
+    "exhausted": false,
+    "toolSummary": "[Đã tra cứu: get_user_goals]",
+    "groundingWarnings": 0
+  }
+}

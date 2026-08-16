@@ -1,0 +1,35 @@
+{
+  "name": "grounding-violation",
+  "description": "A score claim without a score tool in this turn is blocked as fabricated — grounding warning recorded, reply is the grounding-blocked message.",
+  "promptPath": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+  "promptHash": "ABB28F9DD66C87DFF3AB9811B0C6742531364063CF2EAB3D537C3FB63FA9C9F6",
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1009).",
+  "userText": "band hiện tại của mình là bao nhiêu?",
+  "externalUserId": "eval-grounding-0009",
+  "userId": 1009,
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": {
+            "limit": 5
+          },
+          "result": {
+            "sessions": []
+          }
+        }
+      ]
+    },
+    {
+      "text": "Band hiện tại của bạn là 7.0."
+    }
+  ],
+  "expected": {
+    "toolSequence": ["get_upcoming_study_sessions"],
+    "replyTextContains": ["Mình cần tra cứu dữ liệu"],
+    "exhausted": false,
+    "toolSummary": "[Đã tra cứu: get_upcoming_study_sessions]",
+    "groundingWarnings": 1
+  }
+}

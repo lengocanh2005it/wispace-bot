@@ -1,0 +1,21 @@
+{
+  "name": "greeting",
+  "description": "Greeting variants must resolve to a direct reply with no tool calls and no toolSummary.",
+  "promptPath": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+  "promptHash": "ABB28F9DD66C87DFF3AB9811B0C6742531364063CF2EAB3D537C3FB63FA9C9F6",
+  "userText": "chào bạn",
+  "externalUserId": "eval-greeting-0001",
+  "userId": 1001,
+  "script": [
+    {
+      "text": "Chào bạn nha! Mình là trợ lý của WISPACE. Bạn cần hỗ trợ gì về việc học IELTS Writing không?"
+    }
+  ],
+  "expected": {
+    "toolSequence": [],
+    "replyTextContains": ["WISPACE"],
+    "exhausted": false,
+    "toolSummary": null,
+    "groundingWarnings": 0
+  }
+}

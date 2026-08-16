@@ -1,0 +1,31 @@
+{
+  "name": "tool-failure-graceful",
+  "description": "A failing tool must not crash the loop — the failure is fed back as {ok:false} and the agent still produces a graceful final reply.",
+  "promptPath": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+  "promptHash": "ABB28F9DD66C87DFF3AB9811B0C6742531364063CF2EAB3D537C3FB63FA9C9F6",
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1006).",
+  "userText": "xem tiến độ học của mình",
+  "externalUserId": "eval-tool-failure-0006",
+  "userId": 1006,
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "get_user_goals",
+          "args": {},
+          "fail": "WISPACE API error: upstream timeout"
+        }
+      ]
+    },
+    {
+      "text": "Mình chưa lấy được dữ liệu tiến độ ngay bây giờ. Bạn thử lại sau ít phút nhé."
+    }
+  ],
+  "expected": {
+    "toolSequence": ["get_user_goals"],
+    "replyTextContains": ["thử lại"],
+    "exhausted": false,
+    "toolSummary": "[Đã tra cứu: get_user_goals]",
+    "groundingWarnings": 0
+  }
+}

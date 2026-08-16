@@ -1,0 +1,106 @@
+{
+  "name": "exhaustion",
+  "description": "When every round calls tools without a final text, the loop reports exhausted=true and a toolSummary of everything looked up.",
+  "promptPath": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+  "promptHash": "ABB28F9DD66C87DFF3AB9811B0C6742531364063CF2EAB3D537C3FB63FA9C9F6",
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1007).",
+  "userText": "tổng hợp hết mọi thứ về việc học của mình",
+  "externalUserId": "eval-exhaustion-0007",
+  "userId": 1007,
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "get_user_goals",
+          "args": {},
+          "result": {
+            "targetBand": 6.5
+          }
+        }
+      ]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": {
+            "limit": 3
+          },
+          "result": {
+            "sessions": [
+              {
+                "id": 1,
+                "label": "Ngày mai lúc 19:00"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "list_study_calendar_entries",
+          "args": {
+            "timeRange": "all"
+          },
+          "result": {
+            "entries": [
+              {
+                "calendarId": 7,
+                "scheduledTimeLabel": "Tuần trước lúc 19:00"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "preview_next_study_reminder",
+          "args": {},
+          "result": {
+            "preview": "Nhắc buổi học ngày mai lúc 19:00."
+          }
+        }
+      ]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "register_exam_report_notifications",
+          "args": {},
+          "result": {
+            "registered": true
+          }
+        }
+      ]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "precreate_next_exercise",
+          "args": {},
+          "result": {
+            "exerciseUrl": "https://wispace.example/exercises/456"
+          }
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "toolSequence": [
+      "get_user_goals",
+      "get_upcoming_study_sessions",
+      "list_study_calendar_entries",
+      "preview_next_study_reminder",
+      "register_exam_report_notifications",
+      "precreate_next_exercise"
+    ],
+    "replyTextContains": ["chưa thể tổng hợp"],
+    "exhausted": true,
+    "toolSummary": "[Đã tra cứu: get_user_goals; get_upcoming_study_sessions; list_study_calendar_entries; preview_next_study_reminder; register_exam_report_notifications; precreate_next_exercise]",
+    "groundingWarnings": 0
+  }
+}
