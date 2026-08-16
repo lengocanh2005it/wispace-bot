@@ -1,10 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { maskExternalId } from '@wispace/bot-common';
-import {
-  MessengerLinkContext,
-  buildWelcomeMessage,
-} from '@messenger/shared/config/poc.constants';
+import { buildGreetingMessage, maskExternalId } from '@wispace/bot-common';
+import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { UserDisplayNameService } from '@messenger/modules/display-name/application/user-display-name.service';
 import { getStudyReminderLeadTimeNotice } from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
 import { MessengerWebhookEvent } from '../../domain/entities/messenger.types';
@@ -255,6 +252,6 @@ export class WebhookActionExecutorService {
       psid,
       userId,
     });
-    return buildWelcomeMessage(displayName);
+    return buildGreetingMessage(displayName);
   }
 }

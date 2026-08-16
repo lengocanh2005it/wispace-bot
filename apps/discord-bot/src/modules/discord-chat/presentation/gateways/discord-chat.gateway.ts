@@ -1,5 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { maskExternalId, sanitizeLogValue } from '@wispace/bot-common';
+import {
+  GREETING_INTRO,
+  buildGreetingMessage,
+  buildSelfIntroMessage,
+  maskExternalId,
+  sanitizeLogValue,
+} from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { ChannelType } from 'discord.js';
 import { Button, Context, On, Once } from 'necord';
@@ -32,12 +38,6 @@ import {
   CHAT_FAILURE_FALLBACK_MESSAGE,
   IntentDetector,
 } from '@wispace/llm-agent';
-
-const GREETING_TEMPLATE =
-  'Chào {name}! 👋 Mình là trợ lý WISPACE — hỗ trợ bạn học IELTS Writing. Bạn có thể hỏi về lịch học, tiến độ hoặc mục tiêu band nhé!';
-
-const SELF_INTRO_TEMPLATE =
-  'Mình là WISPACE Bot — trợ lý AI hỗ trợ học IELTS Writing trên Discord. Mình có thể giúp bạn xem lịch học, tiến độ và mục tiêu band. Gõ "hi" để bắt đầu! 🎓';
 
 function formatError(error: unknown): string {
   if (error instanceof WispaceApiError) {
@@ -95,10 +95,10 @@ export class DiscordChatGateway {
     if (welcomeChannelId) {
       const serverMsg = isLinked
         ? `Chào mừng <@${discordUserId}> đến với server WISPACE! 👋\n\n` +
-          `Tài khoản WISPACE đã được liên kết. Hỏi mình bất cứ điều gì về lịch học, tiến độ IELTS hoặc mục tiêu band nhé 🎓`
+          `Tài khoản WISPACE đã được liên kết. ${GREETING_INTRO} 🎓`
         : `Chào mừng <@${discordUserId}> đến với server WISPACE! 👋\n\n` +
-          `Mình là trợ lý AI của WISPACE — mình có thể giúp bạn xem lịch học, tiến độ IELTS Writing và trả lời các câu hỏi luyện thi.\n\n` +
-          `Để dùng đầy đủ tính năng, bạn cần liên kết tài khoản WISPACE với Discord trước nhé. Vào WISPACE và chọn "Kết nối Discord" để bắt đầu! 🎓`;
+          `${GREETING_INTRO} 🎓\n\n` +
+          `Để dùng đầy đủ tính năng, bạn cần liên kết tài khoản WISPACE với Discord trước nhé. Vào WISPACE và chọn "Kết nối Discord" để bắt đầu!`;
       await this.outboundService.sendToChannel(welcomeChannelId, serverMsg);
     }
 
@@ -125,9 +125,7 @@ export class DiscordChatGateway {
           )} — link callback in flight`,
         );
       } else {
-        const dmMsg =
-          `Chào ${displayName}! Mình là trợ lý WISPACE. ` +
-          `Bạn có thể hỏi về tiến độ học, lịch học sắp tới, hoặc mục tiêu band — cứ nhắn tự nhiên nhé 🎓`;
+        const dmMsg = buildGreetingMessage(displayName);
         await this.outboundService.sendMenuButtons(discordUserId, dmMsg);
       }
     }
@@ -178,8 +176,8 @@ export class DiscordChatGateway {
     const intent = this.intentDetector.detect(resolvedText);
     if (intent.intent === 'greeting') {
       const displayName =
-        message.member?.displayName ?? message.author.displayName ?? 'bạn';
-      const reply = GREETING_TEMPLATE.replace('{name}', displayName);
+        message.member?.displayName ?? message.author.displayName;
+      const reply = buildGreetingMessage(displayName);
       if (isServerChannel) {
         await message.reply(reply);
       } else {
@@ -188,7 +186,7 @@ export class DiscordChatGateway {
       return;
     }
     if (intent.intent === 'self_intro') {
-      const reply = SELF_INTRO_TEMPLATE;
+      const reply = buildSelfIntroMessage();
       if (isServerChannel) {
         await message.reply(reply);
       } else {

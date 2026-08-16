@@ -143,7 +143,7 @@ apps/messenger-bot/src/modules/<feature>/
 4. **Repository** — interface in `domain/repositories/`; class in `infrastructure/persistence/`; bind token in `*.module.ts`.
 5. **HTTP** → `presentation/controllers/` — call application service, do not call repository directly.
 6. **Wispace / Meta / LLM provider** → `infrastructure/` of the corresponding module (in app), or `packages/llm-agent` if it's orchestration/schema shared across all bots.
-7. **Platform-specific LLM prompts** → `apps/<bot>/src/shared/prompts/`; load via `loadSystemPromptFile()` from `@wispace/llm-agent`. **Shared messages** (not platform-specific) → `packages/llm-agent/src/messages.ts`.
+7. **Platform-specific LLM prompts** → `apps/<bot>/src/shared/prompts/`; load via `loadSystemPromptFile()` from `@wispace/llm-agent`. **Shared messages** (not platform-specific) → `packages/bot-common/src/bot-messages.ts` (greeting/self-intro/welcome builders shared by all bots).
 8. After modifying prompts: `npx turbo run build --filter=@wispace/messenger-bot...` (assets → `apps/messenger-bot/dist/shared/prompts/`).
 
 ## Anti-patterns

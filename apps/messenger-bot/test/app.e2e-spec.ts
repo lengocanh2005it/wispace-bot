@@ -135,7 +135,7 @@ describe('AppController (e2e)', () => {
         id: '123456789',
       },
       message: {
-        text: 'Chào bạn! WISPACE đã kết nối Messenger thành công. Từ bây giờ bạn có thể nhận báo cáo học tập tại đây.',
+        text: expect.stringContaining('Chào bạn! 👋'),
       },
     });
 
