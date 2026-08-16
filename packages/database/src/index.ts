@@ -7,6 +7,7 @@ export { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.en
 export { ReportSendJobEntity } from './entities/report-send-job.entity';
 export { RescheduleConfirmationEntity } from './entities/reschedule-confirmation.entity';
 export { CronLeaderLeaseEntity } from './entities/cron-leader-lease.entity';
+export { LearnerProfileEntity } from './entities/learner-profile.entity';
 export {
   SHARED_ENTITIES,
   getTypeOrmOptions,

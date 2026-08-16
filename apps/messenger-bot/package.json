@@ -65,6 +65,7 @@
     "@wispace/cleanup-cron": "*",
     "@wispace/database": "*",
     "@wispace/llm-agent": "*",
+    "@wispace/learner-profile": "*",
     "@wispace/ops-health": "*",
     "@wispace/reschedule-confirm": "*",
     "@wispace/scheduler-core": "*",

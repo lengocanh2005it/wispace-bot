@@ -15,7 +15,11 @@ import {
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
 } from '@wispace/chat-metering';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
+import {
+  errorMessage,
+  REDIS_CLIENT,
+  type RedisClientPort,
+} from '@wispace/bot-common';
 import { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
 import type {
   PlatformAgentInput,
@@ -153,9 +157,25 @@ export class PlatformAgentService {
   }
 
   private buildAgent(): LlmAgentService<PlatformAgentToolContext> {
+    const onToolResult = this.options.onToolResult;
     const toolExecutor: ToolExecutorPort<PlatformAgentToolContext> = {
       execute: (toolName, argsJson, ctx, signal) =>
-        this.toolsService.execute(toolName, argsJson, ctx, signal),
+        this.toolsService
+          .execute(toolName, argsJson, ctx, signal)
+          .then((result) => {
+            if (onToolResult) {
+              // Fire-and-forget: a rejecting hook (e.g. profile store down)
+              // must never fail the chat — log and move on.
+              Promise.resolve(
+                onToolResult({ toolName, argsJson, result, context: ctx }),
+              ).catch((error: unknown) => {
+                this.logger.warn(
+                  `onToolResult hook failed tool=${toolName} error=${errorMessage(error)}`,
+                );
+              });
+            }
+            return result;
+          }),
     };
 
     const ports: LlmAgentPorts<PlatformAgentToolContext> = {

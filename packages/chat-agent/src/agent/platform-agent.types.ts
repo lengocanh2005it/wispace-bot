@@ -79,6 +79,18 @@ export interface PlatformAgentOptions {
   /** Called before the LLM loop (Messenger sets OTel span attributes). */
   onBeforeReply?: (input: PlatformAgentInput) => Promise<void>;
   /**
+   * Called after a tool executed successfully, with the raw (unserialized)
+   * result — e.g. to persist learner facts from server-derived tool results
+   * (`@wispace/learner-profile`). Fire-and-forget: a rejection must never
+   * break the agent loop.
+   */
+  onToolResult?: (params: {
+    toolName: string;
+    argsJson: string;
+    result: unknown;
+    context: PlatformAgentToolContext;
+  }) => void | Promise<void>;
+  /**
    * Messenger's fast "reschedule my default session" pre-check — returns a
    * ready reply without calling the LLM, or null to continue the normal loop.
    */

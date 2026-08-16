@@ -7,6 +7,7 @@ import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.en
 import { ReportSendJobEntity } from './entities/report-send-job.entity';
 import { RescheduleConfirmationEntity } from './entities/reschedule-confirmation.entity';
 import { CronLeaderLeaseEntity } from './entities/cron-leader-lease.entity';
+import { LearnerProfileEntity } from './entities/learner-profile.entity';
 
 export type EntityClass = new (...args: unknown[]) => unknown;
 
@@ -89,6 +90,7 @@ export const SHARED_ENTITIES: EntityClass[] = [
   ReportSendJobEntity,
   RescheduleConfirmationEntity,
   CronLeaderLeaseEntity,
+  LearnerProfileEntity,
 ];
 
 /**
