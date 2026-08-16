@@ -10,6 +10,9 @@ export interface PlatformAgentToolContext {
   externalUserId: string;
   /** WISPACE userId if the platform account is linked; undefined otherwise. */
   userId?: number;
+  /** The learner's current message — used by side-effect tools to verify
+   * explicit intent before executing (#163). */
+  userText?: string;
   /** True when the message came from a Discord server channel (not a DM). */
   isServerChannel?: boolean;
   /**

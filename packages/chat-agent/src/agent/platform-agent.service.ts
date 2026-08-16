@@ -89,6 +89,7 @@ export class PlatformAgentService {
     const toolContext: PlatformAgentToolContext = {
       externalUserId: input.externalUserId,
       userId: input.userId,
+      userText: input.userText,
       isServerChannel: input.isServerChannel,
       privateDataFetched: false,
       richFollowUps: [],
