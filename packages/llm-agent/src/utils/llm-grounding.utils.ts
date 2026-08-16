@@ -34,10 +34,52 @@ const SCHEDULE_CLAIM_AFTER_RE = new RegExp(
   'i',
 );
 
+// ─── Additional personal-data claim families (#164) ───────────────────────
+// Centralized inventory: each claim family maps a claim-shaped response
+// fragment to the tools that legitimately ground it.
+
+// Band TARGET (whole or decimal) — "mục tiêu band của bạn là 7".
+const TARGET_BAND_RE = new RegExp(
+  `(mục tiêu band|band mục tiêu|target band)[^.!?\\n]{0,30}\\d+(?:[.,]\\d+)?|\\d+(?:[.,]\\d+)?[^.!?\\n]{0,30}(mục tiêu band|band mục tiêu)`,
+  'i',
+);
+
+// Exam date — "ngày thi của bạn là 20/11/2026".
+const EXAM_DATE_RE = new RegExp(
+  `(ngày thi|dự thi|thi vào)[^.!?\\n]{0,20}\\d{1,2}[/-]\\d{1,2}([/-]\\d{2,4})?`,
+  'i',
+);
+
+// Task counts / status — "bạn đã làm 15 bài Task 1", "đã hoàn thành 8/12 bài".
+const TASK_COUNT_RE = new RegExp(
+  `(đã (?:làm|viết|nộp|hoàn thành|sửa|chữa)|số bài|bài đã làm)[^.!?\\n]{0,25}\\d{1,2}\\s*(?:bài|task\\s*1|task\\s*2)|\\d{1,2}\\s*/\\s*\\d{1,2}\\s*bài`,
+  'i',
+);
+
+// Roadmap / exercise state — the precreate status phrases.
+const ROADMAP_STATE_RE = new RegExp(
+  `(chưa có roadmap|đã hoàn thành toàn bộ bài tập|bài tập đã tồn tại|đã tạo bài tập mới|bài tập mới đã sẵn sàng|đã tạo bài mới)`,
+  'i',
+);
+
+const GOALS_TOOLS: ReadonlySet<string> = new Set([
+  'get_user_goals',
+  'get_learning_progress_report',
+]);
+
+const PROGRESS_TOOLS: ReadonlySet<string> = new Set([
+  'get_learning_progress_report',
+]);
+
+const EXERCISE_TOOLS: ReadonlySet<string> = new Set([
+  'precreate_next_exercise',
+]);
+
 /**
  * Checks whether the LLM response contains specific personal data claims
- * (band scores, session dates/times) without a corresponding tool having
- * been called in this turn. Returns suspicious=true if grounding is missing.
+ * (band scores/targets, exam dates, schedule dates/times, task counts,
+ * roadmap state) without a corresponding tool having been called in this
+ * turn. Returns suspicious=true if grounding is missing.
  *
  * Echo suppression is claim-scoped (#157): a time marker the user supplied
  * in their own message suppresses ONLY the schedule claim carrying that
@@ -54,6 +96,34 @@ export function checkLlmGrounding(
     !hasAny(toolsCalledThisTurn, SCORE_TOOLS)
   ) {
     return { suspicious: true, reason: 'score_without_tool' };
+  }
+
+  if (
+    TARGET_BAND_RE.test(responseText) &&
+    !hasAny(toolsCalledThisTurn, GOALS_TOOLS)
+  ) {
+    return { suspicious: true, reason: 'score_without_tool' };
+  }
+
+  if (
+    EXAM_DATE_RE.test(responseText) &&
+    !hasAny(toolsCalledThisTurn, GOALS_TOOLS)
+  ) {
+    return { suspicious: true, reason: 'score_without_tool' };
+  }
+
+  if (
+    TASK_COUNT_RE.test(responseText) &&
+    !hasAny(toolsCalledThisTurn, PROGRESS_TOOLS)
+  ) {
+    return { suspicious: true, reason: 'score_without_tool' };
+  }
+
+  if (
+    ROADMAP_STATE_RE.test(responseText) &&
+    !hasAny(toolsCalledThisTurn, EXERCISE_TOOLS)
+  ) {
+    return { suspicious: true, reason: 'schedule_without_tool' };
   }
 
   if (
