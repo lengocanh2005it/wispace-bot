@@ -1,12 +1,14 @@
 import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
-import { buildLinkSuccessMessage, errorMessage } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { ZaloAccountLinkService } from '../../application/services/zalo-account-link.service';
 import { ZaloOauthStateService } from '../../application/services/zalo-oauth-state.service';
-import { WispaceTokenVerifyService } from '@wispace/wispace-client';
-import { ZaloOutboundService } from '@zalo/modules/zalo-chat/application/services/zalo-outbound.service';
+import {
+  ZaloLinkCompletionService,
+  ZaloLinkTokenRejectedError,
+} from '../../application/services/zalo-link-completion.service';
 
 @Controller('zalo/oauth')
 @UseGuards(ThrottlerGuard)
@@ -17,8 +19,7 @@ export class ZaloOauthController {
     private readonly configService: ConfigService,
     private readonly accountLinkService: ZaloAccountLinkService,
     private readonly oauthStateService: ZaloOauthStateService,
-    private readonly tokenVerifyService: WispaceTokenVerifyService,
-    private readonly outboundService: ZaloOutboundService,
+    private readonly completionService: ZaloLinkCompletionService,
   ) {}
 
   /** `token` is WISPACE's own link token, passed through as-is (WISPACE owns its expiry/usage state). */
@@ -78,34 +79,21 @@ export class ZaloOauthController {
     }
 
     try {
-      const zaloUser = await this.accountLinkService.exchangeCodeForZaloUser(
+      await this.completionService.completeLink(
         code,
         consumed.codeVerifier,
+        consumed.linkToken,
       );
 
-      const verifyResult = await this.tokenVerifyService.verifyToken(
-        consumed.linkToken,
-        zaloUser.id,
-      );
-      if (!verifyResult.valid) {
+      res.json({ success: true });
+    } catch (error) {
+      if (error instanceof ZaloLinkTokenRejectedError) {
         res.json({
           success: false,
           message: 'Link đã hết hạn hoặc không hợp lệ, vui lòng thử lại.',
         });
         return;
       }
-
-      await this.accountLinkService.upsertLink(
-        verifyResult.userId,
-        zaloUser.id,
-      );
-      await this.outboundService.sendText(
-        zaloUser.id,
-        buildLinkSuccessMessage(),
-      );
-
-      res.json({ success: true });
-    } catch (error) {
       this.logger.error(`Zalo OAuth callback failed: ${errorMessage(error)}`);
       res.json({ success: false, message: 'Có lỗi xảy ra, vui lòng thử lại.' });
     }
