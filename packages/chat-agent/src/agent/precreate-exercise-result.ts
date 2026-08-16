@@ -1,6 +1,7 @@
 import { isAbortError, maskExternalId } from '@wispace/bot-common';
 import {
   buildPrecreateExerciseUnavailableMessage,
+  detectPromptInjection,
   sanitizeUntrustedTextForLlm,
 } from '@wispace/llm-agent';
 import {
@@ -56,6 +57,56 @@ export function unavailablePrecreateExerciseResult(): {
   };
 }
 
+export function intentUnclearPrecreateExerciseResult(): {
+  status: 'intent_unclear';
+  messageHint: string;
+} {
+  return {
+    status: 'intent_unclear',
+    messageHint:
+      'Bạn xác nhận muốn tạo bài tập mới nhé — mình sẽ tạo bài tập tiếp theo trong roadmap cho bạn.',
+  };
+}
+
+/**
+ * Strong request phrases that count as explicit intent to create the next
+ * roadmap exercise — anything else is NOT an authorization boundary (#163).
+ */
+const PRECREATE_INTENT_RE =
+  /(?:tạo|cho|nhận|đưa|giao)\s+(?:(?:mình|em|tôi|anh|chị|bạn)\s+)?(?:một\s+)?bài(?:\s+tập)?(?:\s+(?:mới|tiếp\s+theo))?/i;
+
+/** Selection words — the tool does not support them, so no create either. */
+const PRECREATE_SELECTION_RE =
+  /task\s*1|task\s*2|taskType|exerciseTopic|topic|difficulty/i;
+
+export type PrecreateIntentCheck = { ok: true } | { ok: false; reason: string };
+
+/**
+ * Application-level explicit-intent gate (#163): the WISPACE create endpoint
+ * is only called when the learner's own message clearly requests a new
+ * exercise. Prompt instructions alone are not an authorization boundary —
+ * a model misclassification, indirect injection or ambiguous message cannot
+ * execute the side effect.
+ */
+export function checkPrecreateIntent(
+  userText: string | undefined,
+): PrecreateIntentCheck {
+  const text = userText?.trim();
+  if (!text) {
+    return { ok: false, reason: 'missing_user_text' };
+  }
+  if (detectPromptInjection(text).isInjection) {
+    return { ok: false, reason: 'injection' };
+  }
+  if (PRECREATE_SELECTION_RE.test(text)) {
+    return { ok: false, reason: 'selection_requested' };
+  }
+  if (!PRECREATE_INTENT_RE.test(text)) {
+    return { ok: false, reason: 'no_explicit_intent' };
+  }
+  return { ok: true };
+}
+
 export async function executePrecreateExerciseTool(
   ctx: PlatformAgentToolContext,
   exerciseService: PrecreateExerciseService | undefined,
@@ -67,6 +118,18 @@ export async function executePrecreateExerciseTool(
 ): Promise<unknown> {
   if (!ctx.userId) {
     return { available: false, message: options.getNotLinkedMessage() };
+  }
+
+  // Intent gate: never call the create endpoint without explicit learner
+  // intent in the current message (#163).
+  const intent = checkPrecreateIntent(ctx.userText);
+  if (!intent.ok) {
+    logUnavailable(
+      options.logger,
+      ctx.externalUserId,
+      `intent_unclear: ${intent.reason}`,
+    );
+    return intentUnclearPrecreateExerciseResult();
   }
 
   ctx.privateDataFetched = true;

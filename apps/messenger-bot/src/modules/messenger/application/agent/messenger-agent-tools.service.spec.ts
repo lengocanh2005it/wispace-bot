@@ -65,6 +65,7 @@ describe('MessengerAgentToolsService', () => {
     const ctx: PlatformAgentToolContext = {
       externalUserId: 'psid-123',
       userId: 42,
+      userText: 'tạo bài tập mới cho mình',
       richFollowUps: [],
     };
 
