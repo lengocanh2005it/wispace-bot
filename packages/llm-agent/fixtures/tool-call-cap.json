@@ -1,0 +1,36 @@
+{
+  "name": "tool-call-cap",
+  "description": "A model round requesting more distinct tool calls than the per-round cap is blocked fail-closed — nothing executes (#162).",
+  "promptFiles": [
+    {
+      "path": "packages/llm-agent/src/chat-system-prompt.ts",
+      "hash": "bae3da004a84005e8f7757533ff5db7d27b8963038200547cbeaf719ef722730"
+    },
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "4888b2923716995b11505ce96ffd33a694e0ef06e7634feac3036cd6b9f4d0ea"
+    }
+  ],
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1011).",
+  "userText": "tổng hợp hết mọi thông tin về việc học của mình",
+  "externalUserId": "eval-tool-cap-0011",
+  "userId": 1011,
+  "script": [
+    {
+      "toolCalls": [
+        { "name": "get_user_goals", "args": {} },
+        { "name": "get_upcoming_study_sessions", "args": { "limit": 5 } },
+        { "name": "list_study_calendar_entries", "args": { "timeRange": "upcoming" } },
+        { "name": "preview_next_study_reminder", "args": {} },
+        { "name": "register_exam_report_notifications", "args": {} }
+      ]
+    }
+  ],
+  "expected": {
+    "toolSequence": [],
+    "replyTextContains": ["tối đa 4 việc"],
+    "exhausted": false,
+    "toolSummary": null,
+    "groundingWarnings": 0
+  }
+}

@@ -522,6 +522,85 @@ describe('LlmAgentService', () => {
       expect(toolMessages[0]?.content).toContain('"ok":false');
     });
 
+    it('blocks a round whose distinct tool calls exceed the per-round cap, fail-closed (#162)', async () => {
+      const multiToolResponse = makeMultiToolCallResponse([
+        { name: 'get_user_goals', id: 'call-1' },
+        { name: 'get_upcoming_study_sessions', id: 'call-2' },
+        { name: 'list_study_calendar_entries', id: 'call-3' },
+        { name: 'preview_next_study_reminder', id: 'call-4' },
+        { name: 'register_exam_report_notifications', id: 'call-5' },
+      ]);
+      const adapter = makeAdapter([multiToolResponse]);
+      const execute = jest.fn().mockResolvedValue({ ok: true });
+
+      const { service } = buildService({ adapter, execute });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(result.text).toContain('tối đa 4 việc');
+      expect(result.toolSummary).toBeUndefined();
+      expect(execute).not.toHaveBeenCalled();
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(1);
+    });
+
+    it('dedupes repeated identical calls in one round and broadcasts the result to every id (#162)', async () => {
+      const multiToolResponse = makeMultiToolCallResponse([
+        { name: 'precreate_next_exercise', id: 'call-1' },
+        { name: 'precreate_next_exercise', id: 'call-2' },
+      ]);
+      const textResponse = makeTextResponse('Đã tạo bài tập mới.');
+      const seen: Array<
+        Array<{ role: string; content?: string; toolCallId?: string }>
+      > = [];
+      const adapter: LlmProviderAdapter = {
+        providerName: 'openai',
+        isConfigured: () => true,
+        getDefaultModel: () => 'gpt-5.4',
+        generateJson: jest.fn(),
+        chatWithTools: jest.fn().mockImplementation(
+          (_req: {
+            messages: Array<{
+              role: string;
+              content?: string;
+              toolCallId?: string;
+            }>;
+          }) => {
+            seen.push(_req.messages);
+            if (seen.length === 1) {
+              return Promise.resolve(multiToolResponse);
+            }
+            return Promise.resolve(textResponse);
+          },
+        ),
+        chatStream: jest.fn(),
+        isRetryableError: () => false,
+        isRateLimitError: () => false,
+        normalizeError: () => ({
+          provider: 'openai',
+          retryable: false,
+          reason: 'unknown',
+        }),
+      };
+      const execute = jest
+        .fn()
+        .mockResolvedValue({ exerciseUrl: 'https://wispace.example/1' });
+
+      const { service } = buildService({ adapter, execute });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      // The side effect ran exactly once despite two identical calls.
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(result.text).toBe('Đã tạo bài tập mới.');
+      // Both call ids got a tool result (valid message list for the provider).
+      const toolMessages = seen[1].filter((m) => m.role === 'tool');
+      expect(toolMessages).toHaveLength(2);
+      expect(toolMessages[0]?.toolCallId).toBe('call-1');
+      expect(toolMessages[1]?.toolCallId).toBe('call-2');
+      expect(toolMessages[0]?.content).toBe(toolMessages[1]?.content);
+      expect(toolMessages[0]?.content).toContain('https://wispace.example/1');
+    });
+
     it('counts serialized tool-call arguments in the trim budget (#152)', async () => {
       const seen: Array<
         Array<{
