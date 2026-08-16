@@ -109,22 +109,4 @@ export class DiscordAccountLinkService {
   async findDiscordIdByUserId(userId: number): Promise<string | undefined> {
     return this.repository.findDiscordIdByUserId(userId);
   }
-
-  /** Records a welcome DM delivery — dedupes re-welcomes within a window (#137). */
-  async markWelcomed(discordUserId: string): Promise<void> {
-    await this.repository.markWelcomed(discordUserId);
-  }
-
-  /**
-   * True when no welcome DM was delivered yet, or the last one is older than
-   * `windowMs` — used by the OAuth callback and `guildMemberAdd` so a user
-   * is never welcomed twice within the window (re-join / join-during-callback
-   * races, #137 items 2+4).
-   */
-  async shouldWelcome(
-    discordUserId: string,
-    windowMs: number,
-  ): Promise<boolean> {
-    return this.repository.shouldWelcome(discordUserId, windowMs);
-  }
 }

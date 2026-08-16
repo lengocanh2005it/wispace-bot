@@ -16,14 +16,16 @@ export class DiscordGuildMembershipService {
 
   /**
    * Returns true if the user is a member of the configured DISCORD_GUILD_ID.
-   * Returns true (skips check) if DISCORD_GUILD_ID is not set.
+   * Fails closed when DISCORD_GUILD_ID is not set: membership cannot be
+   * verified, so callers must defer the welcome to `guildMemberAdd` instead
+   * of sending a DM into the void (#232).
    */
   async isMember(discordUserId: string): Promise<boolean> {
     if (!this.guildId) {
       this.logger.warn(
-        'DISCORD_GUILD_ID not set — skipping guild membership check',
+        'DISCORD_GUILD_ID not set — cannot verify guild membership (fail closed)',
       );
-      return true;
+      return false;
     }
 
     try {

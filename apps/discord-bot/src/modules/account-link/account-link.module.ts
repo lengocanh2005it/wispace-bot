@@ -5,6 +5,7 @@ import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { BotCommonModule } from '@wispace/bot-common';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordLinkVerifyRecordEntity } from '../../infrastructure/database/entities/discord-link-verify-record.entity';
+import { DiscordWelcomeRecordEntity } from '../../infrastructure/database/entities/discord-welcome-record.entity';
 import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { DiscordAccountLinkService } from './application/services/discord-account-link.service';
 import { DiscordGuildMembershipService } from './application/services/discord-guild-membership.service';
@@ -14,8 +15,10 @@ import { DiscordRelinkNotifier } from './application/services/discord-relink-not
 import { DiscordWelcomeService } from './application/services/discord-welcome.service';
 import { TypeormDiscordAccountLinkRepository } from './infrastructure/persistence/typeorm-discord-account-link.repository';
 import { TypeormDiscordLinkVerifyRecordRepository } from './infrastructure/persistence/typeorm-discord-link-verify-record.repository';
+import { TypeormDiscordWelcomeRecordRepository } from './infrastructure/persistence/typeorm-discord-welcome-record.repository';
 import { DISCORD_ACCOUNT_LINK_REPOSITORY } from './domain/ports/discord-account-link.repository.port';
 import { DISCORD_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/discord-link-verify-record.repository.port';
+import { DISCORD_WELCOME_RECORD_REPOSITORY } from './domain/ports/discord-welcome-record.repository.port';
 import { DiscordOauthController } from './presentation/controllers/discord-oauth.controller';
 import { DiscordLinkStatusController } from './presentation/controllers/discord-link-status.controller';
 
@@ -24,6 +27,7 @@ import { DiscordLinkStatusController } from './presentation/controllers/discord-
     TypeOrmModule.forFeature([
       DiscordAccountLinkEntity,
       DiscordLinkVerifyRecordEntity,
+      DiscordWelcomeRecordEntity,
     ]),
     DiscordOutboundModule,
     BotCommonModule,
@@ -44,6 +48,7 @@ import { DiscordLinkStatusController } from './presentation/controllers/discord-
     DiscordWelcomeService,
     TypeormDiscordAccountLinkRepository,
     TypeormDiscordLinkVerifyRecordRepository,
+    TypeormDiscordWelcomeRecordRepository,
     {
       provide: DISCORD_ACCOUNT_LINK_REPOSITORY,
       useExisting: TypeormDiscordAccountLinkRepository,
@@ -51,6 +56,10 @@ import { DiscordLinkStatusController } from './presentation/controllers/discord-
     {
       provide: DISCORD_LINK_VERIFY_RECORD_REPOSITORY,
       useExisting: TypeormDiscordLinkVerifyRecordRepository,
+    },
+    {
+      provide: DISCORD_WELCOME_RECORD_REPOSITORY,
+      useExisting: TypeormDiscordWelcomeRecordRepository,
     },
   ],
   exports: [

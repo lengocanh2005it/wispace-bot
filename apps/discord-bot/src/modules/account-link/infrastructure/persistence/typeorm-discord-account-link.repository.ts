@@ -72,27 +72,4 @@ export class TypeormDiscordAccountLinkRepository implements DiscordAccountLinkRe
 
     return row?.externalUserId;
   }
-
-  async markWelcomed(discordUserId: string): Promise<void> {
-    await this.repo.update(
-      { platform: PLATFORM, externalUserId: discordUserId },
-      { lastWelcomedAt: new Date() },
-    );
-  }
-
-  async shouldWelcome(
-    discordUserId: string,
-    windowMs: number,
-  ): Promise<boolean> {
-    const row = await this.repo.findOne({
-      where: { platform: PLATFORM, externalUserId: discordUserId },
-      select: { lastWelcomedAt: true },
-    });
-
-    if (!row?.lastWelcomedAt) {
-      return true;
-    }
-
-    return Date.now() - row.lastWelcomedAt.getTime() >= windowMs;
-  }
 }

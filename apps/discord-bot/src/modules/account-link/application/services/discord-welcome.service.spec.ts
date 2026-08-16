@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock assertions */
 import type { ConfigService } from '@nestjs/config';
+import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
-import type { DiscordAccountLinkService } from './discord-account-link.service';
+import type { DiscordWelcomeRecordRepositoryPort } from '../../domain/ports/discord-welcome-record.repository.port';
 import { DiscordWelcomeService } from './discord-welcome.service';
 
 function buildConfigService(): ConfigService {
@@ -10,19 +11,28 @@ function buildConfigService(): ConfigService {
   } as unknown as ConfigService;
 }
 
-describe('DiscordWelcomeService (#137 items 2+4)', () => {
-  it('sends the welcome DM and marks the user welcomed when due', async () => {
-    const accountLinkService = {
-      shouldWelcome: jest.fn().mockResolvedValue(true),
-      markWelcomed: jest.fn().mockResolvedValue(undefined),
-    } as unknown as DiscordAccountLinkService;
-    const outboundService = {
-      sendMenuButtons: jest.fn().mockResolvedValue('dm-1'),
-    } as unknown as DiscordOutboundService;
+function buildMocks() {
+  const welcomeRecords = {
+    shouldWelcome: jest.fn().mockResolvedValue(true),
+    markWelcomed: jest.fn().mockResolvedValue(undefined),
+  } as unknown as DiscordWelcomeRecordRepositoryPort;
+  const outboundService = {
+    sendMenuButtons: jest.fn().mockResolvedValue(true),
+  } as unknown as DiscordOutboundService;
+  const metrics = {
+    incWelcomeAttempt: jest.fn(),
+  } as unknown as BotMetricsService;
+  return { welcomeRecords, outboundService, metrics };
+}
+
+describe('DiscordWelcomeService (#231/#232/#233)', () => {
+  it('sends the linked welcome and marks the record when due', async () => {
+    const { welcomeRecords, outboundService, metrics } = buildMocks();
     const service = new DiscordWelcomeService(
-      accountLinkService,
+      welcomeRecords,
       outboundService,
       buildConfigService(),
+      metrics,
     );
 
     const sent = await service.welcomeIfDue('discord-user-1', 'TestUser');
@@ -31,30 +41,112 @@ describe('DiscordWelcomeService (#137 items 2+4)', () => {
       'discord-user-1',
       expect.stringContaining('TestUser'),
     );
-    expect(accountLinkService.markWelcomed).toHaveBeenCalledWith(
+    expect(welcomeRecords.markWelcomed).toHaveBeenCalledWith(
       'discord-user-1',
+      'linked',
     );
+    expect(metrics.incWelcomeAttempt).toHaveBeenCalledWith('success');
     expect(sent).toBe(true);
   });
 
   it('skips the DM and the marker when welcomed within the window', async () => {
-    const accountLinkService = {
-      shouldWelcome: jest.fn().mockResolvedValue(false),
-      markWelcomed: jest.fn().mockResolvedValue(undefined),
-    } as unknown as DiscordAccountLinkService;
-    const outboundService = {
-      sendMenuButtons: jest.fn().mockResolvedValue('dm-1'),
-    } as unknown as DiscordOutboundService;
+    const { welcomeRecords, outboundService, metrics } = buildMocks();
+    welcomeRecords.shouldWelcome = jest.fn().mockResolvedValue(false);
     const service = new DiscordWelcomeService(
-      accountLinkService,
+      welcomeRecords,
       outboundService,
       buildConfigService(),
+      metrics,
     );
 
     const sent = await service.welcomeIfDue('discord-user-1');
 
     expect(outboundService.sendMenuButtons).not.toHaveBeenCalled();
-    expect(accountLinkService.markWelcomed).not.toHaveBeenCalled();
+    expect(welcomeRecords.markWelcomed).not.toHaveBeenCalled();
+    expect(metrics.incWelcomeAttempt).toHaveBeenCalledWith('skipped');
     expect(sent).toBe(false);
+  });
+
+  it('#232: a failed send is not marked welcomed — the next event retries', async () => {
+    const { welcomeRecords, outboundService, metrics } = buildMocks();
+    outboundService.sendMenuButtons = jest.fn().mockResolvedValue(false);
+    const service = new DiscordWelcomeService(
+      welcomeRecords,
+      outboundService,
+      buildConfigService(),
+      metrics,
+    );
+
+    const sent = await service.welcomeIfDue('discord-user-1');
+
+    expect(outboundService.sendMenuButtons).toHaveBeenCalledTimes(1);
+    expect(welcomeRecords.markWelcomed).not.toHaveBeenCalled();
+    expect(metrics.incWelcomeAttempt).toHaveBeenCalledWith('error');
+    expect(sent).toBe(false);
+  });
+
+  it('#231: organic welcome uses the greeting copy and marks as organic', async () => {
+    const { welcomeRecords, outboundService, metrics } = buildMocks();
+    const service = new DiscordWelcomeService(
+      welcomeRecords,
+      outboundService,
+      buildConfigService(),
+      metrics,
+    );
+
+    const sent = await service.sendOrganicWelcomeIfDue(
+      'discord-user-1',
+      'OrganicUser',
+    );
+
+    expect(outboundService.sendMenuButtons).toHaveBeenCalledWith(
+      'discord-user-1',
+      expect.stringContaining('OrganicUser'),
+    );
+    expect(welcomeRecords.markWelcomed).toHaveBeenCalledWith(
+      'discord-user-1',
+      'organic',
+    );
+    expect(sent).toBe(true);
+  });
+
+  it('#233: organic then linked within the window yields exactly one DM', async () => {
+    const { welcomeRecords, outboundService, metrics } = buildMocks();
+    // First call (organic join) is due; the shared record then says "recently
+    // welcomed" for the linked path — the callback must not send a second DM.
+    welcomeRecords.shouldWelcome = jest
+      .fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const service = new DiscordWelcomeService(
+      welcomeRecords,
+      outboundService,
+      buildConfigService(),
+      metrics,
+    );
+
+    const organic = await service.sendOrganicWelcomeIfDue(
+      'discord-user-1',
+      'User',
+    );
+    const linked = await service.welcomeIfDue('discord-user-1', 'User');
+
+    expect(organic).toBe(true);
+    expect(linked).toBe(false);
+    expect(outboundService.sendMenuButtons).toHaveBeenCalledTimes(1);
+    expect(welcomeRecords.markWelcomed).toHaveBeenCalledTimes(1);
+  });
+
+  it('works without a metrics service (optional dependency)', async () => {
+    const { welcomeRecords, outboundService } = buildMocks();
+    const service = new DiscordWelcomeService(
+      welcomeRecords,
+      outboundService,
+      buildConfigService(),
+    );
+
+    await expect(
+      service.sendOrganicWelcomeIfDue('discord-user-1'),
+    ).resolves.toBe(true);
   });
 });

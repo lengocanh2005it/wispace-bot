@@ -33,8 +33,4 @@ export class DiscordAccountLinkEntity {
 
   @CreateDateColumn({ name: 'linked_at', type: 'timestamptz' })
   linkedAt: Date;
-
-  /** Last welcome-DM timestamp — dedupes re-welcomes within a window (#137). */
-  @Column({ name: 'last_welcomed_at', type: 'timestamptz', nullable: true })
-  lastWelcomedAt?: Date | null;
 }

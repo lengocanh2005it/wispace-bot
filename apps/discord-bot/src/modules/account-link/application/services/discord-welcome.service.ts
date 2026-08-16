@@ -1,43 +1,94 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BotMetricsService } from '@wispace/bot-metrics';
+import { buildGreetingMessage } from '@wispace/bot-common';
 import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
 import { readRewelcomeWindowMs } from '@discord/shared/config/discord-link.config';
 import { buildDiscordLinkWelcomeMessage } from '../messages/account-link.messages';
-import { DiscordAccountLinkService } from './discord-account-link.service';
+import {
+  DISCORD_WELCOME_RECORD_REPOSITORY,
+  type DiscordWelcomeRecordRepositoryPort,
+  type WelcomeSource,
+} from '../../domain/ports/discord-welcome-record.repository.port';
 
 /**
- * Welcome-DM delivery with a single dedupe point (#137 items 2+4): sends the
- * welcome only when the mapping says the user has not been welcomed within
- * `DISCORD_REWELCOME_WINDOW_MS`, then marks `last_welcomed_at`. Used by the
- * OAuth callback, `guildMemberAdd` and the link-reconcile cron so every path
- * behaves identically (no duplicate / no missed welcome across races).
+ * Welcome-DM delivery with a single dedupe point keyed by Discord user id
+ * alone (`discord_welcome_records`, #231): sends the welcome only when the
+ * record says the user has not been welcomed within
+ * `DISCORD_REWELCOME_WINDOW_MS`, and marks it only when Discord acknowledged
+ * the DM (#232 — a failed send leaves the user unwelcomed so the next
+ * join/callback/reconcile event retries). Both the organic and the linked
+ * path share the same record, so a user welcomed organically is not welcomed
+ * again at link time within the window (#233).
  */
 @Injectable()
 export class DiscordWelcomeService {
+  private readonly logger = new Logger(DiscordWelcomeService.name);
+
   constructor(
-    private readonly accountLinkService: DiscordAccountLinkService,
+    @Inject(DISCORD_WELCOME_RECORD_REPOSITORY)
+    private readonly welcomeRecords: DiscordWelcomeRecordRepositoryPort,
     private readonly outboundService: DiscordOutboundService,
     private readonly configService: ConfigService,
+    @Inject(BotMetricsService)
+    private readonly metrics?: BotMetricsService,
   ) {}
 
-  /** Sends the welcome DM (if due) and returns whether it was sent. */
+  /** Sends the linked welcome DM (if due) and returns whether it was sent. */
   async welcomeIfDue(
     discordUserId: string,
     displayName?: string,
   ): Promise<boolean> {
-    const shouldWelcome = await this.accountLinkService.shouldWelcome(
+    return this.sendIfDue(
       discordUserId,
-      readRewelcomeWindowMs(this.configService),
+      displayName,
+      'linked',
+      buildDiscordLinkWelcomeMessage(displayName),
     );
-    if (!shouldWelcome) {
+  }
+
+  /**
+   * Sends the organic welcome DM (unlinked user joining the guild, #231) with
+   * the same dedupe semantics as the linked path. Callers skip it when a
+   * fresh verify intent means the link callback is in flight.
+   */
+  async sendOrganicWelcomeIfDue(
+    discordUserId: string,
+    displayName?: string,
+  ): Promise<boolean> {
+    return this.sendIfDue(
+      discordUserId,
+      displayName,
+      'organic',
+      buildGreetingMessage(displayName),
+    );
+  }
+
+  private async sendIfDue(
+    discordUserId: string,
+    displayName: string | undefined,
+    source: WelcomeSource,
+    message: string,
+  ): Promise<boolean> {
+    const windowMs = readRewelcomeWindowMs(this.configService);
+    if (!(await this.welcomeRecords.shouldWelcome(discordUserId, windowMs))) {
+      this.metrics?.incWelcomeAttempt('skipped');
       return false;
     }
 
-    await this.outboundService.sendMenuButtons(
+    const delivered = await this.outboundService.sendMenuButtons(
       discordUserId,
-      buildDiscordLinkWelcomeMessage(displayName),
+      message,
     );
-    await this.accountLinkService.markWelcomed(discordUserId);
+    if (!delivered) {
+      // Never mark "welcomed" on a failed send — the next join/callback/
+      // reconcile event retries (#232).
+      this.metrics?.incWelcomeAttempt('error');
+      return false;
+    }
+
+    await this.welcomeRecords.markWelcomed(discordUserId, source);
+    this.metrics?.incWelcomeAttempt('success');
     return true;
   }
 }

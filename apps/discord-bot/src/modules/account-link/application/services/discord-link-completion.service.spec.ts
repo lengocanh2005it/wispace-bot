@@ -148,6 +148,20 @@ describe('DiscordLinkCompletionService', () => {
     expect(outcome).toBe('success');
   });
 
+  it('#233: a welcome deduped by the shared record (organic preceded the link) still completes the link without a second DM', async () => {
+    const { service, welcomeService } = buildHarness({
+      inGuild: true,
+      welcomeSent: false,
+    });
+
+    const outcome = await service.completeLink('code', 'good-token');
+
+    expect(welcomeService.welcomeIfDue).toHaveBeenCalledTimes(1);
+    // The welcome service returned false = deduped (organic welcome was sent
+    // within the window); the link itself is still committed and reported.
+    expect(outcome).toBe('success');
+  });
+
   it('reports not-in-guild without welcoming when the user is not in the guild yet', async () => {
     const { service, welcomeService } = buildHarness({ inGuild: false });
 
