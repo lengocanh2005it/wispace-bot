@@ -1,0 +1,43 @@
+{
+  "name": "grounding-violation-band-target",
+  "description": "A band-target claim (whole number) without a goals tool in this turn is blocked as fabricated — the expanded grounding inventory covers targets, exam dates, task counts and roadmap state (#164).",
+  "promptFiles": [
+    {
+      "path": "packages/llm-agent/src/chat-system-prompt.ts",
+      "hash": "bae3da004a84005e8f7757533ff5db7d27b8963038200547cbeaf719ef722730"
+    },
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "4888b2923716995b11505ce96ffd33a694e0ef06e7634feac3036cd6b9f4d0ea"
+    }
+  ],
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1013).",
+  "userText": "mục tiêu band của mình là bao nhiêu?",
+  "externalUserId": "eval-grounding-target-0013",
+  "userId": 1013,
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": {
+            "limit": 5
+          },
+          "result": {
+            "sessions": []
+          }
+        }
+      ]
+    },
+    {
+      "text": "Mục tiêu band của bạn là 7."
+    }
+  ],
+  "expected": {
+    "toolSequence": ["get_upcoming_study_sessions"],
+    "replyTextContains": ["Mình cần tra cứu dữ liệu"],
+    "exhausted": false,
+    "toolSummary": "[Đã tra cứu: get_upcoming_study_sessions]",
+    "groundingWarnings": 1
+  }
+}

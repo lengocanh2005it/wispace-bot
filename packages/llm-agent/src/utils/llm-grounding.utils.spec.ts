@@ -163,6 +163,118 @@ describe('checkLlmGrounding', () => {
     });
   });
 
+  describe('suspicious responses — band target without goals tool (#164)', () => {
+    it('flags "mục tiêu band của bạn là 7" (whole number) with no tool', () => {
+      const result = checkLlmGrounding(
+        'Mục tiêu band của bạn là 7.',
+        new Set(),
+      );
+      expect(result.suspicious).toBe(true);
+      expect(result.reason).toBe('score_without_tool');
+    });
+
+    it('flags "band mục tiêu ... 6.5" with no tool', () => {
+      const result = checkLlmGrounding(
+        'Band mục tiêu của bạn là 6.5.',
+        new Set(),
+      );
+      expect(result.suspicious).toBe(true);
+    });
+
+    it('does NOT flag when get_user_goals was called', () => {
+      const result = checkLlmGrounding(
+        'Mục tiêu band của bạn là 7.',
+        new Set(['get_user_goals']),
+      );
+      expect(result.suspicious).toBe(false);
+    });
+
+    it('does NOT flag generic advice "để đạt band 7"', () => {
+      const result = checkLlmGrounding(
+        'Để đạt band 7, bạn cần luyện thêm Task 2 nhé.',
+        new Set(),
+      );
+      expect(result.suspicious).toBe(false);
+    });
+  });
+
+  describe('suspicious responses — exam date without goals tool (#164)', () => {
+    it('flags "ngày thi của bạn là 20/11/2026" with no tool', () => {
+      const result = checkLlmGrounding(
+        'Ngày thi của bạn là 20/11/2026.',
+        new Set(),
+      );
+      expect(result.suspicious).toBe(true);
+      expect(result.reason).toBe('score_without_tool');
+    });
+
+    it('does NOT flag when get_learning_progress_report was called', () => {
+      const result = checkLlmGrounding(
+        'Ngày thi của bạn là 20/11/2026.',
+        new Set(['get_learning_progress_report']),
+      );
+      expect(result.suspicious).toBe(false);
+    });
+  });
+
+  describe('suspicious responses — task counts without progress tool (#164)', () => {
+    it('flags "bạn đã làm 15 bài Task 1" with no tool', () => {
+      const result = checkLlmGrounding(
+        'Bạn đã làm 15 bài Task 1 rồi.',
+        new Set(),
+      );
+      expect(result.suspicious).toBe(true);
+      expect(result.reason).toBe('score_without_tool');
+    });
+
+    it('flags "đã hoàn thành 8/12 bài Task 2" with no tool', () => {
+      const result = checkLlmGrounding(
+        'Bạn đã hoàn thành 8/12 bài Task 2.',
+        new Set(),
+      );
+      expect(result.suspicious).toBe(true);
+    });
+
+    it('does NOT flag when get_learning_progress_report was called', () => {
+      const result = checkLlmGrounding(
+        'Bạn đã làm 15 bài Task 1 rồi.',
+        new Set(['get_learning_progress_report']),
+      );
+      expect(result.suspicious).toBe(false);
+    });
+
+    it('does NOT flag generic advice "nên làm 5 bài Task 1 mỗi tuần"', () => {
+      const result = checkLlmGrounding(
+        'Bạn nên làm 5 bài Task 1 mỗi tuần nhé.',
+        new Set(),
+      );
+      expect(result.suspicious).toBe(false);
+    });
+  });
+
+  describe('suspicious responses — roadmap state without precreate tool (#164)', () => {
+    it('flags "đã hoàn thành toàn bộ bài tập trong roadmap" with no tool', () => {
+      const result = checkLlmGrounding(
+        'Bạn đã hoàn thành toàn bộ bài tập trong roadmap rồi.',
+        new Set(),
+      );
+      expect(result.suspicious).toBe(true);
+    });
+
+    it('flags "chưa có roadmap" with no tool', () => {
+      const result = checkLlmGrounding('Bạn chưa có roadmap.', new Set());
+      expect(result.suspicious).toBe(true);
+    });
+
+    it('does NOT flag when precreate_next_exercise was called', () => {
+      const result = checkLlmGrounding(
+        'Mình đã tạo bài tập mới cho bạn.',
+        new Set(['precreate_next_exercise']),
+      );
+      expect(result.suspicious).toBe(false);
+    });
+  });
+
   describe('result shape', () => {
     it('returns suspicious=false with no reason when clean', () => {
       const result = checkLlmGrounding('Bạn cần luyện thêm nhé!', new Set());
