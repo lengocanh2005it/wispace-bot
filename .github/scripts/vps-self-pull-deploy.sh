@@ -33,6 +33,7 @@ NGINX_UPSTREAM_DIR="${NGINX_UPSTREAM_DIR:-/home/ngoc_anh/infra/nginx/upstreams}"
 TARGET_BASE_DIR="${TARGET_BASE_DIR:-/home/ngoc_anh}"
 ALERTMANAGER_URL="${ALERTMANAGER_URL:-http://127.0.0.1:9093}"
 STALL_ALERT="vps_self_pull_stall"
+APP_FAIL_ALERT="vps_self_pull_app_failed"
 STALL_MARKER="$STATE_DIR/stall"
 
 : "${GHCR_USER:?GHCR_USER is required}"
@@ -50,9 +51,10 @@ current_sha() {
   git rev-parse HEAD 2>/dev/null || echo unknown
 }
 
-post_alert() { # annotations_json [ends_at]
-  local body="[{\"labels\":{\"alertname\":\"$STALL_ALERT\",\"severity\":\"critical\"},\"annotations\":$1"
-  if [ -n "${2:-}" ]; then body="$body,\"endsAt\":\"$2\""; fi
+post_alert() { # alertname annotations_json [ends_at]
+  local alertname="$1"
+  local body="[{\"labels\":{\"alertname\":\"$alertname\",\"severity\":\"critical\"},\"annotations\":$2"
+  if [ -n "${3:-}" ]; then body="$body,\"endsAt\":\"$3\""; fi
   body="$body}]"
   curl -sf -X POST "$ALERTMANAGER_URL/api/v2/alerts" \
     -H 'Content-Type: application/json' \
@@ -62,12 +64,23 @@ post_alert() { # annotations_json [ends_at]
 
 notify_stall() { # summary description
   local summary="$1" detail="$2"
-  post_alert "{\"summary\":\"$summary\",\"description\":\"$detail\"}" \
+  post_alert "$STALL_ALERT" "{\"summary\":\"$summary\",\"description\":\"$detail\"}" \
     || echo "WARN [$(date -Is)] Alertmanager notify failed (curl)" >&2
 }
 
 resolve_stall() {
-  post_alert "{}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  post_alert "$STALL_ALERT" "{}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    || echo "WARN [$(date -Is)] Alertmanager resolve notify failed (curl)" >&2
+}
+
+notify_app_failed() { # app sha
+  local app="$1" sha="$2"
+  post_alert "$APP_FAIL_ALERT" "{\"summary\":\"$app deploy failed\",\"description\":\"$app @ $sha failed at $(date -Is); next cron tick retries.\"}" \
+    || echo "WARN [$(date -Is)] Alertmanager notify failed (curl)" >&2
+}
+
+resolve_app_failed() { # app
+  post_alert "$APP_FAIL_ALERT" "{}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     || echo "WARN [$(date -Is)] Alertmanager resolve notify failed (curl)" >&2
 }
 
@@ -129,6 +142,7 @@ for app in "${!APPS[@]}"; do
   target_dir="$TARGET_BASE_DIR/${app}"
   image="${REGISTRY}/${REPO_LC}/${app}:${NEW_SHA}"
   state_file="$STATE_DIR/${app}.sha"
+  fail_marker="$STATE_DIR/${app}.failed"
 
   if [ -f "$state_file" ] && [ "$(cat "$state_file")" = "$NEW_SHA" ]; then
     continue
@@ -159,7 +173,18 @@ for app in "${!APPS[@]}"; do
     bash vps-deploy.sh
   ); then
     echo "$NEW_SHA" > "$state_file"
+    if [ -f "$fail_marker" ]; then
+      echo "$app: previous deploy failure recovered ($(cat "$fail_marker"))"
+      rm -f "$fail_marker"
+      resolve_app_failed "$app"
+    fi
   else
     echo "ERROR: deploy failed for $app @ $NEW_SHA — will retry next run" >&2
+    # Alert once per (app, sha): the same failed sha retries every tick and
+    # must not re-page each time (#202). The marker is cleared on success.
+    if [ ! -f "$fail_marker" ] || [ "$(cat "$fail_marker")" != "$NEW_SHA" ]; then
+      echo "$NEW_SHA" > "$fail_marker"
+      notify_app_failed "$app" "$NEW_SHA"
+    fi
   fi
 done

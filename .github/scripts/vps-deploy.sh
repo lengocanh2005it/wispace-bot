@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Restrictive umask: .env copies, the docker env file and the pre-migration
+# dump all carry secrets/PII — never create them world/group-readable (#204).
+umask 077
+
 # Zero-downtime VPS deploy script for all WISPACE bots.
 # Runs in the deploy dir (cwd) containing docker-compose.prod.yml (+ optional production.env).
 #
@@ -11,7 +15,8 @@ set -euo pipefail
 # Requires env: IMAGE, DEPLOY_MODE, APP_NAME
 # Optional env: FORCE_RECREATE, GHCR_PULL_TOKEN, GHCR_USER, HEALTH_PATH, PORT,
 #               HEALTH_MAX_ATTEMPTS, DEPLOY_HOST_DIR, RUN_MIGRATIONS, MIGRATION_CMD,
-#               MIGRATION_DB_CONTAINER, MIGRATION_LOCK_ID, NGINX_UPSTREAM_DIR
+#               MIGRATION_DB_CONTAINER, MIGRATION_LOCK_ID, NGINX_UPSTREAM_DIR,
+#               PUBLIC_HOST, DOCKER_STOP_TIMEOUT, SKIP_NGINX_CHECK
 
 : "${IMAGE:?IMAGE is required}"
 : "${DEPLOY_MODE:?DEPLOY_MODE is required}"
@@ -26,6 +31,9 @@ set -euo pipefail
 : "${NGINX_UPSTREAM_DIR:=/home/ngoc_anh/infra/nginx/upstreams}"
 : "${POST_SWITCH_MONITOR_ATTEMPTS:=24}"       # monitor after switch (24 × 5s = 2 min)
 : "${POST_SWITCH_MONITOR_INTERVAL:=5}"        # seconds between post-switch checks
+: "${DOCKER_STOP_TIMEOUT:=60}"                # docker stop/run grace period — app drains 45s (#201)
+: "${PUBLIC_HOST:=aiassist.aihubproduction.com}"  # public nginx host used for post-switch verify
+: "${SKIP_NGINX_CHECK:=false}"                # first-deploy escape hatch: allow cutover without nginx
 
 COMPOSE_FILE="docker-compose.prod.yml"
 
@@ -71,6 +79,16 @@ get_extra_volumes() {
   echo "$rest"
 }
 
+get_public_health_path() {
+  # Public nginx routes for each bot — messenger uses the bare /health/ready;
+  # discord/zalo use dedicated locations (see deploy/nginx/aiassist.aihubproduction.com.conf).
+  case "$1" in
+    discord-bot) echo "/health/discord/ready" ;;
+    zalo-bot)    echo "/health/zalo/ready" ;;
+    *)           echo "/health/ready" ;;
+  esac
+}
+
 # ─── Prepare .env from production.env (Doppler download from CI) ─────────────
 if [ -f "production.env" ]; then
   DEPLOY_UID=$(id -u)
@@ -85,8 +103,11 @@ if [ -f "production.env" ]; then
   echo ".env installed ($(wc -l < .env) lines)"
 fi
 
+# Fail closed: a container without credentials cannot boot, and the health
+# check would roll it back anyway — fail early instead (#199).
 if [ ! -f ".env" ]; then
-  echo "WARNING: No .env file found — container will have no env"
+  echo "ERROR: No .env file found — refusing to start a container without env (#199)" >&2
+  exit 1
 fi
 
 # ─── Ensure deploy-owned env vars (idempotent — only fills missing keys) ─────
@@ -132,21 +153,41 @@ DEPLOY_GID=${DEPLOY_GID:-$(id -g)}
 # ─── Prepare env file for docker run (strip quotes) ───────────────────────────
 # docker run --env-file does NOT strip surrounding quotes like compose does,
 # and Doppler downloads values as KEY="value" — strip them here.
-ENV_FILE="/tmp/${APP_NAME}.docker-env"
+# mktemp (predictable-path removal) + chmod 600 + EXIT trap: never leave
+# credentials on disk after the deploy (#204).
+ENV_FILE="$(mktemp "${TMPDIR:-/tmp}/${APP_NAME}.docker-env.XXXXXX")"
+chmod 600 "$ENV_FILE"
+trap 'rm -f "$ENV_FILE"' EXIT
 sed 's/^\([A-Za-z_][A-Za-z0-9_]*\)="\(.*\)"$/\1=\2/' .env > "$ENV_FILE"
+# Security check (#204): refuse to run if the env file is world/group-readable.
+env_mode=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo 000)
+if [ "$env_mode" != "600" ]; then
+  echo "ERROR: env file $ENV_FILE has unsafe mode $env_mode (expected 600) — aborting (#204)" >&2
+  exit 1
+fi
 
 # ─── Determine active / standby ports ────────────────────────────────────────
 ACTIVE_PORT=$(get_standalone_port "$APP_NAME")
 STANDBY_PORT=$(get_standby_port "$APP_NAME")
+UPSTREAM_CONF="${NGINX_UPSTREAM_DIR}/${APP_NAME}.conf"
 
-# Active container: prefer ${APP_NAME}-old; fall back to ${APP_NAME} (first
-# deploy after the migration, when containers were not suffixed yet).
-ACTIVE_CONTAINER="${APP_NAME}-old"
-if ! docker inspect "$ACTIVE_CONTAINER" >/dev/null 2>&1; then
-  if docker inspect "$APP_NAME" >/dev/null 2>&1; then
+# Live container: detect the port nginx currently routes to and find the
+# container publishing it. Name-based fallback covers first deploy / legacy
+# layout. Port-based detection is crash-safe: after an interrupted deploy the
+# routed container may still be named ${APP_NAME}-new (#201).
+LIVE_PORT=""
+if [ -f "$UPSTREAM_CONF" ]; then
+  LIVE_PORT=$(grep -oE 'server 127\.0\.0\.1:[0-9]+' "$UPSTREAM_CONF" | head -1 | grep -oE '[0-9]+$' || true)
+fi
+ACTIVE_CONTAINER=""
+if [ -n "$LIVE_PORT" ]; then
+  ACTIVE_CONTAINER=$(docker ps --filter "publish=127.0.0.1:${LIVE_PORT}" --format '{{.Names}}' | head -1 || true)
+fi
+if [ -z "$ACTIVE_CONTAINER" ]; then
+  if docker inspect "${APP_NAME}-old" >/dev/null 2>&1; then
+    ACTIVE_CONTAINER="${APP_NAME}-old"
+  elif docker inspect "$APP_NAME" >/dev/null 2>&1; then
     ACTIVE_CONTAINER="$APP_NAME"
-  else
-    ACTIVE_CONTAINER=""
   fi
 fi
 
@@ -167,11 +208,23 @@ fi
 
 NEW_CONTAINER="${APP_NAME}-new"
 echo "Deploy: $APP_NAME"
-echo "  Active container:  ${ACTIVE_CONTAINER:-<none>} (port $ACTIVE_PORT)"
+echo "  Active container:  ${ACTIVE_CONTAINER:-<none>} (port $ACTIVE_PORT, upstream port ${LIVE_PORT:-<none>})"
 echo "  New container:     $NEW_CONTAINER (port $STANDBY_PORT)"
 echo "  Image:             $IMAGE"
 
-# Clean leftover container from a failed deploy
+# Clean leftover container from a failed deploy — never remove the container
+# nginx currently routes to (#201). If the live container is still named
+# ${APP_NAME}-new (crash between nginx switch and rename), adopt it as
+# ${APP_NAME}-old so this run deploys a fresh ${APP_NAME}-new on the other port.
+if [ -n "$ACTIVE_CONTAINER" ] && [ "$ACTIVE_CONTAINER" = "$NEW_CONTAINER" ]; then
+  echo "  ${NEW_CONTAINER} is the live nginx container (port ${LIVE_PORT:-?}) — adopting it as ${APP_NAME}-old"
+  docker rm -f "${APP_NAME}-old" >/dev/null 2>&1 || true
+  if ! docker rename "$NEW_CONTAINER" "${APP_NAME}-old" 2>/dev/null; then
+    echo "ERROR: could not rename live ${NEW_CONTAINER} to ${APP_NAME}-old — aborting to protect traffic (#201)" >&2
+    exit 1
+  fi
+  ACTIVE_CONTAINER="${APP_NAME}-old"
+fi
 docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
 
 # ─── Pull image ───────────────────────────────────────────────────────────────
@@ -188,6 +241,7 @@ RUN_ARGS=(
   --restart unless-stopped
   --user "${DEPLOY_UID}:${DEPLOY_GID}"
   --env-file "$ENV_FILE"
+  --stop-timeout "${DOCKER_STOP_TIMEOUT}"    # app drain window (45s) + margin (#201)
   -e HOME=/tmp
   -e PORT="${STANDBY_PORT}"
   -p "127.0.0.1:${STANDBY_PORT}:${STANDBY_PORT}"
@@ -231,55 +285,60 @@ if [ -z "$healthy" ]; then
 fi
 
 # ─── Run migrations inside new container (before switching traffic) ───────────
+# The advisory lock is held on the SAME psql session that runs the migration
+# (#203): psql acquires the lock, executes the migration via \! (a shell escape
+# inside the session, so the lock stays held), then unlocks. psql's \! swallows
+# the exit status, so the migration appends it to /tmp/mig.exit which the
+# outer shell checks.
 if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ -n "${MIGRATION_CMD:-}" ]; then
   MIGRATION_DB_CONTAINER="${MIGRATION_DB_CONTAINER:-postgres_n8n_db}"
   MIGRATION_LOCK_ID="${MIGRATION_LOCK_ID:-4242424242}"
   DB_USER_ENV=$(grep -E '^DB_USER=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
   DB_NAME_ENV=$(grep -E '^DB_NAME=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
   DB_PASSWORD_ENV=$(grep -E '^DB_PASSWORD=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
-  if [ -n "$DB_PASSWORD_ENV" ] && docker exec "$MIGRATION_DB_CONTAINER" true 2>/dev/null; then
-    lock_db() {
-      docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$MIGRATION_DB_CONTAINER" \
-        psql -U "$DB_USER_ENV" -d "$DB_NAME_ENV" -h localhost -q -tAc "$1" >/dev/null
-    }
-    echo "Applying migrations (advisory lock $MIGRATION_LOCK_ID): $MIGRATION_CMD"
-    if ! lock_db "SELECT pg_advisory_lock($MIGRATION_LOCK_ID)"; then
-      echo "ERROR: could not acquire migration lock" >&2
+  DB_HOST_ENV=$(grep -E '^DB_HOST=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+  DB_PORT_ENV=$(grep -E '^DB_PORT=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+  case "$MIGRATION_CMD" in
+    'npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
+      ;;
+    *)
+      echo "ERROR: unsupported migration command" >&2
       exit 1
-    fi
-    # Safety net: quick pg_dump before migrations
-    PRE_MIGRATE_DIR="${PRE_MIGRATE_DIR:-/home/ngoc_anh/backups/ai_chat_bot_db/pre-migrate}"
-    mkdir -p "$PRE_MIGRATE_DIR"
-    PRE_MIGRATE_DUMP="$PRE_MIGRATE_DIR/pre-migrate-$(date +%Y%m%d-%H%M%S).dump"
-    echo "Pre-migration safety dump → $PRE_MIGRATE_DUMP"
-    docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$MIGRATION_DB_CONTAINER" \
-      pg_dump -U "$DB_USER_ENV" -d "$DB_NAME_ENV" -h localhost -Fc \
-      > "$PRE_MIGRATE_DUMP" 2>/dev/null || echo "WARNING: pre-migration dump failed — proceeding anyway"
-    find "$PRE_MIGRATE_DIR" -name 'pre-migrate-*.dump' -mtime +1 -delete 2>/dev/null || true
-
-    case "$MIGRATION_CMD" in
-      'npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
-        migration_status=0
-        docker exec "$NEW_CONTAINER" npx --no-install typeorm migration:run \
-          -d apps/messenger-bot/dist/infrastructure/database/data-source.js || migration_status=$?
-        ;;
-      *)
-        echo "ERROR: unsupported migration command" >&2
-        migration_status=1
-        ;;
-    esac
-    if [ "$migration_status" -eq 0 ]; then
-      echo "Migrations applied OK"
-    else
-      echo "ERROR: migrations failed — rolling back" >&2
-      lock_db "SELECT pg_advisory_unlock($MIGRATION_LOCK_ID)" || true
-      docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
-      exit 1
-    fi
-    lock_db "SELECT pg_advisory_unlock($MIGRATION_LOCK_ID)" || true
-  else
-    echo "WARNING: RUN_MIGRATIONS enabled but DB password / postgres container unavailable — skipping migrations"
+      ;;
+  esac
+  # Fail closed: never run new code against an old schema because the DB was
+  # unreachable at deploy time (#199). pg_isready probes the actual postgres
+  # process (a reachable container with a down postgres must still fail here,
+  # before the migration and cutover).
+  if [ -z "$DB_USER_ENV" ] || [ -z "$DB_NAME_ENV" ] || [ -z "$DB_PASSWORD_ENV" ] || [ -z "$DB_HOST_ENV" ] || ! docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$MIGRATION_DB_CONTAINER" pg_isready -h localhost -p "${DB_PORT_ENV:-5432}" -U "$DB_USER_ENV" -d "$DB_NAME_ENV" >/dev/null 2>&1; then
+    echo "ERROR: RUN_MIGRATIONS enabled but DB_* / postgres container ($MIGRATION_DB_CONTAINER) unavailable — refusing to deploy (#199)" >&2
+    exit 1
   fi
+  # Safety net: quick pg_dump before migrations
+  PRE_MIGRATE_DIR="${PRE_MIGRATE_DIR:-/home/ngoc_anh/backups/ai_chat_bot_db/pre-migrate}"
+  mkdir -p "$PRE_MIGRATE_DIR"
+  PRE_MIGRATE_DUMP="$PRE_MIGRATE_DIR/pre-migrate-$(date +%Y%m%d-%H%M%S).dump"
+  echo "Pre-migration safety dump → $PRE_MIGRATE_DUMP"
+  docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$MIGRATION_DB_CONTAINER" \
+    pg_dump -U "$DB_USER_ENV" -d "$DB_NAME_ENV" -h localhost -Fc \
+    > "$PRE_MIGRATE_DUMP" 2>/dev/null || echo "WARNING: pre-migration dump failed — proceeding anyway"
+  find "$PRE_MIGRATE_DIR" -name 'pre-migrate-*.dump' -mtime +1 -delete 2>/dev/null || true
+
+  echo "Applying migrations (advisory lock $MIGRATION_LOCK_ID held on the migration session): $MIGRATION_CMD"
+  if ! docker exec "$NEW_CONTAINER" sh -c "
+    rm -f /tmp/mig.exit
+    PGPASSWORD=\"\$DB_PASSWORD\" psql -v ON_ERROR_STOP=1 -h \"$DB_HOST_ENV\" -p \"${DB_PORT_ENV:-5432}\" -U \"$DB_USER_ENV\" -d \"$DB_NAME_ENV\" <<'SQL'
+SELECT pg_advisory_lock($MIGRATION_LOCK_ID);
+\\! ${MIGRATION_CMD}; echo \$? > /tmp/mig.exit
+SELECT pg_advisory_unlock($MIGRATION_LOCK_ID);
+SQL
+    [ \"\$(cat /tmp/mig.exit 2>/dev/null)\" = \"0\" ]
+  "; then
+    echo "ERROR: migrations failed — rolling back" >&2
+    docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+    exit 1
+  fi
+  echo "Migrations applied OK"
 fi
 
 # ─── Sync upstream config from upload bundle to nginx dir ─────────────────────
@@ -291,7 +350,7 @@ if [ -f "$UPLOAD_UPSTREAM" ]; then
 fi
 
 # ─── Switch nginx upstream to new container ───────────────────────────────────
-UPSTREAM_CONF="${NGINX_UPSTREAM_DIR}/${APP_NAME}.conf"
+NGINX_SWITCHED=false
 if [ -f "$UPSTREAM_CONF" ]; then
   echo "Switching nginx upstream → 127.0.0.1:${STANDBY_PORT}"
   sed -i "s/server 127.0.0.1:[0-9]*/server 127.0.0.1:${STANDBY_PORT}/" "$UPSTREAM_CONF"
@@ -301,17 +360,35 @@ if [ -f "$UPSTREAM_CONF" ]; then
     docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
     exit 1
   fi
+  NGINX_SWITCHED=true
 else
-  echo "WARNING: upstream conf not found at $UPSTREAM_CONF — skipping nginx switch"
+  if [ "${SKIP_NGINX_CHECK}" = "true" ]; then
+    echo "WARNING: upstream conf not found at $UPSTREAM_CONF — SKIP_NGINX_CHECK=true, skipping nginx switch (first-deploy bootstrap)"
+  else
+    echo "ERROR: upstream conf not found at $UPSTREAM_CONF — refusing to cut over without nginx (#199)" >&2
+    docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+    exit 1
+  fi
 fi
 
 # ─── Post-switch health monitor (2 minutes) ──────────────────────────────────
-echo "Monitoring health on port $STANDBY_PORT for $(( POST_SWITCH_MONITOR_ATTEMPTS * POST_SWITCH_MONITOR_INTERVAL ))s ..."
+# Verify the public nginx route (not only the standby port) once the switch
+# happened (#199); curl --resolve pins the public host to 127.0.0.1 so the
+# check never depends on hairpin NAT from the VPS to its own public IP.
+PUBLIC_HEALTH_PATH=$(get_public_health_path "$APP_NAME")
+echo "Monitoring health on $([ "$NGINX_SWITCHED" = "true" ] && echo "public route https://${PUBLIC_HOST}${PUBLIC_HEALTH_PATH}" || echo "port $STANDBY_PORT$HEALTH_PATH") for $(( POST_SWITCH_MONITOR_ATTEMPTS * POST_SWITCH_MONITOR_INTERVAL ))s ..."
 monitor_healthy=""
 monitor_failures=0
 MONITOR_MAX_FAILURES="${MONITOR_MAX_FAILURES:-3}"
+check_post_switch_health() {
+  if [ "$NGINX_SWITCHED" = "true" ]; then
+    curl -sf --max-time 3 --resolve "${PUBLIC_HOST}:443:127.0.0.1" "https://${PUBLIC_HOST}${PUBLIC_HEALTH_PATH}"
+  else
+    curl -sf --max-time 3 "http://127.0.0.1:${STANDBY_PORT}${HEALTH_PATH}"
+  fi
+}
 for attempt in $(seq 1 "${POST_SWITCH_MONITOR_ATTEMPTS}"); do
-  if curl -sf --max-time 3 "http://127.0.0.1:${STANDBY_PORT}${HEALTH_PATH}" >/dev/null 2>&1; then
+  if check_post_switch_health >/dev/null 2>&1; then
     monitor_healthy=1
     monitor_failures=0
   else
@@ -342,7 +419,7 @@ echo "Post-switch health OK — new container stable"
 # ─── Stop old container ──────────────────────────────────────────────────────
 if [ -n "$ACTIVE_CONTAINER" ] && [ -n "$ACTIVE_CONTAINER_IMAGE" ]; then
   echo "Stopping old container: $ACTIVE_CONTAINER"
-  docker stop "$ACTIVE_CONTAINER" 2>/dev/null || true
+  docker stop --time "${DOCKER_STOP_TIMEOUT}" "$ACTIVE_CONTAINER" 2>/dev/null || true
   docker rm "$ACTIVE_CONTAINER" 2>/dev/null || true
 fi
 
