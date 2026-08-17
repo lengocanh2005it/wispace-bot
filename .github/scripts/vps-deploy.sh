@@ -181,7 +181,8 @@ if [ -f "$UPSTREAM_CONF" ]; then
 fi
 ACTIVE_CONTAINER=""
 if [ -n "$LIVE_PORT" ]; then
-  ACTIVE_CONTAINER=$(docker ps --filter "publish=127.0.0.1:${LIVE_PORT}" --format '{{.Names}}' | head -1 || true)
+  # publish filter takes the port only — Docker rejects "127.0.0.1:PORT".
+  ACTIVE_CONTAINER=$(docker ps --filter "publish=${LIVE_PORT}" --format '{{.Names}}' | head -1 || true)
 fi
 if [ -z "$ACTIVE_CONTAINER" ]; then
   if docker inspect "${APP_NAME}-old" >/dev/null 2>&1; then
@@ -309,8 +310,9 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ -n "${MIGRATION_CMD:-}" ]; then
   # Fail closed: never run new code against an old schema because the DB was
   # unreachable at deploy time (#199). pg_isready probes the actual postgres
   # process (a reachable container with a down postgres must still fail here,
-  # before the migration and cutover).
-  if [ -z "$DB_USER_ENV" ] || [ -z "$DB_NAME_ENV" ] || [ -z "$DB_PASSWORD_ENV" ] || [ -z "$DB_HOST_ENV" ] || ! docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$MIGRATION_DB_CONTAINER" pg_isready -h localhost -p "${DB_PORT_ENV:-5432}" -U "$DB_USER_ENV" -d "$DB_NAME_ENV" >/dev/null 2>&1; then
+  # before the migration and cutover). Port is 5432 — the container-internal
+  # default; DB_PORT in .env is the host-mapped port and does not apply here.
+  if [ -z "$DB_USER_ENV" ] || [ -z "$DB_NAME_ENV" ] || [ -z "$DB_PASSWORD_ENV" ] || [ -z "$DB_HOST_ENV" ] || ! docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$MIGRATION_DB_CONTAINER" pg_isready -h localhost -p 5432 -U "$DB_USER_ENV" -d "$DB_NAME_ENV" >/dev/null 2>&1; then
     echo "ERROR: RUN_MIGRATIONS enabled but DB_* / postgres container ($MIGRATION_DB_CONTAINER) unavailable — refusing to deploy (#199)" >&2
     exit 1
   fi
@@ -419,7 +421,7 @@ echo "Post-switch health OK — new container stable"
 # ─── Stop old container ──────────────────────────────────────────────────────
 if [ -n "$ACTIVE_CONTAINER" ] && [ -n "$ACTIVE_CONTAINER_IMAGE" ]; then
   echo "Stopping old container: $ACTIVE_CONTAINER"
-  docker stop --time "${DOCKER_STOP_TIMEOUT}" "$ACTIVE_CONTAINER" 2>/dev/null || true
+  docker stop --timeout "${DOCKER_STOP_TIMEOUT}" "$ACTIVE_CONTAINER" 2>/dev/null || true
   docker rm "$ACTIVE_CONTAINER" 2>/dev/null || true
 fi
 

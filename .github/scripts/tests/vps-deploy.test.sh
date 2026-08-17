@@ -28,8 +28,8 @@ case "$1" in
     exit 1
     ;;
   ps)
-    # docker ps --filter publish=127.0.0.1:PORT --format '{{.Names}}'
-    port=$(printf '%s' "$*" | grep -oE 'publish=127\.0\.0\.1:[0-9]+' | grep -oE '[0-9]+$' || true)
+    # docker ps --filter publish=PORT (or publish=IP:PORT) --format '{{.Names}}'
+    port=$(printf '%s' "$*" | grep -oE 'publish=(127\.0\.0\.1:)?[0-9]+' | grep -oE '[0-9]+$' || true)
     for pair in ${FAKE_PORT_MAP:-}; do
       p=${pair%%:*}; n=${pair#*:}
       [ "$p" = "$port" ] && echo "$n"
@@ -165,7 +165,7 @@ write_upstream "$dir" 5007
 code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old" FAKE_IMAGE=img:old)
 [ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
 grep -q -- "--stop-timeout 60" "$dir/docker.log" || fail "docker run missing --stop-timeout"
-grep -q -- "docker stop --time 60 messenger-bot-old" "$dir/docker.log" || fail "docker stop missing --time"
+grep -q -- "docker stop --timeout 60 messenger-bot-old" "$dir/docker.log" || fail "docker stop missing --timeout"
 pass "graceful stop timeout honored"
 
 echo "Test 7: post-switch monitor verifies the public nginx route (#199)"
