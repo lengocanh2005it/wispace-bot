@@ -13,6 +13,16 @@ export interface RedisChatHistoryClient {
     ttlSec?: number,
   ): Promise<'OK'>;
   del(key: string): Promise<number>;
+  /**
+   * EVAL a Lua script (ioredis array-arg form). `keys` are the script's
+   * KEYS table; `args` are ARGV.
+   */
+  eval(
+    script: string,
+    numKeys: number,
+    keys: string[],
+    args: Array<string | number>,
+  ): Promise<unknown>;
 }
 
 const DEFAULT_KEY_PREFIX = 'chat-history:';
@@ -25,6 +35,40 @@ export interface RedisChatHistoryStoreConfig {
   /** Key prefix, e.g. 'chat-history:messenger:' — platform-scoped to avoid cross-bot collisions. Default: 'chat-history:'. */
   keyPrefix?: string;
 }
+
+/**
+ * Appends new messages to a user's history atomically (#148): reads the
+ * existing JSON array, appends, trims to `maxMessages`, and writes back with
+ * a sliding TTL — all inside one server-side script, so concurrent appends
+ * for the same user are serialized by Redis and can never lose a turn (no
+ * read-modify-write GET/SET race).
+ */
+const APPEND_HISTORY_SCRIPT = `
+local key = KEYS[1]
+local max = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+local newMessages = cjson.decode(ARGV[3])
+local raw = redis.call('GET', key)
+local existing = {}
+if raw then
+  local ok, decoded = pcall(cjson.decode, raw)
+  if ok and type(decoded) == 'table' then
+    existing = decoded
+  end
+end
+for _, m in ipairs(newMessages) do
+  table.insert(existing, m)
+end
+if #existing > max then
+  local tail = {}
+  for i = #existing - max + 1, #existing do
+    table.insert(tail, existing[i])
+  end
+  existing = tail
+end
+redis.call('SET', key, cjson.encode(existing), 'EX', ttl)
+return #existing
+`;
 
 /**
  * Redis-backed chat history store for multi-pod deployments.
@@ -64,36 +108,30 @@ export class RedisChatHistoryStore implements ChatHistoryStorePort {
     const assistant = assistantText.trim();
     if (!user || !assistant) return;
 
-    const existing = await this.getHistory(externalUserId);
     const messages = [
-      ...existing,
       { role: 'user' as const, content: user },
       { role: 'assistant' as const, content: assistant },
-    ].slice(-this.maxMessages);
-
-    await this.redis.set(
-      `${this.keyPrefix}${externalUserId}`,
-      JSON.stringify(messages),
-      'EX',
-      this.ttlSec,
-    );
+    ];
+    await this.appendAtomic(externalUserId, messages);
   }
 
   async appendToolSummary(
     externalUserId: string,
     summary: string,
   ): Promise<void> {
-    const existing = await this.getHistory(externalUserId);
-    const messages = [
-      ...existing,
-      { role: 'tool_summary' as const, content: summary },
-    ].slice(-this.maxMessages);
+    const messages = [{ role: 'tool_summary' as const, content: summary }];
+    await this.appendAtomic(externalUserId, messages);
+  }
 
-    await this.redis.set(
-      `${this.keyPrefix}${externalUserId}`,
-      JSON.stringify(messages),
-      'EX',
-      this.ttlSec,
+  private async appendAtomic(
+    externalUserId: string,
+    messages: Array<{ role: string; content: string }>,
+  ): Promise<void> {
+    await this.redis.eval(
+      APPEND_HISTORY_SCRIPT,
+      1,
+      [`${this.keyPrefix}${externalUserId}`],
+      [this.maxMessages, this.ttlSec, JSON.stringify(messages)],
     );
   }
 
