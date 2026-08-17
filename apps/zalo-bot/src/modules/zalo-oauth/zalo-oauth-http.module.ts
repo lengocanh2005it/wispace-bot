@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
+import { ZaloLinkCompletionService } from './application/services/zalo-link-completion.service';
 import { ZaloOauthController } from './presentation/controllers/zalo-oauth.controller';
 import { ZaloOauthModule } from './zalo-oauth.module';
 
@@ -7,5 +8,6 @@ import { ZaloOauthModule } from './zalo-oauth.module';
 @Module({
   imports: [ZaloOauthModule, ZaloChatModule],
   controllers: [ZaloOauthController],
+  providers: [ZaloLinkCompletionService],
 })
 export class ZaloOauthHttpModule {}
