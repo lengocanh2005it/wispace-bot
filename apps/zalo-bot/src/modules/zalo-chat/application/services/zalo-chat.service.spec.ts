@@ -44,6 +44,25 @@ describe('ZaloChatService', () => {
     );
   });
 
+  it('propagates queue write failures so the durable inbox can retry', async () => {
+    const enqueue = jest.fn().mockRejectedValue(new Error('Redis unavailable'));
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as PlatformChatQueueService,
+      NO_RESCHEDULE,
+    );
+
+    await expect(
+      service.handleIncomingMessage('zalo-1', 'xem lich hoc cua minh'),
+    ).rejects.toThrow('Redis unavailable');
+    expect(sendText).toHaveBeenCalledTimes(1);
+  });
+
   it('replies directly to greeting without enqueueing', async () => {
     const sendText = jest.fn().mockResolvedValue(undefined);
     const enqueue = jest.fn();

@@ -27,8 +27,12 @@ import {
   PlatformAgentToolsService,
   PlatformChatHistoryService,
   PlatformChatQueueService,
+  RedisChatQueueStore,
+  RedisChatQueueWorkerService,
+  PLATFORM_CHAT_QUEUE_STORE,
   createChatPipelineAdapters,
 } from '@wispace/chat-agent';
+import type { ChatQueueStorePort } from '@wispace/chat-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
   WispaceCalendarService,
@@ -212,6 +216,7 @@ const REGISTER_REPORT_MESSAGE =
         historyService: PlatformChatHistoryService,
         agentService: PlatformAgentService,
         outboundService: DiscordOutboundService,
+        queueStore: ChatQueueStorePort,
       ) => {
         const adapters = createChatPipelineAdapters(
           rateLimitService,
@@ -237,6 +242,7 @@ const REGISTER_REPORT_MESSAGE =
               outboundService.sendTyping(externalUserId),
             propagateServerChannel: true,
           },
+          queueStore,
         );
       },
       inject: [
@@ -245,6 +251,36 @@ const REGISTER_REPORT_MESSAGE =
         PlatformChatHistoryService,
         PlatformAgentService,
         DiscordOutboundService,
+        PLATFORM_CHAT_QUEUE_STORE,
+      ],
+    },
+    {
+      provide: PLATFORM_CHAT_QUEUE_STORE,
+      useFactory: (
+        redisClient: import('@wispace/bot-common').RedisClientPort,
+        configService: ConfigService,
+      ) =>
+        new RedisChatQueueStore(redisClient, configService, {
+          platform: 'discord',
+        }),
+      inject: [REDIS_CLIENT, ConfigService],
+    },
+    {
+      provide: RedisChatQueueWorkerService,
+      useFactory: (
+        configService: ConfigService,
+        queueStore: ChatQueueStorePort,
+        queueService: PlatformChatQueueService,
+      ) =>
+        new RedisChatQueueWorkerService(
+          configService,
+          (limit) => queueStore.listReadyExternalUserIds(limit),
+          (externalUserId) => queueService.flushReady(externalUserId),
+        ),
+      inject: [
+        ConfigService,
+        PLATFORM_CHAT_QUEUE_STORE,
+        PlatformChatQueueService,
       ],
     },
     DiscordCalendarPort,

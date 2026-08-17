@@ -274,7 +274,7 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 |-----------|---------------|-----|-------|
 | **1 instance** | Suitable | Keep `CHAT_QUEUE_SHARED=false` | — |
 | **≥2 chat pods** | Queue/history split across pods | `CHAT_QUEUE_SHARED=true` + migration — H7 ✓; `appendChatHistoryTurn` atomic ✓ | Done (enable env) |
-| **≥2 chat pods (Discord/Zalo)** | Shared Redis debounce queue not implemented | **Startup reject** `CHAT_QUEUE_STORE=redis`/`CHAT_QUEUE_SHARED=true` on Discord/Zalo (single-pod documented); port Messenger's Redis queue to `chat-queue-core` = **follow-up** | Follow-up |
+| **≥2 chat pods (Discord/Zalo)** | Redis debounce queue now shared with Messenger | Platform-prefixed Redis buffers, per-user locks, restart recovery, and the common 2s worker; production rejects memory queue | Done (#174) |
 | **Redis chat history unavailable** | ~~Silent memory fallback~~ | **Fail closed** at startup on all 3 bots (#120) | Done |
 | **≥2 report cron pods** | ~~Risk of duplicate 08:00 sends~~ | **R4** ✓ claim + advisory lock + optional cron leader | Done |
 | **≥2 reminder cron pods** | `claimJob` ✓ + **cron pg_advisory_lock** ✓ | `upsertPendingJob` TOCTOU fixed ✓ (`pg_advisory_xact_lock`) | Done |
