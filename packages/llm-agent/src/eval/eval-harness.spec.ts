@@ -10,7 +10,7 @@ function listFixtureFiles(): string[] {
     .sort();
 }
 
-describe('LLM agent eval harness (golden conversations)', () => {
+describe('LLM agent eval harness (offline orchestration regression)', () => {
   const fixtureFiles = listFixtureFiles();
 
   it('discovers at least one fixture', () => {

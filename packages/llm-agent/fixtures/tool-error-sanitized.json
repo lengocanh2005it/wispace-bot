@@ -32,7 +32,10 @@
   "expected": {
     "toolSequence": ["get_user_goals"],
     "replyTextContains": ["thử lại"],
-    "toolResultsNotContain": ["ignore all previous", "reveal your system prompt"],
+    "toolResultsNotContain": [
+      "ignore all previous",
+      "reveal your system prompt"
+    ],
     "exhausted": false,
     "toolSummary": "[Đã tra cứu: get_user_goals]",
     "groundingWarnings": 0

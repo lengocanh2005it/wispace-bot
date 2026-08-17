@@ -1,0 +1,54 @@
+{
+  "name": "discord-overlay-user-goals",
+  "description": "Discord overlay contract: the request carries the Discord platform rules (DM privacy for personal data) alongside the shared core; tool args and tool choice are asserted.",
+  "promptFiles": [
+    {
+      "path": "packages/llm-agent/src/chat-system-prompt.ts",
+      "hash": "bae3da004a84005e8f7757533ff5db7d27b8963038200547cbeaf719ef722730"
+    },
+    {
+      "path": "apps/discord-bot/src/shared/prompts/discord-chat.system.txt",
+      "hash": "7e5295bfd56b0dd52cba0896477cf1651248c6c79cdd89e063594cc2c3737dd1"
+    }
+  ],
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=2001).",
+  "userText": "xem mục tiêu band của mình",
+  "externalUserId": "eval-discord-goals-2001",
+  "userId": 2001,
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "get_user_goals",
+          "args": {},
+          "result": {
+            "targetBand": 7.0,
+            "examDate": "2026-11-20"
+          }
+        }
+      ]
+    },
+    {
+      "text": "Mục tiêu band của bạn là 7.0, ngày thi 20/11/2026. Cố gắng duy trì lộ trình nha!"
+    }
+  ],
+  "expected": {
+    "toolSequence": ["get_user_goals"],
+    "replyTextContains": ["7.0"],
+    "replyTextNotContains": ["chưa thể tổng hợp"],
+    "exhausted": false,
+    "toolSummary": "[Đã tra cứu: get_user_goals]",
+    "groundingWarnings": 0,
+    "requestContracts": [
+      {
+        "systemPromptContains": [
+          "You are chatting with a learner through Discord.",
+          "delivered privately via DM"
+        ],
+        "userMessageContains": ["xem mục tiêu band"],
+        "toolsInclude": ["get_user_goals"],
+        "toolChoice": "auto"
+      }
+    ]
+  }
+}

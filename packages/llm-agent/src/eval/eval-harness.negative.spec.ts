@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { runEvalFixture } from './eval-harness';
+import { runEvalFixture, ScriptedToolExecutor } from './eval-harness';
 
 describe('eval harness self-checks (negative assertions)', () => {
   it('fails when the expected tool sequence does not match', async () => {
@@ -58,6 +58,76 @@ describe('eval harness self-checks (negative assertions)', () => {
     expect(result.ok).toBe(false);
     expect(result.failures.join('\n')).toContain(
       'missing required arg "calendarId"',
+    );
+  });
+
+  it('records an args mismatch when the executor receives different serialized args', async () => {
+    const executor = new ScriptedToolExecutor([
+      {
+        toolCalls: [{ name: 'get_user_goals', args: { limit: 3 } }],
+      },
+    ]);
+    await executor.execute('get_user_goals', '{"limit":9}');
+    expect(executor.argsMismatches.length).toBe(1);
+    expect(executor.argsMismatches[0]).toContain(
+      'tool "get_user_goals" args mismatch',
+    );
+  });
+
+  it('records unexpected tool attempts', async () => {
+    const executor = new ScriptedToolExecutor([
+      { toolCalls: [{ name: 'get_user_goals', args: {} }] },
+    ]);
+    await executor
+      .execute('precreate_next_exercise', '{}')
+      .catch(() => undefined);
+    expect(executor.unexpectedAttempts.length).toBe(1);
+    expect(executor.unexpectedAttempts[0]).toContain(
+      'unexpected tool "precreate_next_exercise"',
+    );
+  });
+
+  it('fails when the scripted tool plan is not fully consumed', async () => {
+    const fixture = JSON.parse(
+      readFileSync(
+        join(__dirname, '../../fixtures/single-tool-user-goals.json'),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+    fixture.expected = { planRemainder: 1 };
+    const result = await runEvalFixture(fixture);
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toContain('scripted tool plan leftover');
+  });
+
+  it('fails when a request contract is not honored', async () => {
+    const fixture = JSON.parse(
+      readFileSync(
+        join(__dirname, '../../fixtures/single-tool-user-goals.json'),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+    fixture.expected = {
+      requestContracts: [{ systemPromptContains: ['no-such-fragment'] }],
+    };
+    const result = await runEvalFixture(fixture);
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toContain(
+      'system prompt is missing "no-such-fragment"',
+    );
+  });
+
+  it('fails when a request contract targets a round with no recorded request', async () => {
+    const fixture = JSON.parse(
+      readFileSync(join(__dirname, '../../fixtures/greeting.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    fixture.expected = {
+      requestContracts: [{ round: 5, toolsInclude: ['get_user_goals'] }],
+    };
+    const result = await runEvalFixture(fixture);
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toContain(
+      'round 5 has no recorded request',
     );
   });
 });

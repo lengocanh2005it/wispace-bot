@@ -40,6 +40,7 @@
   ],
   "expected": {
     "toolSequence": ["precreate_next_exercise"],
+    "planRemainder": 1,
     "replyTextContains": ["https://wispace.example/exercises/999"],
     "exhausted": false,
     "toolSummary": "[Đã tra cứu: precreate_next_exercise]",

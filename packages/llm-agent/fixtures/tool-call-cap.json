@@ -20,7 +20,10 @@
       "toolCalls": [
         { "name": "get_user_goals", "args": {} },
         { "name": "get_upcoming_study_sessions", "args": { "limit": 5 } },
-        { "name": "list_study_calendar_entries", "args": { "timeRange": "upcoming" } },
+        {
+          "name": "list_study_calendar_entries",
+          "args": { "timeRange": "upcoming" }
+        },
         { "name": "preview_next_study_reminder", "args": {} },
         { "name": "register_exam_report_notifications", "args": {} }
       ]
@@ -28,6 +31,7 @@
   ],
   "expected": {
     "toolSequence": [],
+    "planRemainder": 5,
     "replyTextContains": ["tối đa 4 việc"],
     "exhausted": false,
     "toolSummary": null,
