@@ -79,3 +79,6 @@ jobs:
 
       - name: Test VPS self-pull deploy (concurrency + failure paths, #144/#172)
         run: bash .github/scripts/tests/vps-self-pull-deploy.test.sh
+
+      - name: Test VPS deploy script (fail-closed + crash-safety + migration lock, #199/#201/#203/#204)
+        run: bash .github/scripts/tests/vps-deploy.test.sh

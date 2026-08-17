@@ -15,6 +15,12 @@ BACKUP_DIR="${BACKUP_DIR:-/home/ngoc_anh/backups/ai_chat_bot_db}"
 KEEP_DAYS="${KEEP_DAYS:-14}"
 DB_CONTAINER="${DB_CONTAINER:-postgres_n8n_db}"
 
+# Backups hold PII + OAuth/linking material — restrict file creation (600)
+# and lock down the backup directory (700) (#204/#185).
+umask 077
+mkdir -p "$BACKUP_DIR"
+chmod 700 "$BACKUP_DIR"
+
 DB_USER=$(grep -E '^DB_USER=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
 DB_NAME=$(grep -E '^DB_NAME=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
 DB_PASSWORD=$(grep -E '^DB_PASSWORD=' "$ENV_FILE" | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
@@ -24,7 +30,6 @@ if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ] || [ -z "$DB_PASSWORD" ]; then
   exit 1
 fi
 
-mkdir -p "$BACKUP_DIR"
 STAMP=$(date +%Y%m%d-%H%M%S)
 OUT="$BACKUP_DIR/${DB_NAME}-${STAMP}.sql.gz"
 TMP="$OUT.tmp"

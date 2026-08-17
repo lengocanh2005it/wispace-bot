@@ -63,6 +63,10 @@ ARG APP_PORT
 ENV NODE_ENV=production
 ENV APP_NAME=$APP_NAME
 
+# psql: the deploy script holds the migration advisory lock on the same psql
+# session that runs the migration (#203) — psql must exist in the runtime image.
+RUN apk add --no-cache postgresql-client
+
 RUN addgroup -g 1001 -S app \
   && adduser -S app -u 1001 -G app
 
