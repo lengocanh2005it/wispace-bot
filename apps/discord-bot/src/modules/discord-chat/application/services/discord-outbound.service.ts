@@ -32,11 +32,28 @@ const DM_FAILURE_REASON_MENU = 'menu_send_error';
 const DM_FAILURE_REASON_RESCHEDULE = 'reschedule_send_error';
 /** Network/unknown delivery outcome — the provider may have accepted the message (#156). */
 const DM_FAILURE_REASON_AMBIGUOUS = 'dm_send_ambiguous';
+const NETWORK_ERROR_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ETIMEDOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
+
+function isDiscordNetworkError(error: unknown): boolean {
+  if (error instanceof TypeError) {
+    return true;
+  }
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && NETWORK_ERROR_CODES.has(code);
+}
 
 /**
  * Retry predicate for Discord DM sends (#156): retry only rate limits (429),
- * server errors (5xx) and network-level failures (no numeric HTTP status).
- * Never retry known 4xx (auth/validation — permanent) or cancellations.
+ * server errors (5xx) and known network-level failures. Never retry known 4xx
+ * (auth/validation — permanent), unknown errors, or cancellations.
  */
 export function isDiscordRetryableError(error: unknown): boolean {
   if (isAbortError(error)) {
@@ -46,18 +63,17 @@ export function isDiscordRetryableError(error: unknown): boolean {
   if (typeof status === 'number') {
     return status === 429 || status >= 500;
   }
-  // No numeric status: network/unknown failure — transient by definition.
-  return true;
+  return isDiscordNetworkError(error);
 }
 
 /** True when the error carries no delivery verdict — the provider may have
  * accepted the message before the failure (ambiguous outcome, #156). */
 export function isAmbiguousDeliveryError(error: unknown): boolean {
   if (isAbortError(error)) {
-    return false;
+    return (error as { name?: unknown } | null)?.name === 'TimeoutError';
   }
   const status = (error as { status?: unknown } | null)?.status;
-  return typeof status !== 'number';
+  return typeof status !== 'number' && isDiscordNetworkError(error);
 }
 
 /**
@@ -117,6 +133,7 @@ export class DiscordOutboundService {
     text: string,
     options?: { skipDeadLetter?: boolean },
   ): Promise<string | undefined> {
+    let ambiguousDeliveryRecorded = false;
     try {
       const msg = await withRetry(
         async () => {
@@ -132,6 +149,7 @@ export class DiscordOutboundService {
             // provider may have accepted the first attempt (#156).
             if (isAmbiguousDeliveryError(error)) {
               this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
+              ambiguousDeliveryRecorded = true;
             }
             const errorMsg = maskExternalIdInText(
               errorMessage(error),
@@ -152,6 +170,9 @@ export class DiscordOutboundService {
       return msg.channelId;
     } catch (error) {
       const errorMsg = maskExternalIdInText(errorMessage(error), discordUserId);
+      if (!ambiguousDeliveryRecorded && isAmbiguousDeliveryError(error)) {
+        this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
+      }
       this.logger.warn(
         `Failed to send DM to discordUserId=${maskExternalId(
           discordUserId,

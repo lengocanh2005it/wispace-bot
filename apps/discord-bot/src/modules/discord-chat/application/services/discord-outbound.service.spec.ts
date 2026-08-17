@@ -173,7 +173,7 @@ describe('DiscordOutboundService', () => {
   });
 
   it('#156: retries network failures and counts them as ambiguous (delivery outcome unknown)', async () => {
-    const fetch = jest.fn().mockRejectedValue(new Error('fetch failed'));
+    const fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed'));
     const metrics = buildMetricsStub();
 
     const service = new DiscordOutboundService(
@@ -185,6 +185,45 @@ describe('DiscordOutboundService', () => {
 
     await expect(service.sendText('discord-1', 'hello')).rejects.toThrow();
     expect(fetch).toHaveBeenCalledTimes(2);
+    expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
+      'dm_send_ambiguous',
+    );
+  });
+
+  it('#156: does not retry an unknown non-network error', async () => {
+    const fetch = jest.fn().mockRejectedValue(new Error('unexpected failure'));
+    const metrics = buildMetricsStub();
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      undefined,
+      metrics,
+    );
+
+    await expect(service.sendText('discord-1', 'hello')).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(metrics.incDmDeliveryFailure).not.toHaveBeenCalledWith(
+      'dm_send_ambiguous',
+    );
+  });
+
+  it('#156: does not retry a timeout and records ambiguous delivery', async () => {
+    const timeout = Object.assign(new Error('request timed out'), {
+      name: 'TimeoutError',
+    });
+    const fetch = jest.fn().mockRejectedValue(timeout);
+    const metrics = buildMetricsStub();
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      undefined,
+      metrics,
+    );
+
+    await expect(service.sendText('discord-1', 'hello')).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(1);
     expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
       'dm_send_ambiguous',
     );
