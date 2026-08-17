@@ -18,15 +18,20 @@ import {
   REPORT_CLAIM_REPOSITORY,
   ReportScheduleService,
   parseExamDateToIso,
+  type ReportClaimRepositoryPort,
 } from '@wispace/scheduler-core';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import {
   ScheduledReportClaimEntity,
   PlatformReportClaimRepository,
+  ReportClaimStaleResetCronService,
 } from '@wispace/database';
+import { BotCommonModule, PgAdvisoryLockService } from '@wispace/bot-common';
 import { ZaloChatModule } from './zalo-chat.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-cron.service';
+
+const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
 
 @Module({
   imports: [
@@ -36,6 +41,7 @@ import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-
     ]),
     ZaloChatModule,
     ZaloWispaceModule,
+    BotCommonModule,
     ChatMeteringModule.forPlatform('zalo'),
   ],
   providers: [
@@ -67,6 +73,21 @@ import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-
       useFactory: (repo: Repository<ScheduledReportClaimEntity>) =>
         new PlatformReportClaimRepository('zalo', repo),
       inject: [getRepositoryToken(ScheduledReportClaimEntity)],
+    },
+    {
+      provide: ReportClaimStaleResetCronService,
+      useFactory: (
+        configService: ConfigService,
+        claimRepository: ReportClaimRepositoryPort,
+        pgLock: PgAdvisoryLockService,
+      ) =>
+        new ReportClaimStaleResetCronService(
+          configService,
+          claimRepository,
+          pgLock,
+          { platform: 'zalo', lockId: ZALO_REPORT_CLAIM_STALE_RESET_LOCK },
+        ),
+      inject: [ConfigService, REPORT_CLAIM_REPOSITORY, PgAdvisoryLockService],
     },
     {
       provide: PlatformStudentReportService,

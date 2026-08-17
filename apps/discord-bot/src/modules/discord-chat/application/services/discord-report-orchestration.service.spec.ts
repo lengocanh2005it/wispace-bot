@@ -32,7 +32,11 @@ describe('DiscordReportOrchestrationService.claimAndSend', () => {
         .mockResolvedValue(overrides?.alreadySent ?? false),
       tryClaimScheduledReport: jest
         .fn()
-        .mockResolvedValue(overrides?.claimOk ?? true),
+        .mockResolvedValue(
+          overrides?.claimOk === false
+            ? { claimed: false }
+            : { claimed: true, leaseToken: 'lease-1' },
+        ),
       markScheduledReportClaimSent: jest.fn().mockResolvedValue(undefined),
       releaseScheduledReportClaim: jest.fn().mockResolvedValue(undefined),
     };
@@ -75,6 +79,7 @@ describe('DiscordReportOrchestrationService.claimAndSend', () => {
       reportService as never,
       {} as never,
       reportSendScheduleService as never,
+      { get: jest.fn() } as never,
     );
 
     return {
@@ -104,11 +109,14 @@ describe('DiscordReportOrchestrationService.claimAndSend', () => {
 
     expect(result.sent).toBe(1);
     expect(result.skipped).toBe(0);
-    expect(claimRepository.tryClaimScheduledReport).toHaveBeenCalledWith({
-      externalUserId: 'discord-1',
-      userId: 10,
-      reportDate: '2026-08-07',
-    });
+    expect(claimRepository.tryClaimScheduledReport).toHaveBeenCalledWith(
+      {
+        externalUserId: 'discord-1',
+        userId: 10,
+        reportDate: '2026-08-07',
+      },
+      expect.any(Number),
+    );
     expect(goalsService.getUserGoals).toHaveBeenCalledWith('discord-1');
     expect(reportService.generateReport).toHaveBeenCalledWith('discord-1');
     expect(deliveryService.sendReport).toHaveBeenCalledWith({
@@ -116,10 +124,13 @@ describe('DiscordReportOrchestrationService.claimAndSend', () => {
       reportText: 'report text',
       reportDate: '2026-08-07',
     });
-    expect(claimRepository.markScheduledReportClaimSent).toHaveBeenCalledWith({
-      externalUserId: 'discord-1',
-      reportDate: '2026-08-07',
-    });
+    expect(claimRepository.markScheduledReportClaimSent).toHaveBeenCalledWith(
+      {
+        externalUserId: 'discord-1',
+        reportDate: '2026-08-07',
+      },
+      'lease-1',
+    );
   });
 
   it('already sent today → skipped=1, no claim or send', async () => {
@@ -166,10 +177,13 @@ describe('DiscordReportOrchestrationService.claimAndSend', () => {
 
     expect(result.deferred).toBe(1);
     expect(result.retryQueued).toBe(1);
-    expect(claimRepository.releaseScheduledReportClaim).toHaveBeenCalledWith({
-      externalUserId: 'discord-1',
-      reportDate: '2026-08-07',
-    });
+    expect(claimRepository.releaseScheduledReportClaim).toHaveBeenCalledWith(
+      {
+        externalUserId: 'discord-1',
+        reportDate: '2026-08-07',
+      },
+      'lease-1',
+    );
     expect(jobRepository.recordRetryableFailure).toHaveBeenCalledWith(
       expect.objectContaining({
         externalUserId: 'discord-1',
@@ -190,10 +204,13 @@ describe('DiscordReportOrchestrationService.claimAndSend', () => {
     });
 
     expect(result).toEqual({ ...ZERO_RESULT, windowClosed: 1 });
-    expect(claimRepository.releaseScheduledReportClaim).toHaveBeenCalledWith({
-      externalUserId: 'discord-1',
-      reportDate: '2026-08-07',
-    });
+    expect(claimRepository.releaseScheduledReportClaim).toHaveBeenCalledWith(
+      {
+        externalUserId: 'discord-1',
+        reportDate: '2026-08-07',
+      },
+      'lease-1',
+    );
   });
 
   it('send throws → release claim, failure counted', async () => {

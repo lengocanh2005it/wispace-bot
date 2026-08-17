@@ -1,10 +1,12 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { WispaceApiError } from '@wispace/wispace-client';
 import { PlatformStudentReportService } from '@wispace/student-report';
+import { readReportClaimLeaseMs } from '@wispace/database';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import {
   REPORT_CLAIM_REPOSITORY,
@@ -35,6 +37,7 @@ export class ZaloReportCronService {
     private readonly outbound: ZaloOutboundService,
     private readonly reportService: PlatformStudentReportService,
     private readonly reportScheduleService: ReportScheduleService,
+    private readonly configService: ConfigService,
   ) {}
 
   @Cron('0 8 * * *', {
@@ -146,6 +149,7 @@ export class ZaloReportCronService {
       }
     }
 
+    let claimLeaseToken = '';
     if (link.userId) {
       if (sentUserIds.has(link.userId)) {
         this.logger.log(
@@ -155,12 +159,15 @@ export class ZaloReportCronService {
         );
         return 'skipped';
       }
-      const claimed = await this.claimRepo.tryClaimScheduledReport({
-        externalUserId: link.externalUserId,
-        userId: link.userId,
-        reportDate,
-      });
-      if (!claimed) {
+      const claimed = await this.claimRepo.tryClaimScheduledReport(
+        {
+          externalUserId: link.externalUserId,
+          userId: link.userId,
+          reportDate,
+        },
+        readReportClaimLeaseMs(this.configService),
+      );
+      if (!claimed.claimed || !claimed.leaseToken) {
         this.logger.log(
           `Report already claimed by another instance for Zalo user ${maskExternalId(
             link.externalUserId,
@@ -168,6 +175,7 @@ export class ZaloReportCronService {
         );
         return 'skipped';
       }
+      claimLeaseToken = claimed.leaseToken;
     }
 
     try {
@@ -176,10 +184,13 @@ export class ZaloReportCronService {
       );
       await this.outbound.sendText(link.externalUserId, report);
       if (link.userId) {
-        await this.claimRepo.markScheduledReportClaimSent({
-          externalUserId: link.externalUserId,
-          reportDate,
-        });
+        await this.claimRepo.markScheduledReportClaimSent(
+          {
+            externalUserId: link.externalUserId,
+            reportDate,
+          },
+          claimLeaseToken,
+        );
       }
       this.logger.log(
         `Report sent to Zalo user ${maskExternalId(link.externalUserId)}`,
@@ -188,10 +199,13 @@ export class ZaloReportCronService {
     } catch (error) {
       if (link.userId) {
         await this.claimRepo
-          .releaseScheduledReportClaim({
-            externalUserId: link.externalUserId,
-            reportDate,
-          })
+          .releaseScheduledReportClaim(
+            {
+              externalUserId: link.externalUserId,
+              reportDate,
+            },
+            claimLeaseToken,
+          )
           .catch((releaseError) => {
             this.logger.error(
               `Failed to release report claim for Zalo user ${maskExternalId(

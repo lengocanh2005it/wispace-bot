@@ -1,5 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { errorMessage } from '@wispace/bot-common';
+import { readReportClaimLeaseMs } from '@wispace/database';
 import type {
   ReportSendJobRepositoryPort,
   ReportClaimRepositoryPort,
@@ -43,6 +45,7 @@ export class DiscordReportOrchestrationService {
     private readonly reportService: PlatformStudentReportService,
     private readonly reportScheduleService: ReportScheduleService,
     private readonly reportSendScheduleService: ReportSendScheduleService,
+    private readonly configService: ConfigService,
   ) {}
 
   async claimAndSend(
@@ -72,16 +75,21 @@ export class DiscordReportOrchestrationService {
     }
 
     let claimedForSend = false;
+    let claimLeaseToken = '';
     if (skipAlreadySentToday) {
-      const claimed = await this.claimRepository.tryClaimScheduledReport({
-        externalUserId: mapping.externalUserId,
-        userId: mapping.userId,
-        reportDate,
-      });
-      if (!claimed) {
+      const claimed = await this.claimRepository.tryClaimScheduledReport(
+        {
+          externalUserId: mapping.externalUserId,
+          userId: mapping.userId,
+          reportDate,
+        },
+        readReportClaimLeaseMs(this.configService),
+      );
+      if (!claimed.claimed || !claimed.leaseToken) {
         return { ...ZERO, claimSkipped: 1 };
       }
       claimedForSend = true;
+      claimLeaseToken = claimed.leaseToken;
     }
 
     try {
@@ -101,10 +109,13 @@ export class DiscordReportOrchestrationService {
 
       if (result.ok) {
         if (claimedForSend) {
-          await this.claimRepository.markScheduledReportClaimSent({
-            externalUserId: mapping.externalUserId,
-            reportDate,
-          });
+          await this.claimRepository.markScheduledReportClaimSent(
+            {
+              externalUserId: mapping.externalUserId,
+              reportDate,
+            },
+            claimLeaseToken,
+          );
         }
         if (examDateForOutbox) {
           await this.jobRepository.markSentByExternalUserExamDate(
@@ -116,10 +127,13 @@ export class DiscordReportOrchestrationService {
       }
 
       if (claimedForSend) {
-        await this.claimRepository.releaseScheduledReportClaim({
-          externalUserId: mapping.externalUserId,
-          reportDate,
-        });
+        await this.claimRepository.releaseScheduledReportClaim(
+          {
+            externalUserId: mapping.externalUserId,
+            reportDate,
+          },
+          claimLeaseToken,
+        );
       }
 
       if (result.reason === 'RETRYABLE') {
@@ -143,10 +157,13 @@ export class DiscordReportOrchestrationService {
       return { ...ZERO, windowClosed: 1 };
     } catch (error) {
       if (claimedForSend) {
-        await this.claimRepository.releaseScheduledReportClaim({
-          externalUserId: mapping.externalUserId,
-          reportDate,
-        });
+        await this.claimRepository.releaseScheduledReportClaim(
+          {
+            externalUserId: mapping.externalUserId,
+            reportDate,
+          },
+          claimLeaseToken,
+        );
       }
       const msg = errorMessage(error);
       return {
