@@ -53,9 +53,9 @@ describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
         );
         if (staleReset) return Promise.resolve({ affected: 1 });
 
-        const tokenCall = andWhereCalls.find(([sql]) =>
-          String(sql).includes('lease_token'),
-        );
+        const tokenCall = [...andWhereCalls]
+          .reverse()
+          .find(([sql]) => String(sql).includes('lease_token'));
         const leaseToken = tokenCall?.[1]?.leaseToken as string | undefined;
         const row = claimStore.get(claimKey('zalo-1', '2026-08-14'));
         if (!row || (leaseToken && row.leaseToken !== leaseToken)) {
@@ -236,6 +236,45 @@ describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
       .map(([sql]) => sql)
       .join('\n');
     expect(whereSql).toContain('lease_token = :leaseToken');
+  });
+
+  it('prevents a stale worker from changing a reclaimed claim', async () => {
+    const first = await claim();
+    expect(first).toEqual({ claimed: true, leaseToken: 'lease-1' });
+
+    const released = await repository.releaseScheduledReportClaim(
+      { externalUserId: 'zalo-1', reportDate: '2026-08-14' },
+      first.leaseToken,
+    );
+    expect(released).toBe(true);
+
+    const second = await claim();
+    expect(second).toEqual({
+      claimed: true,
+      leaseToken: 'lease-1-reclaimed',
+    });
+
+    const staleMarked = await repository.markScheduledReportClaimSent(
+      { externalUserId: 'zalo-1', reportDate: '2026-08-14' },
+      first.leaseToken,
+    );
+    const staleReleased = await repository.releaseScheduledReportClaim(
+      { externalUserId: 'zalo-1', reportDate: '2026-08-14' },
+      first.leaseToken,
+    );
+
+    expect(staleMarked).toBe(false);
+    expect(staleReleased).toBe(false);
+
+    const currentMarked = await repository.markScheduledReportClaimSent(
+      { externalUserId: 'zalo-1', reportDate: '2026-08-14' },
+      second.leaseToken,
+    );
+
+    expect(currentMarked).toBe(true);
+    expect(claimStore.get(claimKey('zalo-1', '2026-08-14'))?.status).toBe(
+      'sent',
+    );
   });
 
   it('releases only expired leases and legacy claims past the cutoff', async () => {
