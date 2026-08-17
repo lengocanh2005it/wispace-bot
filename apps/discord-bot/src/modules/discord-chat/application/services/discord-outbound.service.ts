@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   errorMessage,
@@ -134,11 +135,14 @@ export class DiscordOutboundService {
     options?: { skipDeadLetter?: boolean },
   ): Promise<string | undefined> {
     let ambiguousDeliveryRecorded = false;
+    // Discord accepts a nonce up to 25 characters and returns the existing
+    // message when enforceNonce is true, making a retry safe after ambiguity.
+    const nonce = randomUUID().replaceAll('-', '').slice(0, 25);
     try {
       const msg = await withRetry(
         async () => {
           const user = await this.client.users.fetch(discordUserId);
-          return user.send(text);
+          return user.send({ content: text, nonce, enforceNonce: true });
         },
         {
           maxRetries: 1,
