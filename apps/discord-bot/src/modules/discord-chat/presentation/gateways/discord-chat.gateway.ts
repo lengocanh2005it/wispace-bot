@@ -81,61 +81,100 @@ export class DiscordChatGateway {
     const displayName = member.displayName;
     const discordUserId = member.id;
 
-    // Linking already happened at OAuth callback time (independent of guild
-    // membership) — here we only deliver the welcome DM that could not be
-    // sent earlier because Discord DMs require a shared guild.
-    const wispaceUserId =
-      await this.accountLinkService.findUserIdByDiscordId(discordUserId);
-    const isLinked = wispaceUserId !== undefined;
+    let isLinked: boolean | undefined;
+    let dmOutcome = 'skipped';
 
-    // Public welcome in server channel (if DISCORD_WELCOME_CHANNEL_ID is set)
+    try {
+      // Linking already happened at OAuth callback time (independent of guild
+      // membership) — here we only deliver the welcome DM that could not be
+      // sent earlier because Discord DMs require a shared guild.
+      const wispaceUserId =
+        await this.accountLinkService.findUserIdByDiscordId(discordUserId);
+      isLinked = wispaceUserId !== undefined;
+    } catch (error) {
+      this.logger.error(
+        `guildMemberAdd mapping lookup failed discordUserId=${maskExternalId(
+          discordUserId,
+        )}: ${formatError(error)}`,
+      );
+    }
+
+    // Public welcome in server channel (if DISCORD_WELCOME_CHANNEL_ID is set).
+    // Isolated try/catch: a channel-welcome failure must not suppress the DM
+    // attempt (#234).
     const welcomeChannelId = this.configService.get<string>(
       'DISCORD_WELCOME_CHANNEL_ID',
     );
     if (welcomeChannelId) {
-      const serverMsg = isLinked
-        ? `Chào mừng <@${discordUserId}> đến với server WISPACE! 👋\n\n` +
-          `Tài khoản WISPACE đã được liên kết. ${GREETING_INTRO} 🎓`
-        : `Chào mừng <@${discordUserId}> đến với server WISPACE! 👋\n\n` +
-          `${GREETING_INTRO} 🎓\n\n` +
-          `Để dùng đầy đủ tính năng, bạn cần liên kết tài khoản WISPACE với Discord trước nhé. Vào WISPACE và chọn "Kết nối Discord" để bắt đầu!`;
-      await this.outboundService.sendToChannel(welcomeChannelId, serverMsg);
+      try {
+        const serverMsg = isLinked
+          ? `Chào mừng <@${discordUserId}> đến với server WISPACE! 👋\n\n` +
+            `Tài khoản WISPACE đã được liên kết. ${GREETING_INTRO} 🎓`
+          : `Chào mừng <@${discordUserId}> đến với server WISPACE! 👋\n\n` +
+            `${GREETING_INTRO} 🎓\n\n` +
+            `Để dùng đầy đủ tính năng, bạn cần liên kết tài khoản WISPACE với Discord trước nhé. Vào WISPACE và chọn "Kết nối Discord" để bắt đầu!`;
+        await this.outboundService.sendToChannel(welcomeChannelId, serverMsg);
+      } catch (error) {
+        this.logger.error(
+          `guildMemberAdd channel welcome failed channelId=${maskExternalId(
+            welcomeChannelId,
+          )}: ${formatError(error)}`,
+        );
+      }
     }
 
     // Private DM — already sent at callback when the user was in the guild;
     // only send here for users who linked before joining or joined organically.
-    // `last_welcomed_at` dedupes re-joins and the join-during-callback race
-    // (#137 items 2+4) — a user welcomed within the window is not welcomed again.
-    if (isLinked) {
-      await this.welcomeService.welcomeIfDue(discordUserId, displayName);
-    } else {
-      // Join-during-callback race: the mapping may not be committed yet, but
-      // a fresh verify intent means the callback is in flight and will send
-      // the linked welcome itself — skip the organic one. Stale intents
-      // (callback failed) still get the organic welcome.
-      const pending = await this.verifyRecordService.findPending(discordUserId);
-      const pendingIsFresh =
-        pending !== undefined &&
-        Date.now() - pending.verifiedAt.getTime() <
-          readPendingOrganicSkipMs(this.configService);
-      if (pendingIsFresh) {
-        this.logger.log(
-          `Skipping organic welcome for discordUserId=${maskExternalId(
-            discordUserId,
-          )} — link callback in flight`,
+    // The shared `discord_welcome_records` dedupe state (#231) prevents
+    // re-joins and the join-during-callback race (#137 items 2+4) from
+    // sending a second DM.
+    try {
+      if (isLinked) {
+        dmOutcome = await this.welcomeService.welcomeIfDue(
+          discordUserId,
+          displayName,
         );
       } else {
-        const dmMsg = buildGreetingMessage(displayName);
-        await this.outboundService.sendMenuButtons(discordUserId, dmMsg);
+        // Join-during-callback race: the mapping may not be committed yet, but
+        // a fresh verify intent means the callback is in flight and will send
+        // the linked welcome itself — skip the organic one. Stale intents
+        // (callback failed) still get the organic welcome.
+        const pending =
+          await this.verifyRecordService.findPending(discordUserId);
+        const pendingIsFresh =
+          pending !== undefined &&
+          Date.now() - pending.verifiedAt.getTime() <
+            readPendingOrganicSkipMs(this.configService);
+        if (pendingIsFresh) {
+          this.logger.log(
+            `Skipping organic welcome for discordUserId=${maskExternalId(
+              discordUserId,
+            )} — link callback in flight`,
+          );
+        } else {
+          dmOutcome = await this.welcomeService.sendOrganicWelcomeIfDue(
+            discordUserId,
+            displayName,
+          );
+        }
       }
+    } catch (error) {
+      dmOutcome = 'error';
+      this.logger.error(
+        `guildMemberAdd DM delivery failed discordUserId=${maskExternalId(
+          discordUserId,
+        )}: ${formatError(error)}`,
+      );
     }
 
     this.logger.log(
-      `Welcome sent to new member discordUserId=${maskExternalId(
+      `Welcome attempt discordUserId=${maskExternalId(
         discordUserId,
       )} displayName=${maskExternalId(
         sanitizeLogValue(displayName, 64),
-      )} linked=${isLinked} channelId=${welcomeChannelId ?? 'none'}`,
+      )} linked=${isLinked ?? 'unknown'} channelId=${
+        welcomeChannelId ?? 'none'
+      } dm=${dmOutcome}`,
     );
   }
 

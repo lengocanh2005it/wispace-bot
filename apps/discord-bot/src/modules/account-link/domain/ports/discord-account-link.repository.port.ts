@@ -15,8 +15,6 @@ export interface DiscordAccountLinkRepositoryPort {
   ): Promise<{ relinked: boolean; previousUserId?: number }>;
   findUserIdByDiscordId(discordUserId: string): Promise<number | undefined>;
   findDiscordIdByUserId(userId: number): Promise<string | undefined>;
-  markWelcomed(discordUserId: string): Promise<void>;
-  shouldWelcome(discordUserId: string, windowMs: number): Promise<boolean>;
 }
 
 export const DISCORD_ACCOUNT_LINK_REPOSITORY = Symbol(

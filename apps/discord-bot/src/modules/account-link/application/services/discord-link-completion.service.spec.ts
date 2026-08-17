@@ -12,7 +12,7 @@ function buildHarness(overrides: {
   inGuild?: boolean;
   upsertResult?: { relinked: boolean; previousUserId?: number };
   upsertFailsFirst?: boolean;
-  welcomeSent?: boolean;
+  welcomeOutcome?: 'sent' | 'skipped' | 'error';
 }) {
   const accountLinkService = {
     exchangeCodeForDiscordUser: jest
@@ -52,7 +52,9 @@ function buildHarness(overrides: {
   } as unknown as DiscordRelinkNotifier;
 
   const welcomeService = {
-    welcomeIfDue: jest.fn().mockResolvedValue(overrides.welcomeSent ?? true),
+    welcomeIfDue: jest
+      .fn()
+      .mockResolvedValue(overrides.welcomeOutcome ?? 'sent'),
   } as unknown as DiscordWelcomeService;
 
   const service = new DiscordLinkCompletionService(
@@ -145,6 +147,20 @@ describe('DiscordLinkCompletionService', () => {
       'discord-user-1',
       'TestUser',
     );
+    expect(outcome).toBe('success');
+  });
+
+  it('#233: a welcome deduped by the shared record (organic preceded the link) still completes the link without a second DM', async () => {
+    const { service, welcomeService } = buildHarness({
+      inGuild: true,
+      welcomeOutcome: 'skipped',
+    });
+
+    const outcome = await service.completeLink('code', 'good-token');
+
+    expect(welcomeService.welcomeIfDue).toHaveBeenCalledTimes(1);
+    // The welcome service returned false = deduped (organic welcome was sent
+    // within the window); the link itself is still committed and reported.
     expect(outcome).toBe('success');
   });
 

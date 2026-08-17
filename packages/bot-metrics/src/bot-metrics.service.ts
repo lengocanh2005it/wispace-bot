@@ -51,6 +51,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private quotaDenied: Counter;
   private reminderDispatch: Counter;
   private dmDeliveryFailures: Counter;
+  private welcomeAttempts: Counter;
   private webhookInboundBacklog: Gauge;
 
   constructor(config: MetricsConfig) {
@@ -136,6 +137,13 @@ export class BotMetricsService implements OnModuleDestroy {
       registers: [this.registry],
     });
 
+    this.welcomeAttempts = new Counter({
+      name: `${this.prefix}_welcome_attempts_total`,
+      help: 'Welcome DM delivery outcomes (skipped = deduped within the re-welcome window)',
+      labelNames: ['outcome'],
+      registers: [this.registry],
+    });
+
     this.webhookInboundBacklog = new Gauge({
       name: `${this.prefix}_webhook_inbound_backlog`,
       help: 'Durable inbound webhook events due for retry (pending/failed/processing-stale)',
@@ -218,6 +226,11 @@ export class BotMetricsService implements OnModuleDestroy {
   /** DM delivery failure (e.g. user privacy settings block DMs) — ops signal. */
   incDmDeliveryFailure(reason: string): void {
     this.dmDeliveryFailures.inc({ reason });
+  }
+
+  /** Welcome-DM attempt outcome — success | error | skipped (#232/#234). */
+  incWelcomeAttempt(outcome: string): void {
+    this.welcomeAttempts.inc({ outcome });
   }
 
   /** Backlog gauge for the durable inbound retry cron — set per tick. */

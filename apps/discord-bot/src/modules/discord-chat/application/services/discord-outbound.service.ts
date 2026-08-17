@@ -148,11 +148,16 @@ export class DiscordOutboundService {
     }
   }
 
-  /** Sends a persistent quick-action menu with 3 buttons. Safe to click after bot restarts. */
+  /**
+   * Sends a persistent quick-action menu with 3 buttons. Safe to click after
+   * bot restarts. Returns true only when Discord acknowledged the send — a
+   * privacy-blocked DM or API error returns false (the caller decides
+   * whether to treat the welcome as delivered, #232).
+   */
   async sendMenuButtons(
     discordUserId: string,
     content?: string,
-  ): Promise<string | undefined> {
+  ): Promise<boolean> {
     try {
       const user = await this.client.users.fetch(discordUserId);
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -165,8 +170,8 @@ export class DiscordOutboundService {
           .setLabel('📊 Xem tiến độ')
           .setStyle(ButtonStyle.Primary),
       );
-      const msg = await user.send({ content, components: [row] });
-      return msg.channelId;
+      await user.send({ content, components: [row] });
+      return true;
     } catch (error) {
       this.logger.warn(
         `Failed to send menu buttons to discordUserId=${maskExternalId(
@@ -174,7 +179,7 @@ export class DiscordOutboundService {
         )}: ${maskExternalIdInText(errorMessage(error), discordUserId)}`,
       );
       this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_MENU);
-      return undefined;
+      return false;
     }
   }
 

@@ -34,6 +34,7 @@ no extra WISPACE backend endpoint needed.
 ## What this repo does after the user authorizes
 
 `GET /v1/discord/oauth/callback?code=...&state=...` (`DiscordOauthController`):
+
 1. Exchange `code` for a Discord access token, then fetch the Discord user id
    via `GET /users/@me` (`DiscordAccountLinkService.exchangeCodeForDiscordUserId`).
 2. Call WISPACE's **shared** account-link verify API
@@ -57,8 +58,9 @@ no extra WISPACE backend endpoint needed.
    Expected response: `{ "userId": 143 }` on success, or
    `{ "valid": false, "reason": "NOT_FOUND" | "EXPIRED" | "USED" | "INVALID_FORMAT" }`
    on failure (mirrors the Messenger verify endpoint's failure reasons).
+
 3. **Commit the mapping immediately** — upsert `(platform='discord',
-   external_user_id=discordUserId, user_id)` into `discord_account_links`
+external_user_id=discordUserId, user_id)` into `discord_account_links`
    (1:1 both directions — matches Messenger's L4 mapping uniqueness) **right
    after verify, independent of guild membership** (retried 3× because the
    verify already consumed the single-use token). This keeps WISPACE's
@@ -72,8 +74,21 @@ no extra WISPACE backend endpoint needed.
    The redirect URLs never carry secrets and the frontend needs no callback
    page (the portal shows the link state itself).
 
+> **Welcome-DM dedupe (#231/#232/#233):** both the organic (`guildMemberAdd`
+> of an unlinked user, via `sendOrganicWelcomeIfDue`) and the linked path
+> (callback / re-join / reconcile cron, via `welcomeIfDue`) share **one**
+> dedupe record in `discord_welcome_records` (PK `discord_user_id`,
+> `last_welcomed_at`, `source` organic|linked) — an organic join followed by
+> a link within `DISCORD_REWELCOME_WINDOW_MS` (24h default) yields exactly
+> one DM. `sendMenuButtons` returns a boolean; the welcome is marked
+> **only** when Discord acknowledged the send, so a privacy-blocked DM stays
+> retryable by the next join/callback/reconcile event. `isMember` fails
+> closed when `DISCORD_GUILD_ID` is unset (returns false), deferring the
+> callback welcome to `guildMemberAdd`. Attempts are counted in
+> `discord_welcome_attempts_total{outcome=success|error|skipped}`.
+
 > **Why no "join-before-link"?** Discord DMs need a shared guild, but the
-> *mapping* does not. Linking commits at callback so a user who never joins
+> _mapping_ does not. Linking commits at callback so a user who never joins
 > is still correctly linked (they just don't receive bot messages until they
 > join). See `docs/project-overview.md` §13 and `docs/wispace-integration-guide.md`
 > Part 6 for the contract.

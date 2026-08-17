@@ -20,8 +20,6 @@ function buildRepositoryPort(): DiscordAccountLinkRepositoryPort {
     upsertLink: jest.fn().mockResolvedValue({ relinked: false }),
     findUserIdByDiscordId: jest.fn(),
     findDiscordIdByUserId: jest.fn(),
-    markWelcomed: jest.fn().mockResolvedValue(undefined),
-    shouldWelcome: jest.fn().mockResolvedValue(true),
   };
 }
 
@@ -152,37 +150,6 @@ describe('DiscordAccountLinkService', () => {
       await expect(
         service.findUserIdByDiscordId('discord-user-unknown'),
       ).resolves.toBeUndefined();
-    });
-  });
-
-  describe('#137 welcomed marker', () => {
-    it('markWelcomed delegates to the repository port', async () => {
-      const repository = buildRepositoryPort();
-      const service = new DiscordAccountLinkService(
-        buildConfigService(),
-        repository,
-      );
-
-      await service.markWelcomed('discord-user-1');
-
-      expect(repository.markWelcomed).toHaveBeenCalledWith('discord-user-1');
-    });
-
-    it('shouldWelcome delegates to the repository port', async () => {
-      const repository = buildRepositoryPort();
-      (repository.shouldWelcome as jest.Mock).mockResolvedValue(false);
-      const service = new DiscordAccountLinkService(
-        buildConfigService(),
-        repository,
-      );
-
-      await expect(
-        service.shouldWelcome('discord-user-1', 86_400_000),
-      ).resolves.toBe(false);
-      expect(repository.shouldWelcome).toHaveBeenCalledWith(
-        'discord-user-1',
-        86_400_000,
-      );
     });
   });
 });

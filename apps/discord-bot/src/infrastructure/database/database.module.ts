@@ -18,6 +18,7 @@ import {
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
 import { DiscordLinkVerifyRecordEntity } from './entities/discord-link-verify-record.entity';
 import { DiscordMessageLogEntity } from './entities/discord-message-log.entity';
+import { DiscordWelcomeRecordEntity } from './entities/discord-welcome-record.entity';
 
 /**
  * Connects to the same Postgres DB as `apps/messenger-bot` (Phase 2: shared
@@ -43,6 +44,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       DiscordAccountLinkEntity,
       DiscordLinkVerifyRecordEntity,
       DiscordMessageLogEntity,
+      DiscordWelcomeRecordEntity,
       StudyReminderJobEntity,
       WebhookDeadLetterEntity,
       ReportSendJobEntity,
@@ -68,6 +70,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       DiscordAccountLinkEntity,
       DiscordLinkVerifyRecordEntity,
       DiscordMessageLogEntity,
+      DiscordWelcomeRecordEntity,
       WebhookDeadLetterEntity,
       ReportSendJobEntity,
       ScheduledReportClaimEntity,

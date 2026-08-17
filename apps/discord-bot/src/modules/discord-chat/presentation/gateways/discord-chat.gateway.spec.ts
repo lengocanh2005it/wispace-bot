@@ -35,12 +35,13 @@ function buildGateway(overrides: {
     ...overrides.accountLink,
   } as unknown as DiscordAccountLinkService;
   const outboundService = {
-    sendMenuButtons: jest.fn().mockResolvedValue('dm-1'),
+    sendMenuButtons: jest.fn().mockResolvedValue(true),
     sendToChannel: jest.fn().mockResolvedValue(undefined),
     ...overrides.outbound,
   } as unknown as DiscordOutboundService;
   const welcomeService = {
-    welcomeIfDue: jest.fn().mockResolvedValue(true),
+    welcomeIfDue: jest.fn().mockResolvedValue('sent'),
+    sendOrganicWelcomeIfDue: jest.fn().mockResolvedValue('sent'),
     ...overrides.welcome,
   } as unknown as DiscordWelcomeService;
   const verifyRecordService = {
@@ -78,12 +79,12 @@ const member = {
 // necord's @Context() decorator passes the raw event args array — mimic it.
 const memberArgs = [member] as never;
 
-describe('DiscordChatGateway onGuildMemberAdd (#137 items 2+4)', () => {
+describe('DiscordChatGateway onGuildMemberAdd (#137 items 2+4, #231/#232/#234)', () => {
   it('welcomes a linked user via the welcome service (deduped)', async () => {
     const accountLink = {
       findUserIdByDiscordId: jest.fn().mockResolvedValue(143),
     };
-    const welcome = { welcomeIfDue: jest.fn().mockResolvedValue(true) };
+    const welcome = { welcomeIfDue: jest.fn().mockResolvedValue('sent') };
     const { gateway, welcomeService } = buildGateway({
       accountLink,
       welcome,
@@ -95,66 +96,162 @@ describe('DiscordChatGateway onGuildMemberAdd (#137 items 2+4)', () => {
       'discord-user-1',
       'Test User',
     );
+    expect(welcomeService.sendOrganicWelcomeIfDue).not.toHaveBeenCalled();
   });
 
   it('skips the organic welcome when a fresh verify intent is pending (join-during-callback)', async () => {
     const accountLink = {
       findUserIdByDiscordId: jest.fn().mockResolvedValue(undefined),
     };
-    const outbound = { sendMenuButtons: jest.fn().mockResolvedValue('dm-1') };
     const pendingVerify = jest
       .fn()
       .mockResolvedValue({ userId: 143, verifiedAt: new Date() });
-    const { gateway, outboundService } = buildGateway({
+    const { gateway, welcomeService } = buildGateway({
       accountLink,
-      outbound,
       pendingVerify,
     });
 
     await gateway.onGuildMemberAdd(memberArgs);
 
-    expect(outboundService.sendMenuButtons).not.toHaveBeenCalled();
+    expect(welcomeService.sendOrganicWelcomeIfDue).not.toHaveBeenCalled();
   });
 
-  it('sends the organic welcome when no verify intent is pending', async () => {
+  it('#231: routes the organic welcome through the shared dedupe service', async () => {
     const accountLink = {
       findUserIdByDiscordId: jest.fn().mockResolvedValue(undefined),
     };
-    const outbound = { sendMenuButtons: jest.fn().mockResolvedValue('dm-1') };
-    const { gateway, outboundService } = buildGateway({
+    const { gateway, welcomeService } = buildGateway({
       accountLink,
-      outbound,
       pendingVerify: jest.fn().mockResolvedValue(undefined),
     });
 
     await gateway.onGuildMemberAdd(memberArgs);
 
-    expect(outboundService.sendMenuButtons).toHaveBeenCalledWith(
+    expect(welcomeService.sendOrganicWelcomeIfDue).toHaveBeenCalledWith(
       'discord-user-1',
-      expect.stringContaining('trợ lý WISPACE'),
+      'Test User',
     );
+    // The gateway itself never sends the DM — dedupe lives in the service.
+  });
+
+  it('#231: a second join within the window is deduped by the service — no DM', async () => {
+    const accountLink = {
+      findUserIdByDiscordId: jest.fn().mockResolvedValue(undefined),
+    };
+    const welcome = {
+      sendOrganicWelcomeIfDue: jest
+        .fn()
+        .mockResolvedValueOnce('sent')
+        .mockResolvedValueOnce('skipped'),
+    };
+    const outbound = { sendMenuButtons: jest.fn() };
+    const { gateway, welcomeService, outboundService } = buildGateway({
+      accountLink,
+      welcome,
+      outbound,
+    });
+
+    await gateway.onGuildMemberAdd(memberArgs);
+    await gateway.onGuildMemberAdd(memberArgs);
+
+    expect(welcomeService.sendOrganicWelcomeIfDue).toHaveBeenCalledTimes(2);
+    // DM delivery happens inside the service; a deduped join sends nothing.
+    expect(outboundService.sendMenuButtons).not.toHaveBeenCalled();
+  });
+
+  it('#231: a re-join after the window is welcomed again', async () => {
+    const accountLink = {
+      findUserIdByDiscordId: jest.fn().mockResolvedValue(undefined),
+    };
+    const welcome = {
+      sendOrganicWelcomeIfDue: jest.fn().mockResolvedValue('sent'),
+    };
+    const { gateway, welcomeService } = buildGateway({
+      accountLink,
+      welcome,
+    });
+
+    await gateway.onGuildMemberAdd(memberArgs);
+    await gateway.onGuildMemberAdd(memberArgs);
+
+    expect(welcomeService.sendOrganicWelcomeIfDue).toHaveBeenCalledTimes(2);
+  });
+
+  it('#233: organic join then link route through the same welcome service — never a second direct DM', async () => {
+    const accountLink = {
+      findUserIdByDiscordId: jest
+        .fn()
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(143),
+    };
+    const outbound = { sendMenuButtons: jest.fn() };
+    const { gateway, welcomeService, outboundService } = buildGateway({
+      accountLink,
+      outbound,
+    });
+
+    // 1) Unlinked join → organic welcome path.
+    await gateway.onGuildMemberAdd(memberArgs);
+    // 2) The user completes the OAuth link in-guild → linked welcome path.
+    await gateway.onGuildMemberAdd(memberArgs);
+
+    expect(welcomeService.sendOrganicWelcomeIfDue).toHaveBeenCalledTimes(1);
+    expect(welcomeService.welcomeIfDue).toHaveBeenCalledTimes(1);
+    // Both paths delegate to the shared dedupe service; the gateway itself
+    // never sends the DM a second time.
+    expect(outboundService.sendMenuButtons).not.toHaveBeenCalled();
   });
 
   it('sends the organic welcome for stale pending intents (callback failed)', async () => {
     const accountLink = {
       findUserIdByDiscordId: jest.fn().mockResolvedValue(undefined),
     };
-    const outbound = { sendMenuButtons: jest.fn().mockResolvedValue('dm-1') };
     const pendingVerify = jest.fn().mockResolvedValue({
       userId: 143,
       verifiedAt: new Date(Date.now() - 10 * 60_000),
     });
-    const { gateway, outboundService } = buildGateway({
+    const { gateway, welcomeService } = buildGateway({
       accountLink,
-      outbound,
       pendingVerify,
     });
 
     await gateway.onGuildMemberAdd(memberArgs);
 
-    expect(outboundService.sendMenuButtons).toHaveBeenCalledWith(
+    expect(welcomeService.sendOrganicWelcomeIfDue).toHaveBeenCalledWith(
       'discord-user-1',
-      expect.stringContaining('trợ lý WISPACE'),
+      'Test User',
     );
+  });
+
+  it('#234: a repository failure resolves the handler (no unhandled rejection)', async () => {
+    const accountLink = {
+      findUserIdByDiscordId: jest.fn().mockRejectedValue(new Error('DB blip')),
+    };
+    const welcome = { welcomeIfDue: jest.fn() };
+    const { gateway, welcomeService } = buildGateway({
+      accountLink,
+      welcome,
+    });
+
+    await expect(gateway.onGuildMemberAdd(memberArgs)).resolves.toBeUndefined();
+
+    // Mapping lookup failed → the DM path still runs (organic fallback) but
+    // the handler never throws.
+    expect(welcomeService.welcomeIfDue).not.toHaveBeenCalled();
+  });
+
+  it('#234: a DM-path failure is caught — the handler resolves and logs', async () => {
+    const accountLink = {
+      findUserIdByDiscordId: jest.fn().mockResolvedValue(143),
+    };
+    const welcome = {
+      welcomeIfDue: jest.fn().mockRejectedValue(new Error('DM send blew up')),
+    };
+    const { gateway } = buildGateway({
+      accountLink,
+      welcome,
+    });
+
+    await expect(gateway.onGuildMemberAdd(memberArgs)).resolves.toBeUndefined();
   });
 });

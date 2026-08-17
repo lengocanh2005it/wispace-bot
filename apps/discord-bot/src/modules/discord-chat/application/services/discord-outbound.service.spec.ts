@@ -63,7 +63,7 @@ describe('DiscordOutboundService', () => {
     expect(send.mock.calls[0][0].components).toHaveLength(1);
   });
 
-  it('sends a DM with menu buttons and optional content, returns the channel id', async () => {
+  it('#232: sendMenuButtons returns true when Discord acknowledges the send', async () => {
     const send = jest
       .fn<
         Promise<{ channelId: string }>,
@@ -73,14 +73,24 @@ describe('DiscordOutboundService', () => {
     const fetch = jest.fn().mockResolvedValue({ send });
 
     const service = new DiscordOutboundService(buildClientStub(fetch));
-    const channelId = await service.sendMenuButtons('discord-1', 'Chào bạn!');
+    const sent = await service.sendMenuButtons('discord-1', 'Chào bạn!');
 
     expect(fetch).toHaveBeenCalledWith('discord-1');
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({ content: 'Chào bạn!' }),
     );
     expect(send.mock.calls[0][0].components).toHaveLength(1);
-    expect(channelId).toBe('dm-1');
+    expect(sent).toBe(true);
+  });
+
+  it('#232: sendMenuButtons returns false (no throw) when the DM fails', async () => {
+    const fetch = jest.fn().mockRejectedValue(new Error('cannot DM user'));
+
+    const service = new DiscordOutboundService(buildClientStub(fetch));
+
+    await expect(
+      service.sendMenuButtons('discord-1', 'Chào bạn!'),
+    ).resolves.toBe(false);
   });
 
   it('swallows errors when the reschedule confirmation DM fails to send', async () => {
