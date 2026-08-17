@@ -47,7 +47,8 @@ function buildService(overrides: {
   const listUserIdsWithSentReportToday =
     overrides.listUserIdsWithSentReportToday ?? jest.fn().mockResolvedValue([]);
   const tryClaimScheduledReport =
-    overrides.tryClaimScheduledReport ?? jest.fn().mockResolvedValue(true);
+    overrides.tryClaimScheduledReport ??
+    jest.fn().mockResolvedValue({ claimed: true, leaseToken: 'lease-1' });
   const markScheduledReportClaimSent =
     overrides.markScheduledReportClaimSent ??
     jest.fn().mockResolvedValue(undefined);
@@ -85,6 +86,7 @@ function buildService(overrides: {
     outbound,
     reportService,
     reportScheduleService,
+    { get: jest.fn() } as never,
   );
   return {
     service,
@@ -176,17 +178,22 @@ describe('ZaloReportCronService', () => {
   });
 
   it('skips without sending when another instance already claimed', async () => {
-    const tryClaimScheduledReport = jest.fn().mockResolvedValue(false);
+    const tryClaimScheduledReport = jest
+      .fn()
+      .mockResolvedValue({ claimed: false });
     const { service, markScheduledReportClaimSent, sendText, generateReport } =
       buildService({ tryClaimScheduledReport });
 
     await service.sendDailyReports();
 
-    expect(tryClaimScheduledReport).toHaveBeenCalledWith({
-      externalUserId: 'zalo-1',
-      userId: 42,
-      reportDate,
-    });
+    expect(tryClaimScheduledReport).toHaveBeenCalledWith(
+      {
+        externalUserId: 'zalo-1',
+        userId: 42,
+        reportDate,
+      },
+      expect.any(Number),
+    );
     expect(generateReport).not.toHaveBeenCalled();
     expect(sendText).not.toHaveBeenCalled();
     expect(markScheduledReportClaimSent).not.toHaveBeenCalled();
@@ -203,17 +210,23 @@ describe('ZaloReportCronService', () => {
 
     await service.sendDailyReports();
 
-    expect(tryClaimScheduledReport).toHaveBeenCalledWith({
-      externalUserId: 'zalo-1',
-      userId: 42,
-      reportDate,
-    });
+    expect(tryClaimScheduledReport).toHaveBeenCalledWith(
+      {
+        externalUserId: 'zalo-1',
+        userId: 42,
+        reportDate,
+      },
+      expect.any(Number),
+    );
     expect(generateReport).toHaveBeenCalledWith('zalo-1');
     expect(sendText).toHaveBeenCalledWith('zalo-1', 'report');
-    expect(markScheduledReportClaimSent).toHaveBeenCalledWith({
-      externalUserId: 'zalo-1',
-      reportDate,
-    });
+    expect(markScheduledReportClaimSent).toHaveBeenCalledWith(
+      {
+        externalUserId: 'zalo-1',
+        reportDate,
+      },
+      'lease-1',
+    );
   });
 
   it('releases the claim and skips when send fails with 48h window error', async () => {
@@ -235,10 +248,13 @@ describe('ZaloReportCronService', () => {
 
     await service.sendDailyReports();
 
-    expect(releaseScheduledReportClaim).toHaveBeenCalledWith({
-      externalUserId: 'zalo-1',
-      reportDate,
-    });
+    expect(releaseScheduledReportClaim).toHaveBeenCalledWith(
+      {
+        externalUserId: 'zalo-1',
+        reportDate,
+      },
+      'lease-1',
+    );
     expect(markScheduledReportClaimSent).not.toHaveBeenCalled();
   });
 
@@ -252,10 +268,13 @@ describe('ZaloReportCronService', () => {
 
     await service.sendDailyReports();
 
-    expect(releaseScheduledReportClaim).toHaveBeenCalledWith({
-      externalUserId: 'zalo-1',
-      reportDate,
-    });
+    expect(releaseScheduledReportClaim).toHaveBeenCalledWith(
+      {
+        externalUserId: 'zalo-1',
+        reportDate,
+      },
+      'lease-1',
+    );
     expect(markScheduledReportClaimSent).not.toHaveBeenCalled();
   });
 
@@ -274,10 +293,13 @@ describe('ZaloReportCronService', () => {
     await service.sendDailyReports();
 
     expect(sendText).not.toHaveBeenCalled();
-    expect(releaseScheduledReportClaim).toHaveBeenCalledWith({
-      externalUserId: 'zalo-1',
-      reportDate,
-    });
+    expect(releaseScheduledReportClaim).toHaveBeenCalledWith(
+      {
+        externalUserId: 'zalo-1',
+        reportDate,
+      },
+      'lease-1',
+    );
     expect(markScheduledReportClaimSent).not.toHaveBeenCalled();
   });
 });

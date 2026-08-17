@@ -39,6 +39,12 @@ export class ScheduledReportClaimEntity {
   @Column({ type: 'varchar', length: 20, default: 'claimed' })
   status: ScheduledReportClaimStatus;
 
+  @Column({ name: 'lease_token', type: 'uuid', nullable: true })
+  leaseToken: string | null;
+
+  @Column({ name: 'lease_expires_at', type: 'timestamptz', nullable: true })
+  leaseExpiresAt: Date | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

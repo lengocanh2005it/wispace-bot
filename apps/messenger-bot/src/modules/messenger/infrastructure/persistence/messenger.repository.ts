@@ -374,73 +374,108 @@ export class MessengerRepository
     return result.affected ?? 0;
   }
 
-  async tryClaimScheduledReport(params: {
-    externalUserId: string;
-    userId?: number;
-    reportDate: string;
-  }): Promise<boolean> {
+  async tryClaimScheduledReport(
+    params: {
+      externalUserId: string;
+      userId?: number;
+      reportDate: string;
+    },
+    leaseMs: number,
+  ): Promise<{ claimed: boolean; leaseToken?: string }> {
     // ON CONFLICT DO UPDATE ... WHERE status = 'released': reclaims a claim
     // released after a transient failure, while an active `claimed` row is
     // never stolen by a concurrent worker and a `sent` claim stays
     // non-reclaimable.
-    const rows: Array<{ id: number }> =
+    const rows: Array<{ id: number; lease_token: string }> =
       await this.reportClaimRepo.manager.query(
         `
-        INSERT INTO scheduled_report_claims (platform, external_user_id, report_date, user_id, status)
-        VALUES ($1, $2, $3::date, $4, 'claimed')
+        INSERT INTO scheduled_report_claims
+          (platform, external_user_id, report_date, user_id, status, lease_token, lease_expires_at)
+        VALUES ($1, $2, $3::date, $4, 'claimed', gen_random_uuid(), now() + ($5::int * interval '1 millisecond'))
         ON CONFLICT (platform, external_user_id, report_date)
-        DO UPDATE SET status = 'claimed', user_id = EXCLUDED.user_id, updated_at = now()
+        DO UPDATE SET
+          status = 'claimed',
+          user_id = EXCLUDED.user_id,
+          lease_token = EXCLUDED.lease_token,
+          lease_expires_at = EXCLUDED.lease_expires_at,
+          updated_at = now()
         WHERE scheduled_report_claims.status = 'released'
-        RETURNING id
+        RETURNING id, lease_token
       `,
         [
           PLATFORM,
           params.externalUserId,
           params.reportDate,
           params.userId ?? null,
+          leaseMs,
         ],
       );
 
-    return rows.length > 0;
+    return rows.length > 0
+      ? { claimed: true, leaseToken: rows[0].lease_token }
+      : { claimed: false };
   }
 
-  async markScheduledReportClaimSent(params: {
-    externalUserId: string;
-    reportDate: string;
-  }): Promise<void> {
-    await this.reportClaimRepo.update(
-      {
-        platform: PLATFORM,
-        externalUserId: params.externalUserId,
-        reportDate: params.reportDate,
-      },
-      { status: 'sent' },
-    );
-  }
-
-  async releaseScheduledReportClaim(params: {
-    externalUserId: string;
-    reportDate: string;
-  }): Promise<void> {
-    await this.reportClaimRepo.update(
-      {
-        platform: PLATFORM,
-        externalUserId: params.externalUserId,
-        reportDate: params.reportDate,
-        status: 'claimed',
-      },
-      { status: 'released' },
-    );
-  }
-
-  async resetStaleScheduledReportClaims(olderThan: Date): Promise<number> {
+  async markScheduledReportClaimSent(
+    params: {
+      externalUserId: string;
+      reportDate: string;
+    },
+    leaseToken: string,
+  ): Promise<boolean> {
     const result = await this.reportClaimRepo
       .createQueryBuilder()
       .update()
-      .set({ status: 'released', updatedAt: new Date() })
+      .set({ status: 'sent' })
+      .where('platform = :platform', { platform: PLATFORM })
+      .andWhere('external_user_id = :externalUserId', {
+        externalUserId: params.externalUserId,
+      })
+      .andWhere('report_date = :reportDate', { reportDate: params.reportDate })
+      .andWhere('status = :status', { status: 'claimed' })
+      .andWhere('lease_token = :leaseToken', { leaseToken })
+      .execute();
+
+    return (result.affected ?? 0) > 0;
+  }
+
+  async releaseScheduledReportClaim(
+    params: {
+      externalUserId: string;
+      reportDate: string;
+    },
+    leaseToken: string,
+  ): Promise<boolean> {
+    const result = await this.reportClaimRepo
+      .createQueryBuilder()
+      .update()
+      .set({ status: 'released' })
+      .where('platform = :platform', { platform: PLATFORM })
+      .andWhere('external_user_id = :externalUserId', {
+        externalUserId: params.externalUserId,
+      })
+      .andWhere('report_date = :reportDate', { reportDate: params.reportDate })
+      .andWhere('status = :status', { status: 'claimed' })
+      .andWhere('lease_token = :leaseToken', { leaseToken })
+      .execute();
+
+    return (result.affected ?? 0) > 0;
+  }
+
+  async releaseExpiredScheduledReportClaims(
+    now: Date,
+    olderThan: Date,
+  ): Promise<number> {
+    const result = await this.reportClaimRepo
+      .createQueryBuilder()
+      .update()
+      .set({ status: 'released', updatedAt: now })
       .where('platform = :platform', { platform: PLATFORM })
       .andWhere('status = :status', { status: 'claimed' })
-      .andWhere('updated_at < :olderThan', { olderThan })
+      .andWhere(
+        '(lease_expires_at < :now OR (lease_expires_at IS NULL AND updated_at < :olderThan))',
+        { now, olderThan },
+      )
       .execute();
 
     return result.affected ?? 0;

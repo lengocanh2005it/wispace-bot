@@ -324,7 +324,7 @@ Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP �
 | `exam-reminder-report` | `0 8 * * *` (08:00 ICT) | `ReportCronService` — daily student reports |
 | `weekly-cleanup-duplicate-mappings` | `0 3 * * 1` (Monday 03:00 ICT) | `ReportCronService` — deactivate duplicate ACTIVE mappings |
 | `report-send-retry` | `*/15 * * * *` | `ReportSendRetryDispatchService` — outbox R5 retry |
-| `report-claims-stale-reset` | `*/30 * * * *` | `ReportClaimStaleResetCronService` — release claims stuck `claimed` (`REPORT_CLAIM_STALE_RESET_MS`=2h) |
+| `report-claims-stale-reset` | `*/30 * * * *` | `ReportClaimStaleResetCronService` — per-platform lease recovery for `scheduled_report_claims` (`REPORT_CLAIM_STALE_RESET_MS`=2h) |
 | `ops-health-daily` | `0 0 9 * * *` (09:00 ICT) | `OpsHealthCronService` — ops health alert |
 | `study-reminder-sync` | `0 */30 * * * *` (every 30 min) | `StudyReminderWorkerService` — sync upcoming sessions |
 | `study-reminder-dispatch` | Adaptive 30s–3.5min (`STUDY_REMINDER_POLL_*`) | `StudyReminderWorkerService` — S2 adaptive dispatch |

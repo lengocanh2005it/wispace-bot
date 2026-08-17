@@ -85,14 +85,19 @@ describe('MessengerRepository.tryClaimScheduledReport', () => {
       if (existing) {
         if (existing.status === 'released') {
           existing.status = 'claimed';
-          return [{ id: existing.id }];
+          existing.leaseToken = 'lease-1-reclaimed';
+          return [{ id: existing.id, lease_token: existing.leaseToken }];
         }
         return [];
       }
 
-      claimStore.set(key, { id: nextId, status: 'claimed' });
+      claimStore.set(key, {
+        id: nextId,
+        status: 'claimed',
+        leaseToken: `lease-${nextId}`,
+      });
       nextId += 1;
-      return [{ id: nextId - 1 }];
+      return [{ id: nextId - 1, lease_token: `lease-${nextId - 1}` }];
     });
 
     const claimRepo = {
@@ -104,7 +109,10 @@ describe('MessengerRepository.tryClaimScheduledReport', () => {
     return { repo, managerQuery };
   };
 
-  let claimStore: Map<string, { id: number; status: string }>;
+  let claimStore: Map<
+    string,
+    { id: number; status: string; leaseToken?: string }
+  >;
   let nextId: number;
 
   beforeEach(() => {
@@ -114,21 +122,31 @@ describe('MessengerRepository.tryClaimScheduledReport', () => {
 
   it('reclaims a released claim after a transient failure', async () => {
     const { repo } = buildRepo();
-    await repo.tryClaimScheduledReport({
-      externalUserId: 'psid-1',
-      reportDate: '2026-08-14',
-    });
+    await repo.tryClaimScheduledReport(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-08-14',
+      },
+      120_000,
+    );
     claimStore.set('messenger:psid-1:2026-08-14', {
       id: 1,
       status: 'released',
+      leaseToken: 'lease-1',
     });
 
-    const reclaimed = await repo.tryClaimScheduledReport({
-      externalUserId: 'psid-1',
-      reportDate: '2026-08-14',
-    });
+    const reclaimed = await repo.tryClaimScheduledReport(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-08-14',
+      },
+      120_000,
+    );
 
-    expect(reclaimed).toBe(true);
+    expect(reclaimed).toEqual({
+      claimed: true,
+      leaseToken: 'lease-1-reclaimed',
+    });
     expect(claimStore.get('messenger:psid-1:2026-08-14')?.status).toBe(
       'claimed',
     );
@@ -139,27 +157,94 @@ describe('MessengerRepository.tryClaimScheduledReport', () => {
     claimStore.set('messenger:psid-1:2026-08-14', {
       id: 1,
       status: 'sent',
+      leaseToken: 'lease-1',
     });
 
-    const reclaimed = await repo.tryClaimScheduledReport({
-      externalUserId: 'psid-1',
-      reportDate: '2026-08-14',
-    });
+    const reclaimed = await repo.tryClaimScheduledReport(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-08-14',
+      },
+      120_000,
+    );
 
-    expect(reclaimed).toBe(false);
+    expect(reclaimed).toEqual({ claimed: false });
   });
 
   it('regression: issued SQL only reclaims released rows', async () => {
     const { repo, managerQuery } = buildRepo();
-    await repo.tryClaimScheduledReport({
-      externalUserId: 'psid-1',
-      reportDate: '2026-08-14',
-    });
+    await repo.tryClaimScheduledReport(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-08-14',
+      },
+      120_000,
+    );
 
     const issuedSql = (managerQuery.mock.calls[0] as unknown[])[0] as string;
     expect(issuedSql).toContain('DO UPDATE');
     expect(issuedSql).toContain(
       "WHERE scheduled_report_claims.status = 'released'",
+    );
+  });
+});
+
+describe('MessengerRepository scheduled report lease ownership', () => {
+  const buildRepo = () => {
+    const queryBuilder = {
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      execute: jest.fn().mockResolvedValue({ affected: 0 }),
+    };
+    const claimRepo = {
+      createQueryBuilder: jest.fn(() => queryBuilder),
+    } as unknown as Repository<ScheduledReportClaimEntity>;
+    const repo = new MessengerRepository(
+      {} as Repository<UserPlatformMappingEntity>,
+      {} as Repository<MessageLogEntity>,
+      claimRepo,
+    );
+    return { repo, queryBuilder };
+  };
+
+  it('requires the current lease token to mark a claim sent', async () => {
+    const { repo, queryBuilder } = buildRepo();
+
+    const marked = await repo.markScheduledReportClaimSent(
+      { externalUserId: 'psid-1', reportDate: '2026-08-14' },
+      'stale-token',
+    );
+
+    expect(marked).toBe(false);
+    const whereSql = (
+      queryBuilder.andWhere.mock.calls as Array<
+        [string, Record<string, unknown>?]
+      >
+    )
+      .map(([sql]) => sql)
+      .join('\n');
+    expect(whereSql).toContain('lease_token = :leaseToken');
+  });
+
+  it('recovers expired and legacy claims with one platform-scoped update', async () => {
+    const { repo, queryBuilder } = buildRepo();
+    const now = new Date('2026-08-14T10:00:00.000Z');
+    const olderThan = new Date('2026-08-14T08:00:00.000Z');
+
+    await repo.releaseExpiredScheduledReportClaims(now, olderThan);
+
+    const whereSql = (
+      queryBuilder.andWhere.mock.calls as Array<
+        [string, Record<string, unknown>?]
+      >
+    )
+      .map(([sql]) => sql)
+      .join('\n');
+    expect(whereSql).toContain('lease_expires_at < :now');
+    expect(whereSql).toContain(
+      'lease_expires_at IS NULL AND updated_at < :olderThan',
     );
   });
 });
