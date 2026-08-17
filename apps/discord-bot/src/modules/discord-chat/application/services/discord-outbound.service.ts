@@ -1,6 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   errorMessage,
+  isAbortError,
   maskExternalId,
   maskExternalIdInText,
 } from '@wispace/bot-common';
@@ -29,6 +31,51 @@ import { withRetry } from '@wispace/wispace-client';
 const DM_FAILURE_REASON_SEND = 'dm_send_error';
 const DM_FAILURE_REASON_MENU = 'menu_send_error';
 const DM_FAILURE_REASON_RESCHEDULE = 'reschedule_send_error';
+/** Network/unknown delivery outcome — the provider may have accepted the message (#156). */
+const DM_FAILURE_REASON_AMBIGUOUS = 'dm_send_ambiguous';
+const NETWORK_ERROR_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ETIMEDOUT',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
+
+function isDiscordNetworkError(error: unknown): boolean {
+  if (error instanceof TypeError) {
+    return true;
+  }
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && NETWORK_ERROR_CODES.has(code);
+}
+
+/**
+ * Retry predicate for Discord DM sends (#156): retry only rate limits (429),
+ * server errors (5xx) and known network-level failures. Never retry known 4xx
+ * (auth/validation — permanent), unknown errors, or cancellations.
+ */
+export function isDiscordRetryableError(error: unknown): boolean {
+  if (isAbortError(error)) {
+    return false;
+  }
+  const status = (error as { status?: unknown } | null)?.status;
+  if (typeof status === 'number') {
+    return status === 429 || status >= 500;
+  }
+  return isDiscordNetworkError(error);
+}
+
+/** True when the error carries no delivery verdict — the provider may have
+ * accepted the message before the failure (ambiguous outcome, #156). */
+export function isAmbiguousDeliveryError(error: unknown): boolean {
+  if (isAbortError(error)) {
+    return (error as { name?: unknown } | null)?.name === 'TimeoutError';
+  }
+  const status = (error as { status?: unknown } | null)?.status;
+  return typeof status !== 'number' && isDiscordNetworkError(error);
+}
 
 /**
  * Discord counterpart to Messenger's `MessageSenderPort` — sends by fetching
@@ -87,16 +134,27 @@ export class DiscordOutboundService {
     text: string,
     options?: { skipDeadLetter?: boolean },
   ): Promise<string | undefined> {
+    let ambiguousDeliveryRecorded = false;
+    // Discord accepts a nonce up to 25 characters and returns the existing
+    // message when enforceNonce is true, making a retry safe after ambiguity.
+    const nonce = randomUUID().replaceAll('-', '').slice(0, 25);
     try {
       const msg = await withRetry(
         async () => {
           const user = await this.client.users.fetch(discordUserId);
-          return user.send(text);
+          return user.send({ content: text, nonce, enforceNonce: true });
         },
         {
           maxRetries: 1,
           baseDelayMs: 1_000,
+          shouldRetry: isDiscordRetryableError,
           onRetry: (attempt, maxRetries, error) => {
+            // Network/unknown failures have no delivery verdict — the
+            // provider may have accepted the first attempt (#156).
+            if (isAmbiguousDeliveryError(error)) {
+              this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
+              ambiguousDeliveryRecorded = true;
+            }
             const errorMsg = maskExternalIdInText(
               errorMessage(error),
               discordUserId,
@@ -116,6 +174,9 @@ export class DiscordOutboundService {
       return msg.channelId;
     } catch (error) {
       const errorMsg = maskExternalIdInText(errorMessage(error), discordUserId);
+      if (!ambiguousDeliveryRecorded && isAmbiguousDeliveryError(error)) {
+        this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
+      }
       this.logger.warn(
         `Failed to send DM to discordUserId=${maskExternalId(
           discordUserId,

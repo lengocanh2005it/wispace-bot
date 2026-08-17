@@ -1,10 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   errorMessage,
+  isAbortError,
   maskExternalId,
   maskExternalIdInText,
   readResponseText,
 } from '@wispace/bot-common';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
 import {
   DeliveryLogService,
@@ -14,6 +16,7 @@ import { withRetry } from '@wispace/wispace-client';
 
 const SEND_TEXT_ENDPOINT = 'https://openapi.zalo.me/v3.0/oa/message/cs';
 const SEND_TIMEOUT_MS = 10_000;
+const SEND_FAILURE_REASON_AMBIGUOUS = 'dm_send_ambiguous';
 
 export class ZaloSendError extends Error {
   constructor(
@@ -22,10 +25,16 @@ export class ZaloSendError extends Error {
     readonly statusText: string,
     readonly responseBody: string,
     readonly httpStatus = status,
+    originalError?: unknown,
   ) {
     super(message);
     this.name = 'ZaloSendError';
+    this.retryable =
+      !isAbortError(originalError) &&
+      (this.httpStatus === 0 || this.httpStatus >= 500);
   }
+
+  private readonly retryable: boolean;
 
   /**
    * Detects 48h consultation window errors from Zalo API.
@@ -50,8 +59,16 @@ export class ZaloSendError extends Error {
   }
 
   isRetryable(): boolean {
-    return this.httpStatus === 0 || this.httpStatus >= 500;
+    return this.retryable;
   }
+
+  isAmbiguousDelivery(): boolean {
+    return this.httpStatus === 0;
+  }
+}
+
+export function isZaloRetryableError(error: unknown): boolean {
+  return error instanceof ZaloSendError && error.isRetryable();
 }
 
 /**
@@ -69,6 +86,9 @@ export class ZaloOutboundService {
     @Optional()
     @Inject(PlatformDeadLetterService)
     private readonly deadLetter?: PlatformDeadLetterService,
+    @Optional()
+    @Inject(BotMetricsService)
+    private readonly metrics?: BotMetricsService,
   ) {}
 
   async sendText(
@@ -76,13 +96,17 @@ export class ZaloOutboundService {
     text: string,
     options?: { skipDeadLetter?: boolean },
   ): Promise<void> {
+    let ambiguousDeliveryRecorded = false;
     try {
       await withRetry(() => this.sendTextOnce(zaloUserId, text), {
         maxRetries: 1,
         baseDelayMs: 1_000,
-        shouldRetry: (error) =>
-          !(error instanceof ZaloSendError && !error.isRetryable()),
-        onRetry: (attempt, maxRetries) => {
+        shouldRetry: isZaloRetryableError,
+        onRetry: (attempt, maxRetries, error) => {
+          if (error instanceof ZaloSendError && error.isAmbiguousDelivery()) {
+            this.metrics?.incDmDeliveryFailure(SEND_FAILURE_REASON_AMBIGUOUS);
+            ambiguousDeliveryRecorded = true;
+          }
           this.logger.warn(
             `Zalo send attempt ${attempt}/${maxRetries + 1} failed for zaloUserId=${maskExternalId(zaloUserId)}, retrying`,
           );
@@ -96,6 +120,13 @@ export class ZaloOutboundService {
       });
     } catch (error) {
       const errorMsg = maskExternalIdInText(errorMessage(error), zaloUserId);
+      if (
+        !ambiguousDeliveryRecorded &&
+        error instanceof ZaloSendError &&
+        error.isAmbiguousDelivery()
+      ) {
+        this.metrics?.incDmDeliveryFailure(SEND_FAILURE_REASON_AMBIGUOUS);
+      }
       await this.deliveryLogService.logDelivery({
         externalUserId: zaloUserId,
         status: 'FAILED',
@@ -151,6 +182,8 @@ export class ZaloOutboundService {
         0,
         'Network Error',
         msg,
+        0,
+        error,
       );
     }
 
