@@ -9,12 +9,23 @@ export type WelcomeSource = 'organic' | 'linked';
 
 export interface DiscordWelcomeRecordRepositoryPort {
   /**
-   * True when no welcome DM was delivered yet, or the last one is older than
-   * `windowMs` — a user is never welcomed twice within the window (re-join
-   * spam, join-then-link duplicate, #231/#233).
+   * Atomically claims the welcome slot for `discordUserId` (single
+   * conditional upsert, #159): wins when the user was never welcomed, the
+   * last welcome is older than `windowMs`, or a previous claim expired.
+   * Returns true only for the winner — a concurrent OAuth callback /
+   * `guildMemberAdd` loses the claim instead of sending a duplicate DM.
+   * The lease lasts `leaseMs`; a crashed/failed sender's claim becomes
+   * reclaimable after it expires (retryable).
    */
-  shouldWelcome(discordUserId: string, windowMs: number): Promise<boolean>;
-  /** Records a delivered welcome DM (upsert by Discord user id). */
+  tryClaimWelcome(
+    discordUserId: string,
+    windowMs: number,
+    leaseMs: number,
+  ): Promise<boolean>;
+  /**
+   * Records a delivered welcome DM (upsert by Discord user id) and clears
+   * the in-flight claim — only called after Discord acknowledged the send.
+   */
   markWelcomed(discordUserId: string, source: WelcomeSource): Promise<void>;
 }
 
