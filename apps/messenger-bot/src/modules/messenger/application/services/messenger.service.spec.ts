@@ -130,7 +130,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
       .mockResolvedValueOnce({ inserted: true, id: 7 });
 
     await expect(service.handleWebhook(payloadWith([event]))).rejects.toThrow(
-      'DB down',
+      'Webhook ingestion failed',
     );
     await expect(service.handleWebhook(payloadWith([event]))).resolves.toEqual({
       accepted: 1,
@@ -183,7 +183,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
 
     await expect(
       service.handleWebhook(payloadWith([textEvent()])),
-    ).rejects.toThrow('DB down');
+    ).rejects.toThrow('Webhook ingestion failed');
     expect(actionExecutor.executeAction).not.toHaveBeenCalled();
   });
 });
