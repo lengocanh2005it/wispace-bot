@@ -49,6 +49,7 @@ export interface ReserveFreeFormSlotInput {
   /** Optional DB-authoritative burst check for Postgres-backed counters. */
   burstLimit?: number;
   burstSince?: Date;
+  burstCountsRefunded?: boolean;
 }
 
 export type ReserveFreeFormSlotOutcome =
@@ -75,6 +76,13 @@ export interface BurstCounterPort {
   tryReserveBurst(
     externalUserId: string,
     limit: number,
-  ): Promise<{ allowed: boolean; count: number }>;
+  ): Promise<BurstReservationResult>;
   releaseReservation(externalUserId: string): Promise<void>;
+}
+
+export interface BurstReservationResult {
+  allowed: boolean;
+  count: number;
+  /** True when this attempt is backed by the Postgres reserve transaction. */
+  transactional: boolean;
 }

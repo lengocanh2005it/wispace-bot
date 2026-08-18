@@ -20,6 +20,7 @@ export { PostgresBurstCounter } from './chat-rate-limit/postgres-burst-counter';
 export { PlatformChatRateLimitService } from './chat-rate-limit/platform-chat-rate-limit.service';
 export type {
   BurstCounterPort,
+  BurstReservationResult,
   ChatIdempotencyRecord,
   ChatQuotaCheckResult,
   ReserveFreeFormSlotInput,

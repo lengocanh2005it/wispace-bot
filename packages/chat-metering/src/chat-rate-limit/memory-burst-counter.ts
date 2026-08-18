@@ -16,16 +16,24 @@ export class MemoryBurstCounter implements BurstCounterPort {
   tryReserveBurst(
     externalUserId: string,
     limit: number,
-  ): Promise<{ allowed: boolean; count: number }> {
+  ): Promise<{ allowed: boolean; count: number; transactional: boolean }> {
     this.evictStaleBuckets();
     const key = this.bucketKey(externalUserId);
     const current = this.counts.get(key) ?? 0;
     if (current >= limit) {
-      return Promise.resolve({ allowed: false, count: current });
+      return Promise.resolve({
+        allowed: false,
+        count: current,
+        transactional: false,
+      });
     }
     const next = current + 1;
     this.counts.set(key, next);
-    return Promise.resolve({ allowed: true, count: next });
+    return Promise.resolve({
+      allowed: true,
+      count: next,
+      transactional: false,
+    });
   }
 
   releaseReservation(externalUserId: string): Promise<void> {
