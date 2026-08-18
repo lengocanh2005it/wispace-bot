@@ -76,8 +76,13 @@ export class DiscordReportOrchestrationService {
 
     let claimedForSend = false;
     let claimLeaseToken = '';
+    let claimDeliveryRecord: string | undefined;
     if (skipAlreadySentToday) {
-      const claimed = await this.claimRepository.tryClaimScheduledReport(
+      const claimed: {
+        claimed: boolean;
+        leaseToken?: string;
+        deliveryRecord?: string;
+      } = await this.claimRepository.tryClaimScheduledReport(
         {
           externalUserId: mapping.externalUserId,
           userId: mapping.userId,
@@ -90,6 +95,21 @@ export class DiscordReportOrchestrationService {
       }
       claimedForSend = true;
       claimLeaseToken = claimed.leaseToken;
+      claimDeliveryRecord =
+        typeof claimed.deliveryRecord === 'string'
+          ? claimed.deliveryRecord
+          : undefined;
+    }
+
+    // Skip re-send if already delivered (#181) — crash between send and
+    // markSent left a delivery_record; re-claim sees it and marks sent
+    // without re-sending.
+    if (claimedForSend && claimDeliveryRecord) {
+      await this.claimRepository.markScheduledReportClaimSent(
+        { externalUserId: mapping.externalUserId, reportDate },
+        claimLeaseToken,
+      );
+      return { ...ZERO, sent: 1 };
     }
 
     try {
@@ -115,6 +135,7 @@ export class DiscordReportOrchestrationService {
               reportDate,
             },
             claimLeaseToken,
+            'sent',
           );
         }
         if (examDateForOutbox) {
