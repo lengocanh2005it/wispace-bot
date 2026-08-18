@@ -2,8 +2,10 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
-# All 3 bots bind to 127.0.0.1 on the host, so scrape them by container name
-# on their own Docker networks (Prometheus is attached to all of them).
+# All 3 bots bind to 127.0.0.1:<port> on the host.
+# Blue-green deploy starts containers via bare `docker run` (not compose),
+# so container names are not on the compose networks. Scrape by host IP
+# instead — works regardless of container networking (#179).
 # Metrics endpoints sit behind InternalApiKeyGuard, which accepts
 # `Authorization: Bearer <INTERNAL_API_KEY>` — the key is injected from the
 # monitoring .env (Prometheus expands ${VAR} at startup).
@@ -11,7 +13,7 @@ scrape_configs:
   - job_name: messenger_bot
     static_configs:
       - targets:
-          - messenger-bot:5007
+          - 127.0.0.1:5007
     metrics_path: /metrics
     scheme: http
     authorization:
@@ -21,7 +23,7 @@ scrape_configs:
   - job_name: discord_bot
     static_configs:
       - targets:
-          - discord-bot:3001
+          - 127.0.0.1:3001
     metrics_path: /metrics
     scheme: http
     authorization:
@@ -31,7 +33,7 @@ scrape_configs:
   - job_name: zalo_bot
     static_configs:
       - targets:
-          - zalo-bot:3002
+          - 127.0.0.1:3002
     metrics_path: /metrics
     scheme: http
     authorization:
