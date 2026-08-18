@@ -52,6 +52,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private reminderDispatch: Counter;
   private dmDeliveryFailures: Counter;
   private welcomeAttempts: Counter;
+  private tokenRefreshFailures: Counter;
   private webhookInboundBacklog: Gauge;
 
   constructor(config: MetricsConfig) {
@@ -144,6 +145,13 @@ export class BotMetricsService implements OnModuleDestroy {
       registers: [this.registry],
     });
 
+    this.tokenRefreshFailures = new Counter({
+      name: `${this.prefix}_token_refresh_failures_total`,
+      help: 'OAuth token refresh failures (timeout, consumed token, network error)',
+      labelNames: ['reason'],
+      registers: [this.registry],
+    });
+
     this.webhookInboundBacklog = new Gauge({
       name: `${this.prefix}_webhook_inbound_backlog`,
       help: 'Durable inbound webhook events due for retry (pending/failed/processing-stale)',
@@ -231,6 +239,11 @@ export class BotMetricsService implements OnModuleDestroy {
   /** Welcome-DM attempt outcome — success | error | skipped (#232/#234). */
   incWelcomeAttempt(outcome: string): void {
     this.welcomeAttempts.inc({ outcome });
+  }
+
+  /** OAuth token refresh failure — timeout, consumed token, network error (#154). */
+  incTokenRefreshFailure(reason: string): void {
+    this.tokenRefreshFailures.inc({ reason });
   }
 
   /** Backlog gauge for the durable inbound retry cron — set per tick. */
