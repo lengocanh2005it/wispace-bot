@@ -258,5 +258,27 @@ else
   echo "  skip: platform does not reflect POSIX modes (CI Ubuntu asserts)"
 fi
 
+echo "Test 12: digest pinning — docker pull/run use @sha256: when IMAGE_DIGEST set (#196)"
+dir=$(make_env digest-pin)
+write_env "$dir"
+write_upstream "$dir" 5008
+code=$(run_script "$dir" "IMAGE_DIGEST=sha256:abc123def456")
+[ "$code" -eq 0 ] || fail "deploy failed with digest pinning, exit $code"
+grep -q "Pinning by digest" "$dir/run.out" || fail "missing digest pin log message"
+grep -q "docker pull ghcr.io/x/messenger-bot:sha@sha256:abc123def456" "$dir/docker.log" || fail "docker pull not pinned by digest"
+grep -q "docker run.*ghcr.io/x/messenger-bot:sha@sha256:abc123def456" "$dir/docker.log" || fail "docker run not pinned by digest"
+pass "digest pinning works"
+
+echo "Test 13: no digest — docker pull/run use tag only when IMAGE_DIGEST unset (#196)"
+dir=$(make_env digest-fallback)
+write_env "$dir"
+write_upstream "$dir" 5008
+code=$(run_script "$dir")
+[ "$code" -eq 0 ] || fail "deploy failed without digest, exit $code"
+! grep -q "Pinning by digest" "$dir/run.out" || fail "should not log digest pin when unset"
+grep -q "docker pull ghcr.io/x/messenger-bot:sha" "$dir/docker.log" || fail "docker pull missing"
+grep -q "docker run.*ghcr.io/x/messenger-bot:sha" "$dir/docker.log" || fail "docker run missing"
+pass "tag-only fallback works"
+
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"
