@@ -561,6 +561,9 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
       leaseExpiresAt: (row.leaseExpiresAt ??
         row.lease_expires_at ??
         undefined) as Date | undefined,
+      deliveryRecord: (row.deliveryRecord ??
+        row.delivery_record ??
+        undefined) as string | undefined,
       createdAt: row.createdAt ?? row.created_at,
       updatedAt: row.updatedAt ?? row.updated_at,
     };
