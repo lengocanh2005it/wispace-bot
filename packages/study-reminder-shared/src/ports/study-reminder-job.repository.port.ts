@@ -65,7 +65,11 @@ export interface StudyReminderJobRepositoryPort {
     leaseMs: number,
   ): Promise<StudyReminderJob | null>;
   /** Marks sent — requires the current lease token (stale owners no-op). */
-  markSent(jobId: number, leaseToken: string): Promise<void>;
+  markSent(
+    jobId: number,
+    leaseToken: string,
+    deliveryRecord?: string,
+  ): Promise<void>;
   markFailed(params: {
     jobId: number;
     leaseToken: string;
