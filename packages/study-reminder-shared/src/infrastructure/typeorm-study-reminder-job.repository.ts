@@ -249,7 +249,11 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     return this.mapEntity(rows[0] as unknown as StudyReminderJobEntity);
   }
 
-  async markSent(jobId: number, leaseToken: string): Promise<void> {
+  async markSent(
+    jobId: number,
+    leaseToken: string,
+    deliveryRecord?: string,
+  ): Promise<void> {
     const result = await this.repo
       .createQueryBuilder()
       .update(StudyReminderJobEntity)
@@ -258,6 +262,7 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
         sentAt: new Date(),
         nextRetryAt: null,
         lastError: null,
+        ...(deliveryRecord !== undefined ? { deliveryRecord } : {}),
       })
       .where('id = :id', { id: jobId })
       .andWhere('lease_token = :leaseToken', { leaseToken })
@@ -556,6 +561,9 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
       leaseExpiresAt: (row.leaseExpiresAt ??
         row.lease_expires_at ??
         undefined) as Date | undefined,
+      deliveryRecord: (row.deliveryRecord ??
+        row.delivery_record ??
+        undefined) as string | undefined,
       createdAt: row.createdAt ?? row.created_at,
       updatedAt: row.updatedAt ?? row.updated_at,
     };

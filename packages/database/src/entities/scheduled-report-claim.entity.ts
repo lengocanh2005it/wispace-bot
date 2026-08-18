@@ -45,6 +45,13 @@ export class ScheduledReportClaimEntity {
   @Column({ name: 'lease_expires_at', type: 'timestamptz', nullable: true })
   leaseExpiresAt: Date | null;
 
+  /**
+   * Platform message_id after successful send. Non-null means the message
+   * was delivered — on re-claim after crash, skip re-send (#181).
+   */
+  @Column({ name: 'delivery_record', type: 'text', nullable: true })
+  deliveryRecord: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

@@ -226,6 +226,7 @@ describe('ZaloReportCronService', () => {
         reportDate,
       },
       'lease-1',
+      'sent',
     );
   });
 

@@ -153,7 +153,23 @@ for app in "${!APPS[@]}"; do
     continue
   fi
 
-  echo "=== Deploying $app @ $NEW_SHA ==="
+  # Extract immutable digest from registry to pin deploy (#196).
+  # docker manifest inspect returns JSON with the manifest digest — use it
+  # to pull by digest instead of tag, closing the TOCTOU gap.
+  IMAGE_DIGEST=$(docker manifest inspect "$image" 2>/dev/null \
+    | grep -o '"digest":"sha256:[^"]*"' | head -1 | cut -d'"' -f4 || true)
+
+  if [ -z "$IMAGE_DIGEST" ]; then
+    echo "ERROR: $app — could not extract digest from manifest inspect" >&2
+    # Fail closed: do not deploy without digest verification (#196)
+    if [ ! -f "$fail_marker" ] || [ "$(cat "$fail_marker")" != "$NEW_SHA" ]; then
+      echo "$NEW_SHA" > "$fail_marker"
+      notify_app_failed "$app" "$NEW_SHA"
+    fi
+    continue
+  fi
+
+  echo "=== Deploying $app @ $NEW_SHA (digest $IMAGE_DIGEST) ==="
   mkdir -p "$target_dir/upstreams"
   cp "$REPO_DIR/apps/${app}/docker-compose.prod.yml" "$target_dir/"
   cp "$REPO_DIR/.github/scripts/vps-deploy.sh" "$target_dir/"
@@ -166,7 +182,7 @@ for app in "${!APPS[@]}"; do
 
   if (
     cd "$target_dir"
-    IMAGE="$image" DEPLOY_MODE=self-pull APP_NAME="$app" HEALTH_PATH="$health_path" \
+    IMAGE="$image" IMAGE_DIGEST="$IMAGE_DIGEST" DEPLOY_MODE=self-pull APP_NAME="$app" HEALTH_PATH="$health_path" \
     GHCR_PULL_TOKEN="$GHCR_PULL_TOKEN" GHCR_USER="$GHCR_USER" \
     RUN_MIGRATIONS="$run_migrations" MIGRATION_CMD="$migration_cmd" \
     NGINX_UPSTREAM_DIR="$NGINX_UPSTREAM_DIR" \

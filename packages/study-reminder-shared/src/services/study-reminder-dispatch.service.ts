@@ -124,6 +124,19 @@ export class StudyReminderDispatchService {
       claimed += 1;
       const leaseToken = claimedJob.leaseToken ?? '';
 
+      // Skip re-send if already delivered (#181) — crash between send and
+      // markSent left a delivery_record; re-claim sees it and marks sent
+      // without re-sending.
+      if (claimedJob.deliveryRecord) {
+        await this.jobRepository.markSent(claimedJob.id, leaseToken);
+        this.hooks?.onSent?.({
+          jobId: claimedJob.id,
+          externalUserId: claimedJob.externalUserId,
+        });
+        sent += 1;
+        return;
+      }
+
       if (this.scheduleService.isSessionStarted(claimedJob.scheduledAt, now)) {
         await this.jobRepository.markCancelled(
           claimedJob.id,
@@ -160,7 +173,9 @@ export class StudyReminderDispatchService {
           userId: claimedJob.userId,
         });
 
-        await this.jobRepository.markSent(claimedJob.id, leaseToken);
+        // Record delivery before marking sent — if crash occurs between send
+        // and markSent, re-claim sees deliveryRecord and skips re-send (#181).
+        await this.jobRepository.markSent(claimedJob.id, leaseToken, 'sent');
         this.hooks?.onSent?.({
           jobId: claimedJob.id,
           externalUserId: claimedJob.externalUserId,

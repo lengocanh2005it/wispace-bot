@@ -16,7 +16,7 @@ umask 077
 # Optional env: FORCE_RECREATE, GHCR_PULL_TOKEN, GHCR_USER, HEALTH_PATH, PORT,
 #               HEALTH_MAX_ATTEMPTS, DEPLOY_HOST_DIR, RUN_MIGRATIONS, MIGRATION_CMD,
 #               MIGRATION_DB_CONTAINER, MIGRATION_LOCK_ID, NGINX_UPSTREAM_DIR,
-#               PUBLIC_HOST, DOCKER_STOP_TIMEOUT, SKIP_NGINX_CHECK
+#               PUBLIC_HOST, DOCKER_STOP_TIMEOUT, SKIP_NGINX_CHECK, IMAGE_DIGEST
 
 : "${IMAGE:?IMAGE is required}"
 : "${DEPLOY_MODE:?DEPLOY_MODE is required}"
@@ -229,7 +229,14 @@ fi
 docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
 
 # ─── Pull image ───────────────────────────────────────────────────────────────
-docker pull "$IMAGE" 2>/dev/null || docker pull "$IMAGE" || true
+# Pin by immutable digest when available (#196) — closes TOCTOU between
+# manifest check and pull. Falls back to tag-only when digest is absent.
+PULL_REF="$IMAGE"
+if [ -n "${IMAGE_DIGEST:-}" ]; then
+  PULL_REF="${IMAGE}@${IMAGE_DIGEST}"
+  echo "Pinning by digest: $PULL_REF"
+fi
+docker pull "$PULL_REF" 2>/dev/null || docker pull "$PULL_REF" || true
 
 # ─── Start new container on standby port (docker run, NOT compose) ────────────
 # Compose would "recreate" the old container (it matches by project/service
@@ -260,7 +267,7 @@ fi
 
 RUN_ARGS+=(--cap-drop ALL --security-opt no-new-privileges:true)
 
-if ! docker run "${RUN_ARGS[@]}" "$IMAGE"; then
+if ! docker run "${RUN_ARGS[@]}" "$PULL_REF"; then
   echo "ERROR: docker run failed for $NEW_CONTAINER" >&2
   docker logs "$NEW_CONTAINER" --tail 60 2>/dev/null || true
   exit 1
