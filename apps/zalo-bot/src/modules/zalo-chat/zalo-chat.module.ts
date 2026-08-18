@@ -12,6 +12,7 @@ import {
   PlatformChatRateLimitService,
   PlatformLlmUsageRecorderAdapter,
   PlatformLlmSafetyEventAdapter,
+  LlmSafetyCleanupService,
 } from '@wispace/chat-metering';
 import {
   PlatformAgentService,
@@ -345,6 +346,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     },
     ZaloOutboundService,
     CleanupCronService,
+    LlmSafetyCleanupService,
     {
       provide: PlatformDeadLetterCronService,
       useFactory: (

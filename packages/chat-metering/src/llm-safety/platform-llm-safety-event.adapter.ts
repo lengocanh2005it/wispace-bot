@@ -41,6 +41,20 @@ export class PlatformLlmSafetyEventAdapter {
     return Number.isFinite(value) && value > 0 ? Math.floor(value) : 5;
   }
 
+  readRetentionDays(): number {
+    const raw = this.configService
+      .get<string>('LLM_SAFETY_EVENT_RETENTION_DAYS')
+      ?.trim();
+    const value = Number(raw);
+    return Number.isFinite(value) && value > 0 ? Math.floor(value) : 30;
+  }
+
+  async deleteOlderThanRetention(): Promise<number> {
+    const days = this.readRetentionDays();
+    const before = new Date(Date.now() - days * 86_400_000);
+    return this.getCore().deleteOlderThan(before);
+  }
+
   private getCore(): LlmSafetyCore {
     if (!this.core) {
       const repository = new LlmSafetyEventRepository(this.repo, this.platform);
