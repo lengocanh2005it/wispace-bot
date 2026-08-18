@@ -42,7 +42,7 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 - **Daily quota** per `(platform, external_user_id, usage_date)` ICT — `chat_daily_usage`; idempotency `message.mid` — `chat_idempotency`.
 - **Burst** `CHAT_BURST_PER_MINUTE`/min; **hard cap** concurrent (H3); **hint** "X remaining" (Phase 6).
 - Menu postback, reminder cron, proactive reports — **no** quota deduction.
-- **Single instance:** `CHAT_QUEUE_STORE=memory` (RAM debounce). **≥2 pods:** `CHAT_QUEUE_STORE=redis` (requires `REDIS_ENABLED=true`; `CHAT_QUEUE_SHARED=true` maps to `redis`). Distributed append retries briefly and propagates persistent Redis failures to the durable webhook inbox for recovery.
+- **Development/test:** `CHAT_QUEUE_STORE=memory` (RAM debounce). **Production:** all three bots require `CHAT_QUEUE_STORE=redis` (requires `REDIS_ENABLED=true`; `CHAT_QUEUE_SHARED=true` maps to `redis`). Enqueue writes are awaited before the Messenger/Zalo durable inbox completes; persistent Redis failures remain retryable. Redis keys use the legacy `chat:queue:*` namespace for Messenger and `chat:queue:discord:*` / `chat:queue:zalo:*` for the other bots.
 
 ### 1.5. Precreate Next Roadmap Exercise
 
@@ -50,7 +50,7 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 - The tool calls `POST WISPACE_API_PRECREATE_EXERCISE_URL` with an empty body and `X-Internal-Key: WISPACE_INTERNAL_KEY`. The platform identity header is `x-psid`, `x-discordid`, or `x-zaloid` respectively. The API is idempotent, so this POST is never automatically retried.
 - `WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS` is required (the example value is `30000`); LLM tool execution is limited to 35 seconds. Responses require an absolute HTTPS URL for `created` and `already_exists`; status flags are authoritative and advisory `message` text is sanitized before use.
 - The current API accepts no `taskType`, `exerciseTopic`, `topic`, or `difficulty` selection. A future extension may support `taskType`/`exerciseTopic` when WISPACE provides the corresponding API contract.
-- **Discord/Zalo queued failures:** a failure before the main reply is delivered sends one direct generic Vietnamese fallback through the outbound service. The fallback never re-enters the chat queue; original pipeline failures and fallback delivery failures are logged separately, while outbound retry/dead-letter behavior remains unchanged.
+- **Discord/Zalo queued failures:** a failure before the main reply is delivered sends one direct generic Vietnamese fallback through the outbound service. The fallback never re-enters the chat queue; original pipeline failures and fallback delivery failures are logged separately. Outbound sends retry only rate limits/5xx and explicit network failures; known 4xx/auth/validation errors fail fast. Discord retries reuse a stable `nonce` with `enforceNonce=true`; Zalo has no equivalent idempotency field in the current send payload. Timeout/ambiguous outcomes are recorded as `dm_send_ambiguous` and are not retried (#156).
 - Details + runbook: [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), section 12 below.
 
 ---
@@ -324,7 +324,7 @@ Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP �
 | `exam-reminder-report` | `0 8 * * *` (08:00 ICT) | `ReportCronService` — daily student reports |
 | `weekly-cleanup-duplicate-mappings` | `0 3 * * 1` (Monday 03:00 ICT) | `ReportCronService` — deactivate duplicate ACTIVE mappings |
 | `report-send-retry` | `*/15 * * * *` | `ReportSendRetryDispatchService` — outbox R5 retry |
-| `report-claims-stale-reset` | `*/30 * * * *` | `ReportClaimStaleResetCronService` — release claims stuck `claimed` (`REPORT_CLAIM_STALE_RESET_MS`=2h) |
+| `report-claims-stale-reset` | `*/30 * * * *` | `ReportClaimStaleResetCronService` — per-platform lease recovery for `scheduled_report_claims` (`REPORT_CLAIM_STALE_RESET_MS`=2h) |
 | `ops-health-daily` | `0 0 9 * * *` (09:00 ICT) | `OpsHealthCronService` — ops health alert |
 | `study-reminder-sync` | `0 */30 * * * *` (every 30 min) | `StudyReminderWorkerService` — sync upcoming sessions |
 | `study-reminder-dispatch` | Adaptive 30s–3.5min (`STUDY_REMINDER_POLL_*`) | `StudyReminderWorkerService` — S2 adaptive dispatch |
@@ -397,7 +397,7 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 - **Chat rate limit:** `CHAT_RATE_LIMIT_ENABLED`, `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_BURST_STORE` (R3: `postgres` | `memory` | `redis`), `CHAT_USAGE_TIMEZONE` (shared), `CHAT_RATE_LIMIT_WHITELIST_PSIDS`, `CHAT_QUOTA_REMAINING_HINT_THRESHOLD`, `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS` (H2), `CHAT_MERGED_TEXT_MAX_CHARS` / `CHAT_BURST_COUNT_REFUNDED` (H5), `CHAT_IDEMPOTENCY_RETENTION_DAYS` (H6)
 - **HTTP throttling:** `WEBHOOK_RATE_LIMIT_PER_MINUTE` / `WEBHOOK_RATE_LIMIT_TTL_MS` control authenticated Messenger/Zalo webhook bursts; `THROTTLE_DEFAULT_LIMIT` / `THROTTLE_DEFAULT_TTL_MS` control other throttled routes. `REDIS_ENABLED=true` uses one atomic Redis window across pods; disabled Redis uses the existing in-process store, while configured-but-unavailable Redis fails closed.
 - **Chat quota events:** `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`, `CHAT_QUOTA_EVENTS_CLEANUP_ENABLED`
-- **Chat queue:** `CHAT_DEBOUNCE_MS`, `CHAT_MAX_BUBBLES`, `CHAT_BUBBLE_MAX_CHARS`, `CHAT_QUEUE_STORE` (R4), `CHAT_QUEUE_SHARED` (H7 legacy), `CHAT_HISTORY_STORE` (R1), `CHAT_QUEUE_PROCESSING_STUCK_MS`, `CHAT_QUEUE_STALE_TTL_MS`, `CHAT_QUEUE_CLEANUP_INTERVAL_MS`, `CHAT_HISTORY_TTL_MS`, `CHAT_HISTORY_MAX_MESSAGES`
+- **Chat queue:** `CHAT_DEBOUNCE_MS`, `CHAT_MAX_BUBBLES`, `CHAT_BUBBLE_MAX_CHARS`, `CHAT_QUEUE_STORE` (Redis is mandatory in production on all three bots), `CHAT_QUEUE_SHARED` (legacy alias), `CHAT_HISTORY_STORE` (R1), `CHAT_QUEUE_PROCESSING_STUCK_MS`, `CHAT_QUEUE_STALE_TTL_MS`, `CHAT_QUEUE_CLEANUP_INTERVAL_MS`, `CHAT_HISTORY_TTL_MS`, `CHAT_HISTORY_MAX_MESSAGES`. A shared 2s poller claims ready Redis buffers with per-user locks; the durable inbox completes only after enqueue persistence.
 - **Ops API:** `INTERNAL_API_KEY` — header `X-Internal-Api-Key` for sync / send-reports / profile setup
 - **Doppler:** production env is applied by the manual `sync-env.yml` workflow; `DOPPLER_RUNTIME_SYNC_ENABLED=false` in deployed containers.
 - **Deploy:** `GHCR_PULL_TOKEN`, `GHCR_USER`, `DEPLOY_UID`, `DEPLOY_GID`
@@ -437,8 +437,8 @@ npm run --workspace=@wispace/zalo-bot db:explain-oauth-cleanup  # EXPLAIN indexe
 
 ## 10. Scope & Limitations
 
-- **Single instance** — `CRON_LEADER_ENABLED=false` (default); enable `CHAT_RATE_LIMIT_ENABLED=true` on prod.
-- **Scaling ≥2 instances** — chat: `CHAT_QUEUE_SHARED=true` (H7); 08:00 reports: `CRON_LEADER_ENABLED` + `scheduled_report_claims` table (R4 ✓). Preparation runbook: [scale-phase-b-runbook.md](../apps/messenger-bot/docs/scale-phase-b-runbook.md).
+- **Single instance** — `CRON_LEADER_ENABLED=false` (default); enable `CHAT_RATE_LIMIT_ENABLED=true` on prod. Production chat still uses Redis so an accepted webhook is restart-safe.
+- **Scaling ≥2 instances** — chat: `CHAT_QUEUE_SHARED=true` (legacy alias for Redis); 08:00 reports: `CRON_LEADER_ENABLED` + `scheduled_report_claims` table (R4 ✓). Preparation runbook: [scale-phase-b-runbook.md](../apps/messenger-bot/docs/scale-phase-b-runbook.md).
 - **Multi-platform** — Messenger (fully functional), Discord (fully functional), Zalo (fully functional). Shared packages in `packages/`.
 - **Schedule integration** — WISPACE calls `POST /messenger/study-calendar/sync` on schedule change (S0 ✓); 30-minute cron is a fallback.
 - **UserCalendar API** — requires `WISPACE_API_USER_CALENDAR_URL`; no more DB fallback.
@@ -524,11 +524,11 @@ Combined I1+S1 snapshot: `npm run ops:health`.
 **Scale ≥2 instances (H7):**
 
 ```env
-CHAT_QUEUE_SHARED=true   # maps to CHAT_QUEUE_STORE=redis (requires REDIS_ENABLED=true)
+CHAT_QUEUE_SHARED=true   # legacy alias for CHAT_QUEUE_STORE=redis (requires REDIS_ENABLED=true)
 npm run migration:run
 ```
 
-Each pod runs a 2s cron poll buffer against the shared Redis queue (`chat:queue:buffer:{psid}` + per-PSID locks; ready members are tracked in `chat:queue:flush` / `chat:queue:stuck` ZSETs keyed by due time, so each poll is two bounded `ZRANGEBYSCORE` reads — no O(active users) scan; legacy active-set members are rehydrated once after deploy); debounce buffers/history live in Redis, and webhook dedupe is the durable `webhook_inbound_events` inbox in PostgreSQL (no `CHAT_DEDUPE_STORE`).
+Each pod runs a shared 2s poller against the platform Redis queue (`chat:queue:buffer:{psid}` for Messenger, platform-prefixed keys for Discord/Zalo) with per-user locks; ready members are tracked in bounded flush/stuck ZSET reads, and Messenger legacy active-set members are rehydrated once after deploy. Debounce buffers/history live in Redis, and webhook dedupe is the durable `webhook_inbound_events` inbox in PostgreSQL (no `CHAT_DEDUPE_STORE`).
 
 Architecture details: [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md).
 
@@ -566,6 +566,21 @@ The shared Dockerfile pins base/action images by digest, prunes the Turborepo to
 The `git fetch`/`reset` run **inside the script, after the deploy lock is held** (#172) — a concurrent cron tick can never reset the checkout mid-deploy. A failed fetch or a stale checkout fails closed with a timestamped `ERROR` in `~/vps-self-pull-deploy.log` and a **Telegram alert via the local Alertmanager** (`vps_self_pull_stall`, default route) instead of silently stalling (#144); the next tick (2 min) retries and posts an alert `resolved` once healthy. **Per-app deploy failures** (`vps_self_pull_app_failed`) alert once per `(app, sha)` via a per-app marker in `~/.vps-deploy-state/<app>.failed`; a later successful deploy clears the marker and posts the resolved alert (#202).
 
 **Deploy hardening (#199/#201/#203/#204):** `vps-deploy.sh` fails closed before cutover when `.env` is missing, the migration DB is unreachable, or the nginx upstream conf is missing (`SKIP_NGINX_CHECK=true` is the first-deploy escape hatch). The live container is detected by the port nginx currently routes to (never removed by name); an interrupted deploy that left nginx routed to `${APP}-new` adopts it as `${APP}-old` instead of deleting it. Container start/stop honor `DOCKER_STOP_TIMEOUT` (default 60s) for the 45s app drain window. The migration advisory lock is held on the **same psql session** that runs the migration (`\!` shell escape + `/tmp/mig.exit` marker) — concurrent deploys are truly serialized. Post-switch monitoring verifies the **public nginx route** (`curl --resolve …:443:127.0.0.1 https://aiassist.aihubproduction.com/health[/discord|/zalo]/ready`) instead of only the standby port. Runtime images include `postgresql-client` (psql) for the migration session. Uploads exclude `.env` from `rsync --delete`; env files use `mktemp` + `chmod 600` + an EXIT trap; `postgres-backup.sh` enforces `umask 077` + mode 700/600.
+
+**Postgres backup & restore (#182/#185):** nightly `pg_dump` at 02:00 ICT via `deploy/postgres-backup.sh`, encrypted at rest with GPG AES-256 (`BACKUP_ENCRYPTION_PASSPHRASE` in `.env`), 14-day retention. Backups are gzip-validated before encryption and stored as `.sql.gz.gpg` in `/home/ngoc_anh/backups/ai_chat_bot_db/`. An hourly `deploy/backup-monitor.sh` checks the `.last-backup-success` timestamp and fires a `postgres_backup_stale` Alertmanager alert (→ Telegram) if no successful backup in 25h. Backup failures also fire `postgres_backup_failed` immediately. Pre-migration safety dumps (`pg_dump -Fc`) go to `pre-migrate/` with 1-day retention.
+
+**Restore from backup:**
+
+```bash
+# List available backups
+ls -lt /home/ngoc_anh/backups/ai_chat_bot_db/*.sql.gz.gpg
+
+# Decrypt + decompress + restore (replace TIMESTAMP accordingly)
+source /home/ngoc_anh/messenger-bot/.env
+gpg --batch --yes --decrypt --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" \
+  /home/ngoc_anh/backups/ai_chat_bot_db/ai_chat_bot_db-TIMESTAMP.sql.gz.gpg \
+  | gunzip | docker exec -i postgres_n8n_db psql -U "$DB_USER" -d "$DB_NAME" --single-transaction
+```
 
 **Recovery when the self-pull stalls** (bots N commits behind, `git fetch` failing silently in the past): run manually on the VPS —
 

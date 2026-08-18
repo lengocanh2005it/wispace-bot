@@ -1,4 +1,8 @@
-export type ChatIdempotencyStatus = 'reserved' | 'completed' | 'refunded';
+export type ChatIdempotencyStatus =
+  | 'reserved'
+  | 'delivered'
+  | 'completed'
+  | 'refunded';
 
 export interface ChatIdempotencyRecord {
   idempotencyKey: string;
@@ -23,6 +27,9 @@ export interface ReserveFreeFormSlotInput {
   idempotencyKey: string;
   /** H3: hard cap inside the same transaction as idempotency insert. */
   dailyLimit: number;
+  burstLimit?: number;
+  burstSince?: Date;
+  burstCountsRefunded?: boolean;
 }
 
 export type ReserveFreeFormSlotOutcome =
@@ -35,5 +42,6 @@ export type ReserveFreeFormSlotOutcome =
 export type RecoverIdempotencyOutcome =
   | 'reopened'
   | 'in_flight'
+  | 'delivered'
   | 'completed'
   | 'not_found';

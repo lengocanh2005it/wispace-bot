@@ -1,5 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import { readReportClaimLeaseMs } from '@wispace/database';
 import {
   REPORT_CLAIM_REPOSITORY,
   type ReportClaimRepositoryPort,
@@ -55,6 +57,7 @@ export class ReportSendOrchestrationService {
     @Inject(REPORT_SEND_JOB_REPOSITORY)
     private readonly reportSendJobRepository: ReportSendJobRepositoryPort,
     private readonly reportSendScheduleService: ReportSendScheduleService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -99,13 +102,17 @@ export class ReportSendOrchestrationService {
     }
 
     let claimedForSend = false;
+    let claimLeaseToken = '';
     if (skipAlreadySentToday) {
-      const claimed = await this.messengerRepository.tryClaimScheduledReport({
-        externalUserId: mapping.psid,
-        userId: mapping.userId,
-        reportDate,
-      });
-      if (!claimed) {
+      const claimed = await this.messengerRepository.tryClaimScheduledReport(
+        {
+          externalUserId: mapping.psid,
+          userId: mapping.userId,
+          reportDate,
+        },
+        readReportClaimLeaseMs(this.configService),
+      );
+      if (!claimed.claimed || !claimed.leaseToken) {
         this.logger.log(
           `Skip PSID ${maskExternalId(
             mapping.psid,
@@ -114,6 +121,7 @@ export class ReportSendOrchestrationService {
         return { ...ZERO, claimSkipped: 1 };
       }
       claimedForSend = true;
+      claimLeaseToken = claimed.leaseToken;
     }
 
     try {
@@ -122,10 +130,13 @@ export class ReportSendOrchestrationService {
 
       if (result) {
         if (claimedForSend) {
-          await this.messengerRepository.markScheduledReportClaimSent({
-            externalUserId: mapping.psid,
-            reportDate,
-          });
+          await this.messengerRepository.markScheduledReportClaimSent(
+            {
+              externalUserId: mapping.psid,
+              reportDate,
+            },
+            claimLeaseToken,
+          );
         }
         if (examDateForOutbox) {
           await this.reportSendJobRepository.markSentByExternalUserExamDate(
@@ -137,10 +148,13 @@ export class ReportSendOrchestrationService {
       }
 
       if (claimedForSend) {
-        await this.messengerRepository.releaseScheduledReportClaim({
-          externalUserId: mapping.psid,
-          reportDate,
-        });
+        await this.messengerRepository.releaseScheduledReportClaim(
+          {
+            externalUserId: mapping.psid,
+            reportDate,
+          },
+          claimLeaseToken,
+        );
       }
       return { ...ZERO, windowClosed: 1 };
     } catch (error) {
@@ -153,10 +167,13 @@ export class ReportSendOrchestrationService {
           )}: ${error.bubblesSent} bubble(s) delivered before failure — marking sent`,
         );
         if (claimedForSend) {
-          await this.messengerRepository.markScheduledReportClaimSent({
-            externalUserId: mapping.psid,
-            reportDate,
-          });
+          await this.messengerRepository.markScheduledReportClaimSent(
+            {
+              externalUserId: mapping.psid,
+              reportDate,
+            },
+            claimLeaseToken,
+          );
         }
         if (examDateForOutbox) {
           await this.reportSendJobRepository.markSentByExternalUserExamDate(
@@ -170,10 +187,13 @@ export class ReportSendOrchestrationService {
       // Release the claim on EVERY other failure — a leak here would silently
       // block same-day re-sends and burn the day's slot.
       if (claimedForSend) {
-        await this.messengerRepository.releaseScheduledReportClaim({
-          externalUserId: mapping.psid,
-          reportDate,
-        });
+        await this.messengerRepository.releaseScheduledReportClaim(
+          {
+            externalUserId: mapping.psid,
+            reportDate,
+          },
+          claimLeaseToken,
+        );
       }
 
       if (

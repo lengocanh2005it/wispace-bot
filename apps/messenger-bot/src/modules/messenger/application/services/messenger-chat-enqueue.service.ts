@@ -37,10 +37,6 @@ interface MemoryQueueContext {
 export class MessengerChatEnqueueService implements OnModuleDestroy {
   private readonly logger = new Logger(MessengerChatEnqueueService.name);
   private readonly debounceQueue: DebounceChatQueue<MemoryQueueContext>;
-  private readonly sharedFlushTimers = new Map<
-    string,
-    ReturnType<typeof setTimeout>
-  >();
   /** PSIDs already told their messages were dropped this cycle (reset on flush). */
   private readonly droppedNotified = new Set<string>();
 
@@ -127,11 +123,6 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     await this.debounceQueue.destroy();
-
-    for (const timer of this.sharedFlushTimers.values()) {
-      clearTimeout(timer);
-    }
-    this.sharedFlushTimers.clear();
   }
 
   async enqueue(input: EnqueueChatMessageInput): Promise<void> {
@@ -204,7 +195,6 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
           idempotencyKey: input.idempotencyKey,
           debounceMs: this.getDebounceMs(),
         });
-        this.scheduleDistributedFlush(input.psid);
         return;
       } catch (error) {
         lastError = error;
@@ -231,27 +221,6 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
       )}`,
     );
     throw lastError;
-  }
-
-  private scheduleDistributedFlush(psid: string): void {
-    const existing = this.sharedFlushTimers.get(psid);
-    if (existing) {
-      clearTimeout(existing);
-    }
-
-    const timer = setTimeout(() => {
-      this.sharedFlushTimers.delete(psid);
-      void this.processor.flushReady(psid).catch((error) => {
-        this.logger.error(
-          `Distributed chat flush failed psid=${maskExternalId(
-            psid,
-          )}: ${errorMessage(error)}`,
-        );
-      });
-    }, this.getDebounceMs());
-    timer.unref?.();
-
-    this.sharedFlushTimers.set(psid, timer);
   }
 
   private getChatQueueStore(): ChatQueueStorePort {

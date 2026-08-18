@@ -60,6 +60,7 @@ export class ChatRateLimitCore {
   ): Promise<ChatQuotaCheckResult> {
     const { freeFormDailyLimit, burstPerMinute, timezone } = this.settings;
     const usageDate = todayUsageDate(timezone);
+    const burstSince = subtractMs(new Date(), CHAT_BURST_WINDOW_MS);
 
     const burstResult = await this.burstCounter.tryReserveBurst(
       externalUserId,
@@ -91,7 +92,9 @@ export class ChatRateLimitCore {
       dailyLimit: freeFormDailyLimit,
       freeFormDailyLimit,
       burstLimit: burstPerMinute,
-      burstSince: subtractMs(new Date(), CHAT_BURST_WINDOW_MS),
+      burstSince,
+      burstTransactional: burstResult.transactional,
+      burstCountsRefunded: this.settings.burstCountsRefunded ?? false,
     });
   }
 
@@ -126,7 +129,11 @@ export class ChatRateLimitCore {
     await this.repository.completeReservedSlot(idempotencyKey);
   }
 
-  /** Refund + release keys stuck in `reserved` past TTL. */
+  async markDelivered(idempotencyKey: string): Promise<void> {
+    await this.repository.markDeliveredSlot(idempotencyKey);
+  }
+
+  /** Finalize delivered keys and refund pre-delivery keys stuck past TTL. */
   async recoverStuckReservedSlots(): Promise<{ recovered: string[] }> {
     const stuckBefore = this.stuckReservedCutoff();
     const recovered =
@@ -155,6 +162,8 @@ export class ChatRateLimitCore {
       freeFormDailyLimit: number;
       burstLimit: number;
       burstSince: Date;
+      burstTransactional: boolean;
+      burstCountsRefunded: boolean;
     },
   ): Promise<ChatQuotaCheckResult> {
     const outcome = await this.reserveSlotOrRecoverOnConflict(externalUserId, {
@@ -162,8 +171,11 @@ export class ChatRateLimitCore {
       usageDate: params.usageDate,
       idempotencyKey: params.idempotencyKey,
       dailyLimit: params.dailyLimit,
-      burstLimit: params.burstLimit,
-      burstSince: params.burstSince,
+      burstLimit: params.burstTransactional ? params.burstLimit : undefined,
+      burstSince: params.burstTransactional ? params.burstSince : undefined,
+      burstCountsRefunded: params.burstTransactional
+        ? params.burstCountsRefunded
+        : undefined,
     });
 
     if (outcome.status === 'burst_limit_exceeded') {
@@ -237,8 +249,9 @@ export class ChatRateLimitCore {
       usageDate: string;
       idempotencyKey: string;
       dailyLimit: number;
-      burstLimit: number;
-      burstSince: Date;
+      burstLimit?: number;
+      burstSince?: Date;
+      burstCountsRefunded?: boolean;
     },
   ) {
     let outcome = await this.repository.reserveFreeFormSlotInTransaction({
@@ -249,6 +262,7 @@ export class ChatRateLimitCore {
       dailyLimit: input.dailyLimit,
       burstLimit: input.burstLimit,
       burstSince: input.burstSince,
+      burstCountsRefunded: input.burstCountsRefunded,
     });
 
     if (
@@ -281,6 +295,7 @@ export class ChatRateLimitCore {
         dailyLimit: input.dailyLimit,
         burstLimit: input.burstLimit,
         burstSince: input.burstSince,
+        burstCountsRefunded: input.burstCountsRefunded,
       });
     } else {
       this.logIdempotencyConflict(
@@ -310,6 +325,15 @@ export class ChatRateLimitCore {
     if (recovery === 'completed') {
       this.logger.log(
         `Idempotency already completed key=${idempotencyKey} externalUserId=${maskExternalId(
+          externalUserId,
+        )}; skip duplicate`,
+      );
+      return;
+    }
+
+    if (recovery === 'delivered') {
+      this.logger.log(
+        `Idempotency delivery pending finalization key=${idempotencyKey} externalUserId=${maskExternalId(
           externalUserId,
         )}; skip duplicate`,
       );

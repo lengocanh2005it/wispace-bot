@@ -19,7 +19,7 @@ type IdempotencyRow = {
   externalUserId: string;
   userId: number | null;
   usageDate: string;
-  status: 'reserved' | 'completed' | 'refunded';
+  status: 'reserved' | 'delivered' | 'completed' | 'refunded';
   reservedAt: Date;
 };
 
@@ -32,11 +32,33 @@ describe('ChatRateLimitRepository', () => {
   let dailyUsageStore: Map<string, DailyUsageRow>;
   let idempotencyStore: Map<string, IdempotencyRow>;
   let hooks: jest.Mocked<ChatRateLimitRepositoryHooks>;
+  let serializeTransactions: boolean;
 
   const usageKey = (externalUserId: string, usageDate: string) =>
     `${externalUserId}:${usageDate}`;
 
   const createManager = (): EntityManager => {
+    let transactionTail: Promise<void> = Promise.resolve();
+    const advisoryLockTails = new Map<string, Promise<void>>();
+
+    const acquireAdvisoryLock = async (key: string): Promise<() => void> => {
+      const previous = advisoryLockTails.get(key) ?? Promise.resolve();
+      let release!: () => void;
+      const current = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const tail = previous.then(() => current);
+      advisoryLockTails.set(key, tail);
+      await previous;
+
+      return () => {
+        release();
+        if (advisoryLockTails.get(key) === tail) {
+          advisoryLockTails.delete(key);
+        }
+      };
+    };
+
     const manager = {
       query: jest.fn((sql: string, params: unknown[]) => {
         const normalized = sql.replace(/\s+/g, ' ').trim();
@@ -134,7 +156,7 @@ describe('ChatRateLimitRepository', () => {
         ) {
           const [, externalUserId, since] = params as [string, string, Date];
           const includeRefunded = !normalized.includes(
-            "status IN ('reserved', 'completed')",
+            "status IN ('reserved', 'delivered', 'completed')",
           );
           const count = [...idempotencyStore.values()].filter((row) => {
             if (
@@ -148,12 +170,37 @@ describe('ChatRateLimitRepository', () => {
               return true;
             }
 
-            return row.status === 'reserved' || row.status === 'completed';
+            return (
+              row.status === 'reserved' ||
+              row.status === 'delivered' ||
+              row.status === 'completed'
+            );
           }).length;
           return [{ count: String(count) }];
         }
 
         if (normalized.startsWith('UPDATE chat_idempotency SET status = ')) {
+          if (
+            normalized.includes("SET status = 'completed'") &&
+            normalized.includes("status = 'delivered'")
+          ) {
+            const [, stuckBefore] = params as [string, Date];
+            const staleRows = [...idempotencyStore.values()].filter(
+              (row) =>
+                row.status === 'delivered' && row.reservedAt < stuckBefore,
+            );
+
+            staleRows.forEach((row) => {
+              row.status = 'completed';
+            });
+
+            return updateResult(
+              staleRows.map((row) => ({
+                idempotency_key: row.idempotencyKey,
+              })),
+            );
+          }
+
           if (
             normalized.includes(
               "WHERE platform = $1 AND status = 'reserved' AND reserved_at < $2",
@@ -196,10 +243,18 @@ describe('ChatRateLimitRepository', () => {
           }
 
           if (normalized.includes("SET status = 'completed'")) {
-            if (row.status !== 'reserved') {
+            if (row.status !== 'reserved' && row.status !== 'delivered') {
               return updateResult([]);
             }
             row.status = 'completed';
+            return updateResult([{ idempotency_key: idempotencyKey }]);
+          }
+
+          if (normalized.includes("SET status = 'delivered'")) {
+            if (row.status !== 'reserved') {
+              return updateResult([]);
+            }
+            row.status = 'delivered';
             return updateResult([{ idempotency_key: idempotencyKey }]);
           }
         }
@@ -274,21 +329,69 @@ describe('ChatRateLimitRepository', () => {
       }),
       transaction: jest.fn(
         async <T>(work: (txManager: EntityManager) => Promise<T>) => {
-          const idempotencySnapshot = new Map(idempotencyStore);
-          const dailySnapshot = new Map(dailyUsageStore);
-          try {
-            return await work(manager);
-          } catch (error) {
-            idempotencyStore.clear();
-            idempotencySnapshot.forEach((value, key) =>
-              idempotencyStore.set(key, value),
-            );
-            dailyUsageStore.clear();
-            dailySnapshot.forEach((value, key) =>
-              dailyUsageStore.set(key, value),
-            );
-            throw error;
+          const releases: Array<() => void> = [];
+          const query = manager.query as unknown as (
+            sql: string,
+            params: unknown[],
+          ) => unknown[] | Promise<unknown[]>;
+          let idempotencySnapshot: Map<string, IdempotencyRow> | undefined;
+          let dailySnapshot: Map<string, DailyUsageRow> | undefined;
+          const captureSnapshot = () => {
+            if (idempotencySnapshot) {
+              return;
+            }
+            idempotencySnapshot = new Map(idempotencyStore);
+            dailySnapshot = new Map(dailyUsageStore);
+          };
+          const txManager = {
+            ...manager,
+            query: jest.fn(async (sql: string, params: unknown[]) => {
+              const normalized = sql.replace(/\s+/g, ' ').trim();
+              if (normalized.startsWith('SELECT pg_advisory_xact_lock')) {
+                const release = await acquireAdvisoryLock(params[0] as string);
+                releases.push(release);
+                captureSnapshot();
+                return [];
+              }
+
+              if (!serializeTransactions) {
+                captureSnapshot();
+              }
+              return query(sql, params);
+            }),
+          } as unknown as EntityManager;
+
+          const run = async () => {
+            if (serializeTransactions) {
+              captureSnapshot();
+            }
+            try {
+              return await work(txManager);
+            } catch (error) {
+              idempotencyStore.clear();
+              idempotencySnapshot?.forEach((value, key) =>
+                idempotencyStore.set(key, value),
+              );
+              dailyUsageStore.clear();
+              dailySnapshot?.forEach((value, key) =>
+                dailyUsageStore.set(key, value),
+              );
+              throw error;
+            } finally {
+              releases.reverse().forEach((release) => release());
+            }
+          };
+
+          if (!serializeTransactions) {
+            return run();
           }
+
+          const queued = transactionTail.then(run);
+          transactionTail = queued.then(
+            () => undefined,
+            () => undefined,
+          );
+          return queued;
         },
       ),
     } as unknown as EntityManager;
@@ -299,6 +402,7 @@ describe('ChatRateLimitRepository', () => {
   beforeEach(() => {
     dailyUsageStore = new Map();
     idempotencyStore = new Map();
+    serializeTransactions = true;
 
     const manager = createManager();
     const dailyUsageRepo = {
@@ -381,6 +485,7 @@ describe('ChatRateLimitRepository', () => {
       dailyLimit: number;
       burstLimit?: number;
       burstSince?: Date;
+      burstCountsRefunded?: boolean;
     }> = {},
   ) => ({
     idempotencyKey: 'mid-tx',
@@ -390,6 +495,7 @@ describe('ChatRateLimitRepository', () => {
     dailyLimit: 15,
     burstLimit: undefined,
     burstSince: undefined,
+    burstCountsRefunded: false,
     ...overrides,
   });
 
@@ -468,6 +574,19 @@ describe('ChatRateLimitRepository', () => {
     await expect(
       repository.getDailyUsageCount('ext-1', '2026-06-15'),
     ).resolves.toBe(1);
+  });
+
+  it('marks delivered idempotency before finalization', async () => {
+    await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({ idempotencyKey: 'mid-delivered' }),
+    );
+
+    const delivered = await repository.markDeliveredSlot('mid-delivered');
+
+    expect(delivered).toBe(true);
+    expect(idempotencyStore.get('mid-delivered')?.status).toBe('delivered');
+    expect(await repository.completeReservedSlot('mid-delivered')).toBe(true);
+    expect(idempotencyStore.get('mid-delivered')?.status).toBe('completed');
   });
 
   it('counts recent reservations inside the burst window', async () => {
@@ -658,6 +777,53 @@ describe('ChatRateLimitRepository', () => {
     expect(idempotencyStore.get('mid-flight')?.status).toBe('reserved');
   });
 
+  it('does not reopen delivered idempotency on duplicate retry', async () => {
+    idempotencyStore.set('mid-delivered-retry', {
+      idempotencyKey: 'mid-delivered-retry',
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      status: 'delivered',
+      reservedAt: new Date('2026-06-15T07:00:00+07:00'),
+    });
+
+    await expect(
+      repository.recoverIdempotencyForRetry(
+        'mid-delivered-retry',
+        new Date('2026-06-15T08:00:00+07:00'),
+      ),
+    ).resolves.toBe('delivered');
+    expect(idempotencyStore.get('mid-delivered-retry')?.status).toBe(
+      'delivered',
+    );
+  });
+
+  it('finalizes stale delivered rows without decrementing usage', async () => {
+    idempotencyStore.set('mid-stale-delivered', {
+      idempotencyKey: 'mid-stale-delivered',
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      status: 'delivered',
+      reservedAt: new Date('2026-06-15T07:00:00+07:00'),
+    });
+    dailyUsageStore.set('ext-1:2026-06-15', {
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      freeFormCount: 1,
+    });
+
+    await expect(
+      repository.recoverAllStuckReserved(new Date('2026-06-15T08:00:00+07:00')),
+    ).resolves.toEqual(['mid-stale-delivered']);
+
+    expect(idempotencyStore.get('mid-stale-delivered')?.status).toBe(
+      'completed',
+    );
+    expect(dailyUsageStore.get('ext-1:2026-06-15')?.freeFormCount).toBe(1);
+  });
+
   it('reopens refunded idempotency for retry', async () => {
     idempotencyStore.set('mid-retry', {
       idempotencyKey: 'mid-retry',
@@ -745,6 +911,62 @@ describe('ChatRateLimitRepository', () => {
 
     expect(outcome).toEqual({ status: 'burst_limit_exceeded', count: 2 });
     expect(idempotencyStore.has('mid-burst')).toBe(false);
+  });
+
+  it('applies the refunded-row burst policy inside the reserve transaction', async () => {
+    idempotencyStore.set('mid-refunded', {
+      idempotencyKey: 'mid-refunded',
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      status: 'refunded',
+      reservedAt: new Date('2026-06-15T08:00:00+07:00'),
+    });
+
+    const outcome = await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({
+        idempotencyKey: 'mid-burst-refunded',
+        burstLimit: 1,
+        burstSince: new Date('2026-06-14T08:00:00+07:00'),
+        burstCountsRefunded: true,
+      }),
+    );
+
+    expect(outcome).toEqual({ status: 'burst_limit_exceeded', count: 2 });
+    expect(idempotencyStore.has('mid-burst-refunded')).toBe(false);
+  });
+
+  it('admits only one concurrent reserve at the burst limit', async () => {
+    serializeTransactions = false;
+    const burstSince = new Date('2026-06-14T08:00:00+07:00');
+    const [first, second] = await Promise.all([
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({
+          idempotencyKey: 'mid-concurrent-a',
+          burstLimit: 1,
+          burstSince,
+        }),
+      ),
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({
+          idempotencyKey: 'mid-concurrent-b',
+          burstLimit: 1,
+          burstSince,
+        }),
+      ),
+    ]);
+
+    const outcomes = [first, second];
+    expect(outcomes.filter((item) => item.status === 'reserved')).toHaveLength(
+      1,
+    );
+    expect(
+      outcomes.filter((item) => item.status === 'burst_limit_exceeded'),
+    ).toHaveLength(1);
+    expect(idempotencyStore.size).toBe(1);
+    await expect(
+      repository.getDailyUsageCount('ext-1', '2026-06-15'),
+    ).resolves.toBe(1);
   });
 
   it('allows only one concurrent reserve when at daily limit minus one', async () => {

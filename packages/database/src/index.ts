@@ -57,6 +57,12 @@ export {
   type MessageLogRow,
 } from './services/delivery-log.service';
 export { PlatformReportClaimRepository } from './services/platform-report-claim.repository';
+export {
+  DEFAULT_REPORT_CLAIM_LEASE_MS,
+  ReportClaimStaleResetCronService,
+  readReportClaimLeaseMs,
+  type ReportClaimStaleResetCronOptions,
+} from './services/report-claim-stale-reset-cron.service';
 export { TypeormRescheduleStore } from './services/typeorm-reschedule-store';
 export { CronLeaderLeaseService } from './services/cron-leader-lease.service';
 export { listUserIdsWithSentReport } from './services/list-user-ids-with-sent-report';

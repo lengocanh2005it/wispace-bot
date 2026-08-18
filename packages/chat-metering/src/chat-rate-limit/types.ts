@@ -49,6 +49,7 @@ export interface ReserveFreeFormSlotInput {
   /** Optional DB-authoritative burst check for Postgres-backed counters. */
   burstLimit?: number;
   burstSince?: Date;
+  burstCountsRefunded?: boolean;
 }
 
 export type ReserveFreeFormSlotOutcome =
@@ -57,10 +58,11 @@ export type ReserveFreeFormSlotOutcome =
   | { status: 'daily_limit_exceeded' }
   | { status: 'burst_limit_exceeded'; count: number };
 
-/** Outcome when reclaiming an idempotency key stuck in `reserved` past TTL. */
+/** Outcome when reclaiming an idempotency key after a retry conflict. */
 export type RecoverIdempotencyOutcome =
   | 'reopened'
   | 'in_flight'
+  | 'delivered'
   | 'completed'
   | 'not_found';
 
@@ -74,6 +76,13 @@ export interface BurstCounterPort {
   tryReserveBurst(
     externalUserId: string,
     limit: number,
-  ): Promise<{ allowed: boolean; count: number }>;
+  ): Promise<BurstReservationResult>;
   releaseReservation(externalUserId: string): Promise<void>;
+}
+
+export interface BurstReservationResult {
+  allowed: boolean;
+  count: number;
+  /** True when this attempt is backed by the Postgres reserve transaction. */
+  transactional: boolean;
 }

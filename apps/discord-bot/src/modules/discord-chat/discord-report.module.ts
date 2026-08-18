@@ -16,6 +16,7 @@ import {
   REPORT_CLAIM_REPOSITORY,
   GOALS_DATA_PORT,
   parseExamDateToIso,
+  type ReportClaimRepositoryPort,
 } from '@wispace/scheduler-core';
 import {
   ReportSendJobEntity,
@@ -23,6 +24,7 @@ import {
   PlatformReportClaimRepository,
   CronLeaderLeaseEntity,
   CronLeaderLeaseService,
+  ReportClaimStaleResetCronService,
 } from '@wispace/database';
 import { ChatMeteringModule } from '@wispace/chat-metering';
 import {
@@ -39,8 +41,10 @@ import { DiscordReportRetryDispatchService } from './application/services/discor
 import { DiscordReportOrchestrationService } from './application/services/discord-report-orchestration.service';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
-import { BotCommonModule } from '@wispace/bot-common';
+import { BotCommonModule, PgAdvisoryLockService } from '@wispace/bot-common';
 import { WispaceModule } from '../wispace/wispace.module';
+
+const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
 
 @Module({
   imports: [
@@ -91,6 +95,24 @@ import { WispaceModule } from '../wispace/wispace.module';
       useFactory: (repo: Repository<ScheduledReportClaimEntity>) =>
         new PlatformReportClaimRepository('discord', repo),
       inject: [getRepositoryToken(ScheduledReportClaimEntity)],
+    },
+    {
+      provide: ReportClaimStaleResetCronService,
+      useFactory: (
+        configService: ConfigService,
+        claimRepository: ReportClaimRepositoryPort,
+        pgLock: PgAdvisoryLockService,
+      ) =>
+        new ReportClaimStaleResetCronService(
+          configService,
+          claimRepository,
+          pgLock,
+          {
+            platform: 'discord',
+            lockId: DISCORD_REPORT_CLAIM_STALE_RESET_LOCK,
+          },
+        ),
+      inject: [ConfigService, REPORT_CLAIM_REPOSITORY, PgAdvisoryLockService],
     },
     {
       provide: PlatformStudentReportService,

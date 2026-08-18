@@ -5,11 +5,11 @@ import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 import { ChatRateLimitService } from './chat-rate-limit.service';
 
 /**
- * H2 auto-recovery: refund + release quota slots stuck in `reserved` past
- * `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS` (default 10 min). Runs every 5 minutes
- * under an advisory lock — a crash between reserve and refund/completed would
- * otherwise inflate `chat_daily_usage.free_form_count` forever and deny users
- * quota they never actually used.
+ * H2 auto-recovery: finalize delivered slots and refund + release pre-delivery
+ * quota slots stuck in `reserved` past `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS`
+ * (default 10 min). Runs every 5 minutes under an advisory lock — a crash
+ * between reserve/delivery/finalization must not refund a delivered turn or
+ * inflate `chat_daily_usage.free_form_count` forever.
  */
 @Injectable()
 export class ChatQuotaStuckRecoveryCronService {

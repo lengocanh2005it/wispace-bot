@@ -178,15 +178,38 @@ export class MessengerChatProcessorService {
     let reservedUsageDate: string | undefined;
     let reservedIdempotencyKey: string | undefined;
     let reservedQuota: ChatQuotaCheckResult | undefined;
-    let mainReplyDelivered = false;
+    let mainReplyDelivery: 'none' | 'delivered' | 'partial' = 'none';
+    let quotaDeliveryMarked = false;
     let quotaFinalized = false;
 
-    const finalizeQuota = async (): Promise<void> => {
+    const markQuotaDelivery = async (): Promise<void> => {
+      if (quotaDeliveryMarked || !reservedIdempotencyKey) {
+        return;
+      }
+
+      await this.chatRateLimitService.markDelivered(reservedIdempotencyKey);
+      quotaDeliveryMarked = true;
+    };
+
+    const finalizeQuota = async (deliveryConfirmed = false): Promise<void> => {
       if (quotaFinalized || !reservedIdempotencyKey) {
         return;
       }
 
-      await this.chatRateLimitService.markCompleted(reservedIdempotencyKey);
+      if (deliveryConfirmed) {
+        await markQuotaDelivery();
+      }
+
+      try {
+        await this.chatRateLimitService.markCompleted(reservedIdempotencyKey);
+      } catch (error) {
+        this.logger.error(
+          `Chat quota finalization deferred mid=${reservedIdempotencyKey}: ${errorMessage(
+            error,
+          )}`,
+        );
+      }
+
       quotaFinalized = true;
     };
 
@@ -266,17 +289,29 @@ export class MessengerChatProcessorService {
 
       const assistantText = reply.text.trim();
       if (assistantText) {
-        await this.metrics.timeStep('history_append', async () => {
-          await this.chatHistory.appendTurn(psid, mergedText, assistantText);
-          if (reply.toolSummary) {
-            await this.chatHistory.appendToolSummary(psid, reply.toolSummary);
-          }
-        });
-        mainReplyDelivered = await this.metrics.timeStep('meta_send', () =>
+        mainReplyDelivery = await this.metrics.timeStep('meta_send', () =>
           this.deliverMainReplyBubbles({ psid, userId, text: assistantText }),
         );
 
-        if (mainReplyDelivered) {
+        if (mainReplyDelivery !== 'none') {
+          await markQuotaDelivery();
+
+          if (mainReplyDelivery === 'delivered') {
+            await this.metrics.timeStep('history_append', async () => {
+              await this.chatHistory.appendTurn(
+                psid,
+                mergedText,
+                assistantText,
+              );
+              if (reply.toolSummary) {
+                await this.chatHistory.appendToolSummary(
+                  psid,
+                  reply.toolSummary,
+                );
+              }
+            });
+          }
+
           await finalizeQuota();
         }
       } else if (reservedIdempotencyKey) {
@@ -290,7 +325,7 @@ export class MessengerChatProcessorService {
         reservedQuota,
       });
     } catch (error) {
-      if (!quotaFinalized && !mainReplyDelivered) {
+      if (!quotaFinalized && mainReplyDelivery === 'none') {
         if (reservedIdempotencyKey && reservedUsageDate) {
           await this.chatRateLimitService.refundFreeFormSlot(
             psid,
@@ -333,7 +368,7 @@ export class MessengerChatProcessorService {
     psid: string;
     userId?: number;
     text: string;
-  }): Promise<boolean> {
+  }): Promise<'none' | 'delivered' | 'partial'> {
     const limits = readMessengerBubbleLimits(this.configService);
     try {
       const bubblesSent = await this.outbound.sendTextBubblesViaPsid({
@@ -345,7 +380,7 @@ export class MessengerChatProcessorService {
         maxCharsPerBubble: Math.min(limits.maxCharsPerBubble, 2000),
       });
 
-      return bubblesSent > 0;
+      return bubblesSent > 0 ? 'delivered' : 'none';
     } catch (error) {
       if (error instanceof MessengerPartialSendError && error.bubblesSent > 0) {
         this.logger.warn(
@@ -353,7 +388,7 @@ export class MessengerChatProcessorService {
             params.psid,
           )} bubblesSent=${error.bubblesSent}`,
         );
-        return true;
+        return 'partial';
       }
 
       throw error;

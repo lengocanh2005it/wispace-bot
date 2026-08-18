@@ -2,7 +2,10 @@ import { ConfigService } from '@nestjs/config';
 import { ZaloOauthController } from './zalo-oauth.controller';
 import { ZaloAccountLinkService } from '../../application/services/zalo-account-link.service';
 import { ZaloOauthStateService } from '../../application/services/zalo-oauth-state.service';
-import { WispaceTokenVerifyService } from '@wispace/wispace-client';
+import {
+  ZaloLinkCompletionService,
+  ZaloLinkTokenRejectedError,
+} from '../../application/services/zalo-link-completion.service';
 
 function buildConfig(): ConfigService {
   return {
@@ -36,8 +39,7 @@ describe('ZaloOauthController', () => {
         findUserIdByZaloId: jest.fn(),
       } as unknown as ZaloAccountLinkService,
       { create, consume: jest.fn() } as unknown as ZaloOauthStateService,
-      { verifyToken: jest.fn() } as unknown as WispaceTokenVerifyService,
-      { sendText: jest.fn() },
+      { completeLink: jest.fn() } as unknown as ZaloLinkCompletionService,
     );
 
     const res = buildRes();
@@ -60,46 +62,64 @@ describe('ZaloOauthController', () => {
       codeVerifier: 'verifier-1',
       linkToken: 'stored-link-token',
     });
-    const exchangeCodeForZaloUser = jest
-      .fn()
-      .mockResolvedValue({ id: 'zalo-user-1', name: 'A' });
-    const verifyToken = jest
-      .fn()
-      .mockResolvedValue({ valid: true, userId: 42 });
-    const upsertLink = jest.fn().mockResolvedValue(undefined);
-    const sendText = jest.fn().mockResolvedValue(undefined);
+    const completeLink = jest.fn().mockResolvedValue(undefined);
 
     const controller = new ZaloOauthController(
       buildConfig(),
       {
         buildPkcePair: jest.fn(),
-        exchangeCodeForZaloUser,
-        upsertLink,
+        exchangeCodeForZaloUser: jest.fn(),
+        upsertLink: jest.fn(),
         findUserIdByZaloId: jest.fn(),
       } as unknown as ZaloAccountLinkService,
       { create: jest.fn(), consume } as unknown as ZaloOauthStateService,
-      { verifyToken } as unknown as WispaceTokenVerifyService,
-      { sendText },
+      { completeLink } as unknown as ZaloLinkCompletionService,
     );
 
     const res = buildRes();
     await controller.callback('auth-code', 'state-1', res);
 
     expect(consume).toHaveBeenCalledWith('state-1');
-    expect(exchangeCodeForZaloUser).toHaveBeenCalledWith(
+    expect(completeLink).toHaveBeenCalledWith(
       'auth-code',
       'verifier-1',
-    );
-    expect(verifyToken).toHaveBeenCalledWith(
       'stored-link-token',
-      'zalo-user-1',
-    );
-    expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1');
-    expect(sendText).toHaveBeenCalledWith(
-      'zalo-user-1',
-      expect.stringContaining('liên kết thành công'),
     );
     expect(res.json).toHaveBeenCalledWith({ success: true });
+  });
+
+  it('GET /callback maps a rejected WISPACE token to the invalid-link message', async () => {
+    const consume = jest.fn().mockResolvedValue({
+      codeVerifier: 'verifier-1',
+      linkToken: 'stored-link-token',
+    });
+    const completeLink = jest
+      .fn()
+      .mockRejectedValue(new ZaloLinkTokenRejectedError());
+
+    const controller = new ZaloOauthController(
+      buildConfig(),
+      {
+        buildPkcePair: jest.fn(),
+        exchangeCodeForZaloUser: jest.fn(),
+        upsertLink: jest.fn(),
+        findUserIdByZaloId: jest.fn(),
+      } as unknown as ZaloAccountLinkService,
+      { create: jest.fn(), consume } as unknown as ZaloOauthStateService,
+      { completeLink } as unknown as ZaloLinkCompletionService,
+    );
+
+    const res = buildRes();
+    await controller.callback('auth-code', 'state-1', res);
+
+    const lastCall = res.json.mock.calls[res.json.mock.calls.length - 1] as
+      | [unknown]
+      | undefined;
+    const payload = lastCall?.[0] as
+      | { success: boolean; message: string }
+      | undefined;
+    expect(payload?.success).toBe(false);
+    expect(payload?.message).toContain('hết hạn');
   });
 
   it('GET /callback returns an error when the PKCE state is missing/expired', async () => {
@@ -114,8 +134,7 @@ describe('ZaloOauthController', () => {
         findUserIdByZaloId: jest.fn(),
       } as unknown as ZaloAccountLinkService,
       { create: jest.fn(), consume } as unknown as ZaloOauthStateService,
-      { verifyToken: jest.fn() } as unknown as WispaceTokenVerifyService,
-      { sendText: jest.fn() },
+      { completeLink: jest.fn() } as unknown as ZaloLinkCompletionService,
     );
 
     const res = buildRes();

@@ -29,7 +29,11 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
         .mockResolvedValue(overrides?.alreadySent ?? false),
       tryClaimScheduledReport: jest
         .fn()
-        .mockResolvedValue(overrides?.claimOk ?? true),
+        .mockResolvedValue(
+          overrides?.claimOk === false
+            ? { claimed: false }
+            : { claimed: true, leaseToken: 'lease-1' },
+        ),
       markScheduledReportClaimSent: jest.fn().mockResolvedValue(undefined),
       releaseScheduledReportClaim: jest.fn().mockResolvedValue(undefined),
     };
@@ -65,6 +69,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
       messengerReportDeliveryService as never,
       reportSendJobRepository as never,
       reportSendScheduleService as never,
+      { get: jest.fn() } as never,
     );
 
     return {
@@ -90,17 +95,23 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     expect(
       messengerReportDeliveryService.sendReportForMapping,
     ).toHaveBeenCalledWith(mapping);
-    expect(messengerRepository.tryClaimScheduledReport).toHaveBeenCalledWith({
-      externalUserId: 'psid-1',
-      userId: 10,
-      reportDate: '2026-07-11',
-    });
+    expect(messengerRepository.tryClaimScheduledReport).toHaveBeenCalledWith(
+      {
+        externalUserId: 'psid-1',
+        userId: 10,
+        reportDate: '2026-07-11',
+      },
+      expect.any(Number),
+    );
     expect(
       messengerRepository.markScheduledReportClaimSent,
-    ).toHaveBeenCalledWith({
-      externalUserId: 'psid-1',
-      reportDate: '2026-07-11',
-    });
+    ).toHaveBeenCalledWith(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-07-11',
+      },
+      'lease-1',
+    );
   });
 
   it('already sent today → skip', async () => {
@@ -152,10 +163,13 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     expect(result.sent).toBe(0);
     expect(
       messengerRepository.releaseScheduledReportClaim,
-    ).toHaveBeenCalledWith({
-      externalUserId: 'psid-1',
-      reportDate: '2026-07-11',
-    });
+    ).toHaveBeenCalledWith(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-07-11',
+      },
+      'lease-1',
+    );
   });
 
   it('StudentReportRetryableError → release claim, record outbox', async () => {
@@ -177,10 +191,13 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     expect(result.retryQueued).toBe(1);
     expect(
       messengerRepository.releaseScheduledReportClaim,
-    ).toHaveBeenCalledWith({
-      externalUserId: 'psid-1',
-      reportDate: '2026-07-11',
-    });
+    ).toHaveBeenCalledWith(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-07-11',
+      },
+      'lease-1',
+    );
     expect(reportSendJobRepository.recordRetryableFailure).toHaveBeenCalledWith(
       expect.objectContaining({
         externalUserId: 'psid-1',
@@ -204,10 +221,13 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     expect(result.sent).toBe(0);
     expect(
       messengerRepository.releaseScheduledReportClaim,
-    ).toHaveBeenCalledWith({
-      externalUserId: 'psid-1',
-      reportDate: '2026-07-11',
-    });
+    ).toHaveBeenCalledWith(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-07-11',
+      },
+      'lease-1',
+    );
   });
 
   it('unknown error → release claim, return failure', async () => {
@@ -227,10 +247,13 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     });
     expect(
       messengerRepository.releaseScheduledReportClaim,
-    ).toHaveBeenCalledWith({
-      externalUserId: 'psid-1',
-      reportDate: '2026-07-11',
-    });
+    ).toHaveBeenCalledWith(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-07-11',
+      },
+      'lease-1',
+    );
   });
 
   it('Meta Send API 5xx → release claim + queue R5 outbox job', async () => {
@@ -254,10 +277,13 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     expect(result.retryQueued).toBe(1);
     expect(
       messengerRepository.releaseScheduledReportClaim,
-    ).toHaveBeenCalledWith({
-      externalUserId: 'psid-1',
-      reportDate: '2026-07-11',
-    });
+    ).toHaveBeenCalledWith(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-07-11',
+      },
+      'lease-1',
+    );
     expect(reportSendJobRepository.recordRetryableFailure).toHaveBeenCalledWith(
       expect.objectContaining({
         externalUserId: 'psid-1',
@@ -289,10 +315,13 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     ).not.toHaveBeenCalled();
     expect(
       messengerRepository.releaseScheduledReportClaim,
-    ).toHaveBeenCalledWith({
-      externalUserId: 'psid-1',
-      reportDate: '2026-07-11',
-    });
+    ).toHaveBeenCalledWith(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-07-11',
+      },
+      'lease-1',
+    );
   });
 
   it('partial bubble send → mark sent, no re-send, no release', async () => {
@@ -318,10 +347,13 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     expect(result.sent).toBe(1);
     expect(
       messengerRepository.markScheduledReportClaimSent,
-    ).toHaveBeenCalledWith({
-      externalUserId: 'psid-1',
-      reportDate: '2026-07-11',
-    });
+    ).toHaveBeenCalledWith(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-07-11',
+      },
+      'lease-1',
+    );
     expect(
       messengerRepository.releaseScheduledReportClaim,
     ).not.toHaveBeenCalled();

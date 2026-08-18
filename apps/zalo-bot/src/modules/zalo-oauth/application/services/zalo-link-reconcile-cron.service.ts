@@ -1,0 +1,123 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Cron } from '@nestjs/schedule';
+import { PgAdvisoryLockService, maskExternalId } from '@wispace/bot-common';
+import {
+  ZALO_LINK_VERIFY_RECORD_REPOSITORY,
+  type ZaloLinkVerifyRecordRepositoryPort,
+} from '../../domain/ports/zalo-link-verify-record.repository.port';
+import { ZaloAccountLinkService } from './zalo-account-link.service';
+
+const DEFAULT_RECONCILE_AGE_MS = 120_000;
+const DEFAULT_MAX_RECORD_AGE_MS = 10 * 60_000;
+const ZALO_LINK_RECONCILE_LOCK = 884_200_937;
+
+/**
+ * Reconciles pending Zalo link verify-intents (#147, mirror of Discord's
+ * discord-link-reconcile #137): a crash between token verification and the
+ * local mapping upsert leaves WISPACE "linked" with no bot mapping — this
+ * cron re-commits the mapping idempotently, then consumes the intent.
+ */
+@Injectable()
+export class ZaloLinkReconcileCronService {
+  private readonly logger = new Logger(ZaloLinkReconcileCronService.name);
+
+  constructor(
+    @Inject(ZALO_LINK_VERIFY_RECORD_REPOSITORY)
+    private readonly verifyRecordService: ZaloLinkVerifyRecordRepositoryPort,
+    private readonly accountLinkService: ZaloAccountLinkService,
+    private readonly configService: ConfigService,
+    private readonly pgLock: PgAdvisoryLockService,
+  ) {}
+
+  @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
+  async handleReconcile(): Promise<void> {
+    const result = await this.pgLock.withLock(ZALO_LINK_RECONCILE_LOCK, () =>
+      this.runReconcileBatch(),
+    );
+
+    if (result === null) {
+      this.logger.debug(
+        'zalo-link-reconcile skipped — lock held by another pod',
+      );
+    }
+  }
+
+  private async runReconcileBatch(): Promise<void> {
+    const staleAgeMs = this.readPositiveInt(
+      'ZALO_LINK_RECONCILE_AGE_MS',
+      DEFAULT_RECONCILE_AGE_MS,
+    );
+    const maxRecordAgeMs = this.readPositiveInt(
+      'ZALO_LINK_RECONCILE_MAX_AGE_MS',
+      DEFAULT_MAX_RECORD_AGE_MS,
+    );
+
+    const records = await this.verifyRecordService.listStaleRecords(staleAgeMs);
+    if (records.length === 0) {
+      return;
+    }
+
+    let reconciled = 0;
+    let alreadyCommitted = 0;
+    let dropped = 0;
+    let failed = 0;
+
+    for (const record of records) {
+      try {
+        const existingUserId = await this.accountLinkService.findUserIdByZaloId(
+          record.zaloUserId,
+        );
+
+        if (existingUserId !== undefined) {
+          // Mapping committed — the record is a leftover (consume raced).
+          await this.verifyRecordService.consumeRecord(record.zaloUserId);
+          alreadyCommitted += 1;
+          continue;
+        }
+
+        if (Date.now() - record.verifiedAt.getTime() >= maxRecordAgeMs) {
+          this.logger.error(
+            `Zalo link verify record older than ${maxRecordAgeMs}ms with no mapping — dropping zaloUserId=${maskExternalId(
+              record.zaloUserId,
+            )} (user must retry with a fresh token)`,
+          );
+          await this.verifyRecordService.consumeRecord(record.zaloUserId);
+          dropped += 1;
+          continue;
+        }
+
+        await this.accountLinkService.upsertLink(
+          record.userId,
+          record.zaloUserId,
+        );
+        await this.verifyRecordService.consumeRecord(record.zaloUserId);
+        reconciled += 1;
+        this.logger.log(
+          `Zalo link reconciled for zaloUserId=${maskExternalId(
+            record.zaloUserId,
+          )} (crash recovery)`,
+        );
+      } catch (error) {
+        failed += 1;
+        this.logger.warn(
+          `Zalo link reconcile failed for zaloUserId=${maskExternalId(
+            record.zaloUserId,
+          )}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    this.logger.log(
+      `zalo-link-reconcile done: reconciled=${reconciled}, alreadyCommitted=${alreadyCommitted}, dropped=${dropped}, failed=${failed}`,
+    );
+  }
+
+  private readPositiveInt(key: string, fallback: number): number {
+    const raw = this.configService.get<string>(key);
+    const parsed = raw ? Number(raw) : NaN;
+    return Number.isFinite(parsed) && parsed > 0
+      ? Math.floor(parsed)
+      : fallback;
+  }
+}

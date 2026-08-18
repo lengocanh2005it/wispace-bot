@@ -5,6 +5,7 @@ import { DataSourceOptions } from 'typeorm';
 import { ZaloOaTokenEntity } from './entities/zalo-oa-token.entity';
 import { ZaloOauthStateEntity } from './entities/zalo-oauth-state.entity';
 import { ZaloAccountLinkEntity } from './entities/zalo-account-link.entity';
+import { ZaloLinkVerifyRecordEntity } from './entities/zalo-link-verify-record.entity';
 import { ZaloMessageLogEntity } from './entities/zalo-message-log.entity';
 import {
   ChatDailyUsageEntity,
@@ -40,6 +41,7 @@ export function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       ZaloOauthStateEntity,
       ZaloAccountLinkEntity,
       ZaloMessageLogEntity,
+      ZaloLinkVerifyRecordEntity,
       ChatDailyUsageEntity,
       ChatIdempotencyEntity,
       LlmUsageEventEntity,
@@ -66,6 +68,7 @@ export function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       ZaloOauthStateEntity,
       ZaloAccountLinkEntity,
       ZaloMessageLogEntity,
+      ZaloLinkVerifyRecordEntity,
       ChatDailyUsageEntity,
       ChatIdempotencyEntity,
       LlmUsageEventEntity,

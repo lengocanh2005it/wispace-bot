@@ -10,7 +10,7 @@ import {
   CHAT_BURST_COUNTER,
   type ChatBurstCounterPort,
 } from '../../domain/repositories/chat-burst-counter.port';
-import { todayUsageDate } from '@wispace/chat-metering';
+import { CHAT_BURST_WINDOW_MS, todayUsageDate } from '@wispace/chat-metering';
 import { subtractMs } from '@wispace/date-utils';
 import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
@@ -38,9 +38,14 @@ export class ChatRateLimitService {
     psid: string,
     params: { userId?: number; idempotencyKey: string },
   ): Promise<ChatQuotaCheckResult> {
-    const { freeFormDailyLimit, burstPerMinute, timezone } =
-      this.configService.getSettings();
+    const {
+      freeFormDailyLimit,
+      burstPerMinute,
+      timezone,
+      burstCountsRefunded,
+    } = this.configService.getSettings();
     const usageDate = todayUsageDate(timezone);
+    const burstSince = subtractMs(new Date(), CHAT_BURST_WINDOW_MS);
 
     if (!this.configService.shouldEnforceForPsid(psid)) {
       const used = this.configService.isEnabled()
@@ -89,6 +94,9 @@ export class ChatRateLimitService {
       idempotencyKey: params.idempotencyKey,
       freeFormDailyLimit,
       burstLimit: burstPerMinute,
+      burstSince,
+      burstTransactional: burstResult.transactional,
+      burstCountsRefunded: burstCountsRefunded ?? false,
     });
   }
 
@@ -102,6 +110,9 @@ export class ChatRateLimitService {
       idempotencyKey: string;
       freeFormDailyLimit: number;
       burstLimit: number;
+      burstSince: Date;
+      burstTransactional: boolean;
+      burstCountsRefunded: boolean;
     },
   ): Promise<ChatQuotaCheckResult> {
     const outcome = await this.reserveSlotOrRecoverOnConflict(psid, {
@@ -109,6 +120,11 @@ export class ChatRateLimitService {
       usageDate: params.usageDate,
       idempotencyKey: params.idempotencyKey,
       dailyLimit: params.freeFormDailyLimit,
+      burstLimit: params.burstTransactional ? params.burstLimit : undefined,
+      burstSince: params.burstTransactional ? params.burstSince : undefined,
+      burstCountsRefunded: params.burstTransactional
+        ? params.burstCountsRefunded
+        : undefined,
     });
 
     if (outcome.status === 'burst_limit_exceeded') {
@@ -226,9 +242,15 @@ export class ChatRateLimitService {
     await this.repository.completeReservedSlot(idempotencyKey);
   }
 
-  /**
-   * H2 ops: refund + release keys stuck in `reserved` past TTL.
-   */
+  async markDelivered(idempotencyKey: string): Promise<void> {
+    if (!this.configService.isEnabled()) {
+      return;
+    }
+
+    await this.repository.markDeliveredSlot(idempotencyKey);
+  }
+
+  /** H2 ops: finalize delivered keys and refund stale pre-delivery keys. */
   async recoverStuckReservedSlots(): Promise<{ recovered: string[] }> {
     if (!this.configService.isEnabled()) {
       return { recovered: [] };
@@ -258,6 +280,9 @@ export class ChatRateLimitService {
       usageDate: string;
       idempotencyKey: string;
       dailyLimit: number;
+      burstLimit?: number;
+      burstSince?: Date;
+      burstCountsRefunded?: boolean;
     },
   ) {
     let outcome = await this.repository.reserveFreeFormSlotInTransaction({
@@ -266,6 +291,9 @@ export class ChatRateLimitService {
       usageDate: input.usageDate,
       idempotencyKey: input.idempotencyKey,
       dailyLimit: input.dailyLimit,
+      burstLimit: input.burstLimit,
+      burstSince: input.burstSince,
+      burstCountsRefunded: input.burstCountsRefunded,
     });
 
     if (
@@ -294,6 +322,9 @@ export class ChatRateLimitService {
         usageDate: input.usageDate,
         idempotencyKey: input.idempotencyKey,
         dailyLimit: input.dailyLimit,
+        burstLimit: input.burstLimit,
+        burstSince: input.burstSince,
+        burstCountsRefunded: input.burstCountsRefunded,
       });
     } else {
       this.logIdempotencyConflict(input.idempotencyKey, psid, recovery);
@@ -317,6 +348,13 @@ export class ChatRateLimitService {
     if (recovery === 'completed') {
       this.logger.log(
         `Idempotency already completed mid=${idempotencyKey} psid=${maskExternalId(psid)}; skip duplicate flush`,
+      );
+      return;
+    }
+
+    if (recovery === 'delivered') {
+      this.logger.log(
+        `Idempotency delivery pending finalization mid=${idempotencyKey} psid=${maskExternalId(psid)}; skip duplicate flush`,
       );
     }
   }

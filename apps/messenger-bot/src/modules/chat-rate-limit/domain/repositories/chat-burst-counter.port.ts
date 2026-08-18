@@ -1,3 +1,5 @@
+import type { BurstReservationResult } from '@wispace/chat-metering';
+
 export const CHAT_BURST_COUNTER = Symbol('CHAT_BURST_COUNTER');
 
 export interface ChatBurstCounterPort {
@@ -7,9 +9,6 @@ export interface ChatBurstCounterPort {
    * Returns allowed=false (and does NOT increment) when already at or above limit.
    * Callers must call releaseReservation() if the downstream DB reserve later fails.
    */
-  tryReserveBurst(
-    psid: string,
-    limit: number,
-  ): Promise<{ allowed: boolean; count: number }>;
+  tryReserveBurst(psid: string, limit: number): Promise<BurstReservationResult>;
   releaseReservation(psid: string): Promise<void>;
 }

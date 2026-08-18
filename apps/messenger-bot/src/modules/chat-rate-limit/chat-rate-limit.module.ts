@@ -6,6 +6,7 @@ import {
   ChatIdempotencyEntity,
   MemoryBurstCounter,
   PostgresBurstCounter,
+  type BurstReservationResult,
 } from '@wispace/chat-metering';
 import { CleanupCronService } from '@wispace/cleanup-cron';
 import { ChatQuotaEventEntity } from '../../infrastructure/database/entities/chat-quota-event.entity';
@@ -69,7 +70,7 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
             async tryReserveBurst(
               psid: string,
               limit: number,
-            ): Promise<{ allowed: boolean; count: number }> {
+            ): Promise<BurstReservationResult> {
               if (redisCounter.isAvailable()) {
                 return redisCounter.tryReserveBurst(psid, limit);
               }

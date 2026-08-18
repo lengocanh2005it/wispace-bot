@@ -60,6 +60,9 @@ export function createChatPipelineAdapters(
     async markCompleted(idempotencyKey: string): Promise<void> {
       await rateLimitService.markCompleted(idempotencyKey);
     },
+    async markDelivered(idempotencyKey: string): Promise<void> {
+      await rateLimitService.markDelivered(idempotencyKey);
+    },
   };
 
   const history: HistoryPort = {

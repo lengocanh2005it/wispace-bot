@@ -14,8 +14,8 @@ const DEFAULT_MERGED_TEXT_MAX_CHARS = 4000;
 /**
  * Framework-agnostic chat flush pipeline.
  *
- * Orchestrates: reserve quota → load history → call agent → append history →
- * send reply → mark completed. Optional hooks let platforms inject tracing,
+ * Orchestrates: reserve quota → load history → call agent → send reply →
+ * mark delivery → append history → mark completed. Optional hooks let platforms inject tracing,
  * metrics, sender actions, and error fallbacks without the pipeline knowing.
  *
  * One module, small interface, lots of behaviour — the deletion test passes
@@ -137,9 +137,9 @@ export class ChatPipeline {
         return false;
       }
 
-      // ── Mark completed after confirmed delivery ──────────────────────────
+      // ── Persist delivery before history/quota finalization ───────────────
       if (input.idempotencyKey) {
-        await this.rateLimiter.markCompleted(input.idempotencyKey);
+        await this.rateLimiter.markDelivered(input.idempotencyKey);
       }
 
       await this.history.appendTurn(
@@ -147,6 +147,22 @@ export class ChatPipeline {
         mergedText,
         reply.text,
       );
+
+      // A confirmed delivery must never be refunded just because quota
+      // finalization is temporarily unavailable. The delivered row is durable
+      // recovery state; the existing stuck-recovery cron completes it later.
+      if (input.idempotencyKey) {
+        try {
+          await this.rateLimiter.markCompleted(input.idempotencyKey);
+        } catch (error) {
+          ctx.quotaFinalizationError = error;
+          try {
+            await this.hooks.onStep?.('quota_finalize_failed', ctx);
+          } catch {
+            // Observability hooks must not turn a delivered reply into a retry.
+          }
+        }
+      }
 
       if (delivered) {
         await this.hooks.onStep?.('after_send', ctx);

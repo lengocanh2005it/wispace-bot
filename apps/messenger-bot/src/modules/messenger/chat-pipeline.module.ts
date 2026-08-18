@@ -8,6 +8,7 @@ import {
   PlatformAgentService,
   PlatformAgentToolsService,
   PlatformChatHistoryService,
+  RedisChatQueueWorkerService,
 } from '@wispace/chat-agent';
 import {
   LlmSafetyEventEntity,
@@ -51,11 +52,11 @@ import { MessengerAgentService } from './application/agent/messenger-agent.servi
 import { MessengerChatSharedConfigService } from './application/services/messenger-chat-shared-config.service';
 import { MessengerChatEnqueueService } from './application/services/messenger-chat-enqueue.service';
 import { MessengerChatProcessorService } from './application/services/messenger-chat-processor.service';
-import { MessengerChatQueueWorkerService } from './application/services/messenger-chat-queue-worker.service';
 import { MessengerRescheduleConfirmationService } from './application/services/messenger-reschedule-confirmation.service';
 import { ChatHistoryStoreStartupService } from './application/services/chat-history-store-startup.service';
 import { ChatQueueStoreStartupService } from './application/services/chat-queue-store-startup.service';
 import { CHAT_QUEUE_STORE } from './domain/repositories/chat-queue.store.port';
+import type { ChatQueueStorePort } from './domain/repositories/chat-queue.store.port';
 import { CHAT_HISTORY_STORE } from './domain/repositories/chat-history.store.port';
 import { RedisChatQueueStore } from './infrastructure/persistence/redis-chat-queue.store';
 import { ChatHistoryStoreResolver } from './infrastructure/persistence/chat-history.store.resolver';
@@ -289,7 +290,20 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     },
     MessengerChatProcessorService,
     MessengerChatEnqueueService,
-    MessengerChatQueueWorkerService,
+    {
+      provide: RedisChatQueueWorkerService,
+      useFactory: (
+        configService: ConfigService,
+        queueStore: ChatQueueStorePort,
+        processor: MessengerChatProcessorService,
+      ) =>
+        new RedisChatQueueWorkerService(
+          configService,
+          (limit) => queueStore.listPsidsReadyForFlush(limit),
+          (externalUserId) => processor.flushReady(externalUserId),
+        ),
+      inject: [ConfigService, CHAT_QUEUE_STORE, MessengerChatProcessorService],
+    },
   ],
   exports: [
     MessengerChatEnqueueService,

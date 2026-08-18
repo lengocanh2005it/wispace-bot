@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
+import { In, LessThan, Repository } from 'typeorm';
 import {
   CleanupCronService,
   type CleanupCronConfig,
@@ -47,7 +47,7 @@ export class ChatIdempotencyCleanupCronService {
       (cutoff) =>
         this.idempotencyRepo
           .delete({
-            status: ['completed', 'refunded'] as never,
+            status: In(['completed', 'refunded']),
             reservedAt: LessThan(cutoff),
           })
           .then((r) => r.affected ?? 0),

@@ -28,9 +28,9 @@ export class PostgresBurstCounter implements BurstCounterPort {
   async tryReserveBurst(
     externalUserId: string,
     limit: number,
-  ): Promise<{ allowed: boolean; count: number }> {
+  ): Promise<{ allowed: boolean; count: number; transactional: boolean }> {
     const count = await this.getBurstCount(externalUserId);
-    return { allowed: count < limit, count };
+    return { allowed: count < limit, count, transactional: true };
   }
 
   releaseReservation(_externalUserId: string): Promise<void> {

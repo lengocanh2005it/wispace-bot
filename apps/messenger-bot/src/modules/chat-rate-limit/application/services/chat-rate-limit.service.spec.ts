@@ -16,6 +16,8 @@ describe('ChatRateLimitService', () => {
     options: {
       burstCount?: number;
       whitelistPsids?: string;
+      transactionalBurst?: boolean;
+      burstCountsRefunded?: boolean;
     } = {},
   ) => {
     const config = {
@@ -29,7 +31,9 @@ describe('ChatRateLimitService', () => {
           CHAT_QUOTA_REMAINING_HINT_THRESHOLD: '3',
           CHAT_IDEMPOTENCY_STUCK_RESERVED_MS: '600000',
           CHAT_MERGED_TEXT_MAX_CHARS: '4000',
-          CHAT_BURST_COUNT_REFUNDED: 'false',
+          CHAT_BURST_COUNT_REFUNDED: options.burstCountsRefunded
+            ? 'true'
+            : 'false',
           CHAT_QUOTA_EVENTS_ENABLED: 'true',
         };
         return values[key];
@@ -71,6 +75,9 @@ describe('ChatRateLimitService', () => {
         count = Math.max(count - 1, 0);
         return Promise.resolve(true);
       }),
+      markDeliveredSlot: jest.fn((idempotencyKey: string) =>
+        Promise.resolve(idempotencyKeys.has(idempotencyKey)),
+      ),
       completeReservedSlot: jest.fn((idempotencyKey: string) =>
         Promise.resolve(idempotencyKeys.has(idempotencyKey)),
       ),
@@ -89,9 +96,17 @@ describe('ChatRateLimitService', () => {
       tryReserveBurst: jest.fn((_psid: string, limit: number) => {
         const current = options.burstCount ?? 0;
         if (current >= limit) {
-          return Promise.resolve({ allowed: false, count: current });
+          return Promise.resolve({
+            allowed: false,
+            count: current,
+            transactional: options.transactionalBurst ?? false,
+          });
         }
-        return Promise.resolve({ allowed: true, count: current + 1 });
+        return Promise.resolve({
+          allowed: true,
+          count: current + 1,
+          transactional: options.transactionalBurst ?? false,
+        });
       }),
       releaseReservation: jest.fn(() => Promise.resolve()),
     };
@@ -206,6 +221,42 @@ describe('ChatRateLimitService', () => {
     });
 
     expect(burstCounter.tryReserveBurst).toHaveBeenCalledWith('psid-1', 3);
+  });
+
+  it('passes transactional burst policy to the repository', async () => {
+    const { service, repository } = createService(true, 0, {
+      transactionalBurst: true,
+      burstCountsRefunded: true,
+    });
+
+    await service.reserveFreeFormSlot('psid-1', {
+      idempotencyKey: 'mid-db-burst',
+    });
+
+    expect(repository.reserveFreeFormSlotInTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        burstLimit: 3,
+        burstCountsRefunded: true,
+      }),
+    );
+    const reserveInput = jest.mocked(
+      repository.reserveFreeFormSlotInTransaction,
+    ).mock.calls[0]?.[0];
+    expect(reserveInput?.burstSince).toBeInstanceOf(Date);
+  });
+
+  it('does not add a DB burst check for non-transactional counters', async () => {
+    const { service, repository } = createService(true);
+
+    await service.reserveFreeFormSlot('psid-1', {
+      idempotencyKey: 'mid-redis-burst',
+    });
+
+    const [input] = (repository.reserveFreeFormSlotInTransaction as jest.Mock)
+      .mock.calls[0] as [Record<string, unknown>];
+    expect(input.burstLimit).toBeUndefined();
+    expect(input.burstSince).toBeUndefined();
+    expect(input.burstCountsRefunded).toBeUndefined();
   });
 
   it('bypasses reserve for whitelisted psid', async () => {

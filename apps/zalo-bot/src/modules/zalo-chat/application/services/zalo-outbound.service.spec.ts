@@ -1,5 +1,7 @@
+/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import { ZaloOutboundService, ZaloSendError } from './zalo-outbound.service';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
+import type { BotMetricsService } from '@wispace/bot-metrics';
 
 describe('ZaloOutboundService', () => {
   const deliveryLog = {
@@ -9,6 +11,12 @@ describe('ZaloOutboundService', () => {
   beforeEach(() => {
     deliveryLog.logDelivery.mockClear();
   });
+
+  function buildMetricsStub(): BotMetricsService {
+    return {
+      incDmDeliveryFailure: jest.fn(),
+    } as unknown as BotMetricsService;
+  }
 
   it('sends a text consultation message with the current access token', async () => {
     const getValidAccessToken = jest.fn().mockResolvedValue('token-abc');
@@ -145,6 +153,112 @@ describe('ZaloOutboundService', () => {
     });
     expect(deliveryLog.logDelivery).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'FAILED' }),
+    );
+
+    delete global.fetch;
+  });
+
+  it('#156: does not retry known 4xx API errors', async () => {
+    const tokenService = {
+      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
+    } as unknown as ZaloTokenService;
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      statusText: 'Bad Request',
+      json: () => Promise.resolve({ error: 4001, message: 'Invalid user id' }),
+    });
+    const metrics = buildMetricsStub();
+
+    global.fetch = fetchMock;
+
+    const service = new ZaloOutboundService(
+      tokenService,
+      deliveryLog as never,
+      undefined,
+      metrics,
+    );
+
+    await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(metrics.incDmDeliveryFailure).not.toHaveBeenCalledWith(
+      'dm_send_ambiguous',
+    );
+
+    delete global.fetch;
+  });
+
+  it('#156: retries 5xx provider errors', async () => {
+    const tokenService = {
+      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
+    } as unknown as ZaloTokenService;
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      statusText: 'Service Unavailable',
+      json: () => Promise.resolve({ error: 503, message: 'temporary outage' }),
+    });
+
+    global.fetch = fetchMock;
+
+    const service = new ZaloOutboundService(tokenService, deliveryLog as never);
+
+    await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    delete global.fetch;
+  });
+
+  it('#156: retries network errors and records ambiguous delivery', async () => {
+    const tokenService = {
+      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
+    } as unknown as ZaloTokenService;
+    const fetchMock = jest
+      .fn()
+      .mockRejectedValue(new TypeError('fetch failed'));
+    const metrics = buildMetricsStub();
+
+    global.fetch = fetchMock;
+
+    const service = new ZaloOutboundService(
+      tokenService,
+      deliveryLog as never,
+      undefined,
+      metrics,
+    );
+
+    await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
+      'dm_send_ambiguous',
+    );
+
+    delete global.fetch;
+  });
+
+  it('#156: does not retry a timeout after acceptance and records ambiguity', async () => {
+    const tokenService = {
+      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
+    } as unknown as ZaloTokenService;
+    const timeout = Object.assign(new Error('request timed out'), {
+      name: 'TimeoutError',
+    });
+    const fetchMock = jest.fn().mockRejectedValue(timeout);
+    const metrics = buildMetricsStub();
+
+    global.fetch = fetchMock;
+
+    const service = new ZaloOutboundService(
+      tokenService,
+      deliveryLog as never,
+      undefined,
+      metrics,
+    );
+
+    await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
+      'dm_send_ambiguous',
     );
 
     delete global.fetch;

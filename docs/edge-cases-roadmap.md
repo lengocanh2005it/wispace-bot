@@ -77,7 +77,7 @@ New edge cases found in a full codebase scan (beyond the roadmap below) and fixe
 | **F** | Discord/Zalo 08:00 crons ignored the 2–3 day exam window (daily reports for everyone) | Window gate added (same as Messenger) + checked **before** LLM generate; Zalo ops `send-reports` accepts `forceSend` |
 | **G** | Zalo dead-letter retry **echoed the user's own text** (inbound events retried as outbound) | `direction` column (migration `1751029200011`); cron replays `outbound` only; Zalo dead-letters outbound failures; advisory lock + validated env parsing |
 | **H** | Stuck `reserved` quota slots never auto-recovered; ops scripts queried pre-rename tables | `chat-quota-stuck-recovery` cron (5 min, advisory lock 884200906); scripts updated to `chat_idempotency`/`chat_daily_usage`/`chat_quota_events` |
-| **I** | Report claim leaked on non-retryable errors; Meta Send 5xx never entered R5 outbox; crash between claim and send burned the day | Claim released on **every** error; `MessengerApiError` 5xx/408 → R5 job; partial bubble send marked sent; `report-claims-stale-reset` cron (30 min, 884200907, `REPORT_CLAIM_STALE_RESET_MS`) |
+| **I** | Report claim leaked on non-retryable errors; Meta Send 5xx never entered R5 outbox; crash between claim and send burned the day | Claim released on **every** error; UUID lease ownership + stale recovery on all 3 platforms; `MessengerApiError` 5xx/408 → R5 job; partial bubble send marked sent; `report-claims-stale-reset` cron (30 min, per-platform advisory locks, `REPORT_CLAIM_STALE_RESET_MS`) |
 | **J** | Graceful shutdown dropped debounced/in-flight messages | `DebounceChatQueue.destroy()` drains buffers first; shutdown timeout 10s → 25s |
 | **K** | Grounding check false positives blocked generic advice ("bạn có thể đạt 6.5…", "lúc 19:30") | Regexes tightened (score keyword + decimal; schedule context + time); user-echoed dates suppressed |
 | **M1** | `register_exam_report_notifications` lied on Discord/Zalo (`registered:true`, no side effect) | Returns `automatic:true, registered:false` + honest message ("không cần đăng ký riêng") |
@@ -274,7 +274,7 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 |-----------|---------------|-----|-------|
 | **1 instance** | Suitable | Keep `CHAT_QUEUE_SHARED=false` | — |
 | **≥2 chat pods** | Queue/history split across pods | `CHAT_QUEUE_SHARED=true` + migration — H7 ✓; `appendChatHistoryTurn` atomic ✓ | Done (enable env) |
-| **≥2 chat pods (Discord/Zalo)** | Shared Redis debounce queue not implemented | **Startup reject** `CHAT_QUEUE_STORE=redis`/`CHAT_QUEUE_SHARED=true` on Discord/Zalo (single-pod documented); port Messenger's Redis queue to `chat-queue-core` = **follow-up** | Follow-up |
+| **≥2 chat pods (Discord/Zalo)** | Redis debounce queue now shared with Messenger | Platform-prefixed Redis buffers, per-user locks, restart recovery, and the common 2s worker; production rejects memory queue | Done (#174) |
 | **Redis chat history unavailable** | ~~Silent memory fallback~~ | **Fail closed** at startup on all 3 bots (#120) | Done |
 | **≥2 report cron pods** | ~~Risk of duplicate 08:00 sends~~ | **R4** ✓ claim + advisory lock + optional cron leader | Done |
 | **≥2 reminder cron pods** | `claimJob` ✓ + **cron pg_advisory_lock** ✓ | `upsertPendingJob` TOCTOU fixed ✓ (`pg_advisory_xact_lock`) | Done |

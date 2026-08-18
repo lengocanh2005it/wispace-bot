@@ -68,6 +68,9 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
       usageDate: input.usageDate,
       idempotencyKey: input.idempotencyKey,
       dailyLimit: input.dailyLimit,
+      burstLimit: input.burstLimit,
+      burstSince: input.burstSince,
+      burstCountsRefunded: input.burstCountsRefunded,
     });
   }
 
@@ -89,6 +92,10 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
 
   completeReservedSlot(idempotencyKey: string): Promise<boolean> {
     return this.core.completeReservedSlot(idempotencyKey);
+  }
+
+  markDeliveredSlot(idempotencyKey: string): Promise<boolean> {
+    return this.core.markDeliveredSlot(idempotencyKey);
   }
 
   countRecentReservations(

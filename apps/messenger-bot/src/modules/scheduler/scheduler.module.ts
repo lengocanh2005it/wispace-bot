@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import { PgAdvisoryLockService } from '@wispace/bot-common';
 import {
   ReportScheduleService,
   ReportSendScheduleService,
@@ -8,12 +9,15 @@ import {
   ReportCronLockService,
   CronLeaderHeartbeatService,
   REPORT_SEND_JOB_REPOSITORY,
+  REPORT_CLAIM_REPOSITORY,
   GOALS_DATA_PORT,
+  type ReportClaimRepositoryPort,
 } from '@wispace/scheduler-core';
 import { ReportSendJobEntity } from '@wispace/database';
 import {
   CronLeaderLeaseService,
   CronLeaderLeaseEntity,
+  ReportClaimStaleResetCronService,
 } from '@wispace/database';
 import { LlmSafetyEventEntity } from '@wispace/chat-metering';
 import { CommonModule } from '../../shared/common/common.module';
@@ -29,12 +33,12 @@ import { DopplerRuntimeSyncService } from './application/services/doppler-runtim
 import { OpsHealthCronService } from './application/services/ops-health-cron.service';
 import { OpsHealthService } from './application/services/ops-health.service';
 import { ReportCronService } from './application/services/report-cron.service';
-import { ReportClaimStaleResetCronService } from './application/services/report-claim-stale-reset-cron.service';
 import { ReportSendOrchestrationService } from './application/services/report-send-orchestration.service';
 import { ReportSendRetryDispatchService } from './application/services/report-send-retry-dispatch.service';
 import { ReportSendJobRepository } from './infrastructure/persistence/report-send-job.repository';
 import { LlmSafetyService } from './application/services/llm-safety.service';
 import { SchedulerController } from './presentation/controllers/scheduler.controller';
+import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
 
 @Module({
   imports: [
@@ -78,7 +82,24 @@ import { SchedulerController } from './presentation/controllers/scheduler.contro
     ReportSendScheduleService,
     ReportSendRetryDispatchService,
     ReportSendJobRepository,
-    ReportClaimStaleResetCronService,
+    {
+      provide: ReportClaimStaleResetCronService,
+      useFactory: (
+        configService: ConfigService,
+        claimRepository: ReportClaimRepositoryPort,
+        pgLock: PgAdvisoryLockService,
+      ) =>
+        new ReportClaimStaleResetCronService(
+          configService,
+          claimRepository,
+          pgLock,
+          {
+            platform: 'messenger',
+            lockId: ADVISORY_LOCK.REPORT_CLAIM_STALE_RESET,
+          },
+        ),
+      inject: [ConfigService, REPORT_CLAIM_REPOSITORY, PgAdvisoryLockService],
+    },
     {
       provide: REPORT_SEND_JOB_REPOSITORY,
       useExisting: ReportSendJobRepository,
