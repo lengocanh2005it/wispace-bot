@@ -183,5 +183,55 @@ done
 grep -q "endsAt" "$dir/curl.body" || fail "resolved per-app alert not posted"
 pass "per-app failure recovered + alert resolved"
 
+echo "Test 8: digest extraction — IMAGE_DIGEST passed to deploy when manifest returns digest (#196)"
+dir=$(make_env digest-extract)
+# Override docker to return a JSON with digest on manifest inspect
+cat > "$dir/bin/docker" <<'FAKE'
+#!/usr/bin/env bash
+echo "docker $*" >> "${DOCKER_LOG:?}"
+case "$1" in
+  login) exit 0 ;;
+  manifest)
+    # Return JSON with sha256 digest
+    printf '{"schemaVersion":2,"config":{"digest":"sha256:fedcba9876543210"}}\n'
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+FAKE
+chmod +x "$dir/bin/docker"
+code=$(run_script "$dir")
+[ "$code" -eq 0 ] || fail "deploy failed with digest extraction, exit $code: $(cat "$dir/run.out")"
+grep -q "Deploying.*digest sha256:fedcba9876543210" "$dir/run.out" || fail "digest not logged in deploy output"
+# Verify the fake deploy script received IMAGE_DIGEST
+grep -q "FAKE vps-deploy messenger-bot" "$dir/deploy.log" || fail "deploy did not run"
+pass "digest extraction works"
+
+echo "Test 9: digest extraction failure -> fail closed, no deploy (#196)"
+dir=$(make_env digest-fail)
+# Override docker to return empty on manifest inspect (simulates digest extraction failure)
+cat > "$dir/bin/docker" <<'FAKE'
+#!/usr/bin/env bash
+echo "docker $*" >> "${DOCKER_LOG:?}"
+case "$1" in
+  login) exit 0 ;;
+  manifest)
+    # Return empty JSON (no digest)
+    printf '{}\n'
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+FAKE
+chmod +x "$dir/bin/docker"
+code=$(run_script "$dir")
+[ "$code" -eq 0 ] || fail "script must not exit non-zero on per-app digest failure (retry next tick), got $code"
+grep -q "could not extract digest" "$dir/run.out" || fail "missing digest extraction error"
+[ ! -f "$dir/deploy.log" ] || fail "deploy must not run when digest extraction fails"
+for app in messenger-bot discord-bot zalo-bot; do
+  [ -f "$dir/state/$app.failed" ] || fail "$app failed marker missing"
+done
+pass "digest extraction failure fail closed"
+
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"
