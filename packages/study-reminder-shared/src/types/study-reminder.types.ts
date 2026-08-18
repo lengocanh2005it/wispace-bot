@@ -25,6 +25,11 @@ export interface StudyReminderJob {
   leaseToken?: string;
   /** Claim deadline — recovery only reopens processing rows past this. */
   leaseExpiresAt?: Date;
+  /**
+   * Platform message_id after successful send. Non-null means the message
+   * was delivered — on re-claim after crash, skip re-send (#181).
+   */
+  deliveryRecord?: string;
   createdAt: Date;
   updatedAt: Date;
 }
