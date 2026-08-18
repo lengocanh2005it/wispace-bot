@@ -2,6 +2,7 @@ import {
   errorMessage,
   maskExternalId,
   readResponseText,
+  sanitizeLogValue,
 } from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import {
@@ -95,7 +96,7 @@ export class UserCalendarApiClient {
     if (!response.ok) {
       const body = await readResponseText(response);
       throw new WispaceApiError(
-        `UserCalendar API failed: HTTP ${response.status} ${response.statusText} - ${body}`,
+        `UserCalendar API failed: HTTP ${response.status} ${response.statusText} - ${sanitizeLogValue(body, 200)}`,
         response.status,
         externalId,
         'UserCalendar',
@@ -139,7 +140,7 @@ export class UserCalendarApiClient {
     if (!response.ok) {
       const body = await readResponseText(response);
       throw new WispaceApiError(
-        `UserCalendar API create failed: HTTP ${response.status} ${response.statusText} - ${body}`,
+        `UserCalendar API create failed: HTTP ${response.status} ${response.statusText} - ${sanitizeLogValue(body, 200)}`,
         response.status,
         externalId,
         'UserCalendar',
@@ -189,7 +190,7 @@ export class UserCalendarApiClient {
     if (!response.ok) {
       const body = await readResponseText(response);
       throw new WispaceApiError(
-        `UserCalendar API delete failed: HTTP ${response.status} ${response.statusText} - ${body}`,
+        `UserCalendar API delete failed: HTTP ${response.status} ${response.statusText} - ${sanitizeLogValue(body, 200)}`,
         response.status,
         externalId,
         'UserCalendar',
