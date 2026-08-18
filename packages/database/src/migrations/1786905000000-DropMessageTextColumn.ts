@@ -8,12 +8,23 @@ export class DropMessageTextColumn1786905000000 implements MigrationInterface {
   name = 'DropMessageTextColumn1786905000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `ALTER TABLE "discord_message_logs" DROP COLUMN "message_text"`,
+    const discord = await queryRunner.query(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'discord_message_logs' AND column_name = 'message_text')`,
     );
-    await queryRunner.query(
-      `ALTER TABLE "zalo_message_logs" DROP COLUMN "message_text"`,
+    if (discord[0]?.exists) {
+      await queryRunner.query(
+        `ALTER TABLE "discord_message_logs" DROP COLUMN "message_text"`,
+      );
+    }
+
+    const zalo = await queryRunner.query(
+      `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'zalo_message_logs' AND column_name = 'message_text')`,
     );
+    if (zalo[0]?.exists) {
+      await queryRunner.query(
+        `ALTER TABLE "zalo_message_logs" DROP COLUMN "message_text"`,
+      );
+    }
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
