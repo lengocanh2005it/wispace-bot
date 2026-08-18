@@ -26,6 +26,7 @@ export interface ChatQuotaRepositoryPort {
     releaseReason?: 'send_failed' | 'stuck_recover';
     userId?: number;
   }): Promise<boolean>;
+  markDeliveredSlot(idempotencyKey: string): Promise<boolean>;
   completeReservedSlot(idempotencyKey: string): Promise<boolean>;
   countRecentReservations(
     psid: string,

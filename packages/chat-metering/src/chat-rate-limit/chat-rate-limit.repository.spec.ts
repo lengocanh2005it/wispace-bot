@@ -19,7 +19,7 @@ type IdempotencyRow = {
   externalUserId: string;
   userId: number | null;
   usageDate: string;
-  status: 'reserved' | 'completed' | 'refunded';
+  status: 'reserved' | 'delivered' | 'completed' | 'refunded';
   reservedAt: Date;
 };
 
@@ -134,7 +134,7 @@ describe('ChatRateLimitRepository', () => {
         ) {
           const [, externalUserId, since] = params as [string, string, Date];
           const includeRefunded = !normalized.includes(
-            "status IN ('reserved', 'completed')",
+            "status IN ('reserved', 'delivered', 'completed')",
           );
           const count = [...idempotencyStore.values()].filter((row) => {
             if (
@@ -148,12 +148,37 @@ describe('ChatRateLimitRepository', () => {
               return true;
             }
 
-            return row.status === 'reserved' || row.status === 'completed';
+            return (
+              row.status === 'reserved' ||
+              row.status === 'delivered' ||
+              row.status === 'completed'
+            );
           }).length;
           return [{ count: String(count) }];
         }
 
         if (normalized.startsWith('UPDATE chat_idempotency SET status = ')) {
+          if (
+            normalized.includes("SET status = 'completed'") &&
+            normalized.includes("status = 'delivered'")
+          ) {
+            const [, stuckBefore] = params as [string, Date];
+            const staleRows = [...idempotencyStore.values()].filter(
+              (row) =>
+                row.status === 'delivered' && row.reservedAt < stuckBefore,
+            );
+
+            staleRows.forEach((row) => {
+              row.status = 'completed';
+            });
+
+            return updateResult(
+              staleRows.map((row) => ({
+                idempotency_key: row.idempotencyKey,
+              })),
+            );
+          }
+
           if (
             normalized.includes(
               "WHERE platform = $1 AND status = 'reserved' AND reserved_at < $2",
@@ -196,10 +221,18 @@ describe('ChatRateLimitRepository', () => {
           }
 
           if (normalized.includes("SET status = 'completed'")) {
-            if (row.status !== 'reserved') {
+            if (row.status !== 'reserved' && row.status !== 'delivered') {
               return updateResult([]);
             }
             row.status = 'completed';
+            return updateResult([{ idempotency_key: idempotencyKey }]);
+          }
+
+          if (normalized.includes("SET status = 'delivered'")) {
+            if (row.status !== 'reserved') {
+              return updateResult([]);
+            }
+            row.status = 'delivered';
             return updateResult([{ idempotency_key: idempotencyKey }]);
           }
         }
@@ -470,6 +503,19 @@ describe('ChatRateLimitRepository', () => {
     ).resolves.toBe(1);
   });
 
+  it('marks delivered idempotency before finalization', async () => {
+    await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({ idempotencyKey: 'mid-delivered' }),
+    );
+
+    const delivered = await repository.markDeliveredSlot('mid-delivered');
+
+    expect(delivered).toBe(true);
+    expect(idempotencyStore.get('mid-delivered')?.status).toBe('delivered');
+    expect(await repository.completeReservedSlot('mid-delivered')).toBe(true);
+    expect(idempotencyStore.get('mid-delivered')?.status).toBe('completed');
+  });
+
   it('counts recent reservations inside the burst window', async () => {
     const now = Date.now();
     idempotencyStore.set('mid-1', {
@@ -656,6 +702,53 @@ describe('ChatRateLimitRepository', () => {
 
     expect(outcome).toBe('in_flight');
     expect(idempotencyStore.get('mid-flight')?.status).toBe('reserved');
+  });
+
+  it('does not reopen delivered idempotency on duplicate retry', async () => {
+    idempotencyStore.set('mid-delivered-retry', {
+      idempotencyKey: 'mid-delivered-retry',
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      status: 'delivered',
+      reservedAt: new Date('2026-06-15T07:00:00+07:00'),
+    });
+
+    await expect(
+      repository.recoverIdempotencyForRetry(
+        'mid-delivered-retry',
+        new Date('2026-06-15T08:00:00+07:00'),
+      ),
+    ).resolves.toBe('delivered');
+    expect(idempotencyStore.get('mid-delivered-retry')?.status).toBe(
+      'delivered',
+    );
+  });
+
+  it('finalizes stale delivered rows without decrementing usage', async () => {
+    idempotencyStore.set('mid-stale-delivered', {
+      idempotencyKey: 'mid-stale-delivered',
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      status: 'delivered',
+      reservedAt: new Date('2026-06-15T07:00:00+07:00'),
+    });
+    dailyUsageStore.set('ext-1:2026-06-15', {
+      externalUserId: 'ext-1',
+      userId: null,
+      usageDate: '2026-06-15',
+      freeFormCount: 1,
+    });
+
+    await expect(
+      repository.recoverAllStuckReserved(new Date('2026-06-15T08:00:00+07:00')),
+    ).resolves.toEqual(['mid-stale-delivered']);
+
+    expect(idempotencyStore.get('mid-stale-delivered')?.status).toBe(
+      'completed',
+    );
+    expect(dailyUsageStore.get('ext-1:2026-06-15')?.freeFormCount).toBe(1);
   });
 
   it('reopens refunded idempotency for retry', async () => {

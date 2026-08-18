@@ -18,7 +18,7 @@ type IdempotencyRow = {
   psid: string;
   userId: number | null;
   usageDate: string;
-  status: 'reserved' | 'completed' | 'refunded';
+  status: 'reserved' | 'delivered' | 'completed' | 'refunded';
   reservedAt: Date;
 };
 

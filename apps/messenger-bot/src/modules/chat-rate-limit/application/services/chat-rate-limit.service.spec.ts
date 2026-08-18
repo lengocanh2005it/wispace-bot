@@ -71,6 +71,9 @@ describe('ChatRateLimitService', () => {
         count = Math.max(count - 1, 0);
         return Promise.resolve(true);
       }),
+      markDeliveredSlot: jest.fn((idempotencyKey: string) =>
+        Promise.resolve(idempotencyKeys.has(idempotencyKey)),
+      ),
       completeReservedSlot: jest.fn((idempotencyKey: string) =>
         Promise.resolve(idempotencyKeys.has(idempotencyKey)),
       ),

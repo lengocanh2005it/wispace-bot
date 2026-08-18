@@ -57,10 +57,11 @@ export type ReserveFreeFormSlotOutcome =
   | { status: 'daily_limit_exceeded' }
   | { status: 'burst_limit_exceeded'; count: number };
 
-/** Outcome when reclaiming an idempotency key stuck in `reserved` past TTL. */
+/** Outcome when reclaiming an idempotency key after a retry conflict. */
 export type RecoverIdempotencyOutcome =
   | 'reopened'
   | 'in_flight'
+  | 'delivered'
   | 'completed'
   | 'not_found';
 

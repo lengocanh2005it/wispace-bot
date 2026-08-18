@@ -3,8 +3,8 @@ import { parseArgs } from './_args.mjs';
 
 const HELP = `Usage: npm run chat-quota:recover-stuck -- [options]
 
-Refund + release chat_idempotency rows stuck in status=reserved
-past CHAT_IDEMPOTENCY_STUCK_RESERVED_MS (default 10 minutes).
+Finalize delivered rows and refund + release chat_idempotency rows stuck in
+status=reserved past CHAT_IDEMPOTENCY_STUCK_RESERVED_MS (default 10 minutes).
 
 Options:
   --dry-run   List stuck keys only; do not refund/delete
@@ -53,9 +53,12 @@ try {
         external_user_id,
         user_id,
         usage_date,
-        reserved_at
+        reserved_at,
+        status
       FROM chat_idempotency
-      WHERE platform = 'messenger' AND status = 'reserved' AND reserved_at < $1
+      WHERE platform = 'messenger'
+        AND status IN ('reserved', 'delivered')
+        AND reserved_at < $1
       ORDER BY reserved_at ASC
     `,
     [stuckBefore],
@@ -84,11 +87,43 @@ try {
     await client.query('BEGIN');
 
     try {
+      if (row.status === 'delivered') {
+        const completeResult = await client.query(
+          `
+            UPDATE chat_idempotency
+            SET status = 'completed'
+            WHERE platform = 'messenger'
+              AND idempotency_key = $1
+              AND status = 'delivered'
+            RETURNING idempotency_key
+          `,
+          [row.idempotency_key],
+        );
+
+        if (!completeResult.rows[0]) {
+          await client.query('ROLLBACK');
+          continue;
+        }
+
+        await client.query('COMMIT');
+        recovered.push({
+          action: 'completed',
+          idempotencyKey: row.idempotency_key,
+          externalUserId: row.external_user_id,
+          userId: row.user_id,
+          usageDate: row.usage_date,
+          reservedAt: row.reserved_at,
+        });
+        continue;
+      }
+
       const refundResult = await client.query(
         `
           UPDATE chat_idempotency
           SET status = 'refunded'
-          WHERE idempotency_key = $1 AND status = 'reserved'
+          WHERE platform = 'messenger'
+            AND idempotency_key = $1
+            AND status = 'reserved'
           RETURNING idempotency_key
         `,
         [row.idempotency_key],
@@ -115,13 +150,14 @@ try {
       await client.query(
         `
           DELETE FROM chat_idempotency
-          WHERE idempotency_key = $1
+          WHERE platform = 'messenger' AND idempotency_key = $1
         `,
         [row.idempotency_key],
       );
 
       await client.query('COMMIT');
       recovered.push({
+        action: 'refunded',
         idempotencyKey: row.idempotency_key,
         externalUserId: row.external_user_id,
         userId: row.user_id,
@@ -141,7 +177,7 @@ try {
         stuckBefore: stuckBefore.toISOString(),
         recoveredCount: recovered.length,
         recovered,
-        note: 'User can retry same message.mid; reserve on next webhook flush will run LLM again.',
+        note: 'Refunded rows can retry the same message.mid; delivered rows were completed without refund.',
       },
       null,
       2,

@@ -126,7 +126,11 @@ export class ChatRateLimitCore {
     await this.repository.completeReservedSlot(idempotencyKey);
   }
 
-  /** Refund + release keys stuck in `reserved` past TTL. */
+  async markDelivered(idempotencyKey: string): Promise<void> {
+    await this.repository.markDeliveredSlot(idempotencyKey);
+  }
+
+  /** Finalize delivered keys and refund pre-delivery keys stuck past TTL. */
   async recoverStuckReservedSlots(): Promise<{ recovered: string[] }> {
     const stuckBefore = this.stuckReservedCutoff();
     const recovered =
@@ -310,6 +314,15 @@ export class ChatRateLimitCore {
     if (recovery === 'completed') {
       this.logger.log(
         `Idempotency already completed key=${idempotencyKey} externalUserId=${maskExternalId(
+          externalUserId,
+        )}; skip duplicate`,
+      );
+      return;
+    }
+
+    if (recovery === 'delivered') {
+      this.logger.log(
+        `Idempotency delivery pending finalization key=${idempotencyKey} externalUserId=${maskExternalId(
           externalUserId,
         )}; skip duplicate`,
       );

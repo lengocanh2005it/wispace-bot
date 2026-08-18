@@ -18,6 +18,7 @@ function mockRateLimiter(
       .fn()
       .mockResolvedValue({ allowed: true, usageDate: '2026-07-29' }),
     refund: jest.fn().mockResolvedValue(undefined),
+    markDelivered: jest.fn().mockResolvedValue(undefined),
     markCompleted: jest.fn().mockResolvedValue(undefined),
     ...overrides,
   };
@@ -46,7 +47,7 @@ function mockOutbound(overrides?: Partial<OutboundPort>): OutboundPort {
 }
 
 describe('ChatPipeline', () => {
-  it('calls reserve → history → agent → append → send → markCompleted', async () => {
+  it('calls reserve → history → agent → send → markDelivered → append → markCompleted', async () => {
     const rateLimiter = mockRateLimiter();
     const history = mockHistory();
     const agent = mockAgent();
@@ -78,6 +79,7 @@ describe('ChatPipeline', () => {
       { userId: undefined },
     );
     expect(rateLimiter.markCompleted).toHaveBeenCalledWith('msg-1');
+    expect(rateLimiter.markDelivered).toHaveBeenCalledWith('msg-1');
   });
 
   it('merges multiple texts with newline', async () => {
@@ -337,6 +339,38 @@ describe('ChatPipeline', () => {
     );
   });
 
+  it('keeps a delivered quota slot for recovery when completion fails', async () => {
+    const onError = jest.fn().mockResolvedValue(undefined);
+    const markDelivered = jest.fn().mockResolvedValue(undefined);
+    const markCompleted = jest
+      .fn()
+      .mockRejectedValue(new Error('quota database unavailable'));
+    const rateLimiter = mockRateLimiter({ markDelivered, markCompleted });
+    const history = mockHistory();
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      history,
+      mockAgent(),
+      mockOutbound(),
+      { onError },
+    );
+
+    await expect(
+      pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['Hello'],
+        idempotencyKey: 'msg-delivered',
+      }),
+    ).resolves.toBe(true);
+
+    expect(rateLimiter.refund).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+    expect(history.appendTurn).toHaveBeenCalled();
+    expect(markDelivered.mock.invocationCallOrder[0]).toBeLessThan(
+      markCompleted.mock.invocationCallOrder[0],
+    );
+  });
+
   it('calls onError when outbound delivery is explicitly unconfirmed', async () => {
     const onError = jest.fn().mockResolvedValue(undefined);
     const rateLimiter = mockRateLimiter();
@@ -366,6 +400,7 @@ describe('ChatPipeline', () => {
       '2026-07-29',
       'msg-1',
     );
+    expect(rateLimiter.markDelivered).not.toHaveBeenCalled();
   });
 
   it('calls onError and refunds when history loading fails', async () => {
@@ -485,7 +520,8 @@ describe('ChatPipeline', () => {
 
     expect(onError).not.toHaveBeenCalled();
     expect(rateLimiter.refund).not.toHaveBeenCalled();
-    expect(rateLimiter.markCompleted).toHaveBeenCalledWith('msg-1');
+    expect(rateLimiter.markDelivered).toHaveBeenCalledWith('msg-1');
+    expect(rateLimiter.markCompleted).not.toHaveBeenCalled();
   });
 
   it('calls onStep hook at each pipeline step', async () => {

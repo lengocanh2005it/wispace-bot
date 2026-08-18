@@ -153,7 +153,7 @@ export class ChatRateLimitRepository {
               FROM chat_idempotency
               WHERE platform = $1 AND external_user_id = $2
                 AND reserved_at > $3
-                AND status IN ('reserved', 'completed')
+                AND status IN ('reserved', 'delivered', 'completed')
             `,
             [this.platform, input.externalUserId, input.burstSince],
           );
@@ -276,6 +276,24 @@ export class ChatRateLimitRepository {
         `
           UPDATE chat_idempotency
           SET status = 'completed'
+          WHERE platform = $1
+            AND idempotency_key = $2
+            AND status IN ('reserved', 'delivered')
+          RETURNING idempotency_key
+        `,
+        [this.platform, idempotencyKey],
+      ),
+    );
+
+    return rows.length > 0;
+  }
+
+  async markDeliveredSlot(idempotencyKey: string): Promise<boolean> {
+    const rows = extractQueryRows<{ idempotency_key: string }>(
+      await this.idempotencyRepo.manager.query(
+        `
+          UPDATE chat_idempotency
+          SET status = 'delivered'
           WHERE platform = $1 AND idempotency_key = $2 AND status = 'reserved'
           RETURNING idempotency_key
         `,
@@ -294,7 +312,7 @@ export class ChatRateLimitRepository {
     const includeRefunded = options.includeRefunded ?? false;
     const statusFilter = includeRefunded
       ? ''
-      : ` AND status IN ('reserved', 'completed')`;
+      : ` AND status IN ('reserved', 'delivered', 'completed')`;
 
     const rows: Array<{ count: string }> =
       await this.idempotencyRepo.manager.query(
@@ -373,6 +391,10 @@ export class ChatRateLimitRepository {
         return 'completed';
       }
 
+      if (row.status === 'delivered') {
+        return 'delivered';
+      }
+
       if (row.status === 'reserved') {
         const reservedAt = new Date(row.reserved_at);
         if (reservedAt >= stuckBefore) {
@@ -448,6 +470,22 @@ export class ChatRateLimitRepository {
 
   async recoverAllStuckReserved(stuckBefore: Date): Promise<string[]> {
     return this.idempotencyRepo.manager.transaction(async (manager) => {
+      const deliveredRows = extractQueryRows<{
+        idempotency_key: string;
+      }>(
+        await manager.query(
+          `
+            UPDATE chat_idempotency
+            SET status = 'completed', updated_at = NOW()
+            WHERE platform = $1
+              AND status = 'delivered'
+              AND reserved_at < $2
+            RETURNING idempotency_key
+          `,
+          [this.platform, stuckBefore],
+        ),
+      );
+
       const rows = extractQueryRows<{
         idempotency_key: string;
         external_user_id: string;
@@ -466,7 +504,9 @@ export class ChatRateLimitRepository {
         ),
       );
 
-      if (rows.length === 0) return [];
+      if (rows.length === 0) {
+        return deliveredRows.map((row) => row.idempotency_key);
+      }
 
       // Decrement daily usage counters in bulk — scoped by the same
       // (platform, external_user_id, usage_date) composite key the reserve
@@ -522,7 +562,10 @@ export class ChatRateLimitRepository {
         );
       }
 
-      return rows.map((r) => r.idempotency_key);
+      return [
+        ...deliveredRows.map((row) => row.idempotency_key),
+        ...rows.map((r) => r.idempotency_key),
+      ];
     });
   }
 

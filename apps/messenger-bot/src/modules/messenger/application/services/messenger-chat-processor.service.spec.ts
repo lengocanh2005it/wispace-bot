@@ -61,10 +61,12 @@ describe('MessengerChatProcessorService', () => {
     } as unknown as ChatHistoryStorePort;
 
     const reserveFreeFormSlot = jest.fn(() => Promise.resolve(quotaAllowed()));
+    const markDelivered = jest.fn(() => Promise.resolve());
     const markCompleted = jest.fn(() => Promise.resolve());
     const refundFreeFormSlot = jest.fn(() => Promise.resolve());
     const chatRateLimitService = {
       reserveFreeFormSlot,
+      markDelivered,
       markCompleted,
       refundFreeFormSlot,
     } as unknown as ChatRateLimitService;
@@ -134,8 +136,11 @@ describe('MessengerChatProcessorService', () => {
       sendSenderActionOptional,
       sendTextViaPsid,
       sendTextBubblesViaPsid,
+      appendTurn,
+      appendToolSummary,
       reply,
       reserveFreeFormSlot,
+      markDelivered,
       markCompleted,
       refundFreeFormSlot,
       logMessage,
@@ -156,7 +161,10 @@ describe('MessengerChatProcessorService', () => {
       service,
       reply,
       reserveFreeFormSlot,
+      sendTextBubblesViaPsid,
+      markDelivered,
       markCompleted,
+      appendTurn,
       refundFreeFormSlot,
       logMessage,
     } = createService();
@@ -180,7 +188,17 @@ describe('MessengerChatProcessorService', () => {
       status: 'SENT',
     });
     expect(reply).toHaveBeenCalled();
+    expect(markDelivered).toHaveBeenCalledWith('mid-1');
     expect(markCompleted).toHaveBeenCalledWith('mid-1');
+    expect(sendTextBubblesViaPsid.mock.invocationCallOrder[0]).toBeLessThan(
+      markDelivered.mock.invocationCallOrder[0],
+    );
+    expect(markDelivered.mock.invocationCallOrder[0]).toBeLessThan(
+      appendTurn.mock.invocationCallOrder[0],
+    );
+    expect(appendTurn.mock.invocationCallOrder[0]).toBeLessThan(
+      markCompleted.mock.invocationCallOrder[0],
+    );
     expect(refundFreeFormSlot).not.toHaveBeenCalled();
   });
 
@@ -381,10 +399,28 @@ describe('MessengerChatProcessorService', () => {
     expect(markCompleted).not.toHaveBeenCalled();
   });
 
+  it('does not append an unseen assistant reply when Meta delivery fails', async () => {
+    const { service, sendTextBubblesViaPsid, appendTurn, appendToolSummary } =
+      createService();
+    sendTextBubblesViaPsid.mockRejectedValue(
+      new MessengerApiError('Send failed', 500, 'Error', '{}'),
+    );
+
+    await service.process({
+      psid: 'psid-1',
+      mergedText: 'Hello',
+      idempotencyKey: 'mid-no-history-on-fail',
+    });
+
+    expect(appendTurn).not.toHaveBeenCalled();
+    expect(appendToolSummary).not.toHaveBeenCalled();
+  });
+
   it('keeps quota when at least one main bubble was delivered (H4)', async () => {
     const {
       service,
       sendTextBubblesViaPsid,
+      appendTurn,
       refundFreeFormSlot,
       markCompleted,
     } = createService();
@@ -402,6 +438,7 @@ describe('MessengerChatProcessorService', () => {
     });
 
     expect(markCompleted).toHaveBeenCalledWith('mid-partial');
+    expect(appendTurn).not.toHaveBeenCalled();
     expect(refundFreeFormSlot).not.toHaveBeenCalled();
   });
 
