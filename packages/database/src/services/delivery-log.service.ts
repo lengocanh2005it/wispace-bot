@@ -9,7 +9,6 @@ export interface MessageLogRow {
   error: string | null;
   messageType: string;
   platform?: string;
-  messageText?: string;
 }
 
 /**
@@ -31,7 +30,6 @@ export class DeliveryLogService<Entity extends MessageLogRow = MessageLogRow> {
     status: 'SENT' | 'FAILED';
     error?: string;
     messageType?: string;
-    messageText?: string;
   }): Promise<void> {
     try {
       await this.repo.save({
@@ -42,7 +40,6 @@ export class DeliveryLogService<Entity extends MessageLogRow = MessageLogRow> {
         ...(this.platform
           ? {
               platform: this.platform,
-              messageText: input.messageText ?? '',
             }
           : {}),
       } as DeepPartial<Entity>);

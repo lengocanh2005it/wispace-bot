@@ -22,9 +22,6 @@ export class DiscordMessageLogEntity {
   @Column({ name: 'error_message', type: 'text', nullable: true })
   error!: string | null;
 
-  @Column({ name: 'message_text', type: 'text' })
-  messageText!: string;
-
   @Column({ type: 'varchar', length: 50, default: 'chat' })
   messageType!: string;
 
