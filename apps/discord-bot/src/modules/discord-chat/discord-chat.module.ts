@@ -19,6 +19,7 @@ import {
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
   ChatIdempotencyEntity,
+  LlmSafetyCleanupService,
 } from '@wispace/chat-metering';
 import { AccountLinkModule } from '../account-link/account-link.module';
 import { WispaceModule } from '../wispace/wispace.module';
@@ -307,6 +308,7 @@ const REGISTER_REPORT_MESSAGE =
     },
     DiscordMenuService,
     CleanupCronService,
+    LlmSafetyCleanupService,
     {
       provide: PlatformDeadLetterCronService,
       useFactory: (
