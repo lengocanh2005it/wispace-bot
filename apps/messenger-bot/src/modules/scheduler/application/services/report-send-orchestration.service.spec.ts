@@ -111,6 +111,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
         reportDate: '2026-07-11',
       },
       'lease-1',
+      'sent',
     );
   });
 
@@ -353,6 +354,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
         reportDate: '2026-07-11',
       },
       'lease-1',
+      'sent',
     );
     expect(
       messengerRepository.releaseScheduledReportClaim,
