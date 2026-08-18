@@ -81,6 +81,7 @@ export class ZaloTokenService {
 
   private async refresh(): Promise<string> {
     let lastError: unknown;
+    let previousAttemptTimedOut = false;
 
     for (let attempt = 1; attempt <= REFRESH_MAX_ATTEMPTS; attempt++) {
       try {
@@ -101,6 +102,20 @@ export class ZaloTokenService {
           throw error;
         }
 
+        // If a previous attempt timed out (server may have consumed the
+        // single-use token) and this attempt gets a non-timeout error,
+        // the token is likely already consumed — stop retrying (#154).
+        if (previousAttemptTimedOut && !this.isTimeoutError(error)) {
+          this.logger.warn(
+            `Zalo OA token refresh: previous timeout likely consumed token, non-timeout error on retry: ${errorMessage(error)}`,
+          );
+          break;
+        }
+
+        if (this.isTimeoutError(error)) {
+          previousAttemptTimedOut = true;
+        }
+
         lastError = error;
         if (attempt < REFRESH_MAX_ATTEMPTS) {
           const backoffMs = REFRESH_BASE_BACKOFF_MS * Math.pow(2, attempt - 1);
@@ -118,6 +133,13 @@ export class ZaloTokenService {
       `Zalo OA token refresh failed after ${REFRESH_MAX_ATTEMPTS} attempts: ${errorMessage(
         lastError,
       )}`,
+    );
+  }
+
+  private isTimeoutError(error: unknown): boolean {
+    return (
+      error instanceof Error &&
+      (error.name === 'AbortError' || error.message.includes('abort'))
     );
   }
 
