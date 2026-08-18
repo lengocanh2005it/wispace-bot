@@ -60,7 +60,7 @@ export class WebhookActionExecutorService {
         const linkAttempt = await this.attemptLinkFromEvent(psid!, event);
         if (linkAttempt.status === 'linked' && linkAttempt.context) {
           this.logger.log(
-            `Linked PSID ${maskExternalId(psid)} from opt-in (ref=${linkAttempt.context.ref}, topic=${linkAttempt.context.topic}, cadence=${linkAttempt.context.cadence})`,
+            `Linked PSID ${maskExternalId(psid)} from opt-in (topic=${linkAttempt.context.topic}, cadence=${linkAttempt.context.cadence})`,
           );
         } else if (!extractRefFromEvent(event)) {
           this.logger.warn(
