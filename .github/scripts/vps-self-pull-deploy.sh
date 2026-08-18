@@ -157,7 +157,7 @@ for app in "${!APPS[@]}"; do
   # docker manifest inspect returns JSON with the manifest digest — use it
   # to pull by digest instead of tag, closing the TOCTOU gap.
   IMAGE_DIGEST=$(docker manifest inspect "$image" 2>/dev/null \
-    | grep -o '"digest":"sha256:[^"]*"' | head -1 | cut -d'"' -f4 || true)
+    | grep -o 'sha256:[a-f0-9]*' | head -1 || true)
 
   if [ -z "$IMAGE_DIGEST" ]; then
     echo "ERROR: $app — could not extract digest from manifest inspect" >&2
