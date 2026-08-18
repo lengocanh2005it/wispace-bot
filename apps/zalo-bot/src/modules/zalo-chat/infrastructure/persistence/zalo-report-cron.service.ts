@@ -150,6 +150,7 @@ export class ZaloReportCronService {
     }
 
     let claimLeaseToken = '';
+    let claimDeliveryRecord: string | undefined;
     if (link.userId) {
       if (sentUserIds.has(link.userId)) {
         this.logger.log(
@@ -159,7 +160,11 @@ export class ZaloReportCronService {
         );
         return 'skipped';
       }
-      const claimed = await this.claimRepo.tryClaimScheduledReport(
+      const claimed: {
+        claimed: boolean;
+        leaseToken?: string;
+        deliveryRecord?: string;
+      } = await this.claimRepo.tryClaimScheduledReport(
         {
           externalUserId: link.externalUserId,
           userId: link.userId,
@@ -176,6 +181,21 @@ export class ZaloReportCronService {
         return 'skipped';
       }
       claimLeaseToken = claimed.leaseToken;
+      claimDeliveryRecord =
+        typeof claimed.deliveryRecord === 'string'
+          ? claimed.deliveryRecord
+          : undefined;
+    }
+
+    // Skip re-send if already delivered (#181) — crash between send and
+    // markSent left a delivery_record; re-claim sees it and marks sent
+    // without re-sending.
+    if (claimDeliveryRecord) {
+      await this.claimRepo.markScheduledReportClaimSent(
+        { externalUserId: link.externalUserId, reportDate },
+        claimLeaseToken,
+      );
+      return 'sent';
     }
 
     try {
@@ -190,6 +210,7 @@ export class ZaloReportCronService {
             reportDate,
           },
           claimLeaseToken,
+          'sent',
         );
       }
       this.logger.log(
