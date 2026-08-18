@@ -271,3 +271,103 @@ describe('MessengerRepository.deleteMessageLogsOlderThan', () => {
     expect(criteria?.createdAt?.value).toBe(cutoff);
   });
 });
+
+describe('MessengerRepository platform-scoped user lookups (#191)', () => {
+  const buildRepoWithFindOne = (findOne: jest.Mock) => {
+    const mappingRepo = {
+      findOne,
+      createQueryBuilder: jest.fn(),
+      manager: { query: jest.fn() },
+    } as unknown as Repository<UserPlatformMappingEntity>;
+    const logRepo = {} as unknown as Repository<MessageLogEntity>;
+    const claimRepo = {} as unknown as Repository<ScheduledReportClaimEntity>;
+    const repo = new MessengerRepository(mappingRepo, logRepo, claimRepo);
+    return { repo };
+  };
+
+  it('scopes findActiveMappingByUserId to the messenger platform', async () => {
+    const findOne = jest.fn().mockResolvedValue(null);
+    const { repo } = buildRepoWithFindOne(findOne);
+
+    await repo.findActiveMappingByUserId(143);
+
+    expect(findOne).toHaveBeenCalledWith({
+      where: { platform: 'messenger', userId: 143, status: 'ACTIVE' },
+      order: { id: 'DESC' },
+    });
+  });
+
+  it('returns null when only sibling-platform mappings exist for the userId', async () => {
+    const findOne = jest.fn().mockResolvedValue(null);
+    const { repo } = buildRepoWithFindOne(findOne);
+
+    const result = await repo.findActiveMappingByUserId(143);
+
+    expect(result).toBeNull();
+  });
+
+  it('returns the mapping when the userId has an active messenger row', async () => {
+    const findOne = jest.fn().mockResolvedValue({
+      id: 7,
+      userId: 143,
+      platform: 'messenger',
+      externalUserId: 'psid-1',
+      topic: 'ielts',
+      cadence: 'weekly',
+      status: 'ACTIVE',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    });
+    const { repo } = buildRepoWithFindOne(findOne);
+
+    const result = await repo.findActiveMappingByUserId(143);
+
+    expect(result?.psid).toBe('psid-1');
+    expect(result?.userId).toBe(143);
+  });
+
+  const buildRepoWithQueryBuilder = () => {
+    const where = jest.fn().mockReturnThis();
+    const andWhere = jest.fn().mockReturnThis();
+    const orderBy = jest.fn().mockReturnThis();
+    const take = jest.fn().mockReturnThis();
+    const getMany = jest.fn().mockResolvedValue([]);
+    const createQueryBuilder = jest.fn().mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      where,
+      andWhere,
+      orderBy,
+      take,
+      getMany,
+    });
+    const mappingRepo = {
+      createQueryBuilder,
+      findOne: jest.fn(),
+      manager: { query: jest.fn() },
+    } as unknown as Repository<UserPlatformMappingEntity>;
+    const logRepo = {} as unknown as Repository<MessageLogEntity>;
+    const claimRepo = {} as unknown as Repository<ScheduledReportClaimEntity>;
+    const repo = new MessengerRepository(mappingRepo, logRepo, claimRepo);
+    return { repo, andWhere };
+  };
+
+  it('scopes findActiveSubscribedMappings to the messenger platform', async () => {
+    const { repo, andWhere } = buildRepoWithQueryBuilder();
+
+    await repo.findActiveSubscribedMappings();
+
+    expect(andWhere).toHaveBeenCalledWith('mapping.platform = :platform', {
+      platform: 'messenger',
+    });
+  });
+
+  it('scopes findActiveMappingsPage to the messenger platform', async () => {
+    const { repo, andWhere } = buildRepoWithQueryBuilder();
+
+    await repo.findActiveMappingsPage(0, 100);
+
+    expect(andWhere).toHaveBeenCalledWith('mapping.platform = :platform', {
+      platform: 'messenger',
+    });
+  });
+});

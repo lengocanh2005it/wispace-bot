@@ -52,7 +52,7 @@ export class MessengerRepository
     userId: number,
   ): Promise<UserMessengerMapping | null> {
     const row = await this.mappingRepo.findOne({
-      where: { userId, status: 'ACTIVE' },
+      where: { platform: PLATFORM, userId, status: 'ACTIVE' },
       order: { id: 'DESC' },
     });
 
@@ -194,6 +194,7 @@ export class MessengerRepository
         'mapping.topic',
       ])
       .where('mapping.status = :status', { status: 'ACTIVE' })
+      .andWhere('mapping.platform = :platform', { platform: PLATFORM })
       .andWhere('mapping.cadence IS NOT NULL')
       .andWhere('mapping.topic IS NOT NULL')
       .orderBy('mapping.id', 'DESC')
@@ -305,6 +306,7 @@ export class MessengerRepository
     const rows = await this.mappingRepo
       .createQueryBuilder('mapping')
       .where('mapping.status = :status', { status: 'ACTIVE' })
+      .andWhere('mapping.platform = :platform', { platform: PLATFORM })
       .andWhere('mapping.external_user_id IS NOT NULL')
       .andWhere('mapping.id > :afterId', { afterId })
       .orderBy('mapping.id', 'ASC')
