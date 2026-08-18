@@ -41,11 +41,11 @@ unknowable — it signals "reconcile manually if this spikes".
 
 ## Metrics guidance
 
-| Metric | Meaning | When to act |
-|--------|---------|-------------|
+| Metric                                                   | Meaning                                              | When to act                                                                    |
+| -------------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------ |
 | `dm_delivery_failures_total{reason="dm_send_ambiguous"}` | Send outcome unknown (network-level, no HTTP status) | Investigate if sustained — may indicate Zalo API outage or network path issues |
-| `dm_delivery_failures_total{reason="dm_send"}` | Send failed after retries with a known status | Fix the error (4xx config/recipient issues, 5xx provider issues) |
-| Outbound dead-letter rows (`webhook_dead_letters`) | Persisted failed sends awaiting replay | Review/cron-replay after the underlying issue is fixed |
+| `dm_delivery_failures_total{reason="dm_send"}`           | Send failed after retries with a known status        | Fix the error (4xx config/recipient issues, 5xx provider issues)               |
+| Outbound dead-letter rows (`webhook_dead_letters`)       | Persisted failed sends awaiting replay               | Review/cron-replay after the underlying issue is fixed                         |
 
 ## Future work
 
