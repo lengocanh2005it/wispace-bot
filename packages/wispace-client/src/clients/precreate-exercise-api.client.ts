@@ -1,4 +1,4 @@
-import { readResponseText } from '@wispace/bot-common';
+import { readResponseText, sanitizeLogValue } from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import {
@@ -30,7 +30,7 @@ export class PrecreateExerciseApiClient {
     if (!response.ok) {
       const body = await readResponseText(response);
       throw new WispaceApiError(
-        `Precreate exercise API failed: HTTP ${response.status} ${response.statusText} - ${body}`,
+        `Precreate exercise API failed: HTTP ${response.status} ${response.statusText} - ${sanitizeLogValue(body, 200)}`,
         response.status,
         externalUserId,
         'PrecreateExercise',

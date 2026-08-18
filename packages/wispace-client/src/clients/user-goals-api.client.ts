@@ -2,6 +2,7 @@ import {
   errorMessage,
   maskExternalId,
   readResponseText,
+  sanitizeLogValue,
 } from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import {
@@ -87,7 +88,7 @@ export class UserGoalsApiClient {
     if (!response.ok) {
       const body = await readResponseText(response);
       throw new WispaceApiError(
-        `User goals API failed: HTTP ${response.status} ${response.statusText} - ${body}`,
+        `User goals API failed: HTTP ${response.status} ${response.statusText} - ${sanitizeLogValue(body, 200)}`,
         response.status,
         externalId,
         'User/goals',
