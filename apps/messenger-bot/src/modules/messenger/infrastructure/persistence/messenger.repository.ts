@@ -368,6 +368,7 @@ export class MessengerRepository
 
   async deleteMessageLogsOlderThan(cutoff: Date): Promise<number> {
     const result = await this.logRepo.delete({
+      platform: PLATFORM,
       createdAt: LessThan(cutoff),
     });
 

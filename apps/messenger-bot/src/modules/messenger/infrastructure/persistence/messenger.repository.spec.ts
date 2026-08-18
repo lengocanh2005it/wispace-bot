@@ -248,3 +248,26 @@ describe('MessengerRepository scheduled report lease ownership', () => {
     );
   });
 });
+
+describe('MessengerRepository.deleteMessageLogsOlderThan', () => {
+  it('scopes message log deletion to Messenger', async () => {
+    const logDelete = jest
+      .fn<Promise<{ affected: number }>, [unknown]>()
+      .mockResolvedValue({ affected: 2 });
+    const mappingRepo = {} as unknown as Repository<UserPlatformMappingEntity>;
+    const logRepo = {
+      delete: logDelete,
+    } as unknown as Repository<MessageLogEntity>;
+    const claimRepo = {} as unknown as Repository<ScheduledReportClaimEntity>;
+    const repo = new MessengerRepository(mappingRepo, logRepo, claimRepo);
+    const cutoff = new Date('2026-08-18T00:00:00.000Z');
+
+    await repo.deleteMessageLogsOlderThan(cutoff);
+
+    const criteria = logDelete.mock.calls[0]?.[0] as
+      | { platform?: string; createdAt?: { value?: Date } }
+      | undefined;
+    expect(criteria?.platform).toBe('messenger');
+    expect(criteria?.createdAt?.value).toBe(cutoff);
+  });
+});

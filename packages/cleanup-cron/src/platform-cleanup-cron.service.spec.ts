@@ -35,7 +35,7 @@ function buildConfig(
     },
     messageLogRepo: {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
-    } as never as Repository<{ createdAt: Date }>,
+    } as never as Repository<{ createdAt: Date; platform: string }>,
     deadLetterRepo: {
       delete: jest.fn().mockResolvedValue({ affected: 0 }),
     } as never as CleanupCronJobsConfig['deadLetterRepo'],
@@ -130,6 +130,46 @@ describe('PlatformCleanupCronService', () => {
       retentionDaysConfigKey: 'DISCORD_MESSAGE_LOG_RETENTION_DAYS',
       defaultRetentionDays: 90,
     });
+  });
+
+  it('scopes message log deletion to the configured platform', async () => {
+    const messageDelete = jest
+      .fn<Promise<{ affected: number }>, [unknown]>()
+      .mockResolvedValue({ affected: 0 });
+    const config = buildConfig({
+      messageLogRepo: { delete: messageDelete } as never,
+    });
+    const { service, cleanupService } = buildService(config);
+
+    await service.handleMessageLogCleanup();
+    const deleteFn = cleanupService.execute.mock.calls[0]?.[1];
+    const cutoff = new Date('2026-08-18T00:00:00.000Z');
+    await deleteFn?.(cutoff);
+
+    const criteria = messageDelete.mock.calls[0]?.[0] as
+      | { platform?: string; createdAt?: { value?: Date } }
+      | undefined;
+    expect(criteria?.platform).toBe('discord');
+    expect(criteria?.createdAt?.value).toBe(cutoff);
+  });
+
+  it('uses an explicit status predicate for dead-letter deletion', async () => {
+    const deadLetterDelete = jest
+      .fn<Promise<{ affected: number }>, [unknown]>()
+      .mockResolvedValue({ affected: 0 });
+    const config = buildConfig({
+      deadLetterRepo: { delete: deadLetterDelete } as never,
+    });
+    const { service, cleanupService } = buildService(config);
+
+    await service.handleDeadLetterCleanup();
+    const deleteFn = cleanupService.execute.mock.calls[0]?.[1];
+    await deleteFn?.(new Date('2026-08-18T00:00:00.000Z'));
+
+    const criteria = deadLetterDelete.mock.calls[0]?.[0] as
+      | { status?: { value?: string[] } }
+      | undefined;
+    expect(criteria?.status?.value).toEqual(['replayed', 'abandoned']);
   });
 
   it('skips idempotency recovery when rate limiting is disabled', async () => {
