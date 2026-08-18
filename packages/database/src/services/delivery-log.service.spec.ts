@@ -44,7 +44,7 @@ describe('DeliveryLogService', () => {
     });
   });
 
-  it('adds platform and message text for a shared platform log table', async () => {
+  it('adds platform for a shared platform log table', async () => {
     const saveMock = jest.fn().mockResolvedValue(undefined);
     const repo = { save: saveMock } as unknown as Repository<MessageLogRow>;
     const service = new DeliveryLogService(repo, 'discord');
@@ -52,7 +52,6 @@ describe('DeliveryLogService', () => {
     await service.logDelivery({
       externalUserId: 'discord-1',
       status: 'SENT',
-      messageText: 'Welcome',
     });
 
     expect(saveMock).toHaveBeenCalledWith({
@@ -61,7 +60,6 @@ describe('DeliveryLogService', () => {
       error: null,
       messageType: 'chat',
       platform: 'discord',
-      messageText: 'Welcome',
     });
   });
 
