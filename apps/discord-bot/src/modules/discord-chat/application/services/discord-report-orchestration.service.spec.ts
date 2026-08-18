@@ -130,6 +130,7 @@ describe('DiscordReportOrchestrationService.claimAndSend', () => {
         reportDate: '2026-08-07',
       },
       'lease-1',
+      'sent',
     );
   });
 
