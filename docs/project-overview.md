@@ -567,6 +567,21 @@ The `git fetch`/`reset` run **inside the script, after the deploy lock is held**
 
 **Deploy hardening (#199/#201/#203/#204):** `vps-deploy.sh` fails closed before cutover when `.env` is missing, the migration DB is unreachable, or the nginx upstream conf is missing (`SKIP_NGINX_CHECK=true` is the first-deploy escape hatch). The live container is detected by the port nginx currently routes to (never removed by name); an interrupted deploy that left nginx routed to `${APP}-new` adopts it as `${APP}-old` instead of deleting it. Container start/stop honor `DOCKER_STOP_TIMEOUT` (default 60s) for the 45s app drain window. The migration advisory lock is held on the **same psql session** that runs the migration (`\!` shell escape + `/tmp/mig.exit` marker) — concurrent deploys are truly serialized. Post-switch monitoring verifies the **public nginx route** (`curl --resolve …:443:127.0.0.1 https://aiassist.aihubproduction.com/health[/discord|/zalo]/ready`) instead of only the standby port. Runtime images include `postgresql-client` (psql) for the migration session. Uploads exclude `.env` from `rsync --delete`; env files use `mktemp` + `chmod 600` + an EXIT trap; `postgres-backup.sh` enforces `umask 077` + mode 700/600.
 
+**Postgres backup & restore (#182/#185):** nightly `pg_dump` at 02:00 ICT via `deploy/postgres-backup.sh`, encrypted at rest with GPG AES-256 (`BACKUP_ENCRYPTION_PASSPHRASE` in `.env`), 14-day retention. Backups are gzip-validated before encryption and stored as `.sql.gz.gpg` in `/home/ngoc_anh/backups/ai_chat_bot_db/`. An hourly `deploy/backup-monitor.sh` checks the `.last-backup-success` timestamp and fires a `postgres_backup_stale` Alertmanager alert (→ Telegram) if no successful backup in 25h. Backup failures also fire `postgres_backup_failed` immediately. Pre-migration safety dumps (`pg_dump -Fc`) go to `pre-migrate/` with 1-day retention.
+
+**Restore from backup:**
+
+```bash
+# List available backups
+ls -lt /home/ngoc_anh/backups/ai_chat_bot_db/*.sql.gz.gpg
+
+# Decrypt + decompress + restore (replace TIMESTAMP accordingly)
+source /home/ngoc_anh/messenger-bot/.env
+gpg --batch --yes --decrypt --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" \
+  /home/ngoc_anh/backups/ai_chat_bot_db/ai_chat_bot_db-TIMESTAMP.sql.gz.gpg \
+  | gunzip | docker exec -i postgres_n8n_db psql -U "$DB_USER" -d "$DB_NAME" --single-transaction
+```
+
 **Recovery when the self-pull stalls** (bots N commits behind, `git fetch` failing silently in the past): run manually on the VPS —
 
 ```bash
