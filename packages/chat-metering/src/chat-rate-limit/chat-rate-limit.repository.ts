@@ -147,13 +147,16 @@ export class ChatRateLimitRepository {
         }
 
         if (input.burstLimit !== undefined && input.burstSince) {
+          const burstStatuses = input.burstCountsRefunded
+            ? "'reserved', 'delivered', 'completed', 'refunded'"
+            : "'reserved', 'delivered', 'completed'";
           const burstRows: Array<{ count: string }> = await manager.query(
             `
               SELECT COUNT(*)::text AS count
               FROM chat_idempotency
               WHERE platform = $1 AND external_user_id = $2
                 AND reserved_at > $3
-                AND status IN ('reserved', 'delivered', 'completed')
+                AND status IN (${burstStatuses})
             `,
             [this.platform, input.externalUserId, input.burstSince],
           );

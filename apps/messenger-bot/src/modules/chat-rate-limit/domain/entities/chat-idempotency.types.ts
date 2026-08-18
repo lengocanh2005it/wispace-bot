@@ -27,6 +27,9 @@ export interface ReserveFreeFormSlotInput {
   idempotencyKey: string;
   /** H3: hard cap inside the same transaction as idempotency insert. */
   dailyLimit: number;
+  burstLimit?: number;
+  burstSince?: Date;
+  burstCountsRefunded?: boolean;
 }
 
 export type ReserveFreeFormSlotOutcome =

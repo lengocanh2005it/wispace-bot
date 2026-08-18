@@ -68,6 +68,9 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
       usageDate: input.usageDate,
       idempotencyKey: input.idempotencyKey,
       dailyLimit: input.dailyLimit,
+      burstLimit: input.burstLimit,
+      burstSince: input.burstSince,
+      burstCountsRefunded: input.burstCountsRefunded,
     });
   }
 

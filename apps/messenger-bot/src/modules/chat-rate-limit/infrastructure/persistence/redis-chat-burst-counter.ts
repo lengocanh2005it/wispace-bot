@@ -51,10 +51,10 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
   async tryReserveBurst(
     psid: string,
     limit: number,
-  ): Promise<{ allowed: boolean; count: number }> {
+  ): Promise<{ allowed: boolean; count: number; transactional: boolean }> {
     const client = this.redisClient.getNativeClient();
     if (!client) {
-      return { allowed: true, count: 0 };
+      return { allowed: true, count: 0, transactional: true };
     }
 
     const key = this.key(psid);
@@ -79,15 +79,21 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
         String(CHAT_BURST_KEY_TTL_SECONDS),
         String(limit),
       )) as number[];
-      return { allowed: result[0] === 1, count: result[1] ?? 0 };
+      return {
+        allowed: result[0] === 1,
+        count: result[1] ?? 0,
+        transactional: false,
+      };
     } catch (error) {
       this.logger.warn(
         `Redis burst tryReserve failed psid=${maskExternalId(psid)}: ${errorMessage(
           error,
         )}`,
       );
-      // Fail-open: Redis error should not block users from chatting.
-      return { allowed: true, count: 0 };
+      // Let the Postgres reserve transaction enforce the burst limit when
+      // Redis is unavailable. This keeps chat available without losing the
+      // quota guarantee.
+      return { allowed: true, count: 0, transactional: true };
     }
   }
 

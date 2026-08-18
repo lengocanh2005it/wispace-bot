@@ -49,7 +49,11 @@ describe('RedisChatBurstCounter', () => {
       };
       const counter = createCounter(client);
       const result = await counter.tryReserveBurst('psid-1', 3);
-      expect(result).toEqual({ allowed: true, count: 2 });
+      expect(result).toEqual({
+        allowed: true,
+        count: 2,
+        transactional: false,
+      });
       expect(client.eval).toHaveBeenCalled();
     });
 
@@ -64,16 +68,24 @@ describe('RedisChatBurstCounter', () => {
       };
       const counter = createCounter(client);
       const result = await counter.tryReserveBurst('psid-1', 3);
-      expect(result).toEqual({ allowed: false, count: 3 });
+      expect(result).toEqual({
+        allowed: false,
+        count: 3,
+        transactional: false,
+      });
     });
 
-    it('fails open when Redis unavailable', async () => {
+    it('falls back to the Postgres-authoritative reserve when Redis is unavailable', async () => {
       const counter = createCounter(null);
       const result = await counter.tryReserveBurst('psid-1', 3);
-      expect(result).toEqual({ allowed: true, count: 0 });
+      expect(result).toEqual({
+        allowed: true,
+        count: 0,
+        transactional: true,
+      });
     });
 
-    it('fails open on Redis error', async () => {
+    it('falls back to the Postgres-authoritative reserve on Redis error', async () => {
       const client = {
         get: jest.fn(),
         incr: jest.fn(),
@@ -84,7 +96,11 @@ describe('RedisChatBurstCounter', () => {
       };
       const counter = createCounter(client);
       const result = await counter.tryReserveBurst('psid-1', 3);
-      expect(result).toEqual({ allowed: true, count: 0 });
+      expect(result).toEqual({
+        allowed: true,
+        count: 0,
+        transactional: true,
+      });
     });
   });
 });
