@@ -60,7 +60,15 @@ FAKE
   cat > "$dir/bin/docker" <<'FAKE'
 #!/usr/bin/env bash
 echo "docker $1" >> "${DOCKER_LOG:?}"
-[ "$1" = "login" ] || [ "$1" = "manifest" ]
+case "$1" in
+  login) exit 0 ;;
+  manifest)
+    # Return JSON with sha256 digest for digest extraction (#196)
+    printf '{"schemaVersion":2,"config":{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}\n'
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
 FAKE
   chmod +x "$dir/bin/docker"
 
