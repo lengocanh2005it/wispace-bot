@@ -49,3 +49,4 @@ export type {
 export { LlmSafetyEventRepository } from './llm-safety/llm-safety.repository';
 export { LlmSafetyCore } from './llm-safety/llm-safety-core.service';
 export { PlatformLlmSafetyEventAdapter } from './llm-safety/platform-llm-safety-event.adapter';
+export { LlmSafetyCleanupService } from './llm-safety/llm-safety-cleanup.service';

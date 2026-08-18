@@ -116,7 +116,6 @@ export class ZaloOutboundService {
         externalUserId: zaloUserId,
         status: 'SENT',
         messageType: 'chat',
-        messageText: text,
       });
     } catch (error) {
       const errorMsg = maskExternalIdInText(errorMessage(error), zaloUserId);
@@ -132,7 +131,6 @@ export class ZaloOutboundService {
         status: 'FAILED',
         messageType: 'chat',
         error: errorMsg,
-        messageText: text,
       });
       if (options?.skipDeadLetter !== true) {
         const persisted = await this.deadLetter?.save({
