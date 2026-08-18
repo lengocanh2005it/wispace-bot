@@ -332,8 +332,9 @@ export class PlatformWebhookInboundEventService {
   }
 
   /**
-   * Total rows matching the `listDue` predicate (unbounded) — the backlog
+   * Total rows matching the `listDue` predicate — the backlog
    * measure for monitoring; `listDue` itself stays capped by `limit`.
+   * Capped at 10 000 to avoid unbounded COUNT(*) scans (#160).
    */
   async countDue(opts: {
     now?: Date;
@@ -344,17 +345,19 @@ export class PlatformWebhookInboundEventService {
       now.getTime() - (opts.processingStuckMs ?? 300_000),
     );
 
-    return this.repo
-      .createQueryBuilder('evt')
-      .where('evt.platform = :platform', { platform: this.platform })
-      .andWhere(
-        `(
-          evt.status IN (:...statuses)
-          AND (evt.next_retry_at IS NULL OR evt.next_retry_at <= :now)
+    const rows: Array<{ count: string }> = await this.repo.query(
+      `
+      SELECT LEAST(COUNT(*), 10000)::text AS count
+      FROM webhook_inbound_events
+      WHERE platform = $1
+        AND (
+          (status IN ('pending', 'failed') AND (next_retry_at IS NULL OR next_retry_at <= $2))
+          OR (status = 'processing' AND updated_at < $3)
         )
-        OR (evt.status = 'processing' AND evt.updated_at < :staleBefore)`,
-        { statuses: ['pending', 'failed'], now, staleBefore },
-      )
-      .getCount();
+      `,
+      [this.platform, now, staleBefore],
+    );
+
+    return Number(rows[0]?.count ?? 0);
   }
 }

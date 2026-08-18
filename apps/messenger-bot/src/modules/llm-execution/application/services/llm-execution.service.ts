@@ -66,19 +66,22 @@ export class LlmExecutionService {
       return fn(undefined);
     }
 
-    if (this.globalLimiter) {
-      const globalLimit = this.config.getGlobalMaxConcurrent();
-      const release = await this.globalLimiter.acquire('global', globalLimit);
-      try {
-        return await this.limiter(
-          () => this.breaker.fire(fn, context) as Promise<T>,
-        );
-      } finally {
-        await release();
+    // Acquire global Redis slot INSIDE the local limiter callback (#153) —
+    // slots are only held during actual LLM execution, not while waiting
+    // in the local p-limit queue.
+    return this.limiter(async () => {
+      if (this.globalLimiter) {
+        const globalLimit = this.config.getGlobalMaxConcurrent();
+        const release = await this.globalLimiter.acquire('global', globalLimit);
+        try {
+          return await this.breaker.fire(fn, context) as Promise<T>;
+        } finally {
+          await release();
+        }
       }
-    }
 
-    return this.limiter(() => this.breaker.fire(fn, context) as Promise<T>);
+      return this.breaker.fire(fn, context) as Promise<T>;
+    });
   }
 
   private async runWithRetry<T>(
