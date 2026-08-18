@@ -63,22 +63,25 @@ export function createEnvLlmExecutionPort(
         return fn(undefined);
       }
 
-      let release: (() => Promise<void>) | undefined;
-      if (nativeRedis) {
-        release = await acquireRedisSlot(
-          nativeRedis,
-          REDIS_SLOT_KEY,
-          config.globalMaxConcurrent,
-          logger,
-        );
-      }
-      try {
-        return await limiter(() => {
+      // Acquire global Redis slot INSIDE the local limiter callback (#153) —
+      // slots are only held during actual LLM execution, not while waiting
+      // in the local p-limit queue.
+      return await limiter(async () => {
+        let release: (() => Promise<void>) | undefined;
+        if (nativeRedis) {
+          release = await acquireRedisSlot(
+            nativeRedis,
+            REDIS_SLOT_KEY,
+            config.globalMaxConcurrent,
+            logger,
+          );
+        }
+        try {
           const deadlineSignal = AbortSignal.timeout(config.requestTimeoutMs);
           const signal = meta?.signal
             ? AbortSignal.any([meta.signal, deadlineSignal])
             : deadlineSignal;
-          return retryWithBackoff(() => fn(signal), {
+          return await retryWithBackoff(() => fn(signal), {
             maxAttempts: config.maxAttempts,
             baseDelayMs: config.baseBackoffMs,
             isRetryable: (error) => adapter.isRetryableError(error),
@@ -94,10 +97,10 @@ export function createEnvLlmExecutionPort(
               ),
             signal,
           });
-        });
-      } finally {
-        await release?.();
-      }
+        } finally {
+          await release?.();
+        }
+      });
     },
   };
 }
