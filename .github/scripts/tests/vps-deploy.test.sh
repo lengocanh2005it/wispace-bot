@@ -228,18 +228,13 @@ FAKE
   # Fake gpg: just copy input to output (no real encryption in tests)
   cat > "$dir/bin/gpg" <<'FAKEGPG'
 #!/usr/bin/env bash
+INFILE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --output) shift; OUTFILE="$1"; shift;;
-    --passphrase) shift; shift;;
-    *) shift;;
-  esac
-done
-# Find the input file (last non-flag arg)
-for arg in "$@"; do
-  case "$arg" in
-    --*) ;;
-    *) INFILE="$arg";;
+    --passphrase|--cipher-algo) shift; shift;;
+    --*) shift;;
+    *) INFILE="$1"; shift;;
   esac
 done
 cp "$INFILE" "$OUTFILE"
