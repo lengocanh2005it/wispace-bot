@@ -225,8 +225,27 @@ if [ "$(stat -c '%a' "$probe" 2>/dev/null)" = "700" ]; then
 [ "$1" = "exec" ] && { printf 'DUMPDATA\n'; exit 0; }
 exit 1
 FAKE
-  chmod +x "$dir/bin/docker"
-  printf 'DB_USER=postgres\nDB_NAME=ai_chat_bot_db\nDB_PASSWORD=secret\n' > "$dir/deploy/.env"
+  # Fake gpg: just copy input to output (no real encryption in tests)
+  cat > "$dir/bin/gpg" <<'FAKEGPG'
+#!/usr/bin/env bash
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --output) shift; OUTFILE="$1"; shift;;
+    --passphrase) shift; shift;;
+    *) shift;;
+  esac
+done
+# Find the input file (last non-flag arg)
+for arg in "$@"; do
+  case "$arg" in
+    --*) ;;
+    *) INFILE="$arg";;
+  esac
+done
+cp "$INFILE" "$OUTFILE"
+FAKEGPG
+  chmod +x "$dir/bin/docker" "$dir/bin/gpg"
+  printf 'DB_USER=postgres\nDB_NAME=ai_chat_bot_db\nDB_PASSWORD=secret\nBACKUP_ENCRYPTION_PASSPHRASE=test-passphrase\n' > "$dir/deploy/.env"
   (
     export ENV_FILE="$dir/deploy/.env" BACKUP_DIR="$dir/backups" DB_CONTAINER=postgres_n8n_db \
       PATH="$dir/bin:$PATH"
@@ -235,7 +254,7 @@ FAKE
   [ $? -eq 0 ] || fail "backup failed: $(cat "$dir/backup.out")"
   dir_mode=$(stat -c '%a' "$dir/backups")
   [ "$dir_mode" = "700" ] || fail "backup dir mode $dir_mode != 700"
-  dump=$(find "$dir/backups" -name '*.sql.gz' | head -1)
+  dump=$(find "$dir/backups" -name '*.sql.gz.gpg' | head -1)
   [ -n "$dump" ] || fail "no backup file produced"
   file_mode=$(stat -c '%a' "$dump")
   [ "$file_mode" = "600" ] || fail "backup file mode $file_mode != 600"
