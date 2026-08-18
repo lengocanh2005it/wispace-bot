@@ -14,12 +14,12 @@ FREE_FORM daily quota, idempotency, and audit events are tracked via PostgreSQL 
 
 ## Alternatives considered
 
-| Alternative | Reason for rejection |
-|-------------|---------------------|
-| Redis counters | Requires Redis infrastructure. No audit trail. Race conditions between pods unless Lua scripts are used. |
-| In-memory counters | Server crash loses all state. Not durable. |
-| External rate limiting service (Upstash, etc.) | Vendor lock-in, additional cost, network latency. |
-| Token bucket algorithm | More complex than needed for daily quota. Better suited for real-time rate limiting. |
+| Alternative                                    | Reason for rejection                                                                                     |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Redis counters                                 | Requires Redis infrastructure. No audit trail. Race conditions between pods unless Lua scripts are used. |
+| In-memory counters                             | Server crash loses all state. Not durable.                                                               |
+| External rate limiting service (Upstash, etc.) | Vendor lock-in, additional cost, network latency.                                                        |
+| Token bucket algorithm                         | More complex than needed for daily quota. Better suited for real-time rate limiting.                     |
 
 ## Consequences
 

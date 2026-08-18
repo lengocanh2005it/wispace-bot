@@ -9,15 +9,15 @@ independent services or databases.
 
 ## Contexts
 
-| Context | Responsibility and ownership | Current code |
-|---|---|---|
-| **Platform Interaction** | Receives webhooks/gateway events, applies Messenger/Discord/Zalo-specific rules, sends messages, and owns delivery behavior. | `apps/messenger-bot/`, `apps/discord-bot/`, `apps/zalo-bot/` |
-| **Account Linking** | Pairs `externalUserId` with WISPACE `userId`; owns linking, relinking, and token verification. | `apps/*/src/modules/account-link/`, `apps/*/src/modules/*-oauth/`, Messenger linking |
-| **Learning Data ACL** | Adapts WISPACE data and roadmap exercise commands; WISPACE owns goals, scores, `UserCalendar`, roadmap state, exercise state, and precreation idempotency. The bot keeps only normalized views/ports needed by its use cases. | `packages/wispace-client/` |
-| **Free-form Chat** | Owns debounce, history, LLM tool orchestration, and chat replies. It does not own report/reminder entities. | `packages/chat-agent/`, `packages/chat-pipeline/`, `packages/chat-history/` |
-| **Study Reminder** | Calculates `remindAt`, syncs `UserCalendar` into outbox jobs, dispatches, retries, and cleans up jobs. | `packages/study-reminder-shared/`, app-specific reminder modules |
-| **Student Report** | Builds `StudentCapacityReport` from a learning-data snapshot; owns parsing, fallback, and report formatting. | `packages/student-report/`, app-specific report delivery |
-| **Metering & Operations** | Owns quota, idempotency, LLM usage/safety, health, cleanup, and operational endpoints. This is a supporting context. | `packages/chat-metering/`, `packages/ops-health/`, `packages/cleanup-cron/` |
+| Context                   | Responsibility and ownership                                                                                                                                                                                                  | Current code                                                                         |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| **Platform Interaction**  | Receives webhooks/gateway events, applies Messenger/Discord/Zalo-specific rules, sends messages, and owns delivery behavior.                                                                                                  | `apps/messenger-bot/`, `apps/discord-bot/`, `apps/zalo-bot/`                         |
+| **Account Linking**       | Pairs `externalUserId` with WISPACE `userId`; owns linking, relinking, and token verification.                                                                                                                                | `apps/*/src/modules/account-link/`, `apps/*/src/modules/*-oauth/`, Messenger linking |
+| **Learning Data ACL**     | Adapts WISPACE data and roadmap exercise commands; WISPACE owns goals, scores, `UserCalendar`, roadmap state, exercise state, and precreation idempotency. The bot keeps only normalized views/ports needed by its use cases. | `packages/wispace-client/`                                                           |
+| **Free-form Chat**        | Owns debounce, history, LLM tool orchestration, and chat replies. It does not own report/reminder entities.                                                                                                                   | `packages/chat-agent/`, `packages/chat-pipeline/`, `packages/chat-history/`          |
+| **Study Reminder**        | Calculates `remindAt`, syncs `UserCalendar` into outbox jobs, dispatches, retries, and cleans up jobs.                                                                                                                        | `packages/study-reminder-shared/`, app-specific reminder modules                     |
+| **Student Report**        | Builds `StudentCapacityReport` from a learning-data snapshot; owns parsing, fallback, and report formatting.                                                                                                                  | `packages/student-report/`, app-specific report delivery                             |
+| **Metering & Operations** | Owns quota, idempotency, LLM usage/safety, health, cleanup, and operational endpoints. This is a supporting context.                                                                                                          | `packages/chat-metering/`, `packages/ops-health/`, `packages/cleanup-cron/`          |
 
 ## Relationships
 

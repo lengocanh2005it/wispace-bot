@@ -9,10 +9,10 @@ Free-form chat: debounce → LLM agent → Send API. Integrates `ChatRateLimitMo
 
 ## Two queue modes
 
-| Mode | Env | Debounce buffer |
-|------|-----|-----------------|
-| Local (1 instance) | `CHAT_QUEUE_STORE=memory` (default) | In-process RAM (`MessengerChatEnqueueService`) |
-| Distributed (≥2 pods or Redis) | `CHAT_QUEUE_STORE=redis` | Redis `chat:queue:buffer:{psid}` |
+| Mode                           | Env                                 | Debounce buffer                                |
+| ------------------------------ | ----------------------------------- | ---------------------------------------------- |
+| Local (1 instance)             | `CHAT_QUEUE_STORE=memory` (default) | In-process RAM (`MessengerChatEnqueueService`) |
+| Distributed (≥2 pods or Redis) | `CHAT_QUEUE_STORE=redis`            | Redis `chat:queue:buffer:{psid}`               |
 
 Legacy: `CHAT_QUEUE_SHARED=true` → `CHAT_QUEUE_STORE=redis` when not explicitly set.
 
@@ -20,19 +20,19 @@ Legacy: `CHAT_QUEUE_SHARED=true` → `CHAT_QUEUE_STORE=redis` when not explicitl
 
 ## Chat queue store (R4)
 
-| Backend | Env | Notes |
-|---------|-----|-------|
-| Memory | `CHAT_QUEUE_STORE=memory` (default) | 1 pod — wraps `@wispace/chat-queue-core`'s `DebounceChatQueue` (package shared across all bots, see `.claude/rules/clean-architecture.md`) |
-| Redis | `CHAT_QUEUE_STORE=redis` + `REDIS_ENABLED=true` | `chat:queue:buffer:{psid}`, set `chat:queue:active-psids`, lock `chat:queue:lock:{psid}` |
+| Backend | Env                                             | Notes                                                                                                                                      |
+| ------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Memory  | `CHAT_QUEUE_STORE=memory` (default)             | 1 pod — wraps `@wispace/chat-queue-core`'s `DebounceChatQueue` (package shared across all bots, see `.claude/rules/clean-architecture.md`) |
+| Redis   | `CHAT_QUEUE_STORE=redis` + `REDIS_ENABLED=true` | `chat:queue:buffer:{psid}`, set `chat:queue:active-psids`, lock `chat:queue:lock:{psid}`                                                   |
 
 Port: `CHAT_QUEUE_STORE` → `ChatQueueStoreResolver` (redis when distributed).
 
 ## Chat history store (R1)
 
-| Backend | Env | Notes |
-|---------|-----|-------|
-| Memory | `CHAT_HISTORY_STORE=memory` (default) | 1 pod — wraps `@wispace/chat-history`'s `MemoryChatHistoryStore` (package shared with Discord, see `.claude/rules/clean-architecture.md`) |
-| Redis | `CHAT_HISTORY_STORE=redis` + `REDIS_ENABLED=true` | Key `chat:history:{psid}`, TTL `CHAT_HISTORY_TTL_MS` — Redis store is not in the package (infrastructure-specific to each app) |
+| Backend | Env                                               | Notes                                                                                                                                     |
+| ------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Memory  | `CHAT_HISTORY_STORE=memory` (default)             | 1 pod — wraps `@wispace/chat-history`'s `MemoryChatHistoryStore` (package shared with Discord, see `.claude/rules/clean-architecture.md`) |
+| Redis   | `CHAT_HISTORY_STORE=redis` + `REDIS_ENABLED=true` | Key `chat:history:{psid}`, TTL `CHAT_HISTORY_TTL_MS` — Redis store is not in the package (infrastructure-specific to each app)            |
 
 `CHAT_HISTORY_STORE=postgres` **removed** (`messenger_chat_history` table dropped).
 
@@ -40,13 +40,13 @@ Port: `CHAT_HISTORY_STORE` → `ChatHistoryStoreResolver`.
 
 ## Webhook ingestion (R2 — durable inbox)
 
-| Concern | Where | Notes |
-|---------|-------|-------|
-| Persist before ack | `webhook_inbound_events` (shared table) | Messenger/Zalo persist every authenticated event before 200; persistence failure → non-2xx → platform redelivers |
-| Idempotency | Unique `(platform, event_id)` | Messenger `mid`, Zalo `msg_id`; postbacks/follows use `{type}:{userId}:{timestamp}` — replaces the removed `CHAT_DEDUPE_STORE` memory/Redis stores |
-| Postback double-tap | Durable unique `(platform, event_id)` index | No process-local debounce; a failed inbox write is retried normally |
-| Retry | Inbound retry cron (30s, advisory-locked) | `pending`/`failed` rows with bounded backoff → `abandoned` (terminal) after `WEBHOOK_INBOUND_MAX_RETRIES`; stale `processing` rows are terminalized, not replayed, because side effects may already have completed |
-| Claim | `status='processing'` transition | The retry worker claims before processing; the request path only persists and acknowledges |
+| Concern             | Where                                       | Notes                                                                                                                                                                                                              |
+| ------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Persist before ack  | `webhook_inbound_events` (shared table)     | Messenger/Zalo persist every authenticated event before 200; persistence failure → non-2xx → platform redelivers                                                                                                   |
+| Idempotency         | Unique `(platform, event_id)`               | Messenger `mid`, Zalo `msg_id`; postbacks/follows use `{type}:{userId}:{timestamp}` — replaces the removed `CHAT_DEDUPE_STORE` memory/Redis stores                                                                 |
+| Postback double-tap | Durable unique `(platform, event_id)` index | No process-local debounce; a failed inbox write is retried normally                                                                                                                                                |
+| Retry               | Inbound retry cron (30s, advisory-locked)   | `pending`/`failed` rows with bounded backoff → `abandoned` (terminal) after `WEBHOOK_INBOUND_MAX_RETRIES`; stale `processing` rows are terminalized, not replayed, because side effects may already have completed |
+| Claim               | `status='processing'` transition            | The retry worker claims before processing; the request path only persists and acknowledges                                                                                                                         |
 
 Port: `PlatformWebhookInboundEventService` (`@wispace/database`) — `ingest` / `claim` / `markCompleted` / `markFailed` / `listDue`.
 
@@ -59,15 +59,15 @@ webhook must not mark such an event completed.
 
 ## Main files
 
-| File | Role |
-|------|------|
-| `messenger-chat-queue.service.ts` | Enqueue, debounce, flush, `processChatBatch`, reserve hook |
-| `messenger-chat-history.service.ts` | LLM context facade — delegates to `CHAT_HISTORY_STORE` |
-| `infrastructure/persistence/redis-chat-queue.store.ts` | Redis queue buffer (R4) |
-| `infrastructure/persistence/chat-queue.store.resolver.ts` | Redis store when distributed |
-| `infrastructure/persistence/*-chat-history.store.ts` | memory / redis stores (R1) |
-| `messenger-chat-shared-config.service.ts` | `CHAT_QUEUE_STORE`, `CHAT_QUEUE_SHARED`, TTL, stuck ms |
-| `messenger-chat-queue-worker.service.ts` | Cron poll Redis buffer (2s) |
+| File                                                      | Role                                                       |
+| --------------------------------------------------------- | ---------------------------------------------------------- |
+| `messenger-chat-queue.service.ts`                         | Enqueue, debounce, flush, `processChatBatch`, reserve hook |
+| `messenger-chat-history.service.ts`                       | LLM context facade — delegates to `CHAT_HISTORY_STORE`     |
+| `infrastructure/persistence/redis-chat-queue.store.ts`    | Redis queue buffer (R4)                                    |
+| `infrastructure/persistence/chat-queue.store.resolver.ts` | Redis store when distributed                               |
+| `infrastructure/persistence/*-chat-history.store.ts`      | memory / redis stores (R1)                                 |
+| `messenger-chat-shared-config.service.ts`                 | `CHAT_QUEUE_STORE`, `CHAT_QUEUE_SHARED`, TTL, stuck ms     |
+| `messenger-chat-queue-worker.service.ts`                  | Cron poll Redis buffer (2s)                                |
 
 Queue port: `CHAT_QUEUE_STORE`. History port: `CHAT_HISTORY_STORE`.
 

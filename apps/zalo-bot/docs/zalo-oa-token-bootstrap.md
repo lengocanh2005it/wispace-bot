@@ -11,7 +11,7 @@ whoever manages the Official Account, right after the app is registered on
 
 This mirrors `apps/discord-bot/docs/discord-account-linking.md`'s "what a
 human does once outside the app" style — see that file for the account-linking
-counterpart (`zalo_account_links`, which *is* fully automated via
+counterpart (`zalo_account_links`, which _is_ fully automated via
 `ZaloOauthController`).
 
 ## Prerequisites

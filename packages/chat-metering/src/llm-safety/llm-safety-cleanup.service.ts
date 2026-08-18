@@ -10,9 +10,7 @@ import { PlatformLlmSafetyEventAdapter } from './platform-llm-safety-event.adapt
 export class LlmSafetyCleanupService {
   private readonly logger = new Logger(LlmSafetyCleanupService.name);
 
-  constructor(
-    private readonly adapter: PlatformLlmSafetyEventAdapter,
-  ) {}
+  constructor(private readonly adapter: PlatformLlmSafetyEventAdapter) {}
 
   @Cron('0 3 * * *', {
     name: 'llm-safety-cleanup',

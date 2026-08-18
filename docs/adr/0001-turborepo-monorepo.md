@@ -11,11 +11,11 @@ The bots (Messenger, Discord, Zalo) and the shared packages under `packages/` li
 
 ## Alternatives considered
 
-| Alternative | Reason for rejection |
-|-------------|---------------------|
+| Alternative                   | Reason for rejection                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------------------ |
 | Multi-repo (one repo per bot) | Shared packages would need versioning + publish workflow. Too complex at this stage. |
-| Nx monorepo | Good but Turborepo is lighter, faster caching, more npm-native ecosystem. |
-| Lerna monorepo | Deprecated, Turborepo is the successor. |
+| Nx monorepo                   | Good but Turborepo is lighter, faster caching, more npm-native ecosystem.            |
+| Lerna monorepo                | Deprecated, Turborepo is the successor.                                              |
 
 ## Consequences
 

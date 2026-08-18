@@ -37,26 +37,26 @@ Add a short table to `.claude/rules/database.md` (new section, under "Adding mig
 
 Classification verified (read actual `CREATE TABLE`/`ALTER TABLE`/`DROP TABLE` in each file):
 
-| Group | File | Tables Affected |
-|-------|------|-----------------|
-| Messenger-only | `1717747200000-CreateMessengerTables` | `user_messenger_mappings`, `messenger_message_logs` |
-| Messenger-only | `1717747200001-CreateStudyReminderJobs` | `study_reminder_jobs` |
-| Messenger-only | `1717747200002-CreateMessengerChatRateLimitTables` | `messenger_chat_daily_usage`, `messenger_chat_idempotency` (predecessors before generic rename in `chat-metering`) |
-| Messenger-only | `1717747200003-CreateMessengerChatSharedQueueTables` | `messenger_chat_queue_buffer`, `messenger_chat_history`, `messenger_chat_webhook_seen` |
-| Messenger-only | `1717747200004-CreateMessengerScheduledReportClaims` | `messenger_scheduled_report_claims` |
-| Messenger-only | `1717747200005-CreateMessengerWebhookDeadLetterTable` | `messenger_webhook_dead_letters` |
-| Messenger-only | `1717747200006-CreateReportSendJobs` | `report_send_jobs` |
-| Messenger-only | `1717747200007-AddMessengerIndexes` | index-only, no new tables |
-| Messenger-only | `1717747200008-CreateMessengerUsersCacheTable` | `users` (+ view `"Users"`) |
-| Messenger-only | `1717747200009-DropMessengerChatWebhookSeenTable` | drop `messenger_chat_webhook_seen` |
-| Messenger-only | `1717747200010-DropMessengerChatQueueBufferAndHistoryTables` | drop `messenger_chat_queue_buffer`, `messenger_chat_history` |
-| Messenger-only | `1717747200011-TrimUsersCacheToMessengerMappings` | alter `users` (index-only, no new table) |
-| Messenger-only | `1717747200012-AddUniqueActiveMessengerMappingIndexes` | index-only on `user_messenger_mappings` |
-| Shared (packages/chat-metering) | `1717747200013-CreateC2QuotaAndLlmUsageTables` | `messenger_chat_events` (predecessor `chat_quota_events`), `llm_usage_events` |
-| Shared (packages/chat-metering) | `1751029200000-CreateLlmSafetyEventsTable` | `llm_safety_events` |
-| Shared (packages/chat-metering) | `1751029200003-AddLlmUsageEventsCachedTokens` | alter `llm_usage_events` |
-| Cross-platform (generalize) | `1751029200001-GeneralizePlatformIdentifiers` | alter `user_messenger_mappings` → `user_platform_mappings`, rename chat-metering tables to generic (`chat_daily_usage`, `chat_idempotency`, `chat_quota_events`) |
-| Discord | `1751029200002-CreateDiscordAccountLinksTable` | `discord_account_links` |
+| Group                           | File                                                         | Tables Affected                                                                                                                                                  |
+| ------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Messenger-only                  | `1717747200000-CreateMessengerTables`                        | `user_messenger_mappings`, `messenger_message_logs`                                                                                                              |
+| Messenger-only                  | `1717747200001-CreateStudyReminderJobs`                      | `study_reminder_jobs`                                                                                                                                            |
+| Messenger-only                  | `1717747200002-CreateMessengerChatRateLimitTables`           | `messenger_chat_daily_usage`, `messenger_chat_idempotency` (predecessors before generic rename in `chat-metering`)                                               |
+| Messenger-only                  | `1717747200003-CreateMessengerChatSharedQueueTables`         | `messenger_chat_queue_buffer`, `messenger_chat_history`, `messenger_chat_webhook_seen`                                                                           |
+| Messenger-only                  | `1717747200004-CreateMessengerScheduledReportClaims`         | `messenger_scheduled_report_claims`                                                                                                                              |
+| Messenger-only                  | `1717747200005-CreateMessengerWebhookDeadLetterTable`        | `messenger_webhook_dead_letters`                                                                                                                                 |
+| Messenger-only                  | `1717747200006-CreateReportSendJobs`                         | `report_send_jobs`                                                                                                                                               |
+| Messenger-only                  | `1717747200007-AddMessengerIndexes`                          | index-only, no new tables                                                                                                                                        |
+| Messenger-only                  | `1717747200008-CreateMessengerUsersCacheTable`               | `users` (+ view `"Users"`)                                                                                                                                       |
+| Messenger-only                  | `1717747200009-DropMessengerChatWebhookSeenTable`            | drop `messenger_chat_webhook_seen`                                                                                                                               |
+| Messenger-only                  | `1717747200010-DropMessengerChatQueueBufferAndHistoryTables` | drop `messenger_chat_queue_buffer`, `messenger_chat_history`                                                                                                     |
+| Messenger-only                  | `1717747200011-TrimUsersCacheToMessengerMappings`            | alter `users` (index-only, no new table)                                                                                                                         |
+| Messenger-only                  | `1717747200012-AddUniqueActiveMessengerMappingIndexes`       | index-only on `user_messenger_mappings`                                                                                                                          |
+| Shared (packages/chat-metering) | `1717747200013-CreateC2QuotaAndLlmUsageTables`               | `messenger_chat_events` (predecessor `chat_quota_events`), `llm_usage_events`                                                                                    |
+| Shared (packages/chat-metering) | `1751029200000-CreateLlmSafetyEventsTable`                   | `llm_safety_events`                                                                                                                                              |
+| Shared (packages/chat-metering) | `1751029200003-AddLlmUsageEventsCachedTokens`                | alter `llm_usage_events`                                                                                                                                         |
+| Cross-platform (generalize)     | `1751029200001-GeneralizePlatformIdentifiers`                | alter `user_messenger_mappings` → `user_platform_mappings`, rename chat-metering tables to generic (`chat_daily_usage`, `chat_idempotency`, `chat_quota_events`) |
+| Discord                         | `1751029200002-CreateDiscordAccountLinksTable`               | `discord_account_links`                                                                                                                                          |
 
 ### 3. Additional Note in `database.md`
 
@@ -72,5 +72,6 @@ Add a short sentence explaining why old migrations are not renamed (TypeORM trac
 ## Testing / Verification
 
 This is a documentation + convention change (no runtime code changes), so no tests need to be run. Verify by:
+
 - Re-reading `.claude/rules/database.md` after modification — ensure no contradictions with existing content.
 - Confirming the 18-migration classification table matches actual file contents (read the files, do not guess) before writing to the doc.

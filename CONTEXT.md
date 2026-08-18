@@ -324,7 +324,7 @@ _Avoid_: hallucination check
 Utility function that strips/escapes potentially dangerous content from user or Wispace data before inserting it into prompts or tool results.
 _Avoid_: escape, encode — use "sanitize"
 
-**system prompt / *.system.txt**:
+*_system prompt / *.system.txt*_:
 Base persona/instructions loaded from `src/shared/prompts/*.system.txt`. Copied to `dist/` at build time. Three variants: `student-report`, `study-reminder`, `messenger-chat`.
 _Avoid_: prompt file, AI instructions — use "system prompt"
 
@@ -486,24 +486,24 @@ _Avoid_: monorepo without "Turborepo"
 
 ### Naming Conventions
 
-| Use | Avoid | Reason |
-|-----|-------|--------|
-| `externalUserId` | `platformUserId`, `botUserId` | Cross-platform standard name |
-| `psid` | `senderId`, `facebookId` | Matches Meta terminology |
-| `userId` | `wispaceId`, `internalId` | WISPACE internal ID, always numeric |
-| `sessionKey` | `sessionId`, `calendarId` | Composite key, not a DB PK |
-| `remindAt` | `sendAt`, `notifyAt` | Domain-specific: when the reminder fires |
-| `scheduledAt` | `startTime`, `eventTime` | Matches UserCalendar API field |
-| `exerciseTopic` | `topic` when referring to a future exercise parameter | `topic` already means notification topic in account linking |
-| `quota` | `limit`, `allowance` | Distinguishes daily cap from burst limit |
-| `reserve` / `refund` | `allocate` / `rollback` | Financial metaphor, domain-specific |
-| `flush` | `process`, `drain` | Specific to debounce queue |
-| `sync` | `refresh`, `reload` | Specific to UserCalendar → jobs pipeline |
-| `dispatch` | `send`, `deliver` | Specific to job → message pipeline |
-| `feature` | `useCase`, `purpose` | LLM usage categorization tag |
-| `correlationId` | `traceId`, `requestId` | Pairs LLM calls with triggering events |
-| `band` | `score`, `grade` | IELTS scoring terminology |
-| `examDate` | `testDate` | Matches UserGoals API field |
-| `cadence` | `frequency` | Matches code and type names |
-| `postback` | `buttonClick` | Messenger platform terminology |
-| `dead letter` | `failed queue` | Standard messaging pattern |
+| Use                  | Avoid                                                 | Reason                                                      |
+| -------------------- | ----------------------------------------------------- | ----------------------------------------------------------- |
+| `externalUserId`     | `platformUserId`, `botUserId`                         | Cross-platform standard name                                |
+| `psid`               | `senderId`, `facebookId`                              | Matches Meta terminology                                    |
+| `userId`             | `wispaceId`, `internalId`                             | WISPACE internal ID, always numeric                         |
+| `sessionKey`         | `sessionId`, `calendarId`                             | Composite key, not a DB PK                                  |
+| `remindAt`           | `sendAt`, `notifyAt`                                  | Domain-specific: when the reminder fires                    |
+| `scheduledAt`        | `startTime`, `eventTime`                              | Matches UserCalendar API field                              |
+| `exerciseTopic`      | `topic` when referring to a future exercise parameter | `topic` already means notification topic in account linking |
+| `quota`              | `limit`, `allowance`                                  | Distinguishes daily cap from burst limit                    |
+| `reserve` / `refund` | `allocate` / `rollback`                               | Financial metaphor, domain-specific                         |
+| `flush`              | `process`, `drain`                                    | Specific to debounce queue                                  |
+| `sync`               | `refresh`, `reload`                                   | Specific to UserCalendar → jobs pipeline                    |
+| `dispatch`           | `send`, `deliver`                                     | Specific to job → message pipeline                          |
+| `feature`            | `useCase`, `purpose`                                  | LLM usage categorization tag                                |
+| `correlationId`      | `traceId`, `requestId`                                | Pairs LLM calls with triggering events                      |
+| `band`               | `score`, `grade`                                      | IELTS scoring terminology                                   |
+| `examDate`           | `testDate`                                            | Matches UserGoals API field                                 |
+| `cadence`            | `frequency`                                           | Matches code and type names                                 |
+| `postback`           | `buttonClick`                                         | Messenger platform terminology                              |
+| `dead letter`        | `failed queue`                                        | Standard messaging pattern                                  |

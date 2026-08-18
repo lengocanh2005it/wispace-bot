@@ -75,8 +75,7 @@ function encryptOaToken(plaintext) {
   ]);
   const tag = cipher.getAuthTag();
   return (
-    'v1.' +
-    [iv, tag, encrypted].map((b) => b.toString('base64')).join('.')
+    'v1.' + [iv, tag, encrypted].map((b) => b.toString('base64')).join('.')
   );
 }
 

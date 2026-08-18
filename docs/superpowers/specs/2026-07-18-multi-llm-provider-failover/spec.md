@@ -35,18 +35,19 @@ At design time (2026-07-18), each app only configured **one** `LlmProviderAdapte
 `packages/llm-agent/src/provider/types.ts` — `LlmProviderError.reason` currently has `'rate_limit' | 'server_error' | 'auth' | 'unknown'`. Add `'quota_exceeded'`.
 
 `OpenAiAdapter.normalizeError()` (base class shared for OpenAI/OpenAI-compatible/OpenRouter/MiniMax) detects quota-exhausted via:
+
 - HTTP status `402` (Payment Required — OpenRouter uses this code when out of credits).
 - HTTP status `429` **and** body/message containing `insufficient_quota` / `insufficient credit` / `insufficient balance` (OpenAI returns `insufficient_quota` in `error.code`; MiniMax returns `base_resp.status_code` separately — **needs verification during implementation**, see Open Questions).
 
 **Policy — not all errors are treated equally.** The goal is failover as fast as possible, but still give transient errors (network hiccup, burst rate-limit) one cheap chance before completely abandoning that provider for this turn:
 
-| `reason` | Policy | Number of attempts **on that provider** before failover | Cooldown after giving up on this provider |
-|----------|--------|------------------------------------------------------------|---------------------------------------------|
-| `quota_exceeded` | **FAST_FAIL** — failover immediately, no retry | 1 (no retry) | Long (`FAILOVER_COOLDOWN_LONG_MS`, default 10 minutes) — out of credits does not self-resolve in seconds |
-| `auth` | **FAST_FAIL** | 1 | Long — usually a configuration error (wrong key), requires operator fix, retrying is pointless |
-| `rate_limit` | **QUICK_RETRY** | 2 (original + 1 retry, fixed short delay, **no** exponential) | Short (`FAILOVER_COOLDOWN_SHORT_MS`, default 5 seconds) — burst rate-limit usually resolves very quickly |
-| `server_error` | **QUICK_RETRY** | 2 | Short |
-| `unknown` | **QUICK_RETRY** | 2 | Short — safe default, error nature unclear so still give one chance before skipping |
+| `reason`         | Policy                                         | Number of attempts **on that provider** before failover       | Cooldown after giving up on this provider                                                                |
+| ---------------- | ---------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `quota_exceeded` | **FAST_FAIL** — failover immediately, no retry | 1 (no retry)                                                  | Long (`FAILOVER_COOLDOWN_LONG_MS`, default 10 minutes) — out of credits does not self-resolve in seconds |
+| `auth`           | **FAST_FAIL**                                  | 1                                                             | Long — usually a configuration error (wrong key), requires operator fix, retrying is pointless           |
+| `rate_limit`     | **QUICK_RETRY**                                | 2 (original + 1 retry, fixed short delay, **no** exponential) | Short (`FAILOVER_COOLDOWN_SHORT_MS`, default 5 seconds) — burst rate-limit usually resolves very quickly |
+| `server_error`   | **QUICK_RETRY**                                | 2                                                             | Short                                                                                                    |
+| `unknown`        | **QUICK_RETRY**                                | 2                                                             | Short — safe default, error nature unclear so still give one chance before skipping                      |
 
 Delay for `QUICK_RETRY` is a **small fixed constant** (default 150ms, not exponential backoff like the old `LlmAgentService.withRetry`) — the goal is catching transient errors within a few hundred ms, not "waiting to be sure" like the old retry approach (which was the main source of high latency users experience).
 
@@ -75,7 +76,7 @@ Both inherit all `chatWithTools`/`chatStream`/`generateJson` logic from `OpenAiA
 
 ### 3. `FailoverLlmProviderAdapter` — greedy pick + circuit breaker
 
-**Provider selection algorithm**: greedy, follows the configured priority order (`order`), picks the **first healthy candidate** from the remaining set — exactly as required, nothing more complex than necessary (no load-balancing/weighted-routing needed because the goal is *correct and fast*, not even traffic distribution). What makes it **fast** is not the selection algorithm (already O(k) with k = number of providers, k is very small ~2-4), but the **in-memory circuit breaker** to avoid repeated network round-trips to a provider known to be down:
+**Provider selection algorithm**: greedy, follows the configured priority order (`order`), picks the **first healthy candidate** from the remaining set — exactly as required, nothing more complex than necessary (no load-balancing/weighted-routing needed because the goal is _correct and fast_, not even traffic distribution). What makes it **fast** is not the selection algorithm (already O(k) with k = number of providers, k is very small ~2-4), but the **in-memory circuit breaker** to avoid repeated network round-trips to a provider known to be down:
 
 ```ts
 interface CircuitState {
@@ -141,7 +142,11 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     for (const candidate of ordered) {
       const req = { ...request, model: candidate.getDefaultModel() }; // model is not portable
 
-      for (let attempt = 1; attempt <= this.maxAttemptsFor(candidate, lastError); attempt++) {
+      for (
+        let attempt = 1;
+        attempt <= this.maxAttemptsFor(candidate, lastError);
+        attempt++
+      ) {
         try {
           const result = await call(candidate, req);
           this.circuit.delete(candidate.providerName); // success → reset circuit
@@ -154,7 +159,8 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
           if (isFastFail || attempt === this.maxAttemptsFor(candidate, err)) {
             this.circuit.set(candidate.providerName, {
               healthyAgainAt:
-                this.clock() + (isFastFail ? COOLDOWN_LONG_MS : COOLDOWN_SHORT_MS),
+                this.clock() +
+                (isFastFail ? COOLDOWN_LONG_MS : COOLDOWN_SHORT_MS),
             });
             this.logger?.warn(
               `LLM_FAILOVER provider=${candidate.providerName} reason=${reason} attempt=${attempt} — moving to next candidate`,
@@ -168,11 +174,17 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
       }
     }
 
-    throw new LlmAllProvidersExhaustedError(ordered.map((c) => c.providerName), lastError);
+    throw new LlmAllProvidersExhaustedError(
+      ordered.map((c) => c.providerName),
+      lastError,
+    );
   }
 
   /** rate_limit/server_error/unknown = QUICK_RETRY (2 attempts); quota_exceeded/auth = 1 attempt (fast-fail). */
-  private maxAttemptsFor(candidate: LlmProviderAdapter, lastError: unknown): number {
+  private maxAttemptsFor(
+    candidate: LlmProviderAdapter,
+    lastError: unknown,
+  ): number {
     if (!lastError) return 2; // reason unknown (first attempt) → allow max quick-retry
     const { reason } = candidate.normalizeError(lastError);
     return reason === 'quota_exceeded' || reason === 'auth' ? 1 : 2;
@@ -182,7 +194,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
 
 **Why this is "optimal" for lowest latency, not just speculation**:
 
-1. **No network round-trip to a known-dead provider** — the `circuit` map is in-memory, lives for the process lifetime (NestJS singleton). After the first fast-fail of a provider (out of credits/wrong key), all *subsequent* chat turns within `COOLDOWN_LONG_MS` (10 minutes) skip it entirely at the `pickHealthy()` step — O(1) timestamp comparison, no HTTP call. This is the most important part for real-world latency during extended outages (e.g. out of credits all day) — not just optimizing a single call.
+1. **No network round-trip to a known-dead provider** — the `circuit` map is in-memory, lives for the process lifetime (NestJS singleton). After the first fast-fail of a provider (out of credits/wrong key), all _subsequent_ chat turns within `COOLDOWN_LONG_MS` (10 minutes) skip it entirely at the `pickHealthy()` step — O(1) timestamp comparison, no HTTP call. This is the most important part for real-world latency during extended outages (e.g. out of credits all day) — not just optimizing a single call.
 2. **Quick-retry has a hard time cap** (fixed 150ms × max 1 retry) instead of exponential backoff (old: could reach seconds/tens of seconds) — catches transient errors without accumulating high latency.
 3. **Fast-fail skips quick-retry entirely** for errors known to not self-resolve (quota/auth) — matching the requirement "out of credits, no retry needed, fallback early".
 4. **Greedy in configured priority order** (no round-robin/random) — matching the intent "pick the first healthy one from the secondary set", and easier to predict/debug than complex load-balancing algorithms this feature does not need.
@@ -255,18 +267,18 @@ export function createFailoverLlmProviderAdapter(
 
 ### 5. Config (new env vars)
 
-| Var | App | Notes |
-|-----|-----|-------|
-| `LLM_PROVIDER_FAILOVER_ORDER` | both | CSV, e.g. `openai,openrouter,minimax`. Empty/absent → old behavior (`LLM_PROVIDER` single, no failover). |
-| `OPENROUTER_API_KEY` | both | |
-| `OPENROUTER_MODEL` | both | default TBD — see Open Questions |
-| `OPENROUTER_BASE_URL` | both | default `https://openrouter.ai/api/v1` |
-| `MINIMAX_API_KEY` | both | |
-| `MINIMAX_MODEL` | both | default TBD |
-| `MINIMAX_BASE_URL` | both | default TBD — verify actual MiniMax OpenAI-compatible endpoint |
-| `LLM_FAILOVER_COOLDOWN_LONG_MS` | both | default 600_000 (10 minutes) — cooldown after fast-fail errors (quota/auth) |
-| `LLM_FAILOVER_COOLDOWN_SHORT_MS` | both | default 5_000 — cooldown after transient errors (rate_limit/server_error/unknown) |
-| `LLM_FAILOVER_QUICK_RETRY_DELAY_MS` | both | default 150 — fixed delay between 2 retries on the same provider before failover |
+| Var                                 | App  | Notes                                                                                                    |
+| ----------------------------------- | ---- | -------------------------------------------------------------------------------------------------------- |
+| `LLM_PROVIDER_FAILOVER_ORDER`       | both | CSV, e.g. `openai,openrouter,minimax`. Empty/absent → old behavior (`LLM_PROVIDER` single, no failover). |
+| `OPENROUTER_API_KEY`                | both |                                                                                                          |
+| `OPENROUTER_MODEL`                  | both | default TBD — see Open Questions                                                                         |
+| `OPENROUTER_BASE_URL`               | both | default `https://openrouter.ai/api/v1`                                                                   |
+| `MINIMAX_API_KEY`                   | both |                                                                                                          |
+| `MINIMAX_MODEL`                     | both | default TBD                                                                                              |
+| `MINIMAX_BASE_URL`                  | both | default TBD — verify actual MiniMax OpenAI-compatible endpoint                                           |
+| `LLM_FAILOVER_COOLDOWN_LONG_MS`     | both | default 600_000 (10 minutes) — cooldown after fast-fail errors (quota/auth)                              |
+| `LLM_FAILOVER_COOLDOWN_SHORT_MS`    | both | default 5_000 — cooldown after transient errors (rate_limit/server_error/unknown)                        |
+| `LLM_FAILOVER_QUICK_RETRY_DELAY_MS` | both | default 150 — fixed delay between 2 retries on the same provider before failover                         |
 
 `LlmExecutionConfigService` (messenger-bot) adds corresponding getters following the existing pattern (`getApiKey()`, `getModel()`, `getBaseUrl()` currently) — no hardcoded default numbers/tokens, per `project-conventions.md`.
 
@@ -289,21 +301,21 @@ When failover occurs, log `LLM_FAILOVER provider=<X> failed, trying next` (alrea
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `packages/llm-agent/src/provider/types.ts` | Add `'quota_exceeded'` to `LlmProviderError['reason']` |
-| `packages/llm-agent/src/provider/openai/openai-adapter.ts` | `normalizeError()`/`isServerError()` detect status 402 + out-of-credits marker text → `reason: 'quota_exceeded'` |
-| `packages/llm-agent/src/provider/openrouter/openrouter-adapter.ts` | **New** — `OpenRouterAdapter extends OpenAiAdapter` |
-| `packages/llm-agent/src/provider/minimax/minimax-adapter.ts` | **New** — `MiniMaxAdapter extends OpenAiAdapter` |
-| `packages/llm-agent/src/provider/failover/failover-adapter.ts` | **New** — `FailoverLlmProviderAdapter` |
-| `packages/llm-agent/src/provider/failover/failover.errors.ts` | **New** — `LlmAllProvidersExhaustedError` |
-| `packages/llm-agent/src/provider/factory.ts` | Add `openrouter`/`minimax` cases, add `createFailoverLlmProviderAdapter()` |
-| `packages/llm-agent/src/index.ts` | Export new adapter/factory/error |
-| `apps/messenger-bot/src/modules/llm-execution/application/services/llm-execution-config.service.ts` | Add OpenRouter/MiniMax getters + `getFailoverOrder()` |
-| `apps/messenger-bot/src/modules/llm-execution/llm-execution.module.ts` | Use `createFailoverLlmProviderAdapter` |
-| `apps/discord-bot/src/modules/discord-chat/discord-chat.module.ts` | **Bug fix** — remove hardcoded `OpenAiAdapter`, use `createFailoverLlmProviderAdapter` |
-| `apps/messenger-bot/.env.example` (if exists) | Add new variables |
-| `apps/discord-bot/.env.example` (if exists) | Add new variables |
-| `docs/adr/0006-llm-provider-adapter.md` | Mark Phase 4 (Minimax adapter + multi-provider routing) → done, link to this spec |
+| File                                                                                                | Change                                                                                                           |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `packages/llm-agent/src/provider/types.ts`                                                          | Add `'quota_exceeded'` to `LlmProviderError['reason']`                                                           |
+| `packages/llm-agent/src/provider/openai/openai-adapter.ts`                                          | `normalizeError()`/`isServerError()` detect status 402 + out-of-credits marker text → `reason: 'quota_exceeded'` |
+| `packages/llm-agent/src/provider/openrouter/openrouter-adapter.ts`                                  | **New** — `OpenRouterAdapter extends OpenAiAdapter`                                                              |
+| `packages/llm-agent/src/provider/minimax/minimax-adapter.ts`                                        | **New** — `MiniMaxAdapter extends OpenAiAdapter`                                                                 |
+| `packages/llm-agent/src/provider/failover/failover-adapter.ts`                                      | **New** — `FailoverLlmProviderAdapter`                                                                           |
+| `packages/llm-agent/src/provider/failover/failover.errors.ts`                                       | **New** — `LlmAllProvidersExhaustedError`                                                                        |
+| `packages/llm-agent/src/provider/factory.ts`                                                        | Add `openrouter`/`minimax` cases, add `createFailoverLlmProviderAdapter()`                                       |
+| `packages/llm-agent/src/index.ts`                                                                   | Export new adapter/factory/error                                                                                 |
+| `apps/messenger-bot/src/modules/llm-execution/application/services/llm-execution-config.service.ts` | Add OpenRouter/MiniMax getters + `getFailoverOrder()`                                                            |
+| `apps/messenger-bot/src/modules/llm-execution/llm-execution.module.ts`                              | Use `createFailoverLlmProviderAdapter`                                                                           |
+| `apps/discord-bot/src/modules/discord-chat/discord-chat.module.ts`                                  | **Bug fix** — remove hardcoded `OpenAiAdapter`, use `createFailoverLlmProviderAdapter`                           |
+| `apps/messenger-bot/.env.example` (if exists)                                                       | Add new variables                                                                                                |
+| `apps/discord-bot/.env.example` (if exists)                                                         | Add new variables                                                                                                |
+| `docs/adr/0006-llm-provider-adapter.md`                                                             | Mark Phase 4 (Minimax adapter + multi-provider routing) → done, link to this spec                                |
 
 Detailed task/commit breakdown: see [tasks.md](./tasks.md).

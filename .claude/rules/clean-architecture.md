@@ -73,12 +73,12 @@ Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (re
 presentation → application → domain ← infrastructure
 ```
 
-| Layer | Directory | Allowed | Not allowed |
-|-------|-----------|---------|-------------|
-| **Domain** | `domain/` | Types, pure entities, repository **interfaces** | Import NestJS, TypeORM, HTTP, LLM provider, services from other modules |
-| **Application** | `application/` | Use cases / services, ports (interface + Symbol token) | Controller, TypeORM entity, direct `fetch` |
-| **Infrastructure** | `infrastructure/` | Repository impl, API client, Meta profile | Import `presentation/` |
-| **Presentation** | `presentation/` | Controller, (DTO if any) | Business logic — only delegate down to `application/` |
+| Layer              | Directory         | Allowed                                                | Not allowed                                                             |
+| ------------------ | ----------------- | ------------------------------------------------------ | ----------------------------------------------------------------------- |
+| **Domain**         | `domain/`         | Types, pure entities, repository **interfaces**        | Import NestJS, TypeORM, HTTP, LLM provider, services from other modules |
+| **Application**    | `application/`    | Use cases / services, ports (interface + Symbol token) | Controller, TypeORM entity, direct `fetch`                              |
+| **Infrastructure** | `infrastructure/` | Repository impl, API client, Meta profile              | Import `presentation/`                                                  |
+| **Presentation**   | `presentation/`   | Controller, (DTO if any)                               | Business logic — only delegate down to `application/`                   |
 
 **Shared / cross-cutting** (not feature modules, inside `apps/messenger-bot/src/`):
 
@@ -109,25 +109,25 @@ apps/messenger-bot/src/modules/<feature>/
 
 ## Existing modules (`apps/messenger-bot`)
 
-| Module | Nest module | Notes |
-|--------|-------------|-------|
-| messenger | `MessengerModule` + `MessengerOutboundModule` | Webhook, chat queue/agent (adapter uses `@wispace/llm-agent`), shared state H7; outbound = Send API |
-| chat-rate-limit | `ChatRateLimitModule` | FREE_FORM quota, idempotency, hard cap H3 |
-| student-report | `StudentReportModule` | No controller |
-| study-reminder | `StudyReminderModule` | Cron in worker; HTTP ops in `SchedulerModule` |
-| scheduler | `SchedulerModule` | Report cron + ops HTTP `/messenger/*` |
+| Module          | Nest module                                   | Notes                                                                                               |
+| --------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| messenger       | `MessengerModule` + `MessengerOutboundModule` | Webhook, chat queue/agent (adapter uses `@wispace/llm-agent`), shared state H7; outbound = Send API |
+| chat-rate-limit | `ChatRateLimitModule`                         | FREE_FORM quota, idempotency, hard cap H3                                                           |
+| student-report  | `StudentReportModule`                         | No controller                                                                                       |
+| study-reminder  | `StudyReminderModule`                         | Cron in worker; HTTP ops in `SchedulerModule`                                                       |
+| scheduler       | `SchedulerModule`                             | Report cron + ops HTTP `/messenger/*`                                                               |
 
 ## Ports & DI tokens (cross-module, in `apps/messenger-bot`)
 
-| Token | Interface | Implementor | Consumer |
-|-------|-----------|-------------|----------|
-| `MESSENGER_REPOSITORY` | `MessengerRepositoryPort` | `MessengerRepository` | `MessengerService`, `ReportCronService` |
-| `MESSENGER_MAPPING_READER` | `MessengerMappingReaderPort` | `MessengerRepository` | `StudyReminderSyncService`, `UserDisplayNameService` |
-| `MESSAGE_SENDER` | `MessageSenderPort` | `MessengerOutboundService` | `StudyReminderDispatchService` |
-| `CHAT_RATE_LIMIT_REPOSITORY` | `ChatRateLimitRepositoryPort` | `ChatRateLimitRepository` | `ChatRateLimitService` |
-| `CHAT_QUEUE_STORE` | `ChatQueueStorePort` | `ChatQueueStoreResolver` → Redis | `MessengerChatProcessorService` (distributed) |
-| `CHAT_HISTORY_STORE` | `ChatHistoryStorePort` | `ChatHistoryStoreResolver` | `MessengerChatHistoryService` |
-| `STUDY_REMINDER_JOB_REPOSITORY` | `StudyReminderJobRepositoryPort` | `StudyReminderJobRepository` | (backup inject via port) |
+| Token                           | Interface                        | Implementor                      | Consumer                                             |
+| ------------------------------- | -------------------------------- | -------------------------------- | ---------------------------------------------------- |
+| `MESSENGER_REPOSITORY`          | `MessengerRepositoryPort`        | `MessengerRepository`            | `MessengerService`, `ReportCronService`              |
+| `MESSENGER_MAPPING_READER`      | `MessengerMappingReaderPort`     | `MessengerRepository`            | `StudyReminderSyncService`, `UserDisplayNameService` |
+| `MESSAGE_SENDER`                | `MessageSenderPort`              | `MessengerOutboundService`       | `StudyReminderDispatchService`                       |
+| `CHAT_RATE_LIMIT_REPOSITORY`    | `ChatRateLimitRepositoryPort`    | `ChatRateLimitRepository`        | `ChatRateLimitService`                               |
+| `CHAT_QUEUE_STORE`              | `ChatQueueStorePort`             | `ChatQueueStoreResolver` → Redis | `MessengerChatProcessorService` (distributed)        |
+| `CHAT_HISTORY_STORE`            | `ChatHistoryStorePort`           | `ChatHistoryStoreResolver`       | `MessengerChatHistoryService`                        |
+| `STUDY_REMINDER_JOB_REPOSITORY` | `StudyReminderJobRepositoryPort` | `StudyReminderJobRepository`     | (backup inject via port)                             |
 
 **Rule:** Application layer injects ports using `@Inject(TOKEN)` + `import type` for interfaces (isolatedModules). Outside apps (in `@wispace/llm-agent` package), uses plain port constructors (no NestJS DI).
 
@@ -148,16 +148,16 @@ apps/messenger-bot/src/modules/<feature>/
 
 ## Anti-patterns
 
-| Wrong | Correct |
-|-------|---------|
-| `@Entity()` in `domain/` | ORM entity in `infrastructure/database/entities/` |
-| `StudyReminderModule` imports `MessengerModule` | Import `MessengerOutboundModule` + port |
-| `MessengerService` in dispatch | `MESSAGE_SENDER` + `StudyReminderService` |
-| Reserve quota in webhook | `ChatRateLimitService` in `MessengerChatProcessorService` flush |
-| New service in `apps/messenger-bot/src/messenger/*.ts` (flat) | Correct layer in `apps/messenger-bot/src/modules/messenger/...` |
-| Import NestJS/TypeORM in `packages/llm-agent` | Package only uses port interface, app implements with Nest |
-| Wispace API business logic in `packages/llm-agent` | Tool handler stays in app, implements `ToolExecutorPort` |
-| Hardcode old migration path `dist/database/` | `apps/messenger-bot/dist/infrastructure/database/data-source.js` |
+| Wrong                                                         | Correct                                                          |
+| ------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `@Entity()` in `domain/`                                      | ORM entity in `infrastructure/database/entities/`                |
+| `StudyReminderModule` imports `MessengerModule`               | Import `MessengerOutboundModule` + port                          |
+| `MessengerService` in dispatch                                | `MESSAGE_SENDER` + `StudyReminderService`                        |
+| Reserve quota in webhook                                      | `ChatRateLimitService` in `MessengerChatProcessorService` flush  |
+| New service in `apps/messenger-bot/src/messenger/*.ts` (flat) | Correct layer in `apps/messenger-bot/src/modules/messenger/...`  |
+| Import NestJS/TypeORM in `packages/llm-agent`                 | Package only uses port interface, app implements with Nest       |
+| Wispace API business logic in `packages/llm-agent`            | Tool handler stays in app, implements `ToolExecutorPort`         |
+| Hardcode old migration path `dist/database/`                  | `apps/messenger-bot/dist/infrastructure/database/data-source.js` |
 
 ## Verify
 

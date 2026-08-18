@@ -23,6 +23,7 @@ attempt 3 → throw LlmRetryExhaustedError
 ```
 
 **Jitter formula:** `Math.min(baseDelay * 2^attempt * (0.5 + Math.random() * 0.5), maxDelayMs)`
+
 - attempt 0: 50–100ms
 - attempt 1: 100–200ms
 - attempt 2: 200–400ms
@@ -41,7 +42,10 @@ retryBaseDelayMs?: number; // default 100
 
 ```ts
 export class LlmRetryExhaustedError extends Error {
-  constructor(public readonly attempts: number, cause: unknown) {
+  constructor(
+    public readonly attempts: number,
+    cause: unknown,
+  ) {
     super(`LLM call failed after ${attempts} attempts`);
     this.cause = cause;
   }
@@ -56,9 +60,9 @@ Each retry: `logger.warn(LLM_RETRY attempt=${n}/${max} round=${round} reason=...
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `packages/llm-agent/src/types.ts` | Add `maxLlmRetries`, `retryBaseDelayMs` |
-| `packages/llm-agent/src/agent.service.ts` | Add `withRetry()`, `LlmRetryExhaustedError`, wrap LLM call |
-| `packages/llm-agent/src/index.ts` | Export `LlmRetryExhaustedError` |
+| File                                           | Change                                                                 |
+| ---------------------------------------------- | ---------------------------------------------------------------------- |
+| `packages/llm-agent/src/types.ts`              | Add `maxLlmRetries`, `retryBaseDelayMs`                                |
+| `packages/llm-agent/src/agent.service.ts`      | Add `withRetry()`, `LlmRetryExhaustedError`, wrap LLM call             |
+| `packages/llm-agent/src/index.ts`              | Export `LlmRetryExhaustedError`                                        |
 | `packages/llm-agent/src/agent.service.spec.ts` | Tests: retry on retryable, no retry on non-retryable, exhausted throws |

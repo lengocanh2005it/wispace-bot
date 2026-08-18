@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 # Verify (Turborepo)
 
-Run **after code changes** and **after updating agent docs/skills** (see `AGENTS.md` → *Docs & skills when changing code*).
+Run **after code changes** and **after updating agent docs/skills** (see `AGENTS.md` → _Docs & skills when changing code_).
 
 ## Prerequisites
 

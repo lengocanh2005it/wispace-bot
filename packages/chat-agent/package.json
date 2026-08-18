@@ -8,9 +8,9 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "format": "prettier --cache --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\"",
-    "lint": "eslint \"src/**/*.ts\" --fix",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "lint": "oxlint --fix",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test": "jest --maxWorkers=50%"
   },
@@ -31,7 +31,6 @@
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "jest": "^30.0.0",
-    "prettier": "^3.4.2",
     "reflect-metadata": "^0.2.2",
     "ts-jest": "^29.2.5"
   },

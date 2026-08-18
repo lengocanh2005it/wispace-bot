@@ -2,11 +2,11 @@
 
 Turborepo monorepo connecting **WISPACE** (IELTS Writing learning platform) with **Facebook Messenger**, **Discord**, and **Zalo**: students link accounts, receive AI progress reports and upcoming study session reminders.
 
-| App | Status |
-|-----|--------|
-| `apps/messenger-bot` | Fully functional — chat, reports, reminders, rate limit |
-| `apps/discord-bot` | Fully functional — chat, quota, pending cap + typing indicator, queued-failure fallback, OAuth account linking, 7/7 real tool handlers, report cron, study reminders, and CI/CD |
-| `apps/zalo-bot` | Fully functional — chat, quota, pending cap, queued-failure fallback, account linking, 7/7 real tool handlers, report cron, study reminders, CI/CD, and shared health/ops hardening |
+| App                  | Status                                                                                                                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/messenger-bot` | Fully functional — chat, reports, reminders, rate limit                                                                                                                             |
+| `apps/discord-bot`   | Fully functional — chat, quota, pending cap + typing indicator, queued-failure fallback, OAuth account linking, 7/7 real tool handlers, report cron, study reminders, and CI/CD     |
+| `apps/zalo-bot`      | Fully functional — chat, quota, pending cap, queued-failure fallback, account linking, 7/7 real tool handlers, report cron, study reminders, CI/CD, and shared health/ops hardening |
 
 Shared packages (`packages/`): `llm-agent`, `chat-metering`, `chat-agent`, `wispace-client`, `chat-history`, `student-report`, `chat-queue-core`, `chat-pipeline`, `study-reminder-shared`, `scheduler-core`, `ops-health`, `bot-metrics`, `cleanup-cron`, `reschedule-confirm`, `bot-common`, `database`, `doppler-sync`, `date-utils`.
 
@@ -138,25 +138,25 @@ flowchart TB
 
 ### Main Flows
 
-| Flow | Trigger | Result |
-|------|---------|--------|
-| Registration / webhook | Meta sends POST `/webhook` | Save mapping, reply to message |
-| Exam-scheduled reports | Cron 08:00 or postback | LLM report → Messenger |
-| Schedule change | WISPACE `POST /messenger/study-calendar/sync` | Sync jobs by `userId` |
-| Study reminders (automatic) | Cron sync 30min + adaptive dispatch (S2) | Job queue → LLM reminder → Messenger |
-| Free-form chat (text) | Webhook text → debounce queue | Reserve quota → LLM agent → Messenger |
-| Ops / test | `POST /messenger/*` | Full sync, manual send |
+| Flow                        | Trigger                                       | Result                                |
+| --------------------------- | --------------------------------------------- | ------------------------------------- |
+| Registration / webhook      | Meta sends POST `/webhook`                    | Save mapping, reply to message        |
+| Exam-scheduled reports      | Cron 08:00 or postback                        | LLM report → Messenger                |
+| Schedule change             | WISPACE `POST /messenger/study-calendar/sync` | Sync jobs by `userId`                 |
+| Study reminders (automatic) | Cron sync 30min + adaptive dispatch (S2)      | Job queue → LLM reminder → Messenger  |
+| Free-form chat (text)       | Webhook text → debounce queue                 | Reserve quota → LLM agent → Messenger |
+| Ops / test                  | `POST /messenger/*`                           | Full sync, manual send                |
 
 ### Responsibility Boundaries
 
-| Component | Belongs to this project | Belongs to WISPACE (external) |
-|-----------|---------------------|-------------------------------|
-| Messenger message sending, bot menu | ✓ | |
-| Mapping + logs + jobs tables | ✓ (migration) | |
-| `UserCalendars`, user profiles | Read only | ✓ owns the data |
-| Sync on schedule change | `POST /messenger/study-calendar/sync` | ✓ WISPACE calls after POST/DELETE schedule |
-| `UserCalendar`, goals, scores API | Call (x-psid) | ✓ hosts API |
-| Calling sync after schedule change | Receives `POST study-calendar/sync` | ✓ calls after POST/DELETE schedule |
+| Component                           | Belongs to this project               | Belongs to WISPACE (external)              |
+| ----------------------------------- | ------------------------------------- | ------------------------------------------ |
+| Messenger message sending, bot menu | ✓                                     |                                            |
+| Mapping + logs + jobs tables        | ✓ (migration)                         |                                            |
+| `UserCalendars`, user profiles      | Read only                             | ✓ owns the data                            |
+| Sync on schedule change             | `POST /messenger/study-calendar/sync` | ✓ WISPACE calls after POST/DELETE schedule |
+| `UserCalendar`, goals, scores API   | Call (x-psid)                         | ✓ hosts API                                |
+| Calling sync after schedule change  | Receives `POST study-calendar/sync`   | ✓ calls after POST/DELETE schedule         |
 
 ---
 
@@ -213,22 +213,22 @@ wispace-bot/                          # Turborepo root
 
 ### NestJS Modules
 
-| Module | Role |
-|--------|------|
-| `DatabaseModule` | TypeORM + PostgreSQL, auto migration on start |
-| `RedisModule` | Redis client lifecycle + health check |
-| `MessengerOutboundModule` | Send API, `MessengerRepository`, ports `MESSAGE_SENDER`, `MESSENGER_MAPPING_READER` |
-| `MessengerModule` | Webhook orchestration, profile menu, message log, dead letter |
-| `ChatPipelineModule` | Chat queue debounce + agent LLM + tools + store resolvers (split from MessengerModule) |
-| `UserLinkingModule` | Link flow + mapping + token verify (split from MessengerModule) |
-| `ChatRateLimitModule` | FREE_FORM quota: `checkQuota`, `reserve`, `refund`, burst counter, idempotency |
-| `LlmExecutionModule` | LLM provider adapter (OpenAI/OpenRouter/MiniMax failover) + concurrency gate |
-| `LlmUsageModule` | LLM token usage tracking (inline persist) + cleanup cron |
-| `LlmSafetyModule` | LLM hallucination/safety event tracking + cleanup |
-| `StudentReportModule` | WISPACE goals/scores → `StudentReportService` (LLM report) |
-| `StudyReminderModule` | Schedule sync, job dispatch, cleanup, LLM study reminders |
-| `SchedulerModule` | `ReportCronService`, operational HTTP endpoints |
-| `MetricsModule` | Prometheus `/metrics` endpoint |
+| Module                    | Role                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------- |
+| `DatabaseModule`          | TypeORM + PostgreSQL, auto migration on start                                          |
+| `RedisModule`             | Redis client lifecycle + health check                                                  |
+| `MessengerOutboundModule` | Send API, `MessengerRepository`, ports `MESSAGE_SENDER`, `MESSENGER_MAPPING_READER`    |
+| `MessengerModule`         | Webhook orchestration, profile menu, message log, dead letter                          |
+| `ChatPipelineModule`      | Chat queue debounce + agent LLM + tools + store resolvers (split from MessengerModule) |
+| `UserLinkingModule`       | Link flow + mapping + token verify (split from MessengerModule)                        |
+| `ChatRateLimitModule`     | FREE_FORM quota: `checkQuota`, `reserve`, `refund`, burst counter, idempotency         |
+| `LlmExecutionModule`      | LLM provider adapter (OpenAI/OpenRouter/MiniMax failover) + concurrency gate           |
+| `LlmUsageModule`          | LLM token usage tracking (inline persist) + cleanup cron                               |
+| `LlmSafetyModule`         | LLM hallucination/safety event tracking + cleanup                                      |
+| `StudentReportModule`     | WISPACE goals/scores → `StudentReportService` (LLM report)                             |
+| `StudyReminderModule`     | Schedule sync, job dispatch, cleanup, LLM study reminders                              |
+| `SchedulerModule`         | `ReportCronService`, operational HTTP endpoints                                        |
+| `MetricsModule`           | Prometheus `/metrics` endpoint                                                         |
 
 `AppModule` imports `StudyReminderModule` directly. `StudyReminderModule` imports `MessengerOutboundModule` (no `forwardRef` with `MessengerModule`). Reminder dispatch sends messages via port `MESSAGE_SENDER`, not by calling `MessengerService` directly.
 
@@ -238,32 +238,32 @@ wispace-bot/                          # Turborepo root
 
 ### Tables Created (migration)
 
-| Table | Purpose |
-|-------|---------|
-| `user_platform_mappings` | `user_id`, `external_user_id`, `platform` (messenger/discord/zalo), `cadence`, `topic`, `status` |
-| `message_logs` | Audit of sent / failed messages |
-| `chat_daily_usage` | FREE_FORM chat quota counter per `(external_user_id, usage_date)` (from `@wispace/chat-metering`) |
-| `chat_idempotency` | Idempotency `message.mid` when reserving quota (from `@wispace/chat-metering`) |
-| `study_reminder_jobs` | Reminder queue (`pending` → `sent` / …) |
-| `scheduled_report_claims` | Multi-pod 08:00 report cron claim + advisory lock |
-| `report_send_jobs` | Outbox retry for report cron 5xx (R5) |
-| `webhook_dead_letters` | Dead-letter webhook entries + auto-retry |
-| `chat_quota_events` | Dual-write quota audit events (C2 hybrid) |
-| `llm_usage_events` | LLM token usage tracking (from `@wispace/chat-metering`) |
-| `llm_safety_events` | LLM hallucination/safety event tracking (from `@wispace/chat-metering`) |
-| `users` + view `"Users"` | Display name / exam date cache — Redis `cache:user:display:{userId}` when R5 enabled |
-| `discord_account_links` | Discord ↔ WISPACE mapping (`last_welcomed_at` dedupes welcome DMs, #137) |
-| `discord_link_verify_records` | Durable verify-intent outbox — reconciled by the `discord-link-reconcile` cron (#137) |
+| Table                         | Purpose                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------- |
+| `user_platform_mappings`      | `user_id`, `external_user_id`, `platform` (messenger/discord/zalo), `cadence`, `topic`, `status`  |
+| `message_logs`                | Audit of sent / failed messages                                                                   |
+| `chat_daily_usage`            | FREE_FORM chat quota counter per `(external_user_id, usage_date)` (from `@wispace/chat-metering`) |
+| `chat_idempotency`            | Idempotency `message.mid` when reserving quota (from `@wispace/chat-metering`)                    |
+| `study_reminder_jobs`         | Reminder queue (`pending` → `sent` / …)                                                           |
+| `scheduled_report_claims`     | Multi-pod 08:00 report cron claim + advisory lock                                                 |
+| `report_send_jobs`            | Outbox retry for report cron 5xx (R5)                                                             |
+| `webhook_dead_letters`        | Dead-letter webhook entries + auto-retry                                                          |
+| `chat_quota_events`           | Dual-write quota audit events (C2 hybrid)                                                         |
+| `llm_usage_events`            | LLM token usage tracking (from `@wispace/chat-metering`)                                          |
+| `llm_safety_events`           | LLM hallucination/safety event tracking (from `@wispace/chat-metering`)                           |
+| `users` + view `"Users"`      | Display name / exam date cache — Redis `cache:user:display:{userId}` when R5 enabled              |
+| `discord_account_links`       | Discord ↔ WISPACE mapping (`last_welcomed_at` dedupes welcome DMs, #137)                          |
+| `discord_link_verify_records` | Durable verify-intent outbox — reconciled by the `discord-link-reconcile` cron (#137)             |
 
 Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 
 ### WISPACE (HTTP API — no local tables except `users` cache)
 
-| Source | Used for |
-|--------|----------|
-| `UserCalendar` API (`x-psid`) | Upcoming schedules (API-only, I3 ✓) |
-| `User/goals`, `TaskScoreAverage` API | Reports, exam dates |
-| `roadmap/precreate-exercise` API | Create the next roadmap exercise (`x-psid`, `x-discordid`, or `x-zaloid`) |
+| Source                               | Used for                                                                  |
+| ------------------------------------ | ------------------------------------------------------------------------- |
+| `UserCalendar` API (`x-psid`)        | Upcoming schedules (API-only, I3 ✓)                                       |
+| `User/goals`, `TaskScoreAverage` API | Reports, exam dates                                                       |
+| `roadmap/precreate-exercise` API     | Create the next roadmap exercise (`x-psid`, `x-discordid`, or `x-zaloid`) |
 
 ---
 
@@ -271,11 +271,11 @@ Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 
 ### Messenger (public / Meta)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/v1/webhook` | Meta webhook verification |
-| POST | `/v1/webhook` | Receive messaging events (guard `X-Hub-Signature-256` when `MESSENGER_WEBHOOK_SIGNATURE_VERIFY` enabled) |
-| POST | `/v1/messenger/profile/setup` | Configure get started + persistent menu (requires `INTERNAL_API_KEY`) |
+| Method | Path                          | Description                                                                                              |
+| ------ | ----------------------------- | -------------------------------------------------------------------------------------------------------- |
+| GET    | `/v1/webhook`                 | Meta webhook verification                                                                                |
+| POST   | `/v1/webhook`                 | Receive messaging events (guard `X-Hub-Signature-256` when `MESSENGER_WEBHOOK_SIGNATURE_VERIFY` enabled) |
+| POST   | `/v1/messenger/profile/setup` | Configure get started + persistent menu (requires `INTERNAL_API_KEY`)                                    |
 
 All bot HTTP APIs are versioned under `/v1` (global prefix). Infra endpoints (`/health`, `/health/ready`, `/health/detail`, `/metrics`) are excluded and stay unversioned. `/health` (liveness) and `/health/ready` (readiness, status-only) are public; `/health/detail` requires `X-Internal-Api-Key`.
 
@@ -295,23 +295,23 @@ Both bots use a **write-ahead inbox** (`webhook_inbound_events`, shared table in
 
 All endpoints below require header **`X-Internal-Api-Key`** (or `Authorization: Bearer …`) matching `INTERNAL_API_KEY` in `.env`.
 
-| Method | Path | Body | Description |
-|--------|------|------|-------------|
-| POST | `/v1/messenger/study-calendar/sync` | `{ "userId": number }` | **Called by WISPACE** after POST/DELETE `UserCalendar` |
-| POST | `/v1/messenger/send-reports` | `{ "psid"?: string, "allowDuplicate"?: boolean }` | Ops send reports: bypass exam window; defaults to skip already sent today |
-| POST | `/v1/messenger/send-reports/retry-dispatch` | — | Manually dispatch outbox R5 |
-| POST | `/v1/messenger/sync-study-reminders` | — | Sync all users (ops / fallback cron) |
-| POST | `/v1/messenger/send-study-reminders` | — | Sync + dispatch due jobs |
-| POST | `/v1/messenger/study-reminder/evening-rollover` | — | Trigger evening rollover job state transitions |
-| POST | `/v1/messenger/profile/setup` | — | Configure bot menu (ops) |
-| POST | `/v1/messenger/mapping/relink` | `{ "psid": string, "userId": number, "allowRelink"?: boolean }` | Ops relink PSID to userId |
-| POST | `/v1/messenger/ops/doppler-sync` | — | Legacy endpoint; disabled in production containers without Docker socket |
-| GET | `/v1/messenger/ops/llm-usage/summary` | Query: `psid` **or** `userId`; `from`/`to` (YYYY-MM-DD, default today) | Total tokens + estimated USD per feature for one student |
-| GET | `/v1/messenger/ops/llm-usage/fleet` | Query: `date` (YYYY-MM-DD, default today) | Total tokens + estimated USD fleet-wide by feature |
-| GET | `/health` | — | **Public liveness** — generic `{ "status": "ok" }` only, never leaks dependency details |
-| GET | `/health/ready` | — | **Public readiness** — 200 only when DB and (if configured) Redis are reachable; 503 `{ "status": "error" }` status-only (deploy gate uses this path) |
-| GET | `/health/detail` | — | **Internal** (`X-Internal-Api-Key`) — full DB/Redis connection detail for ops |
-| GET | `/metrics` | — | Prometheus metrics scrape |
+| Method | Path                                            | Body                                                                   | Description                                                                                                                                           |
+| ------ | ----------------------------------------------- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/v1/messenger/study-calendar/sync`             | `{ "userId": number }`                                                 | **Called by WISPACE** after POST/DELETE `UserCalendar`                                                                                                |
+| POST   | `/v1/messenger/send-reports`                    | `{ "psid"?: string, "allowDuplicate"?: boolean }`                      | Ops send reports: bypass exam window; defaults to skip already sent today                                                                             |
+| POST   | `/v1/messenger/send-reports/retry-dispatch`     | —                                                                      | Manually dispatch outbox R5                                                                                                                           |
+| POST   | `/v1/messenger/sync-study-reminders`            | —                                                                      | Sync all users (ops / fallback cron)                                                                                                                  |
+| POST   | `/v1/messenger/send-study-reminders`            | —                                                                      | Sync + dispatch due jobs                                                                                                                              |
+| POST   | `/v1/messenger/study-reminder/evening-rollover` | —                                                                      | Trigger evening rollover job state transitions                                                                                                        |
+| POST   | `/v1/messenger/profile/setup`                   | —                                                                      | Configure bot menu (ops)                                                                                                                              |
+| POST   | `/v1/messenger/mapping/relink`                  | `{ "psid": string, "userId": number, "allowRelink"?: boolean }`        | Ops relink PSID to userId                                                                                                                             |
+| POST   | `/v1/messenger/ops/doppler-sync`                | —                                                                      | Legacy endpoint; disabled in production containers without Docker socket                                                                              |
+| GET    | `/v1/messenger/ops/llm-usage/summary`           | Query: `psid` **or** `userId`; `from`/`to` (YYYY-MM-DD, default today) | Total tokens + estimated USD per feature for one student                                                                                              |
+| GET    | `/v1/messenger/ops/llm-usage/fleet`             | Query: `date` (YYYY-MM-DD, default today)                              | Total tokens + estimated USD fleet-wide by feature                                                                                                    |
+| GET    | `/health`                                       | —                                                                      | **Public liveness** — generic `{ "status": "ok" }` only, never leaks dependency details                                                               |
+| GET    | `/health/ready`                                 | —                                                                      | **Public readiness** — 200 only when DB and (if configured) Redis are reachable; 503 `{ "status": "error" }` status-only (deploy gate uses this path) |
+| GET    | `/health/detail`                                | —                                                                      | **Internal** (`X-Internal-Api-Key`) — full DB/Redis connection detail for ops                                                                         |
+| GET    | `/metrics`                                      | —                                                                      | Prometheus metrics scrape                                                                                                                             |
 
 Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP — no API key needed.
 
@@ -319,28 +319,28 @@ Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP �
 
 ## 6. Cron Jobs
 
-| Name | Schedule | Service |
-|------|----------|---------|
-| `exam-reminder-report` | `0 8 * * *` (08:00 ICT) | `ReportCronService` — daily student reports |
-| `weekly-cleanup-duplicate-mappings` | `0 3 * * 1` (Monday 03:00 ICT) | `ReportCronService` — deactivate duplicate ACTIVE mappings |
-| `report-send-retry` | `*/15 * * * *` | `ReportSendRetryDispatchService` — outbox R5 retry |
-| `report-claims-stale-reset` | `*/30 * * * *` | `ReportClaimStaleResetCronService` — per-platform lease recovery for `scheduled_report_claims` (`REPORT_CLAIM_STALE_RESET_MS`=2h) |
-| `ops-health-daily` | `0 0 9 * * *` (09:00 ICT) | `OpsHealthCronService` — ops health alert |
-| `study-reminder-sync` | `0 */30 * * * *` (every 30 min) | `StudyReminderWorkerService` — sync upcoming sessions |
-| `study-reminder-dispatch` | Adaptive 30s–3.5min (`STUDY_REMINDER_POLL_*`) | `StudyReminderWorkerService` — S2 adaptive dispatch |
-| `study-reminder-cleanup` | `0 0 3 * * *` (03:00) | `StudyReminderWorkerService` — purge old terminal jobs |
-| `study-reminder-evening-rollover` | Dynamic (config hour, ICT) | `StudyReminderWorkerService` — rollover job states |
-| `messenger-message-log-cleanup` | `0 0 3 * * 1` (Monday 03:00 ICT) | `MessengerMessageLogCleanupService` — purge old message_logs |
-| `messenger-chat-queue-flush` | `*/2 * * * * *` (every 2 sec) | `MessengerChatQueueWorkerService` — flush debounced queue (distributed mode) |
-| `webhook-inbound-retry` | `*/30 * * * * *` (every 30 sec) | `PlatformWebhookInboundRetryCronService` — replay `webhook_inbound_events` (bounded backoff, per-platform advisory lock) |
-| `webhook-inbound-cleanup` | `0 15 3 * * *` (03:15 ICT daily) | `PlatformWebhookInboundCleanupService` — purge terminal (`completed`/`abandoned`) raw-payload rows older than `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30; `WEBHOOK_INBOUND_CLEANUP_ENABLED=false` disables) |
-| `chat-quota-stuck-recovery` | `*/5 * * * *` | `ChatQuotaStuckRecoveryCronService` — H2: refund slots stuck `reserved` (`CHAT_IDEMPOTENCY_STUCK_RESERVED_MS`) |
-| `chat-quota-events-cleanup` | `0 30 3 1 * *` (1st of month 03:30 ICT) | `ChatQuotaEventCleanupCronService` — purge old chat_quota_events |
-| `chat-idempotency-cleanup` | `0 30 3 * * *` (03:30 ICT daily) | `ChatIdempotencyCleanupCronService` — H6: purge terminal `chat_idempotency` rows (`CHAT_IDEMPOTENCY_RETENTION_DAYS`) |
-| `llm-usage-cleanup` | `0 0 4 1 * *` (1st of month 04:00 ICT) | `LlmUsageCleanupCronService` — purge old llm_usage_events |
-| `llm-safety-cleanup` | `0 3 * * *` (daily 03:00 ICT) | `LlmSafetyCleanupService` — purge old llm_safety_events |
-| `cron-leader-heartbeat` | `*/1 * * * *` | `CronLeaderHeartbeatService` — refresh lease (`cron_leader_leases`) when `CRON_LEADER_ENABLED` |
-| `discord-link-reconcile` | `*/5 * * * *` | `DiscordLinkReconcileCronService` — re-commit missing Discord mappings from `discord_link_verify_records` (advisory lock `DISCORD_LINK_RECONCILE`; `DISCORD_LINK_RECONCILE_AGE_MS`/`DISCORD_LINK_RECONCILE_MAX_AGE_MS`) |
+| Name                                | Schedule                                      | Service                                                                                                                                                                                                                 |
+| ----------------------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `exam-reminder-report`              | `0 8 * * *` (08:00 ICT)                       | `ReportCronService` — daily student reports                                                                                                                                                                             |
+| `weekly-cleanup-duplicate-mappings` | `0 3 * * 1` (Monday 03:00 ICT)                | `ReportCronService` — deactivate duplicate ACTIVE mappings                                                                                                                                                              |
+| `report-send-retry`                 | `*/15 * * * *`                                | `ReportSendRetryDispatchService` — outbox R5 retry                                                                                                                                                                      |
+| `report-claims-stale-reset`         | `*/30 * * * *`                                | `ReportClaimStaleResetCronService` — per-platform lease recovery for `scheduled_report_claims` (`REPORT_CLAIM_STALE_RESET_MS`=2h)                                                                                       |
+| `ops-health-daily`                  | `0 0 9 * * *` (09:00 ICT)                     | `OpsHealthCronService` — ops health alert                                                                                                                                                                               |
+| `study-reminder-sync`               | `0 */30 * * * *` (every 30 min)               | `StudyReminderWorkerService` — sync upcoming sessions                                                                                                                                                                   |
+| `study-reminder-dispatch`           | Adaptive 30s–3.5min (`STUDY_REMINDER_POLL_*`) | `StudyReminderWorkerService` — S2 adaptive dispatch                                                                                                                                                                     |
+| `study-reminder-cleanup`            | `0 0 3 * * *` (03:00)                         | `StudyReminderWorkerService` — purge old terminal jobs                                                                                                                                                                  |
+| `study-reminder-evening-rollover`   | Dynamic (config hour, ICT)                    | `StudyReminderWorkerService` — rollover job states                                                                                                                                                                      |
+| `messenger-message-log-cleanup`     | `0 0 3 * * 1` (Monday 03:00 ICT)              | `MessengerMessageLogCleanupService` — purge old message_logs                                                                                                                                                            |
+| `messenger-chat-queue-flush`        | `*/2 * * * * *` (every 2 sec)                 | `MessengerChatQueueWorkerService` — flush debounced queue (distributed mode)                                                                                                                                            |
+| `webhook-inbound-retry`             | `*/30 * * * * *` (every 30 sec)               | `PlatformWebhookInboundRetryCronService` — replay `webhook_inbound_events` (bounded backoff, per-platform advisory lock)                                                                                                |
+| `webhook-inbound-cleanup`           | `0 15 3 * * *` (03:15 ICT daily)              | `PlatformWebhookInboundCleanupService` — purge terminal (`completed`/`abandoned`) raw-payload rows older than `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30; `WEBHOOK_INBOUND_CLEANUP_ENABLED=false` disables)           |
+| `chat-quota-stuck-recovery`         | `*/5 * * * *`                                 | `ChatQuotaStuckRecoveryCronService` — H2: refund slots stuck `reserved` (`CHAT_IDEMPOTENCY_STUCK_RESERVED_MS`)                                                                                                          |
+| `chat-quota-events-cleanup`         | `0 30 3 1 * *` (1st of month 03:30 ICT)       | `ChatQuotaEventCleanupCronService` — purge old chat_quota_events                                                                                                                                                        |
+| `chat-idempotency-cleanup`          | `0 30 3 * * *` (03:30 ICT daily)              | `ChatIdempotencyCleanupCronService` — H6: purge terminal `chat_idempotency` rows (`CHAT_IDEMPOTENCY_RETENTION_DAYS`)                                                                                                    |
+| `llm-usage-cleanup`                 | `0 0 4 1 * *` (1st of month 04:00 ICT)        | `LlmUsageCleanupCronService` — purge old llm_usage_events                                                                                                                                                               |
+| `llm-safety-cleanup`                | `0 3 * * *` (daily 03:00 ICT)                 | `LlmSafetyCleanupService` — purge old llm_safety_events                                                                                                                                                                 |
+| `cron-leader-heartbeat`             | `*/1 * * * *`                                 | `CronLeaderHeartbeatService` — refresh lease (`cron_leader_leases`) when `CRON_LEADER_ENABLED`                                                                                                                          |
+| `discord-link-reconcile`            | `*/5 * * * *`                                 | `DiscordLinkReconcileCronService` — re-commit missing Discord mappings from `discord_link_verify_records` (advisory lock `DISCORD_LINK_RECONCILE`; `DISCORD_LINK_RECONCILE_AGE_MS`/`DISCORD_LINK_RECONCILE_MAX_AGE_MS`) |
 
 Study reminder sync also runs **on server start** (`onModuleInit`).
 
@@ -350,11 +350,11 @@ Study reminder sync also runs **on server start** (`onModuleInit`).
 
 System prompts are in `src/shared/prompts/*.system.txt`, loaded via `load-system-prompt.ts`. Nest copies them to `dist/shared/prompts/` on build (`nest-cli.json` → `assets`).
 
-| File | Used by |
-|------|---------|
+| File                        | Used by                                                                 |
+| --------------------------- | ----------------------------------------------------------------------- |
 | `student-report.system.txt` | `modules/student-report/application/services/student-report.service.ts` |
 | `study-reminder.system.txt` | `modules/study-reminder/application/services/study-reminder.service.ts` |
-| `messenger-chat.system.txt` | `modules/messenger/application/agent/messenger-agent.service.ts` |
+| `messenger-chat.system.txt` | `modules/messenger/application/agent/messenger-agent.service.ts`        |
 
 Missing `OPENAI_API_KEY` → fallback to hardcoded templates in service (no API call).
 
@@ -451,13 +451,13 @@ Detailed study reminder trade-offs: section 11 in [study-session-reminder.md](..
 
 ## 12. Runbook — Chat Rate Limit (V1)
 
-| Parameter | Recommendation | Env |
-|-----------|-------------------|-----|
-| FREE_FORM / day | 15–20 | `CHAT_FREE_FORM_DAILY_LIMIT` |
-| Burst | 3/min | `CHAT_BURST_PER_MINUTE` |
-| Timezone reset | 00:00 ICT | `CHAT_USAGE_TIMEZONE=Asia/Ho_Chi_Minh` |
-| Enable enforcement | Production | `CHAT_RATE_LIMIT_ENABLED=true` |
-| PSID QA unlimited | Team-dependent | `CHAT_RATE_LIMIT_WHITELIST_PSIDS` (comma-separated) |
+| Parameter          | Recommendation | Env                                                 |
+| ------------------ | -------------- | --------------------------------------------------- |
+| FREE_FORM / day    | 15–20          | `CHAT_FREE_FORM_DAILY_LIMIT`                        |
+| Burst              | 3/min          | `CHAT_BURST_PER_MINUTE`                             |
+| Timezone reset     | 00:00 ICT      | `CHAT_USAGE_TIMEZONE=Asia/Ho_Chi_Minh`              |
+| Enable enforcement | Production     | `CHAT_RATE_LIMIT_ENABLED=true`                      |
+| PSID QA unlimited  | Team-dependent | `CHAT_RATE_LIMIT_WHITELIST_PSIDS` (comma-separated) |
 
 **Ops quota query:**
 
@@ -591,11 +591,11 @@ source ~/.ghcr-token && bash .github/scripts/vps-self-pull-deploy.sh
 
 `.env` sync is separate: run the manual **Sync production env** workflow. Bot containers do not mount `.env` or `/var/run/docker.sock`; this keeps production secrets and the Docker host outside the application trust boundary.
 
-| GitHub Secret | Purpose |
-|---------------|---------|
-| `GHCR_PULL_TOKEN` | PAT `read:packages` — image build/push, and VPS `docker login ghcr.io` to pull |
-| `VPS_HOST`, `VPS_USER`, `SSH_PRIVATE_KEY` | Only used by [`sync-env.yml`](../.github/workflows/sync-env.yml) (`env_only=true`, manual `workflow_dispatch`) — legacy env-only SSH path, kept as a fallback since it's rarely triggered |
-| `DOPPLER_TOKEN_MESSENGER`, `DOPPLER_TOKEN_DISCORD`, `DOPPLER_TOKEN_ZALO` | Per-bot service tokens for **prd** config — passed to the reusable deploy workflow; `sync-env.yml` uses the Messenger token for manual env sync |
+| GitHub Secret                                                            | Purpose                                                                                                                                                                                   |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GHCR_PULL_TOKEN`                                                        | PAT `read:packages` — image build/push, and VPS `docker login ghcr.io` to pull                                                                                                            |
+| `VPS_HOST`, `VPS_USER`, `SSH_PRIVATE_KEY`                                | Only used by [`sync-env.yml`](../.github/workflows/sync-env.yml) (`env_only=true`, manual `workflow_dispatch`) — legacy env-only SSH path, kept as a fallback since it's rarely triggered |
+| `DOPPLER_TOKEN_MESSENGER`, `DOPPLER_TOKEN_DISCORD`, `DOPPLER_TOKEN_ZALO` | Per-bot service tokens for **prd** config — passed to the reusable deploy workflow; `sync-env.yml` uses the Messenger token for manual env sync                                           |
 
 Image: `ghcr.io/lengocanh2005it/wispace-bot/<app>:<commit-sha>` (also tagged `:latest`).
 
@@ -604,6 +604,7 @@ On VPS: `docker-compose.prod.yml` + `.env` at `/home/ngoc_anh/<app>/`. Legacy PM
 **Prod public URL:** `https://aiassist.aihubproduction.com` (Nginx → `127.0.0.1:5007`). Docker binds **localhost only** — does not expose `:5007` to the internet. Nginx: `client_max_body_size` + rate limit on `POST /v1/webhook` — see [`deploy/nginx/README.md`](../deploy/nginx/README.md).
 
 Setup details for project/config `dev` + `prd`: [doppler-secrets.md](../apps/messenger-bot/docs/doppler-secrets.md).
+
 ### Runtime image verification
 
 Before publishing a runtime image, build with --pull, record its size with docker image inspect, and run node deploy/verify-runtime-image.mjs <image> <app>. The verifier checks the app entrypoint and shared package artifacts and fails if typescript, ts-node, or jest remains anywhere under node_modules. Refresh a pinned base/tool image only from a reviewed release digest, then rerun this check and the normal quality gate in the same PR.
@@ -625,21 +626,21 @@ Measured locally on 2026-08-13 for messenger-bot with docker image inspect: pre-
 If a local env file (`.env`, `.env.shared`, `apps/*/.env`) is believed to be exposed (backup leak, archive, accidental upload, screenshot, etc.):
 
 1. **Rotate immediately** — every credential in that file: DB password, `INTERNAL_API_KEY`, `WISPACE_INTERNAL_KEY`, Meta/Discord/Zalo tokens and secrets, OpenAI/LLM provider keys, Doppler tokens. Treat them as compromised regardless of git status (git-ignore prevents commits, not leaks).
-2. **Check exposure scope** — `git log --all --oneline` + `git log -S '<value-prefix>' --all` for accidental commits, GitHub secret-scanning alerts, PR artifact uploads, `ghcrawler`-style caches; verify no backup/archive pipeline ever ingested the repo directory *including* ignored files (`.dockerignore`/`.gitignore` are the gates).
+2. **Check exposure scope** — `git log --all --oneline` + `git log -S '<value-prefix>' --all` for accidental commits, GitHub secret-scanning alerts, PR artifact uploads, `ghcrawler`-style caches; verify no backup/archive pipeline ever ingested the repo directory _including_ ignored files (`.dockerignore`/`.gitignore` are the gates).
 3. **Update Doppler** — push the rotated values to the `prd` config and run the manual **Sync production env** workflow so deployed bots pick them up.
 4. **Re-bootstrap Zalo OA tokens** — `zalo_oa_tokens` are now encrypted at rest with `ZALO_TOKEN_ENCRYPTION_KEY`; after any key rotation, re-run the manual OA bootstrap (`apps/zalo-bot/docs/zalo-oa-token-bootstrap.md`). If the key itself was exposed, generate a new one first.
 5. **Document the incident** — record what was exposed, what was rotated, and confirm the leak vector is closed (e.g. delete the stray backup, restrict the archive job).
 
 ### Fail-closed configuration
 
-| Surface | Enforcement |
-|---|---|
-| PostgreSQL | TLS required for every non-local/private host, **independent of `NODE_ENV`** — startup + migration fail; `DB_ALLOW_INSECURE_HOSTS` is the only narrow, tested plaintext exception for non-IP hostnames |
-| WISPACE upstream URLs | HTTPS only (dev loopback exception), no credentials/fragments, no private targets in production, optional `WISPACE_ALLOWED_HOSTS` allowlist — validated at startup for every client |
-| Zalo OA tokens (at rest) | AES-256-GCM with per-row IV, key `ZALO_TOKEN_ENCRYPTION_KEY` (Doppler); legacy plaintext rows fail closed → re-bootstrap |
-| Zalo OA refresh | Single-row transaction + `SELECT … FOR UPDATE`, re-read after lock, retries use the current persisted token — no double-spend of the single-use refresh token across workers |
-| Discord linking | Link commits at OAuth callback (verify → `upsertLink`), independent of guild membership — no pending state, no cookie, no join-status; `Referrer-Policy: no-referrer` on the redirect; redirect targets never carry secrets; verify-intent outbox + reconciliation cron re-commit the mapping after a crash between verify and upsert |
+| Surface                  | Enforcement                                                                                                                                                                                                                                                                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PostgreSQL               | TLS required for every non-local/private host, **independent of `NODE_ENV`** — startup + migration fail; `DB_ALLOW_INSECURE_HOSTS` is the only narrow, tested plaintext exception for non-IP hostnames                                                                                                                                |
+| WISPACE upstream URLs    | HTTPS only (dev loopback exception), no credentials/fragments, no private targets in production, optional `WISPACE_ALLOWED_HOSTS` allowlist — validated at startup for every client                                                                                                                                                   |
+| Zalo OA tokens (at rest) | AES-256-GCM with per-row IV, key `ZALO_TOKEN_ENCRYPTION_KEY` (Doppler); legacy plaintext rows fail closed → re-bootstrap                                                                                                                                                                                                              |
+| Zalo OA refresh          | Single-row transaction + `SELECT … FOR UPDATE`, re-read after lock, retries use the current persisted token — no double-spend of the single-use refresh token across workers                                                                                                                                                          |
+| Discord linking          | Link commits at OAuth callback (verify → `upsertLink`), independent of guild membership — no pending state, no cookie, no join-status; `Referrer-Policy: no-referrer` on the redirect; redirect targets never carry secrets; verify-intent outbox + reconciliation cron re-commit the mapping after a crash between verify and upsert |
 
 ### Discord linking flow
 
-`GET /v1/discord/oauth/callback` → `DiscordLinkCompletionService.completeLink` (controller chỉ redirect — toàn bộ business logic ở application): exchange code → verify WISPACE token → **persist verify intent** (`discord_link_verify_records`) → **`upsertLink` immediately** (retried, since WISPACE already consumed the single-use token) → consume intent (fire-and-forget) → relink notice nếu mapping bị thay thế → in guild? `DiscordWelcomeService.welcomeIfDue` (dedupe qua `discord_welcome_records` + `DISCORD_REWELCOME_WINDOW_MS`, default 24h) : redirect straight to `DISCORD_INVITE_URL`. Joining the server is only needed to *receive* the welcome DM — `guildMemberAdd` re-sends it for already-linked users through the same `welcomeIfDue`; unlinked users get the organic welcome through `sendOrganicWelcomeIfDue` **unless** a fresh pending verify intent exists (`DISCORD_LINK_PENDING_ORGANIC_SKIP_MS`, default 120s — the callback owns the welcome). **Welcome dedupe (#231/#232/#233/#159):** one `discord_welcome_records` table (PK `discord_user_id`, `last_welcomed_at`, `source` organic|linked, `claim_expires_at`) is the single dedupe state for both paths — an organic join followed by a link within the window yields exactly one DM; `sendMenuButtons` returns a boolean and the welcome is marked only when Discord acknowledged the send (a failed send leaves the user unwelcomed for the next join/callback/reconcile to retry); `tryClaimWelcome` claims the slot atomically (one conditional upsert — wins when never welcomed / past the window / previous claim expired), so concurrent OAuth callback vs `guildMemberAdd` sends at most once, with `DISCORD_WELCOME_CLAIM_MS` (default 60s) as the lease that makes a crashed/failed sender's claim reclaimable; `DISCORD_GUILD_ID` unset fails closed in `isMember` (returns false), so the callback defers the welcome to `guildMemberAdd`. `onGuildMemberAdd` wraps the whole handler in try/catch (channel welcome isolated in a nested one) and always emits a summary log (#234); `discord_welcome_attempts_total{outcome=success|error|skipped}` tracks attempts. A crash between verify and upsert is reconciled by the `discord-link-reconcile` cron (5 min, advisory lock `DISCORD_LINK_RECONCILE`) — re-commits the mapping from the stored `userId` and delivers the welcome if the user is already in the guild; records older than `DISCORD_LINK_RECONCILE_MAX_AGE_MS` with no mapping are dropped with an error log (user retries with a fresh token). Relinking the same Discord ID to a different WISPACE user sends a DM notice to the account (`DiscordRelinkNotifier`) and logs a warning — the displaced user silently loses the link (by design). DM delivery failures (e.g. privacy-blocked users) increment `discord_dm_delivery_failures_total{reason}` (Prometheus). The frontend portal has no callback page and needs nothing from the redirect; WISPACE marks the link itself at verify time, which now matches the bot's mapping exactly. The portal distinguishes "linked + not joined" via `GET /v1/discord/link-status?userId=` (ops-guarded, returns `{ linked, inGuild }`) to show the join hint only when relevant.
+`GET /v1/discord/oauth/callback` → `DiscordLinkCompletionService.completeLink` (controller chỉ redirect — toàn bộ business logic ở application): exchange code → verify WISPACE token → **persist verify intent** (`discord_link_verify_records`) → **`upsertLink` immediately** (retried, since WISPACE already consumed the single-use token) → consume intent (fire-and-forget) → relink notice nếu mapping bị thay thế → in guild? `DiscordWelcomeService.welcomeIfDue` (dedupe qua `discord_welcome_records` + `DISCORD_REWELCOME_WINDOW_MS`, default 24h) : redirect straight to `DISCORD_INVITE_URL`. Joining the server is only needed to _receive_ the welcome DM — `guildMemberAdd` re-sends it for already-linked users through the same `welcomeIfDue`; unlinked users get the organic welcome through `sendOrganicWelcomeIfDue` **unless** a fresh pending verify intent exists (`DISCORD_LINK_PENDING_ORGANIC_SKIP_MS`, default 120s — the callback owns the welcome). **Welcome dedupe (#231/#232/#233/#159):** one `discord_welcome_records` table (PK `discord_user_id`, `last_welcomed_at`, `source` organic|linked, `claim_expires_at`) is the single dedupe state for both paths — an organic join followed by a link within the window yields exactly one DM; `sendMenuButtons` returns a boolean and the welcome is marked only when Discord acknowledged the send (a failed send leaves the user unwelcomed for the next join/callback/reconcile to retry); `tryClaimWelcome` claims the slot atomically (one conditional upsert — wins when never welcomed / past the window / previous claim expired), so concurrent OAuth callback vs `guildMemberAdd` sends at most once, with `DISCORD_WELCOME_CLAIM_MS` (default 60s) as the lease that makes a crashed/failed sender's claim reclaimable; `DISCORD_GUILD_ID` unset fails closed in `isMember` (returns false), so the callback defers the welcome to `guildMemberAdd`. `onGuildMemberAdd` wraps the whole handler in try/catch (channel welcome isolated in a nested one) and always emits a summary log (#234); `discord_welcome_attempts_total{outcome=success|error|skipped}` tracks attempts. A crash between verify and upsert is reconciled by the `discord-link-reconcile` cron (5 min, advisory lock `DISCORD_LINK_RECONCILE`) — re-commits the mapping from the stored `userId` and delivers the welcome if the user is already in the guild; records older than `DISCORD_LINK_RECONCILE_MAX_AGE_MS` with no mapping are dropped with an error log (user retries with a fresh token). Relinking the same Discord ID to a different WISPACE user sends a DM notice to the account (`DiscordRelinkNotifier`) and logs a warning — the displaced user silently loses the link (by design). DM delivery failures (e.g. privacy-blocked users) increment `discord_dm_delivery_failures_total{reason}` (Prometheus). The frontend portal has no callback page and needs nothing from the redirect; WISPACE marks the link itself at verify time, which now matches the bot's mapping exactly. The portal distinguishes "linked + not joined" via `GET /v1/discord/link-status?userId=` (ops-guarded, returns `{ linked, inGuild }`) to show the join hint only when relevant.

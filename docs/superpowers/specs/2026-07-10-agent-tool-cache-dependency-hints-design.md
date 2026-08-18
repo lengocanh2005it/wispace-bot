@@ -15,6 +15,7 @@
 ### A3 — Tool Result Cache (TTL-based in-memory)
 
 **Port interface** (`tool-cache/tool-result-cache.port.ts`):
+
 ```ts
 export interface ToolResultCachePort {
   get(key: string): unknown | undefined;
@@ -24,15 +25,18 @@ export interface ToolResultCachePort {
 ```
 
 **Cache key format:** `${externalUserId}:${toolName}:${stableHash(argsJson)}`
+
 - `stableHash` = djb2 hash of sorted JSON string (no external dependency)
 - Distinguishes `get_upcoming_study_sessions(limit=5)` from `limit=10`
 
 **Default implementation** (`tool-cache/in-memory-tool-result-cache.ts`):
+
 - Plain `Map<string, { value: unknown; expiresAt: number }>`
 - Lazy eviction on `get()` — no setInterval needed
 - Default TTL: 5 minutes (`300_000` ms), configurable via `LlmAgentConfig.toolCacheTtlMs`
 
 **Agent loop integration** (`agent.service.ts`):
+
 ```
 tool call received
 → build cache key
@@ -45,6 +49,7 @@ tool call received
 **Cache is optional:** `LlmAgentPorts.toolResultCache?: ToolResultCachePort` — if not injected, agent works as before, no existing code breaks.
 
 **Config addition** (`types.ts`):
+
 ```ts
 interface LlmAgentConfig {
   // ...existing...
@@ -57,23 +62,25 @@ interface LlmAgentConfig {
 Modify `agent.tools.ts` — only 2 tool descriptions:
 
 **`reschedule_study_session`:**
-> Prepend to description: *"Always call `list_study_calendar_entries` first to obtain `calendarId`."*
+
+> Prepend to description: _"Always call `list_study_calendar_entries` first to obtain `calendarId`."_
 
 **`get_upcoming_study_sessions`:**
-> Append to description: *"Used to display schedule. If `calendarId` is needed to reschedule, use `list_study_calendar_entries` instead."*
+
+> Append to description: _"Used to display schedule. If `calendarId` is needed to reschedule, use `list_study_calendar_entries` instead."_
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `packages/llm-agent/src/tool-cache/tool-result-cache.port.ts` | New — port interface + noop implementation |
-| `packages/llm-agent/src/tool-cache/in-memory-tool-result-cache.ts` | New — Map-based implementation |
-| `packages/llm-agent/src/agent.service.ts` | Add `toolResultCache?: ToolResultCachePort` to `LlmAgentPorts` |
-| `packages/llm-agent/src/types.ts` | Add `toolCacheTtlMs?: number` to `LlmAgentConfig` |
-| `packages/llm-agent/src/agent.service.ts` | Cache lookup/set/invalidate in tool execution block |
-| `packages/llm-agent/src/agent.tools.ts` | 2 description updates |
-| `packages/llm-agent/src/index.ts` | Export new cache types |
-| `packages/llm-agent/src/agent.service.spec.ts` | Tests for cache hit/miss/invalidation |
+| File                                                               | Change                                                         |
+| ------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `packages/llm-agent/src/tool-cache/tool-result-cache.port.ts`      | New — port interface + noop implementation                     |
+| `packages/llm-agent/src/tool-cache/in-memory-tool-result-cache.ts` | New — Map-based implementation                                 |
+| `packages/llm-agent/src/agent.service.ts`                          | Add `toolResultCache?: ToolResultCachePort` to `LlmAgentPorts` |
+| `packages/llm-agent/src/types.ts`                                  | Add `toolCacheTtlMs?: number` to `LlmAgentConfig`              |
+| `packages/llm-agent/src/agent.service.ts`                          | Cache lookup/set/invalidate in tool execution block            |
+| `packages/llm-agent/src/agent.tools.ts`                            | 2 description updates                                          |
+| `packages/llm-agent/src/index.ts`                                  | Export new cache types                                         |
+| `packages/llm-agent/src/agent.service.spec.ts`                     | Tests for cache hit/miss/invalidation                          |
 
 ## Constraints
 

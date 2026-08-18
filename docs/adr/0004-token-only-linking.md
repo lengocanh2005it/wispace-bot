@@ -11,11 +11,11 @@ Messenger-to-WISPACE account linking uses token-based verification: the user ope
 
 ## Alternatives considered
 
-| Alternative | Reason for rejection |
-|-------------|---------------------|
-| Ref-only linking (legacy) | Does not verify ownership. Anyone with the link `m.me?ref=X` could link another user's account. |
-| Full OAuth2 flow | Rejected for Messenger at this stage: it requires redirect URI and consent handling. Discord and Zalo use their platform OAuth flows because their platform identity is obtained through OAuth. |
-| Magic link (email) | Requires email infrastructure. Longer user journey. |
+| Alternative               | Reason for rejection                                                                                                                                                                            |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ref-only linking (legacy) | Does not verify ownership. Anyone with the link `m.me?ref=X` could link another user's account.                                                                                                 |
+| Full OAuth2 flow          | Rejected for Messenger at this stage: it requires redirect URI and consent handling. Discord and Zalo use their platform OAuth flows because their platform identity is obtained through OAuth. |
+| Magic link (email)        | Requires email infrastructure. Longer user journey.                                                                                                                                             |
 
 ## Consequences
 

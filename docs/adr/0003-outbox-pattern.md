@@ -12,12 +12,12 @@ Study reminders and report sends use the outbox pattern: write a job row to `stu
 
 ## Alternatives considered
 
-| Alternative | Reason for rejection |
-|-------------|---------------------|
-| Bull queue (Redis) | Adds Redis infrastructure and queue semantics; the DB outbox meets the current durability and retry needs. |
-| SQS (AWS) | Vendor lock-in, additional cost, requires AWS account. |
-| In-memory queue | Not durable — server crash loses all jobs. |
-| Direct DB polling via cron | No transaction safety — two instances could poll simultaneously. Outbox + claim table solves this. |
+| Alternative                | Reason for rejection                                                                                       |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Bull queue (Redis)         | Adds Redis infrastructure and queue semantics; the DB outbox meets the current durability and retry needs. |
+| SQS (AWS)                  | Vendor lock-in, additional cost, requires AWS account.                                                     |
+| In-memory queue            | Not durable — server crash loses all jobs.                                                                 |
+| Direct DB polling via cron | No transaction safety — two instances could poll simultaneously. Outbox + claim table solves this.         |
 
 ## Consequences
 

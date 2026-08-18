@@ -75,13 +75,13 @@ Prod env changed on Doppler: run **Sync production env (no image build)**.
 
 **Required GitHub Secrets for SSH Deploy:**
 
-| Secret | Purpose |
-|--------|---------|
-| `SSH_PRIVATE_KEY` | Private key matching `~/.ssh/authorized_keys` on VPS (`ngoc_anh`) |
-| `VPS_HOST` | VPS IP (e.g. `69.62.74.196`) |
-| `VPS_USER` | `ngoc_anh` |
+| Secret                                                                     | Purpose                                                                |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `SSH_PRIVATE_KEY`                                                          | Private key matching `~/.ssh/authorized_keys` on VPS (`ngoc_anh`)      |
+| `VPS_HOST`                                                                 | VPS IP (e.g. `69.62.74.196`)                                           |
+| `VPS_USER`                                                                 | `ngoc_anh`                                                             |
 | `DOPPLER_TOKEN_MESSENGER` / `DOPPLER_TOKEN_DISCORD` / `DOPPLER_TOKEN_ZALO` | (recommended) Downloads that bot's `production.env` during deploy/sync |
-| `GHCR_PULL_TOKEN` | (recommended) `docker pull` on VPS |
+| `GHCR_PULL_TOKEN`                                                          | (recommended) `docker pull` on VPS                                     |
 
 **Repository variable (optional):** `VPS_SSH_PORT` — default `22` in workflow (`vars.VPS_SSH_PORT || '22'`). The provider dropped inbound SSH on port `8443`, so CI now uses port 22.
 
@@ -119,11 +119,11 @@ Still possible to use `.env` + `npm run start:dev` if Doppler isn't installed.
 
 ### CI Deploy Code (`deploy-bots.yml` → `deploy-bot-reusable.yml`)
 
-| Git Change | CI Action |
-|------------|-----------|
-| `src/`, `Dockerfile`, `package*.json` | lint + test + **build image** + deploy |
+| Git Change                               | CI Action                                 |
+| ---------------------------------------- | ----------------------------------------- |
+| `src/`, `Dockerfile`, `package*.json`    | lint + test + **build image** + deploy    |
 | Only `docker-compose`, workflow, scripts | **Skip build** — VPS uses `:latest` image |
-| Only `docs/` | **Don't run** workflow |
+| Only `docs/`                             | **Don't run** workflow                    |
 
 Docker build still uses **GHA layer cache** (`cache-from/to: type=gha`).
 

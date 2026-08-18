@@ -8,12 +8,12 @@ Related: [project-overview.md](../../../docs/project-overview.md) §10, [chat-ra
 
 ## 1. Phase B Goals
 
-| | |
-|---|---|
-| **Scale** | ~200–800 active students; peak chat hours (evenings, after announcements) |
-| **Architecture** | 2 Nest containers + Nginx `upstream` + Redis + shared PostgreSQL |
-| **No change** | Meta webhook URL, DB schema, logic in `src/` |
-| **Reference VPS** | `69.62.74.196` — 2 vCPU, Redis already running (`~/redis`) |
+|                   |                                                                           |
+| ----------------- | ------------------------------------------------------------------------- |
+| **Scale**         | ~200–800 active students; peak chat hours (evenings, after announcements) |
+| **Architecture**  | 2 Nest containers + Nginx `upstream` + Redis + shared PostgreSQL          |
+| **No change**     | Meta webhook URL, DB schema, logic in `src/`                              |
+| **Reference VPS** | `69.62.74.196` — 2 vCPU, Redis already running (`~/redis`)                |
 
 **What scales:** many users messaging **simultaneously** → 2 pods handle webhook / chat flush in parallel.
 
@@ -25,12 +25,12 @@ Related: [project-overview.md](../../../docs/project-overview.md) §10, [chat-ra
 
 **Don't** enable early just because it's prepared. Enable when **≥2** of these signs persist for several days:
 
-| Metric | Suggested Threshold |
-|--------|-------------------|
-| Messenger process CPU | >50% during peak hours |
+| Metric                         | Suggested Threshold                          |
+| ------------------------------ | -------------------------------------------- |
+| Messenger process CPU          | >50% during peak hours                       |
 | Chat latency (webhook → reply) | p95 >25–30s (excluding quota-exceeded users) |
-| OpenAI logs | 429 / timeouts increasing noticeably |
-| Dead-letter webhook | Retries / backlog growing |
+| OpenAI logs                    | 429 / timeouts increasing noticeably         |
+| Dead-letter webhook            | Retries / backlog growing                    |
 
 **Current status (reference):** 1 container ~50 MB RAM, CPU ~0% → **keep 1 instance**; this runbook is ready when needed.
 
@@ -68,50 +68,50 @@ This section answers: **what does 2-instance scaling gain you, and what does it 
 
 ### 4.1. Benefits
 
-| Benefit | Explanation |
-|---------|-------------|
-| **Parallel webhook handling** | Many users messaging at once → Nginx splits requests between 2 pods; each pod flushes / calls LLM independently for different PSIDs. |
-| **Reduces single-process overload risk** | CPU / event loop of **one** Node doesn't shoulder all peaks (evenings, after announcements). |
-| **Smoother rolling deploys** | Can recreate pods one at a time; Nginx routes to surviving pod (when upstream config is correct). |
-| **Enables proper multi-pod architecture** | Redis store already available — `CHAT_QUEUE_SHARED=true` is required so chat doesn't break when LB splits webhooks. |
-| **Report cron has leader** | Only 1 pod runs 08:00 schedule; other pod focuses on webhooks. |
+| Benefit                                   | Explanation                                                                                                                          |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Parallel webhook handling**             | Many users messaging at once → Nginx splits requests between 2 pods; each pod flushes / calls LLM independently for different PSIDs. |
+| **Reduces single-process overload risk**  | CPU / event loop of **one** Node doesn't shoulder all peaks (evenings, after announcements).                                         |
+| **Smoother rolling deploys**              | Can recreate pods one at a time; Nginx routes to surviving pod (when upstream config is correct).                                    |
+| **Enables proper multi-pod architecture** | Redis store already available — `CHAT_QUEUE_SHARED=true` is required so chat doesn't break when LB splits webhooks.                  |
+| **Report cron has leader**                | Only 1 pod runs 08:00 schedule; other pod focuses on webhooks.                                                                       |
 
 Benefits are **most clear** when **many PSIDs chat simultaneously** and **single-instance CPU** is the bottleneck — **not** when there are just "many registered students" who rarely message.
 
 ### 4.2. Costs / Trade-offs
 
-| Trade-off | Details |
-|-----------|---------|
-| **Operational complexity** | 2 containers, 2 ports, Nginx upstream, env leader, dual health checks, more complex rollback than 1 pod. |
-| **Doppler + Compose** | Shared `.env` insufficient — `INSTANCE_ID` override per service; easy to misconfigure leader. |
-| **2 vCPU VPS shared** | 2 pods + Postgres + Redis + other services **compete for CPU** — not "double the power". |
-| **RAM & DB connections** | ~2× app process footprint; ~2× TypeORM connection pool to PostgreSQL. |
-| **Cron / loop runs twice** | Reminder adaptive dispatch: **both pods** poll DB (`claimJob` prevents duplicate sends, but **extra queries**). |
-| **OpenAI doesn't double** | Same API key → **same RPM/TPM quota**; 2 pods may hit 429 **sooner** during LLM peaks. |
-| **Single-user latency nearly unchanged** | Still debounce ~2s + LLM ~5–20s — **no** reduction in individual wait time. |
-| **Mandatory Redis dependency** | `CHAT_QUEUE_SHARED=true` — Redis down impacts multi-pod chat more heavily than single-instance mode (RAM-local debounce). |
-| **Harder debugging** | Logs across 2 containers; webhooks hit random pod — need `INSTANCE_ID` in logs when investigating. |
-| **Deployment cost** | PR compose + nginx + deploy script + cutover + 48h monitoring. |
+| Trade-off                                | Details                                                                                                                   |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Operational complexity**               | 2 containers, 2 ports, Nginx upstream, env leader, dual health checks, more complex rollback than 1 pod.                  |
+| **Doppler + Compose**                    | Shared `.env` insufficient — `INSTANCE_ID` override per service; easy to misconfigure leader.                             |
+| **2 vCPU VPS shared**                    | 2 pods + Postgres + Redis + other services **compete for CPU** — not "double the power".                                  |
+| **RAM & DB connections**                 | ~2× app process footprint; ~2× TypeORM connection pool to PostgreSQL.                                                     |
+| **Cron / loop runs twice**               | Reminder adaptive dispatch: **both pods** poll DB (`claimJob` prevents duplicate sends, but **extra queries**).           |
+| **OpenAI doesn't double**                | Same API key → **same RPM/TPM quota**; 2 pods may hit 429 **sooner** during LLM peaks.                                    |
+| **Single-user latency nearly unchanged** | Still debounce ~2s + LLM ~5–20s — **no** reduction in individual wait time.                                               |
+| **Mandatory Redis dependency**           | `CHAT_QUEUE_SHARED=true` — Redis down impacts multi-pod chat more heavily than single-instance mode (RAM-local debounce). |
+| **Harder debugging**                     | Logs across 2 containers; webhooks hit random pod — need `INSTANCE_ID` in logs when investigating.                        |
+| **Deployment cost**                      | PR compose + nginx + deploy script + cutover + 48h monitoring.                                                            |
 
 ### 4.3. Still Not Solved (Even with 2 Instances)
 
-| Problem | Notes |
-|---------|-------|
-| OpenAI slow / 429 | Upgrade API tier; **`LlmExecutionService`** (`LLM_MAX_CONCURRENT`, retry) ✓ — multi-pod needs Redis gate later |
-| >50 reminders due in same minute | Still sequential LLM, `LIMIT 50`/dispatch loop |
-| 30-minute full-scan sync cron | Load increases with user count; advisory lock — doesn't scale by adding chat pods |
-| Meta Send API | Almost never a bottleneck at IELTS student scale |
+| Problem                          | Notes                                                                                                          |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| OpenAI slow / 429                | Upgrade API tier; **`LlmExecutionService`** (`LLM_MAX_CONCURRENT`, retry) ✓ — multi-pod needs Redis gate later |
+| >50 reminders due in same minute | Still sequential LLM, `LIMIT 50`/dispatch loop                                                                 |
+| 30-minute full-scan sync cron    | Load increases with user count; advisory lock — doesn't scale by adding chat pods                              |
+| Meta Send API                    | Almost never a bottleneck at IELTS student scale                                                               |
 
 ### 4.4. Quick Comparison
 
-| | 1 Instance | 2 Instances (Phase B) |
-|---|-------------|------------------------|
-| Concurrent webhooks | Limited by 1 CPU / 1 event loop | Better (2 event loops) |
-| Single-user latency | ~2s debounce + LLM | **Nearly identical** |
-| Ops complexity | Low | Higher |
-| OpenAI pressure | 1 stream | 2 streams → easier 429 at peak |
-| Machine cost | Low | Higher (~2 processes) |
-| Best when | Low load (current prod) | CPU/webhook peak, peak chat hours |
+|                     | 1 Instance                      | 2 Instances (Phase B)             |
+| ------------------- | ------------------------------- | --------------------------------- |
+| Concurrent webhooks | Limited by 1 CPU / 1 event loop | Better (2 event loops)            |
+| Single-user latency | ~2s debounce + LLM              | **Nearly identical**              |
+| Ops complexity      | Low                             | Higher                            |
+| OpenAI pressure     | 1 stream                        | 2 streams → easier 429 at peak    |
+| Machine cost        | Low                             | Higher (~2 processes)             |
+| Best when           | Low load (current prod)         | CPU/webhook peak, peak chat hours |
 
 ### 4.5. Practical Conclusion
 
@@ -164,19 +164,19 @@ CHAT_RATE_LIMIT_ENABLED=true
 
 ### 6.2. Per-Pod Override (Docker Compose — **Required**)
 
-| Pod | `INSTANCE_ID` | `PORT` (inside container) | Bind Host |
-|-----|---------------|--------------------------|-----------|
-| `messenger-bot-1` | `messenger-bot-1` | `5007` | `127.0.0.1:5007` |
-| `messenger-bot-2` | `messenger-bot-2` | `5008` | `127.0.0.1:5008` |
+| Pod               | `INSTANCE_ID`     | `PORT` (inside container) | Bind Host        |
+| ----------------- | ----------------- | ------------------------- | ---------------- |
+| `messenger-bot-1` | `messenger-bot-1` | `5007`                    | `127.0.0.1:5007` |
+| `messenger-bot-2` | `messenger-bot-2` | `5008`                    | `127.0.0.1:5008` |
 
 ### 6.3. Cron Leader — Lease-Based Election
 
 Leader election is now lease-based (`cron_leader_leases` table): `CRON_LEADER_ENABLED=true` makes every pod race for a lease keyed by `INSTANCE_ID`; the current leader heartbeats it every minute, and any pod takes over ≤3 min after the leader dies. No static `CRON_LEADER_INSTANCE_ID` — identity is `INSTANCE_ID`/hostname.
 
-| Variable | Pod 1 | Pod 2 |
-|----------|-------|-------|
-| `CRON_LEADER_ENABLED` | `true` | `true` |
-| `INSTANCE_ID` | `messenger-bot-1` | `messenger-bot-2` (**different**) |
+| Variable              | Pod 1             | Pod 2                             |
+| --------------------- | ----------------- | --------------------------------- |
+| `CRON_LEADER_ENABLED` | `true`            | `true`                            |
+| `INSTANCE_ID`         | `messenger-bot-1` | `messenger-bot-2` (**different**) |
 
 → Exactly one pod runs **08:00 report cron** and **`*/15` retry dispatch** at a time; the other takes over automatically if the leader dies.
 
@@ -209,9 +209,9 @@ services:
     env_file: .env
     environment:
       INSTANCE_ID: messenger-bot-1
-      PORT: "5007"
+      PORT: '5007'
     ports:
-      - "127.0.0.1:5007:5007"
+      - '127.0.0.1:5007:5007'
     # no host mounts or Docker socket; run as the unprivileged image user
 
   messenger-bot-2:
@@ -219,9 +219,9 @@ services:
     env_file: .env
     environment:
       INSTANCE_ID: messenger-bot-2
-      PORT: "5008"
+      PORT: '5008'
     ports:
-      - "127.0.0.1:5008:5008"
+      - '127.0.0.1:5008:5008'
 ```
 
 VPS deploy path: `/home/ngoc_anh/messenger-bot/`.
@@ -265,17 +265,17 @@ Needs expansion for real implementation:
 
 ## 8. Per-Flow Behavior After Scale
 
-| Flow | 2 Instances |
-|------|-------------|
-| Chat text | Webhook → any pod → Redis buffer (`CHAT_QUEUE_SHARED`) → worker poll 2s flush |
-| `mid` dedupe | Durable PostgreSQL `webhook_inbound_events` inbox — cross-pod |
-| Daily quota | PostgreSQL atomic (H3) |
-| 08:00 reports | Only leader `INSTANCE_ID=messenger-bot-1` |
-| Report retry `*/15` | Only leader |
-| Reminder dispatch | **Both pods** adaptive loop; `claimJob` — no duplicates |
-| 30-min study sync | Advisory lock — 1 pod/run |
-| Evening rollover / cleanup | Advisory lock — 1 pod/run |
-| Webhook-inbound retry (30s) | Advisory lock — 1 pod/run |
+| Flow                        | 2 Instances                                                                   |
+| --------------------------- | ----------------------------------------------------------------------------- |
+| Chat text                   | Webhook → any pod → Redis buffer (`CHAT_QUEUE_SHARED`) → worker poll 2s flush |
+| `mid` dedupe                | Durable PostgreSQL `webhook_inbound_events` inbox — cross-pod                 |
+| Daily quota                 | PostgreSQL atomic (H3)                                                        |
+| 08:00 reports               | Only leader `INSTANCE_ID=messenger-bot-1`                                     |
+| Report retry `*/15`         | Only leader                                                                   |
+| Reminder dispatch           | **Both pods** adaptive loop; `claimJob` — no duplicates                       |
+| 30-min study sync           | Advisory lock — 1 pod/run                                                     |
+| Evening rollover / cleanup  | Advisory lock — 1 pod/run                                                     |
+| Webhook-inbound retry (30s) | Advisory lock — 1 pod/run                                                     |
 
 ---
 
@@ -322,24 +322,24 @@ If chat breaks after rollback: check Redis key prefix `chat:*` (only flush when 
 
 ## 10. Phase B Limits (Manage Expectations)
 
-| Problem | Phase B | Future Direction |
-|---------|---------|-----------------|
-| OpenAI 429 at peak | May still occur | Upgrade API tier; increase `LLM_MAX_CONCURRENT` or Redis gate with 2 pods |
-| >50 reminders due same minute | Reminders delayed a few minutes | Delayed queue / parallel workers (roadmap) |
-| 30-min full-scan sync | Load increases with users | WISPACE wire sync API (already done) |
-| VPS 2 cores maxed out | Shouldn't add pod 3 | Upgrade to 4 vCPU or separate VPS for messenger |
+| Problem                       | Phase B                         | Future Direction                                                          |
+| ----------------------------- | ------------------------------- | ------------------------------------------------------------------------- |
+| OpenAI 429 at peak            | May still occur                 | Upgrade API tier; increase `LLM_MAX_CONCURRENT` or Redis gate with 2 pods |
+| >50 reminders due same minute | Reminders delayed a few minutes | Delayed queue / parallel workers (roadmap)                                |
+| 30-min full-scan sync         | Load increases with users       | WISPACE wire sync API (already done)                                      |
+| VPS 2 cores maxed out         | Shouldn't add pod 3             | Upgrade to 4 vCPU or separate VPS for messenger                           |
 
 ---
 
 ## 11. 1 vs 2 Instances Comparison (Current Prod)
 
-| | 1 Instance (Current) | 2 Instances (Phase B) |
-|---|----------------------|------------------------|
-| `CHAT_QUEUE_SHARED` | `false` | `true` |
-| `CRON_LEADER_ENABLED` | `false` | `true` |
-| Nginx | 1 backend `:5007` | `upstream` 5007 + 5008 |
-| Container | `messenger-bot` | `messenger-bot-1`, `messenger-bot-2` |
-| When | Low load | Section 2 trigger |
+|                       | 1 Instance (Current) | 2 Instances (Phase B)                |
+| --------------------- | -------------------- | ------------------------------------ |
+| `CHAT_QUEUE_SHARED`   | `false`              | `true`                               |
+| `CRON_LEADER_ENABLED` | `false`              | `true`                               |
+| Nginx                 | 1 backend `:5007`    | `upstream` 5007 + 5008               |
+| Container             | `messenger-bot`      | `messenger-bot-1`, `messenger-bot-2` |
+| When                  | Low load             | Section 2 trigger                    |
 
 Trade-off details: section 4.
 
@@ -359,4 +359,4 @@ When team decides to implement, ops-only PR includes:
 
 ---
 
-*Preparation runbook — not yet deployed to production. Update the date when actual cutover is performed.*
+_Preparation runbook — not yet deployed to production. Update the date when actual cutover is performed._

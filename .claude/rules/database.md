@@ -51,30 +51,30 @@ When adding a new migration (Discord, Zalo, or new shared table):
 
 ## Ownership of 18 existing migrations (static reference, not retroactive)
 
-| Group | File | Tables touched |
-|-------|------|----------------|
-| Messenger-only | `1717747200000-CreateMessengerTables` | `user_messenger_mappings`, `messenger_message_logs` |
-| Messenger-only | `1717747200001-CreateStudyReminderJobs` | `study_reminder_jobs` |
-| Messenger-only | `1717747200002-CreateMessengerChatRateLimitTables` | `messenger_chat_daily_usage`, `messenger_chat_idempotency` (pre-rename generic names) |
-| Messenger-only | `1717747200003-CreateMessengerChatSharedQueueTables` | `messenger_chat_queue_buffer`, `messenger_chat_history`, `messenger_chat_webhook_seen` |
-| Messenger-only | `1717747200004-CreateMessengerScheduledReportClaims` | `messenger_scheduled_report_claims` |
-| Messenger-only | `1717747200005-CreateMessengerWebhookDeadLetterTable` | `messenger_webhook_dead_letters` |
-| Messenger-only | `1717747200006-CreateReportSendJobs` | `report_send_jobs` |
-| Messenger-only | `1717747200007-AddMessengerIndexes` | index-only, no new tables |
-| Messenger-only | `1717747200008-CreateMessengerUsersCacheTable` | `users` (+ view `"Users"`) |
-| Messenger-only | `1717747200009-DropMessengerChatWebhookSeenTable` | drop `messenger_chat_webhook_seen` |
-| Messenger-only | `1717747200010-DropMessengerChatQueueBufferAndHistoryTables` | drop `messenger_chat_queue_buffer`, `messenger_chat_history` |
-| Messenger-only | `1717747200011-TrimUsersCacheToMessengerMappings` | alter `users` (index-only) |
-| Messenger-only | `1717747200012-AddUniqueActiveMessengerMappingIndexes` | index-only on `user_messenger_mappings` |
-| Shared (`packages/chat-metering`) | `1717747200013-CreateC2QuotaAndLlmUsageTables` | `messenger_chat_events` (predecessor of `chat_quota_events`), `llm_usage_events` |
-| Shared (`packages/chat-metering`) | `1751029200000-CreateLlmSafetyEventsTable` | `llm_safety_events` |
-| Shared (`packages/chat-metering`) | `1751029200003-AddLlmUsageEventsCachedTokens` | alter `llm_usage_events` |
-| Cross-platform (generalized) | `1751029200001-GeneralizePlatformIdentifiers` | alter `user_messenger_mappings` → `user_platform_mappings`, rename chat-metering tables to generic (`chat_daily_usage`, `chat_idempotency`, `chat_quota_events`) |
-| Discord | `1751029200002-CreateDiscordAccountLinksTable` | `discord_account_links` |
-| Shared (cleanup/ops hot queries) | `1751029200010-AddCleanupAndClaimIndexes` | index-only on `chat_idempotency` (`platform, status, reserved_at`), `scheduled_report_claims` (`user_id, report_date, status` + `created_at`), `message_logs` (`created_at`) |
-| Shared (durable webhook inbox) | `1751029200014-CreateWebhookInboundEvents` | `webhook_inbound_events` — authenticated inbound payloads, retry state, unique `(platform, event_id)` |
-| Shared (durable webhook inbox) | `1751029200015-AddWebhookInboundCleanupIndex` | cleanup index on `webhook_inbound_events` (`platform, status, created_at`) |
-| Zalo OAuth cleanup | `1751029200016-AddZaloOauthStateCleanupIndex` | cleanup index on `zalo_oauth_states` (`created_at`) |
+| Group                             | File                                                         | Tables touched                                                                                                                                                               |
+| --------------------------------- | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Messenger-only                    | `1717747200000-CreateMessengerTables`                        | `user_messenger_mappings`, `messenger_message_logs`                                                                                                                          |
+| Messenger-only                    | `1717747200001-CreateStudyReminderJobs`                      | `study_reminder_jobs`                                                                                                                                                        |
+| Messenger-only                    | `1717747200002-CreateMessengerChatRateLimitTables`           | `messenger_chat_daily_usage`, `messenger_chat_idempotency` (pre-rename generic names)                                                                                        |
+| Messenger-only                    | `1717747200003-CreateMessengerChatSharedQueueTables`         | `messenger_chat_queue_buffer`, `messenger_chat_history`, `messenger_chat_webhook_seen`                                                                                       |
+| Messenger-only                    | `1717747200004-CreateMessengerScheduledReportClaims`         | `messenger_scheduled_report_claims`                                                                                                                                          |
+| Messenger-only                    | `1717747200005-CreateMessengerWebhookDeadLetterTable`        | `messenger_webhook_dead_letters`                                                                                                                                             |
+| Messenger-only                    | `1717747200006-CreateReportSendJobs`                         | `report_send_jobs`                                                                                                                                                           |
+| Messenger-only                    | `1717747200007-AddMessengerIndexes`                          | index-only, no new tables                                                                                                                                                    |
+| Messenger-only                    | `1717747200008-CreateMessengerUsersCacheTable`               | `users` (+ view `"Users"`)                                                                                                                                                   |
+| Messenger-only                    | `1717747200009-DropMessengerChatWebhookSeenTable`            | drop `messenger_chat_webhook_seen`                                                                                                                                           |
+| Messenger-only                    | `1717747200010-DropMessengerChatQueueBufferAndHistoryTables` | drop `messenger_chat_queue_buffer`, `messenger_chat_history`                                                                                                                 |
+| Messenger-only                    | `1717747200011-TrimUsersCacheToMessengerMappings`            | alter `users` (index-only)                                                                                                                                                   |
+| Messenger-only                    | `1717747200012-AddUniqueActiveMessengerMappingIndexes`       | index-only on `user_messenger_mappings`                                                                                                                                      |
+| Shared (`packages/chat-metering`) | `1717747200013-CreateC2QuotaAndLlmUsageTables`               | `messenger_chat_events` (predecessor of `chat_quota_events`), `llm_usage_events`                                                                                             |
+| Shared (`packages/chat-metering`) | `1751029200000-CreateLlmSafetyEventsTable`                   | `llm_safety_events`                                                                                                                                                          |
+| Shared (`packages/chat-metering`) | `1751029200003-AddLlmUsageEventsCachedTokens`                | alter `llm_usage_events`                                                                                                                                                     |
+| Cross-platform (generalized)      | `1751029200001-GeneralizePlatformIdentifiers`                | alter `user_messenger_mappings` → `user_platform_mappings`, rename chat-metering tables to generic (`chat_daily_usage`, `chat_idempotency`, `chat_quota_events`)             |
+| Discord                           | `1751029200002-CreateDiscordAccountLinksTable`               | `discord_account_links`                                                                                                                                                      |
+| Shared (cleanup/ops hot queries)  | `1751029200010-AddCleanupAndClaimIndexes`                    | index-only on `chat_idempotency` (`platform, status, reserved_at`), `scheduled_report_claims` (`user_id, report_date, status` + `created_at`), `message_logs` (`created_at`) |
+| Shared (durable webhook inbox)    | `1751029200014-CreateWebhookInboundEvents`                   | `webhook_inbound_events` — authenticated inbound payloads, retry state, unique `(platform, event_id)`                                                                        |
+| Shared (durable webhook inbox)    | `1751029200015-AddWebhookInboundCleanupIndex`                | cleanup index on `webhook_inbound_events` (`platform, status, created_at`)                                                                                                   |
+| Zalo OAuth cleanup                | `1751029200016-AddZaloOauthStateCleanupIndex`                | cleanup index on `zalo_oauth_states` (`created_at`)                                                                                                                          |
 
 ## Notes
 

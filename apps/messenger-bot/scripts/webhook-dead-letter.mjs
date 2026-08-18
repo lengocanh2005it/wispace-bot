@@ -74,7 +74,7 @@ async function cmdList(pool, limit) {
   for (const row of rows) {
     console.log(
       `  id=${row.id}  psid=${maskExternalId(row.psid)}  mid=${row.message_mid ?? 'n/a'}` +
-      `  retries=${row.retry_count}  created=${row.created_at.toISOString()}`,
+        `  retries=${row.retry_count}  created=${row.created_at.toISOString()}`,
     );
     console.log(
       `    error: ${maskExternalIdInText(row.error_message ?? '', row.psid)}`,

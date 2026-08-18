@@ -23,9 +23,11 @@
 ### Task 1: Add "New Migration Naming Convention" and ownership table to `database.md`
 
 **Files:**
+
 - Modify: `E:\wispace-bot\.claude\rules\database.md` (insert 2 new sections after the `## Thêm migration` section, before the `## Lưu ý` section, i.e., after line 40, before line 42)
 
 **Interfaces:**
+
 - None — independent documentation change, no code or task dependencies.
 
 - [ ] **Step 1: Insert new content into `database.md`**
@@ -80,6 +82,7 @@ When adding new migrations (Discord, Zalo, or new shared tables):
 - [ ] **Step 2: Re-read the entire file to verify no contradictions**
 
 Read `E:\wispace-bot\.claude\rules\database.md` from start to finish. Confirm:
+
 - Content on lines 1–40 and 42–47 (the `## Lưu ý` section) remains exactly as the original.
 - The 2 new sections are in the correct position (after `## Thêm migration`, before `## Lưu ý`).
 - The historical ownership table has exactly 18 rows; current `packages/database/src/migrations/` contains additional migrations and must not be inferred from this table.

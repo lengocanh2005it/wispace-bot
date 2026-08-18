@@ -11,11 +11,11 @@ Each feature module in `apps/messenger-bot/src/modules/` follows 4 layers: `doma
 
 ## Alternatives considered
 
-| Alternative | Reason for rejection |
-|-------------|---------------------|
+| Alternative                                     | Reason for rejection                                                                                                    |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | NestJS default flat (everything in `services/`) | Circular dependencies occur easily when modules import each other. Hard to test because of NestJS container dependency. |
-| Hexagonal architecture (ports & adapters) | Similar but NestJS already has a built-in DI container, no need for an additional abstraction layer. |
-| Full DDD (entities, value objects, aggregates) | Too heavy at this stage. Requires more boilerplate than necessary. |
+| Hexagonal architecture (ports & adapters)       | Similar but NestJS already has a built-in DI container, no need for an additional abstraction layer.                    |
+| Full DDD (entities, value objects, aggregates)  | Too heavy at this stage. Requires more boilerplate than necessary.                                                      |
 
 ## Consequences
 

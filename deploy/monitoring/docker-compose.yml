@@ -12,12 +12,12 @@ services:
       - ./prometheus-entrypoint.sh:/etc/prometheus/entrypoint.sh:ro
       - ./alert.rules.yml:/etc/prometheus/alert.rules.yml:ro
       - prometheus_data:/prometheus
-    entrypoint: ["/bin/sh", "/etc/prometheus/entrypoint.sh"]
+    entrypoint: ['/bin/sh', '/etc/prometheus/entrypoint.sh']
     command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
-      - "--storage.tsdb.retention.time=30d"
-      - "--web.enable-lifecycle"
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
     networks:
       - monitoring
       - messenger-bot_default
@@ -36,9 +36,9 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       # chat_id is an int64; 0 fails Alertmanager validation, so -1 = placeholder
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:--1}
-    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    entrypoint: ['/bin/sh', '/etc/alertmanager/entrypoint.sh']
     ports:
-      - "127.0.0.1:9093:9093"
+      - '127.0.0.1:9093:9093'
     networks:
       - monitoring
 

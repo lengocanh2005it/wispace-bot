@@ -14,13 +14,13 @@ Turborepo monorepo: `apps/messenger-bot` (NestJS, full-featured) + `apps/discord
 
 ## Module boundaries (in `apps/messenger-bot`)
 
-| Module | Responsibilities only |
-|--------|----------------------|
-| `modules/messenger/` | Webhook, Send API (outbound), menu, chat queue/agent (adapter uses `@wispace/llm-agent`), mapping/logs |
-| `modules/chat-rate-limit/` | FREE_FORM quota: reserve/refund/burst, DB idempotency |
-| `modules/student-report/` | Study reports, Wispace API goals/scores |
-| `modules/study-reminder/` | Sync/dispatch/cleanup jobs, UserCalendar API |
-| `modules/scheduler/` | Report cron + HTTP ops trigger |
+| Module                     | Responsibilities only                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `modules/messenger/`       | Webhook, Send API (outbound), menu, chat queue/agent (adapter uses `@wispace/llm-agent`), mapping/logs |
+| `modules/chat-rate-limit/` | FREE_FORM quota: reserve/refund/burst, DB idempotency                                                  |
+| `modules/student-report/`  | Study reports, Wispace API goals/scores                                                                |
+| `modules/study-reminder/`  | Sync/dispatch/cleanup jobs, UserCalendar API                                                           |
+| `modules/scheduler/`       | Report cron + HTTP ops trigger                                                                         |
 
 **Do not** put study reminder logic in `MessengerService`. **Do not** reserve quota in webhook — only in `MessengerChatProcessorService` flush.
 
@@ -41,7 +41,7 @@ Turborepo monorepo: `apps/messenger-bot` (NestJS, full-featured) + `apps/discord
 
 ## When modifying code (mandatory)
 
-1. **Update agent docs** if behavior/API/env/runbook changes — see table in `AGENTS.md` section *Docs & skills when changing code*.
+1. **Update agent docs** if behavior/API/env/runbook changes — see table in `AGENTS.md` section _Docs & skills when changing code_.
 2. **Update skills** in `.claude/skills/` if debug/verify/migration/prompt workflows are affected.
 3. **Run quality gate** before reporting task complete (requires full `npm install` at root with dev deps):
 

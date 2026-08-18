@@ -71,6 +71,7 @@ apps/messenger-bot/src/infrastructure/database/migrations/
 ### Task 1: Scaffold `apps/zalo-bot`
 
 **Files:**
+
 - Create: `apps/zalo-bot/package.json`
 - Create: `apps/zalo-bot/nest-cli.json`
 - Create: `apps/zalo-bot/tsconfig.json`
@@ -83,6 +84,7 @@ apps/messenger-bot/src/infrastructure/database/migrations/
 - Modify: `apps/zalo-bot/README.md` (replace placeholder content)
 
 **Interfaces:**
+
 - Produces: `AppModule` (NestJS root module, imports added incrementally by later tasks), `HealthController` (`GET /health`).
 
 - [ ] **Step 1: Write the failing test for the health controller**
@@ -330,11 +332,13 @@ git commit -m "feat(zalo-bot): scaffold NestJS app skeleton"
 ### Task 2: DB migrations for the 3 new Zalo tables (in `apps/messenger-bot`)
 
 **Files:**
+
 - Create: `apps/messenger-bot/src/infrastructure/database/migrations/1751029200004-CreateZaloOaTokensTable.ts`
 - Create: `apps/messenger-bot/src/infrastructure/database/migrations/1751029200005-CreateZaloOauthStatesTable.ts`
 - Create: `apps/messenger-bot/src/infrastructure/database/migrations/1751029200006-CreateZaloAccountLinksTable.ts`
 
 **Interfaces:**
+
 - Produces: tables `zalo_oa_tokens`, `zalo_oauth_states`, `zalo_account_links` — consumed by Task 3's TypeORM entities in `apps/zalo-bot`.
 
 Migrations are not unit-tested in this repo (no existing migration has a `.spec.ts` — verified via `npm run migration:run` against a real/staging DB). Follow `.claude/rules/database.md` naming convention and the exact shape of `1751029200002-CreateDiscordAccountLinksTable.ts`.
@@ -352,9 +356,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * `apps/messenger-bot` runs migrations (Phase 5 convention); only
  * `apps/zalo-bot` reads/writes this table.
  */
-export class CreateZaloOaTokensTable1751029200004
-  implements MigrationInterface
-{
+export class CreateZaloOaTokensTable1751029200004 implements MigrationInterface {
   name = 'CreateZaloOaTokensTable1751029200004';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -388,9 +390,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * OAuth2 — see spec §5.2). TTL (10 min) is enforced by the app's query,
  * not a DB constraint — see ZaloOauthStateService (Task 8).
  */
-export class CreateZaloOauthStatesTable1751029200005
-  implements MigrationInterface
-{
+export class CreateZaloOauthStatesTable1751029200005 implements MigrationInterface {
   name = 'CreateZaloOauthStatesTable1751029200005';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -420,9 +420,7 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * `apps/messenger-bot` runs migrations; only `apps/zalo-bot` reads/writes
  * this table (its own TypeOrmModule.forFeature).
  */
-export class CreateZaloAccountLinksTable1751029200006
-  implements MigrationInterface
-{
+export class CreateZaloAccountLinksTable1751029200006 implements MigrationInterface {
   name = 'CreateZaloAccountLinksTable1751029200006';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -476,6 +474,7 @@ git commit -m "feat(db): add zalo_oa_tokens, zalo_oauth_states, zalo_account_lin
 ### Task 3: Zalo entities + `DatabaseModule` in `apps/zalo-bot`
 
 **Files:**
+
 - Create: `apps/zalo-bot/src/infrastructure/database/entities/zalo-oa-token.entity.ts`
 - Create: `apps/zalo-bot/src/infrastructure/database/entities/zalo-oauth-state.entity.ts`
 - Create: `apps/zalo-bot/src/infrastructure/database/entities/zalo-account-link.entity.ts`
@@ -483,6 +482,7 @@ git commit -m "feat(db): add zalo_oa_tokens, zalo_oauth_states, zalo_account_lin
 - Modify: `apps/zalo-bot/src/app.module.ts` (add `DatabaseModule` to imports)
 
 **Interfaces:**
+
 - Consumes: tables created in Task 2.
 - Produces: `ZaloOaTokenEntity`, `ZaloOauthStateEntity`, `ZaloAccountLinkEntity` (TypeORM entities) — consumed by Tasks 5–10's repositories.
 
@@ -547,9 +547,13 @@ import {
 
 /** Maps the `zalo_account_links` table — see migration in apps/messenger-bot. */
 @Entity('zalo_account_links')
-@Index('uq_zalo_account_links_external_user_id', ['platform', 'externalUserId'], {
-  unique: true,
-})
+@Index(
+  'uq_zalo_account_links_external_user_id',
+  ['platform', 'externalUserId'],
+  {
+    unique: true,
+  },
+)
 @Index('uq_zalo_account_links_user_id', ['platform', 'userId'], {
   unique: true,
 })
@@ -660,11 +664,13 @@ git commit -m "feat(zalo-bot): add TypeORM entities and DatabaseModule"
 ### Task 4: Webhook signature verification + domain types
 
 **Files:**
+
 - Create: `apps/zalo-bot/src/modules/zalo-webhook/domain/entities/zalo-webhook-event.types.ts`
 - Create: `apps/zalo-bot/src/modules/zalo-webhook/application/utils/zalo-webhook-signature.utils.ts`
 - Test: `apps/zalo-bot/src/modules/zalo-webhook/application/utils/zalo-webhook-signature.utils.spec.ts`
 
 **Interfaces:**
+
 - Produces: `verifyZaloWebhookSignature(params: { appId: string; rawBody: string; timestamp: string; oaSecretKey: string; signatureHeader: string | undefined }): boolean`, `ZaloWebhookEvent` type — consumed by Task 6's `ZaloWebhookController`.
 
 - [ ] **Step 1: Write the failing test**
@@ -826,12 +832,14 @@ git commit -m "feat(zalo-bot): add webhook signature verification util"
 ### Task 5: `ZaloTokenService` + `ZaloTokenRefreshService` (OA token lifecycle)
 
 **Files:**
+
 - Create: `apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-token.service.ts`
 - Test: `apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-token.service.spec.ts`
 - Create: `apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-token-refresh.service.ts`
 - Test: `apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-token-refresh.service.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `ZaloOaTokenEntity` (Task 3).
 - Produces: `ZaloTokenService.getValidAccessToken(): Promise<string>`, `ZaloTokenService.refreshNow(): Promise<void>` — consumed by Task 9's `ZaloOutboundService` and by `ZaloTokenRefreshService`'s cron.
 
@@ -944,7 +952,11 @@ Expected: FAIL with "Cannot find module './zalo-token.service'"
 
 ```typescript
 // apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-token.service.ts
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -1038,9 +1050,7 @@ export class ZaloTokenService {
     await this.repo.update(row.id, {
       accessToken: payload.access_token,
       refreshToken: payload.refresh_token,
-      accessTokenExpiresAt: new Date(
-        now + Number(payload.expires_in) * 1000,
-      ),
+      accessTokenExpiresAt: new Date(now + Number(payload.expires_in) * 1000),
       refreshTokenExpiresAt: new Date(
         now + Number(payload.refresh_token_expires_in) * 1000,
       ),
@@ -1143,10 +1153,12 @@ git commit -m "feat(zalo-bot): add OA access-token lifecycle (get/refresh + cron
 ### Task 6: `ZaloWebhookController`
 
 **Files:**
+
 - Create: `apps/zalo-bot/src/modules/zalo-webhook/presentation/controllers/zalo-webhook.controller.ts`
 - Test: `apps/zalo-bot/src/modules/zalo-webhook/presentation/controllers/zalo-webhook.controller.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `verifyZaloWebhookSignature` (Task 4), `ZaloWebhookEvent` type (Task 4). Declares a small port `ZaloIncomingMessageHandler { handleIncomingMessage(senderId: string, text: string): Promise<void> }` and `ZaloFollowHandler { handleFollow(senderId: string): Promise<void> }` — implemented for real by `ZaloChatService` in Task 12; this task uses a hand-rolled stub in its own test.
 - Produces: `POST /zalo/webhook` route — this is the final consumer-facing piece; Task 12 injects the real handler.
 
@@ -1162,7 +1174,12 @@ function buildRequest(rawBody: string): Request {
   return { rawBody: Buffer.from(rawBody, 'utf8') } as unknown as Request;
 }
 
-function sign(appId: string, rawBody: string, timestamp: string, secret: string) {
+function sign(
+  appId: string,
+  rawBody: string,
+  timestamp: string,
+  secret: string,
+) {
   return createHash('sha256')
     .update(appId + rawBody + timestamp + secret)
     .digest('hex');
@@ -1333,9 +1350,8 @@ export class ZaloWebhookController {
     @Headers('x-zevent-timestamp') timestampHeader: string | undefined,
   ): Promise<{ received: true }> {
     const appId = this.configService.getOrThrow<string>('ZALO_APP_ID');
-    const oaSecretKey = this.configService.getOrThrow<string>(
-      'ZALO_OA_SECRET_KEY',
-    );
+    const oaSecretKey =
+      this.configService.getOrThrow<string>('ZALO_OA_SECRET_KEY');
     const rawBody = (req.rawBody ?? Buffer.from(JSON.stringify(body))).toString(
       'utf8',
     );
@@ -1422,12 +1438,14 @@ git commit -m "feat(zalo-bot): add ZaloWebhookController (signature verify + eve
 ### Task 7: `ZaloChatHistoryService` + `ZaloOutboundService`
 
 **Files:**
+
 - Create: `apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat-history.service.ts`
 - Test: `apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat-history.service.spec.ts`
 - Create: `apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-outbound.service.ts`
 - Test: `apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-outbound.service.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `ZaloTokenService.getValidAccessToken()` (Task 5).
 - Produces: `ZaloChatHistoryService.getHistory(zaloUserId): Promise<ChatHistoryMessage[]>`, `.appendTurn(zaloUserId, userText, assistantText): Promise<void>`; `ZaloOutboundService.sendText(zaloUserId, text): Promise<void>` — both consumed by Task 8 (`ZaloAgentService`) and Task 12 (`ZaloChatService`).
 
@@ -1452,7 +1470,10 @@ describe('ZaloChatHistoryService', () => {
 
     expect(history).toHaveLength(2);
     expect(history[0]).toMatchObject({ role: 'user', content: 'hi' });
-    expect(history[1]).toMatchObject({ role: 'assistant', content: 'hello there' });
+    expect(history[1]).toMatchObject({
+      role: 'assistant',
+      content: 'hello there',
+    });
   });
 });
 ```
@@ -1640,12 +1661,14 @@ git commit -m "feat(zalo-bot): add chat history store and outbound message sende
 ### Task 8: `ZaloAgentToolsService` (stub) + domain types + system prompt
 
 **Files:**
+
 - Create: `apps/zalo-bot/src/modules/zalo-chat/domain/entities/zalo-chat.types.ts`
 - Create: `apps/zalo-bot/src/modules/zalo-chat/application/agent/zalo-agent-tools.service.ts`
 - Test: `apps/zalo-bot/src/modules/zalo-chat/application/agent/zalo-agent-tools.service.spec.ts`
 - Create: `apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt`
 
 **Interfaces:**
+
 - Produces: `ZaloAgentToolContext`, `ZaloAgentInput`, `ZaloAgentReply` types; `ZaloAgentToolsService.execute(toolName, argsJson, ctx): Promise<unknown>` (implements `ToolExecutorPort<ZaloAgentToolContext>` from `@wispace/llm-agent`) — consumed by Task 9's `ZaloAgentService`.
 
 - [ ] **Step 1: Create domain types (no test — pure types, mirrors `discord-chat.types.ts`)**
@@ -1780,9 +1803,11 @@ git commit -m "feat(zalo-bot): add stub tool executor and system prompt"
 ### Task 9: `ZaloAgentService` (LLM agent adapter)
 
 **Files:**
+
 - Create: `apps/zalo-bot/src/modules/zalo-chat/application/agent/zalo-agent.service.ts`
 
 **Interfaces:**
+
 - Consumes: `ZaloAgentToolsService` (Task 8), `ZaloChatHistoryService` (Task 7), `LlmAgentService`/`LlmAgentPorts`/`NOOP_METRICS_PORT`/`loadSystemPromptFile` from `@wispace/llm-agent`.
 - Produces: `ZaloAgentService.reply(input: ZaloAgentInput): Promise<ZaloAgentReply>` — consumed by Task 12's `ZaloChatService`.
 
@@ -1957,12 +1982,14 @@ git commit -m "feat(zalo-bot): add ZaloAgentService LLM adapter"
 ### Task 10: `ZaloOauthStateService` (PKCE state) + `WispaceZaloTokenVerifyService`
 
 **Files:**
+
 - Create: `apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-oauth-state.service.ts`
 - Test: `apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-oauth-state.service.spec.ts`
 - Create: `apps/zalo-bot/src/modules/zalo-oauth/infrastructure/wispace/wispace-zalo-token-verify.service.ts`
 - Test: `apps/zalo-bot/src/modules/zalo-oauth/infrastructure/wispace/wispace-zalo-token-verify.service.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `ZaloOauthStateEntity` (Task 3).
 - Produces: `ZaloOauthStateService.create(codeVerifier): Promise<string>` (returns `state`), `.consume(state): Promise<string | undefined>` (returns `codeVerifier`, deletes the row, `undefined` if missing/expired); `WispaceZaloTokenVerifyService.verifyToken(token, zaloUserId): Promise<{valid: true; userId: number} | {valid: false; reason: string}>` — both consumed by Task 11's `ZaloAccountLinkService`/`ZaloOauthController`.
 
@@ -2112,7 +2139,8 @@ function buildConfig(): ConfigService {
   return {
     get: (key: string) =>
       ({
-        WISPACE_API_VERIFY_TOKEN_URL: 'https://wispace.example.com/verify-token-url',
+        WISPACE_API_VERIFY_TOKEN_URL:
+          'https://wispace.example.com/verify-token-url',
         WISPACE_INTERNAL_KEY: 'internal-key-1',
       })[key],
   } as unknown as ConfigService;
@@ -2136,7 +2164,9 @@ describe('WispaceZaloTokenVerifyService', () => {
       'https://wispace.example.com/verify-token-url',
       expect.objectContaining({
         method: 'POST',
-        headers: expect.objectContaining({ 'X-Internal-Key': 'internal-key-1' }),
+        headers: expect.objectContaining({
+          'X-Internal-Key': 'internal-key-1',
+        }),
       }),
     );
     const [, options] = fetchMock.mock.calls[0];
@@ -2181,10 +2211,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 
 export type ZaloLinkVerifyFailureReason =
-  | 'NOT_FOUND'
-  | 'EXPIRED'
-  | 'USED'
-  | 'INVALID_FORMAT';
+  'NOT_FOUND' | 'EXPIRED' | 'USED' | 'INVALID_FORMAT';
 
 export type ZaloLinkVerifyResult =
   | { valid: true; userId: number }
@@ -2321,10 +2348,12 @@ git commit -m "feat(zalo-bot): add PKCE state store and WISPACE token-verify cli
 ### Task 11: `ZaloAccountLinkService`
 
 **Files:**
+
 - Create: `apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.ts`
 - Test: `apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `ZaloAccountLinkEntity` (Task 3), PKCE `code_challenge` generation.
 - Produces: `ZaloAccountLinkService.buildPkcePair(): { codeVerifier: string; codeChallenge: string }`, `.exchangeCodeForZaloUser(code, codeVerifier): Promise<{ id: string; name: string }>`, `.upsertLink(userId, zaloUserId): Promise<void>`, `.findUserIdByZaloId(zaloUserId): Promise<number | undefined>` — consumed by Task 13's `ZaloOauthController`.
 
@@ -2378,7 +2407,11 @@ describe('ZaloAccountLinkService', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ error: 0, id: 'zalo-user-1', name: 'Nguyen Van A' }),
+        json: async () => ({
+          error: 0,
+          id: 'zalo-user-1',
+          name: 'Nguyen Van A',
+        }),
       });
 
     const service = new ZaloAccountLinkService(
@@ -2387,7 +2420,10 @@ describe('ZaloAccountLinkService', () => {
       fetchMock as any,
     );
 
-    const user = await service.exchangeCodeForZaloUser('auth-code', 'verifier-1');
+    const user = await service.exchangeCodeForZaloUser(
+      'auth-code',
+      'verifier-1',
+    );
 
     expect(user).toEqual({ id: 'zalo-user-1', name: 'Nguyen Van A' });
     expect(fetchMock).toHaveBeenNthCalledWith(
@@ -2546,7 +2582,9 @@ export class ZaloAccountLinkService {
       );
     });
 
-    this.logger.log(`Linked Zalo account zaloUserId=${zaloUserId} userId=${userId}`);
+    this.logger.log(
+      `Linked Zalo account zaloUserId=${zaloUserId} userId=${userId}`,
+    );
   }
 
   async findUserIdByZaloId(zaloUserId: string): Promise<number | undefined> {
@@ -2576,10 +2614,12 @@ git commit -m "feat(zalo-bot): add Zalo Login PKCE account-link service"
 ### Task 12: `ZaloChatService` (webhook → agent → outbound orchestration)
 
 **Files:**
+
 - Create: `apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat.service.ts`
 - Test: `apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat.service.spec.ts`
 
 **Interfaces:**
+
 - Consumes: `ZaloAgentService.reply()` (Task 9), `ZaloOutboundService.sendText()` (Task 7), `ZaloAccountLinkService.findUserIdByZaloId()` (Task 11).
 - Produces: `ZaloChatService` implementing `ZaloWebhookHandler` (`handleIncomingMessage`, `handleFollow`) from Task 6 — wired into `ZaloWebhookModule` in Task 13.
 
@@ -2690,9 +2730,8 @@ export class ZaloChatService implements ZaloWebhookHandler {
 
   async handleIncomingMessage(zaloUserId: string, text: string): Promise<void> {
     try {
-      const userId = await this.accountLinkService.findUserIdByZaloId(
-        zaloUserId,
-      );
+      const userId =
+        await this.accountLinkService.findUserIdByZaloId(zaloUserId);
       const reply = await this.agentService.reply({
         zaloUserId,
         userId,
@@ -2732,6 +2771,7 @@ git commit -m "feat(zalo-bot): add ZaloChatService orchestrator"
 ### Task 13: `ZaloOauthController` + final module wiring
 
 **Files:**
+
 - Create: `apps/zalo-bot/src/modules/zalo-oauth/presentation/controllers/zalo-oauth.controller.ts`
 - Test: `apps/zalo-bot/src/modules/zalo-oauth/presentation/controllers/zalo-oauth.controller.spec.ts`
 - Create: `apps/zalo-bot/src/modules/zalo-oauth/zalo-oauth.module.ts`
@@ -2740,6 +2780,7 @@ git commit -m "feat(zalo-bot): add ZaloChatService orchestrator"
 - Modify: `apps/zalo-bot/src/app.module.ts` (import `ZaloOauthModule`, `ZaloChatModule`, `ZaloWebhookModule`)
 
 **Interfaces:**
+
 - Consumes: `ZaloAccountLinkService` (Task 11), `WispaceZaloTokenVerifyService` (Task 10), `ZaloOauthStateService` (Task 10), `ZaloOutboundService` (Task 7).
 - Produces: `GET /zalo/oauth/authorize`, `GET /zalo/oauth/callback` — final piece of the account-linking flow (spec §5.2).
 
@@ -2759,7 +2800,8 @@ function buildConfig(): ConfigService {
     getOrThrow: (key: string) =>
       ({
         ZALO_APP_ID: 'app-1',
-        ZALO_OAUTH_REDIRECT_URI: 'https://zalo-bot.example.com/zalo/oauth/callback',
+        ZALO_OAUTH_REDIRECT_URI:
+          'https://zalo-bot.example.com/zalo/oauth/callback',
       })[key],
   } as unknown as ConfigService;
 }
@@ -2770,14 +2812,20 @@ function buildRes() {
 
 describe('ZaloOauthController', () => {
   it('GET /authorize redirects to Zalo Login with a code_challenge and state', async () => {
-    const buildPkcePair = jest
-      .fn()
-      .mockReturnValue({ codeVerifier: 'verifier-1', codeChallenge: 'challenge-1' });
+    const buildPkcePair = jest.fn().mockReturnValue({
+      codeVerifier: 'verifier-1',
+      codeChallenge: 'challenge-1',
+    });
     const create = jest.fn().mockResolvedValue('state-1');
 
     const controller = new ZaloOauthController(
       buildConfig(),
-      { buildPkcePair, exchangeCodeForZaloUser: jest.fn(), upsertLink: jest.fn(), findUserIdByZaloId: jest.fn() } as unknown as ZaloAccountLinkService,
+      {
+        buildPkcePair,
+        exchangeCodeForZaloUser: jest.fn(),
+        upsertLink: jest.fn(),
+        findUserIdByZaloId: jest.fn(),
+      } as unknown as ZaloAccountLinkService,
       { create, consume: jest.fn() } as unknown as ZaloOauthStateService,
       { verifyToken: jest.fn() } as unknown as WispaceZaloTokenVerifyService,
       { sendText: jest.fn() } as unknown as ZaloOutboundService,
@@ -2800,7 +2848,9 @@ describe('ZaloOauthController', () => {
     const exchangeCodeForZaloUser = jest
       .fn()
       .mockResolvedValue({ id: 'zalo-user-1', name: 'A' });
-    const verifyToken = jest.fn().mockResolvedValue({ valid: true, userId: 42 });
+    const verifyToken = jest
+      .fn()
+      .mockResolvedValue({ valid: true, userId: 42 });
     const upsertLink = jest.fn().mockResolvedValue(undefined);
     const sendText = jest.fn().mockResolvedValue(undefined);
 
@@ -2818,11 +2868,22 @@ describe('ZaloOauthController', () => {
     );
 
     const res = buildRes();
-    await controller.callback('auth-code', 'wispace-link-token', 'state-1', res);
+    await controller.callback(
+      'auth-code',
+      'wispace-link-token',
+      'state-1',
+      res,
+    );
 
     expect(consume).toHaveBeenCalledWith('state-1');
-    expect(exchangeCodeForZaloUser).toHaveBeenCalledWith('auth-code', 'verifier-1');
-    expect(verifyToken).toHaveBeenCalledWith('wispace-link-token', 'zalo-user-1');
+    expect(exchangeCodeForZaloUser).toHaveBeenCalledWith(
+      'auth-code',
+      'verifier-1',
+    );
+    expect(verifyToken).toHaveBeenCalledWith(
+      'wispace-link-token',
+      'zalo-user-1',
+    );
     expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1');
     expect(sendText).toHaveBeenCalledWith(
       'zalo-user-1',
@@ -2848,7 +2909,12 @@ describe('ZaloOauthController', () => {
     );
 
     const res = buildRes();
-    await controller.callback('auth-code', 'wispace-link-token', 'state-1', res);
+    await controller.callback(
+      'auth-code',
+      'wispace-link-token',
+      'state-1',
+      res,
+    );
 
     expect(res.json).toHaveBeenCalledWith({
       success: false,
@@ -2956,7 +3022,10 @@ export class ZaloOauthController {
         return;
       }
 
-      await this.accountLinkService.upsertLink(verifyResult.userId, zaloUser.id);
+      await this.accountLinkService.upsertLink(
+        verifyResult.userId,
+        zaloUser.id,
+      );
       await this.outboundService.sendText(zaloUser.id, LINK_WELCOME_MESSAGE);
 
       res.json({ success: true });
@@ -3020,7 +3089,10 @@ export class ZaloOauthModule {}
 // apps/zalo-bot/src/modules/zalo-chat/zalo-chat.module.ts
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { createLlmProviderAdapter, type LlmProviderAdapter } from '@wispace/llm-agent';
+import {
+  createLlmProviderAdapter,
+  type LlmProviderAdapter,
+} from '@wispace/llm-agent';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloAgentService } from './application/agent/zalo-agent.service';
 import { ZaloAgentToolsService } from './application/agent/zalo-agent-tools.service';
@@ -3071,9 +3143,7 @@ import {
 @Module({
   imports: [ZaloChatModule],
   controllers: [ZaloWebhookController],
-  providers: [
-    { provide: ZALO_WEBHOOK_HANDLER, useExisting: ZaloChatService },
-  ],
+  providers: [{ provide: ZALO_WEBHOOK_HANDLER, useExisting: ZaloChatService }],
 })
 export class ZaloWebhookModule {}
 ```

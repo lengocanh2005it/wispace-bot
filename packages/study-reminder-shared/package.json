@@ -9,9 +9,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
-    "lint": "eslint \"src/**/*.ts\" --fix",
-    "format:check": "prettier --check \"src/**/*.ts\"",
-    "format": "prettier --write \"src/**/*.ts\"",
+    "lint": "oxlint --fix",
+    "format:check": "oxfmt --check",
+    "format": "oxfmt",
     "test": "jest --forceExit --maxWorkers=50%"
   },
   "dependencies": {
@@ -31,9 +31,7 @@
     "@types/jest": "^30.0.0",
     "jest": "^30.0.0",
     "reflect-metadata": "^0.2.2",
-    "ts-jest": "^29.2.5",
-    "prettier": "^3.4.2",
-    "eslint": "^9.18.0"
+    "ts-jest": "^29.2.5"
   },
   "jest": {
     "moduleFileExtensions": [

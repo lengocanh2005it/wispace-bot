@@ -37,7 +37,7 @@ interface LlmToolDefinition {
 interface LlmMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
-  toolCallId?: string;    // for role='tool'
+  toolCallId?: string; // for role='tool'
   toolCalls?: LlmToolCall[]; // for assistant with tool calls
 }
 
@@ -50,7 +50,11 @@ interface LlmToolCall {
 interface LlmResponse {
   text?: string;
   toolCalls?: LlmToolCall[];
-  usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
   model: string;
 }
 ```
@@ -115,14 +119,15 @@ The agent loop emits events during execution, allowing downstream consumers to r
 
 ```typescript
 type AgentEvent =
-  | LlmStreamEvent                                            // proxied from adapter
-  | { type: 'tool_start'; toolName: string }                  // before tool execution
-  | { type: 'tool_end'; toolName: string }                    // after tool execution
-  | { type: 'round_start'; round: number }                    // new tool round
-  | { type: 'round_end'; round: number };                     // round completed
+  | LlmStreamEvent // proxied from adapter
+  | { type: 'tool_start'; toolName: string } // before tool execution
+  | { type: 'tool_end'; toolName: string } // after tool execution
+  | { type: 'round_start'; round: number } // new tool round
+  | { type: 'round_end'; round: number }; // round completed
 ```
 
 Loop behavior:
+
 1. For each round: call `adapter.chatStream()`, yield all `LlmStreamEvent`s
 2. Accumulate tool calls from stream (handle `tool_call_start` / `tool_call_delta`)
 3. If no tool calls → yield `done`, return
@@ -148,12 +153,12 @@ Implementation status: provider adapters expose `chatStream()`. `LlmAgentService
 
 ## Alternatives considered
 
-| Alternative | Reason for rejection |
-|-------------|---------------------|
-| Keep OpenAI, add Minimax as secondary via wrapper | Still couples core to OpenAI types; wrapper adds indirection without removing dependency |
-| Use LangChain/Vercel AI SDK as abstraction | Heavy dependencies; adds abstraction we don't control; already have clean port pattern that just needs completing |
-| Provider-specific `LlmAgentService` subclasses | Duplication of agentic loop logic; violates DRY; harder to maintain |
-| Direct `fetch` with per-provider HTTP calls | Reinvents what the OpenAI SDK already does; error handling, retries, streaming become our problem |
+| Alternative                                       | Reason for rejection                                                                                              |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Keep OpenAI, add Minimax as secondary via wrapper | Still couples core to OpenAI types; wrapper adds indirection without removing dependency                          |
+| Use LangChain/Vercel AI SDK as abstraction        | Heavy dependencies; adds abstraction we don't control; already have clean port pattern that just needs completing |
+| Provider-specific `LlmAgentService` subclasses    | Duplication of agentic loop logic; violates DRY; harder to maintain                                               |
+| Direct `fetch` with per-provider HTTP calls       | Reinvents what the OpenAI SDK already does; error handling, retries, streaming become our problem                 |
 
 ## Consequences
 

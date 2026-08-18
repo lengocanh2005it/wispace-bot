@@ -23,6 +23,7 @@
 ### Task 1: OAuth state and callback hardening
 
 **Files:**
+
 - Modify: `apps/zalo-bot/src/infrastructure/database/entities/zalo-oauth-state.entity.ts`
 - Modify: `packages/database/src/migrations/1751029200005-CreateZaloOauthStatesTable.ts`
 - Modify: `apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-oauth-state.service.ts`
@@ -37,6 +38,7 @@
 ### Task 2: Webhook and public endpoint hardening
 
 **Files:**
+
 - Modify: `apps/zalo-bot/src/modules/zalo-webhook/application/utils/zalo-webhook-signature.utils.ts`
 - Modify: `apps/zalo-bot/src/modules/zalo-webhook/presentation/controllers/zalo-webhook.controller.ts`
 - Review/modify if needed: `packages/database/src/services/platform-webhook-inbound-event.service.ts` (durable inbox replaces the former Redis webhook-dedupe path)
@@ -55,6 +57,7 @@
 ### Task 3: Secure database, Redis, and deployment transport
 
 **Files:**
+
 - Modify: `packages/database/src/typeorm-options.ts`
 - Modify: Discord/Zalo database modules and Messenger TypeORM adapter if needed
 - Modify: operational DB scripts using `DB_SSL`
@@ -73,6 +76,7 @@
 ### Task 4: Queue, quota, and timeout safety
 
 **Files:**
+
 - Modify: `packages/chat-queue-core/src/debounce-chat-queue.ts`
 - Modify: Redis chat queue store and bot queue defaults
 - Modify: `packages/chat-metering/src/chat-rate-limit/postgres-burst-counter.ts`
@@ -88,6 +92,7 @@
 ### Task 5: Delivery, retry, and identity correctness
 
 **Files:**
+
 - Modify: Zalo outbound sender
 - Modify: Zalo dead-letter writer/replay cron
 - Modify: `packages/chat-pipeline/src/chat-pipeline.ts`
@@ -105,6 +110,7 @@
 ### Task 6: Verification and residual triage
 
 **Files:**
+
 - Modify: relevant agent-facing docs and `.env.example` files
 - No source changes unless verification finds a regression
 

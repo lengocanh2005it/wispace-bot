@@ -45,20 +45,20 @@ npm run chat-quota:status
 - `docs/edge-cases-roadmap.md` — Project-wide gaps + remediation phases
 - `apps/messenger-bot/docs/study-session-reminder.md` — detailed study session reminders
 
-| Path | Purpose |
-|------|---------|
-| `.claude/settings.json` | Permissions (allow npm/git; deny `.env`, destructive git) |
-| `.claude/rules/` | Per-module conventions — lazy-load when editing matching files |
-| `.claude/skills/` | Workflows invoked via `/skill-name` or auto-triggered when relevant |
+| Path                    | Purpose                                                             |
+| ----------------------- | ------------------------------------------------------------------- |
+| `.claude/settings.json` | Permissions (allow npm/git; deny `.env`, destructive git)           |
+| `.claude/rules/`        | Per-module conventions — lazy-load when editing matching files      |
+| `.claude/skills/`       | Workflows invoked via `/skill-name` or auto-triggered when relevant |
 
 ### Available skills
 
-| Skill | When to use |
-|-------|-------------|
-| `/study-reminder-debug` | Debug study reminder jobs, sync, dispatch |
-| `/typeorm-migration` | Add/modify entities + migrations |
-| `/edit-llm-prompt` | Edit `apps/messenger-bot/src/shared/prompts/*.system.txt` |
-| `/verify` | `format` + `verify` (lint, typecheck, test, build) before finishing a task |
+| Skill                   | When to use                                                                |
+| ----------------------- | -------------------------------------------------------------------------- |
+| `/study-reminder-debug` | Debug study reminder jobs, sync, dispatch                                  |
+| `/typeorm-migration`    | Add/modify entities + migrations                                           |
+| `/edit-llm-prompt`      | Edit `apps/messenger-bot/src/shared/prompts/*.system.txt`                  |
+| `/verify`               | `format` + `verify` (lint, typecheck, test, build) before finishing a task |
 
 Path-scoped rules auto-load when editing matching files — see Rules table below.
 

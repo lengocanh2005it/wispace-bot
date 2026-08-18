@@ -7,14 +7,14 @@ description: Edit LLM system prompts for student reports, study reminders, or th
 
 ## Files
 
-| Prompt | Service | Where |
-|--------|---------|-------|
+| Prompt                                                                     | Service                                                                                             | Where                                          |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
 | `packages/llm-agent/src/chat-system-prompt.ts` (`CHAT_SYSTEM_PROMPT_CORE`) | Chat AI — universal rules (scope, no-tool, no-fabrication, precreate, general) shared by all 3 bots | TS module — packages do not ship `.txt` assets |
-| `apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt` | Chat AI — Messenger overlay (identity, cards, reschedule buttons, report registration) | Overlay of the core |
-| `apps/discord-bot/src/shared/prompts/discord-chat.system.txt` | Chat AI — Discord overlay (identity, DM privacy, reschedule buttons) | Overlay of the core |
-| `apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt` | Chat AI — Zalo overlay (identity, reschedule confirm) | Overlay of the core |
-| `apps/messenger-bot/src/shared/prompts/student-report.system.txt` | Student report (Messenger) | Standalone |
-| `apps/messenger-bot/src/shared/prompts/study-reminder.system.txt` | Study reminder (Messenger) | Standalone |
+| `apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt`          | Chat AI — Messenger overlay (identity, cards, reschedule buttons, report registration)              | Overlay of the core                            |
+| `apps/discord-bot/src/shared/prompts/discord-chat.system.txt`              | Chat AI — Discord overlay (identity, DM privacy, reschedule buttons)                                | Overlay of the core                            |
+| `apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt`                    | Chat AI — Zalo overlay (identity, reschedule confirm)                                               | Overlay of the core                            |
+| `apps/messenger-bot/src/shared/prompts/student-report.system.txt`          | Student report (Messenger)                                                                          | Standalone                                     |
+| `apps/messenger-bot/src/shared/prompts/study-reminder.system.txt`          | Study reminder (Messenger)                                                                          | Standalone                                     |
 
 Read `.claude/rules/prompts.md` before editing.
 

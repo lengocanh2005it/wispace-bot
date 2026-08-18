@@ -67,7 +67,11 @@ try {
 
   if (!current.rows[0]) {
     console.log(
-      JSON.stringify({ found: false, psid: maskExternalId(args.psid) }, null, 2),
+      JSON.stringify(
+        { found: false, psid: maskExternalId(args.psid) },
+        null,
+        2,
+      ),
     );
     process.exit(1);
   }

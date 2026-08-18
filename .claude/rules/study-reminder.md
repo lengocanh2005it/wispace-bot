@@ -23,15 +23,15 @@ Wispace **must** call sync after POST/DELETE `UserCalendar`. The 30-minute cron 
 
 ## Main files (Clean Architecture)
 
-| File | Layer | Role |
-|------|-------|------|
-| `application/services/study-reminder-sync.service.ts` | application | Sync calendar → jobs |
-| `application/services/study-reminder-dispatch.service.ts` | application | Claim + send (via `MESSAGE_SENDER`) |
-| `application/services/study-reminder-schedule.service.ts` | application | Read `STUDY_REMINDER_*` from `.env`, delegate pure computation (`remind_at`, session-started, time label) to `@wispace/study-reminder-shared` |
-| `application/services/study-reminder-worker.service.ts` | application | Cron sync/dispatch/rollover |
-| `infrastructure/wispace/user-calendar-api.service.ts` | infrastructure | GET UserCalendar (x-psid) |
-| `infrastructure/persistence/study-reminder-job.repository.ts` | infrastructure | CRUD jobs |
-| `application/ports/messenger-mapping.port.ts` | application | Read mapping — do not import `MessengerModule` |
+| File                                                          | Layer          | Role                                                                                                                                          |
+| ------------------------------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `application/services/study-reminder-sync.service.ts`         | application    | Sync calendar → jobs                                                                                                                          |
+| `application/services/study-reminder-dispatch.service.ts`     | application    | Claim + send (via `MESSAGE_SENDER`)                                                                                                           |
+| `application/services/study-reminder-schedule.service.ts`     | application    | Read `STUDY_REMINDER_*` from `.env`, delegate pure computation (`remind_at`, session-started, time label) to `@wispace/study-reminder-shared` |
+| `application/services/study-reminder-worker.service.ts`       | application    | Cron sync/dispatch/rollover                                                                                                                   |
+| `infrastructure/wispace/user-calendar-api.service.ts`         | infrastructure | GET UserCalendar (x-psid)                                                                                                                     |
+| `infrastructure/persistence/study-reminder-job.repository.ts` | infrastructure | CRUD jobs                                                                                                                                     |
+| `application/ports/messenger-mapping.port.ts`                 | application    | Read mapping — do not import `MessengerModule`                                                                                                |
 
 ## Tests
 

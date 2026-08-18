@@ -7,6 +7,7 @@ See the full plan at [docs/turborepo-migration-plan.md](../../docs/turborepo-mig
 ## Current status
 
 **Already done:**
+
 - Bot online via Necord, receives DMs + @mentions in server channels (replies via DM), prompt-injection protection, redirects out-of-scope WISPACE requests, and configurable memory/Redis conversation history.
 - Quota/rate-limit + LLM usage/safety event persistence shared via `@wispace/chat-metering` (platform='discord') — see `modules/chat-metering/`.
 - Account-linking Discord ↔ WISPACE userId via OAuth2 (`GET /v1/discord/oauth/callback`), committed at callback independent of guild membership; portal join hint via `GET /v1/discord/link-status?userId=` — see [docs/discord-account-linking.md](docs/discord-account-linking.md).
@@ -18,6 +19,7 @@ See the full plan at [docs/turborepo-migration-plan.md](../../docs/turborepo-mig
 - Queued chat failure fallback + pending-message cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator + user feedback ("Đang xử lý tin nhắn trước...").
 
 **Not yet done / TODO:**
+
 - `register_exam_report_notifications` — intentionally not implemented; Discord has no 24h messaging limit so the 08:00 report cron works without opt-in.
 - Whitelist (`CHAT_RATE_LIMIT_WHITELIST_PSIDS`) and quota-event audit table remain Messenger-only.
 
@@ -30,6 +32,7 @@ npm run start:dev --workspace=apps/discord-bot
 ```
 
 The bot needs the following intents enabled in the Discord Developer Portal (Bot settings):
+
 - `MESSAGE CONTENT INTENT` — read DM content and messages with @mentions ✅
 - `SERVER MEMBERS INTENT` — receive `guildMemberAdd` event for auto-complete account link ✅
 

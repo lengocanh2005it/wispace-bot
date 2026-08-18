@@ -37,13 +37,13 @@ flowchart LR
   end
 ```
 
-| Step | Frequency | Work |
-|------|-----------|------|
-| **Sync** | **API on schedule change** + 30-min cron (fallback) + server start + **23:00 rollover** | Scan 14-day horizon → write/update `study_reminder_jobs` |
-| **Dispatch** | **Adaptive** 30s–3.5min (`STUDY_REMINDER_POLL_*`) | Job reaches `remind_at` → LLM generates content → send via Messenger |
-| **Evening rollover** | **23:00** (`STUDY_REMINDER_TIMEZONE`) | Delete **`sent`** jobs → re-sync 14-day horizon |
-| **Cleanup** | Daily at 03:00 | Delete `cancelled` / `failed` jobs that exhausted retries past `JOB_RETENTION_DAYS` |
-| **Preview** | On demand (bot menu) | Read schedule directly from API/DB — send immediately, bypassing job queue |
+| Step                 | Frequency                                                                               | Work                                                                                |
+| -------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| **Sync**             | **API on schedule change** + 30-min cron (fallback) + server start + **23:00 rollover** | Scan 14-day horizon → write/update `study_reminder_jobs`                            |
+| **Dispatch**         | **Adaptive** 30s–3.5min (`STUDY_REMINDER_POLL_*`)                                       | Job reaches `remind_at` → LLM generates content → send via Messenger                |
+| **Evening rollover** | **23:00** (`STUDY_REMINDER_TIMEZONE`)                                                   | Delete **`sent`** jobs → re-sync 14-day horizon                                     |
+| **Cleanup**          | Daily at 03:00                                                                          | Delete `cancelled` / `failed` jobs that exhausted retries past `JOB_RETENTION_DAYS` |
+| **Preview**          | On demand (bot menu)                                                                    | Read schedule directly from API/DB — send immediately, bypassing job queue          |
 
 ---
 
@@ -53,10 +53,10 @@ flowchart LR
 
 There are **two sync modes** (same internal logic):
 
-| Mode | Trigger | Scope |
-|------|---------|-------|
-| **Per-user** | `POST /messenger/study-calendar/sync` `{ userId }` | One user — WISPACE calls after schedule change |
-| **All users** | 30-min cron, server start, `POST /messenger/sync-study-reminders` | All ACTIVE mappings with `external_user_id` |
+| Mode          | Trigger                                                           | Scope                                          |
+| ------------- | ----------------------------------------------------------------- | ---------------------------------------------- |
+| **Per-user**  | `POST /messenger/study-calendar/sync` `{ userId }`                | One user — WISPACE calls after schedule change |
+| **All users** | 30-min cron, server start, `POST /messenger/sync-study-reminders` | All ACTIVE mappings with `external_user_id`    |
 
 For each synced user:
 
@@ -127,10 +127,10 @@ Delete terminal **`cancelled`** / **`failed`** (retries exhausted) jobs older th
 
 #### When User Changes Schedule (WISPACE)
 
-| Flow | Update Method |
-|------|---------------|
-| **Outbox (T-30)** | `POST /messenger/study-calendar/sync` `{ "userId": 143 }` immediately after schedule commit |
-| **Preview (menu)** | Read directly from the UserCalendar API — always sees the new schedule, no job sync needed |
+| Flow               | Update Method                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------- |
+| **Outbox (T-30)**  | `POST /messenger/study-calendar/sync` `{ "userId": 143 }` immediately after schedule commit |
+| **Preview (menu)** | Read directly from the UserCalendar API — always sees the new schedule, no job sync needed  |
 
 Per-user sync will upsert `pending` jobs, cancel stale jobs, and **reopen `pending` jobs** when:
 
@@ -151,13 +151,13 @@ Both automatic dispatch and menu preview use this same service. Without `OPENAI_
 
 ### 3.5. Quick Testing
 
-| Method | Description |
-|--------|-------------|
-| Menu **"Upcoming Study Reminders"** | Send preview of next upcoming class immediately |
-| `POST /messenger/study-calendar/sync` | **WISPACE calls after schedule change** (by `userId`) |
-| `POST /messenger/sync-study-reminders` | Sync all users (ops / fallback) |
-| `POST /messenger/send-study-reminders` | Sync + dispatch due jobs |
-| `npm run study-reminder:jobs` | View job list in DB |
+| Method                                 | Description                                           |
+| -------------------------------------- | ----------------------------------------------------- |
+| Menu **"Upcoming Study Reminders"**    | Send preview of next upcoming class immediately       |
+| `POST /messenger/study-calendar/sync`  | **WISPACE calls after schedule change** (by `userId`) |
+| `POST /messenger/sync-study-reminders` | Sync all users (ops / fallback)                       |
+| `POST /messenger/send-study-reminders` | Sync + dispatch due jobs                              |
+| `npm run study-reminder:jobs`          | View job list in DB                                   |
 
 ### 3.6. Sync API on Schedule Change
 
@@ -172,10 +172,10 @@ Content-Type: application/json
 { "userId": 2597 }
 ```
 
-| Schedule Action | WISPACE Does | Sync Service Does |
-|-----------------|-------------|-------------------|
+| Schedule Action      | WISPACE Does                | Sync Service Does                         |
+| -------------------- | --------------------------- | ----------------------------------------- |
 | Create / change time | Call sync API with `userId` | GET `UserCalendar` (x-psid) → UPSERT jobs |
-| Delete class | Call sync API with `userId` | Class no longer in API → `cancelled` |
+| Delete class         | Call sync API with `userId` | Class no longer in API → `cancelled`      |
 
 Sample response:
 
@@ -273,10 +273,10 @@ All schedule changes (POST/DELETE) **must call** `POST /messenger/study-calendar
 
 ### 4.2. Data for LLM
 
-| API | Purpose |
-|-----|---------|
+| API                          | Purpose                   |
+| ---------------------------- | ------------------------- |
 | `WISPACE_API_USER_GOALS_URL` | `targetScore`, `examDate` |
-| `WISPACE_API_TASK_SCORE_URL` | Band Task 1/2 |
+| `WISPACE_API_TASK_SCORE_URL` | Band Task 1/2             |
 
 ### 4.3. User Linking
 
@@ -321,13 +321,13 @@ CREATE TABLE study_reminder_jobs (
 > the legacy `psid` column, and `platform` discriminates `messenger` /
 > `discord` / `zalo`. Dispatch index: `(status, remind_at)`.
 
-| `status` | Meaning |
-|----------|---------|
-| `pending` | Waiting until `remind_at` |
-| `processing` | Sending |
-| `sent` | Sent successfully |
-| `failed` | Error — waiting to retry |
-| `cancelled` | Cancelled / schedule change / past class time |
+| `status`     | Meaning                                       |
+| ------------ | --------------------------------------------- |
+| `pending`    | Waiting until `remind_at`                     |
+| `processing` | Sending                                       |
+| `sent`       | Sent successfully                             |
+| `failed`     | Error — waiting to retry                      |
+| `cancelled`  | Cancelled / schedule change / past class time |
 
 Terminal jobs (`sent`, `cancelled`, `failed` retries exhausted) are **permanently deleted** after `STUDY_REMINDER_JOB_RETENTION_DAYS` — see section 3.3.
 
@@ -441,11 +441,11 @@ POST /messenger/profile/setup
 
 ## 10. Messenger Logging
 
-| `message_type` | Meaning |
-|----------------|---------|
-| `STUDY_REMINDER:{timestamp}` | Automatic reminder via dispatch |
-| `STUDY_SESSION_REMINDER_PREVIEW` | Menu test |
-| `STUDY_SESSION_REMINDER_EMPTY` | No upcoming classes |
+| `message_type`                   | Meaning                         |
+| -------------------------------- | ------------------------------- |
+| `STUDY_REMINDER:{timestamp}`     | Automatic reminder via dispatch |
+| `STUDY_SESSION_REMINDER_PREVIEW` | Menu test                       |
+| `STUDY_SESSION_REMINDER_EMPTY`   | No upcoming classes             |
 
 Primary send status: `study_reminder_jobs.status`. `message_logs` used for audit.
 
@@ -457,39 +457,39 @@ The **outbox table (`study_reminder_jobs`) + cron sync/dispatch** approach suits
 
 ### 11.1. Why This Approach Makes Sense Now
 
-| Strength | Brief Explanation |
-|----------|-------------------|
-| **Little new infrastructure** | No Redis/RabbitMQ needed; jobs live in the same Postgres as the app |
-| **Retry & clear state** | `pending` → `sent` / `failed` / `cancelled` — easy to debug, no lost jobs on send errors |
-| **Leverages WISPACE API** | `UserCalendar` via `x-psid` — API-only (I3 ✓) |
-| **Per-user sync** | WISPACE calls one API after schedule change — no event bus / webhook needed |
-| **Flexible LLM** | Personalized reminders based on goals/band without maintaining many templates |
-| **Separate sync from send** | Schedule change only needs job re-sync; no Messenger/LLM calls at write time |
+| Strength                      | Brief Explanation                                                                        |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| **Little new infrastructure** | No Redis/RabbitMQ needed; jobs live in the same Postgres as the app                      |
+| **Retry & clear state**       | `pending` → `sent` / `failed` / `cancelled` — easy to debug, no lost jobs on send errors |
+| **Leverages WISPACE API**     | `UserCalendar` via `x-psid` — API-only (I3 ✓)                                            |
+| **Per-user sync**             | WISPACE calls one API after schedule change — no event bus / webhook needed              |
+| **Flexible LLM**              | Personalized reminders based on goals/band without maintaining many templates            |
+| **Separate sync from send**   | Schedule change only needs job re-sync; no Messenger/LLM calls at write time             |
 
 ### 11.2. Weaknesses / Risks to Know
 
-| Issue | Description | Current Impact |
-|-------|-------------|----------------|
-| **Schedule and jobs not instantly synchronized** | Snapshot at last sync. If WISPACE forgets to call sync API → max ~30 min drift (fallback cron) | Low — **S0 ✓** wired sync after schedule change |
-| **Depends on WISPACE integration** | WISPACE calls `POST /messenger/study-calendar/sync` after every schedule change | **Done (S0)** — keep monitoring if deploying new environments |
-| **Depends on UserCalendar API** | Sync/dispatch needs stable WISPACE API; no more reading `UserCalendars` DB | Medium — monitor 5xx |
-| **Send time accuracy** | Adaptive poll: near `remind_at` → min 30s; no jobs → max ~3.5 min | Low — acceptable for 30-minute advance reminders |
-| **Horizon limited** | Only syncs classes within `SYNC_HORIZON_HOURS` (14 days). Classes further out have no jobs until next sync enters the window | Low for weekly schedules |
-| **LLM called at dispatch** | Each job = 1 OpenAI call + goals/score API → cost, latency, model errors may delay or fail reminders | Medium — has retries and template fallback |
-| **Content not fixed** | Two reminders for same class (preview vs auto) may have different wording due to LLM | Low |
-| **Messenger channel only** | Users without linked `psid` or blocking bot → no reminders | High for unmapped users — by design |
-| **Full-scan sync (cron)** | 30-min cron still scans **all** mappings — just a fallback; primary flow syncs per `userId` | Low with few users; increases at scale |
-| **Multiple app instances** | `claimJob` via DB prevents duplicate sends, but cron runs on every instance — needs monitoring on horizontal scale | Low on single instance |
-| **Dispatch polling** | ~~Fixed 1 minute~~ → **S2 ✓ adaptive** — fewer queries when no jobs due | Low at this stage; reduces scale risk — section [11.6](#116-worker-dispatch-polling--db-load-concerns--risk-mitigation) |
+| Issue                                            | Description                                                                                                                  | Current Impact                                                                                                          |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **Schedule and jobs not instantly synchronized** | Snapshot at last sync. If WISPACE forgets to call sync API → max ~30 min drift (fallback cron)                               | Low — **S0 ✓** wired sync after schedule change                                                                         |
+| **Depends on WISPACE integration**               | WISPACE calls `POST /messenger/study-calendar/sync` after every schedule change                                              | **Done (S0)** — keep monitoring if deploying new environments                                                           |
+| **Depends on UserCalendar API**                  | Sync/dispatch needs stable WISPACE API; no more reading `UserCalendars` DB                                                   | Medium — monitor 5xx                                                                                                    |
+| **Send time accuracy**                           | Adaptive poll: near `remind_at` → min 30s; no jobs → max ~3.5 min                                                            | Low — acceptable for 30-minute advance reminders                                                                        |
+| **Horizon limited**                              | Only syncs classes within `SYNC_HORIZON_HOURS` (14 days). Classes further out have no jobs until next sync enters the window | Low for weekly schedules                                                                                                |
+| **LLM called at dispatch**                       | Each job = 1 OpenAI call + goals/score API → cost, latency, model errors may delay or fail reminders                         | Medium — has retries and template fallback                                                                              |
+| **Content not fixed**                            | Two reminders for same class (preview vs auto) may have different wording due to LLM                                         | Low                                                                                                                     |
+| **Messenger channel only**                       | Users without linked `psid` or blocking bot → no reminders                                                                   | High for unmapped users — by design                                                                                     |
+| **Full-scan sync (cron)**                        | 30-min cron still scans **all** mappings — just a fallback; primary flow syncs per `userId`                                  | Low with few users; increases at scale                                                                                  |
+| **Multiple app instances**                       | `claimJob` via DB prevents duplicate sends, but cron runs on every instance — needs monitoring on horizontal scale           | Low on single instance                                                                                                  |
+| **Dispatch polling**                             | ~~Fixed 1 minute~~ → **S2 ✓ adaptive** — fewer queries when no jobs due                                                      | Low at this stage; reduces scale risk — section [11.6](#116-worker-dispatch-polling--db-load-concerns--risk-mitigation) |
 
 ### 11.3. Comparison with Other Approaches (Summary)
 
-| Approach | Pros | Cons vs Current |
-|----------|------|-----------------|
-| **Fixed N-minute cron poll, send immediately** | Simple, no jobs table | No durable retry, hard to audit, high DB/API load scanning users |
-| **External queue (BullMQ, SQS…)** | Good scale, precise delay | Added infrastructure, operations — overkill at this stage |
-| **Messenger scheduled messages** | Meta sends on your behalf | No dynamic LLM, limited policy/templates |
-| **Push/email multi-channel** | Reaches users not on Messenger | Outside current integration scope |
+| Approach                                       | Pros                           | Cons vs Current                                                  |
+| ---------------------------------------------- | ------------------------------ | ---------------------------------------------------------------- |
+| **Fixed N-minute cron poll, send immediately** | Simple, no jobs table          | No durable retry, hard to audit, high DB/API load scanning users |
+| **External queue (BullMQ, SQS…)**              | Good scale, precise delay      | Added infrastructure, operations — overkill at this stage        |
+| **Messenger scheduled messages**               | Meta sends on your behalf      | No dynamic LLM, limited policy/templates                         |
+| **Push/email multi-channel**                   | Reaches users not on Messenger | Outside current integration scope                                |
 
 ### 11.4. Improvement Directions (Priority Order)
 
@@ -513,11 +513,11 @@ delay = clamp(msTilDue - STUDY_REMINDER_POLL_LEAD_MS,
               STUDY_REMINDER_POLL_MAX_MS)
 ```
 
-| Env | Default | Behavior |
-|-----|---------|----------|
-| `STUDY_REMINDER_POLL_MIN_MS` | 30_000 (30s) | Fastest poll when job is about due |
-| `STUDY_REMINDER_POLL_MAX_MS` | 210_000 (3.5 min) | Slowest poll when no jobs |
-| `STUDY_REMINDER_POLL_LEAD_MS` | 60_000 (60s) | Wake 1 minute before `remind_at` / `next_retry_at` |
+| Env                           | Default           | Behavior                                           |
+| ----------------------------- | ----------------- | -------------------------------------------------- |
+| `STUDY_REMINDER_POLL_MIN_MS`  | 30_000 (30s)      | Fastest poll when job is about due                 |
+| `STUDY_REMINDER_POLL_MAX_MS`  | 210_000 (3.5 min) | Slowest poll when no jobs                          |
+| `STUDY_REMINDER_POLL_LEAD_MS` | 60_000 (60s)      | Wake 1 minute before `remind_at` / `next_retry_at` |
 
 `findNextDueTime(after)` — SQL `MIN(CASE WHEN next_retry_at > after THEN next_retry_at WHEN remind_at > after THEN remind_at END)` on `pending`/`failed` jobs.
 
@@ -525,11 +525,11 @@ Multi-pod: each instance runs its own loop; `claimJob` (atomic `UPDATE … WHERE
 
 #### 11.6.2. Outbox vs Worker Polling (Summary)
 
-| Concept | Current |
-|---------|--------|
-| **Outbox** | `study_reminder_jobs` table — snapshot of "T-30 reminder tasks to send"; the dispatch worker sends due jobs through `MESSAGE_SENDER` |
-| **Sync worker** | Writes/updates outbox from `UserCalendar` (30-min cron, API sync, 23:00 rollover) |
-| **Dispatch worker** | **Adaptive poll** reads outbox: any job with `remind_at <= now` gets sent |
+| Concept             | Current                                                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Outbox**          | `study_reminder_jobs` table — snapshot of "T-30 reminder tasks to send"; the dispatch worker sends due jobs through `MESSAGE_SENDER` |
+| **Sync worker**     | Writes/updates outbox from `UserCalendar` (30-min cron, API sync, 23:00 rollover)                                                    |
+| **Dispatch worker** | **Adaptive poll** reads outbox: any job with `remind_at <= now` gets sent                                                            |
 
 **Menu "Upcoming Study Reminders"** doesn't go through the outbox — reads schedule directly and sends immediately (preview).
 
@@ -557,11 +557,11 @@ ORDER BY remind_at ASC
 LIMIT 50
 ```
 
-| Feature | Meaning |
-|---------|---------|
+| Feature                     | Meaning                                               |
+| --------------------------- | ----------------------------------------------------- |
 | Index `(status, remind_at)` | Postgres only scans **due jobs**, not the whole table |
-| `LIMIT 50` | Max 50 jobs per poll — caps one dispatch loop's load |
-| `scheduled_at` condition | Skips jobs past class time |
+| `LIMIT 50`                  | Max 50 jobs per poll — caps one dispatch loop's load  |
+| `scheduled_at` condition    | Skips jobs past class time                            |
 
 **Frequency:** not a fixed 1 minute. No jobs → max ~**576 queries/day** (3.5min interval × 24h); jobs due → denser polling (min 30s). With proper index and a few hundred `pending` jobs, the cost is minimal on `ai_chat_bot_db`.
 
@@ -569,47 +569,47 @@ The **30-minute sync cron** is **different load** (reads UserCalendar per `psid`
 
 #### 11.6.4. When Does Polling Become a Concern?
 
-| Situation | Why It's Risky | Symptoms |
-|-----------|----------------|----------|
-| **Outbox bloat** | Hundreds of thousands / millions of `sent`, `cancelled` rows not cleaned | Large index, slow vacuum, slow due queries |
-| **Many `pending` jobs due at once** | One minute must process > `LIMIT 50` | Late reminders spill to next minute |
-| **Many Nest instances** | Each pod runs adaptive dispatch loop | Claim contention; `claimJob` is atomic (already in place) |
-| **Dedicated DB** | Queries isolated to `ai_chat_bot_db` | No resource contention with WISPACE hub |
-| **Absolute T-30 accuracy expectation** | Adaptive poll → max late by ~`pollMinMs` + lead when job is close to due | Acceptable for 30-minute advance reminders |
+| Situation                              | Why It's Risky                                                           | Symptoms                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------- |
+| **Outbox bloat**                       | Hundreds of thousands / millions of `sent`, `cancelled` rows not cleaned | Large index, slow vacuum, slow due queries                |
+| **Many `pending` jobs due at once**    | One minute must process > `LIMIT 50`                                     | Late reminders spill to next minute                       |
+| **Many Nest instances**                | Each pod runs adaptive dispatch loop                                     | Claim contention; `claimJob` is atomic (already in place) |
+| **Dedicated DB**                       | Queries isolated to `ai_chat_bot_db`                                     | No resource contention with WISPACE hub                   |
+| **Absolute T-30 accuracy expectation** | Adaptive poll → max late by ~`pollMinMs` + lead when job is close to due | Acceptable for 30-minute advance reminders                |
 
 **Practical conclusion:** S2 reduces idle queries; remaining risk is mainly **outbox size** and **burst of simultaneous due jobs**. With dozens of users, 14-day horizon, evening rollover deleting `sent` → **not yet an issue**.
 
 #### 11.6.5. Already in Code to Mitigate Risk
 
-| Mechanism | File / Config |
-|-----------|---------------|
-| **Adaptive poll (S2)** | `StudyReminderWorkerService.scheduleNextDispatch`, `computePollDelay`, env `STUDY_REMINDER_POLL_*` |
-| `findNextDueTime` | `StudyReminderJobRepository` — schedules wake by next job |
-| Dispatch index | `idx_study_reminder_jobs_dispatch` on `(status, remind_at)` |
-| `LIMIT 50` per loop | `StudyReminderJobRepository.findDueJobs()` |
-| Claim job | `pending`/`failed` → `processing` before send — prevents duplicates (single instance) |
-| Reset stuck jobs | `resetStuckProcessingJobs` after 10 minutes |
-| Evening rollover **23:00** | Deletes all `sent` jobs + re-syncs horizon |
-| Cleanup **03:00** | Deletes `cancelled` / `failed` exhausted retries older than `JOB_RETENTION_DAYS` |
-| 14-day horizon | Only keeps jobs in sync window — no year-long snapshot |
+| Mechanism                  | File / Config                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Adaptive poll (S2)**     | `StudyReminderWorkerService.scheduleNextDispatch`, `computePollDelay`, env `STUDY_REMINDER_POLL_*` |
+| `findNextDueTime`          | `StudyReminderJobRepository` — schedules wake by next job                                          |
+| Dispatch index             | `idx_study_reminder_jobs_dispatch` on `(status, remind_at)`                                        |
+| `LIMIT 50` per loop        | `StudyReminderJobRepository.findDueJobs()`                                                         |
+| Claim job                  | `pending`/`failed` → `processing` before send — prevents duplicates (single instance)              |
+| Reset stuck jobs           | `resetStuckProcessingJobs` after 10 minutes                                                        |
+| Evening rollover **23:00** | Deletes all `sent` jobs + re-syncs horizon                                                         |
+| Cleanup **03:00**          | Deletes `cancelled` / `failed` exhausted retries older than `JOB_RETENTION_DAYS`                   |
+| 14-day horizon             | Only keeps jobs in sync window — no year-long snapshot                                             |
 
 #### 11.6.6. Load Comparison: Dispatch Poll vs Other Cron Jobs
 
-| Cron / Loop | Frequency | Reads | Note |
-|-------------|-----------|-------|------|
-| **dispatch (adaptive)** | 30s–3.5 min | Due jobs in outbox (`LIMIT 50`) + `findNextDueTime` | S2 ✓ — fewer queries when idle |
-| **sync** | 30 min | UserCalendar API × ACTIVE mappings | Heavier **per run**, but 48 times/day |
-| **evening rollover** | 1×/day | DELETE `sent` + full sync | Keeps outbox small |
-| **cleanup** | 1×/day | Delete old terminal | Reduces dead rows |
+| Cron / Loop             | Frequency   | Reads                                               | Note                                  |
+| ----------------------- | ----------- | --------------------------------------------------- | ------------------------------------- |
+| **dispatch (adaptive)** | 30s–3.5 min | Due jobs in outbox (`LIMIT 50`) + `findNextDueTime` | S2 ✓ — fewer queries when idle        |
+| **sync**                | 30 min      | UserCalendar API × ACTIVE mappings                  | Heavier **per run**, but 48 times/day |
+| **evening rollover**    | 1×/day      | DELETE `sent` + full sync                           | Keeps outbox small                    |
+| **cleanup**             | 1×/day      | Delete old terminal                                 | Reduces dead rows                     |
 
 #### 11.6.7. Further Scale Approaches (Not Yet Implemented — Reference)
 
-| Approach | Description | Trade-off |
-|----------|-------------|-----------|
-| ~~**B. Adaptive polling**~~ | ✓ S2 — see 11.6.1 | Already done |
-| **C. `FOR UPDATE SKIP LOCKED`** | More workers/pods claim jobs safely | `claimJob` UPDATE sufficient for moderate scale |
-| **D. Delayed job queue** | BullMQ / SQS / pg_cron fires at exact `remind_at` | No polling; added Redis/ops |
-| **E. Poll schedule instead of outbox** | Every N min read UserCalendar, send if in T-30 window | Poor retry, high WISPACE API load |
+| Approach                               | Description                                           | Trade-off                                       |
+| -------------------------------------- | ----------------------------------------------------- | ----------------------------------------------- |
+| ~~**B. Adaptive polling**~~            | ✓ S2 — see 11.6.1                                     | Already done                                    |
+| **C. `FOR UPDATE SKIP LOCKED`**        | More workers/pods claim jobs safely                   | `claimJob` UPDATE sufficient for moderate scale |
+| **D. Delayed job queue**               | BullMQ / SQS / pg_cron fires at exact `remind_at`     | No polling; added Redis/ops                     |
+| **E. Poll schedule instead of outbox** | Every N min read UserCalendar, send if in T-30 window | Poor retry, high WISPACE API load               |
 
 For **IELTS students + 30-minute advance reminders**, the combination of **small outbox + night cleanup of `sent` + index + S2 adaptive** is typically sufficient up to tens of thousands of `pending` jobs. Only need D/E if product requires second-level timing precision or massive volume.
 

@@ -10,16 +10,15 @@ export class DiscordCalendarPort extends GenericCalendarPort {
   constructor(
     private readonly studyCalendarCommandService: PlatformStudyCalendarCommandService,
   ) {
-    super(
-      (externalId: string): Promise<CalendarEntryView[]> =>
-        studyCalendarCommandService
-          .listEntries(externalId, { timeRange: 'upcoming' })
-          .then((result) =>
-            result.entries.map((entry) => ({
-              calendarId: entry.calendarId,
-              scheduledTimeLabel: entry.scheduledTimeLabel,
-            })),
-          ),
+    super((externalId: string): Promise<CalendarEntryView[]> =>
+      studyCalendarCommandService
+        .listEntries(externalId, { timeRange: 'upcoming' })
+        .then((result) =>
+          result.entries.map((entry) => ({
+            calendarId: entry.calendarId,
+            scheduledTimeLabel: entry.scheduledTimeLabel,
+          })),
+        ),
     );
   }
 }

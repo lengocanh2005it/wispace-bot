@@ -120,6 +120,7 @@ Cron (every 45 minutes) → ZaloTokenRefreshService
 ## 9. Migration / DB
 
 3 new tables (specific names, migration written per the `/typeorm-migration` skill during implementation):
+
 - `zalo_oa_tokens`
 - `zalo_oauth_states`
 - `zalo_account_links`

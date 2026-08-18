@@ -9,16 +9,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
-    "lint": "eslint \"src/**/*.ts\" --fix",
-    "format:check": "prettier --check \"src/**/*.ts\"",
-    "format": "prettier --write \"src/**/*.ts\"",
+    "lint": "oxlint --fix",
+    "format:check": "oxfmt --check",
+    "format": "oxfmt",
     "test": "jest --maxWorkers=50%"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "eslint": "^9.18.0",
     "jest": "^30.0.0",
-    "prettier": "^3.4.2",
     "ts-jest": "^29.2.5"
   },
   "jest": {

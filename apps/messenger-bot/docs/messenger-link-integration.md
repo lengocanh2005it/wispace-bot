@@ -8,12 +8,12 @@ Related: [messenger-link-security.md](./messenger-link-security.md) (solution tr
 
 ## Example Characters
 
-| Character | Role |
-|-----------|------|
-| **Lan** | WISPACE student, `userId = 143` |
-| **Hung** | Someone trying to map their PSID to another person's account |
-| **Bot** | Messenger Bot (`demo_send_message_fb`) |
-| **WISPACE** | Student app + backend |
+| Character   | Role                                                         |
+| ----------- | ------------------------------------------------------------ |
+| **Lan**     | WISPACE student, `userId = 143`                              |
+| **Hung**    | Someone trying to map their PSID to another person's account |
+| **Bot**     | Messenger Bot (`demo_send_message_fb`)                       |
+| **WISPACE** | Student app + backend                                        |
 
 ---
 
@@ -178,12 +178,12 @@ Modify `relinkPsidToUserId` — **don't** upsert freely when `previousUserId !==
 
 ## 4. What If Hung Attacks?
 
-| Attack Method | Result |
-|---------------|--------|
-| Change `ref=999` (userId number) | Bot doesn't parse number → verify `NOT_FOUND` |
-| Guess random token | Practically impossible (UUID/CSPRNG) |
-| Steal Lan's forwarded link | Token is **one-time** — Lan uses first → Hung gets `USED` |
-| Token older than 30 minutes | `EXPIRED` → message to reopen from WISPACE app |
+| Attack Method                    | Result                                                    |
+| -------------------------------- | --------------------------------------------------------- |
+| Change `ref=999` (userId number) | Bot doesn't parse number → verify `NOT_FOUND`             |
+| Guess random token               | Practically impossible (UUID/CSPRNG)                      |
+| Steal Lan's forwarded link       | Token is **one-time** — Lan uses first → Hung gets `USED` |
+| Token older than 30 minutes      | `EXPIRED` → message to reopen from WISPACE app            |
 
 ---
 
@@ -215,13 +215,13 @@ Messenger **doesn't** issue tokens itself — it doesn't know who's logged into 
 
 ## 6. Comparison with Current Code
 
-| | Historical raw-ref flow | Current token-verified flow |
-|--|---------|---------------------|
-| What does `ref` mean? | `userId` | Opaque WISPACE-issued token |
-| Who decides `userId`? | Bot `parseInt` itself | **WISPACE** returns after verify |
-| What does Bot send to WISPACE when linking? | Nothing | `{ token, value, platform }` |
-| When is verify API called? | — | **Once** when webhook has a referral token |
-| Chat / reports / reminders after that | Read DB mapping | **No change** |
+|                                             | Historical raw-ref flow | Current token-verified flow                |
+| ------------------------------------------- | ----------------------- | ------------------------------------------ |
+| What does `ref` mean?                       | `userId`                | Opaque WISPACE-issued token                |
+| Who decides `userId`?                       | Bot `parseInt` itself   | **WISPACE** returns after verify           |
+| What does Bot send to WISPACE when linking? | Nothing                 | `{ token, value, platform }`               |
+| When is verify API called?                  | —                       | **Once** when webhook has a referral token |
+| Chat / reports / reminders after that       | Read DB mapping         | **No change**                              |
 
 ---
 
@@ -260,12 +260,12 @@ CREATE INDEX idx_messenger_link_tokens_expires ON messenger_link_tokens (expires
   WHERE used_at IS NULL;
 ```
 
-| Column | Notes |
-|--------|-------|
-| `token` | UUID v4 or CSPRNG 32+ bytes, opaque |
-| `user_id` | From session — **not** received from client |
-| `expires_at` | Recommended `now() + 30 minutes` |
-| `used_at` | Set on successful verify (one-time) |
+| Column       | Notes                                       |
+| ------------ | ------------------------------------------- |
+| `token`      | UUID v4 or CSPRNG 32+ bytes, opaque         |
+| `user_id`    | From session — **not** received from client |
+| `expires_at` | Recommended `now() + 30 minutes`            |
+| `used_at`    | Set on successful verify (one-time)         |
 
 ---
 
@@ -273,12 +273,12 @@ CREATE INDEX idx_messenger_link_tokens_expires ON messenger_link_tokens (expires
 
 Used when student taps 「Connect Messenger」in a **logged-in** app.
 
-| | |
-|--|--|
-| **Method / path** | `POST /api/messenger/link-token` |
-| **Auth** | Session cookie or `Authorization: Bearer {user_jwt}` — user must be logged in |
-| **Who calls** | WISPACE frontend → WISPACE backend |
-| **Messenger Bot** | Does **not** call this API |
+|                   |                                                                               |
+| ----------------- | ----------------------------------------------------------------------------- |
+| **Method / path** | `POST /api/messenger/link-token`                                              |
+| **Auth**          | Session cookie or `Authorization: Bearer {user_jwt}` — user must be logged in |
+| **Who calls**     | WISPACE frontend → WISPACE backend                                            |
+| **Messenger Bot** | Does **not** call this API                                                    |
 
 #### Request Body (Optional)
 
@@ -289,10 +289,10 @@ Used when student taps 「Connect Messenger」in a **logged-in** app.
 }
 ```
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `topic` | No | Default `"IELTS"` |
-| `cadence` | No | `DAILY` \| `WEEKLY` \| `MONTHLY`, default `WEEKLY` |
+| Field     | Required | Description                                        |
+| --------- | -------- | -------------------------------------------------- |
+| `topic`   | No       | Default `"IELTS"`                                  |
+| `cadence` | No       | `DAILY` \| `WEEKLY` \| `MONTHLY`, default `WEEKLY` |
 
 **Don't send `userId`** — backend gets it from session.
 
@@ -306,17 +306,17 @@ Used when student taps 「Connect Messenger」in a **logged-in** app.
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `token` | string | Value placed in `ref` on `m.me` |
-| `expiresAt` | ISO 8601 | Token expiration |
-| `url` | string | Full link for app to open / copy |
+| Field       | Type     | Description                      |
+| ----------- | -------- | -------------------------------- |
+| `token`     | string   | Value placed in `ref` on `m.me`  |
+| `expiresAt` | ISO 8601 | Token expiration                 |
+| `url`       | string   | Full link for app to open / copy |
 
 #### Error Responses
 
-| HTTP | Example Body | When |
-|------|-------------|------|
-| `401` | `{ "error": "UNAUTHORIZED" }` | Not logged in |
+| HTTP  | Example Body                  | When                              |
+| ----- | ----------------------------- | --------------------------------- |
+| `401` | `{ "error": "UNAUTHORIZED" }` | Not logged in                     |
 | `429` | `{ "error": "RATE_LIMITED" }` | Token created too fast (optional) |
 
 ---
@@ -325,12 +325,12 @@ Used when student taps 「Connect Messenger」in a **logged-in** app.
 
 Used **once** when Meta webhook reports user just opened link (`referral.ref`).
 
-| | |
-|--|--|
-| **Method / path** | `POST WISPACE_API_VERIFY_TOKEN_URL` |
-| **Auth** | `X-Internal-Key: {WISPACE_INTERNAL_KEY}` |
-| **Who calls** | **Messenger Bot** |
-| **Content-Type** | `application/json` |
+|                   |                                          |
+| ----------------- | ---------------------------------------- |
+| **Method / path** | `POST WISPACE_API_VERIFY_TOKEN_URL`      |
+| **Auth**          | `X-Internal-Key: {WISPACE_INTERNAL_KEY}` |
+| **Who calls**     | **Messenger Bot**                        |
+| **Content-Type**  | `application/json`                       |
 
 #### Request Body — **This is the Payload Messenger Sends**
 
@@ -342,11 +342,11 @@ Used **once** when Meta webhook reports user just opened link (`referral.ref`).
 }
 ```
 
-| Field | Required | Source (Messenger side) |
-|-------|----------|-------------------------|
-| `token` | Yes | `event.referral.ref` (or `optin.ref`, `message.referral.ref`) from Meta webhook |
-| `value` | Yes | `event.sender.id` from Meta webhook |
-| `platform` | Yes | Constant `messenger` |
+| Field      | Required | Source (Messenger side)                                                         |
+| ---------- | -------- | ------------------------------------------------------------------------------- |
+| `token`    | Yes      | `event.referral.ref` (or `optin.ref`, `message.referral.ref`) from Meta webhook |
+| `value`    | Yes      | `event.sender.id` from Meta webhook                                             |
+| `platform` | Yes      | Constant `messenger`                                                            |
 
 **Messenger doesn't send `userId`** — WISPACE looks it up from the token table.
 
@@ -361,12 +361,12 @@ Used **once** when Meta webhook reports user just opened link (`referral.ref`).
 }
 ```
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `success` | boolean | `true` when token is valid |
-| `userId` | number | Account owner associated with token |
-| `username` | string | Display name (optional, bot doesn't store) |
-| `email` | string | Email (optional, bot doesn't store) |
+| Field      | Type    | Description                                |
+| ---------- | ------- | ------------------------------------------ |
+| `success`  | boolean | `true` when token is valid                 |
+| `userId`   | number  | Account owner associated with token        |
+| `username` | string  | Display name (optional, bot doesn't store) |
+| `email`    | string  | Email (optional, bot doesn't store)        |
 
 Messenger Bot maps default `topic` / `cadence` (`IELTS` / `WEEKLY`) when API doesn't return these fields.
 
@@ -394,19 +394,19 @@ HTTP `400 Bad Request` or `409 Conflict` — unified body:
 }
 ```
 
-| `reason` | Meaning |
-|----------|---------|
-| `NOT_FOUND` | Token doesn't exist or `ref` is an old numeric userId |
-| `EXPIRED` | `now() > expires_at` |
-| `USED` | `used_at` already set — token consumed |
-| `INVALID_FORMAT` | Token empty / wrong format |
+| `reason`         | Meaning                                               |
+| ---------------- | ----------------------------------------------------- |
+| `NOT_FOUND`      | Token doesn't exist or `ref` is an old numeric userId |
+| `EXPIRED`        | `now() > expires_at`                                  |
+| `USED`           | `used_at` already set — token consumed                |
+| `INVALID_FORMAT` | Token empty / wrong format                            |
 
 Messenger Bot maps `reason` → user-facing message (e.g. 「Link expired, please reopen from WISPACE app」).
 
 #### Auth Error Response
 
-| HTTP | Body |
-|------|------|
+| HTTP          | Body                                                       |
+| ------------- | ---------------------------------------------------------- |
 | `401` / `403` | `{ "error": "UNAUTHORIZED" }` — wrong `X-Internal-Api-Key` |
 
 ---
@@ -468,15 +468,15 @@ After step 7 in [§7](#7-end-to-end-example) (mapping `psid ↔ userId` saved), 
 
 ### 9.2 Webhook Event Matrix — Who Verifies, Who Reads DB
 
-| Event | Has `referral.ref`? | Calls WISPACE Verify? | `userId` Source | Code (Reference) |
-|-------|---------------------|----------------------|----------------|---------------------|
-| Open `m.me?ref=token` first time | Yes | **Yes** (L4) | WISPACE returns after verify | `handleEvent` → `linkPsidFromContext` |
-| `optin` with ref | Yes | **Yes** (L4) | Same as above | `event.optin` branch |
-| Get Started right after linking | Usually yes (`postback.referral`) | **Yes** if ref still present | Same as above | `handlePostbackEvent` |
-| Get Started later (already linked) | Usually **no** | **No** | `resolveLinkContext` → DB | `handlePostbackEvent` |
-| Menu "Register Report" | **No** | **No** | DB mapping | `REGISTER_LEARNING_REPORT` → `registerForScheduledReports` |
-| Free-form chat | **No** | **No** | `resolveUserId` → DB | `MessengerChatEnqueueService.enqueue` |
-| Report cron / reminder dispatch | — | **No** | Mapping by `psid` / `userId` | `ReportCronService`, `StudyReminderDispatchService` |
+| Event                              | Has `referral.ref`?               | Calls WISPACE Verify?        | `userId` Source              | Code (Reference)                                           |
+| ---------------------------------- | --------------------------------- | ---------------------------- | ---------------------------- | ---------------------------------------------------------- |
+| Open `m.me?ref=token` first time   | Yes                               | **Yes** (L4)                 | WISPACE returns after verify | `handleEvent` → `linkPsidFromContext`                      |
+| `optin` with ref                   | Yes                               | **Yes** (L4)                 | Same as above                | `event.optin` branch                                       |
+| Get Started right after linking    | Usually yes (`postback.referral`) | **Yes** if ref still present | Same as above                | `handlePostbackEvent`                                      |
+| Get Started later (already linked) | Usually **no**                    | **No**                       | `resolveLinkContext` → DB    | `handlePostbackEvent`                                      |
+| Menu "Register Report"             | **No**                            | **No**                       | DB mapping                   | `REGISTER_LEARNING_REPORT` → `registerForScheduledReports` |
+| Free-form chat                     | **No**                            | **No**                       | `resolveUserId` → DB         | `MessengerChatEnqueueService.enqueue`                      |
+| Report cron / reminder dispatch    | —                                 | **No**                       | Mapping by `psid` / `userId` | `ReportCronService`, `StudyReminderDispatchService`        |
 
 **Get Started** is usually the moment user taps for first time after `m.me`, but verify trigger is **`ref` in webhook**, not the `GET_STARTED` payload.
 
@@ -493,26 +493,26 @@ Persistent menu (`messenger-profile.service.ts` — payload `REGISTER_LEARNING_R
 
 ### 9.4 Relink — Current vs L4
 
-| | Historical L3 behavior | Current token-only behavior |
-|--|-------------------|----------|
-| PSID mapped to A, webhook ref/token of user B | **Upsert** to B + `MAPPING_USER_ID_RELINK` | **Reject** + log `MAPPING_RELINK_BLOCKED` |
-| Support changing account | Not available through webhook | `POST /messenger/mapping/relink` with ops authorization |
-| User self-change (production) | Not safe | WISPACE app: unlink → new token → re-link |
+|                                               | Historical L3 behavior                     | Current token-only behavior                             |
+| --------------------------------------------- | ------------------------------------------ | ------------------------------------------------------- |
+| PSID mapped to A, webhook ref/token of user B | **Upsert** to B + `MAPPING_USER_ID_RELINK` | **Reject** + log `MAPPING_RELINK_BLOCKED`               |
+| Support changing account                      | Not available through webhook              | `POST /messenger/mapping/relink` with ops authorization |
+| User self-change (production)                 | Not safe                                   | WISPACE app: unlink → new token → re-link               |
 
 See [messenger-link-security.md §7.4](./messenger-link-security.md#74-relink-policy--current-l3-vs-l4) for three relink approaches (ops / self-service / confirm).
 
 ### 9.5 Token TTL & Expiration UX
 
-| Phase | Suggested `expires_at` |
-|-------|----------------------|
-| Pilot | `now() + 30 minutes` |
+| Phase      | Suggested `expires_at`                               |
+| ---------- | ---------------------------------------------------- |
+| Pilot      | `now() + 30 minutes`                                 |
 | Production | **15–30 minutes** + 「Create New Link」button in app |
 
-| Situation | Result |
-|-----------|--------|
-| Lan forwards link, Hung opens **before** Lan | Hung gets token; Lan gets `USED` on verify |
-| Token `EXPIRED` before first webhook | Bot reports expired; user creates new link — **can't** fix via menu/Get Started |
-| Token `USED`, PSID already mapped | Re-open old URL → verify `USED`; chat/menu **still OK** via DB mapping |
+| Situation                                    | Result                                                                          |
+| -------------------------------------------- | ------------------------------------------------------------------------------- |
+| Lan forwards link, Hung opens **before** Lan | Hung gets token; Lan gets `USED` on verify                                      |
+| Token `EXPIRED` before first webhook         | Bot reports expired; user creates new link — **can't** fix via menu/Get Started |
+| Token `USED`, PSID already mapped            | Re-open old URL → verify `USED`; chat/menu **still OK** via DB mapping          |
 
 One-time (`used_at`) is more important than very short TTL — TTL mainly reduces window for **unused** forwarded links.
 

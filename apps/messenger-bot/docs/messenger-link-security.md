@@ -29,11 +29,11 @@ parseUserIdFromRef(ref) → Number.parseInt(ref, 10)
 
 ### 1.2 Risk (IDOR on Account Linking)
 
-| Scenario | Consequence |
-|----------|-------------|
-| Change `ref=143` → `ref=999` on `m.me` URL, open in own Messenger | Attacker's PSID maps to **victim's account** |
-| PSID already linked to user A, opens link with `ref` of user B | **Relink** to user B (L3 — `MAPPING_USER_ID_RELINK`) |
-| Forward / leak link with valid `ref` | Someone else opens first → takes mapping |
+| Scenario                                                          | Consequence                                          |
+| ----------------------------------------------------------------- | ---------------------------------------------------- |
+| Change `ref=143` → `ref=999` on `m.me` URL, open in own Messenger | Attacker's PSID maps to **victim's account**         |
+| PSID already linked to user A, opens link with `ref` of user B    | **Relink** to user B (L3 — `MAPPING_USER_ID_RELINK`) |
+| Forward / leak link with valid `ref`                              | Someone else opens first → takes mapping             |
 
 **Data that could be exposed or misdirected:**
 
@@ -44,10 +44,10 @@ parseUserIdFromRef(ref) → Number.parseInt(ref, 10)
 
 ### 1.3 Encoding / Obfuscation is **Not** a Solution
 
-| Method | Prevents userId change? |
-|--------|------------------------|
-| `ref=143` (current) | No |
-| Base64 / hex `userId` | No — decodable, or copy entire string |
+| Method                   | Prevents userId change?                          |
+| ------------------------ | ------------------------------------------------ |
+| `ref=143` (current)      | No                                               |
+| Base64 / hex `userId`    | No — decodable, or copy entire string            |
 | Hash `userId` (unsigned) | No — unverifiable, small numbers brute-forceable |
 
 Need **proof of issuance from WISPACE** (server-side signature or token), not just "hiding" `userId`.
@@ -60,11 +60,11 @@ Need **proof of issuance from WISPACE** (server-side signature or token), not ju
 
 **Description:** No change; trusts all positive `ref` numbers from webhook.
 
-| Pros | Cons |
-|------|------|
-| Simplest | **Not safe** for production |
+| Pros                           | Cons                                            |
+| ------------------------------ | ----------------------------------------------- |
+| Simplest                       | **Not safe** for production                     |
 | No WISPACE coordination needed | userId enumeration, account takeover via relink |
-| Easy debugging | No audit/revoke for links |
+| Easy debugging                 | No audit/revoke for links                       |
 
 **Verdict:** This is the retired design and must not be enabled for production.
 
@@ -85,11 +85,11 @@ signature = HMAC-SHA256("{userId}.{expUnix}", MESSENGER_LINK_SIGNING_SECRET)
 2. User opens `m.me?ref=...`.
 3. Bot verifies signature + not expired → then `upsertPsidUserLink`.
 
-| Pros | Cons |
-|------|------|
-| Fast to implement (~0.5–1 days) | `userId` still **exposed** on URL |
-| No DB token table needed immediately | Link can be **shared/forwarded** within TTL |
-| Shared secret — simple 2-service sync | Hard to **revoke** individual links (wait for `exp`) |
+| Pros                                  | Cons                                                            |
+| ------------------------------------- | --------------------------------------------------------------- |
+| Fast to implement (~0.5–1 days)       | `userId` still **exposed** on URL                               |
+| No DB token table needed immediately  | Link can be **shared/forwarded** within TTL                     |
+| Shared secret — simple 2-service sync | Hard to **revoke** individual links (wait for `exp`)            |
 | Prevents userId change without secret | Need additional **block relink** policy for already-mapped PSID |
 
 **Verdict:** **Temporary bridge** for pilots; should not be the final production target.
@@ -132,19 +132,19 @@ CREATE INDEX idx_messenger_link_tokens_user ON messenger_link_tokens (user_id);
 
 **Required Rules:**
 
-| Rule | Reason |
-|------|--------|
-| Token is **one-time** (`used_at` set after successful link) | Prevents reuse / forwarding |
-| Short TTL (15–30 minutes) | Reduces attack window |
-| Only create token when WISPACE session is valid | Ensures account ownership |
-| PSID already mapped to user A + token of user B → **reject** | Prevents unauthorized relink |
-| Ops relink via `POST /messenger/mapping/relink` + `INTERNAL_API_KEY` | Support cases |
+| Rule                                                                 | Reason                       |
+| -------------------------------------------------------------------- | ---------------------------- |
+| Token is **one-time** (`used_at` set after successful link)          | Prevents reuse / forwarding  |
+| Short TTL (15–30 minutes)                                            | Reduces attack window        |
+| Only create token when WISPACE session is valid                      | Ensures account ownership    |
+| PSID already mapped to user A + token of user B → **reject**         | Prevents unauthorized relink |
+| Ops relink via `POST /messenger/mapping/relink` + `INTERNAL_API_KEY` | Support cases                |
 
-| Pros | Cons |
-|------|------|
-| No userId exposure; per-token revoke | Needs table + verify API (WISPACE implements) |
-| One-time + TTL — strongest for go-live | Adds 1 verify round-trip when webhook links |
-| Clear audit (`created_at`, `used_at`) | Bot depends on Wispace (or shared DB) |
+| Pros                                          | Cons                                                              |
+| --------------------------------------------- | ----------------------------------------------------------------- |
+| No userId exposure; per-token revoke          | Needs table + verify API (WISPACE implements)                     |
+| One-time + TTL — strongest for go-live        | Adds 1 verify round-trip when webhook links                       |
+| Clear audit (`created_at`, `used_at`)         | Bot depends on Wispace (or shared DB)                             |
 | Better fit for GDPR / privacy than signed ref | Slightly higher effort than HMAC (~1–2 days total across 2 teams) |
 
 **Verdict:** **Final target** for real user deployment.
@@ -155,11 +155,11 @@ CREATE INDEX idx_messenger_link_tokens_user ON messenger_link_tokens (user_id);
 
 **Description:** `ref` = JWT (claims: `sub=userId`, `exp`, `jti`), signed by secret or JWKS.
 
-| Pros | Cons |
-|------|------|
-| Stateless verify (Bot needs no token DB) | Meta `ref` limited to ~250 chars — JWT is long |
-| Industry standard | Still needs `jti` blacklist for one-time / revoke |
-| | `userId` may still be in payload (if not encrypted) |
+| Pros                                     | Cons                                                |
+| ---------------------------------------- | --------------------------------------------------- |
+| Stateless verify (Bot needs no token DB) | Meta `ref` limited to ~250 chars — JWT is long      |
+| Industry standard                        | Still needs `jti` blacklist for one-time / revoke   |
+|                                          | `userId` may still be in payload (if not encrypted) |
 
 **Verdict:** Consider when JWKS infra exists; **opaque token + DB** is simpler and clearer.
 
@@ -167,15 +167,15 @@ CREATE INDEX idx_messenger_link_tokens_user ON messenger_link_tokens (user_id);
 
 ## 3. Overall Comparison
 
-| Criterion | Raw `userId` | HMAC Signed | One-Time Token |
-|-----------|-------------|-------------|----------------|
-| Prevents switching to another user | ✗ | ✓ | ✓ |
-| No userId exposure | ✗ | ✗ | ✓ |
-| One-time / anti-forward | ✗ | ✗ | ✓ |
-| Revoke individual links | ✗ | △ (wait for exp) | ✓ |
-| WISPACE effort | — | Low | Medium |
-| Messenger Bot effort | — | Low | Medium |
-| Production-ready | ✗ | △ (temporary) | ✓ |
+| Criterion                          | Raw `userId` | HMAC Signed      | One-Time Token |
+| ---------------------------------- | ------------ | ---------------- | -------------- |
+| Prevents switching to another user | ✗            | ✓                | ✓              |
+| No userId exposure                 | ✗            | ✗                | ✓              |
+| One-time / anti-forward            | ✗            | ✗                | ✓              |
+| Revoke individual links            | ✗            | △ (wait for exp) | ✓              |
+| WISPACE effort                     | —            | Low              | Medium         |
+| Messenger Bot effort               | —            | Low              | Medium         |
+| Production-ready                   | ✗            | △ (temporary)    | ✓              |
 
 ---
 
@@ -183,13 +183,13 @@ CREATE INDEX idx_messenger_link_tokens_user ON messenger_link_tokens (user_id);
 
 ### L4 — Link Security (Implemented in the Messenger Bot)
 
-| Step | Work | Owner |
-|------|------|-------|
-| **L4.1** | Issue opaque linking tokens and expose the verify contract | WISPACE-owned dependency |
-| **L4.2** | Bot calls `WISPACE_API_VERIFY_TOKEN_URL` with `{ token, value, platform }` | Implemented |
-| **L4.3** | Token-only startup validation; no raw numeric linking path | Implemented |
-| **L4.4** | Block relink PSID → different userId except ops endpoint | Implemented |
-| **L4.5** | Record verification and relink outcomes in application logs | Implemented |
+| Step     | Work                                                                       | Owner                    |
+| -------- | -------------------------------------------------------------------------- | ------------------------ |
+| **L4.1** | Issue opaque linking tokens and expose the verify contract                 | WISPACE-owned dependency |
+| **L4.2** | Bot calls `WISPACE_API_VERIFY_TOKEN_URL` with `{ token, value, platform }` | Implemented              |
+| **L4.3** | Token-only startup validation; no raw numeric linking path                 | Implemented              |
+| **L4.4** | Block relink PSID → different userId except ops endpoint                   | Implemented              |
+| **L4.5** | Record verification and relink outcomes in application logs                | Implemented              |
 
 The former HMAC/raw-ref emergency path is historical and is not part of the active implementation.
 
@@ -207,14 +207,14 @@ Bot **only** supports `token` — `legacy` / `signed` already removed; startup f
 
 ## 5. Current Code and Contract
 
-| File / Module | Change |
-|---------------|--------|
-| `MessengerLinkContextService` | Resolves webhook ref through WISPACE token verification before linking |
-| `WispaceMessengerTokenVerifyService` | Calls `WISPACE_API_VERIFY_TOKEN_URL` with `{ token, value, platform }` |
-| `MessengerMappingService` | Rejects webhook relink if PSID is ACTIVE and `userId` differs |
-| `MessengerService` / webhook router | Links only after a successful verification outcome |
-| `.env.example` | `MESSENGER_LINK_MODE=token`, `WISPACE_API_VERIFY_TOKEN_URL`, `WISPACE_INTERNAL_KEY` |
-| WISPACE app | Must generate `m.me` URLs with opaque tokens, not client-side `userId` values |
+| File / Module                        | Change                                                                              |
+| ------------------------------------ | ----------------------------------------------------------------------------------- |
+| `MessengerLinkContextService`        | Resolves webhook ref through WISPACE token verification before linking              |
+| `WispaceMessengerTokenVerifyService` | Calls `WISPACE_API_VERIFY_TOKEN_URL` with `{ token, value, platform }`              |
+| `MessengerMappingService`            | Rejects webhook relink if PSID is ACTIVE and `userId` differs                       |
+| `MessengerService` / webhook router  | Links only after a successful verification outcome                                  |
+| `.env.example`                       | `MESSENGER_LINK_MODE=token`, `WISPACE_API_VERIFY_TOKEN_URL`, `WISPACE_INTERNAL_KEY` |
+| WISPACE app                          | Must generate `m.me` URLs with opaque tokens, not client-side `userId` values       |
 
 **WISPACE verify API contract:**
 
@@ -257,10 +257,10 @@ Team alignment notes after reviewing the implemented token-only link flow.
 
 ### 7.1 Two Phases: Binding vs Daily Behavior
 
-| Phase | Purpose | Calls WISPACE Verify? |
-|-------|---------|----------------------|
+| Phase                          | Purpose                                        | Calls WISPACE Verify?                                         |
+| ------------------------------ | ---------------------------------------------- | ------------------------------------------------------------- |
 | **Binding** (linking ceremony) | Proves Meta PSID belongs to which WISPACE user | **Yes — once** when webhook has `referral.ref` / unused token |
-| **Daily behavior** | Chat, menu, report cron, reminders | **No** — reads `user_platform_mappings` |
+| **Daily behavior**             | Chat, menu, report cron, reminders             | **No** — reads `user_platform_mappings`                       |
 
 **Don't** verify every chat message: high latency, WISPACE dependency, no added security if mapping is already correct. Model similar to OAuth — login once, then trust session (mapping) persisted.
 
@@ -270,11 +270,11 @@ Other WISPACE APIs (e.g. `UserCalendar` via `x-psid`) are **data APIs**, not rep
 
 Meta may send `referral.ref` in various webhook types — Bot calls verify at **every location** that would `linkPsidFromContext` when `ref` is a new token:
 
-| Webhook Source | Can Have `ref`? |
-|----------------|-----------------|
-| `event.optin` | Yes (`optin.ref`) |
-| `event.referral` alone | Yes |
-| `event.message` + `message.referral` | Yes |
+| Webhook Source                                                   | Can Have `ref`?                              |
+| ---------------------------------------------------------------- | -------------------------------------------- |
+| `event.optin`                                                    | Yes (`optin.ref`)                            |
+| `event.referral` alone                                           | Yes                                          |
+| `event.message` + `message.referral`                             | Yes                                          |
 | `event.postback` (including `GET_STARTED`) + `postback.referral` | Yes — commonly first thread open from `m.me` |
 
 Get Started **usually** coincides with first-time binding, but the correct boundary is **「webhook carrying unconsumed token」**, not the `GET_STARTED` payload itself. On subsequent visits Meta typically **doesn't** send `referral.ref` again → bot falls back to `findActiveMappingByPsid`.
@@ -283,15 +283,15 @@ Get Started **usually** coincides with first-time binding, but the correct bound
 
 Persistent menu "Register Report" (`REGISTER_LEARNING_REPORT`) and other postbacks **don't** carry `referral.ref`. Current code: `resolveLinkContext` → if event has no ref, reads DB mapping (`MessengerService.resolveLinkContext`).
 
-| Behavior | `userId` Source | Calls WISPACE Verify? |
-|----------|----------------|----------------------|
-| Report registration menu (already linked) | DB mapping | **No** |
-| Menu when not linked | — | **No** (no token) → `MISSING_USER_REF`, guide to open app link |
-| Free-form chat | DB mapping | **No** |
+| Behavior                                  | `userId` Source | Calls WISPACE Verify?                                          |
+| ----------------------------------------- | --------------- | -------------------------------------------------------------- |
+| Report registration menu (already linked) | DB mapping      | **No**                                                         |
+| Menu when not linked                      | —               | **No** (no token) → `MISSING_USER_REF`, guide to open app link |
+| Free-form chat                            | DB mapping      | **No**                                                         |
 
 Verifying at menu tap **doesn't help** users who never linked — there's no token to send. If concerned about stale mapping ownership: handle via **block relink (7.4)** + **revoke/unlink** on WISPACE, not per-menu verify.
 
-*Optional future phase:* stale mapping (too old) → send message to re-open app link — still **no** verify call from postback menu.
+_Optional future phase:_ stale mapping (too old) → send message to re-open app link — still **no** verify call from postback menu.
 
 ### 7.4 Relink Policy — Historical L3 vs Current Token-Only Flow
 
@@ -299,30 +299,30 @@ Verifying at menu tap **doesn't help** users who never linked — there's no tok
 
 **Current token-only behavior:**
 
-| Situation | Behavior |
-|-----------|----------|
-| PSID unmapped + valid token | Link OK |
+| Situation                                                             | Behavior                                                                                      |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| PSID unmapped + valid token                                           | Link OK                                                                                       |
 | PSID mapped to user A + token of user A (re-open link / update topic) | **Idempotent** — allow metadata update; token with `used_at` set skips verify, trusts mapping |
-| PSID mapped to user A + token of user B | **Reject** — `PSID_ALREADY_LINKED` / `MAPPING_RELINK_BLOCKED` |
-| True account change (support) | `POST /messenger/mapping/relink` + `INTERNAL_API_KEY` (already exists) |
+| PSID mapped to user A + token of user B                               | **Reject** — `PSID_ALREADY_LINKED` / `MAPPING_RELINK_BLOCKED`                                 |
+| True account change (support)                                         | `POST /messenger/mapping/relink` + `INTERNAL_API_KEY` (already exists)                        |
 
 **Three valid relink approaches (choose by phase):**
 
-| Approach | Description | When to Use |
-|----------|-------------|-------------|
-| **A — Ops-only** | Support verifies out-of-band → calls `mapping/relink` | Pilot → first prod |
-| **B — Self-service** | WISPACE app: "Disconnect" → revoke mapping → new token → re-link | Production scale |
-| **C — Confirm on Messenger** | Postback confirmation before relink | Rare; complex UX — **not** default recommendation |
+| Approach                     | Description                                                      | When to Use                                       |
+| ---------------------------- | ---------------------------------------------------------------- | ------------------------------------------------- |
+| **A — Ops-only**             | Support verifies out-of-band → calls `mapping/relink`            | Pilot → first prod                                |
+| **B — Self-service**         | WISPACE app: "Disconnect" → revoke mapping → new token → re-link | Production scale                                  |
+| **C — Confirm on Messenger** | Postback confirmation before relink                              | Rare; complex UX — **not** default recommendation |
 
 ### 7.5 Token TTL — Trade-offs
 
 Docs recommend **15–30 minutes**. Balance:
 
-| | Short TTL (5–15 min) | TTL 15–30 min (recommended) | Long TTL (HMAC bridge ~24h) |
-|--|----------------------|-----------------------------|-----------------------------|
-| Forward window for unused link | Small | Medium | Large |
-| UX (user opens link then does something else) | Easy `EXPIRED` | Balanced | Comfortable |
-| One-time (`used_at`) | Blocks reuse even with long TTL | Same | Not present — only temporary HMAC |
+|                                               | Short TTL (5–15 min)            | TTL 15–30 min (recommended) | Long TTL (HMAC bridge ~24h)       |
+| --------------------------------------------- | ------------------------------- | --------------------------- | --------------------------------- |
+| Forward window for unused link                | Small                           | Medium                      | Large                             |
+| UX (user opens link then does something else) | Easy `EXPIRED`                  | Balanced                    | Comfortable                       |
+| One-time (`used_at`)                          | Blocks reuse even with long TTL | Same                        | Not present — only temporary HMAC |
 
 **Note:** Meta doesn't send `referral.ref` forever. Token expires **before** first webhook → verify `EXPIRED` → user must create new link in app; **can't** fix with Get Started/menu alone.
 

@@ -7,15 +7,15 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "nest build",
-    "format": "prettier --cache --write \"src/**/*.ts\"",
+    "format": "oxfmt",
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:dev:doppler": "doppler run -- npm run start:dev",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node -r tsconfig-paths/register dist/main",
     "db:explain-oauth-cleanup": "node --env-file=.env scripts/explain-oauth-state-cleanup.mjs",
-    "lint": "eslint \"{src,apps,libs}/**/*.ts\" --fix",
-    "format:check": "prettier --check \"src/**/*.ts\"",
+    "lint": "oxlint --fix",
+    "format:check": "oxfmt --check",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
     "test": "jest --forceExit --maxWorkers=50%",
@@ -36,7 +36,7 @@
     "@wispace/chat-pipeline": "*",
     "@wispace/cleanup-cron": "*",
     "@wispace/database": "*",
-      "@wispace/doppler-sync": "*",
+    "@wispace/doppler-sync": "*",
     "@wispace/llm-agent": "*",
     "@wispace/learner-profile": "*",
     "@wispace/ops-health": "*",
@@ -53,8 +53,6 @@
     "typeorm": "^1.1.0"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.2.0",
-    "@eslint/js": "^9.18.0",
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
@@ -64,15 +62,9 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
     "@types/pg": "^8.20.0",
-    "eslint": "^9.18.0",
-    "eslint-config-prettier": "^10.0.1",
-    "eslint-plugin-prettier": "^5.2.2",
-    "globals": "^17.0.0",
     "jest": "^30.0.0",
-    "prettier": "^3.4.2",
     "ts-node": "^10.9.2",
-    "tsconfig-paths": "^4.2.0",
-    "typescript-eslint": "^8.20.0"
+    "tsconfig-paths": "^4.2.0"
   },
   "jest": {
     "moduleFileExtensions": [
@@ -95,5 +87,3 @@
     }
   }
 }
-
-

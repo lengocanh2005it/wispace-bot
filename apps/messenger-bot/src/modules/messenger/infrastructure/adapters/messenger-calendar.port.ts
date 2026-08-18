@@ -12,16 +12,15 @@ export class MessengerCalendarPort extends GenericCalendarPort {
     @Inject(STUDY_REMINDER_OPERATIONS_PORT)
     private readonly operations: StudyReminderOperationsPort,
   ) {
-    super(
-      (psid: string, userId: number): Promise<CalendarEntryView[]> =>
-        operations
-          .listEntries(psid, userId, { timeRange: 'upcoming' })
-          .then((result) =>
-            result.entries.map((entry) => ({
-              calendarId: entry.calendarId,
-              scheduledTimeLabel: entry.scheduledTimeLabel,
-            })),
-          ),
+    super((psid: string, userId: number): Promise<CalendarEntryView[]> =>
+      operations
+        .listEntries(psid, userId, { timeRange: 'upcoming' })
+        .then((result) =>
+          result.entries.map((entry) => ({
+            calendarId: entry.calendarId,
+            scheduledTimeLabel: entry.scheduledTimeLabel,
+          })),
+        ),
     );
   }
 }

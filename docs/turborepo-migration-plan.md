@@ -17,6 +17,7 @@ Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB 
 **Goal:** Migrate to monorepo structure, extract LLM orchestration + function-calling schema + safety utils into a framework-agnostic shared package, without changing current Messenger bot behavior.
 
 **Done:**
+
 - `turbo.json` + root `package.json` (`workspaces: ["apps/*", "packages/*"]`).
 - Moved all existing code into `apps/messenger-bot/` (package `@wispace/messenger-bot`) — kept DB, entities, migrations, all business modules.
 - Created `packages/llm-agent/` (`@wispace/llm-agent`) containing:
@@ -32,6 +33,7 @@ Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB 
 - Created empty placeholders `apps/discord-bot/`, `apps/zalo-bot/` (only `package.json` + README pointing to phase 3/4 below).
 
 **Known risks / not yet handled in this phase:**
+
 - `packages/llm-agent` builds with raw `tsc` (not NestJS CLI) — requires `npm install` at root so workspaces resolve before building.
 - No real end-to-end testing done (only verified via `turbo run build/lint/typecheck/test`) — see Verification section in original plan.
 
@@ -42,6 +44,7 @@ Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB 
 **Goal:** Allow Discord/Zalo bots to use the same DB without key conflicts with Messenger.
 
 **Done:**
+
 - Migration `1751029200001-GeneralizePlatformIdentifiers.ts` — across 11 tables: added `platform varchar(16) DEFAULT 'messenger'` column, renamed `psid` → `external_user_id`, updated all unique/partial indexes to include `platform`. Renamed 7 tables dropping `messenger_` prefix (now multi-platform): `user_messenger_mappings→user_platform_mappings`, `messenger_chat_daily_usage→chat_daily_usage`, `messenger_chat_idempotency→chat_idempotency`, `messenger_message_logs→message_logs`, `messenger_scheduled_report_claims→scheduled_report_claims`, `messenger_webhook_dead_letters→webhook_dead_letters`, `messenger_chat_events→chat_quota_events`. Kept original names for `study_reminder_jobs`, `report_send_jobs`, `llm_usage_events`, `llm_safety_events`, `users` (already generic enough).
 - **No change to public port method signatures** (`MessengerRepositoryPort.findActiveMappingByPsid(psid)` unchanged) — because `apps/messenger-bot` is the only current implementation and always writes `platform='messenger'`. Discord/Zalo (Phase 3/4) will have their own repository implementations, not importing from `apps/messenger-bot`. Only 7 entity files + 10 repository implementation files (persistence layer) changed — application services/controllers/domain types completely unchanged.
 - **Quota/rate-limit still calculated separately per bot** (decided earlier) — only need to add `platform` to index/query keys, no cross-platform mapping tables needed.
@@ -49,6 +52,7 @@ Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB 
 **Migration ran on VPS production** (via `DB_MIGRATIONS_RUN=true` when container starts, automatically triggered by deploy-messenger-bot.yml) — verified via SSH: `\dt` on `ai_chat_bot_db` shows correct 13 tables with new names (`user_platform_mappings`, `chat_daily_usage`, `chat_idempotency`, `message_logs`, `scheduled_report_claims`, `webhook_dead_letters`, `chat_quota_events` + 5 tables keeping old names with added `platform`/`external_user_id` columns), old data backfilled with `platform='messenger'` correctly, `messenger-bot` container boots clean (`Nest application successfully started`, no errors).
 
 **Incidents encountered and fixed during the run (reference for Phase 3/4 if migration changes are needed):**
+
 - `uq_chat_daily_usage_psid_date` was an inline `CONSTRAINT` (created in original `CREATE TABLE`), not a `CREATE UNIQUE INDEX` like other unique keys — `DROP INDEX` threw error `cannot drop index ... because constraint ... requires it`. Had to use `ALTER TABLE ... DROP CONSTRAINT IF EXISTS`. TypeORM migration transaction rolled back cleanly on error, DB was not corrupted midway.
 - Pre-existing bug in `.github/scripts/vps-deploy.sh` (`set_env_var`) — `sed -i "s/^${key}=.*/${key}=${value}/"` used `/` as delimiter but the value (`DEPLOY_DIR=/deploy`...) also contained `/`, breaking sed syntax. Changed delimiter to `#`.
 
@@ -63,6 +67,7 @@ Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB 
 **Stack:** [Necord](https://necord.org/) — NestJS wrapper around `discord.js`, provides decorators (`@Once`, `@On`, `@Context()`...) and module/DI integration following the NestJS style used throughout the repo (instead of writing a raw gateway with bare `discord.js`). `NecordModule.forRootAsync()` registers the Discord client as a normal NestJS module (`@Global`, exposes `Client` from `discord.js` as an injection token).
 
 **Done (MVP):**
+
 - `apps/discord-bot` full NestJS scaffold (package.json, nest-cli.json, tsconfig, eslint sharing root config) — `NestFactory.createApplicationContext` (no HTTP server needed, bot only maintains gateway connection).
 - `NecordModule.forRootAsync()` in `AppModule`, token from `DISCORD_BOT_TOKEN` (.env), intents `Guilds` + `DirectMessages` + `MessageContent`, `partials: [Channel]` (required to receive DMs before channel is cached).
 - `DiscordChatGateway` (`modules/discord-chat/presentation/gateways/`) — `@Once('ready')` logs bot online, `@On('messageCreate')` is the chat entrypoint (only processes DMs, ignores bots/non-DMs).
@@ -81,6 +86,7 @@ Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB 
 - Unit tests for `DiscordChatHistoryService`, `DiscordAgentToolsService` (including linked/not-linked cases for all tools + valid/error reschedule cases), `DiscordOutboundService` (including button confirmation DMs), `WispaceDiscordTokenVerifyService`, `DiscordAccountLinkService`, `DiscordOauthController`, and `packages/wispace-client` (`UserGoalsApiClient`, `user-calendar-record.normalizer`, `buildWispaceHeaders`).
 
 **Remaining / technical debt:**
+
 - **CI/CD VPS deploy** — `deploy-discord-bot.yml`, shared `deploy/Dockerfile.bot`, `docker-compose.prod.yml`, and SSH/SCP blue-green scripts are implemented and have been exercised on the VPS.
 - **End-to-end testing not done** — needs real Discord Application OAuth2 client + public HTTPS redirect URI + WISPACE backend displaying "Connect Discord" link.
 - Multi-pod chat history/queue is implemented; enable the Redis-backed stores when scaling beyond a single instance.
@@ -95,6 +101,7 @@ Single NestJS repo, `src/` at root, single app (Messenger bot), one Postgres DB 
 Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 7/7 real WISPACE tool handlers via `@wispace/wispace-client`, 08:00 report cron with LLM enrichment, study reminders infrastructure, PostgreSQL-backed dead letter + delivery log + cleanup crons, and stuck idempotency recovery. All features on par with Discord/Messenger.
 
 **Implemented:**
+
 - Chat via Zalo webhook (`POST /zalo/webhook`), rate limit reserve/refund/markCompleted via `@wispace/chat-metering`
 - Account linking via PKCE OAuth2 flow + `WISPACE_API_VERIFY_TOKEN_URL`
 - 7/7 real tool handlers calling real Wispace API (`x-zaloid`): `get_user_goals`, `get_learning_progress_report`, `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder`, `reschedule_study_session` (with Zalo-specific confirm/cancel via structured messages), `precreate_next_exercise`
@@ -111,6 +118,7 @@ Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 7/7 real WISPA
 - Multi-pod advisory locks for all cleanup crons
 
 **All features implemented:**
+
 - Chat queue (debounce/merge) via `@wispace/chat-queue-core`
 - LLM report enrichment via `ZaloStudentReportService`
 - Durable webhook inbox via PostgreSQL `webhook_inbound_events` with unique `(platform, event_id)`
@@ -119,6 +127,7 @@ Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 7/7 real WISPA
 - Legacy Doppler webhook endpoint (`POST /zalo/ops/doppler-sync`) retained for compatibility; production env sync uses the manual workflow
 
 **Recently added (commits 9b9ff9a, 66352b7, ad8a196):**
+
 - Study reminder sync fixed: `getSessions` callback wired via `ZaloWispaceCalendarService`
 - Ops HTTP endpoints (`POST /zalo/send-reports`, `/zalo/study-calendar/sync`, `/zalo/sync-study-reminders`) with `InternalApiKeyGuard`
 - CI/CD: `deploy-zalo-bot.yml` workflow + `vps-deploy-zalo.sh` + Dockerfile updated
@@ -137,11 +146,11 @@ Single `deploy-bots.yml` with 3 jobs (messenger/discord/zalo) + shared `deploy-b
 
 ## Summary by status
 
-| Phase | Content | Status |
-|-------|---------|--------|
-| 0 | Initial state before migration | Reference |
-| 1 | Turborepo scaffold + extract `packages/llm-agent` + discord/zalo placeholders | ✅ Completed |
-| 2 | Generalize DB key `(platform, external_user_id)` | ✅ Completed — migration ran on VPS production, verified via SSH |
-| 3 | Implement Discord bot | ✅ Features complete (chat + quota + account-linking OAuth2 + 7/7 real tools + reschedule + 08:00 report cron + leader-election + retry dispatch + study reminders + dead letter + message log + CI/CD workflow + deploy scripts) — no real end-to-end testing yet |
-| 4 | Implement Zalo bot | ✅ Features complete (chat + quota + account-linking + 7/7 tools + LLM report + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD + health endpoints + Redis queue/history options + chat queue; legacy Doppler webhook retained but disabled in hardened production containers) |
-| 5 | Fully independent CI/CD | ✅ Single `deploy-bots.yml` with 3 jobs (messenger/discord/zalo) + shared `deploy-bot-reusable.yml` + `deploy/Dockerfile.bot` |
+| Phase | Content                                                                       | Status                                                                                                                                                                                                                                                                                                |
+| ----- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0     | Initial state before migration                                                | Reference                                                                                                                                                                                                                                                                                             |
+| 1     | Turborepo scaffold + extract `packages/llm-agent` + discord/zalo placeholders | ✅ Completed                                                                                                                                                                                                                                                                                          |
+| 2     | Generalize DB key `(platform, external_user_id)`                              | ✅ Completed — migration ran on VPS production, verified via SSH                                                                                                                                                                                                                                      |
+| 3     | Implement Discord bot                                                         | ✅ Features complete (chat + quota + account-linking OAuth2 + 7/7 real tools + reschedule + 08:00 report cron + leader-election + retry dispatch + study reminders + dead letter + message log + CI/CD workflow + deploy scripts) — no real end-to-end testing yet                                    |
+| 4     | Implement Zalo bot                                                            | ✅ Features complete (chat + quota + account-linking + 7/7 tools + LLM report + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD + health endpoints + Redis queue/history options + chat queue; legacy Doppler webhook retained but disabled in hardened production containers) |
+| 5     | Fully independent CI/CD                                                       | ✅ Single `deploy-bots.yml` with 3 jobs (messenger/discord/zalo) + shared `deploy-bot-reusable.yml` + `deploy/Dockerfile.bot`                                                                                                                                                                         |

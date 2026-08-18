@@ -7,6 +7,7 @@ See the full design at [docs/superpowers/specs/2026-07-20-zalo-bot-mvp-design.md
 ## Current status
 
 **Already done:**
+
 - Chat via `POST /v1/zalo/webhook` (X-ZEvent-Signature verify + timestamp freshness), debounce queue, pending cap, user feedback, queued-failure fallback, and memory/Redis history.
 - Quota/rate-limit + LLM usage/safety persistence via `@wispace/chat-metering` (platform='zalo'); stuck-reserved recovery + idempotency cleanup crons.
 - 7/7 real WISPACE tools via `@wispace/wispace-client` (header `x-zaloid`): `get_user_goals`, `get_learning_progress_report`, `get_upcoming_study_sessions`, `list_study_calendar_entries`, `preview_next_study_reminder`, `reschedule_study_session`, `precreate_next_exercise`.
@@ -18,6 +19,7 @@ See the full design at [docs/superpowers/specs/2026-07-20-zalo-bot-mvp-design.md
 - CI/CD: `deploy-bots.yml` job + shared `deploy/Dockerfile.bot` + VPS self-pull deploy.
 
 **Not yet done / TODO:**
+
 - `register_exam_report_notifications` — intentionally not implemented (Zalo 48h window covers active users; ZNS deferred to post-product).
 - Whitelist (`CHAT_RATE_LIMIT_WHITELIST_PSIDS`) and quota-event audit table remain Messenger-only.
 

@@ -16,17 +16,17 @@ Related: [project-overview.md](../../../docs/project-overview.md), [study-sessio
 
 ### 1.2. Code Status (V1 + hardening H1–H7 ✓)
 
-| Component | Status |
-|-----------|--------|
-| Webhook delivery dedupe | ✓ Durable `webhook_inbound_events` inbox with unique `(platform, event_id)` — no RAM/Redis dedupe store |
-| Postback dedupe (`psid:payload`, TTL 15s) | ✓ |
-| Rate limit / `chat_daily_usage` | ✓ `ChatRateLimitModule` |
-| DB idempotency quota (`message.mid`) | ✓ `chat_idempotency` |
-| Hard cap daily in transaction (H3) | ✓ |
-| Stuck `reserved` / retry `mid` (H2) | ✓ |
-| LLM vs Send semantics, abuse caps (H4–H5) | ✓ |
-| Ops retention + logs (H6) | ✓ |
-| Shared queue/history cross-pod (H7) | ✓ when `CHAT_QUEUE_SHARED=true` |
+| Component                                 | Status                                                                                                  |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Webhook delivery dedupe                   | ✓ Durable `webhook_inbound_events` inbox with unique `(platform, event_id)` — no RAM/Redis dedupe store |
+| Postback dedupe (`psid:payload`, TTL 15s) | ✓                                                                                                       |
+| Rate limit / `chat_daily_usage`           | ✓ `ChatRateLimitModule`                                                                                 |
+| DB idempotency quota (`message.mid`)      | ✓ `chat_idempotency`                                                                                    |
+| Hard cap daily in transaction (H3)        | ✓                                                                                                       |
+| Stuck `reserved` / retry `mid` (H2)       | ✓                                                                                                       |
+| LLM vs Send semantics, abuse caps (H4–H5) | ✓                                                                                                       |
+| Ops retention + logs (H6)                 | ✓                                                                                                       |
+| Shared queue/history cross-pod (H7)       | ✓ when `CHAT_QUEUE_SHARED=true`                                                                         |
 
 Chat text flow:
 
@@ -44,11 +44,11 @@ The `message_logs` table already exists — used for sent/received message audit
 
 Meta does **not** provide a "max X bot messages per user per day" API. Platform limits are primarily on the **outbound bot side**:
 
-| Limit | Description |
-|-------|-------------|
-| Send API (text) | ~300 messages/sec / Page |
-| Rolling 24h | `200 × Engaged Users` (total app calls) |
-| Per-thread | May throttle if sending too many into **one** conversation |
+| Limit                | Description                                                                 |
+| -------------------- | --------------------------------------------------------------------------- |
+| Send API (text)      | ~300 messages/sec / Page                                                    |
+| Rolling 24h          | `200 × Engaged Users` (total app calls)                                     |
+| Per-thread           | May throttle if sending too many into **one** conversation                  |
 | 24h messaging window | User must message bot within last 24h for bot to reply with `RESPONSE` type |
 
 → **Daily chat quota is self-implemented** by the application on Postgres (or cache), not relying on Meta.
@@ -61,12 +61,12 @@ Meta docs: [Messenger Platform rate limits](https://developers.facebook.com/docs
 
 Not merging all interactions into one counter. Proposal:
 
-| Bucket | Example | Counts toward chat quota? |
-|--------|---------|--------------------------|
-| **FREE_FORM_CHAT** | User types text → LLM replies | **Yes** (strictest) |
-| **MENU_POSTBACK** | Reminders, View Progress, Register Report | **No** (or separate bucket, generous limit) |
-| **PROACTIVE** | T-30 reminders, cron reports | **No** — system-initiated |
-| **SYSTEM_REPLY** | Welcome, quota exceeded, errors | **No** |
+| Bucket             | Example                                   | Counts toward chat quota?                   |
+| ------------------ | ----------------------------------------- | ------------------------------------------- |
+| **FREE_FORM_CHAT** | User types text → LLM replies             | **Yes** (strictest)                         |
+| **MENU_POSTBACK**  | Reminders, View Progress, Register Report | **No** (or separate bucket, generous limit) |
+| **PROACTIVE**      | T-30 reminders, cron reports              | **No** — system-initiated                   |
+| **SYSTEM_REPLY**   | Welcome, quota exceeded, errors           | **No**                                      |
 
 **Proposed time window:** calendar day in `Asia/Ho_Chi_Minh` (matching `STUDY_REMINDER_TIMEZONE`), reset at midnight — easy to explain to students.
 
@@ -111,12 +111,12 @@ CREATE INDEX idx_chat_daily_usage_user_date
   WHERE user_id IS NOT NULL;
 ```
 
-| Column | Meaning |
-|--------|---------|
-| `psid` | Primary key — always available from Messenger webhook |
-| `user_id` | Copied from `user_platform_mappings` when linked (reports, ops) |
-| `usage_date` | ICT date as `2026-06-15` — do **not** use UTC arbitrarily |
-| `free_form_count` | Number of FREE_FORM turns consumed today |
+| Column            | Meaning                                                         |
+| ----------------- | --------------------------------------------------------------- |
+| `psid`            | Primary key — always available from Messenger webhook           |
+| `user_id`         | Copied from `user_platform_mappings` when linked (reports, ops) |
+| `usage_date`      | ICT date as `2026-06-15` — do **not** use UTC arbitrarily       |
+| `free_form_count` | Number of FREE_FORM turns consumed today                        |
 
 #### Processing Flow
 
@@ -169,11 +169,11 @@ Summary: reserve attaches `idempotency_key = message.mid` (unique) before LLM; c
 
 #### Reserve vs Refund
 
-| Strategy | Description | When |
-|----------|-------------|------|
-| **Reserve before LLM** | `+1` before calling OpenAI | Anti-abuse cost — **recommended** |
-| **Refund on fail** | `-1` if LLM or Send API errors | Fair UX |
-| **Only +1 after success** | User doesn't lose turns on error | Easy for spam to consume LLM |
+| Strategy                  | Description                      | When                              |
+| ------------------------- | -------------------------------- | --------------------------------- |
+| **Reserve before LLM**    | `+1` before calling OpenAI       | Anti-abuse cost — **recommended** |
+| **Refund on fail**        | `-1` if LLM or Send API errors   | Fair UX                           |
+| **Only +1 after success** | User doesn't lose turns on error | Easy for spam to consume LLM      |
 
 #### Calculating `usage_date` (ICT)
 
@@ -194,10 +194,10 @@ Quota resets naturally when `usage_date` changes — **no cron needed to clear c
 
 User `psid=27291166300574332` (user 143), limit 15:
 
-| psid | usage_date | free_form_count |
-|------|------------|-----------------|
-| 27291166300574332 | 2026-06-15 | 7 |
-| 27291166300574332 | 2026-06-16 | 2 |
+| psid              | usage_date | free_form_count |
+| ----------------- | ---------- | --------------- |
+| 27291166300574332 | 2026-06-15 | 7               |
+| 27291166300574332 | 2026-06-16 | 2               |
 
 #### Suggested Module Code
 
@@ -217,11 +217,11 @@ Hook: **`MessengerChatProcessorService.flush()`** — before LLM; webhook delive
 
 Counter = **fast reads** for quota. `message_logs` = **audit** of content:
 
-| message_type | When |
-|--------------|------|
-| `FREE_FORM_CHAT_IN` | User sends (optional, before LLM) |
-| `FREE_FORM_CHAT_OUT` | Bot LLM reply successful |
-| `CHAT_QUOTA_DENIED` | Quota exceeded / burst |
+| message_type         | When                              |
+| -------------------- | --------------------------------- |
+| `FREE_FORM_CHAT_IN`  | User sends (optional, before LLM) |
+| `FREE_FORM_CHAT_OUT` | Bot LLM reply successful          |
+| `CHAT_QUOTA_DENIED`  | Quota exceeded / burst            |
 
 ---
 
@@ -238,7 +238,7 @@ type ChatEventType =
   | 'FREE_FORM_MESSAGE_RECEIVED'
   | 'CHAT_QUOTA_RESERVED'
   | 'CHAT_QUOTA_DENIED'
-  | 'CHAT_QUOTA_RELEASED'      // LLM / Send fail → refund turn
+  | 'CHAT_QUOTA_RELEASED' // LLM / Send fail → refund turn
   | 'LLM_REPLY_SENT'
   | 'MENU_POSTBACK_RECEIVED'; // optional, no quota deduction
 ```
@@ -336,19 +336,19 @@ No UPSERT counter — each action only appends a log.
 
 ### 4.1. Summary Table
 
-| Criterion | **A. `chat_daily_usage`** | **B. Event sourcing** | **C. Count from logs** |
-|-----------|-------------------------------------|------------------------|------------------------|
-| **Implementation complexity** | Low | High (store + projection + replay) | Lowest (no new migration) |
-| **Operational complexity** | Low | High — team must understand replay | Medium — log grows over time |
-| **Read performance** | O(1) — 1 row | O(1) with projection; O(n) if replay per request | O(n) — COUNT per message |
-| **Write performance** | 1 UPSERT | 1 INSERT event + update projection | 1 INSERT log (×2 for IN+OUT) |
-| **Race condition / concurrent** | Good — atomic UPSERT | Good if event+projection transactional | Poor — double COUNT before INSERT |
-| **Detailed audit** | Medium — needs accompanying log | Excellent — full event history | Good — if log has enough types |
-| **Replay / rebuild state** | Not native | **Main strength** | Can re-COUNT — slow, no reserve/release semantics |
-| **Storage over time** | ~1 row/user/day | N event/action — largest | 1+ row/message — large |
-| **Changing quota rules later** | Only applies forward | Rebuild projection from events | Hard — old logs lack reserve semantics |
-| **Matches current stack** | Like `study_reminder_jobs` (snapshot state) | New pattern, learning curve | Leverages existing table |
-| **Fits IELTS student scale** | **Very well** | Overkill for early stage | OK for < 50 active chat users |
+| Criterion                       | **A. `chat_daily_usage`**                   | **B. Event sourcing**                            | **C. Count from logs**                            |
+| ------------------------------- | ------------------------------------------- | ------------------------------------------------ | ------------------------------------------------- |
+| **Implementation complexity**   | Low                                         | High (store + projection + replay)               | Lowest (no new migration)                         |
+| **Operational complexity**      | Low                                         | High — team must understand replay               | Medium — log grows over time                      |
+| **Read performance**            | O(1) — 1 row                                | O(1) with projection; O(n) if replay per request | O(n) — COUNT per message                          |
+| **Write performance**           | 1 UPSERT                                    | 1 INSERT event + update projection               | 1 INSERT log (×2 for IN+OUT)                      |
+| **Race condition / concurrent** | Good — atomic UPSERT                        | Good if event+projection transactional           | Poor — double COUNT before INSERT                 |
+| **Detailed audit**              | Medium — needs accompanying log             | Excellent — full event history                   | Good — if log has enough types                    |
+| **Replay / rebuild state**      | Not native                                  | **Main strength**                                | Can re-COUNT — slow, no reserve/release semantics |
+| **Storage over time**           | ~1 row/user/day                             | N event/action — largest                         | 1+ row/message — large                            |
+| **Changing quota rules later**  | Only applies forward                        | Rebuild projection from events                   | Hard — old logs lack reserve semantics            |
+| **Matches current stack**       | Like `study_reminder_jobs` (snapshot state) | New pattern, learning curve                      | Leverages existing table                          |
+| **Fits IELTS student scale**    | **Very well**                               | Overkill for early stage                         | OK for < 50 active chat users                     |
 
 ### 4.2. Actual Cost Bottleneck
 
@@ -382,17 +382,17 @@ Then: add `chat_quota_events` **alongside** `chat_daily_usage`, don't change the
 
 ### 5.1. Decision Summary
 
-| Decision | Choice |
-|----------|--------|
-| Quota storage | **`chat_daily_usage`** table |
-| Key | `(psid, usage_date)` unique |
-| Timezone | `CHAT_USAGE_TIMEZONE` = `Asia/Ho_Chi_Minh` |
-| Counter | `free_form_count` — FREE_FORM bucket only |
-| Write | Atomic UPSERT; reserve before LLM, refund on fail |
-| Idempotency | **DB** — `message.mid` unique at reserve (§5.3); durable inbox dedupes webhook delivery |
-| Audit | Keep `message_logs` with standard `message_type` |
-| Event sourcing | **Not** in phase 1; may add later |
-| Count from logs | **Not** on hot path |
+| Decision        | Choice                                                                                  |
+| --------------- | --------------------------------------------------------------------------------------- |
+| Quota storage   | **`chat_daily_usage`** table                                                            |
+| Key             | `(psid, usage_date)` unique                                                             |
+| Timezone        | `CHAT_USAGE_TIMEZONE` = `Asia/Ho_Chi_Minh`                                              |
+| Counter         | `free_form_count` — FREE_FORM bucket only                                               |
+| Write           | Atomic UPSERT; reserve before LLM, refund on fail                                       |
+| Idempotency     | **DB** — `message.mid` unique at reserve (§5.3); durable inbox dedupes webhook delivery |
+| Audit           | Keep `message_logs` with standard `message_type`                                        |
+| Event sourcing  | **Not** in phase 1; may add later                                                       |
+| Count from logs | **Not** on hot path                                                                     |
 
 ### 5.2. Proposed End-to-End Flow
 
@@ -423,19 +423,19 @@ Hook reserve: **`MessengerChatProcessorService.processChatBatch()`** (called fro
 
 Meta may **retry webhooks** with the same payload (same `message.mid`). The system prevents double quota deduction / duplicate LLM calls via **two layers**:
 
-| Layer | When | Mechanism |
-|-------|------|-----------|
-| Webhook dedupe | Before enqueue | Durable inbox \webhook_inbound_events\ (unique \platform+event_id\) |
-| Quota idempotency | At flush | `chat_idempotency` — unique `idempotency_key = message.mid` |
+| Layer             | When           | Mechanism                                                           |
+| ----------------- | -------------- | ------------------------------------------------------------------- |
+| Webhook dedupe    | Before enqueue | Durable inbox \webhook_inbound_events\ (unique \platform+event_id\) |
+| Quota idempotency | At flush       | `chat_idempotency` — unique `idempotency_key = message.mid`         |
 
 Postback: separate dedupe `psid:payload` (15s) — **not** related to chat quota.
 
-| Dedupe | Single instance (`CHAT_QUEUE_STORE=memory`) | Multi-pod (`CHAT_QUEUE_STORE=redis` or `CHAT_QUEUE_SHARED=true`) |
-|--------|---------------------------------------------|------------------------------------------------------------------|
-| Webhook `mid` | Durable inbox `webhook_inbound_events` | Same shared PostgreSQL inbox |
-| Debounce queue | RAM `Map` per process | Redis `chat:queue:buffer:{psid}` |
-| Chat history LLM | RAM 30 minutes | Redis `chat:history:{psid}` |
-| Quota reserve | DB idempotency + hard cap H3 | Same — shared PostgreSQL |
+| Dedupe           | Single instance (`CHAT_QUEUE_STORE=memory`) | Multi-pod (`CHAT_QUEUE_STORE=redis` or `CHAT_QUEUE_SHARED=true`) |
+| ---------------- | ------------------------------------------- | ---------------------------------------------------------------- |
+| Webhook `mid`    | Durable inbox `webhook_inbound_events`      | Same shared PostgreSQL inbox                                     |
+| Debounce queue   | RAM `Map` per process                       | Redis `chat:queue:buffer:{psid}`                                 |
+| Chat history LLM | RAM 30 minutes                              | Redis `chat:history:{psid}`                                      |
+| Quota reserve    | DB idempotency + hard cap H3                | Same — shared PostgreSQL                                         |
 
 #### Schema — Idempotency Table (migrated)
 
@@ -456,10 +456,10 @@ CREATE INDEX idx_chat_idempotency_psid_date
   ON chat_idempotency (psid, usage_date);
 ```
 
-| Column | Meaning |
-|--------|---------|
-| `idempotency_key` | `message.mid` — globally unique |
-| `status` | `reserved` → LLM running; `delivered` → outbound confirmed, finalization pending; `completed` → quota finalized; `refunded` → turn returned before delivery |
+| Column            | Meaning                                                                                                                                                     |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `idempotency_key` | `message.mid` — globally unique                                                                                                                             |
+| `status`          | `reserved` → LLM running; `delivered` → outbound confirmed, finalization pending; `completed` → quota finalized; `refunded` → turn returned before delivery |
 
 **Simpler approach:** unique `(idempotency_key)` on `message_logs` when `message_type = 'FREE_FORM_CHAT_IN'` — reserve + insert log in one transaction. Insert failure → mid already processed, skip LLM.
 
@@ -497,20 +497,20 @@ sequenceDiagram
 
 `MessengerChatEnqueueService` merges consecutive messages (`CHAT_DEBOUNCE_MS`) into **one** LLM call.
 
-| Convention | Description |
-|------------|-------------|
-| **Recommended** | **1 quota turn / 1 flush** (one bot reply), not per `mid` in burst |
-| Idempotency key on merge | `mid` of the **last message** in debounce batch (implemented in `MessengerChatProcessorService.flush()`) |
-| User sends 5 messages / 2s burst | User receives 1 reply → deducts **1** turn (fair UX) |
+| Convention                       | Description                                                                                              |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Recommended**                  | **1 quota turn / 1 flush** (one bot reply), not per `mid` in burst                                       |
+| Idempotency key on merge         | `mid` of the **last message** in debounce batch (implemented in `MessengerChatProcessorService.flush()`) |
+| User sends 5 messages / 2s burst | User receives 1 reply → deducts **1** turn (fair UX)                                                     |
 
 Document this convention in code + tests to avoid disputes about "5 messages = 5 turns or 1 turn".
 
 #### Keep RAM Dedupe in Parallel
 
-| Layer | Role |
-|-------|------|
+| Layer                             | Role                                                         |
+| --------------------------------- | ------------------------------------------------------------ |
 | **RAM** (`isDuplicateMessageMid`) | Fast path — drops duplicate webhooks immediately, no enqueue |
-| **DB** (idempotency + reserve) | Source of truth for quota — survives restart, multi-instance |
+| **DB** (idempotency + reserve)    | Source of truth for quota — survives restart, multi-instance |
 
 The two layers **complement** each other, not replace.
 
@@ -520,14 +520,14 @@ Students typically message the bot from **computer** (Messenger web / desktop) a
 
 **How code handles this currently (V1):**
 
-| Layer | Behavior |
-|-------|----------|
-| **Webhook** | Each message = one unique `message.mid` (PC and phone always have different `mid`). The durable inbox drops duplicate deliveries with the same event id; it does not merge two devices. |
-| **Queue** (`MessengerChatProcessorService`) | One `Map` entry **per PSID** — no device source distinction. `processing` flag ensures **at most one flush** (one reserve + LLM) runs for that PSID on the **same instance**. |
-| **Debounce** | Messages from PC + phone arriving **within** `CHAT_DEBOUNCE_MS` (before flush) → merge `texts[]` → **one** bot reply → **deducts 1 turn**. |
-| **Pending while processing** | Message arrives **while** bot is calling LLM (`processing = true`) → enters `pendingWhileProcessing` → after flush completes, **flushes again** → **deducts 1 more turn** (two legitimate messages). |
-| **Quota DB** | Reserve by `idempotency_key` = `mid` of last message in flush batch; counter `free_form_count` by PSID + ICT day. |
-| **Burst** | Counts `chat_idempotency` records with `reserved_at` in last 60 seconds — **all devices** combined for same PSID. |
+| Layer                                       | Behavior                                                                                                                                                                                             |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Webhook**                                 | Each message = one unique `message.mid` (PC and phone always have different `mid`). The durable inbox drops duplicate deliveries with the same event id; it does not merge two devices.              |
+| **Queue** (`MessengerChatProcessorService`) | One `Map` entry **per PSID** — no device source distinction. `processing` flag ensures **at most one flush** (one reserve + LLM) runs for that PSID on the **same instance**.                        |
+| **Debounce**                                | Messages from PC + phone arriving **within** `CHAT_DEBOUNCE_MS` (before flush) → merge `texts[]` → **one** bot reply → **deducts 1 turn**.                                                           |
+| **Pending while processing**                | Message arrives **while** bot is calling LLM (`processing = true`) → enters `pendingWhileProcessing` → after flush completes, **flushes again** → **deducts 1 more turn** (two legitimate messages). |
+| **Quota DB**                                | Reserve by `idempotency_key` = `mid` of last message in flush batch; counter `free_form_count` by PSID + ICT day.                                                                                    |
+| **Burst**                                   | Counts `chat_idempotency` records with `reserved_at` in last 60 seconds — **all devices** combined for same PSID.                                                                                    |
 
 **Illustrative scenario:**
 
@@ -550,12 +550,12 @@ sequenceDiagram
   WH->>DB: flush 2 after done → +1 more turn
 ```
 
-| Scenario | UX / quota result (1 instance) |
-|----------|-------------------------------------|
-| Typing on PC + phone **almost simultaneously** (within debounce) | 1 reply (merged content), **1 turn** |
-| Typing on phone **while** bot is replying to PC message | 2 replies sequentially, **2 turns** |
-| Same PSID, **daily quota exhausted** | Next message (from any device) → `CHAT_QUOTA_DENIED` |
-| Exceeding **burst** (3/min default) | Next message → burst deny; applies per PSID, not per device |
+| Scenario                                                         | UX / quota result (1 instance)                              |
+| ---------------------------------------------------------------- | ----------------------------------------------------------- |
+| Typing on PC + phone **almost simultaneously** (within debounce) | 1 reply (merged content), **1 turn**                        |
+| Typing on phone **while** bot is replying to PC message          | 2 replies sequentially, **2 turns**                         |
+| Same PSID, **daily quota exhausted**                             | Next message (from any device) → `CHAT_QUOTA_DENIED`        |
+| Exceeding **burst** (3/min default)                              | Next message → burst deny; applies per PSID, not per device |
 
 **Race condition — practical impact:**
 
@@ -581,7 +581,10 @@ interface ChatQuotaCheckResult {
 }
 
 class ChatRateLimitService {
-  async checkQuota(psid: string, userId?: number): Promise<ChatQuotaCheckResult>;
+  async checkQuota(
+    psid: string,
+    userId?: number,
+  ): Promise<ChatQuotaCheckResult>;
   /** Returns allowed=false if mid already reserved (idempotency conflict). */
   async reserveFreeFormSlot(
     psid: string,
@@ -606,11 +609,11 @@ class ChatRateLimitService {
 
 ### 5.6. Suggested Parameters
 
-| Tier | FREE_FORM / day | Burst |
-|------|-----------------|-------|
-| Demo | 15–20 | 3/min |
-| Light production | 30 | 5/min |
-| QA whitelist | unlimited (configured `psid` list) | — |
+| Tier             | FREE_FORM / day                    | Burst |
+| ---------------- | ---------------------------------- | ----- |
+| Demo             | 15–20                              | 3/min |
+| Light production | 30                                 | 5/min |
+| QA whitelist     | unlimited (configured `psid` list) | —     |
 
 ### 5.7. Implementation Checklist (V1 — done)
 
@@ -629,12 +632,12 @@ class ChatRateLimitService {
 
 ### 5.8. Post-V1 Roadmap (optional — after V1 production)
 
-| Phase | Work | Status |
-|-------|------|--------|
-| **V2 UX** | Hint "X remaining" when `remaining ≤ threshold` | ✓ Phase 6 (code) |
-| **V3 Tier** | Limit by `user_id` / WISPACE package | Not yet |
-| **V4 Event store** | `chat_quota_events` + replay / billing | ✓ `chat_quota_events` table + `ChatQuotaEventRecorderService` dual-write + cleanup cron |
-| **H1–H7** | Operational edge case hardening (§5.10, after §5.9) | H1 ✓; H2 ✓; H4 ✓; H5 ✓; **H3 ✓**; **H6 ✓**; **H7 ✓** |
+| Phase              | Work                                                | Status                                                                                  |
+| ------------------ | --------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **V2 UX**          | Hint "X remaining" when `remaining ≤ threshold`     | ✓ Phase 6 (code)                                                                        |
+| **V3 Tier**        | Limit by `user_id` / WISPACE package                | Not yet                                                                                 |
+| **V4 Event store** | `chat_quota_events` + replay / billing              | ✓ `chat_quota_events` table + `ChatQuotaEventRecorderService` dual-write + cleanup cron |
+| **H1–H7**          | Operational edge case hardening (§5.10, after §5.9) | H1 ✓; H2 ✓; H4 ✓; H5 ✓; **H3 ✓**; **H6 ✓**; **H7 ✓**                                    |
 
 **V4 details:** `chat_quota_events` entity (from `@wispace/chat-metering`) dual-writes events alongside the counter. `ChatQuotaEventCleanupCronService` runs monthly cleanup (`CHAT_QUOTA_EVENTS_CLEANUP_ENABLED`). Env: `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`.
 
@@ -659,12 +662,12 @@ flowchart LR
 
 **Goal:** Configuration and module skeleton, not blocking users.
 
-| Task | Done when |
-|------|-----------|
-| Add env to `.env.example`: `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_USAGE_TIMEZONE` | Dev knows required vars |
-| Create module `src/modules/chat-rate-limit/` (module + service stub) | Nest boots, injection works |
-| `readRequiredPositiveNumber` / config reader like `StudyReminderScheduleService` | Limit read from env, no hardcoding |
-| (Optional) `CHAT_RATE_LIMIT_ENABLED=true` — quick disable for debugging | Rollback without code revert |
+| Task                                                                                                    | Done when                          |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| Add env to `.env.example`: `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_USAGE_TIMEZONE` | Dev knows required vars            |
+| Create module `src/modules/chat-rate-limit/` (module + service stub)                                    | Nest boots, injection works        |
+| `readRequiredPositiveNumber` / config reader like `StudyReminderScheduleService`                        | Limit read from env, no hardcoding |
+| (Optional) `CHAT_RATE_LIMIT_ENABLED=true` — quick disable for debugging                                 | Rollback without code revert       |
 
 **Don't do:** wire queue, migration.
 
@@ -674,12 +677,12 @@ flowchart LR
 
 **Goal:** Postgres ready, repository tests pass independently.
 
-| Task | Done when |
-|------|-----------|
-| Migration `chat_daily_usage` | `npm run migration:run` OK |
-| Migration `chat_idempotency` | Unique `idempotency_key` |
+| Task                                                           | Done when                               |
+| -------------------------------------------------------------- | --------------------------------------- |
+| Migration `chat_daily_usage`                                   | `npm run migration:run` OK              |
+| Migration `chat_idempotency`                                   | Unique `idempotency_key`                |
 | TypeORM entity + repository (UPSERT daily, INSERT idempotency) | Spec: concurrent UPSERT → correct count |
-| Index `(psid, usage_date)` | Explain query fast |
+| Index `(psid, usage_date)`                                     | Explain query fast                      |
 
 **Don't do:** chat queue calls.
 
@@ -689,15 +692,15 @@ flowchart LR
 
 **Goal:** Quota + idempotency logic in transaction, no UI hook yet.
 
-| Task | Done when |
-|------|-----------|
-| `todayUsageDate(timezone)` — ICT `en-CA` | Matches `STUDY_REMINDER_TIMEZONE` |
-| `checkQuota(psid)` → `{ allowed, used, limit, remaining, usageDate }` | Unit test under/at/over limit |
+| Task                                                                                                                 | Done when                                          |
+| -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `todayUsageDate(timezone)` — ICT `en-CA`                                                                             | Matches `STUDY_REMINDER_TIMEZONE`                  |
+| `checkQuota(psid)` → `{ allowed, used, limit, remaining, usageDate }`                                                | Unit test under/at/over limit                      |
 | `reserveFreeFormSlot(psid, { idempotencyKey, userId })` in **one transaction**: INSERT idempotency → UPSERT count +1 | Conflict `mid` → `allowed: false`, count unchanged |
-| `refundFreeFormSlot(psid, usageDate, idempotencyKey)` | count -1, status `refunded` |
-| `markDelivered(idempotencyKey)` | after confirmed outbound, status `delivered` |
-| `markCompleted(idempotencyKey)` | status `reserved`/`delivered` → `completed` |
-| Reserve **before** LLM; refund on LLM/Send fail | Documented in service |
+| `refundFreeFormSlot(psid, usageDate, idempotencyKey)`                                                                | count -1, status `refunded`                        |
+| `markDelivered(idempotencyKey)`                                                                                      | after confirmed outbound, status `delivered`       |
+| `markCompleted(idempotencyKey)`                                                                                      | status `reserved`/`delivered` → `completed`        |
+| Reserve **before** LLM; refund on LLM/Send fail                                                                      | Documented in service                              |
 
 **Required tests:**
 
@@ -710,14 +713,14 @@ flowchart LR
 
 **Goal:** Real users blocked when quota exhausted; normal chat still works.
 
-| Task | Done when |
-|------|-----------|
-| Hook `MessengerChatProcessorService.flush()`: after debounce, **before** `MessengerAgentService.reply()` | Reserve called in right place |
-| Pass `idempotencyKey` = `message.mid` of **last** message in debounce batch (convention §5.3) | 5-message burst → 1 turn |
-| Quota exhausted → `sendTextViaPsid` message §5.5, `message_type=CHAT_QUOTA_DENIED` | No OpenAI call |
-| Confirmed outbound → `markDelivered` → history → `markCompleted`; pre-delivery error → `refund` | Delivery finalization is recoverable; LLM/send error doesn't waste turns |
-| Log `FREE_FORM_CHAT_IN` (optional) before LLM | Audit in `message_logs` |
-| Keep `isDuplicateMessageMid` RAM at webhook | Fast path unchanged |
+| Task                                                                                                     | Done when                                                                |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Hook `MessengerChatProcessorService.flush()`: after debounce, **before** `MessengerAgentService.reply()` | Reserve called in right place                                            |
+| Pass `idempotencyKey` = `message.mid` of **last** message in debounce batch (convention §5.3)            | 5-message burst → 1 turn                                                 |
+| Quota exhausted → `sendTextViaPsid` message §5.5, `message_type=CHAT_QUOTA_DENIED`                       | No OpenAI call                                                           |
+| Confirmed outbound → `markDelivered` → history → `markCompleted`; pre-delivery error → `refund`          | Delivery finalization is recoverable; LLM/send error doesn't waste turns |
+| Log `FREE_FORM_CHAT_IN` (optional) before LLM                                                            | Audit in `message_logs`                                                  |
+| Keep `isDuplicateMessageMid` RAM at webhook                                                              | Fast path unchanged                                                      |
 
 **Manual tests:**
 
@@ -731,13 +734,13 @@ flowchart LR
 
 **Goal:** Fast anti-spam + production stability.
 
-| Task | Done when |
-|------|-----------|
-| `CHAT_BURST_PER_MINUTE` — check before daily reserve | "Slow down" message on spam |
-| Retry webhook with same `mid` (simulate) → no double LLM / double count | QA pass |
-| Server restart + retry `mid` → DB idempotency still blocks | Different from RAM-only |
-| `CHAT_RATE_LIMIT_ENABLED=false` bypass (if Phase 0 flag exists) | Ops quick disable |
-| QA PSID whitelist (env list, optional) | Team tests without limits |
+| Task                                                                    | Done when                   |
+| ----------------------------------------------------------------------- | --------------------------- |
+| `CHAT_BURST_PER_MINUTE` — check before daily reserve                    | "Slow down" message on spam |
+| Retry webhook with same `mid` (simulate) → no double LLM / double count | QA pass                     |
+| Server restart + retry `mid` → DB idempotency still blocks              | Different from RAM-only     |
+| `CHAT_RATE_LIMIT_ENABLED=false` bypass (if Phase 0 flag exists)         | Ops quick disable           |
+| QA PSID whitelist (env list, optional)                                  | Team tests without limits   |
 
 **Don't do:** tier per package, event store.
 
@@ -747,12 +750,12 @@ flowchart LR
 
 **Goal:** Operations and handoff.
 
-| Task | Done when |
-|------|-----------|
-| Script `npm run chat-quota:status` (psid / userId / date) | Ops query usage |
-| Update [project-overview.md](../../../docs/project-overview.md), gap `AGENTS.md` | Docs match code |
-| Checklist §5.7 all V1 items ticked | Review merge |
-| Document recommended prod limits (15–20/day, burst 3) in runbook | Wispace knows the numbers |
+| Task                                                                             | Done when                 |
+| -------------------------------------------------------------------------------- | ------------------------- |
+| Script `npm run chat-quota:status` (psid / userId / date)                        | Ops query usage           |
+| Update [project-overview.md](../../../docs/project-overview.md), gap `AGENTS.md` | Docs match code           |
+| Checklist §5.7 all V1 items ticked                                               | Review merge              |
+| Document recommended prod limits (15–20/day, burst 3) in runbook                 | Wispace knows the numbers |
 
 **V1 definition of done:** Chat text → reserve → LLM → send; quota exhausted / burst / duplicate `mid` / LLM fail all handled correctly; postback & proactive don't deduct quota.
 
@@ -760,10 +763,10 @@ flowchart LR
 
 #### Phase 6 — V2 UX (optional, ≈ 0.5 days) — ✓ done
 
-| Task | Done when |
-|------|-----------|
+| Task                                                                                                   | Done when                   |
+| ------------------------------------------------------------------------------------------------------ | --------------------------- |
 | After successful reply, send hint "X remaining" when `remaining ≤ CHAT_QUOTA_REMAINING_HINT_THRESHOLD` | `CHAT_QUOTA_REMAINING_HINT` |
-| Don't show when unlimited / whitelist / enforcement off | Spec queue pass |
+| Don't show when unlimited / whitelist / enforcement off                                                | Spec queue pass             |
 
 **Next (optional):** Phase 7 WISPACE tier, Phase 8 event store — §5.8.
 
@@ -771,33 +774,33 @@ flowchart LR
 
 #### Phase 7 — V3 Tier & WISPACE (optional, ≈ 2+ days)
 
-| Task | Done when |
-|------|-----------|
+| Task                                           | Done when             |
+| ---------------------------------------------- | --------------------- |
 | Limit by `user_id` / package (Premium vs free) | Config or WISPACE API |
-| Sync tier on user upgrade | No redeploy needed |
+| Sync tier on user upgrade                      | No redeploy needed    |
 
 ---
 
 #### Phase 8 — Event Store / Billing (optional, V4)
 
-| Task | Done when |
-|------|-----------|
+| Task                                                  | Done when                  |
+| ----------------------------------------------------- | -------------------------- |
 | `chat_quota_events` table + replay rebuild projection | Audit & quota rule changes |
-| Per-token billing (if product requires) | Outside scope |
+| Per-token billing (if product requires)               | Outside scope              |
 
 ---
 
 #### V1 Effort Summary (Phase 0–5)
 
-| Phase | Estimated Effort | Can ship independently? |
-|-------|------------------|------------------------|
-| 0 Preparation | 0.5 days | ✓ |
-| 1 DB | 1 day | ✓ (not blocking users) |
-| 2 Service | 1–1.5 days | ✓ (not blocking users) |
-| 3 Wire queue | 1 day | ✓ **enables real rate limit** |
-| 4 Hardening | 1 day | Recommended before prod |
-| 5 Ops | 0.5–1 days | V1 sign-off |
-| **Total V1** | **~5–6 dev days** | |
+| Phase         | Estimated Effort  | Can ship independently?       |
+| ------------- | ----------------- | ----------------------------- |
+| 0 Preparation | 0.5 days          | ✓                             |
+| 1 DB          | 1 day             | ✓ (not blocking users)        |
+| 2 Service     | 1–1.5 days        | ✓ (not blocking users)        |
+| 3 Wire queue  | 1 day             | ✓ **enables real rate limit** |
+| 4 Hardening   | 1 day             | Recommended before prod       |
+| 5 Ops         | 0.5–1 days        | V1 sign-off                   |
+| **Total V1**  | **~5–6 dev days** |                               |
 
 Phase **6** (V2 hint) ✓. **H1–H7** (§5.10) ✓. **Next optional:** Phase **7–8** (tier, event store) when product needs it.
 
@@ -821,32 +824,32 @@ flowchart LR
 
 #### Map — Issue → Phase
 
-| Real Issue | Severity | Phase | Current Note |
-|------------|----------|-------|--------------|
-| `CHAT_RATE_LIMIT_ENABLED=false` — forgotten in prod | High | **H1** | No cost cap |
-| Crash/restart mid-flush → `reserved` stuck, `mid` retry silent | High | **H2** | User loses turn, no reply |
-| Multi-instance / concurrent reserve exceeds daily cap | High | **H3** | Pre-check outside transaction |
-| LLM OK, Send API fails mid-bubble → refund all | Medium | **H4** | UX: split reply + turn refund |
-| Rich follow-up / hint fails after main bubble → refund | Medium | **H4** | Similar to H4 |
-| Debounce merges many long messages → 1 turn, high LLM tokens | Medium | **H5** | Quota counts turns, not length |
-| Burst counts `refunded` in 60s | Medium | **H5** | User retry after error easily hits burst |
-| Webhook missing `message.mid` → skip reserve, still LLM | Medium | **H5** | Gap if Meta doesn't send `mid` |
-| `chat_idempotency` grows forever, no retention | Low | **H6** | Ops / storage |
-| Queue + history RAM not shared across pods | Low | **H7** | Only on horizontal scale |
-| Multiple devices same PSID | — | *(doc §5.3)* | Documented; H3 if multi-pod |
-| Exactly midnight ICT, pending when quota exhausted, sticker-only | Low | **H1** (runbook) | Document QA, no code needed |
+| Real Issue                                                       | Severity | Phase            | Current Note                             |
+| ---------------------------------------------------------------- | -------- | ---------------- | ---------------------------------------- |
+| `CHAT_RATE_LIMIT_ENABLED=false` — forgotten in prod              | High     | **H1**           | No cost cap                              |
+| Crash/restart mid-flush → `reserved` stuck, `mid` retry silent   | High     | **H2**           | User loses turn, no reply                |
+| Multi-instance / concurrent reserve exceeds daily cap            | High     | **H3**           | Pre-check outside transaction            |
+| LLM OK, Send API fails mid-bubble → refund all                   | Medium   | **H4**           | UX: split reply + turn refund            |
+| Rich follow-up / hint fails after main bubble → refund           | Medium   | **H4**           | Similar to H4                            |
+| Debounce merges many long messages → 1 turn, high LLM tokens     | Medium   | **H5**           | Quota counts turns, not length           |
+| Burst counts `refunded` in 60s                                   | Medium   | **H5**           | User retry after error easily hits burst |
+| Webhook missing `message.mid` → skip reserve, still LLM          | Medium   | **H5**           | Gap if Meta doesn't send `mid`           |
+| `chat_idempotency` grows forever, no retention                   | Low      | **H6**           | Ops / storage                            |
+| Queue + history RAM not shared across pods                       | Low      | **H7**           | Only on horizontal scale                 |
+| Multiple devices same PSID                                       | —        | _(doc §5.3)_     | Documented; H3 if multi-pod              |
+| Exactly midnight ICT, pending when quota exhausted, sticker-only | Low      | **H1** (runbook) | Document QA, no code needed              |
 
 #### H1 — Go-live & QA Production (≈ 0.5 days)
 
 **Goal:** Safe enforcement enable; team knows how to verify before deep hardening.
 
-| Task | Done when |
-|------|-----------|
-| `CHAT_RATE_LIMIT_ENABLED=true` on prod/staging env | Counter increments on chat |
+| Task                                                                            | Done when                                       |
+| ------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `CHAT_RATE_LIMIT_ENABLED=true` on prod/staging env                              | Counter increments on chat                      |
 | QA checklist: under limit, day expired, burst, postback no deduction, whitelist | Documented in runbook §12 `project-overview.md` |
-| `npm run chat-quota:status` before/after user test | Ops can query |
-| Document: quota reset 00:00 ICT, `usage_date` calculated at **reserve** time | Support can answer users |
-| Document: pending + quota exhausted → next flush may deny | Clear UX expectations |
+| `npm run chat-quota:status` before/after user test                              | Ops can query                                   |
+| Document: quota reset 00:00 ICT, `usage_date` calculated at **reserve** time    | Support can answer users                        |
+| Document: pending + quota exhausted → next flush may deny                       | Clear UX expectations                           |
 
 **Don't do:** fix stuck reserved, hard cap transaction.
 
@@ -854,18 +857,18 @@ flowchart LR
 
 **Goal:** Crash/restart or timeout between reserve, delivery, and quota finalization never refunds a delivered turn.
 
-| Task | Done when |
-|------|-----------|
-| Env `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS` (default 600000) | `.env.example` |
+| Task                                                                                       | Done when                        |
+| ------------------------------------------------------------------------------------------ | -------------------------------- |
+| Env `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS` (default 600000)                                  | `.env.example`                   |
 | `ChatRateLimitService`: conflict → `recoverIdempotencyForRetry` → re-reserve if `reopened` | `reserveSlotOrRecoverOnConflict` |
-| `refunded` row → delete → Meta retry same `mid` calls LLM again | Repository transaction |
-| `reserved` exceeds TTL → refund count + delete → retry | Repository + service |
-| `delivered` exceeds TTL → complete without decrementing usage | Repository + service |
-| `reserved` within TTL → `in_flight` → skip (flush running) | Log + `IDEMPOTENCY_CONFLICT` |
-| `delivered` → skip duplicate webhook while finalization is pending | Log + `IDEMPOTENCY_CONFLICT` |
-| `completed` → skip duplicate webhook | Log |
-| Ops `npm run chat-quota:recover-stuck` (+ `--dry-run`) | Script |
-| `chat-quota:status` prints `stuckReserved` | Ops |
+| `refunded` row → delete → Meta retry same `mid` calls LLM again                            | Repository transaction           |
+| `reserved` exceeds TTL → refund count + delete → retry                                     | Repository + service             |
+| `delivered` exceeds TTL → complete without decrementing usage                              | Repository + service             |
+| `reserved` within TTL → `in_flight` → skip (flush running)                                 | Log + `IDEMPOTENCY_CONFLICT`     |
+| `delivered` → skip duplicate webhook while finalization is pending                         | Log + `IDEMPOTENCY_CONFLICT`     |
+| `completed` → skip duplicate webhook                                                       | Log                              |
+| Ops `npm run chat-quota:recover-stuck` (+ `--dry-run`)                                     | Script                           |
+| `chat-quota:status` prints `stuckReserved`                                                 | Ops                              |
 
 **Tests:** `chat-rate-limit.service.spec.ts`, `chat-rate-limit.repository.spec.ts`.
 
@@ -877,13 +880,13 @@ flowchart LR
 
 **Goal:** Never exceed `CHAT_FREE_FORM_DAILY_LIMIT` on concurrent reserve (multi-pod).
 
-| Task | Done when |
-|------|-----------|
-| `reserveFreeFormSlotInTransaction` + `dailyLimit` | UPSERT `WHERE free_form_count < $limit` |
-| 0 rows → `daily_limit_exceeded`, transaction rollback (no stuck idempotency) | `DailyLimitExceededError` |
-| Service map → `DAILY_LIMIT` deny | `ChatRateLimitService.reserveFreeFormSlot` |
-| Pre-check `usedBefore` kept as fast-path | Transaction is source of truth |
-| Concurrent test at limit−1 → only 1 reserve | `chat-rate-limit.repository.spec.ts` |
+| Task                                                                         | Done when                                  |
+| ---------------------------------------------------------------------------- | ------------------------------------------ |
+| `reserveFreeFormSlotInTransaction` + `dailyLimit`                            | UPSERT `WHERE free_form_count < $limit`    |
+| 0 rows → `daily_limit_exceeded`, transaction rollback (no stuck idempotency) | `DailyLimitExceededError`                  |
+| Service map → `DAILY_LIMIT` deny                                             | `ChatRateLimitService.reserveFreeFormSlot` |
+| Pre-check `usedBefore` kept as fast-path                                     | Transaction is source of truth             |
+| Concurrent test at limit−1 → only 1 reserve                                  | `chat-rate-limit.repository.spec.ts`       |
 
 **Related:** §5.3 multi-device on horizontal scale. **H7 ✓** persists cross-pod debounce (`CHAT_QUEUE_SHARED=true`).
 
@@ -891,13 +894,13 @@ flowchart LR
 
 **Goal:** Avoid unfair refunds when user received most of the reply; handle Meta 24h window.
 
-| Task | Done when |
-|------|-----------|
-| `markDelivered` after outbound attempt, then history, then `markCompleted` | `deliverMainReplyBubbles` + `finalizeQuota` |
-| Send fails **before** any bubble → refund + `FREE_FORM_CHAT_ERROR` | `catch` when `!mainReplyDelivered` |
+| Task                                                                                                       | Done when                                         |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| `markDelivered` after outbound attempt, then history, then `markCompleted`                                 | `deliverMainReplyBubbles` + `finalizeQuota`       |
+| Send fails **before** any bubble → refund + `FREE_FORM_CHAT_ERROR`                                         | `catch` when `!mainReplyDelivered`                |
 | `MessengerPartialSendError` (bubble 1 OK, bubble 2 fails) → **no** refund and **no** normal history append | `MessengerOutboundService.sendTextBubblesViaPsid` |
-| Rich follow-up / hint fails → log warn, **no** refund / no error message to user | `deliverOptionalChatExtras` |
-| Meta 24h window → separate user-facing message | `chat-delivery.messages.ts` |
+| Rich follow-up / hint fails → log warn, **no** refund / no error message to user                           | `deliverOptionalChatExtras`                       |
+| Meta 24h window → separate user-facing message                                                             | `chat-delivery.messages.ts`                       |
 
 **Policy:** Quota = 1 turn when LLM finishes **and** at least one `FREE_FORM_CHAT_OUT` bubble sent (or LLM returns empty text → still finalize as before).
 
@@ -905,40 +908,40 @@ flowchart LR
 
 #### H5 — Abuse Caps & Burst Refinement (≈ 0.5–1 days) — ✓ done
 
-| Task | Done when |
-|------|-----------|
-| `CHAT_MERGED_TEXT_MAX_CHARS` — `capMergedChatUserText` before LLM | `messenger-text.utils.ts` + flush |
-| Webhook missing `mid` + enforcement → don't enqueue, `CHAT_MISSING_MID` | `MessengerService` + flush guard |
-| Burst default **doesn't** count `refunded` (`CHAT_BURST_COUNT_REFUNDED=false`) | `countRecentReservations` |
-| Debounce merge still 1 turn / flush | Regression spec preserved |
+| Task                                                                           | Done when                         |
+| ------------------------------------------------------------------------------ | --------------------------------- |
+| `CHAT_MERGED_TEXT_MAX_CHARS` — `capMergedChatUserText` before LLM              | `messenger-text.utils.ts` + flush |
+| Webhook missing `mid` + enforcement → don't enqueue, `CHAT_MISSING_MID`        | `MessengerService` + flush guard  |
+| Burst default **doesn't** count `refunded` (`CHAT_BURST_COUNT_REFUNDED=false`) | `countRecentReservations`         |
+| Debounce merge still 1 turn / flush                                            | Regression spec preserved         |
 
 **Env:** `CHAT_MERGED_TEXT_MAX_CHARS`, `CHAT_BURST_COUNT_REFUNDED`.
 
 #### H6 — Ops Retention & Observability (≈ 0.5 days) — ✓ done
 
-| Task | Done when |
-|------|-----------|
-| Idempotency retention (delete completed/refunded > N days) | `npm run chat-quota:cleanup` (+ `--dry-run`) |
-| `chat-quota:status` + stuck `reserved` + idempotency stats | Debug H2/H6 |
-| Log grep: `CHAT_QUOTA_DENY`, `CHAT_QUOTA_REFUND`, `CHAT_QUOTA_RECOVERED` | Ops grep |
+| Task                                                                     | Done when                                    |
+| ------------------------------------------------------------------------ | -------------------------------------------- |
+| Idempotency retention (delete completed/refunded > N days)               | `npm run chat-quota:cleanup` (+ `--dry-run`) |
+| `chat-quota:status` + stuck `reserved` + idempotency stats               | Debug H2/H6                                  |
+| Log grep: `CHAT_QUOTA_DENY`, `CHAT_QUOTA_REFUND`, `CHAT_QUOTA_RECOVERED` | Ops grep                                     |
 
 **Env:** `CHAT_IDEMPOTENCY_RETENTION_DAYS` (default 90). Script does **not** delete `status=reserved`.
 
 #### H7 — Horizontal Scale (≥ 2 instances, ≈ 2+ days) — ✓ done (Option C)
 
-| Option | When |
-|--------|------|
-| **A** — 1 instance | Default `CHAT_QUEUE_SHARED=false` |
-| **B** — sticky webhook / external queue | Not implemented — use C |
-| **C** — persist cross-pod debounce | `CHAT_QUEUE_STORE=redis` or `CHAT_QUEUE_SHARED=true` + `REDIS_ENABLED=true` |
+| Option                                  | When                                                                        |
+| --------------------------------------- | --------------------------------------------------------------------------- |
+| **A** — 1 instance                      | Default `CHAT_QUEUE_SHARED=false`                                           |
+| **B** — sticky webhook / external queue | Not implemented — use C                                                     |
+| **C** — persist cross-pod debounce      | `CHAT_QUEUE_STORE=redis` or `CHAT_QUEUE_SHARED=true` + `REDIS_ENABLED=true` |
 
-| Task | Done when |
-|------|-----------|
-| Redis `chat:queue:buffer:{psid}` | Cross-pod debounce merge |
-| Redis `chat:history:{psid}` | Shared LLM context |
-| Redis `dedupe:mid:*` | Cross-pod `mid` dedupe |
+| Task                                             | Done when                         |
+| ------------------------------------------------ | --------------------------------- |
+| Redis `chat:queue:buffer:{psid}`                 | Cross-pod debounce merge          |
+| Redis `chat:history:{psid}`                      | Shared LLM context                |
+| Redis `dedupe:mid:*`                             | Cross-pod `mid` dedupe            |
 | Cron poll flush (2s) + stuck processing recovery | `MessengerChatQueueWorkerService` |
-| Claim buffer (Redis lock) | One pod flushes / PSID |
+| Claim buffer (Redis lock)                        | One pod flushes / PSID            |
 
 Redis append is fail-safe: lock contention, Redis unavailability, and append
 errors are retried 3 times with a 25 ms delay. If all attempts fail, the
@@ -952,16 +955,16 @@ queued.
 
 #### Hardening Effort Summary
 
-| Phase | Effort | Priority |
-|-------|--------|-------------------------|
-| H1 Go-live | 0.5 days | **Required** |
-| H2 Stuck reserved | 1–1.5 days | **High** |
-| H3 Hard cap DB | 1 day | When >1 pod |
-| H4 Send semantics | 1 day | Medium |
-| H5 Abuse caps | 0.5–1 days | Medium |
-| H6 Ops retention | 0.5 days | Low–Medium |
-| H7 Scale | 2+ days | When ≥2 pods — enable `CHAT_QUEUE_SHARED` |
-| **Total H1–H7** | **~4–6 days** | ✓ Done |
+| Phase             | Effort        | Priority                                  |
+| ----------------- | ------------- | ----------------------------------------- |
+| H1 Go-live        | 0.5 days      | **Required**                              |
+| H2 Stuck reserved | 1–1.5 days    | **High**                                  |
+| H3 Hard cap DB    | 1 day         | When >1 pod                               |
+| H4 Send semantics | 1 day         | Medium                                    |
+| H5 Abuse caps     | 0.5–1 days    | Medium                                    |
+| H6 Ops retention  | 0.5 days      | Low–Medium                                |
+| H7 Scale          | 2+ days       | When ≥2 pods — enable `CHAT_QUEUE_SHARED` |
+| **Total H1–H7**   | **~4–6 days** | ✓ Done                                    |
 
 **Implementation order:** H1 → H2 → H5 → H4 → H3 → H6 → H7. **Next:** Phase 7 tier.
 
@@ -969,19 +972,19 @@ queued.
 
 ## 6. References
 
-| Resource | Link / path |
-|----------|-------------|
-| Meta rate limits | https://developers.facebook.com/docs/messenger-platform/overview/rate-limiting |
-| Current message log | `src/infrastructure/database/entities/messenger-message-log.entity.ts` |
-| Webhook handler + dedupe | `src/modules/messenger/application/services/messenger.service.ts` |
-| Chat queue + reserve hook | `src/modules/messenger/application/services/messenger-chat-queue.service.ts` |
-| Shared queue worker (H7) | `src/modules/messenger/application/services/messenger-chat-queue-worker.service.ts` |
-| Redis queue store (R4) | `src/modules/messenger/infrastructure/persistence/redis-chat-queue.store.ts` |
-| Quota service | `src/modules/chat-rate-limit/application/services/chat-rate-limit.service.ts` |
-| Ops scripts | `scripts/chat-quota-status.mjs`, `chat-quota-recover-stuck.mjs`, `chat-quota-cleanup-idempotency.mjs` |
-| Message sending (Send API) | `src/modules/messenger/application/services/messenger-outbound.service.ts` |
-| Similar outbox pattern | `study_reminder_jobs` — [study-session-reminder.md](./study-session-reminder.md) |
+| Resource                   | Link / path                                                                                           |
+| -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Meta rate limits           | https://developers.facebook.com/docs/messenger-platform/overview/rate-limiting                        |
+| Current message log        | `src/infrastructure/database/entities/messenger-message-log.entity.ts`                                |
+| Webhook handler + dedupe   | `src/modules/messenger/application/services/messenger.service.ts`                                     |
+| Chat queue + reserve hook  | `src/modules/messenger/application/services/messenger-chat-queue.service.ts`                          |
+| Shared queue worker (H7)   | `src/modules/messenger/application/services/messenger-chat-queue-worker.service.ts`                   |
+| Redis queue store (R4)     | `src/modules/messenger/infrastructure/persistence/redis-chat-queue.store.ts`                          |
+| Quota service              | `src/modules/chat-rate-limit/application/services/chat-rate-limit.service.ts`                         |
+| Ops scripts                | `scripts/chat-quota-status.mjs`, `chat-quota-recover-stuck.mjs`, `chat-quota-cleanup-idempotency.mjs` |
+| Message sending (Send API) | `src/modules/messenger/application/services/messenger-outbound.service.ts`                            |
+| Similar outbox pattern     | `study_reminder_jobs` — [study-session-reminder.md](./study-session-reminder.md)                      |
 
 ---
 
-*This document records architectural decisions; implement code per checklist §5.7, roadmap §5.9, hardening edge cases §5.10.*
+_This document records architectural decisions; implement code per checklist §5.7, roadmap §5.9, hardening edge cases §5.10._

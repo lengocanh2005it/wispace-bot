@@ -10,19 +10,19 @@ paths: apps/*/src/shared/prompts/**,packages/llm-agent/src/messages.ts,packages/
 Composed in `PlatformAgentService.buildSystemPrompt` (`packages/chat-agent`):
 `CHAT_SYSTEM_PROMPT_CORE` (universal rules) + per-bot overlay file.
 
-| Part | File | Content |
-|------|------|---------|
-| Core | `packages/llm-agent/src/chat-system-prompt.ts` (`CHAT_SYSTEM_PROMPT_CORE`) | Scope, out-of-scope, no-tool rules, no-fabrication, `precreate_next_exercise`, general rules — **shared, edit once** |
-| Overlay | `apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt` | Identity, report registration, cards, reschedule buttons |
-| Overlay | `apps/discord-bot/src/shared/prompts/discord-chat.system.txt` | Identity, server-channel DM privacy, reschedule buttons |
-| Overlay | `apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt` | Identity, reschedule confirm flow |
+| Part    | File                                                                       | Content                                                                                                              |
+| ------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Core    | `packages/llm-agent/src/chat-system-prompt.ts` (`CHAT_SYSTEM_PROMPT_CORE`) | Scope, out-of-scope, no-tool rules, no-fabrication, `precreate_next_exercise`, general rules — **shared, edit once** |
+| Overlay | `apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt`          | Identity, report registration, cards, reschedule buttons                                                             |
+| Overlay | `apps/discord-bot/src/shared/prompts/discord-chat.system.txt`              | Identity, server-channel DM privacy, reschedule buttons                                                              |
+| Overlay | `apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt`                    | Identity, reschedule confirm flow                                                                                    |
 
 Rule: universal rule → core; platform mechanism → overlay. Never duplicate a core rule into an overlay (or the drift problem returns).
 
 ## Standalone prompts (Messenger)
 
-| File | Service |
-|------|---------|
+| File                                                              | Service                                                                 |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | `apps/messenger-bot/src/shared/prompts/student-report.system.txt` | `modules/student-report/application/services/student-report.service.ts` |
 | `apps/messenger-bot/src/shared/prompts/study-reminder.system.txt` | `modules/study-reminder/application/services/study-reminder.service.ts` |
 

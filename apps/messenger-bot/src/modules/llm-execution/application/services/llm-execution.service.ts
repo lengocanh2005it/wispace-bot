@@ -74,7 +74,7 @@ export class LlmExecutionService {
         const globalLimit = this.config.getGlobalMaxConcurrent();
         const release = await this.globalLimiter.acquire('global', globalLimit);
         try {
-          return await this.breaker.fire(fn, context) as Promise<T>;
+          return (await this.breaker.fire(fn, context)) as Promise<T>;
         } finally {
           await release();
         }

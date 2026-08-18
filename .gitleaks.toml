@@ -7,7 +7,4 @@ useDefault = true
 
 [[allowlists]]
 description = "Test fixture idempotency keys in chat-rate-limit.repository.spec.ts (never a real key)"
-regexes = [
-  '''idempotencyKey:\s*'mid-stuck-ext1' ''',
-  '''mid-stuck-ext1''',
-]
+regexes = ['''idempotencyKey:\s*'mid-stuck-ext1' ''', '''mid-stuck-ext1''']

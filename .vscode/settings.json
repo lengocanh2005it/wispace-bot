@@ -1,7 +1,5 @@
 {
   "js/ts.tsdk.path": "node_modules/typescript/lib",
-  "eslint.workingDirectories": [{ "mode": "auto" }],
-  "eslint.validate": ["typescript", "javascript"],
   "js/ts.tsserver.maxMemory": 4096,
   "js/ts.tsserver.experimental.enableProjectDiagnostics": false,
   "search.exclude": {
