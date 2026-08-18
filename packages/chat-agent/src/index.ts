@@ -19,6 +19,21 @@ export type {
 export { PlatformChatHistoryService } from './chat-history/platform-chat-history.service';
 export { PlatformChatQueueService } from './chat-queue/platform-chat-queue.service';
 export {
+  RedisChatQueueStore,
+  type ChatQueuePlatform,
+  type RedisChatQueueStoreOptions,
+} from './chat-queue/redis-chat-queue.store';
+export { RedisChatQueueWorkerService } from './chat-queue/redis-chat-queue.worker';
+export {
+  PLATFORM_CHAT_QUEUE_STORE,
+  type ChatQueueStorePort,
+} from './chat-queue/chat-queue-store.port';
+export type {
+  AppendChatBufferInput,
+  ChatQueueBufferSnapshot,
+  CompleteChatBufferInput,
+} from './chat-queue/chat-queue-store.types';
+export {
   createChatPipelineAdapters,
   type OutboundServicePort,
 } from './chat-pipeline-adapters';

@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import { ChatPipeline } from '@wispace/chat-pipeline';
 import { PlatformChatQueueService } from './platform-chat-queue.service';
+import type { ChatQueueStorePort } from './chat-queue-store.port';
 import type { PlatformChatQueueOptions } from '../agent/platform-agent.types';
 
 jest.mock('@wispace/chat-queue-core', () => ({
@@ -62,7 +63,10 @@ describe('PlatformChatQueueService', () => {
     ) => Promise<void>;
   };
 
-  const buildConfigWith = (values: Record<string, string>) => {
+  const buildConfigWith = (
+    values: Record<string, string>,
+    queueStore?: ChatQueueStorePort,
+  ) => {
     const config = {
       get: jest.fn((key: string) => values[key] ?? configGet(key)),
     } as unknown as ConfigService;
@@ -78,6 +82,7 @@ describe('PlatformChatQueueService', () => {
       outbound,
       { sendText: jest.fn().mockResolvedValue(undefined) },
       {},
+      queueStore,
     );
   };
 
@@ -85,15 +90,47 @@ describe('PlatformChatQueueService', () => {
     jest.clearAllMocks();
   });
 
-  it('fails closed when CHAT_QUEUE_STORE=redis (unsupported shared queue)', () => {
-    expect(() => buildConfigWith({ CHAT_QUEUE_STORE: 'redis' })).toThrow(
-      /CHAT_QUEUE_STORE=redis .* not supported on Discord\/Zalo/,
-    );
+  it('accepts CHAT_QUEUE_SHARED=true when Redis is available', () => {
+    const queueStore = {
+      isAvailable: jest.fn().mockReturnValue(true),
+      appendChatBuffer: jest.fn().mockResolvedValue(undefined),
+    } as unknown as ChatQueueStorePort;
+
+    expect(() =>
+      buildConfigWith({ CHAT_QUEUE_SHARED: 'true' }, queueStore),
+    ).not.toThrow();
   });
 
-  it('fails closed when CHAT_QUEUE_SHARED=true (legacy shared flag)', () => {
-    expect(() => buildConfigWith({ CHAT_QUEUE_SHARED: 'true' })).toThrow(
-      /CHAT_QUEUE_STORE=redis .* not supported on Discord\/Zalo/,
+  it('persists the message before reporting Redis enqueue success', async () => {
+    const queueStore = {
+      isAvailable: jest.fn().mockReturnValue(true),
+      appendChatBuffer: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = buildConfigWith(
+      { CHAT_QUEUE_STORE: 'redis' },
+      queueStore as unknown as ChatQueueStorePort,
+    );
+
+    await service.enqueue(
+      'discord-1',
+      '  hi  ',
+      { userId: 42, isServerChannel: false },
+      'key-1',
+    );
+
+    expect(queueStore.appendChatBuffer).toHaveBeenCalledWith({
+      externalUserId: 'discord-1',
+      userText: 'hi',
+      userId: 42,
+      context: { isServerChannel: false },
+      idempotencyKey: 'key-1',
+      debounceMs: 2000,
+    });
+  });
+
+  it('rejects memory queue in production', () => {
+    expect(() => buildConfigWith({ NODE_ENV: 'production' })).toThrow(
+      /CHAT_QUEUE_STORE=redis is required in production/,
     );
   });
 
@@ -223,10 +260,15 @@ describe('PlatformChatQueueService', () => {
     expect(getQueueMock(service).enqueue).not.toHaveBeenCalled();
   });
 
-  it('enqueue delegates to queue.enqueue', () => {
+  it('enqueue delegates to queue.enqueue', async () => {
     const service = buildService();
 
-    service.enqueue('discord-1', 'hi', { isServerChannel: false }, 'key-1');
+    await service.enqueue(
+      'discord-1',
+      'hi',
+      { isServerChannel: false },
+      'key-1',
+    );
 
     expect(getQueueMock(service).enqueue).toHaveBeenCalledWith({
       externalUserId: 'discord-1',
@@ -236,10 +278,10 @@ describe('PlatformChatQueueService', () => {
     });
   });
 
-  it('onModuleDestroy calls queue.destroy', () => {
+  it('onModuleDestroy calls queue.destroy', async () => {
     const service = buildService();
 
-    service.onModuleDestroy();
+    await service.onModuleDestroy();
 
     expect(getQueueMock(service).destroy).toHaveBeenCalled();
   });

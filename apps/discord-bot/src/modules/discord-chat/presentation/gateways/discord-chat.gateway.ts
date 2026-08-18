@@ -239,7 +239,7 @@ export class DiscordChatGateway {
       const userId =
         await this.accountLinkService.findUserIdByDiscordId(discordUserId);
 
-      this.chatQueueService.enqueue(
+      await this.chatQueueService.enqueue(
         discordUserId,
         resolvedText,
         { userId, isServerChannel },

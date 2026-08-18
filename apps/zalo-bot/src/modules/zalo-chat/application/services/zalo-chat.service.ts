@@ -93,7 +93,7 @@ export class ZaloChatService {
       }
 
       const key = idempotencyKey ?? `zalo:${zaloUserId}:${Date.now()}`;
-      this.chatQueueService.enqueue(zaloUserId, text, { userId }, key);
+      await this.chatQueueService.enqueue(zaloUserId, text, { userId }, key);
     } catch (error) {
       this.logger.error(
         `Chat enqueue failed for zaloUserId=${maskExternalId(
@@ -108,6 +108,7 @@ export class ZaloChatService {
       } catch {
         // ignore
       }
+      throw error;
     }
   }
 

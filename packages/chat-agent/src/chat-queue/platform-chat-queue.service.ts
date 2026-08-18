@@ -18,14 +18,16 @@ import {
 } from '@wispace/bot-common';
 import { CHAT_FAILURE_FALLBACK_MESSAGE } from '@wispace/llm-agent';
 import type { PlatformChatQueueOptions } from '../agent/platform-agent.types';
+import type { ChatQueueBufferSnapshot } from './chat-queue-store.types';
+import type { ChatQueueStorePort } from './chat-queue-store.port';
 
 const DEFAULT_DEBOUNCE_MS = 2000;
+const DEFAULT_PROCESSING_STUCK_MS = 300_000;
 const STALE_TTL_MS = 60 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
 
 const PENDING_MESSAGE =
   'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...';
-
 const DROPPED_MESSAGE =
   'Bạn gửi hơi nhiều tin quá, mình chỉ xử lý được phần đầu thôi nhé';
 
@@ -35,18 +37,21 @@ interface QueueCtx {
 }
 
 /**
- * Debounce chat queue + flush pipeline shared by Discord and Zalo (replaces
- * their near-identical per-app queue services). Platform extras (merged-text
- * cap, typing indicator, server-channel context) are optional — Zalo uses
- * none, but both platforms get the same direct failure fallback.
+ * Debounces locally in development/tests and persists directly to Redis when
+ * configured. The Redis worker is the only distributed flush path.
  */
 @Injectable()
 export class PlatformChatQueueService implements OnModuleDestroy {
   private readonly logger = new Logger(PlatformChatQueueService.name);
-  private readonly queue: DebounceChatQueue<QueueCtx>;
+  private readonly queue?: DebounceChatQueue<QueueCtx>;
   private readonly pipeline: ChatPipeline;
-  /** Users already told their messages were dropped this cycle (reset on flush). */
+  private readonly distributed: boolean;
+  private readonly debounceMs: number;
+  private readonly processingStuckMs: number;
   private readonly droppedNotified = new Set<string>();
+  private readonly directTextSender: {
+    sendText(externalUserId: string, text: string): Promise<void>;
+  };
 
   constructor(
     configService: ConfigService,
@@ -58,25 +63,40 @@ export class PlatformChatQueueService implements OnModuleDestroy {
       sendText(externalUserId: string, text: string): Promise<void>;
     },
     private readonly options: PlatformChatQueueOptions = {},
+    private readonly queueStore?: ChatQueueStorePort,
   ) {
-    // Fail closed: the shared Redis debounce queue is NOT implemented on
-    // Discord/Zalo — honouring the setting with an in-memory queue would
-    // debounce the same user independently on each pod (multiple LLM calls).
-    const queueStore = configService
-      .get<string>('CHAT_QUEUE_STORE')
-      ?.trim()
-      .toLowerCase();
-    const sharedQueue =
-      configService.get<string>('CHAT_QUEUE_SHARED')?.trim().toLowerCase() ===
-      'true';
-    if (queueStore === 'redis' || sharedQueue) {
-      throw new Error(
-        'CHAT_QUEUE_STORE=redis (or CHAT_QUEUE_SHARED=true) is not supported on Discord/Zalo — the debounce queue is single-pod. Remove the setting or deploy a single instance.',
-      );
+    this.directTextSender = directTextSender;
+    const configuredStore =
+      configService.get<string>('CHAT_QUEUE_STORE')?.trim().toLowerCase() ??
+      (configService.get<string>('CHAT_QUEUE_SHARED')?.trim().toLowerCase() ===
+      'true'
+        ? 'redis'
+        : 'memory');
+    this.distributed = configuredStore === 'redis';
+
+    const nodeEnv =
+      configService.get<string>('NODE_ENV')?.trim().toLowerCase() ??
+      process.env.NODE_ENV?.trim().toLowerCase();
+    if (nodeEnv === 'production' && !this.distributed) {
+      throw new Error('CHAT_QUEUE_STORE=redis is required in production');
+    }
+    if (this.distributed && (!queueStore || !queueStore.isAvailable())) {
+      throw new Error('Redis chat queue unavailable');
     }
 
-    // 0 = no cap (DebounceChatQueue maps 0 to its default 20, so pass
-    // MAX_SAFE_INTEGER to disable the pending-message cap entirely).
+    this.debounceMs = Math.min(
+      Math.max(
+        Number(configService.get<string>('CHAT_DEBOUNCE_MS')) ||
+          DEFAULT_DEBOUNCE_MS,
+        0,
+      ),
+      10_000,
+    );
+    this.processingStuckMs = this.readPositiveNumber(
+      configService.get<string>('CHAT_QUEUE_PROCESSING_STUCK_MS'),
+      DEFAULT_PROCESSING_STUCK_MS,
+    );
+
     const maxPendingSize =
       configService.get<string>('CHAT_MAX_PENDING_MESSAGES') === '0'
         ? Number.MAX_SAFE_INTEGER
@@ -119,94 +139,142 @@ export class PlatformChatQueueService implements OnModuleDestroy {
       };
     }
 
-    const config =
+    const pipelineConfig =
       options.mergedTextMaxChars !== undefined
         ? { mergedTextMaxChars: options.mergedTextMaxChars }
         : undefined;
-
     this.pipeline =
-      config !== undefined
-        ? new ChatPipeline(rateLimiter, history, agent, outbound, hooks, config)
+      pipelineConfig !== undefined
+        ? new ChatPipeline(
+            rateLimiter,
+            history,
+            agent,
+            outbound,
+            hooks,
+            pipelineConfig,
+          )
         : new ChatPipeline(rateLimiter, history, agent, outbound, hooks);
 
-    this.queue = new DebounceChatQueue<QueueCtx>(
-      {
-        getDebounceMs: () =>
-          Math.min(
-            Math.max(
-              Number(configService.get<string>('CHAT_DEBOUNCE_MS')) ||
-                DEFAULT_DEBOUNCE_MS,
-              0,
-            ),
-            10_000,
-          ),
-        staleTtlMs: STALE_TTL_MS,
-        cleanupIntervalMs: CLEANUP_INTERVAL_MS,
-        maxPendingSize,
-      },
-      (batch) => this.handleFlush(batch),
-      {
-        onPendingQueued: (externalUserId, _text, pendingCount) => {
-          if (pendingCount === 1) {
-            directTextSender
-              .sendText(externalUserId, PENDING_MESSAGE)
-              .catch(() => {});
-          }
+    if (!this.distributed) {
+      this.queue = new DebounceChatQueue<QueueCtx>(
+        {
+          getDebounceMs: () => this.debounceMs,
+          staleTtlMs: STALE_TTL_MS,
+          cleanupIntervalMs: CLEANUP_INTERVAL_MS,
+          maxPendingSize,
         },
-        onPendingDropped: (externalUserId, droppedCount) => {
-          this.logger.warn(
-            `Dropped ${droppedCount} pending message(s) for ${maskExternalId(
-              externalUserId,
-            )} (cap exceeded)`,
-          );
-          if (!this.droppedNotified.has(externalUserId)) {
-            this.droppedNotified.add(externalUserId);
-            directTextSender
-              .sendText(externalUserId, DROPPED_MESSAGE)
-              .catch(() => {});
-          }
+        (batch) => this.handleFlush(batch),
+        {
+          onPendingQueued: (externalUserId, _text, pendingCount) => {
+            if (pendingCount === 1) {
+              directTextSender
+                .sendText(externalUserId, PENDING_MESSAGE)
+                .catch(() => {});
+            }
+          },
+          onPendingDropped: (externalUserId, droppedCount) => {
+            this.logger.warn(
+              `Dropped ${droppedCount} pending message(s) for ${maskExternalId(
+                externalUserId,
+              )} (cap exceeded)`,
+            );
+            if (!this.droppedNotified.has(externalUserId)) {
+              this.droppedNotified.add(externalUserId);
+              directTextSender
+                .sendText(externalUserId, DROPPED_MESSAGE)
+                .catch(() => {});
+            }
+          },
+          onShutdownRejected: (externalUserId) => {
+            this.logger.warn(
+              `Enqueue rejected during shutdown for ${maskExternalId(
+                externalUserId,
+              )} — queue is draining`,
+            );
+          },
         },
-        onShutdownRejected: (externalUserId) => {
-          this.logger.warn(
-            `Enqueue rejected during shutdown for ${maskExternalId(
-              externalUserId,
-            )} — queue is draining`,
-          );
-        },
-      },
-    );
+      );
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.queue.destroy();
+    await this.queue?.destroy();
   }
 
-  enqueue(
+  async enqueue(
     externalUserId: string,
     text: string,
     ctx: QueueCtx,
     idempotencyKey: string,
-  ): void {
-    this.queue.enqueue({
+  ): Promise<void> {
+    const userText = text.trim();
+    if (this.distributed) {
+      await this.queueStore!.appendChatBuffer({
+        externalUserId,
+        userText,
+        userId: ctx.userId,
+        context:
+          ctx.isServerChannel !== undefined
+            ? { isServerChannel: ctx.isServerChannel }
+            : undefined,
+        idempotencyKey,
+        debounceMs: this.debounceMs,
+      });
+      return;
+    }
+
+    this.queue!.enqueue({
       externalUserId,
-      text,
+      text: userText,
       context: ctx,
       idempotencyKey,
     });
   }
 
-  private async handleFlush(batch: ChatQueueBatch<QueueCtx>): Promise<void> {
+  async flushReady(externalUserId: string): Promise<void> {
+    if (!this.distributed) {
+      return;
+    }
+
+    const batch = await this.queueStore!.claimReadyBuffer(
+      externalUserId,
+      this.debounceMs,
+      this.processingStuckMs,
+    );
+    if (!batch) {
+      return;
+    }
+
     try {
+      if (batch.droppedNoticePending) {
+        await this.sendDroppedNotice(externalUserId);
+      }
+      await this.handleFlush(batch);
+    } finally {
+      this.droppedNotified.delete(externalUserId);
+      await this.queueStore!.completeChatBuffer({
+        externalUserId,
+        debounceMs: this.debounceMs,
+      });
+    }
+  }
+
+  private async handleFlush(
+    batch: ChatQueueBatch<QueueCtx> | ChatQueueBufferSnapshot,
+  ): Promise<void> {
+    try {
+      const context = batch.context as QueueCtx | undefined;
+      const sharedSnapshot = 'lastIdempotencyKey' in batch;
       await this.pipeline.flush({
         externalUserId: batch.externalUserId,
-        userId: batch.context?.userId,
+        userId: sharedSnapshot ? batch.userId : context?.userId,
         texts: batch.texts,
-        idempotencyKey: batch.idempotencyKey,
+        idempotencyKey: sharedSnapshot
+          ? batch.lastIdempotencyKey
+          : (batch as ChatQueueBatch<QueueCtx>).idempotencyKey,
         context:
           this.options.propagateServerChannel === true
-            ? {
-                isServerChannel: batch.context?.isServerChannel === true,
-              }
+            ? { isServerChannel: context?.isServerChannel === true }
             : undefined,
       });
     } catch (error) {
@@ -219,5 +287,23 @@ export class PlatformChatQueueService implements OnModuleDestroy {
     } finally {
       this.droppedNotified.delete(batch.externalUserId);
     }
+  }
+
+  private async sendDroppedNotice(externalUserId: string): Promise<void> {
+    // The shared store owns the durable flag; delivery is best effort like the
+    // old in-memory callback and the flag is cleared with the completed batch.
+    await this.directTextSender
+      .sendText(externalUserId, DROPPED_MESSAGE)
+      .catch(() => {});
+  }
+
+  private readPositiveNumber(
+    raw: string | undefined,
+    fallback: number,
+  ): number {
+    const parsed = raw ? Number(raw) : NaN;
+    return Number.isFinite(parsed) && parsed > 0
+      ? Math.floor(parsed)
+      : fallback;
   }
 }
