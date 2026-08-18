@@ -100,35 +100,71 @@ export class MessengerService {
     accepted: number;
     duplicates: number;
   }> {
-    let accepted = 0;
-    let duplicates = 0;
+    // Flatten all events from the batch for parallel ingestion (#155).
+    const events: Array<{
+      event: MessengerWebhookEvent;
+      eventId: string;
+    }> = [];
 
     for (const entry of Array.isArray(payload.entry) ? payload.entry : []) {
       for (const event of Array.isArray(entry.messaging)
         ? entry.messaging
         : []) {
         this.logIncomingWebhookEvent(event);
-
         const eventId = buildEventId(event, event.sender?.id ?? '');
-        const { inserted } = await this.inboundEvents.ingest({
-          eventId,
-          externalUserId: event.sender?.id ?? null,
-          eventType: buildEventType(event),
-          rawPayload: event,
-        });
-
-        if (!inserted) {
-          duplicates += 1;
-          this.logger.debug(
-            `Skipping duplicate webhook event id=${maskEventId(
-              eventId,
-              event.sender?.id,
-            )}`,
-          );
-          continue;
-        }
-        accepted += 1;
+        events.push({ event, eventId });
       }
+    }
+
+    if (events.length === 0) {
+      return { accepted: 0, duplicates: 0 };
+    }
+
+    // Parallel insert — unique constraint handles idempotency.
+    // Promise.allSettled processes all events even if some fail.
+    const results = await Promise.allSettled(
+      events.map(({ event, eventId }) =>
+        this.inboundEvents
+          .ingest({
+            eventId,
+            externalUserId: event.sender?.id ?? null,
+            eventType: buildEventType(event),
+            rawPayload: event,
+          })
+          .then((result) => ({ eventId, ...result })),
+      ),
+    );
+
+    let accepted = 0;
+    let duplicates = 0;
+    const failures: string[] = [];
+
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        failures.push(String(result.reason));
+        continue;
+      }
+      if (!result.value.inserted) {
+        duplicates += 1;
+        this.logger.debug(
+          `Skipping duplicate webhook event id=${maskEventId(
+            result.value.eventId,
+            undefined,
+          )}`,
+        );
+        continue;
+      }
+      accepted += 1;
+    }
+
+    if (failures.length > 0) {
+      this.logger.error(
+        `Webhook ingestion: ${failures.length}/${events.length} events failed to persist`,
+      );
+      // Propagate so the endpoint returns non-2xx and Meta redelivers.
+      throw new Error(
+        `Webhook ingestion failed: ${failures.length}/${events.length} events`,
+      );
     }
 
     return { accepted, duplicates };
