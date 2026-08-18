@@ -1,4 +1,8 @@
-export type ChatIdempotencyStatus = 'reserved' | 'completed' | 'refunded';
+export type ChatIdempotencyStatus =
+  | 'reserved'
+  | 'delivered'
+  | 'completed'
+  | 'refunded';
 
 export interface ChatIdempotencyRecord {
   idempotencyKey: string;
@@ -35,5 +39,6 @@ export type ReserveFreeFormSlotOutcome =
 export type RecoverIdempotencyOutcome =
   | 'reopened'
   | 'in_flight'
+  | 'delivered'
   | 'completed'
   | 'not_found';

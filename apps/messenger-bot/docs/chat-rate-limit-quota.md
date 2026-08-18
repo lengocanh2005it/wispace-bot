@@ -449,7 +449,7 @@ CREATE TABLE chat_idempotency (
   usage_date       DATE NOT NULL,
   reserved_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   status           VARCHAR(16) NOT NULL DEFAULT 'reserved'
-                   CHECK (status IN ('reserved', 'completed', 'refunded'))
+                   CHECK (status IN ('reserved', 'delivered', 'completed', 'refunded'))
 );
 
 CREATE INDEX idx_chat_idempotency_psid_date
@@ -459,7 +459,7 @@ CREATE INDEX idx_chat_idempotency_psid_date
 | Column | Meaning |
 |--------|---------|
 | `idempotency_key` | `message.mid` — globally unique |
-| `status` | `reserved` → LLM running; `completed` → reply sent; `refunded` → turn returned after error |
+| `status` | `reserved` → LLM running; `delivered` → outbound confirmed, finalization pending; `completed` → quota finalized; `refunded` → turn returned before delivery |
 
 **Simpler approach:** unique `(idempotency_key)` on `message_logs` when `message_type = 'FREE_FORM_CHAT_IN'` — reserve + insert log in one transaction. Insert failure → mid already processed, skip LLM.
 
@@ -591,6 +591,7 @@ class ChatRateLimitService {
     usageDate: string,
     idempotencyKey: string,
   ): Promise<void>;
+  async markDelivered(idempotencyKey: string): Promise<void>;
   async markCompleted(idempotencyKey: string): Promise<void>;
 }
 ```
@@ -693,7 +694,8 @@ flowchart LR
 | `checkQuota(psid)` → `{ allowed, used, limit, remaining, usageDate }` | Unit test under/at/over limit |
 | `reserveFreeFormSlot(psid, { idempotencyKey, userId })` in **one transaction**: INSERT idempotency → UPSERT count +1 | Conflict `mid` → `allowed: false`, count unchanged |
 | `refundFreeFormSlot(psid, usageDate, idempotencyKey)` | count -1, status `refunded` |
-| `markCompleted(idempotencyKey)` | status `completed` |
+| `markDelivered(idempotencyKey)` | after confirmed outbound, status `delivered` |
+| `markCompleted(idempotencyKey)` | status `reserved`/`delivered` → `completed` |
 | Reserve **before** LLM; refund on LLM/Send fail | Documented in service |
 
 **Required tests:**
@@ -712,7 +714,7 @@ flowchart LR
 | Hook `MessengerChatProcessorService.flush()`: after debounce, **before** `MessengerAgentService.reply()` | Reserve called in right place |
 | Pass `idempotencyKey` = `message.mid` of **last** message in debounce batch (convention §5.3) | 5-message burst → 1 turn |
 | Quota exhausted → `sendTextViaPsid` message §5.5, `message_type=CHAT_QUOTA_DENIED` | No OpenAI call |
-| Success → `markCompleted`; `catch` → `refund` | LLM error doesn't waste turns |
+| Confirmed outbound → `markDelivered` → history → `markCompleted`; pre-delivery error → `refund` | Delivery finalization is recoverable; LLM/send error doesn't waste turns |
 | Log `FREE_FORM_CHAT_IN` (optional) before LLM | Audit in `message_logs` |
 | Keep `isDuplicateMessageMid` RAM at webhook | Fast path unchanged |
 
@@ -849,7 +851,7 @@ flowchart LR
 
 #### H2 — Stuck `reserved` & Retry `mid` (≈ 1–1.5 days) — ✓ done
 
-**Goal:** Crash/restart or timeout between reserve and `markCompleted` doesn't permanently lose user turns.
+**Goal:** Crash/restart or timeout between reserve, delivery, and quota finalization never refunds a delivered turn.
 
 | Task | Done when |
 |------|-----------|
@@ -857,7 +859,9 @@ flowchart LR
 | `ChatRateLimitService`: conflict → `recoverIdempotencyForRetry` → re-reserve if `reopened` | `reserveSlotOrRecoverOnConflict` |
 | `refunded` row → delete → Meta retry same `mid` calls LLM again | Repository transaction |
 | `reserved` exceeds TTL → refund count + delete → retry | Repository + service |
+| `delivered` exceeds TTL → complete without decrementing usage | Repository + service |
 | `reserved` within TTL → `in_flight` → skip (flush running) | Log + `IDEMPOTENCY_CONFLICT` |
+| `delivered` → skip duplicate webhook while finalization is pending | Log + `IDEMPOTENCY_CONFLICT` |
 | `completed` → skip duplicate webhook | Log |
 | Ops `npm run chat-quota:recover-stuck` (+ `--dry-run`) | Script |
 | `chat-quota:status` prints `stuckReserved` | Ops |
@@ -888,9 +892,9 @@ flowchart LR
 
 | Task | Done when |
 |------|-----------|
-| `markCompleted` immediately after **first main bubble** sent successfully | `deliverMainReplyBubbles` + `finalizeQuota` |
+| `markDelivered` after outbound attempt, then history, then `markCompleted` | `deliverMainReplyBubbles` + `finalizeQuota` |
 | Send fails **before** any bubble → refund + `FREE_FORM_CHAT_ERROR` | `catch` when `!mainReplyDelivered` |
-| `MessengerPartialSendError` (bubble 1 OK, bubble 2 fails) → **no** refund | `MessengerOutboundService.sendTextBubblesViaPsid` |
+| `MessengerPartialSendError` (bubble 1 OK, bubble 2 fails) → **no** refund and **no** normal history append | `MessengerOutboundService.sendTextBubblesViaPsid` |
 | Rich follow-up / hint fails → log warn, **no** refund / no error message to user | `deliverOptionalChatExtras` |
 | Meta 24h window → separate user-facing message | `chat-delivery.messages.ts` |
 

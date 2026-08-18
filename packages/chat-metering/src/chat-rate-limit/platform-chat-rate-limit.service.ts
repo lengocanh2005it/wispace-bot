@@ -150,6 +150,10 @@ export class PlatformChatRateLimitService {
     return this.core.markCompleted(idempotencyKey);
   }
 
+  async markDelivered(idempotencyKey: string): Promise<void> {
+    return this.core.markDelivered(idempotencyKey);
+  }
+
   async recoverStuckReservedSlots(): Promise<{ recovered: string[] }> {
     return this.core.recoverStuckReservedSlots();
   }

@@ -22,6 +22,7 @@ export interface RateLimiterPort {
     usageDate: string,
     idempotencyKey: string,
   ): Promise<void>;
+  markDelivered(idempotencyKey: string): Promise<void>;
   markCompleted(idempotencyKey: string): Promise<void>;
 }
 
@@ -87,6 +88,7 @@ export interface PipelineContext {
   reply?: AgentReply;
   error?: unknown;
   refundError?: unknown;
+  quotaFinalizationError?: unknown;
 }
 
 // ── Hooks ───────────────────────────────────────────────────────────────────

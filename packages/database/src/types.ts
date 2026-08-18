@@ -15,7 +15,11 @@ export type ChatQuotaDenyReason =
   | 'IDEMPOTENCY_CONFLICT';
 
 /** Chat idempotency row status. */
-export type ChatIdempotencyStatus = 'reserved' | 'completed' | 'refunded';
+export type ChatIdempotencyStatus =
+  | 'reserved'
+  | 'delivered'
+  | 'completed'
+  | 'refunded';
 
 /** Chat quota event types. */
 export type ChatQuotaEventType =

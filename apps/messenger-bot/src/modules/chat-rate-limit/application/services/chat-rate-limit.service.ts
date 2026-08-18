@@ -226,9 +226,15 @@ export class ChatRateLimitService {
     await this.repository.completeReservedSlot(idempotencyKey);
   }
 
-  /**
-   * H2 ops: refund + release keys stuck in `reserved` past TTL.
-   */
+  async markDelivered(idempotencyKey: string): Promise<void> {
+    if (!this.configService.isEnabled()) {
+      return;
+    }
+
+    await this.repository.markDeliveredSlot(idempotencyKey);
+  }
+
+  /** H2 ops: finalize delivered keys and refund stale pre-delivery keys. */
   async recoverStuckReservedSlots(): Promise<{ recovered: string[] }> {
     if (!this.configService.isEnabled()) {
       return { recovered: [] };
@@ -317,6 +323,13 @@ export class ChatRateLimitService {
     if (recovery === 'completed') {
       this.logger.log(
         `Idempotency already completed mid=${idempotencyKey} psid=${maskExternalId(psid)}; skip duplicate flush`,
+      );
+      return;
+    }
+
+    if (recovery === 'delivered') {
+      this.logger.log(
+        `Idempotency delivery pending finalization mid=${idempotencyKey} psid=${maskExternalId(psid)}; skip duplicate flush`,
       );
     }
   }

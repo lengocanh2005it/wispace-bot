@@ -173,6 +173,7 @@ describe('PlatformAgentService', () => {
           .fn()
           .mockResolvedValue({ allowed: true, usageDate: '2026-08-11' }),
         refund: jest.fn().mockResolvedValue(undefined),
+        markDelivered: jest.fn().mockResolvedValue(undefined),
         markCompleted: jest.fn().mockResolvedValue(undefined),
       } as never,
       historyService,

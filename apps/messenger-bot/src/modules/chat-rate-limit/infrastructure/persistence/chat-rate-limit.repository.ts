@@ -91,6 +91,10 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
     return this.core.completeReservedSlot(idempotencyKey);
   }
 
+  markDeliveredSlot(idempotencyKey: string): Promise<boolean> {
+    return this.core.markDeliveredSlot(idempotencyKey);
+  }
+
   countRecentReservations(
     psid: string,
     since: Date,
