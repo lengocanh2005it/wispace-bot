@@ -15,13 +15,18 @@ export interface ReportClaimRepositoryPort {
       reportDate: string;
     },
     leaseMs: number,
-  ): Promise<{ claimed: boolean; leaseToken?: string }>;
+  ): Promise<{
+    claimed: boolean;
+    leaseToken?: string;
+    deliveryRecord?: string;
+  }>;
   markScheduledReportClaimSent(
     params: {
       externalUserId: string;
       reportDate: string;
     },
     leaseToken: string,
+    deliveryRecord?: string,
   ): Promise<boolean>;
   releaseScheduledReportClaim(
     params: {

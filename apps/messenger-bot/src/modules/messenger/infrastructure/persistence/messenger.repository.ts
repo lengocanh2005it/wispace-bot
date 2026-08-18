@@ -382,14 +382,21 @@ export class MessengerRepository
       reportDate: string;
     },
     leaseMs: number,
-  ): Promise<{ claimed: boolean; leaseToken?: string }> {
+  ): Promise<{
+    claimed: boolean;
+    leaseToken?: string;
+    deliveryRecord?: string;
+  }> {
     // ON CONFLICT DO UPDATE ... WHERE status = 'released': reclaims a claim
     // released after a transient failure, while an active `claimed` row is
     // never stolen by a concurrent worker and a `sent` claim stays
     // non-reclaimable.
-    const rows: Array<{ id: number; lease_token: string }> =
-      await this.reportClaimRepo.manager.query(
-        `
+    const rows: Array<{
+      id: number;
+      lease_token: string;
+      delivery_record: string | null;
+    }> = await this.reportClaimRepo.manager.query(
+      `
         INSERT INTO scheduled_report_claims
           (platform, external_user_id, report_date, user_id, status, lease_token, lease_expires_at)
         VALUES ($1, $2, $3::date, $4, 'claimed', gen_random_uuid(), now() + ($5::int * interval '1 millisecond'))
@@ -401,19 +408,23 @@ export class MessengerRepository
           lease_expires_at = EXCLUDED.lease_expires_at,
           updated_at = now()
         WHERE scheduled_report_claims.status = 'released'
-        RETURNING id, lease_token
+        RETURNING id, lease_token, delivery_record
       `,
-        [
-          PLATFORM,
-          params.externalUserId,
-          params.reportDate,
-          params.userId ?? null,
-          leaseMs,
-        ],
-      );
+      [
+        PLATFORM,
+        params.externalUserId,
+        params.reportDate,
+        params.userId ?? null,
+        leaseMs,
+      ],
+    );
 
     return rows.length > 0
-      ? { claimed: true, leaseToken: rows[0].lease_token }
+      ? {
+          claimed: true,
+          leaseToken: rows[0].lease_token,
+          deliveryRecord: rows[0].delivery_record ?? undefined,
+        }
       : { claimed: false };
   }
 
