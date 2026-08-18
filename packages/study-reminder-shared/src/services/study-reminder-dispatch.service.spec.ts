@@ -355,7 +355,7 @@ describe('StudyReminderDispatchService', () => {
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.claimJob).toHaveBeenCalledTimes(1);
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.markSent).toHaveBeenCalledWith(1, 'lease-a');
+      expect(jobRepo.markSent).toHaveBeenCalledWith(1, 'lease-a', 'sent');
     });
 
     it('reopens only an expired lease and delivers exactly once per owner', async () => {
@@ -393,9 +393,9 @@ describe('StudyReminderDispatchService', () => {
       // while the previous lease was live.
       expect(sendCalls).toBe(2);
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.markSent).toHaveBeenCalledWith(1, 'lease-a');
+      expect(jobRepo.markSent).toHaveBeenCalledWith(1, 'lease-a', 'sent');
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.markSent).toHaveBeenCalledWith(1, 'lease-b');
+      expect(jobRepo.markSent).toHaveBeenCalledWith(1, 'lease-b', 'sent');
     });
   });
 });
