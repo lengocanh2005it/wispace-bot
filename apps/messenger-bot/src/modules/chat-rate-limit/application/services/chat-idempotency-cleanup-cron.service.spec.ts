@@ -39,7 +39,10 @@ describe('ChatIdempotencyCleanupCronService', () => {
     await service.handleDailyCleanup();
 
     const deleteArgs = deleteMock.mock.calls[0][0];
-    expect(deleteArgs.status).toEqual(['completed', 'refunded']);
+    expect((deleteArgs.status as { value?: string[] }).value).toEqual([
+      'completed',
+      'refunded',
+    ]);
     expect(deleteArgs.reservedAt).toBeDefined();
     expect(executeMock).toHaveBeenCalledWith(
       expect.objectContaining({ advisoryLockId: 202 }),

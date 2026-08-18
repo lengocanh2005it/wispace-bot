@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CronJob } from 'cron';
-import { LessThan, Repository } from 'typeorm';
+import { In, LessThan, Repository } from 'typeorm';
 import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { WebhookDeadLetterEntity } from '@wispace/database';
 import type { Platform } from '@wispace/database';
@@ -29,7 +29,7 @@ export interface CleanupCronJobsConfig {
     /** Report claims retention cleanup. */
     reportClaim?: number;
   };
-  messageLogRepo: Repository<{ createdAt: Date }>;
+  messageLogRepo: Repository<{ createdAt: Date; platform: string }>;
   deadLetterRepo: Repository<WebhookDeadLetterEntity>;
   idempotencyRepo: Repository<ChatIdempotencyEntity>;
   /** Zalo-only oauth state cleanup repo. */
@@ -125,7 +125,10 @@ export class PlatformCleanupCronService
       },
       (cutoff) =>
         this.config.messageLogRepo
-          .delete({ createdAt: LessThan(cutoff) })
+          .delete({
+            platform: this.config.platform,
+            createdAt: LessThan(cutoff),
+          })
           .then((r) => r.affected ?? 0),
       this.parseEnabled(`${envPrefix}MESSAGE_LOG_CLEANUP_ENABLED`),
       this.parseRetentionDays(`${envPrefix}MESSAGE_LOG_RETENTION_DAYS`, 90),
@@ -146,8 +149,8 @@ export class PlatformCleanupCronService
       (cutoff) =>
         this.config.deadLetterRepo
           .delete({
-            platform: this.config.platform as never,
-            status: ['replayed', 'abandoned'] as never,
+            platform: this.config.platform,
+            status: In(['replayed', 'abandoned']),
             createdAt: LessThan(cutoff),
           })
           .then((r) => r.affected ?? 0),
