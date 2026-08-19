@@ -145,6 +145,8 @@ export class ReportSendOrchestrationService {
     }
 
     try {
+      const deliveryKey = `messenger-report:${mapping.psid}:${reportDate}`;
+
       const result =
         await this.messengerReportDeliveryService.sendReportForMapping(mapping);
 
@@ -157,6 +159,7 @@ export class ReportSendOrchestrationService {
             },
             claimLeaseToken,
             'sent',
+            deliveryKey,
           );
         }
         if (examDateForOutbox) {
@@ -179,9 +182,11 @@ export class ReportSendOrchestrationService {
       }
       return { ...ZERO, windowClosed: 1 };
     } catch (error) {
-      // Partial send: user already received ≥1 bubble — treat as delivered so
-      // the claim stays 'sent' (no re-send, cross-platform dedupe works).
+      // Partial send: user already received ≥1 bubble — mark as sent with
+      // delivery key so cross-platform dedupe works. The daily slot is burned
+      // because the user already received content (#294).
       if (error instanceof MessengerPartialSendError) {
+        const deliveryKey = `messenger-report:${mapping.psid}:${reportDate}`;
         this.logger.warn(
           `Partial report send for PSID ${maskExternalId(
             mapping.psid,
@@ -195,6 +200,7 @@ export class ReportSendOrchestrationService {
             },
             claimLeaseToken,
             'sent',
+            deliveryKey,
           );
         }
         if (examDateForOutbox) {

@@ -113,6 +113,8 @@ export class DiscordReportOrchestrationService {
     }
 
     try {
+      const deliveryKey = `discord-report:${mapping.externalUserId}:${reportDate}`;
+
       const goals = await this.goalsService.getUserGoals(
         mapping.externalUserId,
       );
@@ -125,6 +127,7 @@ export class DiscordReportOrchestrationService {
         mapping,
         reportText,
         reportDate,
+        deliveryKey,
       });
 
       if (result.ok) {
@@ -136,6 +139,7 @@ export class DiscordReportOrchestrationService {
             },
             claimLeaseToken,
             'sent',
+            deliveryKey,
           );
         }
         if (examDateForOutbox) {

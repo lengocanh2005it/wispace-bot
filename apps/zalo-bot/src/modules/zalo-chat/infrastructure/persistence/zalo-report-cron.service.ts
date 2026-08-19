@@ -151,6 +151,7 @@ export class ZaloReportCronService {
 
     let claimLeaseToken = '';
     let claimDeliveryRecord: string | undefined;
+    let claimDeliveryKey: string | undefined;
     if (link.userId) {
       if (sentUserIds.has(link.userId)) {
         this.logger.log(
@@ -164,6 +165,7 @@ export class ZaloReportCronService {
         claimed: boolean;
         leaseToken?: string;
         deliveryRecord?: string;
+        deliveryKey?: string;
       } = await this.claimRepo.tryClaimScheduledReport(
         {
           externalUserId: link.externalUserId,
@@ -185,6 +187,10 @@ export class ZaloReportCronService {
         typeof claimed.deliveryRecord === 'string'
           ? claimed.deliveryRecord
           : undefined;
+      claimDeliveryKey =
+        typeof claimed.deliveryKey === 'string'
+          ? claimed.deliveryKey
+          : undefined;
     }
 
     // Skip re-send if already delivered (#181) — crash between send and
@@ -194,29 +200,58 @@ export class ZaloReportCronService {
       await this.claimRepo.markScheduledReportClaimSent(
         { externalUserId: link.externalUserId, reportDate },
         claimLeaseToken,
+        'sent',
+        claimDeliveryKey,
       );
       return 'sent';
     }
 
     try {
+      const deliveryKey = `zalo-report:${link.externalUserId}:${reportDate}`;
       const report = await this.reportService.generateReport(
         link.externalUserId,
       );
-      await this.outbound.sendText(link.externalUserId, report);
+      const outcome = await this.outbound.sendTextForRetry(
+        link.externalUserId,
+        report,
+        deliveryKey,
+      );
       if (link.userId) {
-        await this.claimRepo.markScheduledReportClaimSent(
-          {
-            externalUserId: link.externalUserId,
-            reportDate,
-          },
-          claimLeaseToken,
-          'sent',
-        );
+        if (outcome === 'sent') {
+          await this.claimRepo.markScheduledReportClaimSent(
+            {
+              externalUserId: link.externalUserId,
+              reportDate,
+            },
+            claimLeaseToken,
+            'sent',
+            deliveryKey,
+          );
+        } else if (outcome === 'ambiguous') {
+          await this.claimRepo.markScheduledReportClaimSent(
+            {
+              externalUserId: link.externalUserId,
+              reportDate,
+            },
+            claimLeaseToken,
+            'ambiguous',
+            deliveryKey,
+          );
+        } else {
+          // not_sent — release claim for retry
+          await this.claimRepo.releaseScheduledReportClaim(
+            {
+              externalUserId: link.externalUserId,
+              reportDate,
+            },
+            claimLeaseToken,
+          );
+        }
       }
       this.logger.log(
-        `Report sent to Zalo user ${maskExternalId(link.externalUserId)}`,
+        `Report sent to Zalo user ${maskExternalId(link.externalUserId)} (outcome=${outcome})`,
       );
-      return 'sent';
+      return outcome === 'sent' ? 'sent' : 'error';
     } catch (error) {
       if (link.userId) {
         await this.claimRepo

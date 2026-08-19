@@ -10,5 +10,7 @@ export interface ReportDeliveryPort {
     mapping: ReportMapping;
     reportText: string;
     reportDate: string;
+    /** Stable delivery key for crash-safe deduplication (#294). */
+    deliveryKey?: string;
   }): Promise<ReportDeliveryResult>;
 }
