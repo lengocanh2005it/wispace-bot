@@ -10,9 +10,7 @@
       "cache": false
     },
     "format:check": {},
-    "typecheck": {
-      "dependsOn": ["^build"]
-    },
+    "typecheck": {},
     "test": {
       "dependsOn": ["^build"]
     },
