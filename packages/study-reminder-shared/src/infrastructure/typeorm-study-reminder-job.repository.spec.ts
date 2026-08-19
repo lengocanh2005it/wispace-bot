@@ -570,7 +570,10 @@ describe('TypeormStudyReminderJobRepository', () => {
       await repository.resetStuckProcessingJobs('discord', new Date());
 
       const setCall = queryLog.find((entry) => entry.method === 'set');
-      expect(setCall?.args[0]).toEqual({ status: 'failed' });
+      expect(setCall?.args[0]).toEqual({
+        status: 'failed',
+        deliveryStatus: 'ambiguous',
+      });
       const platformCondition = queryLog.find(
         (entry) =>
           entry.method === 'andWhere' &&
@@ -598,7 +601,10 @@ describe('TypeormStudyReminderJobRepository', () => {
       );
 
       const setCall = queryLog.find((entry) => entry.method === 'set');
-      expect(setCall?.args[0]).toEqual({ status: 'pending' });
+      expect(setCall?.args[0]).toEqual({
+        status: 'pending',
+        deliveryStatus: 'ambiguous',
+      });
     });
   });
 

@@ -59,6 +59,7 @@ describe('StudyReminderDispatchService', () => {
       markCancelled: jest.fn().mockResolvedValue(undefined),
       markSent: jest.fn().mockResolvedValue(undefined),
       markFailed: jest.fn().mockResolvedValue(undefined),
+      markDeliveryKey: jest.fn().mockResolvedValue(undefined),
       findNextDueTime: jest.fn().mockResolvedValue(null),
       upsertPendingJob: jest.fn(),
       cancelStaleJobsForExternalUserId: jest.fn(),
@@ -72,7 +73,7 @@ describe('StudyReminderDispatchService', () => {
       findStuckProcessing: jest.fn(),
     };
 
-    messageSender = { sendText: jest.fn().mockResolvedValue(undefined) };
+    messageSender = { sendText: jest.fn().mockResolvedValue('sent') };
 
     scheduleService = {
       getOutboxSettings: jest.fn().mockReturnValue(defaultSettings),
@@ -135,6 +136,7 @@ describe('StudyReminderDispatchService', () => {
       text: 'Nhắc nhở học toán!',
       messageType: 'STUDY_REMINDER',
       userId: 42,
+      deliveryKey: 'reminder:1:calendar:99',
     });
     expect(result).toMatchObject({ claimed: 1, sent: 1, cancelled: 0 });
   });
@@ -340,6 +342,7 @@ describe('StudyReminderDispatchService', () => {
       messageSender.sendText.mockImplementation(async () => {
         sendCalls += 1;
         await slowSendGate;
+        return 'sent';
       });
       build();
 
@@ -355,7 +358,12 @@ describe('StudyReminderDispatchService', () => {
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.claimJob).toHaveBeenCalledTimes(1);
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.markSent).toHaveBeenCalledWith(1, 'lease-a', 'sent');
+      expect(jobRepo.markSent).toHaveBeenCalledWith(
+        1,
+        'lease-a',
+        'sent',
+        'reminder:1:calendar:99',
+      );
     });
 
     it('reopens only an expired lease and delivers exactly once per owner', async () => {
@@ -379,6 +387,7 @@ describe('StudyReminderDispatchService', () => {
         if (sendCalls === 1) {
           await slowSendGate;
         }
+        return 'sent';
       });
       build();
 
@@ -393,9 +402,19 @@ describe('StudyReminderDispatchService', () => {
       // while the previous lease was live.
       expect(sendCalls).toBe(2);
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.markSent).toHaveBeenCalledWith(1, 'lease-a', 'sent');
+      expect(jobRepo.markSent).toHaveBeenCalledWith(
+        1,
+        'lease-a',
+        'sent',
+        'reminder:1:calendar:99',
+      );
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.markSent).toHaveBeenCalledWith(1, 'lease-b', 'sent');
+      expect(jobRepo.markSent).toHaveBeenCalledWith(
+        1,
+        'lease-b',
+        'sent',
+        'reminder:1:calendar:99',
+      );
     });
   });
 });
