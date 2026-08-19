@@ -100,6 +100,8 @@ export interface SendMessageInput {
   text: string;
   messageType?: MessageType;
   userId?: number;
+  /** Stable delivery key for crash-safe deduplication (#294). */
+  deliveryKey?: string;
 }
 
 export interface StudyReminderSyncFailure {
