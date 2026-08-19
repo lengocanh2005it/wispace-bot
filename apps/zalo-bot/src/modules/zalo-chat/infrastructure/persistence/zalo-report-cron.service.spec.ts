@@ -25,7 +25,7 @@ function buildService(overrides: {
   tryClaimScheduledReport?: jest.Mock;
   markScheduledReportClaimSent?: jest.Mock;
   releaseScheduledReportClaim?: jest.Mock;
-  sendText?: jest.Mock;
+  sendTextForRetry?: jest.Mock;
   generateReport?: jest.Mock;
   shouldSendReportToday?: jest.Mock;
   pages?: unknown[][];
@@ -61,8 +61,9 @@ function buildService(overrides: {
     markScheduledReportClaimSent,
     releaseScheduledReportClaim,
   } as unknown as ReportClaimRepositoryPort;
-  const sendText = overrides.sendText ?? jest.fn().mockResolvedValue(undefined);
-  const outbound = { sendText } as unknown as ZaloOutboundService;
+  const sendTextForRetry =
+    overrides.sendTextForRetry ?? jest.fn().mockResolvedValue('sent');
+  const outbound = { sendTextForRetry } as unknown as ZaloOutboundService;
   const generateReport =
     overrides.generateReport ?? jest.fn().mockResolvedValue('report');
   const reportService = {
@@ -94,7 +95,7 @@ function buildService(overrides: {
     tryClaimScheduledReport,
     markScheduledReportClaimSent,
     releaseScheduledReportClaim,
-    sendText,
+    sendTextForRetry,
     generateReport,
     shouldSendReportToday,
   };
@@ -108,7 +109,7 @@ describe('ZaloReportCronService', () => {
       userId: 42 + i,
       platform: 'zalo',
     })) as unknown as ZaloAccountLinkEntity[];
-    const { service, generateReport, sendText, shouldSendReportToday } =
+    const { service, generateReport, sendTextForRetry, shouldSendReportToday } =
       buildService({
         pages: [pageLinks.slice(0, 200), pageLinks.slice(200)],
       });
@@ -117,7 +118,7 @@ describe('ZaloReportCronService', () => {
 
     expect(shouldSendReportToday).toHaveBeenCalledTimes(250);
     expect(generateReport).toHaveBeenCalledTimes(250);
-    expect(sendText).toHaveBeenCalledTimes(250);
+    expect(sendTextForRetry).toHaveBeenCalledTimes(250);
   });
 
   it('skips without generating when outside the exam window', async () => {
@@ -128,13 +129,17 @@ describe('ZaloReportCronService', () => {
       minDays: 2,
       maxDays: 3,
     });
-    const { service, generateReport, sendText, tryClaimScheduledReport } =
-      buildService({ shouldSendReportToday });
+    const {
+      service,
+      generateReport,
+      sendTextForRetry,
+      tryClaimScheduledReport,
+    } = buildService({ shouldSendReportToday });
 
     await service.sendDailyReports();
 
     expect(generateReport).not.toHaveBeenCalled();
-    expect(sendText).not.toHaveBeenCalled();
+    expect(sendTextForRetry).not.toHaveBeenCalled();
     expect(tryClaimScheduledReport).not.toHaveBeenCalled();
   });
 
@@ -146,14 +151,18 @@ describe('ZaloReportCronService', () => {
       minDays: 2,
       maxDays: 3,
     });
-    const { service, generateReport, sendText } = buildService({
+    const { service, generateReport, sendTextForRetry } = buildService({
       shouldSendReportToday,
     });
 
     await service.sendDailyReports({ forceSend: true });
 
     expect(generateReport).toHaveBeenCalledWith('zalo-1');
-    expect(sendText).toHaveBeenCalledWith('zalo-1', 'report');
+    expect(sendTextForRetry).toHaveBeenCalledWith(
+      'zalo-1',
+      'report',
+      `zalo-report:zalo-1:${reportDate}`,
+    );
   });
 
   it('skips without sending or claiming when user already sent on another platform', async () => {
@@ -162,7 +171,7 @@ describe('ZaloReportCronService', () => {
       listUserIdsWithSentReportToday,
       tryClaimScheduledReport,
       markScheduledReportClaimSent,
-      sendText,
+      sendTextForRetry,
       generateReport,
     } = buildService({
       listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([42]),
@@ -172,7 +181,7 @@ describe('ZaloReportCronService', () => {
 
     expect(listUserIdsWithSentReportToday).toHaveBeenCalledWith(reportDate);
     expect(generateReport).not.toHaveBeenCalled();
-    expect(sendText).not.toHaveBeenCalled();
+    expect(sendTextForRetry).not.toHaveBeenCalled();
     expect(tryClaimScheduledReport).not.toHaveBeenCalled();
     expect(markScheduledReportClaimSent).not.toHaveBeenCalled();
   });
@@ -181,8 +190,12 @@ describe('ZaloReportCronService', () => {
     const tryClaimScheduledReport = jest
       .fn()
       .mockResolvedValue({ claimed: false });
-    const { service, markScheduledReportClaimSent, sendText, generateReport } =
-      buildService({ tryClaimScheduledReport });
+    const {
+      service,
+      markScheduledReportClaimSent,
+      sendTextForRetry,
+      generateReport,
+    } = buildService({ tryClaimScheduledReport });
 
     await service.sendDailyReports();
 
@@ -195,7 +208,7 @@ describe('ZaloReportCronService', () => {
       expect.any(Number),
     );
     expect(generateReport).not.toHaveBeenCalled();
-    expect(sendText).not.toHaveBeenCalled();
+    expect(sendTextForRetry).not.toHaveBeenCalled();
     expect(markScheduledReportClaimSent).not.toHaveBeenCalled();
   });
 
@@ -204,7 +217,7 @@ describe('ZaloReportCronService', () => {
       service,
       tryClaimScheduledReport,
       markScheduledReportClaimSent,
-      sendText,
+      sendTextForRetry,
       generateReport,
     } = buildService({});
 
@@ -219,7 +232,11 @@ describe('ZaloReportCronService', () => {
       expect.any(Number),
     );
     expect(generateReport).toHaveBeenCalledWith('zalo-1');
-    expect(sendText).toHaveBeenCalledWith('zalo-1', 'report');
+    expect(sendTextForRetry).toHaveBeenCalledWith(
+      'zalo-1',
+      'report',
+      `zalo-report:zalo-1:${reportDate}`,
+    );
     expect(markScheduledReportClaimSent).toHaveBeenCalledWith(
       {
         externalUserId: 'zalo-1',
@@ -227,11 +244,12 @@ describe('ZaloReportCronService', () => {
       },
       'lease-1',
       'sent',
+      `zalo-report:zalo-1:${reportDate}`,
     );
   });
 
   it('releases the claim and skips when send fails with 48h window error', async () => {
-    const sendText = jest
+    const sendTextForRetry = jest
       .fn()
       .mockRejectedValue(
         new ZaloSendError(
@@ -243,7 +261,7 @@ describe('ZaloReportCronService', () => {
       );
     const releaseScheduledReportClaim = jest.fn().mockResolvedValue(undefined);
     const { service, markScheduledReportClaimSent } = buildService({
-      sendText,
+      sendTextForRetry,
       releaseScheduledReportClaim,
     });
 
@@ -260,10 +278,10 @@ describe('ZaloReportCronService', () => {
   });
 
   it('releases the claim and returns error on generic send failure', async () => {
-    const sendText = jest.fn().mockRejectedValue(new Error('boom'));
+    const sendTextForRetry = jest.fn().mockRejectedValue(new Error('boom'));
     const releaseScheduledReportClaim = jest.fn().mockResolvedValue(undefined);
     const { service, markScheduledReportClaimSent } = buildService({
-      sendText,
+      sendTextForRetry,
       releaseScheduledReportClaim,
     });
 
@@ -286,14 +304,15 @@ describe('ZaloReportCronService', () => {
         new WispaceApiError('access denied', 401, 'zalo-1', 'goals'),
       );
     const releaseScheduledReportClaim = jest.fn().mockResolvedValue(undefined);
-    const { service, markScheduledReportClaimSent, sendText } = buildService({
-      generateReport,
-      releaseScheduledReportClaim,
-    });
+    const { service, markScheduledReportClaimSent, sendTextForRetry } =
+      buildService({
+        generateReport,
+        releaseScheduledReportClaim,
+      });
 
     await service.sendDailyReports();
 
-    expect(sendText).not.toHaveBeenCalled();
+    expect(sendTextForRetry).not.toHaveBeenCalled();
     expect(releaseScheduledReportClaim).toHaveBeenCalledWith(
       {
         externalUserId: 'zalo-1',
