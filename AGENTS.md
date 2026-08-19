@@ -10,6 +10,8 @@ Read this file before modifying code. In-depth details are in `docs/` — only r
 
 ## Project overview
 
+Deploy hardening updates for #271/#284 must keep `vps-deploy.sh` fail-closed on image-pull failure, missing validated migration command, failed/empty pre-migration dump, and unsafe `SKIP_NGINX_CHECK=true` use with an active container. Update `.github/scripts/tests/vps-deploy.test.sh` when changing this script.
+
 |                |                                                                                                                                      |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
 | **Stack**      | NestJS 11, TypeScript, TypeORM, PostgreSQL, LLM Provider Abstraction (adapter pattern)                                               |

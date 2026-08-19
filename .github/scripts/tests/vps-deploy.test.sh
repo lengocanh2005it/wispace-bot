@@ -49,10 +49,18 @@ case "$1" in
       *pg_isready*)
         [ -n "${FAKE_DB_UP:-}" ] && exit 0 || exit 1
         ;;
+      *pg_dump*)
+        [ -n "${FAKE_DUMP_FAIL:-}" ] && exit 1
+        [ -z "${FAKE_DUMP_EMPTY:-}" ] && printf 'DUMPDATA\n'
+        exit 0
+        ;;
     esac
     exit 0
     ;;
-  run|rm|stop|pull|logs|manifest)
+  pull)
+    [ -n "${FAKE_PULL_FAIL:-}" ] && exit 1 || exit 0
+    ;;
+  run|rm|stop|logs|manifest)
     exit 0
     ;;
   rename)
@@ -135,7 +143,56 @@ FAKE_EXISTING= FAKE_PORT_MAP= code=$(run_script "$dir" SKIP_NGINX_CHECK=true)
 grep -q "SKIP_NGINX_CHECK=true" "$dir/run.out" || fail "missing skip warning"
 pass "SKIP_NGINX_CHECK escape hatch works"
 
-echo "Test 4: interrupted deploy (nginx routed to -new) -> adopt -new as -old, never rm it (#201)"
+echo "Test 4: SKIP_NGINX_CHECK with active container -> fail closed without stopping live (#284)"
+dir=$(make_env upstream-skip-live)
+write_env "$dir"
+code=$(run_script "$dir" SKIP_NGINX_CHECK=true FAKE_EXISTING="messenger-bot-old")
+[ "$code" -eq 1 ] || fail "expected exit 1 with active container, got $code"
+grep -q "active container" "$dir/run.out" || fail "missing active-container fail-closed message"
+! grep -q "docker stop --timeout.*messenger-bot-old" "$dir/docker.log" || fail "active container was stopped"
+pass "Nginx bypass refuses to stop active container"
+
+echo "Test 5: image pull failure -> fail closed before docker run (#271)"
+dir=$(make_env pull-fail)
+write_env "$dir"
+code=$(run_script "$dir" SKIP_NGINX_CHECK=true FAKE_PULL_FAIL=1)
+[ "$code" -eq 1 ] || fail "expected exit 1 on pull failure, got $code"
+grep -q "image pull failed" "$dir/run.out" || fail "missing pull failure message"
+! grep -q "docker run" "$dir/docker.log" || fail "docker run started after pull failure"
+pass "image pull failure stops before docker run"
+
+echo "Test 6: migrations enabled without command -> fail closed (#271)"
+dir=$(make_env migration-command-missing)
+write_env "$dir"
+write_upstream "$dir" 5007
+code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1)
+[ "$code" -eq 1 ] || fail "expected exit 1 without migration command, got $code"
+grep -q "MIGRATION_CMD" "$dir/run.out" || fail "missing migration command error"
+pass "missing migration command fails closed"
+
+echo "Test 7: pre-migration dump failure -> fail closed before migration (#271)"
+dir=$(make_env migration-dump-fail)
+write_env "$dir"
+write_upstream "$dir" 5007
+code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1 FAKE_DUMP_FAIL=1 PRE_MIGRATE_DIR="$dir/pre-migrate" \
+  MIGRATION_CMD='npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
+[ "$code" -eq 1 ] || fail "expected exit 1 on dump failure, got $code"
+grep -q "pre-migration dump failed" "$dir/run.out" || fail "missing dump failure message"
+! grep -q "pg_advisory_lock" "$dir/docker.log" || fail "migration started after dump failure"
+pass "pre-migration dump failure stops before migration"
+
+echo "Test 8: empty pre-migration dump -> fail closed before migration (#271)"
+dir=$(make_env migration-dump-empty)
+write_env "$dir"
+write_upstream "$dir" 5007
+code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1 FAKE_DUMP_EMPTY=1 PRE_MIGRATE_DIR="$dir/pre-migrate" \
+  MIGRATION_CMD='npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
+[ "$code" -eq 1 ] || fail "expected exit 1 on empty dump, got $code"
+grep -q "pre-migration dump failed" "$dir/run.out" || fail "missing empty dump failure message"
+! grep -q "pg_advisory_lock" "$dir/docker.log" || fail "migration started after empty dump"
+pass "empty pre-migration dump stops before migration"
+
+echo "Test 9: interrupted deploy (nginx routed to -new) -> adopt -new as -old, never rm it (#201)"
 dir=$(make_env crash-recover)
 write_env "$dir"
 write_upstream "$dir" 5008
@@ -148,7 +205,7 @@ rm_new_line=$(grep -n "docker rm -f messenger-bot-new" "$dir/docker.log" | head 
 [ -n "$rm_new_line" ] && [ "$rename_line" -lt "$rm_new_line" ] || fail "-new removed before/without adoption"
 pass "live -new adopted, not deleted"
 
-echo "Test 5: rename of live -new fails -> abort, live container never deleted (#201)"
+echo "Test 10: rename of live -new fails -> abort, live container never deleted (#201)"
 dir=$(make_env rename-fail)
 write_env "$dir"
 write_upstream "$dir" 5008
@@ -158,7 +215,7 @@ grep -q "could not rename live" "$dir/run.out" || fail "missing rename-failure a
 grep -q "docker rm -f messenger-bot-new" "$dir/docker.log" && fail "-new deleted after failed rename (live container removed!)"
 pass "rename failure aborts without deleting live container"
 
-echo "Test 6: docker stop/run honor DOCKER_STOP_TIMEOUT grace period (#201)"
+echo "Test 11: docker stop/run honor DOCKER_STOP_TIMEOUT grace period (#201)"
 dir=$(make_env stop-timeout)
 write_env "$dir"
 write_upstream "$dir" 5007
@@ -168,7 +225,7 @@ grep -q -- "--stop-timeout 60" "$dir/docker.log" || fail "docker run missing --s
 grep -q -- "docker stop --timeout 60 messenger-bot-old" "$dir/docker.log" || fail "docker stop missing --timeout"
 pass "graceful stop timeout honored"
 
-echo "Test 7: post-switch monitor verifies the public nginx route (#199)"
+echo "Test 12: post-switch monitor verifies the public nginx route (#199)"
 dir=$(make_env public-verify)
 write_env "$dir"
 write_upstream "$dir" 5007
@@ -177,7 +234,7 @@ code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:m
 grep -q -- "--resolve aiassist.aihubproduction.com:443:127.0.0.1" "$dir/curl.log" || fail "public route not verified through nginx"
 pass "public route verified after switch"
 
-echo "Test 8: migration runs inside one psql session with the advisory lock (#203)"
+echo "Test 13: migration runs inside one psql session with the advisory lock (#203)"
 dir=$(make_env migration-lock)
 write_env "$dir"
 write_upstream "$dir" 5007
@@ -191,7 +248,7 @@ lock_count=$(grep -c "pg_advisory_lock" "$dir/docker.log" || true)
 [ "$lock_count" -eq 1 ] || fail "expected exactly 1 lock acquisition (same session), got $lock_count"
 pass "advisory lock held on the migration session"
 
-echo "Test 9: migration DB unreachable -> fail closed, no migration attempt (#199)"
+echo "Test 14: migration DB unreachable -> fail closed, no migration attempt (#199)"
 dir=$(make_env migration-db-down)
 write_env "$dir"
 code=$(run_script "$dir" RUN_MIGRATIONS=true \
@@ -200,7 +257,7 @@ code=$(run_script "$dir" RUN_MIGRATIONS=true \
 grep -q "unavailable — refusing to deploy" "$dir/run.out" || fail "missing fail-closed message"
 pass "migration DB down fails closed"
 
-echo "Test 10: env file uses mktemp + EXIT trap cleanup (#204)"
+echo "Test 15: env file uses mktemp + EXIT trap cleanup (#204)"
 dir=$(make_env env-file-cleanup)
 write_env "$dir"
 write_upstream "$dir" 5007
@@ -210,7 +267,7 @@ leftovers=$(find "$dir/tmp" -name '*.docker-env.*' 2>/dev/null | wc -l)
 [ "$leftovers" -eq 0 ] || fail "env file not cleaned up (${leftovers} leftover)"
 pass "env file cleaned up after deploy"
 
-echo "Test 11: postgres-backup.sh enforces 700 dir / 600 files (#204)"
+echo "Test 16: postgres-backup.sh enforces 700 dir / 600 files (#204)"
 # Git Bash/MSYS on Windows does not reflect POSIX mode bits through chmod/stat
 # (chmod only marks read-only) — skip the mode assertions there; CI runs on
 # Ubuntu where modes are real.
@@ -258,7 +315,7 @@ else
   echo "  skip: platform does not reflect POSIX modes (CI Ubuntu asserts)"
 fi
 
-echo "Test 12: digest pinning — docker pull/run use @sha256: when IMAGE_DIGEST set (#196)"
+echo "Test 17: digest pinning — docker pull/run use @sha256: when IMAGE_DIGEST set (#196)"
 dir=$(make_env digest-pin)
 write_env "$dir"
 write_upstream "$dir" 5008
@@ -269,7 +326,7 @@ grep -q "docker pull ghcr.io/x/messenger-bot:sha@sha256:abc123def456" "$dir/dock
 grep -q "docker run.*ghcr.io/x/messenger-bot:sha@sha256:abc123def456" "$dir/docker.log" || fail "docker run not pinned by digest"
 pass "digest pinning works"
 
-echo "Test 13: no digest — docker pull/run use tag only when IMAGE_DIGEST unset (#196)"
+echo "Test 18: no digest — docker pull/run use tag only when IMAGE_DIGEST unset (#196)"
 dir=$(make_env digest-fallback)
 write_env "$dir"
 write_upstream "$dir" 5008
