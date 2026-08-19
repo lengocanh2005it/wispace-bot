@@ -361,6 +361,23 @@ SQL
     exit 1
   fi
   echo "Migrations applied OK"
+  migration_status=$(docker exec "$NEW_CONTAINER" sh -c \
+    'npx --no-install typeorm migration:show -d apps/messenger-bot/dist/infrastructure/database/data-source.js' 2>&1) || {
+    echo "ERROR: could not verify migration status for the release image — refusing to deploy (#275)" >&2
+    docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+    exit 1
+  }
+  if printf '%s\n' "$migration_status" | grep -Eq '^[[:space:]]*\[[[:space:]]\]'; then
+    echo "ERROR: release image has pending migrations — refusing to deploy (#275)" >&2
+    docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+    exit 1
+  fi
+  if [ -z "$migration_status" ] || ! printf '%s\n' "$migration_status" | grep -Eq '^[[:space:]]*\[[Xx]\]'; then
+    echo "ERROR: release image migration status could not be verified — refusing to deploy (#275)" >&2
+    docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+    exit 1
+  fi
+  echo "Migration status verified for release image"
 fi
 
 # ─── Sync upstream config from upload bundle to nginx dir ─────────────────────

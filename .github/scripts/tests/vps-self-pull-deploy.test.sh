@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Concurrency + failure-path tests for vps-self-pull-deploy.sh (#144/#172).
+# Concurrency + failure-path tests for vps-self-pull-deploy.sh (#144/#172/#283).
 #
 # Self-contained: fakes git/docker/curl via PATH (fake repo with .git refs);
 # requires only bash + flock. Run: bash .github/scripts/tests/vps-self-pull-deploy.test.sh
@@ -31,6 +31,7 @@ make_env() { # name -> creates fake repo/PATH-fakes/state dirs; prints dir
 echo "FAKE vps-deploy ${APP_NAME:-unknown}" >> "${FAKE_DEPLOY_LOG:?}"
 echo "locked" > "${FAKE_DEPLOY_STARTED:?}"
 [ -n "${FAKE_DEPLOY_SLEEP:-}" ] && sleep "$FAKE_DEPLOY_SLEEP"
+[ "${FAKE_DEPLOY_FAIL_APP:-}" = "${APP_NAME:-}" ] && exit 1
 [ -n "${FAKE_DEPLOY_FAIL:-}" ] && exit 1
 exit 0
 STUB
@@ -128,6 +129,8 @@ code=$(run_script "$dir")
 grep -q "^git fetch" "$dir/git.log" || fail "fetch not called"
 grep -q "^git reset" "$dir/git.log" || fail "reset not called"
 [ "$(grep -c '^FAKE vps-deploy' "$dir/deploy.log")" -eq 3 ] || fail "expected 3 deploys: $(cat "$dir/deploy.log" 2>/dev/null)"
+order=$(sed -E 's/^FAKE vps-deploy ([^ ]+).*/\1/' "$dir/deploy.log" | tr '\n' ' ')
+[ "$order" = "messenger-bot discord-bot zalo-bot " ] || fail "migration owner must deploy first, got: $order"
 for app in messenger-bot discord-bot zalo-bot; do
   [ "$(cat "$dir/state/$app.sha")" = "$SHA_B" ] || fail "$app state sha != $SHA_B"
 done
@@ -162,14 +165,16 @@ grep -q "Recovered from previous stall" "$dir/run.out" || fail "recovery not log
 grep -q "endsAt" "$dir/curl.body" || fail "resolved alert not posted"
 pass "stall recovery"
 
-echo "Test 6: per-app deploy failure -> marker + per-app alert, retried next run (#202)"
+echo "Test 6: non-owner deploy failure -> marker + per-app alert, retried next run (#202)"
 dir=$(make_env app-fail)
-code=$(run_script "$dir" FAKE_DEPLOY_FAIL=1)
+code=$(run_script "$dir" FAKE_DEPLOY_FAIL_APP=discord-bot)
 [ "$code" -eq 0 ] || fail "script must not exit non-zero on per-app failure (retry next tick), got $code"
-for app in messenger-bot discord-bot zalo-bot; do
-  [ -f "$dir/state/$app.failed" ] || fail "$app failed marker missing"
-  [ "$(cat "$dir/state/$app.failed")" = "$SHA_B" ] || fail "$app failed marker sha != $SHA_B"
-  [ ! -f "$dir/state/$app.sha" ] || fail "$app state sha must not be written on failure"
+[ -f "$dir/state/discord-bot.failed" ] || fail "discord-bot failed marker missing"
+[ "$(cat "$dir/state/discord-bot.failed")" = "$SHA_B" ] || fail "discord-bot failed marker sha != $SHA_B"
+[ ! -f "$dir/state/discord-bot.sha" ] || fail "discord-bot state sha must not be written on failure"
+for app in messenger-bot zalo-bot; do
+  [ "$(cat "$dir/state/$app.sha")" = "$SHA_B" ] || fail "$app state sha != $SHA_B"
+  [ ! -f "$dir/state/$app.failed" ] || fail "$app must not have a failure marker"
 done
 grep -q 'alertname":"vps_self_pull_app_failed' "$dir/curl.body" || fail "per-app alert not posted"
 grep -q "curl -sf -X POST" "$dir/curl.log" || fail "alert not posted"
@@ -177,11 +182,9 @@ pass "per-app failure alerted"
 
 echo "Test 7: per-app recovery -> markers cleared + resolved alert (#202)"
 dir=$(make_env app-recover)
-code=$(run_script "$dir" FAKE_DEPLOY_FAIL=1)
+code=$(run_script "$dir" FAKE_DEPLOY_FAIL_APP=discord-bot)
 [ "$code" -eq 0 ] || fail "failure run should exit 0, got $code"
-for app in messenger-bot discord-bot zalo-bot; do
-  [ -f "$dir/state/$app.failed" ] || fail "$app failed marker missing before recovery"
-done
+[ -f "$dir/state/discord-bot.failed" ] || fail "discord-bot failed marker missing before recovery"
 code2=$(run_script "$dir")
 [ "$code2" -eq 0 ] || fail "recovery run should exit 0, got $code2"
 for app in messenger-bot discord-bot zalo-bot; do
@@ -190,6 +193,19 @@ for app in messenger-bot discord-bot zalo-bot; do
 done
 grep -q "endsAt" "$dir/curl.body" || fail "resolved per-app alert not posted"
 pass "per-app failure recovered + alert resolved"
+
+echo "Test 10: migration owner failure blocks Discord/Zalo traffic changes (#283)"
+dir=$(make_env migration-barrier)
+code=$(run_script "$dir" FAKE_DEPLOY_FAIL_APP=messenger-bot)
+[ "$code" -eq 0 ] || fail "barrier failure should retry next tick, got $code"
+[ "$(grep -c '^FAKE vps-deploy' "$dir/deploy.log")" -eq 1 ] || fail "dependent apps deployed after migration owner failure"
+grep -q '^FAKE vps-deploy messenger-bot' "$dir/deploy.log" || fail "migration owner was not attempted"
+grep -q "migration barrier" "$dir/run.out" || fail "missing migration barrier log"
+for app in discord-bot zalo-bot; do
+  [ ! -f "$dir/state/$app.sha" ] || fail "$app state written despite blocked migration barrier"
+  [ ! -f "$dir/state/$app.failed" ] || fail "$app failure marker written without an attempt"
+done
+pass "migration owner gates dependent apps"
 
 echo "Test 8: digest extraction — IMAGE_DIGEST passed to deploy when manifest returns digest (#196)"
 dir=$(make_env digest-extract)
@@ -236,8 +252,9 @@ code=$(run_script "$dir")
 [ "$code" -eq 0 ] || fail "script must not exit non-zero on per-app digest failure (retry next tick), got $code"
 grep -q "could not extract digest" "$dir/run.out" || fail "missing digest extraction error"
 [ ! -f "$dir/deploy.log" ] || fail "deploy must not run when digest extraction fails"
-for app in messenger-bot discord-bot zalo-bot; do
-  [ -f "$dir/state/$app.failed" ] || fail "$app failed marker missing"
+[ -f "$dir/state/messenger-bot.failed" ] || fail "messenger-bot failed marker missing"
+for app in discord-bot zalo-bot; do
+  [ ! -f "$dir/state/$app.failed" ] || fail "$app failure marker written without a deploy attempt"
 done
 pass "digest extraction failure fail closed"
 
