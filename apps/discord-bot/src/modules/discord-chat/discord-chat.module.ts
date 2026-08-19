@@ -328,10 +328,13 @@ const REGISTER_REPORT_MESSAGE =
               text: payload.text as string | undefined,
             }),
             abandonReason: 'Missing discordUserId or text in payload',
-            sendText: (externalUserId, text) =>
-              outboundService.sendText(externalUserId, text, {
-                skipDeadLetter: true,
-              }),
+            retryAmbiguous: true,
+            sendText: (externalUserId, text, opts) =>
+              outboundService.sendTextForRetry(
+                externalUserId,
+                text,
+                opts?.deliveryKey ?? '',
+              ),
           },
         ),
       inject: [

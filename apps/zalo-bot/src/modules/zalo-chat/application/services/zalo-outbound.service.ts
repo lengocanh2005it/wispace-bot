@@ -151,6 +151,53 @@ export class ZaloOutboundService {
     }
   }
 
+  /**
+   * Crash-safe dead-letter replay send (#291): Zalo has no idempotency field
+   * in the current send payload, so the delivery key is a tracking key only.
+   * Ambiguous outcomes are terminal (provider may have accepted) — the cron
+   * never auto-resends them. Never dead-letters again (the cron owns retry).
+   */
+  async sendTextForRetry(
+    zaloUserId: string,
+    text: string,
+    _deliveryKey: string,
+  ): Promise<'sent' | 'ambiguous' | 'not_sent'> {
+    try {
+      await withRetry(() => this.sendTextOnce(zaloUserId, text), {
+        maxRetries: 1,
+        baseDelayMs: 1_000,
+        shouldRetry: isZaloRetryableError,
+        onRetry: (attempt, maxRetries, error) => {
+          if (error instanceof ZaloSendError && error.isAmbiguousDelivery()) {
+            this.metrics?.incDmDeliveryFailure(SEND_FAILURE_REASON_AMBIGUOUS);
+          }
+          this.logger.warn(
+            `Zalo send attempt ${attempt}/${maxRetries + 1} failed for zaloUserId=${maskExternalId(zaloUserId)}, retrying`,
+          );
+        },
+      });
+      await this.deliveryLogService.logDelivery({
+        externalUserId: zaloUserId,
+        status: 'SENT',
+        messageType: 'chat',
+      });
+      return 'sent';
+    } catch (error) {
+      const errorMsg = maskExternalIdInText(errorMessage(error), zaloUserId);
+      await this.deliveryLogService.logDelivery({
+        externalUserId: zaloUserId,
+        status: 'FAILED',
+        messageType: 'chat',
+        error: errorMsg,
+      });
+      if (error instanceof ZaloSendError && error.isAmbiguousDelivery()) {
+        this.metrics?.incDmDeliveryFailure(SEND_FAILURE_REASON_AMBIGUOUS);
+        return 'ambiguous';
+      }
+      return 'not_sent';
+    }
+  }
+
   private async sendTextOnce(zaloUserId: string, text: string): Promise<void> {
     const accessToken = await this.tokenService.getValidAccessToken();
 
