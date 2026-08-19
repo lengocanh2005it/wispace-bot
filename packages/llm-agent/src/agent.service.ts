@@ -1,6 +1,6 @@
 import type { LlmProviderAdapter } from './provider/llm-provider.adapter';
 import type { LlmMessage } from './provider/types';
-import { AGENT_TOOLS } from './agent.tools';
+import { AGENT_TOOLS, isAgentToolName } from './agent.tools';
 import { checkLlmGrounding } from './utils/llm-grounding.utils';
 import {
   detectPromptInjection,
@@ -83,6 +83,10 @@ const NOOP_LOGGER = { warn: () => undefined, debug: () => undefined };
 const DEFAULT_MAX_LLM_RETRIES = 3;
 const DEFAULT_RETRY_BASE_DELAY_MS = 100;
 const MAX_RETRY_DELAY_MS = 10_000;
+const UNKNOWN_TOOL_RESULT_CONTENT = JSON.stringify({
+  ok: false,
+  error: 'Tool không được hỗ trợ',
+});
 
 export class LlmRetryExhaustedError extends Error {
   constructor(
@@ -454,10 +458,12 @@ export class LlmAgentService<TToolContext> {
         metrics.llmRoundOutcomeInc(FEATURE, 'tool_call');
         messages.push(response.message);
 
-        // Emit tool_start for all calls before parallel execution
+        // Emit tool_start for known calls before parallel execution.
         for (const toolCall of toolCalls) {
-          toolsCalledThisTurn.add(toolCall.name);
-          yield { type: 'tool_start', toolName: toolCall.name };
+          if (isAgentToolName(toolCall.name)) {
+            toolsCalledThisTurn.add(toolCall.name);
+            yield { type: 'tool_start', toolName: toolCall.name };
+          }
         }
 
         const toolResults = await this.executeToolCalls(
@@ -885,8 +891,17 @@ export class LlmAgentService<TToolContext> {
     await Promise.all(
       uniqueCalls.map(async (toolCall) => {
         const toolName = toolCall.name;
-        toolsCalledThisTurn.add(toolName);
         const argsJson = toolCall.arguments || '{}';
+
+        if (!isAgentToolName(toolName)) {
+          resultsByKey.set(this.toolCallKey(toolCall), {
+            content: UNKNOWN_TOOL_RESULT_CONTENT,
+            succeeded: false,
+          });
+          return;
+        }
+
+        toolsCalledThisTurn.add(toolName);
 
         let content: string;
         const controller = new AbortController();
