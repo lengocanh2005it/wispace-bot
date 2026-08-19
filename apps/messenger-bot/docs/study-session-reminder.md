@@ -101,6 +101,8 @@ stateDiagram-v2
 - Error → `retry_count++`, `next_retry_at = now + RETRY_BACKOFF_MINUTES` (max `MAX_RETRIES`)
 - Past class time → `cancelled`, don't send
 
+**Delivery crash safety (#294):** A stable `delivery_key` is persisted to the job before calling the provider. The sender returns `OutboundDeliveryOutcome` (`sent` | `ambiguous` | `not_sent`). On `sent`, the job is marked with the key. On `ambiguous` (provider may have accepted), the job is terminal — no auto-resend. On `not_sent`, existing retry logic applies. `resetStuckProcessingJobs` sets `delivery_status = 'ambiguous'` on stuck rows so a re-claim does not blind-resend.
+
 ### 3.3. Cleanup & Evening Rollover
 
 The `study_reminder_jobs` table is a **snapshot outbox** (send queue), not a history store. Message audit is in `message_logs`.
