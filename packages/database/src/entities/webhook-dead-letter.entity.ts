@@ -6,7 +6,11 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { Platform, WebhookDeadLetterStatus } from '../types';
+import type {
+  OutboundDeliveryOutcome,
+  Platform,
+  WebhookDeadLetterStatus,
+} from '../types';
 
 /** Direction of the dead-lettered operation — retry only replays outbound sends. */
 export type WebhookDeadLetterDirection = 'inbound' | 'outbound';
@@ -19,6 +23,8 @@ export interface WebhookDeadLetterEntry {
   errorMessage: string;
   retryCount: number;
   status: string;
+  deliveryKey?: string | null;
+  deliveryStatus?: OutboundDeliveryOutcome | null;
 }
 
 @Entity('webhook_dead_letters')
@@ -63,6 +69,30 @@ export class WebhookDeadLetterEntity {
 
   @Column({ name: 'replayed_at', type: 'timestamptz', nullable: true })
   replayedAt: Date | null;
+
+  /**
+   * Stable idempotency key for crash-safe replay — persisted before calling
+   * the provider and reused on retry so the provider deduplicates (#291).
+   */
+  @Column({ name: 'delivery_key', type: 'text', nullable: true })
+  deliveryKey: string | null;
+
+  /** Explicit delivery outcome: sent | ambiguous | not_sent (#291). */
+  @Column({
+    name: 'delivery_status',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
+  deliveryStatus: OutboundDeliveryOutcome | null;
+
+  /** Timestamp when the current processing attempt started (#291). */
+  @Column({
+    name: 'processing_started_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  processingStartedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

@@ -69,6 +69,7 @@ export interface StudyReminderJobRepositoryPort {
     jobId: number,
     leaseToken: string,
     deliveryRecord?: string,
+    deliveryKey?: string,
   ): Promise<void>;
   markFailed(params: {
     jobId: number;

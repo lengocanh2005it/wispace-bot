@@ -388,6 +388,7 @@ export class MessengerRepository
     claimed: boolean;
     leaseToken?: string;
     deliveryRecord?: string;
+    deliveryKey?: string;
   }> {
     // ON CONFLICT DO UPDATE ... WHERE status = 'released': reclaims a claim
     // released after a transient failure, while an active `claimed` row is
@@ -397,6 +398,7 @@ export class MessengerRepository
       id: number;
       lease_token: string;
       delivery_record: string | null;
+      delivery_key: string | null;
     }> = await this.reportClaimRepo.manager.query(
       `
         INSERT INTO scheduled_report_claims
@@ -410,7 +412,7 @@ export class MessengerRepository
           lease_expires_at = EXCLUDED.lease_expires_at,
           updated_at = now()
         WHERE scheduled_report_claims.status = 'released'
-        RETURNING id, lease_token, delivery_record
+        RETURNING id, lease_token, delivery_record, delivery_key
       `,
       [
         PLATFORM,
@@ -426,6 +428,7 @@ export class MessengerRepository
           claimed: true,
           leaseToken: rows[0].lease_token,
           deliveryRecord: rows[0].delivery_record ?? undefined,
+          deliveryKey: rows[0].delivery_key ?? undefined,
         }
       : { claimed: false };
   }
@@ -436,11 +439,17 @@ export class MessengerRepository
       reportDate: string;
     },
     leaseToken: string,
+    deliveryRecord?: string,
+    deliveryKey?: string,
   ): Promise<boolean> {
     const result = await this.reportClaimRepo
       .createQueryBuilder()
       .update()
-      .set({ status: 'sent' })
+      .set({
+        status: 'sent',
+        ...(deliveryRecord !== undefined ? { deliveryRecord } : {}),
+        ...(deliveryKey !== undefined ? { deliveryKey } : {}),
+      })
       .where('platform = :platform', { platform: PLATFORM })
       .andWhere('external_user_id = :externalUserId', {
         externalUserId: params.externalUserId,

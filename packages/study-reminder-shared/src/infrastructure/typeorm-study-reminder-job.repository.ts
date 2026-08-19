@@ -253,6 +253,7 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     jobId: number,
     leaseToken: string,
     deliveryRecord?: string,
+    deliveryKey?: string,
   ): Promise<void> {
     const result = await this.repo
       .createQueryBuilder()
@@ -263,6 +264,7 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
         nextRetryAt: null,
         lastError: null,
         ...(deliveryRecord !== undefined ? { deliveryRecord } : {}),
+        ...(deliveryKey !== undefined ? { deliveryKey } : {}),
       })
       .where('id = :id', { id: jobId })
       .andWhere('lease_token = :leaseToken', { leaseToken })
