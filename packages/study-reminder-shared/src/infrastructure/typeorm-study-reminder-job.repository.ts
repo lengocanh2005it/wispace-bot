@@ -253,6 +253,7 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     jobId: number,
     leaseToken: string,
     deliveryRecord?: string,
+    deliveryKey?: string,
   ): Promise<void> {
     const result = await this.repo
       .createQueryBuilder()
@@ -263,6 +264,7 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
         nextRetryAt: null,
         lastError: null,
         ...(deliveryRecord !== undefined ? { deliveryRecord } : {}),
+        ...(deliveryKey !== undefined ? { deliveryKey } : {}),
       })
       .where('id = :id', { id: jobId })
       .andWhere('lease_token = :leaseToken', { leaseToken })
@@ -272,6 +274,15 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
         `markSent ignored for jobId=${jobId}: lease token mismatch (stale owner)`,
       );
     }
+  }
+
+  async markDeliveryKey(jobId: number, deliveryKey: string): Promise<void> {
+    await this.repo
+      .createQueryBuilder()
+      .update(StudyReminderJobEntity)
+      .set({ deliveryKey })
+      .where('id = :id', { id: jobId })
+      .execute();
   }
 
   async markFailed(params: {
@@ -400,10 +411,15 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     // Reopen only processing rows whose LEASE expired (live lease = worker
     // still active) or legacy rows (no lease) past the updated_at threshold.
     // Scoped to the worker's platform — never reset another bot's jobs (#180).
+    // Stuck processing → ambiguous: the provider may have accepted the message,
+    // so a blind resend risks a duplicate (#294).
     const result = await this.repo
       .createQueryBuilder()
       .update(StudyReminderJobEntity)
-      .set({ status: targetStatus })
+      .set({
+        status: targetStatus,
+        deliveryStatus: 'ambiguous',
+      })
       .where('status = :status', { status: 'processing' })
       .andWhere('platform = :platform', { platform })
       .andWhere(

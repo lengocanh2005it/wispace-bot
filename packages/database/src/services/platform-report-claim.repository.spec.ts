@@ -80,7 +80,13 @@ describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
         if (existing.status === 'released') {
           existing.status = 'claimed';
           existing.leaseToken = `lease-${existing.id}-reclaimed`;
-          return [{ id: existing.id, lease_token: existing.leaseToken }];
+          return [
+            {
+              id: existing.id,
+              lease_token: existing.leaseToken,
+              delivery_key: null,
+            },
+          ];
         }
         return [];
       }
@@ -93,7 +99,7 @@ describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
         leaseToken,
       });
       nextId += 1;
-      return [{ id: nextId - 1, lease_token: leaseToken }];
+      return [{ id: nextId - 1, lease_token: leaseToken, delivery_key: null }];
     });
 
     const claimRepo = {
@@ -210,6 +216,7 @@ describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
     expect(issuedSql).toContain(
       "WHERE scheduled_report_claims.status = 'released'",
     );
+    expect(issuedSql).toContain('delivery_key');
   });
 
   it('requires the current lease token for mark-sent transitions', async () => {
@@ -275,6 +282,23 @@ describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
     expect(claimStore.get(claimKey('zalo-1', '2026-08-14'))?.status).toBe(
       'sent',
     );
+  });
+
+  it('persists the stable delivery key when marking a claim sent', async () => {
+    await claim();
+
+    const marked = await repository.markScheduledReportClaimSent(
+      { externalUserId: 'zalo-1', reportDate: '2026-08-14' },
+      'lease-1',
+      'sent',
+      'report-key:chunk:0',
+    );
+
+    expect(marked).toBe(true);
+    expect(queryBuilder.pendingPatch).toMatchObject({
+      status: 'sent',
+      deliveryKey: 'report-key:chunk:0',
+    });
   });
 
   it('releases only expired leases and legacy claims past the cutoff', async () => {

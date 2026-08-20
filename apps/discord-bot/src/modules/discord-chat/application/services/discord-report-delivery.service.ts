@@ -36,8 +36,9 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
     mapping: ReportMapping;
     reportText: string;
     reportDate: string;
+    deliveryKey?: string;
   }): Promise<ReportDeliveryResult> {
-    const { mapping, reportText } = input;
+    const { mapping, reportText, deliveryKey } = input;
 
     try {
       const hasLink = await this.accountLinkRepo.findOne({
@@ -58,8 +59,14 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
       }
 
       const chunks = this.splitMessage(reportText);
+      const nonce = deliveryKey
+        ? deliveryKey.replace(/[^a-zA-Z0-9]/g, '').slice(0, 25)
+        : undefined;
       for (const chunk of chunks) {
-        await this.outboundService.sendText(mapping.externalUserId, chunk);
+        await this.outboundService.sendText(mapping.externalUserId, chunk, {
+          skipDeadLetter: true,
+          nonce,
+        });
       }
 
       return { ok: true };

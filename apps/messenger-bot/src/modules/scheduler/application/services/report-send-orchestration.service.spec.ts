@@ -112,6 +112,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
       },
       'lease-1',
       'sent',
+      'messenger-report:psid-1:2026-07-11',
     );
   });
 
@@ -355,6 +356,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
       },
       'lease-1',
       'sent',
+      'messenger-report:psid-1:2026-07-11',
     );
     expect(
       messengerRepository.releaseScheduledReportClaim,

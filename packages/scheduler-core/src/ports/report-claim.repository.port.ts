@@ -19,6 +19,7 @@ export interface ReportClaimRepositoryPort {
     claimed: boolean;
     leaseToken?: string;
     deliveryRecord?: string;
+    deliveryKey?: string;
   }>;
   markScheduledReportClaimSent(
     params: {
@@ -27,6 +28,7 @@ export interface ReportClaimRepositoryPort {
     },
     leaseToken: string,
     deliveryRecord?: string,
+    deliveryKey?: string,
   ): Promise<boolean>;
   releaseScheduledReportClaim(
     params: {

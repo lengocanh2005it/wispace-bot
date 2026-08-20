@@ -123,6 +123,7 @@ describe('DiscordReportOrchestrationService.claimAndSend', () => {
       mapping: MAPPING,
       reportText: 'report text',
       reportDate: '2026-08-07',
+      deliveryKey: 'discord-report:discord-1:2026-08-07',
     });
     expect(claimRepository.markScheduledReportClaimSent).toHaveBeenCalledWith(
       {
@@ -131,6 +132,7 @@ describe('DiscordReportOrchestrationService.claimAndSend', () => {
       },
       'lease-1',
       'sent',
+      'discord-report:discord-1:2026-08-07',
     );
   });
 

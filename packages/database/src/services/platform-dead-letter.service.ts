@@ -6,12 +6,26 @@ import {
   WebhookDeadLetterEntity,
   type WebhookDeadLetterEntry,
 } from '../entities/webhook-dead-letter.entity';
-import type { Platform } from '../types';
+import type { OutboundDeliveryOutcome, Platform } from '../types';
+
+/** Result of an atomic dead-letter claim — the caller owns the row until it
+ * marks/abandons with the lease token. */
+export interface DeadLetterClaim {
+  id: number;
+  leaseToken: string;
+  deliveryKey: string;
+}
 
 /**
  * Dead letter queue for failed webhook events — shared by Discord and Zalo
  * (replaces their near-identical per-app services). Platform
  * (`'discord'` / `'zalo'`) parameterizes the saved row and queries.
+ *
+ * Crash safety (#291): rows are claimed with an owner lease before the
+ * provider is called, the stable `delivery_key` is persisted in the same
+ * claim (so retries reuse it and the provider can deduplicate), and every
+ * terminal write requires the lease token — a stale worker can never
+ * overwrite a recovered row.
  */
 @Injectable()
 export class PlatformDeadLetterService {
@@ -92,37 +106,147 @@ export class PlatformDeadLetterService {
       .getMany();
   }
 
-  async markReplayed(id: number): Promise<void> {
+  /**
+   * Atomically claims a pending row for replay: moves it to `processing`,
+   * assigns an owner lease, and persists a stable `delivery_key` (kept from a
+   * previous attempt so the provider can deduplicate, e.g. Discord's nonce).
+   * Only one worker can claim — a concurrent claim returns `null`.
+   */
+  async claimForRetry(
+    id: number,
+    leaseMs: number,
+  ): Promise<DeadLetterClaim | null> {
+    const rows: Array<{
+      id: number;
+      lease_token: string;
+      delivery_key: string;
+    }> = await this.repo.manager.query(
+      `
+      UPDATE "webhook_dead_letters"
+      SET status = 'processing',
+          lease_token = gen_random_uuid(),
+          lease_expires_at = now() + ($2::int * interval '1 millisecond'),
+          processing_started_at = now(),
+          delivery_key = COALESCE(delivery_key, gen_random_uuid()::text),
+          updated_at = now()
+      WHERE id = $1 AND status = 'pending' AND direction = 'outbound'
+      RETURNING id, lease_token, delivery_key
+    `,
+      [id, leaseMs],
+    );
+
+    return rows.length > 0
+      ? {
+          id: rows[0].id,
+          leaseToken: rows[0].lease_token,
+          deliveryKey: rows[0].delivery_key,
+        }
+      : null;
+  }
+
+  /**
+   * Marks a claimed row as successfully replayed. With a lease token, only the
+   * current owner can mark — a stale worker after lease recovery no-ops.
+   */
+  async markReplayed(
+    id: number,
+    leaseToken?: string,
+    deliveryKey?: string,
+  ): Promise<boolean> {
+    if (leaseToken !== undefined) {
+      const result = await this.repo
+        .createQueryBuilder()
+        .update(WebhookDeadLetterEntity)
+        .set({
+          status: 'replayed',
+          replayedAt: new Date(),
+          deliveryStatus: 'sent',
+          ...(deliveryKey !== undefined ? { deliveryKey } : {}),
+        })
+        .where('id = :id', { id })
+        .andWhere('status = :status', { status: 'processing' })
+        .andWhere('lease_token = :leaseToken', { leaseToken })
+        .execute();
+      return (result.affected ?? 0) > 0;
+    }
+
     await this.repo.update(id, {
       status: 'replayed',
       replayedAt: new Date(),
+      deliveryStatus: 'sent',
     });
+    return true;
   }
 
   async markAbandoned(
     id: number,
     reason: string,
     externalUserId?: string,
-  ): Promise<void> {
-    await this.repo.update(id, {
+    opts?: {
+      leaseToken?: string;
+      deliveryStatus?: OutboundDeliveryOutcome;
+    },
+  ): Promise<boolean> {
+    const patch: Partial<WebhookDeadLetterEntity> = {
       status: 'abandoned',
       errorMessage: maskExternalIdInText(reason, externalUserId),
-    });
+    };
+    if (opts?.deliveryStatus !== undefined) {
+      patch.deliveryStatus = opts.deliveryStatus;
+    }
+
+    if (opts?.leaseToken !== undefined) {
+      const result = await this.repo
+        .createQueryBuilder()
+        .update(WebhookDeadLetterEntity)
+        .set(patch)
+        .where('id = :id', { id })
+        .andWhere('status = :status', { status: 'processing' })
+        .andWhere('lease_token = :leaseToken', { leaseToken: opts.leaseToken })
+        .execute();
+      return (result.affected ?? 0) > 0;
+    }
+
+    await this.repo.update(id, patch);
+    return true;
   }
 
+  /**
+   * Records a failed attempt and re-opens the row for the next tick. With a
+   * lease token, requires the current owner; `updated_at` is refreshed so the
+   * min-retry-age window applies per attempt.
+   */
   async incrementRetry(
     id: number,
     errorMessage: string,
     externalUserId?: string,
-  ): Promise<void> {
-    await this.repo
+    opts?: { leaseToken?: string },
+  ): Promise<boolean> {
+    const set: Record<string, unknown> = {
+      retryCount: () => 'retry_count + 1',
+      errorMessage: maskExternalIdInText(errorMessage, externalUserId),
+      status: 'pending',
+      leaseToken: null,
+      leaseExpiresAt: null,
+      processingStartedAt: null,
+      updatedAt: new Date(),
+    };
+
+    let qb = this.repo
       .createQueryBuilder()
       .update(WebhookDeadLetterEntity)
-      .set({
-        retryCount: () => 'retry_count + 1',
-        errorMessage: maskExternalIdInText(errorMessage, externalUserId),
-      })
-      .where('id = :id', { id })
-      .execute();
+      .set(set)
+      .where('id = :id', { id });
+
+    if (opts?.leaseToken !== undefined) {
+      qb = qb
+        .andWhere('status = :status', { status: 'processing' })
+        .andWhere('lease_token = :leaseToken', {
+          leaseToken: opts.leaseToken,
+        });
+    }
+
+    const result = await qb.execute();
+    return (result.affected ?? 0) > 0;
   }
 }

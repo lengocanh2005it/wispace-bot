@@ -28,6 +28,7 @@ export {
   type WebhookDeadLetterStatus,
   type WebhookInboundEventStatus,
   type StudyReminderJobStatus,
+  type OutboundDeliveryOutcome,
   MessageType,
 } from './types';
 

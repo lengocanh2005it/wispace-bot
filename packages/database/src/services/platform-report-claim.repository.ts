@@ -58,6 +58,7 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
     claimed: boolean;
     leaseToken?: string;
     deliveryRecord?: string;
+    deliveryKey?: string;
   }> {
     // ON CONFLICT DO UPDATE ... WHERE status = 'released': reclaims a claim
     // released after a transient failure (claim -> release -> claim must
@@ -70,6 +71,7 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
       id: number;
       lease_token: string;
       delivery_record: string | null;
+      delivery_key: string | null;
     }> = await this.claimRepo.manager.query(
       `
       INSERT INTO scheduled_report_claims
@@ -83,7 +85,7 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
         lease_expires_at = EXCLUDED.lease_expires_at,
         updated_at = now()
       WHERE scheduled_report_claims.status = 'released'
-      RETURNING id, lease_token, delivery_record
+      RETURNING id, lease_token, delivery_record, delivery_key
     `,
       [
         this.platform,
@@ -99,6 +101,7 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
           claimed: true,
           leaseToken: rows[0].lease_token,
           deliveryRecord: rows[0].delivery_record ?? undefined,
+          deliveryKey: rows[0].delivery_key ?? undefined,
         }
       : { claimed: false };
   }
@@ -110,6 +113,7 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
     },
     leaseToken: string,
     deliveryRecord?: string,
+    deliveryKey?: string,
   ): Promise<boolean> {
     const result = await this.claimRepo
       .createQueryBuilder()
@@ -117,6 +121,7 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
       .set({
         status: 'sent',
         ...(deliveryRecord !== undefined ? { deliveryRecord } : {}),
+        ...(deliveryKey !== undefined ? { deliveryKey } : {}),
       })
       .where('platform = :platform', { platform: this.platform })
       .andWhere('external_user_id = :externalUserId', {

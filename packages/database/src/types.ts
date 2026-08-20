@@ -107,3 +107,9 @@ export type ReportDeliveryReason =
   | 'DELIVERY_FAILED'
   | 'RETRYABLE'
   | 'NOT_LINKED';
+
+/**
+ * Delivery outcome returned by outbound senders after calling the provider.
+ * Persisted to close crash windows between provider ack and DB update (#291/#294).
+ */
+export type OutboundDeliveryOutcome = 'sent' | 'ambiguous' | 'not_sent';

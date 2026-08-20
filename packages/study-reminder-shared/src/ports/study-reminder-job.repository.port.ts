@@ -69,7 +69,10 @@ export interface StudyReminderJobRepositoryPort {
     jobId: number,
     leaseToken: string,
     deliveryRecord?: string,
+    deliveryKey?: string,
   ): Promise<void>;
+  /** Persists a stable delivery key before calling the provider (#294). */
+  markDeliveryKey(jobId: number, deliveryKey: string): Promise<void>;
   markFailed(params: {
     jobId: number;
     leaseToken: string;

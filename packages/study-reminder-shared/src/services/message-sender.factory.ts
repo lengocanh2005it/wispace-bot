@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import type { OutboundDeliveryOutcome } from '@wispace/database';
 import type { MessageSenderPort } from '../ports/message-sender.port';
 import type { SendMessageInput } from '../types/study-reminder.types';
 
@@ -18,6 +19,9 @@ export interface OutboundMessageSender {
  * replaces the near-identical per-app sender classes. The full input is
  * forwarded as an optional 3rd arg so messenger can keep messageType/userId
  * in its message log; discord/zalo ignore it.
+ *
+ * The wrapped sender always returns `'sent'` on success (the caller owns
+ * outcome classification for ambiguous/not_sent via catch blocks).
  */
 export function wrapMessageSender(
   outbound: OutboundMessageSender,
@@ -25,9 +29,10 @@ export function wrapMessageSender(
   const logger = new Logger('StudyReminderMessageSender');
 
   return {
-    async sendText(input: SendMessageInput): Promise<void> {
+    async sendText(input: SendMessageInput): Promise<OutboundDeliveryOutcome> {
       try {
         await outbound.sendText(input.externalUserId, input.text, input);
+        return 'sent';
       } catch (error) {
         logger.warn(
           `Failed to send study reminder to externalUserId=${maskExternalId(

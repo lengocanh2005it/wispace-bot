@@ -6,9 +6,21 @@ describe('wrapMessageSender', () => {
     const sender = wrapMessageSender({ sendText });
 
     const input = { externalUserId: 'u1', text: 'hello' };
-    await sender.sendText(input);
+    const result = await sender.sendText(input);
 
     expect(sendText).toHaveBeenCalledWith('u1', 'hello', input);
+    expect(result).toBe('sent');
+  });
+
+  it('returns "sent" outcome on success', async () => {
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const sender = wrapMessageSender({ sendText });
+
+    const result = await sender.sendText({
+      externalUserId: 'u1',
+      text: 'hello',
+    });
+    expect(result).toBe('sent');
   });
 
   it('logs warning and re-throws on failure', async () => {

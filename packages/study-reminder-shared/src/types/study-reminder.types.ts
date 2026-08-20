@@ -1,10 +1,14 @@
 import type {
+  OutboundDeliveryOutcome,
   Platform,
   StudyReminderJobStatus,
   MessageType,
 } from '@wispace/database';
 
-export type { StudyReminderJobStatus } from '@wispace/database';
+export type {
+  StudyReminderJobStatus,
+  OutboundDeliveryOutcome,
+} from '@wispace/database';
 
 export interface StudyReminderJob {
   id: number;
@@ -30,6 +34,15 @@ export interface StudyReminderJob {
    * was delivered — on re-claim after crash, skip re-send (#181).
    */
   deliveryRecord?: string;
+  /**
+   * Stable idempotency key for crash-safe delivery — persisted before
+   * calling the provider (#294).
+   */
+  deliveryKey?: string;
+  /** Explicit delivery outcome: sent | ambiguous | not_sent (#294). */
+  deliveryStatus?: OutboundDeliveryOutcome;
+  /** Timestamp when the current processing attempt started (#294). */
+  processingStartedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -87,6 +100,8 @@ export interface SendMessageInput {
   text: string;
   messageType?: MessageType;
   userId?: number;
+  /** Stable delivery key for crash-safe deduplication (#294). */
+  deliveryKey?: string;
 }
 
 export interface StudyReminderSyncFailure {

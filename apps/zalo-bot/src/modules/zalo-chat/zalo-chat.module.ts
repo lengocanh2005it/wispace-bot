@@ -366,10 +366,13 @@ const RESCHEDULE_CONFIRM_SUFFIX =
               text: payload.text as string | undefined,
             }),
             abandonReason: 'Missing zaloUserId or text in payload',
-            sendText: (externalUserId, text) =>
-              outboundService.sendText(externalUserId, text, {
-                skipDeadLetter: true,
-              }),
+            retryAmbiguous: false,
+            sendText: (externalUserId, text, opts) =>
+              outboundService.sendTextForRetry(
+                externalUserId,
+                text,
+                opts?.deliveryKey ?? '',
+              ),
           },
         ),
       inject: [

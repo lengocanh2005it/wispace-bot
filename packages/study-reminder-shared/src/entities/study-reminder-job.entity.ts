@@ -6,7 +6,11 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { Platform, StudyReminderJobStatus } from '@wispace/database';
+import type {
+  OutboundDeliveryOutcome,
+  Platform,
+  StudyReminderJobStatus,
+} from '@wispace/database';
 
 @Entity('study_reminder_jobs')
 @Index(
@@ -72,6 +76,30 @@ export class StudyReminderJobEntity {
    */
   @Column({ name: 'delivery_record', type: 'text', nullable: true })
   deliveryRecord: string | null;
+
+  /**
+   * Stable idempotency key for crash-safe delivery — persisted before
+   * calling the provider, reused on retry to deduplicate (#294).
+   */
+  @Column({ name: 'delivery_key', type: 'text', nullable: true })
+  deliveryKey: string | null;
+
+  /** Explicit delivery outcome: sent | ambiguous | not_sent (#294). */
+  @Column({
+    name: 'delivery_status',
+    type: 'varchar',
+    length: 20,
+    nullable: true,
+  })
+  deliveryStatus: OutboundDeliveryOutcome | null;
+
+  /** Timestamp when the current processing attempt started (#294). */
+  @Column({
+    name: 'processing_started_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  processingStartedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;

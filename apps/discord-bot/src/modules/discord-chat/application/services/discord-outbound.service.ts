@@ -103,7 +103,7 @@ export class DiscordOutboundService {
   async sendText(
     discordUserId: string,
     text: string,
-    options?: { skipDeadLetter?: boolean },
+    options?: { skipDeadLetter?: boolean; nonce?: string },
   ): Promise<void> {
     const channelId = await this.sendTextAndGetChannelId(
       discordUserId,
@@ -132,12 +132,98 @@ export class DiscordOutboundService {
   async sendTextAndGetChannelId(
     discordUserId: string,
     text: string,
-    options?: { skipDeadLetter?: boolean },
+    options?: { skipDeadLetter?: boolean; nonce?: string },
   ): Promise<string | undefined> {
+    const nonce =
+      options?.nonce ?? randomUUID().replaceAll('-', '').slice(0, 25);
+    const result = await this.sendCore(discordUserId, text, nonce);
+    if (result.ok) {
+      await this.deliveryLog?.logDelivery({
+        externalUserId: discordUserId,
+        status: 'SENT',
+        messageType: 'chat',
+      });
+      return result.channelId;
+    }
+
+    const errorMsg = result.error;
+    this.logger.warn(
+      `Failed to send DM to discordUserId=${maskExternalId(
+        discordUserId,
+      )} after retries: ${errorMsg}`,
+    );
+    if (result.ambiguous) {
+      this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
+    } else {
+      this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_SEND);
+    }
+    await this.deliveryLog?.logDelivery({
+      externalUserId: discordUserId,
+      status: 'FAILED',
+      error: errorMsg,
+      messageType: 'chat',
+    });
+    if (options?.skipDeadLetter !== true) {
+      const persisted = await this.deadLetter?.save({
+        externalUserId: discordUserId,
+        rawPayload: { discordUserId, text },
+        errorMessage: errorMsg,
+        direction: 'outbound',
+      });
+      if (persisted === false) {
+        this.logger.error(
+          `No durable recovery record for failed DM to discordUserId=${maskExternalId(
+            discordUserId,
+          )} — dead-letter persistence failed`,
+        );
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Crash-safe dead-letter replay send (#291): reuses the persisted delivery
+   * key as the Discord nonce so the provider deduplicates retries, and returns
+   * the delivery outcome instead of dead-lettering again. Never retries on a
+   * known 4xx (permanent) — only ambiguous outcomes are replayed by the cron.
+   */
+  async sendTextForRetry(
+    discordUserId: string,
+    text: string,
+    deliveryKey: string,
+  ): Promise<'sent' | 'ambiguous' | 'not_sent'> {
+    const result = await this.sendCore(discordUserId, text, deliveryKey);
+    if (result.ok) {
+      await this.deliveryLog?.logDelivery({
+        externalUserId: discordUserId,
+        status: 'SENT',
+        messageType: 'chat',
+      });
+      return 'sent';
+    }
+    this.logger.warn(
+      `Dead-letter replay failed for discordUserId=${maskExternalId(
+        discordUserId,
+      )}: ${result.error}`,
+    );
+    await this.deliveryLog?.logDelivery({
+      externalUserId: discordUserId,
+      status: 'FAILED',
+      error: result.error,
+      messageType: 'chat',
+    });
+    return result.ambiguous ? 'ambiguous' : 'not_sent';
+  }
+
+  private async sendCore(
+    discordUserId: string,
+    text: string,
+    nonce: string,
+  ): Promise<
+    | { ok: true; channelId: string }
+    | { ok: false; error: string; ambiguous: boolean }
+  > {
     let ambiguousDeliveryRecorded = false;
-    // Discord accepts a nonce up to 25 characters and returns the existing
-    // message when enforceNonce is true, making a retry safe after ambiguity.
-    const nonce = randomUUID().replaceAll('-', '').slice(0, 25);
     try {
       const msg = await withRetry(
         async () => {
@@ -165,45 +251,15 @@ export class DiscordOutboundService {
           },
         },
       );
-      await this.deliveryLog?.logDelivery({
-        externalUserId: discordUserId,
-        status: 'SENT',
-        messageType: 'chat',
-      });
-      return msg.channelId;
+      return { ok: true, channelId: msg.channelId };
     } catch (error) {
       const errorMsg = maskExternalIdInText(errorMessage(error), discordUserId);
-      if (!ambiguousDeliveryRecorded && isAmbiguousDeliveryError(error)) {
+      const ambiguous =
+        ambiguousDeliveryRecorded || isAmbiguousDeliveryError(error);
+      if (ambiguous) {
         this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
       }
-      this.logger.warn(
-        `Failed to send DM to discordUserId=${maskExternalId(
-          discordUserId,
-        )} after retries: ${errorMsg}`,
-      );
-      this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_SEND);
-      await this.deliveryLog?.logDelivery({
-        externalUserId: discordUserId,
-        status: 'FAILED',
-        error: errorMsg,
-        messageType: 'chat',
-      });
-      if (options?.skipDeadLetter !== true) {
-        const persisted = await this.deadLetter?.save({
-          externalUserId: discordUserId,
-          rawPayload: { discordUserId, text },
-          errorMessage: errorMsg,
-          direction: 'outbound',
-        });
-        if (persisted === false) {
-          this.logger.error(
-            `No durable recovery record for failed DM to discordUserId=${maskExternalId(
-              discordUserId,
-            )} — dead-letter persistence failed`,
-          );
-        }
-      }
-      return undefined;
+      return { ok: false, error: errorMsg, ambiguous };
     }
   }
 
