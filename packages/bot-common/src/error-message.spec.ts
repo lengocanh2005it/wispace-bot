@@ -135,6 +135,15 @@ describe('sanitizeErrorStack', () => {
     expect(sanitized).not.toContain('xyz123');
   });
 
+  it('removes non-newline control characters from stack traces', () => {
+    const stack = 'before\rAFTER\tTAB\n' + '    at frame (file.js:1:1)';
+
+    const sanitized = sanitizeErrorStack(stack);
+    expect(sanitized).not.toContain('\r');
+    expect(sanitized).not.toContain('\t');
+    expect(sanitized).toContain('\n');
+  });
+
   it('caps max stack trace length', () => {
     const hugeStack = 'Error: boom\n' + ' at frame (file.js:1:1)\n'.repeat(200);
     const sanitized = sanitizeErrorStack(hugeStack, 100);

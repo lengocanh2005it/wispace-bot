@@ -11,8 +11,7 @@ const DEFAULT_MAX_ERROR_CHARS = 500;
 
 /* eslint-disable no-control-regex -- intentional control-char stripping for log injection prevention */
 const ALL_CONTROL_CHARS_PATTERN = /[\u0000-\u001F\u007F]/g;
-const NON_NEWLINE_CONTROL_CHARS_PATTERN =
-  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g;
+const NON_NEWLINE_CONTROL_CHARS_PATTERN = /[\u0000-\u0009\u000B-\u001F\u007F]/g;
 /* eslint-enable no-control-regex */
 
 const MULTI_SPACE_PATTERN = /\s+/g;
