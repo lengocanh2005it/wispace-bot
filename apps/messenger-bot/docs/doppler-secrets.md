@@ -117,6 +117,8 @@ Still possible to use `.env` + `npm run start:dev` if Doppler isn't installed.
 2. Run `npm run env:sync-prod` or Actions → **Sync production env (no image build)**.
 3. The workflow writes the env file through the existing SSH deploy path and performs a controlled blue-green container replacement without exposing the Docker socket to the bot.
 
+The workflow runs `chmod 600 production.env` immediately after downloading it. On the VPS, `vps-deploy.sh` re-applies `chmod 600` before reading either `production.env` or an existing `.env`, writes the downloaded values plus `DEPLOY_UID`/`DEPLOY_GID` to a mode-600 temporary file in the app directory, and atomically replaces `/home/ngoc_anh/<app>/.env`. An EXIT trap removes the temporary file and `production.env`; no `/home/ngoc_anh/.env` is created.
+
 ### CI Deploy Code (`deploy-bots.yml` → `deploy-bot-reusable.yml`)
 
 | Git Change                               | CI Action                                 |
@@ -137,6 +139,7 @@ The legacy `/v1/*/ops/doppler-sync` endpoints remain for compatibility but are d
 2. Run **Sync production env (no image build)**.
 
 No need to SSH-edit `.env` manually.
+Secret rotation is manual: update Doppler and rerun the sync. Deploy scripts never generate or rotate secret values automatically. If a production or local env file was exposed, rotate every credential it contained before syncing again; see the recovery procedure in `docs/project-overview.md`.
 
 ---
 
@@ -156,4 +159,6 @@ No need to SSH-edit `.env` manually.
 
 - **Don't** commit `.env`, don't paste secrets in PR/chat.
 - Service token is **read-only**, scoped to **one config** (`prd`).
-- Files on VPS: `chmod 600` (CI uses `install -m 600`).
+- CI applies `chmod 600 production.env` immediately after the Doppler download.
+- VPS app env files are mode `600`; `vps-deploy.sh` uses a same-directory mode-600 temporary file and atomic replacement, then cleans up `production.env` with an EXIT trap.
+- If an env file was exposed, rotate its credentials manually in Doppler/provider systems before the next sync; the scripts do not auto-rotate secrets.

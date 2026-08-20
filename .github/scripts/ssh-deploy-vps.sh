@@ -10,8 +10,72 @@ REMOTE_SCRIPT="${1:?remote script path is required}"
 : "${VPS_HOST:?VPS_HOST is required}"
 : "${VPS_USER:?VPS_USER is required}"
 : "${VPS_KNOWN_HOSTS:?VPS_KNOWN_HOSTS is required}"
+: "${VPS_TARGET_DIR:?VPS_TARGET_DIR is required}"
 : "${IMAGE:?IMAGE is required}"
 : "${DEPLOY_MODE:?DEPLOY_MODE is required}"
+
+die() {
+  echo "ERROR: $1" >&2
+  exit 1
+}
+
+case "$VPS_TARGET_DIR" in
+  /*) ;;
+  *) die "VPS_TARGET_DIR must be an absolute path" ;;
+esac
+
+case "$REMOTE_SCRIPT" in
+  /*) ;;
+  *) die "REMOTE_SCRIPT must be an absolute path" ;;
+esac
+
+case "$REMOTE_SCRIPT" in
+  "$VPS_TARGET_DIR"/*) ;;
+  *) die "REMOTE_SCRIPT must be under VPS_TARGET_DIR" ;;
+esac
+
+case "$REMOTE_SCRIPT" in
+  *$'\n'*|*$'\r'*|*';'*|*'`'*|*\$\(*|*'../'*|*/'..')
+    die "REMOTE_SCRIPT contains an unsafe path"
+    ;;
+esac
+
+shell_quote() {
+  local value="$1"
+  value=${value//\'/\'\\\'\'}
+  printf "'%s'" "$value"
+}
+
+REMOTE_WRAPPER='set -euo pipefail
+umask 077
+payload_file=$(mktemp)
+cleanup() { rm -f "$payload_file"; }
+trap cleanup EXIT
+chmod 600 "$payload_file"
+cat > "$payload_file"
+. "$payload_file"
+rm -f "$payload_file"
+exec bash "$1" </dev/null
+'
+REMOTE_COMMAND="bash -c $(shell_quote "$REMOTE_WRAPPER") -- $(shell_quote "$REMOTE_SCRIPT")"
+
+DEPLOY_VARIABLES=(
+  IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME
+  HEALTH_PATH PORT RUN_MIGRATIONS MIGRATION_CMD NGINX_UPSTREAM_DIR
+)
+
+send_payload() {
+  local name
+  for name in "${DEPLOY_VARIABLES[@]}"; do
+    printf 'export %s=%q\n' "$name" "${!name-}"
+  done | ssh -p "$VPS_SSH_PORT" \
+    -o StrictHostKeyChecking=yes \
+    -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+    -o ServerAliveInterval=30 \
+    -o ConnectTimeout=30 \
+    "${VPS_USER}@${VPS_HOST}" \
+    "$REMOTE_COMMAND"
+}
 
 mkdir -p -m 700 "$HOME/.ssh"
 echo "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
@@ -25,14 +89,7 @@ chmod 600 "$HOME/.ssh/known_hosts"
 # enough to re-run safely (container names are cleaned before start).
 attempt=1
 while [ "$attempt" -le 4 ]; do
-  if ssh -p "$VPS_SSH_PORT" \
-    -o StrictHostKeyChecking=yes \
-    -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
-    -o ServerAliveInterval=30 \
-    -o ConnectTimeout=30 \
-    "${VPS_USER}@${VPS_HOST}" \
-    "export IMAGE='$IMAGE' DEPLOY_MODE='$DEPLOY_MODE' FORCE_RECREATE='$FORCE_RECREATE' GHCR_PULL_TOKEN='$GHCR_PULL_TOKEN' GHCR_USER='$GHCR_USER' APP_NAME='${APP_NAME:-}' HEALTH_PATH='${HEALTH_PATH:-}' PORT='${PORT:-}' RUN_MIGRATIONS='${RUN_MIGRATIONS:-}' MIGRATION_CMD='${MIGRATION_CMD:-}' NGINX_UPSTREAM_DIR='${NGINX_UPSTREAM_DIR:-}' && cd '$(dirname "$REMOTE_SCRIPT")' && exec bash '$(basename "$REMOTE_SCRIPT")'" \
-    < /dev/null; then
+  if send_payload; then
     exit 0
   fi
   if [ "$attempt" -lt 4 ]; then

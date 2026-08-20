@@ -37,6 +37,34 @@ umask 077
 
 COMPOSE_FILE="docker-compose.prod.yml"
 
+ENV_INSTALL_TMP=""
+ENV_FILE=""
+PRODUCTION_ENV_PRESENT=false
+cleanup_env_install() {
+  [ -z "$ENV_INSTALL_TMP" ] || rm -f -- "$ENV_INSTALL_TMP"
+  [ -z "$ENV_FILE" ] || rm -f -- "$ENV_FILE"
+  [ "$PRODUCTION_ENV_PRESENT" = true ] || return 0
+  rm -f -- production.env
+}
+trap cleanup_env_install EXIT
+
+# Lock down env files before any grep/sed can read them.
+if [ -f .env ] && ! chmod 600 .env; then
+  echo "ERROR: could not chmod .env to 600 — refusing to deploy" >&2
+  exit 1
+fi
+
+write_production_env() {
+  local grep_status
+  if grep -v -E '^(DEPLOY_UID|DEPLOY_GID)=' production.env; then
+    :
+  else
+    grep_status=$?
+    [ "$grep_status" -eq 1 ] || return "$grep_status"
+  fi
+  printf 'DEPLOY_UID=%s\nDEPLOY_GID=%s\n' "$DEPLOY_UID" "$DEPLOY_GID"
+}
+
 # ─── Per-app config: port pairs + docker run resources ─────────────────────────
 # Format: ACTIVE:STANDBY;MEM;CPUS;VOL1;VOL2;...
 # (volumes are ';'-separated so the ':' inside volume specs is safe)
@@ -91,16 +119,31 @@ get_public_health_path() {
 
 # ─── Prepare .env from production.env (Doppler download from CI) ─────────────
 if [ -f "production.env" ]; then
+  PRODUCTION_ENV_PRESENT=true
+  if ! chmod 600 production.env; then
+    echo "ERROR: could not chmod production.env to 600 — refusing to deploy" >&2
+    exit 1
+  fi
   DEPLOY_UID=$(id -u)
   DEPLOY_GID=$(id -g)
-  cp production.env .env
-  grep -v '^DEPLOY_UID=' .env > .env.tmp || true
-  echo "DEPLOY_UID=${DEPLOY_UID}" >> .env.tmp
-  grep -v '^DEPLOY_GID=' .env.tmp > .env2 || true
-  echo "DEPLOY_GID=${DEPLOY_GID}" >> .env2
-  mv .env2 .env
-  rm -f .env.tmp production.env
-  echo ".env installed ($(wc -l < .env) lines)"
+  ENV_INSTALL_TMP="$(mktemp "${PWD}/.env.install.XXXXXX")" || {
+    echo "ERROR: could not create temporary env file — refusing to deploy" >&2
+    exit 1
+  }
+  if ! chmod 600 "$ENV_INSTALL_TMP"; then
+    echo "ERROR: could not chmod temporary env file to 600 — refusing to deploy" >&2
+    exit 1
+  fi
+  if ! write_production_env > "$ENV_INSTALL_TMP"; then
+    echo "ERROR: could not prepare production env — refusing to deploy" >&2
+    exit 1
+  fi
+  if ! mv -f "$ENV_INSTALL_TMP" .env; then
+    echo "ERROR: could not atomically install .env — refusing to deploy" >&2
+    exit 1
+  fi
+  ENV_INSTALL_TMP=""
+  echo ".env installed"
 fi
 
 # Fail closed: a container without credentials cannot boot, and the health
@@ -157,7 +200,7 @@ DEPLOY_GID=${DEPLOY_GID:-$(id -g)}
 # credentials on disk after the deploy (#204).
 ENV_FILE="$(mktemp "${TMPDIR:-/tmp}/${APP_NAME}.docker-env.XXXXXX")"
 chmod 600 "$ENV_FILE"
-trap 'rm -f "$ENV_FILE"' EXIT
+trap cleanup_env_install EXIT
 sed 's/^\([A-Za-z_][A-Za-z0-9_]*\)="\(.*\)"$/\1=\2/' .env > "$ENV_FILE"
 # Security check (#204): refuse to run if the env file is world/group-readable.
 env_mode=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo 000)
