@@ -258,5 +258,76 @@ for app in discord-bot zalo-bot; do
 done
 pass "digest extraction failure fail closed"
 
+echo "Test 11: already-deployed guard -> skip deploy when container matches target digest"
+dir=$(make_env already-deployed)
+# Override docker to simulate a running container with the target digest
+cat > "$dir/bin/docker" <<'FAKE'
+#!/usr/bin/env bash
+echo "docker $*" >> "${DOCKER_LOG:?}"
+case "$1" in
+  login) exit 0 ;;
+  manifest)
+    printf '{"schemaVersion":2,"config":{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}\n'
+    exit 0
+    ;;
+  inspect)
+    # Simulate a running container with the target image digest
+    if echo "$*" | grep -q -- '--format'; then
+      printf 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'
+    fi
+    exit 0
+    ;;
+  ps)
+    # Simulate a running container
+    printf 'messenger-bot-old\n'
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+FAKE
+chmod +x "$dir/bin/docker"
+code=$(run_script "$dir")
+[ "$code" -eq 0 ] || fail "already-deployed guard failed, exit $code: $(cat "$dir/run.out")"
+grep -q "already running target image" "$dir/run.out" || fail "skip message not logged"
+[ "$(cat "$dir/state/messenger-bot.sha")" = "$SHA_B" ] || fail "messenger-bot state sha != $SHA_B"
+# Discord and zalo should still deploy (messenger is skipped, not failed)
+[ "$(cat "$dir/state/discord-bot.sha")" = "$SHA_B" ] || fail "discord-bot state sha != $SHA_B"
+[ "$(cat "$dir/state/zalo-bot.sha")" = "$SHA_B" ] || fail "zalo-bot state sha != $SHA_B"
+[ ! -f "$dir/state/messenger-bot.failed" ] || fail "messenger-bot should not have failed marker"
+pass "already-deployed guard works"
+
+echo "Test 12: already-deployed guard clears previous failure marker"
+dir=$(make_env already-deployed-recover)
+echo "$SHA_A" > "$dir/state/messenger-bot.failed"
+# Override docker to simulate a running container with the target digest
+cat > "$dir/bin/docker" <<'FAKE'
+#!/usr/bin/env bash
+echo "docker $*" >> "${DOCKER_LOG:?}"
+case "$1" in
+  login) exit 0 ;;
+  manifest)
+    printf '{"schemaVersion":2,"config":{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}\n'
+    exit 0
+    ;;
+  inspect)
+    if echo "$*" | grep -q -- '--format'; then
+      printf 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n'
+    fi
+    exit 0
+    ;;
+  ps)
+    printf 'messenger-bot-old\n'
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+FAKE
+chmod +x "$dir/bin/docker"
+code=$(run_script "$dir")
+[ "$code" -eq 0 ] || fail "guard with recovery failed, exit $code"
+[ ! -f "$dir/state/messenger-bot.failed" ] || fail "failed marker not cleared"
+grep -q "previous deploy failure recovered" "$dir/run.out" || fail "recovery not logged"
+pass "guard clears failure marker"
+
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"
