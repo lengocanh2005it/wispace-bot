@@ -3,6 +3,7 @@ import {
   GREETING_INTRO,
   buildGreetingMessage,
   buildSelfIntroMessage,
+  errorMessage,
   maskExternalId,
   sanitizeLogValue,
 } from '@wispace/bot-common';
@@ -41,14 +42,9 @@ import {
 
 function formatError(error: unknown): string {
   if (error instanceof WispaceApiError) {
-    return (
-      `WispaceApiError: statusCode=${error.statusCode} endpoint=${error.endpoint} externalId=${maskExternalId(error.externalId)}\n` +
-      (error.stack ?? error.message)
-    );
+    return `WispaceApiError: statusCode=${error.statusCode} endpoint=${error.endpoint} externalId=${maskExternalId(error.externalId)} - ${errorMessage(error)}`;
   }
-  return error instanceof Error
-    ? (error.stack ?? error.message)
-    : String(error);
+  return errorMessage(error);
 }
 
 @Injectable()

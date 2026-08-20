@@ -4,11 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  maskExternalId,
-  readResponseText,
-  sanitizeLogValue,
-} from '@wispace/bot-common';
+import { maskExternalId, readResponseText } from '@wispace/bot-common';
 import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import {
   validateUpstreamUrl,
@@ -76,12 +72,8 @@ export class WispaceTokenVerifyService {
       return failure;
     }
 
-    const bodyText =
-      payload === undefined
-        ? ''
-        : sanitizeLogValue(JSON.stringify(payload), 500);
     throw new InternalServerErrorException(
-      `WISPACE verify-${this.platform}-token failed: HTTP ${response.status} ${response.statusText} - ${bodyText}`,
+      `WISPACE verify-${this.platform}-token failed: HTTP ${response.status} ${response.statusText}`,
     );
   }
 

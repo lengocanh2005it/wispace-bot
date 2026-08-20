@@ -1,4 +1,8 @@
-export { errorMessage } from './error-message';
+export {
+  errorMessage,
+  sanitizeErrorStack,
+  type ErrorMessageOptions,
+} from './error-message';
 export { readResponseText } from './read-response-text';
 export { isAbortError, sleep } from './abort.utils';
 export {

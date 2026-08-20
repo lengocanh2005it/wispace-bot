@@ -65,12 +65,8 @@ export class WispaceMessengerTokenVerifyService {
       return failure;
     }
 
-    const bodyText =
-      payload === undefined
-        ? ''
-        : sanitizeLogValue(JSON.stringify(payload), 500);
     throw new InternalServerErrorException(
-      `WISPACE verify-messenger-token failed: HTTP ${response.status} ${response.statusText} - ${bodyText}`,
+      `WISPACE verify-messenger-token failed: HTTP ${response.status} ${response.statusText}`,
     );
   }
 

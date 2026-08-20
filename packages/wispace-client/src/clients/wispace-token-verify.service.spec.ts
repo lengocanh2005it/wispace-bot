@@ -212,7 +212,7 @@ describe('WispaceTokenVerifyService', () => {
     }
   });
 
-  it('#108: no raw control characters reach the error message from upstream body', async () => {
+  it('#292: upstream error body payload is not exposed in the error message', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
       status: 500,
@@ -235,7 +235,10 @@ describe('WispaceTokenVerifyService', () => {
         message = error instanceof Error ? error.message : String(error);
       });
 
-    expect(message).toContain('secret-payload');
+    expect(message).toBe(
+      'WISPACE verify-discord-token failed: HTTP 500 Internal Server Error',
+    );
+    expect(message).not.toContain('secret-payload');
     expect(message).not.toMatch(/[\u0000-\u001F\u007F]/);
   });
 });
