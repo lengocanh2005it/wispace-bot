@@ -163,6 +163,26 @@ deploy_app() {
   image_digest=$(docker manifest inspect "$image" 2>/dev/null \
     | grep -o 'sha256:[a-f0-9]*' | head -1 || true)
 
+  # Already-deployed guard: if any running container for this app already
+  # carries the target digest, the deploy succeeded previously but the
+  # state file was not written (e.g. post-switch monitor flapped). Skip
+  # the full deploy cycle to avoid an infinite redeploy loop.
+  if [ -n "$image_digest" ]; then
+    local running_digest
+    running_digest=$(docker inspect --format '{{.Image}}' \
+      "$(docker ps --filter "name=^${app}-" --format '{{.Names}}' | head -1)" 2>/dev/null || true)
+    if [ "$running_digest" = "$image_digest" ]; then
+      echo "$app: already running target image ($image_digest) — skipping deploy"
+      echo "$NEW_SHA" > "$state_file"
+      if [ -f "$fail_marker" ]; then
+        echo "$app: previous deploy failure recovered ($(cat "$fail_marker"))"
+        rm -f "$fail_marker"
+        resolve_app_failed "$app"
+      fi
+      return 0
+    fi
+  fi
+
   if [ -z "$image_digest" ]; then
     echo "ERROR: $app — could not extract digest from manifest inspect" >&2
     # Fail closed: do not deploy without digest verification (#196)
