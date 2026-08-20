@@ -25,7 +25,7 @@ umask 077
 : "${GHCR_PULL_TOKEN:-}"
 : "${GHCR_USER:-}"
 : "${HEALTH_PATH:=/health}"                   # health check path (empty skips)
-: "${HEALTH_MAX_ATTEMPTS:=30}"                # health check attempts before rollback
+: "${HEALTH_MAX_ATTEMPTS:=120}"               # 4-minute cold-start window before rollback
 : "${DEPLOY_HOST_DIR:=/home/ngoc_anh/${APP_NAME}}"
 : "${NGINX_UPSTREAM_DIR:=/home/ngoc_anh/infra/nginx/upstreams}"
 : "${POST_SWITCH_MONITOR_ATTEMPTS:=24}"       # monitor after switch (24 × 5s = 2 min)
