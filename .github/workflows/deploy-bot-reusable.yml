@@ -255,6 +255,7 @@ jobs:
             exit 0
           fi
           doppler secrets download --no-file --format env > production.env
+          chmod 600 production.env
           echo "Downloaded $(wc -l < production.env) lines from Doppler"
           echo "has_production_env=true" >> "$GITHUB_ENV"
 

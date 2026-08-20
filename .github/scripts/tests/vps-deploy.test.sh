@@ -122,6 +122,50 @@ write_upstream() { # dir port
   printf 'upstream messenger_backend {\n    server 127.0.0.1:%s;\n}\n' "$2" > "$dir/upstreams/messenger-bot.conf"
 }
 
+make_failing_chmod() { # dir [basename]
+  local dir="$1" target="${2:-}"
+  cat > "$dir/bin/chmod" <<FAKE
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    *${target}) exit 1 ;;
+  esac
+done
+exit 0
+FAKE
+  chmod +x "$dir/bin/chmod"
+}
+
+make_failing_mktemp() { # dir
+  local dir="$1"
+  cat > "$dir/bin/mktemp" <<'FAKE'
+#!/usr/bin/env bash
+exit 1
+FAKE
+  chmod +x "$dir/bin/mktemp"
+}
+
+make_failing_mv() { # dir
+  local dir="$1"
+  cat > "$dir/bin/mv" <<'FAKE'
+#!/usr/bin/env bash
+exit 1
+FAKE
+  chmod +x "$dir/bin/mv"
+}
+
+make_recording_mv() { # dir
+  local dir="$1" real_mv
+  real_mv=$(command -v mv)
+  cat > "$dir/bin/mv" <<FAKE
+#!/usr/bin/env bash
+printf '%s\n' "\$1 -> \$2" >> "\${FAKE_MV_LOG:?}"
+stat -c '%a' "\$1" >> "\${FAKE_MV_MODE_LOG:?}"
+exec "$real_mv" "\$@"
+FAKE
+  chmod +x "$dir/bin/mv"
+}
+
 # --- tests -------------------------------------------------------------------
 echo "Test 1: missing .env -> fail closed (exit 1), no docker run (#199)"
 dir=$(make_env env-missing)
@@ -352,6 +396,73 @@ code=$(run_script "$dir")
 grep -q "docker pull ghcr.io/x/messenger-bot:sha" "$dir/docker.log" || fail "docker pull missing"
 grep -q "docker run.*ghcr.io/x/messenger-bot:sha" "$dir/docker.log" || fail "docker run missing"
 pass "tag-only fallback works"
+
+echo "Test 20: existing .env is locked down before it is read (#276)"
+dir=$(make_env existing-env-perms)
+write_env "$dir"
+chmod 664 "$dir/deploy/.env"
+code=$(run_script "$dir" SKIP_NGINX_CHECK=true)
+[ "$code" -eq 0 ] || fail "deploy failed after hardening existing .env, exit $code"
+mode_probe="$TEST_ROOT/mode-probe-existing-env"
+printf 'x\n' > "$mode_probe"
+chmod 600 "$mode_probe"
+if [ "$(stat -c '%a' "$mode_probe" 2>/dev/null || echo unsupported)" = "600" ]; then
+  mode=$(stat -c '%a' "$dir/deploy/.env")
+  [ "$mode" = "600" ] || fail "existing .env mode $mode != 600"
+else
+  echo "  skip: platform does not reflect POSIX modes (CI asserts existing .env mode)"
+fi
+pass "existing .env permission is hardened"
+
+echo "Test 21: production.env is atomically installed with mode 600 (#276)"
+dir=$(make_env production-env-install)
+write_env "$dir"
+printf 'OLD_ENV_KEY=from-old\n' >> "$dir/deploy/.env"
+printf 'PORT=5010\nDB_HOST=postgres_n8n_db\nDB_PORT=5432\nDB_USER=postgres\nDB_PASSWORD=new-secret\nDB_NAME=ai_chat_bot_db\n' > "$dir/deploy/production.env"
+make_recording_mv "$dir"
+export FAKE_MV_LOG="$dir/mv.log" FAKE_MV_MODE_LOG="$dir/mv.mode.log"
+code=$(run_script "$dir" SKIP_NGINX_CHECK=true)
+unset FAKE_MV_LOG FAKE_MV_MODE_LOG
+[ "$code" -eq 0 ] || fail "production.env install failed, exit $code: $(cat "$dir/run.out")"
+grep -q '^PORT=5010' "$dir/deploy/.env" || fail "production.env content was not installed"
+grep -q '^DEPLOY_UID=' "$dir/deploy/.env" || fail "DEPLOY_UID missing from installed env"
+grep -q '^DEPLOY_GID=' "$dir/deploy/.env" || fail "DEPLOY_GID missing from installed env"
+! grep -q '^OLD_ENV_KEY=' "$dir/deploy/.env" || fail "old .env content survived replacement"
+[ ! -f "$dir/deploy/production.env" ] || fail "production.env was not cleaned up"
+[ "$(wc -l < "$dir/mv.log")" -eq 1 ] || fail "expected one atomic mv"
+grep -q ' -> ' "$dir/mv.log" || fail "atomic mv was not recorded"
+[ "$(cat "$dir/mv.mode.log")" = "600" ] || fail "temporary env mode was not 600"
+[ "$(find "$dir/deploy" -maxdepth 1 -name '.env.install.*' | wc -l)" -eq 0 ] || fail "temporary install file was not cleaned up"
+pass "production.env uses a mode-600 atomic replacement"
+
+echo "Test 22: env permission/temp/mv failures stop deployment (#276)"
+dir=$(make_env fail-existing-chmod)
+write_env "$dir"
+make_failing_chmod "$dir" .env
+code=$(run_script "$dir")
+[ "$code" -eq 1 ] || fail "existing .env chmod failure did not stop deploy"
+pass "existing .env chmod failure is fail-closed"
+
+dir=$(make_env fail-production-chmod)
+printf 'PORT=5010\n' > "$dir/deploy/production.env"
+make_failing_chmod "$dir" production.env
+code=$(run_script "$dir")
+[ "$code" -eq 1 ] || fail "production.env chmod failure did not stop deploy"
+pass "production.env chmod failure is fail-closed"
+
+dir=$(make_env fail-install-mktemp)
+printf 'PORT=5010\n' > "$dir/deploy/production.env"
+make_failing_mktemp "$dir"
+code=$(run_script "$dir")
+[ "$code" -eq 1 ] || fail "mktemp failure did not stop deploy"
+pass "mktemp failure is fail-closed"
+
+dir=$(make_env fail-install-mv)
+printf 'PORT=5010\n' > "$dir/deploy/production.env"
+make_failing_mv "$dir"
+code=$(run_script "$dir")
+[ "$code" -eq 1 ] || fail "atomic mv failure did not stop deploy"
+pass "atomic mv failure is fail-closed"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"
