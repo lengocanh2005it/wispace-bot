@@ -253,7 +253,6 @@ export class MessengerChatProcessorService {
             userId,
             psid,
             messageType: 'FREE_FORM_CHAT_IN',
-            messageText: mergedText,
             status: 'SENT',
           });
         }

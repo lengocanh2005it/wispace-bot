@@ -1,0 +1,2 @@
+# Keep repository text files consistent across Windows and CI.
+* text=auto eol=lf

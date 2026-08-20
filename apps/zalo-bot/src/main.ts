@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
+import { errorMessage, sanitizeErrorStack } from '@wispace/bot-common';
 import { AppModule } from './app.module';
 
 const logger = new Logger('Bootstrap');
@@ -12,13 +13,16 @@ const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 45_000;
 
 process.on('unhandledRejection', (reason) => {
   logger.error(
-    `Unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`,
-    reason instanceof Error ? reason.stack : undefined,
+    `Unhandled rejection: ${errorMessage(reason)}`,
+    reason instanceof Error ? sanitizeErrorStack(reason.stack) : undefined,
   );
 });
 
 process.on('uncaughtException', (error) => {
-  logger.error(`Uncaught exception: ${error.message}`, error.stack);
+  logger.error(
+    `Uncaught exception: ${errorMessage(error)}`,
+    sanitizeErrorStack(error.stack),
+  );
   process.exit(1);
 });
 
@@ -61,7 +65,10 @@ async function bootstrap() {
       await app.close();
       logger.log('Graceful shutdown completed');
     } catch (err) {
-      logger.error('Error during graceful shutdown', err);
+      logger.error(
+        `Error during graceful shutdown: ${errorMessage(err)}`,
+        err instanceof Error ? sanitizeErrorStack(err.stack) : undefined,
+      );
     } finally {
       clearTimeout(forceExitTimeout);
       process.exit(0);

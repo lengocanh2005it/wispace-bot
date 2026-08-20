@@ -1,9 +1,4 @@
-import {
-  errorMessage,
-  maskExternalId,
-  readResponseText,
-  sanitizeLogValue,
-} from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import {
   isWispaceRetryable,
@@ -87,9 +82,8 @@ export class TaskScoreAverageApiClient {
     });
 
     if (!response.ok) {
-      const body = await readResponseText(response);
       throw new WispaceApiError(
-        `TaskScoreAverage API failed: HTTP ${response.status} ${response.statusText} - ${sanitizeLogValue(body, 200)}`,
+        `TaskScoreAverage API failed: HTTP ${response.status} ${response.statusText}`,
         response.status,
         externalId,
         'TaskScoreAverage',

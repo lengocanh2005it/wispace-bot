@@ -235,7 +235,6 @@ export class MessengerOutboundService {
         userId: params.userId,
         psid: params.psid,
         messageType: params.messageType,
-        messageText: JSON.stringify(params.elements),
         status: 'SENT',
       });
     } catch (error) {
@@ -244,7 +243,6 @@ export class MessengerOutboundService {
         userId: params.userId,
         psid: params.psid,
         messageType: params.messageType,
-        messageText: JSON.stringify(params.elements),
         status: 'FAILED',
         errorMessage: errorText,
       });
@@ -286,7 +284,6 @@ export class MessengerOutboundService {
         userId: params.userId,
         psid: params.psid,
         messageType: params.messageType,
-        messageText: params.text,
         status: 'SENT',
       });
     } catch (error) {
@@ -295,7 +292,6 @@ export class MessengerOutboundService {
         userId: params.userId,
         psid: params.psid,
         messageType: params.messageType,
-        messageText: params.text,
         status: 'FAILED',
         errorMessage: errorText,
       });
@@ -317,7 +313,6 @@ export class MessengerOutboundService {
         userId: params.userId,
         psid: params.psid,
         messageType: params.messageType,
-        messageText: params.text,
         status: 'SENT',
       });
     } catch (error) {
@@ -375,7 +370,6 @@ export class MessengerOutboundService {
         : is24h
           ? buildProactiveFailureMessageType(params.messageType)
           : params.messageType,
-      messageText: params.text,
       status: 'FAILED',
       errorMessage,
     });

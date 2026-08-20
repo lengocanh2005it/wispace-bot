@@ -1,6 +1,5 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { readResponseText } from '@wispace/bot-common';
 import { keepAliveFetch } from '@messenger/shared/http/http-agent';
 
 const PERSISTENT_MENU_ACTIONS = [
@@ -65,9 +64,8 @@ export class MessengerProfileService {
     });
 
     if (!response.ok) {
-      const body = await readResponseText(response);
       throw new InternalServerErrorException(
-        `Messenger Profile DELETE failed: HTTP ${response.status} ${response.statusText} - ${body}`,
+        `Messenger Profile DELETE failed: HTTP ${response.status} ${response.statusText}`,
       );
     }
   }
@@ -95,9 +93,8 @@ export class MessengerProfileService {
     });
 
     if (!response.ok) {
-      const body = await readResponseText(response);
       throw new InternalServerErrorException(
-        `Messenger Profile API failed: HTTP ${response.status} ${response.statusText} - ${body}`,
+        `Messenger Profile API failed: HTTP ${response.status} ${response.statusText}`,
       );
     }
   }
