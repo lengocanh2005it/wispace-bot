@@ -33,7 +33,7 @@ umask 077
 : "${POST_SWITCH_MONITOR_INTERVAL:=5}"        # seconds between post-switch checks
 : "${DOCKER_STOP_TIMEOUT:=60}"                # docker stop/run grace period — app drains 45s (#201)
 : "${PUBLIC_HOST:=aiassist.aihubproduction.com}"  # public nginx host used for post-switch verify
-: "${SKIP_NGINX_CHECK:=false}"                # first-deploy escape hatch: allow cutover without nginx
+: "${SKIP_NGINX_CHECK:=false}"                # first-deploy escape hatch: only without an active container
 
 COMPOSE_FILE="docker-compose.prod.yml"
 
@@ -236,7 +236,10 @@ if [ -n "${IMAGE_DIGEST:-}" ]; then
   PULL_REF="${IMAGE}@${IMAGE_DIGEST}"
   echo "Pinning by digest: $PULL_REF"
 fi
-docker pull "$PULL_REF" 2>/dev/null || docker pull "$PULL_REF" || true
+if ! docker pull "$PULL_REF" 2>/dev/null && ! docker pull "$PULL_REF"; then
+  echo "ERROR: image pull failed for $PULL_REF — refusing to deploy (#271)" >&2
+  exit 1
+fi
 
 # ─── Start new container on standby port (docker run, NOT compose) ────────────
 # Compose would "recreate" the old container (it matches by project/service
@@ -298,7 +301,12 @@ fi
 # inside the session, so the lock stays held), then unlocks. psql's \! swallows
 # the exit status, so the migration appends it to /tmp/mig.exit which the
 # outer shell checks.
-if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ -n "${MIGRATION_CMD:-}" ]; then
+if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
+  if [ -z "${MIGRATION_CMD:-}" ]; then
+    echo "ERROR: RUN_MIGRATIONS=true requires MIGRATION_CMD — refusing to deploy (#271)" >&2
+    docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+    exit 1
+  fi
   MIGRATION_DB_CONTAINER="${MIGRATION_DB_CONTAINER:-postgres_n8n_db}"
   MIGRATION_LOCK_ID="${MIGRATION_LOCK_ID:-4242424242}"
   DB_USER_ENV=$(grep -E '^DB_USER=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
@@ -328,9 +336,14 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ] && [ -n "${MIGRATION_CMD:-}" ]; then
   mkdir -p "$PRE_MIGRATE_DIR"
   PRE_MIGRATE_DUMP="$PRE_MIGRATE_DIR/pre-migrate-$(date +%Y%m%d-%H%M%S).dump"
   echo "Pre-migration safety dump → $PRE_MIGRATE_DUMP"
-  docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$MIGRATION_DB_CONTAINER" \
+  if ! docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$MIGRATION_DB_CONTAINER" \
     pg_dump -U "$DB_USER_ENV" -d "$DB_NAME_ENV" -h localhost -Fc \
-    > "$PRE_MIGRATE_DUMP" 2>/dev/null || echo "WARNING: pre-migration dump failed — proceeding anyway"
+    > "$PRE_MIGRATE_DUMP" 2>/dev/null || [ ! -s "$PRE_MIGRATE_DUMP" ]; then
+    echo "ERROR: pre-migration dump failed or was empty — refusing to deploy (#271)" >&2
+    rm -f "$PRE_MIGRATE_DUMP"
+    docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+    exit 1
+  fi
   find "$PRE_MIGRATE_DIR" -name 'pre-migrate-*.dump' -mtime +1 -delete 2>/dev/null || true
 
   echo "Applying migrations (advisory lock $MIGRATION_LOCK_ID held on the migration session): $MIGRATION_CMD"
@@ -372,6 +385,11 @@ if [ -f "$UPSTREAM_CONF" ]; then
   NGINX_SWITCHED=true
 else
   if [ "${SKIP_NGINX_CHECK}" = "true" ]; then
+    if [ -n "$ACTIVE_CONTAINER" ]; then
+      echo "ERROR: active container $ACTIVE_CONTAINER exists — refusing to bypass nginx check (#284)" >&2
+      docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+      exit 1
+    fi
     echo "WARNING: upstream conf not found at $UPSTREAM_CONF — SKIP_NGINX_CHECK=true, skipping nginx switch (first-deploy bootstrap)"
   else
     echo "ERROR: upstream conf not found at $UPSTREAM_CONF — refusing to cut over without nginx (#199)" >&2

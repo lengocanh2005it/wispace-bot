@@ -569,6 +569,8 @@ The `git fetch`/`reset` run **inside the script, after the deploy lock is held**
 
 **Postgres backup & restore (#182/#185):** nightly `pg_dump` at 02:00 ICT via `deploy/postgres-backup.sh`, encrypted at rest with GPG AES-256 (`BACKUP_ENCRYPTION_PASSPHRASE` in `.env`), 14-day retention. Backups are gzip-validated before encryption and stored as `.sql.gz.gpg` in `/home/ngoc_anh/backups/ai_chat_bot_db/`. An hourly `deploy/backup-monitor.sh` checks the `.last-backup-success` timestamp and fires a `postgres_backup_stale` Alertmanager alert (→ Telegram) if no successful backup in 25h. Backup failures also fire `postgres_backup_failed` immediately. Pre-migration safety dumps (`pg_dump -Fc`) go to `pre-migrate/` with 1-day retention.
 
+**Deploy failure policy (#271/#284):** `vps-deploy.sh` also fails closed when the image cannot be pulled, `RUN_MIGRATIONS=true` has no validated `MIGRATION_CMD`, or the pre-migration `pg_dump` fails/is empty. `SKIP_NGINX_CHECK=true` is only valid when no active container is detected; it cannot bypass a live traffic route.
+
 **Restore from backup:**
 
 ```bash
