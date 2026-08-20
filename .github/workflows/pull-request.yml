@@ -64,7 +64,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify (format + lint + typecheck + test + build)
+      - name: Verify pull request (format + lint + typecheck + test + build)
+        if: github.event_name == 'pull_request'
+        run: npm run verify
+
+      - name: Verify trusted push (format + lint + typecheck + test + build)
+        if: github.event_name == 'push'
         run: npm run verify
         env:
           TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
@@ -82,6 +87,9 @@ jobs:
 
       - name: Test SSH deploy payload isolation (#282)
         run: bash .github/scripts/tests/ssh-deploy-vps.test.sh
+
+      - name: Test pull request workflow Turbo credential scoping (#287)
+        run: bash .github/scripts/tests/pull-request-workflow.test.sh
 
       - name: Test VPS deploy script (fail-closed + crash-safety + migration lock, #199/#201/#203/#204)
         run: bash .github/scripts/tests/vps-deploy.test.sh
