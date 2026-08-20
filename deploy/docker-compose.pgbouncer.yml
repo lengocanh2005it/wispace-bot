@@ -9,34 +9,36 @@
 
 services:
   pgbouncer:
-    image: bitnami/pgbouncer:1.23.1
+    image: edoburu/pgbouncer:1.25.2
     container_name: pgbouncer
     restart: unless-stopped
     ports:
       - "127.0.0.1:6432:5432"
     environment:
-      # Backend PostgreSQL connection
-      - POSTGRESQL_HOST=postgres_n8n_db
-      - POSTGRESQL_PORT=5432
-      - POSTGRESQL_USERNAME=postgres
-      - POSTGRESQL_PASSWORD=${POSTGRES_PASSWORD:-changeme}
-      - POSTGRESQL_DATABASE=ai_chat_bot_db
+      # edoburu generates pgbouncer.ini and userlist.txt from these values.
+      # Keep the password in the deployment environment, never in this file.
+      DB_HOST: postgres_n8n_db
+      DB_PORT: 5432
+      DB_USER: ${PGBOUNCER_DB_USER:?PGBOUNCER_DB_USER is required}
+      DB_PASSWORD: ${PGBOUNCER_DB_PASSWORD:?PGBOUNCER_DB_PASSWORD is required}
+      DB_NAME: ai_chat_bot_db
 
       # PgBouncer pool settings
-      - PGBOUNCER_POOL_MODE=session
-      - PGBOUNCER_POOL_SIZE=20
-      - PGBOUNCER_MAX_CLIENT_CONN=100
-      - PGBOUNCER_SERVER_IDLE_TIMEOUT=300
-      - PGBOUNCER_SERVER_CONNECT_TIMEOUT=5
-      - PGBOUNCER_AUTH_TYPE=md5
+      POOL_MODE: session
+      DEFAULT_POOL_SIZE: 20
+      MAX_CLIENT_CONN: 100
+      SERVER_IDLE_TIMEOUT: 300
+      SERVER_CONNECT_TIMEOUT: 5
+      AUTH_TYPE: md5
 
       # Logging
-      - PGBOUNCER_LOG_CONNECTIONS=1
-      - PGBOUNCER_LOG_DISCONNECTIONS=1
-      - PGBOUNCER_LOG_POOLER_ERRORS=1
+      LOG_CONNECTIONS: 1
+      LOG_DISCONNECTIONS: 1
+      LOG_POOLER_ERRORS: 1
 
     networks:
-      - default
+      - app_n8n_db_network
+      - monitoring
 
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h localhost -p 5432 || exit 1"]
@@ -45,12 +47,13 @@ services:
       retries: 3
       start_period: 10s
 
-    deploy:
-      resources:
-        limits:
-          memory: 64M
-          cpus: "0.25"
+    mem_limit: 64M
+    cpus: "0.25"
 
 networks:
-  default:
-    name: pgbouncer-net
+  app_n8n_db_network:
+    external: true
+    name: app_n8n_db_network
+  monitoring:
+    external: true
+    name: monitoring

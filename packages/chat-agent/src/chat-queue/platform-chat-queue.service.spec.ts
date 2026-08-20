@@ -101,6 +101,21 @@ describe('PlatformChatQueueService', () => {
     ).not.toThrow();
   });
 
+  it('waits for Redis queue availability during module init', async () => {
+    let available = false;
+    const queueStore = {
+      isAvailable: jest.fn(() => available),
+      appendChatBuffer: jest.fn().mockResolvedValue(undefined),
+    } as unknown as ChatQueueStorePort;
+    const service = buildConfigWith({ CHAT_QUEUE_STORE: 'redis' }, queueStore);
+
+    const init = service.onModuleInit();
+    available = true;
+
+    await expect(init).resolves.toBeUndefined();
+    expect(queueStore.isAvailable).toHaveBeenCalled();
+  });
+
   it('persists the message before reporting Redis enqueue success', async () => {
     const queueStore = {
       isAvailable: jest.fn().mockReturnValue(true),
