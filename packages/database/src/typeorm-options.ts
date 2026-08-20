@@ -120,10 +120,8 @@ export function getTypeOrmOptions(
     ssl: getPostgresSsl(source),
     poolSize,
     extra: {
-      pool: {
-        idleTimeoutMillis: poolIdleTimeoutMs,
-        connectionTimeoutMillis: poolConnectionTimeoutMs,
-      },
+      idleTimeoutMillis: poolIdleTimeoutMs,
+      connectionTimeoutMillis: poolConnectionTimeoutMs,
     },
     entities,
     migrations: [join(__dirname, 'migrations', '*.{ts,js}')],

@@ -1,4 +1,4 @@
-import { getPostgresSsl } from './typeorm-options';
+import { getPostgresSsl, getTypeOrmOptions } from './typeorm-options';
 
 describe('getPostgresSsl', () => {
   it('returns verify-only SSL config when TLS is enabled', () => {
@@ -78,5 +78,42 @@ describe('getPostgresSsl', () => {
         DB_ALLOW_INSECURE_HOSTS: '  , ',
       }),
     ).toThrow('DB_SSL=true is required');
+  });
+});
+
+describe('getTypeOrmOptions pool configuration', () => {
+  const baseEnv = {
+    DB_HOST: 'localhost',
+    DB_PORT: '5432',
+    DB_USER: 'test',
+    DB_PASSWORD: 'test',
+    DB_NAME: 'test_db',
+  };
+
+  it('places pool timeouts at pg.Pool top level, not nested under pool', () => {
+    const opts = getTypeOrmOptions(
+      {
+        ...baseEnv,
+        DB_POOL_IDLE_TIMEOUT_MS: '60000',
+        DB_POOL_CONNECTION_TIMEOUT_MS: '3000',
+      },
+      [],
+    );
+    const extra = opts.extra as Record<string, unknown>;
+    expect(extra.idleTimeoutMillis).toBe(60000);
+    expect(extra.connectionTimeoutMillis).toBe(3000);
+    expect(extra.pool).toBeUndefined();
+  });
+
+  it('defaults to 30s idle timeout and 5s connection timeout', () => {
+    const opts = getTypeOrmOptions(baseEnv, []);
+    const extra = opts.extra as Record<string, unknown>;
+    expect(extra.idleTimeoutMillis).toBe(30_000);
+    expect(extra.connectionTimeoutMillis).toBe(5_000);
+  });
+
+  it('applies DB_POOL_SIZE as poolSize', () => {
+    const opts = getTypeOrmOptions({ ...baseEnv, DB_POOL_SIZE: '5' }, []);
+    expect(opts.poolSize).toBe(5);
   });
 });
