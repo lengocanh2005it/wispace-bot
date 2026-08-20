@@ -48,9 +48,15 @@ import {
 import { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
 import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
 import { WispaceExerciseService } from '@wispace/wispace-client';
+import { hasMessengerReportSubscriptionIntent } from '@messenger/shared/utils/messenger-report-subscription-intent.utils';
 
 export const MESSENGER_NOT_LINKED_MESSAGE =
   'Chưa liên kết tài khoản WISPACE. Học viên cần mở Messenger từ link trong app WISPACE.';
+const REPORT_SUBSCRIPTION_INTENT_UNCLEAR_RESULT = {
+  registered: false,
+  reason: 'intent_unclear',
+  message: 'Bạn muốn đăng ký nhận báo cáo tự động đúng không?',
+} as const;
 
 /**
  * Messenger's app-owned tool executor — implements `PlatformToolExecutorPort`
@@ -415,6 +421,10 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
   private async registerExamReportNotifications(
     ctx: PlatformAgentToolContext,
   ): Promise<unknown> {
+    if (!hasMessengerReportSubscriptionIntent(ctx.userText)) {
+      return REPORT_SUBSCRIPTION_INTENT_UNCLEAR_RESULT;
+    }
+
     const linkContext = await this.resolveLinkContext(ctx);
     if (!linkContext) {
       return {

@@ -307,6 +307,108 @@ describe('LlmAgentService', () => {
       expect(result.toolSummary).toContain('get_learning_progress_report');
     });
 
+    it('rejects an unknown tool before calling the executor and keeps the protocol valid', async () => {
+      const adapter = makeAdapter([
+        makeToolCallResponse('unknown_tool'),
+        makeTextResponse('Đã xử lý.'),
+      ]);
+      const execute = jest.fn();
+      const { service } = buildService({ adapter, execute });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(execute).not.toHaveBeenCalled();
+      const secondRequest = (adapter.chatWithTools as jest.Mock).mock
+        .calls[1][0];
+      const toolResult = secondRequest.messages.find(
+        (message: { role: string }) => message.role === 'tool',
+      );
+      expect(toolResult).toMatchObject({
+        toolCallId: 'call-1',
+        content: JSON.stringify({
+          ok: false,
+          error: 'Tool không được hỗ trợ',
+        }),
+      });
+      expect(toolResult.content).not.toContain('unknown_tool');
+      expect(result.toolSummary).toBeUndefined();
+    });
+
+    it('runs known tools and returns a separate failed result for unknown tools', async () => {
+      const adapter = makeAdapter([
+        makeMultiToolCallResponse([
+          { name: 'get_user_goals', id: 'known-call' },
+          { name: 'unknown_tool', id: 'unknown-call' },
+        ]),
+        makeTextResponse('Tổng hợp xong.'),
+      ]);
+      const execute = jest.fn().mockResolvedValue({ goals: [] });
+      const { service } = buildService({ adapter, execute });
+
+      await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(execute).toHaveBeenCalledTimes(1);
+      expect(execute).toHaveBeenCalledWith(
+        'get_user_goals',
+        '{}',
+        TOOL_CONTEXT,
+        expect.any(AbortSignal),
+      );
+      const secondRequest = (adapter.chatWithTools as jest.Mock).mock
+        .calls[1][0];
+      const toolResults = secondRequest.messages.filter(
+        (message: { role: string }) => message.role === 'tool',
+      );
+      expect(toolResults).toHaveLength(2);
+      expect(toolResults).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ toolCallId: 'known-call' }),
+          expect.objectContaining({
+            toolCallId: 'unknown-call',
+            content: JSON.stringify({
+              ok: false,
+              error: 'Tool không được hỗ trợ',
+            }),
+          }),
+        ]),
+      );
+    });
+
+    it('does not emit tool_start or summarize an unknown tool', async () => {
+      const adapter = makeAdapter([
+        makeMultiToolCallResponse([
+          { name: 'get_user_goals', id: 'known-call' },
+          { name: 'unknown_tool', id: 'unknown-call' },
+        ]),
+        makeTextResponse('Tổng hợp xong.'),
+      ]);
+      const execute = jest.fn().mockResolvedValue({ goals: [] });
+      const { service } = buildService({ adapter, execute });
+      const events: import('./types').LlmAgentStreamEvent[] = [];
+
+      for await (const event of service.replyStream(BASE_INPUT, TOOL_CONTEXT)) {
+        events.push(event);
+      }
+
+      expect(
+        events
+          .filter((event) => event.type === 'tool_start')
+          .map((event) => event.toolName),
+      ).toEqual(['get_user_goals']);
+      const doneEvent = events.find((event) => event.type === 'done');
+      expect(doneEvent).toMatchObject({
+        reply: { toolSummary: '[Đã tra cứu: get_user_goals]' },
+      });
+      expect(
+        (
+          doneEvent as Extract<
+            import('./types').LlmAgentStreamEvent,
+            { type: 'done' }
+          >
+        ).reply.toolSummary,
+      ).not.toContain('unknown_tool');
+    });
+
     it('omits toolSummary when no tools were called', async () => {
       const response = makeTextResponse('Câu trả lời trực tiếp.');
       const adapter = makeAdapter([response]);

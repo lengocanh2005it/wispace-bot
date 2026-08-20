@@ -42,6 +42,7 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 - **Daily quota** per `(platform, external_user_id, usage_date)` ICT — `chat_daily_usage`; idempotency `message.mid` — `chat_idempotency`.
 - **Burst** `CHAT_BURST_PER_MINUTE`/min; **hard cap** concurrent (H3); **hint** "X remaining" (Phase 6).
 - Menu postback, reminder cron, proactive reports — **no** quota deduction.
+- Messenger report registration from chat is accepted only for an explicit request such as “đăng ký nhận báo cáo” or “muốn nhận báo cáo tự động”; ambiguous requests are acknowledged without account lookup or subscription writes.
 - **Development/test:** `CHAT_QUEUE_STORE=memory` (RAM debounce). **Production:** all three bots require `CHAT_QUEUE_STORE=redis` (requires `REDIS_ENABLED=true`; `CHAT_QUEUE_SHARED=true` maps to `redis`). Enqueue writes are awaited before the Messenger/Zalo durable inbox completes; persistent Redis failures remain retryable. Redis keys use the legacy `chat:queue:*` namespace for Messenger and `chat:queue:discord:*` / `chat:queue:zalo:*` for the other bots.
 
 ### 1.5. Precreate Next Roadmap Exercise
@@ -363,6 +364,7 @@ All `chat.completions.create` calls go through **`LlmExecutionService`** (`src/m
 LLM safety:
 
 - `MessengerAgentService` blocks English/Vietnamese prompt injection before OpenAI, redacts malicious history, caps context, and sanitizes JSON-format tool results.
+- The shared `LlmAgentService` accepts only names from `AGENT_TOOL_NAMES`; unknown model tool calls receive a fixed failed result for protocol validity but never reach a platform executor.
 - External data from WISPACE/user profile entering reminders/reports must be sanitized via `src/shared/utils/prompt-injection.utils.ts`.
 - JSON output from OpenAI must be parsed + shape-validated via `src/shared/utils/llm-json-output.utils.ts`; invalid shape falls back to template, no direct type casting for formatting.
 - **Safety telemetry is redacted at rest** (`LlmSafetyCore.recordGroundingWarning`, `packages/chat-metering/src/llm-safety/redact-safety-text.ts`): payloads persist only a sanitized excerpt (control chars stripped, credential-like patterns — JWT/Bearer/PEM/emails/VN phones/key=value — replaced with `[REDACTED]`) plus SHA-256 hash and original length; raw user text, assistant text, tool data and error fields are never written to `llm_safety_events`.

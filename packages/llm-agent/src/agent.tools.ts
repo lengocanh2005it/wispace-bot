@@ -134,7 +134,7 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
   {
     name: 'register_exam_report_notifications',
     description:
-      'Đăng ký nhận báo cáo AI tự động qua Messenger khoảng 2–3 ngày trước ngày thi.',
+      'Chỉ gọi khi học viên yêu cầu rõ ràng đăng ký nhận báo cáo AI tự động, ví dụ "đăng ký nhận báo cáo" hoặc "muốn nhận báo cáo tự động". Không gọi khi học viên chỉ muốn xem báo cáo, nói báo cáo cho mình, nói đăng ký chung hoặc nhận thông tin.',
     parameters: {
       type: 'object',
       properties: {},
