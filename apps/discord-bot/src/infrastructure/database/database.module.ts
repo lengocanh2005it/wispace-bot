@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { DataSourceOptions } from 'typeorm';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
@@ -10,10 +9,8 @@ import {
 } from '@wispace/chat-metering';
 import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
 import {
-  WebhookDeadLetterEntity,
-  ScheduledReportClaimEntity,
-  ReportSendJobEntity,
-  getPostgresSsl,
+  getTypeOrmOptions as buildSharedOptions,
+  SHARED_ENTITIES,
 } from '@wispace/database';
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
 import { DiscordLinkVerifyRecordEntity } from './entities/discord-link-verify-record.entity';
@@ -27,32 +24,20 @@ import { DiscordWelcomeRecordEntity } from './entities/discord-welcome-record.en
  * messenger-bot's pipeline is allowed to run `migration:run`, to avoid
  * race conditions between bots' CI on the same DB.
  */
-function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
-  return {
-    type: 'postgres',
-    host: config.get<string>('DB_HOST'),
-    port: Number(config.get<string>('DB_PORT') ?? 5432),
-    username: config.get<string>('DB_USER'),
-    password: config.get<string>('DB_PASSWORD'),
-    database: config.get<string>('DB_NAME'),
-    ssl: getPostgresSsl(config),
-    entities: [
-      ChatDailyUsageEntity,
-      ChatIdempotencyEntity,
-      LlmUsageEventEntity,
-      LlmSafetyEventEntity,
-      DiscordAccountLinkEntity,
-      DiscordLinkVerifyRecordEntity,
-      DiscordMessageLogEntity,
-      DiscordWelcomeRecordEntity,
-      StudyReminderJobEntity,
-      WebhookDeadLetterEntity,
-      ReportSendJobEntity,
-      ScheduledReportClaimEntity,
-    ],
-    synchronize: false,
-    logging: config.get<string>('DB_LOGGING') === 'true',
-  };
+function buildTypeOrmOptions(config: ConfigService) {
+  const entities = [
+    ...SHARED_ENTITIES,
+    ChatDailyUsageEntity,
+    ChatIdempotencyEntity,
+    LlmUsageEventEntity,
+    LlmSafetyEventEntity,
+    DiscordAccountLinkEntity,
+    DiscordLinkVerifyRecordEntity,
+    DiscordMessageLogEntity,
+    DiscordWelcomeRecordEntity,
+    StudyReminderJobEntity,
+  ];
+  return buildSharedOptions(config, entities);
 }
 
 @Module({
@@ -63,6 +48,7 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       useFactory: buildTypeOrmOptions,
     }),
     TypeOrmModule.forFeature([
+      ...SHARED_ENTITIES,
       ChatDailyUsageEntity,
       ChatIdempotencyEntity,
       LlmUsageEventEntity,
@@ -71,9 +57,6 @@ function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       DiscordLinkVerifyRecordEntity,
       DiscordMessageLogEntity,
       DiscordWelcomeRecordEntity,
-      WebhookDeadLetterEntity,
-      ReportSendJobEntity,
-      ScheduledReportClaimEntity,
       StudyReminderJobEntity,
     ]),
   ],
