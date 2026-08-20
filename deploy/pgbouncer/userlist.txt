@@ -1,0 +1,12 @@
+; PgBouncer userlist file
+; Format: "username" "password"
+; Password can be either plain text or MD5-hashed (MD5+username+password)
+;
+; IMPORTANT: In production, mount this file as a secret or use environment
+; variables. Do NOT commit real credentials to the repository.
+;
+; Example (plain text):
+; "bot_user" "your_password_here"
+;
+; Example (MD5 hash):
+; "bot_user" "md5abcdef1234567890abcdef12345678"

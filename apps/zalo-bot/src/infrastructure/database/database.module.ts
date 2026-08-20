@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { DataSourceOptions } from 'typeorm';
 import { ZaloOaTokenEntity } from './entities/zalo-oa-token.entity';
 import { ZaloOauthStateEntity } from './entities/zalo-oauth-state.entity';
 import { ZaloAccountLinkEntity } from './entities/zalo-account-link.entity';
@@ -15,10 +14,8 @@ import {
 } from '@wispace/chat-metering';
 import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
 import {
-  ScheduledReportClaimEntity,
-  WebhookInboundEventEntity,
-  WebhookDeadLetterEntity,
-  getPostgresSsl,
+  getTypeOrmOptions as buildSharedOptions,
+  SHARED_ENTITIES,
 } from '@wispace/database';
 
 /**
@@ -27,33 +24,21 @@ import {
  * migrations — see `docs/turborepo-migration-plan.md` Phase 5: only
  * messenger-bot's pipeline is allowed to run `migration:run`.
  */
-export function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
-  return {
-    type: 'postgres',
-    host: config.getOrThrow<string>('DB_HOST'),
-    port: Number(config.getOrThrow<string>('DB_PORT')),
-    username: config.getOrThrow<string>('DB_USER'),
-    password: config.getOrThrow<string>('DB_PASSWORD'),
-    database: config.getOrThrow<string>('DB_NAME'),
-    ssl: getPostgresSsl(config),
-    entities: [
-      ZaloOaTokenEntity,
-      ZaloOauthStateEntity,
-      ZaloAccountLinkEntity,
-      ZaloMessageLogEntity,
-      ZaloLinkVerifyRecordEntity,
-      ChatDailyUsageEntity,
-      ChatIdempotencyEntity,
-      LlmUsageEventEntity,
-      LlmSafetyEventEntity,
-      StudyReminderJobEntity,
-      ScheduledReportClaimEntity,
-      WebhookInboundEventEntity,
-      WebhookDeadLetterEntity,
-    ],
-    synchronize: false,
-    logging: config.get<string>('DB_LOGGING') === 'true',
-  };
+export function buildTypeOrmOptions(config: ConfigService) {
+  const entities = [
+    ...SHARED_ENTITIES,
+    ZaloOaTokenEntity,
+    ZaloOauthStateEntity,
+    ZaloAccountLinkEntity,
+    ZaloMessageLogEntity,
+    ZaloLinkVerifyRecordEntity,
+    ChatDailyUsageEntity,
+    ChatIdempotencyEntity,
+    LlmUsageEventEntity,
+    LlmSafetyEventEntity,
+    StudyReminderJobEntity,
+  ];
+  return buildSharedOptions(config, entities);
 }
 
 @Module({
@@ -64,6 +49,7 @@ export function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       useFactory: buildTypeOrmOptions,
     }),
     TypeOrmModule.forFeature([
+      ...SHARED_ENTITIES,
       ZaloOaTokenEntity,
       ZaloOauthStateEntity,
       ZaloAccountLinkEntity,
@@ -74,9 +60,6 @@ export function buildTypeOrmOptions(config: ConfigService): DataSourceOptions {
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       StudyReminderJobEntity,
-      ScheduledReportClaimEntity,
-      WebhookInboundEventEntity,
-      WebhookDeadLetterEntity,
     ]),
   ],
   exports: [TypeOrmModule],
