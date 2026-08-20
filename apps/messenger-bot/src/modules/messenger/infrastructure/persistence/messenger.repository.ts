@@ -508,7 +508,6 @@ export class MessengerRepository
     userId?: number;
     psid?: string;
     messageType: string;
-    messageText: string;
     status: 'SENT' | 'FAILED';
     errorMessage?: string;
   }): Promise<MessengerMessageLog> {
@@ -517,7 +516,6 @@ export class MessengerRepository
       platform: PLATFORM,
       externalUserId: params.psid ?? null,
       messageType: params.messageType,
-      messageText: params.messageText,
       status: params.status,
       errorMessage: params.errorMessage ?? null,
     });
@@ -566,7 +564,6 @@ export class MessengerRepository
       userId: entity.userId ?? undefined,
       psid: entity.externalUserId ?? undefined,
       messageType: entity.messageType,
-      messageText: entity.messageText,
       status: entity.status,
       errorMessage: entity.errorMessage ?? undefined,
       createdAt: entity.createdAt.toISOString(),

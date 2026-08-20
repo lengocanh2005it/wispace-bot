@@ -36,9 +36,6 @@ export class MessageLogEntity {
   @Column({ name: 'message_type', type: 'varchar', length: 50 })
   messageType: string;
 
-  @Column({ name: 'message_text', type: 'text' })
-  messageText: string;
-
   @Column({ type: 'varchar', length: 20 })
   status: 'SENT' | 'FAILED';
 

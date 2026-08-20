@@ -9,7 +9,6 @@ export interface MessengerMessageLogRepositoryPort {
     userId?: number;
     psid?: string;
     messageType: string;
-    messageText: string;
     status: 'SENT' | 'FAILED';
     errorMessage?: string;
   }): Promise<MessengerMessageLog>;

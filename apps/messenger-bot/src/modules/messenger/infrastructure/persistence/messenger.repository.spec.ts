@@ -371,3 +371,53 @@ describe('MessengerRepository platform-scoped user lookups (#191)', () => {
     });
   });
 });
+
+describe('MessengerRepository.logMessage (#262)', () => {
+  it('persists message log metadata without messageText', async () => {
+    const create = jest.fn().mockImplementation((payload) => ({
+      id: 1,
+      ...payload,
+      createdAt: new Date('2026-08-20T10:00:00.000Z'),
+    }));
+    const save = jest
+      .fn()
+      .mockImplementation((entity) => Promise.resolve(entity));
+    const mappingRepo = {} as unknown as Repository<UserPlatformMappingEntity>;
+    const logRepo = {
+      create,
+      save,
+    } as unknown as Repository<MessageLogEntity>;
+    const claimRepo = {} as unknown as Repository<ScheduledReportClaimEntity>;
+    const repo = new MessengerRepository(mappingRepo, logRepo, claimRepo);
+
+    const result = await repo.logMessage({
+      userId: 143,
+      psid: 'psid-123',
+      messageType: 'FREE_FORM_CHAT_IN',
+      status: 'SENT',
+    });
+
+    expect(create).toHaveBeenCalledWith({
+      userId: 143,
+      platform: 'messenger',
+      externalUserId: 'psid-123',
+      messageType: 'FREE_FORM_CHAT_IN',
+      status: 'SENT',
+      errorMessage: null,
+    });
+    expect(save).toHaveBeenCalled();
+    expect(result).toEqual({
+      id: 1,
+      userId: 143,
+      psid: 'psid-123',
+      messageType: 'FREE_FORM_CHAT_IN',
+      status: 'SENT',
+      errorMessage: undefined,
+      createdAt: '2026-08-20T10:00:00.000Z',
+    });
+    expect((result as Record<string, unknown>).messageText).toBeUndefined();
+    expect(
+      (create.mock.calls[0][0] as Record<string, unknown>).messageText,
+    ).toBeUndefined();
+  });
+});

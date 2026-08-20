@@ -184,7 +184,6 @@ describe('MessengerChatProcessorService', () => {
       userId: 143,
       psid: 'psid-1',
       messageType: 'FREE_FORM_CHAT_IN',
-      messageText: 'Hello',
       status: 'SENT',
     });
     expect(reply).toHaveBeenCalled();

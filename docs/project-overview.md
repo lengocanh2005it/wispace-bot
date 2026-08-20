@@ -242,7 +242,7 @@ wispace-bot/                          # Turborepo root
 | Table                         | Purpose                                                                                           |
 | ----------------------------- | ------------------------------------------------------------------------------------------------- |
 | `user_platform_mappings`      | `user_id`, `external_user_id`, `platform` (messenger/discord/zalo), `cadence`, `topic`, `status`  |
-| `message_logs`                | Audit of sent / failed messages                                                                   |
+| `message_logs`                | Metadata audit of sent / failed messages (message bodies omitted for privacy, #262)               |
 | `chat_daily_usage`            | FREE_FORM chat quota counter per `(external_user_id, usage_date)` (from `@wispace/chat-metering`) |
 | `chat_idempotency`            | Idempotency `message.mid` when reserving quota (from `@wispace/chat-metering`)                    |
 | `study_reminder_jobs`         | Reminder queue (`pending` → `sent` / …)                                                           |
