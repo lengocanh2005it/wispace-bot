@@ -114,6 +114,7 @@ jobs:
           file: deploy/Dockerfile.bot
           build-args: |
             APP_NAME=${{ inputs.app }}
+            # Fixed internal listener port; blue-green host ports are selected by vps-deploy.sh.
             APP_PORT=${{ inputs.app == 'messenger-bot' && '5007' || (inputs.app == 'discord-bot' && '3001' || '3002') }}
           push: true
           tags: |

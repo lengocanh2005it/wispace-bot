@@ -13,7 +13,7 @@ umask 077
 # switch nginx → monitor → stop old.
 #
 # Requires env: IMAGE, DEPLOY_MODE, APP_NAME
-# Optional env: FORCE_RECREATE, GHCR_PULL_TOKEN, GHCR_USER, HEALTH_PATH, PORT,
+# Optional env: FORCE_RECREATE, GHCR_PULL_TOKEN, GHCR_USER, HEALTH_PATH,
 #               HEALTH_MAX_ATTEMPTS, DEPLOY_HOST_DIR, RUN_MIGRATIONS, MIGRATION_CMD,
 #               MIGRATION_DB_CONTAINER, MIGRATION_LOCK_ID, NGINX_UPSTREAM_DIR,
 #               PUBLIC_HOST, DOCKER_STOP_TIMEOUT, SKIP_NGINX_CHECK, IMAGE_DIGEST
@@ -26,7 +26,6 @@ umask 077
 : "${GHCR_USER:-}"
 : "${HEALTH_PATH:=/health}"                   # health check path (empty skips)
 : "${HEALTH_MAX_ATTEMPTS:=30}"                # health check attempts before rollback
-: "${PORT:=5007}"                             # default port (overridden from .env)
 : "${DEPLOY_HOST_DIR:=/home/ngoc_anh/${APP_NAME}}"
 : "${NGINX_UPSTREAM_DIR:=/home/ngoc_anh/infra/nginx/upstreams}"
 : "${POST_SWITCH_MONITOR_ATTEMPTS:=24}"       # monitor after switch (24 × 5s = 2 min)
@@ -36,6 +35,8 @@ umask 077
 : "${SKIP_NGINX_CHECK:=false}"                # first-deploy escape hatch: only without an active container
 
 COMPOSE_FILE="docker-compose.prod.yml"
+MONITORING_NETWORK="monitoring"
+METRICS_PATH="/metrics"
 
 ENV_INSTALL_TMP=""
 ENV_FILE=""
@@ -66,13 +67,18 @@ write_production_env() {
 }
 
 # ─── Per-app config: port pairs + docker run resources ─────────────────────────
-# Format: ACTIVE:STANDBY;MEM;CPUS;VOL1;VOL2;...
+# Format: ACTIVE:STANDBY:CONTAINER;MEM;CPUS;VOL1;VOL2;...
 # (volumes are ';'-separated so the ':' inside volume specs is safe)
 declare -A APP_CFG=(
-  [messenger-bot]="5007:5008;512m;1.0;"
-  [discord-bot]="3001:3004;256m;0.5;"
-  [zalo-bot]="3002:3003;256m;0.5;"
+  [messenger-bot]="5007:5008:5007;512m;1.0;"
+  [discord-bot]="3001:3004:3001;256m;0.5;"
+  [zalo-bot]="3002:3003:3002;256m;0.5;"
 )
+
+if [[ -z "${APP_CFG[$APP_NAME]+configured}" ]]; then
+  echo "ERROR: unsupported APP_NAME=${APP_NAME} — refusing to deploy" >&2
+  exit 1
+fi
 
 get_standalone_port() {
   local app="$1" ports
@@ -81,6 +87,13 @@ get_standalone_port() {
 }
 
 get_standby_port() {
+  local app="$1" ports
+  ports="${APP_CFG[$app]%%;*}"
+  ports="${ports#*:}"
+  echo "${ports%%:*}"
+}
+
+get_container_port() {
   local app="$1" ports
   ports="${APP_CFG[$app]%%;*}"
   echo "${ports##*:}"
@@ -115,6 +128,49 @@ get_public_health_path() {
     zalo-bot)    echo "/health/zalo/ready" ;;
     *)           echo "/health/ready" ;;
   esac
+}
+
+ensure_monitoring_network() {
+  if docker network inspect "$MONITORING_NETWORK" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "Monitoring network $MONITORING_NETWORK is missing — creating it"
+  if docker network create "$MONITORING_NETWORK" >/dev/null 2>&1; then
+    return 0
+  fi
+  if docker network inspect "$MONITORING_NETWORK" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "ERROR: could not create monitoring network $MONITORING_NETWORK — refusing to deploy (#278)" >&2
+  return 1
+}
+
+attach_metrics_alias() {
+  local container="$1" alias="${APP_NAME}-metrics"
+  docker network disconnect "$MONITORING_NETWORK" "$container" >/dev/null 2>&1 || true
+  if ! docker network connect --alias "$alias" "$MONITORING_NETWORK" "$container" >/dev/null 2>&1; then
+    echo "ERROR: could not attach metrics alias $alias to $container — refusing to deploy (#278)" >&2
+    return 1
+  fi
+}
+
+restore_metrics_alias() {
+  [ -n "${ACTIVE_CONTAINER:-}" ] || return 0
+  docker network connect --alias "${APP_NAME}-metrics" "$MONITORING_NETWORK" "$ACTIVE_CONTAINER" >/dev/null 2>&1 || true
+}
+
+verify_metrics_endpoint() {
+  local url="$1"
+  curl -sf --max-time 3 -H "Authorization: Bearer ${INTERNAL_API_KEY}" "$url" >/dev/null 2>&1
+}
+
+rollback_metrics_cutover() {
+  restore_metrics_alias
+  if [ "${NGINX_SWITCHED:-false}" = true ] && [ -f "$UPSTREAM_CONF" ]; then
+    sed -i "s/server 127.0.0.1:[0-9]*/server 127.0.0.1:${ACTIVE_PORT}/" "$UPSTREAM_CONF"
+    sudo nginx -s reload 2>/dev/null || true
+  fi
+  docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
 }
 
 # ─── Prepare .env from production.env (Doppler download from CI) ─────────────
@@ -173,18 +229,6 @@ if ! grep -q '^HOME=' .env; then
   ensure_env_var HOME /tmp
 fi
 
-# ─── Read PORT from .env ─────────────────────────────────────────────────────
-if [ -f .env ]; then
-  env_port=$(grep -E '^PORT=' .env | tail -1 | cut -d= -f2- | tr -d '\r')
-  env_port="${env_port%\"}"
-  env_port="${env_port#\"}"
-  env_port="${env_port%\'}"
-  env_port="${env_port#\'}"
-  if [ -n "$env_port" ]; then
-    PORT="$env_port"
-  fi
-fi
-
 # ─── Authenticate with GHCR ──────────────────────────────────────────────────
 if [ -n "${GHCR_PULL_TOKEN:-}" ] && [ -n "${GHCR_USER:-}" ]; then
   echo "$GHCR_PULL_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin 2>/dev/null || true
@@ -209,9 +253,20 @@ if [ "$env_mode" != "600" ]; then
   exit 1
 fi
 
+INTERNAL_API_KEY=$(grep -E '^INTERNAL_API_KEY=' .env | tail -1 | cut -d= -f2- | tr -d '\r' || true)
+INTERNAL_API_KEY="${INTERNAL_API_KEY%\"}"
+INTERNAL_API_KEY="${INTERNAL_API_KEY#\"}"
+INTERNAL_API_KEY="${INTERNAL_API_KEY%\'}"
+INTERNAL_API_KEY="${INTERNAL_API_KEY#\'}"
+if [ -z "$INTERNAL_API_KEY" ]; then
+  echo "ERROR: INTERNAL_API_KEY is missing — refusing to verify protected metrics (#278)" >&2
+  exit 1
+fi
+
 # ─── Determine active / standby ports ────────────────────────────────────────
 ACTIVE_PORT=$(get_standalone_port "$APP_NAME")
 STANDBY_PORT=$(get_standby_port "$APP_NAME")
+CONTAINER_PORT=$(get_container_port "$APP_NAME")
 UPSTREAM_CONF="${NGINX_UPSTREAM_DIR}/${APP_NAME}.conf"
 
 # Live container: detect the port nginx currently routes to and find the
@@ -269,6 +324,13 @@ if [ -n "$ACTIVE_CONTAINER" ] && [ "$ACTIVE_CONTAINER" = "$NEW_CONTAINER" ]; the
   fi
   ACTIVE_CONTAINER="${APP_NAME}-old"
 fi
+
+if ! ensure_monitoring_network; then
+  exit 1
+fi
+if [ -n "$ACTIVE_CONTAINER" ] && ! attach_metrics_alias "$ACTIVE_CONTAINER"; then
+  exit 1
+fi
 docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
 
 # ─── Pull image ───────────────────────────────────────────────────────────────
@@ -292,13 +354,14 @@ echo "Starting $NEW_CONTAINER on port $STANDBY_PORT ..."
 RUN_ARGS=(
   -d
   --name "$NEW_CONTAINER"
+  --network "$MONITORING_NETWORK"
   --restart unless-stopped
   --user "${DEPLOY_UID}:${DEPLOY_GID}"
   --env-file "$ENV_FILE"
   --stop-timeout "${DOCKER_STOP_TIMEOUT}"    # app drain window (45s) + margin (#201)
   -e HOME=/tmp
-  -e PORT="${STANDBY_PORT}"
-  -p "127.0.0.1:${STANDBY_PORT}:${STANDBY_PORT}"
+  -e PORT="${CONTAINER_PORT}"
+  -p "127.0.0.1:${STANDBY_PORT}:${CONTAINER_PORT}"
   --memory "$(get_mem "$APP_NAME")"
   --cpus "$(get_cpus "$APP_NAME")"
 )
@@ -333,6 +396,14 @@ done
 
 if [ -z "$healthy" ]; then
   echo "ERROR: New container failed health check — rolling back" >&2
+  docker logs "$NEW_CONTAINER" --tail 80 2>/dev/null || true
+  docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+  exit 1
+fi
+
+echo "Checking protected metrics endpoint on standby port $STANDBY_PORT ..."
+if ! verify_metrics_endpoint "http://127.0.0.1:${STANDBY_PORT}${METRICS_PATH}"; then
+  echo "ERROR: New container metrics endpoint failed auth/health check — rolling back (#278)" >&2
   docker logs "$NEW_CONTAINER" --tail 80 2>/dev/null || true
   docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
   exit 1
@@ -458,6 +529,28 @@ else
   fi
 fi
 
+# ─── Move the stable metrics alias to the active container ───────────────────
+# Keep the old alias until nginx has switched, then accept only a short DNS
+# scrape gap while the alias is moved. This avoids Prometheus randomly
+# resolving both blue-green containers during the cutover (#278).
+if [ -n "$ACTIVE_CONTAINER" ] && ! docker network disconnect "$MONITORING_NETWORK" "$ACTIVE_CONTAINER" >/dev/null 2>&1; then
+  echo "ERROR: could not detach metrics alias from $ACTIVE_CONTAINER — rolling back (#278)" >&2
+  rollback_metrics_cutover
+  exit 1
+fi
+if ! attach_metrics_alias "$NEW_CONTAINER"; then
+  echo "ERROR: could not attach metrics alias to $NEW_CONTAINER — rolling back (#278)" >&2
+  rollback_metrics_cutover
+  exit 1
+fi
+
+NEW_CONTAINER_IP=$(docker inspect -f "{{(index .NetworkSettings.Networks \"${MONITORING_NETWORK}\").IPAddress}}" "$NEW_CONTAINER" 2>/dev/null || true)
+if [ -z "$NEW_CONTAINER_IP" ] || ! verify_metrics_endpoint "http://${NEW_CONTAINER_IP}:${CONTAINER_PORT}${METRICS_PATH}"; then
+  echo "ERROR: metrics endpoint is not reachable through $MONITORING_NETWORK — rolling back (#278)" >&2
+  rollback_metrics_cutover
+  exit 1
+fi
+
 # ─── Post-switch health monitor (2 minutes) ──────────────────────────────────
 # Verify the public nginx route (not only the standby port) once the switch
 # happened (#199); curl --resolve pins the public host to 127.0.0.1 so the
@@ -493,11 +586,7 @@ done
 
 if [ -z "$monitor_healthy" ]; then
   echo "ERROR: Post-switch health check failed — rolling back nginx to port $ACTIVE_PORT" >&2
-  if [ -f "$UPSTREAM_CONF" ]; then
-    sed -i "s/server 127.0.0.1:[0-9]*/server 127.0.0.1:${ACTIVE_PORT}/" "$UPSTREAM_CONF"
-    sudo nginx -s reload 2>/dev/null || true
-  fi
-  docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+  rollback_metrics_cutover
   exit 1
 fi
 

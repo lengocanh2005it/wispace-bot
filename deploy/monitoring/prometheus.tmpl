@@ -2,10 +2,9 @@ global:
   scrape_interval: 15s
   evaluation_interval: 15s
 
-# All 3 bots bind to 127.0.0.1:<port> on the host.
-# Blue-green deploy starts containers via bare `docker run` (not compose),
-# so container names are not on the compose networks. Scrape by host IP
-# instead — works regardless of container networking (#179).
+# Blue-green deploy starts containers via bare `docker run` (not compose).
+# Each active container joins the shared monitoring network with a stable
+# `<app>-metrics` alias; the deploy script moves that alias at cutover (#278).
 # Metrics endpoints sit behind InternalApiKeyGuard, which accepts
 # `Authorization: Bearer <INTERNAL_API_KEY>` — the key is injected from the
 # monitoring .env (Prometheus expands ${VAR} at startup).
@@ -13,7 +12,7 @@ scrape_configs:
   - job_name: messenger_bot
     static_configs:
       - targets:
-          - 127.0.0.1:5007
+          - messenger-bot-metrics:5007
     metrics_path: /metrics
     scheme: http
     authorization:
@@ -23,7 +22,7 @@ scrape_configs:
   - job_name: discord_bot
     static_configs:
       - targets:
-          - 127.0.0.1:3001
+          - discord-bot-metrics:3001
     metrics_path: /metrics
     scheme: http
     authorization:
@@ -33,7 +32,7 @@ scrape_configs:
   - job_name: zalo_bot
     static_configs:
       - targets:
-          - 127.0.0.1:3002
+          - zalo-bot-metrics:3002
     metrics_path: /metrics
     scheme: http
     authorization:

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Failure-path + crash-safety tests for vps-deploy.sh (#199/#201/#203/#204/#275).
+# Failure-path + crash-safety tests for vps-deploy.sh (#199/#201/#203/#204/#275/#278).
 #
 # Self-contained: fakes docker/curl/sudo via PATH; uses a fake upstream conf
 # and a fake container/port map to simulate blue-green state.
@@ -7,6 +7,7 @@
 set -euo pipefail
 
 SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/vps-deploy.sh"
+REPO_ROOT="$(cd "$(dirname "$SCRIPT")/../.." && pwd)"
 BACKUP_SCRIPT="$(cd "$(dirname "$0")/../../.." && pwd)/deploy/postgres-backup.sh"
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
@@ -23,9 +24,32 @@ make_fake_bin() { # dir
 echo "docker $*" >> "${DOCKER_LOG:?}"
 case "$1" in
   inspect)
-    [ "${2:-}" = "-f" ] && { echo "${FAKE_IMAGE:-img}"; exit 0; }
+    if [ "${2:-}" = "-f" ]; then
+      case "${3:-}" in
+        *NetworkSettings.Networks*) echo "${FAKE_NETWORK_IP:-172.30.0.2}" ;;
+        *) echo "${FAKE_IMAGE:-img}" ;;
+      esac
+      exit 0
+    fi
     for c in ${FAKE_EXISTING:-}; do [ "$c" = "${2:-}" ] && exit 0; done
     exit 1
+    ;;
+  network)
+    case "${2:-}" in
+      inspect)
+        [ -n "${FAKE_MONITORING_NETWORK:-}" ] && exit 0 || exit 1
+        ;;
+      create)
+        exit 0
+        ;;
+      connect)
+        [ "${6:-}" = "messenger-bot-new" ] && [ -n "${FAKE_NETWORK_NEW_ALIAS_FAIL:-}" ] && exit 1
+        [ -n "${FAKE_NETWORK_CONNECT_FAIL:-}" ] && exit 1 || exit 0
+        ;;
+      disconnect)
+        [ -n "${FAKE_NETWORK_DISCONNECT_FAIL:-}" ] && exit 1 || exit 0
+        ;;
+    esac
     ;;
   ps)
     # docker ps --filter publish=PORT (or publish=IP:PORT) --format '{{.Names}}'
@@ -115,7 +139,7 @@ run_script() { # dir [EXTRA_ENV=..].. -> echoes exit code
 }
 
 write_env() { # dir -> minimal .env
-  printf 'PORT=5007\nDB_HOST=postgres_n8n_db\nDB_PORT=5432\nDB_USER=postgres\nDB_PASSWORD=secret\nDB_NAME=ai_chat_bot_db\n' > "$dir/deploy/.env"
+  printf 'PORT=5007\nINTERNAL_API_KEY=test-internal-key\nDB_HOST=postgres_n8n_db\nDB_PORT=5432\nDB_USER=postgres\nDB_PASSWORD=secret\nDB_NAME=ai_chat_bot_db\n' > "$dir/deploy/.env"
 }
 
 write_upstream() { # dir port
@@ -418,7 +442,7 @@ echo "Test 21: production.env is atomically installed with mode 600 (#276)"
 dir=$(make_env production-env-install)
 write_env "$dir"
 printf 'OLD_ENV_KEY=from-old\n' >> "$dir/deploy/.env"
-printf 'PORT=5010\nDB_HOST=postgres_n8n_db\nDB_PORT=5432\nDB_USER=postgres\nDB_PASSWORD=new-secret\nDB_NAME=ai_chat_bot_db\n' > "$dir/deploy/production.env"
+printf 'PORT=5010\nINTERNAL_API_KEY=test-internal-key\nDB_HOST=postgres_n8n_db\nDB_PORT=5432\nDB_USER=postgres\nDB_PASSWORD=new-secret\nDB_NAME=ai_chat_bot_db\n' > "$dir/deploy/production.env"
 make_recording_mv "$dir"
 export FAKE_MV_LOG="$dir/mv.log" FAKE_MV_MODE_LOG="$dir/mv.mode.log"
 code=$(run_script "$dir" SKIP_NGINX_CHECK=true)
@@ -463,6 +487,43 @@ make_failing_mv "$dir"
 code=$(run_script "$dir")
 [ "$code" -eq 1 ] || fail "atomic mv failure did not stop deploy"
 pass "atomic mv failure is fail-closed"
+
+echo "Test 24: active bot joins monitoring network and exposes fixed internal metrics port (#278)"
+dir=$(make_env monitoring-network)
+write_env "$dir"
+write_upstream "$dir" 5007
+code=$(run_script "$dir" FAKE_NETWORK_IP=172.30.0.4 FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old")
+[ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
+grep -q "docker network create monitoring" "$dir/docker.log" || fail "monitoring network was not ensured"
+grep -q "docker run.*--network monitoring.*-e PORT=5007.*-p 127.0.0.1:5008:5007" "$dir/docker.log" || fail "new container did not use fixed internal port"
+grep -q "curl.*Authorization: Bearer test-internal-key.*127.0.0.1:5008/metrics" "$dir/curl.log" || fail "standby metrics endpoint was not auth-checked"
+grep -q "docker network disconnect monitoring messenger-bot-old" "$dir/docker.log" || fail "old metrics alias was not detached"
+grep -q "docker network connect --alias messenger-bot-metrics monitoring messenger-bot-new" "$dir/docker.log" || fail "new metrics alias was not attached"
+grep -q "172.30.0.4:5007/metrics" "$dir/curl.log" || fail "monitoring-network metrics endpoint was not checked"
+pass "monitoring network, alias handoff and metrics auth check work"
+
+echo "Test 25: Prometheus targets stable metrics aliases and fixed internal ports (#278)"
+PROM_TEMPLATE="$REPO_ROOT/deploy/monitoring/prometheus.tmpl"
+PROM_COMPOSE="$REPO_ROOT/deploy/monitoring/docker-compose.yml"
+grep -q 'messenger-bot-metrics:5007' "$PROM_TEMPLATE" || fail "Messenger target is not stable alias/fixed port"
+grep -q 'discord-bot-metrics:3001' "$PROM_TEMPLATE" || fail "Discord target is not stable alias/fixed port"
+grep -q 'zalo-bot-metrics:3002' "$PROM_TEMPLATE" || fail "Zalo target is not stable alias/fixed port"
+! grep -q '127.0.0.1:' "$PROM_TEMPLATE" || fail "Prometheus template still targets host loopback"
+grep -q 'external: true' "$PROM_COMPOSE" || fail "monitoring network is not shared external network"
+! grep -q '_default:' "$PROM_COMPOSE" || fail "Prometheus still depends on bot compose networks"
+pass "Prometheus uses stable aliases and shared monitoring network"
+
+echo "Test 26: metrics alias failure rolls back traffic and preserves old alias (#278)"
+dir=$(make_env monitoring-rollback)
+write_env "$dir"
+write_upstream "$dir" 5007
+code=$(run_script "$dir" FAKE_NETWORK_NEW_ALIAS_FAIL=1 FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old")
+[ "$code" -eq 1 ] || fail "expected alias failure to exit 1, got $code"
+grep -q "rolling back" "$dir/run.out" || fail "alias failure did not report rollback"
+grep -q "docker network connect --alias messenger-bot-metrics monitoring messenger-bot-old" "$dir/docker.log" || fail "old metrics alias was not restored"
+grep -q "docker rm -f messenger-bot-new" "$dir/docker.log" || fail "failed new container was not removed"
+grep -q "server 127.0.0.1:5007" "$dir/upstreams/messenger-bot.conf" || fail "nginx was not restored to old port"
+pass "metrics alias failure rolls back safely"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"
