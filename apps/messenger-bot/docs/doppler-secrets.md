@@ -117,7 +117,7 @@ Still possible to use `.env` + `npm run start:dev` if Doppler isn't installed.
 2. Run `npm run env:sync-prod` or Actions → **Sync production env (no image build)**.
 3. The workflow writes the env file through the existing SSH deploy path and performs a controlled blue-green container replacement without exposing the Docker socket to the bot.
 
-The workflow runs `chmod 600 production.env` immediately after downloading it. On the VPS, `vps-deploy.sh` re-applies `chmod 600` before reading either `production.env` or an existing `.env`, writes the downloaded values plus `DEPLOY_UID`/`DEPLOY_GID` to a mode-600 temporary file in the app directory, and atomically replaces `/home/ngoc_anh/<app>/.env`. An EXIT trap removes the temporary file and `production.env`; no `/home/ngoc_anh/.env` is created.
+The workflow runs `chmod 600 production.env` immediately after downloading it. On the VPS, `vps-deploy.sh` re-applies `chmod 600` before reading either `production.env` or an existing `.env`, writes the downloaded values plus `DEPLOY_UID`/`DEPLOY_GID` to a mode-600 temporary file in the app directory, and atomically replaces `/home/ngoc_anh/<app>/.env`. An EXIT trap removes the temporary file and `production.env`; no `/home/ngoc_anh/.env` is created. `INTERNAL_API_KEY` must be present because the blue-green deploy verifies the protected `/metrics` endpoint before switching traffic.
 
 ### CI Deploy Code (`deploy-bots.yml` → `deploy-bot-reusable.yml`)
 

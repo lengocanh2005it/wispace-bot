@@ -169,6 +169,8 @@ CHAT_RATE_LIMIT_ENABLED=true
 | `messenger-bot-1` | `messenger-bot-1` | `5007`                    | `127.0.0.1:5007` |
 | `messenger-bot-2` | `messenger-bot-2` | `5008`                    | `127.0.0.1:5008` |
 
+> This future multi-pod design is separate from the current blue-green deploy. The current deploy keeps the app listener fixed at internal port `5007` and alternates only the host-published port; Prometheus reaches the active container through the `messenger-bot-metrics` alias on the shared `monitoring` network.
+
 ### 6.3. Cron Leader — Lease-Based Election
 
 Leader election is now lease-based (`cron_leader_leases` table): `CRON_LEADER_ENABLED=true` makes every pod race for a lease keyed by `INSTANCE_ID`; the current leader heartbeats it every minute, and any pod takes over ≤3 min after the leader dies. No static `CRON_LEADER_INSTANCE_ID` — identity is `INSTANCE_ID`/hostname.

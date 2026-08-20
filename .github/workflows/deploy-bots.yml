@@ -19,6 +19,9 @@ concurrency:
   group: production-deploy
   cancel-in-progress: false
 
+# The image listener port is fixed per bot; vps-deploy.sh owns the alternating
+# host ports and the shared monitoring-network alias during blue-green cutover.
+
 jobs:
   deploy-messenger-bot:
     uses: ./.github/workflows/deploy-bot-reusable.yml

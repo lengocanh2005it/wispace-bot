@@ -28,6 +28,8 @@ Recreate the container after changes:
 docker compose -f docker-compose.prod.yml up -d --force-recreate
 ```
 
+The VPS blue-green deploy uses bare `docker run` instead of Compose. Each active bot joins the external Docker network `monitoring` with a stable `<app>-metrics` alias; Prometheus scrapes the fixed internal listener port while Nginx continues switching the localhost host ports. The deploy script creates `monitoring` when needed and rolls back if the protected `/metrics` check or alias handoff fails.
+
 ## Verify
 
 ```bash
