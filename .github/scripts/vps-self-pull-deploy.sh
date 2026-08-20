@@ -153,8 +153,8 @@ deploy_app() {
   fi
 
   if ! docker manifest inspect "$image" >/dev/null 2>&1; then
-    echo "$app: $image not published yet — will retry next run"
-    return 1
+    echo "$app: $image not published yet — skipping (CI may not have built this commit)"
+    return 0
   fi
 
   # Extract immutable digest from registry to pin deploy (#196).
