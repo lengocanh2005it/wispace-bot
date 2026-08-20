@@ -137,7 +137,11 @@ declare -A APPS=(
   [zalo-bot]="/health/ready:false"
 )
 
-for app in "${!APPS[@]}"; do
+APP_ORDER=(messenger-bot discord-bot zalo-bot)
+
+deploy_app() {
+  local app="$1"
+  local health_path run_migrations target_dir image state_file fail_marker image_digest migration_cmd
   IFS=':' read -r health_path run_migrations <<< "${APPS[$app]}"
   target_dir="$TARGET_BASE_DIR/${app}"
   image="${REGISTRY}/${REPO_LC}/${app}:${NEW_SHA}"
@@ -145,31 +149,31 @@ for app in "${!APPS[@]}"; do
   fail_marker="$STATE_DIR/${app}.failed"
 
   if [ -f "$state_file" ] && [ "$(cat "$state_file")" = "$NEW_SHA" ]; then
-    continue
+    return 0
   fi
 
   if ! docker manifest inspect "$image" >/dev/null 2>&1; then
     echo "$app: $image not published yet — will retry next run"
-    continue
+    return 1
   fi
 
   # Extract immutable digest from registry to pin deploy (#196).
   # docker manifest inspect returns JSON with the manifest digest — use it
   # to pull by digest instead of tag, closing the TOCTOU gap.
-  IMAGE_DIGEST=$(docker manifest inspect "$image" 2>/dev/null \
+  image_digest=$(docker manifest inspect "$image" 2>/dev/null \
     | grep -o 'sha256:[a-f0-9]*' | head -1 || true)
 
-  if [ -z "$IMAGE_DIGEST" ]; then
+  if [ -z "$image_digest" ]; then
     echo "ERROR: $app — could not extract digest from manifest inspect" >&2
     # Fail closed: do not deploy without digest verification (#196)
     if [ ! -f "$fail_marker" ] || [ "$(cat "$fail_marker")" != "$NEW_SHA" ]; then
       echo "$NEW_SHA" > "$fail_marker"
       notify_app_failed "$app" "$NEW_SHA"
     fi
-    continue
+    return 1
   fi
 
-  echo "=== Deploying $app @ $NEW_SHA (digest $IMAGE_DIGEST) ==="
+  echo "=== Deploying $app @ $NEW_SHA (digest $image_digest) ==="
   mkdir -p "$target_dir/upstreams"
   cp "$REPO_DIR/apps/${app}/docker-compose.prod.yml" "$target_dir/"
   cp "$REPO_DIR/.github/scripts/vps-deploy.sh" "$target_dir/"
@@ -182,7 +186,7 @@ for app in "${!APPS[@]}"; do
 
   if (
     cd "$target_dir"
-    IMAGE="$image" IMAGE_DIGEST="$IMAGE_DIGEST" DEPLOY_MODE=self-pull APP_NAME="$app" HEALTH_PATH="$health_path" \
+    IMAGE="$image" IMAGE_DIGEST="$image_digest" DEPLOY_MODE=self-pull APP_NAME="$app" HEALTH_PATH="$health_path" \
     GHCR_PULL_TOKEN="$GHCR_PULL_TOKEN" GHCR_USER="$GHCR_USER" \
     RUN_MIGRATIONS="$run_migrations" MIGRATION_CMD="$migration_cmd" \
     NGINX_UPSTREAM_DIR="$NGINX_UPSTREAM_DIR" \
@@ -194,6 +198,7 @@ for app in "${!APPS[@]}"; do
       rm -f "$fail_marker"
       resolve_app_failed "$app"
     fi
+    return 0
   else
     echo "ERROR: deploy failed for $app @ $NEW_SHA — will retry next run" >&2
     # Alert once per (app, sha): the same failed sha retries every tick and
@@ -202,5 +207,17 @@ for app in "${!APPS[@]}"; do
       echo "$NEW_SHA" > "$fail_marker"
       notify_app_failed "$app" "$NEW_SHA"
     fi
+    return 1
   fi
-done
+}
+
+# Messenger owns the shared schema migration. Keep it first and make its
+# successful deploy/state write the barrier for Discord and Zalo (#283).
+if deploy_app "${APP_ORDER[0]}"; then
+  echo "Migration barrier ready — deploying dependent bots"
+  for app in "${APP_ORDER[@]:1}"; do
+    deploy_app "$app" || true
+  done
+else
+  echo "ERROR: migration barrier not ready — skipping Discord/Zalo deploys" >&2
+fi
