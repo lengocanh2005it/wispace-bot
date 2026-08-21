@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import pLimit from 'p-limit';
 import { maskEventId } from '@wispace/bot-common';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
@@ -120,18 +121,21 @@ export class MessengerService {
       return { accepted: 0, duplicates: 0 };
     }
 
-    // Parallel insert — unique constraint handles idempotency.
-    // Promise.allSettled processes all events even if some fail.
+    // Bounded parallel insert — unique constraint handles idempotency.
+    // p-limit caps concurrent DB inserts; Promise.allSettled processes all events.
+    const limit = pLimit(5);
     const results = await Promise.allSettled(
       events.map(({ event, eventId }) =>
-        this.inboundEvents
-          .ingest({
-            eventId,
-            externalUserId: event.sender?.id ?? null,
-            eventType: buildEventType(event),
-            rawPayload: event,
-          })
-          .then((result) => ({ eventId, ...result })),
+        limit(() =>
+          this.inboundEvents
+            .ingest({
+              eventId,
+              externalUserId: event.sender?.id ?? null,
+              eventType: buildEventType(event),
+              rawPayload: event,
+            })
+            .then((result) => ({ eventId, ...result })),
+        ),
       ),
     );
 

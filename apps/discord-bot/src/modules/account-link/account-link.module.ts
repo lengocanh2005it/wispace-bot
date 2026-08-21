@@ -21,6 +21,8 @@ import { DISCORD_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/discord-li
 import { DISCORD_WELCOME_RECORD_REPOSITORY } from './domain/ports/discord-welcome-record.repository.port';
 import { DiscordOauthController } from './presentation/controllers/discord-oauth.controller';
 import { DiscordLinkStatusController } from './presentation/controllers/discord-link-status.controller';
+import { DiscordOauthStateEntity } from '../../infrastructure/database/entities/discord-oauth-state.entity';
+import { DiscordOauthStateService } from './application/services/discord-oauth-state.service';
 
 @Module({
   imports: [
@@ -28,6 +30,7 @@ import { DiscordLinkStatusController } from './presentation/controllers/discord-
       DiscordAccountLinkEntity,
       DiscordLinkVerifyRecordEntity,
       DiscordWelcomeRecordEntity,
+      DiscordOauthStateEntity,
     ]),
     DiscordOutboundModule,
     BotCommonModule,
@@ -46,6 +49,7 @@ import { DiscordLinkStatusController } from './presentation/controllers/discord-
     DiscordLinkReconcileCronService,
     DiscordRelinkNotifier,
     DiscordWelcomeService,
+    DiscordOauthStateService,
     TypeormDiscordAccountLinkRepository,
     TypeormDiscordLinkVerifyRecordRepository,
     TypeormDiscordWelcomeRecordRepository,

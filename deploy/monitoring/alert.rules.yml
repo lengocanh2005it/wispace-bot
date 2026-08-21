@@ -27,3 +27,44 @@ groups:
         annotations:
           summary: 'No bot metrics being scraped at all'
           description: 'Every scrape target is down — check the bots and Prometheus connectivity.'
+
+  - name: slos
+    rules:
+      - alert: ChatAvailabilityLow
+        expr: |
+          (
+            1 - (
+              sum(rate(chat_step_duration_seconds{status="error"}[5m])) by (job)
+              /
+              sum(rate(chat_step_duration_seconds[5m])) by (job)
+            )
+          ) < 0.99
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} chat availability below 99%'
+
+      - alert: LlmLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(llm_call_duration_seconds_bucket[5m])) by (job, le)
+          ) > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} LLM p95 latency above 30s'
+
+      - alert: LlmErrorRateHigh
+        expr: |
+          (
+            sum(rate(llm_round_outcome_total{outcome="error"}[5m])) by (job)
+            /
+            sum(rate(llm_round_outcome_total[5m])) by (job)
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} LLM error rate above 5%'

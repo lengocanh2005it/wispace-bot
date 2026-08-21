@@ -140,6 +140,10 @@ export class ChatRateLimitCore {
       await this.repository.recoverAllStuckReserved(stuckBefore);
 
     if (recovered.length > 0) {
+      // #293 known limitation: some `reserved` rows may have been delivered
+      // before the worker crashed. Recovery refunds them anyway, causing a
+      // quota under-count. The crash window is milliseconds; full fix
+      // requires an intermediate `sending` state (deferred to follow-up).
       this.logger.warn(
         `CHAT_QUOTA_RECOVERED count=${recovered.length} keys=${recovered.join(',')}`,
       );

@@ -13,6 +13,7 @@ import {
   PgAdvisoryLockService,
   REDIS_CLIENT,
 } from '@wispace/bot-common';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   ChatMeteringModule,
   PlatformChatRateLimitService,
@@ -56,6 +57,7 @@ import {
   ReportSendJobEntity,
   ScheduledReportClaimEntity,
   RescheduleConfirmationEntity,
+  RescheduleRecoveryCronService,
   LearnerProfileEntity,
   TypeormRescheduleStore,
 } from '@wispace/database';
@@ -171,6 +173,7 @@ const REGISTER_REPORT_MESSAGE =
         safetyEventService: PlatformLlmSafetyEventAdapter,
         adapter: LlmProviderAdapter,
         learnerProfileStore: LearnerProfileStorePort,
+        metrics: BotMetricsService,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -196,6 +199,13 @@ const REGISTER_REPORT_MESSAGE =
               learnerProfileStore,
               'discord',
             ),
+            metrics: {
+              timeLlmCall: (feature, model, round, fn) =>
+                metrics.timeLlmCall(feature, model, round, fn),
+              timeTool: (toolName, fn) => metrics.timeTool(toolName, fn),
+              llmRoundOutcomeInc: (feature, outcome) =>
+                metrics.incRoundOutcome(feature, outcome),
+            },
           },
         );
       },
@@ -207,6 +217,7 @@ const REGISTER_REPORT_MESSAGE =
         PlatformLlmSafetyEventAdapter,
         'LLM_PROVIDER_ADAPTER',
         LEARNER_PROFILE_STORE,
+        BotMetricsService,
       ],
     },
     {
@@ -292,6 +303,7 @@ const REGISTER_REPORT_MESSAGE =
         new TypeormRescheduleStore<string>('discord', repo),
       inject: [getRepositoryToken(RescheduleConfirmationEntity)],
     },
+    RescheduleRecoveryCronService,
     {
       provide: RescheduleConfirmationService,
       useFactory: (

@@ -256,6 +256,12 @@ fi
 
 DEPLOY_UID=${DEPLOY_UID:-$(id -u)}
 DEPLOY_GID=${DEPLOY_GID:-$(id -g)}
+
+# Reject running containers as root (#281)
+if [ "$DEPLOY_UID" = "0" ]; then
+  echo "ERROR: DEPLOY_UID=0 is not allowed — containers must not run as root" >&2
+  exit 1
+fi
 # ensure_env_var wrote these into .env, but they are not shell variables yet
 # ─── Prepare env file for docker run (strip quotes) ───────────────────────────
 # docker run --env-file does NOT strip surrounding quotes like compose does,
@@ -400,7 +406,7 @@ if [ -n "$EXTRA_VOLUMES" ]; then
   done
 fi
 
-RUN_ARGS+=(--cap-drop ALL --security-opt no-new-privileges:true)
+RUN_ARGS+=(--cap-drop ALL --security-opt no-new-privileges:true --read-only --pids-limit 256 --tmpfs /tmp:rw,noexec,nosuid,size=64m)
 
 if ! docker run "${RUN_ARGS[@]}" "$PULL_REF"; then
   echo "ERROR: docker run failed for $NEW_CONTAINER" >&2

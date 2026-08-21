@@ -4,6 +4,7 @@ import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { DiscordLinkCompletionService } from '../../application/services/discord-link-completion.service';
+import { DiscordOauthStateService } from '../../application/services/discord-oauth-state.service';
 
 /**
  * Thin presentation layer for Discord OAuth — all business logic (verify,
@@ -18,42 +19,49 @@ export class DiscordOauthController {
   constructor(
     private readonly configService: ConfigService,
     private readonly completionService: DiscordLinkCompletionService,
+    private readonly stateService: DiscordOauthStateService,
   ) {}
 
   /**
-   * Returns the Discord OAuth2 authorization URL.
-   * The `state` param must come from WISPACE's own link-token API.
+   * Returns the Discord OAuth2 authorization URL with CSRF state binding.
+   * The `state` param is a WISPACE link token; we generate a random nonce,
+   * store it server-side, and pass the nonce to Discord's OAuth flow.
    */
   @Get('url')
-  getOAuthUrl(
-    @Query('state') stateOverride: string | undefined,
+  async getOAuthUrl(
+    @Query('state') linkToken: string | undefined,
     @Res() res: Response,
-  ): void {
+  ): Promise<void> {
     const clientId = this.configService.getOrThrow<string>('DISCORD_CLIENT_ID');
     const redirectUri = this.configService.getOrThrow<string>(
       'DISCORD_OAUTH_REDIRECT_URI',
     );
-    const state = stateOverride?.trim() || '';
+
+    if (!linkToken?.trim()) {
+      res.json({ url: '' });
+      return;
+    }
+
+    const state = await this.stateService.create(linkToken.trim());
 
     const url = new URL('https://discord.com/oauth2/authorize');
     url.searchParams.set('client_id', clientId);
     url.searchParams.set('redirect_uri', redirectUri);
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('scope', 'identify');
-    if (state) url.searchParams.set('state', state);
+    url.searchParams.set('state', state);
 
     res.json({ url: url.toString() });
   }
 
   /**
-   * `state` carries WISPACE's own link token verbatim (WISPACE owns its
-   * expiry/usage state). Delegates the whole flow to the application use case;
-   * linking commits immediately, independent of guild membership.
+   * Callback receives the random state nonce from Discord, consumes it
+   * server-side to retrieve the WISPACE link token, then completes the link.
    */
   @Get('callback')
   async callback(
     @Query('code') code: string | undefined,
-    @Query('state') token: string | undefined,
+    @Query('state') state: string | undefined,
     @Query('error') discordError: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
@@ -62,13 +70,23 @@ export class DiscordOauthController {
       return;
     }
 
-    if (!code || !token) {
+    if (!code || !state) {
+      this.sendResult(res, 'error');
+      return;
+    }
+
+    const consumed = await this.stateService.consume(state);
+    if (!consumed) {
+      this.logger.warn('Discord OAuth callback: invalid or expired state');
       this.sendResult(res, 'error');
       return;
     }
 
     try {
-      const outcome = await this.completionService.completeLink(code, token);
+      const outcome = await this.completionService.completeLink(
+        code,
+        consumed.linkToken,
+      );
       this.sendResult(res, outcome === 'success' ? 'success' : 'not-in-guild');
     } catch (error) {
       this.logger.error(

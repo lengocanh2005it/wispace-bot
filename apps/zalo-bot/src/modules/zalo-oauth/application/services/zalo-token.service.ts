@@ -42,6 +42,7 @@ class ZaloOaTokenRowMissingError extends InternalServerErrorException {
 @Injectable()
 export class ZaloTokenService {
   private readonly logger = new Logger(ZaloTokenService.name);
+  private cachedToken: { accessToken: string; expiresAt: number } | null = null;
 
   constructor(
     private readonly configService: ConfigService,
@@ -50,12 +51,24 @@ export class ZaloTokenService {
   ) {}
 
   async getValidAccessToken(): Promise<string> {
+    // ponytail: in-process cache — token valid ~1h, single-row table, ~99% hit rate
+    if (
+      this.cachedToken &&
+      this.cachedToken.expiresAt - EXPIRY_BUFFER_MS > Date.now()
+    ) {
+      return this.cachedToken.accessToken;
+    }
+
     const row = await this.repo.findOne({ where: {}, order: { id: 'DESC' } });
     if (!row) {
       throw new ZaloOaTokenRowMissingError();
     }
 
     if (this.isFresh(row)) {
+      this.cachedToken = {
+        accessToken: row.accessToken,
+        expiresAt: row.accessTokenExpiresAt.getTime(),
+      };
       return row.accessToken;
     }
 
@@ -64,6 +77,7 @@ export class ZaloTokenService {
 
   /** Force a refresh regardless of current expiry — used by the cron (Task 5b). */
   async refreshNow(): Promise<void> {
+    this.cachedToken = null;
     try {
       await this.refresh();
     } catch (error) {
@@ -229,6 +243,10 @@ export class ZaloTokenService {
     );
 
     this.logger.log('Zalo OA access_token refreshed');
+    this.cachedToken = {
+      accessToken,
+      expiresAt: now + expiresInSeconds * 1000,
+    };
     return accessToken;
   }
 }

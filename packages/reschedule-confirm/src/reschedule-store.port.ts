@@ -9,6 +9,8 @@ export interface PendingRescheduleRecord<TExternalId> {
   newTime?: string;
   sessionLabel: string;
   expiresAt: number;
+  /** Lease token assigned at claim time — required for ownership-gated revert/cancel. */
+  leaseToken?: string;
 }
 
 /**
@@ -24,8 +26,8 @@ export interface RescheduleStorePort<TExternalId> {
     userId?: number,
   ): Promise<PendingRescheduleRecord<TExternalId> | null>;
   /** Puts a claimed record back to pending (confirm failed — user can retry). */
-  revertToPending(externalId: TExternalId): Promise<void>;
-  cancel(externalId: TExternalId): Promise<void>;
+  revertToPending(externalId: TExternalId, leaseToken?: string): Promise<void>;
+  cancel(externalId: TExternalId, leaseToken?: string): Promise<void>;
   hasPending(externalId: TExternalId): Promise<boolean>;
 }
 
@@ -84,7 +86,10 @@ export class MemoryRescheduleStore<
     return Promise.resolve(entry.record);
   }
 
-  revertToPending(externalId: TExternalId): Promise<void> {
+  revertToPending(
+    externalId: TExternalId,
+    _leaseToken?: string,
+  ): Promise<void> {
     const key = String(externalId);
     const entry = this.pendingByExternalId.get(key);
     if (entry) {
@@ -94,7 +99,7 @@ export class MemoryRescheduleStore<
     return Promise.resolve();
   }
 
-  cancel(externalId: TExternalId): Promise<void> {
+  cancel(externalId: TExternalId, _leaseToken?: string): Promise<void> {
     this.pendingByExternalId.delete(String(externalId));
     return Promise.resolve();
   }

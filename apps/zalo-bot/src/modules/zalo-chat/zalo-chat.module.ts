@@ -37,6 +37,7 @@ import {
   PgAdvisoryLockService,
   REDIS_CLIENT,
 } from '@wispace/bot-common';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
@@ -56,6 +57,7 @@ import {
   DeliveryLogService,
   ScheduledReportClaimEntity,
   RescheduleConfirmationEntity,
+  RescheduleRecoveryCronService,
   LearnerProfileEntity,
   TypeormRescheduleStore,
 } from '@wispace/database';
@@ -210,6 +212,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         safetyEventService: PlatformLlmSafetyEventAdapter,
         adapter: LlmProviderAdapter,
         learnerProfileStore: LearnerProfileStorePort,
+        metrics: BotMetricsService,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -235,6 +238,13 @@ const RESCHEDULE_CONFIRM_SUFFIX =
               learnerProfileStore,
               'zalo',
             ),
+            metrics: {
+              timeLlmCall: (feature, model, round, fn) =>
+                metrics.timeLlmCall(feature, model, round, fn),
+              timeTool: (toolName, fn) => metrics.timeTool(toolName, fn),
+              llmRoundOutcomeInc: (feature, outcome) =>
+                metrics.incRoundOutcome(feature, outcome),
+            },
           },
         );
       },
@@ -246,6 +256,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         PlatformLlmSafetyEventAdapter,
         'LLM_PROVIDER_ADAPTER',
         LEARNER_PROFILE_STORE,
+        BotMetricsService,
       ],
     },
     {
@@ -334,6 +345,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         new TypeormRescheduleStore<string>('zalo', repo),
       inject: [getRepositoryToken(RescheduleConfirmationEntity)],
     },
+    RescheduleRecoveryCronService,
     {
       provide: RescheduleConfirmationService,
       useFactory: (

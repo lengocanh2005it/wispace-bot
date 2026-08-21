@@ -627,6 +627,14 @@ Measured locally on 2026-08-13 for messenger-bot with docker image inspect: pre-
 - **CI secret scanning:** the PR workflow runs [Gitleaks](https://github.com/gitleaks/gitleaks-action) on every push and pull request — a new secret fails the build.
 - Production image hygiene is verified by `deploy/verify-runtime-image.mjs` (no TypeScript toolchain in the runtime image).
 
+### DB port exposure
+
+- PostgreSQL must never be published to `0.0.0.0`. All docker-compose files and `docker run` commands must bind DB ports to `127.0.0.1` only. Public DB exposure is a P1 security incident.
+
+### Deploy privileges
+
+- The deploy identity must not have root access. `DEPLOY_UID` must never be 0. Nginx reload should be restricted to the deploy user via sudoers: `deploy ALL=(root) NOPASSWD: /usr/sbin/nginx -s reload` only.
+
 ### Recovery procedure — exposed local `.env` file
 
 If a local env file (`.env`, `.env.shared`, `apps/*/.env`) is believed to be exposed (backup leak, archive, accidental upload, screenshot, etc.):

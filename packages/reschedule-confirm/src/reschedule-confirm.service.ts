@@ -178,7 +178,7 @@ export class RescheduleConfirmationService<TExternalId> {
         newTime: pending.newTime,
       });
 
-      await this.store.cancel(externalId);
+      await this.store.cancel(externalId, pending.leaseToken);
 
       this.logger.log(
         `RESCHEDULE_CONFIRMED externalId=${maskExternalId(
@@ -199,7 +199,7 @@ export class RescheduleConfirmationService<TExternalId> {
       );
       // Keep the confirmation pending so the user can tap confirm again —
       // a transient Wispace failure must not burn the staged request.
-      await this.store.revertToPending(externalId);
+      await this.store.revertToPending(externalId, pending.leaseToken);
       return {
         confirmed: false,
         message:

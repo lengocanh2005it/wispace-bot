@@ -309,7 +309,7 @@ export class StudyReminderDispatchService {
     }
 
     const nextDueAt = await this.jobRepository
-      .findNextDueTime(now)
+      .findNextDueTime(now, this.platform)
       .catch((error) => {
         this.logger.warn(`findNextDueTime failed: ${errorMessage(error)}`);
         return null;

@@ -3,6 +3,17 @@ services:
     image: prom/prometheus:v2.53.0@sha256:b8e8cec4bfdfda676f4334f4f2aab9d8758f51d76ac41fc35224f6ae79b79f54
     container_name: prometheus
     restart: unless-stopped
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 512M
+    cpus: '1.0'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:9090/-/healthy']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     environment:
       INTERNAL_API_KEY_MESSENGER: ${INTERNAL_API_KEY_MESSENGER:-}
       INTERNAL_API_KEY_DISCORD: ${INTERNAL_API_KEY_DISCORD:-}
@@ -25,6 +36,17 @@ services:
     image: prom/alertmanager:v0.27.0@sha256:45c3a586d4332d710bef92b06e90380c0b1f588968c00100d4b5e4e44c40ca5f
     container_name: alertmanager
     restart: unless-stopped
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 128M
+    cpus: '0.5'
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:9093/-/healthy']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     volumes:
       - ./alertmanager.tmpl:/etc/alertmanager/alertmanager.tmpl:ro
       - ./alertmanager-entrypoint.sh:/etc/alertmanager/entrypoint.sh:ro
@@ -49,3 +71,6 @@ networks:
   monitoring:
     name: monitoring
     external: true
+
+# SECURITY POLICY (#277): PostgreSQL must never be published to 0.0.0.0.
+# All port bindings must use 127.0.0.1: prefix. Public DB exposure is a P1 incident.

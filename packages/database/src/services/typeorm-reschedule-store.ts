@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import type {
   PendingRescheduleRecord,
@@ -62,17 +63,21 @@ export class TypeormRescheduleStore<
     userId?: number,
   ): Promise<PendingRescheduleRecord<TExternalId> | null> {
     const key = this.key(externalId);
+    const leaseToken = randomUUID();
     const rows: Array<Record<string, unknown>> = await this.repo.query(
       `
       UPDATE reschedule_confirmations
-      SET status = 'processing', updated_at = now()
+      SET status = 'processing',
+          lease_token = $2,
+          processing_started_at = now(),
+          updated_at = now()
       WHERE external_id = $1
         AND status = 'pending'
         AND expires_at > now()
-        ${userId != null ? 'AND user_id = $2' : ''}
+        ${userId != null ? 'AND user_id = $3' : ''}
       RETURNING *
     `,
-      userId != null ? [key, userId] : [key],
+      userId != null ? [key, leaseToken, userId] : [key, leaseToken],
     );
 
     if (rows.length === 0) {
@@ -83,19 +88,73 @@ export class TypeormRescheduleStore<
     return this.mapRow(row);
   }
 
-  async revertToPending(externalId: TExternalId): Promise<void> {
+  async revertToPending(
+    externalId: TExternalId,
+    leaseToken?: string,
+  ): Promise<void> {
+    const conditions = ['external_id = $1', "status = 'processing'"];
+    const params: unknown[] = [this.key(externalId)];
+    if (leaseToken) {
+      conditions.push('lease_token = $2');
+      params.push(leaseToken);
+    }
     await this.repo.query(
       `
       UPDATE reschedule_confirmations
-      SET status = 'pending', expires_at = now() + interval '10 minutes', updated_at = now()
-      WHERE external_id = $1 AND status = 'processing'
+      SET status = 'pending',
+          lease_token = NULL,
+          processing_started_at = NULL,
+          expires_at = now() + interval '10 minutes',
+          updated_at = now()
+      WHERE ${conditions.join(' AND ')}
     `,
-      [this.key(externalId)],
+      params,
     );
   }
 
-  async cancel(externalId: TExternalId): Promise<void> {
-    await this.repo.delete({ externalId: this.key(externalId) });
+  async cancel(externalId: TExternalId, leaseToken?: string): Promise<void> {
+    const conditions = ['external_id = $1'];
+    const params: unknown[] = [this.key(externalId)];
+    if (leaseToken) {
+      // Ownership-gated: only cancel if we own the lease or row is not processing
+      conditions.push(
+        "(lease_token = $2 OR status IN ('pending', 'confirmed', 'cancelled'))",
+      );
+      params.push(leaseToken);
+    } else {
+      conditions.push(
+        "lease_token IS NULL OR status IN ('pending', 'confirmed', 'cancelled')",
+      );
+    }
+    await this.repo.query(
+      `
+      DELETE FROM reschedule_confirmations
+      WHERE ${conditions.join(' AND ')}
+    `,
+      params,
+    );
+  }
+
+  /**
+   * Resets processing rows whose lease has expired back to pending.
+   * Called by the recovery cron to handle crash-stranded confirmations.
+   */
+  async recoverStaleProcessing(staleAfterMs: number): Promise<number> {
+    const result: Array<{ affected: number }> = await this.repo.query(
+      `
+      UPDATE reschedule_confirmations
+      SET status = 'pending',
+          lease_token = NULL,
+          processing_started_at = NULL,
+          expires_at = now() + interval '10 minutes',
+          updated_at = now()
+      WHERE status = 'processing'
+        AND processing_started_at < now() - ($1::int * interval '1 millisecond')
+        AND lease_token IS NOT NULL
+    `,
+      [staleAfterMs],
+    );
+    return result[0]?.affected ?? 0;
   }
 
   async hasPending(externalId: TExternalId): Promise<boolean> {
@@ -152,6 +211,8 @@ export class TypeormRescheduleStore<
         typeof expiresAt === 'string' || expiresAt instanceof Date
           ? new Date(expiresAt).getTime()
           : 0,
+      leaseToken:
+        typeof row.lease_token === 'string' ? row.lease_token : undefined,
     };
   }
 }
