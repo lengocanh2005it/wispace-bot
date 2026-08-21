@@ -49,3 +49,6 @@ networks:
   monitoring:
     name: monitoring
     external: true
+
+# SECURITY POLICY (#277): PostgreSQL must never be published to 0.0.0.0.
+# All port bindings must use 127.0.0.1: prefix. Public DB exposure is a P1 incident.
