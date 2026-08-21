@@ -1,4 +1,4 @@
-const LOOPBACK_HOST_RE = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+import { isPrivateNetworkHost as isPrivateNetworkHostRaw } from '@wispace/bot-common';
 
 export interface UpstreamUrlPolicy {
   /** Env var name — used in error messages and for startup fail-closed context. */
@@ -20,28 +20,16 @@ export function buildUpstreamUrlPolicy(
   };
 }
 
+/**
+ * Check if hostname is a loopback address (localhost, 127.x.x.x, ::1).
+ * Used for the HTTP dev-loopback exception — narrower than isPrivateNetworkHost.
+ */
 function isLoopbackHost(hostname: string): boolean {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '');
   return (
     normalized === 'localhost' ||
-    normalized === '::1' ||
-    LOOPBACK_HOST_RE.test(normalized)
-  );
-}
-
-function isPrivateNetworkHost(hostname: string): boolean {
-  const octets = hostname.split('.').map(Number);
-  if (
-    octets.length !== 4 ||
-    octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
-  ) {
-    return false;
-  }
-
-  return (
-    octets[0] === 10 ||
-    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
-    (octets[0] === 192 && octets[1] === 168)
+    normalized === '127.0.0.1' ||
+    normalized === '::1'
   );
 }
 
@@ -91,7 +79,10 @@ export function validateUpstreamUrl(
 
   const env = policy.nodeEnv?.trim().toLowerCase();
   const isProduction = env === undefined || env === 'production';
-  if (isProduction && (isLoopback || isPrivateNetworkHost(parsed.hostname))) {
+  if (
+    isProduction &&
+    (isLoopback || isPrivateNetworkHostRaw(parsed.hostname))
+  ) {
     throw new Error(
       `${policy.context} must not target localhost or a private network in production`,
     );

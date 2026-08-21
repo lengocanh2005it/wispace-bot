@@ -102,6 +102,47 @@ describe('validateUpstreamUrl', () => {
     ).toBe('https://192.168.1.10/api');
   });
 
+  it.each([undefined, 'production'])(
+    'rejects link-local targets in production: NODE_ENV=%s',
+    (nodeEnv) => {
+      const env = nodeEnv ? { nodeEnv } : {};
+      expect(() =>
+        validateUpstreamUrl('https://169.254.169.254/api', {
+          context: CONTEXT,
+          ...env,
+        }),
+      ).toThrow('must not target localhost or a private network');
+    },
+  );
+
+  it.each([undefined, 'production'])(
+    'rejects IPv6 private targets in production: NODE_ENV=%s',
+    (nodeEnv) => {
+      const env = nodeEnv ? { nodeEnv } : {};
+      expect(() =>
+        validateUpstreamUrl('https://[fd00::1]/api', {
+          context: CONTEXT,
+          ...env,
+        }),
+      ).toThrow('must not target localhost or a private network');
+      expect(() =>
+        validateUpstreamUrl('https://[fe80::1]/api', {
+          context: CONTEXT,
+          ...env,
+        }),
+      ).toThrow('must not target localhost or a private network');
+    },
+  );
+
+  it('allows link-local targets in development', () => {
+    expect(
+      validateUpstreamUrl('https://169.254.169.254/api', {
+        context: CONTEXT,
+        nodeEnv: 'development',
+      }),
+    ).toBe('https://169.254.169.254/api');
+  });
+
   it('rejects a host not in the allowlist', () => {
     expect(() =>
       validateUpstreamUrl('https://other.example.com/x', {

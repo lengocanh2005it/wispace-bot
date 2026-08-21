@@ -22,6 +22,7 @@ export { PgAdvisoryLockService } from './pg-advisory-lock.service';
 export { ADVISORY_LOCKS } from './advisory-lock-ids';
 export { BotCommonModule } from './bot-common.module';
 export { HealthController } from './health.controller';
+export { isPrivateNetworkHost } from './network-utils';
 export {
   maskExternalId,
   maskEventId,

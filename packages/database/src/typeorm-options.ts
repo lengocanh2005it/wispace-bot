@@ -1,6 +1,7 @@
 import { join } from 'path';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
+import { isPrivateNetworkHost } from '@wispace/bot-common';
 import { WebhookDeadLetterEntity } from './entities/webhook-dead-letter.entity';
 import { WebhookInboundEventEntity } from './entities/webhook-inbound-event.entity';
 import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
@@ -55,31 +56,6 @@ function isInsecureHostAllowlisted(source: EnvSource, host: string): boolean {
     .split(',')
     .map((entry) => entry.trim().toLowerCase())
     .some((entry) => entry !== '' && entry === normalizedHost);
-}
-
-function isPrivateNetworkHost(host: string): boolean {
-  const normalized = host.toLowerCase();
-  if (
-    normalized === 'localhost' ||
-    normalized === '127.0.0.1' ||
-    normalized === '::1'
-  ) {
-    return true;
-  }
-
-  const octets = normalized.split('.').map(Number);
-  if (
-    octets.length !== 4 ||
-    octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)
-  ) {
-    return false;
-  }
-
-  return (
-    octets[0] === 10 ||
-    (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31) ||
-    (octets[0] === 192 && octets[1] === 168)
-  );
 }
 
 /** Shared entities used by all bots — import and spread into each bot's entity list. */
