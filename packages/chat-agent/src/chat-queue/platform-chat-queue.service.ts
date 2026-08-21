@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import type { ChatQueueBatch } from '@wispace/chat-queue-core';
@@ -23,6 +28,8 @@ import type { ChatQueueStorePort } from './chat-queue-store.port';
 
 const DEFAULT_DEBOUNCE_MS = 2000;
 const DEFAULT_PROCESSING_STUCK_MS = 300_000;
+const REDIS_AVAILABILITY_WAIT_MS = 5_000;
+const REDIS_AVAILABILITY_POLL_MS = 50;
 const STALE_TTL_MS = 60 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 15 * 60 * 1000;
 
@@ -41,7 +48,7 @@ interface QueueCtx {
  * configured. The Redis worker is the only distributed flush path.
  */
 @Injectable()
-export class PlatformChatQueueService implements OnModuleDestroy {
+export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PlatformChatQueueService.name);
   private readonly queue?: DebounceChatQueue<QueueCtx>;
   private readonly pipeline: ChatPipeline;
@@ -80,10 +87,6 @@ export class PlatformChatQueueService implements OnModuleDestroy {
     if (nodeEnv === 'production' && !this.distributed) {
       throw new Error('CHAT_QUEUE_STORE=redis is required in production');
     }
-    if (this.distributed && (!queueStore || !queueStore.isAvailable())) {
-      throw new Error('Redis chat queue unavailable');
-    }
-
     this.debounceMs = Math.min(
       Math.max(
         Number(configService.get<string>('CHAT_DEBOUNCE_MS')) ||
@@ -194,6 +197,23 @@ export class PlatformChatQueueService implements OnModuleDestroy {
           },
         },
       );
+    }
+  }
+
+  async onModuleInit(): Promise<void> {
+    if (!this.distributed) {
+      return;
+    }
+    if (!this.queueStore?.isAvailable()) {
+      const deadline = Date.now() + REDIS_AVAILABILITY_WAIT_MS;
+      while (Date.now() < deadline && !this.queueStore?.isAvailable()) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, REDIS_AVAILABILITY_POLL_MS),
+        );
+      }
+    }
+    if (!this.queueStore?.isAvailable()) {
+      throw new Error('Redis chat queue unavailable');
     }
   }
 
