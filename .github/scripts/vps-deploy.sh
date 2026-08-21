@@ -380,7 +380,7 @@ if [ -n "$EXTRA_VOLUMES" ]; then
   done
 fi
 
-RUN_ARGS+=(--cap-drop ALL --security-opt no-new-privileges:true)
+RUN_ARGS+=(--cap-drop ALL --security-opt no-new-privileges:true --read-only --pids-limit 256 --tmpfs /tmp:rw,noexec,nosuid,size=64m)
 
 if ! docker run "${RUN_ARGS[@]}" "$PULL_REF"; then
   echo "ERROR: docker run failed for $NEW_CONTAINER" >&2
