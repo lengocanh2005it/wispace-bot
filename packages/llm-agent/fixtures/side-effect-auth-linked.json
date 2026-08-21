@@ -1,0 +1,39 @@
+{
+  "name": "side-effect-auth-linked",
+  "description": "A linked user can successfully call the side-effect tool register_exam_report_notifications — authorization gate passes.",
+  "promptFiles": [
+    {
+      "path": "packages/llm-agent/src/chat-system-prompt.ts",
+      "hash": "bae3da004a84005e8f7757533ff5db7d27b8963038200547cbeaf719ef722730"
+    },
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "4888b2923716995b11505ce96ffd33a694e0ef06e7634feac3036cd6b9f4d0ea"
+    }
+  ],
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1020).",
+  "userText": "đăng ký nhận báo cáo thi thử cho mình",
+  "externalUserId": "eval-side-effect-0020",
+  "userId": 1020,
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "register_exam_report_notifications",
+          "args": {},
+          "result": { "registered": true }
+        }
+      ]
+    },
+    {
+      "text": "Mình đã đăng ký nhận báo cáo thi thử cho bạn rồi nhé."
+    }
+  ],
+  "expected": {
+    "toolSequence": ["register_exam_report_notifications"],
+    "replyTextContains": ["đăng ký", "báo cáo"],
+    "exhausted": false,
+    "toolSummary": "[Đã tra cứu: register_exam_report_notifications]",
+    "groundingWarnings": 0
+  }
+}
