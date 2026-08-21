@@ -5,19 +5,19 @@ export class AddRescheduleConfirmLeaseColumns1786920000000 implements MigrationI
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `ALTER TABLE "reschedule_confirmations" ADD COLUMN "lease_token" uuid`,
+      `ALTER TABLE "reschedule_confirmations" ADD COLUMN IF NOT EXISTS "lease_token" uuid`,
     );
     await queryRunner.query(
-      `ALTER TABLE "reschedule_confirmations" ADD COLUMN "processing_started_at" timestamptz`,
+      `ALTER TABLE "reschedule_confirmations" ADD COLUMN IF NOT EXISTS "processing_started_at" timestamptz`,
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `ALTER TABLE "reschedule_confirmations" DROP COLUMN "processing_started_at"`,
+      `ALTER TABLE "reschedule_confirmations" DROP COLUMN IF EXISTS "processing_started_at"`,
     );
     await queryRunner.query(
-      `ALTER TABLE "reschedule_confirmations" DROP COLUMN "lease_token"`,
+      `ALTER TABLE "reschedule_confirmations" DROP COLUMN IF EXISTS "lease_token"`,
     );
   }
 }
