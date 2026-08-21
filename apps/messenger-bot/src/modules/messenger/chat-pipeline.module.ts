@@ -26,6 +26,7 @@ import {
 import {
   LearnerProfileEntity,
   RescheduleConfirmationEntity,
+  RescheduleRecoveryCronService,
   TypeormRescheduleStore,
 } from '@wispace/database';
 import {
@@ -268,6 +269,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
         new TypeormRescheduleStore<string>('messenger', repo),
       inject: [getRepositoryToken(RescheduleConfirmationEntity)],
     },
+    RescheduleRecoveryCronService,
     MessengerAgentService,
     MessengerAgentToolsService,
     {

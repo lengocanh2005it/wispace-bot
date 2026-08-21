@@ -56,6 +56,7 @@ import {
   ReportSendJobEntity,
   ScheduledReportClaimEntity,
   RescheduleConfirmationEntity,
+  RescheduleRecoveryCronService,
   LearnerProfileEntity,
   TypeormRescheduleStore,
 } from '@wispace/database';
@@ -292,6 +293,7 @@ const REGISTER_REPORT_MESSAGE =
         new TypeormRescheduleStore<string>('discord', repo),
       inject: [getRepositoryToken(RescheduleConfirmationEntity)],
     },
+    RescheduleRecoveryCronService,
     {
       provide: RescheduleConfirmationService,
       useFactory: (

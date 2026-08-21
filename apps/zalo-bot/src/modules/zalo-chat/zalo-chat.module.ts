@@ -56,6 +56,7 @@ import {
   DeliveryLogService,
   ScheduledReportClaimEntity,
   RescheduleConfirmationEntity,
+  RescheduleRecoveryCronService,
   LearnerProfileEntity,
   TypeormRescheduleStore,
 } from '@wispace/database';
@@ -334,6 +335,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         new TypeormRescheduleStore<string>('zalo', repo),
       inject: [getRepositoryToken(RescheduleConfirmationEntity)],
     },
+    RescheduleRecoveryCronService,
     {
       provide: RescheduleConfirmationService,
       useFactory: (
