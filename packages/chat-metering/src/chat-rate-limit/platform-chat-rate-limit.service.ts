@@ -40,13 +40,15 @@ export class PlatformChatRateLimitService {
   private readonly logger = new Logger(PlatformChatRateLimitService.name);
   private readonly core: ChatRateLimitCore;
   private readonly enabled: boolean;
+  private readonly platform: string;
 
   constructor(
-    options: PlatformChatRateLimitOptions,
+    private readonly options: PlatformChatRateLimitOptions,
     configService: ConfigService,
     dailyUsageRepo: Repository<ChatDailyUsageEntity>,
     idempotencyRepo: Repository<ChatIdempotencyEntity>,
   ) {
+    this.platform = options.platform;
     const strict = options.requireEnv === true;
     const lenient = options.lenientEnabledCheck === true;
 
@@ -106,6 +108,28 @@ export class PlatformChatRateLimitService {
       },
       this.readStuckReservedMs(configService),
     );
+
+    // #299: fail closed when production quota enforcement is disabled
+    this.checkProductionEnforcement(configService);
+  }
+
+  private checkProductionEnforcement(configService: ConfigService): void {
+    const nodeEnv = configService.get<string>('NODE_ENV')?.trim();
+    const enforce = configService
+      .get<string>('ENFORCE_PROD_CHAT_QUOTA')
+      ?.trim()
+      .toLowerCase();
+    const isProduction =
+      nodeEnv === 'production' ||
+      enforce === 'true' ||
+      enforce === '1' ||
+      enforce === 'yes';
+
+    if (isProduction && !this.enabled) {
+      throw new InternalServerErrorException(
+        `CHAT_RATE_LIMIT_ENABLED must be true in production — quota enforcement is required for ${this.platform} (#299)`,
+      );
+    }
   }
 
   isEnabled(): boolean {
