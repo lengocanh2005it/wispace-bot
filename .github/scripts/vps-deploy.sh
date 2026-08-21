@@ -236,6 +236,12 @@ fi
 
 DEPLOY_UID=${DEPLOY_UID:-$(id -u)}
 DEPLOY_GID=${DEPLOY_GID:-$(id -g)}
+
+# Reject running containers as root (#281)
+if [ "$DEPLOY_UID" = "0" ]; then
+  echo "ERROR: DEPLOY_UID=0 is not allowed — containers must not run as root" >&2
+  exit 1
+fi
 # ensure_env_var wrote these into .env, but they are not shell variables yet
 # ─── Prepare env file for docker run (strip quotes) ───────────────────────────
 # docker run --env-file does NOT strip surrounding quotes like compose does,
