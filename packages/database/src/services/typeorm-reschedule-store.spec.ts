@@ -24,6 +24,7 @@ describe('TypeormRescheduleStore', () => {
           session_label: 'Hôm nay 14:00',
           status: 'processing',
           expires_at: new Date(),
+          lease_token: 'lease-uuid',
         },
       ]);
       const store = new TypeormRescheduleStore('messenger', repo as never);
@@ -36,6 +37,7 @@ describe('TypeormRescheduleStore', () => {
       expect(sql).toContain("'processing'");
       expect(result).not.toBeNull();
       expect(result?.externalId).toBe('psid1');
+      expect(result?.leaseToken).toBe('lease-uuid');
     });
 
     it('returns null when no pending row matches', async () => {
@@ -60,6 +62,18 @@ describe('TypeormRescheduleStore', () => {
       expect(sql).toContain('processing_started_at = NULL');
       expect(sql).toContain("'pending'");
     });
+
+    it('includes lease_token guard when leaseToken provided', async () => {
+      const repo = mockRepo();
+      const store = new TypeormRescheduleStore('messenger', repo as never);
+
+      await store.revertToPending('psid1', 'my-lease');
+
+      const sql = repo.query.mock.calls[0][0] as string;
+      expect(sql).toContain('lease_token = $2');
+      const params = repo.query.mock.calls[0][1] as unknown[];
+      expect(params).toContain('my-lease');
+    });
   });
 
   describe('cancel', () => {
@@ -73,6 +87,18 @@ describe('TypeormRescheduleStore', () => {
       expect(sql).toContain('DELETE FROM');
       expect(sql).toContain('lease_token IS NULL');
     });
+
+    it('includes lease_token guard when leaseToken provided', async () => {
+      const repo = mockRepo();
+      const store = new TypeormRescheduleStore('messenger', repo as never);
+
+      await store.cancel('psid1', 'my-lease');
+
+      const sql = repo.query.mock.calls[0][0] as string;
+      expect(sql).toContain('lease_token = $2');
+      const params = repo.query.mock.calls[0][1] as unknown[];
+      expect(params).toContain('my-lease');
+    });
   });
 
   describe('recoverStaleProcessing', () => {
@@ -81,7 +107,7 @@ describe('TypeormRescheduleStore', () => {
       repo.query.mockResolvedValue([{ affected: 2 }]);
       const store = new TypeormRescheduleStore('messenger', repo as never);
 
-      const recovered = await store.recoverStaleProcessing('pod-1', 300_000);
+      const recovered = await store.recoverStaleProcessing(300_000);
 
       const sql = repo.query.mock.calls[0][0] as string;
       expect(sql).toContain("status = 'pending'");
@@ -95,7 +121,7 @@ describe('TypeormRescheduleStore', () => {
       repo.query.mockResolvedValue([{ affected: 0 }]);
       const store = new TypeormRescheduleStore('messenger', repo as never);
 
-      const recovered = await store.recoverStaleProcessing('pod-1', 300_000);
+      const recovered = await store.recoverStaleProcessing(300_000);
       expect(recovered).toBe(0);
     });
   });

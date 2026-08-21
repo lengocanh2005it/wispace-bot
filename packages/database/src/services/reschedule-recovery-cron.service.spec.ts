@@ -11,10 +11,7 @@ describe('RescheduleRecoveryCronService', () => {
 
     await service.handleRecovery();
 
-    expect(store.recoverStaleProcessing).toHaveBeenCalledWith(
-      expect.any(String),
-      5 * 60_000,
-    );
+    expect(store.recoverStaleProcessing).toHaveBeenCalledWith(5 * 60_000);
   });
 
   it('does not log when no rows are recovered', async () => {

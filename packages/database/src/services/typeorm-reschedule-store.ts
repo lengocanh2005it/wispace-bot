@@ -88,7 +88,16 @@ export class TypeormRescheduleStore<
     return this.mapRow(row);
   }
 
-  async revertToPending(externalId: TExternalId): Promise<void> {
+  async revertToPending(
+    externalId: TExternalId,
+    leaseToken?: string,
+  ): Promise<void> {
+    const conditions = ['external_id = $1', "status = 'processing'"];
+    const params: unknown[] = [this.key(externalId)];
+    if (leaseToken) {
+      conditions.push('lease_token = $2');
+      params.push(leaseToken);
+    }
     await this.repo.query(
       `
       UPDATE reschedule_confirmations
@@ -97,23 +106,32 @@ export class TypeormRescheduleStore<
           processing_started_at = NULL,
           expires_at = now() + interval '10 minutes',
           updated_at = now()
-      WHERE external_id = $1 AND status = 'processing'
+      WHERE ${conditions.join(' AND ')}
     `,
-      [this.key(externalId)],
+      params,
     );
   }
 
-  async cancel(externalId: TExternalId): Promise<void> {
+  async cancel(externalId: TExternalId, leaseToken?: string): Promise<void> {
+    const conditions = ['external_id = $1'];
+    const params: unknown[] = [this.key(externalId)];
+    if (leaseToken) {
+      // Ownership-gated: only cancel if we own the lease or row is not processing
+      conditions.push(
+        "(lease_token = $2 OR status IN ('pending', 'confirmed', 'cancelled'))",
+      );
+      params.push(leaseToken);
+    } else {
+      conditions.push(
+        "lease_token IS NULL OR status IN ('pending', 'confirmed', 'cancelled')",
+      );
+    }
     await this.repo.query(
       `
       DELETE FROM reschedule_confirmations
-      WHERE external_id = $1
-        AND (
-          lease_token IS NULL
-          OR status IN ('pending', 'confirmed', 'cancelled')
-        )
+      WHERE ${conditions.join(' AND ')}
     `,
-      [this.key(externalId)],
+      params,
     );
   }
 
@@ -121,10 +139,7 @@ export class TypeormRescheduleStore<
    * Resets processing rows whose lease has expired back to pending.
    * Called by the recovery cron to handle crash-stranded confirmations.
    */
-  async recoverStaleProcessing(
-    _owner: string,
-    staleAfterMs: number,
-  ): Promise<number> {
+  async recoverStaleProcessing(staleAfterMs: number): Promise<number> {
     const result: Array<{ affected: number }> = await this.repo.query(
       `
       UPDATE reschedule_confirmations
@@ -196,6 +211,8 @@ export class TypeormRescheduleStore<
         typeof expiresAt === 'string' || expiresAt instanceof Date
           ? new Date(expiresAt).getTime()
           : 0,
+      leaseToken:
+        typeof row.lease_token === 'string' ? row.lease_token : undefined,
     };
   }
 }
