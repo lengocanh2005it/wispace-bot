@@ -48,6 +48,16 @@ export class RescheduleConfirmationEntity {
   @Column({ type: 'varchar', length: 16, default: 'pending' })
   status: 'pending' | 'processing' | 'confirmed' | 'cancelled';
 
+  @Column({ name: 'lease_token', type: 'uuid', nullable: true })
+  leaseToken: string | null;
+
+  @Column({
+    name: 'processing_started_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  processingStartedAt: Date | null;
+
   @Column({ name: 'expires_at', type: 'timestamptz' })
   expiresAt: Date;
 
