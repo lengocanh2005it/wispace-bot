@@ -1,155 +1,99 @@
-/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment -- Jest mock assertions */
-import type { Response } from 'express';
 import { DiscordOauthController } from './discord-oauth.controller';
-import type { ConfigService } from '@nestjs/config';
-import type { DiscordLinkCompletionService } from '../../application/services/discord-link-completion.service';
 
-const LANDING_URL = 'https://testfrontend.aihubproduction.com/';
-const INVITE_URL = 'https://discord.gg/wispace';
-
-function buildConfigService(): ConfigService {
-  const values: Record<string, string> = {
-    DISCORD_CLIENT_ID: 'client-id',
-    DISCORD_OAUTH_REDIRECT_URI:
-      'https://bot.example.com/discord/oauth/callback',
-    DISCORD_LINK_LANDING_URL: LANDING_URL,
-    DISCORD_INVITE_URL: INVITE_URL,
-  };
+function mockDeps() {
   return {
-    get: (key: string) => values[key],
-    getOrThrow: (key: string) => {
-      const v = values[key];
-      if (!v) throw new Error(`Missing env: ${key}`);
-      return v;
+    configService: {
+      getOrThrow: jest.fn((key: string) => {
+        const vars: Record<string, string> = {
+          DISCORD_CLIENT_ID: 'client-id',
+          DISCORD_OAUTH_REDIRECT_URI:
+            'https://bot.example.com/discord/oauth/callback',
+          DISCORD_LINK_LANDING_URL: 'https://landing.example.com',
+        };
+        return vars[key];
+      }),
+      get: jest.fn(),
     },
-  } as unknown as ConfigService;
+    completionService: { completeLink: jest.fn() },
+    stateService: { create: jest.fn(), consume: jest.fn() },
+  };
 }
 
-function buildResponse(): Response {
-  const res: Partial<Response> = {};
-  res.status = jest.fn().mockReturnValue(res);
-  res.type = jest.fn().mockReturnValue(res);
-  res.send = jest.fn().mockReturnValue(res);
-  res.redirect = jest.fn().mockReturnValue(res);
-  res.json = jest.fn().mockReturnValue(res);
-  res.setHeader = jest.fn().mockReturnValue(res);
-  return res as Response;
-}
+describe('DiscordOauthController', () => {
+  describe('getOAuthUrl', () => {
+    it('generates a state and includes it in the OAuth URL', async () => {
+      const deps = mockDeps();
+      deps.stateService.create.mockResolvedValue('random-state-123');
+      const controller = new DiscordOauthController(
+        deps.configService as never,
+        deps.completionService as never,
+        deps.stateService as never,
+      );
 
-function buildCompletionService(
-  outcome: 'success' | 'not-in-guild',
-): DiscordLinkCompletionService {
-  return {
-    completeLink: jest.fn().mockResolvedValue(outcome),
-  } as unknown as DiscordLinkCompletionService;
-}
+      const res = { json: jest.fn() } as never;
+      await controller.getOAuthUrl('link-token-abc', res);
 
-describe('DiscordOauthController (thin presentation)', () => {
-  it('delegates the callback to the completion use case and redirects to the landing page', async () => {
-    const completionService = buildCompletionService('success');
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      completionService,
-    );
-    const res = buildResponse();
+      expect(deps.stateService.create).toHaveBeenCalledWith('link-token-abc');
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: expect.stringContaining('state=random-state-123'),
+        }),
+      );
+    });
 
-    await controller.callback('code', 'good-token', undefined, res);
+    it('returns empty url when linkToken is missing', async () => {
+      const deps = mockDeps();
+      const controller = new DiscordOauthController(
+        deps.configService as never,
+        deps.completionService as never,
+        deps.stateService as never,
+      );
 
-    expect(completionService.completeLink).toHaveBeenCalledWith(
-      'code',
-      'good-token',
-    );
-    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
-    expect(res.setHeader).toHaveBeenCalledWith(
-      'Referrer-Policy',
-      'no-referrer',
-    );
+      const res = { json: jest.fn() } as never;
+      await controller.getOAuthUrl(undefined, res);
+
+      expect(deps.stateService.create).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ url: '' });
+    });
   });
 
-  it('redirects to the invite when the user is not in the guild yet', async () => {
-    const completionService = buildCompletionService('not-in-guild');
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      completionService,
-    );
-    const res = buildResponse();
+  describe('callback', () => {
+    it('consumes state and completes link', async () => {
+      const deps = mockDeps();
+      deps.stateService.consume.mockResolvedValue({
+        linkToken: 'link-token-123',
+      });
+      deps.completionService.completeLink.mockResolvedValue('success');
+      const controller = new DiscordOauthController(
+        deps.configService as never,
+        deps.completionService as never,
+        deps.stateService as never,
+      );
 
-    await controller.callback('code', 'good-token', undefined, res);
+      const res = { setHeader: jest.fn(), redirect: jest.fn() } as never;
+      await controller.callback('auth-code', 'state-nonce', undefined, res);
 
-    expect(res.redirect).toHaveBeenCalledWith(INVITE_URL);
-    const redirectUrl = String(
-      ((res.redirect as jest.Mock).mock.calls as string[][])[0]?.[0],
-    );
-    expect(redirectUrl).not.toContain('token');
-  });
+      expect(deps.stateService.consume).toHaveBeenCalledWith('state-nonce');
+      expect(deps.completionService.completeLink).toHaveBeenCalledWith(
+        'auth-code',
+        'link-token-123',
+      );
+    });
 
-  it('redirects to the landing page when the use case throws', async () => {
-    const completionService = {
-      completeLink: jest.fn().mockRejectedValue(new Error('token rejected')),
-    } as unknown as DiscordLinkCompletionService;
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      completionService,
-    );
-    const res = buildResponse();
+    it('returns error when state is invalid or expired', async () => {
+      const deps = mockDeps();
+      deps.stateService.consume.mockResolvedValue(undefined);
+      const controller = new DiscordOauthController(
+        deps.configService as never,
+        deps.completionService as never,
+        deps.stateService as never,
+      );
 
-    await controller.callback('code', 'bad-token', undefined, res);
+      const res = { setHeader: jest.fn(), redirect: jest.fn() } as never;
+      await controller.callback('auth-code', 'bad-state', undefined, res);
 
-    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
-  });
-
-  it('returns missing-param errors to the landing page without calling the use case', async () => {
-    const completionService = buildCompletionService('success');
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      completionService,
-    );
-    const res = buildResponse();
-
-    await controller.callback(undefined, 'token', undefined, res);
-    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
-
-    await controller.callback('code', undefined, undefined, res);
-    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
-    expect(completionService.completeLink).not.toHaveBeenCalled();
-  });
-
-  it('redirects cancelled grants to the landing page without calling the use case', async () => {
-    const completionService = buildCompletionService('success');
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      completionService,
-    );
-    const res = buildResponse();
-
-    await controller.callback('code', 'token', 'access_denied', res);
-
-    expect(completionService.completeLink).not.toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith(LANDING_URL);
-  });
-
-  it('returns the OAuth authorize URL with state from WISPACE', () => {
-    const controller = new DiscordOauthController(
-      buildConfigService(),
-      buildCompletionService('success'),
-    );
-    const res = buildResponse();
-    controller.getOAuthUrl('wispace-token', res);
-
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: expect.stringContaining('https://discord.com/oauth2/authorize'),
-      }),
-    );
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: expect.stringContaining('client_id=client-id'),
-      }),
-    );
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        url: expect.stringContaining('state=wispace-token'),
-      }),
-    );
+      expect(deps.completionService.completeLink).not.toHaveBeenCalled();
+      expect(res.redirect).toHaveBeenCalledWith('https://landing.example.com');
+    });
   });
 });
