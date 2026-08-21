@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThan, Repository } from 'typeorm';
+import { LessThan, Repository } from 'typeorm';
 import { ZaloLinkVerifyRecordEntity } from '../../../infrastructure/database/entities/zalo-link-verify-record.entity';
 import type {
   PendingZaloVerifyRecord,
@@ -34,7 +34,9 @@ export class TypeormZaloLinkVerifyRecordRepository implements ZaloLinkVerifyReco
   ): Promise<StaleZaloVerifyRecord[]> {
     const cutoff = new Date(Date.now() - olderThanMs);
     const rows = await this.repo.find({
-      where: { verifiedAt: MoreThan(cutoff) },
+      where: { verifiedAt: LessThan(cutoff) },
+      order: { verifiedAt: 'ASC' },
+      take: 100,
     });
     return rows.map((row) => ({
       zaloUserId: row.zaloUserId,
