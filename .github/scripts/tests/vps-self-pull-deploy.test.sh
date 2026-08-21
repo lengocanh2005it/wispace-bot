@@ -29,6 +29,7 @@ make_env() { # name -> creates fake repo/PATH-fakes/state dirs; prints dir
   cat > "$dir/repo/.github/scripts/vps-deploy.sh" <<'STUB'
 #!/usr/bin/env bash
 echo "FAKE vps-deploy ${APP_NAME:-unknown}" >> "${FAKE_DEPLOY_LOG:?}"
+echo "FAKE app network ${APP_NETWORK:-unset}" >> "${FAKE_DEPLOY_NETWORK_LOG:?}"
 echo "locked" > "${FAKE_DEPLOY_STARTED:?}"
 [ -n "${FAKE_DEPLOY_SLEEP:-}" ] && sleep "$FAKE_DEPLOY_SLEEP"
 [ "${FAKE_DEPLOY_FAIL_APP:-}" = "${APP_NAME:-}" ] && exit 1
@@ -92,6 +93,7 @@ run_script() { # dir [EXTRA_ENV=..]... -> runs the script, echoes exit code
       ALERTMANAGER_URL="http://fake-alertmanager" GHCR_USER="u" GHCR_PULL_TOKEN="t" \
       GIT_LOG="$dir/git.log" DOCKER_LOG="$dir/docker.log" CURL_LOG="$dir/curl.log" \
       CURL_BODY="$dir/curl.body" FAKE_REPO="$dir/repo" FAKE_DEPLOY_LOG="$dir/deploy.log" \
+      FAKE_DEPLOY_NETWORK_LOG="$dir/deploy-network.log" \
       FAKE_DEPLOY_STARTED="$dir/deploy.started" \
       PATH="$dir/bin:$PATH"
     for extra in "$@"; do export "$extra"; done
@@ -136,6 +138,10 @@ for app in messenger-bot discord-bot zalo-bot; do
 done
 [ ! -f "$dir/curl.log" ] || fail "alert should not be posted on success"
 pass "success path"
+
+echo "Test 3b: self-pull passes the shared app network to each deploy"
+[ "$(grep -c '^FAKE app network app_n8n_db_network$' "$dir/deploy-network.log")" -eq 3 ] || fail "shared app network was not passed to all deploys"
+pass "self-pull passes app network"
 
 echo "Test 4: concurrency -> second run skips, no second fetch/reset mid-deploy"
 dir=$(make_env concurrency)

@@ -30,6 +30,7 @@ LOCK_FILE="${LOCK_FILE:-/tmp/vps-self-pull-deploy.lock}"
 REGISTRY="ghcr.io"
 REPO_LC="lengocanh2005it/wispace-bot"
 NGINX_UPSTREAM_DIR="${NGINX_UPSTREAM_DIR:-/home/ngoc_anh/infra/nginx/upstreams}"
+APP_NETWORK="${APP_NETWORK:-app_n8n_db_network}"
 TARGET_BASE_DIR="${TARGET_BASE_DIR:-/home/ngoc_anh}"
 ALERTMANAGER_URL="${ALERTMANAGER_URL:-http://127.0.0.1:9093}"
 STALL_ALERT="vps_self_pull_stall"
@@ -210,6 +211,7 @@ deploy_app() {
     GHCR_PULL_TOKEN="$GHCR_PULL_TOKEN" GHCR_USER="$GHCR_USER" \
     RUN_MIGRATIONS="$run_migrations" MIGRATION_CMD="$migration_cmd" \
     NGINX_UPSTREAM_DIR="$NGINX_UPSTREAM_DIR" \
+    APP_NETWORK="$APP_NETWORK" \
     bash vps-deploy.sh
   ); then
     echo "$NEW_SHA" > "$state_file"

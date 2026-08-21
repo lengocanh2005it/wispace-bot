@@ -37,6 +37,7 @@ case "$1" in
   network)
     case "${2:-}" in
       inspect)
+        [ "${3:-}" = "app_n8n_db_network" ] && exit 0
         [ -n "${FAKE_MONITORING_NETWORK:-}" ] && exit 0 || exit 1
         ;;
       create)
@@ -495,6 +496,8 @@ write_upstream "$dir" 5007
 code=$(run_script "$dir" FAKE_NETWORK_IP=172.30.0.4 FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old")
 [ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
 grep -q "docker network create monitoring" "$dir/docker.log" || fail "monitoring network was not ensured"
+grep -q "docker network connect app_n8n_db_network messenger-bot-old" "$dir/docker.log" || fail "active bot was not attached to app network"
+grep -q "docker network connect app_n8n_db_network messenger-bot-new" "$dir/docker.log" || fail "new bot was not attached to app network"
 grep -q "docker run.*--network monitoring.*-e PORT=5007.*-p 127.0.0.1:5008:5007" "$dir/docker.log" || fail "new container did not use fixed internal port"
 grep -q "curl.*Authorization: Bearer test-internal-key.*127.0.0.1:5008/metrics" "$dir/curl.log" || fail "standby metrics endpoint was not auth-checked"
 grep -q "docker network disconnect monitoring messenger-bot-old" "$dir/docker.log" || fail "old metrics alias was not detached"
