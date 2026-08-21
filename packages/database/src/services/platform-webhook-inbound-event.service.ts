@@ -345,15 +345,21 @@ export class PlatformWebhookInboundEventService {
       now.getTime() - (opts.processingStuckMs ?? 300_000),
     );
 
+    // Bounded count: LIMIT stops the index scan after 10 001 matching rows
+    // so query work stays O(1) even when the inbox grows large (#272).
     const rows: Array<{ count: string }> = await this.repo.query(
       `
-      SELECT LEAST(COUNT(*), 10000)::text AS count
-      FROM webhook_inbound_events
-      WHERE platform = $1
-        AND (
-          (status IN ('pending', 'failed') AND (next_retry_at IS NULL OR next_retry_at <= $2))
-          OR (status = 'processing' AND updated_at < $3)
-        )
+      SELECT COUNT(*)::text AS count
+      FROM (
+        SELECT 1
+        FROM webhook_inbound_events
+        WHERE platform = $1
+          AND (
+            (status IN ('pending', 'failed') AND (next_retry_at IS NULL OR next_retry_at <= $2))
+            OR (status = 'processing' AND updated_at < $3)
+          )
+        LIMIT 10001
+      ) sub
       `,
       [this.platform, now, staleBefore],
     );

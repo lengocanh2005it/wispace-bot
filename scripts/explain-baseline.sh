@@ -90,16 +90,20 @@ RETURNING id;
 "
 
 echo ""
-echo "--- 5. Webhook inbound countDue (platform=messenger) ---"
+echo "--- 5. Webhook inbound countDue (platform=messenger, bounded #272) ---"
 $PSQL -c "
 EXPLAIN (ANALYZE, BUFFERS, FORMAT TEXT)
-SELECT LEAST(COUNT(*), 10000)::text AS count
-FROM webhook_inbound_events
-WHERE platform = 'messenger'
-  AND (
-    (status IN ('pending', 'failed') AND (next_retry_at IS NULL OR next_retry_at <= now()))
-    OR (status = 'processing' AND updated_at < now() - interval '5 minutes')
-  );
+SELECT COUNT(*)::text AS count
+FROM (
+  SELECT 1
+  FROM webhook_inbound_events
+  WHERE platform = 'messenger'
+    AND (
+      (status IN ('pending', 'failed') AND (next_retry_at IS NULL OR next_retry_at <= now()))
+      OR (status = 'processing' AND updated_at < now() - interval '5 minutes')
+    )
+  LIMIT 10001
+) sub;
 "
 
 echo ""
