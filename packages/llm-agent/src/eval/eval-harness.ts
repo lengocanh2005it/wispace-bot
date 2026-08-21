@@ -171,6 +171,11 @@ export interface EvalFixture {
   /** One entry per LLM round (in order). Empty = the LLM is never called. */
   script: EvalScriptRound[];
   expected: EvalExpectation;
+  /**
+   * When true, the fixture may script tool calls with names not in AGENT_TOOLS.
+   * Used to test the agent loop's behavior when the LLM attempts unknown tools.
+   */
+  allowUnknown?: boolean;
 }
 
 export interface EvalFixtureResult {
@@ -244,7 +249,12 @@ function validateToolArgs(
   }
 }
 
-function validateRound(round: unknown, index: number, errors: string[]): void {
+function validateRound(
+  round: unknown,
+  index: number,
+  errors: string[],
+  allowUnknown = false,
+): void {
   if (!isRecord(round)) {
     errors.push(`script[${index}] must be an object`);
     return;
@@ -280,14 +290,18 @@ function validateRound(round: unknown, index: number, errors: string[]): void {
       continue;
     }
     if (!isAgentToolName(call.name)) {
-      errors.push(
-        `script[${index}].toolCalls[${j}].name "${call.name}" is not in AGENT_TOOLS`,
-      );
-    }
-    if (call.args !== undefined && !isRecord(call.args)) {
-      errors.push(`script[${index}].toolCalls[${j}].args must be an object`);
+      if (!allowUnknown) {
+        errors.push(
+          `script[${index}].toolCalls[${j}].name "${call.name}" is not in AGENT_TOOLS`,
+        );
+      }
+      // Skip args validation for unknown tools — no schema available.
     } else {
-      validateToolArgs(call.name, call.args, errors);
+      if (call.args !== undefined && !isRecord(call.args)) {
+        errors.push(`script[${index}].toolCalls[${j}].args must be an object`);
+      } else {
+        validateToolArgs(call.name, call.args, errors);
+      }
     }
     if (call.fail !== undefined && typeof call.fail !== 'string') {
       errors.push(`script[${index}].toolCalls[${j}].fail must be a string`);
@@ -371,14 +385,18 @@ export function parseFixture(
       }
     }
   }
+  if (raw.allowUnknown !== undefined && typeof raw.allowUnknown !== 'boolean') {
+    errors.push('allowUnknown must be a boolean');
+  }
   if (!Array.isArray(raw.script)) {
     errors.push('script must be an array of rounds');
   } else if (raw.script.length === 0) {
     // Empty script = the LLM is never called (e.g. injection/off-topic early
     // returns). The runner fails loudly if the adapter is invoked anyway.
   } else {
+    const allowUnknown = raw.allowUnknown === true;
     for (const [i, round] of raw.script.entries()) {
-      validateRound(round, i, errors);
+      validateRound(round, i, errors, allowUnknown);
     }
   }
   if (!isRecord(raw.expected)) {
