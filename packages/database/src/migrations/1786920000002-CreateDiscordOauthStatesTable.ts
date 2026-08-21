@@ -1,7 +1,7 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class CreateDiscordOauthStatesTable20260821000002 implements MigrationInterface {
-  name = 'CreateDiscordOauthStatesTable20260821000002';
+export class CreateDiscordOauthStatesTable1786920000002 implements MigrationInterface {
+  name = 'CreateDiscordOauthStatesTable1786920000002';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

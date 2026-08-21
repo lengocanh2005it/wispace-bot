@@ -4,8 +4,8 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * Adds CHECK constraints for all state-machine enum columns (#295).
  * Validates existing rows first — fails if invalid data is found.
  */
-export class AddEnumCheckConstraints20260821000003 implements MigrationInterface {
-  name = 'AddEnumCheckConstraints20260821000003';
+export class AddEnumCheckConstraints1786920000003 implements MigrationInterface {
+  name = 'AddEnumCheckConstraints1786920000003';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Validate no invalid rows exist before adding constraints

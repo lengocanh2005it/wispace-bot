@@ -5,8 +5,8 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * The column was null'd in migration 1786915000000 and is never written to
  * by application code. The entity has no message_text field.
  */
-export class DropMessageLogsMessageTextColumn20260821000001 implements MigrationInterface {
-  name = 'DropMessageLogsMessageTextColumn20260821000001';
+export class DropMessageLogsMessageTextColumn1786920000001 implements MigrationInterface {
+  name = 'DropMessageLogsMessageTextColumn1786920000001';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     const hasColumn = await queryRunner.query(

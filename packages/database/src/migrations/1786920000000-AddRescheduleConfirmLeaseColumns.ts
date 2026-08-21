@@ -1,7 +1,7 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddRescheduleConfirmLeaseColumns20260821000000 implements MigrationInterface {
-  name = 'AddRescheduleConfirmLeaseColumns20260821000000';
+export class AddRescheduleConfirmLeaseColumns1786920000000 implements MigrationInterface {
+  name = 'AddRescheduleConfirmLeaseColumns1786920000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
