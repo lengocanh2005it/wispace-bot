@@ -99,7 +99,7 @@ export interface StudyReminderJobRepositoryPort {
     currentPlatform: Platform,
     options?: { statuses?: StudyReminderJobStatus[] },
   ): Promise<number>;
-  findNextDueTime(now: Date): Promise<Date | null>;
+  findNextDueTime(now: Date, platform?: Platform): Promise<Date | null>;
   /**
    * Resets jobs stuck in `processing` for THIS platform only — a worker must
    * never reopen another platform's processing job (#180). Target status

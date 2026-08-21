@@ -383,9 +383,16 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
     return result.affected ?? 0;
   }
 
-  async findNextDueTime(now: Date): Promise<Date | null> {
+  async findNextDueTime(now: Date, platform?: Platform): Promise<Date | null> {
     // Earliest moment any pending/retryable job becomes actionable — accounts
     // for next_retry_at (Messenger semantics; shared by all platforms).
+    // Optional platform filter avoids cross-platform full-table scan (#265).
+    const conditions = ["status IN ('pending', 'failed')"];
+    const params: unknown[] = [now];
+    if (platform) {
+      conditions.push('platform = $2');
+      params.push(platform);
+    }
     const rows = await this.repo.manager.query<
       Array<{ next_due: Date | null }>
     >(
@@ -397,8 +404,8 @@ export class TypeormStudyReminderJobRepository implements StudyReminderJobReposi
          END
        ) AS next_due
        FROM study_reminder_jobs
-       WHERE status IN ('pending', 'failed')`,
-      [now],
+       WHERE ${conditions.join(' AND ')}`,
+      params,
     );
     return rows[0]?.next_due ?? null;
   }
