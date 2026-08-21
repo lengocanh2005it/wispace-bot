@@ -36,6 +36,7 @@ umask 077
 
 COMPOSE_FILE="docker-compose.prod.yml"
 MONITORING_NETWORK="monitoring"
+APP_NETWORK="${APP_NETWORK:-app_n8n_db_network}"
 METRICS_PATH="/metrics"
 
 ENV_INSTALL_TMP=""
@@ -143,6 +144,25 @@ ensure_monitoring_network() {
   fi
   echo "ERROR: could not create monitoring network $MONITORING_NETWORK — refusing to deploy (#278)" >&2
   return 1
+}
+
+ensure_app_network() {
+  if docker network inspect "$APP_NETWORK" >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "ERROR: required app network $APP_NETWORK is missing — refusing to deploy" >&2
+  return 1
+}
+
+attach_app_network() {
+  local container="$1"
+  if docker inspect -f '{{json .NetworkSettings.Networks}}' "$container" 2>/dev/null | grep -q "\"${APP_NETWORK}\""; then
+    return 0
+  fi
+  if ! docker network connect "$APP_NETWORK" "$container" >/dev/null 2>&1; then
+    echo "ERROR: could not attach $container to app network $APP_NETWORK — refusing to deploy" >&2
+    return 1
+  fi
 }
 
 attach_metrics_alias() {
@@ -328,6 +348,12 @@ fi
 if ! ensure_monitoring_network; then
   exit 1
 fi
+if ! ensure_app_network; then
+  exit 1
+fi
+if [ -n "$ACTIVE_CONTAINER" ] && ! attach_app_network "$ACTIVE_CONTAINER"; then
+  exit 1
+fi
 if [ -n "$ACTIVE_CONTAINER" ] && ! attach_metrics_alias "$ACTIVE_CONTAINER"; then
   exit 1
 fi
@@ -379,6 +405,10 @@ RUN_ARGS+=(--cap-drop ALL --security-opt no-new-privileges:true)
 if ! docker run "${RUN_ARGS[@]}" "$PULL_REF"; then
   echo "ERROR: docker run failed for $NEW_CONTAINER" >&2
   docker logs "$NEW_CONTAINER" --tail 60 2>/dev/null || true
+  exit 1
+fi
+if ! attach_app_network "$NEW_CONTAINER"; then
+  docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
   exit 1
 fi
 

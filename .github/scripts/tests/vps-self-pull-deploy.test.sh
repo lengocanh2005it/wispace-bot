@@ -137,6 +137,10 @@ done
 [ ! -f "$dir/curl.log" ] || fail "alert should not be posted on success"
 pass "success path"
 
+echo "Test 3b: deploy bundle carries the shared app-network-aware deploy script"
+grep -q 'APP_NETWORK=.*app_n8n_db_network' "$dir/target/messenger-bot/vps-deploy.sh" || fail "deploy bundle missing app network support"
+pass "deploy bundle includes app network support"
+
 echo "Test 4: concurrency -> second run skips, no second fetch/reset mid-deploy"
 dir=$(make_env concurrency)
 run_script "$dir" FAKE_DEPLOY_SLEEP=3 >/dev/null 2>&1 &
