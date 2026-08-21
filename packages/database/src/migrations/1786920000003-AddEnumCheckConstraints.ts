@@ -11,70 +11,72 @@ export class AddEnumCheckConstraints1786920000003 implements MigrationInterface 
     // Validate no invalid rows exist before adding constraints
     await this.validate(queryRunner);
 
-    // webhook_inbound_events
-    await queryRunner.query(`
-      ALTER TABLE "webhook_inbound_events"
-      ADD CONSTRAINT "chk_wie_status"
-      CHECK ("status" IN ('pending','processing','completed','failed','abandoned'))
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "webhook_inbound_events"
-      ADD CONSTRAINT "chk_wie_platform"
-      CHECK ("platform" IN ('messenger','discord','zalo'))
-    `);
-
-    // study_reminder_jobs
-    await queryRunner.query(`
-      ALTER TABLE "study_reminder_jobs"
-      ADD CONSTRAINT "chk_srr_status"
-      CHECK ("status" IN ('pending','processing','sent','failed','cancelled'))
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "study_reminder_jobs"
-      ADD CONSTRAINT "chk_srr_platform"
-      CHECK ("platform" IN ('messenger','discord','zalo'))
-    `);
-
-    // report_send_jobs
-    await queryRunner.query(`
-      ALTER TABLE "report_send_jobs"
-      ADD CONSTRAINT "chk_rsj_status"
-      CHECK ("status" IN ('pending','processing','sent','failed'))
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "report_send_jobs"
-      ADD CONSTRAINT "chk_rsj_platform"
-      CHECK ("platform" IN ('messenger','discord','zalo'))
-    `);
-
-    // webhook_dead_letters
-    await queryRunner.query(`
-      ALTER TABLE "webhook_dead_letters"
-      ADD CONSTRAINT "chk_wdl_status"
-      CHECK ("status" IN ('pending','replayed','abandoned'))
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "webhook_dead_letters"
-      ADD CONSTRAINT "chk_wdl_direction"
-      CHECK ("direction" IN ('inbound','outbound'))
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "webhook_dead_letters"
-      ADD CONSTRAINT "chk_wdl_platform"
-      CHECK ("platform" IN ('messenger','discord','zalo'))
-    `);
-
-    // chat_idempotency
-    await queryRunner.query(`
-      ALTER TABLE "chat_idempotency"
-      ADD CONSTRAINT "chk_ci_status"
-      CHECK ("status" IN ('reserved','delivered','completed','refunded'))
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "chat_idempotency"
-      ADD CONSTRAINT "chk_ci_platform"
-      CHECK ("platform" IN ('messenger','discord','zalo'))
-    `);
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'webhook_inbound_events',
+      'chk_wie_status',
+      `"status" IN ('pending','processing','completed','failed','abandoned')`,
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'webhook_inbound_events',
+      'chk_wie_platform',
+      `"platform" IN ('messenger','discord','zalo')`,
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'study_reminder_jobs',
+      'chk_srr_status',
+      `"status" IN ('pending','processing','sent','failed','cancelled')`,
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'study_reminder_jobs',
+      'chk_srr_platform',
+      `"platform" IN ('messenger','discord','zalo')`,
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'report_send_jobs',
+      'chk_rsj_status',
+      `"status" IN ('pending','processing','sent','failed')`,
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'report_send_jobs',
+      'chk_rsj_platform',
+      `"platform" IN ('messenger','discord','zalo')`,
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'webhook_dead_letters',
+      'chk_wdl_status',
+      `"status" IN ('pending','replayed','abandoned')`,
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'webhook_dead_letters',
+      'chk_wdl_direction',
+      `"direction" IN ('inbound','outbound')`,
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'webhook_dead_letters',
+      'chk_wdl_platform',
+      `"platform" IN ('messenger','discord','zalo')`,
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'chat_idempotency',
+      'chk_ci_status',
+      `"status" IN ('reserved','delivered','completed','refunded')`,
+    );
+    await this.addConstraintIfMissing(
+      queryRunner,
+      'chat_idempotency',
+      'chk_ci_platform',
+      `"platform" IN ('messenger','discord','zalo')`,
+    );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
@@ -110,6 +112,23 @@ export class AddEnumCheckConstraints1786920000003 implements MigrationInterface 
     );
     await queryRunner.query(
       `ALTER TABLE "webhook_inbound_events" DROP CONSTRAINT IF EXISTS "chk_wie_status"`,
+    );
+  }
+
+  private async addConstraintIfMissing(
+    queryRunner: QueryRunner,
+    tableName: string,
+    constraintName: string,
+    expression: string,
+  ): Promise<void> {
+    const existing = await queryRunner.query(
+      `SELECT 1 FROM pg_constraint WHERE conname = $1 AND conrelid = $2::regclass`,
+      [constraintName, tableName],
+    );
+    if (existing.length > 0) return;
+
+    await queryRunner.query(
+      `ALTER TABLE "${tableName}" ADD CONSTRAINT "${constraintName}" CHECK (${expression})`,
     );
   }
 
