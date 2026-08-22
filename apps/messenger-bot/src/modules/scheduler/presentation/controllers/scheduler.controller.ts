@@ -19,6 +19,7 @@ import { DopplerRuntimeSyncService } from '../../application/services/doppler-ru
 import type { DopplerWebhookPayload } from '../../domain/entities/doppler-runtime-sync.types';
 import { ReportCronService } from '../../application/services/report-cron.service';
 import { ReportSendRetryDispatchService } from '../../application/services/report-send-retry-dispatch.service';
+import { PrivacyDataService } from '@wispace/database';
 
 class SyncStudyCalendarBody {
   @IsNumber()
@@ -49,6 +50,11 @@ class SendReportsBody {
   allowDuplicate?: boolean;
 }
 
+class PrivacyActionBody {
+  @IsString()
+  externalUserId!: string;
+}
+
 @Controller('messenger')
 @UseGuards(InternalApiKeyGuard)
 export class SchedulerController {
@@ -60,6 +66,7 @@ export class SchedulerController {
     private readonly messengerMappingService: MessengerMappingService,
     private readonly reportSendRetryDispatchService: ReportSendRetryDispatchService,
     private readonly dopplerRuntimeSyncService: DopplerRuntimeSyncService,
+    private readonly privacyService: PrivacyDataService,
   ) {}
 
   @Post('ops/doppler-sync')
@@ -140,6 +147,24 @@ export class SchedulerController {
       deletedSent: r.deletedSent,
       sync: this.toWireSyncResult(r.sync),
     }));
+  }
+
+  @Post('privacy/unlink')
+  @HttpCode(200)
+  unlinkUser(@Body() body: PrivacyActionBody) {
+    return this.privacyService.unlink('messenger', body.externalUserId);
+  }
+
+  @Post('privacy/delete')
+  @HttpCode(200)
+  deleteUser(@Body() body: PrivacyActionBody) {
+    return this.privacyService.delete('messenger', body.externalUserId);
+  }
+
+  @Post('privacy/export')
+  @HttpCode(200)
+  exportUser(@Body() body: PrivacyActionBody) {
+    return this.privacyService.export('messenger', body.externalUserId);
   }
 
   /**

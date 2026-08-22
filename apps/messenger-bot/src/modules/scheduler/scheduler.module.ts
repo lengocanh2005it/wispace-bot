@@ -13,7 +13,7 @@ import {
   GOALS_DATA_PORT,
   type ReportClaimRepositoryPort,
 } from '@wispace/scheduler-core';
-import { ReportSendJobEntity } from '@wispace/database';
+import { ReportSendJobEntity, PrivacyDataService } from '@wispace/database';
 import {
   CronLeaderLeaseService,
   CronLeaderLeaseEntity,
@@ -108,6 +108,7 @@ import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
     OpsHealthCronService,
     DopplerRuntimeSyncService,
     LlmSafetyService,
+    PrivacyDataService,
   ],
 })
 export class SchedulerModule {}
