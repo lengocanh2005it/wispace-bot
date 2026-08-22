@@ -48,7 +48,7 @@ describe('study-calendar.utils', () => {
       );
     });
 
-    it.each(['not-a-date', '2026-13-01'])(
+    it.each(['not-a-date', '2026/09/01', 'abc123'])(
       'throws for invalid format: %s',
       (v) => {
         expect(() => formatEventDateForApiWrite(v)).toThrow(
