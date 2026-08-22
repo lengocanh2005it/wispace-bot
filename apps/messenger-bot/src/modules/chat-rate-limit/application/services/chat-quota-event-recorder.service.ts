@@ -9,7 +9,6 @@ import {
   type ChatQuotaEventRepositoryPort,
   type TransactionManager,
 } from '../../domain/repositories/chat-quota-event.repository.port';
-import { runInBackground } from '@messenger/shared/utils/run-in-background.utils';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
 
 @Injectable()
@@ -94,9 +93,10 @@ export class ChatQuotaEventRecorderService {
       return;
     }
 
-    runInBackground(
-      () =>
-        this.eventRepository.insertDenied({
+    // ponytail: inlined runInBackground — was a 9-line file for one setImmediate call
+    setImmediate(() => {
+      void this.eventRepository
+        .insertDenied({
           psid: input.psid,
           userId: input.userId,
           usageDate: input.usageDate,
@@ -105,14 +105,14 @@ export class ChatQuotaEventRecorderService {
             limit: input.limit,
             used: input.used,
           },
-        }),
-      (error) => {
-        this.logger.warn(
-          `CHAT_QUOTA_EVENT_DENIED_INSERT_FAILED psid=${maskExternalId(input.psid)} reason=${input.reason}: ${errorMessage(
-            error,
-          )}`,
-        );
-      },
-    );
+        })
+        .catch((error) => {
+          this.logger.warn(
+            `CHAT_QUOTA_EVENT_DENIED_INSERT_FAILED psid=${maskExternalId(input.psid)} reason=${input.reason}: ${errorMessage(
+              error,
+            )}`,
+          );
+        });
+    });
   }
 }

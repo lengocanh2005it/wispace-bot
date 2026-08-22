@@ -3,7 +3,6 @@ import {
   createFailoverLlmProviderAdapter,
 } from './factory';
 import { OpenAiAdapter } from './openai/openai-adapter';
-import { OpenAiCompatibleAdapter } from './openai-compatible/openai-compatible-adapter';
 import { FailoverLlmProviderAdapter } from './failover/failover-adapter';
 import type { LlmProviderEntryConfig } from './factory';
 
@@ -18,13 +17,14 @@ describe('createLlmProviderAdapter', () => {
     expect(adapter.providerName).toBe('openai');
   });
 
-  it('creates OpenAiCompatibleAdapter for openai-compatible', () => {
+  // ponytail: OpenAiCompatibleAdapter inlined — now just OpenAiAdapter with provider name
+  it('creates OpenAiAdapter for openai-compatible', () => {
     const adapter = createLlmProviderAdapter({
       getApiKey: () => 'key',
       getModel: () => 'model',
       provider: 'openai-compatible',
     });
-    expect(adapter).toBeInstanceOf(OpenAiCompatibleAdapter);
+    expect(adapter).toBeInstanceOf(OpenAiAdapter);
     expect(adapter.providerName).toBe('openai-compatible');
   });
 

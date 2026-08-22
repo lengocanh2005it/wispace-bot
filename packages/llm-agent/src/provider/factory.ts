@@ -1,6 +1,5 @@
 import type { LlmProviderAdapter } from './llm-provider.adapter';
 import { OpenAiAdapter } from './openai/openai-adapter';
-import { OpenAiCompatibleAdapter } from './openai-compatible/openai-compatible-adapter';
 import { FailoverLlmProviderAdapter } from './failover/failover-adapter';
 
 export type LlmProviderType = string;
@@ -33,10 +32,12 @@ export function createLlmProviderAdapter(config: {
       );
 
     case 'openai-compatible':
-      return new OpenAiCompatibleAdapter(
+      // ponytail: inline — OpenAiCompatibleAdapter was just a 15-line subclass passing one string
+      return new OpenAiAdapter(
         config.getApiKey,
         config.getModel,
         config.getBaseUrl,
+        'openai-compatible',
       );
 
     default:

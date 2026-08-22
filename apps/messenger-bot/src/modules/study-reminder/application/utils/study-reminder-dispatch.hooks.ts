@@ -1,7 +1,8 @@
 import { Logger } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common';
 import { isProactiveMessenger24hError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
-import { WispaceApiError } from '@messenger/shared/errors/wispace-api.error';
+// ponytail: deduped — using shared WispaceApiError from @wispace/wispace-client
+import { WispaceApiError } from '@wispace/wispace-client';
 
 /**
  * Messenger terminal-failure classification for study reminder dispatch.

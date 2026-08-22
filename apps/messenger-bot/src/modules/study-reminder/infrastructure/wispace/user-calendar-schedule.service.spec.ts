@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
-import { WispaceApiError } from '@messenger/shared/errors/wispace-api.error';
+// ponytail: deduped — using shared WispaceApiError from @wispace/wispace-client
+import { WispaceApiError } from '@wispace/wispace-client';
 import { UserCalendarApiService } from './user-calendar-api.service';
 import { UserCalendarScheduleService } from './user-calendar-schedule.service';
 

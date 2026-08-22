@@ -1,5 +1,6 @@
 import { MessengerApiError } from '@messenger/modules/messenger/application/services/messenger-outbound.service';
-import { WispaceApiError } from '@messenger/shared/errors/wispace-api.error';
+// ponytail: deduped — using shared WispaceApiError from @wispace/wispace-client
+import { WispaceApiError } from '@wispace/wispace-client';
 import { classifyMessengerDispatchFailure } from './study-reminder-dispatch.hooks';
 
 describe('classifyMessengerDispatchFailure', () => {

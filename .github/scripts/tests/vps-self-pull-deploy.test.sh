@@ -23,7 +23,6 @@ make_env() { # name -> creates fake repo/PATH-fakes/state dirs; prints dir
     "$dir/repo/apps/zalo-bot" "$dir/repo/.github/scripts" \
     "$dir/repo/deploy/nginx/upstreams" "$dir/bin" "$dir/state" "$dir/target" "$dir/upstreams"
   for app in messenger-bot discord-bot zalo-bot; do
-    printf 'services: {}\n' > "$dir/repo/apps/$app/docker-compose.prod.yml"
     printf 'server 127.0.0.1:1;\n' > "$dir/repo/deploy/nginx/upstreams/$app.conf"
   done
   cat > "$dir/repo/.github/scripts/vps-deploy.sh" <<'STUB'

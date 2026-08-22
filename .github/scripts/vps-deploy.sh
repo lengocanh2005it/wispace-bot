@@ -34,7 +34,6 @@ umask 077
 : "${PUBLIC_HOST:=aiassist.aihubproduction.com}"  # public nginx host used for post-switch verify
 : "${SKIP_NGINX_CHECK:=false}"                # first-deploy escape hatch: only without an active container
 
-COMPOSE_FILE="docker-compose.prod.yml"
 MONITORING_NETWORK="monitoring"
 APP_NETWORK="${APP_NETWORK:-app_n8n_db_network}"
 METRICS_PATH="/metrics"

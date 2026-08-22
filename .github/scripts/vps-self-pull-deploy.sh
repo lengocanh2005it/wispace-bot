@@ -196,7 +196,6 @@ deploy_app() {
 
   echo "=== Deploying $app @ $NEW_SHA (digest $image_digest) ==="
   mkdir -p "$target_dir/upstreams"
-  cp "$REPO_DIR/apps/${app}/docker-compose.prod.yml" "$target_dir/"
   cp "$REPO_DIR/.github/scripts/vps-deploy.sh" "$target_dir/"
   cp "$REPO_DIR/deploy/nginx/upstreams/${app}.conf" "$target_dir/upstreams/" 2>/dev/null || true
 

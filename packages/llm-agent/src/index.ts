@@ -93,7 +93,6 @@ export type {
 } from './provider/types';
 export type { LlmProviderAdapter } from './provider/llm-provider.adapter';
 export { OpenAiAdapter } from './provider/openai/openai-adapter';
-export { OpenAiCompatibleAdapter } from './provider/openai-compatible/openai-compatible-adapter';
 export { FailoverLlmProviderAdapter } from './provider/failover/failover-adapter';
 export { LlmAllProvidersExhaustedError } from './provider/failover/failover.errors';
 export {
