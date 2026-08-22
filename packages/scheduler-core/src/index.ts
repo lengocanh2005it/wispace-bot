@@ -25,6 +25,10 @@ export {
 // Services
 export { ReportScheduleService } from './services/report-schedule.service';
 export { ReportSendScheduleService } from './services/report-send-schedule.service';
+export {
+  ReportOrchestrationService,
+  type ClassifiedError,
+} from './services/report-orchestration.service';
 export { ReportCronLeaderService } from './services/report-cron-leader.service';
 export { CronLeaderHeartbeatService } from './services/cron-leader-heartbeat.service';
 export {

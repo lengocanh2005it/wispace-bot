@@ -16,7 +16,10 @@ import {
 import {
   GOALS_DATA_PORT,
   REPORT_CLAIM_REPOSITORY,
+  REPORT_DELIVERY_PORT,
   ReportScheduleService,
+  ReportSendScheduleService,
+  ReportOrchestrationService,
   parseExamDateToIso,
   type ReportClaimRepositoryPort,
 } from '@wispace/scheduler-core';
@@ -30,6 +33,7 @@ import { BotCommonModule, PgAdvisoryLockService } from '@wispace/bot-common';
 import { ZaloChatModule } from './zalo-chat.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-cron.service';
+import { ZaloReportDeliveryService } from './application/services/zalo-report-delivery.service';
 
 const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
 
@@ -46,6 +50,13 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
   ],
   providers: [
     ZaloReportCronService,
+    ZaloReportDeliveryService,
+    {
+      provide: REPORT_DELIVERY_PORT,
+      useExisting: ZaloReportDeliveryService,
+    },
+    ReportSendScheduleService,
+    ReportOrchestrationService,
     // Request-scoped goals memoization: exam-window check and report
     // generation both fetch goals within one execution — one upstream call.
     {

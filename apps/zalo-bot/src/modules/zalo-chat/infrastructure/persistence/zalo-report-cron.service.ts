@@ -4,22 +4,20 @@ import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { WispaceApiError } from '@wispace/wispace-client';
 import { PlatformStudentReportService } from '@wispace/student-report';
-import { readReportClaimLeaseMs } from '@wispace/database';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import {
   REPORT_CLAIM_REPOSITORY,
+  ReportOrchestrationService,
   ReportScheduleService,
   evaluateExamWindow,
   runBatched,
   todayReportDate,
 } from '@wispace/scheduler-core';
+import type { ClassifiedError } from '@wispace/scheduler-core';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
-import {
-  ZaloOutboundService,
-  ZaloSendError,
-} from '../../application/services/zalo-outbound.service';
+import { ZaloSendError } from '../../application/services/zalo-outbound.service';
+import { WispaceApiError } from '@wispace/wispace-client';
 
 const CONCURRENCY = 3;
 const PAGE_SIZE = 200;
@@ -34,7 +32,7 @@ export class ZaloReportCronService {
     private readonly linkRepo: Repository<ZaloAccountLinkEntity>,
     @Inject(REPORT_CLAIM_REPOSITORY)
     private readonly claimRepo: ReportClaimRepositoryPort,
-    private readonly outbound: ZaloOutboundService,
+    private readonly orchestration: ReportOrchestrationService,
     private readonly reportService: PlatformStudentReportService,
     private readonly reportScheduleService: ReportScheduleService,
     private readonly configService: ConfigService,
@@ -48,8 +46,6 @@ export class ZaloReportCronService {
     const reportDate = todayReportDate();
     const forceSend = opts.forceSend === true;
 
-    // Pre-query userIds that already got a report on another platform today —
-    // avoids one SELECT per linked user inside the batched loop.
     const sentUserIds = new Set(
       await this.claimRepo.listUserIdsWithSentReportToday(reportDate),
     );
@@ -131,8 +127,6 @@ export class ZaloReportCronService {
     sentUserIds: Set<number>,
     forceSend: boolean,
   ): Promise<'sent' | 'skipped' | 'error'> {
-    // Window gate: only auto-send inside the days-before-exam window
-    // (same as Messenger/Discord). forceSend bypasses the window.
     if (!forceSend) {
       const window = await evaluateExamWindow(
         link.externalUserId,
@@ -149,146 +143,40 @@ export class ZaloReportCronService {
       }
     }
 
-    let claimLeaseToken = '';
-    let claimDeliveryRecord: string | undefined;
-    let claimDeliveryKey: string | undefined;
-    if (link.userId) {
-      if (sentUserIds.has(link.userId)) {
-        this.logger.log(
-          `Report already sent on another platform for userId=${maskExternalId(
-            link.userId,
-          )}, skipping Zalo`,
-        );
-        return 'skipped';
-      }
-      const claimed: {
-        claimed: boolean;
-        leaseToken?: string;
-        deliveryRecord?: string;
-        deliveryKey?: string;
-      } = await this.claimRepo.tryClaimScheduledReport(
-        {
-          externalUserId: link.externalUserId,
-          userId: link.userId,
-          reportDate,
-        },
-        readReportClaimLeaseMs(this.configService),
+    if (link.userId && sentUserIds.has(link.userId)) {
+      this.logger.log(
+        `Report already sent on another platform for userId=${maskExternalId(
+          link.userId,
+        )}, skipping Zalo`,
       );
-      if (!claimed.claimed || !claimed.leaseToken) {
-        this.logger.log(
-          `Report already claimed by another instance for Zalo user ${maskExternalId(
-            link.externalUserId,
-          )}, skipping`,
-        );
-        return 'skipped';
-      }
-      claimLeaseToken = claimed.leaseToken;
-      claimDeliveryRecord =
-        typeof claimed.deliveryRecord === 'string'
-          ? claimed.deliveryRecord
-          : undefined;
-      claimDeliveryKey =
-        typeof claimed.deliveryKey === 'string'
-          ? claimed.deliveryKey
-          : undefined;
-    }
-
-    // Skip re-send if already delivered (#181) — crash between send and
-    // markSent left a delivery_record; re-claim sees it and marks sent
-    // without re-sending.
-    if (claimDeliveryRecord) {
-      await this.claimRepo.markScheduledReportClaimSent(
-        { externalUserId: link.externalUserId, reportDate },
-        claimLeaseToken,
-        'sent',
-        claimDeliveryKey,
-      );
-      return 'sent';
+      return 'skipped';
     }
 
     try {
-      const deliveryKey = `zalo-report:${link.externalUserId}:${reportDate}`;
-      const report = await this.reportService.generateReport(
+      const reportText = await this.reportService.generateReport(
         link.externalUserId,
       );
-      const outcome = await this.outbound.sendTextForRetry(
-        link.externalUserId,
-        report,
-        deliveryKey,
-      );
-      if (link.userId) {
-        if (outcome === 'sent') {
-          await this.claimRepo.markScheduledReportClaimSent(
-            {
-              externalUserId: link.externalUserId,
-              reportDate,
-            },
-            claimLeaseToken,
-            'sent',
-            deliveryKey,
-          );
-        } else if (outcome === 'ambiguous') {
-          await this.claimRepo.markScheduledReportClaimSent(
-            {
-              externalUserId: link.externalUserId,
-              reportDate,
-            },
-            claimLeaseToken,
-            'ambiguous',
-            deliveryKey,
-          );
-        } else {
-          // not_sent — release claim for retry
-          await this.claimRepo.releaseScheduledReportClaim(
-            {
-              externalUserId: link.externalUserId,
-              reportDate,
-            },
-            claimLeaseToken,
-          );
-        }
-      }
-      this.logger.log(
-        `Report sent to Zalo user ${maskExternalId(link.externalUserId)} (outcome=${outcome})`,
-      );
-      return outcome === 'sent' ? 'sent' : 'error';
+
+      const mapping = {
+        id: link.id,
+        platform: 'zalo',
+        externalUserId: link.externalUserId,
+        userId: link.userId ?? undefined,
+        notificationCadence: 'daily',
+        status: 'ACTIVE',
+      };
+
+      const result = await this.orchestration.claimAndSend(mapping, {
+        reportDate,
+        skipAlreadySentToday: link.userId !== undefined,
+        reportText,
+        classifyError: classifyZaloError,
+      });
+
+      if (result.sent > 0) return 'sent';
+      if (result.skipped > 0 || result.claimSkipped > 0) return 'skipped';
+      return 'error';
     } catch (error) {
-      if (link.userId) {
-        await this.claimRepo
-          .releaseScheduledReportClaim(
-            {
-              externalUserId: link.externalUserId,
-              reportDate,
-            },
-            claimLeaseToken,
-          )
-          .catch((releaseError) => {
-            this.logger.error(
-              `Failed to release report claim for Zalo user ${maskExternalId(
-                link.externalUserId,
-              )}: ${errorMessage(releaseError)}`,
-            );
-          });
-      }
-      if (error instanceof ZaloSendError && error.is48hWindowError()) {
-        this.logger.warn(
-          `48h window closed for Zalo user ${maskExternalId(
-            link.externalUserId,
-          )}, report not delivered`,
-        );
-        return 'skipped';
-      }
-      if (
-        error instanceof WispaceApiError &&
-        (error.statusCode === 401 || error.statusCode === 403)
-      ) {
-        this.logger.warn(
-          `Wispace access denied for Zalo user ${maskExternalId(
-            link.externalUserId,
-          )}: ${error.message}`,
-        );
-        return 'skipped';
-      }
       this.logger.error(
         `Failed to send report to Zalo user ${maskExternalId(
           link.externalUserId,
@@ -297,4 +185,19 @@ export class ZaloReportCronService {
       return 'error';
     }
   }
+}
+
+function classifyZaloError(error: unknown): ClassifiedError {
+  if (error instanceof ZaloSendError && error.is48hWindowError()) {
+    return { kind: 'window_closed', message: '48h window closed' };
+  }
+
+  if (
+    error instanceof WispaceApiError &&
+    (error.statusCode === 401 || error.statusCode === 403)
+  ) {
+    return { kind: 'skipped', message: 'Wispace access denied' };
+  }
+
+  return { kind: 'failure', message: errorMessage(error) };
 }
