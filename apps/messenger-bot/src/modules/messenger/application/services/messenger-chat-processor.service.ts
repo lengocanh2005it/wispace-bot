@@ -282,7 +282,7 @@ export class MessengerChatProcessorService {
 
       // Privacy intent handling — intercept before LLM agent
       const privacyIntent = detectPrivacyIntent(mergedText);
-      if (privacyIntent) {
+      if (privacyIntent && this.privacyState && this.privacyService) {
         const pendingAction = this.privacyState.getPendingAction(
           psid,
           'messenger',
