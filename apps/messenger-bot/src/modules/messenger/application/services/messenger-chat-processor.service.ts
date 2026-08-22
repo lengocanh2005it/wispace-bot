@@ -1,6 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
+import {
+  detectPrivacyIntent,
+  isConfirmationResponse,
+  isCancellationResponse,
+} from '@wispace/llm-agent';
 import { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import type { ChatQuotaCheckResult } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota.types';
@@ -31,6 +36,8 @@ import {
   capMergedChatUserText,
   mergeChatUserTexts,
 } from '@messenger/shared/utils/messenger-text.utils';
+import { PrivacyStateService } from '@wispace/llm-agent';
+import { PrivacyDataService } from '@wispace/database';
 
 export interface ChatBatchInput {
   psid: string;
@@ -58,6 +65,8 @@ export class MessengerChatProcessorService {
     private readonly sharedConfig: MessengerChatSharedConfigService,
     @Inject(CHAT_QUEUE_STORE)
     private readonly chatQueueStore?: ChatQueueStorePort,
+    private readonly privacyState?: PrivacyStateService,
+    private readonly privacyService?: PrivacyDataService,
   ) {}
 
   /** H7: worker/cron entry for shared queue flush. */
@@ -269,6 +278,94 @@ export class MessengerChatProcessorService {
             psid,
           )}; rate limit reserve skipped`,
         );
+      }
+
+      // Privacy intent handling — intercept before LLM agent
+      const privacyIntent = detectPrivacyIntent(mergedText);
+      if (privacyIntent) {
+        const pendingAction = this.privacyState.getPendingAction(
+          psid,
+          'messenger',
+        );
+
+        if (!pendingAction) {
+          // New privacy intent — store and ask for confirmation
+          const confirmMessage = this.privacyState.setPendingAction(
+            psid,
+            'messenger',
+            privacyIntent,
+          );
+          await this.outbound.sendTextViaPsid({
+            psid,
+            userId,
+            text: confirmMessage,
+            messageType: 'PRIVACY_CONFIRM',
+          });
+          await finalizeQuota();
+          return;
+        }
+
+        // Check for confirmation/cancellation
+        if (isConfirmationResponse(mergedText)) {
+          this.privacyState.clearPendingAction(psid, 'messenger');
+
+          let resultMessage: string;
+          switch (pendingAction) {
+            case 'unlink': {
+              const result = await this.privacyService.unlink(
+                'messenger',
+                psid,
+              );
+              resultMessage = result.deleted
+                ? 'Đã ngắt kết nối tài khoản thành công.'
+                : 'Tài khoản chưa được liên kết.';
+              break;
+            }
+            case 'delete': {
+              await this.privacyService.delete('messenger', psid);
+              resultMessage = 'Đã xóa toàn bộ dữ liệu thành công.';
+              break;
+            }
+            case 'export': {
+              const data = await this.privacyService.export('messenger', psid);
+              resultMessage = `Dữ liệu của bạn:\n${JSON.stringify(data, null, 2)}`;
+              break;
+            }
+            default:
+              resultMessage = 'Thao tác không được hỗ trợ.';
+          }
+
+          await this.outbound.sendTextViaPsid({
+            psid,
+            userId,
+            text: resultMessage,
+            messageType: 'PRIVACY_RESULT',
+          });
+          await finalizeQuota();
+          return;
+        }
+
+        if (isCancellationResponse(mergedText)) {
+          this.privacyState.clearPendingAction(psid, 'messenger');
+          await this.outbound.sendTextViaPsid({
+            psid,
+            userId,
+            text: 'Đã hủy thao tác.',
+            messageType: 'PRIVACY_CANCELLED',
+          });
+          await finalizeQuota();
+          return;
+        }
+
+        // Neither confirm nor cancel — remind user
+        await this.outbound.sendTextViaPsid({
+          psid,
+          userId,
+          text: 'Reply "Có" để xác nhận hoặc "Không" để hủy.',
+          messageType: 'PRIVACY_REMIND',
+        });
+        await finalizeQuota();
+        return;
       }
 
       const history = await this.metrics.timeStep('history_load', () =>

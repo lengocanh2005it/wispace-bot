@@ -17,7 +17,10 @@ import {
   PlatformLlmUsageRecorderAdapter,
 } from '@wispace/chat-metering';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
-import { sanitizeUntrustedTextForLlm } from '@wispace/llm-agent';
+import {
+  sanitizeUntrustedTextForLlm,
+  PrivacyStateService,
+} from '@wispace/llm-agent';
 import { REDIS_CLIENT } from '@wispace/bot-common';
 import {
   WispaceConfigService,
@@ -28,6 +31,7 @@ import {
   RescheduleConfirmationEntity,
   RescheduleRecoveryCronService,
   TypeormRescheduleStore,
+  PrivacyDataService,
 } from '@wispace/database';
 import {
   LEARNER_PROFILE_STORE,
@@ -292,6 +296,8 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     },
     MessengerChatProcessorService,
     MessengerChatEnqueueService,
+    PrivacyStateService,
+    PrivacyDataService,
     {
       provide: RedisChatQueueWorkerService,
       useFactory: (

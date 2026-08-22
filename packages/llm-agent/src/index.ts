@@ -59,6 +59,7 @@ export {
   isCancellationResponse,
   type PrivacyIntent,
 } from './utils/privacy-intent.utils';
+export { PrivacyStateService } from './utils/privacy-state.service';
 export { sanitizeReplyText } from './utils/text.utils';
 export { sleep, retryWithBackoff } from './utils/retry.utils';
 export { loadSystemPromptFile } from './utils/load-system-prompt';
