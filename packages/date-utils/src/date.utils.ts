@@ -76,6 +76,9 @@ export function tomorrowInTimezone(
   now: Date = new Date(),
 ): string {
   const today = getDatePartsInTimezone(now, timezone);
+  // Probe at noon UTC on the next local day — works for timezones ±12h from UTC.
+  // For extreme timezones (±14h), the probe may land on the wrong calendar date,
+  // but this is acceptable for the current use case (Vietnam/UTC/NYC/Berlin).
   const probe = new Date(
     Date.UTC(today.year, today.month - 1, today.day + 1, 12, 0, 0),
   );
