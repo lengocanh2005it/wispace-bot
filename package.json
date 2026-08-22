@@ -16,6 +16,8 @@
     "format:check": "turbo run format:check",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "test:affected": "turbo run test --affected",
+    "verify:affected": "turbo run format:check lint typecheck test build --affected",
     "verify": "turbo run format:check lint typecheck test build"
   },
   "devDependencies": {

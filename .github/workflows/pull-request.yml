@@ -54,6 +54,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -64,9 +66,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify pull request (format + lint + typecheck + test + build)
+      - name: Verify pull request (format + lint + typecheck + test + build, affected packages only)
         if: github.event_name == 'pull_request'
-        run: npm run verify
+        run: npm run verify:affected
+        env:
+          TURBO_SCM_BASE: origin/${{ github.base_ref }}
 
       - name: Verify trusted push (format + lint + typecheck + test + build)
         if: github.event_name == 'push'
