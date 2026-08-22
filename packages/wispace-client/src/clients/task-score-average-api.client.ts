@@ -12,6 +12,11 @@ import {
   buildWispaceHeaders,
   type WispaceIdHeader,
 } from '../utils/wispace-headers';
+import {
+  validateShape,
+  isPositiveNumber,
+  isNonEmptyString,
+} from '../utils/validate-shape';
 import type { TaskScoreAverageRecord } from '../types/task-score-average.types';
 import {
   NOOP_WISPACE_LOGGER,
@@ -90,7 +95,104 @@ export class TaskScoreAverageApiClient {
       );
     }
 
-    const data = (await response.json()) as TaskScoreAverageRecord[];
+    const rawData = await response.json();
+
+    if (!Array.isArray(rawData)) {
+      throw new WispaceApiError(
+        `TaskScoreAverage API returned non-array: ${typeof rawData}`,
+        502,
+        externalId,
+        'TaskScoreAverage',
+      );
+    }
+
+    const data: TaskScoreAverageRecord[] = [];
+    for (const [index, item] of rawData.entries()) {
+      try {
+        data.push(
+          validateShape<TaskScoreAverageRecord>(item, [
+            {
+              name: 'id',
+              validate: isPositiveNumber,
+              expected: 'positive number',
+            },
+            {
+              name: 'userId',
+              validate: isPositiveNumber,
+              expected: 'positive number',
+            },
+            {
+              name: 'task',
+              validate: isNonEmptyString,
+              expected: 'non-empty string',
+            },
+            {
+              name: 'avgTaskAchievement',
+              validate: isPositiveNumber,
+              expected: 'positive number',
+            },
+            {
+              name: 'avgCoherenceCohesion',
+              validate: isPositiveNumber,
+              expected: 'positive number',
+            },
+            {
+              name: 'avgLexicalResource',
+              validate: isPositiveNumber,
+              expected: 'positive number',
+            },
+            {
+              name: 'avgGrammaticalRangeAccuracy',
+              validate: isPositiveNumber,
+              expected: 'positive number',
+            },
+            {
+              name: 'avgTotalScore',
+              validate: isPositiveNumber,
+              expected: 'positive number',
+            },
+            {
+              name: 'task1Count',
+              validate: isPositiveNumber,
+              expected: 'positive number',
+            },
+            {
+              name: 'task2Count',
+              validate: isPositiveNumber,
+              expected: 'positive number',
+            },
+            {
+              name: 'totalTasks',
+              validate: isPositiveNumber,
+              expected: 'positive number',
+            },
+            {
+              name: 'currentStreak',
+              validate: isPositiveNumber,
+              expected: 'positive number',
+            },
+            {
+              name: 'highestStreak',
+              validate: isPositiveNumber,
+              expected: 'positive number',
+            },
+            {
+              name: 'totalPracticeTimeMinutes',
+              validate: isPositiveNumber,
+              expected: 'positive number',
+            },
+          ]),
+        );
+      } catch (error) {
+        throw new WispaceApiError(
+          `TaskScoreAverage API returned invalid shape at index ${index}: ${error instanceof Error ? error.message : 'unknown error'}`,
+          502,
+          externalId,
+          'TaskScoreAverage',
+        );
+      }
+    }
+
     this.logger.log(
       `TaskScoreAverage API returned ${data.length} record(s) (${idHeader}=${maskExternalId(
         externalId,

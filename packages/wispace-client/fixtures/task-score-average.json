@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "description": "Valid TaskScoreAverage API response fixture",
+  "endpoint": "TaskScoreAverage",
+  "valid": [
+    {
+      "id": 1,
+      "userId": 100,
+      "task": "Task 1",
+      "avgTaskAchievement": 6.5,
+      "avgCoherenceCohesion": 6.0,
+      "avgLexicalResource": 6.5,
+      "avgGrammaticalRangeAccuracy": 6.0,
+      "avgTotalScore": 6.25,
+      "task1Count": 5,
+      "task2Count": 3,
+      "totalTasks": 8,
+      "currentStreak": 3,
+      "highestStreak": 7,
+      "totalPracticeTimeMinutes": 120
+    }
+  ],
+  "invalid": [
+    {
+      "description": "Non-array response",
+      "data": { "id": 1, "userId": 100 }
+    },
+    {
+      "description": "Missing required field",
+      "data": [{ "id": 1 }]
+    },
+    {
+      "description": "Wrong type for numeric field",
+      "data": [{ "id": "not-a-number", "userId": 100, "task": "Task 1", "avgTaskAchievement": 6.5, "avgCoherenceCohesion": 6.0, "avgLexicalResource": 6.5, "avgGrammaticalRangeAccuracy": 6.0, "avgTotalScore": 6.25, "task1Count": 5, "task2Count": 3, "totalTasks": 8, "currentStreak": 3, "highestStreak": 7, "totalPracticeTimeMinutes": 120 }]
+    },
+    {
+      "description": "Negative number",
+      "data": [{ "id": 1, "userId": 100, "task": "Task 1", "avgTaskAchievement": -1, "avgCoherenceCohesion": 6.0, "avgLexicalResource": 6.5, "avgGrammaticalRangeAccuracy": 6.0, "avgTotalScore": 6.25, "task1Count": 5, "task2Count": 3, "totalTasks": 8, "currentStreak": 3, "highestStreak": 7, "totalPracticeTimeMinutes": 120 }]
+    }
+  ]
+}

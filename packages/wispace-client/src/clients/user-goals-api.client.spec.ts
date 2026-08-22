@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- jest.fn() mock of global.fetch */
 import { UserGoalsApiClient } from './user-goals-api.client';
 import { WispaceApiError } from '../errors/wispace-api.error';
+import { ShapeValidationError } from '../utils/validate-shape';
 
 describe('UserGoalsApiClient', () => {
   const originalFetch = global.fetch;
@@ -13,7 +14,7 @@ describe('UserGoalsApiClient', () => {
   it('fetches goals with the given id header', async () => {
     const fetchMock = jest.fn().mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ targetScore: 7, examDate: '2026-08-01' }),
+      json: () => Promise.resolve({ targetScore: '7', examDate: '2026-08-01' }),
     });
     global.fetch = fetchMock;
 
@@ -24,7 +25,7 @@ describe('UserGoalsApiClient', () => {
 
     const result = await client.getUserGoals('x-discordid', 'discord-1');
 
-    expect(result).toEqual({ targetScore: 7, examDate: '2026-08-01' });
+    expect(result).toEqual({ targetScore: '7', examDate: '2026-08-01' });
     expect(fetchMock).toHaveBeenCalledWith(
       'https://backend.example.com/api/User/goals',
       expect.objectContaining({
@@ -44,7 +45,8 @@ describe('UserGoalsApiClient', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: () => Promise.resolve({ targetScore: 7, examDate: '2026-08-01' }),
+        json: () =>
+          Promise.resolve({ targetScore: '7', examDate: '2026-08-01' }),
       });
     global.fetch = fetchMock;
 
@@ -56,7 +58,7 @@ describe('UserGoalsApiClient', () => {
 
     const result = await client.getUserGoals('x-psid', 'psid-1');
 
-    expect(result.targetScore).toBe(7);
+    expect(result.targetScore).toBe('7');
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -125,5 +127,96 @@ describe('UserGoalsApiClient', () => {
 
     await expect(client.getUserGoals('x-psid', 'psid-1')).rejects.toThrow();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  describe('contract validation', () => {
+    it('accepts valid response shape', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({ targetScore: '7.0', examDate: '2026-09-01' }),
+      });
+      global.fetch = fetchMock;
+
+      const client = new UserGoalsApiClient({
+        url: 'https://backend.example.com/api/User/goals',
+        internalKey: 'internal-key',
+      });
+
+      const result = await client.getUserGoals('x-psid', 'psid-1');
+      expect(result.targetScore).toBe('7.0');
+      expect(result.examDate).toBe('2026-09-01');
+    });
+
+    it('throws ShapeValidationError for malformed response (missing field)', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ examDate: '2026-09-01' }),
+      });
+      global.fetch = fetchMock;
+
+      const client = new UserGoalsApiClient({
+        url: 'https://backend.example.com/api/User/goals',
+        internalKey: 'internal-key',
+      });
+
+      await expect(client.getUserGoals('x-psid', 'psid-1')).rejects.toThrow(
+        ShapeValidationError,
+      );
+    });
+
+    it('throws ShapeValidationError for malformed response (wrong type)', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({ targetScore: 123, examDate: '2026-09-01' }),
+      });
+      global.fetch = fetchMock;
+
+      const client = new UserGoalsApiClient({
+        url: 'https://backend.example.com/api/User/goals',
+        internalKey: 'internal-key',
+      });
+
+      await expect(client.getUserGoals('x-psid', 'psid-1')).rejects.toThrow(
+        ShapeValidationError,
+      );
+    });
+
+    it('throws ShapeValidationError for non-object response', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve('not-an-object'),
+      });
+      global.fetch = fetchMock;
+
+      const client = new UserGoalsApiClient({
+        url: 'https://backend.example.com/api/User/goals',
+        internalKey: 'internal-key',
+      });
+
+      await expect(client.getUserGoals('x-psid', 'psid-1')).rejects.toThrow(
+        ShapeValidationError,
+      );
+    });
+
+    it('does not retry on contract validation failure', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ invalid: true }),
+      });
+      global.fetch = fetchMock;
+
+      const client = new UserGoalsApiClient({
+        url: 'https://backend.example.com/api/User/goals',
+        internalKey: 'internal-key',
+        baseDelayMs: 1,
+      });
+
+      await expect(client.getUserGoals('x-psid', 'psid-1')).rejects.toThrow(
+        ShapeValidationError,
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
   });
 });

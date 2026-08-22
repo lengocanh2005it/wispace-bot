@@ -12,6 +12,11 @@ import {
   buildWispaceHeaders,
   type WispaceIdHeader,
 } from '../utils/wispace-headers';
+import {
+  validateShape,
+  isNonEmptyString,
+  isDateString,
+} from '../utils/validate-shape';
 import type { UserGoalsRecord } from '../types/user-goals.types';
 import {
   NOOP_WISPACE_LOGGER,
@@ -89,7 +94,17 @@ export class UserGoalsApiClient {
       );
     }
 
-    const data = (await response.json()) as UserGoalsRecord;
+    const rawData = await response.json();
+
+    const data = validateShape<UserGoalsRecord>(rawData, [
+      {
+        name: 'targetScore',
+        validate: isNonEmptyString,
+        expected: 'non-empty string',
+      },
+      { name: 'examDate', validate: isDateString, expected: 'ISO date string' },
+    ]);
+
     this.logger.log(
       `User goals API returned targetScore=${data.targetScore}, examDate=${data.examDate} (${idHeader}=${maskExternalId(
         externalId,

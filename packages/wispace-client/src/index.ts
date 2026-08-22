@@ -13,6 +13,14 @@ export { buildWispaceHeaders } from './utils/wispace-headers';
 export type { WispaceIdHeader } from './utils/wispace-headers';
 export { readHttpsUrl } from './utils/https-url';
 export {
+  validateShape,
+  ShapeValidationError,
+  isNonEmptyString,
+  isPositiveNumber,
+  isDateString,
+  isHttpsUrl,
+} from './utils/validate-shape';
+export {
   validateUpstreamUrl,
   buildUpstreamUrlPolicy,
   type UpstreamUrlPolicy,

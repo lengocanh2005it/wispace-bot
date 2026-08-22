@@ -1,0 +1,31 @@
+{
+  "version": "1.0.0",
+  "description": "Valid UserGoals API response fixture",
+  "endpoint": "User/goals",
+  "valid": {
+    "targetScore": "7.0",
+    "examDate": "2026-09-01"
+  },
+  "invalid": [
+    {
+      "description": "Missing targetScore",
+      "data": { "examDate": "2026-09-01" }
+    },
+    {
+      "description": "Missing examDate",
+      "data": { "targetScore": "7.0" }
+    },
+    {
+      "description": "Empty targetScore",
+      "data": { "targetScore": "", "examDate": "2026-09-01" }
+    },
+    {
+      "description": "Invalid examDate format",
+      "data": { "targetScore": "7.0", "examDate": "not-a-date" }
+    },
+    {
+      "description": "Wrong types",
+      "data": { "targetScore": 7.0, "examDate": 123 }
+    }
+  ]
+}
