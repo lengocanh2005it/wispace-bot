@@ -171,8 +171,6 @@ describe('ChatRateLimitService', () => {
       reason: 'DAILY_LIMIT',
     });
     expect(result.usageDate).toMatch(usageDatePattern);
-    // Daily limit is now enforced inside the DB transaction (H3), so one reserve
-    // attempt is made. Burst increment is rolled back via releaseReservation.
     expect(getReserveCallCount()).toBe(1);
     expect(burstCounter.releaseReservation).toHaveBeenCalledWith('psid-1');
     expect(getCount()).toBe(15);

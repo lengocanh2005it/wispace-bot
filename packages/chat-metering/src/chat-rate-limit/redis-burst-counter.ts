@@ -1,26 +1,22 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import {
-  REDIS_CLIENT,
-  errorMessage,
-  maskExternalId,
-} from '@wispace/bot-common';
 import type { RedisClientPort } from '@wispace/bot-common';
-import {
-  CHAT_BURST_KEY_TTL_SECONDS,
-  CHAT_BURST_WINDOW_MS,
-} from '../../domain/entities/chat-burst.types';
-import type { ChatBurstCounterPort } from '../../domain/repositories/chat-burst-counter.port';
+import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
+import type { BurstCounterPort } from './types';
 
-@Injectable()
-export class RedisChatBurstCounter implements ChatBurstCounterPort {
+export const CHAT_BURST_KEY_TTL_SECONDS = 120;
+
+/**
+ * Redis-backed burst counter with automatic TTL expiry and Postgres fallback.
+ *
+ * Uses an atomic Lua script for INCR + EXPIRE + DECR-if-over-limit to avoid
+ * the race where two concurrent requests both pass the read check.
+ *
+ * When Redis is unavailable, returns { allowed: true, transactional: true }
+ * so the Postgres reserve transaction enforces the burst limit as a fallback.
+ */
+export class RedisBurstCounter implements BurstCounterPort {
   private static readonly KEY_PREFIX = 'burst:';
 
-  private readonly logger = new Logger(RedisChatBurstCounter.name);
-
-  constructor(
-    @Inject(REDIS_CLIENT)
-    private readonly redisClient: RedisClientPort,
-  ) {}
+  constructor(private readonly redisClient: RedisClientPort) {}
 
   isAvailable(): boolean {
     return (
@@ -29,27 +25,23 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
     );
   }
 
-  async getBurstCount(psid: string): Promise<number> {
+  async getBurstCount(externalUserId: string): Promise<number> {
     const client = this.redisClient.getNativeClient();
     if (!client) {
       return 0;
     }
 
     try {
-      const raw = await client.get(this.key(psid));
+      const raw = await client.get(this.key(externalUserId));
       return Number(raw ?? 0);
-    } catch (error) {
-      this.logger.warn(
-        `Redis burst read failed psid=${maskExternalId(psid)}: ${errorMessage(
-          error,
-        )}`,
-      );
+    } catch {
+      // ponytail: log-and-fallback, not throw — burst is best-effort
       return 0;
     }
   }
 
   async tryReserveBurst(
-    psid: string,
+    externalUserId: string,
     limit: number,
   ): Promise<{ allowed: boolean; count: number; transactional: boolean }> {
     const client = this.redisClient.getNativeClient();
@@ -57,8 +49,7 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
       return { allowed: true, count: 0, transactional: true };
     }
 
-    const key = this.key(psid);
-    // Atomically INCR, set TTL on first write, DECR+deny if over limit.
+    const key = this.key(externalUserId);
     const luaScript = `
       local count = redis.call('INCR', KEYS[1])
       if count == 1 then
@@ -84,28 +75,19 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
         count: result[1] ?? 0,
         transactional: false,
       };
-    } catch (error) {
-      this.logger.warn(
-        `Redis burst tryReserve failed psid=${maskExternalId(psid)}: ${errorMessage(
-          error,
-        )}`,
-      );
-      // Let the Postgres reserve transaction enforce the burst limit when
-      // Redis is unavailable. This keeps chat available without losing the
-      // quota guarantee.
+    } catch {
+      // Redis unavailable — let Postgres reserve transaction enforce burst limit
       return { allowed: true, count: 0, transactional: true };
     }
   }
 
-  async releaseReservation(psid: string): Promise<void> {
+  async releaseReservation(externalUserId: string): Promise<void> {
     const client = this.redisClient.getNativeClient();
     if (!client) {
       return;
     }
 
-    const key = this.key(psid);
-
-    // Atomic: DECR, then DEL if result <= 0.
+    const key = this.key(externalUserId);
     const luaScript = `
       local remaining = redis.call('DECR', KEYS[1])
       if remaining <= 0 then
@@ -116,17 +98,13 @@ export class RedisChatBurstCounter implements ChatBurstCounterPort {
 
     try {
       await client.eval(luaScript, 1, key);
-    } catch (error) {
-      this.logger.warn(
-        `Redis burst decrement failed psid=${maskExternalId(psid)}: ${errorMessage(
-          error,
-        )}`,
-      );
+    } catch {
+      // Best-effort — burst counter is advisory
     }
   }
 
-  private key(psid: string): string {
+  private key(externalUserId: string): string {
     const bucket = Math.floor(Date.now() / CHAT_BURST_WINDOW_MS);
-    return `${RedisChatBurstCounter.KEY_PREFIX}${psid}:${bucket}`;
+    return `${RedisBurstCounter.KEY_PREFIX}${externalUserId}:${bucket}`;
   }
 }

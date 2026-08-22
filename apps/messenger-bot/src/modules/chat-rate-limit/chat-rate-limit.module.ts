@@ -1,11 +1,13 @@
 import { Module, Logger } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
 import { CommonModule } from '../../shared/common/common.module';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
   MemoryBurstCounter,
   PostgresBurstCounter,
+  RedisBurstCounter,
   type BurstReservationResult,
 } from '@wispace/chat-metering';
 import { CleanupCronService } from '@wispace/cleanup-cron';
@@ -23,7 +25,6 @@ import type { ChatBurstCounterPort } from './domain/repositories/chat-burst-coun
 import { CHAT_QUOTA_EVENT_REPOSITORY } from './domain/repositories/chat-quota-event.repository.port';
 import { CHAT_QUOTA_REPOSITORY } from './domain/repositories/chat-quota.repository.port';
 import { ChatQuotaEventRepository } from './infrastructure/persistence/chat-quota-event.repository';
-import { RedisChatBurstCounter } from './infrastructure/persistence/redis-chat-burst-counter';
 import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-limit.repository';
 
 @Module({
@@ -38,20 +39,18 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
   providers: [
     ChatRateLimitConfigService,
     ChatRateLimitStartupService,
-    RedisChatBurstCounter,
     {
       provide: CHAT_BURST_COUNTER,
       useFactory: (
         config: ChatRateLimitConfigService,
-        redisCounter: RedisChatBurstCounter,
         repository: ChatRateLimitRepository,
+        redisClient: RedisClientPort | null,
       ): ChatBurstCounterPort => {
         const logger = new Logger('ChatBurstCounter');
         const configured = config.getBurstStore();
 
         if (configured === 'redis') {
-          // Defer Redis check — RedisService.onModuleInit() may not have
-          // completed yet when this factory runs. Check on first use instead.
+          const redisCounter = new RedisBurstCounter(redisClient!);
           const pgFallback = (): PostgresBurstCounter =>
             new PostgresBurstCounter(
               {
@@ -106,8 +105,8 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
       },
       inject: [
         ChatRateLimitConfigService,
-        RedisChatBurstCounter,
         ChatRateLimitRepository,
+        { token: REDIS_CLIENT, optional: true },
       ],
     },
     ChatQuotaEventRepository,

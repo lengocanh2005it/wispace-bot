@@ -1,4 +1,3 @@
-import type { ChatRateLimitRepository } from './chat-rate-limit.repository';
 import {
   todayInTimezone as todayUsageDate,
   subtractMs,
@@ -8,6 +7,7 @@ import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
 import type {
   BurstCounterPort,
   ChatQuotaCheckResult,
+  ChatRateLimitRepositoryPort,
   ChatRateLimitSettings,
   RecoverIdempotencyOutcome,
 } from './types';
@@ -36,7 +36,7 @@ const DEFAULT_STUCK_RESERVED_MS = 600_000;
  */
 export class ChatRateLimitCore {
   constructor(
-    private readonly repository: ChatRateLimitRepository,
+    private readonly repository: ChatRateLimitRepositoryPort,
     private readonly burstCounter: BurstCounterPort,
     private readonly settings: ChatRateLimitSettings,
     private readonly logger: ChatRateLimitLogger = NOOP_LOGGER,

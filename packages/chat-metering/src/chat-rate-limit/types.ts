@@ -86,3 +86,32 @@ export interface BurstReservationResult {
   /** True when this attempt is backed by the Postgres reserve transaction. */
   transactional: boolean;
 }
+
+/**
+ * Structural interface for the quota repository used by `ChatRateLimitCore`.
+ * The concrete `ChatRateLimitRepository` class satisfies this — adapters
+ * (e.g. Messenger's wrapper) can also satisfy it without extending the class.
+ */
+export interface ChatRateLimitRepositoryPort {
+  getDailyUsageCount(
+    externalUserId: string,
+    usageDate: string,
+  ): Promise<number>;
+  reserveFreeFormSlotInTransaction(
+    input: ReserveFreeFormSlotInput,
+  ): Promise<ReserveFreeFormSlotOutcome>;
+  refundReservedSlot(params: {
+    externalUserId: string;
+    usageDate: string;
+    idempotencyKey: string;
+    releaseReason?: 'send_failed' | 'stuck_recover';
+    userId?: number;
+  }): Promise<boolean>;
+  completeReservedSlot(idempotencyKey: string): Promise<boolean>;
+  markDeliveredSlot(idempotencyKey: string): Promise<boolean>;
+  recoverIdempotencyForRetry(
+    idempotencyKey: string,
+    stuckBefore: Date,
+  ): Promise<RecoverIdempotencyOutcome>;
+  recoverAllStuckReserved(stuckBefore: Date): Promise<string[]>;
+}

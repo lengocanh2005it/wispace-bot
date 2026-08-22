@@ -17,12 +17,17 @@ export {
   CHAT_BURST_WINDOW_MS,
 } from './chat-rate-limit/memory-burst-counter';
 export { PostgresBurstCounter } from './chat-rate-limit/postgres-burst-counter';
+export {
+  RedisBurstCounter,
+  CHAT_BURST_KEY_TTL_SECONDS,
+} from './chat-rate-limit/redis-burst-counter';
 export { PlatformChatRateLimitService } from './chat-rate-limit/platform-chat-rate-limit.service';
 export type {
   BurstCounterPort,
   BurstReservationResult,
   ChatIdempotencyRecord,
   ChatQuotaCheckResult,
+  ChatRateLimitRepositoryPort,
   ReserveFreeFormSlotInput,
   ReserveFreeFormSlotOutcome,
   ReserveIdempotencyInput,
