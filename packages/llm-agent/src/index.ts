@@ -53,6 +53,12 @@ export {
   isOpenAiServerError,
 } from './utils/openai-error.utils';
 export { isObviouslyOffTopic, isGreetingOnly } from './utils/scope.utils';
+export {
+  detectPrivacyIntent,
+  isConfirmationResponse,
+  isCancellationResponse,
+  type PrivacyIntent,
+} from './utils/privacy-intent.utils';
 export { sanitizeReplyText } from './utils/text.utils';
 export { sleep, retryWithBackoff } from './utils/retry.utils';
 export { loadSystemPromptFile } from './utils/load-system-prompt';

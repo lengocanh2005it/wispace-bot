@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BotCommonModule } from '@wispace/bot-common';
 import { DopplerSyncModule } from '@wispace/doppler-sync';
+import { PrivacyDataService } from '@wispace/database';
 import { DiscordReportModule } from '../discord-chat/discord-report.module';
 import { DiscordStudyReminderModule } from '../discord-study-reminder/discord-study-reminder.module';
 import { WispaceModule } from '../wispace/wispace.module';
@@ -16,5 +17,6 @@ import { DiscordOpsController } from './discord-ops.controller';
     DopplerSyncModule.forPlatform('discord-bot'),
   ],
   controllers: [DiscordOpsController],
+  providers: [PrivacyDataService],
 })
 export class DiscordOpsModule {}

@@ -1,5 +1,11 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
-import { IsBoolean, IsNumber, IsOptional, IsPositive } from 'class-validator';
+import {
+  IsBoolean,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+} from 'class-validator';
 import { InternalApiKeyGuard } from '@wispace/bot-common';
 import {
   createCalendarGetSessions,
@@ -8,6 +14,7 @@ import {
 import { WispaceCalendarService } from '@wispace/wispace-client';
 import { DopplerRuntimeSyncService } from '@wispace/doppler-sync';
 import type { DopplerWebhookPayload } from '@wispace/doppler-sync';
+import { PrivacyDataService } from '@wispace/database';
 import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
 
 class SyncStudyCalendarBody {
@@ -22,6 +29,11 @@ class SendReportsBody {
   forceSend?: boolean;
 }
 
+class PrivacyActionBody {
+  @IsString()
+  externalUserId!: string;
+}
+
 @Controller('zalo')
 @UseGuards(InternalApiKeyGuard)
 export class ZaloOpsController {
@@ -30,6 +42,7 @@ export class ZaloOpsController {
     private readonly studyReminderSyncService: StudyReminderSyncService,
     private readonly calendarService: WispaceCalendarService,
     private readonly dopplerRuntimeSyncService: DopplerRuntimeSyncService,
+    private readonly privacyService: PrivacyDataService,
   ) {}
 
   @Post('ops/doppler-sync')
@@ -65,5 +78,23 @@ export class ZaloOpsController {
       // Authoritative calendar fetch before any stale-job cancellation.
       getSessions: createCalendarGetSessions(this.calendarService),
     });
+  }
+
+  @Post('privacy/unlink')
+  @HttpCode(200)
+  unlinkUser(@Body() body: PrivacyActionBody) {
+    return this.privacyService.unlink('zalo', body.externalUserId);
+  }
+
+  @Post('privacy/delete')
+  @HttpCode(200)
+  deleteUser(@Body() body: PrivacyActionBody) {
+    return this.privacyService.delete('zalo', body.externalUserId);
+  }
+
+  @Post('privacy/export')
+  @HttpCode(200)
+  exportUser(@Body() body: PrivacyActionBody) {
+    return this.privacyService.export('zalo', body.externalUserId);
   }
 }
