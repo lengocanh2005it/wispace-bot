@@ -31,11 +31,45 @@
     },
     {
       "description": "Wrong type for numeric field",
-      "data": [{ "id": "not-a-number", "userId": 100, "task": "Task 1", "avgTaskAchievement": 6.5, "avgCoherenceCohesion": 6.0, "avgLexicalResource": 6.5, "avgGrammaticalRangeAccuracy": 6.0, "avgTotalScore": 6.25, "task1Count": 5, "task2Count": 3, "totalTasks": 8, "currentStreak": 3, "highestStreak": 7, "totalPracticeTimeMinutes": 120 }]
+      "data": [
+        {
+          "id": "not-a-number",
+          "userId": 100,
+          "task": "Task 1",
+          "avgTaskAchievement": 6.5,
+          "avgCoherenceCohesion": 6.0,
+          "avgLexicalResource": 6.5,
+          "avgGrammaticalRangeAccuracy": 6.0,
+          "avgTotalScore": 6.25,
+          "task1Count": 5,
+          "task2Count": 3,
+          "totalTasks": 8,
+          "currentStreak": 3,
+          "highestStreak": 7,
+          "totalPracticeTimeMinutes": 120
+        }
+      ]
     },
     {
       "description": "Negative number",
-      "data": [{ "id": 1, "userId": 100, "task": "Task 1", "avgTaskAchievement": -1, "avgCoherenceCohesion": 6.0, "avgLexicalResource": 6.5, "avgGrammaticalRangeAccuracy": 6.0, "avgTotalScore": 6.25, "task1Count": 5, "task2Count": 3, "totalTasks": 8, "currentStreak": 3, "highestStreak": 7, "totalPracticeTimeMinutes": 120 }]
+      "data": [
+        {
+          "id": 1,
+          "userId": 100,
+          "task": "Task 1",
+          "avgTaskAchievement": -1,
+          "avgCoherenceCohesion": 6.0,
+          "avgLexicalResource": 6.5,
+          "avgGrammaticalRangeAccuracy": 6.0,
+          "avgTotalScore": 6.25,
+          "task1Count": 5,
+          "task2Count": 3,
+          "totalTasks": 8,
+          "currentStreak": 3,
+          "highestStreak": 7,
+          "totalPracticeTimeMinutes": 120
+        }
+      ]
     }
   ]
 }
