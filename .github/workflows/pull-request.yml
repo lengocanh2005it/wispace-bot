@@ -71,6 +71,8 @@ jobs:
         run: npm run verify:affected
         env:
           TURBO_SCM_BASE: origin/${{ github.base_ref }}
+          TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+          TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
 
       - name: Verify trusted push (format + lint + typecheck + test + build)
         if: github.event_name == 'push'
