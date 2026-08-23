@@ -44,16 +44,16 @@ printf '%s\n' "$install_step" | grep -q 'run: npm ci' || fail "npm ci step missi
 
 printf '%s\n' "$pr_verify_step" | grep -Fq "if: github.event_name == 'pull_request'" \
   || fail "PR verify is not gated by github.event_name == 'pull_request'"
-printf '%s\n' "$pr_verify_step" | grep -q 'run: npm run verify' \
-  || fail "PR path does not run npm run verify"
+printf '%s\n' "$pr_verify_step" | grep -q 'run: npm run verify:affected' \
+  || fail "PR path does not run npm run verify:affected"
 ! printf '%s\n' "$pr_verify_step" | grep -Eq 'TURBO_TOKEN|TURBO_TEAM|secrets\.' \
   || fail "PR verify path contains credentials"
 pass "pull_request verify runs without Turbo credentials"
 
 printf '%s\n' "$push_verify_step" | grep -Fq "if: github.event_name == 'push'" \
   || fail "trusted verify is not gated by github.event_name == 'push'"
-printf '%s\n' "$push_verify_step" | grep -q 'run: npm run verify' \
-  || fail "trusted push path does not run npm run verify"
+printf '%s\n' "$push_verify_step" | grep -q 'run: npx turbo run format:check lint typecheck test build --force' \
+  || fail "trusted push path does not run the full forced Turbo verify"
 printf '%s\n' "$push_verify_step" | grep -q 'TURBO_TOKEN:.*secrets.TURBO_TOKEN' \
   || fail "trusted push path cannot use TURBO_TOKEN"
 printf '%s\n' "$push_verify_step" | grep -q 'TURBO_TEAM:.*secrets.TURBO_TEAM' \
