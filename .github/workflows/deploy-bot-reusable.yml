@@ -121,8 +121,8 @@ jobs:
             ${{ env.IMAGE_LATEST }}
           sbom: true
           provenance: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ inputs.app }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.app }}
 
   migration-timestamps:
     # Check for duplicate migration timestamps in source files.

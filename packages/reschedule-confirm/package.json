@@ -9,7 +9,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
-    "lint": "oxlint --fix",
+    "lint": "oxlint",
     "format:check": "oxfmt --check",
     "format": "oxfmt",
     "test": "jest --maxWorkers=50%"

@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.build.json",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "lint": "oxlint --fix",
+    "lint": "oxlint",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test": "jest --maxWorkers=50%"
   },

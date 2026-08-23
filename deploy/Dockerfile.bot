@@ -11,11 +11,21 @@ FROM node:22.23.2-alpine@sha256:76789712cd1ae89a1225eac9077010d68987a423588042da
 WORKDIR /src
 ARG APP_NAME
 
-# Install the lockfile-resolved dependency tree first so `turbo` comes from
-# package-lock.json — never from an unpinned registry fetch.
+# Install the lockfile-resolved dependency tree before copying source so
+# source changes do not invalidate this dependency layer. The bind mount
+# contributes workspace manifests without persisting the full source tree.
+RUN --mount=type=bind,source=.,target=/context,ro \
+    --mount=type=cache,target=/root/.npm \
+    set -eu; \
+    cp /context/package.json /context/package-lock.json /src/; \
+    find /context/apps /context/packages -name package.json -print | while read -r manifest; do \
+      relative="${manifest#/context/}"; \
+      mkdir -p "/src/$(dirname "$relative")"; \
+      cp "$manifest" "/src/$relative"; \
+    done; \
+    HUSKY=0 npm ci
 COPY . .
-RUN --mount=type=cache,target=/root/.npm HUSKY=0 npm ci
-RUN npx turbo prune @wispace/${APP_NAME} --docker --out-dir /tmp/pruned
+RUN npx --no-install turbo prune @wispace/${APP_NAME} --docker --out-dir /tmp/pruned
 
 FROM node:22.23.2-alpine@sha256:76789712cd1ae89a1225eac9077010d68987a423588042dac30446f502f1858c AS build
 WORKDIR /app

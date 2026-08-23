@@ -32,7 +32,7 @@
     "migration:revert": "npm run build && npx --no-install typeorm migration:revert -d dist/infrastructure/database/data-source.js",
     "migration:show": "npm run build && npx --no-install typeorm migration:show -d dist/infrastructure/database/data-source.js",
     "migration:generate": "npm run build && npx --no-install typeorm migration:generate -d dist/infrastructure/database/data-source.js",
-    "lint": "oxlint --fix",
+    "lint": "oxlint",
     "format:check": "oxfmt --check",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test && npm run build",
