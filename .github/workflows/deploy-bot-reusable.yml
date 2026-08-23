@@ -68,7 +68,6 @@ jobs:
               - 'package-lock.json'
               - 'turbo.json'
             deploy:
-              - 'apps/${{ inputs.app }}/docker-compose.prod.yml'
               - 'deploy/Dockerfile.bot'
               - 'deploy/verify-runtime-image.mjs'
               - '.github/workflows/**'
@@ -265,7 +264,6 @@ jobs:
       - name: Prepare VPS upload bundle
         run: |
           mkdir -p upload-bundle
-          cp apps/${{ inputs.app }}/docker-compose.prod.yml upload-bundle/
           cp .github/scripts/vps-deploy.sh upload-bundle/
           # Copy nginx upstream config for zero-downtime deploy
           mkdir -p upload-bundle/upstreams
@@ -273,6 +271,14 @@ jobs:
           if [ -f production.env ]; then
             cp production.env upload-bundle/
           fi
+
+      - name: Validate bundle contents
+        run: |
+          if [ ! -f upload-bundle/vps-deploy.sh ]; then
+            echo "ERROR: Required bundle artifact missing: vps-deploy.sh"
+            exit 1
+          fi
+          echo "Bundle OK: $(ls upload-bundle/ | tr '\n' ', ')"
 
       - name: Upload bundle to VPS (retry)
         env:
