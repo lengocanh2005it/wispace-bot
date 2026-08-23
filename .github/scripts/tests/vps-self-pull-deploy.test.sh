@@ -334,5 +334,85 @@ code=$(run_script "$dir")
 grep -q "previous deploy failure recovered" "$dir/run.out" || fail "recovery not logged"
 pass "guard clears failure marker"
 
+echo "Test 13: migration owner image missing -> barrier blocked, alert, no dependent deploys (#338)"
+dir=$(make_env barrier-missing-image)
+cat > "$dir/bin/docker" <<'FAKE'
+#!/usr/bin/env bash
+echo "docker $*" >> "${DOCKER_LOG:?}"
+case "$1" in
+  login) exit 0 ;;
+  manifest)
+    # Simulate image not published — manifest inspect fails
+    printf '' >&2
+    exit 1
+    ;;
+  *) exit 0 ;;
+esac
+FAKE
+chmod +x "$dir/bin/docker"
+code=$(run_script "$dir")
+[ "$code" -eq 0 ] || fail "barrier failure should retry next tick, got $code"
+grep -q "migration owner.*not published or unverifiable" "$dir/run.out" || fail "missing migration owner barrier error"
+[ -f "$dir/state/messenger-bot.failed" ] || fail "messenger-bot failed marker missing"
+[ "$(cat "$dir/state/messenger-bot.failed")" = "$SHA_B" ] || fail "messenger-bot failed marker sha != $SHA_B"
+grep -q 'alertname":"vps_self_pull_app_failed' "$dir/curl.body" || fail "barrier alert not posted"
+[ ! -f "$dir/state/discord-bot.sha" ] || fail "discord-bot deployed despite blocked barrier"
+[ ! -f "$dir/state/zalo-bot.sha" ] || fail "zalo-bot deployed despite blocked barrier"
+grep -q "migration barrier" "$dir/run.out" || fail "missing migration barrier log"
+pass "missing image blocks migration barrier"
+
+echo "Test 14: migration owner manifest auth failure -> barrier blocked (#338)"
+dir=$(make_env barrier-auth-fail)
+cat > "$dir/bin/docker" <<'FAKE'
+#!/usr/bin/env bash
+echo "docker $*" >> "${DOCKER_LOG:?}"
+case "$1" in
+  login) exit 0 ;;
+  manifest)
+    # Simulate auth failure
+    echo "unauthorized: authentication required" >&2
+    exit 1
+    ;;
+  *) exit 0 ;;
+esac
+FAKE
+chmod +x "$dir/bin/docker"
+code=$(run_script "$dir")
+[ "$code" -eq 0 ] || fail "auth failure should retry next tick, got $code"
+grep -q "migration owner.*not published or unverifiable" "$dir/run.out" || fail "missing migration owner barrier error"
+[ -f "$dir/state/messenger-bot.failed" ] || fail "messenger-bot failed marker missing"
+grep -q 'alertname":"vps_self_pull_app_failed' "$dir/curl.body" || fail "barrier alert not posted"
+[ ! -f "$dir/state/discord-bot.sha" ] || fail "discord-bot deployed despite blocked barrier"
+[ ! -f "$dir/state/zalo-bot.sha" ] || fail "zalo-bot deployed despite blocked barrier"
+pass "auth failure blocks migration barrier"
+
+echo "Test 15: non-migration owner image missing -> skip without blocking barrier (#338)"
+dir=$(make_env skip-non-owner)
+cat > "$dir/bin/docker" <<'FAKE'
+#!/usr/bin/env bash
+echo "docker $*" >> "${DOCKER_LOG:?}"
+case "$1" in
+  login) exit 0 ;;
+  manifest)
+    # Messenger succeeds, discord fails
+    if echo "$*" | grep -q "discord-bot"; then
+      echo "unauthorized" >&2
+      exit 1
+    fi
+    printf '{"schemaVersion":2,"config":{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}\n'
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+FAKE
+chmod +x "$dir/bin/docker"
+code=$(run_script "$dir")
+[ "$code" -eq 0 ] || fail "non-owner skip should not fail, got $code"
+grep -q "discord-bot.*not published yet" "$dir/run.out" || fail "missing skip log for discord"
+[ "$(cat "$dir/state/messenger-bot.sha")" = "$SHA_B" ] || fail "messenger-bot not deployed"
+[ ! -f "$dir/state/discord-bot.sha" ] || fail "discord-bot deployed despite missing image"
+[ ! -f "$dir/state/discord-bot.failed" ] || fail "discord-bot should not have failed marker (just skipped)"
+pass "non-migration owner skip without barrier block"
+
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"

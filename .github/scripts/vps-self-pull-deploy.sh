@@ -142,6 +142,7 @@ APP_ORDER=(messenger-bot discord-bot zalo-bot)
 
 deploy_app() {
   local app="$1"
+  local is_migration_owner="${2:-false}"
   local health_path run_migrations target_dir image state_file fail_marker image_digest migration_cmd
   IFS=':' read -r health_path run_migrations <<< "${APPS[$app]}"
   target_dir="$TARGET_BASE_DIR/${app}"
@@ -154,6 +155,14 @@ deploy_app() {
   fi
 
   if ! docker manifest inspect "$image" >/dev/null 2>&1; then
+    if [ "$is_migration_owner" = "true" ]; then
+      echo "ERROR: $app (migration owner) — $image not published or unverifiable — barrier blocked" >&2
+      if [ ! -f "$fail_marker" ] || [ "$(cat "$fail_marker")" != "$NEW_SHA" ]; then
+        echo "$NEW_SHA" > "$fail_marker"
+        notify_app_failed "$app" "$NEW_SHA"
+      fi
+      return 1
+    fi
     echo "$app: $image not published yet — skipping (CI may not have built this commit)"
     return 0
   fi
@@ -234,7 +243,7 @@ deploy_app() {
 
 # Messenger owns the shared schema migration. Keep it first and make its
 # successful deploy/state write the barrier for Discord and Zalo (#283).
-if deploy_app "${APP_ORDER[0]}"; then
+if deploy_app "${APP_ORDER[0]}" true; then
   echo "Migration barrier ready — deploying dependent bots"
   for app in "${APP_ORDER[@]:1}"; do
     deploy_app "$app" || true
