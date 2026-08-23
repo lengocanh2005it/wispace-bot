@@ -165,6 +165,8 @@ jobs:
       # exception required by the NODE_ENV-independent TLS enforcement.
       DB_ALLOW_INSECURE_HOSTS: postgres
     steps:
+      - name: Check for duplicate migration timestamps
+        run: bash .github/scripts/check-migration-timestamps.sh packages/database/src/migrations
       # The container job runs with CWD=/github/workspace, but the image's
       # typeorm CLI lives in /app/node_modules/.bin — cd into /app first.
       - name: Show migration status (pending)
