@@ -72,6 +72,39 @@ describe('ZaloWebhookIngestService (durable webhook ingestion)', () => {
     expect(buildZaloEventId(event)).toMatch(/^follow:u2:\d+$/);
   });
 
+  it('generates deterministic content hash when both msg_id and timestamp are missing', () => {
+    const event: ZaloWebhookEvent = {
+      app_id: 'app-1',
+      event_name: 'follow',
+      follower: { id: 'u2' },
+    };
+    const first = buildZaloEventId(event);
+    const second = buildZaloEventId(event);
+    expect(first).toBe(second);
+    expect(first).toMatch(/^follow:u2:[a-f0-9]{64}$/);
+  });
+
+  it('same payload always produces the same hash across repeated calls', () => {
+    const event: ZaloWebhookEvent = {
+      app_id: 'app-1',
+      event_name: 'unfollow',
+      sender: { id: 'u3' },
+      message: { text: 'bye' },
+    };
+    const ids = Array.from({ length: 10 }, () => buildZaloEventId(event));
+    expect(new Set(ids).size).toBe(1);
+  });
+
+  it('different payloads produce different hashes', () => {
+    const base: ZaloWebhookEvent = {
+      app_id: 'app-1',
+      event_name: 'follow',
+      follower: { id: 'u2' },
+    };
+    const modified = { ...base, app_id: 'app-2' };
+    expect(buildZaloEventId(base)).not.toBe(buildZaloEventId(modified));
+  });
+
   it('propagates an inbox persistence failure so the endpoint does not acknowledge', async () => {
     const { service, inboundEvents } = buildService();
     (inboundEvents.ingest as jest.Mock).mockRejectedValue(new Error('DB down'));

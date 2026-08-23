@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { maskEventId } from '@wispace/bot-common';
 import { PlatformWebhookInboundEventService } from '@wispace/database';
 import type { ZaloWebhookEvent } from '../domain/entities/zalo-webhook-event.types';
@@ -9,7 +10,15 @@ export function buildZaloEventId(event: ZaloWebhookEvent): string {
     return event.message.msg_id;
   }
   const userId = event.sender?.id ?? event.follower?.id ?? 'unknown';
-  return `${event.event_name}:${userId}:${event.timestamp ?? Date.now()}`;
+  if (event.timestamp) {
+    return `${event.event_name}:${userId}:${event.timestamp}`;
+  }
+  // ponytail: deterministic content hash — same payload always produces the
+  // same key, even across redeliveries with no msg_id or timestamp.
+  const fingerprint = createHash('sha256')
+    .update(JSON.stringify(event))
+    .digest('hex');
+  return `${event.event_name}:${userId}:${fingerprint}`;
 }
 
 /**

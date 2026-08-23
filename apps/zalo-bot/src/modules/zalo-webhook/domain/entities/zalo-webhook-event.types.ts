@@ -15,7 +15,7 @@ export type ZaloWebhookEventName =
 export interface ZaloWebhookEvent {
   app_id: string;
   event_name: ZaloWebhookEventName;
-  timestamp: string;
+  timestamp?: string;
   sender?: { id: string };
   recipient?: { id: string };
   follower?: { id: string };
