@@ -51,6 +51,8 @@ export class DiscordOauthController {
     url.searchParams.set('scope', 'identify');
     url.searchParams.set('state', state);
 
+    // ponytail: Cache-Control not in Helmet v8 — prevent browser/proxy caching of token-bearing response
+    res.setHeader('Cache-Control', 'no-store');
     res.json({ url: url.toString() });
   }
 

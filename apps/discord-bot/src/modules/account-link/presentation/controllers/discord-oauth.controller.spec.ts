@@ -30,7 +30,7 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = { json: jest.fn() } as never;
+      const res = { json: jest.fn(), setHeader: jest.fn() } as never;
       await controller.getOAuthUrl('link-token-abc', res);
 
       expect(deps.stateService.create).toHaveBeenCalledWith('link-token-abc');
@@ -39,6 +39,21 @@ describe('DiscordOauthController', () => {
           url: expect.stringContaining('state=random-state-123'),
         }),
       );
+    });
+
+    it('sets Cache-Control: no-store on the response', async () => {
+      const deps = mockDeps();
+      deps.stateService.create.mockResolvedValue('state-xyz');
+      const controller = new DiscordOauthController(
+        deps.configService as never,
+        deps.completionService as never,
+        deps.stateService as never,
+      );
+
+      const res = { json: jest.fn(), setHeader: jest.fn() } as never;
+      await controller.getOAuthUrl('token-abc', res);
+
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     });
 
     it('returns empty url when linkToken is missing', async () => {

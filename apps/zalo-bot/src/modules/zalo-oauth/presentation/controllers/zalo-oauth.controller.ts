@@ -55,6 +55,8 @@ export class ZaloOauthController {
     url.searchParams.set('code_challenge', codeChallenge);
     url.searchParams.set('state', state);
 
+    // ponytail: Cache-Control not in Helmet v8 — prevent browser/proxy caching of token-bearing 302 redirect
+    res.setHeader('Cache-Control', 'no-store');
     res.redirect(url.toString());
   }
 

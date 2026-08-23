@@ -19,10 +19,36 @@ function buildConfig(): ConfigService {
 }
 
 function buildRes() {
-  return { redirect: jest.fn(), json: jest.fn() };
+  return { redirect: jest.fn(), json: jest.fn(), setHeader: jest.fn() };
 }
 
 describe('ZaloOauthController', () => {
+  it('GET /authorize sets Cache-Control: no-store before redirect', async () => {
+    const controller = new ZaloOauthController(
+      buildConfig(),
+      {
+        buildPkcePair: jest.fn().mockReturnValue({
+          codeVerifier: 'v',
+          codeChallenge: 'c',
+        }),
+        exchangeCodeForZaloUser: jest.fn(),
+        upsertLink: jest.fn(),
+        findUserIdByZaloId: jest.fn(),
+      } as unknown as ZaloAccountLinkService,
+      {
+        create: jest.fn().mockResolvedValue('s'),
+        consume: jest.fn(),
+      } as unknown as ZaloOauthStateService,
+      { completeLink: jest.fn() } as unknown as ZaloLinkCompletionService,
+    );
+
+    const res = buildRes();
+    await controller.authorize('token', res);
+
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(res.redirect).toHaveBeenCalled();
+  });
+
   it('GET /authorize redirects to Zalo Login with a code_challenge and state', async () => {
     const buildPkcePair = jest.fn().mockReturnValue({
       codeVerifier: 'verifier-1',
