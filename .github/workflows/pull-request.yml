@@ -75,7 +75,7 @@ jobs:
 
       - name: Verify trusted push (format + lint + typecheck + test + build)
         if: github.event_name == 'push'
-        run: npm run verify
+        run: npx turbo run format:check lint typecheck test build --force
         env:
           TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
           TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
