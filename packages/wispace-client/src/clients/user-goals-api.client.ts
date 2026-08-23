@@ -17,6 +17,7 @@ import {
   isNonEmptyString,
   isDateString,
 } from '../utils/validate-shape';
+import { fetchWispaceJson } from '../utils/fetch-wispace-json';
 import type { UserGoalsRecord } from '../types/user-goals.types';
 import {
   NOOP_WISPACE_LOGGER,
@@ -94,7 +95,7 @@ export class UserGoalsApiClient {
       );
     }
 
-    const rawData = await response.json();
+    const rawData = await fetchWispaceJson(response);
 
     const data = validateShape<UserGoalsRecord>(rawData, [
       {

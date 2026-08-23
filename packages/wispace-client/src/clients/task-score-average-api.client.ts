@@ -17,6 +17,7 @@ import {
   isPositiveNumber,
   isNonEmptyString,
 } from '../utils/validate-shape';
+import { fetchWispaceJson, ARRAY_MAX_BYTES } from '../utils/fetch-wispace-json';
 import type { TaskScoreAverageRecord } from '../types/task-score-average.types';
 import {
   NOOP_WISPACE_LOGGER,
@@ -95,7 +96,9 @@ export class TaskScoreAverageApiClient {
       );
     }
 
-    const rawData = await response.json();
+    const rawData = await fetchWispaceJson(response, {
+      maxBytes: ARRAY_MAX_BYTES,
+    });
 
     if (!Array.isArray(rawData)) {
       throw new WispaceApiError(

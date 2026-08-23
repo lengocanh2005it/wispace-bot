@@ -219,4 +219,40 @@ describe('UserGoalsApiClient', () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('response size limits', () => {
+    it('rejects response body exceeding 16KB default', async () => {
+      const oversized = {
+        targetScore: 'x'.repeat(20 * 1024),
+        examDate: '2026-09-01',
+      };
+      const text = JSON.stringify(oversized);
+      const bytes = new TextEncoder().encode(text);
+      let read = false;
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: jest.fn().mockImplementation(() => {
+              if (read)
+                return Promise.resolve({ done: true, value: undefined });
+              read = true;
+              return Promise.resolve({ done: false, value: bytes });
+            }),
+            cancel: jest.fn(),
+            releaseLock: jest.fn(),
+          }),
+        },
+        json: () => Promise.resolve(oversized),
+      });
+      global.fetch = fetchMock;
+
+      const client = new UserGoalsApiClient({
+        url: 'https://backend.example.com/api/User/goals',
+        internalKey: 'internal-key',
+      });
+
+      await expect(client.getUserGoals('x-psid', 'psid-1')).rejects.toThrow();
+    });
+  });
 });

@@ -13,6 +13,7 @@ import {
   type WispaceIdHeader,
 } from '../utils/wispace-headers';
 import { formatEventDateForApiWrite } from '../utils/study-calendar.utils';
+import { fetchWispaceJson, ARRAY_MAX_BYTES } from '../utils/fetch-wispace-json';
 import type {
   CreateUserCalendarInput,
   UserCalendarRecord,
@@ -97,7 +98,9 @@ export class UserCalendarApiClient {
       );
     }
 
-    const payload: unknown = await response.json();
+    const payload: unknown = await fetchWispaceJson(response, {
+      maxBytes: ARRAY_MAX_BYTES,
+    });
     const records = normalizeUserCalendarRecords(payload);
 
     this.logger.log(
@@ -140,7 +143,7 @@ export class UserCalendarApiClient {
       );
     }
 
-    const payload: unknown = await response.json();
+    const payload: unknown = await fetchWispaceJson(response);
     const created = normalizeCreatedCalendarRecord(payload, {
       eventDate: input.eventDate,
       time: input.time,

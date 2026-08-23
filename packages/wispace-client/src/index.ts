@@ -25,6 +25,7 @@ export {
   buildUpstreamUrlPolicy,
   type UpstreamUrlPolicy,
 } from './utils/upstream-url.utils';
+export { fetchWispaceJson, ARRAY_MAX_BYTES } from './utils/fetch-wispace-json';
 export * from './utils/study-calendar.utils';
 export {
   formatLocalDate,
