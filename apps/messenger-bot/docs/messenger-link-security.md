@@ -56,12 +56,12 @@ Need **proof of issuance from WISPACE** (server-side signature or token), not ju
 
 The current opaque one-time token in `m.me?ref={token}` is visible in:
 
-| Exposure vector             | Mitigation (already in place)                                | Remaining risk                         |
-| --------------------------- | ------------------------------------------------------------ | -------------------------------------- |
-| Browser history / address bar | Token is opaque, single-use, 15-30 min TTL                 | Low — token expires quickly            |
-| Reverse-proxy access logs   | Token visible in logged URL query string                     | Proxy log retention captures the token |
-| HTTP `Referer` header       | `Referrer-Policy: no-referrer` set by Helmet v8 (global)    | None — header prevents leakage        |
-| Browser cache               | `Cache-Control: no-store` on OAuth initiation endpoints      | m.me link is a chat message, not HTTP response — no server header applies |
+| Exposure vector               | Mitigation (already in place)                            | Remaining risk                                                            |
+| ----------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Browser history / address bar | Token is opaque, single-use, 15-30 min TTL               | Low — token expires quickly                                               |
+| Reverse-proxy access logs     | Token visible in logged URL query string                 | Proxy log retention captures the token                                    |
+| HTTP `Referer` header         | `Referrer-Policy: no-referrer` set by Helmet v8 (global) | None — header prevents leakage                                            |
+| Browser cache                 | `Cache-Control: no-store` on OAuth initiation endpoints  | m.me link is a chat message, not HTTP response — no server header applies |
 
 **The bot cannot set HTTP headers on a Messenger chat message** (sent via Meta Send API). The token's design (opaque, single-use, short-lived) is the primary mitigation. WISPACE frontend should avoid rendering the token in page titles, open-graph tags, or sharing dialogs.
 
