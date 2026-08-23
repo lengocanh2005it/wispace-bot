@@ -259,4 +259,29 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
 
     expect(welcomeService.welcomeIfDue).toHaveBeenCalledWith('discord-user-1');
   });
+
+  it('processes at most the batch size returned by the repository', async () => {
+    const records = Array.from({ length: 50 }, (_, i) => ({
+      discordUserId: `discord-user-${i}`,
+      userId: i + 1,
+      verifiedAt: new Date(Date.now() - 120_000),
+    }));
+    const { verifyRecordService, accountLinkService } = buildHarness({
+      records,
+    });
+    const cron = new DiscordLinkReconcileCronService(
+      verifyRecordService,
+      accountLinkService,
+      buildConfigService(),
+      buildPgLock(884_200_934),
+      { notify: jest.fn().mockResolvedValue(undefined) } as never,
+      { isMember: jest.fn().mockResolvedValue(false) } as never,
+      { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
+    );
+
+    await cron.handleReconcile();
+
+    expect(accountLinkService.upsertLink).toHaveBeenCalledTimes(50);
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledTimes(50);
+  });
 });

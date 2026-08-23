@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
+import { Counter } from 'prom-client';
 import {
   ADVISORY_LOCKS,
   errorMessage,
@@ -22,6 +23,12 @@ const DEFAULT_RECONCILE_AGE_MS = 60_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 3_600_000;
 const RECONCILE_MAX_ATTEMPTS = 3;
 const RECONCILE_BASE_BACKOFF_MS = 1_000;
+
+const reconcileRecordsTotal = new Counter({
+  name: 'discord_link_reconcile_records_total',
+  help: 'Records processed by Discord link reconciliation',
+  labelNames: ['outcome'] as const,
+});
 
 /**
  * Reconciliation for the crash window between WISPACE token verify and the
@@ -90,6 +97,7 @@ export class DiscordLinkReconcileCronService {
         // Mapping committed — the record is a leftover (consume raced).
         await this.verifyRecordService.consumeRecord(record.discordUserId);
         alreadyCommitted += 1;
+        reconcileRecordsTotal.inc({ outcome: 'already_committed' });
         continue;
       }
 
@@ -101,6 +109,7 @@ export class DiscordLinkReconcileCronService {
         );
         await this.verifyRecordService.consumeRecord(record.discordUserId);
         dropped += 1;
+        reconcileRecordsTotal.inc({ outcome: 'dropped' });
         continue;
       }
 
@@ -131,8 +140,10 @@ export class DiscordLinkReconcileCronService {
           await this.welcomeService.welcomeIfDue(record.discordUserId);
         }
         reconciled += 1;
+        reconcileRecordsTotal.inc({ outcome: 'reconciled' });
       } catch (error) {
         failed += 1;
+        reconcileRecordsTotal.inc({ outcome: 'failed' });
         this.logger.error(
           `Discord link reconciliation failed for discordUserId=${maskExternalId(
             record.discordUserId,

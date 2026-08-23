@@ -37,12 +37,14 @@ export class TypeormDiscordLinkVerifyRecordRepository implements DiscordLinkVeri
 
   /** Verify intents older than `olderThanMs` — candidates for reconciliation. */
   async listStaleRecords(olderThanMs: number): Promise<StaleVerifyRecord[]> {
+    // ponytail: bounded batch — matches Zalo's take:100, drains across ticks
     const rows = await this.repo
       .createQueryBuilder('record')
       .where('record.verified_at < :cutoff', {
         cutoff: subtractMs(new Date(), olderThanMs),
       })
       .orderBy('record.verified_at', 'ASC')
+      .take(100)
       .getMany();
 
     return rows.map((row) => ({
