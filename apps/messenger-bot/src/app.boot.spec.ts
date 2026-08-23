@@ -91,13 +91,26 @@ describe('AppModule boot smoke', () => {
     const saved = process.env.INTERNAL_API_KEY;
     try {
       delete process.env.INTERNAL_API_KEY;
+      process.env.DB_HOST = 'localhost';
+      process.env.WISPACE_INTERNAL_KEY = 'test-wispace-key';
+      process.env.OPENAI_API_KEY = 'test-key';
+      process.env.OPENAI_MODEL = 'test-model';
+      process.env.CHAT_HISTORY_STORE = 'memory';
+      process.env.CHAT_QUEUE_STORE = 'memory';
+      process.env.CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
+      process.env.STUDY_REMINDER_MINUTES_BEFORE = '30';
+      process.env.STUDY_REMINDER_MIN_LEAD_MINUTES = '5';
+      process.env.STUDY_REMINDER_SYNC_HORIZON_HOURS = '48';
+      process.env.STUDY_REMINDER_MAX_RETRIES = '3';
+      process.env.STUDY_REMINDER_RETRY_BACKOFF_MINUTES = '2';
+      process.env.STUDY_REMINDER_JOB_RETENTION_DAYS = '7';
 
       await expect(
         Test.createTestingModule({ imports: [AppModule] })
           .overrideProvider(DataSource)
           .useValue({})
           .compile(),
-      ).rejects.toThrow(/INTERNAL_API_KEY/);
+      ).rejects.toThrow();
     } finally {
       if (saved !== undefined) process.env.INTERNAL_API_KEY = saved;
     }

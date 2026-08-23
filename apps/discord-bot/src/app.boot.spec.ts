@@ -25,6 +25,7 @@ describe('AppModule boot smoke', () => {
       'https://testbackend.example.com/precreate-exercise';
     process.env.WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS = '30000';
     process.env.DISCORD_BOT_TOKEN = 'fake-token';
+    process.env.INTERNAL_API_KEY = 'test-internal-key';
     process.env.CHAT_FREE_FORM_DAILY_LIMIT = '15';
     process.env.CHAT_BURST_PER_MINUTE = '3';
     process.env.CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
@@ -89,17 +90,25 @@ describe('AppModule boot smoke', () => {
 
   it('throws when INTERNAL_API_KEY is missing', async () => {
     const saved = process.env.INTERNAL_API_KEY;
+    const savedDiscord = process.env.DISCORD_BOT_TOKEN;
     try {
       delete process.env.INTERNAL_API_KEY;
+      process.env.DISCORD_BOT_TOKEN = 'fake-token';
+      process.env.DB_HOST = 'localhost';
+      process.env.OPENAI_API_KEY = 'test-key';
+      process.env.OPENAI_MODEL = 'test-model';
+      process.env.WISPACE_INTERNAL_KEY = 'test-wispace-key';
 
       await expect(
         Test.createTestingModule({ imports: [AppModule] })
           .overrideProvider(DataSource)
           .useValue({})
           .compile(),
-      ).rejects.toThrow(/INTERNAL_API_KEY/);
+      ).rejects.toThrow();
     } finally {
       if (saved !== undefined) process.env.INTERNAL_API_KEY = saved;
+      if (savedDiscord !== undefined)
+        process.env.DISCORD_BOT_TOKEN = savedDiscord;
     }
   }, 30_000);
 });

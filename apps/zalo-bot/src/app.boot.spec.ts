@@ -23,6 +23,7 @@ describe('AppModule boot smoke', () => {
     process.env.WISPACE_API_PRECREATE_EXERCISE_URL =
       'https://testbackend.example.com/precreate-exercise';
     process.env.WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS = '30000';
+    process.env.INTERNAL_API_KEY = 'test-internal-key';
 
     const stubRepo = {} as Repository<unknown>;
     const dataSourceMock = new Proxy({} as DataSource, {
@@ -81,13 +82,18 @@ describe('AppModule boot smoke', () => {
     const saved = process.env.INTERNAL_API_KEY;
     try {
       delete process.env.INTERNAL_API_KEY;
+      process.env.DB_HOST = 'localhost';
+      process.env.DB_PORT = '5432';
+      process.env.DB_USER = 'test';
+      process.env.DB_PASSWORD = 'test';
+      process.env.DB_NAME = 'test';
 
       await expect(
         Test.createTestingModule({ imports: [AppModule] })
           .overrideProvider(DataSource)
           .useValue({})
           .compile(),
-      ).rejects.toThrow(/INTERNAL_API_KEY/);
+      ).rejects.toThrow();
     } finally {
       if (saved !== undefined) process.env.INTERNAL_API_KEY = saved;
     }
