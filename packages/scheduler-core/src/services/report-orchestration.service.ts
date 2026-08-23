@@ -1,7 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { errorMessage } from '@wispace/bot-common';
-import { readReportClaimLeaseMs } from '@wispace/database';
 import type { ReportClaimRepositoryPort } from '../ports/report-claim.repository.port';
 import type { ReportDeliveryPort } from '../ports/report-delivery.port';
 import type { ReportSendJobRepositoryPort } from '../ports/report-send-job.repository.port';
@@ -13,6 +12,17 @@ import type {
   ReportMapping,
 } from '../types/report-send-job.types';
 import { ReportSendScheduleService } from './report-send-schedule.service';
+
+const DEFAULT_REPORT_CLAIM_LEASE_MS = 2 * 60 * 60 * 1000;
+
+// ponytail: inlined from @wispace/database to break circular dependency
+function readReportClaimLeaseMs(configService: ConfigService): number {
+  const raw = configService.get<string>('REPORT_CLAIM_STALE_RESET_MS');
+  const parsed = raw ? Number(raw) : NaN;
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.floor(parsed)
+    : DEFAULT_REPORT_CLAIM_LEASE_MS;
+}
 
 const ZERO: ClaimAndSendResult = {
   sent: 0,
