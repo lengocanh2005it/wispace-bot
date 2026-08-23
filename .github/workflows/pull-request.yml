@@ -71,6 +71,7 @@ jobs:
         run: npm run verify:affected
         env:
           TURBO_SCM_BASE: origin/${{ github.base_ref }}
+          NODE_OPTIONS: '--max-old-space-size=4096'
 
       - name: Verify trusted push (format + lint + typecheck + test + build)
         if: github.event_name == 'push'
@@ -78,6 +79,7 @@ jobs:
         env:
           TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
           TURBO_TEAM: ${{ secrets.TURBO_TEAM }}
+          NODE_OPTIONS: '--max-old-space-size=4096'
 
   deploy-scripts-test:
     runs-on: ubuntu-latest

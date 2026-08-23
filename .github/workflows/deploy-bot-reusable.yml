@@ -124,6 +124,23 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  migration-timestamps:
+    # Check for duplicate migration timestamps in source files.
+    # Runs on ubuntu-latest (not inside Docker) to avoid Alpine missing bash/find.
+    needs: build-image
+    if: |
+      always() &&
+      !cancelled() &&
+      inputs.env_only != true &&
+      needs.build-image.result == 'success' &&
+      inputs.app == 'messenger-bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for duplicate migration timestamps
+        run: bash .github/scripts/check-migration-timestamps.sh packages/database/src/migrations
+
   migrations-check:
     # Gate the deploy: apply the migration chain against a real Postgres
     # inside the freshly built image. A broken migration must stop the
@@ -164,8 +181,6 @@ jobs:
       # exception required by the NODE_ENV-independent TLS enforcement.
       DB_ALLOW_INSECURE_HOSTS: postgres
     steps:
-      - name: Check for duplicate migration timestamps
-        run: bash .github/scripts/check-migration-timestamps.sh packages/database/src/migrations
       # The container job runs with CWD=/github/workspace, but the image's
       # typeorm CLI lives in /app/node_modules/.bin — cd into /app first.
       - name: Show migration status (pending)
