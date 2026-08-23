@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   Injectable,
   InternalServerErrorException,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -13,14 +14,19 @@ export const INTERNAL_API_KEY_HEADER = 'x-internal-api-key';
 
 @Injectable()
 export class InternalApiKeyGuard implements CanActivate {
+  private readonly logger = new Logger(InternalApiKeyGuard.name);
+
   constructor(private readonly configService: ConfigService) {}
 
   canActivate(context: ExecutionContext): boolean {
     const expected = this.configService.get<string>('INTERNAL_API_KEY')?.trim();
 
     if (!expected) {
+      this.logger.error(
+        'INTERNAL_API_KEY is not configured — guarded routes will reject all requests',
+      );
       throw new InternalServerErrorException(
-        'INTERNAL_API_KEY must be set in .env',
+        'Internal authentication not configured',
       );
     }
 

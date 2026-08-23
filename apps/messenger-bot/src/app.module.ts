@@ -48,5 +48,15 @@ import { MetricsModule } from './modules/metrics/metrics.module';
     MetricsModule,
   ],
   controllers: [AppController, HealthController],
+  providers: [
+    {
+      provide: 'INTERNAL_API_KEY_VALIDATION',
+      useFactory: (config: ConfigService) => {
+        config.getOrThrow<string>('INTERNAL_API_KEY');
+        return true;
+      },
+      inject: [ConfigService],
+    },
+  ],
 })
 export class AppModule {}

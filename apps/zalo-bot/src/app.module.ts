@@ -43,5 +43,15 @@ import { createMetricsModule } from '@wispace/bot-metrics';
     ZaloOpsModule,
     createMetricsModule('zalo', 'zalo-bot'),
   ],
+  providers: [
+    {
+      provide: 'INTERNAL_API_KEY_VALIDATION',
+      useFactory: (config: ConfigService) => {
+        config.getOrThrow<string>('INTERNAL_API_KEY');
+        return true;
+      },
+      inject: [ConfigService],
+    },
+  ],
 })
 export class AppModule {}

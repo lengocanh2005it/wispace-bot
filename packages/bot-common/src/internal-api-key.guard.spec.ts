@@ -1,4 +1,8 @@
-import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InternalApiKeyGuard } from './internal-api-key.guard';
 
@@ -49,6 +53,19 @@ describe('InternalApiKeyGuard', () => {
 
     expect(() => guard.canActivate(createContext({}))).toThrow(
       UnauthorizedException,
+    );
+  });
+
+  it('throws generic error when INTERNAL_API_KEY is not configured', () => {
+    const guard = new InternalApiKeyGuard({
+      get: () => undefined,
+    } as unknown as ConfigService);
+
+    expect(() => guard.canActivate(createContext({}))).toThrow(
+      InternalServerErrorException,
+    );
+    expect(() => guard.canActivate(createContext({}))).toThrow(
+      'Internal authentication not configured',
     );
   });
 });

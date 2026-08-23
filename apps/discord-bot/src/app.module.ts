@@ -53,5 +53,15 @@ import { HealthController } from '@wispace/bot-common';
     DiscordOpsModule,
     createMetricsModule('discord', 'discord-bot'),
   ],
+  providers: [
+    {
+      provide: 'INTERNAL_API_KEY_VALIDATION',
+      useFactory: (config: ConfigService) => {
+        config.getOrThrow<string>('INTERNAL_API_KEY');
+        return true;
+      },
+      inject: [ConfigService],
+    },
+  ],
 })
 export class AppModule {}

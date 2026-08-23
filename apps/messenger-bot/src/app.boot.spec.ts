@@ -86,4 +86,20 @@ describe('AppModule boot smoke', () => {
 
     await app.close();
   }, 30_000);
+
+  it('throws when INTERNAL_API_KEY is missing', async () => {
+    const saved = process.env.INTERNAL_API_KEY;
+    try {
+      delete process.env.INTERNAL_API_KEY;
+
+      await expect(
+        Test.createTestingModule({ imports: [AppModule] })
+          .overrideProvider(DataSource)
+          .useValue({})
+          .compile(),
+      ).rejects.toThrow(/INTERNAL_API_KEY/);
+    } finally {
+      if (saved !== undefined) process.env.INTERNAL_API_KEY = saved;
+    }
+  }, 30_000);
 });
