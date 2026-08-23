@@ -23,6 +23,8 @@ export class MessengerController {
   ) {}
 
   @Get('webhook')
+  @UseGuards(ThrottlerGuard)
+  @WebhookThrottle()
   verifyWebhook(
     @Query('hub.verify_token') token?: string,
     @Query('hub.challenge') challenge?: string,
