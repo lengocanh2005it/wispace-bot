@@ -38,11 +38,7 @@ const FEATURE = 'FREE_FORM_CHAT';
 // `LLM_GLOBAL_MAX_CONCURRENT`, `LLM_OPENAI_RETRY_MAX_ATTEMPTS`,
 // `LLM_OPENAI_RETRY_BACKOFF_MS`, `LLM_REQUEST_TIMEOUT_MS`,
 // `LLM_GLOBAL_CONCURRENCY_ENABLED`).
-const DEFAULT_MAX_CONCURRENT = 3;
-const DEFAULT_GLOBAL_MAX_CONCURRENT = 10;
-const DEFAULT_RETRY_MAX_ATTEMPTS = 3;
-const DEFAULT_RETRY_BACKOFF_MS = 2_000;
-const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+import { buildLlmExecutionConfig } from '@wispace/llm-agent';
 
 /**
  * Thin NestJS adapter around `@wispace/llm-agent`'s platform-agnostic
@@ -239,34 +235,12 @@ export class PlatformAgentService {
    * retry budget, and an optional Redis-distributed aggregate budget.
    */
   private buildEnvLlmExecutionPort(): LlmExecutionPort {
-    const globalConcurrencyEnabled =
-      process.env.LLM_GLOBAL_CONCURRENCY_ENABLED?.toLowerCase() === 'true';
+    const config = buildLlmExecutionConfig();
 
     return createEnvLlmExecutionPort(
       {
-        enabled: this.readEnvBoolean('LLM_EXECUTION_ENABLED', true),
-        maxConcurrent: this.readEnvPositiveInt(
-          'LLM_MAX_CONCURRENT',
-          DEFAULT_MAX_CONCURRENT,
-        ),
-        globalMaxConcurrent: this.readEnvPositiveInt(
-          'LLM_GLOBAL_MAX_CONCURRENT',
-          DEFAULT_GLOBAL_MAX_CONCURRENT,
-        ),
-        maxAttempts: this.readEnvPositiveInt(
-          'LLM_OPENAI_RETRY_MAX_ATTEMPTS',
-          DEFAULT_RETRY_MAX_ATTEMPTS,
-        ),
-        baseBackoffMs: this.readEnvPositiveInt(
-          'LLM_OPENAI_RETRY_BACKOFF_MS',
-          DEFAULT_RETRY_BACKOFF_MS,
-        ),
-        requestTimeoutMs: this.readEnvPositiveInt(
-          'LLM_REQUEST_TIMEOUT_MS',
-          DEFAULT_REQUEST_TIMEOUT_MS,
-        ),
-        globalConcurrencyEnabled,
-        redis: globalConcurrencyEnabled
+        ...config,
+        redis: config.globalConcurrencyEnabled
           ? (this.redisClient?.getNativeClient() ?? null)
           : null,
       },
