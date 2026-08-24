@@ -529,4 +529,18 @@ describe('MessengerChatProcessorService', () => {
     expect(reserveFreeFormSlot).not.toHaveBeenCalled();
     expect(reply).not.toHaveBeenCalled();
   });
+
+  it('does not refund when quota finalization fails after delivery', async () => {
+    const { service, markCompleted, refundFreeFormSlot } = createService();
+    markCompleted.mockRejectedValue(new Error('quota db unavailable'));
+
+    await service.process({
+      psid: 'psid-1',
+      mergedText: 'Hello',
+      idempotencyKey: 'mid-finalize-fail',
+    });
+
+    // Delivery succeeded — quota finalization failure must not trigger refund
+    expect(refundFreeFormSlot).not.toHaveBeenCalled();
+  });
 });
