@@ -69,3 +69,8 @@ export { RescheduleRecoveryCronService } from './services/reschedule-recovery-cr
 export { CronLeaderLeaseService } from './services/cron-leader-lease.service';
 export { listUserIdsWithSentReport } from './services/list-user-ids-with-sent-report';
 export { PrivacyDataService } from './services/privacy-data.service';
+export {
+  WebhookInboundIngressPort,
+  WEBHOOK_INBOUND_INGRESS_PORT,
+  type WebhookIngestResult,
+} from './ports/webhook-inbound-ingress.port';

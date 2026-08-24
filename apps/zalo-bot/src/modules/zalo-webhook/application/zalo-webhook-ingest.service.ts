@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { maskEventId } from '@wispace/bot-common';
 import { PlatformWebhookInboundEventService } from '@wispace/database';
+import type { WebhookInboundIngressPort } from '@wispace/database';
 import type { ZaloWebhookEvent } from '../domain/entities/zalo-webhook-event.types';
 
 /** Stable per-delivery event id for the durable inbox. */
@@ -24,9 +25,10 @@ export function buildZaloEventId(event: ZaloWebhookEvent): string {
 /**
  * Write-ahead ingestion for authenticated Zalo webhook events. Downstream
  * dispatch is owned by the advisory-locked retry cron after the HTTP ACK.
+ * Implements the shared WebhookInboundIngressPort for normalized persistence.
  */
 @Injectable()
-export class ZaloWebhookIngestService {
+export class ZaloWebhookIngestService implements WebhookInboundIngressPort {
   private readonly logger = new Logger(ZaloWebhookIngestService.name);
 
   constructor(
@@ -54,5 +56,18 @@ export class ZaloWebhookIngestService {
     }
 
     return true;
+  }
+
+  /**
+   * Shared WebhookInboundIngressPort implementation.
+   * Delegates to ingestEvent for platform-specific normalization.
+   */
+  async ingest(input: {
+    eventId: string;
+    externalUserId?: string | null;
+    eventType?: string | null;
+    rawPayload: object;
+  }): Promise<{ inserted: boolean; id?: number }> {
+    return this.inboundEvents.ingest(input);
   }
 }

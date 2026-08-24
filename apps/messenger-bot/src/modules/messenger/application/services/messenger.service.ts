@@ -107,13 +107,37 @@ export class MessengerService {
     accepted: number;
     duplicates: number;
   }> {
+    // Count entries BEFORE flatten to reject oversized batches early (#365).
+    // The DTO permits up to 50 entries × 500 events, but the service default
+    // accepts only 50 total events. Reject before per-event logging or
+    // construction of the full ingestion work list.
+    const maxBatchSize = this.configService.get<number>(
+      'WEBHOOK_MAX_BATCH_SIZE',
+      50,
+    );
+    const entries = Array.isArray(payload.entry) ? payload.entry : [];
+    let totalEventCount = 0;
+    for (const entry of entries) {
+      if (Array.isArray(entry.messaging)) {
+        totalEventCount += entry.messaging.length;
+      }
+    }
+    if (totalEventCount > maxBatchSize) {
+      this.logger.warn(
+        `Webhook batch rejected: ${totalEventCount} events exceeds limit ${maxBatchSize}`,
+      );
+      throw new PayloadTooLargeException(
+        `Batch size ${totalEventCount} exceeds limit ${maxBatchSize}`,
+      );
+    }
+
     // Flatten all events from the batch for parallel ingestion (#155).
     const events: Array<{
       event: MessengerWebhookEvent;
       eventId: string;
     }> = [];
 
-    for (const entry of Array.isArray(payload.entry) ? payload.entry : []) {
+    for (const entry of entries) {
       for (const event of Array.isArray(entry.messaging)
         ? entry.messaging
         : []) {
@@ -125,19 +149,6 @@ export class MessengerService {
 
     if (events.length === 0) {
       return { accepted: 0, duplicates: 0 };
-    }
-
-    const maxBatchSize = this.configService.get<number>(
-      'WEBHOOK_MAX_BATCH_SIZE',
-      50,
-    );
-    if (events.length > maxBatchSize) {
-      this.logger.warn(
-        `Webhook batch rejected: ${events.length} events exceeds limit ${maxBatchSize}`,
-      );
-      throw new PayloadTooLargeException(
-        `Batch size ${events.length} exceeds limit ${maxBatchSize}`,
-      );
     }
 
     // Bounded parallel insert — unique constraint handles idempotency.
