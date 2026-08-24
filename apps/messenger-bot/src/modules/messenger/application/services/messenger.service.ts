@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  PayloadTooLargeException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import pLimit from 'p-limit';
 import { maskEventId } from '@wispace/bot-common';
@@ -119,6 +125,19 @@ export class MessengerService {
 
     if (events.length === 0) {
       return { accepted: 0, duplicates: 0 };
+    }
+
+    const maxBatchSize = this.configService.get<number>(
+      'WEBHOOK_MAX_BATCH_SIZE',
+      50,
+    );
+    if (events.length > maxBatchSize) {
+      this.logger.warn(
+        `Webhook batch rejected: ${events.length} events exceeds limit ${maxBatchSize}`,
+      );
+      throw new PayloadTooLargeException(
+        `Batch size ${events.length} exceeds limit ${maxBatchSize}`,
+      );
     }
 
     // Bounded parallel insert — unique constraint handles idempotency.

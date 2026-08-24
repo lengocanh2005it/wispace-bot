@@ -186,4 +186,93 @@ describe('MessengerService (durable webhook ingestion)', () => {
     ).rejects.toThrow('Webhook ingestion failed');
     expect(actionExecutor.executeAction).not.toHaveBeenCalled();
   });
+
+  it('rejects oversized batches with PayloadTooLargeException (#345)', async () => {
+    const configService = {
+      get: jest.fn((key: string, fallback?: unknown) => {
+        if (key === 'WEBHOOK_MAX_BATCH_SIZE') return 3;
+        return fallback;
+      }),
+    } as unknown as ConfigService;
+    const repository = {
+      findActiveMappingByPsid: jest.fn().mockResolvedValue(null),
+    };
+    const outbound = {} as unknown as MessengerOutboundService;
+    const linkContext = {
+      resolveFromMapping: jest.fn().mockResolvedValue(undefined),
+      resolveFromRef: jest.fn().mockResolvedValue({ context: undefined }),
+    } as unknown as MessengerLinkContextService;
+    const chatRateLimitConfig = {
+      shouldEnforceForPsid: jest.fn().mockReturnValue(false),
+    } as unknown as ChatRateLimitConfigService;
+    const actionExecutor = {
+      executeAction: jest.fn().mockResolvedValue(undefined),
+    } as unknown as WebhookActionExecutorService;
+    const inboundEvents = {
+      ingest: jest.fn().mockResolvedValue({ inserted: true, id: 7 }),
+    } as unknown as WebhookInboundEventsPort;
+
+    const service = new MessengerService(
+      configService,
+      repository as never,
+      outbound,
+      linkContext,
+      chatRateLimitConfig,
+      actionExecutor,
+      inboundEvents,
+    );
+
+    const events = Array.from({ length: 5 }, (_, i) =>
+      textEvent({ message: { mid: `mid-${i}`, text: `msg ${i}` } }),
+    );
+
+    await expect(service.handleWebhook(payloadWith(events))).rejects.toThrow(
+      'exceeds limit',
+    );
+    expect(inboundEvents.ingest).not.toHaveBeenCalled();
+  });
+
+  it('accepts batch within configured limit (#345)', async () => {
+    const configService = {
+      get: jest.fn((key: string, fallback?: unknown) => {
+        if (key === 'WEBHOOK_MAX_BATCH_SIZE') return 5;
+        return fallback;
+      }),
+    } as unknown as ConfigService;
+    const repository = {
+      findActiveMappingByPsid: jest.fn().mockResolvedValue(null),
+    };
+    const outbound = {} as unknown as MessengerOutboundService;
+    const linkContext = {
+      resolveFromMapping: jest.fn().mockResolvedValue(undefined),
+      resolveFromRef: jest.fn().mockResolvedValue({ context: undefined }),
+    } as unknown as MessengerLinkContextService;
+    const chatRateLimitConfig = {
+      shouldEnforceForPsid: jest.fn().mockReturnValue(false),
+    } as unknown as ChatRateLimitConfigService;
+    const actionExecutor = {
+      executeAction: jest.fn().mockResolvedValue(undefined),
+    } as unknown as WebhookActionExecutorService;
+    const inboundEvents = {
+      ingest: jest.fn().mockResolvedValue({ inserted: true, id: 7 }),
+    } as unknown as WebhookInboundEventsPort;
+
+    const service = new MessengerService(
+      configService,
+      repository as never,
+      outbound,
+      linkContext,
+      chatRateLimitConfig,
+      actionExecutor,
+      inboundEvents,
+    );
+
+    const events = Array.from({ length: 5 }, (_, i) =>
+      textEvent({ message: { mid: `mid-${i}`, text: `msg ${i}` } }),
+    );
+
+    const result = await service.handleWebhook(payloadWith(events));
+    expect(result).toEqual({ accepted: 5, duplicates: 0 });
+    expect(inboundEvents.ingest).toHaveBeenCalledTimes(5);
+  });
 });
