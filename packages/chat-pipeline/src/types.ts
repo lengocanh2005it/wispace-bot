@@ -34,6 +34,7 @@ export interface HistoryPort {
     externalUserId: string,
     userText: string,
     assistantText: string,
+    toolSummary?: string,
   ): Promise<void>;
 }
 
@@ -67,6 +68,8 @@ export interface AgentPort {
 
 export interface SendResult {
   delivered: boolean;
+  /** At least one message unit was sent before a later failure. */
+  partial?: boolean;
 }
 
 export interface OutboundPort {
@@ -89,6 +92,8 @@ export interface PipelineContext {
   error?: unknown;
   refundError?: unknown;
   quotaFinalizationError?: unknown;
+  /** True when outbound delivered at least one unit but not all. */
+  partialDelivery?: boolean;
 }
 
 // ── Hooks ───────────────────────────────────────────────────────────────────

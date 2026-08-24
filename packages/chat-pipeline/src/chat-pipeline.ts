@@ -111,9 +111,10 @@ export class ChatPipeline {
         );
 
         delivered = sendResult.delivered;
+        ctx.partialDelivery = sendResult.partial === true;
       }
 
-      if (!delivered) {
+      if (!delivered && !ctx.partialDelivery) {
         if (input.idempotencyKey && usageDate) {
           refundAttempted = true;
           try {
@@ -146,6 +147,7 @@ export class ChatPipeline {
         input.externalUserId,
         mergedText,
         reply.text,
+        reply.toolSummary,
       );
 
       // A confirmed delivery must never be refunded just because quota

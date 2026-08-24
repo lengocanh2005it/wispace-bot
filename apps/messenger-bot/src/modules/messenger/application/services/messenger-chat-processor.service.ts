@@ -1,6 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
+import { ChatPipeline } from '@wispace/chat-pipeline';
+import type {
+  PipelineContext,
+  ChatPipelineHooks,
+} from '@wispace/chat-pipeline';
 import {
   detectPrivacyIntent,
   isConfirmationResponse,
@@ -8,14 +13,11 @@ import {
 } from '@wispace/llm-agent';
 import { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
-import type { ChatQuotaCheckResult } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota.types';
 import {
   buildChatQuotaDenyMessage,
   buildChatQuotaRemainingHintMessage,
 } from '../messages/chat-quota.messages';
 import { shouldShowQuotaRemainingHint } from '@messenger/modules/chat-rate-limit/domain/utils/quota-hint';
-import { CHAT_HISTORY_STORE } from '../../domain/repositories/chat-history.store.port';
-import type { ChatHistoryStorePort } from '../../domain/repositories/chat-history.store.port';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '../../domain/repositories/messenger-message-log.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
 import { CHAT_QUEUE_STORE } from '../../domain/repositories/chat-queue.store.port';
@@ -23,13 +25,9 @@ import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.st
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import { MessengerAgentService } from '../agent/messenger-agent.service';
-import {
-  MessengerOutboundService,
-  MessengerPartialSendError,
-} from './messenger-outbound.service';
+import { MessengerOutboundService } from './messenger-outbound.service';
 import { buildChatDeliveryErrorMessage } from '../messages/chat-delivery.messages';
 import { buildChatDroppedMessage } from '../messages/chat-delivery.messages';
-import { readMessengerBubbleLimits } from '../utils/messenger-bubble-config.utils';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import { trace, context, SpanStatusCode, SpanKind } from '@opentelemetry/api';
@@ -40,6 +38,8 @@ import {
 } from '@messenger/shared/utils/messenger-text.utils';
 import { PrivacyStateService } from '@wispace/llm-agent';
 import { PrivacyDataService } from '@wispace/database';
+import { createMessengerChatPipelineAdapters } from '../../infrastructure/adapters/messenger-chat-pipeline-adapters';
+import { PlatformChatHistoryService } from '@wispace/chat-agent';
 
 export interface ChatBatchInput {
   psid: string;
@@ -49,29 +49,102 @@ export interface ChatBatchInput {
   idempotencyKey?: string;
 }
 
+/**
+ * Messenger chat flush processor. Orchestrates the shared ChatPipeline
+ * with Messenger-specific behavior:
+ * - Pre-checks: quota deny messages, privacy intent intercept
+ * - Pipeline: reserve → history → agent → send (bubbles) → mark → append → finalize
+ * - Post-pipeline: rich follow-ups, quota hints
+ * - Error: refund + fallback message
+ *
+ * Privacy intent lives in the processor (not agent service) because it needs
+ * access to PrivacyStateService and PrivacyDataService which are Messenger-only.
+ */
 @Injectable()
 export class MessengerChatProcessorService {
   private readonly logger = new Logger(MessengerChatProcessorService.name);
+  private readonly pipeline: ChatPipeline;
 
   constructor(
-    private readonly configService: ConfigService,
     private readonly outbound: MessengerOutboundService,
     private readonly messengerAgentService: MessengerAgentService,
-    @Inject(CHAT_HISTORY_STORE)
-    private readonly chatHistory: ChatHistoryStorePort,
     private readonly chatRateLimitService: ChatRateLimitService,
     private readonly chatRateLimitConfig: ChatRateLimitConfigService,
     private readonly metrics: MetricsService,
     @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
     private readonly messengerRepository: MessengerMessageLogRepositoryPort,
     private readonly sharedConfig: MessengerChatSharedConfigService,
+    private readonly historyService: PlatformChatHistoryService,
+    private readonly configService: ConfigService,
     @Inject(CHAT_QUEUE_STORE)
     private readonly chatQueueStore?: ChatQueueStorePort,
     private readonly privacyState?: PrivacyStateService,
     private readonly privacyService?: PrivacyDataService,
     @Inject(MESSENGER_REPOSITORY)
     private readonly mappingRepository?: MessengerMappingRepositoryPort,
-  ) {}
+  ) {
+    const adapters = createMessengerChatPipelineAdapters(
+      chatRateLimitService,
+      historyService,
+      messengerAgentService,
+      outbound,
+      configService,
+    );
+
+    const hooks: ChatPipelineHooks = {
+      onStep: async (step: string, ctx: PipelineContext) => {
+        if (step === 'before_agent') {
+          await outbound
+            .sendSenderActionOptional(ctx.externalUserId, 'typing_on')
+            .catch(() => {});
+        }
+      },
+      onError: async (ctx: PipelineContext) => {
+        this.logger.error(
+          `Chat pipeline failed psid=${maskExternalId(
+            ctx.externalUserId,
+          )}: ${errorMessage(ctx.error)}`,
+        );
+        const userId = ctx.userId;
+        try {
+          await outbound.sendTextViaPsid({
+            psid: ctx.externalUserId,
+            userId,
+            text: buildChatDeliveryErrorMessage(ctx.error, ctx.mergedText),
+            messageType: 'FREE_FORM_CHAT_ERROR',
+          });
+        } catch (sendError) {
+          this.logger.error(
+            `Failed to send chat error fallback psid=${maskExternalId(
+              ctx.externalUserId,
+            )}: ${errorMessage(sendError)}`,
+          );
+        }
+      },
+      onAfterSend: async (ctx: PipelineContext) => {
+        await this.deliverOptionalChatExtras({
+          psid: ctx.externalUserId,
+          userId: ctx.userId,
+          richFollowUps: (ctx.reply?.richFollowUps ?? []) as Awaited<
+            ReturnType<MessengerAgentService['reply']>
+          >['richFollowUps'],
+        });
+      },
+    };
+
+    const pipelineConfig = {
+      mergedTextMaxChars: chatRateLimitConfig.getSettings().mergedTextMaxChars,
+    };
+
+    this.pipeline = new ChatPipeline(
+      adapters.rateLimiter,
+      adapters.history,
+      adapters.agent,
+      adapters.outbound,
+      hooks,
+      pipelineConfig,
+    );
+  }
 
   /** H7: worker/cron entry for shared queue flush. */
   async flushReady(psid: string): Promise<void> {
@@ -80,8 +153,6 @@ export class MessengerChatProcessorService {
       return;
     }
 
-    // Memory mode: flushNow is called from the EnqueueService's debounce queue.
-    // This path should not be reached in memory mode, but handle gracefully.
     this.logger.warn(
       `flushReady called in memory mode for psid=${maskExternalId(
         psid,
@@ -126,7 +197,6 @@ export class MessengerChatProcessorService {
       this.getMergedTextMaxChars(),
     );
 
-    // Re-validate mapping on flush — userId in snapshot may be stale after relink (#352)
     let freshUserId = snapshot.userId;
     if (this.mappingRepository) {
       const freshMapping =
@@ -157,8 +227,6 @@ export class MessengerChatProcessorService {
 
         if (hasPending) {
           // Re-schedule via the EnqueueService's timer.
-          // Import injected lazily to avoid circular dependency.
-          // This is fine — the store write triggers the worker poll.
         }
       } catch (completeError) {
         this.logger.error(
@@ -202,311 +270,158 @@ export class MessengerChatProcessorService {
   private async processChatBatchInner(input: ChatBatchInput): Promise<void> {
     const { psid, mergedText, userId, linkContext, idempotencyKey } = input;
 
-    let reservedUsageDate: string | undefined;
-    let reservedIdempotencyKey: string | undefined;
-    let reservedQuota: ChatQuotaCheckResult | undefined;
-    let mainReplyDelivery: 'none' | 'delivered' | 'partial' = 'none';
-    let quotaDeliveryMarked = false;
-    let quotaFinalized = false;
+    // ── Pre-pipeline checks ──────────────────────────────────────────
 
-    const markQuotaDelivery = async (): Promise<void> => {
-      if (quotaDeliveryMarked || !reservedIdempotencyKey) {
-        return;
-      }
-
-      await this.chatRateLimitService.markDelivered(reservedIdempotencyKey);
-      quotaDeliveryMarked = true;
-    };
-
-    const finalizeQuota = async (deliveryConfirmed = false): Promise<void> => {
-      if (quotaFinalized || !reservedIdempotencyKey) {
-        return;
-      }
-
-      if (deliveryConfirmed) {
-        await markQuotaDelivery();
-      }
-
-      try {
-        await this.chatRateLimitService.markCompleted(reservedIdempotencyKey);
-      } catch (error) {
-        this.logger.error(
-          `Chat quota finalization deferred mid=${reservedIdempotencyKey}: ${errorMessage(
-            error,
-          )}`,
-        );
-      }
-
-      quotaFinalized = true;
-    };
-
-    try {
-      await this.outbound.sendSenderActionOptional(psid, 'typing_on');
-
-      if (idempotencyKey) {
-        const quota = await this.metrics.timeStep('rate_limit_reserve', () =>
-          this.chatRateLimitService.reserveFreeFormSlot(psid, {
-            userId,
-            idempotencyKey,
-          }),
-        );
-
-        if (!quota.allowed) {
-          if (quota.reason === 'IDEMPOTENCY_CONFLICT') {
-            this.logger.log(
-              `Skipping duplicate chat flush mid=${idempotencyKey} psid=${maskExternalId(psid)}`,
-            );
-            return;
-          }
-
-          const denyReason =
-            quota.reason === 'BURST_LIMIT' ? 'BURST_LIMIT' : 'DAILY_LIMIT';
-
-          await this.outbound.sendTextViaPsid({
-            psid,
-            userId,
-            text: buildChatQuotaDenyMessage(denyReason, quota.limit),
-            messageType: 'CHAT_QUOTA_DENIED',
-          });
-          return;
-        }
-
-        if (quota.quotaReserved) {
-          reservedUsageDate = quota.usageDate;
-          reservedIdempotencyKey = idempotencyKey;
-          reservedQuota = quota;
-
-          await this.messengerRepository.logMessage({
-            userId,
-            psid,
-            messageType: 'FREE_FORM_CHAT_IN',
-            status: 'SENT',
-          });
-        }
-      } else if (this.chatRateLimitConfig.shouldEnforceForPsid(psid)) {
-        this.logger.error(
-          `Chat flush without message.mid psid=${maskExternalId(
-            psid,
-          )}; skipped (H5)`,
-        );
-        return;
-      } else {
-        this.logger.warn(
-          `Chat flush without message.mid psid=${maskExternalId(
-            psid,
-          )}; rate limit reserve skipped`,
-        );
-      }
-
-      // Privacy intent handling — intercept before LLM agent
-      const privacyIntent = detectPrivacyIntent(mergedText);
-      if (privacyIntent && this.privacyState && this.privacyService) {
-        const pendingAction = this.privacyState.getPendingAction(
-          psid,
-          'messenger',
-        );
-
-        if (!pendingAction) {
-          // New privacy intent — store and ask for confirmation
-          const confirmMessage = this.privacyState.setPendingAction(
-            psid,
-            'messenger',
-            privacyIntent,
-          );
-          await this.outbound.sendTextViaPsid({
-            psid,
-            userId,
-            text: confirmMessage,
-            messageType: 'PRIVACY_CONFIRM',
-          });
-          await finalizeQuota();
-          return;
-        }
-
-        // Check for confirmation/cancellation
-        if (isConfirmationResponse(mergedText)) {
-          this.privacyState.clearPendingAction(psid, 'messenger');
-
-          let resultMessage: string;
-          switch (pendingAction) {
-            case 'unlink': {
-              const result = await this.privacyService.unlink(
-                'messenger',
-                psid,
-              );
-              resultMessage = result.deleted
-                ? 'Đã ngắt kết nối tài khoản thành công.'
-                : 'Tài khoản chưa được liên kết.';
-              break;
-            }
-            case 'delete': {
-              await this.privacyService.delete('messenger', psid);
-              resultMessage = 'Đã xóa toàn bộ dữ liệu thành công.';
-              break;
-            }
-            case 'export': {
-              const data = await this.privacyService.export('messenger', psid);
-              resultMessage = `Dữ liệu của bạn:\n${JSON.stringify(data, null, 2)}`;
-              break;
-            }
-            default:
-              resultMessage = 'Thao tác không được hỗ trợ.';
-          }
-
-          await this.outbound.sendTextViaPsid({
-            psid,
-            userId,
-            text: resultMessage,
-            messageType: 'PRIVACY_RESULT',
-          });
-          await finalizeQuota();
-          return;
-        }
-
-        if (isCancellationResponse(mergedText)) {
-          this.privacyState.clearPendingAction(psid, 'messenger');
-          await this.outbound.sendTextViaPsid({
-            psid,
-            userId,
-            text: 'Đã hủy thao tác.',
-            messageType: 'PRIVACY_CANCELLED',
-          });
-          await finalizeQuota();
-          return;
-        }
-
-        // Neither confirm nor cancel — remind user
-        await this.outbound.sendTextViaPsid({
-          psid,
+    // Quota pre-check + deny messages (processor wrapper, not pipeline)
+    if (idempotencyKey) {
+      const quota = await this.metrics.timeStep('rate_limit_reserve', () =>
+        this.chatRateLimitService.reserveFreeFormSlot(psid, {
           userId,
-          text: 'Reply "Có" để xác nhận hoặc "Không" để hủy.',
-          messageType: 'PRIVACY_REMIND',
-        });
-        await finalizeQuota();
-        return;
-      }
-
-      const history = await this.metrics.timeStep('history_load', () =>
-        this.chatHistory.getHistory(psid),
-      );
-
-      const reply = await this.metrics.timeStep('llm_agent', async () =>
-        this.messengerAgentService.reply({
-          psid,
-          userId,
-          userText: mergedText,
-          linkContext,
-          history,
-          correlationId: idempotencyKey,
+          idempotencyKey,
         }),
       );
 
-      const assistantText = reply.text.trim();
-      if (assistantText) {
-        mainReplyDelivery = await this.metrics.timeStep('meta_send', () =>
-          this.deliverMainReplyBubbles({ psid, userId, text: assistantText }),
-        );
-
-        if (mainReplyDelivery !== 'none') {
-          await markQuotaDelivery();
-
-          if (mainReplyDelivery === 'delivered') {
-            await this.metrics.timeStep('history_append', async () => {
-              await this.chatHistory.appendTurn(
-                psid,
-                mergedText,
-                assistantText,
-              );
-              if (reply.toolSummary) {
-                await this.chatHistory.appendToolSummary(
-                  psid,
-                  reply.toolSummary,
-                );
-              }
-            });
-          }
-
-          await finalizeQuota();
-        }
-      } else if (reservedIdempotencyKey) {
-        await finalizeQuota();
-      }
-
-      await this.deliverOptionalChatExtras({
-        psid,
-        userId,
-        richFollowUps: reply.richFollowUps,
-        reservedQuota,
-      });
-    } catch (error) {
-      if (!quotaFinalized && mainReplyDelivery === 'none') {
-        if (reservedIdempotencyKey && reservedUsageDate) {
-          await this.chatRateLimitService.refundFreeFormSlot(
-            psid,
-            reservedUsageDate,
-            reservedIdempotencyKey,
+      if (!quota.allowed) {
+        if (quota.reason === 'IDEMPOTENCY_CONFLICT') {
+          this.logger.log(
+            `Skipping duplicate chat flush mid=${idempotencyKey} psid=${maskExternalId(psid)}`,
           );
+          return;
         }
 
-        this.logger.error(
-          `Chat queue failed before delivery psid=${maskExternalId(psid)}: ${errorMessage(
-            error,
-          )}`,
-        );
+        const denyReason =
+          quota.reason === 'BURST_LIMIT' ? 'BURST_LIMIT' : 'DAILY_LIMIT';
 
-        await this.sendChatDeliveryFallback(psid, userId, error, mergedText);
-      } else {
-        this.logger.error(
-          `Chat queue failed after partial delivery psid=${maskExternalId(psid)}: ${errorMessage(
-            error,
-          )}`,
-        );
+        await this.outbound.sendTextViaPsid({
+          psid,
+          userId,
+          text: buildChatQuotaDenyMessage(denyReason, quota.limit),
+          messageType: 'CHAT_QUOTA_DENIED',
+        });
+        return;
       }
-    }
-  }
 
-  private getChatQueueStore(): ChatQueueStorePort {
-    if (!this.chatQueueStore) {
-      throw new Error(
-        'CHAT_QUEUE_STORE not available — distributed mode requires Redis',
+      if (quota.quotaReserved) {
+        await this.messengerRepository.logMessage({
+          userId,
+          psid,
+          messageType: 'FREE_FORM_CHAT_IN',
+          status: 'SENT',
+        });
+      }
+    } else if (this.chatRateLimitConfig.shouldEnforceForPsid(psid)) {
+      this.logger.error(
+        `Chat flush without message.mid psid=${maskExternalId(
+          psid,
+        )}; skipped (H5)`,
+      );
+      return;
+    } else {
+      this.logger.warn(
+        `Chat flush without message.mid psid=${maskExternalId(
+          psid,
+        )}; rate limit reserve skipped`,
       );
     }
-    return this.chatQueueStore;
+
+    // Privacy intent intercept — before pipeline (no quota consumed)
+    const privacyIntent = detectPrivacyIntent(mergedText);
+    if (privacyIntent && this.privacyState && this.privacyService) {
+      await this.handlePrivacyIntent(psid, userId, mergedText, privacyIntent);
+      return;
+    }
+
+    // ── Pipeline flush ───────────────────────────────────────────────
+
+    await this.metrics.timeStep('pipeline_flush', () =>
+      this.pipeline.flush({
+        externalUserId: psid,
+        userId,
+        texts: [mergedText],
+        idempotencyKey,
+        context: linkContext ? { linkContext } : undefined,
+      }),
+    );
   }
 
-  private isDistributedMode(): boolean {
-    return this.sharedConfig.isDistributedQueueEnabled() === true;
-  }
+  private async handlePrivacyIntent(
+    psid: string,
+    userId: number | undefined,
+    mergedText: string,
+    privacyIntent: 'unlink' | 'delete' | 'export',
+  ): Promise<void> {
+    const pendingAction = this.privacyState!.getPendingAction(
+      psid,
+      'messenger',
+    );
 
-  private async deliverMainReplyBubbles(params: {
-    psid: string;
-    userId?: number;
-    text: string;
-  }): Promise<'none' | 'delivered' | 'partial'> {
-    const limits = readMessengerBubbleLimits(this.configService);
-    try {
-      const bubblesSent = await this.outbound.sendTextBubblesViaPsid({
-        psid: params.psid,
-        userId: params.userId,
-        text: params.text,
-        messageType: 'FREE_FORM_CHAT_OUT',
-        maxBubbles: Math.min(limits.maxBubbles, 10),
-        maxCharsPerBubble: Math.min(limits.maxCharsPerBubble, 2000),
+    if (!pendingAction) {
+      const confirmMessage = this.privacyState!.setPendingAction(
+        psid,
+        'messenger',
+        privacyIntent,
+      );
+      await this.outbound.sendTextViaPsid({
+        psid,
+        userId,
+        text: confirmMessage,
+        messageType: 'PRIVACY_CONFIRM',
       });
+      return;
+    }
 
-      return bubblesSent > 0 ? 'delivered' : 'none';
-    } catch (error) {
-      if (error instanceof MessengerPartialSendError && error.bubblesSent > 0) {
-        this.logger.warn(
-          `Partial main reply delivery psid=${maskExternalId(
-            params.psid,
-          )} bubblesSent=${error.bubblesSent}`,
-        );
-        return 'partial';
+    if (isConfirmationResponse(mergedText)) {
+      this.privacyState!.clearPendingAction(psid, 'messenger');
+
+      let resultMessage: string;
+      switch (pendingAction) {
+        case 'unlink': {
+          const result = await this.privacyService!.unlink('messenger', psid);
+          resultMessage = result.deleted
+            ? 'Đã ngắt kết nối tài khoản thành công.'
+            : 'Tài khoản chưa được liên kết.';
+          break;
+        }
+        case 'delete': {
+          await this.privacyService!.delete('messenger', psid);
+          resultMessage = 'Đã xóa toàn bộ dữ liệu thành công.';
+          break;
+        }
+        case 'export': {
+          const data = await this.privacyService!.export('messenger', psid);
+          resultMessage = `Dữ liệu của bạn:\n${JSON.stringify(data, null, 2)}`;
+          break;
+        }
+        default:
+          resultMessage = 'Thao tác không được hỗ trợ.';
       }
 
-      throw error;
+      await this.outbound.sendTextViaPsid({
+        psid,
+        userId,
+        text: resultMessage,
+        messageType: 'PRIVACY_RESULT',
+      });
+      return;
     }
+
+    if (isCancellationResponse(mergedText)) {
+      this.privacyState!.clearPendingAction(psid, 'messenger');
+      await this.outbound.sendTextViaPsid({
+        psid,
+        userId,
+        text: 'Đã hủy thao tác.',
+        messageType: 'PRIVACY_CANCELLED',
+      });
+      return;
+    }
+
+    await this.outbound.sendTextViaPsid({
+      psid,
+      userId,
+      text: 'Reply "Có" để xác nhận hoặc "Không" để hủy.',
+      messageType: 'PRIVACY_REMIND',
+    });
   }
 
   private async deliverOptionalChatExtras(params: {
@@ -515,7 +430,6 @@ export class MessengerChatProcessorService {
     richFollowUps: Awaited<
       ReturnType<MessengerAgentService['reply']>
     >['richFollowUps'];
-    reservedQuota?: ChatQuotaCheckResult;
   }): Promise<void> {
     if (params.richFollowUps.length > 0) {
       try {
@@ -533,63 +447,42 @@ export class MessengerChatProcessorService {
       }
     }
 
-    if (params.reservedQuota) {
-      try {
-        await this.sendQuotaRemainingHintIfNeeded(
-          params.psid,
-          params.userId,
-          params.reservedQuota,
-        );
-      } catch (error) {
-        this.logger.warn(
-          `Quota hint delivery failed psid=${maskExternalId(
-            params.psid,
-          )}: ${errorMessage(error)}`,
-        );
-      }
-    }
-  }
-
-  private async sendChatDeliveryFallback(
-    psid: string,
-    userId: number | undefined,
-    error: unknown,
-    userText?: string,
-  ): Promise<void> {
+    // Quota remaining hint — query current usage after delivery
     try {
-      await this.outbound.sendTextViaPsid({
-        psid,
-        userId,
-        text: buildChatDeliveryErrorMessage(error, userText),
-        messageType: 'FREE_FORM_CHAT_ERROR',
-      });
-    } catch (sendError) {
-      this.logger.error(
-        `Failed to send chat error fallback psid=${maskExternalId(psid)}: ${errorMessage(
-          sendError,
-        )}`,
+      const { remainingHintThreshold } = this.chatRateLimitConfig.getSettings();
+      const quota = await this.chatRateLimitService.getRemainingQuota(
+        params.psid,
+      );
+      if (
+        shouldShowQuotaRemainingHint(quota.remaining, remainingHintThreshold)
+      ) {
+        await this.outbound.sendTextViaPsid({
+          psid: params.psid,
+          userId: params.userId,
+          text: buildChatQuotaRemainingHintMessage(quota.remaining),
+          messageType: 'CHAT_QUOTA_REMAINING_HINT',
+        });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Quota hint delivery failed psid=${maskExternalId(
+          params.psid,
+        )}: ${errorMessage(error)}`,
       );
     }
   }
 
-  private async sendQuotaRemainingHintIfNeeded(
-    psid: string,
-    userId: number | undefined,
-    quota: ChatQuotaCheckResult,
-  ): Promise<void> {
-    const { remainingHintThreshold } = this.chatRateLimitConfig.getSettings();
-    if (
-      !shouldShowQuotaRemainingHint(quota.remaining, remainingHintThreshold)
-    ) {
-      return;
+  private getChatQueueStore(): ChatQueueStorePort {
+    if (!this.chatQueueStore) {
+      throw new Error(
+        'CHAT_QUEUE_STORE not available — distributed mode requires Redis',
+      );
     }
+    return this.chatQueueStore;
+  }
 
-    await this.outbound.sendTextViaPsid({
-      psid,
-      userId,
-      text: buildChatQuotaRemainingHintMessage(quota.remaining),
-      messageType: 'CHAT_QUOTA_REMAINING_HINT',
-    });
+  private isDistributedMode(): boolean {
+    return this.sharedConfig.isDistributedQueueEnabled() === true;
   }
 
   private getMergedTextMaxChars(): number {

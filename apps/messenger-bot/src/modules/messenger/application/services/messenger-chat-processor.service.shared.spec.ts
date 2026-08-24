@@ -42,15 +42,30 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
     } as unknown as MetricsService;
 
     const service = new MessengerChatProcessorService(
-      { get: () => '0' } as never,
       { sendSenderActionOptional, sendTextBubblesViaPsid } as never,
       {
         reply: jest.fn(() =>
           Promise.resolve({ text: 'Bot reply', richFollowUps: [] }),
         ),
       } as never,
-      { getHistory: jest.fn(() => Promise.resolve([])) } as never,
-      {} as never,
+      {
+        reserveFreeFormSlot: jest.fn(() =>
+          Promise.resolve({
+            allowed: true,
+            used: 1,
+            limit: 15,
+            remaining: 14,
+            usageDate: '2026-06-15',
+            quotaReserved: true,
+          }),
+        ),
+        markDelivered: jest.fn(() => Promise.resolve()),
+        markCompleted: jest.fn(() => Promise.resolve()),
+        refundFreeFormSlot: jest.fn(() => Promise.resolve()),
+        getRemainingQuota: jest.fn(() =>
+          Promise.resolve({ remaining: 14, limit: 15 }),
+        ),
+      } as never,
       {
         shouldEnforceForPsid: jest.fn(() => false),
         getSettings: jest.fn(() => ({
@@ -59,8 +74,14 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         })),
       } as never,
       metrics,
-      {} as never,
+      { logMessage: jest.fn(() => Promise.resolve()) } as never,
       sharedConfig,
+      {
+        getHistory: jest.fn(() => Promise.resolve([])),
+        appendTurn: jest.fn(() => Promise.resolve()),
+        appendToolSummary: jest.fn(() => Promise.resolve()),
+      } as never,
+      { get: () => '0' } as never,
       chatQueueStore,
     );
 
@@ -109,7 +130,6 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
     } as unknown as MetricsService;
 
     const service = new MessengerChatProcessorService(
-      { get: () => '0' } as never,
       {
         sendSenderActionOptional: jest.fn(() => Promise.resolve()),
         sendTextBubblesViaPsid,
@@ -120,8 +140,24 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
           Promise.resolve({ text: 'Bot reply', richFollowUps: [] }),
         ),
       } as never,
-      { getHistory: jest.fn(() => Promise.resolve([])) } as never,
-      {} as never,
+      {
+        reserveFreeFormSlot: jest.fn(() =>
+          Promise.resolve({
+            allowed: true,
+            used: 1,
+            limit: 15,
+            remaining: 14,
+            usageDate: '2026-06-15',
+            quotaReserved: true,
+          }),
+        ),
+        markDelivered: jest.fn(() => Promise.resolve()),
+        markCompleted: jest.fn(() => Promise.resolve()),
+        refundFreeFormSlot: jest.fn(() => Promise.resolve()),
+        getRemainingQuota: jest.fn(() =>
+          Promise.resolve({ remaining: 14, limit: 15 }),
+        ),
+      } as never,
       {
         shouldEnforceForPsid: jest.fn(() => false),
         getSettings: jest.fn(() => ({
@@ -130,8 +166,14 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         })),
       } as never,
       metrics,
-      {} as never,
+      { logMessage: jest.fn(() => Promise.resolve()) } as never,
       sharedConfig,
+      {
+        getHistory: jest.fn(() => Promise.resolve([])),
+        appendTurn: jest.fn(() => Promise.resolve()),
+        appendToolSummary: jest.fn(() => Promise.resolve()),
+      } as never,
+      { get: () => '0' } as never,
       chatQueueStore,
     );
 

@@ -114,6 +114,14 @@ export class PlatformChatHistoryService
     );
   }
 
+  appendToolSummary(externalUserId: string, summary: string): Promise<void> {
+    const store = this.resolveStore();
+    if (store.appendToolSummary) {
+      return store.appendToolSummary(externalUserId, summary);
+    }
+    return Promise.resolve();
+  }
+
   private resolveStore(): ChatHistoryStorePort {
     if (this.storeType !== 'redis') {
       return this.memory;

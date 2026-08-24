@@ -75,8 +75,12 @@ export function createChatPipelineAdapters(
       externalUserId: string,
       userText: string,
       assistantText: string,
+      toolSummary?: string,
     ): Promise<void> {
       await historyService.appendTurn(externalUserId, userText, assistantText);
+      if (toolSummary) {
+        await historyService.appendToolSummary(externalUserId, toolSummary);
+      }
     },
   };
 
@@ -92,6 +96,10 @@ export function createChatPipelineAdapters(
       });
       return {
         text: result.text,
+        ...(result.toolSummary ? { toolSummary: result.toolSummary } : {}),
+        ...(result.richFollowUps
+          ? { richFollowUps: result.richFollowUps }
+          : {}),
         ...(result.privateDataFetched ? { privateDataFetched: true } : {}),
       };
     },

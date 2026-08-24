@@ -164,6 +164,22 @@ export class ChatRateLimitService {
     return this.core.recoverStuckReservedSlots();
   }
 
+  /** Get remaining daily quota for hint display (no side effects). */
+  async getRemainingQuota(psid: string): Promise<{
+    remaining: number;
+    limit: number;
+  }> {
+    const { freeFormDailyLimit, timezone } = this.configService.getSettings();
+    const usageDate = todayUsageDate(timezone);
+    const used = this.configService.isEnabled()
+      ? await this.repository.getDailyUsageCount(psid, usageDate)
+      : 0;
+    return {
+      remaining: Math.max(freeFormDailyLimit - used, 0),
+      limit: freeFormDailyLimit,
+    };
+  }
+
   // Reason is narrowed to 'DAILY_LIMIT' | 'BURST_LIMIT' at the call site —
   // the core never returns 'NOT_LINKED' or 'IDEMPOTENCY_CONFLICT' here.
   private logQuotaDeny(
