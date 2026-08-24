@@ -4,6 +4,7 @@ import { WebhookThrottle } from '@wispace/bot-common';
 import type { ZaloWebhookEvent } from '../../domain/entities/zalo-webhook-event.types';
 import { ZaloWebhookIngestService } from '../../application/zalo-webhook-ingest.service';
 import { ZaloWebhookSignatureGuard } from '../guards/zalo-webhook-signature.guard';
+import { ZaloWebhookEventDto } from '../dto/zalo-webhook-event.dto';
 
 /** Thin presentation layer: authenticate, durably ingest, then acknowledge. */
 @Controller('zalo/webhook')
@@ -14,9 +15,9 @@ export class ZaloWebhookController {
   @Post()
   @WebhookThrottle()
   async handleWebhook(
-    @Body() body: ZaloWebhookEvent,
+    @Body() body: ZaloWebhookEventDto,
   ): Promise<{ received: true }> {
-    await this.ingestService.ingestEvent(body);
+    await this.ingestService.ingestEvent(body as unknown as ZaloWebhookEvent);
     return { received: true };
   }
 }
