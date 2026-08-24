@@ -528,5 +528,54 @@ grep -q "docker rm -f messenger-bot-new" "$dir/docker.log" || fail "failed new c
 grep -q "server 127.0.0.1:5007" "$dir/upstreams/messenger-bot.conf" || fail "nginx was not restored to old port"
 pass "metrics alias failure rolls back safely"
 
+# --- Migration config validation tests (#357) ---
+
+echo "Test 20: malicious DB_HOST with shell metacharacters -> validation fails"
+dir=$(make_env malicious-db-host)
+# Write .env with malicious DB_HOST — script reads from deploy dir
+cat > "$dir/deploy/.env" <<EOF
+DB_USER=testuser
+DB_NAME=testdb
+DB_PASSWORD=testpass
+DB_HOST=localhost;rm -rf /
+DB_PORT=5432
+EOF
+write_upstream "$dir" 5007
+code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old" RUN_MIGRATIONS=true "MIGRATION_CMD=npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js")
+[ "$code" -eq 1 ] || fail "malicious DB_HOST should exit 1, got $code"
+grep -q "DB_HOST contains invalid characters" "$dir/run.out" || fail "missing DB_HOST validation error"
+pass "malicious DB_HOST rejected"
+
+echo "Test 21: malicious MIGRATION_LOCK_ID with SQL injection -> validation fails"
+dir=$(make_env malicious-lock-id)
+cat > "$dir/deploy/.env" <<EOF
+DB_USER=testuser
+DB_NAME=testdb
+DB_PASSWORD=testpass
+DB_HOST=localhost
+DB_PORT=5432
+EOF
+write_upstream "$dir" 5007
+code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old" RUN_MIGRATIONS=true "MIGRATION_CMD=npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js" "MIGRATION_LOCK_ID=1;DROP TABLE users")
+[ "$code" -eq 1 ] || fail "malicious MIGRATION_LOCK_ID should exit 1, got $code"
+grep -q "MIGRATION_LOCK_ID must be a numeric integer" "$dir/run.out" || fail "missing MIGRATION_LOCK_ID validation error"
+pass "malicious MIGRATION_LOCK_ID rejected"
+
+echo "Test 22: valid config values pass validation"
+dir=$(make_env valid-config)
+cat > "$dir/deploy/.env" <<EOF
+DB_USER=ai_chat_bot
+DB_NAME=ai_chat_bot_db
+DB_PASSWORD=securepass123
+DB_HOST=pgbouncer
+DB_PORT=5432
+EOF
+write_upstream "$dir" 5007
+code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old" RUN_MIGRATIONS=true "MIGRATION_CMD=npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js")
+# Should NOT fail on validation — may fail on other things (DB unreachable, etc.)
+grep -q "contains invalid characters" "$dir/run.out" && fail "valid config should pass validation"
+grep -q "must be a numeric integer" "$dir/run.out" && fail "valid config should pass validation"
+pass "valid config passes validation"
+
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"

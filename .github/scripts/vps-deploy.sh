@@ -463,6 +463,46 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
   DB_PASSWORD_ENV=$(grep -E '^DB_PASSWORD=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
   DB_HOST_ENV=$(grep -E '^DB_HOST=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
   DB_PORT_ENV=$(grep -E '^DB_PORT=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
+  # Validate config values at trust boundary — reject shell metacharacters
+  # and SQL injection vectors before interpolation into migration commands (#357)
+  validate_db_config() {
+    local field="$1" value="$2"
+    case "$field" in
+      DB_HOST)
+        # RFC 952/1123 hostname or IP; allow localhost, dots, hyphens, alphanumerics
+        if ! printf '%s' "$value" | grep -Eq '^[a-zA-Z0-9._-]+$'; then
+          echo "ERROR: $field contains invalid characters: $value" >&2
+          return 1
+        fi
+        ;;
+      DB_PORT)
+        # Numeric port 1-65535
+        if ! printf '%s' "$value" | grep -Eq '^[0-9]+$' || [ "$value" -lt 1 ] || [ "$value" -gt 65535 ] 2>/dev/null; then
+          echo "ERROR: $field must be a numeric port (1-65535): $value" >&2
+          return 1
+        fi
+        ;;
+      DB_USER|DB_NAME)
+        # Alphanumeric + underscore only (PostgreSQL identifier rules)
+        if ! printf '%s' "$value" | grep -Eq '^[a-zA-Z_][a-zA-Z0-9_]*$'; then
+          echo "ERROR: $field contains invalid characters: $value" >&2
+          return 1
+        fi
+        ;;
+      MIGRATION_LOCK_ID)
+        # Numeric only — will be cast to bigint in SQL
+        if ! printf '%s' "$value" | grep -Eq '^-?[0-9]+$'; then
+          echo "ERROR: $field must be a numeric integer: $value" >&2
+          return 1
+        fi
+        ;;
+    esac
+  }
+  validate_db_config DB_HOST "$DB_HOST_ENV" || exit 1
+  validate_db_config DB_PORT "${DB_PORT_ENV:-5432}" || exit 1
+  validate_db_config DB_USER "$DB_USER_ENV" || exit 1
+  validate_db_config DB_NAME "$DB_NAME_ENV" || exit 1
+  validate_db_config MIGRATION_LOCK_ID "$MIGRATION_LOCK_ID" || exit 1
   case "$MIGRATION_CMD" in
     'npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
       ;;
@@ -499,9 +539,9 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
   if ! docker exec "$NEW_CONTAINER" sh -c "
     rm -f /tmp/mig.exit
     PGPASSWORD=\"\$DB_PASSWORD\" psql -v ON_ERROR_STOP=1 -h \"$DB_HOST_ENV\" -p \"${DB_PORT_ENV:-5432}\" -U \"$DB_USER_ENV\" -d \"$DB_NAME_ENV\" <<'SQL'
-SELECT pg_advisory_lock($MIGRATION_LOCK_ID);
+SELECT pg_advisory_lock($MIGRATION_LOCK_ID::bigint);
 \\! ${MIGRATION_CMD}; echo \$? > /tmp/mig.exit
-SELECT pg_advisory_unlock($MIGRATION_LOCK_ID);
+SELECT pg_advisory_unlock($MIGRATION_LOCK_ID::bigint);
 SQL
     [ \"\$(cat /tmp/mig.exit 2>/dev/null)\" = \"0\" ]
   "; then
