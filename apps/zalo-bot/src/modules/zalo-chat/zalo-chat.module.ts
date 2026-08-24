@@ -28,7 +28,7 @@ import type { ChatQueueStorePort } from '@wispace/chat-agent';
 import {
   WispaceCalendarService,
   WispaceConfigService,
-  WispaceExerciseService,
+  PrecreateExerciseApiClient,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
 import {
@@ -48,8 +48,6 @@ import {
   type ReschedulePort,
 } from '@wispace/reschedule-confirm';
 import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
-import { ZaloCalendarPort } from './infrastructure/adapters/zalo-calendar.port';
-import { ZaloReschedulePort } from './infrastructure/adapters/zalo-reschedule.port';
 import {
   PlatformDeadLetterCronService,
   PlatformDeadLetterService,
@@ -142,7 +140,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         configService: ConfigService,
         goalsService: WispaceGoalsService,
         calendarService: WispaceCalendarService,
-        exerciseService: WispaceExerciseService,
+        exerciseClient: PrecreateExerciseApiClient,
         rescheduleConfirmationService: RescheduleConfirmationService<string>,
         outboundService: ZaloOutboundService,
       ) => {
@@ -186,14 +184,15 @@ const RESCHEDULE_CONFIRM_SUFFIX =
                 ),
             },
           },
-          exerciseService,
+          exerciseClient,
+          'x-zaloid',
         );
       },
       inject: [
         ConfigService,
         WispaceGoalsService,
         WispaceCalendarService,
-        WispaceExerciseService,
+        PrecreateExerciseApiClient,
         RescheduleConfirmationService,
         ZaloOutboundService,
       ],
@@ -337,8 +336,39 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         ),
       inject: [WispaceCalendarService, WispaceConfigService],
     },
-    ZaloCalendarPort,
-    ZaloReschedulePort,
+    {
+      provide: 'ZaloCalendarPort',
+      useFactory: (
+        calendarService: WispaceCalendarService,
+      ): CalendarPort<string> => ({
+        listUpcomingEntries: async (zaloUserId: string) => {
+          const records = await calendarService.listCalendars(zaloUserId);
+          return records.map((record) => ({
+            calendarId: record.id,
+            scheduledTimeLabel:
+              `${record.eventDate} ${record.time ?? ''}`.trim(),
+          }));
+        },
+      }),
+      inject: [WispaceCalendarService],
+    },
+    {
+      provide: 'ZaloReschedulePort',
+      useFactory: (
+        studyCalendarCommandService: PlatformStudyCalendarCommandService,
+      ): ReschedulePort<string> => ({
+        rescheduleSession: (params) =>
+          studyCalendarCommandService.rescheduleSession({
+            externalUserId: params.externalId,
+            userId: params.userId,
+            calendarId: params.calendarId,
+            schedulingMode: params.schedulingMode,
+            newLocalDate: params.newLocalDate,
+            newTime: params.newTime,
+          }),
+      }),
+      inject: [PlatformStudyCalendarCommandService],
+    },
     {
       provide: TypeormRescheduleStore,
       useFactory: (repo: Repository<RescheduleConfirmationEntity>) =>
@@ -354,7 +384,11 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         store: TypeormRescheduleStore<string>,
       ) =>
         new RescheduleConfirmationService<string>(calendar, reschedule, store),
-      inject: [ZaloCalendarPort, ZaloReschedulePort, TypeormRescheduleStore],
+      inject: [
+        'ZaloCalendarPort',
+        'ZaloReschedulePort',
+        TypeormRescheduleStore,
+      ],
     },
     ZaloOutboundService,
     CleanupCronService,

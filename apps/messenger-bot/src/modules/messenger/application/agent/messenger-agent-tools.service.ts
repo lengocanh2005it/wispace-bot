@@ -47,7 +47,7 @@ import {
 } from '@messenger/shared/utils/messenger-chat-intent.utils';
 import { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
 import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
-import { WispaceExerciseService } from '@wispace/wispace-client';
+import { PrecreateExerciseApiClient } from '@wispace/wispace-client';
 import { hasMessengerReportSubscriptionIntent } from '@messenger/shared/utils/messenger-report-subscription-intent.utils';
 
 export const MESSENGER_NOT_LINKED_MESSAGE =
@@ -76,7 +76,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     @Inject(STUDY_REMINDER_OPERATIONS_PORT)
     private readonly studyPort: StudyReminderOperationsPort,
     private readonly rescheduleConfirmationService: MessengerRescheduleConfirmationService,
-    private readonly exerciseService: WispaceExerciseService,
+    private readonly exerciseClient: PrecreateExerciseApiClient,
   ) {}
 
   async execute(
@@ -226,7 +226,8 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
   ): Promise<unknown> {
     return executePrecreateExerciseTool(
       ctx,
-      this.exerciseService,
+      this.exerciseClient,
+      'x-psid',
       {
         getNotLinkedMessage: () => MESSENGER_NOT_LINKED_MESSAGE,
         logger: this.logger,

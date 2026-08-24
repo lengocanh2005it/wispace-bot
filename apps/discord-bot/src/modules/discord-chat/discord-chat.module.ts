@@ -38,7 +38,7 @@ import type { ChatQueueStorePort } from '@wispace/chat-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
   WispaceCalendarService,
-  WispaceExerciseService,
+  PrecreateExerciseApiClient,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
 import {
@@ -46,6 +46,7 @@ import {
   type CalendarPort,
   type ReschedulePort,
 } from '@wispace/reschedule-confirm';
+import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
 import { DiscordMenuService } from './application/services/discord-menu.service';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
@@ -69,8 +70,6 @@ import {
 } from '@wispace/learner-profile';
 import type { LearnerProfileStorePort } from '@wispace/learner-profile';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
-import { DiscordCalendarPort } from './infrastructure/adapters/discord-calendar.port';
-import { DiscordReschedulePort } from './infrastructure/adapters/discord-reschedule.port';
 import { DiscordOutboundService } from './application/services/discord-outbound.service';
 
 const NOT_LINKED_MESSAGE =
@@ -120,7 +119,7 @@ const REGISTER_REPORT_MESSAGE =
       useFactory: (
         goalsService: WispaceGoalsService,
         calendarService: WispaceCalendarService,
-        exerciseService: WispaceExerciseService,
+        exerciseClient: PrecreateExerciseApiClient,
         rescheduleConfirmationService: RescheduleConfirmationService<string>,
         outboundService: DiscordOutboundService,
       ) =>
@@ -149,12 +148,13 @@ const REGISTER_REPORT_MESSAGE =
                 ),
             },
           },
-          exerciseService,
+          exerciseClient,
+          'x-discordid',
         ),
       inject: [
         WispaceGoalsService,
         WispaceCalendarService,
-        WispaceExerciseService,
+        PrecreateExerciseApiClient,
         RescheduleConfirmationService,
         DiscordOutboundService,
       ],
@@ -295,8 +295,40 @@ const REGISTER_REPORT_MESSAGE =
         PlatformChatQueueService,
       ],
     },
-    DiscordCalendarPort,
-    DiscordReschedulePort,
+    {
+      provide: 'DiscordCalendarPort',
+      useFactory: (
+        studyCalendarCommandService: PlatformStudyCalendarCommandService,
+      ): CalendarPort<string> => ({
+        listUpcomingEntries: (externalId: string, _userId: number) =>
+          studyCalendarCommandService
+            .listEntries(externalId, { timeRange: 'upcoming' })
+            .then((result) =>
+              result.entries.map((entry) => ({
+                calendarId: entry.calendarId,
+                scheduledTimeLabel: entry.scheduledTimeLabel,
+              })),
+            ),
+      }),
+      inject: [PlatformStudyCalendarCommandService],
+    },
+    {
+      provide: 'DiscordReschedulePort',
+      useFactory: (
+        studyCalendarCommandService: PlatformStudyCalendarCommandService,
+      ): ReschedulePort<string> => ({
+        rescheduleSession: (params) =>
+          studyCalendarCommandService.rescheduleSession({
+            externalUserId: params.externalId,
+            userId: params.userId,
+            calendarId: params.calendarId,
+            schedulingMode: params.schedulingMode,
+            newLocalDate: params.newLocalDate,
+            newTime: params.newTime,
+          }),
+      }),
+      inject: [PlatformStudyCalendarCommandService],
+    },
     {
       provide: TypeormRescheduleStore,
       useFactory: (repo: Repository<RescheduleConfirmationEntity>) =>
@@ -313,8 +345,8 @@ const REGISTER_REPORT_MESSAGE =
       ) =>
         new RescheduleConfirmationService<string>(calendar, reschedule, store),
       inject: [
-        DiscordCalendarPort,
-        DiscordReschedulePort,
+        'DiscordCalendarPort',
+        'DiscordReschedulePort',
         TypeormRescheduleStore,
       ],
     },

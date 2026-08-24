@@ -13,7 +13,8 @@ import {
 import {
   WispaceCalendarService,
   WispaceGoalsService,
-  WispaceExerciseService,
+  PrecreateExerciseApiClient,
+  type WispaceIdHeader,
 } from '@wispace/wispace-client';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import type {
@@ -45,7 +46,8 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
     private readonly stagePort: RescheduleStagePort,
     private readonly options: PlatformAgentToolsOptions,
     @Optional()
-    private readonly exerciseService?: WispaceExerciseService,
+    private readonly exerciseClient?: PrecreateExerciseApiClient,
+    private readonly exerciseIdHeader?: WispaceIdHeader,
   ) {}
 
   async execute(
@@ -175,7 +177,8 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
       case 'precreate_next_exercise':
         return executePrecreateExerciseTool(
           ctx,
-          this.exerciseService,
+          this.exerciseClient,
+          this.exerciseIdHeader ?? 'x-psid',
           {
             getNotLinkedMessage: this.options.getNotLinkedMessage,
             logger: this.logger,
