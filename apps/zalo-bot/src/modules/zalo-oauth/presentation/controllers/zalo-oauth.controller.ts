@@ -10,6 +10,9 @@ import {
   ZaloLinkTokenRejectedError,
 } from '../../application/services/zalo-link-completion.service';
 
+const OAUTH_STATE_COOKIE = 'zalo_oauth_state';
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes — matches state TTL
+
 @Controller('zalo/oauth')
 @UseGuards(ThrottlerGuard)
 export class ZaloOauthController {
@@ -57,6 +60,13 @@ export class ZaloOauthController {
 
     // ponytail: Cache-Control not in Helmet v8 — prevent browser/proxy caching of token-bearing 302 redirect
     res.setHeader('Cache-Control', 'no-store');
+    // Bind OAuth state to the initiating browser session (#348)
+    res.cookie(OAUTH_STATE_COOKIE, state, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      maxAge: OAUTH_STATE_TTL_MS,
+    });
     res.redirect(url.toString());
   }
 
@@ -65,11 +75,27 @@ export class ZaloOauthController {
     @Query('code') code: string | undefined,
     @Query('state') rawState: string | undefined,
     @Res() res: Response,
+    req: { cookies?: Record<string, string> },
   ): Promise<void> {
     if (!code || !rawState) {
       res.json({ success: false, message: 'Thiếu code hoặc state.' });
       return;
     }
+
+    // Bind OAuth state to the initiating browser session (#348)
+    const cookieState = req.cookies?.[OAUTH_STATE_COOKIE];
+    if (!cookieState || cookieState !== rawState) {
+      this.logger.warn(
+        'Zalo OAuth callback: state mismatch — possible cross-browser or forwarded URL',
+      );
+      res.json({
+        success: false,
+        message: 'Phiên liên kết không hợp lệ, vui lòng thử lại.',
+      });
+      return;
+    }
+    // Clear the cookie after validation — single-use
+    res.clearCookie(OAUTH_STATE_COOKIE);
 
     const consumed = await this.oauthStateService.consume(rawState);
     if (!consumed) {

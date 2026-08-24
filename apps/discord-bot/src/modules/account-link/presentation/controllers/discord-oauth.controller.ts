@@ -6,6 +6,9 @@ import type { Response } from 'express';
 import { DiscordLinkCompletionService } from '../../application/services/discord-link-completion.service';
 import { DiscordOauthStateService } from '../../application/services/discord-oauth-state.service';
 
+const OAUTH_STATE_COOKIE = 'discord_oauth_state';
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes — matches state TTL
+
 /**
  * Thin presentation layer for Discord OAuth — all business logic (verify,
  * mapping commit, welcome, relink notice) lives in `DiscordLinkCompletionService`;
@@ -53,6 +56,13 @@ export class DiscordOauthController {
 
     // ponytail: Cache-Control not in Helmet v8 — prevent browser/proxy caching of token-bearing response
     res.setHeader('Cache-Control', 'no-store');
+    // Bind OAuth state to the initiating browser session (#348)
+    res.cookie(OAUTH_STATE_COOKIE, state, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'lax',
+      maxAge: OAUTH_STATE_TTL_MS,
+    });
     res.json({ url: url.toString() });
   }
 
@@ -66,6 +76,7 @@ export class DiscordOauthController {
     @Query('state') state: string | undefined,
     @Query('error') discordError: string | undefined,
     @Res() res: Response,
+    req: { cookies?: Record<string, string> },
   ): Promise<void> {
     if (discordError === 'access_denied') {
       this.sendResult(res, 'cancelled');
@@ -76,6 +87,18 @@ export class DiscordOauthController {
       this.sendResult(res, 'error');
       return;
     }
+
+    // Bind OAuth state to the initiating browser session (#348)
+    const cookieState = req.cookies?.[OAUTH_STATE_COOKIE];
+    if (!cookieState || cookieState !== state) {
+      this.logger.warn(
+        'Discord OAuth callback: state mismatch — possible cross-browser or forwarded URL',
+      );
+      this.sendResult(res, 'error');
+      return;
+    }
+    // Clear the cookie after validation — single-use
+    res.clearCookie(OAUTH_STATE_COOKIE);
 
     const consumed = await this.stateService.consume(state);
     if (!consumed) {

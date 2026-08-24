@@ -19,7 +19,13 @@ function buildConfig(): ConfigService {
 }
 
 function buildRes() {
-  return { redirect: jest.fn(), json: jest.fn(), setHeader: jest.fn() };
+  return {
+    redirect: jest.fn(),
+    json: jest.fn(),
+    setHeader: jest.fn(),
+    cookie: jest.fn(),
+    clearCookie: jest.fn(),
+  };
 }
 
 describe('ZaloOauthController', () => {
@@ -83,7 +89,45 @@ describe('ZaloOauthController', () => {
     );
   });
 
-  it('GET /callback links the account and sends a welcome message on success', async () => {
+  it('GET /authorize sets browser-binding cookie with the state nonce (#348)', async () => {
+    const controller = new ZaloOauthController(
+      buildConfig(),
+      {
+        buildPkcePair: jest.fn().mockReturnValue({
+          codeVerifier: 'v',
+          codeChallenge: 'c',
+        }),
+        exchangeCodeForZaloUser: jest.fn(),
+        upsertLink: jest.fn(),
+        findUserIdByZaloId: jest.fn(),
+      } as unknown as ZaloAccountLinkService,
+      {
+        create: jest.fn().mockResolvedValue('s'),
+        consume: jest.fn(),
+      } as unknown as ZaloOauthStateService,
+      { completeLink: jest.fn() } as unknown as ZaloLinkCompletionService,
+    );
+
+    const res = {
+      redirect: jest.fn(),
+      json: jest.fn(),
+      setHeader: jest.fn(),
+      cookie: jest.fn(),
+    } as never;
+    await controller.authorize('token', res);
+
+    expect(res.cookie).toHaveBeenCalledWith(
+      'zalo_oauth_state',
+      's',
+      expect.objectContaining({
+        httpOnly: true,
+        secure: true,
+        sameSite: 'lax',
+      }),
+    );
+  });
+
+  it('GET /callback links the account when cookie matches (#348)', async () => {
     const consume = jest.fn().mockResolvedValue({
       codeVerifier: 'verifier-1',
       linkToken: 'stored-link-token',
@@ -103,7 +147,9 @@ describe('ZaloOauthController', () => {
     );
 
     const res = buildRes();
-    await controller.callback('auth-code', 'state-1', res);
+    res.clearCookie = jest.fn();
+    const req = { cookies: { zalo_oauth_state: 'state-1' } };
+    await controller.callback('auth-code', 'state-1', res, req);
 
     expect(consume).toHaveBeenCalledWith('state-1');
     expect(completeLink).toHaveBeenCalledWith(
@@ -112,6 +158,57 @@ describe('ZaloOauthController', () => {
       'stored-link-token',
     );
     expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(res.clearCookie).toHaveBeenCalledWith('zalo_oauth_state');
+  });
+
+  it('GET /callback rejects when cookie is missing (#348)', async () => {
+    const consume = jest.fn();
+
+    const controller = new ZaloOauthController(
+      buildConfig(),
+      {
+        buildPkcePair: jest.fn(),
+        exchangeCodeForZaloUser: jest.fn(),
+        upsertLink: jest.fn(),
+        findUserIdByZaloId: jest.fn(),
+      } as unknown as ZaloAccountLinkService,
+      { create: jest.fn(), consume } as unknown as ZaloOauthStateService,
+      { completeLink: jest.fn() } as unknown as ZaloLinkCompletionService,
+    );
+
+    const res = buildRes();
+    const req = { cookies: {} };
+    await controller.callback('auth-code', 'state-1', res, req);
+
+    expect(consume).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: false }),
+    );
+  });
+
+  it('GET /callback rejects when cookie mismatches state (#348)', async () => {
+    const consume = jest.fn();
+
+    const controller = new ZaloOauthController(
+      buildConfig(),
+      {
+        buildPkcePair: jest.fn(),
+        exchangeCodeForZaloUser: jest.fn(),
+        upsertLink: jest.fn(),
+        findUserIdByZaloId: jest.fn(),
+      } as unknown as ZaloAccountLinkService,
+      { create: jest.fn(), consume } as unknown as ZaloOauthStateService,
+      { completeLink: jest.fn() } as unknown as ZaloLinkCompletionService,
+    );
+
+    const res = buildRes();
+    const req = { cookies: { zalo_oauth_state: 'different-state' } };
+    await controller.callback('auth-code', 'state-1', res, req);
+
+    expect(consume).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ success: false }),
+    );
   });
 
   it('GET /callback maps a rejected WISPACE token to the invalid-link message', async () => {
@@ -136,7 +233,8 @@ describe('ZaloOauthController', () => {
     );
 
     const res = buildRes();
-    await controller.callback('auth-code', 'state-1', res);
+    const req = { cookies: { zalo_oauth_state: 'state-1' } };
+    await controller.callback('auth-code', 'state-1', res, req);
 
     const lastCall = res.json.mock.calls[res.json.mock.calls.length - 1] as
       | [unknown]
@@ -164,7 +262,8 @@ describe('ZaloOauthController', () => {
     );
 
     const res = buildRes();
-    await controller.callback('auth-code', 'state-1', res);
+    const req = { cookies: { zalo_oauth_state: 'state-1' } };
+    await controller.callback('auth-code', 'state-1', res, req);
 
     const jsonMock = res.json;
     const lastCall = jsonMock.mock.calls[jsonMock.mock.calls.length - 1] as
