@@ -20,6 +20,8 @@ import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '../../domain/repositories/mess
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
 import { CHAT_QUEUE_STORE } from '../../domain/repositories/chat-queue.store.port';
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
+import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
+import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import { MessengerAgentService } from '../agent/messenger-agent.service';
 import {
   MessengerOutboundService,
@@ -67,6 +69,8 @@ export class MessengerChatProcessorService {
     private readonly chatQueueStore?: ChatQueueStorePort,
     private readonly privacyState?: PrivacyStateService,
     private readonly privacyService?: PrivacyDataService,
+    @Inject(MESSENGER_REPOSITORY)
+    private readonly mappingRepository?: MessengerMappingRepositoryPort,
   ) {}
 
   /** H7: worker/cron entry for shared queue flush. */
@@ -122,11 +126,25 @@ export class MessengerChatProcessorService {
       this.getMergedTextMaxChars(),
     );
 
+    // Re-validate mapping on flush — userId in snapshot may be stale after relink (#352)
+    let freshUserId = snapshot.userId;
+    if (this.mappingRepository) {
+      const freshMapping =
+        await this.mappingRepository.findActiveMappingByPsid(psid);
+      if (!freshMapping) {
+        this.logger.warn(
+          `Dropping queued messages for psid=${maskExternalId(psid)}: no active mapping (user may have unlinked)`,
+        );
+        return;
+      }
+      freshUserId = freshMapping.userId;
+    }
+
     try {
       await this.processChatBatch({
         psid,
         mergedText,
-        userId: snapshot.userId,
+        userId: freshUserId,
         linkContext: snapshot.linkContext,
         idempotencyKey: snapshot.lastIdempotencyKey,
       });

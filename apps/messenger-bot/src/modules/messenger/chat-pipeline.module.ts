@@ -229,7 +229,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
               });
               const displayName = sanitized.text || 'Chào bạn nha';
               const base = input.userId
-                ? `Học viên đã liên kết WISPACE (userId=${input.userId}). Tên gọi: ${displayName}.`
+                ? `Học viên đã liên kết WISPACE. Tên gọi: ${displayName}.`
                 : `Học viên chưa liên kết WISPACE. Tên gọi: ${displayName}. Nhắc mở Messenger từ link trong app WISPACE nếu cần dữ liệu cá nhân.`;
               const profileSection = await learnerProfileSuffix(input);
               return profileSection ? `${base}\n\n${profileSection}` : base;
