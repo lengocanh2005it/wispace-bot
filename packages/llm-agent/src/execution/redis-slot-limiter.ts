@@ -22,7 +22,7 @@ export interface SlotMetrics {
  */
 const RETRY_DELAY_MS = 50;
 const MAX_RETRIES = 200;
-const SLOT_TTL_MS = 60_000;
+const DEFAULT_LEASE_MS = 60_000;
 const LEASE_PREFIX = ':lease:';
 
 // Lua script: atomic acquire — INCR counter, PEXPIRE, store lease UUID
@@ -71,12 +71,23 @@ export async function acquireRedisSlot(
   key: string,
   limit: number,
   logger: SlotLogger,
-  metrics?: SlotMetrics,
+  options?: { metrics?: SlotMetrics; signal?: AbortSignal; leaseMs?: number },
 ): Promise<() => Promise<void>> {
+  const { metrics, signal, leaseMs = DEFAULT_LEASE_MS } = options ?? {};
   const uuid = randomUUID();
   const leaseKey = `${key}${LEASE_PREFIX}${uuid}`;
 
+  // Reject early if caller already aborted
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
+
   for (let i = 0; i < MAX_RETRIES; i++) {
+    // Check cancellation between retries
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     try {
       const result = await redis.eval(
         ACQUIRE_SCRIPT,
@@ -84,7 +95,7 @@ export async function acquireRedisSlot(
         key,
         leaseKey,
         String(limit),
-        String(SLOT_TTL_MS),
+        String(leaseMs),
         uuid,
       );
 
@@ -96,16 +107,42 @@ export async function acquireRedisSlot(
 
       metrics?.incrementCounter('llm_concurrency_rejected');
     } catch (err) {
+      // AbortError from signal abort during redis.eval
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        throw err;
+      }
       logger.warn(`Redis acquire error: ${errorMessage(err)}`);
       metrics?.incrementCounter('llm_concurrency_rejected');
     }
 
-    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+    // Abort-aware sleep — reject if signal fires during delay
+    await abortableSleep(RETRY_DELAY_MS, signal);
   }
 
   throw new Error(
     `Global LLM concurrency limit (${limit}) exceeded after ${MAX_RETRIES} retries`,
   );
+}
+
+/**
+ * Sleep that rejects early if the provided AbortSignal fires.
+ */
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(new DOMException('Aborted', 'AbortError'));
+      },
+      { once: true },
+    );
+  });
 }
 
 async function releaseRedisSlot(

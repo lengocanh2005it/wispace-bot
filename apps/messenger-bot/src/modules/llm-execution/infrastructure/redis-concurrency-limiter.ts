@@ -7,7 +7,7 @@ const KEY_PREFIX = 'llm:concurrency:';
 const LEASE_PREFIX = ':lease:';
 const RETRY_DELAY_MS = 50;
 const MAX_RETRIES = 200;
-const SLOT_TTL_MS = 60_000;
+const DEFAULT_LEASE_MS = 60_000;
 
 // Lua script: atomic acquire — INCR counter, PEXPIRE, store lease UUID
 const ACQUIRE_SCRIPT = `
@@ -57,14 +57,29 @@ export class RedisConcurrencyLimiter {
   /**
    * Acquire a global concurrency slot with owner-safe lease.
    * Returns a release function that only releases if the lease UUID matches.
-   * Throws if cannot acquire within max retries.
+   * Throws if cannot acquire within max retries or if signal aborts.
    */
-  async acquire(key: string, limit: number): Promise<() => Promise<void>> {
+  async acquire(
+    key: string,
+    limit: number,
+    options?: { signal?: AbortSignal; leaseMs?: number },
+  ): Promise<() => Promise<void>> {
+    const { signal, leaseMs = DEFAULT_LEASE_MS } = options ?? {};
     const redisKey = `${KEY_PREFIX}${key}`;
     const uuid = randomUUID();
     const leaseKey = `${redisKey}${LEASE_PREFIX}${uuid}`;
 
+    // Reject early if caller already aborted
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+
     for (let i = 0; i < MAX_RETRIES; i++) {
+      // Check cancellation between retries
+      if (signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+      }
+
       try {
         const result = await this.redis.eval(
           ACQUIRE_SCRIPT,
@@ -72,7 +87,7 @@ export class RedisConcurrencyLimiter {
           redisKey,
           leaseKey,
           String(limit),
-          String(SLOT_TTL_MS),
+          String(leaseMs),
           uuid,
         );
 
@@ -80,15 +95,41 @@ export class RedisConcurrencyLimiter {
           return () => this.release(redisKey, leaseKey, uuid);
         }
       } catch (err) {
+        // AbortError from signal abort during redis.eval
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          throw err;
+        }
         this.logger.warn(`Redis acquire error: ${errorMessage(err)}`);
       }
 
-      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      // Abort-aware sleep — reject if signal fires during delay
+      await this.abortableSleep(RETRY_DELAY_MS, signal);
     }
 
     throw new Error(
       `Global LLM concurrency limit (${limit}) exceeded after ${MAX_RETRIES} retries`,
     );
+  }
+
+  /**
+   * Sleep that rejects early if the provided AbortSignal fires.
+   */
+  private abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (signal?.aborted) {
+        reject(new DOMException('Aborted', 'AbortError'));
+        return;
+      }
+      const timer = setTimeout(resolve, ms);
+      signal?.addEventListener(
+        'abort',
+        () => {
+          clearTimeout(timer);
+          reject(new DOMException('Aborted', 'AbortError'));
+        },
+        { once: true },
+      );
+    });
   }
 
   private async release(
