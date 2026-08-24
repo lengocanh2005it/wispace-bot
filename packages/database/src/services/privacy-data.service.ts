@@ -124,21 +124,33 @@ export class PrivacyDataService {
   /**
    * Delete: atomic cascade-remove all local data for a user.
    *
-   * 1. Unlink the platform mapping (returns userId for cross-platform delete)
-   * 2. Delete all user data by userId (covers all platforms) in a transaction
-   * 3. Clear Redis chat history (outside transaction — best-effort, idempotent)
+   * 1. Inside a single transaction:
+   *    a. Look up + remove the platform mapping (returns userId for cross-platform delete)
+   *    b. Delete all other platform mappings by userId
+   *    c. Delete all userId-scoped local records
+   * 2. Clear Redis chat history (outside transaction — best-effort, idempotent)
    *
    * Idempotent — safe to call multiple times. Returns without error if
    * the user was already deleted.
    */
   async delete(platform: string, externalUserId: string): Promise<void> {
-    // 1. Unlink — get userId for cross-platform delete
-    const { userId } = await this.unlink(platform, externalUserId);
+    // 1. Atomic transaction: mapping removal + all userId-scoped deletes
+    let userId: number | undefined;
 
-    // 2. Transactional delete of all user data by userId
     await this.dataSource.transaction(async (manager) => {
-      // Platform mapping for this platform is already deleted above.
-      // Delete mappings for OTHER platforms if userId is known.
+      // 1a. Look up and remove the platform mapping INSIDE the transaction
+      const mappingRepo = manager.getRepository(
+        ENTITY_NAMES[platform as keyof typeof ENTITY_NAMES],
+      );
+      const mapping = await mappingRepo.findOne({
+        where: { platform, externalUserId } as never,
+      });
+      if (mapping) {
+        userId = (mapping as unknown as { userId?: number }).userId;
+        await mappingRepo.remove(mapping);
+      }
+
+      // 1b. Delete mappings for OTHER platforms if userId is known
       if (userId) {
         for (const [p, entityName] of Object.entries({
           messenger: ENTITY_NAMES.messenger,
@@ -151,7 +163,7 @@ export class PrivacyDataService {
         }
       }
 
-      // Delete by (platform, externalUserId) — covers current platform
+      // 1c. Delete by (platform, externalUserId) — covers current platform
       // and any remaining records if userId was null
       const deleteByUser = async (
         entityName: string,
@@ -178,7 +190,7 @@ export class PrivacyDataService {
       await deleteByUser(ENTITY_NAMES.chatIdempotency, uid);
     });
 
-    // 3. Redis cleanup — outside transaction, best-effort, idempotent
+    // 2. Redis cleanup — outside transaction, best-effort, idempotent
     if (this.chatHistoryClearer) {
       await this.chatHistoryClearer.clear(externalUserId);
     }
