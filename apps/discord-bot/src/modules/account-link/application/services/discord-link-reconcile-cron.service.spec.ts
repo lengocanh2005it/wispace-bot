@@ -284,4 +284,30 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
     expect(accountLinkService.upsertLink).toHaveBeenCalledTimes(50);
     expect(verifyRecordService.consumeRecord).toHaveBeenCalledTimes(50);
   });
+  it('does not consume verify record when existing mapping has a mismatched userId', async () => {
+    const { verifyRecordService, accountLinkService } = buildHarness({
+      records: [
+        {
+          discordUserId: 'discord-user-1',
+          userId: 143,
+          verifiedAt: new Date(Date.now() - 120_000),
+        },
+      ],
+      findUserId: () => 999,
+    });
+    const cron = new DiscordLinkReconcileCronService(
+      verifyRecordService,
+      accountLinkService,
+      buildConfigService(),
+      buildPgLock(884_200_934),
+      { notify: jest.fn().mockResolvedValue(undefined) } as never,
+      { isMember: jest.fn().mockResolvedValue(false) } as never,
+      { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
+    );
+
+    await cron.handleReconcile();
+
+    expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
+    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalled();
+  });
 });

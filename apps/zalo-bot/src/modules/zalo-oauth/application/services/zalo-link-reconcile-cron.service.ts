@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
+import { Counter } from 'prom-client';
 import { PgAdvisoryLockService, maskExternalId } from '@wispace/bot-common';
 import {
   ZALO_LINK_VERIFY_RECORD_REPOSITORY,
@@ -11,6 +12,12 @@ import { ZaloAccountLinkService } from './zalo-account-link.service';
 const DEFAULT_RECONCILE_AGE_MS = 120_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 10 * 60_000;
 const ZALO_LINK_RECONCILE_LOCK = 884_200_937;
+
+const reconcileRecordsTotal = new Counter({
+  name: 'zalo_link_reconcile_records_total',
+  help: 'Records processed by Zalo link reconciliation',
+  labelNames: ['outcome'] as const,
+});
 
 /**
  * Reconciles pending Zalo link verify-intents (#147, mirror of Discord's
@@ -69,10 +76,34 @@ export class ZaloLinkReconcileCronService {
           record.zaloUserId,
         );
 
-        if (existingUserId !== undefined) {
+        if (existingUserId === record.userId) {
           // Mapping committed — the record is a leftover (consume raced).
           await this.verifyRecordService.consumeRecord(record.zaloUserId);
           alreadyCommitted += 1;
+          reconcileRecordsTotal.inc({ outcome: 'already_committed' });
+          continue;
+        }
+
+        if (existingUserId !== undefined && existingUserId !== record.userId) {
+          this.logger.warn(
+            `Zalo link reconcile mismatch: verified intent for userId=${maskExternalId(
+              record.userId,
+            )} but existing mapping has userId=${maskExternalId(
+              existingUserId,
+            )} for zaloUserId=${maskExternalId(record.zaloUserId)}`,
+          );
+          reconcileRecordsTotal.inc({ outcome: 'mismatched' });
+
+          if (Date.now() - record.verifiedAt.getTime() >= maxRecordAgeMs) {
+            this.logger.error(
+              `Zalo link verify record older than ${maxRecordAgeMs}ms with mismatched mapping — dropping zaloUserId=${maskExternalId(
+                record.zaloUserId,
+              )}`,
+            );
+            await this.verifyRecordService.consumeRecord(record.zaloUserId);
+            dropped += 1;
+            reconcileRecordsTotal.inc({ outcome: 'dropped' });
+          }
           continue;
         }
 
@@ -84,6 +115,7 @@ export class ZaloLinkReconcileCronService {
           );
           await this.verifyRecordService.consumeRecord(record.zaloUserId);
           dropped += 1;
+          reconcileRecordsTotal.inc({ outcome: 'dropped' });
           continue;
         }
 
@@ -93,6 +125,7 @@ export class ZaloLinkReconcileCronService {
         );
         await this.verifyRecordService.consumeRecord(record.zaloUserId);
         reconciled += 1;
+        reconcileRecordsTotal.inc({ outcome: 'reconciled' });
         this.logger.log(
           `Zalo link reconciled for zaloUserId=${maskExternalId(
             record.zaloUserId,
@@ -100,6 +133,7 @@ export class ZaloLinkReconcileCronService {
         );
       } catch (error) {
         failed += 1;
+        reconcileRecordsTotal.inc({ outcome: 'failed' });
         this.logger.warn(
           `Zalo link reconcile failed for zaloUserId=${maskExternalId(
             record.zaloUserId,

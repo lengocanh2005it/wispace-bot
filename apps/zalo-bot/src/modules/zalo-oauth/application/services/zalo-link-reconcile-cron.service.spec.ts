@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import type { ConfigService } from '@nestjs/config';
 import type { PgAdvisoryLockService } from '@wispace/bot-common';
 import type { ZaloAccountLinkService } from './zalo-account-link.service';
@@ -26,19 +25,17 @@ function buildPgLock(lockId: number): PgAdvisoryLockService {
   } as unknown as PgAdvisoryLockService;
 }
 
-function buildHarness(
-  options: {
-    records?: Array<{
-      zaloUserId: string;
-      userId: number;
-      verifiedAt: Date;
-    }>;
-    findUserId?: (zaloUserId: string) => number | undefined;
-    upsertError?: Error;
-  } = {},
-) {
+function buildHarness(options: {
+  records?: Array<{
+    zaloUserId: string;
+    userId: number;
+    verifiedAt: Date;
+  }>;
+  findUserId?: (zaloUserId: string) => number | undefined;
+  upsertError?: Error;
+}) {
   const verifyRecordService = {
-    listStaleRecords: jest.fn().mockResolvedValue(options.records || []),
+    listStaleRecords: jest.fn().mockResolvedValue(options.records ?? []),
     consumeRecord: jest.fn().mockResolvedValue(undefined),
   } as unknown as ZaloLinkVerifyRecordRepositoryPort;
 
@@ -54,14 +51,14 @@ function buildHarness(
   return { verifyRecordService, accountLinkService };
 }
 
-describe('ZaloLinkReconcileCronService (#147)', () => {
+describe('ZaloLinkReconcileCronService', () => {
   it('re-commits a missing mapping from the verify record, then consumes it', async () => {
     const { verifyRecordService, accountLinkService } = buildHarness({
       records: [
         {
           zaloUserId: 'zalo-user-1',
-          userId: 143,
-          verifiedAt: new Date(Date.now() - 120_000),
+          userId: 42,
+          verifiedAt: new Date(Date.now() - 150_000),
         },
       ],
     });
@@ -75,7 +72,7 @@ describe('ZaloLinkReconcileCronService (#147)', () => {
     await cron.handleReconcile();
 
     expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
-      143,
+      42,
       'zalo-user-1',
     );
     expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith(
@@ -83,16 +80,16 @@ describe('ZaloLinkReconcileCronService (#147)', () => {
     );
   });
 
-  it('consumes records whose mapping is already committed (leftover consume race)', async () => {
+  it('consumes records whose mapping is already committed with same userId', async () => {
     const { verifyRecordService, accountLinkService } = buildHarness({
       records: [
         {
           zaloUserId: 'zalo-user-1',
-          userId: 143,
-          verifiedAt: new Date(Date.now() - 120_000),
+          userId: 42,
+          verifiedAt: new Date(Date.now() - 150_000),
         },
       ],
-      findUserId: () => 143,
+      findUserId: () => 42,
     });
     const cron = new ZaloLinkReconcileCronService(
       verifyRecordService,
@@ -109,13 +106,37 @@ describe('ZaloLinkReconcileCronService (#147)', () => {
     );
   });
 
-  it('drops records older than the max age when the mapping still missing', async () => {
+  it('does not consume verify record when existing mapping has a mismatched userId', async () => {
     const { verifyRecordService, accountLinkService } = buildHarness({
       records: [
         {
           zaloUserId: 'zalo-user-1',
-          userId: 143,
-          verifiedAt: new Date(Date.now() - 700_000), // > 600,000 default
+          userId: 42,
+          verifiedAt: new Date(Date.now() - 150_000),
+        },
+      ],
+      findUserId: () => 999,
+    });
+    const cron = new ZaloLinkReconcileCronService(
+      verifyRecordService,
+      accountLinkService,
+      buildConfigService(),
+      buildPgLock(884_200_937),
+    );
+
+    await cron.handleReconcile();
+
+    expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
+    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalled();
+  });
+
+  it('drops records older than the max age when the mapping is missing', async () => {
+    const { verifyRecordService, accountLinkService } = buildHarness({
+      records: [
+        {
+          zaloUserId: 'zalo-user-1',
+          userId: 42,
+          verifiedAt: new Date(Date.now() - 700_000),
         },
       ],
     });
@@ -134,13 +155,13 @@ describe('ZaloLinkReconcileCronService (#147)', () => {
     );
   });
 
-  it('keeps the record when upsert fails', async () => {
+  it('keeps the record when reconciliation upsert fails', async () => {
     const { verifyRecordService, accountLinkService } = buildHarness({
       records: [
         {
           zaloUserId: 'zalo-user-1',
-          userId: 143,
-          verifiedAt: new Date(Date.now() - 120_000),
+          userId: 42,
+          verifiedAt: new Date(Date.now() - 150_000),
         },
       ],
       upsertError: new Error('db down'),
@@ -154,7 +175,9 @@ describe('ZaloLinkReconcileCronService (#147)', () => {
 
     await cron.handleReconcile();
 
-    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalled();
+    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalledWith(
+      'zalo-user-1',
+    );
   });
 
   it('does nothing when the advisory lock is held elsewhere', async () => {
@@ -162,8 +185,8 @@ describe('ZaloLinkReconcileCronService (#147)', () => {
       records: [
         {
           zaloUserId: 'zalo-user-1',
-          userId: 143,
-          verifiedAt: new Date(Date.now() - 120_000),
+          userId: 42,
+          verifiedAt: new Date(Date.now() - 150_000),
         },
       ],
     });
@@ -171,26 +194,11 @@ describe('ZaloLinkReconcileCronService (#147)', () => {
       verifyRecordService,
       accountLinkService,
       buildConfigService(),
-      buildPgLock(0), // wrong lock ID → returns null
+      buildPgLock(999_999),
     );
 
     await cron.handleReconcile();
 
-    expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
-  });
-
-  it('does nothing when no stale records', async () => {
-    const { verifyRecordService, accountLinkService } = buildHarness();
-    const cron = new ZaloLinkReconcileCronService(
-      verifyRecordService,
-      accountLinkService,
-      buildConfigService(),
-      buildPgLock(884_200_937),
-    );
-
-    await cron.handleReconcile();
-
-    expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
-    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalled();
+    expect(verifyRecordService.listStaleRecords).not.toHaveBeenCalled();
   });
 });

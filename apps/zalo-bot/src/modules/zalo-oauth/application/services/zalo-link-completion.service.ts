@@ -88,7 +88,15 @@ export class ZaloLinkCompletionService {
 
     // Welcome comes AFTER the mapping is committed — a send failure must not
     // make an already-committed link appear uncommitted.
-    await this.outboundService.sendText(zaloUser.id, buildLinkSuccessMessage());
+    await this.outboundService
+      .sendText(zaloUser.id, buildLinkSuccessMessage())
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `Zalo link welcome send failed for zaloUserId=${maskExternalId(
+            zaloUser.id,
+          )}: ${errorMessage(error)}`,
+        );
+      });
   }
 
   private async retryUpsert(userId: number, zaloUserId: string): Promise<void> {

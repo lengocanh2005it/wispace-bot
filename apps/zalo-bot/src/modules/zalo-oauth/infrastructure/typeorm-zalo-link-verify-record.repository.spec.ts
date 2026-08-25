@@ -5,6 +5,7 @@ function mockRepo() {
     find: jest.fn().mockResolvedValue([]),
     create: jest.fn(),
     save: jest.fn(),
+    upsert: jest.fn(),
     delete: jest.fn(),
     findOne: jest.fn(),
   };
@@ -65,6 +66,21 @@ describe('TypeormZaloLinkVerifyRecordRepository', () => {
       expect(result).toEqual([
         { zaloUserId: 'z1', userId: 1, verifiedAt: now },
       ]);
+    });
+  });
+  describe('recordVerify', () => {
+    it('upserts verify intent idempotently by zaloUserId', async () => {
+      const repo = mockRepo();
+      const repository = new TypeormZaloLinkVerifyRecordRepository(
+        repo as never,
+      );
+
+      await repository.recordVerify('zalo-1', 42);
+
+      expect(repo.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ zaloUserId: 'zalo-1', userId: 42 }),
+        ['zaloUserId'],
+      );
     });
   });
 });

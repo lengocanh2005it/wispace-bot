@@ -16,13 +16,9 @@ export class TypeormZaloLinkVerifyRecordRepository implements ZaloLinkVerifyReco
   ) {}
 
   async recordVerify(zaloUserId: string, userId: number): Promise<void> {
-    await this.repo.save(
-      this.repo.create({
-        zaloUserId,
-        userId,
-        verifiedAt: new Date(),
-      }),
-    );
+    await this.repo.upsert({ zaloUserId, userId, verifiedAt: new Date() }, [
+      'zaloUserId',
+    ]);
   }
 
   async consumeRecord(zaloUserId: string): Promise<void> {

@@ -93,11 +93,34 @@ export class DiscordLinkReconcileCronService {
           record.discordUserId,
         );
 
-      if (existingUserId !== undefined) {
+      if (existingUserId === record.userId) {
         // Mapping committed — the record is a leftover (consume raced).
         await this.verifyRecordService.consumeRecord(record.discordUserId);
         alreadyCommitted += 1;
         reconcileRecordsTotal.inc({ outcome: 'already_committed' });
+        continue;
+      }
+
+      if (existingUserId !== undefined && existingUserId !== record.userId) {
+        this.logger.warn(
+          `Discord link reconcile mismatch: verified intent for userId=${maskExternalId(
+            record.userId,
+          )} but existing mapping has userId=${maskExternalId(
+            existingUserId,
+          )} for discordUserId=${maskExternalId(record.discordUserId)}`,
+        );
+        reconcileRecordsTotal.inc({ outcome: 'mismatched' });
+
+        if (Date.now() - record.verifiedAt.getTime() >= maxRecordAgeMs) {
+          this.logger.error(
+            `Discord link verify record older than ${maxRecordAgeMs}ms with mismatched mapping — dropping discordUserId=${maskExternalId(
+              record.discordUserId,
+            )}`,
+          );
+          await this.verifyRecordService.consumeRecord(record.discordUserId);
+          dropped += 1;
+          reconcileRecordsTotal.inc({ outcome: 'dropped' });
+        }
         continue;
       }
 

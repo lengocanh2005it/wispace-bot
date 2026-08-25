@@ -122,4 +122,15 @@ describe('ZaloLinkCompletionService', () => {
     expect(recordVerify).not.toHaveBeenCalled();
     expect(upsertLink).not.toHaveBeenCalled();
   });
+  it('succeeds even if the welcome outbound message delivery fails (best-effort)', async () => {
+    const { service, upsertLink, sendText } = buildService();
+    sendText.mockRejectedValueOnce(new Error('Zalo API 500'));
+
+    await expect(
+      service.completeLink('code-1', 'verifier-1', 'link-token'),
+    ).resolves.toBeUndefined();
+
+    expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1');
+    expect(sendText).toHaveBeenCalled();
+  });
 });
