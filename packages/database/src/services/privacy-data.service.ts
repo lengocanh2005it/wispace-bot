@@ -1,4 +1,4 @@
-import type { DataSource, Repository } from 'typeorm';
+import type { DataSource, ObjectLiteral, Repository } from 'typeorm';
 
 /**
  * Minimal interface for Redis chat history cleanup during erasure.
@@ -76,7 +76,7 @@ const ENTITY_NAMES = {
 } as const;
 
 export class PrivacyDataService {
-  private readonly mappingRepos: Map<string, Repository<unknown>>;
+  private readonly mappingRepos: Map<string, Repository<ObjectLiteral>>;
 
   constructor(
     private readonly dataSource: DataSource,
@@ -85,7 +85,7 @@ export class PrivacyDataService {
     this.mappingRepos = new Map();
   }
 
-  private getMappingRepo(platform: string): Repository<unknown> {
+  private getMappingRepo(platform: string): Repository<ObjectLiteral> {
     if (this.mappingRepos.has(platform)) {
       return this.mappingRepos.get(platform)!;
     }

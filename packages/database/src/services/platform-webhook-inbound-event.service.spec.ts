@@ -24,7 +24,7 @@ describe('PlatformWebhookInboundEventService', () => {
     // Every andWhere returns { andWhere, execute } so both single-condition
     // (claim, abandonStaleProcessing) and double-condition (transitions) work.
     const claimExecuteMock = jest.fn().mockResolvedValue({ affected: 1 });
-    const claimAndWhereMock = jest.fn(() => ({
+    const claimAndWhereMock: jest.Mock = jest.fn(() => ({
       andWhere: claimAndWhereMock,
       execute: claimExecuteMock,
     }));
@@ -170,7 +170,7 @@ describe('PlatformWebhookInboundEventService', () => {
       let updateId: number | undefined;
       let updateToken: string | undefined;
       let updateStaleBefore: Date | undefined;
-      const updateBuilder = {
+      const updateBuilder: Record<string, jest.Mock> = {
         set: jest.fn().mockReturnThis(),
         where: jest.fn((_condition: string, parameters: { id: number }) => {
           updateId = parameters.id;
@@ -409,10 +409,21 @@ describe('PlatformWebhookInboundEventService', () => {
     it('lists only stale processing rows and terminalizes the same row atomically', async () => {
       const now = new Date('2026-08-13T01:00:00Z');
       const staleBefore = new Date('2026-08-13T00:55:00Z');
-      const rows = [
+      const rows: Array<{
+        id: number;
+        platform: string;
+        eventId: string;
+        externalUserId: string;
+        eventType: string;
+        rawPayload: Record<string, unknown>;
+        status: string;
+        retryCount: number;
+        nextRetryAt: Date | null;
+        updatedAt: Date;
+      }> = [
         {
           id: 1,
-          platform: 'messenger' as const,
+          platform: 'messenger',
           eventId: 'stale',
           externalUserId: 'psid-stale',
           eventType: 'message',
@@ -424,7 +435,7 @@ describe('PlatformWebhookInboundEventService', () => {
         },
         {
           id: 2,
-          platform: 'messenger' as const,
+          platform: 'messenger',
           eventId: 'fresh',
           externalUserId: 'psid-fresh',
           eventType: 'message',
@@ -436,7 +447,7 @@ describe('PlatformWebhookInboundEventService', () => {
         },
         {
           id: 3,
-          platform: 'messenger' as const,
+          platform: 'messenger',
           eventId: 'pending',
           externalUserId: 'psid-pending',
           eventType: 'message',
@@ -466,7 +477,7 @@ describe('PlatformWebhookInboundEventService', () => {
       };
       let updateId: number | undefined;
       let updateStaleBefore: Date | undefined;
-      const updateBuilder = {
+      const updateBuilder: Record<string, jest.Mock> = {
         set: jest.fn().mockReturnThis(),
         where: jest.fn((_condition: string, parameters: { id: number }) => {
           updateId = parameters.id;

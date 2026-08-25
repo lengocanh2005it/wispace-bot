@@ -36,14 +36,14 @@ import type { Platform, WebhookInboundEventStatus } from '../types';
 @Index('idx_webhook_inbound_events_stale', ['platform', 'status', 'updatedAt'])
 export class WebhookInboundEventEntity {
   @PrimaryGeneratedColumn()
-  id: number;
+  id!: number;
 
   @Column({ type: 'varchar', length: 16 })
-  platform: Platform;
+  platform!: Platform;
 
   /** Stable per-delivery event id (Messenger mid, Zalo msg_id, ...). */
   @Column({ name: 'event_id', type: 'varchar', length: 255 })
-  eventId: string;
+  eventId!: string;
 
   @Column({
     name: 'external_user_id',
@@ -51,25 +51,25 @@ export class WebhookInboundEventEntity {
     length: 64,
     nullable: true,
   })
-  externalUserId: string | null;
+  externalUserId!: string | null;
 
   @Column({ name: 'event_type', type: 'varchar', length: 32, nullable: true })
-  eventType: string | null;
+  eventType!: string | null;
 
   @Column({ name: 'raw_payload', type: 'jsonb' })
-  rawPayload: object;
+  rawPayload!: object;
 
   @Column({ type: 'varchar', length: 20, default: 'pending' })
-  status: WebhookInboundEventStatus;
+  status!: WebhookInboundEventStatus;
 
   @Column({ name: 'retry_count', type: 'int', default: 0 })
-  retryCount: number;
+  retryCount!: number;
 
   @Column({ name: 'last_error', type: 'text', nullable: true })
-  lastError: string | null;
+  lastError!: string | null;
 
   @Column({ name: 'next_retry_at', type: 'timestamptz', nullable: true })
-  nextRetryAt: Date | null;
+  nextRetryAt!: Date | null;
 
   /**
    * Ownership token assigned when the retry worker claims the row
@@ -78,14 +78,14 @@ export class WebhookInboundEventEntity {
    * overwrite the terminal state (#149).
    */
   @Column({ name: 'lease_token', type: 'varchar', length: 64, nullable: true })
-  leaseToken: string | null;
+  leaseToken!: string | null;
 
   @Column({ name: 'processed_at', type: 'timestamptz', nullable: true })
-  processedAt: Date | null;
+  processedAt!: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
-  updatedAt: Date;
+  updatedAt!: Date;
 }

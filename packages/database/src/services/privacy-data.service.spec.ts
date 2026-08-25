@@ -1,4 +1,4 @@
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, ObjectLiteral, Repository } from 'typeorm';
 import {
   PrivacyDataService,
   type ChatHistoryClearer,
@@ -8,17 +8,17 @@ describe('PrivacyDataService', () => {
   let service: PrivacyDataService;
   let mockDataSource: jest.Mocked<DataSource>;
   let mockManager: jest.Mocked<unknown>;
-  let mockMappingRepo: jest.Mocked<Repository<unknown>>;
-  let mockLearnerRepo: jest.Mocked<Repository<unknown>>;
-  let mockReminderRepo: jest.Mocked<Repository<unknown>>;
-  let mockClaimRepo: jest.Mocked<Repository<unknown>>;
-  let mockReportRepo: jest.Mocked<Repository<unknown>>;
-  let mockLogRepo: jest.Mocked<Repository<unknown>>;
-  let mockDailyUsageRepo: jest.Mocked<Repository<unknown>>;
-  let mockLlmUsageRepo: jest.Mocked<Repository<unknown>>;
-  let mockIdempotencyRepo: jest.Mocked<Repository<unknown>>;
-  let mockDiscordMappingRepo: jest.Mocked<Repository<unknown>>;
-  let mockZaloMappingRepo: jest.Mocked<Repository<unknown>>;
+  let mockMappingRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockLearnerRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockReminderRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockClaimRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockReportRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockLogRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockDailyUsageRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockLlmUsageRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockIdempotencyRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockDiscordMappingRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockZaloMappingRepo: jest.Mocked<Repository<ObjectLiteral>>;
 
   const makeRepo = () =>
     ({
@@ -26,7 +26,7 @@ describe('PrivacyDataService', () => {
       remove: jest.fn(),
       count: jest.fn(),
       delete: jest.fn(),
-    }) as unknown as jest.Mocked<Repository<unknown>>;
+    }) as unknown as jest.Mocked<Repository<ObjectLiteral>>;
 
   beforeEach(() => {
     mockMappingRepo = makeRepo();

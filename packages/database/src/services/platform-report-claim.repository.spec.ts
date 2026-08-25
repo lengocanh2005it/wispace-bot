@@ -251,7 +251,7 @@ describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
 
     const released = await repository.releaseScheduledReportClaim(
       { externalUserId: 'zalo-1', reportDate: '2026-08-14' },
-      first.leaseToken,
+      first.leaseToken!,
     );
     expect(released).toBe(true);
 
@@ -263,11 +263,11 @@ describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
 
     const staleMarked = await repository.markScheduledReportClaimSent(
       { externalUserId: 'zalo-1', reportDate: '2026-08-14' },
-      first.leaseToken,
+      first.leaseToken!,
     );
     const staleReleased = await repository.releaseScheduledReportClaim(
       { externalUserId: 'zalo-1', reportDate: '2026-08-14' },
-      first.leaseToken,
+      first.leaseToken!,
     );
 
     expect(staleMarked).toBe(false);
@@ -275,7 +275,7 @@ describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
 
     const currentMarked = await repository.markScheduledReportClaimSent(
       { externalUserId: 'zalo-1', reportDate: '2026-08-14' },
-      second.leaseToken,
+      second.leaseToken!,
     );
 
     expect(currentMarked).toBe(true);

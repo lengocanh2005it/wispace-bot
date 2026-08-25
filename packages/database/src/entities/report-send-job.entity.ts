@@ -18,52 +18,52 @@ import type { Platform, ReportSendJobStatus } from '../types';
 @Index('idx_report_send_jobs_dispatch', ['status', 'nextRetryAt'])
 export class ReportSendJobEntity {
   @PrimaryGeneratedColumn()
-  id: number;
+  id!: number;
 
   @Column({ type: 'varchar', length: 16, default: 'messenger' })
-  platform: Platform;
+  platform!: Platform;
 
   @Column({ name: 'external_user_id', type: 'varchar', length: 64 })
-  externalUserId: string;
+  externalUserId!: string;
 
   @Column({ name: 'user_id', type: 'int', nullable: true })
-  userId: number | null;
+  userId!: number | null;
 
   @Column({ name: 'exam_date', type: 'date' })
-  examDate: string;
+  examDate!: string;
 
   @Column({ name: 'first_attempt_date', type: 'date' })
-  firstAttemptDate: string;
+  firstAttemptDate!: string;
 
   @Column({ type: 'varchar', length: 20, default: 'pending' })
-  status: ReportSendJobStatus;
+  status!: ReportSendJobStatus;
 
   @Column({ name: 'retry_count', type: 'int', default: 0 })
-  retryCount: number;
+  retryCount!: number;
 
   @Column({ name: 'max_retries', type: 'int', default: 3 })
-  maxRetries: number;
+  maxRetries!: number;
 
   @Column({ name: 'next_retry_at', type: 'timestamptz', nullable: true })
-  nextRetryAt: Date | null;
+  nextRetryAt!: Date | null;
 
   @Column({ name: 'last_error', type: 'text', nullable: true })
-  lastError: string | null;
+  lastError!: string | null;
 
   @Column({ name: 'sent_at', type: 'timestamptz', nullable: true })
-  sentAt: Date | null;
+  sentAt!: Date | null;
 
   /** Lease owner token — set at claim, required for mark-sent/mark-failed. */
   @Column({ name: 'lease_token', type: 'uuid', nullable: true })
-  leaseToken: string | null;
+  leaseToken!: string | null;
 
   /** Claim deadline — recovery only reopens processing rows past this. */
   @Column({ name: 'lease_expires_at', type: 'timestamptz', nullable: true })
-  leaseExpiresAt: Date | null;
+  leaseExpiresAt!: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
-  updatedAt: Date;
+  updatedAt!: Date;
 }

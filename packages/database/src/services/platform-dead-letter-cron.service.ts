@@ -124,7 +124,7 @@ export class PlatformDeadLetterCronService {
           await this.deadLetterService.markAbandoned(
             entry.id,
             this.options.abandonReason,
-            entry.externalUserId,
+            entry.externalUserId ?? undefined,
             { leaseToken: claimed.leaseToken },
           );
           continue;
@@ -146,7 +146,7 @@ export class PlatformDeadLetterCronService {
             await this.deadLetterService.incrementRetry(
               entry.id,
               'ambiguous delivery — retried with the same delivery key',
-              entry.externalUserId,
+              entry.externalUserId ?? undefined,
               { leaseToken: claimed.leaseToken },
             );
           } else {
@@ -154,7 +154,7 @@ export class PlatformDeadLetterCronService {
             await this.deadLetterService.markAbandoned(
               entry.id,
               'ambiguous delivery — not auto-retried',
-              entry.externalUserId,
+              entry.externalUserId ?? undefined,
               {
                 leaseToken: claimed.leaseToken,
                 deliveryStatus: 'ambiguous',
@@ -194,14 +194,14 @@ export class PlatformDeadLetterCronService {
       await this.deadLetterService.markAbandoned(
         entry.id,
         errorMsg,
-        entry.externalUserId,
+        entry.externalUserId ?? undefined,
         { leaseToken },
       );
     } else {
       await this.deadLetterService.incrementRetry(
         entry.id,
         errorMsg,
-        entry.externalUserId,
+        entry.externalUserId ?? undefined,
         { leaseToken },
       );
     }
