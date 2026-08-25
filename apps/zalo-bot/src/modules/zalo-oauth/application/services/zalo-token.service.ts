@@ -3,7 +3,7 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage, readBoundedJson } from '@wispace/bot-common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
@@ -202,7 +202,7 @@ export class ZaloTokenService {
       throw new Error(`Zalo OA token refresh failed: HTTP ${response.status}`);
     }
 
-    const payload = (await response.json()) as ZaloAccessTokenResponse;
+    const payload = await readBoundedJson<ZaloAccessTokenResponse>(response);
 
     const accessToken = payload.access_token;
     const refreshToken = payload.refresh_token;
