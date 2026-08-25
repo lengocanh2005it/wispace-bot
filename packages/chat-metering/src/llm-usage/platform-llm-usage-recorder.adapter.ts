@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { errorMessage } from '@wispace/bot-common';
@@ -40,7 +40,7 @@ export interface PlatformRecordLlmUsageInput {
  * direct fire-and-forget insert (no BullMQ queue/retry yet).
  */
 @Injectable()
-export class PlatformLlmUsageRecorderAdapter {
+export class PlatformLlmUsageRecorderAdapter implements OnModuleDestroy {
   private readonly logger = new Logger(PlatformLlmUsageRecorderAdapter.name);
   private core?: LlmUsageRecorderCore;
 
@@ -92,5 +92,9 @@ export class PlatformLlmUsageRecorderAdapter {
     }
 
     return this.core;
+  }
+
+  onModuleDestroy(): void {
+    this.core?.dispose();
   }
 }

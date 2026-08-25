@@ -95,4 +95,12 @@ export class LlmUsageRecorderCore {
       usageDate: this.todayUsageDate(),
     });
   }
+
+  /** Forward shutdown to the underlying writer. */
+  dispose(): void {
+    const w = this.writer as unknown as { dispose?: () => void };
+    if (typeof w.dispose === 'function') {
+      w.dispose();
+    }
+  }
 }
