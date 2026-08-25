@@ -71,6 +71,8 @@ export class ZaloLinkReconcileCronService {
     let failed = 0;
 
     for (const record of records) {
+      const isStale =
+        Date.now() - record.verifiedAt.getTime() >= maxRecordAgeMs;
       try {
         const existingUserId = await this.accountLinkService.findUserIdByZaloId(
           record.zaloUserId,
@@ -84,38 +86,28 @@ export class ZaloLinkReconcileCronService {
           continue;
         }
 
-        if (existingUserId !== undefined && existingUserId !== record.userId) {
+        if (existingUserId !== undefined) {
           this.logger.warn(
-            `Zalo link reconcile mismatch: verified intent for userId=${maskExternalId(
-              record.userId,
-            )} but existing mapping has userId=${maskExternalId(
-              existingUserId,
-            )} for zaloUserId=${maskExternalId(record.zaloUserId)}`,
+            `Zalo link reconcile mismatch: verified intent for userId=${maskExternalId(record.userId)} but existing mapping has userId=${maskExternalId(existingUserId)} for zaloUserId=${maskExternalId(record.zaloUserId)}`,
           );
           reconcileRecordsTotal.inc({ outcome: 'mismatched' });
 
-          if (Date.now() - record.verifiedAt.getTime() >= maxRecordAgeMs) {
-            this.logger.error(
-              `Zalo link verify record older than ${maxRecordAgeMs}ms with mismatched mapping — dropping zaloUserId=${maskExternalId(
-                record.zaloUserId,
-              )}`,
+          if (isStale) {
+            await this.dropRecord(
+              record.zaloUserId,
+              `older than ${maxRecordAgeMs}ms with mismatched mapping`,
             );
-            await this.verifyRecordService.consumeRecord(record.zaloUserId);
             dropped += 1;
-            reconcileRecordsTotal.inc({ outcome: 'dropped' });
           }
           continue;
         }
 
-        if (Date.now() - record.verifiedAt.getTime() >= maxRecordAgeMs) {
-          this.logger.error(
-            `Zalo link verify record older than ${maxRecordAgeMs}ms with no mapping — dropping zaloUserId=${maskExternalId(
-              record.zaloUserId,
-            )} (user must retry with a fresh token)`,
+        if (isStale) {
+          await this.dropRecord(
+            record.zaloUserId,
+            `older than ${maxRecordAgeMs}ms with no mapping (user must retry with a fresh token)`,
           );
-          await this.verifyRecordService.consumeRecord(record.zaloUserId);
           dropped += 1;
-          reconcileRecordsTotal.inc({ outcome: 'dropped' });
           continue;
         }
 
@@ -127,9 +119,7 @@ export class ZaloLinkReconcileCronService {
         reconciled += 1;
         reconcileRecordsTotal.inc({ outcome: 'reconciled' });
         this.logger.log(
-          `Zalo link reconciled for zaloUserId=${maskExternalId(
-            record.zaloUserId,
-          )} (crash recovery)`,
+          `Zalo link reconciled for zaloUserId=${maskExternalId(record.zaloUserId)} (crash recovery)`,
         );
       } catch (error) {
         failed += 1;
@@ -145,6 +135,14 @@ export class ZaloLinkReconcileCronService {
     this.logger.log(
       `zalo-link-reconcile done: reconciled=${reconciled}, alreadyCommitted=${alreadyCommitted}, dropped=${dropped}, failed=${failed}`,
     );
+  }
+
+  private async dropRecord(zaloUserId: string, reason: string): Promise<void> {
+    this.logger.error(
+      `Zalo link verify record dropped for zaloUserId=${maskExternalId(zaloUserId)}: ${reason}`,
+    );
+    await this.verifyRecordService.consumeRecord(zaloUserId);
+    reconcileRecordsTotal.inc({ outcome: 'dropped' });
   }
 
   private readPositiveInt(key: string, fallback: number): number {

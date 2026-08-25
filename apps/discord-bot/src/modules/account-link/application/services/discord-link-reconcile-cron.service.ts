@@ -88,6 +88,8 @@ export class DiscordLinkReconcileCronService {
     let failed = 0;
 
     for (const record of records) {
+      const isStale =
+        Date.now() - record.verifiedAt.getTime() >= maxRecordAgeMs;
       const existingUserId =
         await this.accountLinkService.findUserIdByDiscordId(
           record.discordUserId,
@@ -101,38 +103,28 @@ export class DiscordLinkReconcileCronService {
         continue;
       }
 
-      if (existingUserId !== undefined && existingUserId !== record.userId) {
+      if (existingUserId !== undefined) {
         this.logger.warn(
-          `Discord link reconcile mismatch: verified intent for userId=${maskExternalId(
-            record.userId,
-          )} but existing mapping has userId=${maskExternalId(
-            existingUserId,
-          )} for discordUserId=${maskExternalId(record.discordUserId)}`,
+          `Discord link reconcile mismatch: verified intent for userId=${maskExternalId(record.userId)} but existing mapping has userId=${maskExternalId(existingUserId)} for discordUserId=${maskExternalId(record.discordUserId)}`,
         );
         reconcileRecordsTotal.inc({ outcome: 'mismatched' });
 
-        if (Date.now() - record.verifiedAt.getTime() >= maxRecordAgeMs) {
-          this.logger.error(
-            `Discord link verify record older than ${maxRecordAgeMs}ms with mismatched mapping — dropping discordUserId=${maskExternalId(
-              record.discordUserId,
-            )}`,
+        if (isStale) {
+          await this.dropRecord(
+            record.discordUserId,
+            `older than ${maxRecordAgeMs}ms with mismatched mapping`,
           );
-          await this.verifyRecordService.consumeRecord(record.discordUserId);
           dropped += 1;
-          reconcileRecordsTotal.inc({ outcome: 'dropped' });
         }
         continue;
       }
 
-      if (Date.now() - record.verifiedAt.getTime() >= maxRecordAgeMs) {
-        this.logger.error(
-          `Discord link verify record older than ${maxRecordAgeMs}ms with no mapping — dropping discordUserId=${maskExternalId(
-            record.discordUserId,
-          )} (user must retry with a fresh token)`,
+      if (isStale) {
+        await this.dropRecord(
+          record.discordUserId,
+          `older than ${maxRecordAgeMs}ms with no mapping (user must retry with a fresh token)`,
         );
-        await this.verifyRecordService.consumeRecord(record.discordUserId);
         dropped += 1;
-        reconcileRecordsTotal.inc({ outcome: 'dropped' });
         continue;
       }
 
@@ -178,6 +170,17 @@ export class DiscordLinkReconcileCronService {
     this.logger.log(
       `Discord link reconcile batch: records=${records.length} reconciled=${reconciled} alreadyCommitted=${alreadyCommitted} dropped=${dropped} failed=${failed}`,
     );
+  }
+
+  private async dropRecord(
+    discordUserId: string,
+    reason: string,
+  ): Promise<void> {
+    this.logger.error(
+      `Discord link verify record dropped for discordUserId=${maskExternalId(discordUserId)}: ${reason}`,
+    );
+    await this.verifyRecordService.consumeRecord(discordUserId);
+    reconcileRecordsTotal.inc({ outcome: 'dropped' });
   }
 
   private async upsertWithRetry(
