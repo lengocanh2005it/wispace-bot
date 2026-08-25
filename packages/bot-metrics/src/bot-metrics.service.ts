@@ -54,6 +54,10 @@ export class BotMetricsService implements OnModuleDestroy {
   private welcomeAttempts: Counter;
   private tokenRefreshFailures: Counter;
   private webhookInboundBacklog: Gauge;
+  private wispaceCallDuration: Histogram;
+  private llmUsageInsertFailures: Counter;
+  private llmMissingTokens: Counter;
+  private llmUnpricedModelTokens: Counter;
 
   constructor(config: MetricsConfig) {
     this.prefix = config.prefix;
@@ -157,6 +161,35 @@ export class BotMetricsService implements OnModuleDestroy {
       help: 'Durable inbound webhook events due for retry (pending/failed/processing-stale)',
       registers: [this.registry],
     });
+
+    this.wispaceCallDuration = new Histogram({
+      name: `${this.prefix}_wispace_call_duration_seconds`,
+      help: 'Duration of WISPACE upstream API calls',
+      labelNames: ['service', 'operation', 'status'],
+      buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30],
+      registers: [this.registry],
+    });
+
+    this.llmUsageInsertFailures = new Counter({
+      name: `${this.prefix}_llm_usage_insert_failures_total`,
+      help: 'LLM usage event database insert failures',
+      labelNames: ['reason'],
+      registers: [this.registry],
+    });
+
+    this.llmMissingTokens = new Counter({
+      name: `${this.prefix}_llm_missing_tokens_total`,
+      help: 'LLM responses missing token usage data',
+      labelNames: ['feature'],
+      registers: [this.registry],
+    });
+
+    this.llmUnpricedModelTokens = new Counter({
+      name: `${this.prefix}_llm_unpriced_model_tokens_total`,
+      help: 'LLM tokens processed for models with no configured pricing',
+      labelNames: ['model'],
+      registers: [this.registry],
+    });
   }
 
   async timeStep<T>(step: string, fn: () => Promise<T>): Promise<T> {
@@ -208,8 +241,12 @@ export class BotMetricsService implements OnModuleDestroy {
       'wispace.service': service,
       'wispace.operation': operation,
     });
-    return this.withSpan(span, fn, () => {
-      // No Prometheus metric for Wispace calls — OTel only
+    const end = this.wispaceCallDuration.startTimer({
+      service,
+      operation,
+    });
+    return this.withSpan(span, fn, (status) => {
+      end({ status });
     });
   }
 
@@ -253,6 +290,21 @@ export class BotMetricsService implements OnModuleDestroy {
 
   incRoundOutcome(feature: string, outcome: string): void {
     this.llmRoundOutcome.inc({ feature, outcome });
+  }
+
+  /** LLM usage event database insert failure — ops signal for telemetry loss. */
+  incLlmUsageInsertFailure(reason: string): void {
+    this.llmUsageInsertFailures.inc({ reason });
+  }
+
+  /** LLM response missing token usage data — ops signal. */
+  incLlmMissingTokens(feature: string): void {
+    this.llmMissingTokens.inc({ feature });
+  }
+
+  /** LLM tokens processed for a model with no configured pricing. */
+  incLlmUnpricedModelTokens(model: string): void {
+    this.llmUnpricedModelTokens.inc({ model });
   }
 
   async getMetrics(): Promise<string> {
