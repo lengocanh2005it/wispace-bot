@@ -97,20 +97,28 @@ export class UserGoalsApiClient {
 
     const rawData = await fetchWispaceJson(response);
 
-    const data = validateShape<UserGoalsRecord>(rawData, [
-      {
-        name: 'targetScore',
-        validate: isNonEmptyString,
-        expected: 'non-empty string',
-      },
-      { name: 'examDate', validate: isDateString, expected: 'ISO date string' },
-    ]);
+    const data = validateShape<{ targetScore: string; examDate: string }>(
+      rawData,
+      [
+        {
+          name: 'targetScore',
+          validate: isNonEmptyString,
+          expected: 'non-empty string',
+        },
+        {
+          name: 'examDate',
+          validate: isDateString,
+          expected: 'ISO date string',
+        },
+      ],
+    );
 
+    const targetScore = Number(data.targetScore);
     this.logger.log(
-      `User goals API returned targetScore=${data.targetScore}, examDate=${data.examDate} (${idHeader}=${maskExternalId(
+      `User goals API returned targetScore=${targetScore}, examDate=${data.examDate} (${idHeader}=${maskExternalId(
         externalId,
       )})`,
     );
-    return data;
+    return { targetScore, examDate: data.examDate };
   }
 }

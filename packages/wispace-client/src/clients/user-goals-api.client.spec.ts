@@ -25,7 +25,7 @@ describe('UserGoalsApiClient', () => {
 
     const result = await client.getUserGoals('x-discordid', 'discord-1');
 
-    expect(result).toEqual({ targetScore: '7', examDate: '2026-08-01' });
+    expect(result).toEqual({ targetScore: 7, examDate: '2026-08-01' });
     expect(fetchMock).toHaveBeenCalledWith(
       'https://backend.example.com/api/User/goals',
       expect.objectContaining({
@@ -58,7 +58,7 @@ describe('UserGoalsApiClient', () => {
 
     const result = await client.getUserGoals('x-psid', 'psid-1');
 
-    expect(result.targetScore).toBe('7');
+    expect(result.targetScore).toBe(7);
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
@@ -144,7 +144,7 @@ describe('UserGoalsApiClient', () => {
       });
 
       const result = await client.getUserGoals('x-psid', 'psid-1');
-      expect(result.targetScore).toBe('7.0');
+      expect(result.targetScore).toBe(7);
       expect(result.examDate).toBe('2026-09-01');
     });
 
