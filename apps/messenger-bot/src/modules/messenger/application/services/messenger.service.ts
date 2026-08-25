@@ -31,14 +31,32 @@ import { WebhookActionExecutorService } from './webhook-action-executor.service'
 
 export { MessengerApiError } from './messenger-outbound.service';
 
+/** Maximum length for event IDs stored in varchar(255) DB columns. */
+export const MAX_EVENT_ID_LENGTH = 255;
+
+/** Maximum length for idempotency keys stored in varchar(128) DB columns. */
+export const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
+
 /** Stable per-delivery event id for the durable inbox. */
-function buildEventId(event: MessengerWebhookEvent, psid: string): string {
+export function buildEventId(
+  event: MessengerWebhookEvent,
+  psid: string,
+): string {
   if (event.message?.mid) {
     return event.message.mid;
   }
   if (event.timestamp !== undefined) {
     if (event.postback?.payload) {
-      return `pb:${psid}:${event.postback.payload}:${event.timestamp}`;
+      const raw = `pb:${psid}:${event.postback.payload}:${event.timestamp}`;
+      if (raw.length <= MAX_EVENT_ID_LENGTH) {
+        return raw;
+      }
+      // Bound long payloads: hash the payload to fit within varchar(255)
+      const payloadHash = createHash('sha256')
+        .update(event.postback.payload)
+        .digest('hex')
+        .slice(0, 32);
+      return `pb:${psid}:${payloadHash}:${event.timestamp}`;
     }
     return `evt:${psid}:${event.timestamp}`;
   }
@@ -46,6 +64,22 @@ function buildEventId(event: MessengerWebhookEvent, psid: string): string {
     .update(canonicalize({ psid, event }))
     .digest('hex');
   return `${event.postback?.payload ? 'pb' : 'evt'}:${fingerprint}`;
+}
+
+/**
+ * Deterministic idempotency key for chat rate limiting, bounded to
+ * varchar(128). Uses SHA-256 for collision resistance within the limit.
+ */
+export function buildIdempotencyKey(
+  event: MessengerWebhookEvent,
+  psid: string,
+): string {
+  const raw = buildEventId(event, psid);
+  if (raw.length <= MAX_IDEMPOTENCY_KEY_LENGTH) {
+    return raw;
+  }
+  const hash = createHash('sha256').update(raw).digest('hex').slice(0, 32);
+  return `idem:${hash}`;
 }
 
 function canonicalize(value: unknown): string {
@@ -232,7 +266,7 @@ export class MessengerService {
     for (const action of actions) {
       const actionForExecution =
         action.type === 'enqueue_chat' && !action.idempotencyKey
-          ? { ...action, idempotencyKey: buildEventId(event, psid) }
+          ? { ...action, idempotencyKey: buildIdempotencyKey(event, psid) }
           : action;
 
       if (
