@@ -2,7 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
+import { Counter } from 'prom-client';
 import { maskExternalIdInText } from '@wispace/bot-common';
+
+const webhookInboundRetentionDeletedTotal = new Counter({
+  name: 'webhook_inbound_retention_deleted_total',
+  help: 'Total rows deleted by webhook inbound retention cleanup',
+});
 import { WebhookInboundEventEntity } from '../entities/webhook-inbound-event.entity';
 import type { Platform } from '../types';
 
@@ -274,18 +280,39 @@ export class PlatformWebhookInboundEventService {
    * recovery flow must keep working.
    */
   async deleteTerminalOlderThan(cutoff: Date): Promise<number> {
-    const result = await this.repo
-      .createQueryBuilder()
-      .delete()
-      .from(WebhookInboundEventEntity)
-      .where('platform = :platform', { platform: this.platform })
-      .andWhere('status IN (:...statuses)', {
-        statuses: ['completed', 'abandoned'],
-      })
-      .andWhere('created_at < :cutoff', { cutoff })
-      .execute();
+    const BATCH_SIZE = 1000;
+    let totalDeleted = 0;
 
-    return result.affected ?? 0;
+    for (;;) {
+      const ids: Array<{ id: number }> = await this.repo.query(
+        `SELECT id FROM webhook_inbound_events
+         WHERE platform = $1 AND status IN ('completed','abandoned')
+           AND created_at < $2
+         LIMIT $3`,
+        [this.platform, cutoff, BATCH_SIZE],
+      );
+
+      if (ids.length === 0) break;
+
+      const result = await this.repo
+        .createQueryBuilder()
+        .delete()
+        .from(WebhookInboundEventEntity)
+        .where('id IN (:...ids)', { ids: ids.map((r) => r.id) })
+        .execute();
+
+      totalDeleted += result.affected ?? 0;
+
+      if (ids.length < BATCH_SIZE) {
+        break;
+      }
+    }
+
+    if (totalDeleted > 0) {
+      webhookInboundRetentionDeletedTotal.inc(totalDeleted);
+    }
+
+    return totalDeleted;
   }
 
   /**

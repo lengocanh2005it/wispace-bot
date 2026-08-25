@@ -8,11 +8,20 @@ describe('ChatIdempotencyCleanupCronService', () => {
   const buildService = () => {
     const configGet = jest.fn<unknown, [string]>(() => undefined);
     const configService = { get: configGet } as unknown as ConfigService;
-    const deleteMock = jest
-      .fn<Promise<{ affected: number }>, [Record<string, unknown>]>()
-      .mockResolvedValue({ affected: 5 });
+    const queryMock = jest
+      .fn()
+      .mockResolvedValueOnce([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    const deleteExecuteMock = jest.fn().mockResolvedValue({ affected: 3 });
+    const deleteWhereMock = jest.fn(() => ({
+      execute: deleteExecuteMock,
+    }));
     const idempotencyRepo = {
-      delete: deleteMock,
+      query: queryMock,
+      createQueryBuilder: jest.fn(() => ({
+        delete: () => ({
+          from: () => ({ where: deleteWhereMock }),
+        }),
+      })),
     } as unknown as Repository<ChatIdempotencyEntity>;
     const executeMock = jest
       .fn()
@@ -30,20 +39,23 @@ describe('ChatIdempotencyCleanupCronService', () => {
       cleanupCron,
     );
 
-    return { service, deleteMock, executeMock };
+    return { service, queryMock, deleteWhereMock, executeMock };
   };
 
-  it('deletes terminal idempotency rows older than the cutoff', async () => {
-    const { service, deleteMock, executeMock } = buildService();
+  it('deletes terminal idempotency rows older than the cutoff using bounded batch', async () => {
+    const { service, queryMock, deleteWhereMock, executeMock } = buildService();
 
     await service.handleDailyCleanup();
 
-    const deleteArgs = deleteMock.mock.calls[0][0];
-    expect((deleteArgs.status as { value?: string[] }).value).toEqual([
-      'completed',
-      'refunded',
-    ]);
-    expect(deleteArgs.reservedAt).toBeDefined();
+    // Verify the SELECT query uses bounded batch
+    expect(queryMock).toHaveBeenCalledWith(
+      expect.stringContaining('SELECT id FROM chat_idempotency'),
+      expect.arrayContaining([expect.any(Date), 1000]),
+    );
+    // Verify the DELETE uses the returned IDs
+    expect(deleteWhereMock).toHaveBeenCalledWith('id IN (:...ids)', {
+      ids: [1, 2, 3],
+    });
     expect(executeMock).toHaveBeenCalledWith(
       expect.objectContaining({ advisoryLockId: 202 }),
       expect.any(Function),

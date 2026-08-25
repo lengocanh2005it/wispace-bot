@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
+import { Counter } from 'prom-client';
 import { ChatQuotaEventEntity } from '@messenger/infrastructure/database/entities/chat-quota-event.entity';
 import type {
   ChatQuotaEventRepositoryPort,
@@ -11,6 +12,11 @@ import type {
 } from '../../domain/repositories/chat-quota-event.repository.port';
 
 const PLATFORM = 'messenger' as const;
+
+const chatQuotaRetentionDeletedTotal = new Counter({
+  name: 'chat_quota_retention_deleted_total',
+  help: 'Total rows deleted by chat-quota retention cleanup',
+});
 
 @Injectable()
 export class ChatQuotaEventRepository implements ChatQuotaEventRepositoryPort {
@@ -103,18 +109,34 @@ export class ChatQuotaEventRepository implements ChatQuotaEventRepositoryPort {
   }
 
   async deleteOlderThan(cutoff: Date): Promise<number> {
-    const rows: Array<{ count: string }> = await this.eventRepo.manager.query(
-      `
-        WITH deleted AS (
-          DELETE FROM chat_quota_events
-          WHERE occurred_at < $1
-          RETURNING id
-        )
-        SELECT COUNT(*)::text AS count FROM deleted
-      `,
-      [cutoff],
-    );
+    const BATCH_SIZE = 1000;
+    let totalDeleted = 0;
 
-    return Number(rows[0]?.count ?? 0);
+    for (;;) {
+      const deleted: Array<{ id: string }> = await this.eventRepo.manager.query(
+        `
+            DELETE FROM chat_quota_events
+            WHERE id IN (
+              SELECT id FROM chat_quota_events
+              WHERE occurred_at < $1
+              LIMIT $2
+            )
+            RETURNING id
+          `,
+        [cutoff, BATCH_SIZE],
+      );
+
+      totalDeleted += deleted.length;
+
+      if (deleted.length < BATCH_SIZE) {
+        break;
+      }
+    }
+
+    if (totalDeleted > 0) {
+      chatQuotaRetentionDeletedTotal.inc(totalDeleted);
+    }
+
+    return totalDeleted;
   }
 }

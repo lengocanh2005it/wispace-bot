@@ -28,7 +28,11 @@ export interface WebhookDeadLetterEntry {
 }
 
 @Entity('webhook_dead_letters')
-@Index('idx_webhook_dead_letter_status_created', ['status', 'createdAt'])
+@Index('idx_webhook_dead_letter_platform_status_created', [
+  'platform',
+  'status',
+  'createdAt',
+])
 export class WebhookDeadLetterEntity {
   @PrimaryGeneratedColumn()
   id!: number;

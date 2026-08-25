@@ -5,8 +5,9 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { InjectDataSource } from '@nestjs/typeorm';
 import { CronJob } from 'cron';
-import { In, LessThan, Repository } from 'typeorm';
+import { DataSource, LessThan, Repository } from 'typeorm';
 import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { WebhookDeadLetterEntity } from '@wispace/database';
 import type { Platform } from '@wispace/database';
@@ -63,6 +64,7 @@ export class PlatformCleanupCronService
   constructor(
     private readonly cleanupService: CleanupCronService,
     private readonly configService: ConfigService,
+    @InjectDataSource() private readonly dataSource: DataSource,
     config: CleanupCronJobsConfig,
   ) {
     this.config = config;
@@ -113,10 +115,10 @@ export class PlatformCleanupCronService
   }
 
   async handleMessageLogCleanup(): Promise<void> {
-    const { envPrefix } = this.config;
+    const { envPrefix, platform } = this.config;
     await this.cleanupService.execute(
       {
-        name: `${this.config.platform}-message-log-cleanup`,
+        name: `${platform}-message-log-cleanup`,
         advisoryLockId: this.config.lockIds.messageLog,
         cronExpression: '0 0 3 * * *',
         enabledConfigKey: `${envPrefix}MESSAGE_LOG_CLEANUP_ENABLED`,
@@ -124,22 +126,21 @@ export class PlatformCleanupCronService
         defaultRetentionDays: 90,
       },
       (cutoff) =>
-        this.config.messageLogRepo
-          .delete({
-            platform: this.config.platform,
-            createdAt: LessThan(cutoff),
-          })
-          .then((r) => r.affected ?? 0),
+        this.deleteBatched(
+          'message_logs',
+          `"platform" = $1 AND "created_at" < $2`,
+          [platform, cutoff],
+        ),
       this.parseEnabled(`${envPrefix}MESSAGE_LOG_CLEANUP_ENABLED`),
       this.parseRetentionDays(`${envPrefix}MESSAGE_LOG_RETENTION_DAYS`, 90),
     );
   }
 
   async handleDeadLetterCleanup(): Promise<void> {
-    const { envPrefix } = this.config;
+    const { envPrefix, platform } = this.config;
     await this.cleanupService.execute(
       {
-        name: `${this.config.platform}-dead-letter-cleanup`,
+        name: `${platform}-dead-letter-cleanup`,
         advisoryLockId: this.config.lockIds.deadLetter,
         cronExpression: '0 30 3 * * *',
         enabledConfigKey: `${envPrefix}DEAD_LETTER_CLEANUP_ENABLED`,
@@ -147,13 +148,11 @@ export class PlatformCleanupCronService
         defaultRetentionDays: 30,
       },
       (cutoff) =>
-        this.config.deadLetterRepo
-          .delete({
-            platform: this.config.platform,
-            status: In(['replayed', 'abandoned']),
-            createdAt: LessThan(cutoff),
-          })
-          .then((r) => r.affected ?? 0),
+        this.deleteBatched(
+          'webhook_dead_letters',
+          `"platform" = $1 AND "status" IN ('replayed','abandoned') AND "created_at" < $2`,
+          [platform, cutoff],
+        ),
       this.parseEnabled(`${envPrefix}DEAD_LETTER_CLEANUP_ENABLED`),
       this.parseRetentionDays(`${envPrefix}DEAD_LETTER_RETENTION_DAYS`, 30),
     );
@@ -200,17 +199,11 @@ export class PlatformCleanupCronService
         defaultRetentionDays: retentionDays,
       },
       (cutoff) =>
-        this.config.idempotencyRepo
-          .createQueryBuilder()
-          .delete()
-          .from(ChatIdempotencyEntity)
-          .where('platform = :platform', { platform: this.config.platform })
-          .andWhere('status IN (:...statuses)', {
-            statuses: ['completed', 'refunded'],
-          })
-          .andWhere('reserved_at < :cutoff', { cutoff })
-          .execute()
-          .then((r) => r.affected ?? 0),
+        this.deleteBatched(
+          'chat_idempotency',
+          `"platform" = $1 AND "status" IN ('completed','refunded') AND "reserved_at" < $2`,
+          [this.config.platform, cutoff],
+        ),
       () => true,
       () => retentionDays,
     );
@@ -259,9 +252,9 @@ export class PlatformCleanupCronService
         defaultRetentionDays: 90,
       },
       (cutoff) =>
-        this.config
-          .reportClaimRepo!.delete({ createdAt: LessThan(cutoff) })
-          .then((r) => r.affected ?? 0),
+        this.deleteBatched('scheduled_report_claims', `"created_at" < $1`, [
+          cutoff,
+        ]),
       this.parseEnabled(`${envPrefix}REPORT_CLAIMS_CLEANUP_ENABLED`),
       () => retentionDays,
     );
@@ -303,5 +296,40 @@ export class PlatformCleanupCronService
       const value = Number(raw);
       return Number.isFinite(value) && value > 0 ? value : fallback;
     };
+  }
+
+  /**
+   * Delete rows in bounded batches of 1 000 to avoid long-held locks.
+   * `whereSql` uses positional parameters ($1, $2, ...) bound by `params`.
+   */
+  private async deleteBatched(
+    table: string,
+    whereSql: string,
+    params: unknown[],
+  ): Promise<number> {
+    const BATCH_SIZE = 1000;
+    let totalDeleted = 0;
+
+    for (;;) {
+      const ids: Array<{ id: number | string }> = await this.dataSource.query(
+        `SELECT id FROM ${table} WHERE ${whereSql} LIMIT $${params.length + 1}`,
+        [...params, BATCH_SIZE],
+      );
+
+      if (ids.length === 0) break;
+
+      const result = await this.dataSource.query(
+        `DELETE FROM ${table} WHERE id IN (${ids.map((_, i) => `$${i + 1}`).join(',')})`,
+        ids.map((r) => r.id),
+      );
+
+      totalDeleted += result.rowCount ?? result.affected ?? 0;
+
+      if (ids.length < BATCH_SIZE) {
+        break;
+      }
+    }
+
+    return totalDeleted;
   }
 }

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Not, Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
 import { buildPocPsidToken } from '@messenger/shared/config/poc.constants';
 import {
   MessageLogEntity,
@@ -369,12 +369,34 @@ export class MessengerRepository
   }
 
   async deleteMessageLogsOlderThan(cutoff: Date): Promise<number> {
-    const result = await this.logRepo.delete({
-      platform: PLATFORM,
-      createdAt: LessThan(cutoff),
-    });
+    const BATCH_SIZE = 1000;
+    let totalDeleted = 0;
 
-    return result.affected ?? 0;
+    for (;;) {
+      const ids: Array<{ id: number }> = await this.logRepo.query(
+        `SELECT id FROM message_logs
+         WHERE "platform" = $1 AND "created_at" < $2
+         LIMIT $3`,
+        [PLATFORM, cutoff, BATCH_SIZE],
+      );
+
+      if (ids.length === 0) break;
+
+      const result = await this.logRepo
+        .createQueryBuilder()
+        .delete()
+        .from(MessageLogEntity)
+        .where('id IN (:...ids)', { ids: ids.map((r) => r.id) })
+        .execute();
+
+      totalDeleted += result.affected ?? 0;
+
+      if (ids.length < BATCH_SIZE) {
+        break;
+      }
+    }
+
+    return totalDeleted;
   }
 
   async tryClaimScheduledReport(
