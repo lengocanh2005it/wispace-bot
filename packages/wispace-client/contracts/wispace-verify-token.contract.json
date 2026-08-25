@@ -1,0 +1,19 @@
+{
+  "version": "1.0.0",
+  "description": "Canonical contract for WISPACE verify-token endpoint",
+  "endpoint": "POST /api/User/verify-token-url",
+  "env_var": "WISPACE_API_VERIFY_TOKEN_URL",
+  "request": {
+    "token": "string (required — WISPACE link token)",
+    "value": "string (required — platform external user ID)",
+    "platform": "string (required — 'messenger' | 'discord' | 'zalo')"
+  },
+  "response": {
+    "success": "boolean",
+    "userId": "number (WISPACE internal user ID)"
+  },
+  "shared_across_bots": true,
+  "changelog": [
+    "1.0.0 — Initial canonical contract"
+  ]
+}
