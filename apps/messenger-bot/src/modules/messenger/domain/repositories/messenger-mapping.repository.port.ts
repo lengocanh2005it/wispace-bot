@@ -22,6 +22,10 @@ export interface MessengerMappingRepositoryPort {
     notificationMessagesToken: string;
   }): Promise<UserMessengerMapping>;
   findActiveSubscribedMappings(): Promise<UserMessengerMapping[]>;
+  findActiveSubscribedMappingsPage(
+    afterId: number,
+    limit: number,
+  ): Promise<UserMessengerMapping[]>;
   findActiveMappingsPage(
     afterId: number,
     limit: number,

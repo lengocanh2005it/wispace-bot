@@ -389,6 +389,19 @@ describe('MessengerRepository platform-scoped user lookups (#191)', () => {
     });
   });
 
+  it('scopes findActiveSubscribedMappingsPage with keyset cursor', async () => {
+    const { repo, andWhere } = buildRepoWithQueryBuilder();
+
+    await repo.findActiveSubscribedMappingsPage(100, 500);
+
+    expect(andWhere).toHaveBeenCalledWith('mapping.id > :afterId', {
+      afterId: 100,
+    });
+    expect(andWhere).toHaveBeenCalledWith('mapping.platform = :platform', {
+      platform: 'messenger',
+    });
+  });
+
   it('scopes findActiveMappingsPage to the messenger platform', async () => {
     const { repo, andWhere } = buildRepoWithQueryBuilder();
 

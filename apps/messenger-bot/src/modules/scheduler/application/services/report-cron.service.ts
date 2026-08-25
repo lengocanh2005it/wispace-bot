@@ -100,33 +100,9 @@ export class ReportCronService {
       );
     }
 
-    let mappings =
-      await this.messengerRepository.findActiveSubscribedMappings();
-
-    if (psidFilter) {
-      mappings = mappings.filter((m) => m.psid === psidFilter);
-      if (mappings.length === 0) {
-        throw new BadRequestException(
-          `No active subscribed mapping for psid=${maskExternalId(psidFilter)}`,
-        );
-      }
-    }
-
+    const PAGE_SIZE = 500;
     const concurrency = this.readConcurrency();
-    const settled = await runBatched(mappings, concurrency, (mapping) =>
-      this.processMappingForReport(mapping, {
-        forceSend,
-        skipAlreadySentToday,
-        reportDate,
-      }),
-    );
-    const results = settled
-      .filter(
-        (r): r is PromiseFulfilledResult<ClaimAndSendResult> =>
-          r.status === 'fulfilled',
-      )
-      .map((r) => r.value);
-
+    let totalMappings = 0;
     let sent = 0;
     let skipped = 0;
     let deferred = 0;
@@ -135,18 +111,64 @@ export class ReportCronService {
     let retryQueued = 0;
     const failures: SendScheduledReportsResult['failures'] = [];
 
-    for (const r of results) {
-      sent += r.sent;
-      skipped += r.skipped;
-      deferred += r.deferred;
-      windowClosed += r.windowClosed;
-      claimSkipped += r.claimSkipped;
-      retryQueued += r.retryQueued;
-      failures.push(...r.failures);
+    // Keyset pagination: fetch mappings in bounded pages instead of loading
+    // all at once — prevents unbounded memory growth as linked users scale.
+    let cursor = 0;
+    for (;;) {
+      const page =
+        await this.messengerRepository.findActiveSubscribedMappingsPage(
+          cursor,
+          PAGE_SIZE,
+        );
+
+      if (page.length === 0) break;
+
+      // Update cursor to the last ID in this page for next iteration
+      const lastId = page[page.length - 1]!.id;
+      cursor = lastId;
+
+      let mappings = page;
+      if (psidFilter) {
+        mappings = mappings.filter((m) => m.psid === psidFilter);
+      }
+
+      totalMappings += mappings.length;
+
+      const settled = await runBatched(mappings, concurrency, (mapping) =>
+        this.processMappingForReport(mapping, {
+          forceSend,
+          skipAlreadySentToday,
+          reportDate,
+        }),
+      );
+
+      for (const r of settled) {
+        if (r.status === 'fulfilled') {
+          sent += r.value.sent;
+          skipped += r.value.skipped;
+          deferred += r.value.deferred;
+          windowClosed += r.value.windowClosed;
+          claimSkipped += r.value.claimSkipped;
+          retryQueued += r.value.retryQueued;
+          failures.push(...r.value.failures);
+        }
+      }
+
+      // If filtering by psid and we already found it, no need to scan remaining pages
+      if (psidFilter && mappings.length > 0) break;
+
+      // Partial page signals end of data
+      if (page.length < PAGE_SIZE) break;
+    }
+
+    if (psidFilter && totalMappings === 0) {
+      throw new BadRequestException(
+        `No active subscribed mapping for psid=${maskExternalId(psidFilter)}`,
+      );
     }
 
     return {
-      total: mappings.length,
+      total: totalMappings,
       sent,
       skipped,
       deferred,

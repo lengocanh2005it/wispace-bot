@@ -33,6 +33,12 @@ export interface WebhookDeadLetterEntry {
   'status',
   'createdAt',
 ])
+@Index('idx_webhook_dead_letter_retry', [
+  'platform',
+  'status',
+  'direction',
+  'updatedAt',
+])
 export class WebhookDeadLetterEntity {
   @PrimaryGeneratedColumn()
   id!: number;

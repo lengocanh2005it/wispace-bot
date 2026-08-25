@@ -183,6 +183,13 @@ export class MessengerRepository
   }
 
   async findActiveSubscribedMappings(): Promise<UserMessengerMapping[]> {
+    return this.findActiveSubscribedMappingsPage(0, Number.MAX_SAFE_INTEGER);
+  }
+
+  async findActiveSubscribedMappingsPage(
+    afterId: number,
+    limit: number,
+  ): Promise<UserMessengerMapping[]> {
     const rows = await this.mappingRepo
       .createQueryBuilder('mapping')
       .select([
@@ -197,7 +204,9 @@ export class MessengerRepository
       .andWhere('mapping.platform = :platform', { platform: PLATFORM })
       .andWhere('mapping.cadence IS NOT NULL')
       .andWhere('mapping.topic IS NOT NULL')
-      .orderBy('mapping.id', 'DESC')
+      .andWhere('mapping.id > :afterId', { afterId })
+      .orderBy('mapping.id', 'ASC')
+      .take(limit)
       .getMany();
 
     return this.dedupeMappingsByPsid(rows.map((row) => this.mapEntity(row)));
