@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import pLimit from 'p-limit';
-import { maskEventId } from '@wispace/bot-common';
+import { maskEventId, maskExternalId } from '@wispace/bot-common';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
@@ -27,6 +27,7 @@ import {
   routeWebhookEvent,
   RouterContext,
 } from '../messenger-webhook.router';
+import type { RefVerification } from '../types/messenger-webhook-router.types';
 import { WebhookActionExecutorService } from './webhook-action-executor.service';
 
 export { MessengerApiError } from './messenger-outbound.service';
@@ -305,23 +306,77 @@ export class MessengerService {
     const shouldEnforceRateLimit =
       this.chatRateLimitConfig.shouldEnforceForPsid(psid);
 
-    let linkContext: RouterContext['linkContext'] = undefined;
+    // #383: verify an event-carried ref exactly once, for every Meta shape
+    // (opt-in, top-level referral, postback referral, message referral). The
+    // token is single-use — downstream link actions reuse the verified
+    // context instead of re-submitting it.
+    let refVerification: RefVerification | undefined;
+    const ref = extractRefFromEvent(event);
+    if (ref) {
+      refVerification = await this.verifyEventRef(
+        psid,
+        event,
+        ref,
+        existingMapping,
+      );
+    }
 
-    if (!event.optin && !event.referral?.ref) {
-      const resolved = await this.resolveLinkContextFromMapping(
+    let linkContext: RouterContext['linkContext'];
+    if (refVerification?.status === 'verified') {
+      linkContext = refVerification.context;
+    } else {
+      linkContext = await this.resolveLinkContextFromMapping(
         psid,
         existingMapping,
       );
-      if (resolved) {
-        linkContext = resolved;
-      }
     }
 
     return {
-      userId: existingMapping?.userId,
-      linkContext,
+      userId:
+        refVerification?.status === 'verified'
+          ? refVerification.context?.userId
+          : existingMapping?.userId,
+      linkContext: linkContext ?? undefined,
       shouldEnforceRateLimit,
+      refVerification,
     };
+  }
+
+  private async verifyEventRef(
+    psid: string,
+    event: MessengerWebhookEvent,
+    ref: string,
+    existingMapping: UserMessengerMapping | null,
+  ): Promise<RefVerification> {
+    const outcome = await this.messengerLinkContextService.resolveFromRef(
+      psid,
+      {
+        ref,
+        topic: event.optin?.topic,
+        cadence: event.optin?.frequency,
+      },
+    );
+
+    if (outcome.verifyFailureReason) {
+      return { status: 'failed', failureReason: outcome.verifyFailureReason };
+    }
+    if (!outcome.context) {
+      // resolveFromRef returns a context or a failure reason; treat the
+      // impossible remainder as a generic verification failure.
+      return { status: 'failed', failureReason: 'NOT_FOUND' };
+    }
+    if (
+      existingMapping?.userId != null &&
+      existingMapping.userId !== outcome.context.userId
+    ) {
+      this.logger.warn(
+        `REF_LINK_BLOCKED psid=${maskExternalId(psid)} mappedUser=${maskExternalId(
+          String(existingMapping.userId),
+        )} refUser=${maskExternalId(String(outcome.context.userId))}`,
+      );
+      return { status: 'blocked' };
+    }
+    return { status: 'verified', context: outcome.context };
   }
 
   private async resolveLinkContextFromMapping(
@@ -346,6 +401,17 @@ export class MessengerService {
     event: MessengerWebhookEvent,
     preResolved?: RouterContext,
   ): Promise<MessengerLinkContext | undefined> {
+    // #383: the ref (if any) was verified once during pre-resolve — honor
+    // that outcome instead of re-submitting a single-use token.
+    const rv = preResolved?.refVerification;
+    if (rv) {
+      if (rv.status === 'verified') {
+        return rv.context ?? preResolved?.linkContext ?? undefined;
+      }
+      // blocked/failed → identity stays with the active mapping.
+      return preResolved?.linkContext ?? undefined;
+    }
+
     const ref = extractRefFromEvent(event);
     if (ref) {
       const outcome = await this.messengerLinkContextService.resolveFromRef(

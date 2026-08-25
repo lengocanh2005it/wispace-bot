@@ -268,7 +268,29 @@ export class MessengerChatProcessorService {
   }
 
   private async processChatBatchInner(input: ChatBatchInput): Promise<void> {
-    const { psid, mergedText, userId, linkContext, idempotencyKey } = input;
+    const { psid, mergedText, idempotencyKey } = input;
+    let { userId, linkContext } = input;
+
+    // #383: revalidate linkContext against the fresh mapping — if the mapping
+    // was updated (relinked/unlinked) during the debounce window, a stale
+    // context could disagree with the active identity.
+    if (linkContext && this.mappingRepository) {
+      const freshMapping =
+        await this.mappingRepository.findActiveMappingByPsid(psid);
+      if (!freshMapping) {
+        this.logger.warn(
+          `Dropping batch for psid=${maskExternalId(psid)}: no active mapping after revalidation`,
+        );
+        return;
+      }
+      if (freshMapping.userId !== linkContext.userId) {
+        this.logger.warn(
+          `Discarding stale linkContext for psid=${maskExternalId(psid)}: context userId=${maskExternalId(String(linkContext.userId))} vs mapping userId=${maskExternalId(String(freshMapping.userId))}`,
+        );
+        linkContext = undefined;
+        userId = freshMapping.userId;
+      }
+    }
 
     // ── Pre-pipeline checks ──────────────────────────────────────────
 

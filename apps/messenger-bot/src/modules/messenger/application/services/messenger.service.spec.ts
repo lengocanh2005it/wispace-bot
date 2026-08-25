@@ -70,7 +70,13 @@ describe('MessengerService (durable webhook ingestion)', () => {
       inboundEvents,
     );
 
-    return { service, repository, actionExecutor, inboundEvents };
+    return {
+      service,
+      repository,
+      actionExecutor,
+      inboundEvents,
+      linkContext,
+    };
   };
 
   const payloadWith = (
@@ -78,6 +84,120 @@ describe('MessengerService (durable webhook ingestion)', () => {
   ): MessengerWebhookPayload => ({
     object: 'page',
     entry: [{ id: 'page-1', time: 1_700_000_000_000, messaging: events }],
+  });
+
+  describe('#383 referral verification (pre-resolve)', () => {
+    const verified = {
+      ref: '999',
+      topic: 'IELTS',
+      cadence: 'WEEKLY' as const,
+      userId: 999,
+    };
+    const textWithRef = (mid: string) =>
+      textEvent({
+        message: { mid, text: 'xem lich hoc', referral: { ref: '999' } },
+      });
+    const executedActions = (actionExecutor: { executeAction: jest.Mock }) =>
+      actionExecutor.executeAction.mock.calls.map((call) => call[0]);
+
+    it('links an unmapped psid from a message referral then routes chat under the new identity', async () => {
+      const { service, actionExecutor, linkContext } = buildService();
+      (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
+        context: verified,
+      });
+
+      await service.processEvent(textWithRef('mid-r1'));
+
+      expect(linkContext.resolveFromRef).toHaveBeenCalledTimes(1);
+      const actions = executedActions(actionExecutor);
+      expect(actions.map((a) => a.type)).toEqual(['link_user', 'enqueue_chat']);
+      expect(actions[0]).toEqual(
+        expect.objectContaining({ type: 'link_user', context: verified }),
+      );
+      expect(actions[1].userId).toBe(999);
+      expect(actions[1].idempotencyKey).toBe('mid-r1');
+    });
+
+    it('blocks a relink attempt: notice first, no link_user, chat keeps the old identity', async () => {
+      const { service, actionExecutor, linkContext, repository } =
+        buildService();
+      (repository.findActiveMappingByPsid as jest.Mock).mockResolvedValue({
+        userId: 143,
+        topic: 'IELTS',
+        cadence: 'WEEKLY',
+      });
+      (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
+        context: verified,
+      });
+
+      await service.processEvent(textWithRef('mid-r2'));
+
+      const actions = executedActions(actionExecutor);
+      expect(actions.map((a) => a.type)).toEqual(['send_text', 'enqueue_chat']);
+      expect(actions[0].messageType).toBe('MAPPING_RELINK_BLOCKED');
+      expect(actions[1].userId).toBe(143);
+    });
+
+    it('verify failure on unmapped psid: single failure notice only', async () => {
+      const { service, actionExecutor, linkContext } = buildService();
+      (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
+        verifyFailureReason: 'EXPIRED',
+      });
+
+      await service.processEvent(textWithRef('mid-r3'));
+
+      const actions = executedActions(actionExecutor);
+      expect(actions).toHaveLength(1);
+      expect(actions[0].messageType).toBe('MESSENGER_LINK_VERIFY_FAILED');
+      expect(actions[0].text).toContain('hết hạn');
+    });
+
+    it('verify failure on mapped psid: notice then chat under mapping identity', async () => {
+      const { service, actionExecutor, linkContext, repository } =
+        buildService();
+      (repository.findActiveMappingByPsid as jest.Mock).mockResolvedValue({
+        userId: 143,
+      });
+      (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
+        verifyFailureReason: 'USED',
+      });
+
+      await service.processEvent(textWithRef('mid-r4'));
+
+      const actions = executedActions(actionExecutor);
+      expect(actions.map((a) => a.type)).toEqual(['send_text', 'enqueue_chat']);
+      expect(actions[0].messageType).toBe('MESSENGER_LINK_VERIFY_FAILED');
+      expect(actions[1].userId).toBe(143);
+    });
+
+    it('optin reuses the pre-verified context without submitting the token twice', async () => {
+      const { service, actionExecutor, linkContext } = buildService();
+      (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
+        context: verified,
+      });
+
+      await service.processEvent(textEvent({ optin: { ref: '999' } }) as never);
+
+      expect(linkContext.resolveFromRef).toHaveBeenCalledTimes(1);
+      const actions = executedActions(actionExecutor);
+      expect(actions).toHaveLength(1);
+      expect(actions[0]).toEqual(
+        expect.objectContaining({ type: 'link_user', context: verified }),
+      );
+    });
+
+    it('plain chat without a ref skips verification entirely', async () => {
+      const { service, actionExecutor, linkContext, repository } =
+        buildService();
+      (repository.findActiveMappingByPsid as jest.Mock).mockResolvedValue({
+        userId: 143,
+      });
+
+      await service.processEvent(textEvent());
+
+      expect(linkContext.resolveFromRef).not.toHaveBeenCalled();
+      expect(executedActions(actionExecutor)[0].type).toBe('enqueue_chat');
+    });
   });
 
   it('persists an event and returns without dispatching it', async () => {

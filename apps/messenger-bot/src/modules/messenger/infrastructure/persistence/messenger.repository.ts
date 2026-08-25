@@ -68,7 +68,7 @@ export class MessengerRepository
     userId: number;
     topic?: string;
     cadence?: NotificationCadence;
-  }): Promise<UserMessengerMapping> {
+  }): Promise<UserMessengerMapping | null> {
     const token = buildPocPsidToken(params.psid);
 
     // 1. Re-activate a previously deactivated mapping (keeps its id) — the
@@ -121,6 +121,9 @@ export class MessengerRepository
           cadence = COALESCE(EXCLUDED.cadence, user_platform_mappings.cadence),
           status = 'ACTIVE',
           updated_at = now()
+        -- #383 CAS guard: skip update when concurrent write changed the userId,
+        -- preventing a check-then-write race from bypassing the relink policy.
+        WHERE user_platform_mappings.user_id = EXCLUDED.user_id
         RETURNING *
       `,
         [
@@ -132,6 +135,12 @@ export class MessengerRepository
           params.cadence ?? null,
         ],
       );
+
+    // #383: CAS guard may have blocked the update when a concurrent write
+    // changed the userId — RETURNING yields no rows.
+    if (rows.length === 0) {
+      return null;
+    }
 
     return this.mapEntity(this.mapRawRow(rows[0]));
   }

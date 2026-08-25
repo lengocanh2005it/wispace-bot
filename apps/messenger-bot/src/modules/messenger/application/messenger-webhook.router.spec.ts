@@ -413,6 +413,263 @@ describe('routeWebhookEvent', () => {
     });
   });
 
+  describe('ref verification (#383)', () => {
+    const verifiedContext = {
+      ref: '7',
+      topic: 'IELTS',
+      cadence: 'WEEKLY' as const,
+      userId: 7,
+    };
+    const verifiedCtx: RouterContext = {
+      userId: 7,
+      linkContext: verifiedContext,
+      refVerification: { status: 'verified', context: verifiedContext },
+    };
+    const mappedACtx: RouterContext = {
+      userId: 42,
+      linkContext: {
+        ref: '42',
+        topic: 'IELTS',
+        cadence: 'WEEKLY',
+        userId: 42,
+      },
+    };
+
+    it('prepends link_user with verified context before chat on message referral', () => {
+      const actions = routeWebhookEvent(
+        event({
+          message: {
+            text: 'xem lich hoc',
+            mid: 'mid-1',
+            referral: { ref: '7' },
+          },
+        }),
+        verifiedCtx,
+      );
+      expect(actions).toEqual([
+        expect.objectContaining({
+          type: 'link_user',
+          ref: '7',
+          context: verifiedContext,
+        }),
+        expect.objectContaining({ type: 'enqueue_chat', userId: 7 }),
+      ]);
+    });
+
+    it('prepends link_user before register_report on postback with nested referral', () => {
+      const actions = routeWebhookEvent(
+        event({
+          postback: { payload: 'GET_LEARNING_REPORT', referral: { ref: '7' } },
+        }),
+        {
+          ...verifiedCtx,
+          linkContext: verifiedContext,
+        },
+      );
+      expect(actions[0]).toEqual(
+        expect.objectContaining({
+          type: 'link_user',
+          context: verifiedContext,
+        }),
+      );
+      expect(actions[1]).toEqual(
+        expect.objectContaining({
+          type: 'register_report',
+          userId: 7,
+          topic: 'IELTS',
+          cadence: 'WEEKLY',
+        }),
+      );
+    });
+
+    it('routes postback actions for a top-level referral attached to a postback', () => {
+      const actions = routeWebhookEvent(
+        event({
+          referral: { ref: '7' },
+          postback: { payload: 'GET_LEARNING_REPORT' },
+        }),
+        verifiedCtx,
+      );
+      expect(actions[0]).toEqual(
+        expect.objectContaining({ type: 'link_user' }),
+      );
+      expect(actions[1]).toEqual(
+        expect.objectContaining({ type: 'register_report', userId: 7 }),
+      );
+    });
+
+    it('emits exactly one link_user for optin when already pre-verified', () => {
+      const actions = routeWebhookEvent(optinEvent('12345'), verifiedCtx);
+      expect(actions).toEqual([
+        expect.objectContaining({
+          type: 'link_user',
+          context: verifiedContext,
+        }),
+      ]);
+    });
+
+    it('emits exactly one link_user for pure referral when already pre-verified', () => {
+      const actions = routeWebhookEvent(referralEvent('12345'), verifiedCtx);
+      expect(actions).toEqual([
+        expect.objectContaining({
+          type: 'link_user',
+          context: verifiedContext,
+        }),
+      ]);
+    });
+
+    describe('blocked relink attempt', () => {
+      const blockedCtx: RouterContext = {
+        ...mappedACtx,
+        refVerification: { status: 'blocked' },
+      };
+
+      it('pure referral: sends MAPPING_RELINK_BLOCKED instead of link_user', () => {
+        const actions = routeWebhookEvent(referralEvent('999'), blockedCtx);
+        expect(actions).toEqual([
+          expect.objectContaining({
+            type: 'send_text',
+            psid: 'psid-123',
+            messageType: 'MAPPING_RELINK_BLOCKED',
+          }),
+        ]);
+      });
+
+      it('optin: sends MAPPING_RELINK_BLOCKED instead of link_user', () => {
+        const actions = routeWebhookEvent(optinEvent('999'), blockedCtx);
+        expect(actions).toEqual([
+          expect.objectContaining({ messageType: 'MAPPING_RELINK_BLOCKED' }),
+        ]);
+      });
+
+      it('text with message referral: notice first, then chat under existing identity', () => {
+        const actions = routeWebhookEvent(
+          event({
+            message: {
+              text: 'xem lich hoc',
+              mid: 'mid-2',
+              referral: { ref: '999' },
+            },
+          }),
+          blockedCtx,
+        );
+        expect(actions).toEqual([
+          expect.objectContaining({ messageType: 'MAPPING_RELINK_BLOCKED' }),
+          expect.objectContaining({ type: 'enqueue_chat', userId: 42 }),
+        ]);
+      });
+
+      it('postback register: notice first, then register_report under existing identity', () => {
+        const ctx: RouterContext = {
+          ...blockedCtx,
+          linkContext: mappedACtx.linkContext,
+        };
+        const actions = routeWebhookEvent(
+          event({
+            postback: {
+              payload: 'GET_LEARNING_REPORT',
+              referral: { ref: '999' },
+            },
+          }),
+          ctx,
+        );
+        expect(actions).toEqual([
+          expect.objectContaining({ messageType: 'MAPPING_RELINK_BLOCKED' }),
+          expect.objectContaining({
+            type: 'register_report',
+            userId: 42,
+            topic: 'IELTS',
+          }),
+        ]);
+      });
+    });
+
+    describe('failed verify', () => {
+      const failedCtx: RouterContext = {
+        ...mappedACtx,
+        refVerification: { status: 'failed', failureReason: 'EXPIRED' },
+      };
+      const failedUnmappedCtx: RouterContext = {
+        refVerification: { status: 'failed', failureReason: 'USED' },
+      };
+
+      it('unmapped text: only verify-failed notice, no MISSING_USER_REF duplicate', () => {
+        const actions = routeWebhookEvent(
+          event({
+            message: {
+              text: 'xem lich hoc',
+              mid: 'mid-3',
+              referral: { ref: 'bad' },
+            },
+          }),
+          failedUnmappedCtx,
+        );
+        expect(actions).toEqual([
+          expect.objectContaining({
+            messageType: 'MESSENGER_LINK_VERIFY_FAILED',
+          }),
+        ]);
+      });
+
+      it('unmapped postback register: only verify-failed notice', () => {
+        const actions = routeWebhookEvent(
+          event({
+            postback: {
+              payload: 'GET_LEARNING_REPORT',
+              referral: { ref: 'bad' },
+            },
+          }),
+          failedUnmappedCtx,
+        );
+        expect(actions).toEqual([
+          expect.objectContaining({
+            messageType: 'MESSENGER_LINK_VERIFY_FAILED',
+          }),
+        ]);
+      });
+
+      it('pure referral: only verify-failed notice', () => {
+        const actions = routeWebhookEvent(
+          referralEvent('bad'),
+          failedUnmappedCtx,
+        );
+        expect(actions).toEqual([
+          expect.objectContaining({
+            messageType: 'MESSENGER_LINK_VERIFY_FAILED',
+          }),
+        ]);
+      });
+
+      it('mapped text: verify-failed notice first, then chat under mapping identity', () => {
+        const actions = routeWebhookEvent(
+          event({
+            message: {
+              text: 'xem lich hoc',
+              mid: 'mid-4',
+              referral: { ref: 'bad' },
+            },
+          }),
+          failedCtx,
+        );
+        expect(actions).toEqual([
+          expect.objectContaining({
+            messageType: 'MESSENGER_LINK_VERIFY_FAILED',
+          }),
+          expect.objectContaining({ type: 'enqueue_chat', userId: 42 }),
+        ]);
+      });
+
+      it('optin: only verify-failed notice', () => {
+        const actions = routeWebhookEvent(optinEvent('bad'), failedUnmappedCtx);
+        expect(actions).toEqual([
+          expect.objectContaining({
+            messageType: 'MESSENGER_LINK_VERIFY_FAILED',
+          }),
+        ]);
+      });
+    });
+  });
+
   describe('edge cases', () => {
     it('uses referral ref when both optin and referral present (referral checked first)', () => {
       const actions = routeWebhookEvent(

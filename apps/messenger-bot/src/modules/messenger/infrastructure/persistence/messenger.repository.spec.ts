@@ -50,8 +50,9 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
       cadence: 'weekly',
     });
 
-    expect(result.psid).toBe('psid-1');
-    expect(result.userId).toBe(143);
+    expect(result).not.toBeNull();
+    expect(result!.psid).toBe('psid-1');
+    expect(result!.userId).toBe(143);
     expect(managerQuery).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining('UPDATE user_platform_mappings'),
@@ -64,6 +65,22 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
       ),
       expect.any(Array),
     );
+  });
+
+  it('returns null when CAS guard blocks the update (#383)', async () => {
+    const { repo, managerQuery } = buildRepo();
+    managerQuery
+      .mockResolvedValueOnce([]) // UPDATE INACTIVE (no-op)
+      .mockResolvedValueOnce([]); // CAS guard blocked — RETURNING empty
+
+    const result = await repo.upsertPsidUserLink({
+      psid: 'psid-1',
+      userId: 99,
+      topic: 'ielts',
+      cadence: 'weekly',
+    });
+
+    expect(result).toBeNull();
   });
 });
 

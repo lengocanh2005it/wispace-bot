@@ -53,6 +53,12 @@ describe('MessengerAgentToolsService', () => {
         jest.fn(() => Promise.resolve({ status: 'no_roadmap' as const })),
     } as unknown as jest.Mocked<PrecreateExerciseApiClient>;
 
+    const mappingService = {
+      linkFromContext:
+        overrides.linkFromContext ??
+        jest.fn().mockResolvedValue({ blocked: false }),
+    };
+
     const service = new MessengerAgentToolsService(
       repository,
       studentReportService,
@@ -60,6 +66,7 @@ describe('MessengerAgentToolsService', () => {
       studyPort,
       rescheduleConfirmationService,
       exerciseClient,
+      mappingService as never,
     );
 
     const ctx: PlatformAgentToolContext = {
@@ -79,6 +86,7 @@ describe('MessengerAgentToolsService', () => {
       studyPort,
       rescheduleConfirmationService,
       exerciseClient,
+      mappingService,
     };
   };
 
@@ -560,6 +568,33 @@ describe('MessengerAgentToolsService', () => {
         alreadyActive: false,
       });
       expect(ctx.richFollowUps).toHaveLength(0);
+    });
+
+    it('blocks a relink attempt via the mapping service (#383)', async () => {
+      const linkFromContext = jest.fn().mockResolvedValue({ blocked: true });
+      const { service, ctx } = createService({ linkFromContext });
+      ctx.linkContext = {
+        userId: 99,
+        cadence: 'daily',
+        topic: 'exam',
+      };
+      ctx.userText = 'đăng ký nhận báo cáo';
+
+      const result = await service.execute(
+        'register_exam_report_notifications',
+        '{}',
+        ctx,
+      );
+
+      expect(result).toMatchObject({
+        registered: false,
+        blocked: true,
+      });
+      expect(linkFromContext).toHaveBeenCalledWith(
+        'psid-123',
+        expect.objectContaining({ userId: 99 }),
+        { notifyUser: false, syncStudyReminders: false },
+      );
     });
   });
 

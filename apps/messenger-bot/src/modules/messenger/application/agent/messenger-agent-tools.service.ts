@@ -18,7 +18,6 @@ import {
 } from '@wispace/llm-agent';
 import {
   MessengerLinkContext,
-  buildPocPsidToken,
   getPocAlreadySubscribedMessage,
   getPocSubscriptionConfirmationMessage,
   parseMessengerLinkContext,
@@ -29,6 +28,7 @@ import {
 } from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
+import { MessengerMappingService } from '../services/messenger-mapping.service';
 import { STUDY_REMINDER_OPERATIONS_PORT } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import type { StudyReminderOperationsPort } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import { UserGoalsApiService } from '../../../student-report/infrastructure/wispace/user-goals-api.service';
@@ -77,6 +77,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     private readonly studyPort: StudyReminderOperationsPort,
     private readonly rescheduleConfirmationService: MessengerRescheduleConfirmationService,
     private readonly exerciseClient: PrecreateExerciseApiClient,
+    private readonly mappingService: MessengerMappingService,
   ) {}
 
   async execute(
@@ -448,13 +449,15 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       };
     }
 
-    await this.repository.upsertPocSubscription({
-      psid: ctx.externalUserId,
-      userId: linkContext.userId,
-      cadence: linkContext.cadence,
-      topic: linkContext.topic,
-      notificationMessagesToken: buildPocPsidToken(ctx.externalUserId),
-    });
+    const result = await this.mappingService.linkFromContext(
+      ctx.externalUserId,
+      linkContext,
+      { notifyUser: false, syncStudyReminders: false },
+    );
+
+    if (result.blocked) {
+      return { registered: false, blocked: true };
+    }
 
     return {
       registered: true,

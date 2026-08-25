@@ -53,6 +53,7 @@ import { DisplayNameModule } from '../display-name/display-name.module';
 import { UserDisplayNameService } from '../display-name/application/user-display-name.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { MessengerOutboundModule } from './messenger-outbound.module';
+import { UserLinkingModule } from './user-linking.module';
 import { MessengerAgentToolsService } from './application/agent/messenger-agent-tools.service';
 import { MessengerAgentService } from './application/agent/messenger-agent.service';
 import { MessengerChatSharedConfigService } from './application/services/messenger-chat-shared-config.service';
@@ -93,6 +94,7 @@ import {
     StudentReportModule,
     StudyReminderModule,
     DisplayNameModule,
+    UserLinkingModule,
     TypeOrmModule.forFeature([
       LlmUsageEventEntity,
       LlmSafetyEventEntity,

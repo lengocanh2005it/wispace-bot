@@ -10,6 +10,7 @@ describe('MessengerReportDeliveryService', () => {
     sendTextViaPsid?: jest.Mock;
     findActiveMappingByPsid?: jest.Mock;
     upsertPocSubscription?: jest.Mock;
+    mappingService?: { linkFromContext: jest.Mock };
   }) => {
     const studentReportService = {
       generateReport: overrides?.generateReport ?? jest.fn(),
@@ -38,11 +39,16 @@ describe('MessengerReportDeliveryService', () => {
       }),
     };
 
+    const mappingService = overrides?.mappingService ?? {
+      linkFromContext: jest.fn().mockResolvedValue({ blocked: false }),
+    };
+
     const service = new MessengerReportDeliveryService(
       configService as never,
       repository as never,
       outbound as never,
       studentReportService as never,
+      mappingService as never,
     );
 
     return {
@@ -234,20 +240,35 @@ describe('MessengerReportDeliveryService', () => {
         userId: 10,
       });
 
-      expect(repository.upsertPocSubscription).toHaveBeenCalledWith(
-        expect.objectContaining({
-          psid: 'psid-1',
-          userId: 10,
-          cadence: 'weekly',
-          topic: 'ielts',
-        }),
-      );
       expect(outbound.sendTextViaPsid).toHaveBeenCalledWith(
         expect.objectContaining({
           psid: 'psid-1',
           messageType: 'SUBSCRIPTION_CONFIRMATION',
         }),
       );
+    });
+
+    it('blocks a relink attempt through the mapping service when userId differs (#383)', async () => {
+      const mappingService = {
+        linkFromContext: jest.fn().mockResolvedValue({ blocked: true }),
+      };
+      const { service, repository } = buildService({
+        mappingService,
+      });
+
+      await service.registerForScheduledReports('psid-1', {
+        ref: 'ref-1',
+        topic: 'ielts',
+        cadence: 'weekly',
+        userId: 99,
+      });
+
+      expect(mappingService.linkFromContext).toHaveBeenCalledWith(
+        'psid-1',
+        expect.objectContaining({ userId: 99 }),
+        { notifyUser: false, syncStudyReminders: false },
+      );
+      expect(repository.upsertPocSubscription).not.toHaveBeenCalled();
     });
   });
 });
