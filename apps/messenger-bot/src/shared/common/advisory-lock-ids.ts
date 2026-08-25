@@ -29,4 +29,7 @@ export const ADVISORY_LOCK = {
 
   /** Release scheduled_report_claims stuck in `claimed` (every 30 min). */
   REPORT_CLAIM_STALE_RESET: 884_200_907,
+
+  /** Messenger: link-verify reconciliation cron (every 5 min, `messenger_link_verify_records`). */
+  MESSENGER_LINK_RECONCILE: 884_200_938,
 } as const;

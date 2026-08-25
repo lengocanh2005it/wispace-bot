@@ -1,10 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import {
   MessengerLinkContext,
   parseMessengerLinkContext,
 } from '@messenger/shared/config/poc.constants';
 import type { MessengerLinkResolveOutcome } from '../../domain/types/messenger-link-verify.types';
+import {
+  MESSENGER_LINK_VERIFY_RECORD_REPOSITORY,
+  type MessengerLinkVerifyRecordRepositoryPort,
+} from '../../domain/ports/messenger-link-verify-record.repository.port';
 import { WispaceMessengerTokenVerifyService } from '../../infrastructure/wispace/wispace-messenger-token-verify.service';
 
 @Injectable()
@@ -13,6 +17,8 @@ export class MessengerLinkContextService {
 
   constructor(
     private readonly wispaceTokenVerifyService: WispaceMessengerTokenVerifyService,
+    @Inject(MESSENGER_LINK_VERIFY_RECORD_REPOSITORY)
+    private readonly verifyRecordRepository: MessengerLinkVerifyRecordRepositoryPort,
   ) {}
 
   async resolveFromRef(
@@ -28,25 +34,12 @@ export class MessengerLinkContextService {
       return {};
     }
 
+    let verified;
     try {
-      const verified =
-        await this.wispaceTokenVerifyService.verifyMessengerToken(psid, ref);
-
-      if (!verified.valid) {
-        this.logger.warn(
-          `Messenger link verify failed psid=${maskExternalId(psid)} reason=${verified.reason}`,
-        );
-        return { verifyFailureReason: verified.reason };
-      }
-
-      return {
-        context: {
-          ref,
-          userId: verified.userId,
-          topic: input.topic?.trim() || verified.topic,
-          cadence: verified.cadence,
-        },
-      };
+      verified = await this.wispaceTokenVerifyService.verifyMessengerToken(
+        psid,
+        ref,
+      );
     } catch (error) {
       const message = errorMessage(error);
       this.logger.error(
@@ -54,6 +47,27 @@ export class MessengerLinkContextService {
       );
       return { verifyFailureReason: 'NOT_FOUND' };
     }
+
+    if (!verified.valid) {
+      this.logger.warn(
+        `Messenger link verify failed psid=${maskExternalId(psid)} reason=${verified.reason}`,
+      );
+      return { verifyFailureReason: verified.reason };
+    }
+
+    // #384: persist a durable verify intent BEFORE the caller commits the
+    // mapping, so a crash between WISPACE token verify and local upsert
+    // leaves a recoverable intent for the reconciliation cron.
+    await this.verifyRecordRepository.recordVerify(psid, verified.userId);
+
+    return {
+      context: {
+        ref,
+        userId: verified.userId,
+        topic: input.topic?.trim() || verified.topic,
+        cadence: verified.cadence,
+      },
+    };
   }
 
   resolveFromMapping(mapping: {
