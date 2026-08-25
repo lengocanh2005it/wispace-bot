@@ -6,10 +6,19 @@
 #
 # All bots should set DB_HOST=pgbouncer (or the container name) in their .env.
 # The bots connect to PgBouncer on port 5432, which multiplexes to PostgreSQL.
+#
+# Image update procedure:
+#   1. Check https://hub.docker.com/r/edoburu/pgbouncer/tags for new releases
+#   2. Pull the new tag: docker pull edoburu/pgbouncer:<new-tag>
+#   3. Get the digest: docker inspect --format='{{index .RepoDigests 0}}' edoburu/pgbouncer:<new-tag>
+#   4. Update the image reference below with the new tag and digest
+#   5. Test in staging before deploying to production
 
 services:
   pgbouncer:
-    image: edoburu/pgbouncer:1.25.2
+    # Pin by immutable digest for reproducible deployments.
+    # Tag: v1.25.2-p0 (2026-06-10)
+    image: edoburu/pgbouncer:v1.25.2-p0@sha256:7d7a27d9e90985cab5cf42256f5c13a3120baa4b055b69df37beb272b89b2340
     container_name: pgbouncer
     restart: unless-stopped
     ports:
@@ -17,16 +26,16 @@ services:
     environment:
       # edoburu generates pgbouncer.ini and userlist.txt from these values.
       # Keep the password in the deployment environment, never in this file.
-      DB_HOST: postgres_n8n_db
-      DB_PORT: 5432
+      DB_HOST: ${PGBOUNCER_DB_HOST:-postgres_n8n_db}
+      DB_PORT: ${PGBOUNCER_DB_PORT:-5432}
       DB_USER: ${PGBOUNCER_DB_USER:?PGBOUNCER_DB_USER is required}
       DB_PASSWORD: ${PGBOUNCER_DB_PASSWORD:?PGBOUNCER_DB_PASSWORD is required}
-      DB_NAME: ai_chat_bot_db
+      DB_NAME: ${PGBOUNCER_DB_NAME:-ai_chat_bot_db}
 
       # PgBouncer pool settings
       POOL_MODE: session
-      DEFAULT_POOL_SIZE: 20
-      MAX_CLIENT_CONN: 100
+      DEFAULT_POOL_SIZE: ${PGBOUNCER_DEFAULT_POOL_SIZE:-20}
+      MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN:-100}
       SERVER_IDLE_TIMEOUT: 300
       SERVER_CONNECT_TIMEOUT: 5
       AUTH_TYPE: md5
@@ -47,8 +56,22 @@ services:
       retries: 3
       start_period: 10s
 
+    # ── Container hardening ────────────────────────────────────────────
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:size=10M
+      - /var/run/postgresql:size=10M
+    pids_limit: 256
     mem_limit: 64M
     cpus: "0.25"
+
+    entrypoint: ["/entrypoint.sh"]
+    volumes:
+      - ./pgbouncer/entrypoint.sh:/entrypoint.sh:ro
 
 networks:
   app_n8n_db_network:
