@@ -172,4 +172,36 @@ describe('DiscordLinkCompletionService', () => {
     expect(welcomeService.welcomeIfDue).not.toHaveBeenCalled();
     expect(outcome).toBe('not-in-guild');
   });
+  it('completes link successfully even when welcome delivery fails (outcome: error)', async () => {
+    const { service, welcomeService, accountLinkService } = buildHarness({
+      inGuild: true,
+      welcomeOutcome: 'error',
+    });
+
+    const outcome = await service.completeLink('code', 'good-token');
+
+    expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
+      143,
+      'discord-user-1',
+    );
+    expect(welcomeService.welcomeIfDue).toHaveBeenCalledTimes(1);
+    expect(outcome).toBe('success');
+  });
+
+  it('completes link and commits mapping even when relinkNotifier fails', async () => {
+    const { service, relinkNotifier, accountLinkService } = buildHarness({
+      upsertResult: { relinked: true, previousUserId: 99 },
+    });
+    (relinkNotifier.notify as jest.Mock).mockRejectedValueOnce(
+      new Error('Discord DM failed'),
+    );
+
+    const outcome = await service.completeLink('code', 'good-token');
+
+    expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
+      143,
+      'discord-user-1',
+    );
+    expect(outcome).toBe('success');
+  });
 });

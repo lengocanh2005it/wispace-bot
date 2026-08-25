@@ -89,10 +89,15 @@ export class DiscordLinkCompletionService {
     if (linkResult.relinked) {
       // #137 item 5: the Discord id was linked to a different WISPACE user
       // — notify the account holder that the previous link was displaced.
-      await this.relinkNotifier.notify(
-        discordUser.id,
-        linkResult.previousUserId,
-      );
+      await this.relinkNotifier
+        .notify(discordUser.id, linkResult.previousUserId)
+        .catch((error: unknown) => {
+          this.logger.warn(
+            `Discord relink notification failed for discordUserId=${maskExternalId(
+              discordUser.id,
+            )}: ${errorMessage(error)}`,
+          );
+        });
     }
 
     const inGuild = await this.guildMembershipService.isMember(discordUser.id);

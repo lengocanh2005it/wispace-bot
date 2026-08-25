@@ -8,6 +8,7 @@ jest.mock('@wispace/llm-agent', () => ({
   loadSystemPromptFile: jest.fn().mockReturnValue('system prompt'),
   buildLlmExecutionConfig: jest.fn(() => ({})),
   createEnvLlmExecutionPort: jest.fn(),
+  buildLlmExecutionConfig: jest.fn().mockReturnValue({}),
 }));
 
 const mockGenerateReport = jest

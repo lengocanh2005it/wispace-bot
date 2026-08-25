@@ -133,4 +133,14 @@ describe('ZaloLinkCompletionService', () => {
     expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1');
     expect(sendText).toHaveBeenCalled();
   });
+  it('completes successfully and does not throw when outbound welcome times out', async () => {
+    const { service, upsertLink, sendText } = buildService();
+    sendText.mockRejectedValueOnce(new Error('Request timeout'));
+
+    await expect(
+      service.completeLink('code-1', 'verifier-1', 'link-token'),
+    ).resolves.toBeUndefined();
+
+    expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1');
+  });
 });
