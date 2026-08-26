@@ -26,6 +26,10 @@ describe('buildLlmExecutionConfig', () => {
     expect(config).toEqual({
       enabled: LLM_EXECUTION_DEFAULTS.enabled,
       maxConcurrent: LLM_EXECUTION_DEFAULTS.maxConcurrent,
+      maxQueueDepth: LLM_EXECUTION_DEFAULTS.maxQueueDepth,
+      chatAdmissionWaitMs: LLM_EXECUTION_DEFAULTS.chatAdmissionWaitMs,
+      backgroundAdmissionWaitMs:
+        LLM_EXECUTION_DEFAULTS.backgroundAdmissionWaitMs,
       globalMaxConcurrent: LLM_EXECUTION_DEFAULTS.globalMaxConcurrent,
       maxAttempts: LLM_EXECUTION_DEFAULTS.retryMaxAttempts,
       baseBackoffMs: LLM_EXECUTION_DEFAULTS.retryBackoffMs,

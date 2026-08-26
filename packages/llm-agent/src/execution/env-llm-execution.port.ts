@@ -4,6 +4,12 @@ import type { LlmProviderAdapter } from '../provider/llm-provider.adapter';
 import type { LlmExecutionPort } from '../ports';
 import { retryWithBackoff } from '../utils/retry.utils';
 import { acquireRedisSlot, type SlotLogger } from './redis-slot-limiter';
+import {
+  BoundedAdmissionQueue,
+  LlmOverloadError,
+  admissionWaitBudgetMs,
+  type AdmissionTicket,
+} from './bounded-admission';
 
 const FEATURE = 'FREE_FORM_CHAT';
 
@@ -24,10 +30,32 @@ export interface EnvLlmExecutionConfig {
   globalConcurrencyEnabled: boolean;
   /** Optional native Redis client for the distributed budget. */
   redis?: Redis | null;
+  /** `LLM_MAX_QUEUE_DEPTH` — hard cap on locally queued admissions (#389). */
+  maxQueueDepth: number;
+  /** `LLM_ADMISSION_WAIT_MS` — wait budget for interactive chat (#389). */
+  chatAdmissionWaitMs: number;
+  /** `LLM_BACKGROUND_ADMISSION_WAIT_MS` — background sheds first (#389). */
+  backgroundAdmissionWaitMs: number;
+  /** Internal test seam: bound the Redis acquire retry loop. */
+  globalAcquireMaxRetries?: number;
+  /** Internal test seam: Redis acquire retry delay in ms. */
+  globalAcquireRetryDelayMs?: number;
 }
 
-/** Shared Redis keyspace with the Messenger `RedisConcurrencyLimiter`. */
+/** Shared Redis keyspace for the cross-pod aggregate LLM budget. */
 const REDIS_SLOT_KEY = 'llm:concurrency:global';
+
+/**
+ * Admission telemetry for all three bots (#389): low-cardinality rejection
+ * reasons plus how long admitted calls waited before execution started.
+ * Extends SlotMetrics so the same object feeds the shared Redis slot limiter.
+ */
+export interface AdmissionMetrics {
+  incrementCounter(name: string, labels?: Record<string, string>): void;
+  observeWaitSeconds(seconds: number): void;
+  /** Optional local queue saturation gauge (#389). */
+  observeQueueDepth?(depth: number): void;
+}
 
 /**
  * Default `LlmExecutionPort` for apps without their own execution service
@@ -35,7 +63,7 @@ const REDIS_SLOT_KEY = 'llm:concurrency:global';
  * the Messenger app's `LlmExecutionConfigService` — one documented
  * execution-control path for every LLM feature:
  *  - enable flag (off = passthrough)
- *  - per-instance p-limit on provider calls
+ *  - per-instance bounded admission queue on provider calls (#389)
  *  - per-request deadline composed with the caller signal, aborts the
  *    in-flight provider request (issue #121)
  *  - retry budget (429/5xx) with abort-aware backoff
@@ -45,14 +73,20 @@ export function createEnvLlmExecutionPort(
   config: EnvLlmExecutionConfig,
   adapter: LlmProviderAdapter,
   logger: SlotLogger,
+  metrics?: AdmissionMetrics,
 ): LlmExecutionPort {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const pLimit = require('p-limit') as (
-    concurrency: number,
-  ) => <T>(fn: () => Promise<T>) => Promise<T>;
-  const limiter = pLimit(config.maxConcurrent);
-  const nativeRedis =
-    config.globalConcurrencyEnabled && config.redis ? config.redis : null;
+  if (config.enabled && config.globalConcurrencyEnabled && !config.redis) {
+    throw new Error(
+      'LLM_GLOBAL_CONCURRENCY_ENABLED=true requires a Redis client — refusing to start with the aggregate limit silently bypassed (#389)',
+    );
+  }
+  const queue = new BoundedAdmissionQueue(
+    config.maxConcurrent,
+    config.maxQueueDepth,
+  );
+  const nativeRedis = config.globalConcurrencyEnabled
+    ? (config.redis ?? null)
+    : null;
 
   return {
     run: async <T>(
@@ -65,13 +99,33 @@ export function createEnvLlmExecutionPort(
 
       // Acquire global Redis slot INSIDE the local limiter callback (#153) —
       // slots are only held during actual LLM execution, not while waiting
-      // in the local p-limit queue.
-      return await limiter(async () => {
-        let release: (() => Promise<void>) | undefined;
+      // in the bounded admission queue.
+      const startedAtMs = Date.now();
+      let ticket: AdmissionTicket;
+      try {
+        ticket = await queue.acquire({
+          signal: meta?.signal,
+          waitBudgetMs: admissionWaitBudgetMs(config, meta?.feature),
+        });
+      } catch (error) {
+        if (error instanceof LlmOverloadError) {
+          metrics?.incrementCounter('llm_admission_rejected_total', {
+            reason: error.reason,
+          });
+          metrics?.observeQueueDepth?.(queue.waitingCount);
+        }
+        throw error;
+      }
+      metrics?.observeWaitSeconds((Date.now() - startedAtMs) / 1000);
+      metrics?.observeQueueDepth?.(queue.waitingCount);
+
+      let release: (() => Promise<void>) | undefined;
+      const waitBudgetMs = admissionWaitBudgetMs(config, meta?.feature);
+      try {
         if (nativeRedis) {
           // Compose deadline + caller signal BEFORE slot acquisition so
           // cancellation aborts the Redis retry loop and avoids holding
-          // a local p-limit slot while spinning (#364).
+          // a local admission slot while spinning (#364).
           const deadlineSignal = AbortSignal.timeout(config.requestTimeoutMs);
           const acquireSignal = meta?.signal
             ? AbortSignal.any([meta.signal, deadlineSignal])
@@ -86,34 +140,37 @@ export function createEnvLlmExecutionPort(
               metrics: undefined,
               signal: acquireSignal,
               leaseMs: Math.max(config.requestTimeoutMs, 60_000),
+              maxRetries: config.globalAcquireMaxRetries,
+              retryDelayMs: config.globalAcquireRetryDelayMs,
+              waitBudgetMs,
             },
           );
         }
-        try {
-          const deadlineSignal = AbortSignal.timeout(config.requestTimeoutMs);
-          const signal = meta?.signal
-            ? AbortSignal.any([meta.signal, deadlineSignal])
-            : deadlineSignal;
-          return await retryWithBackoff(() => fn(signal), {
-            maxAttempts: config.maxAttempts,
-            baseDelayMs: config.baseBackoffMs,
-            isRetryable: (error) => adapter.isRetryableError(error),
-            onRetry: (attempt, backoffMs, error) =>
-              logger.warn(
-                `LLM provider retry feature=${
-                  meta?.feature ?? FEATURE
-                } correlation=${
-                  meta?.correlationId ?? 'n/a'
-                } attempt=${attempt}/${config.maxAttempts} backoffMs=${backoffMs}: ${errorMessage(
-                  error,
-                )}`,
-              ),
-            signal,
-          });
-        } finally {
-          await release?.();
-        }
-      });
+        const deadlineSignal = AbortSignal.timeout(config.requestTimeoutMs);
+        const signal = meta?.signal
+          ? AbortSignal.any([meta.signal, deadlineSignal])
+          : deadlineSignal;
+        return await retryWithBackoff(() => fn(signal), {
+          maxAttempts: config.maxAttempts,
+          baseDelayMs: config.baseBackoffMs,
+          isRetryable: (error) => adapter.isRetryableError(error),
+          onRetry: (attempt, backoffMs, error) =>
+            logger.warn(
+              `LLM provider retry feature=${
+                meta?.feature ?? FEATURE
+              } correlation=${
+                meta?.correlationId ?? 'n/a'
+              } attempt=${attempt}/${config.maxAttempts} backoffMs=${backoffMs}: ${errorMessage(
+                error,
+              )}`,
+            ),
+          signal,
+        });
+      } finally {
+        await release?.();
+        ticket.release();
+        metrics?.observeQueueDepth?.(queue.waitingCount);
+      }
     },
   };
 }

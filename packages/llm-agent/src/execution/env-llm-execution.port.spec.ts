@@ -1,4 +1,5 @@
 import type { LlmProviderAdapter } from '../provider/llm-provider.adapter';
+import { LlmOverloadError } from './bounded-admission';
 import {
   createEnvLlmExecutionPort,
   type EnvLlmExecutionConfig,
@@ -13,6 +14,9 @@ const DEFAULT_CONFIG: EnvLlmExecutionConfig = {
   requestTimeoutMs: 30_000,
   globalConcurrencyEnabled: false,
   redis: null,
+  maxQueueDepth: 50,
+  chatAdmissionWaitMs: 8000,
+  backgroundAdmissionWaitMs: 1500,
 };
 
 const noopLogger = { warn: jest.fn() };
@@ -32,6 +36,222 @@ function makeAdapter(): LlmProviderAdapter {
 }
 
 describe('createEnvLlmExecutionPort', () => {
+  it('throws at construction when global concurrency is enabled without redis (#389)', () => {
+    expect(() =>
+      createEnvLlmExecutionPort(
+        { ...DEFAULT_CONFIG, globalConcurrencyEnabled: true, redis: null },
+        makeAdapter(),
+        noopLogger,
+      ),
+    ).toThrow(/aggregate limit/i);
+  });
+
+  it('sheds background features with a typed wait_timeout under saturation (#389)', async () => {
+    const port = createEnvLlmExecutionPort(
+      {
+        ...DEFAULT_CONFIG,
+        maxConcurrent: 1,
+        backgroundAdmissionWaitMs: 20,
+      },
+      makeAdapter(),
+      noopLogger,
+    );
+    const holders: Array<() => void> = [];
+    const held = port.run(
+      () =>
+        new Promise<string>((resolve) => {
+          holders.push(() => resolve('held'));
+        }),
+      { feature: 'STUDENT_REPORT' },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const queued = port.run(() => Promise.resolve('quick'), {
+      feature: 'STUDENT_REPORT',
+    });
+    await expect(queued).rejects.toBeInstanceOf(LlmOverloadError);
+    await expect(queued).rejects.toMatchObject({ reason: 'wait_timeout' });
+
+    holders.forEach((release) => release());
+    await expect(held).resolves.toBe('held');
+  });
+
+  it('lets interactive chat wait longer than background features (#389)', async () => {
+    const port = createEnvLlmExecutionPort(
+      {
+        ...DEFAULT_CONFIG,
+        maxConcurrent: 1,
+        backgroundAdmissionWaitMs: 20,
+        chatAdmissionWaitMs: 5_000,
+      },
+      makeAdapter(),
+      noopLogger,
+    );
+    const holders: Array<() => void> = [];
+    const held = port.run(
+      () =>
+        new Promise<string>((resolve) => {
+          holders.push(() => resolve('held'));
+        }),
+      { feature: 'STUDENT_REPORT' },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    void port
+      .run(() => Promise.resolve('bg'), { feature: 'STUDENT_REPORT' })
+      .catch(() => undefined);
+    const chat = port.run(() => Promise.resolve('chat'), {
+      feature: 'FREE_FORM_CHAT',
+    });
+
+    holders.forEach((release) => release());
+    await expect(chat).resolves.toBe('chat');
+    await expect(held).resolves.toBe('held');
+  }, 5_000);
+
+  it('rejects immediately with queue_full when the depth cap is hit (#389)', async () => {
+    const port = createEnvLlmExecutionPort(
+      { ...DEFAULT_CONFIG, maxConcurrent: 1, maxQueueDepth: 1 },
+      makeAdapter(),
+      noopLogger,
+    );
+    const holders: Array<() => void> = [];
+    const held = port.run(
+      () =>
+        new Promise<string>((resolve) => {
+          holders.push(() => resolve('held'));
+        }),
+      { feature: 'FREE_FORM_CHAT' },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    void port.run(() => Promise.resolve('queued'), {
+      feature: 'FREE_FORM_CHAT',
+    });
+
+    await expect(
+      port.run(() => Promise.resolve('overflow'), {
+        feature: 'FREE_FORM_CHAT',
+      }),
+    ).rejects.toMatchObject({ name: 'LlmOverloadError', reason: 'queue_full' });
+
+    holders.forEach((release) => release());
+    await expect(held).resolves.toBe('held');
+  });
+
+  it('cancels admission waiting when the caller aborts (#389)', async () => {
+    const port = createEnvLlmExecutionPort(
+      { ...DEFAULT_CONFIG, maxConcurrent: 1 },
+      makeAdapter(),
+      noopLogger,
+    );
+    const controller = new AbortController();
+    const holders: Array<() => void> = [];
+    const held = port.run(
+      () =>
+        new Promise<string>((resolve) => {
+          holders.push(() => resolve('held'));
+        }),
+      { feature: 'FREE_FORM_CHAT' },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const fn = jest.fn(() => Promise.resolve('never'));
+    const queued = port.run(fn, {
+      feature: 'FREE_FORM_CHAT',
+      signal: controller.signal,
+    });
+    controller.abort(new Error('caller gone'));
+
+    await expect(queued).rejects.toThrow('caller gone');
+    expect(fn).not.toHaveBeenCalled();
+
+    holders.forEach((release) => release());
+    await expect(held).resolves.toBe('held');
+  });
+
+  it('reports typed redis_unavailable instead of silently bypassing the limit (#389)', async () => {
+    const redis = { eval: jest.fn().mockRejectedValue(new Error('down')) };
+    const port = createEnvLlmExecutionPort(
+      {
+        ...DEFAULT_CONFIG,
+        globalConcurrencyEnabled: true,
+        redis: redis as never,
+        globalAcquireMaxRetries: 2,
+        globalAcquireRetryDelayMs: 1,
+      },
+      makeAdapter(),
+      noopLogger,
+    );
+
+    await expect(
+      port.run(() => Promise.resolve('ok'), { feature: 'FREE_FORM_CHAT' }),
+    ).rejects.toMatchObject({
+      name: 'LlmOverloadError',
+      reason: 'redis_unavailable',
+    });
+  });
+
+  it('reports typed global_saturated when every acquire attempt is denied (#389)', async () => {
+    const redis = { eval: jest.fn().mockResolvedValue(0) };
+    const port = createEnvLlmExecutionPort(
+      {
+        ...DEFAULT_CONFIG,
+        globalConcurrencyEnabled: true,
+        redis: redis as never,
+        globalMaxConcurrent: 10,
+        globalAcquireMaxRetries: 2,
+        globalAcquireRetryDelayMs: 1,
+      },
+      makeAdapter(),
+      noopLogger,
+    );
+
+    await expect(
+      port.run(() => Promise.resolve('ok'), { feature: 'FREE_FORM_CHAT' }),
+    ).rejects.toMatchObject({
+      name: 'LlmOverloadError',
+      reason: 'global_saturated',
+    });
+  });
+
+  it('emits low-cardinality rejection reasons and admission wait metrics (#389)', async () => {
+    const incrementCounter = jest.fn();
+    const observeWaitSeconds = jest.fn();
+    const metrics = { incrementCounter, observeWaitSeconds };
+    const port = createEnvLlmExecutionPort(
+      {
+        ...DEFAULT_CONFIG,
+        maxConcurrent: 1,
+        backgroundAdmissionWaitMs: 10,
+      },
+      makeAdapter(),
+      noopLogger,
+      metrics,
+    );
+    const holders: Array<() => void> = [];
+    const held = port.run(
+      () =>
+        new Promise<string>((resolve) => {
+          holders.push(() => resolve('held'));
+        }),
+      { feature: 'STUDENT_REPORT' },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    void port
+      .run(() => Promise.resolve('bg'), { feature: 'STUDENT_REPORT' })
+      .catch(() => undefined);
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(incrementCounter).toHaveBeenCalledWith(
+      'llm_admission_rejected_total',
+      { reason: 'wait_timeout' },
+    );
+
+    holders.forEach((release) => release());
+    await expect(held).resolves.toBe('held');
+    expect(observeWaitSeconds).toHaveBeenCalled();
+  });
+
   it('passes the composed deadline signal into the provider call (#121)', async () => {
     const port = createEnvLlmExecutionPort(
       { ...DEFAULT_CONFIG, requestTimeoutMs: 5 },

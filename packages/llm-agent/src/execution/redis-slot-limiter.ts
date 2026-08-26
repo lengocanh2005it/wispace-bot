@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { errorMessage } from '@wispace/bot-common';
 import type { Redis } from 'ioredis';
+import { LlmOverloadError, raceAbort } from './bounded-admission';
 
 export interface SlotLogger {
   warn(message: string): void;
@@ -71,33 +72,63 @@ export async function acquireRedisSlot(
   key: string,
   limit: number,
   logger: SlotLogger,
-  options?: { metrics?: SlotMetrics; signal?: AbortSignal; leaseMs?: number },
+  options?: {
+    metrics?: SlotMetrics;
+    signal?: AbortSignal;
+    leaseMs?: number;
+    maxRetries?: number;
+    retryDelayMs?: number;
+    /** Total acquire budget in ms — caps retry attempts against retryDelayMs (#389). */
+    waitBudgetMs?: number;
+  },
 ): Promise<() => Promise<void>> {
-  const { metrics, signal, leaseMs = DEFAULT_LEASE_MS } = options ?? {};
+  const {
+    metrics,
+    signal,
+    leaseMs = DEFAULT_LEASE_MS,
+    maxRetries = MAX_RETRIES,
+    retryDelayMs = RETRY_DELAY_MS,
+    waitBudgetMs,
+  } = options ?? {};
   const uuid = randomUUID();
   const leaseKey = `${key}${LEASE_PREFIX}${uuid}`;
+  let sawRedisError = false;
+  // Cap the total acquire wait to the caller's admission budget (#389):
+  // with the default 50ms cadence a 1500ms background budget yields ~30
+  // attempts instead of the previous 200 (~10s).
+  const effectiveMaxRetries =
+    waitBudgetMs !== undefined && retryDelayMs > 0
+      ? Math.max(
+          1,
+          Math.min(maxRetries, Math.ceil(waitBudgetMs / retryDelayMs)),
+        )
+      : maxRetries;
+  const acquireCommand = (): Promise<unknown> =>
+    redis.eval(
+      ACQUIRE_SCRIPT,
+      2,
+      key,
+      leaseKey,
+      String(limit),
+      String(leaseMs),
+      uuid,
+    ) as unknown as Promise<unknown>;
 
   // Reject early if caller already aborted
   if (signal?.aborted) {
     throw new DOMException('Aborted', 'AbortError');
   }
 
-  for (let i = 0; i < MAX_RETRIES; i++) {
+  for (let i = 0; i < effectiveMaxRetries; i++) {
     // Check cancellation between retries
     if (signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
     }
 
     try {
-      const result = await redis.eval(
-        ACQUIRE_SCRIPT,
-        2,
-        key,
-        leaseKey,
-        String(limit),
-        String(leaseMs),
-        uuid,
-      );
+      // Signal-aware: a caller abort or request deadline rejects even when
+      // the Redis command itself hangs (#389).
+      const result = await raceAbort(acquireCommand, signal);
 
       if (result === 1) {
         metrics?.incrementCounter('llm_concurrency_acquired');
@@ -111,16 +142,17 @@ export async function acquireRedisSlot(
       if (err instanceof DOMException && err.name === 'AbortError') {
         throw err;
       }
+      sawRedisError = true;
       logger.warn(`Redis acquire error: ${errorMessage(err)}`);
       metrics?.incrementCounter('llm_concurrency_rejected');
     }
 
     // Abort-aware sleep — reject if signal fires during delay
-    await abortableSleep(RETRY_DELAY_MS, signal);
+    await abortableSleep(retryDelayMs, signal);
   }
 
-  throw new Error(
-    `Global LLM concurrency limit (${limit}) exceeded after ${MAX_RETRIES} retries`,
+  throw new LlmOverloadError(
+    sawRedisError ? 'redis_unavailable' : 'global_saturated',
   );
 }
 

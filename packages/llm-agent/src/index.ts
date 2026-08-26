@@ -65,7 +65,21 @@ export { sanitizeReplyText } from './utils/text.utils';
 export { sleep, retryWithBackoff } from './utils/retry.utils';
 export { loadSystemPromptFile } from './utils/load-system-prompt';
 export { createEnvLlmExecutionPort } from './execution/env-llm-execution.port';
-export type { EnvLlmExecutionConfig } from './execution/env-llm-execution.port';
+export type {
+  AdmissionMetrics,
+  EnvLlmExecutionConfig,
+} from './execution/env-llm-execution.port';
+export {
+  BoundedAdmissionQueue,
+  LlmOverloadError,
+  raceAbort,
+  INTERACTIVE_LLM_FEATURES,
+  admissionWaitBudgetMs,
+} from './execution/bounded-admission';
+export type {
+  AdmissionTicket,
+  LlmOverloadReason,
+} from './execution/bounded-admission';
 export { buildLlmExecutionConfig } from './execution/llm-execution.config';
 export { acquireRedisSlot } from './execution/redis-slot-limiter';
 export {

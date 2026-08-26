@@ -1,5 +1,9 @@
 import type { StageInput, StageResult } from '@wispace/reschedule-confirm';
-import type { AgentMetricsPort, LlmExecutionPort } from '@wispace/llm-agent';
+import type {
+  AdmissionMetrics,
+  AgentMetricsPort,
+  LlmExecutionPort,
+} from '@wispace/llm-agent';
 import type { PinnedFact } from './pinned-facts';
 
 /**
@@ -115,6 +119,11 @@ export interface PlatformAgentOptions {
    * contract. One documented execution-control path for free-form chat.
    */
   llmExecution?: LlmExecutionPort;
+  /**
+   * Bounded-admission telemetry for the default env execution port (#389).
+   * Ignored when `llmExecution` is injected directly.
+   */
+  llmAdmissionMetrics?: AdmissionMetrics;
   /** 0 disables agent-level retry when the app's LLM execution already retries. */
   maxLlmRetries?: number;
   /** Per-tool execution timeout in ms (Messenger report tool needs 30s). */

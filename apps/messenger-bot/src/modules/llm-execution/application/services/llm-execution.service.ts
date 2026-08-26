@@ -1,13 +1,21 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common';
-import pLimit from 'p-limit';
 import CircuitBreaker from 'opossum';
-import { retryWithBackoff, type LlmProviderAdapter } from '@wispace/llm-agent';
+import {
+  acquireRedisSlot,
+  admissionWaitBudgetMs,
+  retryWithBackoff,
+  BoundedAdmissionQueue,
+  LlmOverloadError,
+  type AdmissionTicket,
+  type LlmProviderAdapter,
+} from '@wispace/llm-agent';
 import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import type { LlmExecutionContext } from '../types/llm-execution.types';
-import { RedisConcurrencyLimiter } from '../../infrastructure/redis-concurrency-limiter';
 import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
+import type Redis from 'ioredis';
 
 export type {
   LlmExecutionFeature,
@@ -17,7 +25,12 @@ export type {
 @Injectable()
 export class LlmExecutionService {
   private readonly logger = new Logger(LlmExecutionService.name);
-  private limiter: ReturnType<typeof pLimit>;
+  private readonly queue: BoundedAdmissionQueue;
+  private readonly globalRedis: Redis | null;
+  private readonly budgets: {
+    chatAdmissionWaitMs: number;
+    backgroundAdmissionWaitMs: number;
+  };
   private readonly breaker: CircuitBreaker;
 
   constructor(
@@ -26,10 +39,28 @@ export class LlmExecutionService {
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
     @Optional()
-    @Inject(RedisConcurrencyLimiter)
-    private readonly globalLimiter?: RedisConcurrencyLimiter,
+    @Inject(REDIS_CLIENT)
+    redisClient?: RedisClientPort | null,
   ) {
-    this.limiter = pLimit(this.config.getMaxConcurrent());
+    this.queue = new BoundedAdmissionQueue(
+      this.config.getMaxConcurrent(),
+      this.config.getMaxQueueDepth(),
+    );
+    this.budgets = {
+      chatAdmissionWaitMs: this.config.getChatAdmissionWaitMs(),
+      backgroundAdmissionWaitMs: this.config.getBackgroundAdmissionWaitMs(),
+    };
+
+    // Fail closed at startup when the aggregate budget is enabled without its
+    // Redis dependency — never silently bypass the shared limit (#389).
+    this.globalRedis = this.config.isGlobalConcurrencyEnabled()
+      ? (redisClient?.getNativeClient() ?? null)
+      : null;
+    if (this.config.isGlobalConcurrencyEnabled() && !this.globalRedis) {
+      throw new Error(
+        'LLM_GLOBAL_CONCURRENCY_ENABLED=true requires a configured Redis client — refusing to start with the aggregate limit silently bypassed (#389)',
+      );
+    }
 
     this.breaker = new CircuitBreaker(
       (fn: () => Promise<unknown>, context?: LlmExecutionContext) =>
@@ -54,9 +85,10 @@ export class LlmExecutionService {
   }
 
   /**
-   * Runs an LLM call with optional global concurrency cap (p-limit), circuit
-   * breaker, and retry on retryable errors (429 / 5xx). Each LLM request
-   * should pass through here.
+   * Runs an LLM call through bounded admission (#389): local wait-budgeted
+   * queue, optional Redis-global slot with caller-signal cancellation,
+   * circuit breaker, and retry on retryable errors (429 / 5xx). Each LLM
+   * request should pass through here.
    */
   async run<T>(
     fn: (signal?: AbortSignal) => Promise<T>,
@@ -66,22 +98,49 @@ export class LlmExecutionService {
       return fn(undefined);
     }
 
-    // Acquire global Redis slot INSIDE the local limiter callback (#153) —
-    // slots are only held during actual LLM execution, not while waiting
-    // in the local p-limit queue.
-    return this.limiter(async () => {
-      if (this.globalLimiter) {
-        const globalLimit = this.config.getGlobalMaxConcurrent();
-        const release = await this.globalLimiter.acquire('global', globalLimit);
-        try {
-          return (await this.breaker.fire(fn, context)) as Promise<T>;
-        } finally {
-          await release();
-        }
+    const startedAtMs = Date.now();
+    let ticket: AdmissionTicket;
+    try {
+      ticket = await this.queue.acquire({
+        signal: context?.signal,
+        waitBudgetMs: admissionWaitBudgetMs(this.budgets, context?.feature),
+      });
+    } catch (error) {
+      if (error instanceof LlmOverloadError) {
+        this.metrics.incLlmAdmissionRejected(error.reason);
+      }
+      throw error;
+    }
+    this.metrics.observeLlmAdmissionWait((Date.now() - startedAtMs) / 1000);
+
+    let releaseGlobal: (() => Promise<void>) | undefined;
+    try {
+      if (this.globalRedis) {
+        // Compose deadline + caller signal BEFORE slot acquisition so
+        // cancellation aborts the retry loop (#364 parity on Messenger).
+        const deadlineSignal = AbortSignal.timeout(
+          this.config.getRequestTimeoutMs(),
+        );
+        const acquireSignal = context?.signal
+          ? AbortSignal.any([context.signal, deadlineSignal])
+          : deadlineSignal;
+        releaseGlobal = await acquireRedisSlot(
+          this.globalRedis,
+          'llm:concurrency:global',
+          this.config.getGlobalMaxConcurrent(),
+          { warn: (message) => this.logger.warn(message) },
+          {
+            signal: acquireSignal,
+            waitBudgetMs: admissionWaitBudgetMs(this.budgets, context?.feature),
+          },
+        );
       }
 
-      return this.breaker.fire(fn, context) as Promise<T>;
-    });
+      return (await this.breaker.fire(fn, context)) as Promise<T>;
+    } finally {
+      await releaseGlobal?.();
+      ticket.release();
+    }
   }
 
   private async runWithRetry<T>(

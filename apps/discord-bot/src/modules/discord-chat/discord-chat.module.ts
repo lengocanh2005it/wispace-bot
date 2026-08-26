@@ -206,6 +206,8 @@ const REGISTER_REPORT_MESSAGE =
               llmRoundOutcomeInc: (feature, outcome) =>
                 metrics.incRoundOutcome(feature, outcome),
             },
+            // Bounded admission telemetry (#389)
+            llmAdmissionMetrics: metrics.llmAdmission,
           },
         );
       },

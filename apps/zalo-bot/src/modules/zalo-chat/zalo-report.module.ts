@@ -8,6 +8,7 @@ import {
   ChatMeteringModule,
   PlatformLlmUsageRecorderAdapter,
 } from '@wispace/chat-metering';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
   MemoizedWispaceGoalsService,
@@ -107,6 +108,7 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
         goalsService: MemoizedWispaceGoalsService,
         usageRecorder: PlatformLlmUsageRecorderAdapter,
         adapter: LlmProviderAdapter,
+        metrics: BotMetricsService,
       ) =>
         new PlatformStudentReportService(
           'zalo',
@@ -115,12 +117,15 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
           usageRecorder,
           adapter,
           join(__dirname, '../../shared/prompts'),
+          undefined,
+          metrics.llmAdmission,
         ),
       inject: [
         ConfigService,
         MemoizedWispaceGoalsService,
         PlatformLlmUsageRecorderAdapter,
         'LLM_PROVIDER_ADAPTER',
+        BotMetricsService,
       ],
     },
   ],

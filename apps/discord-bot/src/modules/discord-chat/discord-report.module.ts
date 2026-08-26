@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { join } from 'path';
 import { PlatformStudentReportService } from '@wispace/student-report';
 import { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
   ReportScheduleService,
@@ -122,6 +123,7 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
         goalsService: MemoizedWispaceGoalsService,
         usageRecorder: PlatformLlmUsageRecorderAdapter,
         adapter: LlmProviderAdapter,
+        metrics: BotMetricsService,
       ) =>
         new PlatformStudentReportService(
           'discord',
@@ -130,12 +132,15 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
           usageRecorder,
           adapter,
           join(__dirname, '../../shared/prompts'),
+          undefined,
+          metrics.llmAdmission,
         ),
       inject: [
         ConfigService,
         MemoizedWispaceGoalsService,
         PlatformLlmUsageRecorderAdapter,
         'LLM_PROVIDER_ADAPTER',
+        BotMetricsService,
       ],
     },
     ReportScheduleService,

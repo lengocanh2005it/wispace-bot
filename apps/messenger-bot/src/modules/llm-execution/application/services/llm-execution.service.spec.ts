@@ -4,6 +4,8 @@ import { LlmExecutionService } from './llm-execution.service';
 
 const noopMetrics = {
   timeLlmExecution: <T>(_feature: string, fn: () => Promise<T>) => fn(),
+  incLlmAdmissionRejected: jest.fn(),
+  observeLlmAdmissionWait: jest.fn(),
 } as unknown as MetricsService;
 
 const mockAdapter = {
@@ -22,6 +24,10 @@ const mockAdapter = {
 function createConfig(overrides: {
   enabled?: boolean;
   maxConcurrent?: number;
+  maxQueueDepth?: number;
+  chatAdmissionWaitMs?: number;
+  backgroundAdmissionWaitMs?: number;
+  globalConcurrencyEnabled?: boolean;
   retryMaxAttempts?: number;
   retryBackoffMs?: number;
   requestTimeoutMs?: number;
@@ -32,6 +38,22 @@ function createConfig(overrides: {
   }
   if (overrides.maxConcurrent !== undefined) {
     values.LLM_MAX_CONCURRENT = String(overrides.maxConcurrent);
+  }
+  if (overrides.maxQueueDepth !== undefined) {
+    values.LLM_MAX_QUEUE_DEPTH = String(overrides.maxQueueDepth);
+  }
+  if (overrides.chatAdmissionWaitMs !== undefined) {
+    values.LLM_ADMISSION_WAIT_MS = String(overrides.chatAdmissionWaitMs);
+  }
+  if (overrides.backgroundAdmissionWaitMs !== undefined) {
+    values.LLM_BACKGROUND_ADMISSION_WAIT_MS = String(
+      overrides.backgroundAdmissionWaitMs,
+    );
+  }
+  if (overrides.globalConcurrencyEnabled !== undefined) {
+    values.LLM_GLOBAL_CONCURRENCY_ENABLED = overrides.globalConcurrencyEnabled
+      ? 'true'
+      : 'false';
   }
   if (overrides.retryMaxAttempts !== undefined) {
     values.LLM_OPENAI_RETRY_MAX_ATTEMPTS = String(overrides.retryMaxAttempts);
@@ -49,6 +71,78 @@ function createConfig(overrides: {
 }
 
 describe('LlmExecutionService', () => {
+  it('fails startup when the global budget is enabled without Redis (#389)', () => {
+    const config = createConfig({ globalConcurrencyEnabled: true });
+
+    expect(
+      () => new LlmExecutionService(config, noopMetrics, mockAdapter),
+    ).toThrow(/aggregate limit|Redis/i);
+  });
+
+  it('sheds background work with a typed overload before the provider is called (#389)', async () => {
+    const config = createConfig({
+      enabled: true,
+      maxConcurrent: 1,
+      backgroundAdmissionWaitMs: 20,
+    });
+    const service = new LlmExecutionService(config, noopMetrics, mockAdapter);
+    let releaseHeld!: () => void;
+    const held = service.run(
+      () =>
+        new Promise<string>((resolve) => {
+          releaseHeld = () => resolve('held');
+        }),
+      { feature: 'STUDY_REMINDER' },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const inner = jest.fn().mockResolvedValue('never');
+    await expect(
+      service.run(inner, { feature: 'STUDY_REMINDER' }),
+    ).rejects.toMatchObject({
+      name: 'LlmOverloadError',
+      reason: 'wait_timeout',
+    });
+    expect(inner).not.toHaveBeenCalled();
+
+    releaseHeld();
+    await expect(held).resolves.toBe('held');
+  });
+
+  it('composes the caller signal into Redis-global acquisition (#389)', async () => {
+    const config = createConfig({ globalConcurrencyEnabled: true });
+    const nativeRedis = { eval: jest.fn().mockResolvedValue(1) };
+    const service = new LlmExecutionService(config, noopMetrics, mockAdapter, {
+      getNativeClient: () => nativeRedis,
+    } as never);
+    const controller = new AbortController();
+    controller.abort(new Error('caller gone'));
+
+    await expect(
+      service.run(() => Promise.resolve('ok'), {
+        feature: 'FREE_FORM_CHAT',
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow('caller gone');
+    expect(nativeRedis.eval).not.toHaveBeenCalled();
+  });
+
+  it('sheds background work within its bounded budget even under global saturation (#389)', async () => {
+    const config = createConfig({ globalConcurrencyEnabled: true });
+    const nativeRedis = { eval: jest.fn().mockResolvedValue(0) }; // saturated
+    const service = new LlmExecutionService(config, noopMetrics, mockAdapter, {
+      getNativeClient: () => nativeRedis,
+    } as never);
+    const startedAt = Date.now();
+
+    await expect(
+      service.run(() => Promise.resolve('ok'), { feature: 'STUDY_REMINDER' }),
+    ).rejects.toMatchObject({ reason: 'global_saturated' });
+
+    // Legacy loop was ~10s; the admission budget must bound it near 1.5s.
+    expect(Date.now() - startedAt).toBeLessThan(4_000);
+  }, 10_000);
+
   it('bypasses the limiter when execution gate is disabled', async () => {
     const config = createConfig({ enabled: false, maxConcurrent: 1 });
     const service = new LlmExecutionService(config, noopMetrics, mockAdapter);
@@ -144,7 +238,11 @@ describe('LlmExecutionService', () => {
       const timeLlmExecution = jest.fn(
         <T>(_feature: string, fn: () => Promise<T>) => fn(),
       );
-      const metrics = { timeLlmExecution } as unknown as MetricsService;
+      const metrics = {
+        timeLlmExecution,
+        incLlmAdmissionRejected: jest.fn(),
+        observeLlmAdmissionWait: jest.fn(),
+      } as unknown as MetricsService;
       const service = new LlmExecutionService(config, metrics, mockAdapter);
 
       await service.run(() => Promise.resolve('ok'), {
@@ -166,7 +264,11 @@ describe('LlmExecutionService', () => {
       const timeLlmExecution = jest.fn(
         <T>(_feature: string, fn: () => Promise<T>) => fn(),
       );
-      const metrics = { timeLlmExecution } as unknown as MetricsService;
+      const metrics = {
+        timeLlmExecution,
+        incLlmAdmissionRejected: jest.fn(),
+        observeLlmAdmissionWait: jest.fn(),
+      } as unknown as MetricsService;
       const service = new LlmExecutionService(config, metrics, mockAdapter);
 
       await service.run(() => Promise.resolve('ok'));
@@ -187,7 +289,11 @@ describe('LlmExecutionService', () => {
       const timeLlmExecution = jest.fn(
         <T>(_feature: string, fn: () => Promise<T>) => fn(),
       );
-      const metrics = { timeLlmExecution } as unknown as MetricsService;
+      const metrics = {
+        timeLlmExecution,
+        incLlmAdmissionRejected: jest.fn(),
+        observeLlmAdmissionWait: jest.fn(),
+      } as unknown as MetricsService;
       const service = new LlmExecutionService(config, metrics, mockAdapter);
       let attempts = 0;
 

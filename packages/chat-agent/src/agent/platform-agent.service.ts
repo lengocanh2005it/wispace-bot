@@ -246,6 +246,7 @@ export class PlatformAgentService {
       },
       this.adapter,
       this.logger,
+      this.options.llmAdmissionMetrics,
     );
   }
 

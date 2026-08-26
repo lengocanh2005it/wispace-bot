@@ -12,6 +12,7 @@ import type {
 } from '@wispace/wispace-client';
 import {
   createEnvLlmExecutionPort,
+  type AdmissionMetrics,
   loadSystemPromptFile,
   type LlmProviderAdapter,
 } from '@wispace/llm-agent';
@@ -63,6 +64,8 @@ export class PlatformStudentReportService {
     @Optional()
     @Inject(REDIS_CLIENT)
     private readonly redisClient?: RedisClientPort,
+    @Optional()
+    private readonly llmAdmissionMetrics?: AdmissionMetrics,
   ) {}
 
   generateReport(externalUserId: string): Promise<string> {
@@ -93,6 +96,7 @@ export class PlatformStudentReportService {
         },
         this.adapter,
         { warn: (message) => this.logger.warn(message) },
+        this.llmAdmissionMetrics,
       ),
       usageRecorder: {
         recordFromCompletion: (params) =>

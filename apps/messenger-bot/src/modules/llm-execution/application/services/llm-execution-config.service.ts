@@ -17,6 +17,34 @@ export class LlmExecutionConfigService {
     return readEnvPositiveInt(this.configService, 'LLM_MAX_CONCURRENT', 3);
   }
 
+  getMaxQueueDepth(): number {
+    return readEnvPositiveInt(this.configService, 'LLM_MAX_QUEUE_DEPTH', 50);
+  }
+
+  getChatAdmissionWaitMs(): number {
+    return readEnvPositiveInt(
+      this.configService,
+      'LLM_ADMISSION_WAIT_MS',
+      8_000,
+    );
+  }
+
+  getBackgroundAdmissionWaitMs(): number {
+    return readEnvPositiveInt(
+      this.configService,
+      'LLM_BACKGROUND_ADMISSION_WAIT_MS',
+      1_500,
+    );
+  }
+
+  isGlobalConcurrencyEnabled(): boolean {
+    return readEnvBoolean(
+      this.configService,
+      'LLM_GLOBAL_CONCURRENCY_ENABLED',
+      false,
+    );
+  }
+
   getGlobalMaxConcurrent(): number {
     return readEnvPositiveInt(
       this.configService,

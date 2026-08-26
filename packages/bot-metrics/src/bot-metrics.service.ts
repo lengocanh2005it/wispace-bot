@@ -48,6 +48,9 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmToolDuration: Histogram;
   private llmToolCalls: Counter;
   private llmRoundOutcome: Counter;
+  private llmAdmissionRejected: Counter;
+  private llmAdmissionWait: Histogram;
+  private llmAdmissionQueueDepth: Gauge;
   private quotaDenied: Counter;
   private reminderDispatch: Counter;
   private dmDeliveryFailures: Counter;
@@ -120,6 +123,26 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_llm_round_outcome_total`,
       help: 'LLM agent round outcomes',
       labelNames: ['feature', 'outcome'],
+      registers: [this.registry],
+    });
+
+    this.llmAdmissionRejected = new Counter({
+      name: `${this.prefix}_llm_admission_rejected_total`,
+      help: 'LLM calls shed before provider invocation (bounded admission #389)',
+      labelNames: ['reason'],
+      registers: [this.registry],
+    });
+
+    this.llmAdmissionWait = new Histogram({
+      name: `${this.prefix}_llm_admission_wait_seconds`,
+      help: 'Time spent waiting for local admission before LLM execution starts',
+      buckets: [0.005, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 8],
+      registers: [this.registry],
+    });
+
+    this.llmAdmissionQueueDepth = new Gauge({
+      name: `${this.prefix}_llm_admission_queue_depth`,
+      help: 'Current number of LLM calls waiting for a local admission slot (#389)',
       registers: [this.registry],
     });
 
@@ -292,6 +315,33 @@ export class BotMetricsService implements OnModuleDestroy {
 
   incRoundOutcome(feature: string, outcome: string): void {
     this.llmRoundOutcome.inc({ feature, outcome });
+  }
+
+  /** Bounded-admission rejection reason — queue_full | wait_timeout | global_saturated | redis_unavailable (#389). */
+  incLlmAdmissionRejected(reason: string): void {
+    this.llmAdmissionRejected.inc({ reason });
+  }
+
+  /** How long an admitted call waited for a local slot before executing (#389). */
+  observeLlmAdmissionWait(seconds: number): void {
+    this.llmAdmissionWait.observe(seconds);
+  }
+
+  /** Current local admission queue depth — saturation signal (#389). */
+  setLlmAdmissionQueueDepth(depth: number): void {
+    this.llmAdmissionQueueDepth.set(depth);
+  }
+
+  /** Structural AdmissionMetrics adapter for the shared llm-agent port (#389). */
+  get llmAdmission(): {
+    incrementCounter(name: string, labels?: Record<string, string>): void;
+    observeWaitSeconds(seconds: number): void;
+  } {
+    return {
+      incrementCounter: (_name, labels) =>
+        this.incLlmAdmissionRejected(labels?.reason ?? 'unknown'),
+      observeWaitSeconds: (seconds) => this.observeLlmAdmissionWait(seconds),
+    };
   }
 
   /** LLM usage event database insert failure — ops signal for telemetry loss. */

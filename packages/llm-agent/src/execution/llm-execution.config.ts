@@ -13,6 +13,9 @@
 export const LLM_EXECUTION_DEFAULTS = {
   enabled: true,
   maxConcurrent: 3,
+  maxQueueDepth: 50,
+  chatAdmissionWaitMs: 8_000,
+  backgroundAdmissionWaitMs: 1_500,
   globalMaxConcurrent: 10,
   retryMaxAttempts: 3,
   retryBackoffMs: 2_000,
@@ -47,6 +50,9 @@ export function buildLlmExecutionConfig(
 ): {
   enabled: boolean;
   maxConcurrent: number;
+  maxQueueDepth: number;
+  chatAdmissionWaitMs: number;
+  backgroundAdmissionWaitMs: number;
   globalMaxConcurrent: number;
   maxAttempts: number;
   baseBackoffMs: number;
@@ -63,6 +69,18 @@ export function buildLlmExecutionConfig(
     maxConcurrent: readPositiveInt(
       get('LLM_MAX_CONCURRENT'),
       LLM_EXECUTION_DEFAULTS.maxConcurrent,
+    ),
+    maxQueueDepth: readPositiveInt(
+      get('LLM_MAX_QUEUE_DEPTH'),
+      LLM_EXECUTION_DEFAULTS.maxQueueDepth,
+    ),
+    chatAdmissionWaitMs: readPositiveInt(
+      get('LLM_ADMISSION_WAIT_MS'),
+      LLM_EXECUTION_DEFAULTS.chatAdmissionWaitMs,
+    ),
+    backgroundAdmissionWaitMs: readPositiveInt(
+      get('LLM_BACKGROUND_ADMISSION_WAIT_MS'),
+      LLM_EXECUTION_DEFAULTS.backgroundAdmissionWaitMs,
     ),
     globalMaxConcurrent: readPositiveInt(
       get('LLM_GLOBAL_MAX_CONCURRENT'),
