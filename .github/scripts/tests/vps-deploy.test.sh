@@ -534,6 +534,7 @@ echo "Test 20: malicious DB_HOST with shell metacharacters -> validation fails"
 dir=$(make_env malicious-db-host)
 # Write .env with malicious DB_HOST — script reads from deploy dir
 cat > "$dir/deploy/.env" <<EOF
+INTERNAL_API_KEY=test-internal-key
 DB_USER=testuser
 DB_NAME=testdb
 DB_PASSWORD=testpass
@@ -549,6 +550,7 @@ pass "malicious DB_HOST rejected"
 echo "Test 21: malicious MIGRATION_LOCK_ID with SQL injection -> validation fails"
 dir=$(make_env malicious-lock-id)
 cat > "$dir/deploy/.env" <<EOF
+INTERNAL_API_KEY=test-internal-key
 DB_USER=testuser
 DB_NAME=testdb
 DB_PASSWORD=testpass
@@ -564,6 +566,7 @@ pass "malicious MIGRATION_LOCK_ID rejected"
 echo "Test 22: valid config values pass validation"
 dir=$(make_env valid-config)
 cat > "$dir/deploy/.env" <<EOF
+INTERNAL_API_KEY=test-internal-key
 DB_USER=ai_chat_bot
 DB_NAME=ai_chat_bot_db
 DB_PASSWORD=securepass123

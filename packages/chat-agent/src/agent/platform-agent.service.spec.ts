@@ -21,6 +21,7 @@ jest.mock('@wispace/llm-agent', () => ({
   CHAT_SYSTEM_PROMPT_CORE: 'core prompt',
   loadSystemPromptFile: jest.fn().mockReturnValue('system prompt'),
   retryWithBackoff: jest.fn(),
+  buildLlmExecutionConfig: jest.fn(() => ({})),
   createEnvLlmExecutionPort: jest.fn(),
 }));
 
