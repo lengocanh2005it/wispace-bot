@@ -31,6 +31,5 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "testEnvironment": "node"
-  },
-  "dependencies": {}
+  }
 }
