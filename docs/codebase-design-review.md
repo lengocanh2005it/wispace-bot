@@ -2,11 +2,30 @@
 
 > Phân tích toàn monorepo qua lăng kính **deep module** (skill `codebase-design`): *module / interface /
 > implementation / depth / seam / adapter / leverage / locality*. Thực hiện bởi 7 agent review song song
-> theo cụm package/app, mỗi claim đều dẫn nguồn file+dòng trong source. Ngày tạo: 2026-02 (post Phase 2+).
+> theo cụm package/app, mỗi claim đều dẫn nguồn file+dòng trong source. Refresh theo HEAD
+> `49ea385e` ngày 2026-08-26.
 
-Phạm vi: 3 apps (`messenger-bot`, `discord-bot`, `zalo-bot`) + 19 packages, ~800 file TS.
+Phạm vi: 3 apps (`messenger-bot`, `discord-bot`, `zalo-bot`) + 19 packages, 763 file TS
+(221 spec file, khoảng 88.5k dòng).
 Baseline quy chiếu: `.claude/rules/clean-architecture.md`, `.claude/rules/project-conventions.md`,
 `docs/project-overview.md`.
+
+---
+
+## 0. Refresh theo HEAD
+
+Các thay đổi sau bản review ban đầu đã làm seam hiện tại rõ hơn nhưng chưa xoá các nợ thiết kế chính:
+
+| Trạng thái | Quan sát hiện tại |
+|---|---|
+| **Đã cải thiện** | `CanonicalPlatformService` được dùng trong report cron của Messenger/Discord/Zalo; policy gửi đa nền tảng đã nằm sau một resolver dùng chung. |
+| **Đã cải thiện một phần** | `WebhookInboundIngressPort` nay ở `packages/database/src/domain/ports`, và Zalo bind port này; Messenger vẫn dùng `WebhookInboundEventsPort` riêng nên vẫn còn hai interface cho cùng write-ahead inbox. |
+| **Đã harden nhưng chưa deepen** | Discord/Zalo reconcile đã có advisory lock, stale-record drop và retry/telemetry; lifecycle vẫn là hai implementation gần clone, với behavior Discord (relink/welcome) không xuất hiện đầy đủ ở Zalo. |
+| **Còn nguyên** | `PrivacyDataService` vẫn resolve entity bằng tên chuỗi (`packages/database/src/services/privacy-data.service.ts:64-190`); `PlatformStudentReportService` vẫn tự map capacity và throw `Error` thường (`packages/student-report/src/platform-student-report.service.ts:101-161`); Messenger vẫn reserve quota trước rồi `ChatPipeline` reserve lại (`apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts:299-339`, `packages/chat-pipeline/src/chat-pipeline.ts:68-83`). |
+| **Còn nguyên** | `OpsHealthRepositoryPort` yêu cầu `getLlmSafetyWarningsCount(since)` nhưng adapter bỏ qua `since` và hardcode 24 giờ (`packages/ops-health/src/types.ts:20`, `packages/ops-health/src/typeorm-ops-health.repository.ts:55-63`); package `ops-health` không có consumer runtime, Messenger giữ implementation riêng. |
+
+Kết luận refresh: chưa có lý do để tạo thêm package/port tổng quát. Ưu tiên sửa các seam đang nói dối hoặc
+đang bị bỏ qua; chỉ extract khi có adapter thứ hai thật và test đi qua interface mới.
 
 ---
 
@@ -70,8 +89,8 @@ Nợ thiết kế không nằm ở "thiếu abstraction" mà ở 4 chỗ:
 
 ### 2.3 Seam giả định (1 adapter — indirection, không phải seam)
 
-- `WebhookInboundIngressPort`: token exported **0 consumer**; Messenger tự khai bản duplicate byte-for-byte
-  rồi bind inline lambda — một seam, định nghĩa 2 nơi, bind không đâu.
+- `WebhookInboundIngressPort`: hiện có **Zalo consumer/bind**, nhưng Messenger vẫn khai
+  `WebhookInboundEventsPort` riêng rồi bind inline lambda — cùng behavior nhưng hai interface.
 - Multi-provider LLM: union `'anthropic'|'gemini'|'local'` nhưng factory fallback hết về OpenAI-compatible;
   openrouter/minimax chỉ là biến thể base-URL. Một adapter family tồn tại, phần còn lại là speculative.
 - `ChatQueueStorePort`: chỉ Redis impl; memory mode **bypass port** bằng nhánh `distributed` trong service body.
@@ -159,7 +178,7 @@ app service) · `ToolExecutorPort<T>` ×2+scripted · `RedisClientPort` + fakes 
 | M7 | Calendar command | Messenger tự tiến hoá 291 dòng trong khi `PlatformStudyCalendarCommandService` đã có, signature khớp | adopt qua `USER_CALENDAR_DATA_PORT` |
 | M8 | Env dialects | `CHAT_QUEUE_STORE` parse 3×, `CHAT_DEBOUNCE_MS` clamp copy, stuck-ms default dup, `readPositiveInt`/`readEnvBoolean` copies | `ChatRuntimeConfig` |
 | M9 | Ops controllers | Discord↔Zalo 57/89 dòng chung | shared factory (ưu tiên thấp) |
-| M10 | Durable-inbox port | port exported 0 bind + bản duplicate local ở Messenger | `WebhookInboundInboxPort` mở rộng port sẵn có |
+| M10 | Durable-inbox port | Zalo đã bind `WebhookInboundIngressPort`; Messenger vẫn giữ bản port local tương đương | `WebhookInboundInboxPort` mở rộng port sẵn có |
 
 ---
 
@@ -207,7 +226,7 @@ app service) · `ToolExecutorPort<T>` ×2+scripted · `RedisClientPort` + fakes 
    `'delivered'|'denied'|'failed'`. Messenger xoá block pre-reserve (:297–347), deny copy chuyển vào hook.
    Waste: processor specs asserting reserve-wiring với stateless mock → 1 stateful fake limiter trong
    `chat-pipeline.spec.ts`. Giải từa latent double-reserve.
-4. **Resilience pipeline trong wispace-client** (M5):
+4. **Resilience pipeline trong wispace-client** (M5, chỉ cho thao tác retry-safe):
    ```ts
    runWispaceCall<T>(cfg, logger, op, externalId,
      send: (signal: AbortSignal) => Promise<Response>,
@@ -215,7 +234,8 @@ app service) · `ToolExecutorPort<T>` ×2+scripted · `RedisClientPort` + fakes 
      o?: { maxBytes?; useBreaker? }): Promise<T>
    ```
    Hides timeout merge, backoff/jitter, breaker budget, `WispaceApiError` mapping, bounded read, masked
-   logs. 5 consumers; 5 endpoint hiện naked được phủ. Specs retry ×3 gộp thành 1 suite.
+   logs cho endpoint đọc. Không áp dụng mù cho create/delete hoặc precreate vì các contract này yêu cầu
+   no automatic retry để tránh side effect kép. Specs retry ×3 gộp thành 1 suite.
 5. **Tách `@wispace/log-hygiene` từ bot-common** (M6): `error-message`, `mask-external-id`,
    `read-response-text`, `read-bounded-json`, `abort.utils`, `network-utils` (đã Nest-free);
    `withRetry`/`CircuitBreaker` về đây khỏi wispace-client. ≥13 named consumers; framework-agnostic
