@@ -5,9 +5,7 @@ import { Column, CreateDateColumn, Entity, Index } from 'typeorm';
  * Mirrors zalo_oauth_states: random state → link token mapping,
  * single-use, 10min TTL enforced in app code.
  *
- * linkToken is stored as plaintext (#301 known limitation):
- * rows are short-lived and deleted on consume, so the risk window is minimal.
- * Encrypt at rest if the threat model requires it.
+ * linkToken is encrypted at rest with AES-256-GCM (#399).
  */
 @Entity('discord_oauth_states')
 @Index('idx_discord_oauth_state_created', ['createdAt'])

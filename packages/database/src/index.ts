@@ -86,7 +86,7 @@ export {
   DEFAULT_PLATFORM_PRIORITY,
 } from './services/canonical-platform.service';
 export {
-  WebhookInboundIngressPort,
+  type WebhookInboundIngressPort,
   WEBHOOK_INBOUND_INGRESS_PORT,
   type WebhookIngestResult,
 } from './domain/ports/webhook-inbound-ingress.port';
