@@ -96,6 +96,16 @@ export class ReportOrchestrationService {
         }
         return { ...ZERO, skipped: 1 };
       }
+
+      if (mapping.userId) {
+        const anySent = await this.claimRepo.hasAnyPlatformSentReportToday(
+          mapping.userId,
+          reportDate,
+        );
+        if (anySent) {
+          return { ...ZERO, skipped: 1 };
+        }
+      }
     }
 
     // ── Step 2: try claim ───────────────────────────────────────────────

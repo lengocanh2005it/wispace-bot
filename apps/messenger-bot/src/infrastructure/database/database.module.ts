@@ -2,6 +2,12 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
+  createCircuitBreakerDataSourceFactory,
+  DbCircuitBreakerService,
+  CanonicalPlatformService,
+  UserNotificationPreferenceEntity,
+} from '@wispace/database';
+import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
   MessageLogEntity,
@@ -11,7 +17,6 @@ import {
   UserEntity,
   UserPlatformMappingEntity,
 } from './entities';
-import { MessengerLinkVerifyRecordEntity } from './entities/messenger-link-verify-record.entity';
 import { getAppTypeOrmOptions } from './typeorm.options';
 
 @Module({
@@ -20,6 +25,7 @@ import { getAppTypeOrmOptions } from './typeorm.options';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => getAppTypeOrmOptions(config),
+      dataSourceFactory: createCircuitBreakerDataSourceFactory(),
     }),
     TypeOrmModule.forFeature([
       UserPlatformMappingEntity,
@@ -30,9 +36,10 @@ import { getAppTypeOrmOptions } from './typeorm.options';
       ChatIdempotencyEntity,
       StudyReminderJobEntity,
       UserEntity,
-      MessengerLinkVerifyRecordEntity,
+      UserNotificationPreferenceEntity,
     ]),
   ],
-  exports: [TypeOrmModule],
+  providers: [DbCircuitBreakerService, CanonicalPlatformService],
+  exports: [TypeOrmModule, CanonicalPlatformService],
 })
 export class DatabaseModule {}

@@ -9,7 +9,8 @@ import {
   todayReportDate,
   runBatched,
 } from '@wispace/scheduler-core';
-import { Inject } from '@nestjs/common';
+import { Inject, Optional } from '@nestjs/common';
+import { CanonicalPlatformService } from '@wispace/database';
 import { maskExternalId } from '@wispace/bot-common';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
 import {
@@ -48,6 +49,9 @@ export class DiscordReportCronService {
     private readonly orchestrationService: DiscordReportOrchestrationService,
     @Inject(DISCORD_REPORT_ACCOUNT_READER)
     private readonly accountReader: DiscordReportAccountPageReaderPort,
+    @Optional()
+    @Inject(CanonicalPlatformService)
+    private readonly canonicalPlatformService?: CanonicalPlatformService,
   ) {}
 
   @Cron('0 8 * * *', {
@@ -109,6 +113,23 @@ export class DiscordReportCronService {
           // Window gate: only auto-send inside the days-before-exam window
           // (same as Messenger). forceSend bypasses the window but still
           // respects already-sent-today unless the caller clears it.
+          if (link.userId) {
+            const canonical =
+              await this.canonicalPlatformService?.getCanonicalPlatformForUser(
+                link.userId,
+              );
+            if (canonical && canonical !== PLATFORM) {
+              this.logger.log(
+                `Skip Discord user ${maskExternalId(
+                  link.externalUserId,
+                )}: canonical platform is ${canonical} for userId=${maskExternalId(
+                  link.userId,
+                )}`,
+              );
+              return { ...ZERO, skipped: 1 };
+            }
+          }
+
           const window = await evaluateExamWindow(
             link.externalUserId,
             this.reportScheduleService,

@@ -186,4 +186,45 @@ describe('ReportCronService.sendScheduledReports (R5 ops)', () => {
       messengerRepository.findActiveSubscribedMappingsPage,
     ).toHaveBeenCalledWith(1000, 500);
   });
+  it('skips sending report when canonical platform for user is not messenger (e.g. zalo)', async () => {
+    const messengerRepository = {
+      findActiveSubscribedMappingsPage: jest
+        .fn()
+        .mockResolvedValue([
+          { id: 1, psid: 'psid-1', userId: 42, cadence: 'daily' },
+        ]),
+    };
+    const canonicalService = {
+      getCanonicalPlatformForUser: jest.fn().mockResolvedValue('zalo'),
+    };
+    const reportSendOrchestrationService = {
+      claimAndSend: jest.fn(),
+    };
+    const service = new ReportCronService(
+      messengerRepository as never,
+      {
+        getExamReminderWindow: jest
+          .fn()
+          .mockReturnValue({ minDays: 2, maxDays: 3 }),
+      } as never,
+      {
+        shouldRunScheduledReportCron: jest.fn().mockResolvedValue(true),
+      } as never,
+      {
+        tryAcquireDailyLock: jest.fn().mockResolvedValue(true),
+        releaseDailyLock: jest.fn(),
+      } as never,
+      { get: jest.fn() } as never,
+      reportSendOrchestrationService as never,
+      canonicalService as never,
+    );
+
+    const result = await service.sendScheduledReports({ forceSend: true });
+
+    expect(canonicalService.getCanonicalPlatformForUser).toHaveBeenCalledWith(
+      42,
+    );
+    expect(reportSendOrchestrationService.claimAndSend).not.toHaveBeenCalled();
+    expect(result.skipped).toBe(1);
+  });
 });

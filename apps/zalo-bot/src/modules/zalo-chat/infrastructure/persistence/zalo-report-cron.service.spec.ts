@@ -149,4 +149,48 @@ describe('ZaloReportCronService', () => {
 
     expect(orchestrationClaimAndSend).toHaveBeenCalled();
   });
+  it('skips sending report when canonical platform for user is not zalo (e.g. preferred discord)', async () => {
+    const linkRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest
+          .fn()
+          .mockResolvedValue([
+            { id: '1', externalUserId: 'zalo-1', userId: 42, platform: 'zalo' },
+          ]),
+      }),
+    };
+    const canonicalService = {
+      getCanonicalPlatformForUser: jest.fn().mockResolvedValue('discord'),
+    };
+    const claimRepo = {
+      listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
+    };
+    const orchestration = { claimAndSend: jest.fn() };
+    const reportService = { generateReport: jest.fn() };
+    const reportScheduleService = { getExamReminderWindow: jest.fn() };
+    const configService = { get: jest.fn() };
+
+    const service = new ZaloReportCronService(
+      linkRepo as unknown as never,
+      claimRepo as unknown as never,
+      orchestration as unknown as never,
+      reportService as unknown as never,
+      reportScheduleService as unknown as never,
+      configService as unknown as never,
+      canonicalService as unknown as never,
+    );
+
+    await service.sendDailyReports({ forceSend: true });
+
+    expect(canonicalService.getCanonicalPlatformForUser).toHaveBeenCalledWith(
+      42,
+    );
+    expect(reportService.generateReport).not.toHaveBeenCalled();
+    expect(orchestration.claimAndSend).not.toHaveBeenCalled();
+  });
 });

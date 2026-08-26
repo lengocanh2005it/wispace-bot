@@ -25,6 +25,10 @@ const DEFAULT_PLATFORM = 'messenger';
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_SYNC_CONCURRENCY = 5;
 
+export type CanonicalPlatformResolver = (
+  userId: number,
+) => Promise<Platform | undefined>;
+
 export type OnUserSyncHook = (
   userId: number,
   platform: Platform,
@@ -73,6 +77,7 @@ interface PerMappingOutcome {
 export class StudyReminderSyncService {
   private readonly logger = new Logger(StudyReminderSyncService.name);
   private readonly onUserSync?: OnUserSyncHook;
+  private readonly canonicalResolver?: CanonicalPlatformResolver;
 
   constructor(
     @Inject(MAPPING_READER)
@@ -81,8 +86,10 @@ export class StudyReminderSyncService {
     private readonly jobRepository: StudyReminderJobRepositoryPort,
     private readonly scheduleService: StudyReminderScheduleService,
     @Optional() onUserSync?: OnUserSyncHook,
+    @Optional() canonicalResolver?: CanonicalPlatformResolver,
   ) {
     this.onUserSync = onUserSync;
+    this.canonicalResolver = canonicalResolver;
   }
 
   async syncUpcomingSessions(
@@ -217,6 +224,28 @@ export class StudyReminderSyncService {
 
     try {
       let cancelledOtherPlatforms = 0;
+
+      if (mapping.userId && this.canonicalResolver) {
+        const canonical = await this.canonicalResolver(mapping.userId);
+        if (canonical && canonical !== platform) {
+          const cancelledCount =
+            await this.jobRepository.cancelStaleJobsForExternalUserId(
+              platform,
+              mapping.externalUserId,
+              [],
+              horizonEnd,
+              opts?.staleCancelStatuses
+                ? { statuses: opts.staleCancelStatuses }
+                : undefined,
+            );
+          return {
+            upserted: 0,
+            cancelled: cancelledCount,
+            skipped: 1,
+            cancelledOtherPlatforms: 0,
+          };
+        }
+      }
       // Cross-platform cancel hook (Messenger cancels jobs from other platforms)
       if (opts.userId && mapping.userId) {
         const cancelledCount = await this.onUserSync?.(

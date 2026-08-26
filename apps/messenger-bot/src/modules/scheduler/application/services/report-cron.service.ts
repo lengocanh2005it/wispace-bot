@@ -3,7 +3,9 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
+import { CanonicalPlatformService } from '@wispace/database';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { maskExternalId } from '@wispace/bot-common';
@@ -36,6 +38,9 @@ export class ReportCronService {
     private readonly reportCronLockService: ReportCronLockService,
     private readonly configService: ConfigService,
     private readonly reportSendOrchestrationService: ReportSendOrchestrationService,
+    @Optional()
+    @Inject(CanonicalPlatformService)
+    private readonly canonicalPlatformService?: CanonicalPlatformService,
   ) {}
 
   @Cron('0 3 * * 1', {
@@ -194,6 +199,23 @@ export class ReportCronService {
     if (!mapping.psid) {
       this.logger.log(`Skip mapping ${mapping.id}: missing PSID`);
       return { ...ZERO, skipped: 1 };
+    }
+
+    if (mapping.userId) {
+      const canonical =
+        await this.canonicalPlatformService?.getCanonicalPlatformForUser(
+          mapping.userId,
+        );
+      if (canonical && canonical !== 'messenger') {
+        this.logger.log(
+          `Skip Messenger PSID ${maskExternalId(
+            mapping.psid,
+          )}: canonical platform is ${canonical} for userId=${maskExternalId(
+            mapping.userId,
+          )}`,
+        );
+        return { ...ZERO, skipped: 1 };
+      }
     }
 
     // Single Wispace API call — supplies both shouldSend and examDate

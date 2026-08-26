@@ -67,6 +67,24 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
     // duplicate claim returns false — any other DB failure propagates instead
     // of masquerading as "already claimed" (a DB blip during the 08:00 cron
     // must not silently skip users).
+    if (params.userId) {
+      const activeOther = await this.claimRepo
+        .createQueryBuilder('claim')
+        .where('claim.user_id = :userId', { userId: params.userId })
+        .andWhere('claim.report_date = :reportDate', {
+          reportDate: params.reportDate,
+        })
+        .andWhere('claim.platform != :platform', { platform: this.platform })
+        .andWhere(
+          "(claim.status = 'sent' OR (claim.status = 'claimed' AND (claim.lease_expires_at > now() OR claim.lease_expires_at IS NULL)))",
+        )
+        .getOne();
+
+      if (activeOther) {
+        return { claimed: false };
+      }
+    }
+
     const rows: Array<{
       id: number;
       lease_token: string;

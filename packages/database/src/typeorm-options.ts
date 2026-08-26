@@ -9,10 +9,11 @@ import { ReportSendJobEntity } from './entities/report-send-job.entity';
 import { RescheduleConfirmationEntity } from './entities/reschedule-confirmation.entity';
 import { CronLeaderLeaseEntity } from './entities/cron-leader-lease.entity';
 import { LearnerProfileEntity } from './entities/learner-profile.entity';
+import { UserNotificationPreferenceEntity } from './entities/user-notification-preference.entity';
 
 export type EntityClass = new (...args: unknown[]) => unknown;
 
-type EnvSource = ConfigService | NodeJS.ProcessEnv;
+export type EnvSource = ConfigService | NodeJS.ProcessEnv;
 
 export function readEnv(source: EnvSource, key: string): string | undefined {
   if (source instanceof ConfigService) {
@@ -67,6 +68,7 @@ export const SHARED_ENTITIES: EntityClass[] = [
   RescheduleConfirmationEntity,
   CronLeaderLeaseEntity,
   LearnerProfileEntity,
+  UserNotificationPreferenceEntity,
 ];
 
 /**

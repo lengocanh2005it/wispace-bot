@@ -434,6 +434,24 @@ export class MessengerRepository
     // released after a transient failure, while an active `claimed` row is
     // never stolen by a concurrent worker and a `sent` claim stays
     // non-reclaimable.
+    if (params.userId) {
+      const activeOther = await this.reportClaimRepo
+        .createQueryBuilder('claim')
+        .where('claim.user_id = :userId', { userId: params.userId })
+        .andWhere('claim.report_date = :reportDate', {
+          reportDate: params.reportDate,
+        })
+        .andWhere('claim.platform != :platform', { platform: 'messenger' })
+        .andWhere(
+          "(claim.status = 'sent' OR (claim.status = 'claimed' AND (claim.lease_expires_at > now() OR claim.lease_expires_at IS NULL)))",
+        )
+        .getOne();
+
+      if (activeOther) {
+        return { claimed: false };
+      }
+    }
+
     const rows: Array<{
       id: number;
       lease_token: string;

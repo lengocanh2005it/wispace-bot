@@ -328,4 +328,38 @@ describe('DiscordReportCronService', () => {
       200,
     );
   });
+  it('skips sending report when canonical platform for user is not discord (e.g. zalo)', async () => {
+    const accountReader = {
+      findActiveAccountsPage: jest
+        .fn()
+        .mockResolvedValue([{ id: '1', externalUserId: 'disc-1', userId: 42 }]),
+    };
+    const canonicalService = {
+      getCanonicalPlatformForUser: jest.fn().mockResolvedValue('zalo'),
+    };
+    const orchestrationService = {
+      claimAndSend: jest.fn(),
+    };
+    const service = new DiscordReportCronService(
+      { get: jest.fn().mockReturnValue(undefined) } as never,
+      { shouldRunScheduledReportCron: jest.fn() } as never,
+      { tryAcquireDailyLock: jest.fn(), releaseDailyLock: jest.fn() } as never,
+      {
+        shouldSendReportToday: jest
+          .fn()
+          .mockResolvedValue({ shouldSend: true }),
+      } as never,
+      orchestrationService as never,
+      accountReader as never,
+      canonicalService as never,
+    );
+
+    const result = await service.sendScheduledReports();
+
+    expect(canonicalService.getCanonicalPlatformForUser).toHaveBeenCalledWith(
+      42,
+    );
+    expect(orchestrationService.claimAndSend).not.toHaveBeenCalled();
+    expect(result.skipped).toBe(1);
+  });
 });

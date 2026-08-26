@@ -319,5 +319,75 @@ describe('StudyReminderSyncService', () => {
         { statuses: ['pending', 'failed', 'processing'] },
       );
     });
+    it('cancels pending jobs and skips upsert when current platform is not canonical for the user', async () => {
+      const canonicalResolver = jest.fn().mockResolvedValue('zalo'); // canonical is zalo, but syncing messenger
+      const syncService = new StudyReminderSyncService(
+        mappingReader,
+        jobRepo,
+        scheduleService,
+        onUserSync,
+        canonicalResolver,
+      );
+
+      const mapping = {
+        externalUserId: 'psid-1',
+        userId: 42,
+        platform: 'messenger' as const,
+      };
+      mappingReader.findActiveMappingsPage.mockResolvedValueOnce({
+        items: [mapping],
+        nextId: undefined,
+      });
+      jobRepo.cancelStaleJobsForExternalUserId.mockResolvedValueOnce(2);
+
+      const result = await syncService.syncUpcomingSessions({
+        platform: 'messenger',
+        getSessions: jest.fn().mockResolvedValue([makeSession()]),
+      });
+
+      expect(canonicalResolver).toHaveBeenCalledWith(42);
+      expect(jobRepo.cancelStaleJobsForExternalUserId).toHaveBeenCalledWith(
+        'messenger',
+        'psid-1',
+        [],
+        expect.any(Date),
+        undefined,
+      );
+      expect(jobRepo.upsertPendingJobs).not.toHaveBeenCalled();
+      expect(result.skipped).toBe(1);
+      expect(result.cancelled).toBe(2);
+    });
+
+    it('proceeds with upsert when current platform is canonical for the user', async () => {
+      const canonicalResolver = jest.fn().mockResolvedValue('zalo'); // canonical is zalo, syncing zalo
+      const syncService = new StudyReminderSyncService(
+        mappingReader,
+        jobRepo,
+        scheduleService,
+        onUserSync,
+        canonicalResolver,
+      );
+
+      const mapping = {
+        externalUserId: 'zalo-1',
+        userId: 42,
+        platform: 'zalo' as const,
+      };
+      mappingReader.findActiveMappingsPage.mockResolvedValueOnce({
+        items: [mapping],
+        nextId: undefined,
+      });
+      const getSessions = jest.fn().mockResolvedValue([makeSession()]);
+
+      const result = await syncService.syncUpcomingSessions({
+        platform: 'zalo',
+        getSessions,
+      });
+
+      expect(canonicalResolver).toHaveBeenCalledWith(42);
+      expect(getSessions).toHaveBeenCalledWith('zalo-1', 42);
+      expect(jobRepo.upsertPendingJobs).toHaveBeenCalled();
+      expect(result.upserted).toBe(1);
+    });
   });
 });

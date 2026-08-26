@@ -8,6 +8,7 @@ export { ReportSendJobEntity } from './entities/report-send-job.entity';
 export { RescheduleConfirmationEntity } from './entities/reschedule-confirmation.entity';
 export { CronLeaderLeaseEntity } from './entities/cron-leader-lease.entity';
 export { LearnerProfileEntity } from './entities/learner-profile.entity';
+export { UserNotificationPreferenceEntity } from './entities/user-notification-preference.entity';
 export {
   SHARED_ENTITIES,
   getTypeOrmOptions,
@@ -15,7 +16,17 @@ export {
   buildCliDataSource,
   readEnv,
   type EntityClass,
+  type EnvSource,
 } from './typeorm-options';
+export {
+  attachDbCircuitBreaker,
+  getDbCircuitBreaker,
+  readDbCircuitBreakerOptions,
+  createCircuitBreakerDataSourceFactory,
+  DbCircuitBreakerService,
+  type DbCircuitBreakerOptions,
+  type CircuitBreakerProtectedDataSource,
+} from './db-circuit-breaker';
 
 // Shared types
 export {
@@ -69,6 +80,11 @@ export { RescheduleRecoveryCronService } from './services/reschedule-recovery-cr
 export { CronLeaderLeaseService } from './services/cron-leader-lease.service';
 export { listUserIdsWithSentReport } from './services/list-user-ids-with-sent-report';
 export { PrivacyDataService } from './services/privacy-data.service';
+export {
+  CanonicalPlatformService,
+  resolveCanonicalPlatform,
+  DEFAULT_PLATFORM_PRIORITY,
+} from './services/canonical-platform.service';
 export {
   WebhookInboundIngressPort,
   WEBHOOK_INBOUND_INGRESS_PORT,

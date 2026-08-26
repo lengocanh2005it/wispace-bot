@@ -16,14 +16,12 @@ import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
 import {
   getTypeOrmOptions as buildSharedOptions,
   SHARED_ENTITIES,
+  createCircuitBreakerDataSourceFactory,
+  DbCircuitBreakerService,
+  CanonicalPlatformService,
+  UserNotificationPreferenceEntity,
 } from '@wispace/database';
 
-/**
- * Connects to the same Postgres DB as `apps/messenger-bot` (Phase 2: shared
- * schema keyed by `(platform, external_user_id)`). Does NOT run/own
- * migrations — see `docs/turborepo-migration-plan.md` Phase 5: only
- * messenger-bot's pipeline is allowed to run `migration:run`.
- */
 export function buildTypeOrmOptions(config: ConfigService) {
   const entities = [
     ...SHARED_ENTITIES,
@@ -47,6 +45,7 @@ export function buildTypeOrmOptions(config: ConfigService) {
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: buildTypeOrmOptions,
+      dataSourceFactory: createCircuitBreakerDataSourceFactory(),
     }),
     TypeOrmModule.forFeature([
       ...SHARED_ENTITIES,
@@ -60,8 +59,10 @@ export function buildTypeOrmOptions(config: ConfigService) {
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
       StudyReminderJobEntity,
+      UserNotificationPreferenceEntity,
     ]),
   ],
-  exports: [TypeOrmModule],
+  providers: [DbCircuitBreakerService, CanonicalPlatformService],
+  exports: [TypeOrmModule, CanonicalPlatformService],
 })
 export class DatabaseModule {}

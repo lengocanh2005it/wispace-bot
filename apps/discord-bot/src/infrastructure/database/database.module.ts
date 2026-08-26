@@ -11,19 +11,16 @@ import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
 import {
   getTypeOrmOptions as buildSharedOptions,
   SHARED_ENTITIES,
+  createCircuitBreakerDataSourceFactory,
+  DbCircuitBreakerService,
+  CanonicalPlatformService,
+  UserNotificationPreferenceEntity,
 } from '@wispace/database';
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
 import { DiscordLinkVerifyRecordEntity } from './entities/discord-link-verify-record.entity';
 import { DiscordMessageLogEntity } from './entities/discord-message-log.entity';
 import { DiscordWelcomeRecordEntity } from './entities/discord-welcome-record.entity';
 
-/**
- * Connects to the same Postgres DB as `apps/messenger-bot` (Phase 2: shared
- * schema keyed by `(platform, external_user_id)`). Does NOT run/own
- * migrations — see `docs/turborepo-migration-plan.md` Phase 5: only
- * messenger-bot's pipeline is allowed to run `migration:run`, to avoid
- * race conditions between bots' CI on the same DB.
- */
 function buildTypeOrmOptions(config: ConfigService) {
   const entities = [
     ...SHARED_ENTITIES,
@@ -46,6 +43,7 @@ function buildTypeOrmOptions(config: ConfigService) {
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: buildTypeOrmOptions,
+      dataSourceFactory: createCircuitBreakerDataSourceFactory(),
     }),
     TypeOrmModule.forFeature([
       ...SHARED_ENTITIES,
@@ -58,8 +56,10 @@ function buildTypeOrmOptions(config: ConfigService) {
       DiscordMessageLogEntity,
       DiscordWelcomeRecordEntity,
       StudyReminderJobEntity,
+      UserNotificationPreferenceEntity,
     ]),
   ],
-  exports: [TypeOrmModule],
+  providers: [DbCircuitBreakerService, CanonicalPlatformService],
+  exports: [TypeOrmModule, CanonicalPlatformService],
 })
 export class DatabaseModule {}

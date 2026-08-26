@@ -58,6 +58,8 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmUsageInsertFailures: Counter;
   private llmMissingTokens: Counter;
   private llmUnpricedModelTokens: Counter;
+  private dbCircuitBreakerState: Gauge;
+  private dbCircuitBreakerFailures: Counter;
 
   constructor(config: MetricsConfig) {
     this.prefix = config.prefix;
@@ -305,6 +307,44 @@ export class BotMetricsService implements OnModuleDestroy {
   /** LLM tokens processed for a model with no configured pricing. */
   incLlmUnpricedModelTokens(model: string): void {
     this.llmUnpricedModelTokens.inc({ model });
+  }
+
+  setDbCircuitBreakerState(state: 0 | 1 | 2): void {
+    this.dbCircuitBreakerState.set(state);
+  }
+
+  incDbCircuitBreakerFailures(): void {
+    this.dbCircuitBreakerFailures.inc();
+  }
+
+  registerDbCircuitBreaker(breaker: {
+    opened?: boolean;
+    halfOpen?: boolean;
+    on(event: 'open', listener: () => void): unknown;
+    on(event: 'halfOpen', listener: (resetTimeout: number) => void): unknown;
+    on(event: 'close', listener: () => void): unknown;
+    on(event: 'failure', listener: (error: Error) => void): unknown;
+    on(event: 'timeout', listener: () => void): unknown;
+  }): void {
+    const currentState = breaker.opened ? 2 : breaker.halfOpen ? 1 : 0;
+    this.dbCircuitBreakerState.set(currentState);
+    this.dbCircuitBreakerFailures.inc(0);
+
+    breaker.on('open', () => {
+      this.dbCircuitBreakerState.set(2);
+    });
+    breaker.on('halfOpen', () => {
+      this.dbCircuitBreakerState.set(1);
+    });
+    breaker.on('close', () => {
+      this.dbCircuitBreakerState.set(0);
+    });
+    breaker.on('failure', () => {
+      this.dbCircuitBreakerFailures.inc();
+    });
+    breaker.on('timeout', () => {
+      this.dbCircuitBreakerFailures.inc();
+    });
   }
 
   async getMetrics(): Promise<string> {

@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { CanonicalPlatformService } from '@wispace/database';
 import { ConfigService } from '@nestjs/config';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { Cron } from '@nestjs/schedule';
@@ -36,6 +37,9 @@ export class ZaloReportCronService {
     private readonly reportService: PlatformStudentReportService,
     private readonly reportScheduleService: ReportScheduleService,
     private readonly configService: ConfigService,
+    @Optional()
+    @Inject(CanonicalPlatformService)
+    private readonly canonicalPlatformService?: CanonicalPlatformService,
   ) {}
 
   @Cron('0 8 * * *', {
@@ -127,6 +131,23 @@ export class ZaloReportCronService {
     sentUserIds: Set<number>,
     forceSend: boolean,
   ): Promise<'sent' | 'skipped' | 'error'> {
+    if (link.userId) {
+      const canonical =
+        await this.canonicalPlatformService?.getCanonicalPlatformForUser(
+          link.userId,
+        );
+      if (canonical && canonical !== 'zalo') {
+        this.logger.log(
+          `Skip Zalo user ${maskExternalId(
+            link.externalUserId,
+          )}: canonical platform is ${canonical} for userId=${maskExternalId(
+            link.userId,
+          )}`,
+        );
+        return 'skipped';
+      }
+    }
+
     if (!forceSend) {
       const window = await evaluateExamWindow(
         link.externalUserId,
