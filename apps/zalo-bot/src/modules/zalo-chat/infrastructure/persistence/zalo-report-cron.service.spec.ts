@@ -165,7 +165,10 @@ describe('ZaloReportCronService', () => {
       }),
     };
     const canonicalService = {
-      getCanonicalPlatformForUser: jest.fn().mockResolvedValue('discord'),
+      isCanonicalForUser: jest.fn().mockResolvedValue({
+        isCanonical: false,
+        canonicalPlatform: 'discord',
+      }),
     };
     const claimRepo = {
       listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
@@ -187,8 +190,9 @@ describe('ZaloReportCronService', () => {
 
     await service.sendDailyReports({ forceSend: true });
 
-    expect(canonicalService.getCanonicalPlatformForUser).toHaveBeenCalledWith(
+    expect(canonicalService.isCanonicalForUser).toHaveBeenCalledWith(
       42,
+      'zalo',
     );
     expect(reportService.generateReport).not.toHaveBeenCalled();
     expect(orchestration.claimAndSend).not.toHaveBeenCalled();

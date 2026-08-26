@@ -335,7 +335,9 @@ describe('DiscordReportCronService', () => {
         .mockResolvedValue([{ id: '1', externalUserId: 'disc-1', userId: 42 }]),
     };
     const canonicalService = {
-      getCanonicalPlatformForUser: jest.fn().mockResolvedValue('zalo'),
+      isCanonicalForUser: jest
+        .fn()
+        .mockResolvedValue({ isCanonical: false, canonicalPlatform: 'zalo' }),
     };
     const orchestrationService = {
       claimAndSend: jest.fn(),
@@ -356,8 +358,9 @@ describe('DiscordReportCronService', () => {
 
     const result = await service.sendScheduledReports();
 
-    expect(canonicalService.getCanonicalPlatformForUser).toHaveBeenCalledWith(
+    expect(canonicalService.isCanonicalForUser).toHaveBeenCalledWith(
       42,
+      'discord',
     );
     expect(orchestrationService.claimAndSend).not.toHaveBeenCalled();
     expect(result.skipped).toBe(1);

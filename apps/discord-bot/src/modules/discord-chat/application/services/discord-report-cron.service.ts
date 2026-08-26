@@ -113,16 +113,17 @@ export class DiscordReportCronService {
           // Window gate: only auto-send inside the days-before-exam window
           // (same as Messenger). forceSend bypasses the window but still
           // respects already-sent-today unless the caller clears it.
-          if (link.userId) {
-            const canonical =
-              await this.canonicalPlatformService?.getCanonicalPlatformForUser(
+          if (link.userId && this.canonicalPlatformService) {
+            const { isCanonical, canonicalPlatform } =
+              await this.canonicalPlatformService.isCanonicalForUser(
                 link.userId,
+                PLATFORM,
               );
-            if (canonical && canonical !== PLATFORM) {
+            if (!isCanonical) {
               this.logger.log(
                 `Skip Discord user ${maskExternalId(
                   link.externalUserId,
-                )}: canonical platform is ${canonical} for userId=${maskExternalId(
+                )}: canonical platform is ${canonicalPlatform} for userId=${maskExternalId(
                   link.userId,
                 )}`,
               );

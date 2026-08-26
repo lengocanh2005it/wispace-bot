@@ -201,16 +201,17 @@ export class ReportCronService {
       return { ...ZERO, skipped: 1 };
     }
 
-    if (mapping.userId) {
-      const canonical =
-        await this.canonicalPlatformService?.getCanonicalPlatformForUser(
+    if (mapping.userId && this.canonicalPlatformService) {
+      const { isCanonical, canonicalPlatform } =
+        await this.canonicalPlatformService.isCanonicalForUser(
           mapping.userId,
+          'messenger',
         );
-      if (canonical && canonical !== 'messenger') {
+      if (!isCanonical) {
         this.logger.log(
           `Skip Messenger PSID ${maskExternalId(
             mapping.psid,
-          )}: canonical platform is ${canonical} for userId=${maskExternalId(
+          )}: canonical platform is ${canonicalPlatform} for userId=${maskExternalId(
             mapping.userId,
           )}`,
         );

@@ -115,6 +115,29 @@ describe('CanonicalPlatformService', () => {
     expect(canonical).toBeUndefined();
   });
 
+  it('checks if platform is canonical for user via isCanonicalForUser', async () => {
+    queryMock.mockResolvedValue([
+      {
+        preferred_platform: 'discord',
+        zalo_id: 'zalo-1',
+        discord_id: 'disc-1',
+        messenger_id: 'psid-1',
+      },
+    ]);
+
+    const discordCheck = await service.isCanonicalForUser(42, 'discord');
+    expect(discordCheck).toEqual({
+      isCanonical: true,
+      canonicalPlatform: 'discord',
+    });
+
+    const messengerCheck = await service.isCanonicalForUser(42, 'messenger');
+    expect(messengerCheck).toEqual({
+      isCanonical: false,
+      canonicalPlatform: 'discord',
+    });
+  });
+
   it('saves preferred platform via upsert', async () => {
     await service.setPreferredPlatform(42, 'discord');
 

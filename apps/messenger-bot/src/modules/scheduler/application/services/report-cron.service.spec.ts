@@ -195,7 +195,9 @@ describe('ReportCronService.sendScheduledReports (R5 ops)', () => {
         ]),
     };
     const canonicalService = {
-      getCanonicalPlatformForUser: jest.fn().mockResolvedValue('zalo'),
+      isCanonicalForUser: jest
+        .fn()
+        .mockResolvedValue({ isCanonical: false, canonicalPlatform: 'zalo' }),
     };
     const reportSendOrchestrationService = {
       claimAndSend: jest.fn(),
@@ -221,8 +223,9 @@ describe('ReportCronService.sendScheduledReports (R5 ops)', () => {
 
     const result = await service.sendScheduledReports({ forceSend: true });
 
-    expect(canonicalService.getCanonicalPlatformForUser).toHaveBeenCalledWith(
+    expect(canonicalService.isCanonicalForUser).toHaveBeenCalledWith(
       42,
+      'messenger',
     );
     expect(reportSendOrchestrationService.claimAndSend).not.toHaveBeenCalled();
     expect(result.skipped).toBe(1);

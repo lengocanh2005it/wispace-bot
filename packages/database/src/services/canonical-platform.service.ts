@@ -97,6 +97,21 @@ export class CanonicalPlatformService {
   }
 
   /**
+   * Check whether currentPlatform is the resolved canonical platform for the user.
+   * Returns { isCanonical: false, canonicalPlatform } if another platform is canonical.
+   */
+  async isCanonicalForUser(
+    userId: number,
+    currentPlatform: Platform,
+  ): Promise<{ isCanonical: boolean; canonicalPlatform?: Platform }> {
+    const canonical = await this.getCanonicalPlatformForUser(userId);
+    if (canonical && canonical !== currentPlatform) {
+      return { isCanonical: false, canonicalPlatform: canonical };
+    }
+    return { isCanonical: true, canonicalPlatform: canonical };
+  }
+
+  /**
    * Set or clear the learner's preferred notification platform.
    */
   async setPreferredPlatform(

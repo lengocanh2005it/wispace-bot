@@ -131,16 +131,17 @@ export class ZaloReportCronService {
     sentUserIds: Set<number>,
     forceSend: boolean,
   ): Promise<'sent' | 'skipped' | 'error'> {
-    if (link.userId) {
-      const canonical =
-        await this.canonicalPlatformService?.getCanonicalPlatformForUser(
+    if (link.userId && this.canonicalPlatformService) {
+      const { isCanonical, canonicalPlatform } =
+        await this.canonicalPlatformService.isCanonicalForUser(
           link.userId,
+          'zalo',
         );
-      if (canonical && canonical !== 'zalo') {
+      if (!isCanonical) {
         this.logger.log(
           `Skip Zalo user ${maskExternalId(
             link.externalUserId,
-          )}: canonical platform is ${canonical} for userId=${maskExternalId(
+          )}: canonical platform is ${canonicalPlatform} for userId=${maskExternalId(
             link.userId,
           )}`,
         );
