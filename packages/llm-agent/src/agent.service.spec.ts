@@ -237,6 +237,75 @@ describe('LlmAgentService', () => {
     });
   });
 
+  describe('reply() — ambiguous message (provider configured)', () => {
+    it('returns clarification without calling LLM', async () => {
+      const adapter = makeAdapter([]);
+      const { service, llmExecution } = buildService({ adapter });
+
+      const result = await service.reply(
+        { ...BASE_INPUT, userText: 'abc???' },
+        TOOL_CONTEXT,
+      );
+
+      expect(result.text).toContain('chưa rõ');
+      expect(llmExecution.run).not.toHaveBeenCalled();
+    });
+
+    it('returns clarification for meaningless fragment', async () => {
+      const adapter = makeAdapter([]);
+      const { service, llmExecution } = buildService({ adapter });
+
+      const result = await service.reply(
+        { ...BASE_INPUT, userText: 'cái đó' },
+        TOOL_CONTEXT,
+      );
+
+      expect(result.text).toContain('Tiến độ học IELTS');
+      expect(llmExecution.run).not.toHaveBeenCalled();
+    });
+
+    it('returns clarification for empty message', async () => {
+      const adapter = makeAdapter([]);
+      const { service, llmExecution } = buildService({ adapter });
+
+      const result = await service.reply(
+        { ...BASE_INPUT, userText: '' },
+        TOOL_CONTEXT,
+      );
+
+      expect(result.text).toBeTruthy();
+      expect(llmExecution.run).not.toHaveBeenCalled();
+    });
+
+    it('does NOT block clear messages', async () => {
+      const response = makeTextResponse('Tiến độ của bạn tốt lắm!');
+      const adapter = makeAdapter([response]);
+      const { service, llmExecution } = buildService({ adapter });
+
+      const result = await service.reply(
+        { ...BASE_INPUT, userText: 'Tiến độ học IELTS của mình' },
+        TOOL_CONTEXT,
+      );
+
+      expect(result.text).toBe('Tiến độ của bạn tốt lắm!');
+      expect(llmExecution.run).toHaveBeenCalled();
+    });
+
+    it('does NOT block ambiguous personal-data requests — LLM handles safely', async () => {
+      const response = makeTextResponse('Mình chưa có thông tin này.');
+      const adapter = makeAdapter([response]);
+      const { service, llmExecution } = buildService({ adapter });
+
+      const result = await service.reply(
+        { ...BASE_INPUT, userText: 'mình bao nhiêu tuổi' },
+        TOOL_CONTEXT,
+      );
+
+      expect(result.text).toBeTruthy();
+      expect(llmExecution.run).toHaveBeenCalled();
+    });
+  });
+
   describe('reply() — normal LLM flow', () => {
     it('returns text when LLM responds directly', async () => {
       const response = makeTextResponse('Tiến độ của bạn tốt lắm!');
@@ -1588,6 +1657,26 @@ describe('LlmAgentService', () => {
       expect(
         (doneEvent as { type: 'done'; reply: { text: string } }).reply.text,
       ).toMatch(/không thể xử lý/i);
+    });
+
+    it('yields done for ambiguous message via early return', async () => {
+      const { service } = buildService({
+        adapter: makeAdapter([makeTextResponse('stub')]),
+      });
+
+      const events = await collectStream(
+        service.replyStream(
+          { ...BASE_INPUT, userText: 'abc???' },
+          TOOL_CONTEXT,
+        ),
+      );
+
+      const doneEvent = events.find((e) => e.type === 'done');
+      expect(doneEvent).toBeDefined();
+      expect(
+        (doneEvent as { type: 'done'; reply: { text: string } }).reply.text,
+      ).toContain('chưa rõ');
+      expect(events.some((e) => e.type === 'delta')).toBe(false);
     });
 
     it('tool_start events come before delta/done events', async () => {

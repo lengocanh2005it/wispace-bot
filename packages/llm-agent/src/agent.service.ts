@@ -6,7 +6,7 @@ import {
   detectPromptInjection,
   sanitizeToolResultContent,
 } from './utils/prompt-injection.utils';
-import { isObviouslyOffTopic } from './utils/scope.utils';
+import { isObviouslyOffTopic, isAmbiguousMessage } from './utils/scope.utils';
 import { sanitizeReplyText } from './utils/text.utils';
 import { checkFinalOutputSafety } from './utils/final-output.utils';
 import { sleep, isAbortError } from './utils/retry.utils';
@@ -17,6 +17,7 @@ import {
   buildToolCallCapMessage,
   buildWispaceScopeRedirectMessage,
   buildGroundingBlockedMessage,
+  buildClarificationMessage,
 } from './messages';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import {
@@ -810,6 +811,13 @@ export class LlmAgentService<TToolContext> {
       return {
         blocked: true,
         reply: { text: buildWispaceScopeRedirectMessage() },
+      };
+    }
+
+    if (isAmbiguousMessage(input.userText)) {
+      return {
+        blocked: true,
+        reply: { text: buildClarificationMessage() },
       };
     }
 

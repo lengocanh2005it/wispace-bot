@@ -21,6 +21,7 @@ const GREETING_ONLY =
  * that the LLM can handle safely.
  */
 const SHORT_AMBIGUOUS_THRESHOLD = 20;
+const SHORT_FRAGMENT_THRESHOLD = 4;
 
 /** WISPACE domain scope check — shared across all bot platforms. */
 export function isObviouslyOffTopic(userText: string): boolean {
@@ -44,4 +45,32 @@ export function isObviouslyOffTopic(userText: string): boolean {
 /** True when the message is only a greeting/ack — safe to answer with a canned reply when the LLM is unavailable. */
 export function isGreetingOnly(userText: string): boolean {
   return GREETING_ONLY.test(userText.trim());
+}
+
+const AMBIGUOUS_FRAGMENTS =
+  /^(?:thứ|bài|cái\s+đó|học\s+gì|cho\s+xin|gì\s+vậy|sao\s+thế|thì\s+sao)$/i;
+
+/** Short acknowledgment patterns — safe for LLM, not ambiguous. */
+const SHORT_ACK =
+  /^(?:ok|oke|okay|ừ|vâng|dạ|à|ờ|hả|nhé|đi|ok\s+nhé|ok\s+nhá)$/i;
+
+/**
+ * True when the message is too vague to identify intent safely.
+ * Ambiguous messages get a clarification reply instead of tool execution.
+ */
+export function isAmbiguousMessage(userText: string): boolean {
+  const text = userText.trim();
+  if (!text) return true;
+  // Random/accidental: non-alphanumeric chars dominate (>=50% of length)
+  const nonAlpha = text.replace(/[\p{L}\p{N}]/gu, '');
+  if (nonAlpha.length >= text.length / 2 && text.length <= 20) return true;
+  if (
+    text.length <= SHORT_FRAGMENT_THRESHOLD &&
+    !SHORT_ACK.test(text) &&
+    !GREETING_ONLY.test(text)
+  ) {
+    return true;
+  }
+  if (AMBIGUOUS_FRAGMENTS.test(text)) return true;
+  return false;
 }

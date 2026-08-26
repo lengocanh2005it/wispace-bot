@@ -22,6 +22,15 @@ export function buildGroundingBlockedMessage(): string {
   );
 }
 
+export function buildClarificationMessage(): string {
+  return (
+    'Mình chưa rõ bạn muốn hỏi gì. Bạn có thể hỏi về:\n' +
+    '• Tiến độ học IELTS\n' +
+    '• Lịch học sắp tới\n' +
+    '• Đổi lịch học'
+  );
+}
+
 export function buildPrecreateExerciseUnavailableMessage(): string {
   return 'Hiện chưa thể tạo bài tập mới. Bạn thử lại sau ít phút nhé.';
 }
