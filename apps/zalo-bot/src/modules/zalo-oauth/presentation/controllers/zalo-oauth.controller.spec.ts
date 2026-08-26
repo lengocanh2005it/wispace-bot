@@ -117,7 +117,7 @@ describe('ZaloOauthController', () => {
     await controller.authorize('token', res);
 
     expect(res.cookie).toHaveBeenCalledWith(
-      'zalo_oauth_state',
+      '__Host-zalo_oauth_state',
       's',
       expect.objectContaining({
         httpOnly: true,
@@ -148,7 +148,9 @@ describe('ZaloOauthController', () => {
 
     const res = buildRes();
     res.clearCookie = jest.fn();
-    const req = { headers: { cookie: 'zalo_oauth_state=state-1' } };
+    const req = {
+      headers: { cookie: '__Host-zalo_oauth_state=state-1' },
+    };
     await controller.callback('auth-code', 'state-1', res, req);
 
     expect(consume).toHaveBeenCalledWith('state-1');
@@ -158,7 +160,7 @@ describe('ZaloOauthController', () => {
       'stored-link-token',
     );
     expect(res.json).toHaveBeenCalledWith({ success: true });
-    expect(res.clearCookie).toHaveBeenCalledWith('zalo_oauth_state');
+    expect(res.clearCookie).toHaveBeenCalledWith('__Host-zalo_oauth_state');
   });
 
   it('GET /callback rejects when cookie is missing (#348)', async () => {
@@ -202,7 +204,9 @@ describe('ZaloOauthController', () => {
     );
 
     const res = buildRes();
-    const req = { headers: { cookie: 'zalo_oauth_state=different-state' } };
+    const req = {
+      headers: { cookie: '__Host-zalo_oauth_state=different-state' },
+    };
     await controller.callback('auth-code', 'state-1', res, req);
 
     expect(consume).not.toHaveBeenCalled();
@@ -233,7 +237,9 @@ describe('ZaloOauthController', () => {
     );
 
     const res = buildRes();
-    const req = { headers: { cookie: 'zalo_oauth_state=state-1' } };
+    const req = {
+      headers: { cookie: '__Host-zalo_oauth_state=state-1' },
+    };
     await controller.callback('auth-code', 'state-1', res, req);
 
     const lastCall = res.json.mock.calls[res.json.mock.calls.length - 1] as
@@ -262,7 +268,9 @@ describe('ZaloOauthController', () => {
     );
 
     const res = buildRes();
-    const req = { headers: { cookie: 'zalo_oauth_state=state-1' } };
+    const req = {
+      headers: { cookie: '__Host-zalo_oauth_state=state-1' },
+    };
     await controller.callback('auth-code', 'state-1', res, req);
 
     const jsonMock = res.json;

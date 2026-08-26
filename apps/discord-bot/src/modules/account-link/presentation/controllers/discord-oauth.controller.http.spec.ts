@@ -59,7 +59,7 @@ describe('DiscordOauthController HTTP binding (#388)', () => {
     const response = await fetch(
       `${baseUrl}/discord/oauth/callback?code=auth-code&state=state-nonce`,
       {
-        headers: { cookie: 'discord_oauth_state=state-nonce' },
+        headers: { cookie: '__Host-discord_oauth_state=state-nonce' },
         redirect: 'manual',
       },
     );
@@ -89,7 +89,7 @@ describe('DiscordOauthController HTTP binding (#388)', () => {
     const response = await fetch(
       `${baseUrl}/discord/oauth/callback?code=auth-code&state=state-nonce`,
       {
-        headers: { cookie: 'discord_oauth_state=different-state' },
+        headers: { cookie: '__Host-discord_oauth_state=different-state' },
         redirect: 'manual',
       },
     );

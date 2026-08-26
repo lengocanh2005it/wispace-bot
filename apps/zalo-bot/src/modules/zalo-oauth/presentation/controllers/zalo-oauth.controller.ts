@@ -18,7 +18,7 @@ import {
   ZaloLinkTokenRejectedError,
 } from '../../application/services/zalo-link-completion.service';
 
-const OAUTH_STATE_COOKIE = 'zalo_oauth_state';
+const OAUTH_STATE_COOKIE = '__Host-zalo_oauth_state';
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes — matches state TTL
 
 @Controller('zalo/oauth')
@@ -72,7 +72,9 @@ export class ZaloOauthController {
     res.cookie(OAUTH_STATE_COOKIE, state, {
       httpOnly: true,
       secure: true,
+      // __Host- cookies are browser-enforced to Secure, no Domain, and Path=/
       sameSite: 'lax',
+      path: '/',
       maxAge: OAUTH_STATE_TTL_MS,
     });
     res.redirect(url.toString());

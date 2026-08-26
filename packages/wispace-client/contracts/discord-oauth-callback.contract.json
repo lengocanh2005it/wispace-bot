@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Deterministic fixtures for Discord OAuth callback contract",
   "callback_endpoint": "GET /v1/discord/oauth/callback",
   "query_params": {
@@ -7,8 +7,8 @@
     "state": "string (required — WISPACE link token, bound to server-side nonce via secure cookie)"
   },
   "cookie": {
-    "name": "discord_oauth_state",
-    "flags": "HttpOnly, Secure, SameSite=Lax",
+    "name": "__Host-discord_oauth_state",
+    "flags": "__Host- prefixed (browser-enforced: Secure, no Domain, Path=/), HttpOnly, Secure, SameSite=Lax",
     "purpose": "Bind browser session to server-side nonce to prevent CSRF"
   },
   "token_exchange": {
@@ -36,6 +36,7 @@
     }
   },
   "changelog": [
-    "1.0.0 — Initial contract: OAuth code+state → token exchange → user fetch → verify WISPACE token → link"
+    "1.0.0 — Initial contract: OAuth code+state → token exchange → user fetch → verify WISPACE token → link",
+    "1.1.0 — Rename state cookie to __Host-discord_oauth_state (#506)"
   ]
 }

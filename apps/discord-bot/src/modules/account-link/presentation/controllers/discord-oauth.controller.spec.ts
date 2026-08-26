@@ -81,7 +81,7 @@ describe('DiscordOauthController', () => {
       await controller.getOAuthUrl('token-abc', res);
 
       expect(res.cookie).toHaveBeenCalledWith(
-        'discord_oauth_state',
+        '__Host-discord_oauth_state',
         'state-abc',
         expect.objectContaining({
           httpOnly: true,
@@ -125,7 +125,9 @@ describe('DiscordOauthController', () => {
         redirect: jest.fn(),
         clearCookie: jest.fn(),
       } as never;
-      const req = { headers: { cookie: 'discord_oauth_state=state-nonce' } };
+      const req = {
+        headers: { cookie: '__Host-discord_oauth_state=state-nonce' },
+      };
       await controller.callback(
         'auth-code',
         'state-nonce',
@@ -139,7 +141,9 @@ describe('DiscordOauthController', () => {
         'auth-code',
         'link-token-123',
       );
-      expect(res.clearCookie).toHaveBeenCalledWith('discord_oauth_state');
+      expect(res.clearCookie).toHaveBeenCalledWith(
+        '__Host-discord_oauth_state',
+      );
     });
 
     it('rejects callback when cookie is missing (#348)', async () => {
@@ -183,7 +187,7 @@ describe('DiscordOauthController', () => {
         clearCookie: jest.fn(),
       } as never;
       const req = {
-        headers: { cookie: 'discord_oauth_state=different-state' },
+        headers: { cookie: '__Host-discord_oauth_state=different-state' },
       };
       await controller.callback(
         'auth-code',
@@ -212,7 +216,9 @@ describe('DiscordOauthController', () => {
         redirect: jest.fn(),
         clearCookie: jest.fn(),
       } as never;
-      const req = { headers: { cookie: 'discord_oauth_state=bad-state' } };
+      const req = {
+        headers: { cookie: '__Host-discord_oauth_state=bad-state' },
+      };
       await controller.callback('auth-code', 'bad-state', undefined, res, req);
 
       expect(deps.completionService.completeLink).not.toHaveBeenCalled();

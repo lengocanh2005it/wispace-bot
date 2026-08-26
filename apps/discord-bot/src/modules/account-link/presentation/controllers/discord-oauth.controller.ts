@@ -14,7 +14,7 @@ import type { Response } from 'express';
 import { DiscordLinkCompletionService } from '../../application/services/discord-link-completion.service';
 import { DiscordOauthStateService } from '../../application/services/discord-oauth-state.service';
 
-const OAUTH_STATE_COOKIE = 'discord_oauth_state';
+const OAUTH_STATE_COOKIE = '__Host-discord_oauth_state';
 const OAUTH_STATE_TTL_MS = 10 * 60 * 1000; // 10 minutes — matches state TTL
 
 /**
@@ -68,7 +68,9 @@ export class DiscordOauthController {
     res.cookie(OAUTH_STATE_COOKIE, state, {
       httpOnly: true,
       secure: true,
+      // __Host- cookies are browser-enforced to Secure, no Domain, and Path=/
       sameSite: 'lax',
+      path: '/',
       maxAge: OAUTH_STATE_TTL_MS,
     });
     res.json({ url: url.toString() });

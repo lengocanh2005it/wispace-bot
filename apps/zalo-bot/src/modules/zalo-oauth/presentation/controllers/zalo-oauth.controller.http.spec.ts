@@ -62,7 +62,7 @@ describe('ZaloOauthController HTTP binding (#388)', () => {
 
     const response = await fetch(
       `${baseUrl}/zalo/oauth/callback?code=auth-code&state=state-1`,
-      { headers: { cookie: 'zalo_oauth_state=state-1' } },
+      { headers: { cookie: '__Host-zalo_oauth_state=state-1' } },
     );
 
     expect(response.status).toBe(200);
@@ -89,7 +89,7 @@ describe('ZaloOauthController HTTP binding (#388)', () => {
   it('rejects a mismatched state cookie without consuming the state', async () => {
     const response = await fetch(
       `${baseUrl}/zalo/oauth/callback?code=auth-code&state=state-1`,
-      { headers: { cookie: 'zalo_oauth_state=different-state' } },
+      { headers: { cookie: '__Host-zalo_oauth_state=different-state' } },
     );
 
     expect(await response.json()).toEqual(
