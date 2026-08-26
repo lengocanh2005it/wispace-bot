@@ -1,0 +1,36 @@
+// Shared utilities — safety, scope, retry, text, privacy
+export {
+  CHAT_FAILURE_FALLBACK_MESSAGE,
+  buildPromptInjectionBlockedMessage,
+  buildWispaceScopeRedirectMessage,
+  buildGroundingBlockedMessage,
+  buildPrecreateExerciseUnavailableMessage,
+} from '../messages';
+export {
+  detectPromptInjection,
+  sanitizeToolResultContent,
+  sanitizeUntrustedTextForLlm,
+} from './prompt-injection.utils';
+export type { InjectionCheckResult } from './prompt-injection.utils';
+export { checkLlmGrounding } from './llm-grounding.utils';
+export type { LlmGroundingResult } from './llm-grounding.utils';
+export {
+  isOpenAiRateLimitError,
+  isOpenAiServerError,
+} from './openai-error.utils';
+export { isObviouslyOffTopic, isGreetingOnly } from './scope.utils';
+export {
+  detectPrivacyIntent,
+  isConfirmationResponse,
+  isCancellationResponse,
+  type PrivacyIntent,
+} from './privacy-intent.utils';
+export { PrivacyStateService } from './privacy-state.service';
+export { sanitizeReplyText } from './text.utils';
+export { sleep, retryWithBackoff } from './retry.utils';
+export { loadSystemPromptFile } from './load-system-prompt';
+export {
+  SYSTEM_PROMPT_LEAK_MARKERS,
+  checkFinalOutputSafety,
+  type FinalOutputSafetyResult,
+} from './final-output.utils';
