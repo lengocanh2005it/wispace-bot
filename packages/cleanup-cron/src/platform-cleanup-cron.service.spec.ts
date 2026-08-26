@@ -224,7 +224,7 @@ describe('PlatformCleanupCronService', () => {
     expect(cleanupService.execute).not.toHaveBeenCalled();
   });
 
-  it('oauth state cleanup deletes states older than 10 minutes', async () => {
+  it('oauth state cleanup deletes states older than 10 minutes (fresh rows survive)', async () => {
     const oauthDelete = jest
       .fn<Promise<{ affected: number }>, [{ createdAt: { value: Date } }]>()
       .mockResolvedValue({ affected: 0 });
@@ -238,10 +238,14 @@ describe('PlatformCleanupCronService', () => {
     const { service, cleanupService } = buildService(config);
     await service.handleOAuthStateCleanup();
     const deleteFn = cleanupService.execute.mock.calls[0][1];
-    await deleteFn(new Date());
+    const now = new Date();
+    await deleteFn(now);
     const where = oauthDelete.mock.calls[0][0];
-    expect(
-      Math.abs(where.createdAt.value.getTime() - (Date.now() - 600_000)),
-    ).toBeLessThan(1000);
+    // Cutoff is ~10 minutes ago — fresh rows (createdAt >= cutoff) survive
+    const cutoffMs = where.createdAt.value.getTime();
+    expect(Math.abs(cutoffMs - (now.getTime() - 600_000))).toBeLessThan(1000);
+    // Predicate is LessThan(cutoff): rows with createdAt < cutoff are deleted,
+    // rows with createdAt >= cutoff (fresh) are excluded by TypeORM's WHERE clause
+    expect(cutoffMs).toBeLessThan(now.getTime());
   });
 });

@@ -25,7 +25,7 @@ export interface CleanupCronJobsConfig {
     deadLetter: number;
     idempotencyRecovery: number;
     idempotencyCleanup: number;
-    /** Zalo-only 5th cron (oauth state cleanup). */
+    /** Optional oauth state cleanup (wired by Discord and Zalo). */
     oauthState?: number;
     /** Report claims retention cleanup. */
     reportClaim?: number;
@@ -33,7 +33,7 @@ export interface CleanupCronJobsConfig {
   messageLogRepo: Repository<{ createdAt: Date; platform: string }>;
   deadLetterRepo: Repository<WebhookDeadLetterEntity>;
   idempotencyRepo: Repository<ChatIdempotencyEntity>;
-  /** Zalo-only oauth state cleanup repo. */
+  /** Optional oauth state cleanup repo. */
   oauthStateRepo?: Repository<{ createdAt: Date }>;
   /** Report claims (scheduled_report_claims) retention cleanup repo. */
   reportClaimRepo?: Repository<{ createdAt: Date }>;
