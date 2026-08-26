@@ -281,9 +281,39 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
       }
     }
 
+    // #397 defense-in-depth: re-verify the mapping before staging a
+    // reschedule. This is the only tool with a destructive side-effect
+    // (staging a session on a userId) — a stale identity here means
+    // hijacking another user's calendar slot.
+    let resolvedUserId = ctx.userId!;
+    if (this.options.freshMappingProvider) {
+      try {
+        const freshUserId = await this.options.freshMappingProvider(
+          ctx.externalUserId,
+        );
+        if (freshUserId === undefined) {
+          this.logger.warn(
+            `Reschedule blocked for ${maskExternalId(ctx.externalUserId)}: no active mapping`,
+          );
+          return { error: this.options.getNotLinkedMessage() };
+        }
+        if (freshUserId !== resolvedUserId) {
+          this.logger.warn(
+            `Reschedule identity refresh for ${maskExternalId(ctx.externalUserId)}: userId ${maskExternalId(String(resolvedUserId))} → ${maskExternalId(String(freshUserId))}`,
+          );
+          resolvedUserId = freshUserId;
+        }
+      } catch (error) {
+        this.logger.error(
+          `Fresh-mapping query failed during reschedule for ${maskExternalId(ctx.externalUserId)}: ${errorMessage(error)} — rejecting to prevent stale-identity staging`,
+        );
+        return { error: this.options.getNotLinkedMessage() };
+      }
+    }
+
     const staged = await this.stagePort.stage({
       externalId: ctx.externalUserId,
-      userId: ctx.userId!,
+      userId: resolvedUserId,
       calendarId,
       schedulingMode,
       newLocalDate,

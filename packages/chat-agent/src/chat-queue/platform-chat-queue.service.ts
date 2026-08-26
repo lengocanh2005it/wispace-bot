@@ -265,6 +265,58 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    // #397: fresh-mapping revalidation — adopt the current WISPACE userId for
+    // this platform identity before running the pipeline. If the mapping is
+    // gone (user unlinked during debounce) the batch is dropped; if it changed
+    // (user relinked) the fresh value replaces the stale snapshot.
+    if (this.options.freshMappingProvider) {
+      try {
+        const freshUserId =
+          await this.options.freshMappingProvider(externalUserId);
+        if (freshUserId === undefined) {
+          this.logger.warn(
+            `Dropping batch for ${maskExternalId(externalUserId)}: no active mapping (user may have unlinked)`,
+          );
+          // Batch was claimed — always complete it even when dropping.
+          await this.queueStore!.completeChatBuffer({
+            externalUserId,
+            debounceMs: this.debounceMs,
+          });
+          return;
+        }
+        if (batch.userId !== undefined && batch.userId !== freshUserId) {
+          this.logger.warn(
+            `Stale mapping for ${maskExternalId(externalUserId)}: buffered userId=${maskExternalId(String(batch.userId))} → fresh userId=${maskExternalId(String(freshUserId))}`,
+          );
+        }
+        batch.userId = freshUserId;
+      } catch (error) {
+        // Transient infra failure — retry once, then fail-open.
+        this.logger.error(
+          `Fresh-mapping query failed for ${maskExternalId(externalUserId)}: ${errorMessage(error)}`,
+        );
+        try {
+          const retryUserId =
+            await this.options.freshMappingProvider!(externalUserId);
+          if (retryUserId === undefined) {
+            this.logger.warn(
+              `Dropping batch for ${maskExternalId(externalUserId)}: no active mapping after retry`,
+            );
+            await this.queueStore!.completeChatBuffer({
+              externalUserId,
+              debounceMs: this.debounceMs,
+            });
+            return;
+          }
+          batch.userId = retryUserId;
+        } catch (retryError) {
+          this.logger.error(
+            `Fresh-mapping retry failed for ${maskExternalId(externalUserId)}: ${errorMessage(retryError)} — proceeding with buffered userId`,
+          );
+        }
+      }
+    }
+
     try {
       if (batch.droppedNoticePending) {
         await this.sendDroppedNotice(externalUserId);

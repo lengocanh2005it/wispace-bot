@@ -651,4 +651,88 @@ describe('PlatformAgentToolsService', () => {
       expect(stagePort.stage).not.toHaveBeenCalled();
     });
   });
+
+  describe('fresh-mapping revalidation in reschedule (#397)', () => {
+    let freshMappingProvider: jest.Mock;
+    let serviceWithProvider: PlatformAgentToolsService;
+
+    beforeEach(() => {
+      freshMappingProvider = jest.fn();
+      serviceWithProvider = new PlatformAgentToolsService(
+        goalsService as unknown as WispaceGoalsService,
+        calendarService as unknown as WispaceCalendarService,
+        stagePort,
+        {
+          ...buildDiscordOptions(confirmSender),
+          freshMappingProvider,
+        },
+        exerciseClient,
+        'x-discordid',
+      );
+    });
+
+    it('blocks reschedule when fresh-mapping returns undefined (unlinked)', async () => {
+      freshMappingProvider.mockResolvedValue(undefined);
+
+      const result = await serviceWithProvider.execute(
+        'reschedule_study_session',
+        JSON.stringify({
+          calendarId: 42,
+          schedulingMode: 'default_next_day_same_time',
+        }),
+        { externalUserId: 'discord-1', userId: 143 },
+      );
+
+      expect(freshMappingProvider).toHaveBeenCalledWith('discord-1');
+      expect(result).toMatchObject({
+        error: expect.stringContaining('liên kết'),
+      });
+      expect(stagePort.stage).not.toHaveBeenCalled();
+    });
+
+    it('adopts fresh userId when mapping changed during debounce', async () => {
+      freshMappingProvider.mockResolvedValue(99);
+      stagePort.stage.mockResolvedValue({
+        pendingConfirmation: true,
+        sessionLabel: 'Ngày mai lúc 19:00',
+        summary: 'Dời buổi Ngày mai lúc 19:00 sang ngày kế tiếp cùng giờ?',
+      });
+
+      const result = await serviceWithProvider.execute(
+        'reschedule_study_session',
+        JSON.stringify({
+          calendarId: 42,
+          schedulingMode: 'default_next_day_same_time',
+        }),
+        { externalUserId: 'discord-1', userId: 143 },
+      );
+
+      expect(freshMappingProvider).toHaveBeenCalledWith('discord-1');
+      expect(stagePort.stage).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 99 }),
+      );
+      expect(result).toEqual({
+        pendingConfirmation: true,
+        sessionLabel: 'Ngày mai lúc 19:00',
+      });
+    });
+
+    it('rejects reschedule when fresh-mapping query fails (fail-closed)', async () => {
+      freshMappingProvider.mockRejectedValue(new Error('DB timeout'));
+
+      const result = await serviceWithProvider.execute(
+        'reschedule_study_session',
+        JSON.stringify({
+          calendarId: 42,
+          schedulingMode: 'default_next_day_same_time',
+        }),
+        { externalUserId: 'discord-1', userId: 143 },
+      );
+
+      expect(result).toMatchObject({
+        error: expect.stringContaining('liên kết'),
+      });
+      expect(stagePort.stage).not.toHaveBeenCalled();
+    });
+  });
 });

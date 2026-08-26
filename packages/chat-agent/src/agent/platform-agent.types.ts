@@ -173,6 +173,15 @@ export interface PlatformAgentToolsOptions {
   wispaceExternalId: (ctx: PlatformAgentToolContext) => string;
   /** Success text for `register_exam_report_notifications`. */
   registerReportMessage: string;
+  /**
+   * Defense-in-depth fresh-mapping check (#397) for destructive tools
+   * (reschedule_study_session). When present, the tool re-verifies the
+   * current mapping before staging to prevent identity-hijack from a
+   * stale queued snapshot.
+   */
+  freshMappingProvider?: (
+    externalUserId: string,
+  ) => Promise<number | undefined>;
   reschedule: {
     /** Discord validates newLocalDate/newTime; Zalo does not. */
     validateDateAndTime: boolean;
@@ -203,4 +212,15 @@ export interface PlatformChatQueueOptions {
   typingIndicator?: (externalUserId: string) => Promise<void>;
   /** When true, flush context carries `{ isServerChannel }` (Discord only). */
   propagateServerChannel?: boolean;
+  /**
+   * Fresh-mapping revalidation (#397): resolves the current WISPACE userId
+   * for the given platform externalUserId before pipeline flush. When present,
+   * the shared queue service compares the result against the buffered userId
+   * and adopts the fresh value (or drops the batch when the mapping is gone).
+   * Absent = no revalidation (legacy behavior, safe for platforms that manage
+   * their own check upstream).
+   */
+  freshMappingProvider?: (
+    externalUserId: string,
+  ) => Promise<number | undefined>;
 }

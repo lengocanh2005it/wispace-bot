@@ -39,6 +39,7 @@ import { BotCommonModule } from '@wispace/bot-common/guard';
 import { REDIS_CLIENT } from '@wispace/bot-common/redis';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
+import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
 import { ZaloChatService } from './application/services/zalo-chat.service';
@@ -269,6 +270,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         agentService: PlatformAgentService,
         outboundService: ZaloOutboundService,
         queueStore: ChatQueueStorePort,
+        accountLinkService: ZaloAccountLinkService,
       ) => {
         const adapters = createChatPipelineAdapters(
           rateLimitService,
@@ -283,7 +285,11 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           adapters.agent,
           adapters.outbound,
           outboundService,
-          {},
+          {
+            // #397: fresh-mapping revalidation before pipeline flush
+            freshMappingProvider: (externalUserId) =>
+              accountLinkService.findUserIdByZaloId(externalUserId),
+          },
           queueStore,
         );
       },
@@ -294,6 +300,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         PlatformAgentService,
         ZaloOutboundService,
         PLATFORM_CHAT_QUEUE_STORE,
+        ZaloAccountLinkService,
       ],
     },
     {

@@ -472,4 +472,242 @@ describe('PlatformChatQueueService', () => {
     };
     expect(cfg.maxPendingSize).toBe(Number.MAX_SAFE_INTEGER);
   });
+
+  describe('fresh-mapping revalidation (#397)', () => {
+    const buildDistributedService = (
+      freshMappingProvider?: (
+        externalUserId: string,
+      ) => Promise<number | undefined>,
+    ) => {
+      const queueStore = {
+        isAvailable: jest.fn().mockReturnValue(true),
+        appendChatBuffer: jest.fn().mockResolvedValue(undefined),
+        claimReadyBuffer: jest.fn(),
+        completeChatBuffer: jest.fn().mockResolvedValue(false),
+      } as unknown as ChatQueueStorePort;
+      const config = {
+        get: jest.fn((key: string) => {
+          if (key === 'CHAT_QUEUE_STORE') return 'redis';
+          if (key === 'CHAT_DEBOUNCE_MS') return '2000';
+          return undefined;
+        }),
+      } as unknown as ConfigService;
+      const rateLimit = {} as never;
+      const history = {} as never;
+      const agent = {} as never;
+      const outbound = {} as never;
+      return {
+        service: new PlatformChatQueueService(
+          config,
+          rateLimit,
+          history,
+          agent,
+          outbound,
+          { sendText: jest.fn().mockResolvedValue(undefined) },
+          { freshMappingProvider },
+          queueStore,
+        ),
+        queueStore,
+        pipeline: undefined as unknown as { flush: jest.Mock },
+      };
+    };
+
+    it('drops batch when fresh-mapping provider returns undefined (unlinked)', async () => {
+      const freshMappingProvider = jest.fn().mockResolvedValue(undefined);
+      const { service, queueStore } =
+        buildDistributedService(freshMappingProvider);
+      await service.onModuleInit();
+
+      (
+        queueStore as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue({
+        externalUserId: 'discord-1',
+        texts: ['hello'],
+        lastIdempotencyKey: 'key-1',
+        userId: 42,
+      });
+
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      await service.flushReady('discord-1');
+
+      expect(freshMappingProvider).toHaveBeenCalledWith('discord-1');
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('no active mapping'),
+      );
+      // completeChatBuffer should still be called (batch claimed → always complete)
+      expect(
+        (queueStore as { completeChatBuffer: jest.Mock }).completeChatBuffer,
+      ).toHaveBeenCalled();
+
+      warnSpy.mockRestore();
+    });
+
+    it('adopts fresh userId when mapping changed (relinked)', async () => {
+      const freshMappingProvider = jest.fn().mockResolvedValue(99);
+      const { service, queueStore } =
+        buildDistributedService(freshMappingProvider);
+      await service.onModuleInit();
+
+      const batch = {
+        externalUserId: 'zalo-1',
+        texts: ['hello'],
+        lastIdempotencyKey: 'key-2',
+        userId: 42,
+      };
+      (
+        queueStore as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue(batch);
+
+      const pipelineFlush = jest.fn().mockResolvedValue(undefined);
+      // Access the pipeline mock via the service internals
+      (service as unknown as { pipeline: { flush: jest.Mock } }).pipeline = {
+        flush: pipelineFlush,
+      };
+
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+
+      await service.flushReady('zalo-1');
+
+      expect(freshMappingProvider).toHaveBeenCalledWith('zalo-1');
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Stale mapping'),
+      );
+      // Pipeline should be called with fresh userId
+      expect(pipelineFlush).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 99 }),
+      );
+
+      warnSpy.mockRestore();
+    });
+
+    it('retries once on provider failure, then fail-open with buffered userId', async () => {
+      const freshMappingProvider = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('DB timeout'))
+        .mockResolvedValueOnce(42);
+      const { service, queueStore } =
+        buildDistributedService(freshMappingProvider);
+      await service.onModuleInit();
+
+      (
+        queueStore as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue({
+        externalUserId: 'discord-2',
+        texts: ['hi'],
+        lastIdempotencyKey: 'key-3',
+        userId: 42,
+      });
+
+      const pipelineFlush = jest.fn().mockResolvedValue(undefined);
+      (service as unknown as { pipeline: { flush: jest.Mock } }).pipeline = {
+        flush: pipelineFlush,
+      };
+
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await service.flushReady('discord-2');
+
+      expect(freshMappingProvider).toHaveBeenCalledTimes(2);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Fresh-mapping query failed'),
+      );
+      // Retry succeeded → userId adopted from retry
+      expect(pipelineFlush).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 42 }),
+      );
+
+      errorSpy.mockRestore();
+    });
+
+    it('fail-open with buffered userId when both attempts fail', async () => {
+      const freshMappingProvider = jest
+        .fn()
+        .mockRejectedValue(new Error('Redis down'));
+      const { service, queueStore } =
+        buildDistributedService(freshMappingProvider);
+      await service.onModuleInit();
+
+      (
+        queueStore as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue({
+        externalUserId: 'zalo-2',
+        texts: ['yo'],
+        lastIdempotencyKey: 'key-4',
+        userId: 77,
+      });
+
+      const pipelineFlush = jest.fn().mockResolvedValue(undefined);
+      (service as unknown as { pipeline: { flush: jest.Mock } }).pipeline = {
+        flush: pipelineFlush,
+      };
+
+      const errorSpy = jest
+        .spyOn(Logger.prototype, 'error')
+        .mockImplementation(() => undefined);
+
+      await service.flushReady('zalo-2');
+
+      expect(freshMappingProvider).toHaveBeenCalledTimes(2);
+      expect(errorSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Fresh-mapping retry failed'),
+      );
+      // Fail-open: pipeline called with original buffered userId
+      expect(pipelineFlush).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 77 }),
+      );
+
+      errorSpy.mockRestore();
+    });
+
+    it('concurrent flush + relink: no crash, consistent outcome', async () => {
+      // Simulate: provider returns 42 on first call (before relink completes),
+      // then 99 on second call (after relink). The batch should adopt whichever
+      // value the provider returns — no crash, no corrupt state.
+      let callCount = 0;
+      const freshMappingProvider = jest.fn().mockImplementation(() => {
+        callCount++;
+        return callCount === 1 ? Promise.resolve(42) : Promise.resolve(99);
+      });
+      const { service, queueStore } =
+        buildDistributedService(freshMappingProvider);
+      await service.onModuleInit();
+
+      (
+        queueStore as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue({
+        externalUserId: 'discord-race',
+        texts: ['hello during relink'],
+        lastIdempotencyKey: 'key-race',
+        userId: 42,
+      });
+
+      const pipelineFlush = jest.fn().mockResolvedValue(undefined);
+      (service as unknown as { pipeline: { flush: jest.Mock } }).pipeline = {
+        flush: pipelineFlush,
+      };
+
+      // Two concurrent flushes for the same user — each claims its own batch
+      // and calls the provider independently.
+      const [result1, result2] = await Promise.allSettled([
+        service.flushReady('discord-race'),
+        service.flushReady('discord-race'),
+      ]);
+
+      expect(result1.status).toBe('fulfilled');
+      expect(result2.status).toBe('fulfilled');
+      // Both should complete without crash
+      expect(pipelineFlush).toHaveBeenCalledTimes(2);
+      // Each should have been called with a valid userId (42 or 99, not undefined)
+      for (const call of pipelineFlush.mock.calls) {
+        expect([42, 99]).toContain(call[0].userId);
+      }
+    });
+  });
 });

@@ -23,6 +23,7 @@ import {
   LlmSafetyCleanupService,
 } from '@wispace/chat-metering';
 import { AccountLinkModule } from '../account-link/account-link.module';
+import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import { WispaceModule } from '../wispace/wispace.module';
 import {
   PlatformAgentService,
@@ -231,6 +232,7 @@ const REGISTER_REPORT_MESSAGE =
         agentService: PlatformAgentService,
         outboundService: DiscordOutboundService,
         queueStore: ChatQueueStorePort,
+        accountLinkService: DiscordAccountLinkService,
       ) => {
         const adapters = createChatPipelineAdapters(
           rateLimitService,
@@ -255,6 +257,9 @@ const REGISTER_REPORT_MESSAGE =
             typingIndicator: (externalUserId) =>
               outboundService.sendTyping(externalUserId),
             propagateServerChannel: true,
+            // #397: fresh-mapping revalidation before pipeline flush
+            freshMappingProvider: (externalUserId) =>
+              accountLinkService.findUserIdByDiscordId(externalUserId),
           },
           queueStore,
         );
@@ -266,6 +271,7 @@ const REGISTER_REPORT_MESSAGE =
         PlatformAgentService,
         DiscordOutboundService,
         PLATFORM_CHAT_QUEUE_STORE,
+        DiscordAccountLinkService,
       ],
     },
     {

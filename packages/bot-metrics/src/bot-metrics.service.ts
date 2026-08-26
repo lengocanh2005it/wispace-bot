@@ -63,6 +63,8 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmUnpricedModelTokens: Counter;
   private dbCircuitBreakerState: Gauge;
   private dbCircuitBreakerFailures: Counter;
+  private chatIdentityStaleDetected: Counter;
+  private chatRevalidationSkip: Counter;
 
   constructor(config: MetricsConfig) {
     this.prefix = config.prefix;
@@ -213,6 +215,20 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_llm_unpriced_model_tokens_total`,
       help: 'LLM tokens processed for models with no configured pricing',
       labelNames: ['model'],
+      registers: [this.registry],
+    });
+
+    this.chatIdentityStaleDetected = new Counter({
+      name: `${this.prefix}_chat_identity_stale_detected_total`,
+      help: 'Stale identity detected during chat flush revalidation (#397)',
+      labelNames: ['platform', 'outcome'],
+      registers: [this.registry],
+    });
+
+    this.chatRevalidationSkip = new Counter({
+      name: `${this.prefix}_chat_revalidation_skip_total`,
+      help: 'Fresh-mapping revalidation skipped due to infra failure (#397)',
+      labelNames: ['reason'],
       registers: [this.registry],
     });
   }
@@ -367,6 +383,16 @@ export class BotMetricsService implements OnModuleDestroy {
 
   incDbCircuitBreakerFailures(): void {
     this.dbCircuitBreakerFailures.inc();
+  }
+
+  /** Stale identity detected during flush revalidation (#397). */
+  incChatIdentityStaleDetected(platform: string, outcome: string): void {
+    this.chatIdentityStaleDetected.inc({ platform, outcome });
+  }
+
+  /** Fresh-mapping revalidation skipped due to infra failure (#397). */
+  incChatRevalidationSkip(reason: string): void {
+    this.chatRevalidationSkip.inc({ reason });
   }
 
   registerDbCircuitBreaker(breaker: {
