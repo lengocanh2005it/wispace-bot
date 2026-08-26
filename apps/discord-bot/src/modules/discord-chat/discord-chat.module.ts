@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { join } from 'path';
 import {
   CleanupCronService,
@@ -393,31 +393,38 @@ const REGISTER_REPORT_MESSAGE =
       useFactory: (
         cleanupService: CleanupCronService,
         configService: ConfigService,
+        dataSource: DataSource,
         messageLogRepo: Repository<DiscordMessageLogEntity>,
         deadLetterRepo: Repository<WebhookDeadLetterEntity>,
         idempotencyRepo: Repository<ChatIdempotencyEntity>,
         reportClaimRepo: Repository<ScheduledReportClaimEntity>,
         rateLimitService: PlatformChatRateLimitService,
       ) =>
-        new PlatformCleanupCronService(cleanupService, configService, {
-          platform: 'discord',
-          envPrefix: 'DISCORD_',
-          lockIds: {
-            messageLog: 884_200_911,
-            deadLetter: 884_200_912,
-            idempotencyRecovery: 884_200_914,
-            idempotencyCleanup: 884_200_915,
-            reportClaim: 884_200_920,
+        new PlatformCleanupCronService(
+          cleanupService,
+          configService,
+          dataSource,
+          {
+            platform: 'discord',
+            envPrefix: 'DISCORD_',
+            lockIds: {
+              messageLog: 884_200_911,
+              deadLetter: 884_200_912,
+              idempotencyRecovery: 884_200_914,
+              idempotencyCleanup: 884_200_915,
+              reportClaim: 884_200_920,
+            },
+            messageLogRepo,
+            deadLetterRepo,
+            idempotencyRepo,
+            reportClaimRepo,
+            rateLimitService,
           },
-          messageLogRepo,
-          deadLetterRepo,
-          idempotencyRepo,
-          reportClaimRepo,
-          rateLimitService,
-        }),
+        ),
       inject: [
         CleanupCronService,
         ConfigService,
+        DataSource,
         getRepositoryToken(DiscordMessageLogEntity),
         getRepositoryToken(WebhookDeadLetterEntity),
         getRepositoryToken(ChatIdempotencyEntity),

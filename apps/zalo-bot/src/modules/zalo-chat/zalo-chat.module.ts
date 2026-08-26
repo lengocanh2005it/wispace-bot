@@ -73,7 +73,7 @@ import {
 import { ZaloMessageLogEntity } from '../../infrastructure/database/entities/zalo-message-log.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 
 const NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Zalo. Liên kết tài khoản để sử dụng tính năng này nhé.';
@@ -433,6 +433,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       useFactory: (
         cleanupService: CleanupCronService,
         configService: ConfigService,
+        dataSource: DataSource,
         oauthStateRepo: Repository<ZaloOauthStateEntity>,
         messageLogRepo: Repository<ZaloMessageLogEntity>,
         deadLetterRepo: Repository<WebhookDeadLetterEntity>,
@@ -440,27 +441,33 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         reportClaimRepo: Repository<ScheduledReportClaimEntity>,
         rateLimitService: PlatformChatRateLimitService,
       ) =>
-        new PlatformCleanupCronService(cleanupService, configService, {
-          platform: 'zalo',
-          envPrefix: 'ZALO_',
-          lockIds: {
-            messageLog: 884_200_916,
-            deadLetter: 884_200_917,
-            idempotencyRecovery: 884_200_918,
-            idempotencyCleanup: 884_200_919,
-            oauthState: 884_200_913,
-            reportClaim: 884_200_921,
+        new PlatformCleanupCronService(
+          cleanupService,
+          configService,
+          dataSource,
+          {
+            platform: 'zalo',
+            envPrefix: 'ZALO_',
+            lockIds: {
+              messageLog: 884_200_916,
+              deadLetter: 884_200_917,
+              idempotencyRecovery: 884_200_918,
+              idempotencyCleanup: 884_200_919,
+              oauthState: 884_200_913,
+              reportClaim: 884_200_921,
+            },
+            messageLogRepo,
+            deadLetterRepo,
+            idempotencyRepo,
+            oauthStateRepo,
+            reportClaimRepo,
+            rateLimitService,
           },
-          messageLogRepo,
-          deadLetterRepo,
-          idempotencyRepo,
-          oauthStateRepo,
-          reportClaimRepo,
-          rateLimitService,
-        }),
+        ),
       inject: [
         CleanupCronService,
         ConfigService,
+        DataSource,
         getRepositoryToken(ZaloOauthStateEntity),
         getRepositoryToken(ZaloMessageLogEntity),
         getRepositoryToken(WebhookDeadLetterEntity),
