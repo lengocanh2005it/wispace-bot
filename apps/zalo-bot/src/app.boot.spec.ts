@@ -2,7 +2,7 @@ import { Test } from '@nestjs/testing';
 import { DataSource, Repository } from 'typeorm';
 import { AppModule } from './app.module';
 import { InternalApiKeyGuard } from '@wispace/bot-common';
-import { WispaceExerciseService } from '@wispace/wispace-client';
+import { PrecreateExerciseApiClient } from '@wispace/wispace-client';
 
 /**
  * Boot smoke test: compiles AppModule and runs app.init() so Nest resolves
@@ -69,8 +69,8 @@ describe('AppModule boot smoke', () => {
     expect(moduleRef.get(InternalApiKeyGuard)).toBeInstanceOf(
       InternalApiKeyGuard,
     );
-    expect(moduleRef.get(WispaceExerciseService)).toBeInstanceOf(
-      WispaceExerciseService,
+    expect(moduleRef.get(PrecreateExerciseApiClient)).toBeInstanceOf(
+      PrecreateExerciseApiClient,
     );
 
     const app = moduleRef.createNestApplication({ logger: false });

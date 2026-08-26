@@ -1,21 +1,31 @@
 #!/bin/sh
 set -e
 
-# Render the Telegram receiver from the template — Alertmanager has no
-# built-in env substitution, so placeholders are replaced here before start.
-# A placeholder token keeps the config loadable until a real token is set.
-TOKEN="${TELEGRAM_BOT_TOKEN:-}"
-if [ -z "$TOKEN" ]; then
-  TOKEN="0000000000:AA-PLACEHOLDER-PENDING-SETUP"
-  echo "WARNING: TELEGRAM_BOT_TOKEN is not set — alerts will not be delivered"
-fi
-# chat_id 0 is the Go zero value and fails Alertmanager validation, so the
-# fallback is -1 until a real chat id is configured.
-CHAT="${TELEGRAM_CHAT_ID:--1}"
+# Render the Alertmanager config from the template.
+# envsubst handles arbitrary secret characters safely (no delimiter corruption).
+# Fail closed: missing credentials → exit 1 → container restart loop.
 
-sed -e "s|__TELEGRAM_BOT_TOKEN__|${TOKEN}|g" \
-    -e "s|__TELEGRAM_CHAT_ID__|${CHAT}|g" \
-    /etc/alertmanager/alertmanager.tmpl > /etc/alertmanager/alertmanager.yml
+# --- Validate credentials ---
+if [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
+  echo "FATAL: TELEGRAM_BOT_TOKEN is not set — cannot start Alertmanager" >&2
+  exit 1
+fi
+
+if [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
+  echo "FATAL: TELEGRAM_CHAT_ID is not set — cannot start Alertmanager" >&2
+  exit 1
+fi
+
+# --- Check envsubst availability ---
+if ! command -v envsubst >/dev/null 2>&1; then
+  echo "FATAL: envsubst not found — install gettext package" >&2
+  exit 1
+fi
+
+# --- Render config ---
+envsubst '$TELEGRAM_BOT_TOKEN $TELEGRAM_CHAT_ID' \
+  < /etc/alertmanager/alertmanager.tmpl \
+  > /etc/alertmanager/alertmanager.yml
 
 exec /bin/alertmanager \
   --config.file=/etc/alertmanager/alertmanager.yml \

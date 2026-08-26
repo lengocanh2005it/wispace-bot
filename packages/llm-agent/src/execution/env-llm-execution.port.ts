@@ -69,11 +69,24 @@ export function createEnvLlmExecutionPort(
       return await limiter(async () => {
         let release: (() => Promise<void>) | undefined;
         if (nativeRedis) {
+          // Compose deadline + caller signal BEFORE slot acquisition so
+          // cancellation aborts the Redis retry loop and avoids holding
+          // a local p-limit slot while spinning (#364).
+          const deadlineSignal = AbortSignal.timeout(config.requestTimeoutMs);
+          const acquireSignal = meta?.signal
+            ? AbortSignal.any([meta.signal, deadlineSignal])
+            : deadlineSignal;
+
           release = await acquireRedisSlot(
             nativeRedis,
             REDIS_SLOT_KEY,
             config.globalMaxConcurrent,
             logger,
+            {
+              metrics: undefined,
+              signal: acquireSignal,
+              leaseMs: Math.max(config.requestTimeoutMs, 60_000),
+            },
           );
         }
         try {

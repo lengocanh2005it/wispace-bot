@@ -1,8 +1,14 @@
 import { createHash } from 'node:crypto';
-import { ForbiddenException, Inject, Injectable, Logger } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  Logger,
+  PayloadTooLargeException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import pLimit from 'p-limit';
-import { maskEventId } from '@wispace/bot-common';
+import { maskEventId, maskExternalId } from '@wispace/bot-common';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
@@ -21,18 +27,37 @@ import {
   routeWebhookEvent,
   RouterContext,
 } from '../messenger-webhook.router';
+import type { RefVerification } from '../types/messenger-webhook-router.types';
 import { WebhookActionExecutorService } from './webhook-action-executor.service';
 
 export { MessengerApiError } from './messenger-outbound.service';
 
+/** Maximum length for event IDs stored in varchar(255) DB columns. */
+export const MAX_EVENT_ID_LENGTH = 255;
+
+/** Maximum length for idempotency keys stored in varchar(128) DB columns. */
+export const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
+
 /** Stable per-delivery event id for the durable inbox. */
-function buildEventId(event: MessengerWebhookEvent, psid: string): string {
+export function buildEventId(
+  event: MessengerWebhookEvent,
+  psid: string,
+): string {
   if (event.message?.mid) {
     return event.message.mid;
   }
   if (event.timestamp !== undefined) {
     if (event.postback?.payload) {
-      return `pb:${psid}:${event.postback.payload}:${event.timestamp}`;
+      const raw = `pb:${psid}:${event.postback.payload}:${event.timestamp}`;
+      if (raw.length <= MAX_EVENT_ID_LENGTH) {
+        return raw;
+      }
+      // Bound long payloads: hash the payload to fit within varchar(255)
+      const payloadHash = createHash('sha256')
+        .update(event.postback.payload)
+        .digest('hex')
+        .slice(0, 32);
+      return `pb:${psid}:${payloadHash}:${event.timestamp}`;
     }
     return `evt:${psid}:${event.timestamp}`;
   }
@@ -40,6 +65,22 @@ function buildEventId(event: MessengerWebhookEvent, psid: string): string {
     .update(canonicalize({ psid, event }))
     .digest('hex');
   return `${event.postback?.payload ? 'pb' : 'evt'}:${fingerprint}`;
+}
+
+/**
+ * Deterministic idempotency key for chat rate limiting, bounded to
+ * varchar(128). Uses SHA-256 for collision resistance within the limit.
+ */
+export function buildIdempotencyKey(
+  event: MessengerWebhookEvent,
+  psid: string,
+): string {
+  const raw = buildEventId(event, psid);
+  if (raw.length <= MAX_IDEMPOTENCY_KEY_LENGTH) {
+    return raw;
+  }
+  const hash = createHash('sha256').update(raw).digest('hex').slice(0, 32);
+  return `idem:${hash}`;
 }
 
 function canonicalize(value: unknown): string {
@@ -101,13 +142,37 @@ export class MessengerService {
     accepted: number;
     duplicates: number;
   }> {
+    // Count entries BEFORE flatten to reject oversized batches early (#365).
+    // The DTO permits up to 50 entries × 500 events, but the service default
+    // accepts only 50 total events. Reject before per-event logging or
+    // construction of the full ingestion work list.
+    const maxBatchSize = this.configService.get<number>(
+      'WEBHOOK_MAX_BATCH_SIZE',
+      50,
+    );
+    const entries = Array.isArray(payload.entry) ? payload.entry : [];
+    let totalEventCount = 0;
+    for (const entry of entries) {
+      if (Array.isArray(entry.messaging)) {
+        totalEventCount += entry.messaging.length;
+      }
+    }
+    if (totalEventCount > maxBatchSize) {
+      this.logger.warn(
+        `Webhook batch rejected: ${totalEventCount} events exceeds limit ${maxBatchSize}`,
+      );
+      throw new PayloadTooLargeException(
+        `Batch size ${totalEventCount} exceeds limit ${maxBatchSize}`,
+      );
+    }
+
     // Flatten all events from the batch for parallel ingestion (#155).
     const events: Array<{
       event: MessengerWebhookEvent;
       eventId: string;
     }> = [];
 
-    for (const entry of Array.isArray(payload.entry) ? payload.entry : []) {
+    for (const entry of entries) {
       for (const event of Array.isArray(entry.messaging)
         ? entry.messaging
         : []) {
@@ -202,7 +267,7 @@ export class MessengerService {
     for (const action of actions) {
       const actionForExecution =
         action.type === 'enqueue_chat' && !action.idempotencyKey
-          ? { ...action, idempotencyKey: buildEventId(event, psid) }
+          ? { ...action, idempotencyKey: buildIdempotencyKey(event, psid) }
           : action;
 
       if (
@@ -241,23 +306,77 @@ export class MessengerService {
     const shouldEnforceRateLimit =
       this.chatRateLimitConfig.shouldEnforceForPsid(psid);
 
-    let linkContext: RouterContext['linkContext'] = undefined;
+    // #383: verify an event-carried ref exactly once, for every Meta shape
+    // (opt-in, top-level referral, postback referral, message referral). The
+    // token is single-use — downstream link actions reuse the verified
+    // context instead of re-submitting it.
+    let refVerification: RefVerification | undefined;
+    const ref = extractRefFromEvent(event);
+    if (ref) {
+      refVerification = await this.verifyEventRef(
+        psid,
+        event,
+        ref,
+        existingMapping,
+      );
+    }
 
-    if (!event.optin && !event.referral?.ref) {
-      const resolved = await this.resolveLinkContextFromMapping(
+    let linkContext: RouterContext['linkContext'];
+    if (refVerification?.status === 'verified') {
+      linkContext = refVerification.context;
+    } else {
+      linkContext = await this.resolveLinkContextFromMapping(
         psid,
         existingMapping,
       );
-      if (resolved) {
-        linkContext = resolved;
-      }
     }
 
     return {
-      userId: existingMapping?.userId,
-      linkContext,
+      userId:
+        refVerification?.status === 'verified'
+          ? refVerification.context?.userId
+          : existingMapping?.userId,
+      linkContext: linkContext ?? undefined,
       shouldEnforceRateLimit,
+      refVerification,
     };
+  }
+
+  private async verifyEventRef(
+    psid: string,
+    event: MessengerWebhookEvent,
+    ref: string,
+    existingMapping: UserMessengerMapping | null,
+  ): Promise<RefVerification> {
+    const outcome = await this.messengerLinkContextService.resolveFromRef(
+      psid,
+      {
+        ref,
+        topic: event.optin?.topic,
+        cadence: event.optin?.frequency,
+      },
+    );
+
+    if (outcome.verifyFailureReason) {
+      return { status: 'failed', failureReason: outcome.verifyFailureReason };
+    }
+    if (!outcome.context) {
+      // resolveFromRef returns a context or a failure reason; treat the
+      // impossible remainder as a generic verification failure.
+      return { status: 'failed', failureReason: 'NOT_FOUND' };
+    }
+    if (
+      existingMapping?.userId != null &&
+      existingMapping.userId !== outcome.context.userId
+    ) {
+      this.logger.warn(
+        `REF_LINK_BLOCKED psid=${maskExternalId(psid)} mappedUser=${maskExternalId(
+          String(existingMapping.userId),
+        )} refUser=${maskExternalId(String(outcome.context.userId))}`,
+      );
+      return { status: 'blocked' };
+    }
+    return { status: 'verified', context: outcome.context };
   }
 
   private async resolveLinkContextFromMapping(
@@ -282,6 +401,17 @@ export class MessengerService {
     event: MessengerWebhookEvent,
     preResolved?: RouterContext,
   ): Promise<MessengerLinkContext | undefined> {
+    // #383: the ref (if any) was verified once during pre-resolve — honor
+    // that outcome instead of re-submitting a single-use token.
+    const rv = preResolved?.refVerification;
+    if (rv) {
+      if (rv.status === 'verified') {
+        return rv.context ?? preResolved?.linkContext ?? undefined;
+      }
+      // blocked/failed → identity stays with the active mapping.
+      return preResolved?.linkContext ?? undefined;
+    }
+
     const ref = extractRefFromEvent(event);
     if (ref) {
       const outcome = await this.messengerLinkContextService.resolveFromRef(

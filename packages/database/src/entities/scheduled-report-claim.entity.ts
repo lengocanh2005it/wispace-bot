@@ -26,42 +26,42 @@ import type {
 @Index('idx_scheduled_report_claims_created_at', ['createdAt'])
 export class ScheduledReportClaimEntity {
   @PrimaryGeneratedColumn()
-  id: number;
+  id!: number;
 
   @Column({ type: 'varchar', length: 16, default: 'messenger' })
-  platform: Platform;
+  platform!: Platform;
 
   @Column({ name: 'external_user_id', type: 'varchar', length: 64 })
-  externalUserId: string;
+  externalUserId!: string;
 
   @Column({ name: 'report_date', type: 'date' })
-  reportDate: string;
+  reportDate!: string;
 
   @Column({ name: 'user_id', type: 'int', nullable: true })
-  userId: number | null;
+  userId!: number | null;
 
   @Column({ type: 'varchar', length: 20, default: 'claimed' })
-  status: ScheduledReportClaimStatus;
+  status!: ScheduledReportClaimStatus;
 
   @Column({ name: 'lease_token', type: 'uuid', nullable: true })
-  leaseToken: string | null;
+  leaseToken!: string | null;
 
   @Column({ name: 'lease_expires_at', type: 'timestamptz', nullable: true })
-  leaseExpiresAt: Date | null;
+  leaseExpiresAt!: Date | null;
 
   /**
    * Platform message_id after successful send. Non-null means the message
    * was delivered — on re-claim after crash, skip re-send (#181).
    */
   @Column({ name: 'delivery_record', type: 'text', nullable: true })
-  deliveryRecord: string | null;
+  deliveryRecord!: string | null;
 
   /**
    * Stable idempotency key for crash-safe delivery — persisted before
    * calling the provider, reused on retry to deduplicate (#294).
    */
   @Column({ name: 'delivery_key', type: 'text', nullable: true })
-  deliveryKey: string | null;
+  deliveryKey!: string | null;
 
   /** Explicit delivery outcome: sent | ambiguous | not_sent (#294). */
   @Column({
@@ -70,7 +70,7 @@ export class ScheduledReportClaimEntity {
     length: 20,
     nullable: true,
   })
-  deliveryStatus: OutboundDeliveryOutcome | null;
+  deliveryStatus!: OutboundDeliveryOutcome | null;
 
   /** Timestamp when the current processing attempt started (#294). */
   @Column({
@@ -78,11 +78,11 @@ export class ScheduledReportClaimEntity {
     type: 'timestamptz',
     nullable: true,
   })
-  processingStartedAt: Date | null;
+  processingStartedAt!: Date | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
-  updatedAt: Date;
+  updatedAt!: Date;
 }

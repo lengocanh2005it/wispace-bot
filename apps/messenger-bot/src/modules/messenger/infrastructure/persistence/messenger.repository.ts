@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Not, Repository } from 'typeorm';
+import { Not, Repository } from 'typeorm';
 import { buildPocPsidToken } from '@messenger/shared/config/poc.constants';
 import {
   MessageLogEntity,
@@ -68,7 +68,7 @@ export class MessengerRepository
     userId: number;
     topic?: string;
     cadence?: NotificationCadence;
-  }): Promise<UserMessengerMapping> {
+  }): Promise<UserMessengerMapping | null> {
     const token = buildPocPsidToken(params.psid);
 
     // 1. Re-activate a previously deactivated mapping (keeps its id) — the
@@ -121,6 +121,9 @@ export class MessengerRepository
           cadence = COALESCE(EXCLUDED.cadence, user_platform_mappings.cadence),
           status = 'ACTIVE',
           updated_at = now()
+        -- #383 CAS guard: skip update when concurrent write changed the userId,
+        -- preventing a check-then-write race from bypassing the relink policy.
+        WHERE user_platform_mappings.user_id = EXCLUDED.user_id
         RETURNING *
       `,
         [
@@ -132,6 +135,12 @@ export class MessengerRepository
           params.cadence ?? null,
         ],
       );
+
+    // #383: CAS guard may have blocked the update when a concurrent write
+    // changed the userId — RETURNING yields no rows.
+    if (rows.length === 0) {
+      return null;
+    }
 
     return this.mapEntity(this.mapRawRow(rows[0]));
   }
@@ -183,6 +192,13 @@ export class MessengerRepository
   }
 
   async findActiveSubscribedMappings(): Promise<UserMessengerMapping[]> {
+    return this.findActiveSubscribedMappingsPage(0, Number.MAX_SAFE_INTEGER);
+  }
+
+  async findActiveSubscribedMappingsPage(
+    afterId: number,
+    limit: number,
+  ): Promise<UserMessengerMapping[]> {
     const rows = await this.mappingRepo
       .createQueryBuilder('mapping')
       .select([
@@ -197,7 +213,9 @@ export class MessengerRepository
       .andWhere('mapping.platform = :platform', { platform: PLATFORM })
       .andWhere('mapping.cadence IS NOT NULL')
       .andWhere('mapping.topic IS NOT NULL')
-      .orderBy('mapping.id', 'DESC')
+      .andWhere('mapping.id > :afterId', { afterId })
+      .orderBy('mapping.id', 'ASC')
+      .take(limit)
       .getMany();
 
     return this.dedupeMappingsByPsid(rows.map((row) => this.mapEntity(row)));
@@ -369,12 +387,34 @@ export class MessengerRepository
   }
 
   async deleteMessageLogsOlderThan(cutoff: Date): Promise<number> {
-    const result = await this.logRepo.delete({
-      platform: PLATFORM,
-      createdAt: LessThan(cutoff),
-    });
+    const BATCH_SIZE = 1000;
+    let totalDeleted = 0;
 
-    return result.affected ?? 0;
+    for (;;) {
+      const ids: Array<{ id: number }> = await this.logRepo.query(
+        `SELECT id FROM message_logs
+         WHERE "platform" = $1 AND "created_at" < $2
+         LIMIT $3`,
+        [PLATFORM, cutoff, BATCH_SIZE],
+      );
+
+      if (ids.length === 0) break;
+
+      const result = await this.logRepo
+        .createQueryBuilder()
+        .delete()
+        .from(MessageLogEntity)
+        .where('id IN (:...ids)', { ids: ids.map((r) => r.id) })
+        .execute();
+
+      totalDeleted += result.affected ?? 0;
+
+      if (ids.length < BATCH_SIZE) {
+        break;
+      }
+    }
+
+    return totalDeleted;
   }
 
   async tryClaimScheduledReport(

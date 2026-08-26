@@ -27,10 +27,8 @@ import { MessengerReportModule } from './messenger-report.module';
 import { MessengerController } from './presentation/controllers/messenger.controller';
 import { ChatPipelineModule } from './chat-pipeline.module';
 import { UserLinkingModule } from './user-linking.module';
-import { MessengerCalendarPort } from './infrastructure/adapters/messenger-calendar.port';
-import { MessengerReschedulePort } from './infrastructure/adapters/messenger-reschedule.port';
-import { MessengerWebhookInboundAdapter } from './infrastructure/persistence/messenger-webhook-inbound.adapter';
 import { WEBHOOK_INBOUND_EVENTS_PORT } from './domain/repositories/webhook-inbound-events.port';
+import type { WebhookInboundEventsPort } from './domain/repositories/webhook-inbound-events.port';
 import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
 import { MetricsService } from '../metrics/metrics.service';
 
@@ -67,10 +65,14 @@ import { MetricsService } from '../metrics/metrics.service';
         new PlatformWebhookInboundEventService('messenger', repo),
       inject: [getRepositoryToken(WebhookInboundEventEntity)],
     },
-    MessengerWebhookInboundAdapter,
     {
       provide: WEBHOOK_INBOUND_EVENTS_PORT,
-      useExisting: MessengerWebhookInboundAdapter,
+      useFactory: (
+        inboundEvents: PlatformWebhookInboundEventService,
+      ): WebhookInboundEventsPort => ({
+        ingest: (input) => inboundEvents.ingest(input),
+      }),
+      inject: [PlatformWebhookInboundEventService],
     },
     {
       provide: PlatformWebhookInboundRetryCronService,
@@ -123,17 +125,9 @@ import { MetricsService } from '../metrics/metrics.service';
         PgAdvisoryLockService,
       ],
     },
-    MessengerCalendarPort,
-    MessengerReschedulePort,
     MessengerReminderDeliveryService,
     WebhookActionExecutorService,
   ],
-  exports: [
-    MessengerOutboundModule,
-    MessengerService,
-    MessengerCalendarPort,
-    MessengerReschedulePort,
-    UserLinkingModule,
-  ],
+  exports: [MessengerOutboundModule, MessengerService, UserLinkingModule],
 })
 export class MessengerModule {}

@@ -3,6 +3,7 @@ import { errorMessage } from '@wispace/bot-common';
 import {
   LlmUsageRecorderCore,
   type UsageWriterPort,
+  type LlmUsageRecorderMetrics,
 } from '@wispace/chat-metering';
 import type {
   RecordLlmUsageFromCompletionInput,
@@ -13,6 +14,7 @@ import {
   type LlmUsageRepositoryPort,
 } from '../../domain/repositories/llm-usage.repository.port';
 import { LlmUsageConfigService } from './llm-usage-config.service';
+import { MetricsService } from '@messenger/modules/metrics/metrics.service';
 
 @Injectable()
 export class LlmUsageRecorderService {
@@ -23,6 +25,7 @@ export class LlmUsageRecorderService {
     private readonly configService: LlmUsageConfigService,
     @Inject(LLM_USAGE_REPOSITORY)
     private readonly repository: LlmUsageRepositoryPort,
+    private readonly metrics: MetricsService,
   ) {}
 
   isEnabled(): boolean {
@@ -72,6 +75,7 @@ export class LlmUsageRecorderService {
             error,
           )}`,
         );
+        this.metrics.incLlmUsageInsertFailure('db_error');
       });
   }
 
@@ -116,8 +120,19 @@ export class LlmUsageRecorderService {
           ),
         () => this.configService.todayUsageDate(),
         { warn: (m) => this.logger.warn(m) },
+        this.buildMetrics(),
       );
     }
     return this.core;
+  }
+
+  private buildMetrics(): LlmUsageRecorderMetrics {
+    return {
+      incMissingTokens: (feature) => this.metrics.incLlmMissingTokens(feature),
+      incUnpricedModelTokens: (model) =>
+        this.metrics.incLlmUnpricedModelTokens(model),
+      incInsertFailure: (reason) =>
+        this.metrics.incLlmUsageInsertFailure(reason),
+    };
   }
 }

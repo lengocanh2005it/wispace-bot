@@ -67,6 +67,7 @@ function buildService(config: CleanupCronJobsConfig): {
   service: PlatformCleanupCronService;
   cleanupService: { execute: ExecuteMock };
   configService: ConfigService;
+  dataSource: { query: jest.Mock };
 } {
   const execute = jest
     .fn<
@@ -83,12 +84,14 @@ function buildService(config: CleanupCronJobsConfig): {
   const configService = {
     get: jest.fn(() => undefined),
   } as never as ConfigService;
+  const dataSource = { query: jest.fn().mockResolvedValue([]) };
   const service = new PlatformCleanupCronService(
     cleanupService,
     configService,
+    dataSource as never,
     config,
   );
-  return { service, cleanupService: { execute }, configService };
+  return { service, cleanupService: { execute }, configService, dataSource };
 }
 
 describe('PlatformCleanupCronService', () => {
@@ -132,44 +135,65 @@ describe('PlatformCleanupCronService', () => {
     });
   });
 
-  it('scopes message log deletion to the configured platform', async () => {
-    const messageDelete = jest
-      .fn<Promise<{ affected: number }>, [unknown]>()
-      .mockResolvedValue({ affected: 0 });
-    const config = buildConfig({
-      messageLogRepo: { delete: messageDelete } as never,
-    });
-    const { service, cleanupService } = buildService(config);
-
+  it('message log cleanup uses bounded-batch delete', async () => {
+    const { service, cleanupService, dataSource } = buildService(buildConfig());
     await service.handleMessageLogCleanup();
     const deleteFn = cleanupService.execute.mock.calls[0]?.[1];
     const cutoff = new Date('2026-08-18T00:00:00.000Z');
-    await deleteFn?.(cutoff);
 
-    const criteria = messageDelete.mock.calls[0]?.[0] as
-      | { platform?: string; createdAt?: { value?: Date } }
-      | undefined;
-    expect(criteria?.platform).toBe('discord');
-    expect(criteria?.createdAt?.value).toBe(cutoff);
+    // First call: select IDs (empty → loop exits immediately)
+    dataSource.query.mockResolvedValueOnce([]);
+    const deleted = await deleteFn?.(cutoff);
+
+    expect(deleted).toBe(0);
+    expect(dataSource.query).toHaveBeenCalledWith(
+      expect.stringContaining('SELECT id FROM message_logs'),
+      ['discord', cutoff, 1000],
+    );
   });
 
-  it('uses an explicit status predicate for dead-letter deletion', async () => {
-    const deadLetterDelete = jest
-      .fn<Promise<{ affected: number }>, [unknown]>()
-      .mockResolvedValue({ affected: 0 });
-    const config = buildConfig({
-      deadLetterRepo: { delete: deadLetterDelete } as never,
-    });
-    const { service, cleanupService } = buildService(config);
+  it('message log cleanup iterates multiple batches', async () => {
+    const { service, cleanupService, dataSource } = buildService(buildConfig());
+    await service.handleMessageLogCleanup();
+    const deleteFn = cleanupService.execute.mock.calls[0]?.[1];
 
+    // Batch 1: 1000 IDs → delete returns 1000
+    dataSource.query
+      .mockResolvedValueOnce(
+        Array.from({ length: 1000 }, (_, i) => ({ id: i + 1 })),
+      )
+      .mockResolvedValueOnce({ rowCount: 1000 })
+      // Batch 2: 500 IDs → delete returns 500, loop stops
+      .mockResolvedValueOnce(
+        Array.from({ length: 500 }, (_, i) => ({ id: i + 1001 })),
+      )
+      .mockResolvedValueOnce({ rowCount: 500 })
+      // Batch 3: 0 IDs → loop exits
+      .mockResolvedValueOnce([]);
+
+    const deleted = await deleteFn?.(new Date());
+    expect(deleted).toBe(1500);
+  });
+
+  it('dead-letter cleanup uses bounded-batch delete with platform scope', async () => {
+    const { service, cleanupService, dataSource } = buildService(buildConfig());
     await service.handleDeadLetterCleanup();
     const deleteFn = cleanupService.execute.mock.calls[0]?.[1];
-    await deleteFn?.(new Date('2026-08-18T00:00:00.000Z'));
+    const cutoff = new Date('2026-08-18T00:00:00.000Z');
 
-    const criteria = deadLetterDelete.mock.calls[0]?.[0] as
-      | { status?: { value?: string[] } }
-      | undefined;
-    expect(criteria?.status?.value).toEqual(['replayed', 'abandoned']);
+    dataSource.query.mockResolvedValueOnce([]);
+    const deleted = await deleteFn?.(cutoff);
+
+    expect(deleted).toBe(0);
+    expect(dataSource.query).toHaveBeenCalledWith(
+      expect.stringContaining('SELECT id FROM webhook_dead_letters'),
+      ['discord', cutoff, 1000],
+    );
+    // Verify the WHERE clause includes platform, status, and created_at
+    const sql = dataSource.query.mock.calls[0]?.[0] as string;
+    expect(sql).toContain("'replayed','abandoned'");
+    expect(sql).toContain('"platform"');
+    expect(sql).toContain('"created_at"');
   });
 
   it('skips idempotency recovery when rate limiting is disabled', async () => {

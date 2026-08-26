@@ -10,33 +10,33 @@ import { Column, Entity, PrimaryColumn } from 'typeorm';
 @Entity('learner_profiles')
 export class LearnerProfileEntity {
   @PrimaryColumn({ type: 'varchar', length: 16 })
-  platform: string;
+  platform!: string;
 
   @PrimaryColumn({ name: 'external_user_id', type: 'varchar', length: 128 })
-  externalUserId: string;
+  externalUserId!: string;
 
   /** WISPACE userId when the account is linked (nullable before linking). */
   @Column({ name: 'user_id', type: 'int', nullable: true })
-  userId: number | null;
+  userId!: number | null;
 
   /** Band target (e.g. 7.0) — from `get_user_goals`. */
   @Column({ name: 'target_score', type: 'double precision', nullable: true })
-  targetScore: number | null;
+  targetScore!: number | null;
 
   @Column({
     name: 'target_score_fetched_at',
     type: 'timestamptz',
     nullable: true,
   })
-  targetScoreFetchedAt: Date | null;
+  targetScoreFetchedAt!: Date | null;
 
   /** Exam date `YYYY-MM-DD` — from `get_user_goals`. */
   @Column({ name: 'exam_date', type: 'varchar', length: 20, nullable: true })
-  examDate: string | null;
+  examDate!: string | null;
 
   @Column({ name: 'exam_date_fetched_at', type: 'timestamptz', nullable: true })
-  examDateFetchedAt: Date | null;
+  examDateFetchedAt!: Date | null;
 
   @Column({ name: 'updated_at', type: 'timestamptz' })
-  updatedAt: Date;
+  updatedAt!: Date;
 }

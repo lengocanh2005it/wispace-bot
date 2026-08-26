@@ -14,6 +14,11 @@ import {
   buildChatMissingMidMessage,
   buildUnsupportedMessageTypeReply,
 } from './messages/chat-delivery.messages';
+import {
+  buildMappingRelinkBlockedMessage,
+  buildMessengerLinkVerifyFailedMessage,
+} from './messages/messenger-link.messages';
+import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 
 const intentDetector = new IntentDetector();
 
@@ -24,6 +29,8 @@ export type WebhookAction =
       ref: string;
       topic?: string;
       cadence?: string;
+      /** Pre-verified context (#383) — executor skips re-verification. */
+      context?: MessengerLinkContext;
     }
   | {
       type: 'enqueue_chat';
@@ -108,25 +115,74 @@ export function routeWebhookEvent(
     return [{ type: 'ignore' }];
   }
 
+  const refVerification = ctx.refVerification;
+
+  // #383: one verified-link pipeline. Notices for blocked/failed refs are
+  // emitted once per event for every Meta shape; link_user reuses the
+  // pre-verified context so the single-use token is never submitted twice.
+  const noticeActions: WebhookAction[] = [];
+  if (refVerification?.status === 'blocked') {
+    noticeActions.push({
+      type: 'send_text',
+      psid,
+      userId: ctx.userId,
+      text: buildMappingRelinkBlockedMessage(),
+      messageType: 'MAPPING_RELINK_BLOCKED',
+    });
+  } else if (refVerification?.status === 'failed') {
+    noticeActions.push({
+      type: 'send_text',
+      psid,
+      text: buildMessengerLinkVerifyFailedMessage(
+        refVerification.failureReason ?? 'NOT_FOUND',
+      ),
+      messageType: 'MESSENGER_LINK_VERIFY_FAILED',
+    });
+  }
+
+  const linkAction: WebhookAction | undefined =
+    refVerification?.status === 'verified' && refVerification.context
+      ? {
+          type: 'link_user',
+          psid,
+          ref: refVerification.context.ref,
+          topic: event.optin?.topic,
+          cadence: event.optin?.frequency,
+          context: refVerification.context,
+        }
+      : undefined;
+
+  const withRefActions = (actions: WebhookAction[]): WebhookAction[] => [
+    ...(linkAction ? [linkAction] : []),
+    ...noticeActions,
+    ...actions,
+  ];
+
   // --- Optin ---
   if (event.optin) {
     const ref = extractRefFromEvent(event);
-    if (ref) {
-      return [
-        {
-          type: 'link_user',
-          psid,
-          ref,
-          topic: event.optin.topic,
-          cadence: event.optin.frequency,
-        },
-      ];
+    if (!ref) {
+      return [{ type: 'ignore' }];
     }
-    return [{ type: 'ignore' }];
+    if (refVerification) {
+      return linkAction ? [linkAction] : noticeActions;
+    }
+    return [
+      {
+        type: 'link_user',
+        psid,
+        ref,
+        topic: event.optin.topic,
+        cadence: event.optin.frequency,
+      },
+    ];
   }
 
   // --- Referral only (no postback, no text) ---
   if (event.referral?.ref && !event.postback && !event.message?.text) {
+    if (refVerification) {
+      return linkAction ? [linkAction] : noticeActions;
+    }
     return [
       {
         type: 'link_user',
@@ -140,22 +196,22 @@ export function routeWebhookEvent(
 
   // --- Postback ---
   if (event.postback?.payload) {
-    return routePostback(psid, event.postback.payload, ctx);
+    return withRefActions(routePostback(psid, event.postback.payload, ctx));
   }
 
   // --- Text message ---
   if (event.message?.text) {
-    return routeTextMessage(psid, event.message, ctx);
+    return withRefActions(routeTextMessage(psid, event.message, ctx));
   }
 
   // --- Unsupported message (sticker/attachment, no text) ---
   if (event.message && !event.message.is_echo) {
     if (isUnsupportedUserMessage(event.message)) {
-      return routeUnsupportedMessage(psid, event.message, ctx);
+      return withRefActions(routeUnsupportedMessage(psid, event.message, ctx));
     }
   }
 
-  return [{ type: 'ignore' }];
+  return noticeActions.length > 0 ? noticeActions : [{ type: 'ignore' }];
 }
 
 function routeTextMessage(
@@ -170,6 +226,11 @@ function routeTextMessage(
   const messageMid = message.mid;
 
   if (!ctx.userId) {
+    if (ctx.refVerification?.status === 'failed') {
+      // The verify-failed notice was already emitted for this event (#383);
+      // a MISSING_USER_REF reply would duplicate the same instruction.
+      return [];
+    }
     return [
       {
         type: 'send_text',
@@ -258,6 +319,10 @@ function routePostback(
     payload === 'REGISTER_LEARNING_REPORT'
   ) {
     if (!context) {
+      if (ctx.refVerification?.status === 'failed') {
+        // Verify-failed notice already emitted (#383) — no duplicate reply.
+        return [];
+      }
       return [
         {
           type: 'send_text',

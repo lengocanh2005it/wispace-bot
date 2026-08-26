@@ -50,8 +50,9 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
       cadence: 'weekly',
     });
 
-    expect(result.psid).toBe('psid-1');
-    expect(result.userId).toBe(143);
+    expect(result).not.toBeNull();
+    expect(result!.psid).toBe('psid-1');
+    expect(result!.userId).toBe(143);
     expect(managerQuery).toHaveBeenNthCalledWith(
       1,
       expect.stringContaining('UPDATE user_platform_mappings'),
@@ -64,6 +65,22 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
       ),
       expect.any(Array),
     );
+  });
+
+  it('returns null when CAS guard blocks the update (#383)', async () => {
+    const { repo, managerQuery } = buildRepo();
+    managerQuery
+      .mockResolvedValueOnce([]) // UPDATE INACTIVE (no-op)
+      .mockResolvedValueOnce([]); // CAS guard blocked — RETURNING empty
+
+    const result = await repo.upsertPsidUserLink({
+      psid: 'psid-1',
+      userId: 99,
+      topic: 'ielts',
+      cadence: 'weekly',
+    });
+
+    expect(result).toBeNull();
   });
 });
 
@@ -250,25 +267,53 @@ describe('MessengerRepository scheduled report lease ownership', () => {
 });
 
 describe('MessengerRepository.deleteMessageLogsOlderThan', () => {
-  it('scopes message log deletion to Messenger', async () => {
-    const logDelete = jest
-      .fn<Promise<{ affected: number }>, [unknown]>()
-      .mockResolvedValue({ affected: 2 });
+  it('scopes message log deletion to Messenger using bounded batch', async () => {
+    const queryMock = jest.fn().mockResolvedValueOnce([{ id: 1 }, { id: 2 }]);
+    const deleteExecuteMock = jest.fn().mockResolvedValue({ affected: 2 });
+    const deleteWhereMock = jest.fn(() => ({
+      execute: deleteExecuteMock,
+    }));
     const mappingRepo = {} as unknown as Repository<UserPlatformMappingEntity>;
     const logRepo = {
-      delete: logDelete,
+      query: queryMock,
+      createQueryBuilder: jest.fn(() => ({
+        delete: () => ({
+          from: () => ({ where: deleteWhereMock }),
+        }),
+      })),
     } as unknown as Repository<MessageLogEntity>;
     const claimRepo = {} as unknown as Repository<ScheduledReportClaimEntity>;
     const repo = new MessengerRepository(mappingRepo, logRepo, claimRepo);
     const cutoff = new Date('2026-08-18T00:00:00.000Z');
 
-    await repo.deleteMessageLogsOlderThan(cutoff);
+    const deleted = await repo.deleteMessageLogsOlderThan(cutoff);
 
-    const criteria = logDelete.mock.calls[0]?.[0] as
-      | { platform?: string; createdAt?: { value?: Date } }
-      | undefined;
-    expect(criteria?.platform).toBe('messenger');
-    expect(criteria?.createdAt?.value).toBe(cutoff);
+    expect(deleted).toBe(2);
+    // Verify the SELECT query uses bounded batch with platform scope
+    expect(queryMock).toHaveBeenCalledWith(
+      expect.stringContaining('SELECT id FROM message_logs'),
+      ['messenger', cutoff, 1000],
+    );
+    // Verify the DELETE uses the returned IDs
+    expect(deleteWhereMock).toHaveBeenCalledWith('id IN (:...ids)', {
+      ids: [1, 2],
+    });
+  });
+
+  it('returns 0 when no matching rows exist', async () => {
+    const queryMock = jest.fn().mockResolvedValueOnce([]);
+    const mappingRepo = {} as unknown as Repository<UserPlatformMappingEntity>;
+    const logRepo = {
+      query: queryMock,
+      createQueryBuilder: jest.fn(),
+    } as unknown as Repository<MessageLogEntity>;
+    const claimRepo = {} as unknown as Repository<ScheduledReportClaimEntity>;
+    const repo = new MessengerRepository(mappingRepo, logRepo, claimRepo);
+
+    const deleted = await repo.deleteMessageLogsOlderThan(new Date());
+
+    expect(deleted).toBe(0);
+    expect(logRepo.createQueryBuilder).not.toHaveBeenCalled();
   });
 });
 
@@ -356,6 +401,19 @@ describe('MessengerRepository platform-scoped user lookups (#191)', () => {
 
     await repo.findActiveSubscribedMappings();
 
+    expect(andWhere).toHaveBeenCalledWith('mapping.platform = :platform', {
+      platform: 'messenger',
+    });
+  });
+
+  it('scopes findActiveSubscribedMappingsPage with keyset cursor', async () => {
+    const { repo, andWhere } = buildRepoWithQueryBuilder();
+
+    await repo.findActiveSubscribedMappingsPage(100, 500);
+
+    expect(andWhere).toHaveBeenCalledWith('mapping.id > :afterId', {
+      afterId: 100,
+    });
     expect(andWhere).toHaveBeenCalledWith('mapping.platform = :platform', {
       platform: 'messenger',
     });

@@ -19,6 +19,16 @@ import type {
   { unique: true },
 )
 @Index('idx_study_reminder_jobs_dispatch', ['status', 'remindAt'])
+@Index('idx_study_reminder_jobs_platform_status_remind', [
+  'platform',
+  'status',
+  'remindAt',
+])
+@Index('idx_study_reminder_jobs_status_platform_lease', [
+  'status',
+  'platform',
+  'leaseExpiresAt',
+])
 export class StudyReminderJobEntity {
   @PrimaryGeneratedColumn()
   id: number;

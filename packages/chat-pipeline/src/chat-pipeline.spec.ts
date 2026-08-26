@@ -72,6 +72,7 @@ describe('ChatPipeline', () => {
       'user-1',
       'Hello',
       'Hello from agent',
+      undefined,
     );
     expect(outbound.sendText).toHaveBeenCalledWith(
       'user-1',
@@ -603,5 +604,83 @@ describe('ChatPipeline', () => {
       'Hello from agent',
       { userId: 42 },
     );
+  });
+
+  it('passes toolSummary to history.appendTurn', async () => {
+    const history = mockHistory();
+    const agent = mockAgent({
+      reply: jest.fn().mockResolvedValue({
+        text: 'Hello from agent',
+        toolSummary: 'Checked schedule',
+      }),
+    });
+    const pipeline = new ChatPipeline(
+      mockRateLimiter(),
+      history,
+      agent,
+      mockOutbound(),
+    );
+
+    await pipeline.flush({
+      externalUserId: 'user-1',
+      texts: ['Hello'],
+      idempotencyKey: 'msg-1',
+    });
+
+    expect(history.appendTurn).toHaveBeenCalledWith(
+      'user-1',
+      'Hello',
+      'Hello from agent',
+      'Checked schedule',
+    );
+  });
+
+  it('does not refund on partial delivery', async () => {
+    const rateLimiter = mockRateLimiter();
+    const outbound = mockOutbound({
+      sendText: jest.fn().mockResolvedValue({ delivered: true, partial: true }),
+    });
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      mockHistory(),
+      mockAgent(),
+      outbound,
+    );
+
+    const delivered = await pipeline.flush({
+      externalUserId: 'user-1',
+      texts: ['Hello'],
+      idempotencyKey: 'msg-1',
+    });
+
+    expect(delivered).toBe(true);
+    expect(rateLimiter.refund).not.toHaveBeenCalled();
+    expect(rateLimiter.markDelivered).toHaveBeenCalledWith('msg-1');
+    expect(rateLimiter.markCompleted).toHaveBeenCalledWith('msg-1');
+  });
+
+  it('sets partialDelivery in context for onAfterSend hook', async () => {
+    const onAfterSend = jest.fn().mockResolvedValue(undefined);
+    const outbound = mockOutbound({
+      sendText: jest.fn().mockResolvedValue({ delivered: true, partial: true }),
+    });
+    const pipeline = new ChatPipeline(
+      mockRateLimiter(),
+      mockHistory(),
+      mockAgent(),
+      outbound,
+      { onAfterSend },
+    );
+
+    await pipeline.flush({
+      externalUserId: 'user-1',
+      texts: ['Hello'],
+      idempotencyKey: 'msg-1',
+    });
+
+    expect(onAfterSend).toHaveBeenCalled();
+    expect(onAfterSend.mock.calls[0][0]).toMatchObject({
+      partialDelivery: true,
+    });
   });
 });

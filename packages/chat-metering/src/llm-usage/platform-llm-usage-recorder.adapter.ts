@@ -1,10 +1,13 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { errorMessage } from '@wispace/bot-common';
 import { LlmUsageEventEntity } from '../entities';
 import { DirectUsageWriter } from './direct-usage-writer';
-import { LlmUsageRecorderCore } from './llm-usage-recorder-core.service';
+import {
+  LlmUsageRecorderCore,
+  type LlmUsageRecorderMetrics,
+} from './llm-usage-recorder-core.service';
 import { LlmUsageRepository } from './llm-usage.repository';
 
 /** Config surface the adapter needs — satisfied by each app's `LlmUsageConfigService`. */
@@ -37,7 +40,7 @@ export interface PlatformRecordLlmUsageInput {
  * direct fire-and-forget insert (no BullMQ queue/retry yet).
  */
 @Injectable()
-export class PlatformLlmUsageRecorderAdapter {
+export class PlatformLlmUsageRecorderAdapter implements OnModuleDestroy {
   private readonly logger = new Logger(PlatformLlmUsageRecorderAdapter.name);
   private core?: LlmUsageRecorderCore;
 
@@ -46,6 +49,7 @@ export class PlatformLlmUsageRecorderAdapter {
     private readonly config: PlatformLlmUsageConfig,
     @InjectRepository(LlmUsageEventEntity)
     private readonly usageRepo: Repository<LlmUsageEventEntity>,
+    private readonly metrics?: LlmUsageRecorderMetrics,
   ) {}
 
   recordFromCompletion(input: PlatformRecordLlmUsageInput): void {
@@ -69,6 +73,7 @@ export class PlatformLlmUsageRecorderAdapter {
       const repository = new LlmUsageRepository(this.usageRepo, this.platform);
       const writer = new DirectUsageWriter(repository, (error) => {
         this.logger.warn(`LLM_USAGE_INSERT_FAILED: ${errorMessage(error)}`);
+        this.metrics?.incInsertFailure('db_error');
       });
 
       this.core = new LlmUsageRecorderCore(
@@ -82,9 +87,14 @@ export class PlatformLlmUsageRecorderAdapter {
           ),
         () => this.config.todayUsageDate(),
         { warn: (m) => this.logger.warn(m) },
+        this.metrics,
       );
     }
 
     return this.core;
+  }
+
+  onModuleDestroy(): void {
+    this.core?.dispose();
   }
 }

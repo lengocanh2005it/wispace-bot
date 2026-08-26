@@ -119,7 +119,7 @@ export class MemoryRescheduleStore<
   private prune(): void {
     const now = Date.now();
     for (const [key, entry] of this.pendingByExternalId) {
-      if (entry.record.expiresAt <= now) {
+      if (entry.record.expiresAt <= now || entry.claimed) {
         this.pendingByExternalId.delete(key);
       }
     }

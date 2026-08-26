@@ -35,6 +35,14 @@ export function extractFactsFromToolResult(
   const { targetScore, examDate } = result;
 
   if (
+    typeof targetScore === 'string' &&
+    targetScore.trim() !== '' &&
+    Number.isFinite(Number(targetScore)) &&
+    Number(targetScore) > 0
+  ) {
+    facts.targetScore = Number(targetScore);
+    facts.targetScoreFetchedAt = now;
+  } else if (
     typeof targetScore === 'number' &&
     Number.isFinite(targetScore) &&
     targetScore > 0

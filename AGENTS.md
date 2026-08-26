@@ -426,6 +426,38 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 - Meta webhook: verified via `VERIFY_TOKEN` (GET `/v1/webhook`); POST `/v1/webhook` verifies `X-Hub-Signature-256` with `MESSENGER_APP_SECRET` (disable: `MESSENGER_WEBHOOK_SIGNATURE_VERIFY=false`). `ENFORCE_PROD_CHAT_QUOTA=true` or `NODE_ENV=production` → startup fails if secret is missing / verify is disabled / `CHAT_RATE_LIMIT_ENABLED=false`.
 - LLM prompt injection: do not pass user/Wispace strings directly into prompts or tool results. Use `sanitizeUntrustedTextForLlm` / `sanitizeToolResultContent`; JSON output from LLM providers must be parsed + shape-validated, with template fallback on error.
 
+## Privacy erasure (GDPR Art. 17)
+
+`PrivacyDataService` (`packages/database/src/services/privacy-data.service.ts`) handles user data erasure. All operations are idempotent — safe to call multiple times.
+
+**Erasure scope** (atomic via `dataSource.transaction()`):
+
+| Table | Erased by | Method |
+|-------|-----------|--------|
+| `user_platform_mappings` / `discord_account_links` / `zalo_account_links` | `unlink()` | `repo.remove()` |
+| `learner_profiles` | `delete()` by userId | `repo.delete()` |
+| `study_reminder_jobs` | `delete()` by userId | `repo.delete()` |
+| `scheduled_report_claims` | `delete()` by userId | `repo.delete()` |
+| `report_send_jobs` | `delete()` by userId | `repo.delete()` |
+| `chat_daily_usage` | `delete()` by userId | `repo.delete()` |
+| `llm_usage_events` | `delete()` by userId | `repo.delete()` |
+| `chat_idempotency` | `delete()` by userId | `repo.delete()` |
+| Redis chat history | `delete()` via `ChatHistoryClearer` | `redis.del()` |
+
+**Preserved** (audit trail, auto-cleaned by retention cron):
+- `message_logs` — 90-day retention
+- `webhook_inbound_events` — 30-day retention (terminal rows)
+- `webhook_dead_letters` — 30-day retention
+- `discord/zalo_link_verify_records` — cleaned by reconcile cron
+- `discord_welcome_records` — dedupe state, no PII
+
+**Not erasable** (no per-user identifier):
+- `chat_quota_events` — uses `aggregate_id`, not `external_user_id`
+
+**Cross-platform**: delete uses WISPACE `user_id` (root identifier), so deleting via Messenger also cleans Discord/Zalo records.
+
+**Redis cleanup**: `ChatHistoryClearer` (optional constructor param) — `RedisChatHistoryStore.clear()` or `MemoryChatHistoryStore.clear()`. Best-effort, outside transaction.
+
 ---
 
 ## Documentation index (read per task)

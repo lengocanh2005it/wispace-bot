@@ -15,12 +15,12 @@ import {
   ProactiveMessenger24hSkippedError,
 } from '../utils/proactive-send.utils';
 import { MessengerOutboundService } from './messenger-outbound.service';
+import { MessengerMappingService } from './messenger-mapping.service';
 import type { UserMessengerMapping } from '../../domain/entities/messenger.types';
 import {
   getPocAlreadySubscribedMessage,
   getPocSubscriptionConfirmationMessage,
 } from '@messenger/shared/config/poc.constants';
-import { buildPocPsidToken } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
@@ -35,6 +35,7 @@ export class MessengerReportDeliveryService {
     private readonly repository: MessengerMappingRepositoryPort,
     private readonly outbound: MessengerOutboundService,
     private readonly studentReportService: StudentReportService,
+    private readonly mappingService: MessengerMappingService,
   ) {}
 
   async sendReportForMapping(mapping: UserMessengerMapping): Promise<string> {
@@ -89,13 +90,14 @@ export class MessengerReportDeliveryService {
       return;
     }
 
-    await this.repository.upsertPocSubscription({
-      psid,
-      userId: context.userId,
-      cadence: context.cadence,
-      topic: context.topic,
-      notificationMessagesToken: buildPocPsidToken(psid),
+    const result = await this.mappingService.linkFromContext(psid, context, {
+      notifyUser: false,
+      syncStudyReminders: false,
     });
+
+    if (result.blocked) {
+      return;
+    }
 
     this.logger.log(
       `Registered PSID ${maskExternalId(psid)} (userId=${maskExternalId(

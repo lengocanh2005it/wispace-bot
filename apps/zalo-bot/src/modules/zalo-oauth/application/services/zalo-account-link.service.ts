@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId, readBoundedJson } from '@wispace/bot-common';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 
 const PLATFORM = 'zalo' as const;
@@ -67,7 +67,9 @@ export class ZaloAccountLinkService {
       );
     }
 
-    const tokenJson = (await tokenResponse.json()) as { access_token: string };
+    const tokenJson = await readBoundedJson<{ access_token: string }>(
+      tokenResponse,
+    );
 
     const userResponse = await fetch(`${ZALO_ME_ENDPOINT}?fields=id,name`, {
       headers: { access_token: tokenJson.access_token },
@@ -80,10 +82,10 @@ export class ZaloAccountLinkService {
       );
     }
 
-    const userJson = (await userResponse.json()) as {
+    const userJson = await readBoundedJson<{
       id: string;
       name: string;
-    };
+    }>(userResponse);
     return { id: userJson.id, name: userJson.name };
   }
 

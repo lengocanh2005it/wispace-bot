@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   WispaceCalendarService,
   WispaceConfigService,
-  WispaceExerciseService,
+  PrecreateExerciseApiClient,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
 import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
@@ -23,10 +23,9 @@ import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-sha
       inject: [WispaceConfigService],
     },
     {
-      provide: WispaceExerciseService,
+      provide: PrecreateExerciseApiClient,
       useFactory: (configService: WispaceConfigService) =>
-        new WispaceExerciseService(
-          'x-discordid',
+        new PrecreateExerciseApiClient(
           configService.buildPrecreateExerciseClientConfig(),
         ),
       inject: [WispaceConfigService],
@@ -56,7 +55,7 @@ import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-sha
   exports: [
     WispaceGoalsService,
     WispaceCalendarService,
-    WispaceExerciseService,
+    PrecreateExerciseApiClient,
     PlatformStudyCalendarCommandService,
   ],
 })

@@ -24,7 +24,7 @@ describe('PlatformWebhookInboundEventService', () => {
     // Every andWhere returns { andWhere, execute } so both single-condition
     // (claim, abandonStaleProcessing) and double-condition (transitions) work.
     const claimExecuteMock = jest.fn().mockResolvedValue({ affected: 1 });
-    const claimAndWhereMock = jest.fn(() => ({
+    const claimAndWhereMock: jest.Mock = jest.fn(() => ({
       andWhere: claimAndWhereMock,
       execute: claimExecuteMock,
     }));
@@ -170,7 +170,7 @@ describe('PlatformWebhookInboundEventService', () => {
       let updateId: number | undefined;
       let updateToken: string | undefined;
       let updateStaleBefore: Date | undefined;
-      const updateBuilder = {
+      const updateBuilder: Record<string, jest.Mock> = {
         set: jest.fn().mockReturnThis(),
         where: jest.fn((_condition: string, parameters: { id: number }) => {
           updateId = parameters.id;
@@ -409,10 +409,21 @@ describe('PlatformWebhookInboundEventService', () => {
     it('lists only stale processing rows and terminalizes the same row atomically', async () => {
       const now = new Date('2026-08-13T01:00:00Z');
       const staleBefore = new Date('2026-08-13T00:55:00Z');
-      const rows = [
+      const rows: Array<{
+        id: number;
+        platform: string;
+        eventId: string;
+        externalUserId: string;
+        eventType: string;
+        rawPayload: Record<string, unknown>;
+        status: string;
+        retryCount: number;
+        nextRetryAt: Date | null;
+        updatedAt: Date;
+      }> = [
         {
           id: 1,
-          platform: 'messenger' as const,
+          platform: 'messenger',
           eventId: 'stale',
           externalUserId: 'psid-stale',
           eventType: 'message',
@@ -424,7 +435,7 @@ describe('PlatformWebhookInboundEventService', () => {
         },
         {
           id: 2,
-          platform: 'messenger' as const,
+          platform: 'messenger',
           eventId: 'fresh',
           externalUserId: 'psid-fresh',
           eventType: 'message',
@@ -436,7 +447,7 @@ describe('PlatformWebhookInboundEventService', () => {
         },
         {
           id: 3,
-          platform: 'messenger' as const,
+          platform: 'messenger',
           eventId: 'pending',
           externalUserId: 'psid-pending',
           eventType: 'message',
@@ -466,7 +477,7 @@ describe('PlatformWebhookInboundEventService', () => {
       };
       let updateId: number | undefined;
       let updateStaleBefore: Date | undefined;
-      const updateBuilder = {
+      const updateBuilder: Record<string, jest.Mock> = {
         set: jest.fn().mockReturnThis(),
         where: jest.fn((_condition: string, parameters: { id: number }) => {
           updateId = parameters.id;
@@ -515,20 +526,18 @@ describe('PlatformWebhookInboundEventService', () => {
 
   describe('deleteTerminalOlderThan', () => {
     it('deletes only terminal rows older than the cutoff for the platform', async () => {
+      const queryMock = jest
+        .fn()
+        .mockResolvedValueOnce([{ id: 1 }, { id: 2 }, { id: 3 }]);
       const deleteExecuteMock = jest.fn().mockResolvedValue({ affected: 3 });
-      const deleteAndWhere2Mock = jest.fn(() => ({
-        execute: deleteExecuteMock,
-      }));
-      const deleteAndWhere1Mock = jest.fn(() => ({
-        andWhere: deleteAndWhere2Mock,
-      }));
       const deleteWhereMock = jest.fn(() => ({
-        andWhere: deleteAndWhere1Mock,
+        execute: deleteExecuteMock,
       }));
       const deleteFromMock = jest.fn(() => ({ where: deleteWhereMock }));
       const deleteMock = jest.fn(() => ({ from: deleteFromMock }));
       const createQueryBuilderMock = jest.fn(() => ({ delete: deleteMock }));
       const repo = {
+        query: queryMock,
         createQueryBuilder: createQueryBuilderMock,
       } as unknown as Repository<WebhookInboundEventEntity>;
 
@@ -537,16 +546,58 @@ describe('PlatformWebhookInboundEventService', () => {
       const deleted = await service.deleteTerminalOlderThan(cutoff);
 
       expect(deleted).toBe(3);
-      expect(deleteWhereMock).toHaveBeenCalledWith('platform = :platform', {
-        platform: 'messenger',
-      });
-      expect(deleteAndWhere1Mock).toHaveBeenCalledWith(
-        'status IN (:...statuses)',
-        { statuses: ['completed', 'abandoned'] },
+      // Verify the SELECT query uses bounded batch with LIMIT 1000
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining('SELECT id FROM webhook_inbound_events'),
+        ['messenger', cutoff, 1000],
       );
-      expect(deleteAndWhere2Mock).toHaveBeenCalledWith('created_at < :cutoff', {
-        cutoff,
+      // Verify the DELETE uses the returned IDs
+      expect(deleteWhereMock).toHaveBeenCalledWith('id IN (:...ids)', {
+        ids: [1, 2, 3],
       });
+    });
+
+    it('returns 0 when no matching rows exist', async () => {
+      const queryMock = jest.fn().mockResolvedValueOnce([]);
+      const repo = {
+        query: queryMock,
+        createQueryBuilder: jest.fn(),
+      } as unknown as Repository<WebhookInboundEventEntity>;
+
+      const service = new PlatformWebhookInboundEventService('messenger', repo);
+      const deleted = await service.deleteTerminalOlderThan(new Date());
+
+      expect(deleted).toBe(0);
+      // No DELETE should be issued when there are no IDs
+      expect(repo.createQueryBuilder).not.toHaveBeenCalled();
+    });
+
+    it('processes multiple batches when >1000 rows match', async () => {
+      const queryMock = jest
+        .fn()
+        .mockResolvedValueOnce(
+          Array.from({ length: 1000 }, (_, i) => ({ id: i + 1 })),
+        )
+        .mockResolvedValueOnce([{ id: 1001 }]);
+      const deleteExecuteMock = jest
+        .fn()
+        .mockResolvedValueOnce({ affected: 1000 })
+        .mockResolvedValueOnce({ affected: 1 });
+      const deleteWhereMock = jest.fn(() => ({
+        execute: deleteExecuteMock,
+      }));
+      const repo = {
+        query: queryMock,
+        createQueryBuilder: jest.fn(() => ({
+          delete: () => ({ from: () => ({ where: deleteWhereMock }) }),
+        })),
+      } as unknown as Repository<WebhookInboundEventEntity>;
+
+      const service = new PlatformWebhookInboundEventService('messenger', repo);
+      const deleted = await service.deleteTerminalOlderThan(new Date());
+
+      expect(deleted).toBe(1001);
+      expect(queryMock).toHaveBeenCalledTimes(2);
     });
   });
 });

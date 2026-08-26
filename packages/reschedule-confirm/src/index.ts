@@ -17,7 +17,3 @@ export {
   type PendingRescheduleRecord,
   type RescheduleStorePort,
 } from './reschedule-store.port';
-export {
-  GenericReschedulePort,
-  type RescheduleFn,
-} from './generic-reschedule.port';

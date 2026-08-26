@@ -14,6 +14,7 @@ import { MessengerWebhookSignatureGuard } from '@messenger/shared/common/guards/
 import { MessengerService } from '../../application/services/messenger.service';
 import type { MessengerWebhookPayload } from '../../domain/entities/messenger.types';
 import { MessengerProfileService } from '../../infrastructure/meta/messenger-profile.service';
+import { MessengerWebhookPayloadDto } from '../dto/messenger-webhook-payload.dto';
 
 @Controller()
 export class MessengerController {
@@ -23,6 +24,8 @@ export class MessengerController {
   ) {}
 
   @Get('webhook')
+  @UseGuards(ThrottlerGuard)
+  @WebhookThrottle()
   verifyWebhook(
     @Query('hub.verify_token') token?: string,
     @Query('hub.challenge') challenge?: string,
@@ -34,12 +37,14 @@ export class MessengerController {
   @UseGuards(MessengerWebhookSignatureGuard, ThrottlerGuard)
   @WebhookThrottle()
   @HttpCode(200)
-  async receiveWebhook(@Body() payload: MessengerWebhookPayload) {
+  async receiveWebhook(@Body() payload: MessengerWebhookPayloadDto) {
     if (payload.object !== 'page') {
       throw new NotFoundException('Unsupported webhook object');
     }
 
-    const result = await this.messengerService.handleWebhook(payload);
+    const result = await this.messengerService.handleWebhook(
+      payload as unknown as MessengerWebhookPayload,
+    );
     return {
       ok: true,
       ...result,

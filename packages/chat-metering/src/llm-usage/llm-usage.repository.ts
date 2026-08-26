@@ -1,10 +1,16 @@
 import type { Repository } from 'typeorm';
+import { Counter } from 'prom-client';
 import type { LlmUsageEventEntity } from '../entities/llm-usage-event.entity';
 import type {
   LlmUsageAggregateRow,
   LlmUsageQueryFilter,
   RecordLlmUsageInput,
 } from './types';
+
+const llmUsageRetentionDeletedTotal = new Counter({
+  name: 'llm_usage_retention_deleted_total',
+  help: 'Total rows deleted by LLM usage retention cleanup',
+});
 
 interface AggregateQueryRow {
   feature: string;
@@ -73,19 +79,39 @@ export class LlmUsageRepository {
   }
 
   async deleteOlderThan(cutoff: Date): Promise<number> {
-    const rows: Array<{ count: string }> = await this.usageRepo.manager.query(
-      `
-        WITH deleted AS (
-          DELETE FROM llm_usage_events
-          WHERE platform = $1 AND occurred_at < $2
-          RETURNING id
-        )
-        SELECT COUNT(*)::text AS count FROM deleted
-      `,
-      [this.platform, cutoff],
-    );
+    const BATCH_SIZE = 1000;
+    let totalDeleted = 0;
 
-    return Number(rows[0]?.count ?? 0);
+    // ponytail: bounded batch to avoid long-held locks on large tables.
+    // The subquery selects a batch of matching IDs; the outer DELETE
+    // removes exactly those rows. Loop exits when a partial batch signals
+    // no more rows remain.
+    for (;;) {
+      const deleted: Array<{ id: string }> = await this.usageRepo.manager.query(
+        `
+            DELETE FROM llm_usage_events
+            WHERE id IN (
+              SELECT id FROM llm_usage_events
+              WHERE platform = $1 AND occurred_at < $2
+              LIMIT $3
+            )
+            RETURNING id
+          `,
+        [this.platform, cutoff, BATCH_SIZE],
+      );
+
+      totalDeleted += deleted.length;
+
+      if (deleted.length < BATCH_SIZE) {
+        break;
+      }
+    }
+
+    if (totalDeleted > 0) {
+      llmUsageRetentionDeletedTotal.inc(totalDeleted);
+    }
+
+    return totalDeleted;
   }
 
   async aggregateUsage(

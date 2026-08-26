@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Valid TaskScoreAverage API response fixture",
   "endpoint": "TaskScoreAverage",
   "valid": [
@@ -18,6 +18,23 @@
       "currentStreak": 3,
       "highestStreak": 7,
       "totalPracticeTimeMinutes": 120
+    },
+    {
+      "description": "New user with zero counts/streak — legitimate data",
+      "id": 2,
+      "userId": 200,
+      "task": "Task 1",
+      "avgTaskAchievement": 0,
+      "avgCoherenceCohesion": 0,
+      "avgLexicalResource": 0,
+      "avgGrammaticalRangeAccuracy": 0,
+      "avgTotalScore": 0,
+      "task1Count": 0,
+      "task2Count": 0,
+      "totalTasks": 0,
+      "currentStreak": 0,
+      "highestStreak": 0,
+      "totalPracticeTimeMinutes": 0
     }
   ],
   "invalid": [

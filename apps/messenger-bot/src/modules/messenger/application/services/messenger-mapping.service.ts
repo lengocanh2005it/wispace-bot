@@ -57,6 +57,11 @@ export class MessengerMappingService {
     syncStudyReminders?: boolean;
     allowRelink?: boolean;
   }): Promise<RelinkMappingResult> {
+    // ponytail: CAS guard closes PSID-direction race (same PSID, different
+    // users). UserId-direction race (different PSIDs → same user) still open
+    // — requires a partial unique index on (platform, user_id) WHERE ACTIVE
+    // to close at the DB level. Accept ceiling for now; the pre-resolve check
+    // in MessengerService catches the common case.
     const existingByPsid = await this.repository.findActiveMappingByPsid(
       params.psid,
     );
@@ -134,6 +139,33 @@ export class MessengerMappingService {
       topic: params.topic,
       cadence: params.cadence,
     });
+
+    // #383: CAS guard may have blocked the upsert when a concurrent write
+    // changed the userId — treat as a blocked relink attempt.
+    if (!mapping) {
+      this.logger.warn(
+        `MAPPING_CAS_BLOCKED psid=${maskExternalId(
+          params.psid,
+        )} userId=${maskExternalId(String(params.userId))}`,
+      );
+
+      if (params.notifyUser !== false) {
+        await this.outbound.sendTextViaPsid({
+          psid: params.psid,
+          userId: previousUserId ?? undefined,
+          text: buildMappingRelinkBlockedMessage(),
+          messageType: 'MAPPING_RELINK_BLOCKED',
+        });
+      }
+
+      return {
+        mapping: existingByPsid!,
+        relinked: false,
+        blocked: true,
+        previousUserId,
+        syncedStudyReminders: false,
+      };
+    }
 
     if (relinked) {
       this.logger.warn(

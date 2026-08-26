@@ -9,7 +9,7 @@ import type { StudyReminderOperationsPort } from '@messenger/modules/study-remin
 import type { MessengerRescheduleConfirmationService } from '../services/messenger-reschedule-confirmation.service';
 import type { UserGoalsApiService } from '../../../student-report/infrastructure/wispace/user-goals-api.service';
 import type { StudentReportService } from '../../../student-report/application/services/student-report.service';
-import type { WispaceExerciseService } from '@wispace/wispace-client';
+import type { PrecreateExerciseApiClient } from '@wispace/wispace-client';
 
 describe('MessengerAgentToolsService', () => {
   const createService = (
@@ -47,10 +47,16 @@ describe('MessengerAgentToolsService', () => {
         stage: overrides.stage ?? jest.fn(),
       } as unknown as jest.Mocked<MessengerRescheduleConfirmationService>;
 
-    const exerciseService: jest.Mocked<
-      Pick<WispaceExerciseService, 'precreateNextExercise'>
-    > = {
-      precreateNextExercise: overrides.precreateNextExercise ?? jest.fn(),
+    const exerciseClient: jest.Mocked<PrecreateExerciseApiClient> = {
+      precreateNextExercise:
+        overrides.precreateNextExercise ??
+        jest.fn(() => Promise.resolve({ status: 'no_roadmap' as const })),
+    } as unknown as jest.Mocked<PrecreateExerciseApiClient>;
+
+    const mappingService = {
+      linkFromContext:
+        overrides.linkFromContext ??
+        jest.fn().mockResolvedValue({ blocked: false }),
     };
 
     const service = new MessengerAgentToolsService(
@@ -59,7 +65,8 @@ describe('MessengerAgentToolsService', () => {
       userGoalsApiService,
       studyPort,
       rescheduleConfirmationService,
-      exerciseService as unknown as WispaceExerciseService,
+      exerciseClient,
+      mappingService as never,
     );
 
     const ctx: PlatformAgentToolContext = {
@@ -78,7 +85,8 @@ describe('MessengerAgentToolsService', () => {
       userGoalsApiService,
       studyPort,
       rescheduleConfirmationService,
-      exerciseService,
+      exerciseClient,
+      mappingService,
     };
   };
 
@@ -114,7 +122,7 @@ describe('MessengerAgentToolsService', () => {
     });
 
     it('does not call the exercise API when Messenger is unlinked', async () => {
-      const { service, ctx, exerciseService } = createService();
+      const { service, ctx, exerciseClient } = createService();
       ctx.userId = undefined;
 
       const result = await service.execute(
@@ -124,11 +132,11 @@ describe('MessengerAgentToolsService', () => {
       );
 
       expect(result).toMatchObject({ available: false });
-      expect(exerciseService.precreateNextExercise).not.toHaveBeenCalled();
+      expect(exerciseClient.precreateNextExercise).not.toHaveBeenCalled();
     });
 
     it('calls the exercise API with the Messenger PSID', async () => {
-      const { service, ctx, exerciseService } = createService({
+      const { service, ctx, exerciseClient } = createService({
         precreateNextExercise: jest.fn().mockResolvedValue({
           status: 'already_exists',
           exerciseUrl:
@@ -139,7 +147,8 @@ describe('MessengerAgentToolsService', () => {
 
       await service.execute('precreate_next_exercise', '{}', ctx);
 
-      expect(exerciseService.precreateNextExercise).toHaveBeenCalledWith(
+      expect(exerciseClient.precreateNextExercise).toHaveBeenCalledWith(
+        'x-psid',
         'psid-123',
         expect.any(Object),
       );
@@ -559,6 +568,33 @@ describe('MessengerAgentToolsService', () => {
         alreadyActive: false,
       });
       expect(ctx.richFollowUps).toHaveLength(0);
+    });
+
+    it('blocks a relink attempt via the mapping service (#383)', async () => {
+      const linkFromContext = jest.fn().mockResolvedValue({ blocked: true });
+      const { service, ctx } = createService({ linkFromContext });
+      ctx.linkContext = {
+        userId: 99,
+        cadence: 'daily',
+        topic: 'exam',
+      };
+      ctx.userText = 'đăng ký nhận báo cáo';
+
+      const result = await service.execute(
+        'register_exam_report_notifications',
+        '{}',
+        ctx,
+      );
+
+      expect(result).toMatchObject({
+        registered: false,
+        blocked: true,
+      });
+      expect(linkFromContext).toHaveBeenCalledWith(
+        'psid-123',
+        expect.objectContaining({ userId: 99 }),
+        { notifyUser: false, syncStudyReminders: false },
+      );
     });
   });
 

@@ -14,17 +14,17 @@ import {
 @Entity('cron_leader_leases')
 export class CronLeaderLeaseEntity {
   @PrimaryColumn({ type: 'varchar', length: 64 })
-  name: string;
+  name!: string;
 
   @Column({ name: 'instance_id', type: 'varchar', length: 128 })
-  instanceId: string;
+  instanceId!: string;
 
   @Column({ name: 'expires_at', type: 'timestamptz' })
-  expiresAt: Date;
+  expiresAt!: Date;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamptz' })
-  updatedAt: Date;
+  updatedAt!: Date;
 }

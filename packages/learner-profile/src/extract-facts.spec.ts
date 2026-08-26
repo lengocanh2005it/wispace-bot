@@ -31,20 +31,26 @@ describe('extractFactsFromToolResult', () => {
   });
 
   it('drops malformed values instead of guessing', () => {
-    expect(
-      extractFactsFromToolResult(
-        'get_user_goals',
-        { targetScore: '7.0', examDate: '20/11/2026' },
-        NOW,
-      ),
-    ).toBeNull();
-
     const partial = extractFactsFromToolResult(
       'get_user_goals',
       { targetScore: -1, examDate: '2026-11-20' },
       NOW,
     );
     expect(partial).toEqual({ examDate: '2026-11-20', examDateFetchedAt: NOW });
+  });
+
+  it('coerces string targetScore to number', () => {
+    const facts = extractFactsFromToolResult(
+      'get_user_goals',
+      { targetScore: '7.0', examDate: '2026-11-20' },
+      NOW,
+    );
+    expect(facts).toEqual({
+      targetScore: 7,
+      targetScoreFetchedAt: NOW,
+      examDate: '2026-11-20',
+      examDateFetchedAt: NOW,
+    });
   });
 
   it('returns null for non-object results', () => {

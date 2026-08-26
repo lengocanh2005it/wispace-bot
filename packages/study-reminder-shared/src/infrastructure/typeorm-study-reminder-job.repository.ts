@@ -8,6 +8,9 @@ import type {
   UpsertStudyReminderJobInput,
   UpsertStudyReminderJobOptions,
 } from '../ports/study-reminder-job.repository.port';
+import type { SyncJobRepository } from '../ports/study-reminder-sync-job.repository.port';
+import type { DispatchJobRepository } from '../ports/study-reminder-dispatch-job.repository.port';
+import type { OpsJobRepository } from '../ports/study-reminder-ops-job.repository.port';
 import { StudyReminderJobEntity } from '../entities/study-reminder-job.entity';
 import type { Platform } from '@wispace/database';
 
@@ -18,10 +21,18 @@ const DEFAULT_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
 
 /**
  * TypeORM implementation of StudyReminderJobRepositoryPort.
+ * Also implements lifecycle-specific interfaces (SyncJobRepository,
+ * DispatchJobRepository, OpsJobRepository) for focused dependency injection.
  * Shared across Discord, Zalo and Messenger.
  */
 @Injectable()
-export class TypeormStudyReminderJobRepository implements StudyReminderJobRepositoryPort {
+export class TypeormStudyReminderJobRepository
+  implements
+    StudyReminderJobRepositoryPort,
+    SyncJobRepository,
+    DispatchJobRepository,
+    OpsJobRepository
+{
   private readonly logger = new Logger(TypeormStudyReminderJobRepository.name);
 
   constructor(

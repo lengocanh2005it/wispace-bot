@@ -97,24 +97,78 @@ describe('ChatQuotaEventRepository', () => {
   });
 
   describe('deleteOlderThan', () => {
-    it('returns count of deleted rows', async () => {
-      queryFn.mockResolvedValue([{ count: '5' }]);
+    it('deletes in batches of 1000 until exhausted (multi-batch backlog)', async () => {
+      queryFn
+        .mockResolvedValueOnce(
+          Array.from({ length: 1000 }, (_, i) => ({ id: String(i) })),
+        )
+        .mockResolvedValueOnce(
+          Array.from({ length: 1000 }, (_, i) => ({ id: String(i + 1000) })),
+        )
+        .mockResolvedValueOnce(
+          Array.from({ length: 200 }, (_, i) => ({ id: String(i + 2000) })),
+        );
 
       const result = await repo.deleteOlderThan(new Date('2026-01-01'));
 
-      expect(result).toBe(5);
+      expect(result).toBe(2200);
+      // 3 calls: 2 full batches + 1 partial batch (loop exits because < 1000)
+      expect(queryFn).toHaveBeenCalledTimes(3);
       expect(queryFn).toHaveBeenCalledWith(
         expect.stringContaining('DELETE FROM chat_quota_events'),
-        [new Date('2026-01-01')],
+        [new Date('2026-01-01'), 1000],
       );
     });
 
-    it('returns 0 when no rows deleted', async () => {
-      queryFn.mockResolvedValue([{ count: '0' }]);
+    it('returns 0 when no rows match (empty backlog)', async () => {
+      queryFn.mockResolvedValueOnce([]);
 
       const result = await repo.deleteOlderThan(new Date('2026-08-08'));
 
       expect(result).toBe(0);
+      expect(queryFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('handles exactly-full batch (1000 rows) then empty', async () => {
+      queryFn
+        .mockResolvedValueOnce(
+          Array.from({ length: 1000 }, (_, i) => ({ id: String(i) })),
+        )
+        .mockResolvedValueOnce([]);
+
+      const result = await repo.deleteOlderThan(new Date('2026-01-01'));
+
+      expect(result).toBe(1000);
+      // Exactly-full batch triggers a second call to check for more
+      expect(queryFn).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops after a partial batch', async () => {
+      queryFn.mockResolvedValueOnce(
+        Array.from({ length: 50 }, (_, i) => ({ id: String(i) })),
+      );
+
+      const result = await repo.deleteOlderThan(new Date('2026-01-01'));
+
+      expect(result).toBe(50);
+      expect(queryFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('propagates error on batch failure (retry resumes from next cron tick)', async () => {
+      queryFn
+        .mockRejectedValueOnce(new Error('connection timeout'))
+        .mockResolvedValueOnce(
+          Array.from({ length: 300 }, (_, i) => ({ id: String(i) })),
+        );
+
+      // First call fails on first batch
+      await expect(
+        repo.deleteOlderThan(new Date('2026-01-01')),
+      ).rejects.toThrow('connection timeout');
+
+      // Second call (simulating next cron tick) picks up remaining rows
+      const result = await repo.deleteOlderThan(new Date('2026-01-01'));
+      expect(result).toBe(300);
     });
   });
 });

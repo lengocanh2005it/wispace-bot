@@ -11,6 +11,7 @@ import {
   UserEntity,
   UserPlatformMappingEntity,
 } from './entities';
+import { MessengerLinkVerifyRecordEntity } from './entities/messenger-link-verify-record.entity';
 import { getAppTypeOrmOptions } from './typeorm.options';
 
 @Module({
@@ -29,6 +30,7 @@ import { getAppTypeOrmOptions } from './typeorm.options';
       ChatIdempotencyEntity,
       StudyReminderJobEntity,
       UserEntity,
+      MessengerLinkVerifyRecordEntity,
     ]),
   ],
   exports: [TypeOrmModule],

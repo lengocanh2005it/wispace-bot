@@ -13,15 +13,12 @@ export interface MessengerMappingRepositoryPort {
     userId: number;
     topic?: string;
     cadence?: NotificationCadence;
-  }): Promise<UserMessengerMapping>;
-  upsertPocSubscription(params: {
-    psid: string;
-    userId: number;
-    cadence: NotificationCadence;
-    topic: string;
-    notificationMessagesToken: string;
-  }): Promise<UserMessengerMapping>;
+  }): Promise<UserMessengerMapping | null>;
   findActiveSubscribedMappings(): Promise<UserMessengerMapping[]>;
+  findActiveSubscribedMappingsPage(
+    afterId: number,
+    limit: number,
+  ): Promise<UserMessengerMapping[]>;
   findActiveMappingsPage(
     afterId: number,
     limit: number,

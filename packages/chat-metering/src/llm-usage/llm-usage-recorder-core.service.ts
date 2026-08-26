@@ -21,6 +21,12 @@ export interface LlmUsageRecorderLogger {
   warn(message: string): void;
 }
 
+export interface LlmUsageRecorderMetrics {
+  incMissingTokens(feature: string): void;
+  incUnpricedModelTokens(model: string): void;
+  incInsertFailure(reason: string): void;
+}
+
 const NOOP_LOGGER: LlmUsageRecorderLogger = { warn: () => undefined };
 
 /**
@@ -39,6 +45,7 @@ export class LlmUsageRecorderCore {
     ) => string | null,
     private readonly todayUsageDate: () => string,
     private readonly logger: LlmUsageRecorderLogger = NOOP_LOGGER,
+    private readonly metrics?: LlmUsageRecorderMetrics,
   ) {}
 
   /** Non-blocking. */
@@ -48,11 +55,29 @@ export class LlmUsageRecorderCore {
       this.logger.warn(
         `LLM_USAGE_MISSING_TOKENS feature=${input.feature} correlation=${input.correlationId ?? 'n/a'}`,
       );
+      this.metrics?.incMissingTokens(input.feature);
     }
 
     const promptTokens = usage?.prompt_tokens ?? 0;
     const completionTokens = usage?.completion_tokens ?? 0;
     const cachedTokens = usage?.prompt_tokens_details?.cached_tokens ?? 0;
+
+    const estimatedCostUsd = this.estimateCostUsdForModel(
+      input.model,
+      promptTokens,
+      completionTokens,
+      cachedTokens,
+    );
+
+    if (
+      estimatedCostUsd === null &&
+      (promptTokens > 0 || completionTokens > 0)
+    ) {
+      this.logger.warn(
+        `LLM_UNPRICED_MODEL model=${input.model} feature=${input.feature}`,
+      );
+      this.metrics?.incUnpricedModelTokens(input.model);
+    }
 
     this.writer.write({
       feature: input.feature,
@@ -66,13 +91,16 @@ export class LlmUsageRecorderCore {
       openaiResponseId: input.response.id,
       correlationId: input.correlationId,
       toolRound: input.toolRound,
-      estimatedCostUsd: this.estimateCostUsdForModel(
-        input.model,
-        promptTokens,
-        completionTokens,
-        cachedTokens,
-      ),
+      estimatedCostUsd,
       usageDate: this.todayUsageDate(),
     });
+  }
+
+  /** Forward shutdown to the underlying writer. */
+  dispose(): void {
+    const w = this.writer as unknown as { dispose?: () => void };
+    if (typeof w.dispose === 'function') {
+      w.dispose();
+    }
   }
 }

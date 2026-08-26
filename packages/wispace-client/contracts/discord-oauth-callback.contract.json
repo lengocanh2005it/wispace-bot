@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "description": "Deterministic fixtures for Discord OAuth callback contract",
+  "callback_endpoint": "GET /v1/discord/oauth/callback",
+  "query_params": {
+    "code": "string (required — OAuth2 authorization code)",
+    "state": "string (required — WISPACE link token, bound to server-side nonce via secure cookie)"
+  },
+  "cookie": {
+    "name": "discord_oauth_state",
+    "flags": "HttpOnly, Secure, SameSite=Lax",
+    "purpose": "Bind browser session to server-side nonce to prevent CSRF"
+  },
+  "token_exchange": {
+    "endpoint": "POST https://discord.com/api/oauth2/token",
+    "body": {
+      "client_id": "string",
+      "client_secret": "string",
+      "grant_type": "authorization_code",
+      "code": "string (from query param)",
+      "redirect_uri": "string"
+    },
+    "response": {
+      "access_token": "string",
+      "token_type": "Bearer",
+      "expires_in": "number"
+    }
+  },
+  "user_fetch": {
+    "endpoint": "GET https://discord.com/api/users/@me",
+    "headers": { "Authorization": "Bearer {access_token}" },
+    "response": {
+      "id": "string (Discord user ID)",
+      "username": "string",
+      "global_name": "string | null"
+    }
+  },
+  "changelog": [
+    "1.0.0 — Initial contract: OAuth code+state → token exchange → user fetch → verify WISPACE token → link"
+  ]
+}

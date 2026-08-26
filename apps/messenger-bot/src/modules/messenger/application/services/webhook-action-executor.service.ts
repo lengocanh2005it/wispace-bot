@@ -57,7 +57,11 @@ export class WebhookActionExecutorService {
         break;
 
       case 'link_user': {
-        const linkAttempt = await this.attemptLinkFromEvent(psid!, event);
+        const linkAttempt = await this.attemptLinkFromEvent(
+          psid!,
+          event,
+          action.context,
+        );
         if (linkAttempt.status === 'linked' && linkAttempt.context) {
           this.logger.log(
             `Linked PSID ${maskExternalId(psid)} from opt-in (topic=${linkAttempt.context.topic}, cadence=${linkAttempt.context.cadence})`,
@@ -143,7 +147,17 @@ export class WebhookActionExecutorService {
   private async attemptLinkFromEvent(
     psid: string,
     event: MessengerWebhookEvent,
+    verifiedContext?: MessengerLinkContext,
   ): Promise<MessengerLinkAttemptResult> {
+    // #383: when the router hands over a pre-verified context, write it
+    // directly — the single-use token was already consumed during pre-resolve.
+    if (verifiedContext) {
+      const linked = await this.linkPsidFromContext(psid, verifiedContext);
+      return linked
+        ? { status: 'linked', context: verifiedContext }
+        : { status: 'blocked' };
+    }
+
     const ref = extractRefFromEvent(event);
     if (!ref) {
       return { status: 'no_ref' };

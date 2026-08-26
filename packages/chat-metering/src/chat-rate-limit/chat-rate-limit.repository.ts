@@ -511,39 +511,35 @@ export class ChatRateLimitRepository {
         return deliveredRows.map((row) => row.idempotency_key);
       }
 
-      // Decrement daily usage counters in bulk — scoped by the same
-      // (platform, external_user_id, usage_date) composite key the reserve
-      // path incremented, so one user's refund never changes another user's
-      // counter (multiple external users can share a null/equal internal
-      // user_id on unlinked rows).
-      const usageDecrement = new Map<string, number>();
-      for (const row of rows) {
-        // usage_date comes back as a Date object (TypeORM date parser);
-        // its toString() contains ':' and would corrupt the key below —
-        // normalize to YYYY-MM-DD first.
-        const rawUsageDate = row.usage_date as unknown;
-        const usageDate =
-          rawUsageDate instanceof Date
-            ? rawUsageDate.toISOString().slice(0, 10)
-            : String(row.usage_date ?? '').slice(0, 10);
-        const key = `${usageDate}:${row.external_user_id}`;
-        usageDecrement.set(key, (usageDecrement.get(key) ?? 0) + 1);
-      }
+      // Decrement daily usage counters in bounded pages to stay under
+      // PostgreSQL's 65 535-parameter limit (4 params per group → 16 383
+      // groups max at one shot). Processing in 1 000-row pages keeps the
+      // parameter count at 4 000 — well within budget.
+      const PAGE_SIZE = 1000;
 
-      if (usageDecrement.size > 0) {
+      for (let offset = 0; offset < rows.length; offset += PAGE_SIZE) {
+        const page = rows.slice(offset, offset + PAGE_SIZE);
+        const usageDecrement = new Map<string, number>();
+
+        for (const row of page) {
+          const rawUsageDate = row.usage_date as unknown;
+          const usageDate =
+            rawUsageDate instanceof Date
+              ? rawUsageDate.toISOString().slice(0, 10)
+              : String(row.usage_date ?? '').slice(0, 10);
+          const key = `${usageDate}:${row.external_user_id}`;
+          usageDecrement.set(key, (usageDecrement.get(key) ?? 0) + 1);
+        }
+
+        if (usageDecrement.size === 0) continue;
+
         const entries = [...usageDecrement.entries()];
         const valuesClauses: string[] = [];
-        // NOTE: no leading platform param — the SQL below only references
-        // $1..$4 (one per VALUES column); a stray $1 param would make
-        // Postgres fail with "could not determine data type of parameter $1".
         const params: unknown[] = [];
         let paramIndex = 1;
 
-        for (let i = 0; i < entries.length; i++) {
-          const [key, count] = entries[i];
+        for (const [key, count] of entries) {
           const [usageDateRaw, externalUserId] = key.split(':');
-          // usage_date is normalized to YYYY-MM-DD when the key was built
-          // (see usageDecrement loop), so this is a plain date string.
           const usageDate = String(usageDateRaw ?? '').slice(0, 10);
           valuesClauses.push(
             `($${paramIndex}::varchar, $${paramIndex + 1}::date, $${paramIndex + 2}::varchar, $${paramIndex + 3}::int)`,

@@ -36,14 +36,16 @@ import { StudyReminderService } from './application/services/study-reminder.serv
 import { StudySessionSourceService } from './application/services/study-session-source.service';
 import { UserCalendarScheduleService } from './infrastructure/wispace/user-calendar-schedule.service';
 import { UserCalendarApiService } from './infrastructure/wispace/user-calendar-api.service';
-import { UserCalendarDataAdapter } from './infrastructure/wispace/user-calendar-data.adapter';
-import { ReminderStudentDataAdapter } from './infrastructure/wispace/reminder-student-data.adapter';
+import type { UserCalendarDataPort } from './domain/ports/user-calendar-data.port';
+import type { ReminderStudentDataPort } from './domain/ports/reminder-student-data.port';
 import { USER_CALENDAR_DATA_PORT } from './domain/ports/user-calendar-data.port';
 import { REMINDER_STUDENT_DATA_PORT } from './domain/ports/reminder-student-data.port';
 import { classifyMessengerDispatchFailure } from './application/utils/study-reminder-dispatch.hooks';
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
 import { STUDY_REMINDER_OPERATIONS_PORT } from './domain/ports/study-reminder-operations.port';
-import { StudyReminderOperationsAdapter } from './infrastructure/study-reminder-operations.adapter';
+import type { StudyReminderOperationsPort } from './domain/ports/study-reminder-operations.port';
+import { UserGoalsApiService } from '../student-report/infrastructure/wispace/user-goals-api.service';
+import { TaskScoreAverageApiService } from '../student-report/infrastructure/wispace/task-score-average-api.service';
 
 const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
   'pending',
@@ -118,15 +120,34 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     // ── Messenger-local services (kept) ──────────────────────────────────
     UserCalendarApiService,
     UserCalendarScheduleService,
-    UserCalendarDataAdapter,
-    ReminderStudentDataAdapter,
     {
       provide: USER_CALENDAR_DATA_PORT,
-      useExisting: UserCalendarDataAdapter,
+      useFactory: (
+        calendarApi: UserCalendarApiService,
+        calendarSchedule: UserCalendarScheduleService,
+      ): UserCalendarDataPort => ({
+        listCalendars: (psid) => calendarApi.listCalendars(psid),
+        createCalendar: (psid, input, options) =>
+          calendarApi.createCalendar(psid, input, options),
+        deleteCalendar: (psid, calendarId) =>
+          calendarApi.deleteCalendar(psid, calendarId),
+        getCalendarSessions: (psid, horizonEnd, options) =>
+          calendarSchedule.getCalendarSessions(psid, horizonEnd, options),
+        findCalendarRecord: (psid, calendarId) =>
+          calendarSchedule.findCalendarRecord(psid, calendarId),
+      }),
+      inject: [UserCalendarApiService, UserCalendarScheduleService],
     },
     {
       provide: REMINDER_STUDENT_DATA_PORT,
-      useExisting: ReminderStudentDataAdapter,
+      useFactory: (
+        goalsApi: UserGoalsApiService,
+        taskScoreAverageApi: TaskScoreAverageApiService,
+      ): ReminderStudentDataPort => ({
+        getUserGoals: (psid) => goalsApi.getUserGoals(psid),
+        getCapacityData: (psid) => taskScoreAverageApi.getCapacityData(psid),
+      }),
+      inject: [UserGoalsApiService, TaskScoreAverageApiService],
     },
     StudyCalendarCommandService,
     StudySessionSourceService,
@@ -236,10 +257,45 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     },
 
     // ── Operations port (messenger-facing seam) ───────────────────────────
-    StudyReminderOperationsAdapter,
     {
       provide: STUDY_REMINDER_OPERATIONS_PORT,
-      useExisting: StudyReminderOperationsAdapter,
+      useFactory: (
+        sessionSource: StudySessionSourceService,
+        reminderService: StudyReminderService,
+        calendarCommand: StudyCalendarCommandService,
+        scheduleService: StudyReminderScheduleService,
+      ): StudyReminderOperationsPort => ({
+        getUpcomingSessions: (params) =>
+          sessionSource.getUpcomingSessions(params),
+        getNextUpcomingSession: (psid, userId?) =>
+          reminderService.getNextUpcomingSession(psid, userId),
+        generateReminderBundleForSession: (psid, session, options?) =>
+          reminderService.generateReminderBundleForSession(
+            psid,
+            session,
+            options,
+          ),
+        listEntries: (psid, userId?, options?) =>
+          calendarCommand.listEntries(psid, userId, options),
+        getOutboxSettings: () => scheduleService.getOutboxSettings(),
+        formatScheduledTimeLabel: (scheduledAt, now?) =>
+          scheduleService.formatScheduledTimeLabel(scheduledAt, now),
+        rescheduleSession: (params) =>
+          calendarCommand.rescheduleSession({
+            psid: params.psid,
+            userId: params.userId,
+            calendarId: params.calendarId,
+            schedulingMode: params.schedulingMode,
+            newLocalDate: params.newLocalDate,
+            newTime: params.newTime,
+          }),
+      }),
+      inject: [
+        StudySessionSourceService,
+        StudyReminderService,
+        StudyCalendarCommandService,
+        StudyReminderScheduleService,
+      ],
     },
   ],
   exports: [

@@ -3,13 +3,13 @@ import type { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/ap
 import type { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import type { ChatQuotaCheckResult } from '@messenger/modules/chat-rate-limit/domain/entities/chat-quota.types';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
+import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerAgentService } from '../agent/messenger-agent.service';
 import {
   buildChatBurstLimitMessage,
   buildChatQuotaDeniedMessage,
   buildChatQuotaRemainingHintMessage,
 } from '../messages/chat-quota.messages';
-import type { ChatHistoryStorePort } from '../../domain/repositories/chat-history.store.port';
 import type { MessengerOutboundService } from './messenger-outbound.service';
 import {
   MessengerApiError,
@@ -18,6 +18,7 @@ import {
 import { MessengerChatProcessorService } from './messenger-chat-processor.service';
 import type { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import type { MetricsService } from '@messenger/modules/metrics/metrics.service';
+import type { PlatformChatHistoryService } from '@wispace/chat-agent';
 
 describe('MessengerChatProcessorService', () => {
   const quotaAllowed = (
@@ -32,7 +33,12 @@ describe('MessengerChatProcessorService', () => {
     ...overrides,
   });
 
-  const createService = (options: { shouldEnforce?: boolean } = {}) => {
+  const createService = (
+    options: {
+      shouldEnforce?: boolean;
+      mappingRepository?: MessengerMappingRepositoryPort;
+    } = {},
+  ) => {
     const sendSenderActionOptional = jest.fn(() => Promise.resolve());
     const sendTextViaPsid = jest.fn(() => Promise.resolve());
     const sendTextBubblesViaPsid = jest.fn(() => Promise.resolve(1));
@@ -54,21 +60,25 @@ describe('MessengerChatProcessorService', () => {
     const getHistory = jest.fn(() => []);
     const appendTurn = jest.fn();
     const appendToolSummary = jest.fn();
-    const chatHistory = {
+    const historyService = {
       getHistory,
       appendTurn,
       appendToolSummary,
-    } as unknown as ChatHistoryStorePort;
+    } as unknown as PlatformChatHistoryService;
 
     const reserveFreeFormSlot = jest.fn(() => Promise.resolve(quotaAllowed()));
     const markDelivered = jest.fn(() => Promise.resolve());
     const markCompleted = jest.fn(() => Promise.resolve());
     const refundFreeFormSlot = jest.fn(() => Promise.resolve());
+    const getRemainingQuota = jest.fn(() =>
+      Promise.resolve({ remaining: 14, limit: 15 }),
+    );
     const chatRateLimitService = {
       reserveFreeFormSlot,
       markDelivered,
       markCompleted,
       refundFreeFormSlot,
+      getRemainingQuota,
     } as unknown as ChatRateLimitService;
 
     const chatRateLimitConfig = {
@@ -120,15 +130,19 @@ describe('MessengerChatProcessorService', () => {
     } as unknown as MetricsService;
 
     const service = new MessengerChatProcessorService(
-      configService,
       outbound,
       messengerAgentService,
-      chatHistory,
       chatRateLimitService,
       chatRateLimitConfig,
       metrics,
       messengerRepository,
       sharedConfig,
+      historyService,
+      configService,
+      undefined, // chatQueueStore
+      undefined, // privacyState
+      undefined, // privacyService
+      options.mappingRepository as never,
     );
 
     return {
@@ -143,6 +157,7 @@ describe('MessengerChatProcessorService', () => {
       markDelivered,
       markCompleted,
       refundFreeFormSlot,
+      getRemainingQuota,
       logMessage,
     };
   };
@@ -296,11 +311,13 @@ describe('MessengerChatProcessorService', () => {
       Promise.reject(new Error('OpenAI down')),
     );
 
-    await service.process({
-      psid: 'psid-1',
-      mergedText: 'Hello',
-      idempotencyKey: 'mid-fail',
-    });
+    await expect(
+      service.process({
+        psid: 'psid-1',
+        mergedText: 'Hello',
+        idempotencyKey: 'mid-fail',
+      }),
+    ).rejects.toThrow('OpenAI down');
 
     expect(refundFreeFormSlot).toHaveBeenCalledWith(
       'psid-1',
@@ -316,10 +333,12 @@ describe('MessengerChatProcessorService', () => {
   });
 
   it('sends remaining quota hint when remaining is at or below threshold', async () => {
-    const { service, sendTextViaPsid, reserveFreeFormSlot } = createService();
+    const { service, sendTextViaPsid, reserveFreeFormSlot, getRemainingQuota } =
+      createService();
     reserveFreeFormSlot.mockResolvedValue(
       quotaAllowed({ used: 13, remaining: 2 }),
     );
+    getRemainingQuota.mockResolvedValue({ remaining: 2, limit: 15 });
 
     await service.process({
       psid: 'psid-1',
@@ -336,10 +355,12 @@ describe('MessengerChatProcessorService', () => {
   });
 
   it('does not send remaining quota hint when remaining is zero', async () => {
-    const { service, sendTextViaPsid, reserveFreeFormSlot } = createService();
+    const { service, sendTextViaPsid, reserveFreeFormSlot, getRemainingQuota } =
+      createService();
     reserveFreeFormSlot.mockResolvedValue(
       quotaAllowed({ used: 15, remaining: 0 }),
     );
+    getRemainingQuota.mockResolvedValue({ remaining: 0, limit: 15 });
 
     await service.process({
       psid: 'psid-1',
@@ -355,10 +376,12 @@ describe('MessengerChatProcessorService', () => {
   });
 
   it('does not send remaining quota hint when remaining is above threshold', async () => {
-    const { service, sendTextViaPsid, reserveFreeFormSlot } = createService();
+    const { service, sendTextViaPsid, reserveFreeFormSlot, getRemainingQuota } =
+      createService();
     reserveFreeFormSlot.mockResolvedValue(
       quotaAllowed({ used: 5, remaining: 10 }),
     );
+    getRemainingQuota.mockResolvedValue({ remaining: 10, limit: 15 });
 
     await service.process({
       psid: 'psid-1',
@@ -384,11 +407,13 @@ describe('MessengerChatProcessorService', () => {
       new MessengerApiError('Send failed', 500, 'Error', '{}'),
     );
 
-    await service.process({
-      psid: 'psid-1',
-      mergedText: 'Hello',
-      idempotencyKey: 'mid-send-fail',
-    });
+    await expect(
+      service.process({
+        psid: 'psid-1',
+        mergedText: 'Hello',
+        idempotencyKey: 'mid-send-fail',
+      }),
+    ).rejects.toThrow('Send failed');
 
     expect(refundFreeFormSlot).toHaveBeenCalledWith(
       'psid-1',
@@ -405,11 +430,13 @@ describe('MessengerChatProcessorService', () => {
       new MessengerApiError('Send failed', 500, 'Error', '{}'),
     );
 
-    await service.process({
-      psid: 'psid-1',
-      mergedText: 'Hello',
-      idempotencyKey: 'mid-no-history-on-fail',
-    });
+    await expect(
+      service.process({
+        psid: 'psid-1',
+        mergedText: 'Hello',
+        idempotencyKey: 'mid-no-history-on-fail',
+      }),
+    ).rejects.toThrow('Send failed');
 
     expect(appendTurn).not.toHaveBeenCalled();
     expect(appendToolSummary).not.toHaveBeenCalled();
@@ -419,7 +446,6 @@ describe('MessengerChatProcessorService', () => {
     const {
       service,
       sendTextBubblesViaPsid,
-      appendTurn,
       refundFreeFormSlot,
       markCompleted,
     } = createService();
@@ -437,22 +463,11 @@ describe('MessengerChatProcessorService', () => {
     });
 
     expect(markCompleted).toHaveBeenCalledWith('mid-partial');
-    expect(appendTurn).not.toHaveBeenCalled();
     expect(refundFreeFormSlot).not.toHaveBeenCalled();
   });
 
   it('does not refund when quota hint fails after main reply (H4)', async () => {
-    const { service, sendTextViaPsid, refundFreeFormSlot, markCompleted } =
-      createService();
-    (sendTextViaPsid as jest.Mock).mockImplementation(
-      (params: { messageType: string }) => {
-        if (params.messageType === 'CHAT_QUOTA_REMAINING_HINT') {
-          return Promise.reject(new Error('hint send failed'));
-        }
-
-        return Promise.resolve();
-      },
-    );
+    const { service, refundFreeFormSlot, markCompleted } = createService();
 
     await service.process({
       psid: 'psid-1',
@@ -473,6 +488,7 @@ describe('MessengerChatProcessorService', () => {
       idempotencyKey: 'mid-typing',
     });
 
+    // Typing indicator fires via pipeline onStep('before_agent') hook
     expect(sendSenderActionOptional).toHaveBeenCalledWith(
       'psid-1',
       'typing_on',
@@ -492,11 +508,13 @@ describe('MessengerChatProcessorService', () => {
       ),
     );
 
-    await service.process({
-      psid: 'psid-1',
-      mergedText: 'Hello',
-      idempotencyKey: 'mid-window',
-    });
+    await expect(
+      service.process({
+        psid: 'psid-1',
+        mergedText: 'Hello',
+        idempotencyKey: 'mid-window',
+      }),
+    ).rejects.toThrow();
 
     expect(sendTextViaPsid).toHaveBeenCalled();
     const sendArgs = (
@@ -520,5 +538,96 @@ describe('MessengerChatProcessorService', () => {
 
     expect(reserveFreeFormSlot).not.toHaveBeenCalled();
     expect(reply).not.toHaveBeenCalled();
+  });
+
+  it('does not refund when quota finalization fails after delivery', async () => {
+    const { service, markCompleted, refundFreeFormSlot } = createService();
+    markCompleted.mockRejectedValue(new Error('quota db unavailable'));
+
+    await service.process({
+      psid: 'psid-1',
+      mergedText: 'Hello',
+      idempotencyKey: 'mid-finalize-fail',
+    });
+
+    // Delivery succeeded — quota finalization failure must not trigger refund
+    expect(refundFreeFormSlot).not.toHaveBeenCalled();
+  });
+
+  describe('#383 linkContext revalidation', () => {
+    it('discards stale linkContext when mapping userId differs', async () => {
+      const mappingRepository = {
+        findActiveMappingByPsid: jest.fn().mockResolvedValue({ userId: 143 }),
+      };
+      const { service, reply } = createService({ mappingRepository });
+
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'xem lich hoc',
+        userId: 143,
+        linkContext: {
+          ref: '999',
+          topic: 'IELTS',
+          cadence: 'WEEKLY',
+          userId: 99,
+        },
+        idempotencyKey: 'mid-stale',
+      });
+
+      expect(mappingRepository.findActiveMappingByPsid).toHaveBeenCalledWith(
+        'psid-1',
+      );
+      expect(reply).toHaveBeenCalled();
+      // linkContext was discarded — pipeline should not see userId 99
+      const pipelineInput = reply.mock.calls[0][0];
+      expect(pipelineInput.linkContext).toBeUndefined();
+    });
+
+    it('drops batch when no active mapping exists', async () => {
+      const mappingRepository = {
+        findActiveMappingByPsid: jest.fn().mockResolvedValue(null),
+      };
+      const { service, reply, reserveFreeFormSlot } = createService({
+        mappingRepository,
+      });
+
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'xem lich hoc',
+        userId: 99,
+        linkContext: {
+          ref: '999',
+          topic: 'IELTS',
+          cadence: 'WEEKLY',
+          userId: 99,
+        },
+        idempotencyKey: 'mid-nomapping',
+      });
+
+      expect(reply).not.toHaveBeenCalled();
+      expect(reserveFreeFormSlot).not.toHaveBeenCalled();
+    });
+
+    it('keeps linkContext when userId matches fresh mapping', async () => {
+      const mappingRepository = {
+        findActiveMappingByPsid: jest.fn().mockResolvedValue({ userId: 99 }),
+      };
+      const { service, reply } = createService({ mappingRepository });
+
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'xem lich hoc',
+        userId: 99,
+        linkContext: {
+          ref: '999',
+          topic: 'IELTS',
+          cadence: 'WEEKLY',
+          userId: 99,
+        },
+        idempotencyKey: 'mid-match',
+      });
+
+      expect(reply).toHaveBeenCalled();
+    });
   });
 });

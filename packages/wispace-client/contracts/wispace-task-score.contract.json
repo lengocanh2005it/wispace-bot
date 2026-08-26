@@ -1,0 +1,37 @@
+{
+  "version": "1.0.0",
+  "description": "Canonical contract for WISPACE TaskScoreAverage API response",
+  "endpoint": "GET /api/TaskScoreAverage",
+  "headers": {
+    "X-Internal-Key": "string (required)",
+    "x-psid | x-discordid | x-zaloid": "string (required — platform identity)"
+  },
+  "response": "Array of TaskScoreAverageRecord",
+  "record": {
+    "id": "number (positive)",
+    "userId": "number (positive)",
+    "task": "string (non-empty)",
+    "avgTaskAchievement": "number (positive — > 0)",
+    "avgCoherenceCohesion": "number (positive — > 0)",
+    "avgLexicalResource": "number (positive — > 0)",
+    "avgGrammaticalRangeAccuracy": "number (positive — > 0)",
+    "avgTotalScore": "number (positive — > 0)",
+    "task1Count": "number (non-negative — >= 0, new users have 0)",
+    "task2Count": "number (non-negative — >= 0, new users have 0)",
+    "totalTasks": "number (non-negative — >= 0, new users have 0)",
+    "currentStreak": "number (non-negative — >= 0, new users have 0)",
+    "highestStreak": "number (non-negative — >= 0, new users have 0)",
+    "totalPracticeTimeMinutes": "number (non-negative — >= 0, new users have 0)"
+  },
+  "validation": {
+    "id": "isPositiveNumber",
+    "userId": "isPositiveNumber",
+    "task": "isNonEmptyString",
+    "avg*": "isPositiveNumber (> 0)",
+    "count/streak/time": "isNonNegativeNumber (>= 0)"
+  },
+  "fixtures": "./task-score-average.json",
+  "changelog": [
+    "1.0.0 — Initial canonical contract (count/streak fields accept zero for new users)"
+  ]
+}

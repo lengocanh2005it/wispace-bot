@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, LessThan, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import {
   CleanupCronService,
   type CleanupCronConfig,
@@ -44,16 +44,43 @@ export class ChatIdempotencyCleanupCronService {
   async handleDailyCleanup(): Promise<void> {
     await this.cleanupCron.execute(
       CLEANUP_CONFIG,
-      (cutoff) =>
-        this.idempotencyRepo
-          .delete({
-            status: In(['completed', 'refunded']),
-            reservedAt: LessThan(cutoff),
-          })
-          .then((r) => r.affected ?? 0),
+      (cutoff) => this.deleteBatched(cutoff),
       () => this.isEnabled(),
       () => this.getRetentionDays(),
     );
+  }
+
+  private async deleteBatched(cutoff: Date): Promise<number> {
+    const BATCH_SIZE = 1000;
+    let totalDeleted = 0;
+
+    for (;;) {
+      const ids: Array<{ id: number }> = await this.idempotencyRepo.query(
+        `SELECT id FROM chat_idempotency
+         WHERE "platform" = 'messenger'
+           AND "status" IN ('completed','refunded')
+           AND "reserved_at" < $1
+         LIMIT $2`,
+        [cutoff, BATCH_SIZE],
+      );
+
+      if (ids.length === 0) break;
+
+      const result = await this.idempotencyRepo
+        .createQueryBuilder()
+        .delete()
+        .from(ChatIdempotencyEntity)
+        .where('id IN (:...ids)', { ids: ids.map((r) => r.id) })
+        .execute();
+
+      totalDeleted += result.affected ?? 0;
+
+      if (ids.length < BATCH_SIZE) {
+        break;
+      }
+    }
+
+    return totalDeleted;
   }
 
   private isEnabled(): boolean {

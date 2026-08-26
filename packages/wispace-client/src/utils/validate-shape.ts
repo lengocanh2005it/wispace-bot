@@ -103,6 +103,13 @@ export function isPositiveNumber(value: unknown): boolean {
 }
 
 /**
+ * Validate that a value is a non-negative number (>= 0).
+ */
+export function isNonNegativeNumber(value: unknown): boolean {
+  return typeof value === 'number' && value >= 0 && Number.isFinite(value);
+}
+
+/**
  * Validate that a value is a valid ISO date string.
  */
 export function isDateString(value: unknown): boolean {

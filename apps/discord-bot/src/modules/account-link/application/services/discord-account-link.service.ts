@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Inject } from '@nestjs/common';
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId, readBoundedJson } from '@wispace/bot-common';
 import {
   DISCORD_ACCOUNT_LINK_REPOSITORY,
   type DiscordAccountLinkRepositoryPort,
@@ -57,7 +57,9 @@ export class DiscordAccountLinkService {
       );
     }
 
-    const tokenJson = (await tokenResponse.json()) as { access_token: string };
+    const tokenJson = await readBoundedJson<{ access_token: string }>(
+      tokenResponse,
+    );
 
     const userResponse = await fetch('https://discord.com/api/users/@me', {
       headers: { Authorization: `Bearer ${tokenJson.access_token}` },
@@ -70,11 +72,11 @@ export class DiscordAccountLinkService {
       );
     }
 
-    const userJson = (await userResponse.json()) as {
+    const userJson = await readBoundedJson<{
       id: string;
       username: string;
       global_name?: string;
-    };
+    }>(userResponse);
     return {
       id: userJson.id,
       username: userJson.global_name ?? userJson.username,

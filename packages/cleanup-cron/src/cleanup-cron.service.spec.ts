@@ -125,4 +125,69 @@ describe('CleanupCronService', () => {
 
     expect(queries).toContain('SELECT pg_advisory_unlock($1::bigint)');
   });
+
+  it('concurrent executions are serialized by advisory lock', async () => {
+    const order: string[] = [];
+    let resolve1!: () => void;
+    const gate1 = new Promise<void>((r) => {
+      resolve1 = r;
+    });
+
+    const deleteFn1 = jest.fn().mockImplementation(async () => {
+      order.push('start-1');
+      await gate1;
+      order.push('end-1');
+      return 10;
+    });
+    const deleteFn2 = jest.fn().mockImplementation(async () => {
+      order.push('start-2');
+      order.push('end-2');
+      return 5;
+    });
+
+    const { service } = buildService(true);
+    // Mock pgLock.withLock to serialize: first call holds gate, second waits
+    let lockHeld = false;
+    const waitingResolvers: Array<() => void> = [];
+    const pgLock = service['pgLock'];
+    const originalWithLock = pgLock.withLock.bind(pgLock);
+    pgLock.withLock = jest
+      .fn()
+      .mockImplementation(
+        async (lockId: number, fn: () => Promise<unknown>) => {
+          while (lockHeld) {
+            await new Promise<void>((r) => waitingResolvers.push(r));
+          }
+          lockHeld = true;
+          try {
+            return await originalWithLock(lockId, fn);
+          } finally {
+            lockHeld = false;
+            waitingResolvers.shift()?.();
+          }
+        },
+      );
+
+    // Start both concurrently
+    const p1 = service.execute(
+      config,
+      deleteFn1,
+      () => true,
+      () => 7,
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    const p2 = service.execute(
+      config,
+      deleteFn2,
+      () => true,
+      () => 7,
+    );
+
+    resolve1();
+    const [r1, r2] = await Promise.all([p1, p2]);
+
+    expect(r1!.deleted).toBe(10);
+    expect(r2!.deleted).toBe(5);
+    expect(order).toEqual(['start-1', 'end-1', 'start-2', 'end-2']);
+  });
 });

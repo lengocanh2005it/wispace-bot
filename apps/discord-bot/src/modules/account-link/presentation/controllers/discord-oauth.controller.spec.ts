@@ -30,7 +30,11 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = { json: jest.fn(), setHeader: jest.fn() } as never;
+      const res = {
+        json: jest.fn(),
+        setHeader: jest.fn(),
+        cookie: jest.fn(),
+      } as never;
       await controller.getOAuthUrl('link-token-abc', res);
 
       expect(deps.stateService.create).toHaveBeenCalledWith('link-token-abc');
@@ -50,10 +54,41 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = { json: jest.fn(), setHeader: jest.fn() } as never;
+      const res = {
+        json: jest.fn(),
+        setHeader: jest.fn(),
+        cookie: jest.fn(),
+      } as never;
       await controller.getOAuthUrl('token-abc', res);
 
       expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    });
+
+    it('sets browser-binding cookie with the state nonce (#348)', async () => {
+      const deps = mockDeps();
+      deps.stateService.create.mockResolvedValue('state-abc');
+      const controller = new DiscordOauthController(
+        deps.configService as never,
+        deps.completionService as never,
+        deps.stateService as never,
+      );
+
+      const res = {
+        json: jest.fn(),
+        setHeader: jest.fn(),
+        cookie: jest.fn(),
+      } as never;
+      await controller.getOAuthUrl('token-abc', res);
+
+      expect(res.cookie).toHaveBeenCalledWith(
+        'discord_oauth_state',
+        'state-abc',
+        expect.objectContaining({
+          httpOnly: true,
+          secure: true,
+          sameSite: 'lax',
+        }),
+      );
     });
 
     it('returns empty url when linkToken is missing', async () => {
@@ -73,7 +108,7 @@ describe('DiscordOauthController', () => {
   });
 
   describe('callback', () => {
-    it('consumes state and completes link', async () => {
+    it('consumes state and completes link when cookie matches (#348)', async () => {
       const deps = mockDeps();
       deps.stateService.consume.mockResolvedValue({
         linkToken: 'link-token-123',
@@ -85,14 +120,80 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = { setHeader: jest.fn(), redirect: jest.fn() } as never;
-      await controller.callback('auth-code', 'state-nonce', undefined, res);
+      const res = {
+        setHeader: jest.fn(),
+        redirect: jest.fn(),
+        clearCookie: jest.fn(),
+      } as never;
+      const req = { cookies: { discord_oauth_state: 'state-nonce' } };
+      await controller.callback(
+        'auth-code',
+        'state-nonce',
+        undefined,
+        res,
+        req,
+      );
 
       expect(deps.stateService.consume).toHaveBeenCalledWith('state-nonce');
       expect(deps.completionService.completeLink).toHaveBeenCalledWith(
         'auth-code',
         'link-token-123',
       );
+      expect(res.clearCookie).toHaveBeenCalledWith('discord_oauth_state');
+    });
+
+    it('rejects callback when cookie is missing (#348)', async () => {
+      const deps = mockDeps();
+      const controller = new DiscordOauthController(
+        deps.configService as never,
+        deps.completionService as never,
+        deps.stateService as never,
+      );
+
+      const res = {
+        setHeader: jest.fn(),
+        redirect: jest.fn(),
+        clearCookie: jest.fn(),
+      } as never;
+      const req = { cookies: {} };
+      await controller.callback(
+        'auth-code',
+        'state-nonce',
+        undefined,
+        res,
+        req,
+      );
+
+      expect(deps.stateService.consume).not.toHaveBeenCalled();
+      expect(deps.completionService.completeLink).not.toHaveBeenCalled();
+      expect(res.redirect).toHaveBeenCalledWith('https://landing.example.com');
+    });
+
+    it('rejects callback when cookie mismatches state (#348)', async () => {
+      const deps = mockDeps();
+      const controller = new DiscordOauthController(
+        deps.configService as never,
+        deps.completionService as never,
+        deps.stateService as never,
+      );
+
+      const res = {
+        setHeader: jest.fn(),
+        redirect: jest.fn(),
+        clearCookie: jest.fn(),
+      } as never;
+      const req = { cookies: { discord_oauth_state: 'different-state' } };
+      await controller.callback(
+        'auth-code',
+        'state-nonce',
+        undefined,
+        res,
+        req,
+      );
+
+      expect(deps.stateService.consume).not.toHaveBeenCalled();
+      expect(deps.completionService.completeLink).not.toHaveBeenCalled();
+      expect(res.redirect).toHaveBeenCalledWith('https://landing.example.com');
     });
 
     it('returns error when state is invalid or expired', async () => {
@@ -104,8 +205,13 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = { setHeader: jest.fn(), redirect: jest.fn() } as never;
-      await controller.callback('auth-code', 'bad-state', undefined, res);
+      const res = {
+        setHeader: jest.fn(),
+        redirect: jest.fn(),
+        clearCookie: jest.fn(),
+      } as never;
+      const req = { cookies: { discord_oauth_state: 'bad-state' } };
+      await controller.callback('auth-code', 'bad-state', undefined, res, req);
 
       expect(deps.completionService.completeLink).not.toHaveBeenCalled();
       expect(res.redirect).toHaveBeenCalledWith('https://landing.example.com');

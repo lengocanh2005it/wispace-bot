@@ -1,0 +1,49 @@
+{
+  "version": "1.0.0",
+  "description": "Error scenario fixtures for WISPACE API contract testing",
+  "scenarios": [
+    {
+      "name": "rate_limited",
+      "description": "429 Too Many Requests",
+      "status": 429,
+      "headers": { "Retry-After": "5" },
+      "body": "rate limit exceeded",
+      "expected_behavior": "retry after Retry-After delay"
+    },
+    {
+      "name": "server_error",
+      "description": "500 Internal Server Error",
+      "status": 500,
+      "body": "internal error",
+      "expected_behavior": "retry with exponential backoff"
+    },
+    {
+      "name": "service_unavailable",
+      "description": "503 Service Unavailable",
+      "status": 503,
+      "body": "service unavailable",
+      "expected_behavior": "retry with exponential backoff"
+    },
+    {
+      "name": "timeout",
+      "description": "Request timeout (no response within configured timeout)",
+      "status": null,
+      "error": "AbortError",
+      "expected_behavior": "throw TimeoutError, no retry on timeout"
+    },
+    {
+      "name": "auth_failure",
+      "description": "401 Unauthorized — invalid or missing internal key",
+      "status": 401,
+      "body": "unauthorized",
+      "expected_behavior": "throw WispaceApiError, no retry"
+    },
+    {
+      "name": "invalid_shape",
+      "description": "200 OK but response body does not match canonical shape",
+      "status": 200,
+      "body": { "unexpected": "field" },
+      "expected_behavior": "throw ShapeValidationError, no retry"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ export {
   type ErrorMessageOptions,
 } from './error-message';
 export { readResponseText } from './read-response-text';
+export { readBoundedJson } from './read-bounded-json';
 export { isAbortError, sleep } from './abort.utils';
 export {
   FALLBACK_DISPLAY_NAME,

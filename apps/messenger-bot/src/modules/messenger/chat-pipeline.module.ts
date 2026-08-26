@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { join } from 'path';
 import { trace } from '@opentelemetry/api';
 import { Repository } from 'typeorm';
+import type { CalendarPort, ReschedulePort } from '@wispace/reschedule-confirm';
 import {
   PlatformAgentService,
   PlatformAgentToolsService,
@@ -24,7 +25,7 @@ import {
 import { REDIS_CLIENT } from '@wispace/bot-common';
 import {
   WispaceConfigService,
-  WispaceExerciseService,
+  PrecreateExerciseApiClient,
 } from '@wispace/wispace-client';
 import {
   LearnerProfileEntity,
@@ -52,6 +53,7 @@ import { DisplayNameModule } from '../display-name/display-name.module';
 import { UserDisplayNameService } from '../display-name/application/user-display-name.service';
 import { MetricsService } from '../metrics/metrics.service';
 import { MessengerOutboundModule } from './messenger-outbound.module';
+import { UserLinkingModule } from './user-linking.module';
 import { MessengerAgentToolsService } from './application/agent/messenger-agent-tools.service';
 import { MessengerAgentService } from './application/agent/messenger-agent.service';
 import { MessengerChatSharedConfigService } from './application/services/messenger-chat-shared-config.service';
@@ -65,8 +67,10 @@ import type { ChatQueueStorePort } from './domain/repositories/chat-queue.store.
 import { CHAT_HISTORY_STORE } from './domain/repositories/chat-history.store.port';
 import { RedisChatQueueStore } from './infrastructure/persistence/redis-chat-queue.store';
 import { ChatHistoryStoreResolver } from './infrastructure/persistence/chat-history.store.resolver';
-import { MessengerCalendarPort } from './infrastructure/adapters/messenger-calendar.port';
-import { MessengerReschedulePort } from './infrastructure/adapters/messenger-reschedule.port';
+import {
+  STUDY_REMINDER_OPERATIONS_PORT,
+  type StudyReminderOperationsPort,
+} from '../study-reminder/domain/ports/study-reminder-operations.port';
 
 /**
  * Self-contained module for the chat pipeline:
@@ -90,6 +94,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     StudentReportModule,
     StudyReminderModule,
     DisplayNameModule,
+    UserLinkingModule,
     TypeOrmModule.forFeature([
       LlmUsageEventEntity,
       LlmSafetyEventEntity,
@@ -106,10 +111,9 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
       inject: [ConfigService],
     },
     {
-      provide: WispaceExerciseService,
+      provide: PrecreateExerciseApiClient,
       useFactory: (configService: WispaceConfigService) =>
-        new WispaceExerciseService(
-          'x-psid',
+        new PrecreateExerciseApiClient(
           configService.buildPrecreateExerciseClientConfig(),
         ),
       inject: [WispaceConfigService],
@@ -229,7 +233,7 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
               });
               const displayName = sanitized.text || 'Chào bạn nha';
               const base = input.userId
-                ? `Học viên đã liên kết WISPACE (userId=${input.userId}). Tên gọi: ${displayName}.`
+                ? `Học viên đã liên kết WISPACE. Tên gọi: ${displayName}.`
                 : `Học viên chưa liên kết WISPACE. Tên gọi: ${displayName}. Nhắc mở Messenger từ link trong app WISPACE nếu cần dữ liệu cá nhân.`;
               const profileSection = await learnerProfileSuffix(input);
               return profileSection ? `${base}\n\n${profileSection}` : base;
@@ -265,8 +269,40 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
       provide: CHAT_QUEUE_STORE,
       useExisting: RedisChatQueueStore,
     },
-    MessengerCalendarPort,
-    MessengerReschedulePort,
+    {
+      provide: 'MessengerCalendarPort',
+      useFactory: (
+        operations: StudyReminderOperationsPort,
+      ): CalendarPort<string> => ({
+        listUpcomingEntries: (psid: string, userId: number) =>
+          operations
+            .listEntries(psid, userId, { timeRange: 'upcoming' })
+            .then((result) =>
+              result.entries.map((entry) => ({
+                calendarId: entry.calendarId,
+                scheduledTimeLabel: entry.scheduledTimeLabel,
+              })),
+            ),
+      }),
+      inject: [STUDY_REMINDER_OPERATIONS_PORT],
+    },
+    {
+      provide: 'MessengerReschedulePort',
+      useFactory: (
+        operations: StudyReminderOperationsPort,
+      ): ReschedulePort<string> => ({
+        rescheduleSession: (params) =>
+          operations.rescheduleSession({
+            psid: params.externalId,
+            userId: params.userId,
+            calendarId: params.calendarId,
+            schedulingMode: params.schedulingMode,
+            newLocalDate: params.newLocalDate,
+            newTime: params.newTime,
+          }),
+      }),
+      inject: [STUDY_REMINDER_OPERATIONS_PORT],
+    },
     {
       provide: TypeormRescheduleStore,
       useFactory: (repo: Repository<RescheduleConfirmationEntity>) =>
@@ -279,8 +315,8 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
     {
       provide: MessengerRescheduleConfirmationService,
       useFactory: (
-        calendarPort: MessengerCalendarPort,
-        reschedulePort: MessengerReschedulePort,
+        calendarPort: CalendarPort<string>,
+        reschedulePort: ReschedulePort<string>,
         store: TypeormRescheduleStore<string>,
       ) =>
         new MessengerRescheduleConfirmationService(
@@ -289,8 +325,8 @@ import { MessengerReschedulePort } from './infrastructure/adapters/messenger-res
           store,
         ),
       inject: [
-        MessengerCalendarPort,
-        MessengerReschedulePort,
+        'MessengerCalendarPort',
+        'MessengerReschedulePort',
         TypeormRescheduleStore,
       ],
     },

@@ -1,0 +1,58 @@
+{
+  "version": "1.0.0",
+  "description": "Deterministic fixtures for Zalo OAuth callback contract",
+  "callback_endpoint": "GET /v1/zalo/oauth/callback",
+  "query_params": {
+    "code": "string (required — Zalo authorization code)",
+    "state": "string (required — WISPACE link token, bound to server-side nonce via secure cookie)"
+  },
+  "cookie": {
+    "name": "zalo_oauth_state",
+    "flags": "HttpOnly, Secure, SameSite=Lax",
+    "purpose": "Bind browser session to server-side nonce to prevent CSRF"
+  },
+  "token_exchange": {
+    "endpoint": "POST https://oauth.zaloapp.com/v4/access_token",
+    "headers": {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "secret_key": "string (Zalo app secret)"
+    },
+    "body": {
+      "code": "string (from query param)",
+      "app_id": "string (Zalo app ID)",
+      "grant_type": "authorization_code",
+      "code_verifier": "string (PKCE code verifier)"
+    },
+    "response": {
+      "access_token": "string",
+      "refresh_token": "string",
+      "expires_in": "number (seconds)",
+      "refresh_token_expires_in": "number (seconds)"
+    }
+  },
+  "user_fetch": {
+    "endpoint": "GET https://graph.zalo.me/v2.0/me?fields=id,name",
+    "headers": { "access_token": "string" },
+    "response": {
+      "id": "string (Zalo OA user ID)",
+      "name": "string"
+    }
+  },
+  "token_refresh": {
+    "endpoint": "POST https://oauth.zaloapp.com/v4/refresh_token",
+    "body": {
+      "app_id": "string",
+      "grant_type": "refresh_token",
+      "refresh_token": "string"
+    },
+    "response": {
+      "access_token": "string",
+      "refresh_token": "string",
+      "expires_in": "number",
+      "refresh_token_expires_in": "number"
+    }
+  },
+  "changelog": [
+    "1.0.0 — Initial contract: OAuth code+PKCE → token exchange → user fetch → verify WISPACE token → link"
+  ]
+}

@@ -149,10 +149,7 @@ describe('createEnvLlmExecutionPort', () => {
 
   it('acquires a Redis-distributed slot when enabled and releases after', async () => {
     const redis = {
-      incr: jest.fn().mockResolvedValue(1),
-      pexpire: jest.fn().mockResolvedValue(1),
-      decr: jest.fn().mockResolvedValue(0),
-      set: jest.fn().mockResolvedValue('OK'),
+      eval: jest.fn().mockResolvedValue(1),
     };
     const port = createEnvLlmExecutionPort(
       {
@@ -169,11 +166,7 @@ describe('createEnvLlmExecutionPort', () => {
       'ok',
     );
 
-    expect(redis.incr).toHaveBeenCalledWith('llm:concurrency:global');
-    expect(redis.pexpire).toHaveBeenCalledWith(
-      'llm:concurrency:global',
-      60_000,
-    );
-    expect(redis.decr).toHaveBeenCalledWith('llm:concurrency:global');
+    // acquire (Lua ACQUIRE_SCRIPT) + release (Lua RELEASE_SCRIPT)
+    expect(redis.eval).toHaveBeenCalledTimes(2);
   });
 });

@@ -7,15 +7,11 @@ import {
 import {
   readHttpsUrl,
   type PrecreateExerciseResult,
-  type WispaceExerciseService,
+  type PrecreateExerciseApiClient,
+  type WispaceIdHeader,
 } from '@wispace/wispace-client';
 import { buildExerciseUrlFact } from './pinned-facts';
 import type { PlatformAgentToolContext } from './platform-agent.types';
-
-type PrecreateExerciseService = Pick<
-  WispaceExerciseService,
-  'precreateNextExercise'
->;
 
 type PrecreateExerciseLogger = { warn(message: string): void };
 
@@ -109,7 +105,8 @@ export function checkPrecreateIntent(
 
 export async function executePrecreateExerciseTool(
   ctx: PlatformAgentToolContext,
-  exerciseService: PrecreateExerciseService | undefined,
+  exerciseClient: PrecreateExerciseApiClient | undefined,
+  idHeader: WispaceIdHeader,
   options: {
     getNotLinkedMessage: () => string;
     logger?: PrecreateExerciseLogger;
@@ -134,13 +131,14 @@ export async function executePrecreateExerciseTool(
 
   ctx.privateDataFetched = true;
 
-  if (!exerciseService) {
+  if (!exerciseClient) {
     logUnavailable(options.logger, ctx.externalUserId, 'missing_client');
     return unavailablePrecreateExerciseResult();
   }
 
   try {
-    const result = await exerciseService.precreateNextExercise(
+    const result = await exerciseClient.precreateNextExercise(
+      idHeader,
       ctx.externalUserId,
       { signal },
     );

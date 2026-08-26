@@ -17,6 +17,9 @@ import {
   verifyMessengerWebhookSignature,
 } from '../utils/messenger-webhook-signature.utils';
 
+const META_WEBHOOK_TIMESTAMP_HEADER = 'x-hub-timestamp';
+const MAX_WEBHOOK_CLOCK_SKEW_MS = 5 * 60 * 1000; // 5 minutes — match Zalo freshness window
+
 type MessengerWebhookRequest = Request & { rawBody?: Buffer };
 
 @Injectable()
@@ -54,6 +57,21 @@ export class MessengerWebhookSignatureGuard implements CanActivate {
     const signatureHeader = request.header(META_WEBHOOK_SIGNATURE_HEADER);
     if (!verifyMessengerWebhookSignature(rawBody, appSecret, signatureHeader)) {
       throw new ForbiddenException('Invalid Meta webhook signature');
+    }
+
+    // Replay protection: reject stale events (#350)
+    // Meta sends X-Hub-Timestamp as Unix seconds. Reject if >5 minutes old
+    // to prevent replay after durable inbox retention cleanup.
+    const timestampHeader = request.header(META_WEBHOOK_TIMESTAMP_HEADER);
+    if (!timestampHeader) {
+      throw new ForbiddenException('Missing Meta webhook timestamp');
+    }
+    const timestampMs = Number(timestampHeader) * 1000;
+    if (
+      !Number.isFinite(timestampMs) ||
+      Math.abs(Date.now() - timestampMs) > MAX_WEBHOOK_CLOCK_SKEW_MS
+    ) {
+      throw new ForbiddenException('Stale Meta webhook timestamp');
     }
 
     return true;

@@ -15,6 +15,7 @@ import {
 import {
   validateShape,
   isPositiveNumber,
+  isNonNegativeNumber,
   isNonEmptyString,
 } from '../utils/validate-shape';
 import { fetchWispaceJson, ARRAY_MAX_BYTES } from '../utils/fetch-wispace-json';
@@ -156,33 +157,33 @@ export class TaskScoreAverageApiClient {
             },
             {
               name: 'task1Count',
-              validate: isPositiveNumber,
-              expected: 'positive number',
+              validate: isNonNegativeNumber,
+              expected: 'non-negative number',
             },
             {
               name: 'task2Count',
-              validate: isPositiveNumber,
-              expected: 'positive number',
+              validate: isNonNegativeNumber,
+              expected: 'non-negative number',
             },
             {
               name: 'totalTasks',
-              validate: isPositiveNumber,
-              expected: 'positive number',
+              validate: isNonNegativeNumber,
+              expected: 'non-negative number',
             },
             {
               name: 'currentStreak',
-              validate: isPositiveNumber,
-              expected: 'positive number',
+              validate: isNonNegativeNumber,
+              expected: 'non-negative number',
             },
             {
               name: 'highestStreak',
-              validate: isPositiveNumber,
-              expected: 'positive number',
+              validate: isNonNegativeNumber,
+              expected: 'non-negative number',
             },
             {
               name: 'totalPracticeTimeMinutes',
-              validate: isPositiveNumber,
-              expected: 'positive number',
+              validate: isNonNegativeNumber,
+              expected: 'non-negative number',
             },
           ]),
         );

@@ -1,0 +1,21 @@
+{
+  "version": "1.0.0",
+  "description": "Canonical contract for WISPACE UserGoals API response",
+  "endpoint": "GET /api/User/goals",
+  "headers": {
+    "X-Internal-Key": "string (required)",
+    "x-psid | x-discordid | x-zaloid": "string (required — platform identity)"
+  },
+  "response": {
+    "targetScore": "string (numeric, e.g. '7.0') — coerced to number by client",
+    "examDate": "string (ISO 8601 date, e.g. '2026-09-01')"
+  },
+  "validation": {
+    "targetScore": "non-empty string → Number() coercion at boundary",
+    "examDate": "ISO date format YYYY-MM-DD"
+  },
+  "fixtures": "./user-goals.json",
+  "changelog": [
+    "1.0.0 — Initial canonical contract (targetScore coerced from string to number)"
+  ]
+}

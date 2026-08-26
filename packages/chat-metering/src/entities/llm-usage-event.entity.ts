@@ -10,6 +10,7 @@ import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
   { where: '"external_user_id" IS NOT NULL' },
 )
 @Index('idx_llm_usage_feature_date', ['feature', 'usageDate'])
+@Index('idx_llm_usage_platform_usage_date', ['platform', 'usageDate'])
 export class LlmUsageEventEntity {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: string;

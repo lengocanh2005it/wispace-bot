@@ -67,7 +67,6 @@ export {
 export { WispaceCalendarService } from './clients/wispace-calendar.service';
 export { WispaceTokenVerifyService } from './clients/wispace-token-verify.service';
 export { PrecreateExerciseApiClient } from './clients/precreate-exercise-api.client';
-export { WispaceExerciseService } from './clients/wispace-exercise.service';
 export type {
   WispaceLinkVerifyFailureReason,
   WispaceLinkVerifyResult,
