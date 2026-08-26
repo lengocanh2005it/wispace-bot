@@ -1,12 +1,9 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { IsBoolean, IsNumber, IsOptional, IsPositive } from 'class-validator';
 import {
-  IsBoolean,
-  IsNumber,
-  IsOptional,
-  IsPositive,
-  IsString,
-} from 'class-validator';
-import { InternalApiKeyGuard } from '@wispace/bot-common';
+  InternalApiKeyGuard,
+  PlatformOpsController,
+} from '@wispace/bot-common';
 import {
   createCalendarGetSessions,
   StudyReminderSyncService,
@@ -29,34 +26,42 @@ class SendReportsBody {
   forceSend?: boolean;
 }
 
-class PrivacyActionBody {
-  @IsString()
-  externalUserId!: string;
-}
-
 @Controller('zalo')
 @UseGuards(InternalApiKeyGuard)
-export class ZaloOpsController {
+export class ZaloOpsController extends PlatformOpsController<DopplerWebhookPayload> {
   constructor(
-    private readonly reportCronService: ZaloReportCronService,
     private readonly studyReminderSyncService: StudyReminderSyncService,
+    private readonly reportCronService: ZaloReportCronService,
     private readonly calendarService: WispaceCalendarService,
-    private readonly dopplerRuntimeSyncService: DopplerRuntimeSyncService,
-    private readonly privacyService: PrivacyDataService,
-  ) {}
-
-  @Post('ops/doppler-sync')
-  @HttpCode(202)
-  dopplerRuntimeSync(@Body() body?: DopplerWebhookPayload) {
-    return this.dopplerRuntimeSyncService.scheduleSync(body);
+    dopplerRuntimeSyncService: DopplerRuntimeSyncService,
+    privacyService: PrivacyDataService,
+  ) {
+    super({
+      dopplerRuntimeSync: (body) =>
+        dopplerRuntimeSyncService.scheduleSync(body),
+      sendReports: (body?: SendReportsBody) =>
+        reportCronService.sendDailyReports({
+          forceSend: body?.forceSend === true,
+        }),
+      syncStudyReminders: () =>
+        studyReminderSyncService.syncUpcomingSessions({
+          platform: 'zalo',
+          getSessions: createCalendarGetSessions(calendarService),
+        }),
+      unlinkUser: (externalUserId) =>
+        privacyService.unlink('zalo', externalUserId),
+      deleteUser: (externalUserId) =>
+        privacyService.delete('zalo', externalUserId),
+      exportUser: (externalUserId) =>
+        privacyService.export('zalo', externalUserId),
+    });
   }
 
+  // Preserve request-body validation while delegating through the shared route.
   @Post('send-reports')
   @HttpCode(200)
   sendReports(@Body() body?: SendReportsBody) {
-    return this.reportCronService.sendDailyReports({
-      forceSend: body?.forceSend === true,
-    });
+    return this.ops.sendReports(body);
   }
 
   @Post('study-calendar/sync')
@@ -65,36 +70,7 @@ export class ZaloOpsController {
     return this.studyReminderSyncService.syncUpcomingSessions({
       userId: body.userId,
       platform: 'zalo',
-      // Authoritative calendar fetch before any stale-job cancellation.
       getSessions: createCalendarGetSessions(this.calendarService),
     });
-  }
-
-  @Post('sync-study-reminders')
-  @HttpCode(200)
-  syncStudyReminders() {
-    return this.studyReminderSyncService.syncUpcomingSessions({
-      platform: 'zalo',
-      // Authoritative calendar fetch before any stale-job cancellation.
-      getSessions: createCalendarGetSessions(this.calendarService),
-    });
-  }
-
-  @Post('privacy/unlink')
-  @HttpCode(200)
-  unlinkUser(@Body() body: PrivacyActionBody) {
-    return this.privacyService.unlink('zalo', body.externalUserId);
-  }
-
-  @Post('privacy/delete')
-  @HttpCode(200)
-  deleteUser(@Body() body: PrivacyActionBody) {
-    return this.privacyService.delete('zalo', body.externalUserId);
-  }
-
-  @Post('privacy/export')
-  @HttpCode(200)
-  exportUser(@Body() body: PrivacyActionBody) {
-    return this.privacyService.export('zalo', body.externalUserId);
   }
 }
