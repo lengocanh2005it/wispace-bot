@@ -89,4 +89,4 @@ export {
   WebhookInboundIngressPort,
   WEBHOOK_INBOUND_INGRESS_PORT,
   type WebhookIngestResult,
-} from './ports/webhook-inbound-ingress.port';
+} from './domain/ports/webhook-inbound-ingress.port';
