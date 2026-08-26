@@ -75,3 +75,7 @@ export {
   WispaceConfigService,
   type WispaceConfigGetter,
 } from './config/wispace-config.service';
+export {
+  createWispaceProviders,
+  type WispaceProvidersOptions,
+} from './wispace-providers';
