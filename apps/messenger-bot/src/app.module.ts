@@ -4,13 +4,13 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { DatabaseModule } from './infrastructure/database/database.module';
+import { BotCommonModule } from '@wispace/bot-common/guard';
 import {
-  BotCommonModule,
   createBotThrottlerOptions,
-  HealthController,
   RedisModule,
   RedisService,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/redis';
+import { HealthController } from '@wispace/bot-common/health';
 import { MessengerModule } from './modules/messenger/messenger.module';
 import { SchedulerModule } from './modules/scheduler/scheduler.module';
 import { StudentReportModule } from './modules/student-report/student-report.module';

@@ -15,11 +15,8 @@ import {
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
 } from '@wispace/chat-metering';
-import {
-  errorMessage,
-  REDIS_CLIENT,
-  type RedisClientPort,
-} from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
 import type {
   PlatformAgentInput,

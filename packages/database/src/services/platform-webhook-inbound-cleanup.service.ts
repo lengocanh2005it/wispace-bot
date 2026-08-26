@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { PgAdvisoryLockService } from '@wispace/bot-common';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { subDays } from 'date-fns';
 import { PlatformWebhookInboundEventService } from './platform-webhook-inbound-event.service';
 

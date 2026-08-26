@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { BotCommonModule } from '@wispace/bot-common';
+import { BotCommonModule } from '@wispace/bot-common/guard';
 import { MessengerWebhookSignatureGuard } from './guards/messenger-webhook-signature.guard';
 
 @Module({

@@ -7,7 +7,8 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
-import { errorMessage, parseCookieHeader } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
+import { parseCookieHeader } from '@wispace/bot-common/utils';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';

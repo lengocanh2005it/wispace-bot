@@ -1,5 +1,6 @@
 import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
-import { maskExternalId, sleep } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
+import { sleep } from '@wispace/bot-common/utils';
 import {
   WispaceCalendarService,
   WispaceConfigService,

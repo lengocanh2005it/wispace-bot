@@ -2,7 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { Counter } from 'prom-client';
-import { PgAdvisoryLockService, maskExternalId } from '@wispace/bot-common';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import { maskExternalId } from '@wispace/bot-common/masking';
 import {
   ZALO_LINK_VERIFY_RECORD_REPOSITORY,
   type ZaloLinkVerifyRecordRepositoryPort,

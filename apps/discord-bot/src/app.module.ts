@@ -5,17 +5,17 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { IntentsBitField, Partials } from 'discord.js';
 import { NecordModule } from 'necord';
 import { DatabaseModule } from './infrastructure/database/database.module';
+import { BotCommonModule } from '@wispace/bot-common/guard';
 import {
-  BotCommonModule,
   createBotThrottlerOptions,
   RedisModule,
   RedisService,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/redis';
 import { DiscordChatModule } from './modules/discord-chat/discord-chat.module';
 import { DiscordStudyReminderModule } from './modules/discord-study-reminder/discord-study-reminder.module';
 import { DiscordOpsModule } from './modules/discord-ops/discord-ops.module';
 import { createMetricsModule } from '@wispace/bot-metrics';
-import { HealthController } from '@wispace/bot-common';
+import { HealthController } from '@wispace/bot-common/health';
 
 @Module({
   controllers: [HealthController],

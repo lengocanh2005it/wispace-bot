@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { PgAdvisoryLockService } from '@wispace/bot-common';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 import { ChatRateLimitService } from './chat-rate-limit.service';
 

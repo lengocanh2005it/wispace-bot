@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { buildGreetingMessage } from '@wispace/bot-common';
+import { buildGreetingMessage } from '@wispace/bot-common/messages';
 import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
 import {
   readRewelcomeWindowMs,

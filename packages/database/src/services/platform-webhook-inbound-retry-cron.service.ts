@@ -5,8 +5,8 @@ import {
   errorMessage,
   maskEventId,
   maskExternalIdInText,
-  PgAdvisoryLockService,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/masking';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { runBatched } from '@wispace/scheduler-core';
 import {
   PlatformWebhookInboundEventService,

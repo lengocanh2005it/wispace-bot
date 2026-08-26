@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import type { PgAdvisoryLockService } from '@wispace/bot-common';
+import type { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import {
   DEFAULT_REPORT_CLAIM_LEASE_MS,

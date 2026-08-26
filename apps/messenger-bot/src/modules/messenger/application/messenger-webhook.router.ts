@@ -9,7 +9,7 @@ import { IntentDetector } from '@wispace/llm-agent';
 import {
   buildGreetingMessage,
   buildSelfIntroMessage,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/messages';
 import {
   buildChatMissingMidMessage,
   buildUnsupportedMessageTypeReply,

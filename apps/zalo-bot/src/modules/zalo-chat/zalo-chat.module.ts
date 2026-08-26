@@ -33,10 +33,10 @@ import {
 } from '@wispace/wispace-client';
 import {
   ADVISORY_LOCKS,
-  BotCommonModule,
   PgAdvisoryLockService,
-  REDIS_CLIENT,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/locks';
+import { BotCommonModule } from '@wispace/bot-common/guard';
+import { REDIS_CLIENT } from '@wispace/bot-common/redis';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
@@ -299,7 +299,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     {
       provide: PLATFORM_CHAT_QUEUE_STORE,
       useFactory: (
-        redisClient: import('@wispace/bot-common').RedisClientPort,
+        redisClient: import('@wispace/bot-common/redis').RedisClientPort,
         configService: ConfigService,
       ) =>
         new RedisChatQueueStore(redisClient, configService, {

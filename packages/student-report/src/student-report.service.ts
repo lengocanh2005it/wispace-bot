@@ -4,7 +4,7 @@ import type {
   LlmUsageRecorderPort,
 } from '@wispace/llm-agent';
 import { retryWithBackoff } from '@wispace/llm-agent';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import type { CapacityDataPort } from './ports';
 import {
   StudentReportNoScoreDataError,

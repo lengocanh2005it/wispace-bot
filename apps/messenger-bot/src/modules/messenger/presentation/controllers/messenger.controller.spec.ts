@@ -1,5 +1,5 @@
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { readWebhookThrottleConfig } from '@wispace/bot-common';
+import { readWebhookThrottleConfig } from '@wispace/bot-common/redis';
 import { MessengerWebhookSignatureGuard } from '@messenger/shared/common/guards/messenger-webhook-signature.guard';
 import { MessengerController } from './messenger.controller';
 

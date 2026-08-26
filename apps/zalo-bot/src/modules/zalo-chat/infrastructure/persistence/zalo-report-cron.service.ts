@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { CanonicalPlatformService } from '@wispace/database';
 import { ConfigService } from '@nestjs/config';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';

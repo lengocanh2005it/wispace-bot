@@ -4,9 +4,9 @@ import { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
 import {
   ADVISORY_LOCKS,
-  BotCommonModule,
   PgAdvisoryLockService,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/locks';
+import { BotCommonModule } from '@wispace/bot-common/guard';
 import {
   PlatformWebhookInboundCleanupService,
   PlatformWebhookInboundEventService,

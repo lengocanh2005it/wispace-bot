@@ -1,6 +1,6 @@
 import { subMilliseconds } from 'date-fns';
 import { todayInTimezone as todayUsageDate } from '@wispace/date-utils';
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
 import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
 import type {
   BurstCounterPort,

@@ -20,7 +20,7 @@ import {
   errorMessage,
   maskExternalId,
   maskExternalIdInText,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/masking';
 import { CHAT_FAILURE_FALLBACK_MESSAGE } from '@wispace/llm-agent';
 import type { PlatformChatQueueOptions } from '../agent/platform-agent.types';
 import type { ChatQueueBufferSnapshot } from './chat-queue-store.types';

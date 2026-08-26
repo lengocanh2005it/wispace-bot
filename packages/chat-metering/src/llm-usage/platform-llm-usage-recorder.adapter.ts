@@ -1,7 +1,7 @@
 import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
 import { LlmUsageEventEntity } from '../entities';
 import { DirectUsageWriter } from './direct-usage-writer';
 import {

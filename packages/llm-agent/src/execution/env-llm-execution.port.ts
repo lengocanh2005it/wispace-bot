@@ -1,4 +1,4 @@
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
 import type Redis from 'ioredis';
 import type { LlmProviderAdapter } from '../provider/llm-provider.adapter';
 import type { LlmExecutionPort } from '../ports';

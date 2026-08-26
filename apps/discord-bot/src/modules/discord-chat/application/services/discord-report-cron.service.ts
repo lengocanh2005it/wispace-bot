@@ -11,7 +11,7 @@ import {
 } from '@wispace/scheduler-core';
 import { Inject, Optional } from '@nestjs/common';
 import { CanonicalPlatformService } from '@wispace/database';
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
 import {
   DISCORD_REPORT_ACCOUNT_READER,

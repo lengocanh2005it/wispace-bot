@@ -7,7 +7,7 @@ import {
 } from '@wispace/study-reminder-shared';
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-message-log.repository.port';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { LlmSafetyService } from './llm-safety.service';
 import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
 import { subHours, subMilliseconds } from 'date-fns';

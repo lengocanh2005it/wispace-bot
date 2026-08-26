@@ -1,4 +1,4 @@
-import { readResponseText } from '@wispace/bot-common';
+import { readResponseText } from '@wispace/bot-common/utils';
 
 const DEFAULT_MAX_RESPONSE_BYTES = 16 * 1024;
 const ARRAY_MAX_RESPONSE_BYTES = 64 * 1024;

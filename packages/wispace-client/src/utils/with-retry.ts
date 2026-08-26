@@ -1,7 +1,7 @@
 import CircuitBreaker from 'opossum';
-import { isAbortError, sleep } from '@wispace/bot-common';
+import { isAbortError, sleep } from '@wispace/bot-common/utils';
 
-export { isAbortError, sleep } from '@wispace/bot-common';
+export { isAbortError, sleep } from '@wispace/bot-common/utils';
 
 export interface WithRetryOptions {
   /** Total retry attempts after the initial call (maxRetries=3 → 4 total calls). */

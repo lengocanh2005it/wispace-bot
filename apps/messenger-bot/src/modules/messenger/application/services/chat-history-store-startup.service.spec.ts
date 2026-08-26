@@ -1,7 +1,7 @@
 import { ChatHistoryStoreStartupService } from './chat-history-store-startup.service';
 import { ChatHistoryStoreResolver } from '../../infrastructure/persistence/chat-history.store.resolver';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
-import type { RedisClientPort } from '@wispace/bot-common';
+import type { RedisClientPort } from '@wispace/bot-common/redis';
 
 describe('ChatHistoryStoreStartupService', () => {
   const build = (

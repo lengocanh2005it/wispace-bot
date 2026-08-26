@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
 import { buildLearnerProfileSection } from './learner-profile-section';
 import type { LearnerProfileStorePort } from './learner-profile.store.port';
 import type { LearnerIdentity } from './types';

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { retryWithBackoff } from '@discord/shared/utils/retry.utils';
 import {

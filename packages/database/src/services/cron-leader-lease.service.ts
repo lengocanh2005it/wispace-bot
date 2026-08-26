@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
 import { CronLeaderLeaseEntity } from '../entities/cron-leader-lease.entity';
 
 const DEFAULT_LEASE_TTL_MS = 3 * 60 * 1000;

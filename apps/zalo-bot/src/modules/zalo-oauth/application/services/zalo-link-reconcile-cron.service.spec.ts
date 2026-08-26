@@ -1,5 +1,5 @@
 import type { ConfigService } from '@nestjs/config';
-import type { PgAdvisoryLockService } from '@wispace/bot-common';
+import type { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import type { ZaloAccountLinkService } from './zalo-account-link.service';
 import type { ZaloLinkVerifyRecordRepositoryPort } from '../../domain/ports/zalo-link-verify-record.repository.port';
 import { ZaloLinkReconcileCronService } from './zalo-link-reconcile-cron.service';

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import {
   createSessionSourceGetSessions,

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { BotCommonModule } from '@wispace/bot-common';
+import { BotCommonModule } from '@wispace/bot-common/guard';
 import { DopplerSyncModule } from '@wispace/doppler-sync';
 import { PrivacyDataService } from '@wispace/database';
 import { ZaloReportModule } from '../zalo-chat/zalo-report.module';

@@ -3,7 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
-import { maskExternalId, readBoundedJson } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
+import { readBoundedJson } from '@wispace/bot-common/utils';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 
 const PLATFORM = 'zalo' as const;

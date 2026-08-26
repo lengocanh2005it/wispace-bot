@@ -8,7 +8,7 @@ import {
   createStudyReminderProviders,
 } from '@wispace/study-reminder-shared';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
-import { BotCommonModule } from '@wispace/bot-common';
+import { BotCommonModule } from '@wispace/bot-common/guard';
 import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { WispaceCalendarService } from '@wispace/wispace-client';

@@ -8,8 +8,8 @@ import {
   errorMessage,
   maskExternalId,
   maskExternalIdInText,
-  readResponseText,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/masking';
+import { readResponseText } from '@wispace/bot-common/utils';
 import { ConfigService } from '@nestjs/config';
 import CircuitBreaker from 'opossum';
 import { isMessenger24hWindowError } from '../messages/chat-delivery.messages';

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
 import {
   MemoryChatHistoryStore,
   RedisChatHistoryStore,
@@ -7,7 +7,7 @@ import {
   type ChatHistoryStorePort,
   type RedisChatHistoryClient,
 } from '@wispace/chat-history';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { MessengerChatSharedConfigService } from '../../application/services/messenger-chat-shared-config.service';
 
 const KEY_PREFIX = 'chat:history:';

@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { errorMessage, maskExternalIdInText, sleep } from '@wispace/bot-common';
+import {
+  errorMessage,
+  maskExternalIdInText,
+} from '@wispace/bot-common/masking';
+import { sleep } from '@wispace/bot-common/utils';
 import {
   WebhookDeadLetterEntity,
   type WebhookDeadLetterEntry,

@@ -1,4 +1,4 @@
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
 
 /** Thrown by `CapacityDataPort` when the platform has no scored Writing tasks yet. */
 export class StudentReportNoScoreDataError extends Error {

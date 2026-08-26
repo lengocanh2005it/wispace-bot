@@ -1,9 +1,7 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { IsBoolean, IsNumber, IsOptional, IsPositive } from 'class-validator';
-import {
-  InternalApiKeyGuard,
-  PlatformOpsController,
-} from '@wispace/bot-common';
+import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
+import { PlatformOpsController } from '@wispace/bot-common/health';
 import {
   createCalendarGetSessions,
   StudyReminderSyncService,

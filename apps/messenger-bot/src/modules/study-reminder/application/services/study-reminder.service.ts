@@ -4,11 +4,8 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import {
-  errorMessage,
-  FALLBACK_DISPLAY_NAME,
-  maskExternalId,
-} from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import { FALLBACK_DISPLAY_NAME } from '@wispace/bot-common/messages';
 import { type LlmProviderAdapter } from '@wispace/llm-agent';
 import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';

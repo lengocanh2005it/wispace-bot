@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Inject } from '@nestjs/common';
-import { maskExternalId, readBoundedJson } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
+import { readBoundedJson } from '@wispace/bot-common/utils';
 import {
   DISCORD_ACCOUNT_LINK_REPOSITORY,
   type DiscordAccountLinkRepositoryPort,

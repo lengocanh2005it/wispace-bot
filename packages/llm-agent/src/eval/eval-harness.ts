@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import { existsSync, readFileSync } from 'fs';
 import { dirname, join, relative, resolve } from 'path';
 import type { ChatHistoryMessage } from '@wispace/chat-history';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
 import { LlmAgentService } from '../agent.service';
 import { AGENT_TOOLS, isAgentToolName } from '../agent.tools';
 import { NOOP_METRICS_PORT } from '../ports';

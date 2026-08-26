@@ -2,14 +2,14 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { BotCommonModule } from '@wispace/bot-common/guard';
 import {
-  BotCommonModule,
   createBotThrottlerOptions,
-  HealthController,
   RedisService,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/redis';
+import { HealthController } from '@wispace/bot-common/health';
 import { DatabaseModule } from './infrastructure/database/database.module';
-import { RedisModule } from '@wispace/bot-common';
+import { RedisModule } from '@wispace/bot-common/redis';
 import { ZaloOauthHttpModule } from './modules/zalo-oauth/zalo-oauth-http.module';
 import { ZaloChatModule } from './modules/zalo-chat/zalo-chat.module';
 import { ZaloWebhookModule } from './modules/zalo-webhook/zalo-webhook.module';

@@ -9,10 +9,10 @@ import {
 } from '@wispace/cleanup-cron';
 import {
   ADVISORY_LOCKS,
-  BotCommonModule,
   PgAdvisoryLockService,
-  REDIS_CLIENT,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/locks';
+import { BotCommonModule } from '@wispace/bot-common/guard';
+import { REDIS_CLIENT } from '@wispace/bot-common/redis';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   ChatMeteringModule,
@@ -271,7 +271,7 @@ const REGISTER_REPORT_MESSAGE =
     {
       provide: PLATFORM_CHAT_QUEUE_STORE,
       useFactory: (
-        redisClient: import('@wispace/bot-common').RedisClientPort,
+        redisClient: import('@wispace/bot-common/redis').RedisClientPort,
         configService: ConfigService,
       ) =>
         new RedisChatQueueStore(redisClient, configService, {

@@ -1,8 +1,5 @@
-import {
-  errorMessage,
-  isAbortError,
-  maskExternalId,
-} from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import { isAbortError } from '@wispace/bot-common/utils';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import { resolveScheduledAtFromEventDate } from '../utils/study-calendar.utils';
 import type { UserCalendarApiClient } from './user-calendar-api.client';

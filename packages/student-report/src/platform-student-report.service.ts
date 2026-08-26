@@ -4,7 +4,7 @@ import {
   PlatformLlmUsageRecorderAdapter,
   todayUsageDate,
 } from '@wispace/chat-metering';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import type { Platform } from '@wispace/database';
 import type {
   UserGoalsRecord,

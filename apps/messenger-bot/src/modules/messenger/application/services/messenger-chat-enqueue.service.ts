@@ -5,7 +5,7 @@ import {
   OnModuleDestroy,
   Optional,
 } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { ConfigService } from '@nestjs/config';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import type { ChatQueueBatch } from '@wispace/chat-queue-core';

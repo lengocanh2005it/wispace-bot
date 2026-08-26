@@ -1,4 +1,4 @@
-import { buildGreetingMessage } from '@wispace/bot-common';
+import { buildGreetingMessage } from '@wispace/bot-common/messages';
 
 export function buildDiscordLinkWelcomeMessage(displayName?: string): string {
   return buildGreetingMessage(displayName);

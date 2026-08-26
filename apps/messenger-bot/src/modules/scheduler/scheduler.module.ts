@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import { PgAdvisoryLockService } from '@wispace/bot-common';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import {
   ReportScheduleService,
   ReportSendScheduleService,

@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
 import type { ReportClaimRepositoryPort } from '../ports/report-claim.repository.port';
 import type { ReportDeliveryPort } from '../ports/report-delivery.port';
 import type { ReportSendJobRepositoryPort } from '../ports/report-send-job.repository.port';

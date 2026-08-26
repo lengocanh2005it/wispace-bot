@@ -1,5 +1,5 @@
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { readWebhookThrottleConfig } from '@wispace/bot-common';
+import { readWebhookThrottleConfig } from '@wispace/bot-common/redis';
 import { ZaloWebhookSignatureGuard } from '../guards/zalo-webhook-signature.guard';
 import { ZaloWebhookController } from './zalo-webhook.controller';
 

@@ -2,10 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   errorMessage,
-  isAbortError,
   maskExternalId,
   maskExternalIdInText,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/masking';
+import { isAbortError } from '@wispace/bot-common/utils';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   ActionRowBuilder,

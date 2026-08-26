@@ -1,7 +1,7 @@
 import type { Provider } from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { SchedulerRegistry } from '@nestjs/schedule';
-import { PgAdvisoryLockService } from '@wispace/bot-common';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import type { WispaceCalendarService } from '@wispace/wispace-client';
 import type { Repository } from 'typeorm';
 import { MESSAGE_SENDER } from '../ports/message-sender.port';

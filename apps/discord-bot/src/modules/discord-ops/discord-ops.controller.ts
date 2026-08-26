@@ -1,8 +1,6 @@
 import { Controller, UseGuards } from '@nestjs/common';
-import {
-  InternalApiKeyGuard,
-  PlatformOpsController,
-} from '@wispace/bot-common';
+import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
+import { PlatformOpsController } from '@wispace/bot-common/health';
 import {
   createCalendarGetSessions,
   StudyReminderSyncService,

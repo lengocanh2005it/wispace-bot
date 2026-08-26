@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import { Counter } from 'prom-client';
-import { maskExternalIdInText } from '@wispace/bot-common';
+import { maskExternalIdInText } from '@wispace/bot-common/masking';
 
 const webhookInboundRetentionDeletedTotal = new Counter({
   name: 'webhook_inbound_retention_deleted_total',

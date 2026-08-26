@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 
 @Injectable()

@@ -1,6 +1,6 @@
-import { isAbortError, sleep } from '@wispace/bot-common';
+import { isAbortError, sleep } from '@wispace/bot-common/utils';
 
-export { isAbortError, sleep } from '@wispace/bot-common';
+export { isAbortError, sleep } from '@wispace/bot-common/utils';
 
 export interface RetryBackoffOptions {
   maxAttempts: number;

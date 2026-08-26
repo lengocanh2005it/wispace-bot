@@ -2,10 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   buildGreetingMessage,
   buildSelfIntroMessage,
+} from '@wispace/bot-common/messages';
+import {
   errorMessage,
   maskExternalId,
   maskExternalIdInText,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/masking';
 import { ConfigService } from '@nestjs/config';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';

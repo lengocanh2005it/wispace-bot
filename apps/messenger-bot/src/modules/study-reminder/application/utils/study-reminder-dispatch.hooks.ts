@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
 import { isProactiveMessenger24hError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
 // ponytail: deduped — using shared WispaceApiError from @wispace/wispace-client
 import { WispaceApiError } from '@wispace/wispace-client';

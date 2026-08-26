@@ -1,4 +1,4 @@
-import { PgAdvisoryLockService } from '@wispace/bot-common';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { ChatQuotaStuckRecoveryCronService } from './chat-quota-stuck-recovery-cron.service';
 
 describe('ChatQuotaStuckRecoveryCronService', () => {

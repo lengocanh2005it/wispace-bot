@@ -4,7 +4,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { maskExternalId, readResponseText } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
+import { readResponseText } from '@wispace/bot-common/utils';
 import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import {
   validateUpstreamUrl,

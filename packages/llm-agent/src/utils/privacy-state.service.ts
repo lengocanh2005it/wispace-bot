@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
 import type { PrivacyIntent } from './privacy-intent.utils';
 
 /**

@@ -5,7 +5,7 @@ import {
   REDIS_CLIENT,
   RedisUserDisplayNameCache,
   type RedisClientPort,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/redis';
 import { UserEntity } from '../../infrastructure/database/entities/user.entity';
 import { CommonModule } from '../../shared/common/common.module';
 import { MessengerOutboundModule } from '../messenger/messenger-outbound.module';

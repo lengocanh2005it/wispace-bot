@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import type { Response } from 'express';
-import { InternalApiKeyGuard } from '@wispace/bot-common';
+import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { BotMetricsService } from './bot-metrics.service';
 
 /**

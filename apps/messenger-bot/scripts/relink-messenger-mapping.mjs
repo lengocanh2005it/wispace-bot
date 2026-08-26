@@ -1,6 +1,6 @@
 import { createPool } from './_db.mjs';
 import { parseArgs } from './_args.mjs';
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
 
 function maskMapping(row) {
   if (!row) return row;

@@ -1,4 +1,4 @@
-import type { CachedUserDisplayName } from '@wispace/bot-common';
+import type { CachedUserDisplayName } from '@wispace/bot-common/redis';
 
 export type { CachedUserDisplayName };
 

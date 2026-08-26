@@ -9,23 +9,33 @@
   "exports": {
     ".": {
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./provider": {
       "import": "./dist/provider/index.js",
-      "types": "./dist/provider/index.d.ts"
+      "types": "./dist/provider/index.d.ts",
+      "require": "./dist/provider/index.js",
+      "default": "./dist/provider/index.js"
     },
     "./tools": {
       "import": "./dist/agent.tools.js",
-      "types": "./dist/agent.tools.d.ts"
+      "types": "./dist/agent.tools.d.ts",
+      "require": "./dist/agent.tools.js",
+      "default": "./dist/agent.tools.js"
     },
     "./utils": {
       "import": "./dist/utils/index.js",
-      "types": "./dist/utils/index.d.ts"
+      "types": "./dist/utils/index.d.ts",
+      "require": "./dist/utils/index.js",
+      "default": "./dist/utils/index.js"
     },
     "./execution": {
       "import": "./dist/execution/index.js",
-      "types": "./dist/execution/index.d.ts"
+      "types": "./dist/execution/index.d.ts",
+      "require": "./dist/execution/index.js",
+      "default": "./dist/execution/index.js"
     }
   },
   "scripts": {

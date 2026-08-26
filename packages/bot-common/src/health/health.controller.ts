@@ -8,9 +8,9 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { DataSource } from 'typeorm';
-import { InternalApiKeyGuard } from './internal-api-key.guard';
-import { REDIS_CLIENT, type RedisClientPort } from './redis.client.port';
-import { errorMessage } from './error-message';
+import { InternalApiKeyGuard } from '../guard/internal-api-key.guard';
+import { REDIS_CLIENT, type RedisClientPort } from '../redis/redis.client.port';
+import { errorMessage } from '../masking/error-message';
 
 export interface HealthDetail {
   status: 'ok' | 'error';

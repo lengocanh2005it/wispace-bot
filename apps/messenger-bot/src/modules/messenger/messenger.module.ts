@@ -3,7 +3,7 @@ import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
 import { CleanupCronService } from '@wispace/cleanup-cron';
-import { PgAdvisoryLockService } from '@wispace/bot-common';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import {
   PlatformWebhookInboundCleanupService,
   PlatformWebhookInboundEventService,

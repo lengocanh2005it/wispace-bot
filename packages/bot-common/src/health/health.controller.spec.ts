@@ -1,6 +1,6 @@
 import type { DataSource } from 'typeorm';
-import { InternalApiKeyGuard } from './internal-api-key.guard';
-import type { RedisClientPort } from './redis.client.port';
+import { InternalApiKeyGuard } from '../guard/internal-api-key.guard';
+import type { RedisClientPort } from '../redis/redis.client.port';
 import { HealthController } from './health.controller';
 
 describe('HealthController', () => {

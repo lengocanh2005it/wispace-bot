@@ -2,7 +2,7 @@ import { Test } from '@nestjs/testing';
 import { DataSource, Repository } from 'typeorm';
 import { Client } from 'discord.js';
 import { AppModule } from './app.module';
-import { InternalApiKeyGuard } from '@wispace/bot-common';
+import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { PrecreateExerciseApiClient } from '@wispace/wispace-client';
 
 /**

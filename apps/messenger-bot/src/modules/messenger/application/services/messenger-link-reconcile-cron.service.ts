@@ -2,11 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { Counter } from 'prom-client';
-import {
-  errorMessage,
-  maskExternalId,
-  PgAdvisoryLockService,
-} from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 import {
   MESSENGER_LINK_VERIFY_RECORD_REPOSITORY,

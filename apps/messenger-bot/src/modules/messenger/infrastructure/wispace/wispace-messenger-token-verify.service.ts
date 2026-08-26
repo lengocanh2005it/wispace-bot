@@ -4,11 +4,8 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  maskExternalId,
-  readResponseText,
-  sanitizeLogValue,
-} from '@wispace/bot-common';
+import { maskExternalId, sanitizeLogValue } from '@wispace/bot-common/masking';
+import { readResponseText } from '@wispace/bot-common/utils';
 import {
   isValidCadence,
   normalizeCadence,

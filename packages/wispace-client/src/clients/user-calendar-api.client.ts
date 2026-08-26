@@ -1,4 +1,4 @@
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import {
   isWispaceRetryable,

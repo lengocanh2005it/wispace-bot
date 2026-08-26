@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import type { OutboundDeliveryOutcome } from '@wispace/database';
 import {
   STUDY_REMINDER_JOB_REPOSITORY,

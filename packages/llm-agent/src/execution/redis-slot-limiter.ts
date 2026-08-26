@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
 import type { Redis } from 'ioredis';
 import { LlmOverloadError, raceAbort } from './bounded-admission';
 

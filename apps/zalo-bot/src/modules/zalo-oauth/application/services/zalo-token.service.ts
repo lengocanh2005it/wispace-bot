@@ -3,7 +3,8 @@ import {
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
-import { errorMessage, readBoundedJson } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
+import { readBoundedJson } from '@wispace/bot-common/utils';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import type { ConfigService } from '@nestjs/config';
-import type { PgAdvisoryLockService } from '@wispace/bot-common';
+import type { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import type { DiscordAccountLinkService } from './discord-account-link.service';
 import type { DiscordLinkVerifyRecordRepositoryPort } from '../../domain/ports/discord-link-verify-record.repository.port';
 import { DiscordLinkReconcileCronService } from './discord-link-reconcile-cron.service';

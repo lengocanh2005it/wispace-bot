@@ -4,7 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
-import { errorMessage, sanitizeErrorStack } from '@wispace/bot-common';
+import { errorMessage, sanitizeErrorStack } from '@wispace/bot-common/masking';
 import { AppModule } from './app.module';
 import { parseJsonBodyLimit } from './shared/config/body-limit';
 

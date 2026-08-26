@@ -22,7 +22,7 @@ import {
   sanitizeUntrustedTextForLlm,
   PrivacyStateService,
 } from '@wispace/llm-agent';
-import { REDIS_CLIENT } from '@wispace/bot-common';
+import { REDIS_CLIENT } from '@wispace/bot-common/redis';
 import {
   WispaceConfigService,
   PrecreateExerciseApiClient,

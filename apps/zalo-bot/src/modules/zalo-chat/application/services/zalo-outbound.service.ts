@@ -1,11 +1,10 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   errorMessage,
-  isAbortError,
   maskExternalId,
   maskExternalIdInText,
-  readResponseText,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/masking';
+import { isAbortError, readResponseText } from '@wispace/bot-common/utils';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
 import {

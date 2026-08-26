@@ -6,7 +6,7 @@ import {
   IsPositive,
   IsString,
 } from 'class-validator';
-import { InternalApiKeyGuard } from '@wispace/bot-common';
+import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import {
   createSessionSourceGetSessions,
   StudyReminderSyncService,

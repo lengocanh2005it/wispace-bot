@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { buildGreetingMessage, maskExternalId } from '@wispace/bot-common';
+import { buildGreetingMessage } from '@wispace/bot-common/messages';
+import { maskExternalId } from '@wispace/bot-common/masking';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { UserDisplayNameService } from '@messenger/modules/display-name/application/user-display-name.service';
 import { getStudyReminderLeadTimeNotice } from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';

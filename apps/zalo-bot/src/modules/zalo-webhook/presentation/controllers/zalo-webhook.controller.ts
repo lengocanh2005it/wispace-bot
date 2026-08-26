@@ -1,6 +1,6 @@
 import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { WebhookThrottle } from '@wispace/bot-common';
+import { WebhookThrottle } from '@wispace/bot-common/redis';
 import type { ZaloWebhookEvent } from '../../domain/entities/zalo-webhook-event.types';
 import { ZaloWebhookIngestService } from '../../application/zalo-webhook-ingest.service';
 import { ZaloWebhookSignatureGuard } from '../guards/zalo-webhook-signature.guard';

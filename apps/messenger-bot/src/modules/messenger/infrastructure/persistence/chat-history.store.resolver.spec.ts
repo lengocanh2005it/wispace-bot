@@ -1,4 +1,4 @@
-import type { RedisClientPort } from '@wispace/bot-common';
+import type { RedisClientPort } from '@wispace/bot-common/redis';
 import { ChatHistoryStoreResolver } from './chat-history.store.resolver';
 import { MessengerChatSharedConfigService } from '../../application/services/messenger-chat-shared-config.service';
 

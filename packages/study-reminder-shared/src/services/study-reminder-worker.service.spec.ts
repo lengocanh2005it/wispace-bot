@@ -1,5 +1,5 @@
 import type { SchedulerRegistry } from '@nestjs/schedule';
-import type { PgAdvisoryLockService } from '@wispace/bot-common';
+import type { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { StudyReminderWorkerService } from './study-reminder-worker.service';
 import type { StudyReminderSyncService } from './study-reminder-sync.service';
 import type { StudyReminderDispatchService } from './study-reminder-dispatch.service';

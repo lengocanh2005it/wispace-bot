@@ -1,4 +1,4 @@
-import { FALLBACK_DISPLAY_NAME } from '@wispace/bot-common';
+import { FALLBACK_DISPLAY_NAME } from '@wispace/bot-common/messages';
 import {
   parseJsonObject,
   readRequiredStringArrayField,

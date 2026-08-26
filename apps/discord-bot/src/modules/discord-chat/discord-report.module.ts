@@ -43,7 +43,8 @@ import { DiscordReportRetryDispatchService } from './application/services/discor
 import { DiscordReportOrchestrationService } from './application/services/discord-report-orchestration.service';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
-import { BotCommonModule, PgAdvisoryLockService } from '@wispace/bot-common';
+import { BotCommonModule } from '@wispace/bot-common/guard';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { WispaceModule } from '../wispace/wispace.module';
 
 const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;

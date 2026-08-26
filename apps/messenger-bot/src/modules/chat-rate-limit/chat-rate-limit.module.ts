@@ -1,6 +1,6 @@
 import { Module, Logger } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { CommonModule } from '../../shared/common/common.module';
 import {
   ChatDailyUsageEntity,

@@ -10,7 +10,10 @@
 
 import { createPool } from './_db.mjs';
 import { parseArgs, printHelp } from './_args.mjs';
-import { maskExternalId, maskExternalIdInText } from '@wispace/bot-common';
+import {
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common/masking';
 
 const DEFAULT_BASE_URL = 'http://localhost:3000';
 const DEFAULT_LIMIT = 20;

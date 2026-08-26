@@ -1,10 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import {
-  buildLinkSuccessMessage,
-  errorMessage,
-  maskExternalId,
-  sleep,
-} from '@wispace/bot-common';
+import { buildLinkSuccessMessage } from '@wispace/bot-common/messages';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import { sleep } from '@wispace/bot-common/utils';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { ZaloOutboundService } from '@zalo/modules/zalo-chat/application/services/zalo-outbound.service';
 import {

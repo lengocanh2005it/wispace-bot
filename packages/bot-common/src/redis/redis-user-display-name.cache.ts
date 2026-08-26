@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { errorMessage } from './error-message';
-import { maskExternalId } from './mask-external-id';
+import { errorMessage } from '../masking/error-message';
+import { maskExternalId } from '../masking/mask-external-id';
 import { REDIS_CLIENT } from './redis.client.port';
 import type { RedisClientPort } from './redis.client.port';
 

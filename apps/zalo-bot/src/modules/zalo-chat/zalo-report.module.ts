@@ -30,7 +30,8 @@ import {
   PlatformReportClaimRepository,
   ReportClaimStaleResetCronService,
 } from '@wispace/database';
-import { BotCommonModule, PgAdvisoryLockService } from '@wispace/bot-common';
+import { BotCommonModule } from '@wispace/bot-common/guard';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { ZaloChatModule } from './zalo-chat.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-cron.service';

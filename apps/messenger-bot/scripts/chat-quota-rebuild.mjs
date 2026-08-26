@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
 import { parseArgs } from './_args.mjs';
 
 const HELP = `Usage: npm run chat-quota:rebuild -- [options]

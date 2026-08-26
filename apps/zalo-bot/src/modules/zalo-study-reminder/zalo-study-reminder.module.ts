@@ -9,7 +9,7 @@ import {
 } from '@wispace/study-reminder-shared';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
-import { BotCommonModule } from '@wispace/bot-common';
+import { BotCommonModule } from '@wispace/bot-common/guard';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloOutboundService } from '../zalo-chat/application/services/zalo-outbound.service';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';

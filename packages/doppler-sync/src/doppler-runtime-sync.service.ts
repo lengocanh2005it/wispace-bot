@@ -7,7 +7,7 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
 import { ConfigService } from '@nestjs/config';
 import { parse as parseDotenv } from 'dotenv';
 import type {

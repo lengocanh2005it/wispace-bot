@@ -2,12 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
-import {
-  errorMessage,
-  maskExternalId,
-  REDIS_CLIENT,
-} from '@wispace/bot-common';
-import type { RedisClientPort } from '@wispace/bot-common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import { REDIS_CLIENT } from '@wispace/bot-common/redis';
+import type { RedisClientPort } from '@wispace/bot-common/redis';
 import type {
   AppendChatBufferInput,
   ChatQueueBufferSnapshot,

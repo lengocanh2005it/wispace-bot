@@ -1,5 +1,5 @@
 import { CleanupCronService } from './cleanup-cron.service';
-import { PgAdvisoryLockService } from '@wispace/bot-common';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 
 function mockDataSource(acquired = true) {
   const queries: string[] = [];

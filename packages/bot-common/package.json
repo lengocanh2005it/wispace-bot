@@ -41,5 +41,47 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "testEnvironment": "node"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./guard": {
+      "import": "./dist/guard/index.js",
+      "require": "./dist/guard/index.js",
+      "types": "./dist/guard/index.d.ts"
+    },
+    "./locks": {
+      "import": "./dist/locks/index.js",
+      "require": "./dist/locks/index.js",
+      "types": "./dist/locks/index.d.ts"
+    },
+    "./messages": {
+      "import": "./dist/messages/index.js",
+      "require": "./dist/messages/index.js",
+      "types": "./dist/messages/index.d.ts"
+    },
+    "./masking": {
+      "import": "./dist/masking/index.js",
+      "require": "./dist/masking/index.js",
+      "types": "./dist/masking/index.d.ts"
+    },
+    "./utils": {
+      "import": "./dist/utils/index.js",
+      "require": "./dist/utils/index.js",
+      "types": "./dist/utils/index.d.ts"
+    },
+    "./redis": {
+      "import": "./dist/redis/index.js",
+      "require": "./dist/redis/index.js",
+      "types": "./dist/redis/index.d.ts"
+    },
+    "./health": {
+      "import": "./dist/health/index.js",
+      "require": "./dist/health/index.js",
+      "types": "./dist/health/index.d.ts"
+    }
   }
 }

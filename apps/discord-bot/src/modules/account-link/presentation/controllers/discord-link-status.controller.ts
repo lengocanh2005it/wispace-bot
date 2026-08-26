@@ -1,6 +1,6 @@
 import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
-import { InternalApiKeyGuard } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
+import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import type { Response } from 'express';
 import { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';
 import { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';

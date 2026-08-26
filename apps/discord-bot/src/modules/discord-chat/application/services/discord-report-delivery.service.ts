@@ -3,7 +3,7 @@ import {
   errorMessage,
   maskExternalId,
   maskExternalIdInText,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/masking';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import type {

@@ -1,8 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { RedisChatQueueStore as SharedRedisChatQueueStore } from '@wispace/chat-agent';
-import { REDIS_CLIENT } from '@wispace/bot-common';
-import type { RedisClientPort } from '@wispace/bot-common';
+import { REDIS_CLIENT } from '@wispace/bot-common/redis';
+import type { RedisClientPort } from '@wispace/bot-common/redis';
 import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import type {
   AppendChatBufferInput,

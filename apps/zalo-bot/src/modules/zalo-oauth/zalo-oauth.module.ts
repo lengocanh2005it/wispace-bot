@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BotCommonModule } from '@wispace/bot-common';
+import { BotCommonModule } from '@wispace/bot-common/guard';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { ZaloOaTokenEntity } from '../../infrastructure/database/entities/zalo-oa-token.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';

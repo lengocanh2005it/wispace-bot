@@ -1,4 +1,5 @@
-import { isAbortError, maskExternalId } from '@wispace/bot-common';
+import { isAbortError } from '@wispace/bot-common/utils';
+import { maskExternalId } from '@wispace/bot-common/masking';
 import {
   buildPrecreateExerciseUnavailableMessage,
   detectPromptInjection,

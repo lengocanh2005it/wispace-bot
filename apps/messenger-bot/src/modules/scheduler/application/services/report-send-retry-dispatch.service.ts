@@ -11,7 +11,8 @@ import {
 import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
-import { maskExternalId, PgAdvisoryLockService } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { subMilliseconds, addMinutes } from 'date-fns';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 

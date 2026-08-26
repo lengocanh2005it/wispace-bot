@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
 import CircuitBreaker from 'opossum';
 import {
   acquireRedisSlot,
@@ -14,7 +14,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import type { LlmExecutionContext } from '../types/llm-execution.types';
 import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
-import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import type Redis from 'ioredis';
 
 export type {

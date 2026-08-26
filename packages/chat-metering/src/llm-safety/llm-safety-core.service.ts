@@ -1,4 +1,4 @@
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
 import type { LlmSafetyEventRepository } from './llm-safety.repository';
 import type { RecordGroundingWarningInput } from './types';
 import { redactSafetyText } from './redact-safety-text';

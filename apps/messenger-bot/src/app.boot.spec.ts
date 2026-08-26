@@ -3,7 +3,7 @@ import { DataSource, Repository } from 'typeorm';
 import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from './app.module';
-import { InternalApiKeyGuard } from '@wispace/bot-common';
+import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 
 /**
  * Boot smoke test: compiles AppModule and runs app.init() so Nest resolves

@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { BotCommonModule } from '@wispace/bot-common';
+import { BotCommonModule } from '@wispace/bot-common/guard';
 import { DopplerSyncModule } from '@wispace/doppler-sync';
 import { PrivacyDataService } from '@wispace/database';
 import { DiscordReportModule } from '../discord-chat/discord-report.module';

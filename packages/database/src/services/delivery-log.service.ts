@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Repository, type DeepPartial } from 'typeorm';
-import { errorMessage } from '@wispace/bot-common';
+import { errorMessage } from '@wispace/bot-common/masking';
 
 /** Minimum column shape shared by the per-app message log entities. */
 export interface MessageLogRow {

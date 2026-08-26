@@ -1,4 +1,4 @@
-import { readResponseText } from '@wispace/bot-common';
+import { readResponseText } from '@wispace/bot-common/utils';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import { mergeWithTimeout } from '../utils/abort-signal.utils';
 import {

@@ -1,4 +1,4 @@
-import type { RedisClientPort } from '@wispace/bot-common';
+import type { RedisClientPort } from '@wispace/bot-common/redis';
 import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
 import type { BurstCounterPort } from './types';
 

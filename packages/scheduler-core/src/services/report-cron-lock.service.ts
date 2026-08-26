@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PgAdvisoryLockService } from '@wispace/bot-common';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import type { QueryRunner } from 'typeorm';
 
 export const REPORT_CRON_ADVISORY_LOCK_ID = 8_842_008_01;

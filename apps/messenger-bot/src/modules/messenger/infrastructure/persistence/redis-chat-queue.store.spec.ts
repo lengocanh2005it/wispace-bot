@@ -1,4 +1,4 @@
-import type { RedisClientPort } from '@wispace/bot-common';
+import type { RedisClientPort } from '@wispace/bot-common/redis';
 import { RedisChatQueueStore } from './redis-chat-queue.store';
 
 interface MockClient {

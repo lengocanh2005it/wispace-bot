@@ -10,11 +10,16 @@
     "sourceMap": true,
     "incremental": true,
     "skipLibCheck": true,
-    "types": ["node", "jest"],
+    "types": [
+      "node",
+      "jest"
+    ],
     "strictNullChecks": false,
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "forceConsistentCasingInFileNames": false,
-    "noFallthroughCasesInSwitch": false
+    "noFallthroughCasesInSwitch": false,
+    "isolatedModules": true,
+    "esModuleInterop": true
   }
 }

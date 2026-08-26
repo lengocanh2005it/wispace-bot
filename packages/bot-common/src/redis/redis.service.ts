@@ -8,8 +8,8 @@ import { ConfigService } from '@nestjs/config';
 import IORedis from 'ioredis';
 import type Redis from 'ioredis';
 import type { RedisClientPort } from './redis.client.port';
-import { isPrivateNetworkHost } from './network-utils';
-import { errorMessage } from './error-message';
+import { isPrivateNetworkHost } from '../utils/network-utils';
+import { errorMessage } from '../masking/error-message';
 
 @Injectable()
 export class RedisService

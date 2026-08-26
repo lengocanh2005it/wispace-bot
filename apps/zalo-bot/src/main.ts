@@ -3,7 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
-import { errorMessage, sanitizeErrorStack } from '@wispace/bot-common';
+import { errorMessage, sanitizeErrorStack } from '@wispace/bot-common/masking';
 import { AppModule } from './app.module';
 
 const logger = new Logger('Bootstrap');

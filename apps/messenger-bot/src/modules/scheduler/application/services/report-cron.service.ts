@@ -8,7 +8,7 @@ import {
 import { CanonicalPlatformService } from '@wispace/database';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
-import { maskExternalId } from '@wispace/bot-common';
+import { maskExternalId } from '@wispace/bot-common/masking';
 import {
   ReportCronLeaderService,
   ReportCronLockService,

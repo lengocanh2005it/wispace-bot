@@ -1,4 +1,4 @@
-import { isPrivateNetworkHost as isPrivateNetworkHostRaw } from '@wispace/bot-common';
+import { isPrivateNetworkHost as isPrivateNetworkHostRaw } from '@wispace/bot-common/utils';
 
 export interface UpstreamUrlPolicy {
   /** Env var name — used in error messages and for startup fail-closed context. */

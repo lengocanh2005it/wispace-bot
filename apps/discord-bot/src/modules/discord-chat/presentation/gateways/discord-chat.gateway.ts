@@ -3,10 +3,12 @@ import {
   GREETING_INTRO,
   buildGreetingMessage,
   buildSelfIntroMessage,
+} from '@wispace/bot-common/messages';
+import {
   errorMessage,
   maskExternalId,
   sanitizeLogValue,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/masking';
 import { ConfigService } from '@nestjs/config';
 import { ChannelType } from 'discord.js';
 import { Button, Context, On, Once } from 'necord';

@@ -5,8 +5,8 @@ import { subMilliseconds } from 'date-fns';
 import {
   errorMessage,
   maskExternalIdInText,
-  PgAdvisoryLockService,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/masking';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import type { OutboundDeliveryOutcome } from '../types';
 import { PlatformDeadLetterService } from './platform-dead-letter.service';
 

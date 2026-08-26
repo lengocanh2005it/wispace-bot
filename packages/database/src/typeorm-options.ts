@@ -1,7 +1,7 @@
 import { join } from 'path';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { isPrivateNetworkHost } from '@wispace/bot-common';
+import { isPrivateNetworkHost } from '@wispace/bot-common/utils';
 import { WebhookDeadLetterEntity } from './entities/webhook-dead-letter.entity';
 import { WebhookInboundEventEntity } from './entities/webhook-inbound-event.entity';
 import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';

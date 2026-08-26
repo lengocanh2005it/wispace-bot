@@ -4,10 +4,9 @@ import { ConfigService } from '@nestjs/config';
 import { Counter } from 'prom-client';
 import {
   ADVISORY_LOCKS,
-  errorMessage,
-  maskExternalId,
   PgAdvisoryLockService,
-} from '@wispace/bot-common';
+} from '@wispace/bot-common/locks';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { DiscordAccountLinkService } from './discord-account-link.service';
 import { DiscordGuildMembershipService } from './discord-guild-membership.service';
 import { DiscordRelinkNotifier } from './discord-relink-notifier.service';

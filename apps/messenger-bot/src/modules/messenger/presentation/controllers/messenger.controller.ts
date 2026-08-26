@@ -9,7 +9,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
-import { InternalApiKeyGuard, WebhookThrottle } from '@wispace/bot-common';
+import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
+import { WebhookThrottle } from '@wispace/bot-common/redis';
 import { MessengerWebhookSignatureGuard } from '@messenger/shared/common/guards/messenger-webhook-signature.guard';
 import { MessengerService } from '../../application/services/messenger.service';
 import type { MessengerWebhookPayload } from '../../domain/entities/messenger.types';

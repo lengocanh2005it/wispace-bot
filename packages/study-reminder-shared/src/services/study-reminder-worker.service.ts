@@ -8,7 +8,8 @@ import {
 } from '@nestjs/common';
 import { Cron, SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
-import { PgAdvisoryLockService, errorMessage } from '@wispace/bot-common';
+import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import { errorMessage } from '@wispace/bot-common/masking';
 import { StudyReminderSyncService } from './study-reminder-sync.service';
 import { StudyReminderDispatchService } from './study-reminder-dispatch.service';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';

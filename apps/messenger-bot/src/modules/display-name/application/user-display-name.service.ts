@@ -8,7 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { UserEntity } from '@messenger/infrastructure/database/entities/user.entity';
-import { FALLBACK_DISPLAY_NAME } from '@wispace/bot-common';
+import { FALLBACK_DISPLAY_NAME } from '@wispace/bot-common/messages';
 import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
 import {
