@@ -14,14 +14,13 @@ import { createChatPipelineAdapters } from '../chat-pipeline-adapters';
 const mockLlmReply = jest.fn();
 
 jest.mock('@wispace/llm-agent', () => ({
+  ...jest.requireActual('@wispace/llm-agent'),
+  CHAT_SYSTEM_PROMPT_CORE: 'core prompt',
   LlmAgentService: jest.fn().mockImplementation(() => ({
     reply: mockLlmReply,
   })),
-  NOOP_METRICS_PORT: {},
-  CHAT_SYSTEM_PROMPT_CORE: 'core prompt',
   loadSystemPromptFile: jest.fn().mockReturnValue('system prompt'),
   retryWithBackoff: jest.fn(),
-  buildLlmExecutionConfig: jest.fn(() => ({})),
   createEnvLlmExecutionPort: jest.fn(),
 }));
 

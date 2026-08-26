@@ -9,18 +9,6 @@ jest.mock('@wispace/llm-agent', () => ({
   ...jest.requireActual('@wispace/llm-agent'),
   loadSystemPromptFile: jest.fn().mockReturnValue('system prompt'),
   createEnvLlmExecutionPort: jest.fn(),
-  buildLlmExecutionConfig: jest.fn().mockReturnValue({
-    enabled: true,
-    maxConcurrent: 1,
-    maxQueueDepth: 2,
-    chatAdmissionWaitMs: 8000,
-    backgroundAdmissionWaitMs: 20,
-    globalMaxConcurrent: 10,
-    maxAttempts: 1,
-    baseBackoffMs: 1,
-    requestTimeoutMs: 30000,
-    globalConcurrencyEnabled: false,
-  }),
 }));
 
 const mockGenerateReport = jest
@@ -111,10 +99,10 @@ describe('PlatformStudentReportService', () => {
 
     expect(createEnvLlmExecutionPort).toHaveBeenCalledWith(
       expect.objectContaining({
-        maxConcurrent: 1,
-        maxQueueDepth: 2,
+        maxConcurrent: 3,
+        maxQueueDepth: 50,
         chatAdmissionWaitMs: 8000,
-        backgroundAdmissionWaitMs: 20,
+        backgroundAdmissionWaitMs: 1500,
       }),
       expect.anything(),
       expect.anything(),
