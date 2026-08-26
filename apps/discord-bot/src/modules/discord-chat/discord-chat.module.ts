@@ -24,6 +24,7 @@ import {
 } from '@wispace/chat-metering';
 import { AccountLinkModule } from '../account-link/account-link.module';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
+import { DiscordOauthStateEntity } from '../../infrastructure/database/entities/discord-oauth-state.entity';
 import { WispaceModule } from '../wispace/wispace.module';
 import {
   PlatformAgentService,
@@ -98,6 +99,7 @@ const REGISTER_REPORT_MESSAGE =
       ScheduledReportClaimEntity,
       RescheduleConfirmationEntity,
       LearnerProfileEntity,
+      DiscordOauthStateEntity,
     ]),
   ],
   providers: [
@@ -407,6 +409,7 @@ const REGISTER_REPORT_MESSAGE =
         idempotencyRepo: Repository<ChatIdempotencyEntity>,
         reportClaimRepo: Repository<ScheduledReportClaimEntity>,
         rateLimitService: PlatformChatRateLimitService,
+        oauthStateRepo: Repository<DiscordOauthStateEntity>,
       ) =>
         new PlatformCleanupCronService(
           cleanupService,
@@ -420,6 +423,7 @@ const REGISTER_REPORT_MESSAGE =
               deadLetter: 884_200_912,
               idempotencyRecovery: 884_200_914,
               idempotencyCleanup: 884_200_915,
+              oauthState: 884_200_939,
               reportClaim: 884_200_920,
             },
             messageLogRepo,
@@ -427,6 +431,7 @@ const REGISTER_REPORT_MESSAGE =
             idempotencyRepo,
             reportClaimRepo,
             rateLimitService,
+            oauthStateRepo,
           },
         ),
       inject: [
@@ -438,6 +443,7 @@ const REGISTER_REPORT_MESSAGE =
         getRepositoryToken(ChatIdempotencyEntity),
         getRepositoryToken(ScheduledReportClaimEntity),
         PlatformChatRateLimitService,
+        getRepositoryToken(DiscordOauthStateEntity),
       ],
     },
   ],

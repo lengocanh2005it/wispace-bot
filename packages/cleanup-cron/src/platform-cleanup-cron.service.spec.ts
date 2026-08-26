@@ -95,7 +95,7 @@ function buildService(config: CleanupCronJobsConfig): {
 }
 
 describe('PlatformCleanupCronService', () => {
-  it('registers 4 discord crons on module init', () => {
+  it('registers 4 discord crons when oauth state is not wired', () => {
     const { service } = buildService(buildConfig());
     service.onModuleInit();
     expect(service['jobs'].size).toBe(4);
@@ -104,6 +104,26 @@ describe('PlatformCleanupCronService', () => {
       'discord-dead-letter-cleanup',
       'discord-idempotency-recovery',
       'discord-idempotency-cleanup',
+    ]);
+    service.onModuleDestroy();
+  });
+
+  it('registers 5 discord crons when oauth state is wired', () => {
+    const config = buildConfig({
+      lockIds: { oauthState: 884_200_939 },
+      oauthStateRepo: {
+        delete: jest.fn().mockResolvedValue({ affected: 0 }),
+      } as never,
+    });
+    const { service } = buildService(config);
+    service.onModuleInit();
+    expect(service['jobs'].size).toBe(5);
+    expect([...service['jobs'].keys()]).toEqual([
+      'discord-message-log-cleanup',
+      'discord-dead-letter-cleanup',
+      'discord-idempotency-recovery',
+      'discord-idempotency-cleanup',
+      'discord-oauth-state-cleanup',
     ]);
     service.onModuleDestroy();
   });
