@@ -1,4 +1,4 @@
-import { subtractMs } from '@wispace/date-utils';
+import { subMilliseconds } from 'date-fns';
 import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
 import type { ChatRateLimitRepository } from './chat-rate-limit.repository';
 import type { BurstCounterPort } from './types';
@@ -20,7 +20,7 @@ export class PostgresBurstCounter implements BurstCounterPort {
   getBurstCount(externalUserId: string): Promise<number> {
     return this.repository.countRecentReservations(
       externalUserId,
-      subtractMs(new Date(), CHAT_BURST_WINDOW_MS),
+      subMilliseconds(new Date(), CHAT_BURST_WINDOW_MS),
       { includeRefunded: this.includeRefunded },
     );
   }

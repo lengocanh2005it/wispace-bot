@@ -21,6 +21,7 @@
     "@wispace/bot-common": "*",
     "@wispace/database": "*",
     "@wispace/date-utils": "*",
+    "date-fns": "^4.4.0",
     "typeorm": "^1.1.0"
   },
   "devDependencies": {

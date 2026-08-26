@@ -1,14 +1,12 @@
 /** Pure timezone-aware study reminder scheduling math — no I/O, no config reads. */
-import {
-  getDatePartsInTimezone as getDatePartsFromUtils,
-  subtractMs,
-} from '@wispace/date-utils';
+import { subMilliseconds } from 'date-fns';
+import { getDatePartsInTimezone as getDatePartsFromUtils } from '@wispace/date-utils';
 
 export function computeRemindAt(
   scheduledAt: Date,
   minutesBefore: number,
 ): Date {
-  return subtractMs(scheduledAt, minutesBefore * 60 * 1000);
+  return subMilliseconds(scheduledAt, minutesBefore * 60 * 1000);
 }
 
 export function getMinutesUntilSession(

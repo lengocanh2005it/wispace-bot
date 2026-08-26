@@ -3,7 +3,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { Counter } from 'prom-client';
 import { PgAdvisoryLockService } from '@wispace/bot-common';
-import { daysAgo } from '@wispace/date-utils';
+import { subDays } from 'date-fns';
 
 /** Retention-cleanup metrics — module-level Counters shared across all bots. */
 export const retentionRowsDeletedTotal = new Counter({
@@ -71,7 +71,7 @@ export class CleanupCronService {
     }
 
     const retentionDays = getRetentionDays();
-    const cutoff = daysAgo(retentionDays);
+    const cutoff = subDays(new Date(), retentionDays);
 
     return this.pgLock.withLock(config.advisoryLockId, async () => {
       try {

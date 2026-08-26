@@ -14,7 +14,7 @@ import {
   type DispatchHooksPort,
 } from '../ports/dispatch-hooks.port';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
-import { subtractMs } from '@wispace/date-utils';
+import { subMilliseconds } from 'date-fns';
 import type { Platform } from '@wispace/database';
 import type { StudyReminderJob } from '../types/study-reminder.types';
 
@@ -81,7 +81,7 @@ export class StudyReminderDispatchService {
 
     const resetStuck = await this.jobRepository.resetStuckProcessingJobs(
       this.platform,
-      subtractMs(now, settings.stuckProcessingMs),
+      subMilliseconds(now, settings.stuckProcessingMs),
     );
 
     const dueJobs = await this.jobRepository.findDueJobs(

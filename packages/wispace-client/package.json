@@ -18,7 +18,8 @@
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@wispace/bot-common": "*",
-    "@wispace/date-utils": "*"
+    "@wispace/date-utils": "*",
+    "date-fns": "^4.4.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

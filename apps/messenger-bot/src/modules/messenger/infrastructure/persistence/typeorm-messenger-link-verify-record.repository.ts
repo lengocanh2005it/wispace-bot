@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { subtractMs } from '@wispace/date-utils';
+import { subMilliseconds } from 'date-fns';
 import { MessengerLinkVerifyRecordEntity } from '@messenger/infrastructure/database/entities/messenger-link-verify-record.entity';
 import type {
   MessengerLinkVerifyRecordRepositoryPort,
@@ -38,7 +38,7 @@ export class TypeormMessengerLinkVerifyRecordRepository implements MessengerLink
     const rows = await this.repo
       .createQueryBuilder('record')
       .where('record.verified_at < :cutoff', {
-        cutoff: subtractMs(new Date(), olderThanMs),
+        cutoff: subMilliseconds(new Date(), olderThanMs),
       })
       .orderBy('record.verified_at', 'ASC')
       .take(100)

@@ -11,7 +11,7 @@ import {
   type UpsertStudyReminderJobInput,
 } from '../ports/study-reminder-job.repository.port';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
-import { hoursFromNow } from '@wispace/date-utils';
+import { addHours } from 'date-fns';
 import type {
   StudyReminderJobStatus,
   StudyReminderSyncFailure,
@@ -108,7 +108,7 @@ export class StudyReminderSyncService {
     }
 
     const settings = this.scheduleService.getOutboxSettings();
-    const horizonEnd = hoursFromNow(settings.syncHorizonHours);
+    const horizonEnd = addHours(new Date(), settings.syncHorizonHours);
     const startedAt = Date.now();
     const counters: SyncCounters = {
       mappings: 0,

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WispaceConfigService } from '../config/wispace-config.service';
-import { hoursFromNow } from '@wispace/date-utils';
+import { addHours } from 'date-fns';
 import type {
   CalendarSessionTimeRange,
   NormalizedStudySession,
@@ -39,7 +39,7 @@ export class WispaceCalendarService {
       signal?: AbortSignal;
     } = {},
   ): Promise<NormalizedStudySession[]> {
-    const horizonEnd = hoursFromNow(this.horizonHours());
+    const horizonEnd = addHours(new Date(), this.horizonHours());
 
     return this.getScheduleClient().getCalendarSessions(
       this.idHeader,

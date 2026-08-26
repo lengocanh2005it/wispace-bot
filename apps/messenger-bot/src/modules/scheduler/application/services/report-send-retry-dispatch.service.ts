@@ -12,7 +12,7 @@ import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/reposi
 import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
 import { maskExternalId, PgAdvisoryLockService } from '@wispace/bot-common';
-import { subtractMs, minutesFromNow } from '@wispace/date-utils';
+import { subMilliseconds, addMinutes } from 'date-fns';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 
 @Injectable()
@@ -62,7 +62,7 @@ export class ReportSendRetryDispatchService {
 
     const resetStuck =
       await this.reportSendJobRepository.resetStuckProcessingJobs(
-        subtractMs(now, 10 * 60 * 1000),
+        subMilliseconds(now, 10 * 60 * 1000),
       );
 
     const dueJobs = await this.reportSendJobRepository.findDueJobs(now);
@@ -145,7 +145,10 @@ export class ReportSendRetryDispatchService {
         await this.reportSendJobRepository.markSent(claimedJob.id, leaseToken);
         sent += 1;
       } else if (orchestrationResult.claimSkipped > 0) {
-        const nextRetryAt = minutesFromNow(settings.retryBackoffMinutes);
+        const nextRetryAt = addMinutes(
+          new Date(),
+          settings.retryBackoffMinutes,
+        );
         await this.reportSendJobRepository.markFailed({
           jobId: claimedJob.id,
           leaseToken,
@@ -158,7 +161,10 @@ export class ReportSendRetryDispatchService {
       } else if (orchestrationResult.deferred > 0) {
         const nextRetryCount = claimedJob.retryCount + 1;
         const terminal = nextRetryCount >= claimedJob.maxRetries;
-        const nextRetryAt = minutesFromNow(settings.retryBackoffMinutes);
+        const nextRetryAt = addMinutes(
+          new Date(),
+          settings.retryBackoffMinutes,
+        );
 
         await this.reportSendJobRepository.markFailed({
           jobId: claimedJob.id,

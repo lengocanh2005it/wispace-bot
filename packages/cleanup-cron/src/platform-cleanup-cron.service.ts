@@ -11,7 +11,7 @@ import { DataSource, LessThan, Repository } from 'typeorm';
 import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { WebhookDeadLetterEntity } from '@wispace/database';
 import type { Platform } from '@wispace/database';
-import { minutesAgo } from '@wispace/date-utils';
+import { subMinutes } from 'date-fns';
 import { CleanupCronService } from './cleanup-cron.service';
 
 export interface CleanupCronJobsConfig {
@@ -221,7 +221,7 @@ export class PlatformCleanupCronService
         defaultRetentionDays: 0,
       },
       () => {
-        const tenMinutesAgo = minutesAgo(10);
+        const tenMinutesAgo = subMinutes(new Date(), 10);
         return this.config
           .oauthStateRepo!.delete({ createdAt: LessThan(tenMinutesAgo) })
           .then((r) => r.affected ?? 0);

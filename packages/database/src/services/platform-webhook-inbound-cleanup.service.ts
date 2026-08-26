@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { PgAdvisoryLockService } from '@wispace/bot-common';
-import { daysAgo } from '@wispace/date-utils';
+import { subDays } from 'date-fns';
 import { PlatformWebhookInboundEventService } from './platform-webhook-inbound-event.service';
 
 const DEFAULT_RETENTION_DAYS = 30;
@@ -62,7 +62,7 @@ export class PlatformWebhookInboundCleanupService {
     }
 
     const retentionDays = this.getRetentionDays();
-    const cutoff = daysAgo(retentionDays);
+    const cutoff = subDays(new Date(), retentionDays);
 
     const result = await this.pgLock.withLock(this.options.lockId, async () => {
       const deleted = await this.inboundEvents.deleteTerminalOlderThan(cutoff);

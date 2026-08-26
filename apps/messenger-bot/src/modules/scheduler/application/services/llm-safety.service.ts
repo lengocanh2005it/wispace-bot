@@ -8,7 +8,7 @@ import {
   LlmSafetyEventEntity,
   LlmSafetyEventRepository,
 } from '@wispace/chat-metering';
-import { hoursAgo, daysAgo } from '@wispace/date-utils';
+import { subHours, subDays } from 'date-fns';
 import type { RecordGroundingWarningInput } from './llm-safety.types';
 
 const PLATFORM = 'messenger' as const;
@@ -55,12 +55,12 @@ export class LlmSafetyService {
 
   async countWarnings24h(): Promise<number> {
     if (!this.isEnabled()) return 0;
-    const since = hoursAgo(24);
+    const since = subHours(new Date(), 24);
     return this.getCore().countWarningsSince(since);
   }
 
   async deleteOlderThanRetentionDays(): Promise<number> {
-    const before = daysAgo(this.retentionDays);
+    const before = subDays(new Date(), this.retentionDays);
     const deleted = await this.getCore().deleteOlderThan(before);
     if (deleted > 0)
       this.logger.log(

@@ -10,7 +10,7 @@ import type { MessengerMessageLogRepositoryPort } from '@messenger/modules/messe
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common';
 import { LlmSafetyService } from './llm-safety.service';
 import { readEnvBoolean } from '@messenger/shared/config/env-helpers';
-import { hoursAgo, subtractMs } from '@wispace/date-utils';
+import { subHours, subMilliseconds } from 'date-fns';
 import type {
   OpsHealthAlert,
   OpsHealthSnapshot,
@@ -50,7 +50,7 @@ export class OpsHealthService {
       'OPS_ALERT_DENY_LOOKBACK_HOURS',
       24,
     );
-    const denySince = hoursAgo(denyLookbackHours);
+    const denySince = subHours(new Date(), denyLookbackHours);
 
     const [
       chatQuotaBase,
@@ -214,8 +214,8 @@ export class OpsHealthService {
     stuckProcessingMinutes: number,
   ): Promise<StudyReminderOpsSummary> {
     const sampleLimit = 20;
-    const failedSince = hoursAgo(failedHours);
-    const stuckBefore = subtractMs(
+    const failedSince = subHours(new Date(), failedHours);
+    const stuckBefore = subMilliseconds(
       new Date(),
       stuckProcessingMinutes * 60 * 1000,
     );

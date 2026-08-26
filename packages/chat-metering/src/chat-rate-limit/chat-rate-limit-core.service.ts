@@ -1,7 +1,5 @@
-import {
-  todayInTimezone as todayUsageDate,
-  subtractMs,
-} from '@wispace/date-utils';
+import { subMilliseconds } from 'date-fns';
+import { todayInTimezone as todayUsageDate } from '@wispace/date-utils';
 import { maskExternalId } from '@wispace/bot-common';
 import { CHAT_BURST_WINDOW_MS } from './memory-burst-counter';
 import type {
@@ -60,7 +58,7 @@ export class ChatRateLimitCore {
   ): Promise<ChatQuotaCheckResult> {
     const { freeFormDailyLimit, burstPerMinute, timezone } = this.settings;
     const usageDate = todayUsageDate(timezone);
-    const burstSince = subtractMs(new Date(), CHAT_BURST_WINDOW_MS);
+    const burstSince = subMilliseconds(new Date(), CHAT_BURST_WINDOW_MS);
 
     const burstResult = await this.burstCounter.tryReserveBurst(
       externalUserId,
@@ -153,7 +151,7 @@ export class ChatRateLimitCore {
   }
 
   private stuckReservedCutoff(): Date {
-    return subtractMs(new Date(), this.stuckReservedMs);
+    return subMilliseconds(new Date(), this.stuckReservedMs);
   }
 
   private async reserveAndRollbackBurstOnFailure(

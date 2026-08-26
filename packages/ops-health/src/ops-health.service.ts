@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { hoursFromNow } from '@wispace/date-utils';
+import { addHours } from 'date-fns';
 import {
   OPS_HEALTH_REPOSITORY,
   type OpsHealthRepositoryPort,
@@ -41,7 +41,7 @@ export class OpsHealthService {
       'OPS_ALERT_FAILED_JOBS_HOURS',
       DEFAULT_FAILED_JOBS_HOURS,
     );
-    const failedSince = hoursFromNow(-failedHours);
+    const failedSince = addHours(new Date(), -failedHours);
     const llmSafetyWarnings =
       await this.repository.getLlmSafetyWarningsCount(failedSince);
 

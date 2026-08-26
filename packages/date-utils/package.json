@@ -32,7 +32,5 @@
     },
     "testEnvironment": "node"
   },
-  "dependencies": {
-    "date-fns": "^4.4.0"
-  }
+  "dependencies": {}
 }

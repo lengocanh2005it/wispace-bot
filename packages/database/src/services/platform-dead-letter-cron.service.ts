@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { subtractMs } from '@wispace/date-utils';
+import { subMilliseconds } from 'date-fns';
 import {
   errorMessage,
   maskExternalIdInText,
@@ -99,7 +99,7 @@ export class PlatformDeadLetterCronService {
       DEFAULT_LEASE_MS,
     );
 
-    const olderThan = subtractMs(new Date(), minRetryAgeMs);
+    const olderThan = subMilliseconds(new Date(), minRetryAgeMs);
     const entries = await this.deadLetterService.listPendingForRetry({
       limit: retryLimit,
       olderThan,

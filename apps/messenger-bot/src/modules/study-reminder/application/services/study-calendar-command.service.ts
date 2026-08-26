@@ -24,7 +24,7 @@ import type {
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
 import { createSessionSourceGetSessions } from '@wispace/study-reminder-shared';
-import { hoursFromNow } from '@wispace/date-utils';
+import { addHours } from 'date-fns';
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
 import { StudySessionSourceService } from './study-session-source.service';
 
@@ -57,7 +57,7 @@ export class StudyCalendarCommandService {
     const recordById = new Map(records.map((record) => [record.id, record]));
     const { syncHorizonHours } =
       this.studyReminderScheduleService.getOutboxSettings();
-    const horizonEnd = hoursFromNow(syncHorizonHours);
+    const horizonEnd = addHours(new Date(), syncHorizonHours);
     const sessions = await this.calendarData.getCalendarSessions(
       psid,
       horizonEnd,

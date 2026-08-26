@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
-import { subtractMs } from '@wispace/date-utils';
+import { subMilliseconds } from 'date-fns';
 import { PgAdvisoryLockService } from '@wispace/bot-common';
 import {
   REPORT_CLAIM_REPOSITORY,
@@ -44,7 +44,7 @@ export class ReportClaimStaleResetCronService {
     const result = await this.pgLock.withLock(this.options.lockId, () =>
       this.claimRepository.releaseExpiredScheduledReportClaims(
         now,
-        subtractMs(now, staleMs),
+        subMilliseconds(now, staleMs),
       ),
     );
 

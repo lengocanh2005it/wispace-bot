@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common';
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
-import { hoursFromNow } from '@wispace/date-utils';
+import { addHours } from 'date-fns';
 import { NormalizedStudySession } from '../../domain/entities/study-schedule.types';
 import { UserCalendarScheduleService } from '../../infrastructure/wispace/user-calendar-schedule.service';
 
@@ -21,7 +21,8 @@ export class StudySessionSourceService {
   }): Promise<NormalizedStudySession[]> {
     const { syncHorizonHours } =
       this.studyReminderScheduleService.getOutboxSettings();
-    const horizonEnd = params.horizonEnd ?? hoursFromNow(syncHorizonHours);
+    const horizonEnd =
+      params.horizonEnd ?? addHours(new Date(), syncHorizonHours);
 
     try {
       return await this.userCalendarScheduleService.getUpcomingSessions(

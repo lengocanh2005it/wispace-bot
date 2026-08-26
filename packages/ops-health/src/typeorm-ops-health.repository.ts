@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { hoursAgo, subtractMs } from '@wispace/date-utils';
+import { subHours, subMilliseconds } from 'date-fns';
 import type { OpsHealthRepositoryPort } from './types';
 
 interface CountRow {
@@ -53,7 +53,7 @@ export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
   }
 
   async getLlmSafetyWarningsCount(): Promise<number> {
-    const since = hoursAgo(24);
+    const since = subHours(new Date(), 24);
     const rows = await this.execQuery<CountRow>(
       `SELECT COUNT(*)::int AS count FROM llm_safety_events WHERE platform = $1 AND created_at > $2`,
       [this.platform, since],
@@ -62,7 +62,7 @@ export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
   }
 
   private async countDenyLogs24h(): Promise<number> {
-    const since = hoursAgo(24);
+    const since = subHours(new Date(), 24);
     const rows = await this.execQuery<CountRow>(
       `SELECT COUNT(*)::int AS count FROM chat_idempotency WHERE platform = $1 AND status = 'refunded' AND reserved_at > $2`,
       [this.platform, since],
@@ -71,7 +71,7 @@ export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
   }
 
   private async countStuckReserved(): Promise<number> {
-    const stuckBefore = subtractMs(new Date(), 600_000);
+    const stuckBefore = subMilliseconds(new Date(), 600_000);
     const rows = await this.execQuery<CountRow>(
       `SELECT COUNT(*)::int AS count FROM chat_idempotency WHERE platform = $1 AND status = 'reserved' AND reserved_at < $2`,
       [this.platform, stuckBefore],
@@ -102,7 +102,7 @@ export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
   }
 
   private async countTerminalFailedSince(): Promise<number> {
-    const since = hoursAgo(24);
+    const since = subHours(new Date(), 24);
     const rows = await this.execQuery<CountRow>(
       `SELECT COUNT(*)::int AS count FROM study_reminder_jobs WHERE platform = $1 AND status = 'failed' AND updated_at > $2`,
       [this.platform, since],
@@ -111,7 +111,7 @@ export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
   }
 
   private async countStuckProcessing(): Promise<number> {
-    const stuckBefore = subtractMs(new Date(), 300_000);
+    const stuckBefore = subMilliseconds(new Date(), 300_000);
     const rows = await this.execQuery<CountRow>(
       `SELECT COUNT(*)::int AS count FROM study_reminder_jobs WHERE platform = $1 AND status = 'processing' AND updated_at < $2`,
       [this.platform, stuckBefore],
