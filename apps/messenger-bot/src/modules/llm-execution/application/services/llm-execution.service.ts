@@ -10,7 +10,7 @@ import {
   type AdmissionTicket,
   type LlmProviderAdapter,
 } from '@wispace/llm-agent';
-import { MetricsService } from '@messenger/modules/metrics/metrics.service';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import type { LlmExecutionContext } from '../types/llm-execution.types';
 import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
@@ -35,7 +35,7 @@ export class LlmExecutionService {
 
   constructor(
     private readonly config: LlmExecutionConfigService,
-    private readonly metrics: MetricsService,
+    private readonly metrics: BotMetricsService,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
     @Optional()

@@ -30,7 +30,7 @@ import { UserLinkingModule } from './user-linking.module';
 import { WEBHOOK_INBOUND_EVENTS_PORT } from './domain/repositories/webhook-inbound-events.port';
 import type { WebhookInboundEventsPort } from './domain/repositories/webhook-inbound-events.port';
 import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
-import { MetricsService } from '../metrics/metrics.service';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 /**
  * Thin orchestrator module — owns webhook handling, event routing,
@@ -81,7 +81,7 @@ import { MetricsService } from '../metrics/metrics.service';
         configService: ConfigService,
         pgLock: PgAdvisoryLockService,
         messengerService: MessengerService,
-        metrics: MetricsService,
+        metrics: BotMetricsService,
       ) =>
         new PlatformWebhookInboundRetryCronService(
           inboundEvents,
@@ -101,7 +101,7 @@ import { MetricsService } from '../metrics/metrics.service';
         ConfigService,
         PgAdvisoryLockService,
         MessengerService,
-        MetricsService,
+        BotMetricsService,
       ],
     },
     CleanupCronService,

@@ -5,7 +5,7 @@ import {
   todayUsageDate,
   type ChatQuotaCheckResult,
 } from '@wispace/chat-metering';
-import { MetricsService } from '@messenger/modules/metrics/metrics.service';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
 import { ChatQuotaEventRecorderService } from './chat-quota-event-recorder.service';
 import {
@@ -37,7 +37,7 @@ export class ChatRateLimitService {
     @Inject(CHAT_BURST_COUNTER)
     private readonly burstCounter: ChatBurstCounterPort,
     private readonly quotaEventRecorder: ChatQuotaEventRecorderService,
-    private readonly metrics: MetricsService,
+    private readonly metrics: BotMetricsService,
   ) {
     const settings = this.configService.getSettings();
     this.core = new ChatRateLimitCore(

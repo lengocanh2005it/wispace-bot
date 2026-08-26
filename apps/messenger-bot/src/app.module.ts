@@ -17,7 +17,7 @@ import { StudentReportModule } from './modules/student-report/student-report.mod
 import { StudyReminderModule } from './modules/study-reminder/study-reminder.module';
 import { ChatRateLimitModule } from './modules/chat-rate-limit/chat-rate-limit.module';
 import { LlmUsageModule } from './modules/llm-usage/llm-usage.module';
-import { MetricsModule } from './modules/metrics/metrics.module';
+import { createMetricsModule } from '@wispace/bot-metrics';
 
 @Module({
   imports: [
@@ -45,7 +45,7 @@ import { MetricsModule } from './modules/metrics/metrics.module';
     SchedulerModule,
     ChatRateLimitModule,
     LlmUsageModule,
-    MetricsModule,
+    createMetricsModule('messenger', 'messenger-ai-for-student'),
   ],
   controllers: [AppController, HealthController],
   providers: [

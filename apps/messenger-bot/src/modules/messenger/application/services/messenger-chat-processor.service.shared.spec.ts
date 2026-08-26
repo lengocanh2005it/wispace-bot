@@ -1,7 +1,7 @@
 import type { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import type { ChatQueueStorePort } from '../../domain/repositories/chat-queue.store.port';
 import { MessengerChatProcessorService } from './messenger-chat-processor.service';
-import type { MetricsService } from '@messenger/modules/metrics/metrics.service';
+import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 
 describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
@@ -40,7 +40,7 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         (_f: string, _m: string, _r: number, fn: () => Promise<unknown>) =>
           fn(),
       ),
-    } as unknown as MetricsService;
+    } as unknown as BotMetricsService;
 
     const service = new MessengerChatProcessorService(
       { sendSenderActionOptional, sendTextBubblesViaPsid } as never,
@@ -128,7 +128,7 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         (_f: string, _m: string, _r: number, fn: () => Promise<unknown>) =>
           fn(),
       ),
-    } as unknown as MetricsService;
+    } as unknown as BotMetricsService;
 
     const service = new MessengerChatProcessorService(
       {
@@ -231,7 +231,7 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         (_f: string, _m: string, _r: number, fn: () => Promise<unknown>) =>
           fn(),
       ),
-    } as unknown as MetricsService;
+    } as unknown as BotMetricsService;
 
     const service = new MessengerChatProcessorService(
       {
@@ -326,7 +326,7 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         (_f: string, _m: string, _r: number, fn: () => Promise<unknown>) =>
           fn(),
       ),
-    } as unknown as MetricsService;
+    } as unknown as BotMetricsService;
 
     const service = new MessengerChatProcessorService(
       {

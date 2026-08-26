@@ -1,4 +1,4 @@
-import type { MetricsService } from '@messenger/modules/metrics/metrics.service';
+import type { BotMetricsService } from '@wispace/bot-metrics';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import { LlmExecutionService } from './llm-execution.service';
 
@@ -7,7 +7,7 @@ const noopMetrics = {
   incLlmAdmissionRejected: jest.fn(),
   observeLlmAdmissionWait: jest.fn(),
   setLlmAdmissionQueueDepth: jest.fn(),
-} as unknown as MetricsService;
+} as unknown as BotMetricsService;
 
 const mockAdapter = {
   isConfigured: () => true,
@@ -244,7 +244,7 @@ describe('LlmExecutionService', () => {
         incLlmAdmissionRejected: jest.fn(),
         observeLlmAdmissionWait: jest.fn(),
         setLlmAdmissionQueueDepth: jest.fn(),
-      } as unknown as MetricsService;
+      } as unknown as BotMetricsService;
       const service = new LlmExecutionService(config, metrics, mockAdapter);
 
       await service.run(() => Promise.resolve('ok'), {
@@ -271,7 +271,7 @@ describe('LlmExecutionService', () => {
         incLlmAdmissionRejected: jest.fn(),
         observeLlmAdmissionWait: jest.fn(),
         setLlmAdmissionQueueDepth: jest.fn(),
-      } as unknown as MetricsService;
+      } as unknown as BotMetricsService;
       const service = new LlmExecutionService(config, metrics, mockAdapter);
 
       await service.run(() => Promise.resolve('ok'));
@@ -297,7 +297,7 @@ describe('LlmExecutionService', () => {
         incLlmAdmissionRejected: jest.fn(),
         observeLlmAdmissionWait: jest.fn(),
         setLlmAdmissionQueueDepth: jest.fn(),
-      } as unknown as MetricsService;
+      } as unknown as BotMetricsService;
       const service = new LlmExecutionService(config, metrics, mockAdapter);
       let attempts = 0;
 

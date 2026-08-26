@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule } from '../../shared/common/common.module';
 import { MessengerOutboundModule } from '../messenger/messenger-outbound.module';
-import { MetricsModule } from '../metrics/metrics.module';
 import { LlmUsageEventEntity } from '@wispace/chat-metering';
 import { CleanupCronService } from '@wispace/cleanup-cron';
 import { LlmUsageCleanupCronService } from './application/services/llm-usage-cleanup-cron.service';
@@ -17,7 +16,6 @@ import { LlmUsageController } from './presentation/controllers/llm-usage.control
   imports: [
     CommonModule,
     MessengerOutboundModule,
-    MetricsModule,
     TypeOrmModule.forFeature([LlmUsageEventEntity]),
   ],
   controllers: [LlmUsageController],

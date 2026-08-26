@@ -51,7 +51,7 @@ import { StudentReportModule } from '../student-report/student-report.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
 import { DisplayNameModule } from '../display-name/display-name.module';
 import { UserDisplayNameService } from '../display-name/application/user-display-name.service';
-import { MetricsService } from '../metrics/metrics.service';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { MessengerOutboundModule } from './messenger-outbound.module';
 import { UserLinkingModule } from './user-linking.module';
 import { MessengerAgentToolsService } from './application/agent/messenger-agent-tools.service';
@@ -180,7 +180,7 @@ import {
         adapter: LlmProviderAdapter,
         messengerTools: MessengerAgentToolsService,
         userDisplayNameService: UserDisplayNameService,
-        metrics: MetricsService,
+        metrics: BotMetricsService,
         llmExecution: LlmExecutionService,
         learnerProfileStore: LearnerProfileStorePort,
       ) => {
@@ -258,7 +258,7 @@ import {
         'LLM_PROVIDER_ADAPTER',
         MessengerAgentToolsService,
         UserDisplayNameService,
-        MetricsService,
+        BotMetricsService,
         LlmExecutionService,
         LEARNER_PROFILE_STORE,
       ],

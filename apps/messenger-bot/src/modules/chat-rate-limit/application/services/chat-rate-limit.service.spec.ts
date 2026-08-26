@@ -2,7 +2,7 @@
 import { ConfigService } from '@nestjs/config';
 import type { ChatQuotaRepositoryPort } from '../../domain/repositories/chat-quota.repository.port';
 import type { ChatBurstCounterPort } from '../../domain/repositories/chat-burst-counter.port';
-import type { MetricsService } from '@messenger/modules/metrics/metrics.service';
+import type { BotMetricsService } from '@wispace/bot-metrics';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
 import { ChatQuotaEventRecorderService } from './chat-quota-event-recorder.service';
 import { ChatRateLimitService } from './chat-rate-limit.service';
@@ -118,7 +118,7 @@ describe('ChatRateLimitService', () => {
 
     const metrics = {
       incQuotaDenied: jest.fn(),
-    } as unknown as MetricsService;
+    } as unknown as BotMetricsService;
 
     const service = new ChatRateLimitService(
       configService,

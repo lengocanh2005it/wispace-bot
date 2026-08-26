@@ -29,7 +29,7 @@ import { MessengerOutboundService } from './messenger-outbound.service';
 import { buildChatDeliveryErrorMessage } from '../messages/chat-delivery.messages';
 import { buildChatDroppedMessage } from '../messages/chat-delivery.messages';
 import { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
-import { MetricsService } from '@messenger/modules/metrics/metrics.service';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { trace, context, SpanStatusCode, SpanKind } from '@opentelemetry/api';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import {
@@ -70,7 +70,7 @@ export class MessengerChatProcessorService {
     private readonly messengerAgentService: MessengerAgentService,
     private readonly chatRateLimitService: ChatRateLimitService,
     private readonly chatRateLimitConfig: ChatRateLimitConfigService,
-    private readonly metrics: MetricsService,
+    private readonly metrics: BotMetricsService,
     @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
     private readonly messengerRepository: MessengerMessageLogRepositoryPort,
     private readonly sharedConfig: MessengerChatSharedConfigService,

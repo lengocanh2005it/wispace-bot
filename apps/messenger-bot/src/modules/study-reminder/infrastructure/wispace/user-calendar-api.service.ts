@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UserCalendarApiClient } from '@wispace/wispace-client';
-import { MetricsService } from '@messenger/modules/metrics/metrics.service';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   CreateUserCalendarInput,
   UserCalendarRecord,
@@ -17,7 +17,7 @@ export class UserCalendarApiService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly metrics: MetricsService,
+    private readonly metrics: BotMetricsService,
   ) {}
 
   async listCalendars(psid: string): Promise<UserCalendarRecord[]> {

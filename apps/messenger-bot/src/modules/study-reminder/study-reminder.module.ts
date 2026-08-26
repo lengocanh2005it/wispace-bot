@@ -30,7 +30,7 @@ import { StudentReportModule } from '../student-report/student-report.module';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
 import { LlmUsageModule } from '../llm-usage/llm-usage.module';
 import { DisplayNameModule } from '../display-name/display-name.module';
-import { MetricsService } from '../metrics/metrics.service';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { StudyCalendarCommandService } from './application/services/study-calendar-command.service';
 import { StudyReminderService } from './application/services/study-reminder.service';
 import { StudySessionSourceService } from './application/services/study-session-source.service';
@@ -173,7 +173,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
       provide: DISPATCH_HOOKS,
       useFactory: (
         reminderService: StudyReminderService,
-        metrics: MetricsService,
+        metrics: BotMetricsService,
       ): DispatchHooksPort => ({
         generateReminder: (session, ctx) =>
           reminderService.generateReminderForSession(
@@ -190,7 +190,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         onRetried: () => metrics.incReminderDispatch('retried'),
         onCancelled: () => metrics.incReminderDispatch('cancelled'),
       }),
-      inject: [StudyReminderService, MetricsService],
+      inject: [StudyReminderService, BotMetricsService],
     },
 
     {

@@ -14,7 +14,7 @@ import {
   type LlmUsageRepositoryPort,
 } from '../../domain/repositories/llm-usage.repository.port';
 import { LlmUsageConfigService } from './llm-usage-config.service';
-import { MetricsService } from '@messenger/modules/metrics/metrics.service';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 @Injectable()
 export class LlmUsageRecorderService {
@@ -25,7 +25,7 @@ export class LlmUsageRecorderService {
     private readonly configService: LlmUsageConfigService,
     @Inject(LLM_USAGE_REPOSITORY)
     private readonly repository: LlmUsageRepositoryPort,
-    private readonly metrics: MetricsService,
+    private readonly metrics: BotMetricsService,
   ) {}
 
   isEnabled(): boolean {

@@ -17,7 +17,7 @@ import {
 } from './messenger-outbound.service';
 import { MessengerChatProcessorService } from './messenger-chat-processor.service';
 import type { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
-import type { MetricsService } from '@messenger/modules/metrics/metrics.service';
+import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { PlatformChatHistoryService } from '@wispace/chat-agent';
 
 describe('MessengerChatProcessorService', () => {
@@ -127,7 +127,7 @@ describe('MessengerChatProcessorService', () => {
         (_f: string, _m: string, _r: number, fn: () => Promise<unknown>) =>
           fn(),
       ),
-    } as unknown as MetricsService;
+    } as unknown as BotMetricsService;
 
     const service = new MessengerChatProcessorService(
       outbound,

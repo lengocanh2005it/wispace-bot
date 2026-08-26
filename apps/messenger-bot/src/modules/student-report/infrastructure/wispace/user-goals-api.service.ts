@@ -8,7 +8,7 @@ import {
   buildWispaceHeaders,
   UserGoalsApiClient,
 } from '@wispace/wispace-client';
-import { MetricsService } from '@messenger/modules/metrics/metrics.service';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import type { UserGoalsRecord } from '@wispace/wispace-client';
 // ponytail: shared date utils live in scheduler-core (same byte-identical copy was local)
 import { parseExamDateToIso } from '@wispace/scheduler-core';
@@ -26,7 +26,7 @@ export class UserGoalsApiService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly metrics: MetricsService,
+    private readonly metrics: BotMetricsService,
   ) {}
 
   async getUserGoals(psid: string): Promise<UserGoalsRecord> {
