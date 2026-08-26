@@ -13,7 +13,5 @@
     "userId": "number (WISPACE internal user ID)"
   },
   "shared_across_bots": true,
-  "changelog": [
-    "1.0.0 — Initial canonical contract"
-  ]
+  "changelog": ["1.0.0 — Initial canonical contract"]
 }
