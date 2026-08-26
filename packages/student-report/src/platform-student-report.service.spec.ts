@@ -1,14 +1,26 @@
 import { ConfigService } from '@nestjs/config';
 import { PlatformStudentReportService } from './platform-student-report.service';
+import { createEnvLlmExecutionPort } from '@wispace/llm-agent';
 import type { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering';
 import type { WispaceGoalsService } from '@wispace/wispace-client';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 
 jest.mock('@wispace/llm-agent', () => ({
+  ...jest.requireActual('@wispace/llm-agent'),
   loadSystemPromptFile: jest.fn().mockReturnValue('system prompt'),
-  buildLlmExecutionConfig: jest.fn(() => ({})),
   createEnvLlmExecutionPort: jest.fn(),
-  buildLlmExecutionConfig: jest.fn().mockReturnValue({}),
+  buildLlmExecutionConfig: jest.fn().mockReturnValue({
+    enabled: true,
+    maxConcurrent: 1,
+    maxQueueDepth: 2,
+    chatAdmissionWaitMs: 8000,
+    backgroundAdmissionWaitMs: 20,
+    globalMaxConcurrent: 10,
+    maxAttempts: 1,
+    baseBackoffMs: 1,
+    requestTimeoutMs: 30000,
+    globalConcurrencyEnabled: false,
+  }),
 }));
 
 const mockGenerateReport = jest
@@ -87,5 +99,26 @@ describe('PlatformStudentReportService', () => {
     const result: string = await service.generateReport('external-1');
 
     expect(result).toBe('mock report');
+  });
+
+  // Multi-platform regression (#389): Discord and Zalo reports both build
+  // their execution port through this platform-parameterized service — the
+  // bounded-admission contract must be passed through intact.
+  it('wires the shared bounded-admission config into its execution port', async () => {
+    const service = buildService();
+
+    await service.generateReport('external-1');
+
+    expect(createEnvLlmExecutionPort).toHaveBeenCalledWith(
+      expect.objectContaining({
+        maxConcurrent: 1,
+        maxQueueDepth: 2,
+        chatAdmissionWaitMs: 8000,
+        backgroundAdmissionWaitMs: 20,
+      }),
+      expect.anything(),
+      expect.anything(),
+      undefined,
+    );
   });
 });

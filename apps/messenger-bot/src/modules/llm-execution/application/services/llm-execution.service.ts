@@ -108,10 +108,12 @@ export class LlmExecutionService {
     } catch (error) {
       if (error instanceof LlmOverloadError) {
         this.metrics.incLlmAdmissionRejected(error.reason);
+        this.metrics.setLlmAdmissionQueueDepth(this.queue.waitingCount);
       }
       throw error;
     }
     this.metrics.observeLlmAdmissionWait((Date.now() - startedAtMs) / 1000);
+    this.metrics.setLlmAdmissionQueueDepth(this.queue.waitingCount);
 
     let releaseGlobal: (() => Promise<void>) | undefined;
     try {
@@ -130,6 +132,7 @@ export class LlmExecutionService {
           this.config.getGlobalMaxConcurrent(),
           { warn: (message) => this.logger.warn(message) },
           {
+            metrics: this.metrics.llmAdmission,
             signal: acquireSignal,
             waitBudgetMs: admissionWaitBudgetMs(this.budgets, context?.feature),
           },
@@ -140,6 +143,7 @@ export class LlmExecutionService {
     } finally {
       await releaseGlobal?.();
       ticket.release();
+      this.metrics.setLlmAdmissionQueueDepth(this.queue.waitingCount);
     }
   }
 

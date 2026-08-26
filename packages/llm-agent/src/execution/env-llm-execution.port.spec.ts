@@ -191,6 +191,36 @@ describe('createEnvLlmExecutionPort', () => {
     });
   });
 
+  it('counts Redis-global rejections into the shared admission contract (#389 review)', async () => {
+    const incrementCounter = jest.fn();
+    const observeWaitSeconds = jest.fn();
+    const redis = { eval: jest.fn().mockResolvedValue(0) };
+    const port = createEnvLlmExecutionPort(
+      {
+        ...DEFAULT_CONFIG,
+        globalConcurrencyEnabled: true,
+        redis: redis as never,
+        globalAcquireMaxRetries: 2,
+        globalAcquireRetryDelayMs: 1,
+      },
+      makeAdapter(),
+      noopLogger,
+      { incrementCounter, observeWaitSeconds },
+    );
+
+    await expect(
+      port.run(() => Promise.resolve('ok'), { feature: 'FREE_FORM_CHAT' }),
+    ).rejects.toMatchObject({
+      name: 'LlmOverloadError',
+      reason: 'global_saturated',
+    });
+
+    expect(incrementCounter).toHaveBeenCalledWith(
+      'llm_admission_rejected_total',
+      { reason: 'global_saturated' },
+    );
+  });
+
   it('reports typed global_saturated when every acquire attempt is denied (#389)', async () => {
     const redis = { eval: jest.fn().mockResolvedValue(0) };
     const port = createEnvLlmExecutionPort(

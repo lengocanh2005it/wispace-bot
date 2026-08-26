@@ -137,7 +137,7 @@ export function createEnvLlmExecutionPort(
             config.globalMaxConcurrent,
             logger,
             {
-              metrics: undefined,
+              metrics,
               signal: acquireSignal,
               leaseMs: Math.max(config.requestTimeoutMs, 60_000),
               maxRetries: config.globalAcquireMaxRetries,

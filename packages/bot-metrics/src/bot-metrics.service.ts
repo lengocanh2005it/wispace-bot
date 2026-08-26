@@ -336,11 +336,13 @@ export class BotMetricsService implements OnModuleDestroy {
   get llmAdmission(): {
     incrementCounter(name: string, labels?: Record<string, string>): void;
     observeWaitSeconds(seconds: number): void;
+    observeQueueDepth(depth: number): void;
   } {
     return {
       incrementCounter: (_name, labels) =>
         this.incLlmAdmissionRejected(labels?.reason ?? 'unknown'),
       observeWaitSeconds: (seconds) => this.observeLlmAdmissionWait(seconds),
+      observeQueueDepth: (depth) => this.setLlmAdmissionQueueDepth(depth),
     };
   }
 

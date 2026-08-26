@@ -89,9 +89,11 @@ describe('acquireRedisSlot', () => {
 
   it('maps sustained denial to typed global_saturated overload (#389)', async () => {
     const redis = makeRedis(0);
+    const metrics = { incrementCounter: jest.fn() };
 
     await expect(
       acquireRedisSlot(redis as never, 'test', 10, mockLogger, {
+        metrics,
         maxRetries: 2,
         retryDelayMs: 1,
       }),
@@ -99,13 +101,19 @@ describe('acquireRedisSlot', () => {
       name: 'LlmOverloadError',
       reason: 'global_saturated',
     });
+    expect(metrics.incrementCounter).toHaveBeenCalledWith(
+      'llm_admission_rejected_total',
+      { reason: 'global_saturated' },
+    );
   });
 
   it('maps sustained redis errors to typed redis_unavailable overload (#389)', async () => {
     const redis = { eval: jest.fn().mockRejectedValue(new Error('down')) };
+    const metrics = { incrementCounter: jest.fn() };
 
     await expect(
       acquireRedisSlot(redis as never, 'test', 10, mockLogger, {
+        metrics,
         maxRetries: 2,
         retryDelayMs: 1,
       }),
@@ -113,6 +121,10 @@ describe('acquireRedisSlot', () => {
       name: 'LlmOverloadError',
       reason: 'redis_unavailable',
     });
+    expect(metrics.incrementCounter).toHaveBeenCalledWith(
+      'llm_admission_rejected_total',
+      { reason: 'redis_unavailable' },
+    );
   });
 
   it('aborts a hung acquire command when the caller signal fires (#389)', async () => {

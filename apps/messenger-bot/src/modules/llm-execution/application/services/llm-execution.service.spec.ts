@@ -6,6 +6,7 @@ const noopMetrics = {
   timeLlmExecution: <T>(_feature: string, fn: () => Promise<T>) => fn(),
   incLlmAdmissionRejected: jest.fn(),
   observeLlmAdmissionWait: jest.fn(),
+  setLlmAdmissionQueueDepth: jest.fn(),
 } as unknown as MetricsService;
 
 const mockAdapter = {
@@ -242,6 +243,7 @@ describe('LlmExecutionService', () => {
         timeLlmExecution,
         incLlmAdmissionRejected: jest.fn(),
         observeLlmAdmissionWait: jest.fn(),
+        setLlmAdmissionQueueDepth: jest.fn(),
       } as unknown as MetricsService;
       const service = new LlmExecutionService(config, metrics, mockAdapter);
 
@@ -268,6 +270,7 @@ describe('LlmExecutionService', () => {
         timeLlmExecution,
         incLlmAdmissionRejected: jest.fn(),
         observeLlmAdmissionWait: jest.fn(),
+        setLlmAdmissionQueueDepth: jest.fn(),
       } as unknown as MetricsService;
       const service = new LlmExecutionService(config, metrics, mockAdapter);
 
@@ -293,6 +296,7 @@ describe('LlmExecutionService', () => {
         timeLlmExecution,
         incLlmAdmissionRejected: jest.fn(),
         observeLlmAdmissionWait: jest.fn(),
+        setLlmAdmissionQueueDepth: jest.fn(),
       } as unknown as MetricsService;
       const service = new LlmExecutionService(config, metrics, mockAdapter);
       let attempts = 0;

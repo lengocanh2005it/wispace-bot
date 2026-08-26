@@ -151,9 +151,10 @@ export async function acquireRedisSlot(
     await abortableSleep(retryDelayMs, signal);
   }
 
-  throw new LlmOverloadError(
-    sawRedisError ? 'redis_unavailable' : 'global_saturated',
-  );
+  const reason = sawRedisError ? 'redis_unavailable' : 'global_saturated';
+  // Same low-cardinality rejection contract as local admission (#389).
+  metrics?.incrementCounter('llm_admission_rejected_total', { reason });
+  throw new LlmOverloadError(reason);
 }
 
 /**
