@@ -9,3 +9,4 @@ data/*.json
 *.tsbuildinfo
 GUIDE.md
 .turbo/
+.commandcode/
