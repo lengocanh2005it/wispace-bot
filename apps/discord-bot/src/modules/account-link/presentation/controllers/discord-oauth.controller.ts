@@ -1,5 +1,13 @@
-import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
-import { errorMessage } from '@wispace/bot-common';
+import {
+  Controller,
+  Get,
+  Logger,
+  Query,
+  Req,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
+import { errorMessage, parseCookieHeader } from '@wispace/bot-common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
@@ -76,7 +84,7 @@ export class DiscordOauthController {
     @Query('state') state: string | undefined,
     @Query('error') discordError: string | undefined,
     @Res() res: Response,
-    req: { cookies?: Record<string, string> },
+    @Req() req: { headers: { cookie?: string } },
   ): Promise<void> {
     if (discordError === 'access_denied') {
       this.sendResult(res, 'cancelled');
@@ -89,7 +97,9 @@ export class DiscordOauthController {
     }
 
     // Bind OAuth state to the initiating browser session (#348)
-    const cookieState = req.cookies?.[OAUTH_STATE_COOKIE];
+    const cookieState = parseCookieHeader(req.headers.cookie)[
+      OAUTH_STATE_COOKIE
+    ];
     if (!cookieState || cookieState !== state) {
       this.logger.warn(
         'Discord OAuth callback: state mismatch — possible cross-browser or forwarded URL',
