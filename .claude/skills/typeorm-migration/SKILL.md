@@ -20,6 +20,8 @@ npm run build
 npm run test
 ```
 
+For CI schema validation, run the root `npm run database:migration-compatibility` against disposable PostgreSQL; it exercises the canonical Messenger migration owner and checks bot tables. The separate `database:bootstrap-smoke` check intentionally uses `synchronize` and does not run migrations. Both commands require `NODE_ENV=test` with a loopback `DB_HOST` and must not target production.
+
 ## Constraints
 
 - Migration bảng: mappings, logs, jobs, `users` + view `"Users"`, and shared durable webhook inbox/dead-letter tables (DB dedicated, dùng chung giữa các bot — xem `docs/turborepo-migration-plan.md` Phase 2 về generalize khóa `psid`).

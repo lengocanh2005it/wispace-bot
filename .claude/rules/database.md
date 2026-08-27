@@ -39,6 +39,10 @@ H7 migration created `messenger_chat_queue_buffer` + `messenger_chat_history` �
 
 CLI generate (if needed): `npm run migration:generate -- src/infrastructure/database/migrations/TenMigration` (run in `apps/messenger-bot/`), then move shared-table entities/migrations to `packages/database/` when appropriate.
 
+## CI compatibility checks
+
+From the repository root, `npm run database:bootstrap-smoke` validates Discord/Zalo entity metadata and OAuth-state cleanup against a disposable PostgreSQL database using `synchronize` (migrations intentionally excluded). `npm run database:migration-compatibility` separately runs the canonical Messenger migration chain, verifies no pending migrations, and checks the Discord/Zalo tables. Both commands require `NODE_ENV=test` and a loopback `DB_HOST`; never run them against `ai_chat_bot_db` production.
+
 DB is shared across bots (Messenger, Discord, and Zalo) — keys generalized to `(platform, external_user_id)` in Phase 2, see `docs/turborepo-migration-plan.md`. Entities for the 4 chat-metering tables (`chat_daily_usage`, `chat_idempotency`, `llm_usage_events`, `llm_safety_events`) live in `packages/chat-metering` — **do not** add duplicate entities in `apps/*/infrastructure/database/entities/` — only migrations (run by messenger-bot) modify these tables' schemas.
 
 ## Naming convention for new migrations (applied going forward, not retroactively)
