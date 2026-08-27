@@ -43,6 +43,8 @@ export class DiscordOpsController extends PlatformOpsController<DopplerWebhookPa
       },
       exportUser: (externalUserId) =>
         privacyService.export('discord', externalUserId),
+      clearClarification: (externalUserId) =>
+        clarificationAgent.clearClarificationState(externalUserId),
     });
   }
 }

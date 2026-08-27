@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import type {
@@ -39,6 +40,7 @@ describe('PlatformAgentService', () => {
     overrides: {
       clarificationStore?: ClarificationStateStore;
       platform?: string;
+      clarificationOutcomeInc?: (outcome: string) => void;
     } = {},
   ) {
     const config = {
@@ -59,6 +61,7 @@ describe('PlatformAgentService', () => {
         promptFile: 'chat.system.txt',
         platform: overrides.platform,
         clarificationStore: overrides.clarificationStore,
+        clarificationOutcomeInc: overrides.clarificationOutcomeInc,
       },
     );
   }
@@ -604,5 +607,68 @@ describe('PlatformAgentService', () => {
       { role: 'user', content: 'second question' },
       { role: 'assistant', content: 'second answer' },
     ]);
+  });
+
+  it('redacts sensitive data in telemetry: metric labels and logs never contain unmasked external id or raw text', async () => {
+    const errorSpy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation(() => undefined);
+    const outcomes: string[] = [];
+    const clarificationOutcomeInc = jest.fn((outcome: string) => {
+      outcomes.push(outcome);
+    });
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const failingStore: ClarificationStateStore = {
+      get: jest.fn().mockRejectedValue(new Error('store unavailable')),
+      set: jest.fn(),
+      clear: jest.fn(),
+    };
+    const rawExternalId = 'unmasked-sensitive-user-9876543210';
+    const rawSecretUserText = 'my secret confidential question about scores';
+
+    const service = buildService(historyService, {
+      clarificationStore: failingStore,
+      clarificationOutcomeInc,
+    });
+
+    await service.reply({
+      externalUserId: rawExternalId,
+      userText: rawSecretUserText,
+    });
+
+    // Verify metrics outcomes
+    expect(clarificationOutcomeInc).toHaveBeenCalled();
+    for (const outcome of outcomes) {
+      expect(outcome).not.toContain(rawExternalId);
+      expect(outcome).not.toContain(rawSecretUserText);
+      expect([
+        'blocked_tool',
+        'expired',
+        'identity_reset',
+        'stale_reply',
+        'replayed',
+        'cancelled',
+        'choice',
+        'new_question',
+        'max_reset',
+        'reset_menu',
+        'irrelevant_clarify',
+        'started_offtopic',
+        'started_ambiguous',
+        'unavailable',
+      ]).toContain(outcome);
+    }
+
+    // Verify logs redaction
+    expect(errorSpy).toHaveBeenCalled();
+    const loggedMessage = errorSpy.mock.calls[0][0] as string;
+    expect(loggedMessage).not.toContain(rawExternalId);
+    expect(loggedMessage).not.toContain(rawSecretUserText);
+    expect(loggedMessage).toContain('unma…3210');
+
+    errorSpy.mockRestore();
   });
 });

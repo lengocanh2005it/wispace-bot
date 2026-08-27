@@ -156,6 +156,12 @@ export class SchedulerController {
     }));
   }
 
+  @Post('ops/clarification/clear')
+  @HttpCode(204)
+  async clearClarificationState(@Body() body: PrivacyActionBody) {
+    await this.clarificationAgent.clearClarificationState(body.externalUserId);
+  }
+
   @Post('privacy/unlink')
   @HttpCode(200)
   unlinkUser(@Body() body: PrivacyActionBody) {

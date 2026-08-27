@@ -525,7 +525,6 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
       getNativeClient(): unknown;
     },
     private readonly keyPrefix: string,
-    private readonly memory = new MemoryClarificationStateStore(),
     limits: ClarificationLimits = DEFAULT_CLARIFICATION_LIMITS,
   ) {
     this.limits = normalizeLimits(limits);
@@ -533,7 +532,6 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
 
   async get(key: string): Promise<ClarificationState | null> {
     const client = this.client();
-    if (!client) return this.memory.get(key);
     const raw = await client.get(this.redisKey(key));
     if (!raw) return null;
     return this.parse(raw);
@@ -545,9 +543,6 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
     expectedVersion?: number,
   ): Promise<boolean> {
     const client = this.client();
-    if (!client) {
-      return (await this.memory.set(key, state, expectedVersion)) !== false;
-    }
     const ttlMs = Math.max(1, state.expiresAt - Date.now());
     const result = await client.eval(
       `
@@ -575,9 +570,6 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
 
   async clear(key: string, expectedVersion?: number): Promise<boolean> {
     const client = this.client();
-    if (!client) {
-      return (await this.memory.clear(key, expectedVersion)) !== false;
-    }
     if (expectedVersion === undefined) {
       await client.del(this.redisKey(key));
       return true;
@@ -600,11 +592,11 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
     return Number(result) === 1;
   }
 
-  private client(): RedisLikeClient | null {
-    if (!this.redisClient.isConfiguredEnabled()) {
-      return null;
-    }
-    if (!this.redisClient.isEnabled()) {
+  private client(): RedisLikeClient {
+    if (
+      !this.redisClient.isConfiguredEnabled() ||
+      !this.redisClient.isEnabled()
+    ) {
       throw new Error('Redis clarification state unavailable');
     }
     const client = this.redisClient.getNativeClient();
@@ -692,7 +684,6 @@ export function createClarificationStateStore(params: {
     return new RedisClarificationStateStore(
       params.redisClient,
       `chat:clarification:${params.platform}`,
-      undefined,
       limits,
     );
   }

@@ -2,6 +2,7 @@ import {
   ClarificationStateMachine,
   MemoryClarificationStateStore,
   RedisClarificationStateStore,
+  createClarificationStateStore,
   type ClarificationState,
 } from './clarification-state';
 
@@ -144,8 +145,11 @@ describe('ClarificationStateMachine', () => {
     await expect(store.clear('u1', consumed.version)).resolves.toBe(false);
   });
 
-  it('fails closed when configured Redis is unavailable', async () => {
-    const store = new RedisClarificationStateStore(
+  it('fails closed when configured Redis is disabled or native client is missing', async () => {
+    const machine = new ClarificationStateMachine();
+    const state = machine.start(Date.now());
+
+    const disabledStore = new RedisClarificationStateStore(
       {
         isConfiguredEnabled: () => true,
         isEnabled: () => false,
@@ -154,6 +158,74 @@ describe('ClarificationStateMachine', () => {
       'chat:clarification:test',
     );
 
-    await expect(store.get('u1')).rejects.toThrow('unavailable');
+    await expect(disabledStore.get('u1')).rejects.toThrow('unavailable');
+    await expect(disabledStore.set('u1', state)).rejects.toThrow('unavailable');
+    await expect(disabledStore.clear('u1')).rejects.toThrow('unavailable');
+
+    const missingClientStore = new RedisClarificationStateStore(
+      {
+        isConfiguredEnabled: () => true,
+        isEnabled: () => true,
+        getNativeClient: () => null,
+      },
+      'chat:clarification:test',
+    );
+
+    await expect(missingClientStore.get('u1')).rejects.toThrow('unavailable');
+    await expect(missingClientStore.set('u1', state)).rejects.toThrow(
+      'unavailable',
+    );
+    await expect(missingClientStore.clear('u1')).rejects.toThrow('unavailable');
+
+    const notConfiguredDirectStore = new RedisClarificationStateStore(
+      {
+        isConfiguredEnabled: () => false,
+        isEnabled: () => false,
+        getNativeClient: () => null,
+      },
+      'chat:clarification:test',
+    );
+
+    await expect(notConfiguredDirectStore.get('u1')).rejects.toThrow(
+      'unavailable',
+    );
+    await expect(notConfiguredDirectStore.set('u1', state)).rejects.toThrow(
+      'unavailable',
+    );
+    await expect(notConfiguredDirectStore.clear('u1')).rejects.toThrow(
+      'unavailable',
+    );
+  });
+
+  it('creates memory store when Redis is not configured, and Redis store when configured', () => {
+    const mockConfig = { get: jest.fn() };
+
+    const memStore = createClarificationStateStore({
+      platform: 'test',
+      config: mockConfig,
+    });
+    expect(memStore).toBeInstanceOf(MemoryClarificationStateStore);
+
+    const memStoreDisabledRedis = createClarificationStateStore({
+      platform: 'test',
+      config: mockConfig,
+      redisClient: {
+        isConfiguredEnabled: () => false,
+        isEnabled: () => false,
+        getNativeClient: () => null,
+      } as never,
+    });
+    expect(memStoreDisabledRedis).toBeInstanceOf(MemoryClarificationStateStore);
+
+    const redisStore = createClarificationStateStore({
+      platform: 'test',
+      config: mockConfig,
+      redisClient: {
+        isConfiguredEnabled: () => true,
+        isEnabled: () => true,
+        getNativeClient: () => ({}),
+      } as never,
+    });
+    expect(redisStore).toBeInstanceOf(RedisClarificationStateStore);
   });
 });

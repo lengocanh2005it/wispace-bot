@@ -59,6 +59,8 @@ export class ZaloOpsController extends PlatformOpsController<DopplerWebhookPaylo
       },
       exportUser: (externalUserId) =>
         privacyService.export('zalo', externalUserId),
+      clearClarification: (externalUserId) =>
+        clarificationAgent.clearClarificationState(externalUserId),
     });
   }
 

@@ -13,6 +13,7 @@ const handlers = {
   unlinkUser: jest.fn(),
   deleteUser: jest.fn(),
   exportUser: jest.fn(),
+  clearClarification: jest.fn(),
 };
 
 describe('PlatformOpsController', () => {
@@ -32,6 +33,7 @@ describe('PlatformOpsController', () => {
     controller.unlinkUser({ externalUserId: 'u1' });
     controller.deleteUser({ externalUserId: 'u2' });
     controller.exportUser({ externalUserId: 'u3' });
+    controller.clearClarificationState({ externalUserId: 'u4' });
 
     expect(handlers.dopplerRuntimeSync).toHaveBeenCalledWith(dopplerBody);
     expect(handlers.sendReports).toHaveBeenCalledWith(reportBody);
@@ -39,6 +41,7 @@ describe('PlatformOpsController', () => {
     expect(handlers.unlinkUser).toHaveBeenLastCalledWith('u1');
     expect(handlers.deleteUser).toHaveBeenLastCalledWith('u2');
     expect(handlers.exportUser).toHaveBeenLastCalledWith('u3');
+    expect(handlers.clearClarification).toHaveBeenLastCalledWith('u4');
   });
 
   it('binds the shared routes and status codes', () => {
@@ -50,6 +53,12 @@ describe('PlatformOpsController', () => {
         'sync-study-reminders',
         RequestMethod.POST,
         HttpStatus.OK,
+      ],
+      [
+        'clearClarificationState',
+        'ops/clarification/clear',
+        RequestMethod.POST,
+        HttpStatus.NO_CONTENT,
       ],
       ['unlinkUser', 'privacy/unlink', RequestMethod.POST, HttpStatus.OK],
       ['deleteUser', 'privacy/delete', RequestMethod.POST, HttpStatus.OK],

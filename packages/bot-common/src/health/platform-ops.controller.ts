@@ -13,6 +13,7 @@ export interface PlatformOpsHandlers<TDopplerBody> {
   unlinkUser(externalUserId: string): unknown;
   deleteUser(externalUserId: string): unknown;
   exportUser(externalUserId: string): unknown;
+  clearClarification(externalUserId: string): unknown;
 }
 
 export abstract class PlatformOpsController<TDopplerBody = unknown> {
@@ -36,6 +37,12 @@ export abstract class PlatformOpsController<TDopplerBody = unknown> {
   @HttpCode(200)
   syncStudyReminders() {
     return this.ops.syncStudyReminders();
+  }
+
+  @Post('ops/clarification/clear')
+  @HttpCode(204)
+  async clearClarificationState(@Body() body: PrivacyActionBody) {
+    await this.ops.clearClarification(body.externalUserId);
   }
 
   @Post('privacy/unlink')
