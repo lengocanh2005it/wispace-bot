@@ -40,6 +40,15 @@ If only editing `packages/llm-agent`: run `npx turbo run test --filter=@wispace/
 
 All 3 bots (`apps/messenger-bot`, `apps/discord-bot`, `apps/zalo-bot`) are fully functional — the full `npx turbo run format` + `npm run verify` gate above covers all workspaces.
 
+The pull-request workflow also runs database checks in disposable PostgreSQL jobs:
+
+```bash
+npm run database:bootstrap-smoke
+npm run database:migration-compatibility
+```
+
+Both require `NODE_ENV=test` and a loopback `DB_HOST`; never use production credentials.
+
 ## Checks
 
 - Edit Messenger prompt (`apps/messenger-bot/src/shared/prompts/*.system.txt`) → after `build`, verify new files in `apps/messenger-bot/dist/shared/prompts/`.

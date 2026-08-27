@@ -95,6 +95,98 @@ jobs:
           TURBO_CONCURRENCY: 2
           NODE_OPTIONS: '--max-old-space-size=4096'
 
+  database-bootstrap-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:7a396fd264a2067788b6551122b50f162bf6136312c7fc9d74381cb92c648382
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_chat_bot_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_NAME: ai_chat_bot_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      NODE_ENV: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build database bootstrap dependencies
+        run: npx --no-install turbo run build --filter=@wispace/discord-bot... --filter=@wispace/zalo-bot...
+        env:
+          TURBO_CONCURRENCY: 2
+          NODE_OPTIONS: '--max-old-space-size=4096'
+
+      - name: Run real TypeORM database bootstrap smoke test
+        run: npm run database:bootstrap-smoke
+
+  database-migration-compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:7a396fd264a2067788b6551122b50f162bf6136312c7fc9d74381cb92c648382
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ai_chat_bot_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_NAME: ai_chat_bot_db
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      NODE_ENV: test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build database migration dependencies
+        run: npx --no-install turbo run build --filter=@wispace/messenger-bot... --filter=@wispace/discord-bot... --filter=@wispace/zalo-bot...
+        env:
+          TURBO_CONCURRENCY: 2
+          NODE_OPTIONS: '--max-old-space-size=4096'
+
+      - name: Run TypeORM migration compatibility test
+        run: npm run database:migration-compatibility
+
   deploy-scripts-test:
     runs-on: ubuntu-latest
     timeout-minutes: 10

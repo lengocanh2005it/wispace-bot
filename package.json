@@ -17,6 +17,8 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "test:affected": "turbo run test --affected",
+    "database:bootstrap-smoke": "node scripts/database-bootstrap-smoke.mjs",
+    "database:migration-compatibility": "node scripts/database-bootstrap-smoke.mjs --migrations",
     "verify:affected": "turbo run format:check lint typecheck test build --affected",
     "verify": "turbo run format:check lint typecheck test build"
   },

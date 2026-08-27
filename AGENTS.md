@@ -89,6 +89,15 @@ npx turbo run build --filter=@wispace/messenger-bot...
 npx turbo run test --filter=@wispace/messenger-bot...
 ```
 
+Database CI checks (root, disposable PostgreSQL only):
+
+```bash
+npm run database:bootstrap-smoke          # entity metadata + OAuth cleanup
+npm run database:migration-compatibility  # canonical migration chain + bot tables
+```
+
+Both checks require `NODE_ENV=test` and a loopback `DB_HOST`; never point them at the production DB.
+
 From `apps/messenger-bot/` (same as pre-migration commands):
 
 ```bash
