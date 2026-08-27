@@ -1,71 +1,76 @@
+export function normalizeScopeText(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/đ/gi, 'd')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
 const IN_SCOPE_HINTS =
-  /wispace|ielts|writing|task\s*1|task\s*2|lịch\s*học|buổi\s*học|tiến\s*độ|báo\s*cáo|band|mục\s*tiêu|ngày\s*thi|đổi\s*lịch|dời\s*lịch|nhắc\s*lịch|đăng\s*ký|học\s*viên|luyện\s*đề|essay|graph|chart|process/i;
+  /wispace|ielts|writing|task\s*1|task\s*2|lich\s*hoc|buoi\s*hoc|tien\s*do|bao\s*cao|band|muc\s*tieu|ngay\s*thi|doi\s*lich|nhac\s*lich|dang\s*ky|hoc\s*vien|luyen\s*de|essay|graph|chart|process/i;
 
 const OFF_TOPIC_PATTERNS = [
-  /thời\s*tiết|weather|mưa\s*hôm nay/i,
-  /bóng\s*đá|world\s*cup|phim\s+|game\s+|netflix/i,
-  /bitcoin|crypto|chứng\s*khoán|forex/i,
-  /nấu\s*ăn|công\s*thức\s*nấu|recipe/i,
-  /chính\s*trị|bầu\s*cử|tổng\s*thống/i,
-  /python|javascript|java\s+code|lập\s*trình\s+web/i,
-  /toán\s+lớp|vật\s+lý|hóa\s+học(?!\s*ielts)/i,
-  /bác\s*sĩ|khám\s*bệnh|thuốc|điều\s*trị|y\s*khoa|pháp\s*luật|luật\s*sư|tư\s*vấn\s*pháp\s*luật|tâm\s*lý|tư\s*vấn\s*tâm\s*lý/i,
+  /thoi\s*tiet|weather|mua\s*hom nay/i,
+  /bong\s*da|world\s*cup|phim\s+|game\s+|netflix/i,
+  /bitcoin|crypto|chung\s*khoan|forex/i,
+  /nau\s*an|cong\s*thuc\s*nau|recipe/i,
+  /chinh\s*tri|bau\s*cu|tong\s*thong/i,
+  /python|javascript|java\s+code|lap\s*trinh\s+web/i,
+  /toan\s+lop|vat\s*ly|hoa\s*hoc(?!\s*ielts)/i,
+  /bac\s*si|kham\s*benh|thuoc|dieu\s*tri|y\s*khoa|phap\s*luat|luat\s*su|tu\s*van\s*phap\s*luat|tam\s*ly|tu\s*van\s*tam\s*ly/i,
 ] as const;
 
 const GREETING_ONLY =
-  /^(?:hello|hi|hey|chào|xin\s*chào|alo)(?:\s+(?:bạn|bot|ơi|nhé|nha|ạ|shop))*[\s!.,?]*$|^(?:ok|oke|okay|ừ|vâng|dạ|cảm\s*ơn|thanks|thank\s*you)[\s!.?]*$/i;
+  /^(?:hello|hi|hey|chao|xin\s*chao|alo)(?:\s+(?:ban|bot|oi|nhe|nha|a|shop))*[\s!.,?]*$|^(?:ok|oke|okay|u|vang|da|cam\s*on|thanks|thank\s*you)[\s!.?]*$/i;
 
-/**
- * Short messages (<=20 chars) that don't match any scope hint or off-topic pattern
- * are allowed through — they're likely short Vietnamese responses or acknowledgments
- * that the LLM can handle safely.
- */
-const SHORT_AMBIGUOUS_THRESHOLD = 20;
 const SHORT_FRAGMENT_THRESHOLD = 4;
 
 /** WISPACE domain scope check — shared across all bot platforms. */
 export function isObviouslyOffTopic(userText: string): boolean {
   const text = userText.trim();
-  if (!text || GREETING_ONLY.test(text)) {
+  const normalized = normalizeScopeText(text);
+  if (!text || GREETING_ONLY.test(normalized)) {
     return false;
   }
 
-  if (IN_SCOPE_HINTS.test(text)) {
+  if (IN_SCOPE_HINTS.test(normalized)) {
     return false;
   }
 
-  // Allow short ambiguous messages through (e.g. "ok", "vâng ạ", "cảm ơn")
-  if (text.length <= SHORT_AMBIGUOUS_THRESHOLD) {
-    return false;
-  }
-
-  return OFF_TOPIC_PATTERNS.some((pattern) => pattern.test(text));
+  // Known irrelevant phrases are blocked even when short; this keeps
+  // repeated off-topic follow-ups out of the LLM path (#401).
+  return OFF_TOPIC_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
 /** True when the message is only a greeting/ack — safe to answer with a canned reply when the LLM is unavailable. */
 export function isGreetingOnly(userText: string): boolean {
-  return GREETING_ONLY.test(userText.trim());
+  return GREETING_ONLY.test(normalizeScopeText(userText.trim()));
 }
 
 const AMBIGUOUS_FRAGMENTS =
-  /^(?:thứ|bài|cái\s+đó|học\s+gì|cho\s+xin|gì\s+vậy|sao\s+thế|thì\s+sao)$/i;
+  /^(?:thu|bai|cai\s+do|hoc\s+gi+|hco|lch|lichh|cho\s+xin|gi\s*vay|sao\s*the|thi\s*sao|hom\s+nay|ngay\s+mai|mai|tuan\s+(?:nay|sau)|sang|chieu|toi)$/i;
 
 /** Short acknowledgment patterns — safe for LLM, not ambiguous. */
 const SHORT_ACK =
-  /^(?:ok|oke|okay|ừ|vâng|dạ|à|ờ|hả|nhé|đi|ok\s+nhé|ok\s+nhá)$/i;
+  /^(?:ok|oke|okay|u|vang|da|a|o|ha|nhe|di|ok\s+nhe|ok\s+nha)$/i;
 
 /**
  * True when the message is too vague to identify intent safely.
  * Ambiguous messages get a clarification reply instead of tool execution.
  */
 export function isAmbiguousMessage(userText: string): boolean {
-  const text = userText.trim();
+  const rawText = userText.trim();
+  const text = normalizeScopeText(rawText);
   if (!text) return true;
   // Random/accidental: non-alphanumeric chars dominate (>=50% of length)
-  const nonAlpha = text.replace(/[\p{L}\p{N}]/gu, '');
-  if (nonAlpha.length >= text.length / 2 && text.length <= 20) return true;
+  const nonAlpha = rawText.replace(/[\p{L}\p{N}]/gu, '');
+  if (nonAlpha.length >= rawText.length / 2 && rawText.length <= 20)
+    return true;
   if (
-    text.length <= SHORT_FRAGMENT_THRESHOLD &&
+    rawText.length <= SHORT_FRAGMENT_THRESHOLD &&
     !SHORT_ACK.test(text) &&
     !GREETING_ONLY.test(text)
   ) {

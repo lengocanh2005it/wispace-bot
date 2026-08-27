@@ -18,7 +18,12 @@ import type { PlatformChatRateLimitService } from '@wispace/chat-metering';
  * ZaloOutboundService satisfy this with their `sendText` method.
  */
 export interface OutboundServicePort {
-  sendText(externalUserId: string, text: string): Promise<unknown>;
+  sendText(
+    externalUserId: string,
+    text: string,
+    options?: { deliveryKey?: string; clarification?: boolean },
+  ): Promise<unknown>;
+  isAmbiguousDeliveryError?(error: unknown): boolean;
 }
 
 /**
@@ -101,13 +106,28 @@ export function createChatPipelineAdapters(
           ? { richFollowUps: result.richFollowUps }
           : {}),
         ...(result.privateDataFetched ? { privateDataFetched: true } : {}),
+        ...(result.skipHistory ? { skipHistory: true } : {}),
+        ...(result.deliveryKey ? { deliveryKey: result.deliveryKey } : {}),
+        ...(result.clarification ? { clarification: true } : {}),
+        ...(result.skipDelivery ? { skipDelivery: true } : {}),
       };
     },
   };
 
   const outbound: OutboundPort = {
-    async sendText(externalUserId: string, text: string): Promise<SendResult> {
-      await outboundService.sendText(externalUserId, text);
+    isAmbiguousDeliveryError: (error) =>
+      outboundService.isAmbiguousDeliveryError?.(error) === true,
+    async sendText(
+      externalUserId: string,
+      text: string,
+      context?: Record<string, unknown>,
+    ): Promise<SendResult> {
+      await outboundService.sendText(externalUserId, text, {
+        ...(typeof context?.deliveryKey === 'string'
+          ? { deliveryKey: context.deliveryKey }
+          : {}),
+        ...(context?.clarification === true ? { clarification: true } : {}),
+      });
       return { delivered: true };
     },
   };

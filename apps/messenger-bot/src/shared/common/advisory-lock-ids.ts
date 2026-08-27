@@ -21,6 +21,9 @@ export const ADVISORY_LOCK = {
   /** Inbound webhook inbox raw-payload retention cleanup (03:15 ICT daily). */
   MESSENGER_WEBHOOK_INBOUND_CLEANUP: 884_200_910,
 
+  /** Messenger outbound dead-letter retry cron (every 5 minutes). */
+  MESSENGER_DEAD_LETTER_RETRY: 884_200_941,
+
   /** R5: report send retry dispatch (every 15 min). */
   REPORT_SEND_RETRY_DISPATCH: 884_200_909,
 

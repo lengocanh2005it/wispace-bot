@@ -8,6 +8,8 @@ import {
   PlatformWebhookInboundCleanupService,
   PlatformWebhookInboundEventService,
   PlatformWebhookInboundRetryCronService,
+  PlatformDeadLetterCronService,
+  PlatformDeadLetterService,
   WebhookInboundEventEntity,
 } from '@wispace/database';
 import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities';
@@ -23,6 +25,7 @@ import { WebhookActionExecutorService } from './application/services/webhook-act
 import { MessengerService } from './application/services/messenger.service';
 import { MessengerProfileService } from './infrastructure/meta/messenger-profile.service';
 import { MessengerOutboundModule } from './messenger-outbound.module';
+import { MessengerOutboundService } from './application/services/messenger-outbound.service';
 import { MessengerReportModule } from './messenger-report.module';
 import { MessengerController } from './presentation/controllers/messenger.controller';
 import { ChatPipelineModule } from './chat-pipeline.module';
@@ -122,6 +125,41 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       inject: [
         PlatformWebhookInboundEventService,
         ConfigService,
+        PgAdvisoryLockService,
+      ],
+    },
+    {
+      provide: PlatformDeadLetterCronService,
+      useFactory: (
+        deadLetterService: PlatformDeadLetterService,
+        configService: ConfigService,
+        outboundService: MessengerOutboundService,
+        pgLock: PgAdvisoryLockService,
+      ) =>
+        new PlatformDeadLetterCronService(
+          deadLetterService,
+          configService,
+          pgLock,
+          {
+            lockId: ADVISORY_LOCK.MESSENGER_DEAD_LETTER_RETRY,
+            extractPayload: (payload) => ({
+              externalUserId: payload.psid as string | undefined,
+              text: payload.text as string | undefined,
+            }),
+            abandonReason: 'Missing psid or text in payload',
+            retryAmbiguous: false,
+            sendText: (externalUserId, text, opts) =>
+              outboundService.sendTextForRetry(
+                externalUserId,
+                text,
+                opts?.deliveryKey ?? '',
+              ),
+          },
+        ),
+      inject: [
+        PlatformDeadLetterService,
+        ConfigService,
+        MessengerOutboundService,
         PgAdvisoryLockService,
       ],
     },

@@ -44,6 +44,7 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 - Menu postback, reminder cron, proactive reports — **no** quota deduction.
 - Messenger report registration from chat is accepted only for an explicit request such as “đăng ký nhận báo cáo” or “muốn nhận báo cáo tự động”; ambiguous requests are acknowledged without account lookup or subscription writes.
 - **Development/test:** `CHAT_QUEUE_STORE=memory` (RAM debounce). **Production:** all three bots require `CHAT_QUEUE_STORE=redis` (requires `REDIS_ENABLED=true`; `CHAT_QUEUE_SHARED=true` maps to `redis`). Enqueue writes are awaited before the Messenger/Zalo durable inbox completes; persistent Redis failures remain retryable. Redis keys use the legacy `chat:queue:*` namespace for Messenger and `chat:queue:discord:*` / `chat:queue:zalo:*` for the other bots.
+- **Clarification follow-ups (#401):** ambiguous or contradictory chat is answered with a bounded menu and never reaches the LLM/tools until one choice is selected. State is keyed by platform + external user id and bounded by `CHAT_CLARIFICATION_TTL_MS`, `CHAT_CLARIFICATION_MAX_ATTEMPTS`, and `CHAT_CLARIFICATION_MAX_MENU_RESETS`; recent event ids form a short tombstone so delayed/replayed choices cannot execute tools. Definitive clarification-delivery failures are persisted in the outbound dead-letter table with a stable `deliveryKey` for the platform retry cron; ambiguous transport failures are not auto-resend.
 
 ### 1.5. Precreate Next Roadmap Exercise
 

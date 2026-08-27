@@ -1,4 +1,20 @@
 export { PlatformAgentService } from './agent/platform-agent.service';
+export {
+  ClarificationStateMachine,
+  MemoryClarificationStateStore,
+  RedisClarificationStateStore,
+  createClarificationStateStore,
+} from './clarification/clarification-state';
+export type {
+  ClarificationChoice,
+  ClarificationState,
+  ClarificationStateStore,
+  ClarificationLimits,
+  ClarificationConfigReader,
+  ClarificationIrrelevantAction,
+  ClarificationIrrelevantResult,
+} from './clarification/clarification-state';
+export { CLARIFICATION_STATE_STORE } from './clarification/clarification-state';
 export { PlatformAgentToolsService } from './agent/platform-agent-tools.service';
 export {
   executePrecreateExerciseTool,

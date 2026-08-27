@@ -218,6 +218,56 @@ describe('DiscordOutboundService', () => {
     expect(secondPayload.nonce).toBe(firstPayload.nonce);
   });
 
+  it('uses the clarification delivery key as a stable nonce and persists definitive failures for replay', async () => {
+    const send = jest
+      .fn<Promise<{ channelId: string }>, [DiscordTextPayload]>()
+      .mockRejectedValue(
+        Object.assign(new Error('temporary Discord failure'), { status: 500 }),
+      );
+    const fetch = jest.fn().mockResolvedValue({ send });
+    const deadLetter = { save: jest.fn().mockResolvedValue(true) };
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      deadLetter as never,
+    );
+
+    await expect(
+      service.sendText('discord-1', 'Mình chưa rõ.', {
+        deliveryKey: 'clarification:discord:event-401',
+        clarification: true,
+      }),
+    ).rejects.toThrow();
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[1][0].nonce).toBe(send.mock.calls[0][0].nonce);
+    expect(deadLetter.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        direction: 'outbound',
+        deliveryKey: 'clarification:discord:event-401',
+      }),
+    );
+  });
+
+  it('hashes the persisted clarification key to the same Discord nonce on replay', async () => {
+    const send = jest
+      .fn<Promise<{ channelId: string }>, [DiscordTextPayload]>()
+      .mockResolvedValue({ channelId: 'dm-1' });
+    const fetch = jest.fn().mockResolvedValue({ send });
+    const service = new DiscordOutboundService(buildClientStub(fetch));
+
+    await expect(
+      service.sendTextForRetry(
+        'discord-1',
+        'Mình chưa rõ.',
+        'clarification:discord:event-401',
+      ),
+    ).resolves.toBe('sent');
+
+    expect(send.mock.calls[0][0].nonce).toHaveLength(25);
+  });
+
   it('#156: does not retry an unknown non-network error', async () => {
     const fetch = jest.fn().mockRejectedValue(new Error('unexpected failure'));
     const metrics = buildMetricsStub();

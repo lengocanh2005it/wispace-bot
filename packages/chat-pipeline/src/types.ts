@@ -58,6 +58,14 @@ export interface AgentReply {
   toolSummary?: string;
   richFollowUps?: unknown[];
   privateDataFetched?: boolean;
+  /** Canned recovery/clarification noise must not become long-term context. */
+  skipHistory?: boolean;
+  /** Stable key for provider-side/outbound clarification dedupe. */
+  deliveryKey?: string;
+  /** Marks a reply as clarification lifecycle telemetry. */
+  clarification?: boolean;
+  /** This is a redelivery of an already-attempted canned reply. */
+  skipDelivery?: boolean;
 }
 
 export interface AgentPort {
@@ -78,6 +86,8 @@ export interface OutboundPort {
     text: string,
     context?: Record<string, unknown>,
   ): Promise<SendResult>;
+  /** Provider accepted neither a success nor a definitive failure verdict. */
+  isAmbiguousDeliveryError?(error: unknown): boolean;
 }
 
 // ── Pipeline context (passed to hooks) ──────────────────────────────────────
@@ -94,6 +104,8 @@ export interface PipelineContext {
   quotaFinalizationError?: unknown;
   /** True when outbound delivered at least one unit but not all. */
   partialDelivery?: boolean;
+  /** Do not automatically reopen a canned reply after an ambiguous send. */
+  deliveryAmbiguous?: boolean;
 }
 
 // ── Hooks ───────────────────────────────────────────────────────────────────

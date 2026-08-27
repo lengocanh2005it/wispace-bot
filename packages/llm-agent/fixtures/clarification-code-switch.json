@@ -1,0 +1,29 @@
+{
+  "name": "clarification-code-switch",
+  "description": "Code-switched and abbreviated follow-up stays a single bounded, tool-free clarification turn.",
+  "promptFiles": [
+    {
+      "path": "packages/llm-agent/src/chat-system-prompt.ts",
+      "hash": "bae3da004a84005e8f7757533ff5db7d27b8963038200547cbeaf719ef722730"
+    },
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "4888b2923716995b11505ce96ffd33a694e0ef06e7634feac3036cd6b9f4d0ea"
+    }
+  ],
+  "userText": "pls xem progress cua minh",
+  "externalUserId": "eval-clarification-locale-0401",
+  "userId": 1401,
+  "script": [
+    {
+      "text": "Mình chưa rõ bạn muốn xem tiến độ hay lịch học. Bạn trả lời 1, 2 hoặc 3 nhé."
+    }
+  ],
+  "expected": {
+    "toolSequence": [],
+    "replyTextContains": ["Mình chưa rõ", "1, 2 hoặc 3"],
+    "exhausted": false,
+    "toolSummary": null,
+    "groundingWarnings": 0
+  }
+}

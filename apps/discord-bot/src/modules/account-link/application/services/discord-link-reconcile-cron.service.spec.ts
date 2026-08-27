@@ -71,6 +71,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
       { isMember: jest.fn().mockResolvedValue(false) } as never,
       { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     await cron.handleReconcile();
@@ -103,6 +104,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
       { isMember: jest.fn().mockResolvedValue(false) } as never,
       { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     await cron.handleReconcile();
@@ -131,6 +133,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
       { isMember: jest.fn().mockResolvedValue(false) } as never,
       { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     await cron.handleReconcile();
@@ -160,6 +163,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
       { isMember: jest.fn().mockResolvedValue(false) } as never,
       { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     await cron.handleReconcile();
@@ -187,6 +191,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
       { isMember: jest.fn().mockResolvedValue(false) } as never,
       { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     await cron.handleReconcile();
@@ -221,6 +226,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       relinkNotifier,
       { isMember: jest.fn().mockResolvedValue(false) } as never,
       { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     await cron.handleReconcile();
@@ -253,6 +259,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
       { isMember: jest.fn().mockResolvedValue(true) } as never,
       welcomeService,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     await cron.handleReconcile();
@@ -277,6 +284,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
       { isMember: jest.fn().mockResolvedValue(false) } as never,
       { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     await cron.handleReconcile();
@@ -303,6 +311,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
       { notify: jest.fn().mockResolvedValue(undefined) } as never,
       { isMember: jest.fn().mockResolvedValue(false) } as never,
       { welcomeIfDue: jest.fn().mockResolvedValue(false) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     await cron.handleReconcile();

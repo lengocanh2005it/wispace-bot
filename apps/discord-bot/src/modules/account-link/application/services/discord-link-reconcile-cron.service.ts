@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { Counter } from 'prom-client';
@@ -16,7 +16,10 @@ import {
   DISCORD_LINK_VERIFY_RECORD_REPOSITORY,
   type DiscordLinkVerifyRecordRepositoryPort,
 } from '../../domain/ports/discord-link-verify-record.repository.port';
-import { Inject } from '@nestjs/common';
+import {
+  CLARIFICATION_STATE_STORE,
+  type ClarificationStateStore,
+} from '@wispace/chat-agent';
 
 const DEFAULT_RECONCILE_AGE_MS = 60_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 3_600_000;
@@ -50,6 +53,8 @@ export class DiscordLinkReconcileCronService {
     private readonly relinkNotifier: DiscordRelinkNotifier,
     private readonly guildMembershipService: DiscordGuildMembershipService,
     private readonly welcomeService: DiscordWelcomeService,
+    @Inject(CLARIFICATION_STATE_STORE)
+    private readonly clarificationStateStore: ClarificationStateStore,
   ) {}
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
@@ -96,6 +101,7 @@ export class DiscordLinkReconcileCronService {
 
       if (existingUserId === record.userId) {
         // Mapping committed — the record is a leftover (consume raced).
+        await this.clearClarificationState(record.discordUserId);
         await this.verifyRecordService.consumeRecord(record.discordUserId);
         alreadyCommitted += 1;
         reconcileRecordsTotal.inc({ outcome: 'already_committed' });
@@ -132,6 +138,7 @@ export class DiscordLinkReconcileCronService {
           record.userId,
           record.discordUserId,
         );
+        await this.clearClarificationState(record.discordUserId);
         await this.verifyRecordService.consumeRecord(record.discordUserId);
         this.logger.log(
           `Reconciled Discord link discordUserId=${maskExternalId(
@@ -161,7 +168,7 @@ export class DiscordLinkReconcileCronService {
         this.logger.error(
           `Discord link reconciliation failed for discordUserId=${maskExternalId(
             record.discordUserId,
-          )}: ${errorMessage(error)}`,
+          )}: ${errorMessage(error, record.discordUserId)}`,
         );
       }
     }
@@ -199,5 +206,15 @@ export class DiscordLinkReconcileCronService {
     return Number.isFinite(parsed) && parsed > 0
       ? Math.floor(parsed)
       : fallback;
+  }
+
+  private async clearClarificationState(discordUserId: string): Promise<void> {
+    try {
+      await this.clarificationStateStore.clear(`discord:${discordUserId}`);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Discord clarification state clear after link reconcile failed for discordUserId=${maskExternalId(discordUserId)}: ${errorMessage(error, discordUserId)}`,
+      );
+    }
   }
 }

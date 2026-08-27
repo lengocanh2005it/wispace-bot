@@ -275,6 +275,65 @@ describe('PlatformChatQueueService', () => {
     expect(getQueueMock(service).enqueue).not.toHaveBeenCalled();
   });
 
+  it('reopens only the failed clarification event without sending a generic fallback', async () => {
+    const clarificationDeliveryFailure = jest.fn().mockResolvedValue(undefined);
+    const pendingTextSender = {
+      sendText: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = buildService(pendingTextSender, {
+      clarificationDeliveryFailure,
+    });
+    const hooks = jest.mocked(ChatPipeline).mock.calls[0][4] as {
+      onError: (context: {
+        externalUserId: string;
+        idempotencyKey?: string;
+        error: Error;
+        reply: { text: string; clarification: true };
+      }) => Promise<void>;
+    };
+
+    await hooks.onError({
+      externalUserId: 'zalo-1',
+      idempotencyKey: 'event-401-delivery',
+      error: new Error('delivery unavailable'),
+      reply: { text: 'Mình chưa rõ.', clarification: true },
+    });
+
+    expect(clarificationDeliveryFailure).toHaveBeenCalledWith(
+      'zalo-1',
+      'event-401-delivery',
+    );
+    expect(pendingTextSender.sendText).not.toHaveBeenCalled();
+    expect(getQueueMock(service).enqueue).not.toHaveBeenCalled();
+  });
+
+  it('does not reopen a clarification when the provider delivery is ambiguous', async () => {
+    const clarificationDeliveryFailure = jest.fn().mockResolvedValue(undefined);
+    buildService(
+      { sendText: jest.fn().mockResolvedValue(undefined) },
+      { clarificationDeliveryFailure },
+    );
+    const hooks = jest.mocked(ChatPipeline).mock.calls[0][4] as {
+      onError: (context: {
+        externalUserId: string;
+        idempotencyKey?: string;
+        error: Error;
+        deliveryAmbiguous: true;
+        reply: { text: string; clarification: true };
+      }) => Promise<void>;
+    };
+
+    await hooks.onError({
+      externalUserId: 'zalo-1',
+      idempotencyKey: 'event-401-ambiguous',
+      error: new Error('provider timeout'),
+      deliveryAmbiguous: true,
+      reply: { text: 'Mình chưa rõ.', clarification: true },
+    });
+
+    expect(clarificationDeliveryFailure).not.toHaveBeenCalled();
+  });
+
   it('enqueue delegates to queue.enqueue', async () => {
     const service = buildService();
 
@@ -478,6 +537,7 @@ describe('PlatformChatQueueService', () => {
       freshMappingProvider?: (
         externalUserId: string,
       ) => Promise<number | undefined>,
+      clarificationStateClearer?: (externalUserId: string) => Promise<void>,
     ) => {
       const queueStore = {
         isAvailable: jest.fn().mockReturnValue(true),
@@ -504,7 +564,7 @@ describe('PlatformChatQueueService', () => {
           agent,
           outbound,
           { sendText: jest.fn().mockResolvedValue(undefined) },
-          { freshMappingProvider },
+          { freshMappingProvider, clarificationStateClearer },
           queueStore,
         ),
         queueStore,
@@ -514,8 +574,11 @@ describe('PlatformChatQueueService', () => {
 
     it('drops batch when fresh-mapping provider returns undefined (unlinked)', async () => {
       const freshMappingProvider = jest.fn().mockResolvedValue(undefined);
-      const { service, queueStore } =
-        buildDistributedService(freshMappingProvider);
+      const clarificationStateClearer = jest.fn().mockResolvedValue(undefined);
+      const { service, queueStore } = buildDistributedService(
+        freshMappingProvider,
+        clarificationStateClearer,
+      );
       await service.onModuleInit();
 
       (
@@ -534,6 +597,7 @@ describe('PlatformChatQueueService', () => {
       await service.flushReady('discord-1');
 
       expect(freshMappingProvider).toHaveBeenCalledWith('discord-1');
+      expect(clarificationStateClearer).toHaveBeenCalledWith('discord-1');
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('no active mapping'),
       );
@@ -547,8 +611,11 @@ describe('PlatformChatQueueService', () => {
 
     it('adopts fresh userId when mapping changed (relinked)', async () => {
       const freshMappingProvider = jest.fn().mockResolvedValue(99);
-      const { service, queueStore } =
-        buildDistributedService(freshMappingProvider);
+      const clarificationStateClearer = jest.fn().mockResolvedValue(undefined);
+      const { service, queueStore } = buildDistributedService(
+        freshMappingProvider,
+        clarificationStateClearer,
+      );
       await service.onModuleInit();
 
       const batch = {
@@ -574,6 +641,7 @@ describe('PlatformChatQueueService', () => {
       await service.flushReady('zalo-1');
 
       expect(freshMappingProvider).toHaveBeenCalledWith('zalo-1');
+      expect(clarificationStateClearer).toHaveBeenCalledWith('zalo-1');
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('Stale mapping'),
       );

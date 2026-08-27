@@ -54,6 +54,8 @@ export class PlatformDeadLetterService {
     errorMessage: string;
     /** Outbound sends are retried by the shared cron; inbound events are not. */
     direction?: 'inbound' | 'outbound';
+    /** Stable provider idempotency key for safe outbound replay. */
+    deliveryKey?: string;
   }): Promise<boolean> {
     let lastError: unknown;
     for (const delayMs of PlatformDeadLetterService.SAVE_RETRY_DELAYS_MS) {
@@ -71,6 +73,7 @@ export class PlatformDeadLetterService {
             input.externalUserId,
           ),
           status: 'pending',
+          ...(input.deliveryKey ? { deliveryKey: input.deliveryKey } : {}),
         });
         return true;
       } catch (error) {

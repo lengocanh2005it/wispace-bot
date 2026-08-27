@@ -70,6 +70,10 @@ export function isZaloRetryableError(error: unknown): boolean {
   return error instanceof ZaloSendError && error.isRetryable();
 }
 
+export function isZaloAmbiguousDeliveryError(error: unknown): boolean {
+  return error instanceof ZaloSendError && error.isAmbiguousDelivery();
+}
+
 /**
  * MessageSenderPort-equivalent for Zalo — sends a "consultation" text
  * message (works within the 48h window; ZNS for outside that window is
@@ -90,17 +94,30 @@ export class ZaloOutboundService {
     private readonly metrics?: BotMetricsService,
   ) {}
 
+  isAmbiguousDeliveryError(error: unknown): boolean {
+    return isZaloAmbiguousDeliveryError(error);
+  }
+
   async sendText(
     zaloUserId: string,
     text: string,
-    options?: { skipDeadLetter?: boolean },
+    options?: {
+      skipDeadLetter?: boolean;
+      deliveryKey?: string;
+      clarification?: boolean;
+    },
   ): Promise<void> {
     let ambiguousDeliveryRecorded = false;
     try {
       await withRetry(() => this.sendTextOnce(zaloUserId, text), {
         maxRetries: 1,
         baseDelayMs: 1_000,
-        shouldRetry: isZaloRetryableError,
+        shouldRetry: (error) =>
+          options?.clarification === true &&
+          error instanceof ZaloSendError &&
+          error.isAmbiguousDelivery()
+            ? false
+            : isZaloRetryableError(error),
         onRetry: (attempt, maxRetries, error) => {
           if (error instanceof ZaloSendError && error.isAmbiguousDelivery()) {
             this.metrics?.incDmDeliveryFailure(SEND_FAILURE_REASON_AMBIGUOUS);
@@ -131,12 +148,18 @@ export class ZaloOutboundService {
         messageType: 'chat',
         error: errorMsg,
       });
-      if (options?.skipDeadLetter !== true) {
+      const ambiguous =
+        error instanceof ZaloSendError && error.isAmbiguousDelivery();
+      if (
+        options?.skipDeadLetter !== true &&
+        (options?.clarification !== true || !ambiguous)
+      ) {
         const persisted = await this.deadLetter?.save({
           externalUserId: zaloUserId,
           rawPayload: { zaloUserId, text },
           errorMessage: errorMsg,
           direction: 'outbound',
+          ...(options?.deliveryKey ? { deliveryKey: options.deliveryKey } : {}),
         });
         if (persisted === false) {
           this.logger.error(

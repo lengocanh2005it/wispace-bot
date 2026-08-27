@@ -3,6 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { BotCommonModule } from '@wispace/bot-common/guard';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
+import {
+  CLARIFICATION_STATE_STORE,
+  createClarificationStateStore,
+  type ClarificationStateStore,
+} from '@wispace/chat-agent';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordLinkVerifyRecordEntity } from '../../infrastructure/database/entities/discord-link-verify-record.entity';
 import { DiscordWelcomeRecordEntity } from '../../infrastructure/database/entities/discord-welcome-record.entity';
@@ -65,11 +71,25 @@ import { DiscordOauthStateService } from './application/services/discord-oauth-s
       provide: DISCORD_WELCOME_RECORD_REPOSITORY,
       useExisting: TypeormDiscordWelcomeRecordRepository,
     },
+    {
+      provide: CLARIFICATION_STATE_STORE,
+      useFactory: (
+        configService: ConfigService,
+        redisClient?: RedisClientPort,
+      ): ClarificationStateStore =>
+        createClarificationStateStore({
+          platform: 'discord',
+          config: configService,
+          redisClient,
+        }),
+      inject: [ConfigService, { token: REDIS_CLIENT, optional: true }],
+    },
   ],
   exports: [
     DiscordAccountLinkService,
     DiscordWelcomeService,
     DISCORD_LINK_VERIFY_RECORD_REPOSITORY,
+    CLARIFICATION_STATE_STORE,
   ],
 })
 export class AccountLinkModule {}

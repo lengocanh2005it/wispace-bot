@@ -3,6 +3,7 @@ import {
   GREETING_INTRO,
   buildGreetingMessage,
   buildSelfIntroMessage,
+  buildUnsupportedMessageTypeReply,
 } from '@wispace/bot-common/messages';
 import {
   errorMessage,
@@ -182,10 +183,6 @@ export class DiscordChatGateway {
 
     const isDM = message.channel.type === ChannelType.DM;
     const isServerChannel = !isDM;
-
-    const userText = message.content.trim();
-    if (!userText) return;
-
     const discordUserId = message.author.id;
 
     // Detect @mention → strip mention tags, use neutral trigger if bare ping
@@ -195,6 +192,23 @@ export class DiscordChatGateway {
 
     // In server channels: only respond when @mentioned to avoid replying to everyone
     if (isServerChannel && !isMentioned) return;
+
+    const userText = message.content.trim();
+    if (!userText) {
+      const hasNonTextContent =
+        message.attachments.size > 0 ||
+        message.stickers.size > 0 ||
+        message.embeds.length > 0;
+      if (!hasNonTextContent) return;
+
+      const fallback = buildUnsupportedMessageTypeReply();
+      if (isServerChannel) {
+        await message.reply(fallback);
+      } else {
+        await this.outboundService.sendMenuButtons(discordUserId, fallback);
+      }
+      return;
+    }
 
     if (isDM && userText.toLowerCase() === 'menu') {
       await this.outboundService.sendMenuButtons(discordUserId);

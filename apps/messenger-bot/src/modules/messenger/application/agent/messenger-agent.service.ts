@@ -36,6 +36,24 @@ export class MessengerAgentService {
       richFollowUps: (result.richFollowUps ?? []) as MessengerRichFollowUp[],
       exhausted: result.exhausted,
       toolSummary: result.toolSummary,
+      skipHistory: result.skipHistory,
+      deliveryKey: result.deliveryKey,
+      clarification: result.clarification,
+      skipDelivery: result.skipDelivery,
     };
+  }
+
+  async clearClarificationState(psid: string): Promise<void> {
+    await this.platformAgent.clearClarificationState(psid);
+  }
+
+  async markClarificationDeliveryFailedForEvent(
+    psid: string,
+    eventId?: string,
+  ): Promise<void> {
+    await this.platformAgent.markClarificationDeliveryFailedForEvent(
+      psid,
+      eventId,
+    );
   }
 }

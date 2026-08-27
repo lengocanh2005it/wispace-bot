@@ -20,6 +20,7 @@ import type { DopplerWebhookPayload } from '../../domain/entities/doppler-runtim
 import { ReportCronService } from '../../application/services/report-cron.service';
 import { ReportSendRetryDispatchService } from '../../application/services/report-send-retry-dispatch.service';
 import { PrivacyDataService } from '@wispace/database';
+import { MessengerAgentService } from '@messenger/modules/messenger/application/agent/messenger-agent.service';
 
 class SyncStudyCalendarBody {
   @IsNumber()
@@ -67,6 +68,7 @@ export class SchedulerController {
     private readonly reportSendRetryDispatchService: ReportSendRetryDispatchService,
     private readonly dopplerRuntimeSyncService: DopplerRuntimeSyncService,
     private readonly privacyService: PrivacyDataService,
+    private readonly clarificationAgent: MessengerAgentService,
   ) {}
 
   @Post('ops/doppler-sync')
@@ -94,12 +96,17 @@ export class SchedulerController {
   @Post('mapping/relink')
   @HttpCode(200)
   relinkMessengerMapping(@Body() body: RelinkMappingBody) {
-    return this.messengerMappingService.relinkPsidToUserId({
-      psid: body.psid,
-      userId: body.userId,
-      notifyUser: false,
-      allowRelink: body.allowRelink === true,
-    });
+    return this.messengerMappingService
+      .relinkPsidToUserId({
+        psid: body.psid,
+        userId: body.userId,
+        notifyUser: false,
+        allowRelink: body.allowRelink === true,
+      })
+      .then(async (result) => {
+        await this.clarificationAgent.clearClarificationState(body.psid);
+        return result;
+      });
   }
 
   @Post('study-calendar/sync')
@@ -152,13 +159,24 @@ export class SchedulerController {
   @Post('privacy/unlink')
   @HttpCode(200)
   unlinkUser(@Body() body: PrivacyActionBody) {
-    return this.privacyService.unlink('messenger', body.externalUserId);
+    return this.privacyService
+      .unlink('messenger', body.externalUserId)
+      .then(async (result) => {
+        await this.clarificationAgent.clearClarificationState(
+          body.externalUserId,
+        );
+        return result;
+      });
   }
 
   @Post('privacy/delete')
   @HttpCode(200)
   deleteUser(@Body() body: PrivacyActionBody) {
-    return this.privacyService.delete('messenger', body.externalUserId);
+    return this.privacyService
+      .delete('messenger', body.externalUserId)
+      .then(() =>
+        this.clarificationAgent.clearClarificationState(body.externalUserId),
+      );
   }
 
   @Post('privacy/export')

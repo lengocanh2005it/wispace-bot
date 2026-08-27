@@ -10,6 +10,10 @@ import { DiscordAccountLinkService } from './discord-account-link.service';
 import { DiscordGuildMembershipService } from './discord-guild-membership.service';
 import { DiscordRelinkNotifier } from './discord-relink-notifier.service';
 import { DiscordWelcomeService } from './discord-welcome.service';
+import {
+  CLARIFICATION_STATE_STORE,
+  type ClarificationStateStore,
+} from '@wispace/chat-agent';
 
 const UPSERT_MAX_ATTEMPTS = 3;
 const UPSERT_BASE_BACKOFF_MS = 500;
@@ -36,6 +40,8 @@ export class DiscordLinkCompletionService {
     private readonly guildMembershipService: DiscordGuildMembershipService,
     private readonly relinkNotifier: DiscordRelinkNotifier,
     private readonly welcomeService: DiscordWelcomeService,
+    @Inject(CLARIFICATION_STATE_STORE)
+    private readonly clarificationStateStore: ClarificationStateStore,
   ) {}
 
   /**
@@ -74,6 +80,8 @@ export class DiscordLinkCompletionService {
       UPSERT_BASE_BACKOFF_MS,
     );
 
+    await this.clearClarificationState(discordUser.id);
+
     // Intent consumed — the mapping is committed (fire-and-forget; a race
     // leaves a record that the reconcile cron cleans up).
     await this.verifyRecordService
@@ -82,7 +90,7 @@ export class DiscordLinkCompletionService {
         this.logger.warn(
           `Discord link verify record cleanup failed for discordUserId=${maskExternalId(
             discordUser.id,
-          )}: ${errorMessage(error)}`,
+          )}: ${errorMessage(error, discordUser.id)}`,
         );
       });
 
@@ -95,7 +103,7 @@ export class DiscordLinkCompletionService {
           this.logger.warn(
             `Discord relink notification failed for discordUserId=${maskExternalId(
               discordUser.id,
-            )}: ${errorMessage(error)}`,
+            )}: ${errorMessage(error, discordUser.id)}`,
           );
         });
     }
@@ -114,5 +122,17 @@ export class DiscordLinkCompletionService {
     // Not in the guild yet — send them straight to the invite; the bot
     // delivers the welcome DM on `guildMemberAdd` (link is already done).
     return 'not-in-guild';
+  }
+
+  private async clearClarificationState(discordUserId: string): Promise<void> {
+    try {
+      await this.clarificationStateStore.clear(`discord:${discordUserId}`);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Discord clarification state clear failed for discordUserId=${maskExternalId(
+          discordUserId,
+        )}: ${errorMessage(error, discordUserId)}`,
+      );
+    }
   }
 }

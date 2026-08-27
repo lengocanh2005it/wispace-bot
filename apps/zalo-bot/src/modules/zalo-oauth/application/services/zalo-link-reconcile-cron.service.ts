@@ -3,12 +3,16 @@ import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { Counter } from 'prom-client';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
-import { maskExternalId } from '@wispace/bot-common/masking';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import {
   ZALO_LINK_VERIFY_RECORD_REPOSITORY,
   type ZaloLinkVerifyRecordRepositoryPort,
 } from '../../domain/ports/zalo-link-verify-record.repository.port';
 import { ZaloAccountLinkService } from './zalo-account-link.service';
+import {
+  CLARIFICATION_STATE_STORE,
+  type ClarificationStateStore,
+} from '@wispace/chat-agent';
 
 const DEFAULT_RECONCILE_AGE_MS = 120_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 10 * 60_000;
@@ -36,6 +40,8 @@ export class ZaloLinkReconcileCronService {
     private readonly accountLinkService: ZaloAccountLinkService,
     private readonly configService: ConfigService,
     private readonly pgLock: PgAdvisoryLockService,
+    @Inject(CLARIFICATION_STATE_STORE)
+    private readonly clarificationStateStore: ClarificationStateStore,
   ) {}
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
@@ -116,6 +122,7 @@ export class ZaloLinkReconcileCronService {
           record.userId,
           record.zaloUserId,
         );
+        await this.clearClarificationState(record.zaloUserId);
         await this.verifyRecordService.consumeRecord(record.zaloUserId);
         reconciled += 1;
         reconcileRecordsTotal.inc({ outcome: 'reconciled' });
@@ -128,7 +135,7 @@ export class ZaloLinkReconcileCronService {
         this.logger.warn(
           `Zalo link reconcile failed for zaloUserId=${maskExternalId(
             record.zaloUserId,
-          )}: ${error instanceof Error ? error.message : String(error)}`,
+          )}: ${errorMessage(error, record.zaloUserId)}`,
         );
       }
     }
@@ -152,5 +159,15 @@ export class ZaloLinkReconcileCronService {
     return Number.isFinite(parsed) && parsed > 0
       ? Math.floor(parsed)
       : fallback;
+  }
+
+  private async clearClarificationState(zaloUserId: string): Promise<void> {
+    try {
+      await this.clarificationStateStore.clear(`zalo:${zaloUserId}`);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Zalo clarification state clear after link reconcile failed for zaloUserId=${maskExternalId(zaloUserId)}: ${errorMessage(error, zaloUserId)}`,
+      );
+    }
   }
 }

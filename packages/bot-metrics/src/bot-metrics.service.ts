@@ -48,6 +48,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmToolDuration: Histogram;
   private llmToolCalls: Counter;
   private llmRoundOutcome: Counter;
+  private clarificationOutcomes: Counter;
   private llmAdmissionRejected: Counter;
   private llmAdmissionWait: Histogram;
   private llmAdmissionQueueDepth: Gauge;
@@ -125,6 +126,13 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_llm_round_outcome_total`,
       help: 'LLM agent round outcomes',
       labelNames: ['feature', 'outcome'],
+      registers: [this.registry],
+    });
+
+    this.clarificationOutcomes = new Counter({
+      name: `${this.prefix}_clarification_outcomes_total`,
+      help: 'Bounded clarification state-machine outcomes (#401)',
+      labelNames: ['outcome'],
       registers: [this.registry],
     });
 
@@ -341,6 +349,10 @@ export class BotMetricsService implements OnModuleDestroy {
 
   incRoundOutcome(feature: string, outcome: string): void {
     this.llmRoundOutcome.inc({ feature, outcome });
+  }
+
+  incClarificationOutcome(outcome: string): void {
+    this.clarificationOutcomes.inc({ outcome });
   }
 
   /** Bounded-admission rejection reason — queue_full | wait_timeout | global_saturated | redis_unavailable (#389). */

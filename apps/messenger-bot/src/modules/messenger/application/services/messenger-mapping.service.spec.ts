@@ -34,6 +34,7 @@ describe('MessengerMappingService', () => {
       outbound as never,
       studyReminderSyncService as never,
       { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     const result = await service.relinkPsidToUserId({
@@ -76,6 +77,7 @@ describe('MessengerMappingService', () => {
       outbound as never,
       studyReminderSyncService as never,
       { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     const result = await service.linkFromContext('psid-1', {
@@ -114,6 +116,7 @@ describe('MessengerMappingService', () => {
       outbound as never,
       studyReminderSyncService as never,
       { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     const result = await service.linkFromContext('psid-new', {
@@ -127,6 +130,46 @@ describe('MessengerMappingService', () => {
     expect(repository.upsertPsidUserLink).not.toHaveBeenCalled();
     expect(outbound.sendTextViaPsid).toHaveBeenCalledWith(
       expect.objectContaining({ messageType: 'MAPPING_USER_PSID_CONFLICT' }),
+    );
+  });
+
+  it('clears clarification state after a committed mapping update', async () => {
+    const repository = {
+      findActiveMappingByPsid: jest.fn(() => Promise.resolve(null)),
+      findActiveMappingByUserId: jest.fn(() => Promise.resolve(null)),
+      upsertPsidUserLink: jest.fn(() =>
+        Promise.resolve({
+          id: 1,
+          userId: 200,
+          psid: 'psid-1',
+          notificationMessagesToken: 'token',
+          status: 'ACTIVE',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+      ),
+    };
+    const clarificationStateStore = {
+      clear: jest.fn().mockResolvedValue(true),
+    };
+
+    const service = new MessengerMappingService(
+      repository as never,
+      { sendTextViaPsid: jest.fn() } as never,
+      { syncUpcomingSessions: jest.fn().mockResolvedValue({}) } as never,
+      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      clarificationStateStore as never,
+    );
+
+    await service.linkFromContext('psid-1', {
+      ref: 'token',
+      userId: 200,
+      topic: 'IELTS',
+      cadence: 'WEEKLY',
+    });
+
+    expect(clarificationStateStore.clear).toHaveBeenCalledWith(
+      'messenger:psid-1',
     );
   });
 });

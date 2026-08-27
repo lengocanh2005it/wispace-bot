@@ -26,8 +26,15 @@ describe('isObviouslyOffTopic', () => {
     expect(isObviouslyOffTopic('cái đó')).toBe(false);
   });
 
-  it('returns false for Vietnamese off-topic under threshold', () => {
-    expect(isObviouslyOffTopic('thời tiết')).toBe(false);
+  it.each(['thời tiết', 'thoi tiet', 'bóng đá'])(
+    'recognizes short Vietnamese off-topic text: "%s"',
+    (text) => {
+      expect(isObviouslyOffTopic(text)).toBe(true);
+    },
+  );
+
+  it('keeps in-scope no-diacritic text allowed', () => {
+    expect(isObviouslyOffTopic('xem lich hoc')).toBe(false);
   });
 });
 
@@ -78,8 +85,21 @@ describe('isAmbiguousMessage', () => {
     'gì vậy',
     'sao thế',
     'thì sao',
+    'ngày mai',
+    'mai',
+    'tuần sau',
+    'sáng',
+    'chiều',
   ])('returns true for meaningless Vietnamese fragment "%s"', (text) => {
     expect(isAmbiguousMessage(text)).toBe(true);
+  });
+
+  it('normalizes punctuation and no-diacritic typos before classifying fragments', () => {
+    expect(isAmbiguousMessage('Hoc gi?')).toBe(true);
+    expect(isAmbiguousMessage('ngay mai!!!')).toBe(true);
+    expect(isAmbiguousMessage('hoc gii')).toBe(true);
+    expect(isAmbiguousMessage('lichh')).toBe(true);
+    expect(isAmbiguousMessage('lich hoc')).toBe(false);
   });
 
   it.each([

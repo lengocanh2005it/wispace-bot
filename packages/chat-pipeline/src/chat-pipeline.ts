@@ -100,14 +100,23 @@ export class ChatPipeline {
       ctx.reply = reply;
 
       // ── Send reply ────────────────────────────────────────────────────────
-      if (reply.text.trim()) {
+      if (reply.skipDelivery) {
+        // A duplicate webhook/worker replay has already attempted this
+        // canned clarification. Mark the idempotency row terminal without
+        // sending a second user-visible reply.
+        delivered = true;
+      } else if (reply.text.trim()) {
         await this.hooks.onBeforeSend?.(ctx);
         await this.hooks.onStep?.('before_send', ctx);
 
         const sendResult = await this.outbound.sendText(
           input.externalUserId,
           reply.text,
-          { userId: input.userId },
+          {
+            userId: input.userId,
+            ...(reply.deliveryKey ? { deliveryKey: reply.deliveryKey } : {}),
+            ...(reply.clarification ? { clarification: true } : {}),
+          },
         );
 
         delivered = sendResult.delivered;
@@ -143,12 +152,14 @@ export class ChatPipeline {
         await this.rateLimiter.markDelivered(input.idempotencyKey);
       }
 
-      await this.history.appendTurn(
-        input.externalUserId,
-        mergedText,
-        reply.text,
-        reply.toolSummary,
-      );
+      if (!reply.skipHistory) {
+        await this.history.appendTurn(
+          input.externalUserId,
+          mergedText,
+          reply.text,
+          reply.toolSummary,
+        );
+      }
 
       // A confirmed delivery must never be refunded just because quota
       // finalization is temporarily unavailable. The delivered row is durable
@@ -173,6 +184,8 @@ export class ChatPipeline {
 
       return delivered;
     } catch (error) {
+      ctx.deliveryAmbiguous =
+        this.outbound.isAmbiguousDeliveryError?.(error) === true;
       // ── Refund on error before delivery ──────────────────────────────────
       if (!delivered && input.idempotencyKey && usageDate && !refundAttempted) {
         refundAttempted = true;

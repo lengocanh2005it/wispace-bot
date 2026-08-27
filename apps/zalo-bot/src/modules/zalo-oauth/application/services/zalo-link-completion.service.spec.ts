@@ -13,6 +13,7 @@ describe('ZaloLinkCompletionService', () => {
       verifyResult?: { valid: boolean; userId?: number };
       upsertError?: Error;
       upsertFailures?: number;
+      clearClarificationState?: jest.Mock;
     } = {},
   ) => {
     const exchangeCodeForZaloUser = jest
@@ -45,12 +46,17 @@ describe('ZaloLinkCompletionService', () => {
     } as unknown as ZaloLinkVerifyRecordRepositoryPort;
     const sendText = jest.fn().mockResolvedValue(undefined);
     const outboundService = { sendText } as never;
+    const clarificationStateStore = {
+      clear:
+        overrides.clearClarificationState ?? jest.fn().mockResolvedValue(true),
+    };
 
     const service = new ZaloLinkCompletionService(
       accountLinkService,
       tokenVerifyService,
       verifyRecordService,
       outboundService,
+      clarificationStateStore,
     );
     return {
       service,
@@ -60,12 +66,19 @@ describe('ZaloLinkCompletionService', () => {
       recordVerify,
       consumeRecord,
       sendText,
+      clarificationStateStore,
     };
   };
 
   it('records a durable verify intent BEFORE the mapping upsert (#147)', async () => {
-    const { service, recordVerify, upsertLink, sendText, consumeRecord } =
-      buildService();
+    const {
+      service,
+      recordVerify,
+      upsertLink,
+      sendText,
+      consumeRecord,
+      clarificationStateStore,
+    } = buildService();
 
     await service.completeLink('code-1', 'verifier-1', 'link-token');
 
@@ -80,6 +93,9 @@ describe('ZaloLinkCompletionService', () => {
     // Welcome AFTER the mapping is committed.
     expect(sendText.mock.invocationCallOrder[0]).toBeGreaterThan(
       upsertLink.mock.invocationCallOrder[0],
+    );
+    expect(clarificationStateStore.clear).toHaveBeenCalledWith(
+      'zalo:zalo-user-1',
     );
   });
 
@@ -104,6 +120,7 @@ describe('ZaloLinkCompletionService', () => {
       } as never,
       verifyRecordService,
       { sendText: jest.fn().mockResolvedValue(undefined) } as never,
+      { clear: jest.fn().mockResolvedValue(true) },
     );
 
     await service.completeLink('code-1', 'verifier-1', 'token');

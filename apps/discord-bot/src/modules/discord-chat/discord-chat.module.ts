@@ -12,7 +12,7 @@ import {
   PgAdvisoryLockService,
 } from '@wispace/bot-common/locks';
 import { BotCommonModule } from '@wispace/bot-common/guard';
-import { REDIS_CLIENT } from '@wispace/bot-common/redis';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   ChatMeteringModule,
@@ -34,9 +34,13 @@ import {
   RedisChatQueueStore,
   RedisChatQueueWorkerService,
   PLATFORM_CHAT_QUEUE_STORE,
+  CLARIFICATION_STATE_STORE,
   createChatPipelineAdapters,
 } from '@wispace/chat-agent';
-import type { ChatQueueStorePort } from '@wispace/chat-agent';
+import type {
+  ChatQueueStorePort,
+  ClarificationStateStore,
+} from '@wispace/chat-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
   WispaceCalendarService,
@@ -177,6 +181,8 @@ const REGISTER_REPORT_MESSAGE =
         adapter: LlmProviderAdapter,
         learnerProfileStore: LearnerProfileStorePort,
         metrics: BotMetricsService,
+        redisClient: RedisClientPort,
+        clarificationStore: ClarificationStateStore,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -190,6 +196,8 @@ const REGISTER_REPORT_MESSAGE =
           safetyEventService,
           adapter,
           {
+            platform: 'discord',
+            clarificationStore,
             promptDir: join(__dirname, '../../shared/prompts'),
             promptFile: 'discord-chat.system.txt',
             // Single retry layer — retryWithBackoff in PlatformAgentService
@@ -209,9 +217,12 @@ const REGISTER_REPORT_MESSAGE =
               llmRoundOutcomeInc: (feature, outcome) =>
                 metrics.incRoundOutcome(feature, outcome),
             },
+            clarificationOutcomeInc: (outcome) =>
+              metrics.incClarificationOutcome(outcome),
             // Bounded admission telemetry (#389)
             llmAdmissionMetrics: metrics.llmAdmission,
           },
+          redisClient,
         );
       },
       inject: [
@@ -223,6 +234,8 @@ const REGISTER_REPORT_MESSAGE =
         'LLM_PROVIDER_ADAPTER',
         LEARNER_PROFILE_STORE,
         BotMetricsService,
+        REDIS_CLIENT,
+        CLARIFICATION_STATE_STORE,
       ],
     },
     {
@@ -235,6 +248,7 @@ const REGISTER_REPORT_MESSAGE =
         outboundService: DiscordOutboundService,
         queueStore: ChatQueueStorePort,
         accountLinkService: DiscordAccountLinkService,
+        metrics: BotMetricsService,
       ) => {
         const adapters = createChatPipelineAdapters(
           rateLimitService,
@@ -262,6 +276,15 @@ const REGISTER_REPORT_MESSAGE =
             // #397: fresh-mapping revalidation before pipeline flush
             freshMappingProvider: (externalUserId) =>
               accountLinkService.findUserIdByDiscordId(externalUserId),
+            clarificationStateClearer: (externalUserId) =>
+              agentService.clearClarificationState(externalUserId),
+            clarificationDeliveryFailure: (externalUserId, eventId) =>
+              agentService.markClarificationDeliveryFailedForEvent(
+                externalUserId,
+                eventId,
+              ),
+            clarificationOutcomeInc: (outcome) =>
+              metrics.incClarificationOutcome(outcome),
           },
           queueStore,
         );
@@ -274,6 +297,7 @@ const REGISTER_REPORT_MESSAGE =
         DiscordOutboundService,
         PLATFORM_CHAT_QUEUE_STORE,
         DiscordAccountLinkService,
+        BotMetricsService,
       ],
     },
     {
@@ -447,6 +471,6 @@ const REGISTER_REPORT_MESSAGE =
       ],
     },
   ],
-  exports: [],
+  exports: [PlatformAgentService],
 })
 export class DiscordChatModule {}

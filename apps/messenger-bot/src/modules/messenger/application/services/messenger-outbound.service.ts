@@ -3,6 +3,7 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import {
   errorMessage,
@@ -23,6 +24,7 @@ import { readMessengerBubbleLimits } from '../utils/messenger-bubble-config.util
 import { splitMessengerBubbles } from '@messenger/shared/utils/messenger-text.utils';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
 import { keepAliveFetch } from '@messenger/shared/http/http-agent';
+import { PlatformDeadLetterService } from '@wispace/database';
 
 export class MessengerApiError extends Error {
   constructor(
@@ -43,6 +45,10 @@ export class MessengerApiError extends Error {
         this.responseBody.includes('OAuthException'))
     );
   }
+}
+
+export function isMessengerAmbiguousDeliveryError(error: unknown): boolean {
+  return error instanceof MessengerApiError && error.status === 408;
 }
 
 /** H4: at least one bubble was delivered before a later Send API failure. */
@@ -73,6 +79,9 @@ export class MessengerOutboundService {
     private readonly configService: ConfigService,
     @Inject(MESSENGER_MESSAGE_LOG_REPOSITORY)
     private readonly repository: MessengerMessageLogRepositoryPort,
+    @Optional()
+    @Inject(PlatformDeadLetterService)
+    private readonly deadLetter?: PlatformDeadLetterService,
   ) {
     const raw = this.configService.get<string>('MESSENGER_SEND_API_TIMEOUT_MS');
     const parsed = raw ? Number(raw) : NaN;
@@ -134,6 +143,10 @@ export class MessengerOutboundService {
     userId?: number;
     maxBubbles?: number;
     maxCharsPerBubble?: number;
+    /** Stable clarification delivery identity (provider currently ignores it). */
+    deliveryKey?: string;
+    clarification?: boolean;
+    skipDeadLetter?: boolean;
   }): Promise<number> {
     const defaults = readMessengerBubbleLimits(this.configService);
     const bubbles = splitMessengerBubbles(
@@ -154,8 +167,9 @@ export class MessengerOutboundService {
           psid: params.psid,
           userId: params.userId,
           text: bubble,
-          messageType:
-            bubbles.length > 1
+          messageType: params.clarification
+            ? 'CLARIFICATION'
+            : bubbles.length > 1
               ? `${params.messageType}_PART_${index + 1}_OF_${bubbles.length}`
               : params.messageType,
         });
@@ -164,6 +178,27 @@ export class MessengerOutboundService {
         const apiError = this.toMessengerApiError(params.psid, error);
         if (sentCount > 0) {
           throw new MessengerPartialSendError(sentCount, apiError);
+        }
+
+        if (
+          params.clarification &&
+          params.skipDeadLetter !== true &&
+          !isMessengerAmbiguousDeliveryError(apiError)
+        ) {
+          const persisted = await this.deadLetter?.save({
+            externalUserId: params.psid,
+            rawPayload: { psid: params.psid, text: params.text },
+            errorMessage: apiError.message,
+            direction: 'outbound',
+            ...(params.deliveryKey ? { deliveryKey: params.deliveryKey } : {}),
+          });
+          if (persisted === false) {
+            this.logger.error(
+              `No durable recovery record for failed clarification to psid=${maskExternalId(
+                params.psid,
+              )} — dead-letter persistence failed`,
+            );
+          }
         }
 
         throw apiError;
@@ -329,7 +364,12 @@ export class MessengerOutboundService {
   async sendText(
     externalUserId: string,
     text: string,
-    input?: { messageType?: string; userId?: number },
+    input?: {
+      messageType?: string;
+      userId?: number;
+      deliveryKey?: string;
+      clarification?: boolean;
+    },
   ): Promise<void> {
     await this.sendTextViaPsid({
       psid: externalUserId,
@@ -337,6 +377,32 @@ export class MessengerOutboundService {
       messageType: input?.messageType ?? 'STUDY_REMINDER',
       userId: input?.userId,
     });
+  }
+
+  isAmbiguousDeliveryError(error: unknown): boolean {
+    return isMessengerAmbiguousDeliveryError(error);
+  }
+
+  async sendTextForRetry(
+    psid: string,
+    text: string,
+    deliveryKey: string,
+  ): Promise<'sent' | 'ambiguous' | 'not_sent'> {
+    try {
+      await this.sendTextBubblesViaPsid({
+        psid,
+        text,
+        messageType: 'FREE_FORM_CHAT_OUT',
+        clarification: true,
+        deliveryKey,
+        skipDeadLetter: true,
+      });
+      return 'sent';
+    } catch (error) {
+      return isMessengerAmbiguousDeliveryError(error)
+        ? 'ambiguous'
+        : 'not_sent';
+    }
   }
 
   private async logSendFailure(

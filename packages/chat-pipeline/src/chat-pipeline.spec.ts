@@ -83,6 +83,128 @@ describe('ChatPipeline', () => {
     expect(rateLimiter.markDelivered).toHaveBeenCalledWith('msg-1');
   });
 
+  it('does not persist bounded clarification noise as long-term history', async () => {
+    const history = mockHistory();
+    const pipeline = new ChatPipeline(
+      mockRateLimiter(),
+      history,
+      mockAgent({
+        reply: jest.fn().mockResolvedValue({
+          text: 'Bạn chọn 1, 2 hoặc 3 nhé.',
+          skipHistory: true,
+        }),
+      }),
+      mockOutbound(),
+    );
+
+    await expect(
+      pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['???'],
+        idempotencyKey: 'clarification-1',
+      }),
+    ).resolves.toBe(true);
+
+    expect(history.appendTurn).not.toHaveBeenCalled();
+  });
+
+  it('forwards clarification delivery identity to outbound providers', async () => {
+    const outbound = mockOutbound();
+    const pipeline = new ChatPipeline(
+      mockRateLimiter(),
+      mockHistory(),
+      mockAgent({
+        reply: jest.fn().mockResolvedValue({
+          text: 'Bạn chọn 1, 2 hoặc 3 nhé.',
+          skipHistory: true,
+          clarification: true,
+          deliveryKey: 'clarification:event-1',
+        }),
+      }),
+      outbound,
+    );
+
+    await pipeline.flush({
+      externalUserId: 'user-1',
+      texts: ['???'],
+      idempotencyKey: 'event-1',
+    });
+
+    expect(outbound.sendText).toHaveBeenCalledWith(
+      'user-1',
+      'Bạn chọn 1, 2 hoặc 3 nhé.',
+      {
+        userId: undefined,
+        deliveryKey: 'clarification:event-1',
+        clarification: true,
+      },
+    );
+  });
+
+  it('suppresses a replay after a clarification reply was already attempted', async () => {
+    const outbound = mockOutbound();
+    const rateLimiter = mockRateLimiter();
+    const history = mockHistory();
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      history,
+      mockAgent({
+        reply: jest.fn().mockResolvedValue({
+          text: 'Bạn chọn 1, 2 hoặc 3 nhé.',
+          skipHistory: true,
+          clarification: true,
+          skipDelivery: true,
+        }),
+      }),
+      outbound,
+    );
+
+    await expect(
+      pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['???'],
+        idempotencyKey: 'event-1',
+      }),
+    ).resolves.toBe(true);
+
+    expect(outbound.sendText).not.toHaveBeenCalled();
+    expect(history.appendTurn).not.toHaveBeenCalled();
+    expect(rateLimiter.markDelivered).toHaveBeenCalledWith('event-1');
+    expect(rateLimiter.markCompleted).toHaveBeenCalledWith('event-1');
+  });
+
+  it('marks ambiguous clarification delivery so retry logic cannot resend blindly', async () => {
+    const onError = jest.fn().mockResolvedValue(undefined);
+    const pipeline = new ChatPipeline(
+      mockRateLimiter(),
+      mockHistory(),
+      mockAgent({
+        reply: jest.fn().mockResolvedValue({
+          text: 'Bạn chọn 1, 2 hoặc 3 nhé.',
+          skipHistory: true,
+          clarification: true,
+        }),
+      }),
+      mockOutbound({
+        sendText: jest.fn().mockRejectedValue(new Error('provider timeout')),
+        isAmbiguousDeliveryError: jest.fn().mockReturnValue(true),
+      }),
+      { onError },
+    );
+
+    await expect(
+      pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['???'],
+        idempotencyKey: 'event-ambiguous',
+      }),
+    ).rejects.toThrow('provider timeout');
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryAmbiguous: true }),
+    );
+  });
+
   it('merges multiple texts with newline', async () => {
     const agent = mockAgent();
     const pipeline = new ChatPipeline(

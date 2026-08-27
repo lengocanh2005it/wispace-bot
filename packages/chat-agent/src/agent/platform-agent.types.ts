@@ -5,6 +5,7 @@ import type {
   LlmExecutionPort,
 } from '@wispace/llm-agent';
 import type { PinnedFact } from './pinned-facts';
+import type { ClarificationStateStore } from '../clarification/clarification-state';
 
 /**
  * Platform-neutral agent context — Discord sets `isServerChannel` +
@@ -53,6 +54,14 @@ export interface PlatformAgentReply {
   exhausted?: boolean;
   /** E.g. "[Đã tra cứu: get_user_goals]" — appended to history for next turns. */
   toolSummary?: string;
+  /** Canned clarification/recovery replies do not become long-term context. */
+  skipHistory?: boolean;
+  /** Stable inbound-event key used to prevent duplicate clarification sends. */
+  deliveryKey?: string;
+  /** Marks a reply as clarification lifecycle telemetry, not a normal answer. */
+  clarification?: boolean;
+  /** Redelivery already attempted this canned reply; do not send it again. */
+  skipDelivery?: boolean;
 }
 
 export interface PlatformAgentInput {
@@ -79,6 +88,10 @@ export interface PlatformAgentInput {
 
 /** Per-platform agent options — prompt files are owned by each app. */
 export interface PlatformAgentOptions {
+  /** Stable platform namespace for clarification state (messenger/discord/zalo). */
+  platform?: string;
+  /** Optional state store seam; defaults to bounded memory/Redis selection. */
+  clarificationStore?: ClarificationStateStore;
   promptDir: string;
   promptFile: string;
   /**
@@ -112,6 +125,8 @@ export interface PlatformAgentOptions {
   ) => Promise<PlatformAgentReply | null>;
   /** Prometheus/OTel agent metrics (default: no-op). */
   metrics?: AgentMetricsPort;
+  /** Bounded clarification lifecycle metrics; labels contain no user data. */
+  clarificationOutcomeInc?: (outcome: string) => void;
   /**
    * LLM execution-control port (limiter/deadline/retry). Apps with a full
    * execution service (Messenger's `LlmExecutionService`) inject it here;
@@ -223,4 +238,13 @@ export interface PlatformChatQueueOptions {
   freshMappingProvider?: (
     externalUserId: string,
   ) => Promise<number | undefined>;
+  /** Clears pending clarification when unlink/relink changes identity. */
+  clarificationStateClearer?: (externalUserId: string) => Promise<void>;
+  /** Re-opens a clarification only when its known outbound attempt failed. */
+  clarificationDeliveryFailure?: (
+    externalUserId: string,
+    eventId?: string,
+  ) => Promise<void>;
+  /** Records clarification delivery failures without user data labels. */
+  clarificationOutcomeInc?: (outcome: string) => void;
 }
