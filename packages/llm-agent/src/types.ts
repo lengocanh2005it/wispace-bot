@@ -23,6 +23,12 @@ export interface LlmAgentConfig {
   globalAgentTimeoutMs?: number;
   /** Max input tokens (system prompt + history + user text). Default: 16_000. */
   maxInputTokens?: number;
+  /** Enable semantic compaction — summarize old history entries instead of dropping them. Default: false. */
+  compactionEnabled?: boolean;
+  /** Max tokens for the compacted summary. Default: 500. */
+  compactionSummaryMaxTokens?: number;
+  /** Number of recent turns to preserve after compaction. Default: 2. */
+  compactionRecentTurns?: number;
 }
 
 export interface LlmAgentInput {

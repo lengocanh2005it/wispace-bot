@@ -565,9 +565,9 @@ describe('LlmAgentService', () => {
         isRetryableError: () => false,
         isRateLimitError: () => false,
         normalizeError: () => ({
-          provider: 'openai',
+          provider: 'openai' as const,
           retryable: false,
-          reason: 'unknown',
+          reason: 'unknown' as const,
         }),
       };
       const execute = jest
@@ -651,9 +651,9 @@ describe('LlmAgentService', () => {
         isRetryableError: () => false,
         isRateLimitError: () => false,
         normalizeError: () => ({
-          provider: 'openai',
+          provider: 'openai' as const,
           retryable: false,
-          reason: 'unknown',
+          reason: 'unknown' as const,
         }),
       };
       const execute = jest
@@ -747,9 +747,9 @@ describe('LlmAgentService', () => {
         isRetryableError: () => false,
         isRateLimitError: () => false,
         normalizeError: () => ({
-          provider: 'openai',
+          provider: 'openai' as const,
           retryable: false,
-          reason: 'unknown',
+          reason: 'unknown' as const,
         }),
       };
       const execute = jest
@@ -847,9 +847,9 @@ describe('LlmAgentService', () => {
         isRetryableError: () => false,
         isRateLimitError: () => false,
         normalizeError: () => ({
-          provider: 'openai',
+          provider: 'openai' as const,
           retryable: false,
-          reason: 'unknown',
+          reason: 'unknown' as const,
         }),
       };
       const execute = jest.fn().mockResolvedValue({ entries: [] });
@@ -1772,9 +1772,9 @@ describe('LlmAgentService', () => {
         isRetryableError: () => false,
         isRateLimitError: () => false,
         normalizeError: () => ({
-          provider: 'openai',
+          provider: 'openai' as const,
           retryable: false,
-          reason: 'unknown',
+          reason: 'unknown' as const,
         }),
       };
     }
@@ -1829,6 +1829,258 @@ describe('LlmAgentService', () => {
 
       await expect(service.reply(BASE_INPUT, TOOL_CONTEXT)).rejects.toThrow();
       expect(capturedSignals[0]?.aborted).toBe(true);
+    });
+  });
+
+  describe('semantic compaction (#413)', () => {
+    function makeCompactionAdapter(summaryText: string): LlmProviderAdapter {
+      return {
+        providerName: 'openai',
+        isConfigured: () => true,
+        getDefaultModel: () => 'gpt-5.4',
+        generateJson: jest.fn(),
+        chatWithTools: jest.fn().mockResolvedValue({
+          message: { role: 'assistant', content: summaryText },
+          content: summaryText,
+          metadata: {
+            provider: 'openai',
+            model: 'gpt-5.4',
+            responseId: 'chatcmpl_compact',
+            usage: { promptTokens: 50, completionTokens: 30, totalTokens: 80 },
+          },
+        }),
+        chatStream: jest.fn(),
+        isRetryableError: () => false,
+        isRateLimitError: () => false,
+        normalizeError: () => ({
+          provider: 'openai' as const,
+          retryable: false,
+          reason: 'unknown' as const,
+        }),
+      };
+    }
+
+    function buildHistory(turns: number): Array<{
+      role: 'user' | 'assistant';
+      content: string;
+    }> {
+      const samples = [
+        {
+          u: 'Cho mình xem tiến độ học IELTS gần nhất',
+          a: 'Mình đã kiểm tra tiến độ học của bạn. Bạn đang ở band 6.0.',
+        },
+        {
+          u: 'Mình muốn đặt lịch học buổi tối',
+          a: 'Bạn có thể chọn khung giờ 19h-21h, mình sẽ sắp xếp.',
+        },
+        {
+          u: 'Tiếng Anh của mình verbessert chưa?',
+          a: 'So với tháng trước, điểm Listening của bạn đã cải thiện 0.5 band.',
+        },
+        {
+          u: 'Mình cần ôn WritingTask 2',
+          a: 'Writing Task 2 cần luyện cấu trúc essay và vocabulary. Mình gợi ý chủ đề phổ biến.',
+        },
+        {
+          u: 'Khi nào mình thi được?',
+          a: 'Với hiện tại, bạn nên thi sau 2 tháng nữa để đạt target 6.5.',
+        },
+        {
+          u: 'Cảm ơn bạn nhé',
+          a: 'Không có gì! Mình luôn sẵn sàng hỗ trợ bạn.',
+        },
+        {
+          u: 'Mình muốn đổi lịch học sang thứ 7',
+          a: 'Được rồi, mình sẽ cập nhật lịch học của bạn sang thứ 7 hàng tuần.',
+        },
+        {
+          u: 'Điểm Listening của mình bao nhiêu?',
+          a: 'Điểm Listening hiện tại của bạn là 6.5, mục tiêu là 7.0.',
+        },
+      ];
+      const history: Array<{ role: 'user' | 'assistant'; content: string }> =
+        [];
+      for (let i = 0; i < turns; i++) {
+        const sample = samples[i % samples.length];
+        history.push({ role: 'user', content: sample.u });
+        history.push({ role: 'assistant', content: sample.a });
+      }
+      return history;
+    }
+
+    it('compacts old entries when history exceeds token budget and compaction enabled', async () => {
+      const adapter = makeCompactionAdapter(
+        'Summary of earlier conversation about IELTS goals.',
+      );
+      const history = buildHistory(8); // 16 messages, should exceed budget
+      const service = new LlmAgentService<StubToolContext>(
+        { compactionEnabled: true, maxInputTokens: 500 },
+        {
+          llmExecution: {
+            run: jest
+              .fn()
+              .mockImplementation(
+                (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
+              ),
+          },
+          usageRecorder: { recordFromCompletion: jest.fn() },
+          safetyEvents: { recordGroundingWarning: jest.fn() },
+          toolExecutor: { execute: jest.fn().mockResolvedValue({ ok: true }) },
+          adapter,
+          metrics: NOOP_METRICS_PORT,
+          logger: { warn: jest.fn(), debug: jest.fn() },
+        },
+      );
+
+      await service.reply({ ...BASE_INPUT, history }, TOOL_CONTEXT);
+
+      // Compaction + reply = at least 2 chatWithTools calls
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not compact when compaction is disabled', async () => {
+      const adapter = makeCompactionAdapter('should not be called');
+      const history = buildHistory(8);
+      const service = new LlmAgentService<StubToolContext>(
+        { compactionEnabled: false, maxInputTokens: 2000 },
+        {
+          llmExecution: {
+            run: jest
+              .fn()
+              .mockImplementation(
+                (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
+              ),
+          },
+          usageRecorder: { recordFromCompletion: jest.fn() },
+          safetyEvents: { recordGroundingWarning: jest.fn() },
+          toolExecutor: { execute: jest.fn().mockResolvedValue({ ok: true }) },
+          adapter,
+          metrics: NOOP_METRICS_PORT,
+          logger: { warn: jest.fn(), debug: jest.fn() },
+        },
+      );
+
+      await service.reply({ ...BASE_INPUT, history }, TOOL_CONTEXT);
+
+      // Only 1 chatWithTools call (the reply), no compaction call
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to truncation when compaction LLM call fails', async () => {
+      // Compaction fails → fallback to truncation → reply still works
+      const adapter = makeCompactionAdapter('unused');
+      const calls: string[] = [];
+      adapter.chatWithTools = jest
+        .fn()
+        .mockImplementation((params: { correlationId?: string }) => {
+          const isCompaction = params.correlationId?.startsWith('compaction:');
+          calls.push(isCompaction ? 'compaction' : 'reply');
+          if (isCompaction) {
+            return Promise.reject(new Error('compaction failed'));
+          }
+          return Promise.resolve({
+            message: { role: 'assistant', content: 'OK after fallback' },
+            content: 'OK after fallback',
+            metadata: {
+              provider: 'openai',
+              model: 'gpt-5.4',
+              responseId: 'r',
+              usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+            },
+          });
+        });
+
+      const history = buildHistory(8);
+      const service = new LlmAgentService<StubToolContext>(
+        { compactionEnabled: true, maxInputTokens: 500 },
+        {
+          llmExecution: {
+            run: jest
+              .fn()
+              .mockImplementation(
+                (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
+              ),
+          },
+          usageRecorder: { recordFromCompletion: jest.fn() },
+          safetyEvents: { recordGroundingWarning: jest.fn() },
+          toolExecutor: { execute: jest.fn().mockResolvedValue({ ok: true }) },
+          adapter,
+          metrics: NOOP_METRICS_PORT,
+          logger: { warn: jest.fn(), debug: jest.fn() },
+        },
+      );
+
+      const result = await service.reply(
+        { ...BASE_INPUT, history },
+        TOOL_CONTEXT,
+      );
+      expect(result.text).toBe('OK after fallback');
+      expect(calls).toContain('compaction');
+      expect(calls).toContain('reply');
+    });
+
+    it('preserves recent turns after compaction', async () => {
+      const compactSummary = 'User discussed IELTS goals and study schedule.';
+      const adapter = makeCompactionAdapter(compactSummary);
+      const history = buildHistory(6); // 12 messages
+      const service = new LlmAgentService<StubToolContext>(
+        {
+          compactionEnabled: true,
+          maxInputTokens: 500,
+          compactionRecentTurns: 2,
+        },
+        {
+          llmExecution: {
+            run: jest
+              .fn()
+              .mockImplementation(
+                (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
+              ),
+          },
+          usageRecorder: { recordFromCompletion: jest.fn() },
+          safetyEvents: { recordGroundingWarning: jest.fn() },
+          toolExecutor: { execute: jest.fn().mockResolvedValue({ ok: true }) },
+          adapter,
+          metrics: NOOP_METRICS_PORT,
+          logger: { warn: jest.fn(), debug: jest.fn() },
+        },
+      );
+
+      const result = await service.reply(
+        { ...BASE_INPUT, history },
+        TOOL_CONTEXT,
+      );
+      expect(result.text).toBeDefined();
+      // Verify compaction was attempted (adapter called more than once)
+      expect(adapter.chatWithTools).toHaveBeenCalled();
+    });
+
+    it('does not compact when history is below threshold', async () => {
+      const adapter = makeCompactionAdapter('should not be called');
+      const history = buildHistory(2); // 4 messages — below threshold
+      const service = new LlmAgentService<StubToolContext>(
+        { compactionEnabled: true, maxInputTokens: 16000 },
+        {
+          llmExecution: {
+            run: jest
+              .fn()
+              .mockImplementation(
+                (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
+              ),
+          },
+          usageRecorder: { recordFromCompletion: jest.fn() },
+          safetyEvents: { recordGroundingWarning: jest.fn() },
+          toolExecutor: { execute: jest.fn().mockResolvedValue({ ok: true }) },
+          adapter,
+          metrics: NOOP_METRICS_PORT,
+          logger: { warn: jest.fn(), debug: jest.fn() },
+        },
+      );
+
+      await service.reply({ ...BASE_INPUT, history }, TOOL_CONTEXT);
+
+      // Only 1 chatWithTools call (the reply), no compaction
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(1);
     });
   });
 });

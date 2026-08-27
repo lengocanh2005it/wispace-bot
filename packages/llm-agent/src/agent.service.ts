@@ -42,6 +42,9 @@ const DEFAULT_MAX_CONTEXT_CHARS = 24_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 1024;
 const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 10_000;
 const DEFAULT_GLOBAL_AGENT_TIMEOUT_MS = 60_000;
+const DEFAULT_COMPACTION_SUMMARY_MAX_TOKENS = 500;
+const DEFAULT_COMPACTION_RECENT_TURNS = 2;
+const COMPACTION_MIN_DROPPED_TURNS = 2;
 const FEATURE = 'FREE_FORM_CHAT';
 
 /**
@@ -284,7 +287,7 @@ export class LlmAgentService<TToolContext> {
     }
 
     const model = adapter.getDefaultModel();
-    const messages = this.buildMessages(input);
+    const messages = await this.buildMessages(input);
 
     const toolsCalledThisTurn = new Set<string>();
     const groundedToolsThisTurn = new Set<string>();
@@ -605,8 +608,9 @@ export class LlmAgentService<TToolContext> {
   /**
    * Fix 2 — redact history entries containing injection patterns.
    * Fix 3 — truncate history to stay within context token budget.
+   * #413 — semantic compaction: summarize old entries instead of dropping them.
    */
-  private buildSafeHistory(
+  private async buildSafeHistory(
     history: ChatHistoryMessage[],
     systemPrompt: string,
     userText: string,
@@ -615,7 +619,7 @@ export class LlmAgentService<TToolContext> {
       warn: (message: string) => void;
       debug: (message: string) => void;
     },
-  ): ChatHistoryMessage[] {
+  ): Promise<ChatHistoryMessage[]> {
     const redacted = history.map((entry) => {
       const check = detectPromptInjection(entry.content);
       if (check.isInjection) {
@@ -633,25 +637,134 @@ export class LlmAgentService<TToolContext> {
     const fixedTokens = estimateTokens(systemPrompt) + estimateTokens(userText);
     let budget = maxTokens - fixedTokens;
 
+    // Collect entries that fit within budget (newest-first)
     const result: ChatHistoryMessage[] = [];
+    let droppedCount = 0;
     for (let i = redacted.length - 1; i >= 0; i--) {
       const entry = redacted[i];
       if (!entry) continue;
       const entryTokens = estimateTokens(entry.content);
+
       if (budget >= entryTokens) {
         result.unshift(entry);
         budget -= entryTokens;
       } else {
-        logger.debug(
-          `History truncated at index ${i} to stay within token budget externalUserId=${maskExternalId(
-            externalUserId,
-          )}`,
-        );
-        break;
+        droppedCount++;
       }
     }
 
+    // #413: Semantic compaction — if enough entries were dropped, summarize them
+    const compactionEnabled = this.getCompactionEnabled();
+    const shouldCompact =
+      compactionEnabled &&
+      droppedCount >= COMPACTION_MIN_DROPPED_TURNS * 2 &&
+      result.length > 0;
+
+    if (shouldCompact) {
+      const droppedEntries = redacted.slice(0, redacted.length - result.length);
+      const compacted = await this.compactHistory(
+        droppedEntries,
+        externalUserId,
+        logger,
+      );
+      if (compacted) {
+        const recentTurns = this.getCompactionRecentTurns();
+        result.splice(0, result.length - recentTurns * 2, ...compacted);
+        logger.debug(
+          `History compacted externalUserId=${maskExternalId(
+            externalUserId,
+          )} dropped=${droppedCount} summary_tokens=${estimateTokens(
+            compacted[0]?.content ?? '',
+          )}`,
+        );
+      } else {
+        logger.warn(
+          `History compaction failed, falling back to truncation externalUserId=${maskExternalId(
+            externalUserId,
+          )}`,
+        );
+      }
+    } else if (droppedCount > 0) {
+      logger.debug(
+        `History truncated at ${droppedCount} entries to stay within token budget externalUserId=${maskExternalId(
+          externalUserId,
+        )}`,
+      );
+    }
+
     return result;
+  }
+
+  /**
+   * #413 — Summarize old history entries via LLM compaction call.
+   * Returns a single summary message entry, or null on failure (caller falls
+   * back to truncation).
+   */
+  private async compactHistory(
+    entries: ChatHistoryMessage[],
+    externalUserId: string,
+    logger: {
+      warn: (message: string) => void;
+      debug: (message: string) => void;
+    },
+  ): Promise<ChatHistoryMessage[] | null> {
+    if (entries.length === 0) return null;
+
+    const summaryMaxTokens = this.getCompactionSummaryMaxTokens();
+    const historyText = entries
+      .map((e) => `${e.role}: ${e.content}`)
+      .join('\n');
+
+    const compactionPrompt = `Summarize the following conversation history into a concise summary (max ${summaryMaxTokens} tokens). Include: intent, preferences, decisions, unresolved questions. Exclude: specific scores, dates, numbers, identity details, side-effect authorizations.
+
+Conversation history:
+${historyText}
+
+Summary:`;
+
+    try {
+      const adapter = this.ports.adapter;
+      const model = adapter.getDefaultModel();
+      const result = await adapter.chatWithTools({
+        feature: FEATURE,
+        model,
+        messages: [{ role: 'user', content: compactionPrompt }],
+        tools: [],
+        toolChoice: 'none',
+        correlationId: `compaction:${externalUserId}`,
+        maxOutputTokens: summaryMaxTokens,
+      });
+
+      const summaryText = result.content;
+      if (!summaryText) {
+        return null;
+      }
+
+      // Output safety check
+      const safetyCheck = checkFinalOutputSafety(summaryText);
+      if (safetyCheck.unsafe) {
+        logger.warn(
+          `Compaction summary failed safety check externalUserId=${maskExternalId(
+            externalUserId,
+          )} reason=${safetyCheck.reason}`,
+        );
+        return null;
+      }
+
+      return [
+        {
+          role: 'tool_summary' as const,
+          content: `[Compacted summary of ${entries.length} earlier messages] ${summaryText}`,
+        },
+      ];
+    } catch (error) {
+      logger.warn(
+        `Compaction LLM call failed externalUserId=${maskExternalId(
+          externalUserId,
+        )} error=${errorMessage(error)}`,
+      );
+      return null;
+    }
   }
 
   private getMaxInputTokens(): number {
@@ -660,6 +773,22 @@ export class LlmAgentService<TToolContext> {
     // Fallback: derive from maxContextChars using token estimation
     const chars = this.getMaxContextChars();
     return Math.floor(chars * 0.67); // ~1.5 tokens/char → 1 char ≈ 0.67 tokens
+  }
+
+  private getCompactionEnabled(): boolean {
+    return this.config.compactionEnabled === true;
+  }
+
+  private getCompactionSummaryMaxTokens(): number {
+    const v = this.config.compactionSummaryMaxTokens;
+    if (v && Number.isFinite(v) && v > 0) return Math.floor(v);
+    return DEFAULT_COMPACTION_SUMMARY_MAX_TOKENS;
+  }
+
+  private getCompactionRecentTurns(): number {
+    const v = this.config.compactionRecentTurns;
+    if (v && Number.isFinite(v) && v > 0) return Math.floor(v);
+    return DEFAULT_COMPACTION_RECENT_TURNS;
   }
 
   private getMaxContextChars(): number {
@@ -824,9 +953,9 @@ export class LlmAgentService<TToolContext> {
     return null;
   }
 
-  private buildMessages(input: LlmAgentInput): LlmMessage[] {
+  private async buildMessages(input: LlmAgentInput): Promise<LlmMessage[]> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
-    const safeHistory = this.buildSafeHistory(
+    const safeHistory = await this.buildSafeHistory(
       input.history ?? [],
       input.systemPrompt,
       input.userText,
