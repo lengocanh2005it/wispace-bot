@@ -19,9 +19,10 @@ import {
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
 import { DiscordLinkVerifyRecordEntity } from './entities/discord-link-verify-record.entity';
 import { DiscordMessageLogEntity } from './entities/discord-message-log.entity';
+import { DiscordOauthStateEntity } from './entities/discord-oauth-state.entity';
 import { DiscordWelcomeRecordEntity } from './entities/discord-welcome-record.entity';
 
-function buildTypeOrmOptions(config: ConfigService) {
+export function buildTypeOrmOptions(config: ConfigService) {
   const entities = [
     ...SHARED_ENTITIES,
     ChatDailyUsageEntity,
@@ -31,6 +32,7 @@ function buildTypeOrmOptions(config: ConfigService) {
     DiscordAccountLinkEntity,
     DiscordLinkVerifyRecordEntity,
     DiscordMessageLogEntity,
+    DiscordOauthStateEntity,
     DiscordWelcomeRecordEntity,
     StudyReminderJobEntity,
   ];
@@ -54,6 +56,7 @@ function buildTypeOrmOptions(config: ConfigService) {
       DiscordAccountLinkEntity,
       DiscordLinkVerifyRecordEntity,
       DiscordMessageLogEntity,
+      DiscordOauthStateEntity,
       DiscordWelcomeRecordEntity,
       StudyReminderJobEntity,
       UserNotificationPreferenceEntity,
