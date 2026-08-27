@@ -4,6 +4,16 @@ import { Client } from 'discord.js';
 import { AppModule } from './app.module';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { PrecreateExerciseApiClient } from '@wispace/wispace-client';
+import { DiscordAccountLinkService } from './modules/account-link/application/services/discord-account-link.service';
+import { DiscordLinkCompletionService } from './modules/account-link/application/services/discord-link-completion.service';
+import { DiscordOauthStateService } from './modules/account-link/application/services/discord-oauth-state.service';
+
+const initialEnv = { ...process.env };
+
+afterEach(() => {
+  jest.restoreAllMocks();
+  process.env = { ...initialEnv };
+});
 
 /**
  * Boot smoke test: compiles AppModule and runs app.init() so Nest resolves
@@ -16,7 +26,9 @@ import { PrecreateExerciseApiClient } from '@wispace/wispace-client';
  * no-ops.
  */
 describe('AppModule boot smoke', () => {
-  it('boots without DI errors', async () => {
+  it('boots and resolves representative providers without DI errors', async () => {
+    process.env.NODE_ENV = 'test';
+    process.env.REDIS_ENABLED = 'false';
     process.env.DB_HOST = 'localhost'; // TLS enforcement — local/private exception
     process.env.OPENAI_API_KEY = 'test-key';
     process.env.OPENAI_MODEL = 'test-model';
@@ -29,9 +41,7 @@ describe('AppModule boot smoke', () => {
     process.env.CHAT_FREE_FORM_DAILY_LIMIT = '15';
     process.env.CHAT_BURST_PER_MINUTE = '3';
     process.env.CHAT_USAGE_TIMEZONE = 'Asia/Ho_Chi_Minh';
-    const loginSpy = jest
-      .spyOn(Client.prototype, 'login')
-      .mockResolvedValue('fake-token');
+    jest.spyOn(Client.prototype, 'login').mockResolvedValue('fake-token');
 
     const stubRepo = {} as Repository<unknown>;
     const dataSourceMock = new Proxy({} as DataSource, {
@@ -74,41 +84,44 @@ describe('AppModule boot smoke', () => {
       .useValue(dataSourceMock)
       .compile();
 
-    expect(moduleRef.get(InternalApiKeyGuard)).toBeInstanceOf(
-      InternalApiKeyGuard,
-    );
-    expect(moduleRef.get(PrecreateExerciseApiClient)).toBeInstanceOf(
-      PrecreateExerciseApiClient,
-    );
-
     const app = moduleRef.createNestApplication({ logger: false });
-    await app.init();
-    await app.close();
-
-    loginSpy.mockRestore();
+    try {
+      await app.init();
+      expect(moduleRef.get(InternalApiKeyGuard)).toBeInstanceOf(
+        InternalApiKeyGuard,
+      );
+      expect(moduleRef.get(PrecreateExerciseApiClient)).toBeInstanceOf(
+        PrecreateExerciseApiClient,
+      );
+      expect(moduleRef.get(DiscordOauthStateService)).toBeInstanceOf(
+        DiscordOauthStateService,
+      );
+      expect(moduleRef.get(DiscordAccountLinkService)).toBeInstanceOf(
+        DiscordAccountLinkService,
+      );
+      expect(moduleRef.get(DiscordLinkCompletionService)).toBeInstanceOf(
+        DiscordLinkCompletionService,
+      );
+    } finally {
+      await app.close();
+    }
   }, 30_000);
 
   it('throws when INTERNAL_API_KEY is missing', async () => {
-    const saved = process.env.INTERNAL_API_KEY;
-    const savedDiscord = process.env.DISCORD_BOT_TOKEN;
-    try {
-      delete process.env.INTERNAL_API_KEY;
-      process.env.DISCORD_BOT_TOKEN = 'fake-token';
-      process.env.DB_HOST = 'localhost';
-      process.env.OPENAI_API_KEY = 'test-key';
-      process.env.OPENAI_MODEL = 'test-model';
-      process.env.WISPACE_INTERNAL_KEY = 'test-wispace-key';
+    delete process.env.INTERNAL_API_KEY;
+    process.env.NODE_ENV = 'test';
+    process.env.REDIS_ENABLED = 'false';
+    process.env.DISCORD_BOT_TOKEN = 'fake-token';
+    process.env.DB_HOST = 'localhost';
+    process.env.OPENAI_API_KEY = 'test-key';
+    process.env.OPENAI_MODEL = 'test-model';
+    process.env.WISPACE_INTERNAL_KEY = 'test-wispace-key';
 
-      await expect(
-        Test.createTestingModule({ imports: [AppModule] })
-          .overrideProvider(DataSource)
-          .useValue({})
-          .compile(),
-      ).rejects.toThrow();
-    } finally {
-      if (saved !== undefined) process.env.INTERNAL_API_KEY = saved;
-      if (savedDiscord !== undefined)
-        process.env.DISCORD_BOT_TOKEN = savedDiscord;
-    }
+    await expect(
+      Test.createTestingModule({ imports: [AppModule] })
+        .overrideProvider(DataSource)
+        .useValue({})
+        .compile(),
+    ).rejects.toThrow();
   }, 30_000);
 });

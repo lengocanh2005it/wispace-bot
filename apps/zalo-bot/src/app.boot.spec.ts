@@ -3,6 +3,17 @@ import { DataSource, Repository } from 'typeorm';
 import { AppModule } from './app.module';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { PrecreateExerciseApiClient } from '@wispace/wispace-client';
+import { ZaloAccountLinkService } from './modules/zalo-oauth/application/services/zalo-account-link.service';
+import { ZaloLinkCompletionService } from './modules/zalo-oauth/application/services/zalo-link-completion.service';
+import { ZaloOauthStateService } from './modules/zalo-oauth/application/services/zalo-oauth-state.service';
+import { ZaloTokenService } from './modules/zalo-oauth/application/services/zalo-token.service';
+
+const initialEnv = { ...process.env };
+
+afterEach(() => {
+  jest.restoreAllMocks();
+  process.env = { ...initialEnv };
+});
 
 /**
  * Boot smoke test: compiles AppModule and runs app.init() so Nest resolves
@@ -11,7 +22,9 @@ import { PrecreateExerciseApiClient } from '@wispace/wispace-client';
  * and that otherwise only surface at the deploy health check.
  */
 describe('AppModule boot smoke', () => {
-  it('boots without DI errors', async () => {
+  it('boots and resolves representative providers without DI errors', async () => {
+    process.env.NODE_ENV = 'test';
+    process.env.REDIS_ENABLED = 'false';
     process.env.OPENAI_API_KEY = 'test-key';
     process.env.OPENAI_MODEL = 'test-model';
     process.env.DB_HOST = 'localhost';
@@ -66,36 +79,45 @@ describe('AppModule boot smoke', () => {
       .useValue(dataSourceMock)
       .compile();
 
-    expect(moduleRef.get(InternalApiKeyGuard)).toBeInstanceOf(
-      InternalApiKeyGuard,
-    );
-    expect(moduleRef.get(PrecreateExerciseApiClient)).toBeInstanceOf(
-      PrecreateExerciseApiClient,
-    );
-
     const app = moduleRef.createNestApplication({ logger: false });
-    await app.init();
-    await app.close();
+    try {
+      await app.init();
+      expect(moduleRef.get(InternalApiKeyGuard)).toBeInstanceOf(
+        InternalApiKeyGuard,
+      );
+      expect(moduleRef.get(PrecreateExerciseApiClient)).toBeInstanceOf(
+        PrecreateExerciseApiClient,
+      );
+      expect(moduleRef.get(ZaloOauthStateService)).toBeInstanceOf(
+        ZaloOauthStateService,
+      );
+      expect(moduleRef.get(ZaloAccountLinkService)).toBeInstanceOf(
+        ZaloAccountLinkService,
+      );
+      expect(moduleRef.get(ZaloLinkCompletionService)).toBeInstanceOf(
+        ZaloLinkCompletionService,
+      );
+      expect(moduleRef.get(ZaloTokenService)).toBeInstanceOf(ZaloTokenService);
+    } finally {
+      await app.close();
+    }
   }, 30_000);
 
   it('throws when INTERNAL_API_KEY is missing', async () => {
-    const saved = process.env.INTERNAL_API_KEY;
-    try {
-      delete process.env.INTERNAL_API_KEY;
-      process.env.DB_HOST = 'localhost';
-      process.env.DB_PORT = '5432';
-      process.env.DB_USER = 'test';
-      process.env.DB_PASSWORD = 'test';
-      process.env.DB_NAME = 'test';
+    delete process.env.INTERNAL_API_KEY;
+    process.env.NODE_ENV = 'test';
+    process.env.REDIS_ENABLED = 'false';
+    process.env.DB_HOST = 'localhost';
+    process.env.DB_PORT = '5432';
+    process.env.DB_USER = 'test';
+    process.env.DB_PASSWORD = 'test';
+    process.env.DB_NAME = 'test';
 
-      await expect(
-        Test.createTestingModule({ imports: [AppModule] })
-          .overrideProvider(DataSource)
-          .useValue({})
-          .compile(),
-      ).rejects.toThrow();
-    } finally {
-      if (saved !== undefined) process.env.INTERNAL_API_KEY = saved;
-    }
+    await expect(
+      Test.createTestingModule({ imports: [AppModule] })
+        .overrideProvider(DataSource)
+        .useValue({})
+        .compile(),
+    ).rejects.toThrow();
   }, 30_000);
 });
