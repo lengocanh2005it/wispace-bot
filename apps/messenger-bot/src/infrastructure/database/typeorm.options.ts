@@ -15,6 +15,7 @@ import { MessageLogEntity } from './entities/message-log.entity';
 import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
 import { UserPlatformMappingEntity } from './entities/user-platform-mapping.entity';
 import { UserEntity } from './entities/user.entity';
+import { MessengerLinkVerifyRecordEntity } from './entities/messenger-link-verify-record.entity';
 
 type EnvSource = ConfigService | NodeJS.ProcessEnv;
 
@@ -26,6 +27,7 @@ export function getTypeOrmOptions(
     ...SHARED_ENTITIES,
     UserPlatformMappingEntity,
     MessageLogEntity,
+    MessengerLinkVerifyRecordEntity,
     ChatDailyUsageEntity,
     ChatQuotaEventEntity,
     LlmUsageEventEntity,

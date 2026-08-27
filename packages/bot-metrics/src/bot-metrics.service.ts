@@ -231,6 +231,16 @@ export class BotMetricsService implements OnModuleDestroy {
       labelNames: ['reason'],
       registers: [this.registry],
     });
+    this.dbCircuitBreakerState = new Gauge({
+      name: `${this.prefix}_db_circuit_breaker_state`,
+      help: 'Database circuit breaker state (0=closed, 1=half-open, 2=open)',
+      registers: [this.registry],
+    });
+    this.dbCircuitBreakerFailures = new Counter({
+      name: `${this.prefix}_db_circuit_breaker_failures_total`,
+      help: 'Database circuit breaker failure events',
+      registers: [this.registry],
+    });
   }
 
   async timeStep<T>(step: string, fn: () => Promise<T>): Promise<T> {
