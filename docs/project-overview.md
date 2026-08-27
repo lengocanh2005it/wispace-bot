@@ -259,6 +259,20 @@ wispace-bot/                          # Turborepo root
 
 Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 
+### CI database checks
+
+The database smoke scripts discover compiled Discord/Zalo TypeORM entities from
+`apps/*/dist/infrastructure/database/entities` and compare them with each
+bot's production `buildTypeOrmOptions().entities` registration. Files ending
+in `.spec.js`, `.test.js`, or `.transformer.js` and modules without TypeORM
+entity metadata are ignored, so adding a new entity requires no separate
+allowlist. A missing registration fails with the entity module and the
+required `DatabaseModule` locations. The disposable-schema smoke test checks
+metadata, tables, and OAuth-state cleanup; migration compatibility checks use
+the same discovered entity set after the canonical Messenger migrations run.
+Both commands remain restricted to `NODE_ENV=test` and loopback database
+hosts.
+
 ### WISPACE (HTTP API — no local tables except `users` cache)
 
 | Source                               | Used for                                                                  |

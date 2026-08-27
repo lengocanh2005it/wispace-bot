@@ -19,6 +19,7 @@
     "test:affected": "turbo run test --affected",
     "database:bootstrap-smoke": "node scripts/database-bootstrap-smoke.mjs",
     "database:migration-compatibility": "node scripts/database-bootstrap-smoke.mjs --migrations",
+    "database:entity-discovery:test": "node --test scripts/database-entity-discovery.test.mjs",
     "verify:affected": "turbo run format:check lint typecheck test build --affected",
     "verify": "turbo run format:check lint typecheck test build"
   },

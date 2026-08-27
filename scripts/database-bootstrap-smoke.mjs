@@ -3,6 +3,10 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import {
+  assertEntitiesRegistered,
+  discoverCompiledEntities,
+} from './database-entity-discovery.mjs';
 
 const require = createRequire(import.meta.url);
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -13,85 +17,6 @@ const {
   PlatformCleanupCronService,
 } = require('@wispace/cleanup-cron');
 const { PgAdvisoryLockService } = require('@wispace/bot-common/locks');
-
-const discordDatabase = require(
-  resolve(
-    rootDir,
-    'apps/discord-bot/dist/infrastructure/database/database.module.js',
-  ),
-);
-const zaloDatabase = require(
-  resolve(
-    rootDir,
-    'apps/zalo-bot/dist/infrastructure/database/database.module.js',
-  ),
-);
-
-const discordEntities = [
-  entity(
-    'DiscordAccountLinkEntity',
-    'discord-account-link.entity.js',
-    'discord_account_links',
-    'discord-bot',
-  ),
-  entity(
-    'DiscordLinkVerifyRecordEntity',
-    'discord-link-verify-record.entity.js',
-    'discord_link_verify_records',
-    'discord-bot',
-  ),
-  entity(
-    'DiscordMessageLogEntity',
-    'discord-message-log.entity.js',
-    'message_logs',
-    'discord-bot',
-  ),
-  entity(
-    'DiscordOauthStateEntity',
-    'discord-oauth-state.entity.js',
-    'discord_oauth_states',
-    'discord-bot',
-  ),
-  entity(
-    'DiscordWelcomeRecordEntity',
-    'discord-welcome-record.entity.js',
-    'discord_welcome_records',
-    'discord-bot',
-  ),
-];
-
-const zaloEntities = [
-  entity(
-    'ZaloOaTokenEntity',
-    'zalo-oa-token.entity.js',
-    'zalo_oa_tokens',
-    'zalo-bot',
-  ),
-  entity(
-    'ZaloOauthStateEntity',
-    'zalo-oauth-state.entity.js',
-    'zalo_oauth_states',
-    'zalo-bot',
-  ),
-  entity(
-    'ZaloAccountLinkEntity',
-    'zalo-account-link.entity.js',
-    'zalo_account_links',
-    'zalo-bot',
-  ),
-  entity(
-    'ZaloLinkVerifyRecordEntity',
-    'zalo-link-verify-record.entity.js',
-    'zalo_link_verify_records',
-    'zalo-bot',
-  ),
-  entity(
-    'ZaloMessageLogEntity',
-    'zalo-message-log.entity.js',
-    'message_logs',
-    'zalo-bot',
-  ),
-];
 
 const requiredEnv = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
 const migrationMode = process.argv.includes('--migrations');
@@ -114,18 +39,24 @@ if (
 
 const config = new ConfigService({ ...process.env });
 
-function entity(name, file, table, app) {
-  const module = require(
-    resolve(
-      rootDir,
-      `apps/${app}/dist/infrastructure/database/entities/${file}`,
-    ),
-  );
-  if (!module[name]) {
-    throw new Error(`${app}: compiled entity export ${name} is missing`);
-  }
-  return { name, entity: module[name], table };
-}
+const discordDatabase = require(
+  resolve(
+    rootDir,
+    'apps/discord-bot/dist/infrastructure/database/database.module.js',
+  ),
+);
+const zaloDatabase = require(
+  resolve(
+    rootDir,
+    'apps/zalo-bot/dist/infrastructure/database/database.module.js',
+  ),
+);
+
+const discordEntities = discoverCompiledEntities({
+  rootDir,
+  app: 'discord-bot',
+});
+const zaloEntities = discoverCompiledEntities({ rootDir, app: 'zalo-bot' });
 
 function ephemeralOptions(builder, dropSchema) {
   const options = {
@@ -140,11 +71,11 @@ function ephemeralOptions(builder, dropSchema) {
 }
 
 function assertMetadata(dataSource, entities, platform) {
-  for (const expected of entities) {
-    const metadata = dataSource.getMetadata(expected.entity);
-    if (metadata.tableName !== expected.table) {
+  for (const { name, entity } of entities) {
+    const metadata = dataSource.getMetadata(entity);
+    if (metadata.target !== entity || !metadata.tableName) {
       throw new Error(
-        `${platform}: ${expected.name} mapped to ${metadata.tableName}, expected ${expected.table}`,
+        `${platform}: discovered entity ${name} has incomplete TypeORM metadata`,
       );
     }
   }
@@ -153,10 +84,16 @@ function assertMetadata(dataSource, entities, platform) {
 async function assertTables(dataSource, entities, platform) {
   const queryRunner = dataSource.createQueryRunner();
   try {
-    for (const expected of entities) {
-      if (!(await queryRunner.hasTable(expected.table))) {
+    const tables = new Map(
+      entities.map(({ entity, name }) => {
+        const metadata = dataSource.getMetadata(entity);
+        return [metadata.tableName, name];
+      }),
+    );
+    for (const [table, name] of tables) {
+      if (!(await queryRunner.hasTable(table))) {
         throw new Error(
-          `${platform}: migration schema is missing ${expected.table}`,
+          `${platform}: migration schema is missing ${table} for ${name}`,
         );
       }
     }
@@ -189,7 +126,10 @@ async function exerciseCleanup({
     createdAt: freshCreatedAt,
   };
 
-  if (platform === 'zalo') {
+  const hasCodeVerifier = dataSource
+    .getMetadata(oauthEntity.entity)
+    .columns.some(({ propertyName }) => propertyName === 'codeVerifier');
+  if (hasCodeVerifier) {
     oldValues.codeVerifier = 'smoke-test-code-verifier';
     freshValues.codeVerifier = 'smoke-test-code-verifier';
   }
@@ -234,6 +174,18 @@ async function exerciseCleanup({
   }
 }
 
+function findOAuthStateEntity(dataSource, entities, platform) {
+  const candidates = entities.filter(({ entity }) =>
+    dataSource.getMetadata(entity).tableName.endsWith('_oauth_states'),
+  );
+  if (candidates.length !== 1) {
+    throw new Error(
+      `${platform}: expected exactly one discovered OAuth state entity, found ${candidates.length}`,
+    );
+  }
+  return candidates[0];
+}
+
 async function runCanonicalMigrations() {
   const messengerDatabase = require(
     resolve(
@@ -275,11 +227,12 @@ async function runPlatform({
   envPrefix,
   builder,
   entities,
-  oauthEntityName,
   lockId,
   dropSchema,
 }) {
-  const dataSource = new DataSource(ephemeralOptions(builder, dropSchema));
+  const options = ephemeralOptions(builder, dropSchema);
+  assertEntitiesRegistered(options, entities, platform);
+  const dataSource = new DataSource(options);
   try {
     await dataSource.initialize();
     assertMetadata(dataSource, entities, platform);
@@ -292,7 +245,7 @@ async function runPlatform({
         dataSource,
         platform,
         envPrefix,
-        oauthEntity: entities.find(({ name }) => name === oauthEntityName),
+        oauthEntity: findOAuthStateEntity(dataSource, entities, platform),
         lockId,
       });
       console.log(`${platform}: metadata and OAuth cleanup passed`);
@@ -309,7 +262,6 @@ await runPlatform({
   envPrefix: 'DISCORD_',
   builder: discordDatabase.buildTypeOrmOptions,
   entities: discordEntities,
-  oauthEntityName: 'DiscordOauthStateEntity',
   lockId: 884_200_939,
   dropSchema: !migrationMode,
 });
@@ -319,7 +271,6 @@ await runPlatform({
   envPrefix: 'ZALO_',
   builder: zaloDatabase.buildTypeOrmOptions,
   entities: zaloEntities,
-  oauthEntityName: 'ZaloOauthStateEntity',
   lockId: 884_200_913,
   dropSchema: false,
 });
