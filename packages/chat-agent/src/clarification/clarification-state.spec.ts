@@ -41,9 +41,35 @@ describe('ClarificationStateMachine', () => {
     const machine = new ClarificationStateMachine();
 
     expect(machine.isContradictory('lịch học\n3')).toBe(true);
+    expect(machine.isContradictory('xem lịch học và đổi lịch học')).toBe(true);
+    expect(machine.isContradictory('tiến độ và lịch học')).toBe(true);
+    expect(machine.isContradictory('tiến độ, lịch học')).toBe(true);
     expect(machine.isContradictory('1 1')).toBe(false);
     expect(machine.isContradictory('mình muốn xem lịch học')).toBe(false);
     expect(machine.isContradictory('mình muốn dời lịch')).toBe(false);
+  });
+
+  it('uses configured bounds and retains event history for stale replies', () => {
+    const machine = new ClarificationStateMachine({
+      ttlMs: 30_000,
+      maxAttempts: 1,
+      maxMenuResets: 0,
+    });
+    const first = machine.withReply(machine.start(now), 'event-a', 'menu');
+    const second = machine.withReply(
+      machine.recordIrrelevant(first, now + 1).state!,
+      'event-b',
+      'menu-2',
+    );
+
+    expect(second.expiresAt).toBe(now + 1 + 30_000);
+    expect(machine.getLimits()).toEqual({
+      ttlMs: 30_000,
+      maxAttempts: 1,
+      maxMenuResets: 0,
+    });
+    expect(machine.isStaleEvent(second, 'event-a')).toBe(true);
+    expect(machine.isStaleEvent(second, 'event-b')).toBe(false);
   });
 
   it('creates a bounded state and expires it after ten minutes', () => {
@@ -102,13 +128,20 @@ describe('ClarificationStateMachine', () => {
     );
   });
 
-  it('consumes a choice with a compare-and-delete', async () => {
+  it('consumes a choice with a compare-and-set tombstone', async () => {
     const store = new MemoryClarificationStateStore();
-    const state = new ClarificationStateMachine().start(Date.now(), 42);
+    const machine = new ClarificationStateMachine();
+    const state = machine.withReply(
+      machine.start(Date.now(), 42),
+      'menu-1',
+      'menu',
+    );
 
     await store.set('u1', state, 0);
-    await expect(store.clear('u1', state.version)).resolves.toBe(true);
-    await expect(store.clear('u1', state.version)).resolves.toBe(false);
+    const consumed = machine.consume(state, 'choice-1', Date.now());
+    await expect(store.set('u1', consumed, state.version)).resolves.toBe(true);
+    await expect(store.clear('u1', consumed.version)).resolves.toBe(true);
+    await expect(store.clear('u1', consumed.version)).resolves.toBe(false);
   });
 
   it('fails closed when configured Redis is unavailable', async () => {

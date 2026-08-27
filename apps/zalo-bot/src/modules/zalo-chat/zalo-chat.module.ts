@@ -22,9 +22,13 @@ import {
   RedisChatQueueStore,
   RedisChatQueueWorkerService,
   PLATFORM_CHAT_QUEUE_STORE,
+  CLARIFICATION_STATE_STORE,
   createChatPipelineAdapters,
 } from '@wispace/chat-agent';
-import type { ChatQueueStorePort } from '@wispace/chat-agent';
+import type {
+  ChatQueueStorePort,
+  ClarificationStateStore,
+} from '@wispace/chat-agent';
 import {
   WispaceCalendarService,
   WispaceConfigService,
@@ -214,6 +218,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         learnerProfileStore: LearnerProfileStorePort,
         metrics: BotMetricsService,
         redisClient: RedisClientPort,
+        clarificationStore: ClarificationStateStore,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -228,6 +233,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           adapter,
           {
             platform: 'zalo',
+            clarificationStore,
             promptDir: join(__dirname, '../../shared/prompts'),
             promptFile: 'zalo-chat.system.txt',
             // Single retry layer — retryWithBackoff in PlatformAgentService
@@ -265,6 +271,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         LEARNER_PROFILE_STORE,
         BotMetricsService,
         REDIS_CLIENT,
+        CLARIFICATION_STATE_STORE,
       ],
     },
     {

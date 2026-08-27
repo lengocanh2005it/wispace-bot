@@ -10,7 +10,9 @@ import {
   PlatformAgentToolsService,
   PlatformChatHistoryService,
   RedisChatQueueWorkerService,
+  CLARIFICATION_STATE_STORE,
 } from '@wispace/chat-agent';
+import type { ClarificationStateStore } from '@wispace/chat-agent';
 import {
   LlmSafetyEventEntity,
   LlmUsageEventEntity,
@@ -184,6 +186,7 @@ import {
         llmExecution: LlmExecutionService,
         learnerProfileStore: LearnerProfileStorePort,
         redisClient: RedisClientPort,
+        clarificationStore: ClarificationStateStore,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -198,6 +201,7 @@ import {
           adapter,
           {
             platform: 'messenger',
+            clarificationStore,
             promptDir: join(__dirname, '../../../shared/prompts'),
             promptFile: 'messenger-chat.system.txt',
             appendHistory: false,
@@ -267,6 +271,7 @@ import {
         LlmExecutionService,
         LEARNER_PROFILE_STORE,
         REDIS_CLIENT,
+        CLARIFICATION_STATE_STORE,
       ],
     },
     RedisChatQueueStore,

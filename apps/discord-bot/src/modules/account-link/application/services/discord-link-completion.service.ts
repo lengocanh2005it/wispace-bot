@@ -1,5 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { retryWithBackoff } from '@discord/shared/utils/retry.utils';
@@ -11,7 +10,10 @@ import { DiscordAccountLinkService } from './discord-account-link.service';
 import { DiscordGuildMembershipService } from './discord-guild-membership.service';
 import { DiscordRelinkNotifier } from './discord-relink-notifier.service';
 import { DiscordWelcomeService } from './discord-welcome.service';
-import { PlatformAgentService } from '@wispace/chat-agent';
+import {
+  CLARIFICATION_STATE_STORE,
+  type ClarificationStateStore,
+} from '@wispace/chat-agent';
 
 const UPSERT_MAX_ATTEMPTS = 3;
 const UPSERT_BASE_BACKOFF_MS = 500;
@@ -38,7 +40,8 @@ export class DiscordLinkCompletionService {
     private readonly guildMembershipService: DiscordGuildMembershipService,
     private readonly relinkNotifier: DiscordRelinkNotifier,
     private readonly welcomeService: DiscordWelcomeService,
-    @Optional() private readonly moduleRef?: ModuleRef,
+    @Inject(CLARIFICATION_STATE_STORE)
+    private readonly clarificationStateStore: ClarificationStateStore,
   ) {}
 
   /**
@@ -87,7 +90,7 @@ export class DiscordLinkCompletionService {
         this.logger.warn(
           `Discord link verify record cleanup failed for discordUserId=${maskExternalId(
             discordUser.id,
-          )}: ${errorMessage(error)}`,
+          )}: ${errorMessage(error, discordUser.id)}`,
         );
       });
 
@@ -100,7 +103,7 @@ export class DiscordLinkCompletionService {
           this.logger.warn(
             `Discord relink notification failed for discordUserId=${maskExternalId(
               discordUser.id,
-            )}: ${errorMessage(error)}`,
+            )}: ${errorMessage(error, discordUser.id)}`,
           );
         });
     }
@@ -123,15 +126,12 @@ export class DiscordLinkCompletionService {
 
   private async clearClarificationState(discordUserId: string): Promise<void> {
     try {
-      const agent = this.moduleRef?.get(PlatformAgentService, {
-        strict: false,
-      });
-      await agent?.clearClarificationState(discordUserId);
+      await this.clarificationStateStore.clear(`discord:${discordUserId}`);
     } catch (error: unknown) {
       this.logger.warn(
         `Discord clarification state clear failed for discordUserId=${maskExternalId(
           discordUserId,
-        )}: ${errorMessage(error)}`,
+        )}: ${errorMessage(error, discordUserId)}`,
       );
     }
   }

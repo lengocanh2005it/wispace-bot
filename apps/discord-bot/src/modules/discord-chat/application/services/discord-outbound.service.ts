@@ -193,12 +193,16 @@ export class DiscordOutboundService {
       error: errorMsg,
       messageType: 'chat',
     });
-    if (options?.skipDeadLetter !== true && options?.clarification !== true) {
+    if (
+      options?.skipDeadLetter !== true &&
+      (options?.clarification !== true || !result.ambiguous)
+    ) {
       const persisted = await this.deadLetter?.save({
         externalUserId: discordUserId,
         rawPayload: { discordUserId, text },
         errorMessage: errorMsg,
         direction: 'outbound',
+        ...(options?.deliveryKey ? { deliveryKey: options.deliveryKey } : {}),
       });
       if (persisted === false) {
         this.logger.error(
@@ -229,7 +233,11 @@ export class DiscordOutboundService {
     text: string,
     deliveryKey: string,
   ): Promise<'sent' | 'ambiguous' | 'not_sent'> {
-    const result = await this.sendCore(discordUserId, text, deliveryKey);
+    const result = await this.sendCore(
+      discordUserId,
+      text,
+      this.toDiscordNonce(deliveryKey),
+    );
     if (result.ok) {
       await this.deliveryLog?.logDelivery({
         externalUserId: discordUserId,

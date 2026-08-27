@@ -148,12 +148,18 @@ export class ZaloOutboundService {
         messageType: 'chat',
         error: errorMsg,
       });
-      if (options?.skipDeadLetter !== true && options?.clarification !== true) {
+      const ambiguous =
+        error instanceof ZaloSendError && error.isAmbiguousDelivery();
+      if (
+        options?.skipDeadLetter !== true &&
+        (options?.clarification !== true || !ambiguous)
+      ) {
         const persisted = await this.deadLetter?.save({
           externalUserId: zaloUserId,
           rawPayload: { zaloUserId, text },
           errorMessage: errorMsg,
           direction: 'outbound',
+          ...(options?.deliveryKey ? { deliveryKey: options.deliveryKey } : {}),
         });
         if (persisted === false) {
           this.logger.error(

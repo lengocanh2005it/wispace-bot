@@ -34,6 +34,7 @@ describe('MessengerMappingService', () => {
       outbound as never,
       studyReminderSyncService as never,
       { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     const result = await service.relinkPsidToUserId({
@@ -76,6 +77,7 @@ describe('MessengerMappingService', () => {
       outbound as never,
       studyReminderSyncService as never,
       { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     const result = await service.linkFromContext('psid-1', {
@@ -114,6 +116,7 @@ describe('MessengerMappingService', () => {
       outbound as never,
       studyReminderSyncService as never,
       { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
     );
 
     const result = await service.linkFromContext('psid-new', {
@@ -146,9 +149,8 @@ describe('MessengerMappingService', () => {
         }),
       ),
     };
-    const clearer = { clearClarificationState: jest.fn() };
-    const moduleRef = {
-      get: jest.fn().mockReturnValue(clearer),
+    const clarificationStateStore = {
+      clear: jest.fn().mockResolvedValue(true),
     };
 
     const service = new MessengerMappingService(
@@ -156,7 +158,7 @@ describe('MessengerMappingService', () => {
       { sendTextViaPsid: jest.fn() } as never,
       { syncUpcomingSessions: jest.fn().mockResolvedValue({}) } as never,
       { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
-      moduleRef as never,
+      clarificationStateStore as never,
     );
 
     await service.linkFromContext('psid-1', {
@@ -166,6 +168,8 @@ describe('MessengerMappingService', () => {
       cadence: 'WEEKLY',
     });
 
-    expect(clearer.clearClarificationState).toHaveBeenCalledWith('psid-1');
+    expect(clarificationStateStore.clear).toHaveBeenCalledWith(
+      'messenger:psid-1',
+    );
   });
 });

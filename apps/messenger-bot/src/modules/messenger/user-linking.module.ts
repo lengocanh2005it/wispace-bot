@@ -1,5 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
+import {
+  CLARIFICATION_STATE_STORE,
+  createClarificationStateStore,
+  type ClarificationStateStore,
+} from '@wispace/chat-agent';
 import { CommonModule } from '../../shared/common/common.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
 import { MessengerOutboundModule } from './messenger-outbound.module';
@@ -35,7 +42,24 @@ import { MESSENGER_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/messenge
       provide: MESSENGER_LINK_VERIFY_RECORD_REPOSITORY,
       useClass: TypeormMessengerLinkVerifyRecordRepository,
     },
+    {
+      provide: CLARIFICATION_STATE_STORE,
+      useFactory: (
+        configService: ConfigService,
+        redisClient?: RedisClientPort,
+      ): ClarificationStateStore =>
+        createClarificationStateStore({
+          platform: 'messenger',
+          config: configService,
+          redisClient,
+        }),
+      inject: [ConfigService, { token: REDIS_CLIENT, optional: true }],
+    },
   ],
-  exports: [MessengerMappingService, MessengerLinkContextService],
+  exports: [
+    MessengerMappingService,
+    MessengerLinkContextService,
+    CLARIFICATION_STATE_STORE,
+  ],
 })
 export class UserLinkingModule {}

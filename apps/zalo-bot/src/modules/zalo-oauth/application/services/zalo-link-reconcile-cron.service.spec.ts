@@ -67,6 +67,7 @@ describe('ZaloLinkReconcileCronService', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_937),
+      { clear: jest.fn().mockResolvedValue(true) },
     );
 
     await cron.handleReconcile();
@@ -96,6 +97,7 @@ describe('ZaloLinkReconcileCronService', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_937),
+      { clear: jest.fn().mockResolvedValue(true) },
     );
 
     await cron.handleReconcile();
@@ -122,6 +124,7 @@ describe('ZaloLinkReconcileCronService', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_937),
+      { clear: jest.fn().mockResolvedValue(true) },
     );
 
     await cron.handleReconcile();
@@ -145,6 +148,7 @@ describe('ZaloLinkReconcileCronService', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_937),
+      { clear: jest.fn().mockResolvedValue(true) },
     );
 
     await cron.handleReconcile();
@@ -171,6 +175,7 @@ describe('ZaloLinkReconcileCronService', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(884_200_937),
+      { clear: jest.fn().mockResolvedValue(true) },
     );
 
     await cron.handleReconcile();
@@ -195,6 +200,7 @@ describe('ZaloLinkReconcileCronService', () => {
       accountLinkService,
       buildConfigService(),
       buildPgLock(999_999),
+      { clear: jest.fn().mockResolvedValue(true) },
     );
 
     await cron.handleReconcile();

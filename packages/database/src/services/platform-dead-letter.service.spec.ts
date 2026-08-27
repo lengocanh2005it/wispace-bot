@@ -60,6 +60,24 @@ describe('PlatformDeadLetterService', () => {
     });
   });
 
+  it('persists the stable delivery key for outbound replay', async () => {
+    const { service, saveMock } = buildService('discord');
+
+    await service.save({
+      externalUserId: 'u1234567890',
+      rawPayload: { discordUserId: 'u1234567890', text: 'menu' },
+      errorMessage: 'send failed',
+      direction: 'outbound',
+      deliveryKey: 'clarification:discord:event-401',
+    });
+
+    expect(saveMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        deliveryKey: 'clarification:discord:event-401',
+      }),
+    );
+  });
+
   it('retries a transient persistence failure and reports success', async () => {
     const { service, saveMock } = buildService('discord');
     saveMock

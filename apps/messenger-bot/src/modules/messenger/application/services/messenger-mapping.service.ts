@@ -1,6 +1,5 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { ModuleRef } from '@nestjs/core';
-import { maskExternalId } from '@wispace/bot-common/masking';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import {
   createSessionSourceGetSessions,
@@ -16,7 +15,10 @@ import {
   buildMappingUserLinkedOtherPsidMessage,
 } from '../messages/messenger-link.messages';
 import { MessengerOutboundService } from './messenger-outbound.service';
-import { PlatformAgentService } from '@wispace/chat-agent';
+import {
+  CLARIFICATION_STATE_STORE,
+  type ClarificationStateStore,
+} from '@wispace/chat-agent';
 
 @Injectable()
 export class MessengerMappingService {
@@ -28,7 +30,8 @@ export class MessengerMappingService {
     private readonly outbound: MessengerOutboundService,
     private readonly studyReminderSyncService: StudyReminderSyncService,
     private readonly sessionSourceService: StudySessionSourceService,
-    @Optional() private readonly moduleRef?: ModuleRef,
+    @Inject(CLARIFICATION_STATE_STORE)
+    private readonly clarificationStateStore: ClarificationStateStore,
   ) {}
 
   async linkFromContext(
@@ -230,13 +233,10 @@ export class MessengerMappingService {
 
   private async clearClarificationState(psid: string): Promise<void> {
     try {
-      const agent = this.moduleRef?.get(PlatformAgentService, {
-        strict: false,
-      });
-      await agent?.clearClarificationState(psid);
+      await this.clarificationStateStore.clear(`messenger:${psid}`);
     } catch (error: unknown) {
       this.logger.warn(
-        `Clarification state clear after mapping update failed psid=${maskExternalId(psid)}: ${error instanceof Error ? error.message : String(error)}`,
+        `Clarification state clear after mapping update failed psid=${maskExternalId(psid)}: ${errorMessage(error, psid)}`,
       );
     }
   }

@@ -34,9 +34,13 @@ import {
   RedisChatQueueStore,
   RedisChatQueueWorkerService,
   PLATFORM_CHAT_QUEUE_STORE,
+  CLARIFICATION_STATE_STORE,
   createChatPipelineAdapters,
 } from '@wispace/chat-agent';
-import type { ChatQueueStorePort } from '@wispace/chat-agent';
+import type {
+  ChatQueueStorePort,
+  ClarificationStateStore,
+} from '@wispace/chat-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
   WispaceCalendarService,
@@ -178,6 +182,7 @@ const REGISTER_REPORT_MESSAGE =
         learnerProfileStore: LearnerProfileStorePort,
         metrics: BotMetricsService,
         redisClient: RedisClientPort,
+        clarificationStore: ClarificationStateStore,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -192,6 +197,7 @@ const REGISTER_REPORT_MESSAGE =
           adapter,
           {
             platform: 'discord',
+            clarificationStore,
             promptDir: join(__dirname, '../../shared/prompts'),
             promptFile: 'discord-chat.system.txt',
             // Single retry layer — retryWithBackoff in PlatformAgentService
@@ -229,6 +235,7 @@ const REGISTER_REPORT_MESSAGE =
         LEARNER_PROFILE_STORE,
         BotMetricsService,
         REDIS_CLIENT,
+        CLARIFICATION_STATE_STORE,
       ],
     },
     {

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { buildLinkSuccessMessage } from '@wispace/bot-common/messages';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { sleep } from '@wispace/bot-common/utils';
@@ -9,12 +9,10 @@ import {
   type ZaloLinkVerifyRecordRepositoryPort,
 } from '../../domain/ports/zalo-link-verify-record.repository.port';
 import { ZaloAccountLinkService } from './zalo-account-link.service';
-import { PlatformAgentService } from '@wispace/chat-agent';
-
-type ClarificationStateClearer = Pick<
-  PlatformAgentService,
-  'clearClarificationState'
->;
+import {
+  CLARIFICATION_STATE_STORE,
+  type ClarificationStateStore,
+} from '@wispace/chat-agent';
 
 const UPSERT_MAX_ATTEMPTS = 3;
 const UPSERT_BASE_BACKOFF_MS = 500;
@@ -42,9 +40,8 @@ export class ZaloLinkCompletionService {
     @Inject(ZALO_LINK_VERIFY_RECORD_REPOSITORY)
     private readonly verifyRecordService: ZaloLinkVerifyRecordRepositoryPort,
     private readonly outboundService: ZaloOutboundService,
-    @Optional()
-    @Inject(PlatformAgentService)
-    private readonly clarificationAgent?: ClarificationStateClearer,
+    @Inject(CLARIFICATION_STATE_STORE)
+    private readonly clarificationStateStore: ClarificationStateStore,
   ) {}
 
   /**
@@ -79,17 +76,15 @@ export class ZaloLinkCompletionService {
     );
 
     await this.retryUpsert(verifyResult.userId, zaloUser.id);
-    if (this.clarificationAgent) {
-      await this.clarificationAgent
-        .clearClarificationState(zaloUser.id)
-        .catch((error: unknown) => {
-          this.logger.warn(
-            `Zalo clarification state clear failed for zaloUserId=${maskExternalId(
-              zaloUser.id,
-            )}: ${errorMessage(error)}`,
-          );
-        });
-    }
+    await this.clarificationStateStore
+      .clear(`zalo:${zaloUser.id}`)
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `Zalo clarification state clear failed for zaloUserId=${maskExternalId(
+            zaloUser.id,
+          )}: ${errorMessage(error, zaloUser.id)}`,
+        );
+      });
 
     // Intent consumed — the mapping is committed (fire-and-forget; a race
     // leaves a record that the reconcile cron cleans up).
@@ -99,7 +94,7 @@ export class ZaloLinkCompletionService {
         this.logger.warn(
           `Zalo link verify record cleanup failed for zaloUserId=${maskExternalId(
             zaloUser.id,
-          )}: ${errorMessage(error)}`,
+          )}: ${errorMessage(error, zaloUser.id)}`,
         );
       });
 
@@ -111,7 +106,7 @@ export class ZaloLinkCompletionService {
         this.logger.warn(
           `Zalo link welcome send failed for zaloUserId=${maskExternalId(
             zaloUser.id,
-          )}: ${errorMessage(error)}`,
+          )}: ${errorMessage(error, zaloUser.id)}`,
         );
       });
   }

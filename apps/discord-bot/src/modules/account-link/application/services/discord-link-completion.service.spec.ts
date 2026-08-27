@@ -60,8 +60,8 @@ function buildHarness(overrides: {
 
   const clearClarificationState =
     overrides.clearClarificationState ?? jest.fn().mockResolvedValue(undefined);
-  const moduleRef = {
-    get: jest.fn().mockReturnValue({ clearClarificationState }),
+  const clarificationStateStore = {
+    clear: clearClarificationState,
   };
 
   const service = new DiscordLinkCompletionService(
@@ -71,7 +71,7 @@ function buildHarness(overrides: {
     guildMembershipService,
     relinkNotifier,
     welcomeService,
-    moduleRef as never,
+    clarificationStateStore as never,
   );
 
   return {
@@ -83,6 +83,7 @@ function buildHarness(overrides: {
     relinkNotifier,
     welcomeService,
     clearClarificationState,
+    clarificationStateStore,
   };
 }
 
@@ -138,14 +139,16 @@ describe('DiscordLinkCompletionService', () => {
   });
 
   it('notifies when the link displaced another WISPACE user', async () => {
-    const { service, relinkNotifier, clearClarificationState } = buildHarness({
+    const { service, relinkNotifier, clarificationStateStore } = buildHarness({
       upsertResult: { relinked: true, previousUserId: 99 },
     });
 
     await service.completeLink('code', 'good-token');
 
     expect(relinkNotifier.notify).toHaveBeenCalledWith('discord-user-1', 99);
-    expect(clearClarificationState).toHaveBeenCalledWith('discord-user-1');
+    expect(clarificationStateStore.clear).toHaveBeenCalledWith(
+      'discord:discord-user-1',
+    );
   });
 
   it('welcomes (deduped) when already in the guild, then reports success', async () => {

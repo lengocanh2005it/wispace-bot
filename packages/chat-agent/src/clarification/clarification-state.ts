@@ -1,11 +1,84 @@
+import type { RedisClientPort } from '@wispace/bot-common/redis';
+
 export const CLARIFICATION_TTL_MS = 10 * 60 * 1000;
 export const MAX_CLARIFICATION_ATTEMPTS = 2;
 export const MAX_CLARIFICATION_MENU_RESETS = 1;
+const MAX_CLARIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_CLARIFICATION_EVENT_HISTORY = 8;
+
+export interface ClarificationLimits {
+  ttlMs: number;
+  maxAttempts: number;
+  maxMenuResets: number;
+}
+
+export const DEFAULT_CLARIFICATION_LIMITS: ClarificationLimits = {
+  ttlMs: CLARIFICATION_TTL_MS,
+  maxAttempts: MAX_CLARIFICATION_ATTEMPTS,
+  maxMenuResets: MAX_CLARIFICATION_MENU_RESETS,
+};
+
+export interface ClarificationConfigReader {
+  get<T = string>(key: string): T | undefined;
+}
+
+export function readClarificationLimits(
+  config: ClarificationConfigReader,
+): ClarificationLimits {
+  const readBound = (
+    key: string,
+    fallback: number,
+    allowZero = false,
+  ): number => {
+    const raw = config.get<string>(key);
+    const parsed = raw ? Number(raw) : NaN;
+    return Number.isFinite(parsed) &&
+      (parsed > 0 || (allowZero && parsed === 0))
+      ? Math.floor(parsed)
+      : fallback;
+  };
+  return normalizeLimits({
+    ttlMs: readBound('CHAT_CLARIFICATION_TTL_MS', CLARIFICATION_TTL_MS),
+    maxAttempts: readBound(
+      'CHAT_CLARIFICATION_MAX_ATTEMPTS',
+      MAX_CLARIFICATION_ATTEMPTS,
+      true,
+    ),
+    maxMenuResets: readBound(
+      'CHAT_CLARIFICATION_MAX_MENU_RESETS',
+      MAX_CLARIFICATION_MENU_RESETS,
+      true,
+    ),
+  });
+}
+
+function normalizeLimits(limits: ClarificationLimits): ClarificationLimits {
+  return {
+    ttlMs: Math.min(
+      Number.isFinite(limits.ttlMs) && limits.ttlMs > 0
+        ? Math.floor(limits.ttlMs)
+        : CLARIFICATION_TTL_MS,
+      MAX_CLARIFICATION_TTL_MS,
+    ),
+    maxAttempts: Math.min(
+      Number.isFinite(limits.maxAttempts) && limits.maxAttempts >= 0
+        ? Math.floor(limits.maxAttempts)
+        : MAX_CLARIFICATION_ATTEMPTS,
+      10,
+    ),
+    maxMenuResets: Math.min(
+      Number.isFinite(limits.maxMenuResets) && limits.maxMenuResets >= 0
+        ? Math.floor(limits.maxMenuResets)
+        : MAX_CLARIFICATION_MENU_RESETS,
+      5,
+    ),
+  };
+}
 
 export type ClarificationChoice = 'progress' | 'schedule' | 'reschedule';
 
 export interface ClarificationState {
-  phase: 'awaiting_choice';
+  phase: 'awaiting_choice' | 'consumed';
   attempts: number;
   menuResets: number;
   version: number;
@@ -14,6 +87,8 @@ export interface ClarificationState {
   userId?: number;
   /** The inbound event that produced the last canned reply. */
   lastEventId?: string;
+  /** Recent event ids form a bounded tombstone for delayed/replayed replies. */
+  recentEventIds?: string[];
   /** Canned text cached so a redelivery can be suppressed deterministically. */
   lastReplyText?: string;
   /** A definitive outbound failure keeps the state retryable without deleting it. */
@@ -29,6 +104,8 @@ export interface ClarificationStateStore {
   ): Promise<boolean | void>;
   clear(key: string, expectedVersion?: number): Promise<boolean | void>;
 }
+
+export const CLARIFICATION_STATE_STORE = Symbol('CLARIFICATION_STATE_STORE');
 
 export type ClarificationIrrelevantAction = 'clarify' | 'reset_menu' | 'clear';
 
@@ -196,6 +273,12 @@ function isChoiceSuffix(value: string): boolean {
 }
 
 export class ClarificationStateMachine {
+  private readonly limits: ClarificationLimits;
+
+  constructor(limits: ClarificationLimits = DEFAULT_CLARIFICATION_LIMITS) {
+    this.limits = normalizeLimits(limits);
+  }
+
   parseChoice(text: string): ClarificationChoice | null {
     const normalized = normalizeClarificationText(text);
     if (!normalized) return null;
@@ -241,7 +324,28 @@ export class ClarificationStateMachine {
       });
       if (matched) matches += 1;
     }
-    return matches > 1;
+    if (matches > 1) return true;
+
+    const normalized = tokens.join(' ');
+    const hasProgress = /\b(?:tien do|progress|score|diem|band)\b/.test(
+      normalized,
+    );
+    const hasReschedule =
+      /\b(?:reschedule|move|change)\b/.test(normalized) ||
+      /\bdoi(?: lai)?\b.*\b(?:lich|buoi|session)\b/.test(normalized);
+    const hasScheduleTopic = /\blic?h(?: hoc)?\b/.test(normalized);
+    const hasScheduleView =
+      hasScheduleTopic &&
+      /\b(?:xem|check|view|upcoming|schedule|calendar)\b/.test(normalized);
+    const hasJoiner =
+      /\b(?:va|and|hoac|or)\b/.test(normalized) || /[,;\n]/.test(text);
+
+    return (
+      (hasProgress && (hasScheduleView || hasReschedule)) ||
+      (hasReschedule && hasScheduleView) ||
+      (hasProgress && hasScheduleTopic && hasJoiner) ||
+      (hasJoiner && hasScheduleTopic && hasReschedule)
+    );
   }
 
   isCancel(text: string): boolean {
@@ -255,7 +359,7 @@ export class ClarificationStateMachine {
       menuResets: 0,
       version: 1,
       createdAt: now,
-      expiresAt: now + CLARIFICATION_TTL_MS,
+      expiresAt: now + this.limits.ttlMs,
       ...(userId === undefined ? {} : { userId }),
     };
   }
@@ -268,14 +372,14 @@ export class ClarificationStateMachine {
     state: ClarificationState,
     now = Date.now(),
   ): ClarificationIrrelevantResult {
-    if (state.attempts < MAX_CLARIFICATION_ATTEMPTS) {
+    if (state.attempts < this.limits.maxAttempts) {
       return {
         action: 'clarify',
         state: this.bump(state, now, { attempts: state.attempts + 1 }),
       };
     }
 
-    if (state.menuResets < MAX_CLARIFICATION_MENU_RESETS) {
+    if (state.menuResets < this.limits.maxMenuResets) {
       return {
         action: 'reset_menu',
         state: this.bump(state, now, {
@@ -297,7 +401,7 @@ export class ClarificationStateMachine {
       ...state,
       ...changes,
       version: state.version + 1,
-      expiresAt: now + CLARIFICATION_TTL_MS,
+      expiresAt: now + this.limits.ttlMs,
     };
   }
 
@@ -306,12 +410,49 @@ export class ClarificationStateMachine {
     eventId: string | undefined,
     replyText: string,
   ): ClarificationState {
+    const recentEventIds = eventId
+      ? [...(state.recentEventIds ?? []), eventId].slice(
+          -MAX_CLARIFICATION_EVENT_HISTORY,
+        )
+      : state.recentEventIds;
     return {
       ...state,
       ...(eventId ? { lastEventId: eventId } : {}),
+      ...(recentEventIds ? { recentEventIds } : {}),
       lastReplyText: replyText,
       lastDeliveryFailed: false,
     };
+  }
+
+  isStaleEvent(state: ClarificationState, eventId?: string): boolean {
+    return Boolean(
+      eventId &&
+      state.lastEventId !== eventId &&
+      state.recentEventIds?.includes(eventId),
+    );
+  }
+
+  consume(
+    state: ClarificationState,
+    eventId: string | undefined,
+    now = Date.now(),
+  ): ClarificationState {
+    const recentEventIds = eventId
+      ? [...(state.recentEventIds ?? []), eventId].slice(
+          -MAX_CLARIFICATION_EVENT_HISTORY,
+        )
+      : state.recentEventIds;
+    return {
+      ...state,
+      phase: 'consumed',
+      version: state.version + 1,
+      expiresAt: now + this.limits.ttlMs,
+      ...(recentEventIds ? { recentEventIds } : {}),
+    };
+  }
+
+  getLimits(): ClarificationLimits {
+    return this.limits;
   }
 }
 
@@ -375,6 +516,8 @@ interface RedisLikeClient {
 
 /** Redis-backed state with a short TTL; configured Redis failures are fail-closed. */
 export class RedisClarificationStateStore implements ClarificationStateStore {
+  private readonly limits: ClarificationLimits;
+
   constructor(
     private readonly redisClient: {
       isConfiguredEnabled(): boolean;
@@ -383,7 +526,10 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
     },
     private readonly keyPrefix: string,
     private readonly memory = new MemoryClarificationStateStore(),
-  ) {}
+    limits: ClarificationLimits = DEFAULT_CLARIFICATION_LIMITS,
+  ) {
+    this.limits = normalizeLimits(limits);
+  }
 
   async get(key: string): Promise<ClarificationState | null> {
     const client = this.client();
@@ -477,14 +623,16 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
     if (
       typeof parsed !== 'object' ||
       parsed === null ||
-      (parsed as { phase?: unknown }).phase !== 'awaiting_choice' ||
+      !(['awaiting_choice', 'consumed'] as unknown[]).includes(
+        (parsed as { phase?: unknown }).phase,
+      ) ||
       !Number.isInteger((parsed as { attempts?: unknown }).attempts) ||
       (parsed as { attempts: number }).attempts < 0 ||
-      (parsed as { attempts: number }).attempts > MAX_CLARIFICATION_ATTEMPTS ||
+      (parsed as { attempts: number }).attempts > this.limits.maxAttempts ||
       !Number.isInteger((parsed as { menuResets?: unknown }).menuResets) ||
       (parsed as { menuResets: number }).menuResets < 0 ||
       (parsed as { menuResets: number }).menuResets >
-        MAX_CLARIFICATION_MENU_RESETS ||
+        this.limits.maxMenuResets ||
       !Number.isInteger((parsed as { version?: unknown }).version) ||
       (parsed as { version: number }).version < 1 ||
       !Number.isFinite((parsed as { createdAt?: unknown }).createdAt) ||
@@ -492,7 +640,7 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
       (parsed as { expiresAt: number }).expiresAt <=
         (parsed as { createdAt: number }).createdAt ||
       (parsed as { expiresAt: number }).expiresAt >
-        (parsed as { createdAt: number }).createdAt + CLARIFICATION_TTL_MS ||
+        (parsed as { createdAt: number }).createdAt + this.limits.ttlMs ||
       ('userId' in parsed &&
         (parsed as { userId?: unknown }).userId !== undefined &&
         (!Number.isInteger((parsed as { userId?: unknown }).userId) ||
@@ -513,10 +661,40 @@ export class RedisClarificationStateStore implements ClarificationStateStore {
         (parsed as { lastDeliveryFailed?: unknown }).lastDeliveryFailed !==
           undefined &&
         typeof (parsed as { lastDeliveryFailed?: unknown })
-          .lastDeliveryFailed !== 'boolean')
+          .lastDeliveryFailed !== 'boolean') ||
+      ('recentEventIds' in parsed &&
+        (parsed as { recentEventIds?: unknown }).recentEventIds !== undefined &&
+        (!Array.isArray(
+          (parsed as { recentEventIds?: unknown }).recentEventIds,
+        ) ||
+          (parsed as { recentEventIds: unknown[] }).recentEventIds.length >
+            MAX_CLARIFICATION_EVENT_HISTORY ||
+          (parsed as { recentEventIds: unknown[] }).recentEventIds.some(
+            (eventId) =>
+              typeof eventId !== 'string' ||
+              eventId.length === 0 ||
+              eventId.length > 255,
+          )))
     ) {
       throw new Error('Invalid clarification state');
     }
     return parsed as ClarificationState;
   }
+}
+
+export function createClarificationStateStore(params: {
+  platform: string;
+  config: ClarificationConfigReader;
+  redisClient?: RedisClientPort;
+}): ClarificationStateStore {
+  const limits = readClarificationLimits(params.config);
+  if (params.redisClient?.isConfiguredEnabled?.() === true) {
+    return new RedisClarificationStateStore(
+      params.redisClient,
+      `chat:clarification:${params.platform}`,
+      undefined,
+      limits,
+    );
+  }
+  return new MemoryClarificationStateStore();
 }

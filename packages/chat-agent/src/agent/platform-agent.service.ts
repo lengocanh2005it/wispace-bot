@@ -35,10 +35,10 @@ import type {
 import { pinFactsToReply } from './pinned-facts';
 import {
   ClarificationStateMachine,
-  RedisClarificationStateStore,
-  MemoryClarificationStateStore,
   type ClarificationChoice,
   type ClarificationStateStore,
+  createClarificationStateStore,
+  readClarificationLimits,
 } from '../clarification/clarification-state';
 
 const FEATURE = 'FREE_FORM_CHAT';
@@ -67,7 +67,7 @@ import { buildLlmExecutionConfig } from '@wispace/llm-agent';
 export class PlatformAgentService {
   private readonly logger = new Logger(PlatformAgentService.name);
   private agent?: LlmAgentService<PlatformAgentToolContext>;
-  private readonly clarificationMachine = new ClarificationStateMachine();
+  private readonly clarificationMachine: ClarificationStateMachine;
   private readonly clarificationStore: ClarificationStateStore;
 
   constructor(
@@ -83,15 +83,16 @@ export class PlatformAgentService {
     @Inject(REDIS_CLIENT)
     private readonly redisClient?: RedisClientPort,
   ) {
+    const limits = readClarificationLimits(configService);
+    this.clarificationMachine = new ClarificationStateMachine(limits);
     if (options.clarificationStore) {
       this.clarificationStore = options.clarificationStore;
-    } else if (redisClient?.isConfiguredEnabled?.() === true) {
-      this.clarificationStore = new RedisClarificationStateStore(
-        redisClient,
-        `chat:clarification:${options.platform ?? 'default'}`,
-      );
     } else {
-      this.clarificationStore = new MemoryClarificationStateStore();
+      this.clarificationStore = createClarificationStateStore({
+        platform: options.platform ?? 'default',
+        config: configService,
+        redisClient,
+      });
     }
   }
 
@@ -252,6 +253,39 @@ export class PlatformAgentService {
         };
       }
 
+      if (
+        state &&
+        this.clarificationMachine.isStaleEvent(state, input.correlationId)
+      ) {
+        this.recordClarificationOutcome('stale_reply');
+        return {
+          reply: this.staticReply(
+            state.lastReplyText ?? buildClarificationMessage(),
+            input,
+            true,
+          ),
+        };
+      }
+
+      if (state?.phase === 'consumed') {
+        if (this.clarificationMachine.parseChoice(input.userText)) {
+          this.recordClarificationOutcome('blocked_tool');
+          this.recordClarificationOutcome('replayed');
+          return {
+            reply: this.staticReply(
+              state.lastReplyText ?? buildClarificationMessage(),
+              input,
+              true,
+            ),
+          };
+        }
+        const cleared = await this.clarificationStore.clear(key, state.version);
+        if (cleared === false) {
+          throw new Error('Clarification state version conflict');
+        }
+        state = null;
+      }
+
       if (this.clarificationMachine.isCancel(input.userText)) {
         const cancelled = await this.clarificationStore.clear(
           key,
@@ -270,8 +304,9 @@ export class PlatformAgentService {
         ? this.clarificationMachine.parseChoice(input.userText)
         : null;
       if (state && choice) {
-        const consumed = await this.clarificationStore.clear(
+        const consumed = await this.clarificationStore.set(
           key,
+          this.clarificationMachine.consume(state, input.correlationId, now),
           state.version,
         );
         if (consumed === false) {
@@ -296,10 +331,14 @@ export class PlatformAgentService {
         this.clarificationMachine.isContradictory(input.userText);
 
       if (state && !offTopic && !ambiguous) {
-        // Clear a stale clarification before a new clear question reaches any
-        // tool path; an agent failure must not preserve old authority.
-        const cleared = await this.clarificationStore.clear(key, state.version);
-        if (cleared === false) {
+        // Retain a tombstone so delayed choices from the superseded menu cannot
+        // execute tools after this new question reaches the agent.
+        const superseded = await this.clarificationStore.set(
+          key,
+          this.clarificationMachine.consume(state, input.correlationId, now),
+          state.version,
+        );
+        if (superseded === false) {
           throw new Error('Clarification state version conflict');
         }
         this.recordClarificationOutcome('new_question');
@@ -395,7 +434,7 @@ export class PlatformAgentService {
       this.recordClarificationOutcome('unavailable');
       this.recordClarificationOutcome('blocked_tool');
       this.logger.error(
-        `Clarification state unavailable externalUserId=${maskExternalId(input.externalUserId)} error=${errorMessage(error)}`,
+        `Clarification state unavailable externalUserId=${maskExternalId(input.externalUserId)} error=${errorMessage(error, input.externalUserId)}`,
       );
       return {
         reply: this.staticReply(buildClarificationUnavailableMessage(), input),

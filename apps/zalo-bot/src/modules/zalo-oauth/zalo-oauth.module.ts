@@ -2,6 +2,12 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BotCommonModule } from '@wispace/bot-common/guard';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
+import {
+  CLARIFICATION_STATE_STORE,
+  createClarificationStateStore,
+  type ClarificationStateStore,
+} from '@wispace/chat-agent';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { ZaloOaTokenEntity } from '../../infrastructure/database/entities/zalo-oa-token.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
@@ -42,6 +48,19 @@ import { ZALO_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/zalo-link-ver
         new WispaceTokenVerifyService(configService, 'zalo'),
       inject: [ConfigService],
     },
+    {
+      provide: CLARIFICATION_STATE_STORE,
+      useFactory: (
+        configService: ConfigService,
+        redisClient?: RedisClientPort,
+      ): ClarificationStateStore =>
+        createClarificationStateStore({
+          platform: 'zalo',
+          config: configService,
+          redisClient,
+        }),
+      inject: [ConfigService, { token: REDIS_CLIENT, optional: true }],
+    },
   ],
   exports: [
     ZaloTokenService,
@@ -49,6 +68,7 @@ import { ZALO_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/zalo-link-ver
     ZaloOauthStateService,
     WispaceTokenVerifyService,
     ZALO_LINK_VERIFY_RECORD_REPOSITORY,
+    CLARIFICATION_STATE_STORE,
   ],
 })
 export class ZaloOauthModule {}

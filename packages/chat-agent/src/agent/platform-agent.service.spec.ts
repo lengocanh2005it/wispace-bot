@@ -140,13 +140,14 @@ describe('PlatformAgentService', () => {
       }),
       expect.anything(),
     );
-    expect(clarificationStore.clear).toHaveBeenCalledWith(
+    expect(clarificationStore.set).toHaveBeenCalledWith(
       'default:zalo-user-1',
+      expect.objectContaining({ phase: 'consumed' }),
       expect.any(Number),
     );
   });
 
-  it('clears stale clarification state before a clear new question', async () => {
+  it('tombstones stale clarification state before a clear new question', async () => {
     const historyService = {
       getHistory: jest.fn().mockResolvedValue([]),
       appendTurn: jest.fn().mockResolvedValue(undefined),
@@ -163,8 +164,9 @@ describe('PlatformAgentService', () => {
       userText: 'Xem tiến độ học của mình',
     });
 
-    expect(clarificationStore.clear).toHaveBeenCalledWith(
+    expect(clarificationStore.set).toHaveBeenCalledWith(
       'default:zalo-user-1',
+      expect.objectContaining({ phase: 'consumed' }),
       1,
     );
     expect(mockLlmReply).toHaveBeenCalledWith(
@@ -214,6 +216,63 @@ describe('PlatformAgentService', () => {
     expect(replay.skipDelivery).toBe(true);
     expect(mockLlmReply).not.toHaveBeenCalled();
     expect(clarificationStore.set).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks an out-of-order clarification event from executing a tool', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const clarificationStore = buildClarificationStore();
+    const service = buildService(historyService, { clarificationStore });
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'abc???',
+      correlationId: 'event-a',
+    });
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'thời tiết',
+      correlationId: 'event-b',
+    });
+    const stale = await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: '3',
+      correlationId: 'event-a',
+    });
+
+    expect(stale.clarification).toBe(true);
+    expect(stale.skipDelivery).toBe(true);
+    expect(mockLlmReply).not.toHaveBeenCalled();
+  });
+
+  it('keeps a consumed clarification tombstone so a concurrent choice cannot call tools twice', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const clarificationStore = buildClarificationStore();
+    const service = buildService(historyService, { clarificationStore });
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'abc???',
+      correlationId: 'event-menu',
+    });
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: '1',
+      correlationId: 'event-choice-1',
+    });
+    const secondChoice = await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: '3',
+      correlationId: 'event-choice-2',
+    });
+
+    expect(secondChoice.clarification).toBe(true);
+    expect(mockLlmReply).toHaveBeenCalledTimes(1);
   });
 
   it('reopens a clarification after a known failed delivery for that event', async () => {
