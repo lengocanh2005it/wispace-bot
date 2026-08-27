@@ -41,4 +41,19 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     output = await metrics.getMetrics();
     expect(output).toContain('test_db_circuitbreaker_failures_total 2');
   });
+
+  it('exposes bounded clarification lifecycle outcomes without user labels', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+
+    metrics.incClarificationOutcome('started_ambiguous');
+    const output = await metrics.getMetrics();
+
+    expect(output).toContain(
+      'test_clarification_outcomes_total{outcome="started_ambiguous"} 1',
+    );
+    expect(output).not.toContain('external_user_id');
+  });
 });

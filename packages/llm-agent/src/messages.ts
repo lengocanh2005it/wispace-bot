@@ -27,8 +27,17 @@ export function buildClarificationMessage(): string {
     'Mình chưa rõ bạn muốn hỏi gì. Bạn có thể hỏi về:\n' +
     '• Tiến độ học IELTS\n' +
     '• Lịch học sắp tới\n' +
-    '• Đổi lịch học'
+    '• Đổi lịch học\n' +
+    'Trả lời 1, 2 hoặc 3; hoặc nhắn “Hủy” để bỏ qua.'
   );
+}
+
+export function buildClarificationCancelledMessage(): string {
+  return 'Đã hủy phần làm rõ. Khi cần, bạn cứ gửi câu hỏi mới nhé.';
+}
+
+export function buildClarificationUnavailableMessage(): string {
+  return 'Mình chưa thể xử lý lựa chọn lúc này. Bạn thử lại sau ít phút nhé.';
 }
 
 export function buildPrecreateExerciseUnavailableMessage(): string {

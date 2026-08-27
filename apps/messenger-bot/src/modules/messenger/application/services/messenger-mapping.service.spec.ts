@@ -129,4 +129,43 @@ describe('MessengerMappingService', () => {
       expect.objectContaining({ messageType: 'MAPPING_USER_PSID_CONFLICT' }),
     );
   });
+
+  it('clears clarification state after a committed mapping update', async () => {
+    const repository = {
+      findActiveMappingByPsid: jest.fn(() => Promise.resolve(null)),
+      findActiveMappingByUserId: jest.fn(() => Promise.resolve(null)),
+      upsertPsidUserLink: jest.fn(() =>
+        Promise.resolve({
+          id: 1,
+          userId: 200,
+          psid: 'psid-1',
+          notificationMessagesToken: 'token',
+          status: 'ACTIVE',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+      ),
+    };
+    const clearer = { clearClarificationState: jest.fn() };
+    const moduleRef = {
+      get: jest.fn().mockReturnValue(clearer),
+    };
+
+    const service = new MessengerMappingService(
+      repository as never,
+      { sendTextViaPsid: jest.fn() } as never,
+      { syncUpcomingSessions: jest.fn().mockResolvedValue({}) } as never,
+      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      moduleRef as never,
+    );
+
+    await service.linkFromContext('psid-1', {
+      ref: 'token',
+      userId: 200,
+      topic: 'IELTS',
+      cadence: 'WEEKLY',
+    });
+
+    expect(clearer.clearClarificationState).toHaveBeenCalledWith('psid-1');
+  });
 });

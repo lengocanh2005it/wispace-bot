@@ -105,6 +105,26 @@ export class MessengerChatProcessorService {
             ctx.externalUserId,
           )}: ${errorMessage(ctx.error)}`,
         );
+        if (ctx.reply?.clarification) {
+          try {
+            this.metrics.incClarificationOutcome('delivery_failure');
+          } catch {
+            // Telemetry must never change delivery/retry behavior.
+          }
+          try {
+            if (!ctx.deliveryAmbiguous) {
+              await this.messengerAgentService.markClarificationDeliveryFailedForEvent(
+                ctx.externalUserId,
+                ctx.idempotencyKey,
+              );
+            }
+          } catch {
+            // Recovery must not change the durable inbox outcome.
+          }
+          // Re-open only the failed event's state; a generic fallback would
+          // be a duplicate user-visible response for the same inbound event.
+          return;
+        }
         const userId = ctx.userId;
         try {
           await outbound.sendTextViaPsid({
@@ -202,10 +222,17 @@ export class MessengerChatProcessorService {
       const freshMapping =
         await this.mappingRepository.findActiveMappingByPsid(psid);
       if (!freshMapping) {
+        await this.clearClarificationState(psid);
         this.logger.warn(
           `Dropping queued messages for psid=${maskExternalId(psid)}: no active mapping (user may have unlinked)`,
         );
         return;
+      }
+      if (
+        snapshot.userId !== undefined &&
+        snapshot.userId !== freshMapping.userId
+      ) {
+        await this.clearClarificationState(psid);
       }
       freshUserId = freshMapping.userId;
     }
@@ -278,12 +305,14 @@ export class MessengerChatProcessorService {
       const freshMapping =
         await this.mappingRepository.findActiveMappingByPsid(psid);
       if (!freshMapping) {
+        await this.clearClarificationState(psid);
         this.logger.warn(
           `Dropping batch for psid=${maskExternalId(psid)}: no active mapping after revalidation`,
         );
         return;
       }
       if (freshMapping.userId !== linkContext.userId) {
+        await this.clearClarificationState(psid);
         this.logger.warn(
           `Discarding stale linkContext for psid=${maskExternalId(psid)}: context userId=${maskExternalId(String(linkContext.userId))} vs mapping userId=${maskExternalId(String(freshMapping.userId))}`,
         );
@@ -399,6 +428,7 @@ export class MessengerChatProcessorService {
       switch (pendingAction) {
         case 'unlink': {
           const result = await this.privacyService!.unlink('messenger', psid);
+          await this.clearClarificationState(psid);
           resultMessage = result.deleted
             ? 'Đã ngắt kết nối tài khoản thành công.'
             : 'Tài khoản chưa được liên kết.';
@@ -406,6 +436,7 @@ export class MessengerChatProcessorService {
         }
         case 'delete': {
           await this.privacyService!.delete('messenger', psid);
+          await this.clearClarificationState(psid);
           resultMessage = 'Đã xóa toàn bộ dữ liệu thành công.';
           break;
         }
@@ -444,6 +475,22 @@ export class MessengerChatProcessorService {
       text: 'Reply "Có" để xác nhận hoặc "Không" để hủy.',
       messageType: 'PRIVACY_REMIND',
     });
+  }
+
+  private async clearClarificationState(psid: string): Promise<void> {
+    const clearer = (
+      this.messengerAgentService as MessengerAgentService & {
+        clearClarificationState?: (externalUserId: string) => Promise<void>;
+      }
+    ).clearClarificationState;
+    if (!clearer) return;
+    try {
+      await clearer.call(this.messengerAgentService, psid);
+    } catch (error) {
+      this.logger.warn(
+        `Clarification state clear failed psid=${maskExternalId(psid)}: ${errorMessage(error)}`,
+      );
+    }
   }
 
   private async deliverOptionalChatExtras(params: {

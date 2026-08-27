@@ -45,6 +45,10 @@ export class MessengerApiError extends Error {
   }
 }
 
+export function isMessengerAmbiguousDeliveryError(error: unknown): boolean {
+  return error instanceof MessengerApiError && error.status === 408;
+}
+
 /** H4: at least one bubble was delivered before a later Send API failure. */
 export class MessengerPartialSendError extends MessengerApiError {
   constructor(
@@ -134,6 +138,9 @@ export class MessengerOutboundService {
     userId?: number;
     maxBubbles?: number;
     maxCharsPerBubble?: number;
+    /** Stable clarification delivery identity (provider currently ignores it). */
+    deliveryKey?: string;
+    clarification?: boolean;
   }): Promise<number> {
     const defaults = readMessengerBubbleLimits(this.configService);
     const bubbles = splitMessengerBubbles(
@@ -154,8 +161,9 @@ export class MessengerOutboundService {
           psid: params.psid,
           userId: params.userId,
           text: bubble,
-          messageType:
-            bubbles.length > 1
+          messageType: params.clarification
+            ? 'CLARIFICATION'
+            : bubbles.length > 1
               ? `${params.messageType}_PART_${index + 1}_OF_${bubbles.length}`
               : params.messageType,
         });
@@ -329,7 +337,12 @@ export class MessengerOutboundService {
   async sendText(
     externalUserId: string,
     text: string,
-    input?: { messageType?: string; userId?: number },
+    input?: {
+      messageType?: string;
+      userId?: number;
+      deliveryKey?: string;
+      clarification?: boolean;
+    },
   ): Promise<void> {
     await this.sendTextViaPsid({
       psid: externalUserId,

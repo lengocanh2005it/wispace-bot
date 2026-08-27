@@ -119,6 +119,26 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
             ctx.externalUserId,
           )} error=${errorMessage(ctx.error)}${refundError}`,
         );
+        if (ctx.reply?.clarification) {
+          try {
+            this.options.clarificationOutcomeInc?.('delivery_failure');
+          } catch {
+            // Telemetry must never change delivery/retry behavior.
+          }
+          try {
+            if (!ctx.deliveryAmbiguous) {
+              await this.options.clarificationDeliveryFailure?.(
+                ctx.externalUserId,
+                ctx.idempotencyKey,
+              );
+            }
+          } catch {
+            // Recovery must never change delivery/retry behavior.
+          }
+          // Re-open only the failed event's state; a generic fallback would
+          // be a second user-visible reply for the same bounded flow.
+          return;
+        }
         try {
           await directTextSender.sendText(
             ctx.externalUserId,
@@ -274,6 +294,7 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
         const freshUserId =
           await this.options.freshMappingProvider(externalUserId);
         if (freshUserId === undefined) {
+          await this.clearClarificationState(externalUserId);
           this.logger.warn(
             `Dropping batch for ${maskExternalId(externalUserId)}: no active mapping (user may have unlinked)`,
           );
@@ -285,6 +306,7 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
           return;
         }
         if (batch.userId !== undefined && batch.userId !== freshUserId) {
+          await this.clearClarificationState(externalUserId);
           this.logger.warn(
             `Stale mapping for ${maskExternalId(externalUserId)}: buffered userId=${maskExternalId(String(batch.userId))} → fresh userId=${maskExternalId(String(freshUserId))}`,
           );
@@ -299,6 +321,7 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
           const retryUserId =
             await this.options.freshMappingProvider!(externalUserId);
           if (retryUserId === undefined) {
+            await this.clearClarificationState(externalUserId);
             this.logger.warn(
               `Dropping batch for ${maskExternalId(externalUserId)}: no active mapping after retry`,
             );
@@ -307,6 +330,9 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
               debounceMs: this.debounceMs,
             });
             return;
+          }
+          if (batch.userId !== undefined && batch.userId !== retryUserId) {
+            await this.clearClarificationState(externalUserId);
           }
           batch.userId = retryUserId;
         } catch (retryError) {
@@ -367,6 +393,17 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
     await this.directTextSender
       .sendText(externalUserId, DROPPED_MESSAGE)
       .catch(() => {});
+  }
+
+  private async clearClarificationState(externalUserId: string): Promise<void> {
+    if (!this.options.clarificationStateClearer) return;
+    try {
+      await this.options.clarificationStateClearer(externalUserId);
+    } catch (error) {
+      this.logger.error(
+        `Clarification state clear failed for ${maskExternalId(externalUserId)}: ${errorMessage(error)}`,
+      );
+    }
   }
 
   private readPositiveNumber(

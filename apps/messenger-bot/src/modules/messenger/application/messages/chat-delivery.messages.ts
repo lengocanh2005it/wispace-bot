@@ -4,6 +4,7 @@ import {
   isOpenAiServerError,
 } from '@wispace/llm-agent';
 import { MessengerApiError } from '../services/messenger-outbound.service';
+import { buildUnsupportedMessageTypeReply as buildSharedUnsupportedMessageTypeReply } from '@wispace/bot-common/messages';
 
 /** Meta subcode for mark_seen / typing_on / react failures — not the 24h window. */
 const MESSENGER_SENDER_ACTION_FAILED_SUBCODE = 2018048;
@@ -116,10 +117,7 @@ export function buildChatMissingMidMessage(): string {
 
 /** L1: sticker / ảnh / file — bot chỉ xử lý tin chữ. */
 export function buildUnsupportedMessageTypeReply(): string {
-  return (
-    'Mình chỉ đọc được tin nhắn chữ thôi nhé. ' +
-    'Bạn gửi lại câu hỏi bằng chữ để mình hỗ trợ bạn.'
-  );
+  return buildSharedUnsupportedMessageTypeReply();
 }
 
 /** Chat queue cap exceeded: oldest buffered messages were dropped. */

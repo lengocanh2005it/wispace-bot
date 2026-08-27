@@ -10,6 +10,7 @@ import { DopplerRuntimeSyncService } from '@wispace/doppler-sync';
 import type { DopplerWebhookPayload } from '@wispace/doppler-sync';
 import { PrivacyDataService } from '@wispace/database';
 import { DiscordReportCronService } from '../discord-chat/application/services/discord-report-cron.service';
+import { PlatformAgentService } from '@wispace/chat-agent';
 
 @Controller('discord')
 @UseGuards(InternalApiKeyGuard)
@@ -20,6 +21,7 @@ export class DiscordOpsController extends PlatformOpsController<DopplerWebhookPa
     calendarService: WispaceCalendarService,
     dopplerRuntimeSyncService: DopplerRuntimeSyncService,
     privacyService: PrivacyDataService,
+    clarificationAgent: PlatformAgentService,
   ) {
     super({
       dopplerRuntimeSync: (body) =>
@@ -30,10 +32,15 @@ export class DiscordOpsController extends PlatformOpsController<DopplerWebhookPa
           platform: 'discord',
           getSessions: createCalendarGetSessions(calendarService),
         }),
-      unlinkUser: (externalUserId) =>
-        privacyService.unlink('discord', externalUserId),
-      deleteUser: (externalUserId) =>
-        privacyService.delete('discord', externalUserId),
+      unlinkUser: async (externalUserId) => {
+        const result = await privacyService.unlink('discord', externalUserId);
+        await clarificationAgent.clearClarificationState(externalUserId);
+        return result;
+      },
+      deleteUser: async (externalUserId) => {
+        await privacyService.delete('discord', externalUserId);
+        await clarificationAgent.clearClarificationState(externalUserId);
+      },
       exportUser: (externalUserId) =>
         privacyService.export('discord', externalUserId),
     });

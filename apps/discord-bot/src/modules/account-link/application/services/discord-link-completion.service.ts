@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { retryWithBackoff } from '@discord/shared/utils/retry.utils';
@@ -10,6 +11,7 @@ import { DiscordAccountLinkService } from './discord-account-link.service';
 import { DiscordGuildMembershipService } from './discord-guild-membership.service';
 import { DiscordRelinkNotifier } from './discord-relink-notifier.service';
 import { DiscordWelcomeService } from './discord-welcome.service';
+import { PlatformAgentService } from '@wispace/chat-agent';
 
 const UPSERT_MAX_ATTEMPTS = 3;
 const UPSERT_BASE_BACKOFF_MS = 500;
@@ -36,6 +38,7 @@ export class DiscordLinkCompletionService {
     private readonly guildMembershipService: DiscordGuildMembershipService,
     private readonly relinkNotifier: DiscordRelinkNotifier,
     private readonly welcomeService: DiscordWelcomeService,
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
 
   /**
@@ -73,6 +76,8 @@ export class DiscordLinkCompletionService {
       UPSERT_MAX_ATTEMPTS,
       UPSERT_BASE_BACKOFF_MS,
     );
+
+    await this.clearClarificationState(discordUser.id);
 
     // Intent consumed — the mapping is committed (fire-and-forget; a race
     // leaves a record that the reconcile cron cleans up).
@@ -114,5 +119,20 @@ export class DiscordLinkCompletionService {
     // Not in the guild yet — send them straight to the invite; the bot
     // delivers the welcome DM on `guildMemberAdd` (link is already done).
     return 'not-in-guild';
+  }
+
+  private async clearClarificationState(discordUserId: string): Promise<void> {
+    try {
+      const agent = this.moduleRef?.get(PlatformAgentService, {
+        strict: false,
+      });
+      await agent?.clearClarificationState(discordUserId);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Discord clarification state clear failed for discordUserId=${maskExternalId(
+          discordUserId,
+        )}: ${errorMessage(error)}`,
+      );
+    }
   }
 }

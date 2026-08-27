@@ -22,7 +22,7 @@ import {
   sanitizeUntrustedTextForLlm,
   PrivacyStateService,
 } from '@wispace/llm-agent';
-import { REDIS_CLIENT } from '@wispace/bot-common/redis';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import {
   WispaceConfigService,
   PrecreateExerciseApiClient,
@@ -183,6 +183,7 @@ import {
         metrics: BotMetricsService,
         llmExecution: LlmExecutionService,
         learnerProfileStore: LearnerProfileStorePort,
+        redisClient: RedisClientPort,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -196,6 +197,7 @@ import {
           safetyEventService,
           adapter,
           {
+            platform: 'messenger',
             promptDir: join(__dirname, '../../../shared/prompts'),
             promptFile: 'messenger-chat.system.txt',
             appendHistory: false,
@@ -211,6 +213,8 @@ import {
               llmRoundOutcomeInc: (feature, outcome) =>
                 metrics.incRoundOutcome(feature, outcome),
             },
+            clarificationOutcomeInc: (outcome) =>
+              metrics.incClarificationOutcome(outcome),
             onBeforeReply: (input) => {
               const activeSpan = trace.getActiveSpan();
               if (activeSpan) {
@@ -247,6 +251,7 @@ import {
             tryFastReschedule: (ctx, userText) =>
               messengerTools.tryFastDefaultReschedule(ctx, userText),
           },
+          redisClient,
         );
       },
       inject: [
@@ -261,6 +266,7 @@ import {
         BotMetricsService,
         LlmExecutionService,
         LEARNER_PROFILE_STORE,
+        REDIS_CLIENT,
       ],
     },
     RedisChatQueueStore,

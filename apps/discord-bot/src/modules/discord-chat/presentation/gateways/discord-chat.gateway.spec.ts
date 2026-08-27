@@ -11,6 +11,7 @@ import type { DiscordAccountLinkService } from '@discord/modules/account-link/ap
 import type { DiscordWelcomeService } from '@discord/modules/account-link/application/services/discord-welcome.service';
 import type { DiscordLinkVerifyRecordRepositoryPort } from '@discord/modules/account-link/domain/ports/discord-link-verify-record.repository.port';
 import { DiscordChatGateway } from './discord-chat.gateway';
+import { ChannelType } from 'discord.js';
 
 function buildConfigService(): ConfigService {
   return {
@@ -253,5 +254,28 @@ describe('DiscordChatGateway onGuildMemberAdd (#137 items 2+4, #231/#232/#234)',
     });
 
     await expect(gateway.onGuildMemberAdd(memberArgs)).resolves.toBeUndefined();
+  });
+});
+
+describe('DiscordChatGateway non-text messages (#401)', () => {
+  it('sends the bounded shared fallback for a DM attachment without queueing', async () => {
+    const { gateway, outboundService } = buildGateway({});
+    const message = {
+      author: { bot: false, id: 'discord-user-1' },
+      channel: { type: ChannelType.DM },
+      content: '',
+      attachments: { size: 1 },
+      stickers: { size: 0 },
+      embeds: [],
+      mentions: { users: new Map() },
+      client: { user: null },
+    };
+
+    await gateway.onMessageCreate([message] as never);
+
+    expect(outboundService.sendMenuButtons).toHaveBeenCalledWith(
+      'discord-user-1',
+      expect.stringContaining('tin nhắn chữ'),
+    );
   });
 });

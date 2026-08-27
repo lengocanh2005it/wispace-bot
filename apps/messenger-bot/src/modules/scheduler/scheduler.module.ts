@@ -22,6 +22,7 @@ import {
 import { LlmSafetyEventEntity } from '@wispace/chat-metering';
 import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
+import { ChatPipelineModule } from '../messenger/chat-pipeline.module';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { MessengerReportModule } from '../messenger/messenger-report.module';
 import { MessengerOutboundModule } from '../messenger/messenger-outbound.module';
@@ -50,6 +51,7 @@ import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
       CronLeaderLeaseEntity,
     ]),
     ChatRateLimitModule,
+    ChatPipelineModule,
     MessengerOutboundModule,
     MessengerReportModule,
     UserLinkingModule,

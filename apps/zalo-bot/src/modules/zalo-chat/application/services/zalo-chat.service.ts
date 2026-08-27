@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   buildGreetingMessage,
   buildSelfIntroMessage,
+  buildUnsupportedMessageTypeReply,
 } from '@wispace/bot-common/messages';
 import {
   errorMessage,
@@ -21,9 +22,6 @@ import {
   CHAT_FAILURE_FALLBACK_MESSAGE,
   IntentDetector,
 } from '@wispace/llm-agent';
-
-const UNSUPPORTED_MESSAGE_TYPE_MESSAGE =
-  'Hiện mình chỉ hỗ trợ tin nhắn văn bản thôi nhé. Bạn gõ câu hỏi bằng chữ giúp mình nha!';
 
 @Injectable()
 export class ZaloChatService {
@@ -133,7 +131,7 @@ export class ZaloChatService {
   async handleUnsupportedMessage(zaloUserId: string): Promise<void> {
     await this.outboundService.sendText(
       zaloUserId,
-      UNSUPPORTED_MESSAGE_TYPE_MESSAGE,
+      buildUnsupportedMessageTypeReply(),
     );
   }
 }

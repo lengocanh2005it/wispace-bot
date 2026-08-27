@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { Counter } from 'prom-client';
@@ -17,6 +18,7 @@ import {
   type DiscordLinkVerifyRecordRepositoryPort,
 } from '../../domain/ports/discord-link-verify-record.repository.port';
 import { Inject } from '@nestjs/common';
+import { PlatformAgentService } from '@wispace/chat-agent';
 
 const DEFAULT_RECONCILE_AGE_MS = 60_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 3_600_000;
@@ -50,6 +52,7 @@ export class DiscordLinkReconcileCronService {
     private readonly relinkNotifier: DiscordRelinkNotifier,
     private readonly guildMembershipService: DiscordGuildMembershipService,
     private readonly welcomeService: DiscordWelcomeService,
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
@@ -96,6 +99,7 @@ export class DiscordLinkReconcileCronService {
 
       if (existingUserId === record.userId) {
         // Mapping committed — the record is a leftover (consume raced).
+        await this.clearClarificationState(record.discordUserId);
         await this.verifyRecordService.consumeRecord(record.discordUserId);
         alreadyCommitted += 1;
         reconcileRecordsTotal.inc({ outcome: 'already_committed' });
@@ -132,6 +136,7 @@ export class DiscordLinkReconcileCronService {
           record.userId,
           record.discordUserId,
         );
+        await this.clearClarificationState(record.discordUserId);
         await this.verifyRecordService.consumeRecord(record.discordUserId);
         this.logger.log(
           `Reconciled Discord link discordUserId=${maskExternalId(
@@ -199,5 +204,18 @@ export class DiscordLinkReconcileCronService {
     return Number.isFinite(parsed) && parsed > 0
       ? Math.floor(parsed)
       : fallback;
+  }
+
+  private async clearClarificationState(discordUserId: string): Promise<void> {
+    try {
+      const agent = this.moduleRef?.get(PlatformAgentService, {
+        strict: false,
+      });
+      await agent?.clearClarificationState(discordUserId);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Discord clarification state clear after link reconcile failed for discordUserId=${maskExternalId(discordUserId)}: ${errorMessage(error)}`,
+      );
+    }
   }
 }

@@ -3,6 +3,9 @@ export {
   CHAT_FAILURE_FALLBACK_MESSAGE,
   buildPromptInjectionBlockedMessage,
   buildWispaceScopeRedirectMessage,
+  buildClarificationMessage,
+  buildClarificationCancelledMessage,
+  buildClarificationUnavailableMessage,
   buildGroundingBlockedMessage,
   buildPrecreateExerciseUnavailableMessage,
 } from '../messages';
@@ -18,7 +21,12 @@ export {
   isOpenAiRateLimitError,
   isOpenAiServerError,
 } from './openai-error.utils';
-export { isObviouslyOffTopic, isGreetingOnly } from './scope.utils';
+export {
+  isObviouslyOffTopic,
+  isGreetingOnly,
+  isAmbiguousMessage,
+  normalizeScopeText,
+} from './scope.utils';
 export {
   detectPrivacyIntent,
   isConfirmationResponse,

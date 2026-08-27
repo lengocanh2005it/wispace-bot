@@ -218,6 +218,31 @@ describe('DiscordOutboundService', () => {
     expect(secondPayload.nonce).toBe(firstPayload.nonce);
   });
 
+  it('uses the clarification delivery key as a stable nonce and avoids dead-letter replay', async () => {
+    const send = jest
+      .fn<Promise<{ channelId: string }>, [DiscordTextPayload]>()
+      .mockRejectedValue(new TypeError('fetch failed'));
+    const fetch = jest.fn().mockResolvedValue({ send });
+    const deadLetter = { save: jest.fn().mockResolvedValue(true) };
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      deadLetter as never,
+    );
+
+    await expect(
+      service.sendText('discord-1', 'Mình chưa rõ.', {
+        deliveryKey: 'clarification:discord:event-401',
+        clarification: true,
+      }),
+    ).rejects.toThrow();
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(send.mock.calls[1][0].nonce).toBe(send.mock.calls[0][0].nonce);
+    expect(deadLetter.save).not.toHaveBeenCalled();
+  });
+
   it('#156: does not retry an unknown non-network error', async () => {
     const fetch = jest.fn().mockRejectedValue(new Error('unexpected failure'));
     const metrics = buildMetricsStub();

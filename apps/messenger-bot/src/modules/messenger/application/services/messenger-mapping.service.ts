@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import {
@@ -15,6 +16,7 @@ import {
   buildMappingUserLinkedOtherPsidMessage,
 } from '../messages/messenger-link.messages';
 import { MessengerOutboundService } from './messenger-outbound.service';
+import { PlatformAgentService } from '@wispace/chat-agent';
 
 @Injectable()
 export class MessengerMappingService {
@@ -26,6 +28,7 @@ export class MessengerMappingService {
     private readonly outbound: MessengerOutboundService,
     private readonly studyReminderSyncService: StudyReminderSyncService,
     private readonly sessionSourceService: StudySessionSourceService,
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
 
   async linkFromContext(
@@ -167,6 +170,8 @@ export class MessengerMappingService {
       };
     }
 
+    await this.clearClarificationState(params.psid);
+
     if (relinked) {
       this.logger.warn(
         `MAPPING_USER_ID_RELINK psid=${maskExternalId(
@@ -221,5 +226,18 @@ export class MessengerMappingService {
       previousUserId,
       syncedStudyReminders,
     };
+  }
+
+  private async clearClarificationState(psid: string): Promise<void> {
+    try {
+      const agent = this.moduleRef?.get(PlatformAgentService, {
+        strict: false,
+      });
+      await agent?.clearClarificationState(psid);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Clarification state clear after mapping update failed psid=${maskExternalId(psid)}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }

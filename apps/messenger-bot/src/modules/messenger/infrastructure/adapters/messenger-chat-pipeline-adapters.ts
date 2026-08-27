@@ -14,6 +14,7 @@ import type { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/ap
 import { MessengerAgentService } from '@messenger/modules/messenger/application/agent/messenger-agent.service';
 import {
   MessengerOutboundService,
+  isMessengerAmbiguousDeliveryError,
   MessengerPartialSendError,
 } from '@messenger/modules/messenger/application/services/messenger-outbound.service';
 import { readMessengerBubbleLimits } from '@messenger/modules/messenger/application/utils/messenger-bubble-config.utils';
@@ -110,11 +111,16 @@ export function createMessengerChatPipelineAdapters(
         text: result.text,
         toolSummary: result.toolSummary,
         richFollowUps: result.richFollowUps,
+        ...(result.skipHistory ? { skipHistory: true } : {}),
+        ...(result.deliveryKey ? { deliveryKey: result.deliveryKey } : {}),
+        ...(result.clarification ? { clarification: true } : {}),
+        ...(result.skipDelivery ? { skipDelivery: true } : {}),
       };
     },
   };
 
   const outbound: OutboundPort = {
+    isAmbiguousDeliveryError: isMessengerAmbiguousDeliveryError,
     async sendText(
       externalUserId: string,
       text: string,
@@ -130,6 +136,10 @@ export function createMessengerChatPipelineAdapters(
           messageType: 'FREE_FORM_CHAT_OUT',
           maxBubbles: Math.min(limits.maxBubbles, 10),
           maxCharsPerBubble: Math.min(limits.maxCharsPerBubble, 2000),
+          ...(typeof context?.deliveryKey === 'string'
+            ? { deliveryKey: context.deliveryKey }
+            : {}),
+          ...(context?.clarification === true ? { clarification: true } : {}),
         });
         return { delivered: bubblesSent > 0 };
       } catch (error: unknown) {

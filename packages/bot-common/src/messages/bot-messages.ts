@@ -47,3 +47,8 @@ export function buildSelfIntroMessage(
 export function buildLinkSuccessMessage(): string {
   return 'Tài khoản WISPACE của bạn đã liên kết thành công! 🎉';
 }
+
+/** Shared bounded response for unsupported/non-text user messages. */
+export function buildUnsupportedMessageTypeReply(): string {
+  return 'Mình chỉ đọc được tin nhắn chữ/văn bản thôi nhé. Bạn gửi lại câu hỏi bằng chữ để mình hỗ trợ bạn.';
+}

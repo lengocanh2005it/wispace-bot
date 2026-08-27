@@ -236,6 +236,36 @@ describe('ZaloOutboundService', () => {
     delete global.fetch;
   });
 
+  it('does not retry or dead-letter an ambiguous clarification delivery', async () => {
+    const tokenService = {
+      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
+    } as unknown as ZaloTokenService;
+    const fetchMock = jest
+      .fn()
+      .mockRejectedValue(new TypeError('fetch failed'));
+    const deadLetter = { save: jest.fn().mockResolvedValue(true) };
+
+    global.fetch = fetchMock;
+
+    const service = new ZaloOutboundService(
+      tokenService,
+      deliveryLog as never,
+      deadLetter as never,
+    );
+
+    await expect(
+      service.sendText('zalo-1', 'Mình chưa rõ.', {
+        deliveryKey: 'clarification:zalo:event-401',
+        clarification: true,
+      }),
+    ).rejects.toThrow();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(deadLetter.save).not.toHaveBeenCalled();
+
+    delete global.fetch;
+  });
+
   it('#156: does not retry a timeout after acceptance and records ambiguity', async () => {
     const tokenService = {
       getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),

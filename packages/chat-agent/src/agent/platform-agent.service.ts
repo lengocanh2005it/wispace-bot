@@ -10,12 +10,19 @@ import {
   type LlmExecutionPort,
   type LlmProviderAdapter,
   loadSystemPromptFile,
+  isAmbiguousMessage,
+  isObviouslyOffTopic,
+  buildClarificationCancelledMessage,
+  buildClarificationUnavailableMessage,
+  buildClarificationMessage,
+  buildWispaceScopeRedirectMessage,
 } from '@wispace/llm-agent';
 import {
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
 } from '@wispace/chat-metering';
-import { errorMessage } from '@wispace/bot-common/masking';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import { buildUnsupportedMessageTypeReply } from '@wispace/bot-common/messages';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
 import type {
@@ -26,6 +33,13 @@ import type {
   PlatformToolExecutorPort,
 } from './platform-agent.types';
 import { pinFactsToReply } from './pinned-facts';
+import {
+  ClarificationStateMachine,
+  RedisClarificationStateStore,
+  MemoryClarificationStateStore,
+  type ClarificationChoice,
+  type ClarificationStateStore,
+} from '../clarification/clarification-state';
 
 const FEATURE = 'FREE_FORM_CHAT';
 
@@ -53,6 +67,8 @@ import { buildLlmExecutionConfig } from '@wispace/llm-agent';
 export class PlatformAgentService {
   private readonly logger = new Logger(PlatformAgentService.name);
   private agent?: LlmAgentService<PlatformAgentToolContext>;
+  private readonly clarificationMachine = new ClarificationStateMachine();
+  private readonly clarificationStore: ClarificationStateStore;
 
   constructor(
     private readonly configService: ConfigService,
@@ -66,10 +82,44 @@ export class PlatformAgentService {
     @Optional()
     @Inject(REDIS_CLIENT)
     private readonly redisClient?: RedisClientPort,
-  ) {}
+  ) {
+    if (options.clarificationStore) {
+      this.clarificationStore = options.clarificationStore;
+    } else if (redisClient?.isConfiguredEnabled?.() === true) {
+      this.clarificationStore = new RedisClarificationStateStore(
+        redisClient,
+        `chat:clarification:${options.platform ?? 'default'}`,
+      );
+    } else {
+      this.clarificationStore = new MemoryClarificationStateStore();
+    }
+  }
 
   async reply(input: PlatformAgentInput): Promise<PlatformAgentReply> {
     return this.replyInternal(input);
+  }
+
+  async clearClarificationState(externalUserId: string): Promise<void> {
+    await this.clarificationStore.clear(this.clarificationKey(externalUserId));
+  }
+
+  async markClarificationDeliveryFailedForEvent(
+    externalUserId: string,
+    eventId?: string,
+  ): Promise<void> {
+    if (!eventId) return;
+    const key = this.clarificationKey(externalUserId);
+    const state = await this.clarificationStore.get(key);
+    if (state?.lastEventId !== eventId) return;
+    await this.clarificationStore.set(
+      key,
+      {
+        ...state,
+        version: state.version + 1,
+        lastDeliveryFailed: true,
+      },
+      state.version,
+    );
   }
 
   private async replyInternal(
@@ -79,20 +129,34 @@ export class PlatformAgentService {
       this.agent = this.buildAgent();
     }
 
-    const toolContext: PlatformAgentToolContext = {
-      externalUserId: input.externalUserId,
-      userId: input.userId,
-      userText: input.userText,
-      isServerChannel: input.isServerChannel,
-      privateDataFetched: false,
-      richFollowUps: [],
-      linkContext: input.linkContext,
-    };
-
     await this.options.onBeforeReply?.(input);
 
+    if (!/[\p{L}\p{N}]/u.test(input.userText)) {
+      this.recordClarificationOutcome('blocked_tool');
+      return this.staticReply(buildUnsupportedMessageTypeReply(), input);
+    }
+
+    const clarification = await this.handleClarification(input);
+    if (clarification.reply) {
+      return clarification.reply;
+    }
+    const effectiveInput = clarification.input ?? input;
+
+    const toolContext: PlatformAgentToolContext = {
+      externalUserId: effectiveInput.externalUserId,
+      userId: effectiveInput.userId,
+      userText: effectiveInput.userText,
+      isServerChannel: effectiveInput.isServerChannel,
+      privateDataFetched: false,
+      richFollowUps: [],
+      linkContext: effectiveInput.linkContext,
+    };
+
     const fastReschedule = this.options.tryFastReschedule
-      ? await this.options.tryFastReschedule(toolContext, input.userText)
+      ? await this.options.tryFastReschedule(
+          toolContext,
+          effectiveInput.userText,
+        )
       : null;
     if (fastReschedule) {
       return {
@@ -104,20 +168,20 @@ export class PlatformAgentService {
     }
 
     const history =
-      input.history ??
-      (await this.historyService.getHistory(input.externalUserId));
+      effectiveInput.history ??
+      (await this.historyService.getHistory(effectiveInput.externalUserId));
 
     const result = await this.agent.reply(
       {
-        externalUserId: input.externalUserId,
-        userId: input.userId,
-        userText: input.userText,
-        systemPrompt: await this.buildSystemPrompt(input),
+        externalUserId: effectiveInput.externalUserId,
+        userId: effectiveInput.userId,
+        userText: effectiveInput.userText,
+        systemPrompt: await this.buildSystemPrompt(effectiveInput),
         history: history as Parameters<
           LlmAgentService<PlatformAgentToolContext>['reply']
         >[0]['history'],
-        correlationId: input.correlationId,
-        signal: input.signal,
+        correlationId: effectiveInput.correlationId,
+        signal: effectiveInput.signal,
       },
       toolContext,
     );
@@ -126,10 +190,13 @@ export class PlatformAgentService {
     // when the model's reply omits them.
     const text = pinFactsToReply(result.text, toolContext.pinnedFacts ?? []);
 
-    if (this.options.appendHistory !== false && input.history === undefined) {
+    if (
+      this.options.appendHistory !== false &&
+      effectiveInput.history === undefined
+    ) {
       await this.historyService.appendTurn(
-        input.externalUserId,
-        input.userText,
+        effectiveInput.externalUserId,
+        effectiveInput.userText,
         text,
       );
     }
@@ -141,6 +208,242 @@ export class PlatformAgentService {
       exhausted: result.exhausted,
       toolSummary: result.toolSummary,
     };
+  }
+
+  private async handleClarification(input: PlatformAgentInput): Promise<{
+    input?: PlatformAgentInput;
+    reply?: PlatformAgentReply;
+  }> {
+    const key = this.clarificationKey(input.externalUserId);
+    const now = Date.now();
+
+    try {
+      let state = await this.clarificationStore.get(key);
+
+      if (
+        state &&
+        (this.clarificationMachine.isExpired(state, now) ||
+          state.userId !== input.userId)
+      ) {
+        this.recordClarificationOutcome(
+          this.clarificationMachine.isExpired(state, now)
+            ? 'expired'
+            : 'identity_reset',
+        );
+        const staleCleared = await this.clarificationStore.clear(
+          key,
+          state.version,
+        );
+        if (staleCleared === false) {
+          throw new Error('Clarification state version conflict');
+        }
+        state = null;
+      }
+
+      if (
+        state &&
+        input.correlationId &&
+        state.lastEventId === input.correlationId &&
+        state.lastReplyText &&
+        state.lastDeliveryFailed !== true
+      ) {
+        return {
+          reply: this.staticReply(state.lastReplyText, input, true),
+        };
+      }
+
+      if (this.clarificationMachine.isCancel(input.userText)) {
+        const cancelled = await this.clarificationStore.clear(
+          key,
+          state?.version,
+        );
+        if (state && cancelled === false) {
+          throw new Error('Clarification state version conflict');
+        }
+        this.recordClarificationOutcome('cancelled');
+        return {
+          reply: this.staticReply(buildClarificationCancelledMessage(), input),
+        };
+      }
+
+      const choice = state
+        ? this.clarificationMachine.parseChoice(input.userText)
+        : null;
+      if (state && choice) {
+        const consumed = await this.clarificationStore.clear(
+          key,
+          state.version,
+        );
+        if (consumed === false) {
+          this.recordClarificationOutcome('blocked_tool');
+          this.recordClarificationOutcome('replayed');
+          return {
+            reply: this.staticReply(buildClarificationMessage(), input),
+          };
+        }
+        this.recordClarificationOutcome('choice');
+        return {
+          input: {
+            ...input,
+            userText: this.buildChoicePrompt(choice),
+          },
+        };
+      }
+
+      const offTopic = isObviouslyOffTopic(input.userText);
+      const ambiguous =
+        isAmbiguousMessage(input.userText) ||
+        this.clarificationMachine.isContradictory(input.userText);
+
+      if (state && !offTopic && !ambiguous) {
+        // Clear a stale clarification before a new clear question reaches any
+        // tool path; an agent failure must not preserve old authority.
+        const cleared = await this.clarificationStore.clear(key, state.version);
+        if (cleared === false) {
+          throw new Error('Clarification state version conflict');
+        }
+        this.recordClarificationOutcome('new_question');
+        return { input };
+      }
+
+      if (state) {
+        const next = this.clarificationMachine.recordIrrelevant(state, now);
+        if (next.action === 'clear') {
+          this.recordClarificationOutcome('blocked_tool');
+          this.recordClarificationOutcome('max_reset');
+          const menuText = buildClarificationMessage();
+          const cleared = await this.clarificationStore.clear(
+            key,
+            state.version,
+          );
+          if (cleared === false) {
+            throw new Error('Clarification state version conflict');
+          }
+          return {
+            reply: this.staticReply(menuText, input),
+          };
+        }
+        const replyText = offTopic
+          ? buildWispaceScopeRedirectMessage()
+          : buildClarificationMessage();
+        const nextState = this.clarificationMachine.withReply(
+          next.state!,
+          input.correlationId,
+          replyText,
+        );
+        const updated = await this.clarificationStore.set(
+          key,
+          nextState,
+          state.version,
+        );
+        if (updated === false) {
+          const replay = await this.clarificationStore.get(key);
+          if (
+            replay &&
+            replay.lastEventId === input.correlationId &&
+            replay.lastReplyText
+          ) {
+            return {
+              reply: this.staticReply(replay.lastReplyText, input, true),
+            };
+          }
+          throw new Error('Clarification state version conflict');
+        }
+        this.recordClarificationOutcome(
+          next.action === 'reset_menu' ? 'reset_menu' : 'irrelevant_clarify',
+        );
+        this.recordClarificationOutcome('blocked_tool');
+        return {
+          reply: this.staticReply(replyText, input),
+        };
+      }
+
+      if (offTopic || ambiguous) {
+        const replyText = offTopic
+          ? buildWispaceScopeRedirectMessage()
+          : buildClarificationMessage();
+        const startedState = this.clarificationMachine.withReply(
+          this.clarificationMachine.start(now, input.userId),
+          input.correlationId,
+          replyText,
+        );
+        const started = await this.clarificationStore.set(key, startedState, 0);
+        if (started === false) {
+          const replay = await this.clarificationStore.get(key);
+          if (
+            replay &&
+            replay.lastEventId === input.correlationId &&
+            replay.lastReplyText
+          ) {
+            return {
+              reply: this.staticReply(replay.lastReplyText, input, true),
+            };
+          }
+          throw new Error('Clarification state version conflict');
+        }
+        this.recordClarificationOutcome(
+          offTopic ? 'started_offtopic' : 'started_ambiguous',
+        );
+        this.recordClarificationOutcome('blocked_tool');
+        return {
+          reply: this.staticReply(replyText, input),
+        };
+      }
+
+      return { input };
+    } catch (error) {
+      this.recordClarificationOutcome('unavailable');
+      this.recordClarificationOutcome('blocked_tool');
+      this.logger.error(
+        `Clarification state unavailable externalUserId=${maskExternalId(input.externalUserId)} error=${errorMessage(error)}`,
+      );
+      return {
+        reply: this.staticReply(buildClarificationUnavailableMessage(), input),
+      };
+    }
+  }
+
+  private recordClarificationOutcome(outcome: string): void {
+    try {
+      this.options.clarificationOutcomeInc?.(outcome);
+    } catch {
+      // Metrics must never change chat behavior.
+    }
+  }
+
+  private staticReply(
+    text: string,
+    input: PlatformAgentInput,
+    skipDelivery = false,
+  ): PlatformAgentReply {
+    return {
+      text,
+      privateDataFetched: false,
+      richFollowUps: [],
+      skipHistory: true,
+      clarification: true,
+      ...(input.correlationId
+        ? {
+            deliveryKey: `clarification:${this.options.platform ?? 'default'}:${input.correlationId}`,
+          }
+        : {}),
+      ...(skipDelivery ? { skipDelivery: true } : {}),
+    };
+  }
+
+  private buildChoicePrompt(choice: ClarificationChoice): string {
+    switch (choice) {
+      case 'progress':
+        return 'Mình muốn xem tiến độ học IELTS của mình.';
+      case 'schedule':
+        return 'Mình muốn xem lịch học sắp tới của mình.';
+      case 'reschedule':
+        return 'Mình muốn đổi lịch học.';
+    }
+  }
+
+  private clarificationKey(externalUserId: string): string {
+    return `${this.options.platform ?? 'default'}:${externalUserId}`;
   }
 
   private buildAgent(): LlmAgentService<PlatformAgentToolContext> {

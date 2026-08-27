@@ -36,7 +36,7 @@ import {
   PgAdvisoryLockService,
 } from '@wispace/bot-common/locks';
 import { BotCommonModule } from '@wispace/bot-common/guard';
-import { REDIS_CLIENT } from '@wispace/bot-common/redis';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
@@ -213,6 +213,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         adapter: LlmProviderAdapter,
         learnerProfileStore: LearnerProfileStorePort,
         metrics: BotMetricsService,
+        redisClient: RedisClientPort,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -226,6 +227,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           safetyEventService,
           adapter,
           {
+            platform: 'zalo',
             promptDir: join(__dirname, '../../shared/prompts'),
             promptFile: 'zalo-chat.system.txt',
             // Single retry layer — retryWithBackoff in PlatformAgentService
@@ -245,9 +247,12 @@ const RESCHEDULE_CONFIRM_SUFFIX =
               llmRoundOutcomeInc: (feature, outcome) =>
                 metrics.incRoundOutcome(feature, outcome),
             },
+            clarificationOutcomeInc: (outcome) =>
+              metrics.incClarificationOutcome(outcome),
             // Bounded admission telemetry (#389)
             llmAdmissionMetrics: metrics.llmAdmission,
           },
+          redisClient,
         );
       },
       inject: [
@@ -259,6 +264,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         'LLM_PROVIDER_ADAPTER',
         LEARNER_PROFILE_STORE,
         BotMetricsService,
+        REDIS_CLIENT,
       ],
     },
     {
@@ -271,6 +277,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         outboundService: ZaloOutboundService,
         queueStore: ChatQueueStorePort,
         accountLinkService: ZaloAccountLinkService,
+        metrics: BotMetricsService,
       ) => {
         const adapters = createChatPipelineAdapters(
           rateLimitService,
@@ -289,6 +296,15 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             // #397: fresh-mapping revalidation before pipeline flush
             freshMappingProvider: (externalUserId) =>
               accountLinkService.findUserIdByZaloId(externalUserId),
+            clarificationStateClearer: (externalUserId) =>
+              agentService.clearClarificationState(externalUserId),
+            clarificationDeliveryFailure: (externalUserId, eventId) =>
+              agentService.markClarificationDeliveryFailedForEvent(
+                externalUserId,
+                eventId,
+              ),
+            clarificationOutcomeInc: (outcome) =>
+              metrics.incClarificationOutcome(outcome),
           },
           queueStore,
         );
@@ -301,6 +317,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         ZaloOutboundService,
         PLATFORM_CHAT_QUEUE_STORE,
         ZaloAccountLinkService,
+        BotMetricsService,
       ],
     },
     {
@@ -489,6 +506,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
   ],
   exports: [
     'LLM_PROVIDER_ADAPTER',
+    PlatformAgentService,
     ZaloChatService,
     ZaloOutboundService,
     PlatformDeadLetterService,

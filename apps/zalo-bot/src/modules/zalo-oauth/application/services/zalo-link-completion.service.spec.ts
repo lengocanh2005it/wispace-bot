@@ -13,6 +13,7 @@ describe('ZaloLinkCompletionService', () => {
       verifyResult?: { valid: boolean; userId?: number };
       upsertError?: Error;
       upsertFailures?: number;
+      clearClarificationState?: jest.Mock;
     } = {},
   ) => {
     const exchangeCodeForZaloUser = jest
@@ -45,12 +46,16 @@ describe('ZaloLinkCompletionService', () => {
     } as unknown as ZaloLinkVerifyRecordRepositoryPort;
     const sendText = jest.fn().mockResolvedValue(undefined);
     const outboundService = { sendText } as never;
+    const clearClarificationState =
+      overrides.clearClarificationState ??
+      jest.fn().mockResolvedValue(undefined);
 
     const service = new ZaloLinkCompletionService(
       accountLinkService,
       tokenVerifyService,
       verifyRecordService,
       outboundService,
+      { clearClarificationState },
     );
     return {
       service,
@@ -60,12 +65,19 @@ describe('ZaloLinkCompletionService', () => {
       recordVerify,
       consumeRecord,
       sendText,
+      clearClarificationState,
     };
   };
 
   it('records a durable verify intent BEFORE the mapping upsert (#147)', async () => {
-    const { service, recordVerify, upsertLink, sendText, consumeRecord } =
-      buildService();
+    const {
+      service,
+      recordVerify,
+      upsertLink,
+      sendText,
+      consumeRecord,
+      clearClarificationState,
+    } = buildService();
 
     await service.completeLink('code-1', 'verifier-1', 'link-token');
 
@@ -81,6 +93,7 @@ describe('ZaloLinkCompletionService', () => {
     expect(sendText.mock.invocationCallOrder[0]).toBeGreaterThan(
       upsertLink.mock.invocationCallOrder[0],
     );
+    expect(clearClarificationState).toHaveBeenCalledWith('zalo-user-1');
   });
 
   it('retries the upsert on transient failure (token already consumed — must commit)', async () => {

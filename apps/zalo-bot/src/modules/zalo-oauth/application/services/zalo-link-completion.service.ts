@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { buildLinkSuccessMessage } from '@wispace/bot-common/messages';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { sleep } from '@wispace/bot-common/utils';
@@ -9,6 +9,12 @@ import {
   type ZaloLinkVerifyRecordRepositoryPort,
 } from '../../domain/ports/zalo-link-verify-record.repository.port';
 import { ZaloAccountLinkService } from './zalo-account-link.service';
+import { PlatformAgentService } from '@wispace/chat-agent';
+
+type ClarificationStateClearer = Pick<
+  PlatformAgentService,
+  'clearClarificationState'
+>;
 
 const UPSERT_MAX_ATTEMPTS = 3;
 const UPSERT_BASE_BACKOFF_MS = 500;
@@ -36,6 +42,9 @@ export class ZaloLinkCompletionService {
     @Inject(ZALO_LINK_VERIFY_RECORD_REPOSITORY)
     private readonly verifyRecordService: ZaloLinkVerifyRecordRepositoryPort,
     private readonly outboundService: ZaloOutboundService,
+    @Optional()
+    @Inject(PlatformAgentService)
+    private readonly clarificationAgent?: ClarificationStateClearer,
   ) {}
 
   /**
@@ -70,6 +79,17 @@ export class ZaloLinkCompletionService {
     );
 
     await this.retryUpsert(verifyResult.userId, zaloUser.id);
+    if (this.clarificationAgent) {
+      await this.clarificationAgent
+        .clearClarificationState(zaloUser.id)
+        .catch((error: unknown) => {
+          this.logger.warn(
+            `Zalo clarification state clear failed for zaloUserId=${maskExternalId(
+              zaloUser.id,
+            )}: ${errorMessage(error)}`,
+          );
+        });
+    }
 
     // Intent consumed — the mapping is committed (fire-and-forget; a race
     // leaves a record that the reconcile cron cleans up).

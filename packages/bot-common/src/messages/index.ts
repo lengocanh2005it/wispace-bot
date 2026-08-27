@@ -6,4 +6,5 @@ export {
   buildGreetingMessage,
   buildLinkSuccessMessage,
   buildSelfIntroMessage,
+  buildUnsupportedMessageTypeReply,
 } from './bot-messages';

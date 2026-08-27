@@ -7,6 +7,10 @@ export interface MessengerAgentReply {
   richFollowUps: MessengerRichFollowUp[];
   exhausted?: boolean;
   toolSummary?: string;
+  skipHistory?: boolean;
+  deliveryKey?: string;
+  clarification?: boolean;
+  skipDelivery?: boolean;
 }
 
 export interface MessengerAgentInput {

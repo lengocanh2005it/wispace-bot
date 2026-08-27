@@ -11,6 +11,7 @@ import { DopplerRuntimeSyncService } from '@wispace/doppler-sync';
 import type { DopplerWebhookPayload } from '@wispace/doppler-sync';
 import { PrivacyDataService } from '@wispace/database';
 import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
+import { PlatformAgentService } from '@wispace/chat-agent';
 
 class SyncStudyCalendarBody {
   @IsNumber()
@@ -33,6 +34,7 @@ export class ZaloOpsController extends PlatformOpsController<DopplerWebhookPaylo
     private readonly calendarService: WispaceCalendarService,
     dopplerRuntimeSyncService: DopplerRuntimeSyncService,
     privacyService: PrivacyDataService,
+    clarificationAgent: PlatformAgentService,
   ) {
     super({
       dopplerRuntimeSync: (body) =>
@@ -46,10 +48,15 @@ export class ZaloOpsController extends PlatformOpsController<DopplerWebhookPaylo
           platform: 'zalo',
           getSessions: createCalendarGetSessions(calendarService),
         }),
-      unlinkUser: (externalUserId) =>
-        privacyService.unlink('zalo', externalUserId),
-      deleteUser: (externalUserId) =>
-        privacyService.delete('zalo', externalUserId),
+      unlinkUser: async (externalUserId) => {
+        const result = await privacyService.unlink('zalo', externalUserId);
+        await clarificationAgent.clearClarificationState(externalUserId);
+        return result;
+      },
+      deleteUser: async (externalUserId) => {
+        await privacyService.delete('zalo', externalUserId);
+        await clarificationAgent.clearClarificationState(externalUserId);
+      },
       exportUser: (externalUserId) =>
         privacyService.export('zalo', externalUserId),
     });

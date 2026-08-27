@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   errorMessage,
@@ -70,11 +70,24 @@ export function isDiscordRetryableError(error: unknown): boolean {
 /** True when the error carries no delivery verdict — the provider may have
  * accepted the message before the failure (ambiguous outcome, #156). */
 export function isAmbiguousDeliveryError(error: unknown): boolean {
+  if (error instanceof DiscordDeliveryFailureError) {
+    return error.ambiguousDelivery;
+  }
   if (isAbortError(error)) {
     return (error as { name?: unknown } | null)?.name === 'TimeoutError';
   }
   const status = (error as { status?: unknown } | null)?.status;
   return typeof status !== 'number' && isDiscordNetworkError(error);
+}
+
+export class DiscordDeliveryFailureError extends Error {
+  constructor(
+    message: string,
+    readonly ambiguousDelivery: boolean,
+  ) {
+    super(message);
+    this.name = 'DiscordDeliveryFailureError';
+  }
 }
 
 /**
@@ -100,10 +113,19 @@ export class DiscordOutboundService {
     private readonly metrics?: BotMetricsService,
   ) {}
 
+  isAmbiguousDeliveryError(error: unknown): boolean {
+    return isAmbiguousDeliveryError(error);
+  }
+
   async sendText(
     discordUserId: string,
     text: string,
-    options?: { skipDeadLetter?: boolean; nonce?: string },
+    options?: {
+      skipDeadLetter?: boolean;
+      nonce?: string;
+      deliveryKey?: string;
+      clarification?: boolean;
+    },
   ): Promise<void> {
     const channelId = await this.sendTextAndGetChannelId(
       discordUserId,
@@ -132,10 +154,18 @@ export class DiscordOutboundService {
   async sendTextAndGetChannelId(
     discordUserId: string,
     text: string,
-    options?: { skipDeadLetter?: boolean; nonce?: string },
+    options?: {
+      skipDeadLetter?: boolean;
+      nonce?: string;
+      deliveryKey?: string;
+      clarification?: boolean;
+    },
   ): Promise<string | undefined> {
     const nonce =
-      options?.nonce ?? randomUUID().replaceAll('-', '').slice(0, 25);
+      options?.nonce ??
+      (options?.deliveryKey
+        ? this.toDiscordNonce(options.deliveryKey)
+        : randomUUID().replaceAll('-', '').slice(0, 25));
     const result = await this.sendCore(discordUserId, text, nonce);
     if (result.ok) {
       await this.deliveryLog?.logDelivery({
@@ -163,7 +193,7 @@ export class DiscordOutboundService {
       error: errorMsg,
       messageType: 'chat',
     });
-    if (options?.skipDeadLetter !== true) {
+    if (options?.skipDeadLetter !== true && options?.clarification !== true) {
       const persisted = await this.deadLetter?.save({
         externalUserId: discordUserId,
         rawPayload: { discordUserId, text },
@@ -178,7 +208,14 @@ export class DiscordOutboundService {
         );
       }
     }
-    return undefined;
+    throw new DiscordDeliveryFailureError(
+      `Discord DM delivery failed for ${maskExternalId(discordUserId)}`,
+      result.ambiguous,
+    );
+  }
+
+  private toDiscordNonce(deliveryKey: string): string {
+    return createHash('sha256').update(deliveryKey).digest('hex').slice(0, 25);
   }
 
   /**

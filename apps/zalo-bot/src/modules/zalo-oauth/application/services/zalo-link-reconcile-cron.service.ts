@@ -1,4 +1,5 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { Counter } from 'prom-client';
@@ -9,6 +10,7 @@ import {
   type ZaloLinkVerifyRecordRepositoryPort,
 } from '../../domain/ports/zalo-link-verify-record.repository.port';
 import { ZaloAccountLinkService } from './zalo-account-link.service';
+import { PlatformAgentService } from '@wispace/chat-agent';
 
 const DEFAULT_RECONCILE_AGE_MS = 120_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 10 * 60_000;
@@ -36,6 +38,7 @@ export class ZaloLinkReconcileCronService {
     private readonly accountLinkService: ZaloAccountLinkService,
     private readonly configService: ConfigService,
     private readonly pgLock: PgAdvisoryLockService,
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
@@ -116,6 +119,7 @@ export class ZaloLinkReconcileCronService {
           record.userId,
           record.zaloUserId,
         );
+        await this.clearClarificationState(record.zaloUserId);
         await this.verifyRecordService.consumeRecord(record.zaloUserId);
         reconciled += 1;
         reconcileRecordsTotal.inc({ outcome: 'reconciled' });
@@ -152,5 +156,18 @@ export class ZaloLinkReconcileCronService {
     return Number.isFinite(parsed) && parsed > 0
       ? Math.floor(parsed)
       : fallback;
+  }
+
+  private async clearClarificationState(zaloUserId: string): Promise<void> {
+    try {
+      const agent = this.moduleRef?.get(PlatformAgentService, {
+        strict: false,
+      });
+      await agent?.clearClarificationState(zaloUserId);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Zalo clarification state clear after link reconcile failed for zaloUserId=${maskExternalId(zaloUserId)}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }
