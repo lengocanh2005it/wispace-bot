@@ -5,6 +5,7 @@ import { checkLlmGrounding } from './utils/llm-grounding.utils';
 import {
   detectPromptInjection,
   sanitizeToolResultContent,
+  sanitizeUntrustedTextForLlm,
 } from './utils/prompt-injection.utils';
 import { isObviouslyOffTopic, isAmbiguousMessage } from './utils/scope.utils';
 import { sanitizeReplyText } from './utils/text.utils';
@@ -44,7 +45,7 @@ const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 10_000;
 const DEFAULT_GLOBAL_AGENT_TIMEOUT_MS = 60_000;
 const DEFAULT_COMPACTION_SUMMARY_MAX_TOKENS = 500;
 const DEFAULT_COMPACTION_RECENT_TURNS = 2;
-const COMPACTION_MIN_DROPPED_TURNS = 2;
+const COMPACTION_MIN_DROPPED_TOKENS = 100;
 const FEATURE = 'FREE_FORM_CHAT';
 
 /**
@@ -639,7 +640,7 @@ export class LlmAgentService<TToolContext> {
 
     // Collect entries that fit within budget (newest-first)
     const result: ChatHistoryMessage[] = [];
-    let droppedCount = 0;
+    let droppedTokens = 0;
     for (let i = redacted.length - 1; i >= 0; i--) {
       const entry = redacted[i];
       if (!entry) continue;
@@ -649,15 +650,15 @@ export class LlmAgentService<TToolContext> {
         result.unshift(entry);
         budget -= entryTokens;
       } else {
-        droppedCount++;
+        droppedTokens += entryTokens;
       }
     }
 
-    // #413: Semantic compaction — if enough entries were dropped, summarize them
+    // #413: Semantic compaction — if enough tokens were dropped, summarize them
     const compactionEnabled = this.getCompactionEnabled();
     const shouldCompact =
       compactionEnabled &&
-      droppedCount >= COMPACTION_MIN_DROPPED_TURNS * 2 &&
+      droppedTokens >= COMPACTION_MIN_DROPPED_TOKENS &&
       result.length > 0;
 
     if (shouldCompact) {
@@ -673,7 +674,7 @@ export class LlmAgentService<TToolContext> {
         logger.debug(
           `History compacted externalUserId=${maskExternalId(
             externalUserId,
-          )} dropped=${droppedCount} summary_tokens=${estimateTokens(
+          )} dropped_tokens=${droppedTokens} summary_tokens=${estimateTokens(
             compacted[0]?.content ?? '',
           )}`,
         );
@@ -684,9 +685,9 @@ export class LlmAgentService<TToolContext> {
           )}`,
         );
       }
-    } else if (droppedCount > 0) {
+    } else if (droppedTokens > 0) {
       logger.debug(
-        `History truncated at ${droppedCount} entries to stay within token budget externalUserId=${maskExternalId(
+        `History truncated ${droppedTokens} tokens to stay within budget externalUserId=${maskExternalId(
           externalUserId,
         )}`,
       );
@@ -712,7 +713,7 @@ export class LlmAgentService<TToolContext> {
 
     const summaryMaxTokens = this.getCompactionSummaryMaxTokens();
     const historyText = entries
-      .map((e) => `${e.role}: ${e.content}`)
+      .map((e) => `${e.role}: ${sanitizeUntrustedTextForLlm(e.content)}`)
       .join('\n');
 
     const compactionPrompt = `Summarize the following conversation history into a concise summary (max ${summaryMaxTokens} tokens). Include: intent, preferences, decisions, unresolved questions. Exclude: specific scores, dates, numbers, identity details, side-effect authorizations.

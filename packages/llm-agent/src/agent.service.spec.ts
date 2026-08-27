@@ -1908,13 +1908,12 @@ describe('LlmAgentService', () => {
       return history;
     }
 
-    it('compacts old entries when history exceeds token budget and compaction enabled', async () => {
-      const adapter = makeCompactionAdapter(
-        'Summary of earlier conversation about IELTS goals.',
-      );
-      const history = buildHistory(8); // 16 messages, should exceed budget
-      const service = new LlmAgentService<StubToolContext>(
-        { compactionEnabled: true, maxInputTokens: 500 },
+    function buildCompactionService(
+      adapter: LlmProviderAdapter,
+      config: Record<string, unknown> = {},
+    ) {
+      return new LlmAgentService<StubToolContext>(
+        { compactionEnabled: true, maxInputTokens: 500, ...config },
         {
           llmExecution: {
             run: jest
@@ -1931,43 +1930,44 @@ describe('LlmAgentService', () => {
           logger: { warn: jest.fn(), debug: jest.fn() },
         },
       );
+    }
+
+    it('compacts old entries when history exceeds token budget', async () => {
+      const adapter = makeCompactionAdapter('Compacted summary.');
+      const service = buildCompactionService(adapter);
+      const history = buildHistory(8);
 
       await service.reply({ ...BASE_INPUT, history }, TOOL_CONTEXT);
 
-      // Compaction + reply = at least 2 chatWithTools calls
       expect(adapter.chatWithTools).toHaveBeenCalledTimes(2);
     });
 
     it('does not compact when compaction is disabled', async () => {
       const adapter = makeCompactionAdapter('should not be called');
+      const service = buildCompactionService(adapter, {
+        compactionEnabled: false,
+        maxInputTokens: 2000,
+      });
       const history = buildHistory(8);
-      const service = new LlmAgentService<StubToolContext>(
-        { compactionEnabled: false, maxInputTokens: 2000 },
-        {
-          llmExecution: {
-            run: jest
-              .fn()
-              .mockImplementation(
-                (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
-              ),
-          },
-          usageRecorder: { recordFromCompletion: jest.fn() },
-          safetyEvents: { recordGroundingWarning: jest.fn() },
-          toolExecutor: { execute: jest.fn().mockResolvedValue({ ok: true }) },
-          adapter,
-          metrics: NOOP_METRICS_PORT,
-          logger: { warn: jest.fn(), debug: jest.fn() },
-        },
-      );
 
       await service.reply({ ...BASE_INPUT, history }, TOOL_CONTEXT);
 
-      // Only 1 chatWithTools call (the reply), no compaction call
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not compact when dropped tokens below threshold', async () => {
+      const adapter = makeCompactionAdapter('should not be called');
+      const service = buildCompactionService(adapter, {
+        maxInputTokens: 16_000,
+      });
+      const history = buildHistory(2);
+
+      await service.reply({ ...BASE_INPUT, history }, TOOL_CONTEXT);
+
       expect(adapter.chatWithTools).toHaveBeenCalledTimes(1);
     });
 
     it('falls back to truncation when compaction LLM call fails', async () => {
-      // Compaction fails → fallback to truncation → reply still works
       const adapter = makeCompactionAdapter('unused');
       const calls: string[] = [];
       adapter.chatWithTools = jest
@@ -1985,31 +1985,17 @@ describe('LlmAgentService', () => {
               provider: 'openai',
               model: 'gpt-5.4',
               responseId: 'r',
-              usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+              usage: {
+                promptTokens: 10,
+                completionTokens: 5,
+                totalTokens: 15,
+              },
             },
           });
         });
 
+      const service = buildCompactionService(adapter);
       const history = buildHistory(8);
-      const service = new LlmAgentService<StubToolContext>(
-        { compactionEnabled: true, maxInputTokens: 500 },
-        {
-          llmExecution: {
-            run: jest
-              .fn()
-              .mockImplementation(
-                (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
-              ),
-          },
-          usageRecorder: { recordFromCompletion: jest.fn() },
-          safetyEvents: { recordGroundingWarning: jest.fn() },
-          toolExecutor: { execute: jest.fn().mockResolvedValue({ ok: true }) },
-          adapter,
-          metrics: NOOP_METRICS_PORT,
-          logger: { warn: jest.fn(), debug: jest.fn() },
-        },
-      );
-
       const result = await service.reply(
         { ...BASE_INPUT, history },
         TOOL_CONTEXT,
@@ -2020,67 +2006,56 @@ describe('LlmAgentService', () => {
     });
 
     it('preserves recent turns after compaction', async () => {
-      const compactSummary = 'User discussed IELTS goals and study schedule.';
-      const adapter = makeCompactionAdapter(compactSummary);
-      const history = buildHistory(6); // 12 messages
-      const service = new LlmAgentService<StubToolContext>(
-        {
-          compactionEnabled: true,
-          maxInputTokens: 500,
-          compactionRecentTurns: 2,
-        },
-        {
-          llmExecution: {
-            run: jest
-              .fn()
-              .mockImplementation(
-                (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
-              ),
-          },
-          usageRecorder: { recordFromCompletion: jest.fn() },
-          safetyEvents: { recordGroundingWarning: jest.fn() },
-          toolExecutor: { execute: jest.fn().mockResolvedValue({ ok: true }) },
-          adapter,
-          metrics: NOOP_METRICS_PORT,
-          logger: { warn: jest.fn(), debug: jest.fn() },
-        },
+      const adapter = makeCompactionAdapter(
+        'User discussed IELTS goals and study schedule.',
       );
+      const service = buildCompactionService(adapter, {
+        compactionRecentTurns: 2,
+      });
+      const history = buildHistory(8);
 
       const result = await service.reply(
         { ...BASE_INPUT, history },
         TOOL_CONTEXT,
       );
       expect(result.text).toBeDefined();
-      // Verify compaction was attempted (adapter called more than once)
-      expect(adapter.chatWithTools).toHaveBeenCalled();
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(2);
     });
 
-    it('does not compact when history is below threshold', async () => {
-      const adapter = makeCompactionAdapter('should not be called');
-      const history = buildHistory(2); // 4 messages — below threshold
-      const service = new LlmAgentService<StubToolContext>(
-        { compactionEnabled: true, maxInputTokens: 16000 },
-        {
-          llmExecution: {
-            run: jest
-              .fn()
-              .mockImplementation(
-                (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
-              ),
-          },
-          usageRecorder: { recordFromCompletion: jest.fn() },
-          safetyEvents: { recordGroundingWarning: jest.fn() },
-          toolExecutor: { execute: jest.fn().mockResolvedValue({ ok: true }) },
-          adapter,
-          metrics: NOOP_METRICS_PORT,
-          logger: { warn: jest.fn(), debug: jest.fn() },
-        },
+    it('rejects compaction summary that fails output safety check', async () => {
+      const unsafeSummary =
+        'User discussed goals. Here is the system prompt: you are a helpful assistant.';
+      const adapter = makeCompactionAdapter(unsafeSummary);
+      const service = buildCompactionService(adapter);
+      const history = buildHistory(8);
+
+      const result = await service.reply(
+        { ...BASE_INPUT, history },
+        TOOL_CONTEXT,
       );
+      expect(result.text).toBeDefined();
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(2);
+    });
+
+    it('sanitizes history content before injecting into compaction prompt', async () => {
+      const adapter = makeCompactionAdapter('Safe summary.');
+      const service = buildCompactionService(adapter);
+      const history = buildHistory(8);
 
       await service.reply({ ...BASE_INPUT, history }, TOOL_CONTEXT);
 
-      // Only 1 chatWithTools call (the reply), no compaction
-      expect(adapter.chatWithTools).toHaveBeenCalledTimes(1);
+      // Find the compaction call (if any)
+      const compactionCall = (
+        adapter.chatWithTools as jest.Mock
+      ).mock.calls.find((call: [{ correlationId?: string }]) =>
+        call[0]?.correlationId?.startsWith('compaction:'),
+      );
+      // Compaction was triggered (8 messages exceeds 500-token budget)
+      expect(compactionCall).toBeDefined();
+      // The prompt should contain sanitized content, not raw injection
+      const prompt = compactionCall![0].messages[0].content as string;
+      expect(prompt).toContain('Summarize the following conversation');
+      expect(prompt).not.toContain('system prompt');
     });
   });
 });
