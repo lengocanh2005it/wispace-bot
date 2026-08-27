@@ -2057,5 +2057,97 @@ describe('LlmAgentService', () => {
       expect(prompt).toContain('Summarize the following conversation');
       expect(prompt).not.toContain('system prompt');
     });
+    it('strips factual data from compaction summary (scores, dates)', async () => {
+      // Summary with scores and dates — should be sanitized
+      const rawSummary =
+        'User discussed IELTS goals. Target band 6.5, exam date 15/3/2024. Points Listening: 6.0. Score 7.0 writing.';
+      const adapter = makeCompactionAdapter(rawSummary);
+      const service = buildCompactionService(adapter);
+      const history = buildHistory(8);
+
+      await service.reply({ ...BASE_INPUT, history }, TOOL_CONTEXT);
+
+      const compactionCall = (
+        adapter.chatWithTools as jest.Mock
+      ).mock.calls.find((call: [{ correlationId?: string }]) =>
+        call[0]?.correlationId?.startsWith('compaction:'),
+      );
+      expect(compactionCall).toBeDefined();
+    });
+
+    it('calls compactionOutcomeInc metric on compaction', async () => {
+      const adapter = makeCompactionAdapter(
+        'User discussed their IELTS study goals and preferences for evening sessions.',
+      );
+      const compactionOutcomeInc = jest.fn();
+      const service = new LlmAgentService<StubToolContext>(
+        { compactionEnabled: true, maxInputTokens: 500 },
+        {
+          llmExecution: {
+            run: jest
+              .fn()
+              .mockImplementation(
+                (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
+              ),
+          },
+          usageRecorder: { recordFromCompletion: jest.fn() },
+          safetyEvents: { recordGroundingWarning: jest.fn() },
+          toolExecutor: { execute: jest.fn().mockResolvedValue({ ok: true }) },
+          adapter,
+          metrics: { ...NOOP_METRICS_PORT, compactionOutcomeInc },
+          logger: { warn: jest.fn(), debug: jest.fn() },
+        },
+      );
+      const history = buildHistory(8);
+
+      await service.reply({ ...BASE_INPUT, history }, TOOL_CONTEXT);
+
+      expect(compactionOutcomeInc).toHaveBeenCalledWith('compacted');
+    });
+
+    it('calls compactionOutcomeInc with fallback when LLM fails', async () => {
+      const adapter = makeCompactionAdapter('unused');
+      adapter.chatWithTools = jest
+        .fn()
+        .mockImplementation((params: { correlationId?: string }) => {
+          if (params.correlationId?.startsWith('compaction:')) {
+            return Promise.reject(new Error('fail'));
+          }
+          return Promise.resolve({
+            message: { role: 'assistant', content: 'OK' },
+            content: 'OK',
+            metadata: {
+              provider: 'openai',
+              model: 'gpt-5.4',
+              responseId: 'r',
+              usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+            },
+          });
+        });
+      const compactionOutcomeInc = jest.fn();
+      const service = new LlmAgentService<StubToolContext>(
+        { compactionEnabled: true, maxInputTokens: 500 },
+        {
+          llmExecution: {
+            run: jest
+              .fn()
+              .mockImplementation(
+                (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
+              ),
+          },
+          usageRecorder: { recordFromCompletion: jest.fn() },
+          safetyEvents: { recordGroundingWarning: jest.fn() },
+          toolExecutor: { execute: jest.fn().mockResolvedValue({ ok: true }) },
+          adapter,
+          metrics: { ...NOOP_METRICS_PORT, compactionOutcomeInc },
+          logger: { warn: jest.fn(), debug: jest.fn() },
+        },
+      );
+      const history = buildHistory(8);
+
+      await service.reply({ ...BASE_INPUT, history }, TOOL_CONTEXT);
+
+      expect(compactionOutcomeInc).toHaveBeenCalledWith('fallback');
+    });
   });
 });

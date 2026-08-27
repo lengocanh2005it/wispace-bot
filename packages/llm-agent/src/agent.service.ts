@@ -671,6 +671,7 @@ export class LlmAgentService<TToolContext> {
       if (compacted) {
         const recentTurns = this.getCompactionRecentTurns();
         result.splice(0, result.length - recentTurns * 2, ...compacted);
+        this.ports.metrics?.compactionOutcomeInc?.('compacted');
         logger.debug(
           `History compacted externalUserId=${maskExternalId(
             externalUserId,
@@ -679,6 +680,7 @@ export class LlmAgentService<TToolContext> {
           )}`,
         );
       } else {
+        this.ports.metrics?.compactionOutcomeInc?.('fallback');
         logger.warn(
           `History compaction failed, falling back to truncation externalUserId=${maskExternalId(
             externalUserId,
@@ -686,6 +688,7 @@ export class LlmAgentService<TToolContext> {
         );
       }
     } else if (droppedTokens > 0) {
+      this.ports.metrics?.compactionOutcomeInc?.('skipped');
       logger.debug(
         `History truncated ${droppedTokens} tokens to stay within budget externalUserId=${maskExternalId(
           externalUserId,
@@ -752,10 +755,21 @@ Summary:`;
         return null;
       }
 
+      // AC#3: Strip factual data that should not be in summary (scores, dates, numbers)
+      const sanitized = this.sanitizeCompactionSummary(summaryText);
+      if (!sanitized) {
+        logger.warn(
+          `Compaction summary stripped to empty externalUserId=${maskExternalId(
+            externalUserId,
+          )}`,
+        );
+        return null;
+      }
+
       return [
         {
           role: 'tool_summary' as const,
-          content: `[Compacted summary of ${entries.length} earlier messages] ${summaryText}`,
+          content: `[Compacted summary of ${entries.length} earlier messages] ${sanitized}`,
         },
       ];
     } catch (error) {
@@ -766,6 +780,40 @@ Summary:`;
       );
       return null;
     }
+  }
+
+  /**
+   * #413 AC#3 — Strip factual data from compaction summary that should not be
+   * treated as authoritative (scores, dates, specific numbers). Returns null
+   * if the summary becomes empty after stripping (caller falls back to
+   * truncation).
+   */
+  private sanitizeCompactionSummary(summary: string): string | null {
+    const sanitized = summary
+      // Band scores: "band 6.0", "6.5 band", "band score 7.0"
+      .replace(/\bband\s*\d+\.?\d*\b/gi, '')
+      .replace(/\d+\.?\d*\s*band\b/gi, '')
+      // IELTS scores: "IELTS 6.5", "6.5 IELTS"
+      .replace(/\bielts\s*\d+\.?\d*\b/gi, '')
+      .replace(/\d+\.?\d*\s*ielts\b/gi, '')
+      // Dates: DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD, "ngày 15/3"
+      .replace(/\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/g, '')
+      .replace(/\b\d{4}[/-]\d{1,2}[/-]\d{1,2}\b/g, '')
+      .replace(/ngày\s*\d{1,2}[/-]\d{1,2}/gi, '')
+      // Specific scores: "điểm 6.5", "score 7.0", "score: 6.0"
+      .replace(/(?:điểm|score|diem)\s*:\s*\d+\.?\d*/gi, '')
+      .replace(/\d+\.?\d*\s*(?:điểm|score|diem)/gi, '')
+      // Target scores: "target 6.5", "target: 7.0"
+      .replace(/\btarget\s*:\s*\d+\.?\d*/gi, '')
+      .replace(/\btarget\s+\d+\.?\d*/gi, '')
+      // Clean up extra whitespace
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    if (sanitized.length < 10) {
+      return null;
+    }
+    return sanitized;
   }
 
   private getMaxInputTokens(): number {
