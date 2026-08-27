@@ -28,6 +28,54 @@ groups:
           summary: 'No bot metrics being scraped at all'
           description: 'Every scrape target is down — check the bots and Prometheus connectivity.'
 
+      - alert: WebhookInboundBacklogGrowing
+        expr: (messenger_webhook_inbound_backlog or discord_webhook_inbound_backlog or zalo_webhook_inbound_backlog) > 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} inbound webhook backlog growing'
+          description: '{{ $labels.job }} has {{ $value }} webhook events waiting for retry for 5 minutes.'
+
+      - alert: LlmAdmissionSaturated
+        expr: |
+          (
+            sum(rate(messenger_llm_admission_rejected_total[5m])) by (job)
+            or sum(rate(discord_llm_admission_rejected_total[5m])) by (job)
+            or sum(rate(zalo_llm_admission_rejected_total[5m])) by (job)
+          ) > 0
+          or
+          (messenger_llm_admission_queue_depth or discord_llm_admission_queue_depth or zalo_llm_admission_queue_depth) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} LLM admission queue saturated'
+          description: '{{ $labels.job }} is shedding LLM calls or admission queue depth is high (>10).'
+
+      - alert: DbCircuitBreakerOpen
+        expr: (messenger_db_circuit_breaker_state or discord_db_circuit_breaker_state or zalo_db_circuit_breaker_state) == 2
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.job }} database circuit breaker is OPEN'
+          description: 'Database circuit breaker tripped to open state on {{ $labels.job }}.'
+
+      - alert: StudyReminderFailuresHigh
+        expr: |
+          (
+            sum(rate(messenger_reminder_dispatch_total{status="failed"}[15m])) by (job)
+            or sum(rate(discord_reminder_dispatch_total{status="failed"}[15m])) by (job)
+            or sum(rate(zalo_reminder_dispatch_total{status="failed"}[15m])) by (job)
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} study reminder failure rate elevated'
+          description: '{{ $labels.job }} is failing study reminder dispatches.'
+
   - name: slos
     rules:
       - alert: ChatAvailabilityLow

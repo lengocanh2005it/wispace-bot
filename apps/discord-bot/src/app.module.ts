@@ -16,6 +16,7 @@ import { DiscordStudyReminderModule } from './modules/discord-study-reminder/dis
 import { DiscordOpsModule } from './modules/discord-ops/discord-ops.module';
 import { createMetricsModule } from '@wispace/bot-metrics';
 import { HealthController } from '@wispace/bot-common/health';
+import { OpsHealthModule } from '@wispace/ops-health';
 
 @Module({
   controllers: [HealthController],
@@ -52,6 +53,7 @@ import { HealthController } from '@wispace/bot-common/health';
     DiscordStudyReminderModule,
     DiscordOpsModule,
     createMetricsModule('discord', 'discord-bot'),
+    OpsHealthModule.forPlatform('discord'),
   ],
   providers: [
     {

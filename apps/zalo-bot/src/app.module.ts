@@ -17,6 +17,7 @@ import { ZaloStudyReminderModule } from './modules/zalo-study-reminder/zalo-stud
 import { ZaloReportModule } from './modules/zalo-chat/zalo-report.module';
 import { ZaloOpsModule } from './modules/zalo-ops/zalo-ops.module';
 import { createMetricsModule } from '@wispace/bot-metrics';
+import { OpsHealthModule } from '@wispace/ops-health';
 
 @Module({
   controllers: [HealthController],
@@ -42,6 +43,7 @@ import { createMetricsModule } from '@wispace/bot-metrics';
     ZaloReportModule,
     ZaloOpsModule,
     createMetricsModule('zalo', 'zalo-bot'),
+    OpsHealthModule.forPlatform('zalo'),
   ],
   providers: [
     {

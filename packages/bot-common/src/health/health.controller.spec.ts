@@ -1,13 +1,17 @@
 import type { DataSource } from 'typeorm';
 import { InternalApiKeyGuard } from '../guard/internal-api-key.guard';
 import type { RedisClientPort } from '../redis/redis.client.port';
-import { HealthController } from './health.controller';
+import {
+  HealthController,
+  type OpsHealthServicePort,
+} from './health.controller';
 
 describe('HealthController', () => {
   const build = (
     overrides: {
       dataSource?: Partial<DataSource>;
       redisClient?: Partial<RedisClientPort>;
+      opsHealthService?: Partial<OpsHealthServicePort>;
     } = {},
   ) => {
     const query = jest.fn().mockResolvedValue([{ '?column?': 1 }]);
@@ -21,8 +25,15 @@ describe('HealthController', () => {
       ping: jest.fn().mockResolvedValue('PONG'),
       ...overrides.redisClient,
     } as unknown as RedisClientPort;
+    const opsHealthService = overrides.opsHealthService as
+      | OpsHealthServicePort
+      | undefined;
     return {
-      controller: new HealthController(dataSource, redisClient),
+      controller: new HealthController(
+        dataSource,
+        redisClient,
+        opsHealthService,
+      ),
       query,
       redisClient,
     };
@@ -100,6 +111,37 @@ describe('HealthController', () => {
       });
       expect(await controller.readiness()).toEqual({ status: 'ok' });
     });
+
+    it('delegates to opsHealthService when provided and returns ok when ready', async () => {
+      const opsHealthService: OpsHealthServicePort = {
+        isApplicationReady: jest
+          .fn()
+          .mockResolvedValue({ ready: true, status: 'ok' }),
+        collectSnapshot: jest.fn(),
+      };
+      const { controller } = build({ opsHealthService });
+
+      expect(await controller.readiness()).toEqual({ status: 'ok' });
+      expect(opsHealthService.isApplicationReady).toHaveBeenCalled();
+    });
+
+    it('throws 503 when opsHealthService reports not ready without leaking reason publicly', async () => {
+      const opsHealthService: OpsHealthServicePort = {
+        isApplicationReady: jest.fn().mockResolvedValue({
+          ready: false,
+          status: 'error',
+          reason: 'webhook_inbound_stuck_age_1200s',
+        }),
+        collectSnapshot: jest.fn(),
+      };
+      const { controller } = build({ opsHealthService });
+
+      const error = await controller.readiness().catch((e: unknown) => e);
+      expect(error).toHaveProperty('status', 503);
+      expect((error as { getResponse(): unknown }).getResponse()).toEqual({
+        status: 'error',
+      });
+    });
   });
 
   describe('detail (internal GET /health/detail)', () => {
@@ -163,6 +205,22 @@ describe('HealthController', () => {
         database: 'connected',
         redis: 'unreachable',
       });
+    });
+
+    it('returns full snapshot from opsHealthService when provided', async () => {
+      const snapshot = {
+        status: 'ok',
+        infrastructure: { database: 'connected', redis: 'connected' },
+        queues: { webhookInbound: { pendingCount: 0 } },
+      };
+      const opsHealthService: OpsHealthServicePort = {
+        isApplicationReady: jest.fn(),
+        collectSnapshot: jest.fn().mockResolvedValue(snapshot),
+      };
+      const { controller } = build({ opsHealthService });
+
+      expect(await controller.detail()).toEqual(snapshot);
+      expect(opsHealthService.collectSnapshot).toHaveBeenCalled();
     });
   });
 });

@@ -65,4 +65,68 @@ describe('TypeormOpsHealthRepository', () => {
     expect(summary.terminalFailedSince).toBe(1);
     expect(summary.stuckProcessing).toBe(1);
   });
+
+  it('queries webhook inbound summary correctly', async () => {
+    const query = jest.fn().mockResolvedValue([
+      {
+        pending_count: 5,
+        failed_count: 2,
+        stuck_processing_count: 1,
+        oldest_pending_age_seconds: 120,
+      },
+    ]);
+    const repo = buildRepo('messenger', () => 15, query);
+
+    const summary = await repo.getWebhookInboundSummary();
+
+    expect(summary).toEqual({
+      pendingCount: 5,
+      failedCount: 2,
+      stuckProcessingCount: 1,
+      oldestPendingAgeSeconds: 120,
+    });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('FROM webhook_inbound_events'),
+      ['messenger'],
+    );
+  });
+
+  it('queries dead letter summary correctly', async () => {
+    const query = jest.fn().mockResolvedValue([
+      {
+        pending_count: 3,
+        failed_count: 1,
+        oldest_pending_age_seconds: 300,
+      },
+    ]);
+    const repo = buildRepo('discord', () => 15, query);
+
+    const summary = await repo.getDeadLetterSummary();
+
+    expect(summary).toEqual({
+      outboundPendingCount: 3,
+      outboundFailedCount: 1,
+      oldestPendingAgeSeconds: 300,
+    });
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('FROM webhook_dead_letters'),
+      ['discord'],
+    );
+  });
+
+  it('queries LLM safety warnings with passed since date', async () => {
+    const query = jest.fn().mockResolvedValue([{ count: 7 }]);
+    const repo = buildRepo('zalo', () => 15, query);
+    const since = new Date('2026-08-27T00:00:00.000Z');
+
+    const count = await repo.getLlmSafetyWarningsCount(since);
+
+    expect(count).toBe(7);
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'FROM llm_safety_events WHERE platform = $1 AND created_at > $2',
+      ),
+      ['zalo', since],
+    );
+  });
 });

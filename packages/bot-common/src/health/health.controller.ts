@@ -3,6 +3,7 @@ import {
   Get,
   Inject,
   Logger,
+  Optional,
   ServiceUnavailableException,
   UseGuards,
 } from '@nestjs/common';
@@ -16,6 +17,18 @@ export interface HealthDetail {
   status: 'ok' | 'error';
   database: 'connected' | 'disconnected' | 'unknown';
   redis: 'connected' | 'disabled' | 'error' | 'unreachable' | 'unknown';
+  [key: string]: unknown;
+}
+
+export const OPS_HEALTH_SERVICE = Symbol('OPS_HEALTH_SERVICE');
+
+export interface OpsHealthServicePort {
+  collectSnapshot(): Promise<Record<string, unknown>>;
+  isApplicationReady(): Promise<{
+    ready: boolean;
+    status: string;
+    reason?: string;
+  }>;
 }
 
 /**
@@ -40,6 +53,9 @@ export class HealthController {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     @Inject(REDIS_CLIENT) private readonly redisClient: RedisClientPort,
+    @Optional()
+    @Inject(OPS_HEALTH_SERVICE)
+    private readonly opsHealthService?: OpsHealthServicePort,
   ) {}
 
   /**
@@ -58,6 +74,17 @@ export class HealthController {
    */
   @Get('ready')
   async readiness(): Promise<{ status: 'ok' }> {
+    if (this.opsHealthService) {
+      const readyResult = await this.opsHealthService.isApplicationReady();
+      if (!readyResult.ready) {
+        this.logger.warn(
+          `Application readiness failed: ${readyResult.reason ?? 'unknown'}`,
+        );
+        throw new ServiceUnavailableException({ status: 'error' });
+      }
+      return { status: 'ok' };
+    }
+
     const detail = await this.checkDetail();
     if (detail.status === 'error') {
       throw new ServiceUnavailableException({ status: 'error' });
@@ -71,7 +98,10 @@ export class HealthController {
    */
   @Get('detail')
   @UseGuards(InternalApiKeyGuard)
-  async detail(): Promise<HealthDetail> {
+  async detail(): Promise<HealthDetail | Record<string, unknown>> {
+    if (this.opsHealthService) {
+      return this.opsHealthService.collectSnapshot();
+    }
     return this.checkDetail();
   }
 

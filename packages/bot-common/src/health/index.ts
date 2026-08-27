@@ -1,4 +1,9 @@
-export { HealthController } from './health.controller';
+export {
+  HealthController,
+  OPS_HEALTH_SERVICE,
+  type OpsHealthServicePort,
+  type HealthDetail,
+} from './health.controller';
 export {
   PlatformOpsController,
   PrivacyActionBody,
