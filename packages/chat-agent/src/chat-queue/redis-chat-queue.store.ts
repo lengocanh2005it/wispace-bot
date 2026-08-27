@@ -248,6 +248,23 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     });
   }
 
+  async scheduleRetryFlush(
+    externalUserId: string,
+    retryDelayMs: number,
+  ): Promise<void> {
+    await this.withExternalUserIdLock(externalUserId, async (client) => {
+      const state = await this.readState(client, externalUserId);
+
+      const retryTexts = [...state.processingTexts, ...state.pendingTexts];
+      if (retryTexts.length === 0) {
+        return;
+      }
+
+      this.resetToReady(state, retryTexts, Date.now() + retryDelayMs);
+      await this.writeState(client, externalUserId, state);
+    });
+  }
+
   async completeChatBuffer(input: CompleteChatBufferInput): Promise<boolean> {
     return (
       (await this.withExternalUserIdLock(
@@ -258,17 +275,10 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
           const flushAfterAt =
             pendingTexts.length > 0 ? Date.now() + input.debounceMs : null;
 
-          state.processing = false;
-          state.processingStartedAt = null;
-          // The claimed batch was flushed — clear the recoverable in-flight copy (#176).
-          state.processingTexts = [];
-          state.texts = pendingTexts;
-          state.pendingTexts = [];
+          this.resetToReady(state, pendingTexts, flushAfterAt);
           state.lastIdempotencyKey = state.lastPendingIdempotencyKey ?? null;
           state.lastPendingIdempotencyKey = null;
-          state.flushAfterAt = flushAfterAt;
           state.droppedNoticePending = null;
-          state.updatedAt = Date.now();
 
           await this.writeState(client, input.externalUserId, state);
           return pendingTexts.length > 0;
@@ -529,6 +539,20 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       .sort((left, right) => left.score - right.score)
       .slice(0, limit)
       .map((entry) => entry.externalUserId);
+  }
+
+  private resetToReady(
+    state: RedisChatQueueBufferState,
+    texts: string[],
+    flushAfterAt: number | null,
+  ): void {
+    state.processing = false;
+    state.processingStartedAt = null;
+    state.processingTexts = [];
+    state.texts = texts;
+    state.pendingTexts = [];
+    state.flushAfterAt = flushAfterAt;
+    state.updatedAt = Date.now();
   }
 
   private bufferKey(externalUserId: string): string {

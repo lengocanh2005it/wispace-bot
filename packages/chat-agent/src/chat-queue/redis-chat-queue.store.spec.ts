@@ -121,6 +121,107 @@ describe('RedisChatQueueStore', () => {
     expect(recovered?.texts).toEqual(['accepted']);
   });
 
+  describe('scheduleRetryFlush', () => {
+    it('moves processingTexts back to texts with flushAfterAt delay', async () => {
+      let persistedState: string | null = JSON.stringify({
+        texts: [],
+        pendingTexts: [],
+        processingTexts: ['hello', 'world'],
+        processing: true,
+        processingStartedAt: Date.now(),
+        flushAfterAt: null,
+        lastIdempotencyKey: 'mid-1',
+        lastPendingIdempotencyKey: null,
+        idempotencyKeys: ['mid-1'],
+      });
+      const transaction = createTransaction();
+      transaction.set.mockImplementation((_key: string, value: string) => {
+        persistedState = value;
+        return transaction;
+      });
+      const client = createClient(
+        jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+        transaction,
+      );
+      const store = createStore(client, 'discord');
+
+      await store.scheduleRetryFlush('discord-1', 5000);
+
+      const written = JSON.parse(persistedState ?? '{}') as {
+        texts: string[];
+        processingTexts: string[];
+        processing: boolean;
+        flushAfterAt: number | null;
+      };
+      expect(written.texts).toEqual(['hello', 'world']);
+      expect(written.processingTexts).toEqual([]);
+      expect(written.processing).toBe(false);
+      expect(written.flushAfterAt).toBeGreaterThan(Date.now() - 1000);
+      expect(written.flushAfterAt).toBeLessThanOrEqual(Date.now() + 5100);
+    });
+
+    it('no-ops when processingTexts is empty', async () => {
+      const persistedState: string | null = JSON.stringify({
+        texts: [],
+        pendingTexts: [],
+        processingTexts: [],
+        processing: true,
+        processingStartedAt: Date.now(),
+        flushAfterAt: null,
+        lastIdempotencyKey: null,
+        lastPendingIdempotencyKey: null,
+        idempotencyKeys: [],
+      });
+      const transaction = createTransaction();
+      const writeSpy = transaction.set;
+      const client = createClient(
+        jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+        transaction,
+      );
+      const store = createStore(client, 'discord');
+
+      await store.scheduleRetryFlush('discord-1', 5000);
+
+      // No state write should happen when there's nothing to retry
+      expect(writeSpy).not.toHaveBeenCalled();
+    });
+
+    it('includes pendingTexts in the retry batch', async () => {
+      let persistedState: string | null = JSON.stringify({
+        texts: [],
+        pendingTexts: ['pending-msg'],
+        processingTexts: ['claimed-msg'],
+        processing: true,
+        processingStartedAt: Date.now(),
+        flushAfterAt: null,
+        lastIdempotencyKey: 'mid-1',
+        lastPendingIdempotencyKey: 'mid-2',
+        idempotencyKeys: ['mid-1', 'mid-2'],
+      });
+      const transaction = createTransaction();
+      transaction.set.mockImplementation((_key: string, value: string) => {
+        persistedState = value;
+        return transaction;
+      });
+      const client = createClient(
+        jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+        transaction,
+      );
+      const store = createStore(client, 'zalo');
+
+      await store.scheduleRetryFlush('zalo-1', 5000);
+
+      const written = JSON.parse(persistedState ?? '{}') as {
+        texts: string[];
+        pendingTexts: string[];
+        processingTexts: string[];
+      };
+      expect(written.texts).toEqual(['claimed-msg', 'pending-msg']);
+      expect(written.pendingTexts).toEqual([]);
+      expect(written.processingTexts).toEqual([]);
+    });
+  });
+
   it('treats a duplicate idempotency key as a successful no-op', async () => {
     let persistedState: string | null = null;
     const transaction = createTransaction();

@@ -15,4 +15,5 @@ export interface ChatQueueStorePort {
   ): Promise<ChatQueueBufferSnapshot | null>;
   completeChatBuffer(input: CompleteChatBufferInput): Promise<boolean>;
   listPsidsReadyForFlush(limit: number): Promise<string[]>;
+  scheduleRetryFlush(psid: string, retryDelayMs: number): Promise<void>;
 }

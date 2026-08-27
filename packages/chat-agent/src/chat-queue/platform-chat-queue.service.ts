@@ -28,6 +28,7 @@ import type { ChatQueueStorePort } from './chat-queue-store.port';
 
 const DEFAULT_DEBOUNCE_MS = 2000;
 const DEFAULT_PROCESSING_STUCK_MS = 300_000;
+const DEFAULT_FLUSH_RETRY_DELAY_MS = 5_000;
 const REDIS_AVAILABILITY_WAIT_MS = 5_000;
 const REDIS_AVAILABILITY_POLL_MS = 50;
 const STALE_TTL_MS = 60 * 60 * 1000;
@@ -37,6 +38,11 @@ const PENDING_MESSAGE =
   'Đang xử lý tin nhắn trước, vui lòng chờ trong giây lát...';
 const DROPPED_MESSAGE =
   'Bạn gửi hơi nhiều tin quá, mình chỉ xử lý được phần đầu thôi nhé';
+
+/** Pending batch texts keyed by externalUserId — used by onError hook for #406 retry. */
+const pendingBatchTexts = new Map<string, string[]>();
+/** Users who received a fallback in the current processing cycle. Prevents duplicate fallbacks on retry. Exported for testing. */
+export const fallbackSentThisCycle = new Set<string>();
 
 interface QueueCtx {
   userId?: number;
@@ -56,6 +62,8 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly debounceMs: number;
   private readonly processingStuckMs: number;
   private readonly droppedNotified = new Set<string>();
+  private readonly retryEnabled: boolean;
+  private readonly retryDelayMs: number;
   private readonly directTextSender: {
     sendText(externalUserId: string, text: string): Promise<void>;
   };
@@ -100,6 +108,14 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
       DEFAULT_PROCESSING_STUCK_MS,
     );
 
+    this.retryEnabled =
+      configService.get<string>('CHAT_FLUSH_RETRY_ENABLED')?.toLowerCase() ===
+      'true';
+    this.retryDelayMs = this.readPositiveNumber(
+      configService.get<string>('CHAT_FLUSH_RETRY_DELAY_MS'),
+      DEFAULT_FLUSH_RETRY_DELAY_MS,
+    );
+
     const maxPendingSize =
       configService.get<string>('CHAT_MAX_PENDING_MESSAGES') === '0'
         ? Number.MAX_SAFE_INTEGER
@@ -140,10 +156,14 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
           return;
         }
         try {
-          await directTextSender.sendText(
-            ctx.externalUserId,
-            CHAT_FAILURE_FALLBACK_MESSAGE,
-          );
+          // #406: Only send fallback once per processing cycle.
+          if (!fallbackSentThisCycle.has(ctx.externalUserId)) {
+            await directTextSender.sendText(
+              ctx.externalUserId,
+              CHAT_FAILURE_FALLBACK_MESSAGE,
+            );
+            fallbackSentThisCycle.add(ctx.externalUserId);
+          }
         } catch (fallbackError) {
           this.logger.error(
             `chat_failure phase=fallback_delivery externalUserId=${maskExternalId(
@@ -360,6 +380,10 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
   private async handleFlush(
     batch: ChatQueueBatch<QueueCtx> | ChatQueueBufferSnapshot,
   ): Promise<void> {
+    // #406: Store batch texts for potential retry; clear fallback gate for this cycle.
+    pendingBatchTexts.set(batch.externalUserId, [...batch.texts]);
+    fallbackSentThisCycle.delete(batch.externalUserId);
+
     try {
       const context = batch.context as QueueCtx | undefined;
       const sharedSnapshot = 'lastIdempotencyKey' in batch;
@@ -375,6 +399,9 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
             ? { isServerChannel: context?.isServerChannel === true }
             : undefined,
       });
+      // Success: clean up all retry state.
+      pendingBatchTexts.delete(batch.externalUserId);
+      fallbackSentThisCycle.delete(batch.externalUserId);
     } catch (error) {
       const msg = errorMessage(error);
       this.logger.error(
@@ -382,6 +409,34 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
           batch.externalUserId,
         )}: ${maskExternalIdInText(msg, batch.externalUserId)}`,
       );
+
+      // #406: When pipeline fails, re-enqueue for bounded retry if enabled.
+      // The onError hook sends a best-effort fallback message before this
+      // catch block runs. If fallback was already sent, skip retry — the
+      // user received a response. If fallback was NOT sent (or failed),
+      // re-enqueue so the batch is not silently lost.
+      const userId = batch.externalUserId;
+      const fallbackWasSent = fallbackSentThisCycle.has(userId);
+
+      if (this.retryEnabled && !fallbackWasSent && this.queueStore) {
+        try {
+          await this.queueStore.scheduleRetryFlush(userId, this.retryDelayMs);
+          this.logger.log(
+            `Chat flush retry scheduled for ${maskExternalId(userId)} after ${this.retryDelayMs}ms`,
+          );
+        } catch (retryError) {
+          this.logger.error(
+            `Chat flush retry schedule failed for ${maskExternalId(userId)}: ${errorMessage(retryError)}`,
+          );
+        }
+      } else if (this.retryEnabled && fallbackWasSent) {
+        this.logger.log(
+          `Chat flush retry skipped for ${maskExternalId(userId)}: fallback already delivered`,
+        );
+      }
+
+      pendingBatchTexts.delete(userId);
+      fallbackSentThisCycle.delete(userId);
     } finally {
       this.droppedNotified.delete(batch.externalUserId);
     }

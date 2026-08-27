@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { DebounceChatQueue } from '@wispace/chat-queue-core';
 import { ChatPipeline } from '@wispace/chat-pipeline';
 import { PlatformChatQueueService } from './platform-chat-queue.service';
+import { fallbackSentThisCycle } from './platform-chat-queue.service';
 import type { ChatQueueStorePort } from './chat-queue-store.port';
 import type { PlatformChatQueueOptions } from '../agent/platform-agent.types';
 
@@ -88,6 +89,7 @@ describe('PlatformChatQueueService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    fallbackSentThisCycle.clear();
   });
 
   it('accepts CHAT_QUEUE_SHARED=true when Redis is available', () => {
@@ -532,6 +534,251 @@ describe('PlatformChatQueueService', () => {
     expect(cfg.maxPendingSize).toBe(Number.MAX_SAFE_INTEGER);
   });
 
+  describe('flush retry on pipeline+fallback failure (#406)', () => {
+    const buildDistributedServiceWithRetry = (
+      retryEnabled = true,
+      fallbackSender?: { sendText: jest.Mock },
+    ) => {
+      const queueStore = {
+        isAvailable: jest.fn().mockReturnValue(true),
+        appendChatBuffer: jest.fn().mockResolvedValue(undefined),
+        claimReadyBuffer: jest.fn(),
+        completeChatBuffer: jest.fn().mockResolvedValue(false),
+        scheduleRetryFlush: jest.fn().mockResolvedValue(undefined),
+      } as unknown as ChatQueueStorePort;
+      const config = {
+        get: jest.fn((key: string) => {
+          if (key === 'CHAT_QUEUE_STORE') return 'redis';
+          if (key === 'CHAT_DEBOUNCE_MS') return '2000';
+          if (key === 'CHAT_FLUSH_RETRY_ENABLED')
+            return retryEnabled ? 'true' : 'false';
+          if (key === 'CHAT_FLUSH_RETRY_DELAY_MS') return '5000';
+          return undefined;
+        }),
+      } as unknown as ConfigService;
+      const sender = fallbackSender ?? {
+        sendText: jest.fn().mockResolvedValue(undefined),
+      };
+      const service = new PlatformChatQueueService(
+        config,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        sender,
+        {},
+        queueStore,
+      );
+      // Extract the onError hook registered in the constructor
+      const hooks = jest.mocked(ChatPipeline).mock.calls.at(-1)![4] as {
+        onError: (ctx: unknown) => Promise<void>;
+      };
+      return { service, queueStore, sender, hooks };
+    };
+
+    it('re-enqueues batch when pipeline+fallback both fail and retry enabled', async () => {
+      const { service, queueStore, sender } =
+        buildDistributedServiceWithRetry(true);
+      await service.onModuleInit();
+
+      (
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue({
+        externalUserId: 'discord-1',
+        texts: ['hello'],
+        lastIdempotencyKey: 'key-1',
+        userId: 42,
+      });
+
+      sender.sendText.mockRejectedValue(new Error('DM unavailable'));
+      // Mock pipeline.flush to invoke the onError hook (like the real pipeline)
+      const pipelineFlush = jest
+        .fn()
+        .mockImplementation(async (input: { externalUserId: string }) => {
+          const hooks = jest.mocked(ChatPipeline).mock.calls.at(-1)![4] as {
+            onError: (ctx: unknown) => Promise<void>;
+          };
+          await hooks.onError({
+            externalUserId: input.externalUserId,
+            error: new Error('LLM timeout'),
+          });
+          throw new Error('LLM timeout');
+        });
+      (service as unknown as { pipeline: { flush: jest.Mock } }).pipeline = {
+        flush: pipelineFlush,
+      };
+
+      await service.flushReady('discord-1');
+
+      expect(
+        (queueStore as unknown as { scheduleRetryFlush: jest.Mock })
+          .scheduleRetryFlush,
+      ).toHaveBeenCalledWith('discord-1', 5000);
+    });
+
+    it('does not re-enqueue when retry is disabled', async () => {
+      const { service, queueStore, sender } =
+        buildDistributedServiceWithRetry(false);
+      await service.onModuleInit();
+
+      (
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue({
+        externalUserId: 'discord-2',
+        texts: ['hi'],
+        lastIdempotencyKey: 'key-2',
+        userId: 10,
+      });
+
+      sender.sendText.mockRejectedValue(new Error('DM unavailable'));
+      const pipelineFlush = jest
+        .fn()
+        .mockImplementation(async (input: { externalUserId: string }) => {
+          const hooks = jest.mocked(ChatPipeline).mock.calls.at(-1)![4] as {
+            onError: (ctx: unknown) => Promise<void>;
+          };
+          await hooks.onError({
+            externalUserId: input.externalUserId,
+            error: new Error('LLM timeout'),
+          });
+          throw new Error('LLM timeout');
+        });
+      (service as unknown as { pipeline: { flush: jest.Mock } }).pipeline = {
+        flush: pipelineFlush,
+      };
+
+      await service.flushReady('discord-2');
+
+      expect(
+        (queueStore as unknown as { scheduleRetryFlush: jest.Mock })
+          .scheduleRetryFlush,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('does not re-enqueue when fallback was successfully sent', async () => {
+      const { service, queueStore, sender } =
+        buildDistributedServiceWithRetry(true);
+      await service.onModuleInit();
+
+      (
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue({
+        externalUserId: 'zalo-1',
+        texts: ['hello'],
+        lastIdempotencyKey: 'key-3',
+        userId: 20,
+      });
+
+      // Fallback succeeds — no retry needed (user received a response)
+      sender.sendText.mockResolvedValue(undefined);
+      const pipelineFlush = jest
+        .fn()
+        .mockImplementation(async (input: { externalUserId: string }) => {
+          const hooks = jest.mocked(ChatPipeline).mock.calls.at(-1)![4] as {
+            onError: (ctx: unknown) => Promise<void>;
+          };
+          await hooks.onError({
+            externalUserId: input.externalUserId,
+            error: new Error('LLM timeout'),
+          });
+          throw new Error('LLM timeout');
+        });
+      (service as unknown as { pipeline: { flush: jest.Mock } }).pipeline = {
+        flush: pipelineFlush,
+      };
+
+      await service.flushReady('zalo-1');
+
+      expect(
+        (queueStore as unknown as { scheduleRetryFlush: jest.Mock })
+          .scheduleRetryFlush,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('re-enqueues when fallback send also fails', async () => {
+      const { service, queueStore, sender } =
+        buildDistributedServiceWithRetry(true);
+      await service.onModuleInit();
+
+      (
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue({
+        externalUserId: 'zalo-3',
+        texts: ['hello'],
+        lastIdempotencyKey: 'key-6',
+        userId: 50,
+      });
+
+      // Both fallback and pipeline fail
+      sender.sendText.mockRejectedValue(new Error('DM unavailable'));
+      const pipelineFlush = jest
+        .fn()
+        .mockImplementation(async (input: { externalUserId: string }) => {
+          const hooks = jest.mocked(ChatPipeline).mock.calls.at(-1)![4] as {
+            onError: (ctx: unknown) => Promise<void>;
+          };
+          await hooks.onError({
+            externalUserId: input.externalUserId,
+            error: new Error('LLM timeout'),
+          });
+          throw new Error('LLM timeout');
+        });
+      (service as unknown as { pipeline: { flush: jest.Mock } }).pipeline = {
+        flush: pipelineFlush,
+      };
+
+      await service.flushReady('zalo-3');
+
+      expect(
+        (queueStore as unknown as { scheduleRetryFlush: jest.Mock })
+          .scheduleRetryFlush,
+      ).toHaveBeenCalledWith('zalo-3', 5000);
+    });
+
+    it('still calls completeChatBuffer after scheduleRetryFlush', async () => {
+      const { service, queueStore, sender } =
+        buildDistributedServiceWithRetry(true);
+      await service.onModuleInit();
+
+      (
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue({
+        externalUserId: 'zalo-2',
+        texts: ['hello'],
+        lastIdempotencyKey: 'key-5',
+        userId: 40,
+      });
+
+      sender.sendText.mockRejectedValue(new Error('DM down'));
+      const pipelineFlush = jest
+        .fn()
+        .mockImplementation(async (input: { externalUserId: string }) => {
+          const hooks = jest.mocked(ChatPipeline).mock.calls.at(-1)![4] as {
+            onError: (ctx: unknown) => Promise<void>;
+          };
+          await hooks.onError({
+            externalUserId: input.externalUserId,
+            error: new Error('boom'),
+          });
+          throw new Error('boom');
+        });
+      (service as unknown as { pipeline: { flush: jest.Mock } }).pipeline = {
+        flush: pipelineFlush,
+      };
+
+      await service.flushReady('zalo-2');
+
+      expect(
+        (queueStore as unknown as { completeChatBuffer: jest.Mock })
+          .completeChatBuffer,
+      ).toHaveBeenCalled();
+      expect(
+        (queueStore as unknown as { scheduleRetryFlush: jest.Mock })
+          .scheduleRetryFlush,
+      ).toHaveBeenCalledWith('zalo-2', 5000);
+    });
+  });
+
   describe('fresh-mapping revalidation (#397)', () => {
     const buildDistributedService = (
       freshMappingProvider?: (
@@ -582,7 +829,7 @@ describe('PlatformChatQueueService', () => {
       await service.onModuleInit();
 
       (
-        queueStore as { claimReadyBuffer: jest.Mock }
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
       ).claimReadyBuffer.mockResolvedValue({
         externalUserId: 'discord-1',
         texts: ['hello'],
@@ -603,7 +850,8 @@ describe('PlatformChatQueueService', () => {
       );
       // completeChatBuffer should still be called (batch claimed → always complete)
       expect(
-        (queueStore as { completeChatBuffer: jest.Mock }).completeChatBuffer,
+        (queueStore as unknown as { completeChatBuffer: jest.Mock })
+          .completeChatBuffer,
       ).toHaveBeenCalled();
 
       warnSpy.mockRestore();
@@ -625,7 +873,7 @@ describe('PlatformChatQueueService', () => {
         userId: 42,
       };
       (
-        queueStore as { claimReadyBuffer: jest.Mock }
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
       ).claimReadyBuffer.mockResolvedValue(batch);
 
       const pipelineFlush = jest.fn().mockResolvedValue(undefined);
@@ -663,7 +911,7 @@ describe('PlatformChatQueueService', () => {
       await service.onModuleInit();
 
       (
-        queueStore as { claimReadyBuffer: jest.Mock }
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
       ).claimReadyBuffer.mockResolvedValue({
         externalUserId: 'discord-2',
         texts: ['hi'],
@@ -703,7 +951,7 @@ describe('PlatformChatQueueService', () => {
       await service.onModuleInit();
 
       (
-        queueStore as { claimReadyBuffer: jest.Mock }
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
       ).claimReadyBuffer.mockResolvedValue({
         externalUserId: 'zalo-2',
         texts: ['yo'],
@@ -748,7 +996,7 @@ describe('PlatformChatQueueService', () => {
       await service.onModuleInit();
 
       (
-        queueStore as { claimReadyBuffer: jest.Mock }
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
       ).claimReadyBuffer.mockResolvedValue({
         externalUserId: 'discord-race',
         texts: ['hello during relink'],

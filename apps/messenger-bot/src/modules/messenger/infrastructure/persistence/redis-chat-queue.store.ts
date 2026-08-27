@@ -78,4 +78,8 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
   listPsidsReadyForFlush(limit: number): Promise<string[]> {
     return this.sharedStore.listReadyExternalUserIds(limit);
   }
+
+  scheduleRetryFlush(psid: string, retryDelayMs: number): Promise<void> {
+    return this.sharedStore.scheduleRetryFlush(psid, retryDelayMs);
+  }
 }
