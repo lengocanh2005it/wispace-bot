@@ -24,7 +24,8 @@ export async function loadVaultSecrets(): Promise<void> {
     );
   }
 
-  const secretPath = process.env.VAULT_SECRET_PATH ?? 'secret/data/zalo/prd';
+  const secretPath =
+    process.env.VAULT_SECRET_PATH ?? 'secret/data/wispace-bots/zalo/prd';
 
   log.log(`Authenticating with Vault at ${vaultAddr}...`);
 
