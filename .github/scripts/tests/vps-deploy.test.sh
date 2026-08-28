@@ -402,11 +402,21 @@ while [ $# -gt 0 ]; do
 done
 cp "$INFILE" "$OUTFILE"
 FAKEGPG
-  chmod +x "$dir/bin/docker" "$dir/bin/gpg"
+  # Fake psql/pg_dump: run_db_client() tries native before docker — route
+  # them through the fake docker so the writer preflight + dump succeed.
+  cat > "$dir/bin/psql" <<'FAKEPSQL'
+#!/usr/bin/env bash
+exec docker exec -e PGPASSWORD="${PGPASSWORD:-}" postgres_n8n_db psql "$@"
+FAKEPSQL
+  cat > "$dir/bin/pg_dump" <<'FAKEPGDUMP'
+#!/usr/bin/env bash
+exec docker exec -e PGPASSWORD="${PGPASSWORD:-}" postgres_n8n_db pg_dump "$@"
+FAKEPGDUMP
+  chmod +x "$dir/bin/docker" "$dir/bin/gpg" "$dir/bin/psql" "$dir/bin/pg_dump"
   printf 'DB_HOST=postgres_n8n_db\nDB_PORT=5432\nDB_USER=postgres\nDB_NAME=ai_chat_bot_db\nDB_PASSWORD=secret\nBACKUP_ENCRYPTION_PASSPHRASE=test-passphrase\n' > "$dir/deploy/.env"
   (
     export ENV_FILE="$dir/deploy/.env" BACKUP_DIR="$dir/backups" DB_CONTAINER=postgres_n8n_db \
-      PATH="$dir/bin:/usr/bin:/bin"
+      PATH="$dir/bin:$PATH"
     bash "$BACKUP_SCRIPT"
   ) > "$dir/backup.out" 2>&1
   [ $? -eq 0 ] || fail "backup failed: $(cat "$dir/backup.out")"
