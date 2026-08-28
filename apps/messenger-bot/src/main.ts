@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import { errorMessage, sanitizeErrorStack } from '@wispace/bot-common/masking';
 import { AppModule } from './app.module';
 import { parseJsonBodyLimit } from './shared/config/body-limit';
+import { loadVaultSecrets } from './shared/config/vault-secrets';
 
 const SHUTDOWN_LOGGER = new Logger('Shutdown');
 // Must cover the longest in-flight work (LLM tool execution can take 35s)
@@ -29,6 +30,8 @@ process.on('uncaughtException', (error) => {
 });
 
 async function bootstrap() {
+  await loadVaultSecrets();
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
   });
