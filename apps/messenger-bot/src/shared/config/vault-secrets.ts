@@ -65,16 +65,14 @@ export async function loadVaultSecrets(): Promise<void> {
   };
   const secrets = data.data;
 
-  // Inject into process.env (existing env vars take precedence — .env wins over Vault)
+  // Inject into process.env — Vault is the primary source, overrides .env
   let injected = 0;
   for (const [key, value] of Object.entries(secrets)) {
-    if (process.env[key] === undefined) {
-      process.env[key] = value;
-      injected++;
-    }
+    process.env[key] = value;
+    injected++;
   }
 
   log.log(
-    `Loaded ${Object.keys(secrets).length} secrets from Vault, injected ${injected} new env vars`,
+    `Loaded ${Object.keys(secrets).length} secrets from Vault, injected ${injected} env vars`,
   );
 }
