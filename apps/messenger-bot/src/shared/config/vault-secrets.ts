@@ -24,7 +24,8 @@ export async function loadVaultSecrets(): Promise<void> {
     );
   }
 
-  const secretPath = process.env.VAULT_SECRET_PATH ?? 'secret/messenger/prd';
+  const secretPath =
+    process.env.VAULT_SECRET_PATH ?? 'secret/data/messenger/prd';
 
   log.log(`Authenticating with Vault at ${vaultAddr}...`);
 
