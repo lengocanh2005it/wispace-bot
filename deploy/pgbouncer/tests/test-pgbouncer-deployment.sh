@@ -36,7 +36,7 @@ echo ""
 
 echo "─── Image pinning ───"
 assert_contains "$COMPOSE" "@sha256:" "Image pinned by immutable digest"
-assert_not_contains "$COMPOSE" "image:.*[^@]$" "No mutable-only image tags"
+assert_not_contains "$COMPOSE" "image:[^@]*$" "No mutable-only image tags"
 echo ""
 
 echo "─── Container hardening ───"

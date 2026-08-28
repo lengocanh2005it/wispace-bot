@@ -28,6 +28,13 @@ For CI schema validation, run the root `npm run database:migration-compatibility
 - `webhook_inbound_events.raw_payload` and outbound dead-letter payloads are recovery data. Keep them intact for replay; mask external IDs in logs and persisted error strings. Terminal inbound rows are cleaned after `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30).
 - **Không** migration bảng Wispace (`UserCalendars`, `"Users"` hub, …) — cache user qua bảng `users` local.
 - Cập nhật `apps/messenger-bot/.env.example` nếu thêm biến môi trường mới (không phải DB column).
+- Production migrations must target the stable PostgreSQL writer endpoint. The
+  shared TypeORM data source verifies `pg_is_in_recovery() = false` and guards
+  `runMigrations`/`undoLastMigration` with `MIGRATION_LOCK_ID`; do not wrap the
+  CLI in a separate `psql` advisory-lock shell session.
+- Runtime queries use `DB_QUERY_TIMEOUT_MS`; migration CLI uses
+  `DB_MIGRATION_QUERY_TIMEOUT_MS` so a long migration is not accidentally
+  killed by the app query budget.
 
 ## Tách DB (ops một lần — đã hoàn thành)
 

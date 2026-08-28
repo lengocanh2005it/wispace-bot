@@ -12,6 +12,7 @@ import type { DataSource } from 'typeorm';
 import { InternalApiKeyGuard } from '../guard/internal-api-key.guard';
 import { REDIS_CLIENT, type RedisClientPort } from '../redis/redis.client.port';
 import { errorMessage } from '../masking/error-message';
+import { assertPostgresWriter } from './postgres-writer';
 
 export interface HealthDetail {
   status: 'ok' | 'error';
@@ -114,7 +115,7 @@ export class HealthController {
 
     // DB check
     try {
-      await this.dataSource.query('SELECT 1');
+      await assertPostgresWriter(this.dataSource);
       result.database = 'connected';
     } catch (error) {
       this.logger.warn(`Health check DB failed: ${errorMessage(error)}`);

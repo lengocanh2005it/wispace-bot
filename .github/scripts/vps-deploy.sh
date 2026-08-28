@@ -15,7 +15,7 @@ umask 077
 # Requires env: IMAGE, DEPLOY_MODE, APP_NAME
 # Optional env: FORCE_RECREATE, GHCR_PULL_TOKEN, GHCR_USER, HEALTH_PATH,
 #               HEALTH_MAX_ATTEMPTS, DEPLOY_HOST_DIR, RUN_MIGRATIONS, MIGRATION_CMD,
-#               MIGRATION_DB_CONTAINER, MIGRATION_LOCK_ID, NGINX_UPSTREAM_DIR,
+#               MIGRATION_LOCK_ID, NGINX_UPSTREAM_DIR,
 #               PUBLIC_HOST, DOCKER_STOP_TIMEOUT, SKIP_NGINX_CHECK, IMAGE_DIGEST
 
 : "${IMAGE:?IMAGE is required}"
@@ -445,18 +445,15 @@ if ! verify_metrics_endpoint "http://127.0.0.1:${STANDBY_PORT}${METRICS_PATH}"; 
 fi
 
 # ─── Run migrations inside new container (before switching traffic) ───────────
-# The advisory lock is held on the SAME psql session that runs the migration
-# (#203): psql acquires the lock, executes the migration via \! (a shell escape
-# inside the session, so the lock stays held), then unlocks. psql's \! swallows
-# the exit status, so the migration appends it to /tmp/mig.exit which the
-# outer shell checks.
+# The release image owns the migration lock. Its TypeORM CLI data source checks
+# the writer role and holds the advisory lock on a dedicated session while the
+# migration executor runs, so a shell escape cannot bypass the fence.
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
   if [ -z "${MIGRATION_CMD:-}" ]; then
     echo "ERROR: RUN_MIGRATIONS=true requires MIGRATION_CMD — refusing to deploy (#271)" >&2
     docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
     exit 1
   fi
-  MIGRATION_DB_CONTAINER="${MIGRATION_DB_CONTAINER:-postgres_n8n_db}"
   MIGRATION_LOCK_ID="${MIGRATION_LOCK_ID:-4242424242}"
   DB_USER_ENV=$(grep -E '^DB_USER=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
   DB_NAME_ENV=$(grep -E '^DB_NAME=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
@@ -490,9 +487,10 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
         fi
         ;;
       MIGRATION_LOCK_ID)
-        # Numeric only — will be cast to bigint in SQL
-        if ! printf '%s' "$value" | grep -Eq '^-?[0-9]+$'; then
-          echo "ERROR: $field must be a numeric integer: $value" >&2
+        # Positive safe integer — the migration data source uses the same
+        # value for its session-level advisory lock.
+        if ! printf '%s' "$value" | grep -Eq '^[1-9][0-9]{0,15}$'; then
+          echo "ERROR: $field must be a numeric integer greater than zero: $value" >&2
           return 1
         fi
         ;;
@@ -511,13 +509,21 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
       exit 1
       ;;
   esac
-  # Fail closed: never run new code against an old schema because the DB was
-  # unreachable at deploy time (#199). pg_isready probes the actual postgres
-  # process (a reachable container with a down postgres must still fail here,
-  # before the migration and cutover). Port is 5432 — the container-internal
-  # default; DB_PORT in .env is the host-mapped port and does not apply here.
-  if [ -z "$DB_USER_ENV" ] || [ -z "$DB_NAME_ENV" ] || [ -z "$DB_PASSWORD_ENV" ] || [ -z "$DB_HOST_ENV" ] || ! docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$MIGRATION_DB_CONTAINER" pg_isready -h localhost -p 5432 -U "$DB_USER_ENV" -d "$DB_NAME_ENV" >/dev/null 2>&1; then
-    echo "ERROR: RUN_MIGRATIONS enabled but DB_* / postgres container ($MIGRATION_DB_CONTAINER) unavailable — refusing to deploy (#199)" >&2
+  # Fail closed: probe the same stable writer endpoint used by the release
+  # image. This also works when production PostgreSQL is managed outside the
+  # VPS; a local container remains valid when DB_HOST points at it.
+  if [ -z "$DB_USER_ENV" ] || [ -z "$DB_NAME_ENV" ] || [ -z "$DB_PASSWORD_ENV" ] || [ -z "$DB_HOST_ENV" ] || ! docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$NEW_CONTAINER" pg_isready -h "$DB_HOST_ENV" -p "${DB_PORT_ENV:-5432}" -U "$DB_USER_ENV" -d "$DB_NAME_ENV" >/dev/null 2>&1; then
+    echo "ERROR: RUN_MIGRATIONS enabled but DB_* / writer endpoint unavailable — refusing to deploy (#199)" >&2
+    exit 1
+  fi
+  writer_status=$(docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$NEW_CONTAINER" \
+    psql -v ON_ERROR_STOP=1 -h "$DB_HOST_ENV" -p "${DB_PORT_ENV:-5432}" \
+    -U "$DB_USER_ENV" -d "$DB_NAME_ENV" -tAc 'SELECT NOT pg_is_in_recovery()' 2>/dev/null | tr -d '[:space:]') || {
+    echo "ERROR: could not verify that the database endpoint is the writable primary — refusing to deploy" >&2
+    exit 1
+  }
+  if [ "$writer_status" != "t" ]; then
+    echo "ERROR: database endpoint is not the writable primary — refusing to deploy" >&2
     exit 1
   fi
   # Safety net: quick pg_dump before migrations
@@ -525,8 +531,8 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
   mkdir -p "$PRE_MIGRATE_DIR"
   PRE_MIGRATE_DUMP="$PRE_MIGRATE_DIR/pre-migrate-$(date +%Y%m%d-%H%M%S).dump"
   echo "Pre-migration safety dump → $PRE_MIGRATE_DUMP"
-  if ! docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$MIGRATION_DB_CONTAINER" \
-    pg_dump -U "$DB_USER_ENV" -d "$DB_NAME_ENV" -h localhost -Fc \
+  if ! docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$NEW_CONTAINER" \
+    pg_dump -U "$DB_USER_ENV" -d "$DB_NAME_ENV" -h "$DB_HOST_ENV" -p "${DB_PORT_ENV:-5432}" -Fc \
     > "$PRE_MIGRATE_DUMP" 2>/dev/null || [ ! -s "$PRE_MIGRATE_DUMP" ]; then
     echo "ERROR: pre-migration dump failed or was empty — refusing to deploy (#271)" >&2
     rm -f "$PRE_MIGRATE_DUMP"
@@ -535,16 +541,9 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
   fi
   find "$PRE_MIGRATE_DIR" -name 'pre-migrate-*.dump' -mtime +1 -delete 2>/dev/null || true
 
-  echo "Applying migrations (advisory lock $MIGRATION_LOCK_ID held on the migration session): $MIGRATION_CMD"
-  if ! docker exec "$NEW_CONTAINER" sh -c "
-    rm -f /tmp/mig.exit
-    PGPASSWORD=\"\$DB_PASSWORD\" psql -v ON_ERROR_STOP=1 -h \"$DB_HOST_ENV\" -p \"${DB_PORT_ENV:-5432}\" -U \"$DB_USER_ENV\" -d \"$DB_NAME_ENV\" <<'SQL'
-SELECT pg_advisory_lock($MIGRATION_LOCK_ID::bigint);
-\\! ${MIGRATION_CMD}; echo \$? > /tmp/mig.exit
-SELECT pg_advisory_unlock($MIGRATION_LOCK_ID::bigint);
-SQL
-    [ \"\$(cat /tmp/mig.exit 2>/dev/null)\" = \"0\" ]
-  "; then
+  echo "Applying migrations (advisory lock $MIGRATION_LOCK_ID held by the migration data source): $MIGRATION_CMD"
+  if ! docker exec -e MIGRATION_LOCK_ID="$MIGRATION_LOCK_ID" "$NEW_CONTAINER" \
+    sh -c "$MIGRATION_CMD"; then
     echo "ERROR: migrations failed — rolling back" >&2
     docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
     exit 1

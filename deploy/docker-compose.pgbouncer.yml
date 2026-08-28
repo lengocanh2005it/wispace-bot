@@ -5,7 +5,9 @@
 #   docker compose -f deploy/docker-compose.pgbouncer.yml up -d
 #
 # All bots should set DB_HOST=pgbouncer (or the container name) in their .env.
-# The bots connect to PgBouncer on port 5432, which multiplexes to PostgreSQL.
+# PGBOUNCER_DB_HOST must be the managed PostgreSQL writer endpoint (or an
+# explicitly configured local primary); do not silently fall back to a single
+# host because failover would leave the pooler pointed at the old primary.
 #
 # Image update procedure:
 #   1. Check https://hub.docker.com/r/edoburu/pgbouncer/tags for new releases
@@ -26,7 +28,7 @@ services:
     environment:
       # edoburu generates pgbouncer.ini and userlist.txt from these values.
       # Keep the password in the deployment environment, never in this file.
-      DB_HOST: ${PGBOUNCER_DB_HOST:-postgres_n8n_db}
+      DB_HOST: ${PGBOUNCER_DB_HOST:?PGBOUNCER_DB_HOST is required}
       DB_PORT: ${PGBOUNCER_DB_PORT:-5432}
       DB_USER: ${PGBOUNCER_DB_USER:?PGBOUNCER_DB_USER is required}
       DB_PASSWORD: ${PGBOUNCER_DB_PASSWORD:?PGBOUNCER_DB_PASSWORD is required}

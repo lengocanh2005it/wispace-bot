@@ -14,10 +14,17 @@ export {
   getTypeOrmOptions,
   getPostgresSsl,
   buildCliDataSource,
+  readMigrationLockId,
   readEnv,
   type EntityClass,
   type EnvSource,
+  type TypeOrmOptionOverrides,
 } from './typeorm-options';
+export {
+  DEFAULT_MIGRATION_LOCK_ID,
+  guardDataSourceMigrations,
+  runWithMigrationAdvisoryLock,
+} from './migration-data-source';
 export {
   attachDbCircuitBreaker,
   getDbCircuitBreaker,

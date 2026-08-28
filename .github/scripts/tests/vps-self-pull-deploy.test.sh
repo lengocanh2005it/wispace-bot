@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Concurrency + failure-path tests for vps-self-pull-deploy.sh (#144/#172/#283).
+# Concurrency + failure-path tests for vps-self-pull-deploy.sh (#144/#172/#283/#408).
 #
 # Self-contained: fakes git/docker/curl via PATH (fake repo with .git refs);
 # requires only bash + flock. Run: bash .github/scripts/tests/vps-self-pull-deploy.test.sh
@@ -29,6 +29,7 @@ make_env() { # name -> creates fake repo/PATH-fakes/state dirs; prints dir
 #!/usr/bin/env bash
 echo "FAKE vps-deploy ${APP_NAME:-unknown}" >> "${FAKE_DEPLOY_LOG:?}"
 echo "FAKE app network ${APP_NETWORK:-unset}" >> "${FAKE_DEPLOY_NETWORK_LOG:?}"
+echo "FAKE migration lock ${MIGRATION_LOCK_ID:-unset}" >> "${FAKE_DEPLOY_NETWORK_LOG:?}"
 echo "locked" > "${FAKE_DEPLOY_STARTED:?}"
 [ -n "${FAKE_DEPLOY_SLEEP:-}" ] && sleep "$FAKE_DEPLOY_SLEEP"
 [ "${FAKE_DEPLOY_FAIL_APP:-}" = "${APP_NAME:-}" ] && exit 1
@@ -141,6 +142,10 @@ pass "success path"
 echo "Test 3b: self-pull passes the shared app network to each deploy"
 [ "$(grep -c '^FAKE app network app_n8n_db_network$' "$dir/deploy-network.log")" -eq 3 ] || fail "shared app network was not passed to all deploys"
 pass "self-pull passes app network"
+
+echo "Test 3c: self-pull passes the migration lock contract to the owner"
+grep -q '^FAKE migration lock 4242424242$' "$dir/deploy-network.log" || fail "migration lock id was not passed to deploys"
+pass "self-pull passes migration lock id"
 
 echo "Test 4: concurrency -> second run skips, no second fetch/reset mid-deploy"
 dir=$(make_env concurrency)

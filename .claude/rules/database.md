@@ -18,6 +18,15 @@ paths: apps/messenger-bot/src/infrastructure/database/**, packages/database/**
 
 **Prod DB:** `ai_chat_bot_db`. Old hub `writing_ai_hub_db` — Tables already dropped (ops script). All tables above have been generalized to `(platform, external_user_id)` since Phase 2 — see `docs/turborepo-migration-plan.md`.
 
+**Production HA:** `DB_HOST` is a stable PostgreSQL writer endpoint, never a
+standby or an app-side host list. Runtime readiness and ops health require
+`pg_is_in_recovery() = false`; `DB_QUERY_TIMEOUT_MS` bounds runtime queries.
+PgBouncer, when enabled, must receive `PGBOUNCER_DB_HOST` for that writer and
+stay in `session` mode because advisory locks are session-scoped. Messenger is
+the sole migration owner: its CLI/runtime data source checks the writer and
+holds `MIGRATION_LOCK_ID` on a dedicated session before TypeORM migrations.
+See [docs/postgres-ha-runbook.md](../../docs/postgres-ha-runbook.md).
+
 H7 migration created `messenger_chat_queue_buffer` + `messenger_chat_history` — **dropped** by `1717747200010-DropMessengerChatQueueBufferAndHistoryTables.ts` (queue/history moved to Redis or memory).
 
 ## User cache (dedicated DB, migration `1717747200008`)
@@ -85,6 +94,9 @@ When adding a new migration (Discord, Zalo, or new shared table):
 - `data-source.ts` is used by TypeORM CLI (`dist/infrastructure/database/data-source.js`).
 - App uses `typeorm.options.ts` via `DatabaseModule`.
 - `DB_MIGRATIONS_RUN=true` → auto migrate on start.
+- Migration CLI/runtime fencing is fail-closed on a standby or a held
+  `MIGRATION_LOCK_ID`; use `DB_MIGRATION_QUERY_TIMEOUT_MS` for CLI timeout
+  tuning independently from runtime `DB_QUERY_TIMEOUT_MS`.
 - ORM entities are **not** placed in `modules/*/domain/` — domain is for pure types only.
 - `raw_payload` is intentionally kept intact for replay; logs and persisted error strings must mask external IDs. Ops scripts may read recovery payloads but must print only masked identifiers and sanitized errors.
 - A stale `processing` webhook inbox lease is terminalized instead of replayed automatically; replaying after an uncertain side effect could send a duplicate outbound message.

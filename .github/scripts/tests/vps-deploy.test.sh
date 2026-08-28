@@ -69,10 +69,14 @@ case "$1" in
     exit 0
     ;;
   exec)
-    # DB reachability probe: `docker exec <db> pg_isready ...`
+    # DB reachability/writer probes run from the release container.
     case "$*" in
       *pg_isready*)
         [ -n "${FAKE_DB_UP:-}" ] && exit 0 || exit 1
+        ;;
+      *pg_is_in_recovery*)
+        [ -n "${FAKE_DB_UP:-}" ] && [ -z "${FAKE_DB_STANDBY:-}" ] && printf 't\n'
+        exit 0
         ;;
       *pg_dump*)
         [ -n "${FAKE_DUMP_FAIL:-}" ] && exit 1
@@ -318,20 +322,20 @@ code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:m
 grep -q -- "--resolve aiassist.aihubproduction.com:443:127.0.0.1" "$dir/curl.log" || fail "public route not verified through nginx"
 pass "public route verified after switch"
 
-echo "Test 14: migration runs inside one psql session with the advisory lock (#203)"
+echo "Test 14: migration preflights the writer and invokes the fenced CLI (#203/#408)"
 dir=$(make_env migration-lock)
 write_env "$dir"
 write_upstream "$dir" 5007
 code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1 PRE_MIGRATE_DIR="$dir/pre-migrate" \
   MIGRATION_CMD='npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
 [ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
-grep -q "pg_advisory_lock" "$dir/docker.log" || fail "lock not acquired via psql"
-grep -q "pg_advisory_unlock" "$dir/docker.log" || fail "lock not released via psql"
-grep -q "\\! npx --no-install typeorm migration:run" "$dir/docker.log" || fail "migration not run via psql \! escape"
+grep -q "pg_is_in_recovery" "$dir/docker.log" || fail "writer role was not preflighted"
+grep -q "migration:run" "$dir/docker.log" || fail "migration CLI was not invoked"
+! grep -q "pg_advisory_lock" "$dir/docker.log" || fail "deploy shell must not hold a lock on a different session"
+! grep -q "\\! npx --no-install typeorm migration:run" "$dir/docker.log" || fail "migration still uses a psql shell escape"
 grep -q "migration:show" "$dir/docker.log" || fail "release migration status was not verified"
-lock_count=$(grep -c "pg_advisory_lock" "$dir/docker.log" || true)
-[ "$lock_count" -eq 1 ] || fail "expected exactly 1 lock acquisition (same session), got $lock_count"
-pass "advisory lock held on the migration session"
+grep -q "MIGRATION_LOCK_ID=4242424242" "$dir/docker.log" || fail "migration lock id was not passed to the release image"
+pass "writer preflight and direct migration CLI"
 
 echo "Test 15: migration DB unreachable -> fail closed, no migration attempt (#199)"
 dir=$(make_env migration-db-down)
@@ -341,6 +345,17 @@ code=$(run_script "$dir" RUN_MIGRATIONS=true \
 [ "$code" -eq 1 ] || fail "expected exit 1, got $code"
 grep -q "unavailable — refusing to deploy" "$dir/run.out" || fail "missing fail-closed message"
 pass "migration DB down fails closed"
+
+echo "Test 15b: migration standby endpoint -> fail closed before dump (#408)"
+dir=$(make_env migration-db-standby)
+write_env "$dir"
+write_upstream "$dir" 5007
+code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1 FAKE_DB_STANDBY=1 PRE_MIGRATE_DIR="$dir/pre-migrate" \
+  MIGRATION_CMD='npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
+[ "$code" -eq 1 ] || fail "expected exit 1 on standby, got $code"
+grep -q "not the writable primary" "$dir/run.out" || fail "missing standby fail-closed message"
+[ ! -d "$dir/pre-migrate" ] || fail "standby must fail before creating a dump"
+pass "standby endpoint blocks migration"
 
 echo "Test 16: env file uses mktemp + EXIT trap cleanup (#204)"
 dir=$(make_env env-file-cleanup)
@@ -364,7 +379,13 @@ if [ "$(stat -c '%a' "$probe" 2>/dev/null)" = "700" ]; then
   mkdir -p "$dir/bin"
   cat > "$dir/bin/docker" <<'FAKE'
 #!/usr/bin/env bash
-[ "$1" = "exec" ] && { printf 'DUMPDATA\n'; exit 0; }
+[ "$1" = "exec" ] && {
+  case "$*" in
+    *psql*) printf 't\n' ;;
+    *) printf 'DUMPDATA\n' ;;
+  esac
+  exit 0
+}
 exit 1
 FAKE
   # Fake gpg: just copy input to output (no real encryption in tests)
@@ -382,7 +403,7 @@ done
 cp "$INFILE" "$OUTFILE"
 FAKEGPG
   chmod +x "$dir/bin/docker" "$dir/bin/gpg"
-  printf 'DB_USER=postgres\nDB_NAME=ai_chat_bot_db\nDB_PASSWORD=secret\nBACKUP_ENCRYPTION_PASSPHRASE=test-passphrase\n' > "$dir/deploy/.env"
+  printf 'DB_HOST=postgres_n8n_db\nDB_PORT=5432\nDB_USER=postgres\nDB_NAME=ai_chat_bot_db\nDB_PASSWORD=secret\nBACKUP_ENCRYPTION_PASSPHRASE=test-passphrase\n' > "$dir/deploy/.env"
   (
     export ENV_FILE="$dir/deploy/.env" BACKUP_DIR="$dir/backups" DB_CONTAINER=postgres_n8n_db \
       PATH="$dir/bin:$PATH"

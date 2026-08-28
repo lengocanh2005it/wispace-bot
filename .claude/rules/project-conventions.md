@@ -7,7 +7,9 @@ Turborepo monorepo: `apps/messenger-bot` (NestJS, full-featured) + `apps/discord
 ## Principles
 
 - Small diffs; correct Clean Architecture layer (domain / application / infrastructure / presentation) within each app.
-- Config via `.env` + `ConfigService` — no hardcoded tokens/time values.
+- Config via `.env` + `ConfigService` — no hardcoded tokens/time values. A
+  conservative operational default is allowed only when the value is exposed
+  as an environment override and documented in the relevant `.env.example`.
 - User-facing messages: **Vietnamese**. Logs/comments: English or short Vietnamese.
 - Do not add Redis/Bull/SQS unless the user requests it — outbox = `study_reminder_jobs`; shared chat queue = PostgreSQL (H7).
 - `packages/llm-agent` has no NestJS dependency — only port interfaces + `openai`. Business logic (Wispace API, DB) stays in the app.

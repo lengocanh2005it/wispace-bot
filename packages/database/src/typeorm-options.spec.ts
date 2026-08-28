@@ -1,4 +1,8 @@
-import { getPostgresSsl, getTypeOrmOptions } from './typeorm-options';
+import {
+  getPostgresSsl,
+  getTypeOrmOptions,
+  readMigrationLockId,
+} from './typeorm-options';
 
 describe('getPostgresSsl', () => {
   it('returns verify-only SSL config when TLS is enabled', () => {
@@ -110,10 +114,32 @@ describe('getTypeOrmOptions pool configuration', () => {
     const extra = opts.extra as Record<string, unknown>;
     expect(extra.idleTimeoutMillis).toBe(30_000);
     expect(extra.connectionTimeoutMillis).toBe(5_000);
+    expect(extra.query_timeout).toBe(10_000);
+  });
+
+  it('supports a separate unbounded migration query timeout', () => {
+    const opts = getTypeOrmOptions(baseEnv, [], { queryTimeoutMs: 0 });
+    expect((opts.extra as Record<string, unknown>).query_timeout).toBe(false);
   });
 
   it('applies DB_POOL_SIZE as poolSize', () => {
     const opts = getTypeOrmOptions({ ...baseEnv, DB_POOL_SIZE: '5' }, []);
     expect(opts.poolSize).toBe(5);
   });
+});
+
+describe('readMigrationLockId', () => {
+  it('uses the shared default and accepts a configured lock id', () => {
+    expect(readMigrationLockId({})).toBe(4_242_424_242);
+    expect(readMigrationLockId({ MIGRATION_LOCK_ID: '77' })).toBe(77);
+  });
+
+  it.each(['0', '-1', 'not-a-number'])(
+    'rejects unsafe lock ids: %s',
+    (value) => {
+      expect(() => readMigrationLockId({ MIGRATION_LOCK_ID: value })).toThrow(
+        'MIGRATION_LOCK_ID',
+      );
+    },
+  );
 });

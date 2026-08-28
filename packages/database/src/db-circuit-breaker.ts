@@ -9,7 +9,12 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { readEnv, type EnvSource } from './typeorm-options';
+import {
+  readEnv,
+  readMigrationLockId,
+  type EnvSource,
+} from './typeorm-options';
+import { guardDataSourceMigrations } from './migration-data-source';
 
 export interface DbCircuitBreakerOptions {
   enabled?: boolean;
@@ -153,7 +158,11 @@ export function createCircuitBreakerDataSourceFactory(source?: EnvSource) {
       throw new Error('DataSourceOptions is required');
     }
     const dataSource = new DataSource(options);
-    const breakerOptions = readDbCircuitBreakerOptions(source ?? process.env);
+    const configSource = source ?? process.env;
+    if (options.migrationsRun) {
+      guardDataSourceMigrations(dataSource, readMigrationLockId(configSource));
+    }
+    const breakerOptions = readDbCircuitBreakerOptions(configSource);
     attachDbCircuitBreaker(dataSource, breakerOptions);
     return dataSource.initialize();
   };

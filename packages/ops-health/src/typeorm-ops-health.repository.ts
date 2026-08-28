@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { isPostgresWriter } from '@wispace/bot-common/health';
 import { subHours, subMilliseconds } from 'date-fns';
 import type {
   OpsHealthRepositoryPort,
@@ -53,12 +54,7 @@ export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
   ) {}
 
   async isDatabaseReachable(): Promise<boolean> {
-    try {
-      await this.dataSource.query('SELECT 1');
-      return true;
-    } catch {
-      return false;
-    }
+    return isPostgresWriter(this.dataSource);
   }
 
   async getChatQuotaSummary(): Promise<ChatQuotaOpsSummary> {

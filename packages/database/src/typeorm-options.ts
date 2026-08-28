@@ -2,6 +2,10 @@ import { join } from 'path';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { isPrivateNetworkHost } from '@wispace/bot-common/utils';
+import {
+  DEFAULT_MIGRATION_LOCK_ID,
+  guardDataSourceMigrations,
+} from './migration-data-source';
 import { WebhookDeadLetterEntity } from './entities/webhook-dead-letter.entity';
 import { WebhookInboundEventEntity } from './entities/webhook-inbound-event.entity';
 import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
@@ -14,6 +18,10 @@ import { UserNotificationPreferenceEntity } from './entities/user-notification-p
 export type EntityClass = new (...args: unknown[]) => unknown;
 
 export type EnvSource = ConfigService | NodeJS.ProcessEnv;
+
+export interface TypeOrmOptionOverrides {
+  queryTimeoutMs?: number;
+}
 
 export function readEnv(source: EnvSource, key: string): string | undefined {
   if (source instanceof ConfigService) {
@@ -79,6 +87,7 @@ export const SHARED_ENTITIES: EntityClass[] = [
 export function getTypeOrmOptions(
   source: EnvSource,
   entities: EntityClass[],
+  overrides: TypeOrmOptionOverrides = {},
 ): DataSourceOptions {
   const poolSize = Number(readEnv(source, 'DB_POOL_SIZE') ?? 10);
   const poolIdleTimeoutMs = Number(
@@ -87,6 +96,9 @@ export function getTypeOrmOptions(
   const poolConnectionTimeoutMs = Number(
     readEnv(source, 'DB_POOL_CONNECTION_TIMEOUT_MS') ?? 5_000,
   );
+  const queryTimeoutMs =
+    overrides.queryTimeoutMs ??
+    readNonNegativeInteger(source, 'DB_QUERY_TIMEOUT_MS', 10_000);
 
   return {
     type: 'postgres',
@@ -100,6 +112,7 @@ export function getTypeOrmOptions(
     extra: {
       idleTimeoutMillis: poolIdleTimeoutMs,
       connectionTimeoutMillis: poolConnectionTimeoutMs,
+      query_timeout: queryTimeoutMs > 0 ? queryTimeoutMs : false,
     },
     entities,
     migrations: [join(__dirname, 'migrations', '*.{ts,js}')],
@@ -110,5 +123,43 @@ export function getTypeOrmOptions(
 
 /** Build a CLI-ready DataSource from process.env. */
 export function buildCliDataSource(entities: EntityClass[]): DataSource {
-  return new DataSource(getTypeOrmOptions(process.env, entities));
+  const dataSource = new DataSource(
+    getTypeOrmOptions(process.env, entities, {
+      queryTimeoutMs: readNonNegativeInteger(
+        process.env,
+        'DB_MIGRATION_QUERY_TIMEOUT_MS',
+        0,
+      ),
+    }),
+  );
+  return guardDataSourceMigrations(
+    dataSource,
+    readMigrationLockId(process.env),
+  );
+}
+
+function readNonNegativeInteger(
+  source: EnvSource,
+  key: string,
+  fallback: number,
+): number {
+  const raw = readEnv(source, key);
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${key} must be a non-negative integer`);
+  }
+  return value;
+}
+
+export function readMigrationLockId(source: EnvSource): number {
+  const lockId = readNonNegativeInteger(
+    source,
+    'MIGRATION_LOCK_ID',
+    DEFAULT_MIGRATION_LOCK_ID,
+  );
+  if (lockId === 0) {
+    throw new Error('MIGRATION_LOCK_ID must be greater than zero');
+  }
+  return lockId;
 }

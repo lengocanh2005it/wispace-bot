@@ -9,3 +9,9 @@ export {
   PrivacyActionBody,
   type PlatformOpsHandlers,
 } from './platform-ops.controller';
+export {
+  assertPostgresWriter,
+  isPostgresWriter,
+  POSTGRES_WRITER_CHECK_QUERY,
+  type PostgresQueryable,
+} from './postgres-writer';

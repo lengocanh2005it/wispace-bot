@@ -5,6 +5,7 @@ import {
   HealthController,
   type OpsHealthServicePort,
 } from './health.controller';
+import { POSTGRES_WRITER_CHECK_QUERY } from './postgres-writer';
 
 describe('HealthController', () => {
   const build = (
@@ -14,7 +15,7 @@ describe('HealthController', () => {
       opsHealthService?: Partial<OpsHealthServicePort>;
     } = {},
   ) => {
-    const query = jest.fn().mockResolvedValue([{ '?column?': 1 }]);
+    const query = jest.fn().mockResolvedValue([{ in_recovery: false }]);
     const dataSource = {
       query,
       ...overrides.dataSource,
@@ -69,7 +70,7 @@ describe('HealthController', () => {
     it('returns ok when database is connected and redis disabled', async () => {
       const { controller, query } = build();
       expect(await controller.readiness()).toEqual({ status: 'ok' });
-      expect(query).toHaveBeenCalledWith('SELECT 1');
+      expect(query).toHaveBeenCalledWith(POSTGRES_WRITER_CHECK_QUERY);
     });
 
     it('throws 503 with generic status-only body when database is down', async () => {
@@ -83,6 +84,17 @@ describe('HealthController', () => {
       expect((error as { getResponse(): unknown }).getResponse()).toEqual({
         status: 'error',
       });
+    });
+
+    it('throws 503 when the database endpoint is a standby', async () => {
+      const { controller } = build({
+        dataSource: {
+          query: jest.fn().mockResolvedValue([{ in_recovery: true }]),
+        },
+      });
+
+      const error = await controller.readiness().catch((e: unknown) => e);
+      expect(error).toHaveProperty('status', 503);
     });
 
     it('throws 503 with generic status-only body when redis is configured but unreachable', async () => {

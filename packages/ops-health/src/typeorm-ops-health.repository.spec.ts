@@ -34,6 +34,19 @@ describe('TypeormOpsHealthRepository', () => {
     }
   });
 
+  it('reports only a writable primary as database-ready', async () => {
+    const query = jest.fn().mockResolvedValue([{ in_recovery: false }]);
+    const repo = buildRepo('discord', () => 15, query);
+
+    await expect(repo.isDatabaseReachable()).resolves.toBe(true);
+    expect(query).toHaveBeenCalledWith(
+      'SELECT pg_is_in_recovery() AS in_recovery',
+    );
+
+    query.mockResolvedValue([{ in_recovery: true }]);
+    await expect(repo.isDatabaseReachable()).resolves.toBe(false);
+  });
+
   it('passes the resolved daily limit into the users-at-limit query', async () => {
     const query = jest.fn().mockResolvedValue([]);
     const dailyLimit = jest.fn().mockReturnValue(42);
