@@ -206,7 +206,9 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
           cleanupIntervalMs: CLEANUP_INTERVAL_MS,
           maxPendingSize,
         },
-        (batch) => this.handleFlush(batch),
+        async (batch) => {
+          await this.handleFlush(batch);
+        },
         {
           onPendingQueued: (externalUserId, _text, pendingCount) => {
             if (pendingCount === 1) {
@@ -363,23 +365,26 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
       }
     }
 
+    let retryScheduled = false;
     try {
       if (batch.droppedNoticePending) {
         await this.sendDroppedNotice(externalUserId);
       }
-      await this.handleFlush(batch);
+      retryScheduled = await this.handleFlush(batch);
     } finally {
       this.droppedNotified.delete(externalUserId);
-      await this.queueStore!.completeChatBuffer({
-        externalUserId,
-        debounceMs: this.debounceMs,
-      });
+      if (!retryScheduled) {
+        await this.queueStore!.completeChatBuffer({
+          externalUserId,
+          debounceMs: this.debounceMs,
+        });
+      }
     }
   }
 
   private async handleFlush(
     batch: ChatQueueBatch<QueueCtx> | ChatQueueBufferSnapshot,
-  ): Promise<void> {
+  ): Promise<boolean> {
     // #406: Store batch texts for potential retry; clear fallback gate for this cycle.
     pendingBatchTexts.set(batch.externalUserId, [...batch.texts]);
     fallbackSentThisCycle.delete(batch.externalUserId);
@@ -418,9 +423,11 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
       const userId = batch.externalUserId;
       const fallbackWasSent = fallbackSentThisCycle.has(userId);
 
+      let scheduled = false;
       if (this.retryEnabled && !fallbackWasSent && this.queueStore) {
         try {
           await this.queueStore.scheduleRetryFlush(userId, this.retryDelayMs);
+          scheduled = true;
           this.logger.log(
             `Chat flush retry scheduled for ${maskExternalId(userId)} after ${this.retryDelayMs}ms`,
           );
@@ -437,9 +444,11 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
 
       pendingBatchTexts.delete(userId);
       fallbackSentThisCycle.delete(userId);
+      return scheduled;
     } finally {
       this.droppedNotified.delete(batch.externalUserId);
     }
+    return false;
   }
 
   private async sendDroppedNotice(externalUserId: string): Promise<void> {

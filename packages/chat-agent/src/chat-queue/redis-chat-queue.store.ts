@@ -251,18 +251,21 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
   async scheduleRetryFlush(
     externalUserId: string,
     retryDelayMs: number,
-  ): Promise<void> {
-    await this.withExternalUserIdLock(externalUserId, async (client) => {
-      const state = await this.readState(client, externalUserId);
+  ): Promise<boolean> {
+    return (
+      (await this.withExternalUserIdLock(externalUserId, async (client) => {
+        const state = await this.readState(client, externalUserId);
 
-      const retryTexts = [...state.processingTexts, ...state.pendingTexts];
-      if (retryTexts.length === 0) {
-        return;
-      }
+        const retryTexts = [...state.processingTexts, ...state.pendingTexts];
+        if (retryTexts.length === 0) {
+          return false;
+        }
 
-      this.resetToReady(state, retryTexts, Date.now() + retryDelayMs);
-      await this.writeState(client, externalUserId, state);
-    });
+        this.resetToReady(state, retryTexts, Date.now() + retryDelayMs);
+        await this.writeState(client, externalUserId, state);
+        return true;
+      })) ?? false
+    );
   }
 
   async completeChatBuffer(input: CompleteChatBufferInput): Promise<boolean> {

@@ -25,5 +25,5 @@ export interface ChatQueueStorePort {
   scheduleRetryFlush(
     externalUserId: string,
     retryDelayMs: number,
-  ): Promise<void>;
+  ): Promise<boolean>;
 }

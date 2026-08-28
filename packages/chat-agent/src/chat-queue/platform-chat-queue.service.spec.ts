@@ -735,7 +735,7 @@ describe('PlatformChatQueueService', () => {
       ).toHaveBeenCalledWith('zalo-3', 5000);
     });
 
-    it('still calls completeChatBuffer after scheduleRetryFlush', async () => {
+    it('skips completeChatBuffer when scheduleRetryFlush succeeds (#406)', async () => {
       const { service, queueStore, sender } =
         buildDistributedServiceWithRetry(true);
       await service.onModuleInit();
@@ -748,6 +748,11 @@ describe('PlatformChatQueueService', () => {
         lastIdempotencyKey: 'key-5',
         userId: 40,
       });
+
+      // scheduleRetryFlush returns true (retry was scheduled)
+      (
+        queueStore as unknown as { scheduleRetryFlush: jest.Mock }
+      ).scheduleRetryFlush.mockResolvedValue(true);
 
       sender.sendText.mockRejectedValue(new Error('DM down'));
       const pipelineFlush = jest
@@ -769,13 +774,14 @@ describe('PlatformChatQueueService', () => {
       await service.flushReady('zalo-2');
 
       expect(
-        (queueStore as unknown as { completeChatBuffer: jest.Mock })
-          .completeChatBuffer,
-      ).toHaveBeenCalled();
-      expect(
         (queueStore as unknown as { scheduleRetryFlush: jest.Mock })
           .scheduleRetryFlush,
       ).toHaveBeenCalledWith('zalo-2', 5000);
+      // #406: completeChatBuffer must NOT be called when retry was scheduled
+      expect(
+        (queueStore as unknown as { completeChatBuffer: jest.Mock })
+          .completeChatBuffer,
+      ).not.toHaveBeenCalled();
     });
   });
 

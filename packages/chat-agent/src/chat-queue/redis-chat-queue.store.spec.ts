@@ -145,8 +145,9 @@ describe('RedisChatQueueStore', () => {
       );
       const store = createStore(client, 'discord');
 
-      await store.scheduleRetryFlush('discord-1', 5000);
+      const result = await store.scheduleRetryFlush('discord-1', 5000);
 
+      expect(result).toBe(true);
       const written = JSON.parse(persistedState ?? '{}') as {
         texts: string[];
         processingTexts: string[];
@@ -180,8 +181,9 @@ describe('RedisChatQueueStore', () => {
       );
       const store = createStore(client, 'discord');
 
-      await store.scheduleRetryFlush('discord-1', 5000);
+      const result = await store.scheduleRetryFlush('discord-1', 5000);
 
+      expect(result).toBe(false);
       // No state write should happen when there's nothing to retry
       expect(writeSpy).not.toHaveBeenCalled();
     });
@@ -209,8 +211,9 @@ describe('RedisChatQueueStore', () => {
       );
       const store = createStore(client, 'zalo');
 
-      await store.scheduleRetryFlush('zalo-1', 5000);
+      const result = await store.scheduleRetryFlush('zalo-1', 5000);
 
+      expect(result).toBe(true);
       const written = JSON.parse(persistedState ?? '{}') as {
         texts: string[];
         pendingTexts: string[];
@@ -219,6 +222,90 @@ describe('RedisChatQueueStore', () => {
       expect(written.texts).toEqual(['claimed-msg', 'pending-msg']);
       expect(written.pendingTexts).toEqual([]);
       expect(written.processingTexts).toEqual([]);
+    });
+
+    it('handles pipeline + fallback failure by scheduling retry and leaving texts ready for next claim', async () => {
+      let persistedState: string | null = JSON.stringify({
+        texts: ['batch-msg-1', 'batch-msg-2'],
+        pendingTexts: [],
+        processingTexts: [],
+        processing: false,
+        processingStartedAt: null,
+        flushAfterAt: Date.now() - 1000,
+        lastIdempotencyKey: 'mid-10',
+      });
+      const transaction = createTransaction();
+      transaction.set.mockImplementation((_key: string, value: string) => {
+        persistedState = value;
+        return transaction;
+      });
+      const client = createClient(
+        jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+        transaction,
+      );
+      const store = createStore(client, 'discord');
+
+      const claimed = await store.claimReadyBuffer(
+        'discord-retry-1',
+        2000,
+        300_000,
+      );
+      expect(claimed?.texts).toEqual(['batch-msg-1', 'batch-msg-2']);
+
+      const inFlightState = JSON.parse(persistedState ?? '{}');
+      expect(inFlightState.processing).toBe(true);
+      expect(inFlightState.processingTexts).toEqual([
+        'batch-msg-1',
+        'batch-msg-2',
+      ]);
+      expect(inFlightState.texts).toEqual([]);
+
+      const retryResult = await store.scheduleRetryFlush(
+        'discord-retry-1',
+        5000,
+      );
+      expect(retryResult).toBe(true);
+
+      const retriedState = JSON.parse(persistedState ?? '{}');
+      expect(retriedState.processing).toBe(false);
+      expect(retriedState.processingTexts).toEqual([]);
+      expect(retriedState.texts).toEqual(['batch-msg-1', 'batch-msg-2']);
+      expect(retriedState.flushAfterAt).toBeGreaterThan(Date.now());
+    });
+
+    it('handles crash recovery after lease expiration without retry schedule', async () => {
+      let persistedState: string | null = JSON.stringify({
+        texts: ['crash-msg-1'],
+        pendingTexts: [],
+        processingTexts: [],
+        processing: false,
+        processingStartedAt: null,
+        flushAfterAt: Date.now() - 1000,
+      });
+      const transaction = createTransaction();
+      transaction.set.mockImplementation((_key: string, value: string) => {
+        persistedState = value;
+        return transaction;
+      });
+      const client = createClient(
+        jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+        transaction,
+      );
+      const store = createStore(client, 'zalo');
+
+      const claimed = await store.claimReadyBuffer(
+        'zalo-crash-1',
+        2000,
+        300_000,
+      );
+      expect(claimed?.texts).toEqual(['crash-msg-1']);
+
+      const recovered = await store.claimReadyBuffer('zalo-crash-1', 2000, 0);
+      expect(recovered?.texts).toEqual(['crash-msg-1']);
+
+      const recoveredState = JSON.parse(persistedState ?? '{}');
+      expect(recoveredState.processing).toBe(true);
+      expect(recoveredState.processingTexts).toEqual(['crash-msg-1']);
     });
   });
 
