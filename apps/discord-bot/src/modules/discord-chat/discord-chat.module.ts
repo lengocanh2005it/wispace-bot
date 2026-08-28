@@ -216,6 +216,8 @@ const REGISTER_REPORT_MESSAGE =
               timeTool: (toolName, fn) => metrics.timeTool(toolName, fn),
               llmRoundOutcomeInc: (feature, outcome) =>
                 metrics.incRoundOutcome(feature, outcome),
+              observationOutcomeInc: (toolName, outcome) =>
+                metrics.incObservationOutcome(toolName, 'discord', outcome),
             },
             clarificationOutcomeInc: (outcome) =>
               metrics.incClarificationOutcome(outcome),

@@ -109,11 +109,18 @@ export {
   sleep,
   retryWithBackoff,
   loadSystemPromptFile,
+  canonicalizeToolObservation,
+  fitToolObservation,
+  observationMarker,
+  projectToolObservation,
+  reduceToolObservation,
 } from './utils/index';
 export type {
   InjectionCheckResult,
   LlmGroundingResult,
   PrivacyIntent,
+  ReducedToolObservation,
+  ToolObservationOutcome,
 } from './utils/index';
 
 // Ports — DI tokens and port interfaces

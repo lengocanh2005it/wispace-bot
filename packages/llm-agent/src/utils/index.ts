@@ -38,6 +38,17 @@ export { sanitizeReplyText } from './text.utils';
 export { sleep, retryWithBackoff } from './retry.utils';
 export { loadSystemPromptFile } from './load-system-prompt';
 export {
+  canonicalizeToolObservation,
+  fitToolObservation,
+  observationMarker,
+  projectToolObservation,
+  reduceToolObservation,
+} from './tool-observation';
+export type {
+  ReducedToolObservation,
+  ToolObservationOutcome,
+} from './tool-observation';
+export {
   SYSTEM_PROMPT_LEAK_MARKERS,
   checkFinalOutputSafety,
   type FinalOutputSafetyResult,

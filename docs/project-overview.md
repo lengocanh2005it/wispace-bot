@@ -381,6 +381,7 @@ LLM safety:
 
 - `MessengerAgentService` blocks English/Vietnamese prompt injection before OpenAI, redacts malicious history, caps context, and sanitizes JSON-format tool results.
 - The shared `LlmAgentService` accepts only names from `AGENT_TOOL_NAMES`; unknown model tool calls receive a fixed failed result for protocol validity but never reach a platform executor.
+- In-run tool observations (#414) are projected to server-derived fields, sanitized, bounded per result and cumulatively per round (including serialized tool arguments), and marked as `truncated`, `reused`, `dropped`, or `fallback` when data is reduced. Every provider tool call still receives a paired tool message; observation metrics are `<prefix>_llm_observation_outcome_total{tool_name,platform,outcome}`.
 - External data from WISPACE/user profile entering reminders/reports must be sanitized via `src/shared/utils/prompt-injection.utils.ts`.
 - JSON output from OpenAI must be parsed + shape-validated via `src/shared/utils/llm-json-output.utils.ts`; invalid shape falls back to template, no direct type casting for formatting.
 - **Safety telemetry is redacted at rest** (`LlmSafetyCore.recordGroundingWarning`, `packages/chat-metering/src/llm-safety/redact-safety-text.ts`): payloads persist only a sanitized excerpt (control chars stripped, credential-like patterns — JWT/Bearer/PEM/emails/VN phones/key=value — replaced with `[REDACTED]`) plus SHA-256 hash and original length; raw user text, assistant text, tool data and error fields are never written to `llm_safety_events`.

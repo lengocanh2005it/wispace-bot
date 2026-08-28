@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { LlmAgentService } from '@wispace/llm-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import type {
   PlatformLlmSafetyEventAdapter,
@@ -114,6 +115,27 @@ describe('PlatformAgentService', () => {
       }),
       expect.anything(),
     );
+  });
+
+  it('routes every platform through the shared agent loop (#414)', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+
+    for (const platform of ['messenger', 'discord', 'zalo']) {
+      const service = buildService(historyService, {
+        platform,
+      });
+      await service.reply({
+        externalUserId: `${platform}-user`,
+        userText: 'Xem tiến độ học của mình',
+      });
+    }
+
+    const constructorCalls = (LlmAgentService as unknown as jest.Mock).mock
+      .calls;
+    expect(constructorCalls).toHaveLength(3);
   });
 
   it('bounds an ambiguous turn without invoking the LLM, then maps an active choice to a fresh intent', async () => {

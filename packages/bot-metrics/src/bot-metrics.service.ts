@@ -48,6 +48,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmToolDuration: Histogram;
   private llmToolCalls: Counter;
   private llmRoundOutcome: Counter;
+  private llmObservationOutcome: Counter;
   private clarificationOutcomes: Counter;
   private llmAdmissionRejected: Counter;
   private llmAdmissionWait: Histogram;
@@ -126,6 +127,13 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_llm_round_outcome_total`,
       help: 'LLM agent round outcomes',
       labelNames: ['feature', 'outcome'],
+      registers: [this.registry],
+    });
+
+    this.llmObservationOutcome = new Counter({
+      name: `${this.prefix}_llm_observation_outcome_total`,
+      help: 'Bounded in-run LLM tool-observation outcomes (#414)',
+      labelNames: ['tool_name', 'platform', 'outcome'],
       registers: [this.registry],
     });
 
@@ -349,6 +357,14 @@ export class BotMetricsService implements OnModuleDestroy {
 
   incRoundOutcome(feature: string, outcome: string): void {
     this.llmRoundOutcome.inc({ feature, outcome });
+  }
+
+  incObservationOutcome(
+    toolName: string,
+    platform: string,
+    outcome: string,
+  ): void {
+    this.llmObservationOutcome.inc({ tool_name: toolName, platform, outcome });
   }
 
   incClarificationOutcome(outcome: string): void {

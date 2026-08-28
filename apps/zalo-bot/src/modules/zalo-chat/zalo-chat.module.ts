@@ -252,6 +252,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
               timeTool: (toolName, fn) => metrics.timeTool(toolName, fn),
               llmRoundOutcomeInc: (feature, outcome) =>
                 metrics.incRoundOutcome(feature, outcome),
+              observationOutcomeInc: (toolName, outcome) =>
+                metrics.incObservationOutcome(toolName, 'zalo', outcome),
             },
             clarificationOutcomeInc: (outcome) =>
               metrics.incClarificationOutcome(outcome),

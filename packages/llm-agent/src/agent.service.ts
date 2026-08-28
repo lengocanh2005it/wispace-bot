@@ -4,9 +4,13 @@ import { AGENT_TOOLS, isAgentToolName } from './agent.tools';
 import { checkLlmGrounding } from './utils/llm-grounding.utils';
 import {
   detectPromptInjection,
-  sanitizeToolResultContent,
   sanitizeUntrustedTextForLlm,
 } from './utils/prompt-injection.utils';
+import {
+  fitToolObservation,
+  observationMarker,
+  reduceToolObservation,
+} from './utils/tool-observation';
 import { isObviouslyOffTopic, isAmbiguousMessage } from './utils/scope.utils';
 import { sanitizeReplyText } from './utils/text.utils';
 import { checkFinalOutputSafety } from './utils/final-output.utils';
@@ -29,6 +33,7 @@ import {
   NOOP_METRICS_PORT,
   ToolExecutorPort,
 } from './ports';
+import type { ToolObservationOutcome } from './utils/tool-observation';
 import type {
   ChatHistoryMessage,
   LlmAgentConfig,
@@ -88,10 +93,6 @@ const NOOP_LOGGER = { warn: () => undefined, debug: () => undefined };
 const DEFAULT_MAX_LLM_RETRIES = 3;
 const DEFAULT_RETRY_BASE_DELAY_MS = 100;
 const MAX_RETRY_DELAY_MS = 10_000;
-const UNKNOWN_TOOL_RESULT_CONTENT = JSON.stringify({
-  ok: false,
-  error: 'Tool không được hỗ trợ',
-});
 
 export class LlmRetryExhaustedError extends Error {
   constructor(
@@ -471,11 +472,16 @@ export class LlmAgentService<TToolContext> {
           }
         }
 
+        const observationBudget = Math.max(
+          0,
+          this.getMaxContextChars() - this.messageChars(messages),
+        );
         const toolResults = await this.executeToolCalls(
           toolCalls,
           input,
           toolContext,
           toolsCalledThisTurn,
+          observationBudget,
           signal,
         );
 
@@ -495,7 +501,7 @@ export class LlmAgentService<TToolContext> {
         // Cumulative tool-result budget: individual results are sanitized per
         // string, but across rounds they can exceed the model context. Drop
         // the oldest loop-generated messages until the total fits.
-        this.trimLoopMessages(messages, loopMessagesStart);
+        this.trimLoopMessages(messages, loopMessagesStart, metrics);
       } catch (err) {
         yield { type: 'error', error: err };
         return;
@@ -553,17 +559,10 @@ export class LlmAgentService<TToolContext> {
   private trimLoopMessages(
     messages: LlmMessage[],
     loopStartIndex: number,
+    metrics: AgentMetricsPort,
   ): void {
     const budget = this.getMaxContextChars();
-    let total = 0;
-    for (const message of messages) {
-      total += message.content?.length ?? 0;
-      for (const call of message.toolCalls ?? []) {
-        // Serialized tool-call arguments count against the budget too —
-        // oversized args must not bypass the intended context cap (#152).
-        total += call.arguments?.length ?? 0;
-      }
-    }
+    let total = this.messageChars(messages);
 
     while (total > budget && messages.length > loopStartIndex) {
       const assistantIndex = this.findFirstLoopAssistantIndex(
@@ -572,10 +571,7 @@ export class LlmAgentService<TToolContext> {
       );
       const dropIndex = assistantIndex === -1 ? loopStartIndex : assistantIndex;
       const removed = messages.splice(dropIndex, 1)[0];
-      total -= removed?.content?.length ?? 0;
-      for (const call of removed?.toolCalls ?? []) {
-        total -= call.arguments?.length ?? 0;
-      }
+      total -= this.messageChars(removed);
 
       if (removed?.toolCalls?.length) {
         // Drop the tool results that followed this frame (they reference its
@@ -586,12 +582,49 @@ export class LlmAgentService<TToolContext> {
         ) {
           const toolMessage = messages[dropIndex];
           if (toolMessage) {
-            total -= toolMessage.content?.length ?? 0;
+            total -= this.messageChars(toolMessage);
           }
           messages.splice(dropIndex, 1);
         }
+
+        // Keep a trustworthy indication that an older observation was
+        // omitted. This assistant message has no tool calls, so it cannot
+        // orphan a provider tool-result message.
+        const toolNames = removed.toolCalls.map((call) =>
+          isAgentToolName(call.name) ? call.name : 'unknown',
+        );
+        const markerContent = JSON.stringify({
+          _observation: 'dropped',
+          tools: [...new Set(toolNames)],
+          count: removed.toolCalls.length,
+        });
+        messages.splice(dropIndex, 0, {
+          role: 'assistant',
+          content: markerContent,
+        });
+        total += markerContent.length;
+        for (const toolName of new Set(toolNames)) {
+          metrics.observationOutcomeInc?.(toolName, 'dropped');
+        }
       }
     }
+  }
+
+  private messageChars(value: LlmMessage[] | LlmMessage | undefined): number {
+    if (Array.isArray(value)) {
+      return value.reduce(
+        (sum, message) => sum + this.messageChars(message),
+        0,
+      );
+    }
+    if (!value) return 0;
+    return (
+      (value.content?.length ?? 0) +
+      (value.toolCalls ?? []).reduce(
+        (sum, call) => sum + (call.arguments?.length ?? 0),
+        0,
+      )
+    );
   }
 
   private findFirstLoopAssistantIndex(
@@ -1038,6 +1071,7 @@ Summary:`;
     input: LlmAgentInput,
     toolContext: TToolContext,
     toolsCalledThisTurn: Set<string>,
+    observationBudget: number,
     parentSignal?: AbortSignal,
   ): Promise<
     Array<{
@@ -1071,7 +1105,10 @@ Summary:`;
 
     const resultsByKey = new Map<
       string,
-      { content: string; succeeded: boolean }
+      {
+        observation: ReturnType<typeof reduceToolObservation>;
+        succeeded: boolean;
+      }
     >();
 
     await Promise.all(
@@ -1081,7 +1118,12 @@ Summary:`;
 
         if (!isAgentToolName(toolName)) {
           resultsByKey.set(this.toolCallKey(toolCall), {
-            content: UNKNOWN_TOOL_RESULT_CONTENT,
+            observation: reduceToolObservation({
+              toolName,
+              error: 'Tool không được hỗ trợ',
+              ok: false,
+              maxChars: 8_000,
+            }),
             succeeded: false,
           });
           return;
@@ -1089,7 +1131,6 @@ Summary:`;
 
         toolsCalledThisTurn.add(toolName);
 
-        let content: string;
         const controller = new AbortController();
         const abort = () => controller.abort();
         parentSignal?.addEventListener('abort', abort, { once: true });
@@ -1107,18 +1148,13 @@ Summary:`;
             `Tool ${toolName}`,
             () => controller.abort(),
           );
-          const raw = JSON.stringify({ ok: true, data: result });
-          const sanitized = sanitizeToolResultContent(raw);
-          if (sanitized.wasSanitized) {
-            logger.warn(
-              `Tool result sanitized externalUserId=${maskExternalId(
-                input.externalUserId,
-              )} tool=${toolName} reason=${sanitized.reason}`,
-            );
-          }
-          content = sanitized.content;
           resultsByKey.set(this.toolCallKey(toolCall), {
-            content,
+            observation: reduceToolObservation({
+              toolName,
+              result,
+              ok: true,
+              maxChars: 8_000,
+            }),
             succeeded: true,
           });
         } catch (err) {
@@ -1128,15 +1164,13 @@ Summary:`;
               input.externalUserId,
             )} tool=${toolName} error=${message}`,
           );
-          // The error envelope goes back into the model context — sanitize it
-          // with the SAME pipeline as successful results (control chars,
-          // credential/injection patterns, size cap) so an upstream error
-          // body can never become an indirect prompt injection (#161).
-          content = sanitizeToolResultContent(
-            JSON.stringify({ ok: false, error: message }),
-          ).content;
           resultsByKey.set(this.toolCallKey(toolCall), {
-            content,
+            observation: reduceToolObservation({
+              toolName,
+              error: message,
+              ok: false,
+              maxChars: 8_000,
+            }),
             succeeded: false,
           });
         } finally {
@@ -1145,19 +1179,110 @@ Summary:`;
       }),
     );
 
-    // Broadcast: every original call id gets its group's result.
-    return toolCalls.map((call) => {
+    // Build one bounded, sanitized observation per executed call. The full
+    // form is only retained for this small round (the call cap is four), then
+    // allocated in model order so every call retains at least a marker.
+    const fullByKey = new Map<
+      string,
+      ReturnType<typeof reduceToolObservation>
+    >();
+    for (const call of uniqueCalls) {
       const result = resultsByKey.get(this.toolCallKey(call)) ?? {
-        content: JSON.stringify({
-          ok: false,
-          error: 'tool execution did not produce a result',
-        }),
+        observation: this.missingToolExecutionObservation(call.name),
         succeeded: false,
       };
+      fullByKey.set(this.toolCallKey(call), result.observation);
+    }
+
+    const minimumMarkerBudget = toolCalls.reduce((sum, call) => {
+      const execution = resultsByKey.get(this.toolCallKey(call));
+      return (
+        sum +
+        observationMarker('truncated', execution?.succeeded ?? false).length
+      );
+    }, 0);
+    let extraBudget = Math.max(0, observationBudget - minimumMarkerBudget);
+    let remainingUnique = uniqueCalls.length;
+    const emittedObservationKeys = new Set<string>();
+    const allocatedByKey = new Map<string, string>();
+    const outcomesByKey = new Map<string, ToolObservationOutcome>();
+
+    for (const call of toolCalls) {
+      const callKey = this.toolCallKey(call);
+      const full = fullByKey.get(callKey);
+      const execution = resultsByKey.get(callKey) ?? {
+        observation: this.missingToolExecutionObservation(call.name),
+        succeeded: false,
+      };
+      // A lossy projection/truncation is not strong identity: distinct calls
+      // can share the retained prefix. Exact duplicate calls still share the
+      // same callKey and can safely reuse their observation.
+      const observationKey = `${call.name}:${
+        full?.wasTruncated ? `call:${callKey}` : (full?.canonical ?? callKey)
+      }`;
+
+      if (emittedObservationKeys.has(observationKey)) {
+        allocatedByKey.set(
+          `${call.id}:${callKey}`,
+          observationMarker('reused', execution.succeeded),
+        );
+        outcomesByKey.set(`${call.id}:${callKey}`, 'deduped');
+        continue;
+      }
+
+      emittedObservationKeys.add(observationKey);
+      remainingUnique = Math.max(1, remainingUnique);
+      const markerLength = observationMarker(
+        'truncated',
+        execution.succeeded,
+      ).length;
+      const allocation = Math.max(
+        markerLength,
+        markerLength + Math.floor(extraBudget / remainingUnique),
+      );
+      const fitted = full
+        ? fitToolObservation(full.content, allocation)
+        : {
+            content: observationMarker(
+              execution.succeeded ? 'truncated' : 'fallback',
+              execution.succeeded,
+            ),
+            wasTruncated: true,
+          };
+      const content = fitted.content;
+      const outcome: ToolObservationOutcome =
+        full?.outcome === 'fallback'
+          ? 'fallback'
+          : full?.wasTruncated || fitted.wasTruncated
+            ? 'truncated'
+            : 'kept';
+      allocatedByKey.set(`${call.id}:${callKey}`, content);
+      outcomesByKey.set(`${call.id}:${callKey}`, outcome);
+      extraBudget = Math.max(
+        0,
+        extraBudget - Math.max(0, content.length - markerLength),
+      );
+      remainingUnique -= 1;
+    }
+
+    // Every original call id gets a tool message, including duplicates. This
+    // preserves provider pairing while duplicate observations stay compact.
+    return toolCalls.map((call) => {
+      const result = resultsByKey.get(this.toolCallKey(call)) ?? {
+        observation: this.missingToolExecutionObservation(call.name),
+        succeeded: false,
+      };
+      const resultKey = `${call.id}:${this.toolCallKey(call)}`;
+      const outcome = outcomesByKey.get(resultKey) ?? 'fallback';
+      const content =
+        allocatedByKey.get(resultKey) ??
+        observationMarker('fallback', result.succeeded);
+      const metricToolName = isAgentToolName(call.name) ? call.name : 'unknown';
+      metrics.observationOutcomeInc?.(metricToolName, outcome);
       return {
         toolCallId: call.id,
         toolName: call.name,
-        content: result.content,
+        content,
         succeeded: result.succeeded,
       };
     });
@@ -1165,6 +1290,17 @@ Summary:`;
 
   private toolCallKey(call: { name: string; arguments: string }): string {
     return `${call.name}:${call.arguments || '{}'}`;
+  }
+
+  private missingToolExecutionObservation(
+    toolName: string,
+  ): ReturnType<typeof reduceToolObservation> {
+    return reduceToolObservation({
+      toolName,
+      error: 'tool execution did not produce a result',
+      ok: false,
+      maxChars: 8_000,
+    });
   }
 
   private countUniqueToolCalls(

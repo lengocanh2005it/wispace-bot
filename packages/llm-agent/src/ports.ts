@@ -55,6 +55,11 @@ export interface AgentMetricsPort {
   timeAgentLoop?<T>(feature: string, fn: () => Promise<T>): Promise<T>;
   /** #413: Record compaction outcome. Optional — noop if not provided. */
   compactionOutcomeInc?(outcome: 'compacted' | 'fallback' | 'skipped'): void;
+  /** #414: Record bounded in-run tool-observation outcomes. */
+  observationOutcomeInc?(
+    toolName: string,
+    outcome: ToolObservationOutcome,
+  ): void;
 }
 
 /** Executes a single tool call against platform-specific business services. */
@@ -73,4 +78,6 @@ export const NOOP_METRICS_PORT: AgentMetricsPort = {
   llmRoundOutcomeInc: () => undefined,
   timeAgentLoop: (_feature, fn) => fn(),
   compactionOutcomeInc: () => undefined,
+  observationOutcomeInc: () => undefined,
 };
+import type { ToolObservationOutcome } from './utils/tool-observation';
