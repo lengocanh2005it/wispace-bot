@@ -4,6 +4,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { errorMessage, sanitizeErrorStack } from '@wispace/bot-common/masking';
 import { AppModule } from './app.module';
+import { loadVaultSecrets } from './shared/config/vault-secrets';
 
 const logger = new Logger('Bootstrap');
 // Must cover the longest in-flight work (LLM tool execution can take 35s)
@@ -26,6 +27,8 @@ process.on('uncaughtException', (error) => {
 });
 
 async function bootstrap() {
+  await loadVaultSecrets();
+
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
   const corsOrigin = process.env.CORS_ORIGIN?.trim();
