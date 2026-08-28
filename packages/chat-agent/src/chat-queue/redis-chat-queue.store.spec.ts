@@ -129,6 +129,7 @@ describe('RedisChatQueueStore', () => {
         processingTexts: ['hello', 'world'],
         processing: true,
         processingStartedAt: Date.now(),
+        processingLeaseToken: 'lease-1',
         flushAfterAt: null,
         lastIdempotencyKey: 'mid-1',
         lastPendingIdempotencyKey: null,
@@ -145,7 +146,11 @@ describe('RedisChatQueueStore', () => {
       );
       const store = createStore(client, 'discord');
 
-      const result = await store.scheduleRetryFlush('discord-1', 5000);
+      const result = await store.scheduleRetryFlush(
+        'discord-1',
+        5000,
+        'lease-1',
+      );
 
       expect(result).toBe(true);
       const written = JSON.parse(persistedState ?? '{}') as {
@@ -168,6 +173,7 @@ describe('RedisChatQueueStore', () => {
         processingTexts: [],
         processing: true,
         processingStartedAt: Date.now(),
+        processingLeaseToken: 'lease-empty',
         flushAfterAt: null,
         lastIdempotencyKey: null,
         lastPendingIdempotencyKey: null,
@@ -181,7 +187,11 @@ describe('RedisChatQueueStore', () => {
       );
       const store = createStore(client, 'discord');
 
-      const result = await store.scheduleRetryFlush('discord-1', 5000);
+      const result = await store.scheduleRetryFlush(
+        'discord-1',
+        5000,
+        'lease-empty',
+      );
 
       expect(result).toBe(false);
       // No state write should happen when there's nothing to retry
@@ -195,6 +205,7 @@ describe('RedisChatQueueStore', () => {
         processingTexts: ['claimed-msg'],
         processing: true,
         processingStartedAt: Date.now(),
+        processingLeaseToken: 'lease-2',
         flushAfterAt: null,
         lastIdempotencyKey: 'mid-1',
         lastPendingIdempotencyKey: 'mid-2',
@@ -211,7 +222,7 @@ describe('RedisChatQueueStore', () => {
       );
       const store = createStore(client, 'zalo');
 
-      const result = await store.scheduleRetryFlush('zalo-1', 5000);
+      const result = await store.scheduleRetryFlush('zalo-1', 5000, 'lease-2');
 
       expect(result).toBe(true);
       const written = JSON.parse(persistedState ?? '{}') as {
@@ -263,6 +274,7 @@ describe('RedisChatQueueStore', () => {
       const retryResult = await store.scheduleRetryFlush(
         'discord-retry-1',
         5000,
+        claimed!.leaseToken,
       );
       expect(retryResult).toBe(true);
 
@@ -270,6 +282,7 @@ describe('RedisChatQueueStore', () => {
       expect(retriedState.processing).toBe(false);
       expect(retriedState.processingTexts).toEqual([]);
       expect(retriedState.texts).toEqual(['batch-msg-1', 'batch-msg-2']);
+      expect(retriedState.lastIdempotencyKey).toBe('mid-10');
       expect(retriedState.flushAfterAt).toBeGreaterThan(Date.now());
     });
 
@@ -280,7 +293,9 @@ describe('RedisChatQueueStore', () => {
         processingTexts: [],
         processing: false,
         processingStartedAt: null,
+        processingLeaseToken: null,
         flushAfterAt: Date.now() - 1000,
+        lastIdempotencyKey: 'mid-crash',
       });
       const transaction = createTransaction();
       transaction.set.mockImplementation((_key: string, value: string) => {
@@ -302,10 +317,121 @@ describe('RedisChatQueueStore', () => {
 
       const recovered = await store.claimReadyBuffer('zalo-crash-1', 2000, 0);
       expect(recovered?.texts).toEqual(['crash-msg-1']);
+      expect(recovered?.lastIdempotencyKey).toBe('mid-crash');
 
       const recoveredState = JSON.parse(persistedState ?? '{}');
       expect(recoveredState.processing).toBe(true);
       expect(recoveredState.processingTexts).toEqual(['crash-msg-1']);
+      expect(recoveredState.processingLeaseToken).toEqual(
+        recovered?.leaseToken,
+      );
+    });
+
+    it('fences completion from a worker whose claim was recovered', async () => {
+      let persistedState: string | null = JSON.stringify({
+        texts: ['fenced-msg'],
+        pendingTexts: [],
+        processingTexts: [],
+        processing: false,
+        processingStartedAt: null,
+        processingLeaseToken: null,
+        flushAfterAt: Date.now() - 1000,
+      });
+      const transaction = createTransaction();
+      transaction.set.mockImplementation((_key: string, value: string) => {
+        persistedState = value;
+        return transaction;
+      });
+      const client = createClient(
+        jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+        transaction,
+      );
+      const firstWorker = createStore(client, 'discord');
+      const firstClaim = await firstWorker.claimReadyBuffer(
+        'discord-fenced-1',
+        2000,
+        300_000,
+      );
+      const secondWorker = createStore(client, 'discord');
+      const secondClaim = await secondWorker.claimReadyBuffer(
+        'discord-fenced-1',
+        2000,
+        0,
+      );
+
+      expect(firstClaim?.leaseToken).toBeDefined();
+      expect(secondClaim?.leaseToken).toBeDefined();
+      expect(secondClaim?.leaseToken).not.toBe(firstClaim?.leaseToken);
+
+      await expect(
+        firstWorker.completeChatBuffer({
+          externalUserId: 'discord-fenced-1',
+          debounceMs: 2000,
+          leaseToken: firstClaim!.leaseToken,
+        }),
+      ).resolves.toBe(false);
+      await expect(
+        firstWorker.scheduleRetryFlush(
+          'discord-fenced-1',
+          5000,
+          firstClaim!.leaseToken,
+        ),
+      ).resolves.toBe(false);
+
+      const currentState = JSON.parse(persistedState ?? '{}');
+      expect(currentState.processing).toBe(true);
+      expect(currentState.processingLeaseToken).toBe(secondClaim?.leaseToken);
+      expect(currentState.processingTexts).toEqual(['fenced-msg']);
+    });
+
+    it('retains a failed batch as abandoned after the retry budget is exhausted', async () => {
+      let persistedState: string | null = JSON.stringify({
+        texts: [],
+        pendingTexts: [],
+        processingTexts: ['abandoned-msg'],
+        processing: true,
+        processingStartedAt: Date.now(),
+        processingLeaseToken: 'lease-abandoned',
+        processingIdempotencyKey: 'mid-abandoned',
+        lastIdempotencyKey: null,
+        lastPendingIdempotencyKey: null,
+        retryCount: 1,
+        flushAfterAt: null,
+      });
+      const transaction = createTransaction();
+      transaction.set.mockImplementation((_key: string, value: string) => {
+        persistedState = value;
+        return transaction;
+      });
+      const client = createClient(
+        jest.fn().mockImplementation(() => Promise.resolve(persistedState)),
+        transaction,
+      );
+      const outcomes: string[] = [];
+      const store = new RedisChatQueueStore(
+        {
+          isEnabled: () => true,
+          getNativeClient: () => client,
+        } as unknown as RedisClientPort,
+        {
+          get: (key: string) =>
+            key === 'CHAT_FLUSH_MAX_RETRIES' ? '1' : undefined,
+        } as never,
+        {
+          platform: 'discord',
+          onRecoveryOutcome: (outcome: string) => outcomes.push(outcome),
+        } as never,
+      );
+
+      await expect(
+        store.scheduleRetryFlush('discord-abandoned', 5000, 'lease-abandoned'),
+      ).resolves.toBe(false);
+
+      const abandonedState = JSON.parse(persistedState ?? '{}');
+      expect(abandonedState.abandoned).toBe(true);
+      expect(abandonedState.texts).toEqual(['abandoned-msg']);
+      expect(abandonedState.lastIdempotencyKey).toBe('mid-abandoned');
+      expect(outcomes).toContain('abandoned');
     });
   });
 

@@ -67,7 +67,28 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     const output = await metrics.getMetrics();
 
     expect(output).toContain(
-      'test_llm_observation_outcome_total{outcome="truncated",platform="discord",tool_name="get_user_goals"} 1',
+      'test_llm_observation_outcome_total{tool_name="get_user_goals",platform="discord",outcome="truncated"} 1',
+    );
+    expect(output).not.toContain('external_user_id');
+  });
+
+  it('exposes chat flush recovery outcomes without user labels', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+
+    metrics.incChatFlushRecovery('messenger', 'retry');
+    metrics.incChatFlushRecovery('messenger', 'abandoned');
+    metrics.incChatFlushRecovery('messenger', 'fenced_stale');
+    metrics.incChatFlushRecovery('messenger', 'durable_recovery');
+    const output = await metrics.getMetrics();
+
+    expect(output).toContain(
+      'test_chat_flush_recovery_total{platform="messenger",outcome="retry"} 1',
+    );
+    expect(output).toContain(
+      'test_chat_flush_recovery_total{platform="messenger",outcome="abandoned"} 1',
     );
     expect(output).not.toContain('external_user_id');
   });

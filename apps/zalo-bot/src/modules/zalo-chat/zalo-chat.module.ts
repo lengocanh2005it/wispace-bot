@@ -334,11 +334,14 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       useFactory: (
         redisClient: import('@wispace/bot-common/redis').RedisClientPort,
         configService: ConfigService,
+        metrics: BotMetricsService,
       ) =>
         new RedisChatQueueStore(redisClient, configService, {
           platform: 'zalo',
+          onRecoveryOutcome: (outcome) =>
+            metrics.incChatFlushRecovery('zalo', outcome),
         }),
-      inject: [REDIS_CLIENT, ConfigService],
+      inject: [REDIS_CLIENT, ConfigService, BotMetricsService],
     },
     {
       provide: RedisChatQueueWorkerService,

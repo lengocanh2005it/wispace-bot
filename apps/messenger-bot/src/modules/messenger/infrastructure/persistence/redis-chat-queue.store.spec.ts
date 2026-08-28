@@ -459,6 +459,7 @@ describe('RedisChatQueueStore', () => {
       pendingTexts: ['pending-1'],
       processing: true,
       processingStartedAt: Date.now() - 1000,
+      processingLeaseToken: 'lease-pending',
       flushAfterAt: null,
       lastPendingIdempotencyKey: 'mid-2',
     });
@@ -466,6 +467,7 @@ describe('RedisChatQueueStore', () => {
     const result = await store.completeChatBuffer({
       psid: 'psid-1',
       debounceMs: 2000,
+      leaseToken: 'lease-pending',
     });
 
     expect(result).toBe(true);
@@ -505,12 +507,14 @@ describe('RedisChatQueueStore', () => {
       pendingTexts: [],
       processing: true,
       processingStartedAt: Date.now() - 1000,
+      processingLeaseToken: 'lease-empty',
       flushAfterAt: null,
     });
 
     const result = await store.completeChatBuffer({
       psid: 'psid-1',
       debounceMs: 2000,
+      leaseToken: 'lease-empty',
     });
 
     expect(result).toBe(false);
@@ -576,7 +580,11 @@ describe('RedisChatQueueStore', () => {
     const snapshot = await store.claimReadyBuffer('psid-1', 2000, 300_000);
     expect(snapshot?.droppedNoticePending).toBe(true);
 
-    await store.completeChatBuffer({ psid: 'psid-1', debounceMs: 2000 });
+    await store.completeChatBuffer({
+      psid: 'psid-1',
+      debounceMs: 2000,
+      leaseToken: snapshot!.leaseToken,
+    });
     const afterComplete = JSON.parse(persistedState ?? '{}') as {
       droppedNoticePending?: boolean | null;
     };

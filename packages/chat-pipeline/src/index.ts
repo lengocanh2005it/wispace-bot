@@ -5,6 +5,7 @@ export type {
   AgentReply,
   ChatHistoryMessage,
   ChatPipelineConfig,
+  ChatPipelineInput,
   ChatPipelineHooks,
   HistoryPort,
   OutboundPort,

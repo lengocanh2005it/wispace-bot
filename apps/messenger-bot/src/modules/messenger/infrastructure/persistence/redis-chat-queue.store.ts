@@ -1,8 +1,9 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { RedisChatQueueStore as SharedRedisChatQueueStore } from '@wispace/chat-agent';
 import { REDIS_CLIENT } from '@wispace/bot-common/redis';
 import type { RedisClientPort } from '@wispace/bot-common/redis';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import type {
   AppendChatBufferInput,
@@ -19,6 +20,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
   constructor(
     @Inject(REDIS_CLIENT) redisClient: RedisClientPort,
     configService: ConfigService,
+    @Optional() metrics?: BotMetricsService,
   ) {
     this.sharedStore = new SharedRedisChatQueueStore(
       redisClient,
@@ -26,6 +28,8 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       {
         platform: 'messenger',
         legacyKeys: true,
+        onRecoveryOutcome: (outcome) =>
+          metrics?.incChatFlushRecovery('messenger', outcome),
       },
     );
   }
@@ -61,7 +65,9 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     return {
       psid: snapshot.externalUserId,
       texts: snapshot.texts,
+      leaseToken: snapshot.leaseToken,
       lastIdempotencyKey: snapshot.lastIdempotencyKey,
+      retryCount: snapshot.retryCount,
       userId: snapshot.userId,
       linkContext: snapshot.context as MessengerLinkContext | undefined,
       droppedNoticePending: snapshot.droppedNoticePending,
@@ -72,6 +78,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     return this.sharedStore.completeChatBuffer({
       externalUserId: input.psid,
       debounceMs: input.debounceMs,
+      leaseToken: input.leaseToken,
     });
   }
 
@@ -79,7 +86,11 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     return this.sharedStore.listReadyExternalUserIds(limit);
   }
 
-  scheduleRetryFlush(psid: string, retryDelayMs: number): Promise<boolean> {
-    return this.sharedStore.scheduleRetryFlush(psid, retryDelayMs);
+  scheduleRetryFlush(
+    psid: string,
+    retryDelayMs: number,
+    leaseToken: string,
+  ): Promise<boolean> {
+    return this.sharedStore.scheduleRetryFlush(psid, retryDelayMs, leaseToken);
   }
 }

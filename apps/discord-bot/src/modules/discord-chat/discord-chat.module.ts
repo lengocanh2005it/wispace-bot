@@ -307,11 +307,14 @@ const REGISTER_REPORT_MESSAGE =
       useFactory: (
         redisClient: import('@wispace/bot-common/redis').RedisClientPort,
         configService: ConfigService,
+        metrics: BotMetricsService,
       ) =>
         new RedisChatQueueStore(redisClient, configService, {
           platform: 'discord',
+          onRecoveryOutcome: (outcome) =>
+            metrics.incChatFlushRecovery('discord', outcome),
         }),
-      inject: [REDIS_CLIENT, ConfigService],
+      inject: [REDIS_CLIENT, ConfigService, BotMetricsService],
     },
     {
       provide: RedisChatQueueWorkerService,
