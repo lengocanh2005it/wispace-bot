@@ -244,6 +244,14 @@ ensure_env_var ENFORCE_PROD_CHAT_QUOTA true
 ensure_env_var DOPPLER_RUNTIME_SYNC_ENABLED false
 ensure_env_var DEPLOY_UID "$(id -u)"
 ensure_env_var DEPLOY_GID "$(id -g)"
+# ─── Vault runtime secrets (fetched by app at startup) ──────────────────────
+ensure_env_var VAULT_ADDR "https://vault.wispace.app"
+if [ -n "${VAULT_ROLE_ID:-}" ]; then
+  ensure_env_var VAULT_ROLE_ID "$VAULT_ROLE_ID"
+fi
+if [ -n "${VAULT_SECRET_ID:-}" ]; then
+  ensure_env_var VAULT_SECRET_ID "$VAULT_SECRET_ID"
+fi
 if ! grep -q '^HOME=' .env; then
   ensure_env_var HOME /tmp
 fi

@@ -313,6 +313,8 @@ jobs:
           RUN_MIGRATIONS: ${{ !inputs.env_only && inputs.app == 'messenger-bot' && 'true' || 'false' }}
           MIGRATION_CMD: ${{ env.MIGRATION_CMD }}
           NGINX_UPSTREAM_DIR: /home/ngoc_anh/infra/nginx/upstreams
+          VAULT_ROLE_ID: ${{ secrets.vault_role_id }}
+          VAULT_SECRET_ID: ${{ secrets.vault_secret_id }}
         run: |
-          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH RUN_MIGRATIONS MIGRATION_CMD NGINX_UPSTREAM_DIR
+          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH RUN_MIGRATIONS MIGRATION_CMD NGINX_UPSTREAM_DIR VAULT_ROLE_ID VAULT_SECRET_ID
           bash .github/scripts/ssh-deploy-vps.sh ${{ inputs.vps_target_dir }}/vps-deploy.sh
