@@ -123,7 +123,7 @@ describe('ZaloReportCronService', () => {
     expect(orchestrationClaimAndSend).not.toHaveBeenCalled();
   });
 
-  it('delegates to orchestration with correct mapping and reportText', async () => {
+  it('passes generateReport callback to orchestration', async () => {
     const { service, orchestrationClaimAndSend } = buildService({});
 
     await service.sendDailyReports();
@@ -137,7 +137,9 @@ describe('ZaloReportCronService', () => {
       expect.objectContaining({
         reportDate,
         skipAlreadySentToday: true,
+        reportText: '',
         classifyError: expect.any(Function),
+        generateReport: expect.any(Function),
       }),
     );
   });

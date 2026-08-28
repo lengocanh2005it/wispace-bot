@@ -10,7 +10,7 @@ const MAPPING = {
 };
 
 describe('DiscordReportOrchestrationService', () => {
-  it('generates report text and delegates to shared orchestration', async () => {
+  it('passes generateReport callback to shared orchestration', async () => {
     const reportService = {
       generateReport: jest.fn().mockResolvedValue('report text'),
     };
@@ -39,22 +39,41 @@ describe('DiscordReportOrchestrationService', () => {
     });
 
     expect(result.sent).toBe(1);
-    expect(reportService.generateReport).toHaveBeenCalledWith('discord-1');
+    // Generation should NOT be called directly — it goes through the callback
+    expect(reportService.generateReport).not.toHaveBeenCalled();
     expect(orchestration.claimAndSend).toHaveBeenCalledWith(MAPPING, {
       reportDate: '2026-08-07',
       skipAlreadySentToday: true,
-      reportText: 'report text',
+      reportText: '',
       examDateForOutbox: '2026-08-20',
       classifyError: expect.any(Function),
+      generateReport: expect.any(Function),
     });
+
+    // Verify the callback invokes generateReport when called
+    const callArgs = orchestration.claimAndSend.mock.calls[0];
+    const callback = callArgs[1].generateReport;
+    const text = await callback();
+    expect(text).toBe('report text');
+    expect(reportService.generateReport).toHaveBeenCalledWith('discord-1');
   });
 
-  it('returns failure when report generation throws', async () => {
+  it('propagates generation errors through the callback', async () => {
     const reportService = {
       generateReport: jest.fn().mockRejectedValue(new Error('gen failed')),
     };
 
-    const orchestration = { claimAndSend: jest.fn() };
+    const orchestration = {
+      claimAndSend: jest.fn().mockResolvedValue({
+        sent: 0,
+        skipped: 0,
+        deferred: 1,
+        windowClosed: 0,
+        claimSkipped: 0,
+        retryQueued: 1,
+        failures: [],
+      }),
+    };
 
     const service = new DiscordReportOrchestrationService(
       orchestration as never,
@@ -66,9 +85,14 @@ describe('DiscordReportOrchestrationService', () => {
       skipAlreadySentToday: true,
     });
 
-    expect(result.sent).toBe(0);
-    expect(result.failures).toHaveLength(1);
-    expect(result.failures[0].error).toBe('Error: gen failed');
-    expect(orchestration.claimAndSend).not.toHaveBeenCalled();
+    // The callback is passed to shared orchestration — errors are handled there
+    expect(result.retryQueued).toBe(1);
+    expect(orchestration.claimAndSend).toHaveBeenCalledWith(MAPPING, {
+      reportDate: '2026-08-07',
+      skipAlreadySentToday: true,
+      reportText: '',
+      classifyError: expect.any(Function),
+      generateReport: expect.any(Function),
+    });
   });
 });

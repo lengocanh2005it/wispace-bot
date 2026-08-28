@@ -74,10 +74,10 @@ export class ReportOrchestrationService {
       reportText: string;
       examDateForOutbox?: string;
       classifyError?: (error: unknown) => ClassifiedError;
+      generateReport?: () => Promise<string>;
     },
   ): Promise<ClaimAndSendResult> {
-    const { reportDate, skipAlreadySentToday, reportText, examDateForOutbox } =
-      opts;
+    const { reportDate, skipAlreadySentToday, examDateForOutbox } = opts;
     const classifyError = opts.classifyError ?? defaultClassifyError;
     const platform = mapping.platform;
     const deliveryKey = `${platform}-report:${mapping.externalUserId}:${reportDate}`;
@@ -141,7 +141,52 @@ export class ReportOrchestrationService {
       return { ...ZERO, sent: 1 };
     }
 
-    // ── Step 4: send ────────────────────────────────────────────────────
+    // ── Step 4: generate (inside claim window) ──────────────────────────────
+    let reportText = opts.reportText;
+    if (opts.generateReport) {
+      try {
+        reportText = await opts.generateReport();
+      } catch (genError) {
+        // Generation failed inside claim — release and record retryable.
+        if (claimedForSend) {
+          await this.claimRepo.releaseScheduledReportClaim(
+            {
+              externalUserId: mapping.externalUserId,
+              reportDate,
+            },
+            claimLeaseToken,
+          );
+        }
+        const classified = classifyError(genError);
+        if (this.jobRepo) {
+          const settings = this.reportSendScheduleService.getOutboxSettings();
+          const nextRetryAt = new Date(
+            Date.now() + settings.retryBackoffMinutes * 60 * 1000,
+          );
+          await this.jobRepo.recordRetryableFailure({
+            platform,
+            externalUserId: mapping.externalUserId,
+            userId: mapping.userId,
+            examDate: examDateForOutbox ?? '',
+            firstAttemptDate: reportDate,
+            maxRetries: settings.maxRetries,
+            nextRetryAt,
+            errorMessage: `Generation failed: ${classified.message}`,
+          });
+          return { ...ZERO, deferred: 1, retryQueued: 1 };
+        }
+        return {
+          ...ZERO,
+          failures: [
+            {
+              externalUserId: mapping.externalUserId,
+              error: classified.message,
+            },
+          ],
+        };
+      }
+    }
+    // ── Step 5: send ────────────────────────────────────────────────────
     try {
       const result = await this.delivery.sendReport({
         mapping,
@@ -171,7 +216,7 @@ export class ReportOrchestrationService {
         return { ...ZERO, sent: 1 };
       }
 
-      // ── Step 5: delivery failed — release + classify ──────────────────
+      // ── Step 6: delivery failed — release + classify ──────────────────
       if (claimedForSend) {
         await this.claimRepo.releaseScheduledReportClaim(
           {
@@ -202,7 +247,7 @@ export class ReportOrchestrationService {
 
       return { ...ZERO, windowClosed: 1 };
     } catch (error) {
-      // ── Step 6: exception — release + classify ────────────────────────
+      // ── Step 7: exception — release + classify ────────────────────────
       if (claimedForSend) {
         await this.claimRepo.releaseScheduledReportClaim(
           {

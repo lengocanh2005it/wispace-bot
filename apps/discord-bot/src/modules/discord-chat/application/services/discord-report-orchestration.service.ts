@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { maskExternalId } from '@wispace/bot-common/masking';
 import type {
   ReportMapping,
   ClaimAndSendResult,
@@ -8,8 +9,9 @@ import { ReportOrchestrationService } from '@wispace/scheduler-core';
 import { PlatformStudentReportService } from '@wispace/student-report';
 
 /**
- * Discord-specific wrapper around the shared `ReportOrchestrationService`.
- * Generates report text and provides the Discord-specific error classifier.
+ * Discord-specific wrapper around the shared ReportOrchestrationService.
+ * Passes a generateReport callback so generation happens INSIDE the claim
+ * window — generation failures become retryable via the outbox.
  */
 @Injectable()
 export class DiscordReportOrchestrationService {
@@ -28,37 +30,19 @@ export class DiscordReportOrchestrationService {
       examDateForOutbox?: string;
     },
   ): Promise<ClaimAndSendResult> {
-    try {
-      const reportText = await this.reportService.generateReport(
-        mapping.externalUserId,
-      );
-
-      return this.orchestration.claimAndSend(mapping, {
-        reportDate: opts.reportDate,
-        skipAlreadySentToday: opts.skipAlreadySentToday,
-        reportText,
-        examDateForOutbox: opts.examDateForOutbox,
-        classifyError: classifyDiscordError,
-      });
-    } catch (error) {
-      this.logger.error(
-        `Report generation failed for Discord user ${mapping.externalUserId}: ${error}`,
-      );
-      return {
-        sent: 0,
-        skipped: 0,
-        deferred: 0,
-        windowClosed: 0,
-        claimSkipped: 0,
-        retryQueued: 0,
-        failures: [
-          {
-            externalUserId: mapping.externalUserId,
-            error: String(error),
-          },
-        ],
-      };
-    }
+    return this.orchestration.claimAndSend(mapping, {
+      reportDate: opts.reportDate,
+      skipAlreadySentToday: opts.skipAlreadySentToday,
+      reportText: '', // ignored when generateReport is provided
+      examDateForOutbox: opts.examDateForOutbox,
+      classifyError: classifyDiscordError,
+      generateReport: async () => {
+        this.logger.log(
+          `Generating report for Discord user ${maskExternalId(mapping.externalUserId)}`,
+        );
+        return this.reportService.generateReport(mapping.externalUserId);
+      },
+    });
   }
 }
 

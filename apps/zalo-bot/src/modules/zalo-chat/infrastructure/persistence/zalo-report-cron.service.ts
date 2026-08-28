@@ -175,10 +175,6 @@ export class ZaloReportCronService {
     }
 
     try {
-      const reportText = await this.reportService.generateReport(
-        link.externalUserId,
-      );
-
       const mapping = {
         id: link.id,
         platform: 'zalo',
@@ -191,8 +187,10 @@ export class ZaloReportCronService {
       const result = await this.orchestration.claimAndSend(mapping, {
         reportDate,
         skipAlreadySentToday: link.userId !== undefined,
-        reportText,
+        reportText: '',
         classifyError: classifyZaloError,
+        generateReport: async () =>
+          this.reportService.generateReport(link.externalUserId),
       });
 
       if (result.sent > 0) return 'sent';
