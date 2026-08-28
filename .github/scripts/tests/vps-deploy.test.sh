@@ -406,7 +406,7 @@ FAKEGPG
   printf 'DB_HOST=postgres_n8n_db\nDB_PORT=5432\nDB_USER=postgres\nDB_NAME=ai_chat_bot_db\nDB_PASSWORD=secret\nBACKUP_ENCRYPTION_PASSPHRASE=test-passphrase\n' > "$dir/deploy/.env"
   (
     export ENV_FILE="$dir/deploy/.env" BACKUP_DIR="$dir/backups" DB_CONTAINER=postgres_n8n_db \
-      PATH="$dir/bin:$PATH"
+      PATH="$dir/bin:/usr/bin:/bin"
     bash "$BACKUP_SCRIPT"
   ) > "$dir/backup.out" 2>&1
   [ $? -eq 0 ] || fail "backup failed: $(cat "$dir/backup.out")"
