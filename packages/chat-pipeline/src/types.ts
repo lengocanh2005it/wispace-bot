@@ -127,3 +127,17 @@ export interface ChatPipelineConfig {
   /** Max characters for merged user text. Default: 4000. */
   mergedTextMaxChars?: number;
 }
+
+/**
+ * Input supplied to a flush. `reservedUsageDate` is used by callers that
+ * reserve quota in a platform-specific pre-check; it prevents a second
+ * idempotency reservation while preserving refund/finalization semantics.
+ */
+export interface ChatPipelineInput {
+  externalUserId: string;
+  userId?: number;
+  texts: string[];
+  idempotencyKey?: string;
+  reservedUsageDate?: string;
+  context?: Record<string, unknown>;
+}

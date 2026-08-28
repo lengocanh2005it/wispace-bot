@@ -8,9 +8,11 @@ import type { RedisClientPort } from '@wispace/bot-common/redis';
 import type {
   AppendChatBufferInput,
   ChatQueueBufferSnapshot,
+  ChatQueueRecoveryOutcome,
   CompleteChatBufferInput,
 } from './chat-queue-store.types';
 import type { ChatQueueStorePort } from './chat-queue-store.port';
+import { readChatFlushRetrySettings } from './chat-queue-retry.config';
 
 const CHAT_QUEUE_BUFFER_TTL_SECONDS = 24 * 60 * 60;
 
@@ -28,6 +30,14 @@ interface RedisChatQueueBufferState {
   idempotencyKeys: string[];
   processing: boolean;
   processingStartedAt?: number | null;
+  /** Fences completion/retry writes from a worker that lost its claim. */
+  processingLeaseToken?: string | null;
+  /** Idempotency key of the claimed batch, retained for retry/recovery. */
+  processingIdempotencyKey?: string | null;
+  /** Number of automatic retry/recovery attempts for the current batch. */
+  retryCount: number;
+  /** Failed batch is retained for operator-driven recovery after the cap. */
+  abandoned?: boolean | null;
   flushAfterAt?: number | null;
   droppedNoticePending?: boolean | null;
   updatedAt: number;
@@ -39,6 +49,8 @@ export interface RedisChatQueueStoreOptions {
   platform?: ChatQueuePlatform;
   /** Keep the original Messenger keys so existing buffers remain readable. */
   legacyKeys?: boolean;
+  /** Bounded telemetry callback; failures must never affect queue behavior. */
+  onRecoveryOutcome?: (outcome: ChatQueueRecoveryOutcome) => void;
 }
 
 @Injectable()
@@ -57,6 +69,10 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
   private readonly flushSet: string;
   private readonly stuckSet: string;
   private readonly rehydrateLock: string;
+  private readonly maxFlushRetries: number;
+  private readonly onRecoveryOutcome?: (
+    outcome: ChatQueueRecoveryOutcome,
+  ) => void;
 
   constructor(
     @Inject(REDIS_CLIENT)
@@ -77,6 +93,8 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     this.rehydrateLock = legacyKeys
       ? 'chat:queue:rehydrate-lock'
       : `${prefix}rehydrate-lock`;
+    this.maxFlushRetries = readChatFlushRetrySettings(configService).maxRetries;
+    this.onRecoveryOutcome = options.onRecoveryOutcome;
 
     const raw = configService.get<string>('CHAT_QUEUE_LOCK_TTL_MS');
     const parsed = raw ? Number(raw) : NaN;
@@ -121,6 +139,13 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
             ...state.idempotencyKeys,
             input.idempotencyKey,
           ].slice(-RedisChatQueueStore.MAX_BUFFERED_MESSAGES * 2);
+        }
+
+        // A new user message makes an abandoned batch eligible for a fresh,
+        // bounded attempt. The old text remains in the same durable buffer.
+        if (state.abandoned) {
+          state.abandoned = false;
+          state.retryCount = 0;
         }
 
         const flushAfterAt = Date.now() + input.debounceMs;
@@ -187,22 +212,46 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
           return null;
         }
 
+        const replay = [...state.processingTexts, ...state.pendingTexts];
+        const replayIdempotencyKey =
+          state.lastPendingIdempotencyKey ??
+          state.processingIdempotencyKey ??
+          state.lastIdempotencyKey ??
+          null;
+        const retryCount = (state.retryCount ?? 0) + 1;
+
         // Crash recovery (#176): a pod died mid-flush with the claimed batch
         // persisted in processingTexts. Replay the claimed batch FIRST (it
         // was claimed earlier), then messages accumulated while stuck — no
-        // accepted message is ever lost.
+        // accepted message is ever lost. Once the bounded budget is exhausted,
+        // retain the batch as an abandoned durable record instead of deleting
+        // it or putting it back on the automatic retry set.
         state.processing = false;
         state.processingStartedAt = null;
-
-        const replay = [...state.processingTexts, ...state.pendingTexts];
+        state.processingLeaseToken = null;
+        state.processingIdempotencyKey = null;
         state.processingTexts = [];
         state.pendingTexts = [];
         if (replay.length > 0) {
+          if (retryCount > this.maxFlushRetries) {
+            state.texts = replay;
+            state.lastIdempotencyKey = replayIdempotencyKey;
+            state.lastPendingIdempotencyKey = null;
+            state.retryCount = retryCount;
+            state.flushAfterAt = null;
+            state.abandoned = true;
+            await this.writeState(client, externalUserId, state);
+            this.recordRecoveryOutcome('abandoned');
+            return null;
+          }
           state.texts = replay;
-          state.lastIdempotencyKey = state.lastPendingIdempotencyKey ?? null;
+          state.lastIdempotencyKey = replayIdempotencyKey;
           state.lastPendingIdempotencyKey = null;
+          state.retryCount = retryCount;
+          state.abandoned = false;
           // Claim immediately — the stuck job already consumed the debounce wait.
           state.flushAfterAt = Date.now();
+          this.recordRecoveryOutcome('durable_recovery');
         } else {
           // Wedged with nothing to replay: persist the reset so the dead
           // member leaves the flush/stuck ZSETs instead of being re-picked
@@ -224,10 +273,13 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         return null;
       }
 
+      const leaseToken = randomUUID();
       const snapshot: ChatQueueBufferSnapshot = {
         externalUserId,
         texts: [...state.texts],
+        leaseToken,
         lastIdempotencyKey: state.lastIdempotencyKey ?? undefined,
+        retryCount: state.retryCount ?? 0,
         userId: state.userId,
         context: state.context ?? undefined,
         droppedNoticePending: state.droppedNoticePending === true,
@@ -238,9 +290,11 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       // claim and completion replays it instead of losing it.
       state.processingTexts = [...state.texts];
       state.texts = [];
+      state.processingIdempotencyKey = state.lastIdempotencyKey ?? null;
       state.lastIdempotencyKey = null;
       state.processing = true;
       state.processingStartedAt = Date.now();
+      state.processingLeaseToken = leaseToken;
       state.updatedAt = Date.now();
 
       await this.writeState(client, externalUserId, state);
@@ -251,18 +305,46 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
   async scheduleRetryFlush(
     externalUserId: string,
     retryDelayMs: number,
+    leaseToken: string,
   ): Promise<boolean> {
     return (
       (await this.withExternalUserIdLock(externalUserId, async (client) => {
         const state = await this.readState(client, externalUserId);
+
+        if (!state.processing || state.processingLeaseToken !== leaseToken) {
+          this.recordRecoveryOutcome('fenced_stale');
+          return false;
+        }
 
         const retryTexts = [...state.processingTexts, ...state.pendingTexts];
         if (retryTexts.length === 0) {
           return false;
         }
 
+        const retryIdempotencyKey =
+          state.lastPendingIdempotencyKey ??
+          state.processingIdempotencyKey ??
+          state.lastIdempotencyKey ??
+          null;
+        const retryCount = (state.retryCount ?? 0) + 1;
+        if (retryCount > this.maxFlushRetries) {
+          this.resetToReady(state, retryTexts, null);
+          state.lastIdempotencyKey = retryIdempotencyKey;
+          state.lastPendingIdempotencyKey = null;
+          state.retryCount = retryCount;
+          state.abandoned = true;
+          await this.writeState(client, externalUserId, state);
+          this.recordRecoveryOutcome('abandoned');
+          return false;
+        }
+
         this.resetToReady(state, retryTexts, Date.now() + retryDelayMs);
+        state.lastIdempotencyKey = retryIdempotencyKey;
+        state.lastPendingIdempotencyKey = null;
+        state.retryCount = retryCount;
+        state.abandoned = false;
         await this.writeState(client, externalUserId, state);
+        this.recordRecoveryOutcome('retry');
         return true;
       })) ?? false
     );
@@ -274,6 +356,13 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         input.externalUserId,
         async (client) => {
           const state = await this.readState(client, input.externalUserId);
+          if (
+            !state.processing ||
+            state.processingLeaseToken !== input.leaseToken
+          ) {
+            this.recordRecoveryOutcome('fenced_stale');
+            return false;
+          }
           const pendingTexts = [...state.pendingTexts];
           const flushAfterAt =
             pendingTexts.length > 0 ? Date.now() + input.debounceMs : null;
@@ -281,6 +370,8 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
           this.resetToReady(state, pendingTexts, flushAfterAt);
           state.lastIdempotencyKey = state.lastPendingIdempotencyKey ?? null;
           state.lastPendingIdempotencyKey = null;
+          state.retryCount = 0;
+          state.abandoned = false;
           state.droppedNoticePending = null;
 
           await this.writeState(client, input.externalUserId, state);
@@ -496,6 +587,11 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       const psids = await client.smembers(this.activeSet);
       for (const externalUserId of psids) {
         const state = await this.readState(client, externalUserId);
+        if (state.abandoned) {
+          // Retained dead-letter state is intentionally not scheduled until a
+          // new message or an operator explicitly requeues it.
+          continue;
+        }
         if (state.processing) {
           const stuckAt =
             (state.processingStartedAt ?? Date.now()) + this.stuckMs;
@@ -551,6 +647,8 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
   ): void {
     state.processing = false;
     state.processingStartedAt = null;
+    state.processingLeaseToken = null;
+    state.processingIdempotencyKey = null;
     state.processingTexts = [];
     state.texts = texts;
     state.pendingTexts = [];
@@ -569,6 +667,10 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       processingTexts: [],
       processing: false,
       processingStartedAt: null,
+      processingLeaseToken: null,
+      processingIdempotencyKey: null,
+      retryCount: 0,
+      abandoned: false,
       flushAfterAt: null,
       context: null,
       lastIdempotencyKey: null,
@@ -605,6 +707,11 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         processingTexts: Array.isArray(parsed.processingTexts)
           ? parsed.processingTexts
           : [],
+        retryCount:
+          typeof parsed.retryCount === 'number' && parsed.retryCount >= 0
+            ? Math.floor(parsed.retryCount)
+            : 0,
+        abandoned: parsed.abandoned === true,
         idempotencyKeys: Array.isArray(parsed.idempotencyKeys)
           ? parsed.idempotencyKeys
           : legacyIdempotencyKeys,
@@ -646,7 +753,11 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
       .set(key, JSON.stringify(state), 'EX', CHAT_QUEUE_BUFFER_TTL_SECONDS)
       .sadd(this.activeSet, externalUserId);
 
-    if (state.processing) {
+    if (state.abandoned) {
+      multi
+        .zrem(this.flushSet, externalUserId)
+        .zrem(this.stuckSet, externalUserId);
+    } else if (state.processing) {
       const stuckAt = (state.processingStartedAt ?? Date.now()) + this.stuckMs;
       multi
         .zrem(this.flushSet, externalUserId)
@@ -660,6 +771,14 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
 
     const result = await multi.exec();
     this.assertTransactionSucceeded(result);
+  }
+
+  private recordRecoveryOutcome(outcome: ChatQueueRecoveryOutcome): void {
+    try {
+      this.onRecoveryOutcome?.(outcome);
+    } catch {
+      // Recovery telemetry must never change queue state transitions.
+    }
   }
 
   private assertTransactionSucceeded(

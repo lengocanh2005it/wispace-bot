@@ -15,6 +15,7 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         userId: undefined,
         linkContext: undefined,
         lastIdempotencyKey: 'mid-1',
+        leaseToken: 'lease-shared',
       }),
     );
     const completeChatBuffer = jest.fn(() => Promise.resolve(false));
@@ -89,6 +90,208 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
     await service.flushReady('psid-shared');
 
     expect(claimReadyBuffer).toHaveBeenCalledWith('psid-shared', 0, 300_000);
+
+    jest.useRealTimers();
+  });
+
+  it('preserves a claimed batch when the pipeline and fallback delivery both fail', async () => {
+    jest.useFakeTimers();
+
+    const claimReadyBuffer = jest.fn(() =>
+      Promise.resolve({
+        texts: ['hello'],
+        userId: undefined,
+        linkContext: undefined,
+        lastIdempotencyKey: 'mid-fail',
+        leaseToken: 'lease-1',
+      }),
+    );
+    const completeChatBuffer = jest.fn(() => Promise.resolve(false));
+    const scheduleRetryFlush = jest.fn(() => Promise.resolve(true));
+    const chatQueueStore = {
+      appendChatBuffer: jest.fn(() => Promise.resolve()),
+      claimReadyBuffer,
+      completeChatBuffer,
+      scheduleRetryFlush,
+    } as unknown as ChatQueueStorePort;
+
+    const sharedConfig = {
+      isDistributedQueueEnabled: () => true,
+      getProcessingStuckMs: () => 300_000,
+      getQueueStaleTtlMs: () => 3_600_000,
+      getQueueCleanupIntervalMs: () => 900_000,
+    } as MessengerChatSharedConfigService;
+
+    const sendTextViaPsid = jest.fn(() =>
+      Promise.reject(new Error('fallback down')),
+    );
+    const reply = jest.fn(() => Promise.reject(new Error('LLM down')));
+    const metrics = {
+      chatStep: { startTimer: jest.fn(() => jest.fn()) },
+      timeStep: jest.fn((_step: string, fn: () => Promise<unknown>) => fn()),
+      timeLlmCall: jest.fn(
+        (_f: string, _m: string, _r: number, fn: () => Promise<unknown>) =>
+          fn(),
+      ),
+    } as unknown as BotMetricsService;
+
+    const service = new MessengerChatProcessorService(
+      {
+        sendSenderActionOptional: jest.fn(() => Promise.resolve()),
+        sendTextBubblesViaPsid: jest.fn(() => Promise.resolve(1)),
+        sendTextViaPsid,
+      } as never,
+      { reply } as never,
+      {
+        reserveFreeFormSlot: jest.fn(() =>
+          Promise.resolve({
+            allowed: true,
+            used: 1,
+            limit: 15,
+            remaining: 14,
+            usageDate: '2026-06-15',
+            quotaReserved: true,
+          }),
+        ),
+        markDelivered: jest.fn(() => Promise.resolve()),
+        markCompleted: jest.fn(() => Promise.resolve()),
+        refundFreeFormSlot: jest.fn(() => Promise.resolve()),
+        getRemainingQuota: jest.fn(() =>
+          Promise.resolve({ remaining: 14, limit: 15 }),
+        ),
+      } as never,
+      {
+        shouldEnforceForPsid: jest.fn(() => false),
+        getSettings: jest.fn(() => ({
+          mergedTextMaxChars: 4000,
+          remainingHintThreshold: 3,
+        })),
+      } as never,
+      metrics,
+      { logMessage: jest.fn(() => Promise.resolve()) } as never,
+      sharedConfig,
+      {
+        getHistory: jest.fn(() => Promise.resolve([])),
+        appendTurn: jest.fn(() => Promise.resolve()),
+        appendToolSummary: jest.fn(() => Promise.resolve()),
+      } as never,
+      {
+        get: (key: string) =>
+          ({
+            CHAT_FLUSH_RETRY_ENABLED: 'true',
+            CHAT_FLUSH_RETRY_DELAY_MS: '5000',
+          })[key],
+      } as never,
+      chatQueueStore,
+    );
+
+    await expect(service.flushReady('psid-fail')).rejects.toThrow('LLM down');
+
+    expect(scheduleRetryFlush).toHaveBeenCalledWith(
+      'psid-fail',
+      5000,
+      'lease-1',
+    );
+    expect(completeChatBuffer).not.toHaveBeenCalled();
+
+    jest.useRealTimers();
+  });
+
+  it('preserves a claimed batch when pipeline returns false and fallback fails', async () => {
+    jest.useFakeTimers();
+
+    const claimReadyBuffer = jest.fn(() =>
+      Promise.resolve({
+        texts: ['hello'],
+        userId: undefined,
+        linkContext: undefined,
+        lastIdempotencyKey: 'mid-false',
+        leaseToken: 'lease-false',
+      }),
+    );
+    const completeChatBuffer = jest.fn(() => Promise.resolve(false));
+    const scheduleRetryFlush = jest.fn(() => Promise.resolve(true));
+    const chatQueueStore = {
+      appendChatBuffer: jest.fn(() => Promise.resolve()),
+      claimReadyBuffer,
+      completeChatBuffer,
+      scheduleRetryFlush,
+    } as unknown as ChatQueueStorePort;
+
+    const sharedConfig = {
+      isDistributedQueueEnabled: () => true,
+      getProcessingStuckMs: () => 300_000,
+    } as MessengerChatSharedConfigService;
+    const sendTextViaPsid = jest.fn(() =>
+      Promise.reject(new Error('fallback unavailable')),
+    );
+    const metrics = {
+      timeStep: jest.fn((_step: string, fn: () => Promise<unknown>) => fn()),
+    } as unknown as BotMetricsService;
+
+    const service = new MessengerChatProcessorService(
+      {
+        sendSenderActionOptional: jest.fn(() => Promise.resolve()),
+        sendTextBubblesViaPsid: jest.fn(() => Promise.resolve(1)),
+        sendTextViaPsid,
+      } as never,
+      { reply: jest.fn(() => Promise.resolve({ text: 'reply' })) } as never,
+      {
+        reserveFreeFormSlot: jest.fn(() =>
+          Promise.resolve({
+            allowed: true,
+            used: 1,
+            limit: 15,
+            remaining: 14,
+            usageDate: '2026-06-15',
+            quotaReserved: true,
+          }),
+        ),
+        markDelivered: jest.fn(() => Promise.resolve()),
+        markCompleted: jest.fn(() => Promise.resolve()),
+        refundFreeFormSlot: jest.fn(() => Promise.resolve()),
+        getRemainingQuota: jest.fn(() =>
+          Promise.resolve({ remaining: 14, limit: 15 }),
+        ),
+      } as never,
+      {
+        shouldEnforceForPsid: jest.fn(() => false),
+        getSettings: jest.fn(() => ({
+          mergedTextMaxChars: 4000,
+          remainingHintThreshold: 3,
+        })),
+      } as never,
+      metrics,
+      { logMessage: jest.fn(() => Promise.resolve()) } as never,
+      sharedConfig,
+      {
+        getHistory: jest.fn(() => Promise.resolve([])),
+        appendTurn: jest.fn(() => Promise.resolve()),
+        appendToolSummary: jest.fn(() => Promise.resolve()),
+      } as never,
+      {
+        get: (key: string) =>
+          ({
+            CHAT_FLUSH_RETRY_ENABLED: 'true',
+            CHAT_FLUSH_RETRY_DELAY_MS: '5000',
+          })[key],
+      } as never,
+      chatQueueStore,
+    );
+
+    const pipeline = service as unknown as { pipeline: { flush: jest.Mock } };
+    pipeline.pipeline = {
+      flush: jest.fn(() => Promise.resolve(false)),
+    };
+
+    await service.flushReady('psid-false');
+
+    expect(scheduleRetryFlush).toHaveBeenCalledWith(
+      'psid-false',
+      5000,
+      'lease-false',
+    );
+    expect(completeChatBuffer).not.toHaveBeenCalled();
 
     jest.useRealTimers();
   });
@@ -302,6 +505,7 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
         userId: undefined,
         linkContext: undefined,
         lastIdempotencyKey: 'mid-drain',
+        leaseToken: 'lease-drain',
       }),
     );
     // completeChatBuffer returns true = more messages pending
@@ -381,6 +585,7 @@ describe('MessengerChatProcessorService distributed mode (H7/R4)', () => {
     expect(completeChatBuffer).toHaveBeenCalledWith({
       psid: 'psid-drain',
       debounceMs: 0,
+      leaseToken: 'lease-drain',
     });
 
     jest.useRealTimers();

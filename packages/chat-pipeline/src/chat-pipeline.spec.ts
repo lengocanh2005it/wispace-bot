@@ -83,6 +83,30 @@ describe('ChatPipeline', () => {
     expect(rateLimiter.markDelivered).toHaveBeenCalledWith('msg-1');
   });
 
+  it('uses a platform pre-reservation without reserving the same idempotency key twice', async () => {
+    const rateLimiter = mockRateLimiter();
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      mockHistory(),
+      mockAgent(),
+      mockOutbound(),
+    );
+
+    await expect(
+      pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['Hello'],
+        idempotencyKey: 'msg-pre-reserved',
+        reservedUsageDate: '2026-07-29',
+      }),
+    ).resolves.toBe(true);
+
+    expect(rateLimiter.reserve).not.toHaveBeenCalled();
+    expect(rateLimiter.refund).not.toHaveBeenCalled();
+    expect(rateLimiter.markDelivered).toHaveBeenCalledWith('msg-pre-reserved');
+    expect(rateLimiter.markCompleted).toHaveBeenCalledWith('msg-pre-reserved');
+  });
+
   it('does not persist bounded clarification noise as long-term history', async () => {
     const history = mockHistory();
     const pipeline = new ChatPipeline(

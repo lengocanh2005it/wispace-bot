@@ -25,10 +25,13 @@ import { CHAT_FAILURE_FALLBACK_MESSAGE } from '@wispace/llm-agent';
 import type { PlatformChatQueueOptions } from '../agent/platform-agent.types';
 import type { ChatQueueBufferSnapshot } from './chat-queue-store.types';
 import type { ChatQueueStorePort } from './chat-queue-store.port';
+import {
+  readChatFlushRetrySettings,
+  readPositiveNumber,
+} from './chat-queue-retry.config';
 
 const DEFAULT_DEBOUNCE_MS = 2000;
 const DEFAULT_PROCESSING_STUCK_MS = 300_000;
-const DEFAULT_FLUSH_RETRY_DELAY_MS = 5_000;
 const REDIS_AVAILABILITY_WAIT_MS = 5_000;
 const REDIS_AVAILABILITY_POLL_MS = 50;
 const STALE_TTL_MS = 60 * 60 * 1000;
@@ -39,15 +42,17 @@ const PENDING_MESSAGE =
 const DROPPED_MESSAGE =
   'Bạn gửi hơi nhiều tin quá, mình chỉ xử lý được phần đầu thôi nhé';
 
-/** Pending batch texts keyed by externalUserId — used by onError hook for #406 retry. */
-const pendingBatchTexts = new Map<string, string[]>();
 /** Users who received a fallback in the current processing cycle. Prevents duplicate fallbacks on retry. Exported for testing. */
 export const fallbackSentThisCycle = new Set<string>();
+/** Distinguishes a delivery failure from a normal quota-denied false result. */
+const failedFlushThisCycle = new Set<string>();
 
 interface QueueCtx {
   userId?: number;
   isServerChannel?: boolean;
 }
+
+type FlushOutcome = 'completed' | 'retry_scheduled' | 'deferred';
 
 /**
  * Debounces locally in development/tests and persists directly to Redis when
@@ -103,18 +108,14 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
       ),
       10_000,
     );
-    this.processingStuckMs = this.readPositiveNumber(
+    this.processingStuckMs = readPositiveNumber(
       configService.get<string>('CHAT_QUEUE_PROCESSING_STUCK_MS'),
       DEFAULT_PROCESSING_STUCK_MS,
     );
 
-    this.retryEnabled =
-      configService.get<string>('CHAT_FLUSH_RETRY_ENABLED')?.toLowerCase() ===
-      'true';
-    this.retryDelayMs = this.readPositiveNumber(
-      configService.get<string>('CHAT_FLUSH_RETRY_DELAY_MS'),
-      DEFAULT_FLUSH_RETRY_DELAY_MS,
-    );
+    const retrySettings = readChatFlushRetrySettings(configService);
+    this.retryEnabled = retrySettings.enabled;
+    this.retryDelayMs = retrySettings.delayMs;
 
     const maxPendingSize =
       configService.get<string>('CHAT_MAX_PENDING_MESSAGES') === '0'
@@ -127,13 +128,20 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
 
     const hooks: ChatPipelineHooks = {
       onError: async (ctx: PipelineContext) => {
+        failedFlushThisCycle.add(ctx.externalUserId);
         const refundError = ctx.refundError
-          ? ` refundError=${errorMessage(ctx.refundError)}`
+          ? ` refundError=${maskExternalIdInText(
+              errorMessage(ctx.refundError),
+              ctx.externalUserId,
+            )}`
           : '';
         this.logger.error(
           `chat_failure phase=original externalUserId=${maskExternalId(
             ctx.externalUserId,
-          )} error=${errorMessage(ctx.error)}${refundError}`,
+          )} error=${maskExternalIdInText(
+            errorMessage(ctx.error),
+            ctx.externalUserId,
+          )}${refundError}`,
         );
         if (ctx.reply?.clarification) {
           try {
@@ -168,7 +176,10 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
           this.logger.error(
             `chat_failure phase=fallback_delivery externalUserId=${maskExternalId(
               ctx.externalUserId,
-            )} error=${errorMessage(fallbackError)}`,
+            )}: error=${maskExternalIdInText(
+              errorMessage(fallbackError),
+              ctx.externalUserId,
+            )}`,
           );
         }
       },
@@ -324,6 +335,7 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
           await this.queueStore!.completeChatBuffer({
             externalUserId,
             debounceMs: this.debounceMs,
+            leaseToken: batch.leaseToken,
           });
           return;
         }
@@ -337,7 +349,9 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
       } catch (error) {
         // Transient infra failure — retry once, then fail-open.
         this.logger.error(
-          `Fresh-mapping query failed for ${maskExternalId(externalUserId)}: ${errorMessage(error)}`,
+          `Fresh-mapping query failed for ${maskExternalId(
+            externalUserId,
+          )}: ${maskExternalIdInText(errorMessage(error), externalUserId)}`,
         );
         try {
           const retryUserId =
@@ -350,6 +364,7 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
             await this.queueStore!.completeChatBuffer({
               externalUserId,
               debounceMs: this.debounceMs,
+              leaseToken: batch.leaseToken,
             });
             return;
           }
@@ -359,24 +374,30 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
           batch.userId = retryUserId;
         } catch (retryError) {
           this.logger.error(
-            `Fresh-mapping retry failed for ${maskExternalId(externalUserId)}: ${errorMessage(retryError)} — proceeding with buffered userId`,
+            `Fresh-mapping retry failed for ${maskExternalId(
+              externalUserId,
+            )}: ${maskExternalIdInText(
+              errorMessage(retryError),
+              externalUserId,
+            )} — proceeding with buffered userId`,
           );
         }
       }
     }
 
-    let retryScheduled = false;
+    let outcome: FlushOutcome = 'deferred';
     try {
       if (batch.droppedNoticePending) {
         await this.sendDroppedNotice(externalUserId);
       }
-      retryScheduled = await this.handleFlush(batch);
+      outcome = await this.handleFlush(batch);
     } finally {
       this.droppedNotified.delete(externalUserId);
-      if (!retryScheduled) {
+      if (outcome === 'completed') {
         await this.queueStore!.completeChatBuffer({
           externalUserId,
           debounceMs: this.debounceMs,
+          leaseToken: batch.leaseToken,
         });
       }
     }
@@ -384,15 +405,15 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
 
   private async handleFlush(
     batch: ChatQueueBatch<QueueCtx> | ChatQueueBufferSnapshot,
-  ): Promise<boolean> {
-    // #406: Store batch texts for potential retry; clear fallback gate for this cycle.
-    pendingBatchTexts.set(batch.externalUserId, [...batch.texts]);
+  ): Promise<FlushOutcome> {
+    // #406: clear the fallback gate for this processing cycle.
     fallbackSentThisCycle.delete(batch.externalUserId);
+    failedFlushThisCycle.delete(batch.externalUserId);
 
     try {
       const context = batch.context as QueueCtx | undefined;
       const sharedSnapshot = 'lastIdempotencyKey' in batch;
-      await this.pipeline.flush({
+      const delivered = await this.pipeline.flush({
         externalUserId: batch.externalUserId,
         userId: sharedSnapshot ? batch.userId : context?.userId,
         texts: batch.texts,
@@ -404,15 +425,30 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
             ? { isServerChannel: context?.isServerChannel === true }
             : undefined,
       });
-      // Success: clean up all retry state.
-      pendingBatchTexts.delete(batch.externalUserId);
+
+      if (!delivered) {
+        if (!failedFlushThisCycle.has(batch.externalUserId)) {
+          // Quota denial is a handled pipeline outcome, not a delivery
+          // failure. Do not retry or leave the Redis lease in-flight.
+          return 'completed';
+        }
+        const fallbackWasSent = fallbackSentThisCycle.has(batch.externalUserId);
+        if (fallbackWasSent) {
+          fallbackSentThisCycle.delete(batch.externalUserId);
+          failedFlushThisCycle.delete(batch.externalUserId);
+          return 'completed';
+        }
+        return this.scheduleRetryForFailedBatch(batch);
+      }
+
+      // Success: clear the per-cycle fallback gate.
       fallbackSentThisCycle.delete(batch.externalUserId);
+      return 'completed';
     } catch (error) {
-      const msg = errorMessage(error);
       this.logger.error(
         `Chat queue flush failed for ${maskExternalId(
           batch.externalUserId,
-        )}: ${maskExternalIdInText(msg, batch.externalUserId)}`,
+        )}: ${maskExternalIdInText(errorMessage(error), batch.externalUserId)}`,
       );
 
       // #406: When pipeline fails, re-enqueue for bounded retry if enabled.
@@ -422,33 +458,19 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
       // re-enqueue so the batch is not silently lost.
       const userId = batch.externalUserId;
       const fallbackWasSent = fallbackSentThisCycle.has(userId);
-
-      let scheduled = false;
-      if (this.retryEnabled && !fallbackWasSent && this.queueStore) {
-        try {
-          await this.queueStore.scheduleRetryFlush(userId, this.retryDelayMs);
-          scheduled = true;
-          this.logger.log(
-            `Chat flush retry scheduled for ${maskExternalId(userId)} after ${this.retryDelayMs}ms`,
-          );
-        } catch (retryError) {
-          this.logger.error(
-            `Chat flush retry schedule failed for ${maskExternalId(userId)}: ${errorMessage(retryError)}`,
-          );
-        }
-      } else if (this.retryEnabled && fallbackWasSent) {
-        this.logger.log(
-          `Chat flush retry skipped for ${maskExternalId(userId)}: fallback already delivered`,
-        );
+      if (fallbackWasSent) {
+        fallbackSentThisCycle.delete(userId);
+        failedFlushThisCycle.delete(userId);
+        return 'completed';
       }
 
-      pendingBatchTexts.delete(userId);
       fallbackSentThisCycle.delete(userId);
-      return scheduled;
+      failedFlushThisCycle.delete(userId);
+      return this.scheduleRetryForFailedBatch(batch);
     } finally {
       this.droppedNotified.delete(batch.externalUserId);
+      failedFlushThisCycle.delete(batch.externalUserId);
     }
-    return false;
   }
 
   private async sendDroppedNotice(externalUserId: string): Promise<void> {
@@ -465,18 +487,40 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
       await this.options.clarificationStateClearer(externalUserId);
     } catch (error) {
       this.logger.error(
-        `Clarification state clear failed for ${maskExternalId(externalUserId)}: ${errorMessage(error)}`,
+        `Clarification state clear failed for ${maskExternalId(
+          externalUserId,
+        )}: ${maskExternalIdInText(errorMessage(error), externalUserId)}`,
       );
     }
   }
 
-  private readPositiveNumber(
-    raw: string | undefined,
-    fallback: number,
-  ): number {
-    const parsed = raw ? Number(raw) : NaN;
-    return Number.isFinite(parsed) && parsed > 0
-      ? Math.floor(parsed)
-      : fallback;
+  private async scheduleRetryForFailedBatch(
+    batch: ChatQueueBatch<QueueCtx> | ChatQueueBufferSnapshot,
+  ): Promise<FlushOutcome> {
+    if (!this.retryEnabled || !this.queueStore || !('leaseToken' in batch)) {
+      return 'deferred';
+    }
+
+    const userId = batch.externalUserId;
+    try {
+      const scheduled = await this.queueStore.scheduleRetryFlush(
+        userId,
+        this.retryDelayMs,
+        batch.leaseToken,
+      );
+      if (scheduled) {
+        this.logger.log(
+          `Chat flush retry scheduled for ${maskExternalId(userId)} after ${this.retryDelayMs}ms`,
+        );
+        return 'retry_scheduled';
+      }
+    } catch (retryError) {
+      this.logger.error(
+        `Chat flush retry schedule failed for ${maskExternalId(
+          userId,
+        )}: ${maskExternalIdInText(errorMessage(retryError), userId)}`,
+      );
+    }
+    return 'deferred';
   }
 }

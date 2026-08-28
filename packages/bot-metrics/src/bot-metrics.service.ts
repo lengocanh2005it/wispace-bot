@@ -67,6 +67,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private dbCircuitBreakerFailures: Counter;
   private chatIdentityStaleDetected: Counter;
   private chatRevalidationSkip: Counter;
+  private chatFlushRecovery: Counter;
 
   constructor(config: MetricsConfig) {
     this.prefix = config.prefix;
@@ -245,6 +246,12 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_chat_revalidation_skip_total`,
       help: 'Fresh-mapping revalidation skipped due to infra failure (#397)',
       labelNames: ['reason'],
+      registers: [this.registry],
+    });
+    this.chatFlushRecovery = new Counter({
+      name: `${this.prefix}_chat_flush_recovery_total`,
+      help: 'Distributed chat flush recovery outcomes',
+      labelNames: ['platform', 'outcome'],
       registers: [this.registry],
     });
     this.dbCircuitBreakerState = new Gauge({
@@ -431,6 +438,11 @@ export class BotMetricsService implements OnModuleDestroy {
   /** Fresh-mapping revalidation skipped due to infra failure (#397). */
   incChatRevalidationSkip(reason: string): void {
     this.chatRevalidationSkip.inc({ reason });
+  }
+
+  /** Distributed chat flush recovery outcome (#406). */
+  incChatFlushRecovery(platform: string, outcome: string): void {
+    this.chatFlushRecovery.inc({ platform, outcome });
   }
 
   registerDbCircuitBreaker(breaker: {

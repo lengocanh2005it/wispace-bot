@@ -544,7 +544,7 @@ describe('PlatformChatQueueService', () => {
         appendChatBuffer: jest.fn().mockResolvedValue(undefined),
         claimReadyBuffer: jest.fn(),
         completeChatBuffer: jest.fn().mockResolvedValue(false),
-        scheduleRetryFlush: jest.fn().mockResolvedValue(undefined),
+        scheduleRetryFlush: jest.fn().mockResolvedValue(true),
       } as unknown as ChatQueueStorePort;
       const config = {
         get: jest.fn((key: string) => {
@@ -588,6 +588,7 @@ describe('PlatformChatQueueService', () => {
         texts: ['hello'],
         lastIdempotencyKey: 'key-1',
         userId: 42,
+        leaseToken: 'lease-discord-1',
       });
 
       sender.sendText.mockRejectedValue(new Error('DM unavailable'));
@@ -613,7 +614,7 @@ describe('PlatformChatQueueService', () => {
       expect(
         (queueStore as unknown as { scheduleRetryFlush: jest.Mock })
           .scheduleRetryFlush,
-      ).toHaveBeenCalledWith('discord-1', 5000);
+      ).toHaveBeenCalledWith('discord-1', 5000, 'lease-discord-1');
     });
 
     it('does not re-enqueue when retry is disabled', async () => {
@@ -628,6 +629,7 @@ describe('PlatformChatQueueService', () => {
         texts: ['hi'],
         lastIdempotencyKey: 'key-2',
         userId: 10,
+        leaseToken: 'lease-discord-2',
       });
 
       sender.sendText.mockRejectedValue(new Error('DM unavailable'));
@@ -653,6 +655,10 @@ describe('PlatformChatQueueService', () => {
         (queueStore as unknown as { scheduleRetryFlush: jest.Mock })
           .scheduleRetryFlush,
       ).not.toHaveBeenCalled();
+      expect(
+        (queueStore as unknown as { completeChatBuffer: jest.Mock })
+          .completeChatBuffer,
+      ).not.toHaveBeenCalled();
     });
 
     it('does not re-enqueue when fallback was successfully sent', async () => {
@@ -667,6 +673,7 @@ describe('PlatformChatQueueService', () => {
         texts: ['hello'],
         lastIdempotencyKey: 'key-3',
         userId: 20,
+        leaseToken: 'lease-zalo-1',
       });
 
       // Fallback succeeds — no retry needed (user received a response)
@@ -707,6 +714,7 @@ describe('PlatformChatQueueService', () => {
         texts: ['hello'],
         lastIdempotencyKey: 'key-6',
         userId: 50,
+        leaseToken: 'lease-zalo-3',
       });
 
       // Both fallback and pipeline fail
@@ -732,7 +740,7 @@ describe('PlatformChatQueueService', () => {
       expect(
         (queueStore as unknown as { scheduleRetryFlush: jest.Mock })
           .scheduleRetryFlush,
-      ).toHaveBeenCalledWith('zalo-3', 5000);
+      ).toHaveBeenCalledWith('zalo-3', 5000, 'lease-zalo-3');
     });
 
     it('skips completeChatBuffer when scheduleRetryFlush succeeds (#406)', async () => {
@@ -747,6 +755,7 @@ describe('PlatformChatQueueService', () => {
         texts: ['hello'],
         lastIdempotencyKey: 'key-5',
         userId: 40,
+        leaseToken: 'lease-zalo-2',
       });
 
       // scheduleRetryFlush returns true (retry was scheduled)
@@ -776,12 +785,88 @@ describe('PlatformChatQueueService', () => {
       expect(
         (queueStore as unknown as { scheduleRetryFlush: jest.Mock })
           .scheduleRetryFlush,
-      ).toHaveBeenCalledWith('zalo-2', 5000);
+      ).toHaveBeenCalledWith('zalo-2', 5000, 'lease-zalo-2');
       // #406: completeChatBuffer must NOT be called when retry was scheduled
       expect(
         (queueStore as unknown as { completeChatBuffer: jest.Mock })
           .completeChatBuffer,
       ).not.toHaveBeenCalled();
+    });
+
+    it('retries when pipeline reports an unconfirmed delivery and fallback also fails', async () => {
+      const { service, queueStore, sender } =
+        buildDistributedServiceWithRetry(true);
+      await service.onModuleInit();
+
+      (
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue({
+        externalUserId: 'zalo-false',
+        texts: ['hello'],
+        lastIdempotencyKey: 'key-false',
+        userId: 50,
+        leaseToken: 'lease-false',
+      });
+
+      sender.sendText.mockRejectedValue(new Error('fallback unavailable'));
+      const pipelineFlush = jest
+        .fn()
+        .mockImplementation(async (input: { externalUserId: string }) => {
+          const hooks = jest.mocked(ChatPipeline).mock.calls.at(-1)![4] as {
+            onError: (ctx: unknown) => Promise<void>;
+          };
+          await hooks.onError({
+            externalUserId: input.externalUserId,
+            error: new Error('delivery not confirmed'),
+          });
+          return false;
+        });
+      (service as unknown as { pipeline: { flush: jest.Mock } }).pipeline = {
+        flush: pipelineFlush,
+      };
+
+      await service.flushReady('zalo-false');
+
+      expect(
+        (queueStore as unknown as { scheduleRetryFlush: jest.Mock })
+          .scheduleRetryFlush,
+      ).toHaveBeenCalledWith('zalo-false', 5000, 'lease-false');
+      expect(
+        (queueStore as unknown as { completeChatBuffer: jest.Mock })
+          .completeChatBuffer,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('completes a handled quota-denied false result without retrying', async () => {
+      const { service, queueStore } = buildDistributedServiceWithRetry(true);
+      await service.onModuleInit();
+
+      (
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue({
+        externalUserId: 'discord-quota-denied',
+        texts: ['hello'],
+        lastIdempotencyKey: 'key-quota-denied',
+        leaseToken: 'lease-quota-denied',
+      });
+      (
+        service as unknown as { pipeline: { flush: jest.Mock } }
+      ).pipeline.flush.mockResolvedValue(false);
+
+      await service.flushReady('discord-quota-denied');
+
+      expect(
+        (queueStore as unknown as { scheduleRetryFlush: jest.Mock })
+          .scheduleRetryFlush,
+      ).not.toHaveBeenCalled();
+      expect(
+        (queueStore as unknown as { completeChatBuffer: jest.Mock })
+          .completeChatBuffer,
+      ).toHaveBeenCalledWith({
+        externalUserId: 'discord-quota-denied',
+        debounceMs: 2000,
+        leaseToken: 'lease-quota-denied',
+      });
     });
   });
 

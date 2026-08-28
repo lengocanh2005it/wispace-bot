@@ -1,5 +1,9 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common/masking';
 import { ConfigService } from '@nestjs/config';
 import { ChatPipeline } from '@wispace/chat-pipeline';
 import type {
@@ -39,7 +43,10 @@ import {
 import { PrivacyStateService } from '@wispace/llm-agent';
 import { PrivacyDataService } from '@wispace/database';
 import { createMessengerChatPipelineAdapters } from '../../infrastructure/adapters/messenger-chat-pipeline-adapters';
-import { PlatformChatHistoryService } from '@wispace/chat-agent';
+import {
+  PlatformChatHistoryService,
+  readChatFlushRetrySettings,
+} from '@wispace/chat-agent';
 
 export interface ChatBatchInput {
   psid: string;
@@ -64,6 +71,9 @@ export interface ChatBatchInput {
 export class MessengerChatProcessorService {
   private readonly logger = new Logger(MessengerChatProcessorService.name);
   private readonly pipeline: ChatPipeline;
+  private readonly retryEnabled: boolean;
+  private readonly retryDelayMs: number;
+  private readonly fallbackSentThisCycle = new Set<string>();
 
   constructor(
     private readonly outbound: MessengerOutboundService,
@@ -83,6 +93,10 @@ export class MessengerChatProcessorService {
     @Inject(MESSENGER_REPOSITORY)
     private readonly mappingRepository?: MessengerMappingRepositoryPort,
   ) {
+    const retrySettings = readChatFlushRetrySettings(configService);
+    this.retryEnabled = retrySettings.enabled;
+    this.retryDelayMs = retrySettings.delayMs;
+
     const adapters = createMessengerChatPipelineAdapters(
       chatRateLimitService,
       historyService,
@@ -103,7 +117,10 @@ export class MessengerChatProcessorService {
         this.logger.error(
           `Chat pipeline failed psid=${maskExternalId(
             ctx.externalUserId,
-          )}: ${errorMessage(ctx.error)}`,
+          )}: ${maskExternalIdInText(
+            errorMessage(ctx.error),
+            ctx.externalUserId,
+          )}`,
         );
         if (ctx.reply?.clarification) {
           try {
@@ -127,17 +144,23 @@ export class MessengerChatProcessorService {
         }
         const userId = ctx.userId;
         try {
-          await outbound.sendTextViaPsid({
-            psid: ctx.externalUserId,
-            userId,
-            text: buildChatDeliveryErrorMessage(ctx.error, ctx.mergedText),
-            messageType: 'FREE_FORM_CHAT_ERROR',
-          });
+          if (!this.fallbackSentThisCycle.has(ctx.externalUserId)) {
+            await outbound.sendTextViaPsid({
+              psid: ctx.externalUserId,
+              userId,
+              text: buildChatDeliveryErrorMessage(ctx.error, ctx.mergedText),
+              messageType: 'FREE_FORM_CHAT_ERROR',
+            });
+            this.fallbackSentThisCycle.add(ctx.externalUserId);
+          }
         } catch (sendError) {
           this.logger.error(
             `Failed to send chat error fallback psid=${maskExternalId(
               ctx.externalUserId,
-            )}: ${errorMessage(sendError)}`,
+            )}: ${maskExternalIdInText(
+              errorMessage(sendError),
+              ctx.externalUserId,
+            )}`,
           );
         }
       },
@@ -181,8 +204,8 @@ export class MessengerChatProcessorService {
   }
 
   /** Process a batch — called by EnqueueService after debounce/merge. */
-  async process(input: ChatBatchInput): Promise<void> {
-    await this.processChatBatch(input);
+  async process(input: ChatBatchInput): Promise<boolean> {
+    return this.processChatBatch(input);
   }
 
   private async flushDistributed(psid: string): Promise<void> {
@@ -207,7 +230,7 @@ export class MessengerChatProcessorService {
           this.logger.error(
             `Failed to send drop notice to psid=${maskExternalId(
               psid,
-            )}: ${errorMessage(error)}`,
+            )}: ${maskExternalIdInText(errorMessage(error), psid)}`,
           );
         });
     }
@@ -237,35 +260,85 @@ export class MessengerChatProcessorService {
       freshUserId = freshMapping.userId;
     }
 
+    let retryScheduled = false;
+    let shouldComplete = false;
+    this.fallbackSentThisCycle.delete(psid);
     try {
-      await this.processChatBatch({
+      const delivered = await this.processChatBatch({
         psid,
         mergedText,
         userId: freshUserId,
         linkContext: snapshot.linkContext,
         idempotencyKey: snapshot.lastIdempotencyKey,
       });
-    } finally {
-      try {
-        const hasPending = await this.getChatQueueStore().completeChatBuffer({
-          psid,
-          debounceMs: this.getDebounceMs(),
-        });
-
-        if (hasPending) {
-          // Re-schedule via the EnqueueService's timer.
+      if (delivered || this.fallbackSentThisCycle.has(psid)) {
+        shouldComplete = true;
+      } else if (this.retryEnabled) {
+        try {
+          retryScheduled = await this.getChatQueueStore().scheduleRetryFlush(
+            psid,
+            this.retryDelayMs,
+            snapshot.leaseToken,
+          );
+          if (retryScheduled) {
+            this.logger.log(
+              `Chat flush retry scheduled for psid=${maskExternalId(psid)} after ${this.retryDelayMs}ms`,
+            );
+          }
+        } catch (retryError) {
+          this.logger.error(
+            `Chat flush retry schedule failed for psid=${maskExternalId(
+              psid,
+            )}: ${maskExternalIdInText(errorMessage(retryError), psid)}`,
+          );
         }
-      } catch (completeError) {
-        this.logger.error(
-          `completeChatBuffer failed psid=${maskExternalId(psid)}: ${errorMessage(
-            completeError,
-          )}`,
-        );
+      }
+    } catch (error) {
+      const fallbackWasSent = this.fallbackSentThisCycle.has(psid);
+      if (fallbackWasSent) {
+        shouldComplete = true;
+      } else if (this.retryEnabled) {
+        try {
+          retryScheduled = await this.getChatQueueStore().scheduleRetryFlush(
+            psid,
+            this.retryDelayMs,
+            snapshot.leaseToken,
+          );
+          if (retryScheduled) {
+            this.logger.log(
+              `Chat flush retry scheduled for psid=${maskExternalId(psid)} after ${this.retryDelayMs}ms`,
+            );
+          }
+        } catch (retryError) {
+          this.logger.error(
+            `Chat flush retry schedule failed for psid=${maskExternalId(
+              psid,
+            )}: ${maskExternalIdInText(errorMessage(retryError), psid)}`,
+          );
+        }
+      }
+      throw error;
+    } finally {
+      this.fallbackSentThisCycle.delete(psid);
+      if (shouldComplete && !retryScheduled) {
+        try {
+          await this.getChatQueueStore().completeChatBuffer({
+            psid,
+            debounceMs: this.getDebounceMs(),
+            leaseToken: snapshot.leaseToken,
+          });
+        } catch (completeError) {
+          this.logger.error(
+            `completeChatBuffer failed psid=${maskExternalId(
+              psid,
+            )}: ${maskExternalIdInText(errorMessage(completeError), psid)}`,
+          );
+        }
       }
     }
   }
 
-  private async processChatBatch(input: ChatBatchInput): Promise<void> {
+  private async processChatBatch(input: ChatBatchInput): Promise<boolean> {
     const tracer = trace.getTracer('messenger-ai-for-student');
     const rootSpan = tracer.startSpan('chat.batch', { kind: SpanKind.SERVER });
     rootSpan.setAttributes({
@@ -275,12 +348,16 @@ export class MessengerChatProcessorService {
       'messenger.merged_text_len': input.mergedText.length,
     });
 
-    await context.with(trace.setSpan(context.active(), rootSpan), async () => {
+    return context.with(trace.setSpan(context.active(), rootSpan), async () => {
       try {
-        await this.metrics.timeStep('chat_total', () =>
+        const delivered = await this.metrics.timeStep('chat_total', () =>
           this.processChatBatchInner(input),
         );
-        rootSpan.setStatus({ code: SpanStatusCode.OK });
+        rootSpan.setStatus({
+          code: delivered ? SpanStatusCode.OK : SpanStatusCode.ERROR,
+          ...(delivered ? {} : { message: 'delivery not confirmed' }),
+        });
+        return delivered;
       } catch (err) {
         rootSpan.setStatus({
           code: SpanStatusCode.ERROR,
@@ -294,9 +371,10 @@ export class MessengerChatProcessorService {
     });
   }
 
-  private async processChatBatchInner(input: ChatBatchInput): Promise<void> {
+  private async processChatBatchInner(input: ChatBatchInput): Promise<boolean> {
     const { psid, mergedText, idempotencyKey } = input;
     let { userId, linkContext } = input;
+    let reservedUsageDate: string | undefined;
 
     // #383: revalidate linkContext against the fresh mapping — if the mapping
     // was updated (relinked/unlinked) during the debounce window, a stale
@@ -309,7 +387,7 @@ export class MessengerChatProcessorService {
         this.logger.warn(
           `Dropping batch for psid=${maskExternalId(psid)}: no active mapping after revalidation`,
         );
-        return;
+        return true;
       }
       if (freshMapping.userId !== linkContext.userId) {
         await this.clearClarificationState(psid);
@@ -337,7 +415,7 @@ export class MessengerChatProcessorService {
           this.logger.log(
             `Skipping duplicate chat flush mid=${idempotencyKey} psid=${maskExternalId(psid)}`,
           );
-          return;
+          return true;
         }
 
         const denyReason =
@@ -349,10 +427,11 @@ export class MessengerChatProcessorService {
           text: buildChatQuotaDenyMessage(denyReason, quota.limit),
           messageType: 'CHAT_QUOTA_DENIED',
         });
-        return;
+        return true;
       }
 
       if (quota.quotaReserved) {
+        reservedUsageDate = quota.usageDate;
         await this.messengerRepository.logMessage({
           userId,
           psid,
@@ -366,7 +445,7 @@ export class MessengerChatProcessorService {
           psid,
         )}; skipped (H5)`,
       );
-      return;
+      return true;
     } else {
       this.logger.warn(
         `Chat flush without message.mid psid=${maskExternalId(
@@ -379,17 +458,18 @@ export class MessengerChatProcessorService {
     const privacyIntent = detectPrivacyIntent(mergedText);
     if (privacyIntent && this.privacyState && this.privacyService) {
       await this.handlePrivacyIntent(psid, userId, mergedText, privacyIntent);
-      return;
+      return true;
     }
 
     // ── Pipeline flush ───────────────────────────────────────────────
 
-    await this.metrics.timeStep('pipeline_flush', () =>
+    return this.metrics.timeStep('pipeline_flush', () =>
       this.pipeline.flush({
         externalUserId: psid,
         userId,
         texts: [mergedText],
         idempotencyKey,
+        reservedUsageDate,
         context: linkContext ? { linkContext } : undefined,
       }),
     );
@@ -488,7 +568,9 @@ export class MessengerChatProcessorService {
       await clearer.call(this.messengerAgentService, psid);
     } catch (error) {
       this.logger.warn(
-        `Clarification state clear failed psid=${maskExternalId(psid)}: ${errorMessage(error)}`,
+        `Clarification state clear failed psid=${maskExternalId(
+          psid,
+        )}: ${maskExternalIdInText(errorMessage(error), psid)}`,
       );
     }
   }
@@ -511,7 +593,7 @@ export class MessengerChatProcessorService {
         this.logger.warn(
           `Rich follow-up delivery failed psid=${maskExternalId(
             params.psid,
-          )}: ${errorMessage(error)}`,
+          )}: ${maskExternalIdInText(errorMessage(error), params.psid)}`,
         );
       }
     }
@@ -536,7 +618,7 @@ export class MessengerChatProcessorService {
       this.logger.warn(
         `Quota hint delivery failed psid=${maskExternalId(
           params.psid,
-        )}: ${errorMessage(error)}`,
+        )}: ${maskExternalIdInText(errorMessage(error), params.psid)}`,
       );
     }
   }

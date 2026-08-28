@@ -2,6 +2,7 @@ import type {
   AgentPort,
   ChatPipelineConfig,
   ChatPipelineHooks,
+  ChatPipelineInput,
   HistoryPort,
   OutboundPort,
   PipelineContext,
@@ -40,13 +41,7 @@ export class ChatPipeline {
    * Run the full flush pipeline for a batch of merged user texts.
    * Returns true if the main reply was delivered.
    */
-  async flush(input: {
-    externalUserId: string;
-    userId?: number;
-    texts: string[];
-    idempotencyKey?: string;
-    context?: Record<string, unknown>;
-  }): Promise<boolean> {
+  async flush(input: ChatPipelineInput): Promise<boolean> {
     const mergedText = input.texts.join('\n').slice(0, this.mergedTextMaxChars);
 
     const ctx: PipelineContext = {
@@ -65,7 +60,7 @@ export class ChatPipeline {
       // ── Reserve quota ─────────────────────────────────────────────────────
       await this.hooks.onStep?.('before_reserve', ctx);
 
-      if (input.idempotencyKey) {
+      if (input.idempotencyKey && input.reservedUsageDate === undefined) {
         const reserveResult: ReserveResult = await this.rateLimiter.reserve(
           input.externalUserId,
           input.idempotencyKey,
@@ -77,6 +72,9 @@ export class ChatPipeline {
         }
 
         usageDate = reserveResult.usageDate;
+        ctx.usageDate = usageDate;
+      } else if (input.idempotencyKey) {
+        usageDate = input.reservedUsageDate;
         ctx.usageDate = usageDate;
       }
 
