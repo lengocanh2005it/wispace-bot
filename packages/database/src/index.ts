@@ -103,6 +103,12 @@ export {
   DEFAULT_PLATFORM_PRIORITY,
 } from './services/canonical-platform.service';
 export {
+  WebActivityService,
+  normalizeToUtcIso,
+  DORMANT_REASON,
+} from './services/web-activity.service';
+export { WebActivityEntity } from './entities/web-activity.entity';
+export {
   type WebhookInboundIngressPort,
   WEBHOOK_INBOUND_INGRESS_PORT,
   type WebhookIngestResult,
