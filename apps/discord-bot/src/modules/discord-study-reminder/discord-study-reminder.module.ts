@@ -13,6 +13,9 @@ import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { WispaceCalendarService } from '@wispace/wispace-client';
 import { DiscordOutboundService } from '../discord-chat/application/services/discord-outbound.service';
+import { WebActivityService } from '@wispace/database';
+import { BotMetricsService } from '@wispace/bot-metrics';
+import { DatabaseModule } from '../../infrastructure/database/database.module';
 
 @Module({
   imports: [
@@ -23,6 +26,7 @@ import { DiscordOutboundService } from '../discord-chat/application/services/dis
     BotCommonModule,
     DiscordOutboundModule,
     WispaceModule,
+    DatabaseModule,
   ],
   providers: createStudyReminderProviders({
     platform: 'discord',
@@ -30,6 +34,8 @@ import { DiscordOutboundService } from '../discord-chat/application/services/dis
     mappingEntity: DiscordAccountLinkEntity,
     outboundService: DiscordOutboundService,
     calendarService: WispaceCalendarService,
+    dormancyGate: WebActivityService,
+    dormancySuppressionMetric: BotMetricsService,
   }),
   exports: [
     StudyReminderSyncService,
