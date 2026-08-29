@@ -91,6 +91,10 @@ function buildService(
     {
       promptDir: join(__dirname, '../../../../shared/prompts'),
       promptFile: 'messenger-chat.system.txt',
+      currentIdentityProvider: async () => ({
+        userId: 42,
+        mappingVersion: 'test:messenger-agent',
+      }),
       maxLlmRetries: 0,
       appendHistory: false,
       tryFastReschedule:

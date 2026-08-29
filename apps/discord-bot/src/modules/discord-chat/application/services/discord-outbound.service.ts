@@ -367,16 +367,25 @@ export class DiscordOutboundService {
   async sendRescheduleConfirmation(
     discordUserId: string,
     summary: string,
+    confirmationToken?: string,
   ): Promise<void> {
     try {
       const user = await this.client.users.fetch(discordUserId);
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
-          .setCustomId(RESCHEDULE_CONFIRM_CUSTOM_ID)
+          .setCustomId(
+            confirmationToken
+              ? `${RESCHEDULE_CONFIRM_CUSTOM_ID}:${confirmationToken}`
+              : RESCHEDULE_CONFIRM_CUSTOM_ID,
+          )
           .setLabel('Xác nhận')
           .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
-          .setCustomId(RESCHEDULE_CANCEL_CUSTOM_ID)
+          .setCustomId(
+            confirmationToken
+              ? `${RESCHEDULE_CANCEL_CUSTOM_ID}:${confirmationToken}`
+              : RESCHEDULE_CANCEL_CUSTOM_ID,
+          )
           .setLabel('Hủy')
           .setStyle(ButtonStyle.Danger),
       );

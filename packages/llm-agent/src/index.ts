@@ -78,8 +78,22 @@ export {
   readSchedulingMode,
   readValidatedDate,
   readValidatedTime,
+  getAgentToolDefinition,
+  parseAndValidateToolArguments,
+  canonicalizeToolArguments,
+  validateAgentToolRegistry,
 } from './agent.tools';
-export type { AgentToolName } from './agent.tools';
+export type {
+  AgentToolName,
+  AgentToolCapability,
+  AgentToolDefinition,
+  ToolEffect,
+  ToolIdentityRequirement,
+  ToolAuthorizationRequirement,
+  ToolConfirmationRequirement,
+  ToolIdempotencyStrategy,
+  ToolArgumentValidationResult,
+} from './agent.tools';
 
 // Utils — safety, scope, retry, text, privacy
 export {

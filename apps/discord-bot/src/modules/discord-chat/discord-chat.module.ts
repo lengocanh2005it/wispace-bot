@@ -129,15 +129,22 @@ const REGISTER_REPORT_MESSAGE =
         exerciseClient: PrecreateExerciseApiClient,
         rescheduleConfirmationService: RescheduleConfirmationService<string>,
         outboundService: DiscordOutboundService,
+        accountLinkService: DiscordAccountLinkService,
+        metrics: BotMetricsService,
       ) =>
         new PlatformAgentToolsService(
           goalsService,
           calendarService,
           rescheduleConfirmationService,
           {
+            platform: 'discord',
             getNotLinkedMessage: () => NOT_LINKED_MESSAGE,
             wispaceExternalId: (ctx) => ctx.externalUserId,
             registerReportMessage: REGISTER_REPORT_MESSAGE,
+            currentIdentityProvider: (externalUserId) =>
+              accountLinkService.findCurrentIdentity(externalUserId),
+            policyDeniedInc: (toolName, reason) =>
+              metrics.incLlmToolPolicyDenied(toolName, 'discord', reason),
             reschedule: {
               validateDateAndTime: true,
               messages: {
@@ -148,10 +155,11 @@ const REGISTER_REPORT_MESSAGE =
                   'newLocalDate must be in YYYY-MM-DD format',
                 newTimeInvalid: 'newTime must be in HH:MM format',
               },
-              confirmSender: (externalUserId, summary) =>
+              confirmSender: (externalUserId, summary, confirmationToken) =>
                 outboundService.sendRescheduleConfirmation(
                   externalUserId,
                   summary,
+                  confirmationToken,
                 ),
             },
           },
@@ -164,6 +172,8 @@ const REGISTER_REPORT_MESSAGE =
         PrecreateExerciseApiClient,
         RescheduleConfirmationService,
         DiscordOutboundService,
+        DiscordAccountLinkService,
+        BotMetricsService,
       ],
     },
     {
@@ -183,6 +193,7 @@ const REGISTER_REPORT_MESSAGE =
         metrics: BotMetricsService,
         redisClient: RedisClientPort,
         clarificationStore: ClarificationStateStore,
+        accountLinkService: DiscordAccountLinkService,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -197,6 +208,8 @@ const REGISTER_REPORT_MESSAGE =
           adapter,
           {
             platform: 'discord',
+            currentIdentityProvider: (externalUserId) =>
+              accountLinkService.findCurrentIdentity(externalUserId),
             clarificationStore,
             promptDir: join(__dirname, '../../shared/prompts'),
             promptFile: 'discord-chat.system.txt',
@@ -218,6 +231,8 @@ const REGISTER_REPORT_MESSAGE =
                 metrics.incRoundOutcome(feature, outcome),
               observationOutcomeInc: (toolName, outcome) =>
                 metrics.incObservationOutcome(toolName, 'discord', outcome),
+              toolPolicyDeniedInc: (toolName, reason) =>
+                metrics.incLlmToolPolicyDenied(toolName, 'discord', reason),
             },
             clarificationOutcomeInc: (outcome) =>
               metrics.incClarificationOutcome(outcome),
@@ -238,6 +253,7 @@ const REGISTER_REPORT_MESSAGE =
         BotMetricsService,
         REDIS_CLIENT,
         CLARIFICATION_STATE_STORE,
+        DiscordAccountLinkService,
       ],
     },
     {

@@ -110,7 +110,11 @@ export function buildRescheduleSuccessRichFollowUp(params: {
 
 export function buildRescheduleConfirmFollowUp(params: {
   summary: string;
+  confirmationToken?: string;
 }): MessengerRichFollowUp {
+  const tokenSuffix = params.confirmationToken
+    ? `:${params.confirmationToken}`
+    : '';
   return {
     kind: 'button',
     messageType: 'CHAT_RESCHEDULE_CONFIRM',
@@ -119,12 +123,12 @@ export function buildRescheduleConfirmFollowUp(params: {
       {
         type: 'postback',
         title: 'Xác nhận đổi lịch',
-        payload: 'CONFIRM_RESCHEDULE',
+        payload: `CONFIRM_RESCHEDULE${tokenSuffix}`,
       },
       {
         type: 'postback',
         title: 'Hủy',
-        payload: 'CANCEL_RESCHEDULE',
+        payload: `CANCEL_RESCHEDULE${tokenSuffix}`,
       },
     ],
   };

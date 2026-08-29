@@ -49,6 +49,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmToolCalls: Counter;
   private llmRoundOutcome: Counter;
   private llmObservationOutcome: Counter;
+  private llmToolPolicyDenied: Counter;
   private clarificationOutcomes: Counter;
   private llmAdmissionRejected: Counter;
   private llmAdmissionWait: Histogram;
@@ -135,6 +136,13 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_llm_observation_outcome_total`,
       help: 'Bounded in-run LLM tool-observation outcomes (#414)',
       labelNames: ['tool_name', 'platform', 'outcome'],
+      registers: [this.registry],
+    });
+
+    this.llmToolPolicyDenied = new Counter({
+      name: `${this.prefix}_llm_tool_policy_denied_total`,
+      help: 'LLM tool calls blocked by capability, argument, or identity policy',
+      labelNames: ['tool', 'platform', 'reason'],
       registers: [this.registry],
     });
 
@@ -372,6 +380,10 @@ export class BotMetricsService implements OnModuleDestroy {
     outcome: string,
   ): void {
     this.llmObservationOutcome.inc({ tool_name: toolName, platform, outcome });
+  }
+
+  incLlmToolPolicyDenied(tool: string, platform: string, reason: string): void {
+    this.llmToolPolicyDenied.inc({ tool, platform, reason });
   }
 
   incClarificationOutcome(outcome: string): void {

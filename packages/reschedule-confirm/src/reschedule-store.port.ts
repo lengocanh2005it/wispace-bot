@@ -11,6 +11,21 @@ export interface PendingRescheduleRecord<TExternalId> {
   expiresAt: number;
   /** Lease token assigned at claim time — required for ownership-gated revert/cancel. */
   leaseToken?: string;
+  /** Capability/approval binding fields persisted with the staged request. */
+  toolName?: string;
+  platform?: string;
+  mappingVersion?: string;
+  intentHash?: string;
+  argsHash?: string;
+  nonce?: string;
+}
+
+export interface RescheduleApprovalBinding {
+  platform?: string;
+  mappingVersion?: string;
+  intentHash?: string;
+  argsHash?: string;
+  nonce?: string;
 }
 
 /**
@@ -19,11 +34,14 @@ export interface PendingRescheduleRecord<TExternalId> {
  * apps pass a DB-backed implementation for production.
  */
 export interface RescheduleStorePort<TExternalId> {
+  /** Production stores require the opaque token carried by the UI action. */
+  readonly requiresApprovalToken?: boolean;
   save(pending: PendingRescheduleRecord<TExternalId>): Promise<void>;
   /** Atomically claims a valid (unexpired) pending confirmation for the user. */
   takeValid(
     externalId: TExternalId,
     userId?: number,
+    binding?: RescheduleApprovalBinding,
   ): Promise<PendingRescheduleRecord<TExternalId> | null>;
   /** Puts a claimed record back to pending (confirm failed — user can retry). */
   revertToPending(externalId: TExternalId, leaseToken?: string): Promise<void>;
@@ -66,6 +84,7 @@ export class MemoryRescheduleStore<
   takeValid(
     externalId: TExternalId,
     userId?: number,
+    binding?: RescheduleApprovalBinding,
   ): Promise<PendingRescheduleRecord<TExternalId> | null> {
     const key = String(externalId);
     const entry = this.pendingByExternalId.get(key);
@@ -79,6 +98,18 @@ export class MemoryRescheduleStore<
     }
 
     if (userId != null && entry.record.userId !== userId) {
+      return Promise.resolve(null);
+    }
+    if (
+      binding &&
+      ((binding.platform && entry.record.platform !== binding.platform) ||
+        (binding.mappingVersion &&
+          entry.record.mappingVersion !== binding.mappingVersion) ||
+        (binding.intentHash &&
+          entry.record.intentHash !== binding.intentHash) ||
+        (binding.argsHash && entry.record.argsHash !== binding.argsHash) ||
+        (binding.nonce && entry.record.nonce !== binding.nonce))
+    ) {
       return Promise.resolve(null);
     }
 

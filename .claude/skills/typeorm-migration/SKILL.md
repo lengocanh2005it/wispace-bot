@@ -35,6 +35,9 @@ For CI schema validation, run the root `npm run database:migration-compatibility
 - Runtime queries use `DB_QUERY_TIMEOUT_MS`; migration CLI uses
   `DB_MIGRATION_QUERY_TIMEOUT_MS` so a long migration is not accidentally
   killed by the app query budget.
+- Reschedule confirmation rows are security-sensitive: preserve the
+  platform/mapping revision, intent/argument hashes, and one-time nonce
+  binding; production confirmation must claim by the complete binding.
 
 ## Tách DB (ops một lần — đã hoàn thành)
 

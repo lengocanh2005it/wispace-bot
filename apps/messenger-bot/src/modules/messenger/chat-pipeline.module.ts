@@ -57,6 +57,10 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import { MessengerOutboundModule } from './messenger-outbound.module';
 import { UserLinkingModule } from './user-linking.module';
 import { MessengerAgentToolsService } from './application/agent/messenger-agent-tools.service';
+import {
+  MESSENGER_TOOL_IDENTITY_PROVIDER,
+  MESSENGER_TOOL_POLICY_DENIED_INC,
+} from './application/agent/messenger-agent-tools.service';
 import { MessengerAgentService } from './application/agent/messenger-agent.service';
 import { MessengerChatSharedConfigService } from './application/services/messenger-chat-shared-config.service';
 import { MessengerChatEnqueueService } from './application/services/messenger-chat-enqueue.service';
@@ -73,6 +77,7 @@ import {
   STUDY_REMINDER_OPERATIONS_PORT,
   type StudyReminderOperationsPort,
 } from '../study-reminder/domain/ports/study-reminder-operations.port';
+import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository.port';
 
 /**
  * Self-contained module for the chat pipeline:
@@ -106,6 +111,30 @@ import {
   ],
   providers: [
     MessengerChatSharedConfigService,
+    {
+      provide: MESSENGER_TOOL_IDENTITY_PROVIDER,
+      useFactory:
+        (
+          repository: import('./domain/repositories/messenger-mapping.repository.port').MessengerMappingRepositoryPort,
+        ) =>
+        async (externalUserId: string) => {
+          const mapping =
+            await repository.findActiveMappingByPsid(externalUserId);
+          if (!mapping?.userId) return undefined;
+          return {
+            userId: mapping.userId,
+            mappingVersion: `${mapping.id}:${mapping.updatedAt}`,
+          };
+        },
+      inject: [MESSENGER_REPOSITORY],
+    },
+    {
+      provide: MESSENGER_TOOL_POLICY_DENIED_INC,
+      useFactory:
+        (metrics: BotMetricsService) => (toolName: string, reason: string) =>
+          metrics.incLlmToolPolicyDenied(toolName, 'messenger', reason),
+      inject: [BotMetricsService],
+    },
     {
       provide: WispaceConfigService,
       useFactory: (configService: ConfigService) =>
@@ -187,6 +216,9 @@ import {
         learnerProfileStore: LearnerProfileStorePort,
         redisClient: RedisClientPort,
         clarificationStore: ClarificationStateStore,
+        currentIdentityProvider: (
+          externalUserId: string,
+        ) => Promise<{ userId: number; mappingVersion: string } | undefined>,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -201,6 +233,7 @@ import {
           adapter,
           {
             platform: 'messenger',
+            currentIdentityProvider,
             clarificationStore,
             promptDir: join(__dirname, '../../../shared/prompts'),
             promptFile: 'messenger-chat.system.txt',
@@ -218,6 +251,8 @@ import {
                 metrics.incRoundOutcome(feature, outcome),
               observationOutcomeInc: (toolName, outcome) =>
                 metrics.incObservationOutcome(toolName, 'messenger', outcome),
+              toolPolicyDeniedInc: (toolName, reason) =>
+                metrics.incLlmToolPolicyDenied(toolName, 'messenger', reason),
             },
             clarificationOutcomeInc: (outcome) =>
               metrics.incClarificationOutcome(outcome),
@@ -274,6 +309,7 @@ import {
         LEARNER_PROFILE_STORE,
         REDIS_CLIENT,
         CLARIFICATION_STATE_STORE,
+        MESSENGER_TOOL_IDENTITY_PROVIDER,
       ],
     },
     RedisChatQueueStore,

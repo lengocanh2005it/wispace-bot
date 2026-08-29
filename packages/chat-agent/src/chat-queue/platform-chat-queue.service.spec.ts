@@ -1033,7 +1033,7 @@ describe('PlatformChatQueueService', () => {
       errorSpy.mockRestore();
     });
 
-    it('fail-open with buffered userId when both attempts fail', async () => {
+    it('fails closed when both authoritative mapping attempts fail', async () => {
       const freshMappingProvider = jest
         .fn()
         .mockRejectedValue(new Error('Redis down'));
@@ -1065,10 +1065,8 @@ describe('PlatformChatQueueService', () => {
       expect(errorSpy).toHaveBeenCalledWith(
         expect.stringContaining('Fresh-mapping retry failed'),
       );
-      // Fail-open: pipeline called with original buffered userId
-      expect(pipelineFlush).toHaveBeenCalledWith(
-        expect.objectContaining({ userId: 77 }),
-      );
+      expect(pipelineFlush).not.toHaveBeenCalled();
+      expect(queueStore.completeChatBuffer).toHaveBeenCalled();
 
       errorSpy.mockRestore();
     });

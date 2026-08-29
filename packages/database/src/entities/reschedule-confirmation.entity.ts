@@ -22,8 +22,26 @@ export class RescheduleConfirmationEntity {
   @Column({ name: 'external_id', type: 'varchar', length: 128 })
   externalId!: string;
 
+  @Column({ name: 'tool_name', type: 'varchar', length: 64 })
+  toolName!: string;
+
+  @Column({ name: 'platform', type: 'varchar', length: 16 })
+  platform!: string;
+
   @Column({ name: 'user_id', type: 'int' })
   userId!: number;
+
+  @Column({ name: 'mapping_version', type: 'varchar', length: 255 })
+  mappingVersion!: string;
+
+  @Column({ name: 'intent_hash', type: 'varchar', length: 64 })
+  intentHash!: string;
+
+  @Column({ name: 'args_hash', type: 'varchar', length: 64 })
+  argsHash!: string;
+
+  @Column({ name: 'nonce', type: 'uuid' })
+  nonce!: string;
 
   @Column({ name: 'calendar_id', type: 'int' })
   calendarId!: number;

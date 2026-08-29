@@ -1,6 +1,7 @@
 export {
   RescheduleConfirmationService,
   PENDING_RESCHEDULE_TTL_MS,
+  isValidApprovalToken,
   type CalendarEntryView,
   type StudyCalendarEntryView,
   type RescheduleResult,
@@ -15,5 +16,6 @@ export {
 export {
   MemoryRescheduleStore,
   type PendingRescheduleRecord,
+  type RescheduleApprovalBinding,
   type RescheduleStorePort,
 } from './reschedule-store.port';

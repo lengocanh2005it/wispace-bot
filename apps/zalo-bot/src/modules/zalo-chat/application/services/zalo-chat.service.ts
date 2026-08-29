@@ -13,7 +13,10 @@ import { ConfigService } from '@nestjs/config';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { PlatformChatQueueService } from '@wispace/chat-agent';
-import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
+import {
+  isValidApprovalToken,
+  RescheduleConfirmationService,
+} from '@wispace/reschedule-confirm';
 import {
   RESCHEDULE_CONFIRM_KEYWORDS,
   RESCHEDULE_CANCEL_KEYWORDS,
@@ -63,17 +66,31 @@ export class ZaloChatService {
     }
 
     try {
+      const identity =
+        await this.accountLinkService.findCurrentIdentity?.(zaloUserId);
       const userId =
-        await this.accountLinkService.findUserIdByZaloId(zaloUserId);
+        identity?.userId ??
+        (await this.accountLinkService.findUserIdByZaloId(zaloUserId));
 
       const hasPending =
         await this.rescheduleConfirmationService.hasPending(zaloUserId);
 
       if (hasPending && this.isConfirmKeyword(text.trim())) {
-        const result = await this.rescheduleConfirmationService.confirm(
-          zaloUserId,
-          userId,
-        );
+        const approvalToken = this.readApprovalToken(text.trim());
+        const result = approvalToken
+          ? await this.rescheduleConfirmationService.confirm(
+              zaloUserId,
+              userId,
+              approvalToken,
+              {
+                platform: 'zalo',
+                mappingVersion: identity?.mappingVersion,
+              },
+            )
+          : await this.rescheduleConfirmationService.confirm(
+              zaloUserId,
+              userId,
+            );
         if (result.confirmed) {
           await this.outboundService.sendText(
             zaloUserId,
@@ -113,7 +130,17 @@ export class ZaloChatService {
   }
 
   private isConfirmKeyword(text: string): boolean {
-    return RESCHEDULE_CONFIRM_KEYWORDS.includes(text.toLowerCase());
+    const normalized = text.toLowerCase().trim();
+    return (
+      RESCHEDULE_CONFIRM_KEYWORDS.includes(normalized) ||
+      (normalized.startsWith('xác nhận ') &&
+        isValidApprovalToken(normalized.slice('xác nhận '.length)))
+    );
+  }
+
+  private readApprovalToken(text: string): string | undefined {
+    const token = text.slice('xác nhận '.length).trim();
+    return isValidApprovalToken(token) ? token : undefined;
   }
 
   private isCancelKeyword(text: string): boolean {

@@ -1,12 +1,22 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common/masking';
 import type {
   PlatformAgentReply,
   PlatformAgentToolContext,
   PlatformToolExecutorPort,
+  CurrentPlatformIdentity,
 } from '@wispace/chat-agent';
 import { executePrecreateExerciseTool } from '@wispace/chat-agent';
-import { isAgentToolName, type AgentToolName } from '@wispace/llm-agent';
+import {
+  isAgentToolName,
+  parseAndValidateToolArguments,
+  sanitizeUntrustedTextForLlm,
+  type AgentToolName,
+} from '@wispace/llm-agent';
 import {
   readCalendarTimeRange,
   readPastDays,
@@ -52,6 +62,12 @@ import { hasMessengerReportSubscriptionIntent } from '@messenger/shared/utils/me
 
 export const MESSENGER_NOT_LINKED_MESSAGE =
   'Chưa liên kết tài khoản WISPACE. Học viên cần mở Messenger từ link trong app WISPACE.';
+export const MESSENGER_TOOL_IDENTITY_PROVIDER = Symbol(
+  'MESSENGER_TOOL_IDENTITY_PROVIDER',
+);
+export const MESSENGER_TOOL_POLICY_DENIED_INC = Symbol(
+  'MESSENGER_TOOL_POLICY_DENIED_INC',
+);
 const REPORT_SUBSCRIPTION_INTENT_UNCLEAR_RESULT = {
   registered: false,
   reason: 'intent_unclear',
@@ -78,6 +94,17 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     private readonly rescheduleConfirmationService: MessengerRescheduleConfirmationService,
     private readonly exerciseClient: PrecreateExerciseApiClient,
     private readonly mappingService: MessengerMappingService,
+    @Optional()
+    @Inject(MESSENGER_TOOL_IDENTITY_PROVIDER)
+    private readonly currentIdentityProvider?: (
+      externalUserId: string,
+    ) => Promise<CurrentPlatformIdentity | undefined>,
+    @Optional()
+    @Inject(MESSENGER_TOOL_POLICY_DENIED_INC)
+    private readonly policyDeniedInc?: (
+      toolName: string,
+      reason: string,
+    ) => void,
   ) {}
 
   async execute(
@@ -90,27 +117,71 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       return { error: `Unknown tool: ${toolName}` };
     }
 
-    let args: Record<string, unknown> = {};
-    if (argsJson.trim()) {
+    const parsed = parseAndValidateToolArguments(toolName, argsJson, {
+      allowMissingRequired: true,
+    });
+    if (!parsed.ok) {
+      this.policyDeniedInc?.(toolName, 'invalid_arguments');
+      return { error: parsed.error };
+    }
+
+    if (!this.currentIdentityProvider) {
+      this.policyDeniedInc?.(toolName, 'missing_identity_provider');
+      return { available: false, message: MESSENGER_NOT_LINKED_MESSAGE };
+    }
+
+    if (this.currentIdentityProvider) {
       try {
-        args = JSON.parse(argsJson) as Record<string, unknown>;
-      } catch {
-        return { error: 'Invalid tool arguments JSON' };
+        const identity = await this.currentIdentityProvider(ctx.externalUserId);
+        if (
+          !identity ||
+          !Number.isInteger(identity.userId) ||
+          identity.userId <= 0 ||
+          typeof identity.mappingVersion !== 'string' ||
+          !identity.mappingVersion.trim()
+        ) {
+          this.policyDeniedInc?.(toolName, 'missing_mapping');
+          return { available: false, message: MESSENGER_NOT_LINKED_MESSAGE };
+        }
+        ctx.userId = identity.userId;
+        ctx.mappingVersion = identity.mappingVersion;
+      } catch (error) {
+        const safeError = this.safeErrorMessage(error, ctx.externalUserId);
+        this.logger.warn(
+          `Current-mapping lookup failed for ${maskExternalId(ctx.externalUserId)}: ${safeError}`,
+        );
+        this.policyDeniedInc?.(toolName, 'mapping_lookup_failed');
+        return { available: false, message: MESSENGER_NOT_LINKED_MESSAGE };
       }
     }
 
     try {
-      return await this.dispatch(toolName, args, ctx, signal);
+      return await this.dispatch(
+        toolName,
+        parsed.args,
+        ctx,
+        signal,
+        parsed.canonicalArgs,
+      );
     } catch (error) {
+      const safeError = this.safeErrorMessage(error, ctx.externalUserId);
       this.logger.warn(
         `Tool ${toolName} failed for externalUserId=${maskExternalId(
           ctx.externalUserId,
-        )}: ${errorMessage(error)}`,
+        )}: ${safeError}`,
       );
       return {
-        error: errorMessage(error),
+        error: safeError,
       };
     }
+  }
+
+  private safeErrorMessage(error: unknown, externalUserId: string): string {
+    const sanitized = sanitizeUntrustedTextForLlm(errorMessage(error), {
+      maxChars: 500,
+      unsafePlaceholder: 'Tool execution failed',
+    }).text;
+    return maskExternalIdInText(sanitized, externalUserId);
   }
 
   private async dispatch(
@@ -118,6 +189,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     args: Record<string, unknown>,
     ctx: PlatformAgentToolContext,
     signal?: AbortSignal,
+    canonicalArgs?: string,
   ): Promise<unknown> {
     // Tool execution timed out (agent moved on) — do not start new side effects.
     if (signal?.aborted) {
@@ -136,7 +208,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       case 'preview_next_study_reminder':
         return this.previewNextStudyReminder(ctx);
       case 'reschedule_study_session':
-        return this.rescheduleStudySession(ctx, args);
+        return this.rescheduleStudySession(ctx, args, canonicalArgs);
       case 'register_exam_report_notifications':
         return this.registerExamReportNotifications(ctx);
       case 'precreate_next_exercise':
@@ -185,6 +257,15 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       userId: ctx.userId,
       calendarId: entry.calendarId,
       schedulingMode: 'default_next_day_same_time',
+      platform: 'messenger',
+      mappingVersion: ctx.mappingVersion,
+      intent: userText,
+      canonicalArgs: JSON.stringify({
+        calendarId: entry.calendarId,
+        schedulingMode: 'default_next_day_same_time',
+        newLocalDate: null,
+        newTime: null,
+      }),
     });
 
     if ('error' in staged) {
@@ -344,7 +425,11 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
   private async rescheduleStudySession(
     ctx: PlatformAgentToolContext,
     args: Record<string, unknown>,
+    canonicalArgs?: string,
   ): Promise<unknown> {
+    if (ctx.userText !== undefined && !isRescheduleIntent(ctx.userText)) {
+      return { error: 'intent_unclear' };
+    }
     if (!ctx.userId) {
       return {
         rescheduled: false,
@@ -403,6 +488,10 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       schedulingMode,
       newLocalDate,
       newTime,
+      platform: 'messenger',
+      mappingVersion: ctx.mappingVersion,
+      intent: ctx.userText,
+      canonicalArgs,
     });
 
     if ('error' in staged) {

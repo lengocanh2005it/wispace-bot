@@ -4,7 +4,7 @@ import { dirname, join, relative, resolve } from 'path';
 import type { ChatHistoryMessage } from '@wispace/chat-history';
 import { errorMessage } from '@wispace/bot-common/masking';
 import { LlmAgentService } from '../agent.service';
-import { AGENT_TOOLS, isAgentToolName } from '../agent.tools';
+import { isAgentToolName, parseAndValidateToolArguments } from '../agent.tools';
 import { NOOP_METRICS_PORT } from '../ports';
 import type {
   LlmExecutionPort,
@@ -194,58 +194,17 @@ function validateToolArgs(
   args: Record<string, unknown> | undefined,
   errors: string[],
 ): void {
-  const tool = AGENT_TOOLS.find((t) => t.name === toolName);
-  if (!tool) {
-    errors.push(`scripted tool "${toolName}" is not in AGENT_TOOLS`);
-    return;
-  }
-  const params = tool.parameters;
-  const properties = (params.properties ?? {}) as Record<
-    string,
-    { type?: string; enum?: unknown[] }
-  >;
-  const required = Array.isArray(params.required)
-    ? (params.required as string[])
-    : [];
-  const value = args ?? {};
-
-  for (const key of Object.keys(value)) {
-    if (!(key in properties)) {
-      if (params.additionalProperties === false) {
-        errors.push(
-          `tool "${toolName}" arg "${key}" is not allowed (additionalProperties=false)`,
-        );
-      }
-      continue;
-    }
-    const prop = properties[key];
-    const propValue = value[key];
-    if (prop.type === 'string' && typeof propValue !== 'string') {
-      errors.push(`tool "${toolName}" arg "${key}" must be a string`);
-    } else if (prop.type === 'number' && typeof propValue !== 'number') {
-      errors.push(`tool "${toolName}" arg "${key}" must be a number`);
-    } else if (
-      prop.type === 'integer' &&
-      (typeof propValue !== 'number' || !Number.isInteger(propValue))
-    ) {
-      errors.push(`tool "${toolName}" arg "${key}" must be an integer`);
-    } else if (prop.type === 'boolean' && typeof propValue !== 'boolean') {
-      errors.push(`tool "${toolName}" arg "${key}" must be a boolean`);
-    }
-    if (
-      Array.isArray(prop.enum) &&
-      !prop.enum.some((option) => Object.is(option, propValue))
-    ) {
-      errors.push(
-        `tool "${toolName}" arg "${key}" must be one of ${prop.enum.join('|')}`,
-      );
-    }
-  }
-
-  for (const key of required) {
-    if (!(key in value)) {
-      errors.push(`tool "${toolName}" is missing required arg "${key}"`);
-    }
+  const result = parseAndValidateToolArguments(
+    toolName,
+    JSON.stringify(args ?? {}),
+  );
+  if (!result.ok) {
+    const missing = result.error.match(/^Missing tool argument: (.+)$/);
+    errors.push(
+      missing
+        ? `tool "${toolName}" is missing required arg "${missing[1]}"`
+        : `tool "${toolName}": ${result.error}`,
+    );
   }
 }
 

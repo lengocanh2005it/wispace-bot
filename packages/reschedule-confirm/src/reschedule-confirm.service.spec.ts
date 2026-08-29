@@ -7,6 +7,7 @@ import {
   type CalendarPort,
   type ReschedulePort,
 } from './reschedule-confirm.service';
+import { MemoryRescheduleStore } from './reschedule-store.port';
 
 function mockCalendarPort(): CalendarPort<string> {
   return {
@@ -82,9 +83,162 @@ describe('RescheduleConfirmationService', () => {
         summary: 'Dời buổi Hôm nay 14:00 sang ngày kế tiếp cùng giờ?',
       });
     });
+
+    it('rejects missing approval metadata before reading the calendar', async () => {
+      const calendar = mockCalendarPort();
+      const store = new MemoryRescheduleStore<string>();
+      (store as { requiresApprovalToken?: boolean }).requiresApprovalToken =
+        true;
+      const service = new RescheduleConfirmationService(
+        calendar,
+        mockReschedulePort(),
+        store,
+      );
+
+      const result = await service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 1,
+        schedulingMode: 'explicit',
+      });
+
+      expect(result).toEqual({
+        error:
+          'Không thể xác thực yêu cầu đổi lịch này. Bạn nhắn lại nhu cầu đổi lịch nhé.',
+      });
+      expect(calendar.listUpcomingEntries).not.toHaveBeenCalled();
+    });
   });
 
   describe('confirm', () => {
+    it('binds production confirmations to the one-time token and mapping revision', async () => {
+      const calendar = mockCalendarPort();
+      const reschedule = mockReschedulePort();
+      const store = new MemoryRescheduleStore<string>();
+      (store as { requiresApprovalToken?: boolean }).requiresApprovalToken =
+        true;
+      const service = new RescheduleConfirmationService(
+        calendar,
+        reschedule,
+        store,
+      );
+
+      const staged = await service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 1,
+        schedulingMode: 'explicit',
+        platform: 'discord',
+        mappingVersion: '7:revision-a',
+        intent: 'mình muốn đổi lịch học',
+        canonicalArgs: '{"calendarId":1}',
+      });
+      const token = (staged as { confirmationToken: string }).confirmationToken;
+
+      const wrong = await service.confirm('user-1', 42, 'wrong', {
+        platform: 'discord',
+        mappingVersion: '7:revision-a',
+      });
+      expect(wrong.confirmed).toBe(false);
+      expect(reschedule.rescheduleSession).not.toHaveBeenCalled();
+
+      const wrongPlatform = await service.confirm('user-1', 42, token, {
+        platform: 'zalo',
+        mappingVersion: '7:revision-a',
+      });
+      expect(wrongPlatform.confirmed).toBe(false);
+      expect(reschedule.rescheduleSession).not.toHaveBeenCalled();
+
+      const confirmed = await service.confirm('user-1', 42, token, {
+        platform: 'discord',
+        mappingVersion: '7:revision-a',
+      });
+      expect(confirmed.confirmed).toBe(true);
+      expect(reschedule.rescheduleSession).toHaveBeenCalledTimes(1);
+
+      const duplicate = await service.confirm('user-1', 42, token, {
+        platform: 'discord',
+        mappingVersion: '7:revision-a',
+      });
+      expect(duplicate.confirmed).toBe(false);
+      expect(reschedule.rescheduleSession).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects malformed approval tokens before claiming storage', async () => {
+      const store = new MemoryRescheduleStore<string>();
+      (store as { requiresApprovalToken?: boolean }).requiresApprovalToken =
+        true;
+      const takeValid = jest.spyOn(store, 'takeValid');
+      const service = new RescheduleConfirmationService(
+        mockCalendarPort(),
+        mockReschedulePort(),
+        store,
+      );
+
+      const result = await service.confirm('user-1', 42, 'not-a-uuid', {
+        platform: 'discord',
+        mappingVersion: '7:revision-a',
+      });
+
+      expect(result.confirmed).toBe(false);
+      expect(takeValid).not.toHaveBeenCalled();
+    });
+
+    it('invalidates the previous token when a new argument set is staged', async () => {
+      const calendar = mockCalendarPort();
+      const reschedule = mockReschedulePort();
+      const store = new MemoryRescheduleStore<string>();
+      (store as { requiresApprovalToken?: boolean }).requiresApprovalToken =
+        true;
+      const service = new RescheduleConfirmationService(
+        calendar,
+        reschedule,
+        store,
+      );
+
+      const first = await service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 1,
+        schedulingMode: 'explicit',
+        platform: 'discord',
+        mappingVersion: '7:revision-a',
+        intent: 'đổi lịch',
+        canonicalArgs: '{"calendarId":1}',
+      });
+      const firstToken = (first as { confirmationToken: string })
+        .confirmationToken;
+
+      const second = await service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 2,
+        schedulingMode: 'explicit',
+        platform: 'discord',
+        mappingVersion: '7:revision-a',
+        intent: 'đổi lịch ngày mai',
+        canonicalArgs: '{"calendarId":2}',
+      });
+      const secondToken = (second as { confirmationToken: string })
+        .confirmationToken;
+
+      const stale = await service.confirm('user-1', 42, firstToken, {
+        platform: 'discord',
+        mappingVersion: '7:revision-a',
+      });
+      expect(stale.confirmed).toBe(false);
+      expect(reschedule.rescheduleSession).not.toHaveBeenCalled();
+
+      const current = await service.confirm('user-1', 42, secondToken, {
+        platform: 'discord',
+        mappingVersion: '7:revision-a',
+      });
+      expect(current.confirmed).toBe(true);
+      expect(reschedule.rescheduleSession).toHaveBeenCalledWith(
+        expect.objectContaining({ calendarId: 2 }),
+      );
+    });
+
     it('executes reschedule and returns scheduledTimeLabel', async () => {
       const calendar = mockCalendarPort();
       const reschedule = mockReschedulePort();

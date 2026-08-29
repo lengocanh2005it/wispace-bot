@@ -133,4 +133,23 @@ export class ZaloAccountLinkService {
     });
     return row?.userId;
   }
+
+  async findCurrentIdentity(zaloUserId: string): Promise<
+    | {
+        userId: number;
+        mappingVersion: string;
+      }
+    | undefined
+  > {
+    const row = await this.repo.findOne({
+      where: { platform: PLATFORM, externalUserId: zaloUserId },
+      select: { id: true, userId: true, linkedAt: true },
+    });
+    return row
+      ? {
+          userId: row.userId,
+          mappingVersion: `${row.id}:${row.linkedAt.toISOString()}`,
+        }
+      : undefined;
+  }
 }

@@ -68,11 +68,13 @@ export type WebhookAction =
       type: 'confirm_reschedule';
       psid: string;
       userId?: number;
+      approvalToken?: string;
     }
   | {
       type: 'cancel_reschedule';
       psid: string;
       userId?: number;
+      approvalToken?: string;
     }
   | {
       type: 'send_welcome';
@@ -358,12 +360,44 @@ function routePostback(
     return [{ type: 'send_reminder_preview', psid, userId }];
   }
 
-  if (payload === CONFIRM_RESCHEDULE_POSTBACK) {
-    return [{ type: 'confirm_reschedule', psid, userId }];
+  if (
+    payload === CONFIRM_RESCHEDULE_POSTBACK ||
+    payload.startsWith(`${CONFIRM_RESCHEDULE_POSTBACK}:`)
+  ) {
+    return [
+      {
+        type: 'confirm_reschedule',
+        psid,
+        userId,
+        ...(payload.includes(':')
+          ? {
+              approvalToken:
+                payload.slice(CONFIRM_RESCHEDULE_POSTBACK.length + 1) ||
+                undefined,
+            }
+          : {}),
+      },
+    ];
   }
 
-  if (payload === CANCEL_RESCHEDULE_POSTBACK) {
-    return [{ type: 'cancel_reschedule', psid, userId }];
+  if (
+    payload === CANCEL_RESCHEDULE_POSTBACK ||
+    payload.startsWith(`${CANCEL_RESCHEDULE_POSTBACK}:`)
+  ) {
+    return [
+      {
+        type: 'cancel_reschedule',
+        psid,
+        userId,
+        ...(payload.includes(':')
+          ? {
+              approvalToken:
+                payload.slice(CANCEL_RESCHEDULE_POSTBACK.length + 1) ||
+                undefined,
+            }
+          : {}),
+      },
+    ];
   }
 
   if (payload === 'GET_STARTED') {

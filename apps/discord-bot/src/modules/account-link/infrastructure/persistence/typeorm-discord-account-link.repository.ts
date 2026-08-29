@@ -64,6 +64,21 @@ export class TypeormDiscordAccountLinkRepository implements DiscordAccountLinkRe
     return row?.userId;
   }
 
+  async findLinkByDiscordId(
+    discordUserId: string,
+  ): Promise<{ userId: number; mappingVersion: string } | undefined> {
+    const row = await this.repo.findOne({
+      where: { platform: PLATFORM, externalUserId: discordUserId },
+      select: { id: true, userId: true, linkedAt: true },
+    });
+    return row
+      ? {
+          userId: row.userId,
+          mappingVersion: `${row.id}:${row.linkedAt.toISOString()}`,
+        }
+      : undefined;
+  }
+
   async findDiscordIdByUserId(userId: number): Promise<string | undefined> {
     const row = await this.repo.findOne({
       where: { platform: PLATFORM, userId },

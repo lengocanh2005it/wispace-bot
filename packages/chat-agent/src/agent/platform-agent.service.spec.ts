@@ -61,6 +61,10 @@ describe('PlatformAgentService', () => {
         promptDir: '/prompts',
         promptFile: 'chat.system.txt',
         platform: overrides.platform,
+        currentIdentityProvider: async () => ({
+          userId: 42,
+          mappingVersion: 'test:platform-agent',
+        }),
         clarificationStore: overrides.clarificationStore,
         clarificationOutcomeInc: overrides.clarificationOutcomeInc,
       },

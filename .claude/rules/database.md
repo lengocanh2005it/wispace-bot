@@ -15,6 +15,7 @@ paths: apps/messenger-bot/src/infrastructure/database/**, packages/database/**
 - `users` + view `"Users"` — display name / exam date cache; only `user_id` entries with Messenger mapping
 - `webhook_inbound_events` — durable authenticated Messenger/Zalo inbox; `raw_payload` is retained only for recovery and terminal rows are cleaned after `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30)
 - `webhook_dead_letters` — outbound delivery retry payloads; terminal rows are cleaned by the shared dead-letter cleanup
+- `reschedule_confirmations` — pending reschedule requests with platform/mapping, intent, argument, and one-time nonce bindings; production confirmation claims must match all bindings
 
 **Prod DB:** `ai_chat_bot_db`. Old hub `writing_ai_hub_db` — Tables already dropped (ops script). All tables above have been generalized to `(platform, external_user_id)` since Phase 2 — see `docs/turborepo-migration-plan.md`.
 
@@ -88,6 +89,7 @@ When adding a new migration (Discord, Zalo, or new shared table):
 | Shared (durable webhook inbox)    | `1751029200014-CreateWebhookInboundEvents`                   | `webhook_inbound_events` — authenticated inbound payloads, retry state, unique `(platform, event_id)`                                                                        |
 | Shared (durable webhook inbox)    | `1751029200015-AddWebhookInboundCleanupIndex`                | cleanup index on `webhook_inbound_events` (`platform, status, created_at`)                                                                                                   |
 | Zalo OAuth cleanup                | `1751029200016-AddZaloOauthStateCleanupIndex`                | cleanup index on `zalo_oauth_states` (`created_at`)                                                                                                                          |
+| Shared (reschedule approval)      | `1786932000000-HardenRescheduleConfirmationBinding`          | binds pending reschedules to platform/mapping, intent/args hashes, and a unique approval nonce                                                                                |
 
 ## Notes
 
