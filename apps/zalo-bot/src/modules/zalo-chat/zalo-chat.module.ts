@@ -148,6 +148,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         exerciseClient: PrecreateExerciseApiClient,
         rescheduleConfirmationService: RescheduleConfirmationService<string>,
         outboundService: ZaloOutboundService,
+        accountLinkService: ZaloAccountLinkService,
+        metrics: BotMetricsService,
       ) => {
         const appId = configService.get<string>('ZALO_APP_ID');
         const redirectUri = configService.get<string>(
@@ -163,6 +165,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           calendarService,
           rescheduleConfirmationService,
           {
+            platform: 'zalo',
             getNotLinkedMessage: () => {
               const linkPart = oauthAuthorizeUrl
                 ? `\n\nLiên kết tài khoản tại đây: ${oauthAuthorizeUrl}`
@@ -173,6 +176,10 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             // internal WISPACE userId (ctx.userId) stays for local DB ops only.
             wispaceExternalId: (ctx) => ctx.externalUserId,
             registerReportMessage: REGISTER_REPORT_MESSAGE,
+            currentIdentityProvider: (externalUserId) =>
+              accountLinkService.findCurrentIdentity(externalUserId),
+            policyDeniedInc: (toolName, reason) =>
+              metrics.incLlmToolPolicyDenied(toolName, 'zalo', reason),
             reschedule: {
               validateDateAndTime: false,
               messages: {
@@ -182,10 +189,10 @@ const RESCHEDULE_CONFIRM_SUFFIX =
                 newLocalDateInvalid: '',
                 newTimeInvalid: '',
               },
-              confirmSender: (externalUserId, summary) =>
+              confirmSender: (externalUserId, summary, confirmationToken) =>
                 outboundService.sendText(
                   externalUserId,
-                  `${summary}${RESCHEDULE_CONFIRM_SUFFIX}`,
+                  `${summary}${RESCHEDULE_CONFIRM_SUFFIX}${confirmationToken ? ` Mã: ${confirmationToken}` : ''}`,
                 ),
             },
           },
@@ -200,6 +207,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         PrecreateExerciseApiClient,
         RescheduleConfirmationService,
         ZaloOutboundService,
+        ZaloAccountLinkService,
+        BotMetricsService,
       ],
     },
     {
@@ -219,6 +228,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         metrics: BotMetricsService,
         redisClient: RedisClientPort,
         clarificationStore: ClarificationStateStore,
+        accountLinkService: ZaloAccountLinkService,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -233,6 +243,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           adapter,
           {
             platform: 'zalo',
+            currentIdentityProvider: (externalUserId) =>
+              accountLinkService.findCurrentIdentity(externalUserId),
             clarificationStore,
             promptDir: join(__dirname, '../../shared/prompts'),
             promptFile: 'zalo-chat.system.txt',
@@ -254,6 +266,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
                 metrics.incRoundOutcome(feature, outcome),
               observationOutcomeInc: (toolName, outcome) =>
                 metrics.incObservationOutcome(toolName, 'zalo', outcome),
+              toolPolicyDeniedInc: (toolName, reason) =>
+                metrics.incLlmToolPolicyDenied(toolName, 'zalo', reason),
             },
             clarificationOutcomeInc: (outcome) =>
               metrics.incClarificationOutcome(outcome),
@@ -274,6 +288,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         BotMetricsService,
         REDIS_CLIENT,
         CLARIFICATION_STATE_STORE,
+        ZaloAccountLinkService,
       ],
     },
     {

@@ -67,6 +67,11 @@ describe('MessengerAgentToolsService', () => {
       rescheduleConfirmationService,
       exerciseClient,
       mappingService as never,
+      overrides.currentIdentityProvider ??
+        jest.fn().mockResolvedValue({
+          userId: 42,
+          mappingVersion: 'test:psid-123',
+        }),
     );
 
     const ctx: PlatformAgentToolContext = {
@@ -122,10 +127,13 @@ describe('MessengerAgentToolsService', () => {
     });
 
     it('does not call the exercise API when Messenger is unlinked', async () => {
-      const { service, ctx, exerciseClient } = createService();
+      const { ctx, exerciseClient } = createService();
       ctx.userId = undefined;
+      const { service: unlinkedService } = createService({
+        currentIdentityProvider: jest.fn().mockResolvedValue(undefined),
+      });
 
-      const result = await service.execute(
+      const result = await unlinkedService.execute(
         'precreate_next_exercise',
         '{}',
         ctx,
@@ -287,7 +295,9 @@ describe('MessengerAgentToolsService', () => {
 
   describe('reschedule_study_session', () => {
     it('returns error when no userId', async () => {
-      const { service } = createService();
+      const { service } = createService({
+        currentIdentityProvider: jest.fn().mockResolvedValue(undefined),
+      });
       const ctx = { externalUserId: 'psid-123', richFollowUps: [] };
 
       const result = await service.execute(
@@ -297,7 +307,6 @@ describe('MessengerAgentToolsService', () => {
       );
 
       expect(result).toMatchObject({
-        rescheduled: false,
         message: expect.stringContaining('Chưa liên kết'),
       });
     });
@@ -306,6 +315,7 @@ describe('MessengerAgentToolsService', () => {
       const { service, ctx } = createService({
         listEntries: jest.fn().mockResolvedValue({ entries: [], total: 0 }),
       });
+      ctx.userText = 'mình muốn đổi lịch học';
 
       const result = await service.execute(
         'reschedule_study_session',
@@ -330,6 +340,7 @@ describe('MessengerAgentToolsService', () => {
           richFollowUp: { type: 'button', title: 'Xác nhận' },
         }),
       });
+      ctx.userText = 'mình muốn đổi lịch học';
 
       const result = await service.execute(
         'reschedule_study_session',

@@ -1,5 +1,37 @@
 import type { LlmToolDefinition } from './provider/types';
 
+export type ToolEffect =
+  | 'read_only'
+  | 'idempotent_side_effect'
+  | 'confirmation_required';
+export type ToolIdentityRequirement =
+  | 'platform_identity'
+  | 'linked_wispace_account';
+export type ToolAuthorizationRequirement = 'linked_account';
+export type ToolConfirmationRequirement =
+  | 'none'
+  | 'explicit_intent'
+  | 'approval_token';
+export type ToolIdempotencyStrategy =
+  | 'none'
+  | 'canonical_args'
+  | 'provider_key'
+  | 'confirmation_nonce';
+
+export interface AgentToolCapability {
+  effect: ToolEffect;
+  identity: ToolIdentityRequirement;
+  authorization: ToolAuthorizationRequirement;
+  confirmation: ToolConfirmationRequirement;
+  idempotency: ToolIdempotencyStrategy;
+  /** Side-effect providers must supply their own durable idempotency key. */
+  providerGuaranteeRequired: boolean;
+}
+
+export interface AgentToolDefinition extends LlmToolDefinition {
+  capability: AgentToolCapability;
+}
+
 export const AGENT_TOOL_NAMES = [
   'get_learning_progress_report',
   'get_user_goals',
@@ -28,7 +60,51 @@ export function isAgentToolName(name: string): name is AgentToolName {
   return (AGENT_TOOL_NAMES as readonly string[]).includes(name);
 }
 
-export const AGENT_TOOLS: LlmToolDefinition[] = [
+const READ_ONLY_CAPABILITY: AgentToolCapability = {
+  effect: 'read_only',
+  identity: 'linked_wispace_account',
+  authorization: 'linked_account',
+  confirmation: 'none',
+  idempotency: 'none',
+  providerGuaranteeRequired: false,
+};
+
+const EXPLICIT_INTENT_CAPABILITY: AgentToolCapability = {
+  effect: 'idempotent_side_effect',
+  identity: 'linked_wispace_account',
+  authorization: 'linked_account',
+  confirmation: 'explicit_intent',
+  idempotency: 'provider_key',
+  providerGuaranteeRequired: true,
+};
+
+const RESCHEDULE_CAPABILITY: AgentToolCapability = {
+  effect: 'confirmation_required',
+  identity: 'linked_wispace_account',
+  authorization: 'linked_account',
+  confirmation: 'approval_token',
+  idempotency: 'confirmation_nonce',
+  providerGuaranteeRequired: false,
+};
+
+function exposeCapabilityVocabulary(
+  tool: AgentToolDefinition,
+): AgentToolDefinition {
+  const {
+    effect,
+    identity,
+    authorization,
+    confirmation,
+    idempotency,
+    providerGuaranteeRequired,
+  } = tool.capability;
+  return {
+    ...tool,
+    description: `${tool.description} Policy vocabulary: effect=${effect}; identity=${identity}; authorization=${authorization}; confirmation=${confirmation}; idempotency=${idempotency}; provider_guarantee=${providerGuaranteeRequired}.`,
+  };
+}
+
+export const AGENT_TOOLS: AgentToolDefinition[] = [
   {
     name: 'get_learning_progress_report',
     description:
@@ -38,6 +114,7 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
       properties: {},
       additionalProperties: false,
     },
+    capability: READ_ONLY_CAPABILITY,
   },
   {
     name: 'get_user_goals',
@@ -47,6 +124,7 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
       properties: {},
       additionalProperties: false,
     },
+    capability: READ_ONLY_CAPABILITY,
   },
   {
     name: 'get_upcoming_study_sessions',
@@ -62,6 +140,7 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
       },
       additionalProperties: false,
     },
+    capability: READ_ONLY_CAPABILITY,
   },
   {
     name: 'list_study_calendar_entries',
@@ -88,6 +167,7 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
       },
       additionalProperties: false,
     },
+    capability: READ_ONLY_CAPABILITY,
   },
   {
     name: 'reschedule_study_session',
@@ -120,6 +200,7 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
       required: ['calendarId', 'schedulingMode'],
       additionalProperties: false,
     },
+    capability: RESCHEDULE_CAPABILITY,
   },
   {
     name: 'preview_next_study_reminder',
@@ -130,6 +211,7 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
       properties: {},
       additionalProperties: false,
     },
+    capability: READ_ONLY_CAPABILITY,
   },
   {
     name: 'register_exam_report_notifications',
@@ -140,6 +222,7 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
       properties: {},
       additionalProperties: false,
     },
+    capability: EXPLICIT_INTENT_CAPABILITY,
   },
   {
     name: 'precreate_next_exercise',
@@ -150,8 +233,207 @@ export const AGENT_TOOLS: LlmToolDefinition[] = [
       properties: {},
       additionalProperties: false,
     },
+    capability: EXPLICIT_INTENT_CAPABILITY,
   },
-];
+].map(exposeCapabilityVocabulary);
+
+const EFFECTS = new Set<ToolEffect>([
+  'read_only',
+  'idempotent_side_effect',
+  'confirmation_required',
+]);
+const IDENTITIES = new Set<ToolIdentityRequirement>([
+  'platform_identity',
+  'linked_wispace_account',
+]);
+const AUTHORIZATIONS = new Set<ToolAuthorizationRequirement>([
+  'linked_account',
+]);
+const CONFIRMATIONS = new Set<ToolConfirmationRequirement>([
+  'none',
+  'explicit_intent',
+  'approval_token',
+]);
+const IDEMPOTENCY = new Set<ToolIdempotencyStrategy>([
+  'none',
+  'canonical_args',
+  'provider_key',
+  'confirmation_nonce',
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Fails startup/CI when a tool is missing authorization metadata. */
+export function validateAgentToolRegistry(
+  tools: readonly AgentToolDefinition[],
+): void {
+  const names = new Set<string>();
+  for (const tool of tools) {
+    if (!AGENT_TOOL_NAMES.includes(tool.name as AgentToolName)) {
+      throw new Error(`Unknown agent tool definition: ${tool.name}`);
+    }
+    if (names.has(tool.name)) {
+      throw new Error(`Duplicate agent tool definition: ${tool.name}`);
+    }
+    names.add(tool.name);
+    if (!isRecord(tool.capability)) {
+      throw new Error(`Missing capability metadata for tool: ${tool.name}`);
+    }
+    if (!EFFECTS.has(tool.capability.effect)) {
+      throw new Error(`Invalid effect metadata for tool: ${tool.name}`);
+    }
+    if (!IDENTITIES.has(tool.capability.identity)) {
+      throw new Error(`Invalid identity metadata for tool: ${tool.name}`);
+    }
+    if (!AUTHORIZATIONS.has(tool.capability.authorization)) {
+      throw new Error(`Invalid authorization metadata for tool: ${tool.name}`);
+    }
+    if (!CONFIRMATIONS.has(tool.capability.confirmation)) {
+      throw new Error(`Invalid confirmation metadata for tool: ${tool.name}`);
+    }
+    if (!IDEMPOTENCY.has(tool.capability.idempotency)) {
+      throw new Error(`Invalid idempotency metadata for tool: ${tool.name}`);
+    }
+    if (typeof tool.capability.providerGuaranteeRequired !== 'boolean') {
+      throw new Error(
+        `Invalid provider guarantee metadata for tool: ${tool.name}`,
+      );
+    }
+    if (
+      tool.capability.effect === 'idempotent_side_effect' &&
+      (!tool.capability.providerGuaranteeRequired ||
+        tool.capability.idempotency !== 'provider_key')
+    ) {
+      throw new Error(
+        `Idempotent side effect requires a provider idempotency guarantee: ${tool.name}`,
+      );
+    }
+    if (
+      tool.capability.effect === 'confirmation_required' &&
+      (tool.capability.confirmation !== 'approval_token' ||
+        tool.capability.idempotency !== 'confirmation_nonce')
+    ) {
+      throw new Error(
+        `Confirmation-required tool must bind an approval nonce: ${tool.name}`,
+      );
+    }
+    if (!isRecord(tool.parameters) || tool.parameters.type !== 'object') {
+      throw new Error(`Tool parameters must be an object: ${tool.name}`);
+    }
+  }
+  if (names.size !== AGENT_TOOL_NAMES.length) {
+    throw new Error('Agent tool registry is incomplete');
+  }
+}
+
+validateAgentToolRegistry(AGENT_TOOLS);
+
+export function getAgentToolDefinition(
+  name: string,
+): AgentToolDefinition | undefined {
+  return AGENT_TOOLS.find((tool) => tool.name === name);
+}
+
+export type ToolArgumentValidationResult =
+  | { ok: true; args: Record<string, unknown>; canonicalArgs: string }
+  | { ok: false; error: string };
+
+/** Stable JSON used for dedupe and approval binding. */
+export function canonicalizeToolArguments(value: unknown): string {
+  const normalize = (input: unknown): unknown => {
+    if (Array.isArray(input)) return input.map(normalize);
+    if (isRecord(input)) {
+      return Object.keys(input)
+        .sort()
+        .reduce<Record<string, unknown>>((result, key) => {
+          result[key] = normalize(input[key]);
+          return result;
+        }, {});
+    }
+    return input;
+  };
+  return JSON.stringify(normalize(value)) ?? 'null';
+}
+
+/** Strict, dependency-free subset of JSON Schema used by the tool registry. */
+export function parseAndValidateToolArguments(
+  toolName: string,
+  argsJson: string,
+  options: { allowMissingRequired?: boolean } = {},
+): ToolArgumentValidationResult {
+  const tool = getAgentToolDefinition(toolName);
+  if (!tool) return { ok: false, error: 'Tool không được hỗ trợ' };
+
+  let value: unknown = {};
+  if (argsJson.trim()) {
+    try {
+      value = JSON.parse(argsJson);
+    } catch {
+      return { ok: false, error: 'Invalid tool arguments JSON' };
+    }
+  }
+  if (!isRecord(value)) {
+    return { ok: false, error: 'Tool arguments must be a JSON object' };
+  }
+
+  const parameters = tool.parameters;
+  const properties = isRecord(parameters.properties)
+    ? parameters.properties
+    : {};
+  if (parameters.additionalProperties === false) {
+    const unknown = Object.keys(value).find(
+      (key) => !Object.prototype.hasOwnProperty.call(properties, key),
+    );
+    if (unknown) {
+      return { ok: false, error: `Unknown tool argument: ${unknown}` };
+    }
+  }
+
+  for (const [key, propertyValue] of Object.entries(value)) {
+    const property = properties[key];
+    if (!isRecord(property)) continue;
+    const type = property.type;
+    const validType =
+      type === 'string'
+        ? typeof propertyValue === 'string'
+        : type === 'number'
+          ? typeof propertyValue === 'number' && Number.isFinite(propertyValue)
+          : type === 'integer'
+            ? typeof propertyValue === 'number' &&
+              Number.isInteger(propertyValue)
+            : type === 'boolean'
+              ? typeof propertyValue === 'boolean'
+              : true;
+    if (!validType)
+      return { ok: false, error: `Invalid tool argument: ${key}` };
+    if (
+      Array.isArray(property.enum) &&
+      !property.enum.some((option) => Object.is(option, propertyValue))
+    ) {
+      return { ok: false, error: `Invalid tool argument: ${key}` };
+    }
+  }
+
+  const required = Array.isArray(parameters.required)
+    ? parameters.required.filter(
+        (key): key is string => typeof key === 'string',
+      )
+    : [];
+  const missing = required.find(
+    (key) => !Object.prototype.hasOwnProperty.call(value, key),
+  );
+  if (missing && !options.allowMissingRequired) {
+    return { ok: false, error: `Missing tool argument: ${missing}` };
+  }
+
+  return {
+    ok: true,
+    args: value,
+    canonicalArgs: canonicalizeToolArguments(value),
+  };
+}
 
 export function readPositiveLimit(value: unknown, fallback: number): number {
   const parsed = typeof value === 'number' ? value : Number(value);

@@ -29,14 +29,26 @@ export class MessengerRescheduleConfirmationService extends RescheduleConfirmati
     schedulingMode: import('@wispace/wispace-client').RescheduleSchedulingMode;
     newLocalDate?: string;
     newTime?: string;
+    platform?: string;
+    mappingVersion?: string;
+    intent?: string;
+    canonicalArgs?: string;
   }): Promise<MessengerStageResult | { error: string }> {
     const result = await super.stage(input);
     if ('error' in result) {
       return result;
     }
-    return {
+    const messengerResult = {
       ...result,
-      richFollowUp: buildRescheduleConfirmFollowUp({ summary: result.summary }),
+      richFollowUp: buildRescheduleConfirmFollowUp({
+        summary: result.summary,
+        confirmationToken: result.confirmationToken,
+      }),
     };
+    Object.defineProperty(messengerResult, 'confirmationToken', {
+      value: result.confirmationToken,
+      enumerable: false,
+    });
+    return messengerResult;
   }
 }

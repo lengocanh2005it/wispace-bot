@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { buildGreetingMessage } from '@wispace/bot-common/messages';
 import { maskExternalId } from '@wispace/bot-common/masking';
@@ -19,6 +19,8 @@ import type {
 } from '../../domain/types/messenger-link-verify.types';
 import { MessengerReportDeliveryService } from './messenger-report-delivery.service';
 import { MessengerReminderDeliveryService } from './messenger-reminder-delivery.service';
+import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
+import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import {
   extractRefFromEvent,
   WebhookAction,
@@ -38,6 +40,9 @@ export class WebhookActionExecutorService {
     private readonly reminderDeliveryService: MessengerReminderDeliveryService,
     private readonly userDisplayNameService: UserDisplayNameService,
     private readonly rescheduleConfirmationService: MessengerRescheduleConfirmationService,
+    @Optional()
+    @Inject(MESSENGER_REPOSITORY)
+    private readonly messengerRepository?: MessengerMappingRepositoryPort,
   ) {}
 
   async executeAction(
@@ -120,7 +125,11 @@ export class WebhookActionExecutorService {
         break;
 
       case 'confirm_reschedule':
-        await this.handleConfirmReschedulePostback(psid!, action.userId);
+        await this.handleConfirmReschedulePostback(
+          psid!,
+          action.userId,
+          action.approvalToken,
+        );
         break;
 
       case 'cancel_reschedule': {
@@ -220,16 +229,38 @@ export class WebhookActionExecutorService {
   private async handleConfirmReschedulePostback(
     psid: string,
     userId?: number,
+    approvalToken?: string,
   ): Promise<void> {
-    const result = await this.rescheduleConfirmationService.confirm(
-      psid,
-      userId,
-    );
+    const mapping =
+      await this.messengerRepository?.findActiveMappingByPsid(psid);
+    const currentUserId = mapping?.userId;
+    if (currentUserId == null) {
+      await this.outbound.sendTextViaPsid({
+        psid,
+        userId,
+        text: 'Không thể xác thực liên kết WISPACE hiện tại. Bạn liên kết lại rồi thử lại nhé.',
+        messageType: 'RESCHEDULE_CONFIRM_FAILED',
+      });
+      return;
+    }
+    const result = approvalToken
+      ? await this.rescheduleConfirmationService.confirm(
+          psid,
+          currentUserId,
+          approvalToken,
+          {
+            platform: 'messenger',
+            mappingVersion: mapping
+              ? `${mapping.id}:${mapping.updatedAt}`
+              : undefined,
+          },
+        )
+      : await this.rescheduleConfirmationService.confirm(psid, currentUserId);
 
     if (!result.confirmed) {
       await this.outbound.sendTextViaPsid({
         psid,
-        userId,
+        userId: currentUserId,
         text: result.message,
         messageType: 'RESCHEDULE_CONFIRM_FAILED',
       });
@@ -238,7 +269,7 @@ export class WebhookActionExecutorService {
 
     await this.outbound.sendTextViaPsid({
       psid,
-      userId,
+      userId: currentUserId,
       text: [
         `Mình đã dời buổi học sang ${result.scheduledTimeLabel} cho bạn rồi nhé ✅`,
         getStudyReminderLeadTimeNotice(
@@ -250,7 +281,7 @@ export class WebhookActionExecutorService {
 
     await this.outbound.sendRichFollowUps({
       psid,
-      userId,
+      userId: currentUserId,
       followUps: [
         buildRescheduleSuccessRichFollowUp({
           scheduledTimeLabel: result.scheduledTimeLabel,

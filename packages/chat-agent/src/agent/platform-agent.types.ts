@@ -15,6 +15,10 @@ export interface PlatformAgentToolContext {
   externalUserId: string;
   /** WISPACE userId if the platform account is linked; undefined otherwise. */
   userId?: number;
+  /** Revision of the current external→WISPACE mapping used for approvals. */
+  mappingVersion?: string;
+  /** False when the authoritative mapping lookup failed or returned none. */
+  identityVerified?: boolean;
   /** The learner's current message — used by side-effect tools to verify
    * explicit intent before executing (#163). */
   userText?: string;
@@ -67,6 +71,8 @@ export interface PlatformAgentReply {
 export interface PlatformAgentInput {
   externalUserId: string;
   userId?: number;
+  /** Mapping revision captured with the inbound event, if available. */
+  mappingVersion?: string;
   userText: string;
   /** Platform message id — LLM usage correlation id. */
   correlationId?: string;
@@ -90,6 +96,10 @@ export interface PlatformAgentInput {
 export interface PlatformAgentOptions {
   /** Stable platform namespace for clarification state (messenger/discord/zalo). */
   platform?: string;
+  /** Required authoritative external-id mapping lookup performed before tools. */
+  currentIdentityProvider: (
+    externalUserId: string,
+  ) => Promise<CurrentPlatformIdentity | undefined>;
   /** Optional state store seam; defaults to bounded memory/Redis selection. */
   clarificationStore?: ClarificationStateStore;
   promptDir: string;
@@ -174,11 +184,19 @@ export interface PlatformToolExecutorPort {
   ): Promise<unknown>;
 }
 
+export interface CurrentPlatformIdentity {
+  userId: number;
+  /** Changes whenever the platform mapping is relinked or updated. */
+  mappingVersion: string;
+}
+
 /**
  * Per-platform tool options. Every platform-specific string/mechanism is
  * injected so the shared service preserves each app's behavior exactly.
  */
 export interface PlatformAgentToolsOptions {
+  /** Platform namespace used for bounded policy-denial telemetry. */
+  platform?: string;
   /** Not-linked message (may embed platform link instructions). */
   getNotLinkedMessage: () => string;
   /**
@@ -188,6 +206,12 @@ export interface PlatformAgentToolsOptions {
   wispaceExternalId: (ctx: PlatformAgentToolContext) => string;
   /** Success text for `register_exam_report_notifications`. */
   registerReportMessage: string;
+  /** Required re-read of the authoritative mapping at tool execution time. */
+  currentIdentityProvider: (
+    externalUserId: string,
+  ) => Promise<CurrentPlatformIdentity | undefined>;
+  /** Bounded policy-denial metric; arguments and identities are never passed. */
+  policyDeniedInc?: (toolName: string, reason: string) => void;
   /**
    * Defense-in-depth fresh-mapping check (#397) for destructive tools
    * (reschedule_study_session). When present, the tool re-verifies the
@@ -207,7 +231,11 @@ export interface PlatformAgentToolsOptions {
       newTimeInvalid: string;
     };
     /** Sends the confirmation prompt (Discord: buttons; Zalo: text + reply hint). */
-    confirmSender: (externalUserId: string, summary: string) => Promise<void>;
+    confirmSender: (
+      externalUserId: string,
+      summary: string,
+      confirmationToken?: string,
+    ) => Promise<void>;
   };
 }
 

@@ -9,6 +9,10 @@ import {
   readSchedulingMode,
   readValidatedDate,
   readValidatedTime,
+  parseAndValidateToolArguments,
+  getAgentToolDefinition,
+  detectPromptInjection,
+  sanitizeUntrustedTextForLlm,
 } from '@wispace/llm-agent';
 import {
   WispaceCalendarService,
@@ -16,7 +20,11 @@ import {
   PrecreateExerciseApiClient,
   type WispaceIdHeader,
 } from '@wispace/wispace-client';
-import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common/masking';
 import type {
   PlatformAgentToolContext,
   PlatformAgentToolsOptions,
@@ -60,27 +68,119 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
       return { error: `Unknown tool: ${toolName}` };
     }
 
-    let args: Record<string, unknown> = {};
-    if (argsJson.trim()) {
-      try {
-        args = JSON.parse(argsJson) as Record<string, unknown>;
-      } catch {
-        return { error: 'Invalid tool arguments JSON' };
+    const parsed = parseAndValidateToolArguments(toolName, argsJson, {
+      allowMissingRequired: true,
+    });
+    if (!parsed.ok) {
+      this.options.policyDeniedInc?.(toolName, 'invalid_arguments');
+      return { error: parsed.error };
+    }
+
+    const capability = getAgentToolDefinition(toolName)?.capability;
+    if (!capability) {
+      this.options.policyDeniedInc?.(toolName, 'missing_capability');
+      return { error: 'Tool execution blocked by policy' };
+    }
+
+    if (
+      ctx.userText !== undefined &&
+      capability.confirmation !== 'none' &&
+      toolName !== 'precreate_next_exercise' &&
+      !this.hasExplicitIntent(toolName, ctx.userText)
+    ) {
+      this.options.policyDeniedInc?.(toolName, 'intent_unclear');
+      return { error: 'intent_unclear' };
+    }
+
+    if (capability.identity === 'linked_wispace_account') {
+      const identity = await this.resolveCurrentIdentity(ctx, toolName);
+      if (!identity) {
+        return {
+          available: false,
+          message: this.options.getNotLinkedMessage(),
+        };
       }
+      ctx.userId = identity.userId;
+      ctx.mappingVersion = identity.mappingVersion;
     }
 
     try {
-      return await this.dispatch(toolName, args, ctx, signal);
+      return await this.dispatch(toolName, parsed.args, ctx, signal);
     } catch (error) {
+      const safeError = this.safeErrorMessage(error, ctx.externalUserId);
       this.logger.warn(
         `Tool ${toolName} failed for externalUserId=${maskExternalId(
           ctx.externalUserId,
-        )}: ${errorMessage(error)}`,
+        )}: ${safeError}`,
       );
       return {
-        error: errorMessage(error),
+        error: safeError,
       };
     }
+  }
+
+  private hasExplicitIntent(
+    toolName: AgentToolName,
+    userText: string,
+  ): boolean {
+    const text = userText.trim().toLowerCase();
+    if (!text) return false;
+    if (detectPromptInjection(text).isInjection) return false;
+    if (toolName === 'reschedule_study_session') {
+      return (
+        /(đổi|dời|chuyển|hoãn|reschedule|move|change)/i.test(text) &&
+        /(lịch|buổi\s*học|giờ\s*học|schedule)/i.test(text)
+      );
+    }
+    if (toolName === 'register_exam_report_notifications') {
+      return /(đăng\s*ký|register).*(báo\s*cáo|report)|(báo\s*cáo|report).*(tự\s*động|automatic)/i.test(
+        text,
+      );
+    }
+    // precreate_next_exercise applies its stricter injection/selection gate
+    // in executePrecreateExerciseTool; this preliminary check only rejects a
+    // plainly unrelated message.
+    return toolName === 'precreate_next_exercise';
+  }
+
+  private async resolveCurrentIdentity(
+    ctx: PlatformAgentToolContext,
+    toolName: AgentToolName,
+  ): Promise<{ userId: number; mappingVersion: string } | undefined> {
+    const provider = this.options.currentIdentityProvider;
+    if (typeof provider !== 'function') {
+      this.options.policyDeniedInc?.(toolName, 'missing_identity_provider');
+      return undefined;
+    }
+    try {
+      const identity = await provider(ctx.externalUserId);
+      if (
+        !identity ||
+        !Number.isInteger(identity.userId) ||
+        identity.userId <= 0 ||
+        typeof identity.mappingVersion !== 'string' ||
+        !identity.mappingVersion.trim()
+      ) {
+        this.options.policyDeniedInc?.(toolName, 'missing_mapping');
+        return undefined;
+      }
+      return identity;
+    } catch (error) {
+      const safeError = this.safeErrorMessage(error, ctx.externalUserId);
+      this.logger.warn(
+        `Current-mapping lookup failed for ${maskExternalId(ctx.externalUserId)}: ${safeError}`,
+      );
+      this.options.policyDeniedInc?.(toolName, 'mapping_lookup_failed');
+      return undefined;
+    }
+  }
+
+  private safeErrorMessage(error: unknown, externalUserId: string): string {
+    const sanitized = sanitizeUntrustedTextForLlm(errorMessage(error), {
+      maxChars: 500,
+      unsafePlaceholder: 'Tool execution failed',
+    }).text;
+    return maskExternalIdInText(sanitized, externalUserId);
   }
 
   private async dispatch(
@@ -304,30 +404,53 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
           resolvedUserId = freshUserId;
         }
       } catch (error) {
+        const safeError = this.safeErrorMessage(error, ctx.externalUserId);
         this.logger.error(
-          `Fresh-mapping query failed during reschedule for ${maskExternalId(ctx.externalUserId)}: ${errorMessage(error)} — rejecting to prevent stale-identity staging`,
+          `Fresh-mapping query failed during reschedule for ${maskExternalId(ctx.externalUserId)}: ${safeError} — rejecting to prevent stale-identity staging`,
         );
         return { error: this.options.getNotLinkedMessage() };
       }
     }
 
-    const staged = await this.stagePort.stage({
+    const stageInput = {
       externalId: ctx.externalUserId,
       userId: resolvedUserId,
       calendarId,
       schedulingMode,
       newLocalDate,
       newTime,
-    });
+      ...(this.options.platform || ctx.mappingVersion || ctx.userText
+        ? {
+            platform: this.options.platform,
+            mappingVersion: ctx.mappingVersion,
+            intent: ctx.userText,
+            canonicalArgs: JSON.stringify({
+              calendarId,
+              schedulingMode,
+              newLocalDate: newLocalDate ?? null,
+              newTime: newTime ?? null,
+            }),
+          }
+        : {}),
+    };
+    const staged = await this.stagePort.stage(stageInput);
 
     if ('error' in staged) {
       return staged;
     }
 
-    await this.options.reschedule.confirmSender(
-      ctx.externalUserId,
-      staged.summary,
-    );
+    if (staged.confirmationToken) {
+      await this.options.reschedule.confirmSender(
+        ctx.externalUserId,
+        staged.summary,
+        staged.confirmationToken,
+      );
+    } else {
+      await this.options.reschedule.confirmSender(
+        ctx.externalUserId,
+        staged.summary,
+      );
+    }
 
     return {
       pendingConfirmation: true,

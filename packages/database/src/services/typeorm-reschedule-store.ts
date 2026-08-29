@@ -18,6 +18,7 @@ export class TypeormRescheduleStore<
   TExternalId,
 > implements RescheduleStorePort<TExternalId> {
   private readonly logger = new Logger(TypeormRescheduleStore.name);
+  readonly requiresApprovalToken = true;
 
   constructor(
     private readonly platform: string,
@@ -32,10 +33,16 @@ export class TypeormRescheduleStore<
     await this.repo.query(
       `
         INSERT INTO reschedule_confirmations
-          (external_id, user_id, calendar_id, scheduling_mode, new_local_date, new_time, session_label, status, expires_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', $8)
+          (external_id, tool_name, platform, user_id, mapping_version, intent_hash, args_hash, nonce, calendar_id, scheduling_mode, new_local_date, new_time, session_label, status, expires_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', $14)
         ON CONFLICT (external_id) DO UPDATE SET
+          tool_name = EXCLUDED.tool_name,
+          platform = EXCLUDED.platform,
           user_id = EXCLUDED.user_id,
+          mapping_version = EXCLUDED.mapping_version,
+          intent_hash = EXCLUDED.intent_hash,
+          args_hash = EXCLUDED.args_hash,
+          nonce = EXCLUDED.nonce,
           calendar_id = EXCLUDED.calendar_id,
           scheduling_mode = EXCLUDED.scheduling_mode,
           new_local_date = EXCLUDED.new_local_date,
@@ -47,7 +54,13 @@ export class TypeormRescheduleStore<
       `,
       [
         key,
+        pending.toolName ?? 'reschedule_study_session',
+        pending.platform ?? this.platform,
         pending.userId,
+        pending.mappingVersion ?? `legacy:${pending.userId}`,
+        pending.intentHash ?? '',
+        pending.argsHash ?? '',
+        pending.nonce ?? randomUUID(),
         pending.calendarId,
         pending.schedulingMode,
         pending.newLocalDate ?? null,
@@ -61,9 +74,30 @@ export class TypeormRescheduleStore<
   async takeValid(
     externalId: TExternalId,
     userId?: number,
+    binding?: import('@wispace/reschedule-confirm').RescheduleApprovalBinding,
   ): Promise<PendingRescheduleRecord<TExternalId> | null> {
     const key = this.key(externalId);
     const leaseToken = randomUUID();
+    const bindingConditions: string[] = [];
+    const bindingParams: unknown[] = [];
+    const addBinding = (column: string, value: unknown) => {
+      if (value === undefined) return;
+      bindingParams.push(value);
+      bindingConditions.push(
+        `${column} = $${bindingParams.length + (userId != null ? 3 : 2)}`,
+      );
+    };
+    addBinding('platform', binding?.platform);
+    addBinding('mapping_version', binding?.mappingVersion);
+    addBinding('intent_hash', binding?.intentHash);
+    addBinding('args_hash', binding?.argsHash);
+    addBinding('nonce', binding?.nonce);
+    const params = [
+      key,
+      leaseToken,
+      ...(userId != null ? [userId] : []),
+      ...bindingParams,
+    ];
     const rows: Array<Record<string, unknown>> = await this.repo.query(
       `
       UPDATE reschedule_confirmations
@@ -75,9 +109,10 @@ export class TypeormRescheduleStore<
         AND status = 'pending'
         AND expires_at > now()
         ${userId != null ? 'AND user_id = $3' : ''}
+        ${bindingConditions.length ? `AND ${bindingConditions.join(' AND ')}` : ''}
       RETURNING *
     `,
-      userId != null ? [key, leaseToken, userId] : [key, leaseToken],
+      params,
     );
 
     if (rows.length === 0) {
@@ -197,7 +232,17 @@ export class TypeormRescheduleStore<
     const expiresAt = row.expires_at;
     return {
       externalId: this.stripKeyPrefix(externalId),
+      toolName: typeof row.tool_name === 'string' ? row.tool_name : undefined,
+      platform: typeof row.platform === 'string' ? row.platform : undefined,
       userId: Number(row.user_id),
+      mappingVersion:
+        typeof row.mapping_version === 'string'
+          ? row.mapping_version
+          : undefined,
+      intentHash:
+        typeof row.intent_hash === 'string' ? row.intent_hash : undefined,
+      argsHash: typeof row.args_hash === 'string' ? row.args_hash : undefined,
+      nonce: typeof row.nonce === 'string' ? row.nonce : undefined,
       calendarId: Number(row.calendar_id),
       schedulingMode:
         typeof schedulingMode === 'string'

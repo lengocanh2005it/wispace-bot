@@ -1,6 +1,11 @@
 import type { LlmProviderAdapter } from './provider/llm-provider.adapter';
 import type { LlmMessage } from './provider/types';
-import { AGENT_TOOLS, isAgentToolName } from './agent.tools';
+import {
+  AGENT_TOOLS,
+  getAgentToolDefinition,
+  isAgentToolName,
+  parseAndValidateToolArguments,
+} from './agent.tools';
 import { checkLlmGrounding } from './utils/llm-grounding.utils';
 import {
   detectPromptInjection,
@@ -24,7 +29,11 @@ import {
   buildGroundingBlockedMessage,
   buildClarificationMessage,
 } from './messages';
-import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common/masking';
 import {
   AgentMetricsPort,
   LlmExecutionPort,
@@ -806,10 +815,17 @@ Summary:`;
         },
       ];
     } catch (error) {
+      const safeError = maskExternalIdInText(
+        sanitizeUntrustedTextForLlm(errorMessage(error), {
+          maxChars: 500,
+          unsafePlaceholder: 'Compaction failed',
+        }).text,
+        externalUserId,
+      );
       logger.warn(
         `Compaction LLM call failed externalUserId=${maskExternalId(
           externalUserId,
-        )} error=${errorMessage(error)}`,
+        )} error=${safeError}`,
       );
       return null;
     }
@@ -984,7 +1000,7 @@ Summary:`;
     toolCalls: Array<{ name: string; arguments: string }>,
   ): string {
     return toolCalls
-      .map((tc) => `${tc.name}:${tc.arguments}`)
+      .map((tc) => this.toolCallKey(tc))
       .sort()
       .join('|');
   }
@@ -1111,73 +1127,120 @@ Summary:`;
       }
     >();
 
-    await Promise.all(
-      uniqueCalls.map(async (toolCall) => {
-        const toolName = toolCall.name;
-        const argsJson = toolCall.arguments || '{}';
+    const executeCall = async (toolCall: (typeof uniqueCalls)[number]) => {
+      const toolName = toolCall.name;
+      const argsJson = toolCall.arguments || '{}';
 
-        if (!isAgentToolName(toolName)) {
-          resultsByKey.set(this.toolCallKey(toolCall), {
-            observation: reduceToolObservation({
+      if (!isAgentToolName(toolName)) {
+        resultsByKey.set(this.toolCallKey(toolCall), {
+          observation: reduceToolObservation({
+            toolName,
+            error: 'Tool không được hỗ trợ',
+            ok: false,
+            maxChars: 8_000,
+          }),
+          succeeded: false,
+        });
+        return;
+      }
+
+      const validation = parseAndValidateToolArguments(toolName, argsJson);
+      if (!validation.ok) {
+        metrics.toolPolicyDeniedInc?.(toolName, 'invalid_arguments');
+        resultsByKey.set(this.toolCallKey(toolCall), {
+          observation: reduceToolObservation({
+            toolName,
+            error: validation.error,
+            ok: false,
+            maxChars: 8_000,
+          }),
+          succeeded: false,
+        });
+        return;
+      }
+
+      if (!getAgentToolDefinition(toolName)?.capability) {
+        metrics.toolPolicyDeniedInc?.(toolName, 'missing_capability');
+        resultsByKey.set(this.toolCallKey(toolCall), {
+          observation: reduceToolObservation({
+            toolName,
+            error: 'Tool execution blocked by policy',
+            ok: false,
+            maxChars: 8_000,
+          }),
+          succeeded: false,
+        });
+        return;
+      }
+
+      toolsCalledThisTurn.add(toolName);
+
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      parentSignal?.addEventListener('abort', abort, { once: true });
+      try {
+        const result = await withTimeout(
+          metrics.timeTool(toolName, () =>
+            this.ports.toolExecutor.execute(
               toolName,
-              error: 'Tool không được hỗ trợ',
-              ok: false,
-              maxChars: 8_000,
-            }),
-            succeeded: false,
-          });
-          return;
-        }
-
-        toolsCalledThisTurn.add(toolName);
-
-        const controller = new AbortController();
-        const abort = () => controller.abort();
-        parentSignal?.addEventListener('abort', abort, { once: true });
-        try {
-          const result = await withTimeout(
-            metrics.timeTool(toolName, () =>
-              this.ports.toolExecutor.execute(
-                toolName,
-                argsJson,
-                toolContext,
-                controller.signal,
-              ),
+              argsJson,
+              toolContext,
+              controller.signal,
             ),
-            this.getToolExecutionTimeoutMs(),
-            `Tool ${toolName}`,
-            () => controller.abort(),
-          );
-          resultsByKey.set(this.toolCallKey(toolCall), {
-            observation: reduceToolObservation({
-              toolName,
-              result,
-              ok: true,
-              maxChars: 8_000,
-            }),
-            succeeded: true,
-          });
-        } catch (err) {
-          const message = errorMessage(err);
-          logger.warn(
-            `Tool execution failed externalUserId=${maskExternalId(
-              input.externalUserId,
-            )} tool=${toolName} error=${message}`,
-          );
-          resultsByKey.set(this.toolCallKey(toolCall), {
-            observation: reduceToolObservation({
-              toolName,
-              error: message,
-              ok: false,
-              maxChars: 8_000,
-            }),
-            succeeded: false,
-          });
-        } finally {
-          parentSignal?.removeEventListener('abort', abort);
-        }
-      }),
+          ),
+          this.getToolExecutionTimeoutMs(),
+          `Tool ${toolName}`,
+          () => controller.abort(),
+        );
+        resultsByKey.set(this.toolCallKey(toolCall), {
+          observation: reduceToolObservation({
+            toolName,
+            result,
+            ok: true,
+            maxChars: 8_000,
+          }),
+          succeeded: true,
+        });
+      } catch (err) {
+        const message = maskExternalIdInText(
+          sanitizeUntrustedTextForLlm(errorMessage(err), {
+            maxChars: 500,
+            unsafePlaceholder: 'Tool execution failed',
+          }).text,
+          input.externalUserId,
+        );
+        logger.warn(
+          `Tool execution failed externalUserId=${maskExternalId(
+            input.externalUserId,
+          )} tool=${toolName} error=${message}`,
+        );
+        resultsByKey.set(this.toolCallKey(toolCall), {
+          observation: reduceToolObservation({
+            toolName,
+            error: message,
+            ok: false,
+            maxChars: 8_000,
+          }),
+          succeeded: false,
+        });
+      } finally {
+        parentSignal?.removeEventListener('abort', abort);
+      }
+    };
+
+    const hasSideEffect = uniqueCalls.some(
+      (call) =>
+        getAgentToolDefinition(call.name)?.capability.effect !== 'read_only',
     );
+    if (!hasSideEffect) {
+      await Promise.all(uniqueCalls.map((call) => executeCall(call)));
+    } else {
+      // Preserve the model's dependency order whenever a side effect is
+      // present; all side effects are therefore serialized as well.
+      for (const call of uniqueCalls) {
+        await executeCall(call);
+      }
+    }
 
     // Build one bounded, sanitized observation per executed call. The full
     // form is only retained for this small round (the call cap is four), then
@@ -1289,7 +1352,11 @@ Summary:`;
   }
 
   private toolCallKey(call: { name: string; arguments: string }): string {
-    return `${call.name}:${call.arguments || '{}'}`;
+    const validated = parseAndValidateToolArguments(
+      call.name,
+      call.arguments || '{}',
+    );
+    return `${call.name}:${validated.ok ? validated.canonicalArgs : call.arguments || '{}'}`;
   }
 
   private missingToolExecutionObservation(

@@ -1,5 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import { createHash, randomUUID } from 'crypto';
+import {
+  errorMessage,
+  maskExternalId,
+  sanitizeLogValue,
+} from '@wispace/bot-common/masking';
 import type {
   RescheduleSchedulingMode,
   UserCalendarRecord,
@@ -7,9 +12,16 @@ import type {
 import {
   MemoryRescheduleStore,
   type RescheduleStorePort,
+  type RescheduleApprovalBinding,
 } from './reschedule-store.port';
 
 export const PENDING_RESCHEDULE_TTL_MS = 10 * 60 * 1000;
+const APPROVAL_TOKEN_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isValidApprovalToken(value: string): boolean {
+  return APPROVAL_TOKEN_RE.test(value);
+}
 
 export interface CalendarEntryView {
   calendarId: number;
@@ -45,12 +57,18 @@ export interface StageInput<TExternalId> {
   schedulingMode: RescheduleSchedulingMode;
   newLocalDate?: string;
   newTime?: string;
+  platform?: string;
+  mappingVersion?: string;
+  intent?: string;
+  canonicalArgs?: string;
 }
 
 export interface StageResult {
   pendingConfirmation: true;
   sessionLabel: string;
   summary: string;
+  /** Opaque one-time approval token; non-enumerable for legacy response shapes. */
+  confirmationToken?: string;
 }
 
 export interface ConfirmResult {
@@ -61,6 +79,10 @@ export interface ConfirmResult {
 export interface ConfirmError {
   confirmed: false;
   message: string;
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }
 
 /**
@@ -116,6 +138,19 @@ export class RescheduleConfirmationService<TExternalId> {
   async stage(
     input: StageInput<TExternalId>,
   ): Promise<StageResult | { error: string }> {
+    if (
+      this.store.requiresApprovalToken &&
+      (!input.platform?.trim() ||
+        !input.mappingVersion?.trim() ||
+        !input.intent?.trim() ||
+        !input.canonicalArgs?.trim())
+    ) {
+      return {
+        error:
+          'Không thể xác thực yêu cầu đổi lịch này. Bạn nhắn lại nhu cầu đổi lịch nhé.',
+      };
+    }
+
     const upcoming = await this.calendarPort.listUpcomingEntries(
       input.externalId,
       input.userId,
@@ -134,6 +169,17 @@ export class RescheduleConfirmationService<TExternalId> {
 
     const sessionLabel = matchedEntry.scheduledTimeLabel;
     const summary = this.buildSummary(input, sessionLabel);
+    const nonce = randomUUID();
+    const intentHash = sha256((input.intent ?? '').trim());
+    const argsHash = sha256(
+      input.canonicalArgs ??
+        JSON.stringify({
+          calendarId: matchedEntry.calendarId,
+          schedulingMode: input.schedulingMode,
+          newLocalDate: input.newLocalDate ?? null,
+          newTime: input.newTime ?? null,
+        }),
+    );
 
     await this.store.save({
       externalId: input.externalId,
@@ -144,6 +190,12 @@ export class RescheduleConfirmationService<TExternalId> {
       newTime: input.newTime,
       sessionLabel,
       expiresAt: Date.now() + PENDING_RESCHEDULE_TTL_MS,
+      toolName: 'reschedule_study_session',
+      platform: input.platform,
+      mappingVersion: input.mappingVersion,
+      intentHash,
+      argsHash,
+      nonce,
     });
 
     this.logger.log(
@@ -152,19 +204,62 @@ export class RescheduleConfirmationService<TExternalId> {
       )} calendarId=${matchedEntry.calendarId} mode=${input.schedulingMode}`,
     );
 
-    return { pendingConfirmation: true, sessionLabel, summary };
+    const result: StageResult = {
+      pendingConfirmation: true,
+      sessionLabel,
+      summary,
+    };
+    Object.defineProperty(result, 'confirmationToken', {
+      value: nonce,
+      enumerable: false,
+    });
+    return result;
   }
 
   async confirm(
     externalId: TExternalId,
     userId?: number,
+    approvalToken?: string,
+    binding?: RescheduleApprovalBinding,
   ): Promise<ConfirmResult | ConfirmError> {
-    const pending = await this.store.takeValid(externalId, userId);
+    if (
+      this.store.requiresApprovalToken &&
+      (!approvalToken ||
+        !isValidApprovalToken(approvalToken) ||
+        userId == null ||
+        !binding?.platform ||
+        !binding.mappingVersion)
+    ) {
+      return {
+        confirmed: false,
+        message:
+          'Không thể xác thực yêu cầu đổi lịch này. Bạn nhắn lại nhu cầu đổi lịch nhé.',
+      };
+    }
+    const pending = await this.store.takeValid(externalId, userId, {
+      ...binding,
+      ...(approvalToken ? { nonce: approvalToken } : {}),
+    });
     if (!pending) {
       return {
         confirmed: false,
         message:
           'Không còn yêu cầu đổi lịch đang chờ xác nhận. Bạn nhắn lại nhu cầu đổi lịch nhé.',
+      };
+    }
+
+    if (
+      this.store.requiresApprovalToken &&
+      (pending.toolName !== 'reschedule_study_session' ||
+        !pending.intentHash ||
+        !pending.argsHash ||
+        !pending.nonce)
+    ) {
+      await this.store.revertToPending(externalId, pending.leaseToken);
+      return {
+        confirmed: false,
+        message:
+          'Không thể xác thực yêu cầu đổi lịch này. Bạn nhắn lại nhu cầu đổi lịch nhé.',
       };
     }
 
@@ -195,7 +290,7 @@ export class RescheduleConfirmationService<TExternalId> {
       this.logger.warn(
         `RESCHEDULE_CONFIRM_FAILED externalId=${maskExternalId(
           String(externalId),
-        )}: ${message}`,
+        )}: ${sanitizeLogValue(message, 500)}`,
       );
       // Keep the confirmation pending so the user can tap confirm again —
       // a transient Wispace failure must not burn the staged request.
@@ -208,8 +303,18 @@ export class RescheduleConfirmationService<TExternalId> {
     }
   }
 
-  async cancel(externalId: TExternalId): Promise<string> {
-    await this.store.cancel(externalId);
+  async cancel(
+    externalId: TExternalId,
+    approvalToken?: string,
+  ): Promise<string> {
+    if (
+      this.store.requiresApprovalToken &&
+      approvalToken !== undefined &&
+      !isValidApprovalToken(approvalToken)
+    ) {
+      return 'Không thể xác thực yêu cầu đổi lịch này.';
+    }
+    await this.store.cancel(externalId, approvalToken);
     this.logger.log(
       `RESCHEDULE_CANCELLED externalId=${maskExternalId(String(externalId))}`,
     );

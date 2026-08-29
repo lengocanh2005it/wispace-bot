@@ -48,6 +48,34 @@ describe('TypeormRescheduleStore', () => {
       const result = await store.takeValid('psid1');
       expect(result).toBeNull();
     });
+
+    it('binds approval fields after the optional user id parameter', async () => {
+      const repo = mockRepo();
+      const store = new TypeormRescheduleStore('discord', repo as never);
+
+      await store.takeValid('uid-1', 42, {
+        platform: 'discord',
+        mappingVersion: 'mapping-1',
+        intentHash: 'intent-1',
+        argsHash: 'args-1',
+        nonce: '00000000-0000-4000-8000-000000000000',
+      });
+
+      const sql = repo.query.mock.calls[0][0] as string;
+      expect(sql).toContain('platform = $4');
+      expect(sql).toContain('mapping_version = $5');
+      expect(sql).toContain('nonce = $8');
+      expect(repo.query.mock.calls[0][1]).toEqual([
+        'discord:uid-1',
+        expect.any(String),
+        42,
+        'discord',
+        'mapping-1',
+        'intent-1',
+        'args-1',
+        '00000000-0000-4000-8000-000000000000',
+      ]);
+    });
   });
 
   describe('revertToPending', () => {

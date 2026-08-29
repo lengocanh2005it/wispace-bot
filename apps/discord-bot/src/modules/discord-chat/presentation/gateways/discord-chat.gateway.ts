@@ -43,11 +43,14 @@ import {
   IntentDetector,
 } from '@wispace/llm-agent';
 
+const DISCORD_NOT_LINKED_MESSAGE =
+  'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';
+
 function formatError(error: unknown): string {
   if (error instanceof WispaceApiError) {
-    return `WispaceApiError: statusCode=${error.statusCode} endpoint=${error.endpoint} externalId=${maskExternalId(error.externalId)} - ${errorMessage(error)}`;
+    return `WispaceApiError: statusCode=${error.statusCode} endpoint=${error.endpoint} externalId=${maskExternalId(error.externalId)} - ${sanitizeLogValue(errorMessage(error), 500)}`;
   }
-  return errorMessage(error);
+  return sanitizeLogValue(errorMessage(error), 500);
 }
 
 @Injectable()
@@ -301,6 +304,64 @@ export class DiscordChatGateway {
       content = CHAT_FAILURE_FALLBACK_MESSAGE;
     }
 
+    await interaction.editReply({ content, components: [] });
+  }
+
+  @On('interactionCreate')
+  async onDynamicRescheduleAction(
+    @Context() [interaction]: ContextOf<'interactionCreate'>,
+  ) {
+    if (!interaction.isButton()) return;
+    const [action, approvalToken] = interaction.customId.split(':', 2);
+    if (
+      action !== RESCHEDULE_CONFIRM_CUSTOM_ID &&
+      action !== RESCHEDULE_CANCEL_CUSTOM_ID
+    ) {
+      return;
+    }
+    // The fixed IDs are handled by the legacy @Button handlers below. This
+    // listener owns only token-bound actions so one interaction cannot run
+    // both paths.
+    if (!approvalToken) return;
+    await interaction.deferUpdate();
+    const discordUserId = interaction.user.id;
+    let content: string;
+    try {
+      if (action === RESCHEDULE_CANCEL_CUSTOM_ID) {
+        content = await this.rescheduleConfirmationService.cancel(
+          discordUserId,
+          approvalToken,
+        );
+      } else {
+        const identity =
+          await this.accountLinkService.findCurrentIdentity(discordUserId);
+        const result = identity
+          ? await this.rescheduleConfirmationService.confirm(
+              discordUserId,
+              identity.userId,
+              approvalToken,
+              {
+                platform: 'discord',
+                mappingVersion: identity.mappingVersion,
+              },
+            )
+          : {
+              confirmed: false as const,
+              message: DISCORD_NOT_LINKED_MESSAGE,
+            };
+        content = result.confirmed
+          ? `Đã dời lịch sang ${result.scheduledTimeLabel}.`
+          : result.message;
+      }
+    } catch (error) {
+      this.logger.error(
+        `Dynamic reschedule action failed for discordUserId=${maskExternalId(
+          discordUserId,
+        )}`,
+        formatError(error),
+      );
+      content = CHAT_FAILURE_FALLBACK_MESSAGE;
+    }
     await interaction.editReply({ content, components: [] });
   }
 

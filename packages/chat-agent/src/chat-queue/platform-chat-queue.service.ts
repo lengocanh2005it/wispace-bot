@@ -347,7 +347,8 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
         }
         batch.userId = freshUserId;
       } catch (error) {
-        // Transient infra failure — retry once, then fail-open.
+        // Retry once, then fail closed: a stale userId must never reach a
+        // personal tool when the authoritative mapping cannot be read.
         this.logger.error(
           `Fresh-mapping query failed for ${maskExternalId(
             externalUserId,
@@ -379,8 +380,15 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
             )}: ${maskExternalIdInText(
               errorMessage(retryError),
               externalUserId,
-            )} — proceeding with buffered userId`,
+            )} — dropping buffered batch`,
           );
+          await this.clearClarificationState(externalUserId);
+          await this.queueStore!.completeChatBuffer({
+            externalUserId,
+            debounceMs: this.debounceMs,
+            leaseToken: batch.leaseToken,
+          });
+          return;
         }
       }
     }

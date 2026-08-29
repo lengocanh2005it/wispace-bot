@@ -60,6 +60,8 @@ export interface AgentMetricsPort {
     toolName: string,
     outcome: ToolObservationOutcome,
   ): void;
+  /** Bounded policy-denial telemetry; never receives raw arguments or ids. */
+  toolPolicyDeniedInc?(toolName: string, reason: string): void;
 }
 
 /** Executes a single tool call against platform-specific business services. */
@@ -79,5 +81,6 @@ export const NOOP_METRICS_PORT: AgentMetricsPort = {
   timeAgentLoop: (_feature, fn) => fn(),
   compactionOutcomeInc: () => undefined,
   observationOutcomeInc: () => undefined,
+  toolPolicyDeniedInc: () => undefined,
 };
 import type { ToolObservationOutcome } from './utils/tool-observation';

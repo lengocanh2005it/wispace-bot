@@ -16,12 +16,17 @@ import {
   buildClarificationUnavailableMessage,
   buildClarificationMessage,
   buildWispaceScopeRedirectMessage,
+  sanitizeUntrustedTextForLlm,
 } from '@wispace/llm-agent';
 import {
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
 } from '@wispace/chat-metering';
-import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common/masking';
 import { buildUnsupportedMessageTypeReply } from '@wispace/bot-common/messages';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
@@ -142,12 +147,22 @@ export class PlatformAgentService {
       return clarification.reply;
     }
     const effectiveInput = clarification.input ?? input;
+    const identity = await this.resolveCurrentIdentity(effectiveInput);
+    const resolvedInput = identity
+      ? {
+          ...effectiveInput,
+          userId: identity.userId,
+          mappingVersion: identity.mappingVersion,
+        }
+      : { ...effectiveInput, userId: undefined, mappingVersion: undefined };
 
     const toolContext: PlatformAgentToolContext = {
-      externalUserId: effectiveInput.externalUserId,
-      userId: effectiveInput.userId,
-      userText: effectiveInput.userText,
-      isServerChannel: effectiveInput.isServerChannel,
+      externalUserId: resolvedInput.externalUserId,
+      userId: resolvedInput.userId,
+      mappingVersion: resolvedInput.mappingVersion,
+      identityVerified: !!identity,
+      userText: resolvedInput.userText,
+      isServerChannel: resolvedInput.isServerChannel,
       privateDataFetched: false,
       richFollowUps: [],
       linkContext: effectiveInput.linkContext,
@@ -156,7 +171,7 @@ export class PlatformAgentService {
     const fastReschedule = this.options.tryFastReschedule
       ? await this.options.tryFastReschedule(
           toolContext,
-          effectiveInput.userText,
+          resolvedInput.userText,
         )
       : null;
     if (fastReschedule) {
@@ -170,19 +185,19 @@ export class PlatformAgentService {
 
     const history =
       effectiveInput.history ??
-      (await this.historyService.getHistory(effectiveInput.externalUserId));
+      (await this.historyService.getHistory(resolvedInput.externalUserId));
 
     const result = await this.agent.reply(
       {
-        externalUserId: effectiveInput.externalUserId,
-        userId: effectiveInput.userId,
-        userText: effectiveInput.userText,
-        systemPrompt: await this.buildSystemPrompt(effectiveInput),
+        externalUserId: resolvedInput.externalUserId,
+        userId: resolvedInput.userId,
+        userText: resolvedInput.userText,
+        systemPrompt: await this.buildSystemPrompt(resolvedInput),
         history: history as Parameters<
           LlmAgentService<PlatformAgentToolContext>['reply']
         >[0]['history'],
-        correlationId: effectiveInput.correlationId,
-        signal: effectiveInput.signal,
+        correlationId: resolvedInput.correlationId,
+        signal: resolvedInput.signal,
       },
       toolContext,
     );
@@ -193,11 +208,11 @@ export class PlatformAgentService {
 
     if (
       this.options.appendHistory !== false &&
-      effectiveInput.history === undefined
+      resolvedInput.history === undefined
     ) {
       await this.historyService.appendTurn(
-        effectiveInput.externalUserId,
-        effectiveInput.userText,
+        resolvedInput.externalUserId,
+        resolvedInput.userText,
         text,
       );
     }
@@ -209,6 +224,39 @@ export class PlatformAgentService {
       exhausted: result.exhausted,
       toolSummary: result.toolSummary,
     };
+  }
+
+  private async resolveCurrentIdentity(input: PlatformAgentInput) {
+    const provider = this.options.currentIdentityProvider;
+    if (typeof provider !== 'function') return undefined;
+    try {
+      const identity = await provider(input.externalUserId);
+      if (
+        !identity ||
+        !Number.isInteger(identity.userId) ||
+        identity.userId <= 0 ||
+        typeof identity.mappingVersion !== 'string' ||
+        !identity.mappingVersion.trim()
+      ) {
+        this.logger.warn(
+          `Current-mapping lookup returned invalid identity for ${maskExternalId(input.externalUserId)}`,
+        );
+        return undefined;
+      }
+      return identity;
+    } catch (error) {
+      const safeError = maskExternalIdInText(
+        sanitizeUntrustedTextForLlm(errorMessage(error), {
+          maxChars: 500,
+          unsafePlaceholder: 'Current-mapping lookup failed',
+        }).text,
+        input.externalUserId,
+      );
+      this.logger.warn(
+        `Current-mapping lookup failed for ${maskExternalId(input.externalUserId)}: ${safeError}`,
+      );
+      return undefined;
+    }
   }
 
   private async handleClarification(input: PlatformAgentInput): Promise<{

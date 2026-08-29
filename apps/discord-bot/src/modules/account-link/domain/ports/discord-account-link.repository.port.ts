@@ -14,6 +14,13 @@ export interface DiscordAccountLinkRepositoryPort {
     discordUserId: string,
   ): Promise<{ relinked: boolean; previousUserId?: number }>;
   findUserIdByDiscordId(discordUserId: string): Promise<number | undefined>;
+  findLinkByDiscordId?(discordUserId: string): Promise<
+    | {
+        userId: number;
+        mappingVersion: string;
+      }
+    | undefined
+  >;
   findDiscordIdByUserId(userId: number): Promise<string | undefined>;
 }
 

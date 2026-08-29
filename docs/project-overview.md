@@ -46,6 +46,14 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 - **Development/test:** `CHAT_QUEUE_STORE=memory` (RAM debounce). **Production:** all three bots require `CHAT_QUEUE_STORE=redis` (requires `REDIS_ENABLED=true`; `CHAT_QUEUE_SHARED=true` maps to `redis`). Enqueue writes are awaited before the Messenger/Zalo durable inbox completes; persistent Redis failures remain retryable. Redis keys use the legacy `chat:queue:*` namespace for Messenger and `chat:queue:discord:*` / `chat:queue:zalo:*` for the other bots.
 - **Clarification follow-ups (#401):** ambiguous or contradictory chat is answered with a bounded menu and never reaches the LLM/tools until one choice is selected. State is keyed by platform + external user id and bounded by `CHAT_CLARIFICATION_TTL_MS`, `CHAT_CLARIFICATION_MAX_ATTEMPTS`, and `CHAT_CLARIFICATION_MAX_MENU_RESETS`; recent event ids form a short tombstone so delayed/replayed choices cannot execute tools. Definitive clarification-delivery failures are persisted in the outbound dead-letter table with a stable `deliveryKey` for the platform retry cron; ambiguous transport failures are not auto-resend.
 
+#### LLM tool capability policy (#416)
+
+- Every entry in `packages/llm-agent/src/agent.tools.ts` declares an effect (`read_only`, `idempotent_side_effect`, or `confirmation_required`), identity scope, confirmation requirement, and idempotency strategy. `validateAgentToolRegistry` fails closed when a tool is incomplete or malformed.
+- The shared agent validates tool names and JSON arguments before dispatch. Platform executors re-check the current platform mapping immediately before personal-data access or side effects; missing or failed identity lookup never falls back to a stale queued user id.
+- Reschedule approvals are one-time, expiring, platform-scoped records bound to the linked WISPACE user, mapping revision, intent, canonical arguments, and nonce. Old rows are invalidated by migration `1786932000000`; current platform identity is required at confirmation.
+- Model instructions and tool descriptions are guidance only. The runtime policy is authoritative; denied calls emit `<prefix>_llm_tool_policy_denied_total{tool,platform,reason}` without raw arguments or external identifiers.
+- When adding a tool, update the registry metadata, schema validation tests, the platform executor, and the capability policy tests before wiring any provider call. Do not authorize a side effect from model output alone.
+
 ### 1.5. Precreate Next Roadmap Exercise
 
 - A clear natural-language request such as “tạo bài tập cho mình” may call the no-argument `precreate_next_exercise` tool on Messenger, Discord, or Zalo. It creates only the next exercise in the learner's roadmap and requires a linked account.

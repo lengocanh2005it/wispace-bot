@@ -109,6 +109,21 @@ export class DiscordAccountLinkService {
     return this.repository.findUserIdByDiscordId(discordUserId);
   }
 
+  async findCurrentIdentity(discordUserId: string): Promise<
+    | {
+        userId: number;
+        mappingVersion: string;
+      }
+    | undefined
+  > {
+    const link = await this.repository.findLinkByDiscordId?.(discordUserId);
+    if (link) return link;
+    const userId = await this.repository.findUserIdByDiscordId(discordUserId);
+    return userId === undefined
+      ? undefined
+      : { userId, mappingVersion: `legacy:${userId}` };
+  }
+
   async findDiscordIdByUserId(userId: number): Promise<string | undefined> {
     return this.repository.findDiscordIdByUserId(userId);
   }
