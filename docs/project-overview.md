@@ -340,6 +340,13 @@ All endpoints below require header **`X-Internal-Api-Key`** (or `Authorization: 
 
 Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP — no API key needed.
 
+### WISPACE web-activity dormancy gate
+
+- `POST /v1/messenger/wispace/web-activity` — auth `X-Internal-Api-Key` / `Authorization: Bearer` = `INTERNAL_API_KEY`. Body `{ userId: number (positive int), activeAt?: ISO 8601 }`. `activeAt` defaults to `now()`, a future value is clamped, offset-less strings are read as UTC. Idempotent `GREATEST` upsert into `web_activity`; no idempotency key / inbox / retry — a missed delivery self-heals on the next visit. WISPACE should debounce (≈1 ping / learner / 5–15 min), not send per pageview.
+- Gate: `WEB_ACTIVITY_GATE_ENABLED` (default `false`), `WEB_ACTIVITY_DORMANT_DAYS` (default `7`). When enabled, study-reminder dispatch cancels a dormant recipient's claimed job with reason `recipient dormant (web inactivity)`, and each bot's daily report cron skips the LLM call for dormant learners. Fail-open: no row or DB error → not dormant. User-initiated chat is never gated. Skipped reminders are not backfilled.
+- Metrics: `<bot>_web_activity_webhook_received_total`, `<bot>_scheduled_send_suppressed_total{feature="report"|"reminder"}`.
+- Privacy: `web_activity` rows are deleted by `PrivacyDataService.delete()` (userId-scoped). A row can be orphaned if the erased mapping had no `userId`, or re-created if WISPACE keeps pinging a since-erased learner — inert (the gate only reads userIds from active mappings), no cleanup cron.
+
 ---
 
 ## 6. Cron Jobs

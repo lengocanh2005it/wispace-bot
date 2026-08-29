@@ -16,6 +16,7 @@ paths: apps/messenger-bot/src/infrastructure/database/**, packages/database/**
 - `webhook_inbound_events` — durable authenticated Messenger/Zalo inbox; `raw_payload` is retained only for recovery and terminal rows are cleaned after `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30)
 - `webhook_dead_letters` — outbound delivery retry payloads; terminal rows are cleaned by the shared dead-letter cleanup
 - `reschedule_confirmations` — pending reschedule requests with platform/mapping, intent, argument, and one-time nonce bindings; production confirmation claims must match all bindings
+- `web_activity` — one row per WISPACE `userId`, `last_active_at` merged with `GREATEST`; drives the scheduled-send dormancy gate. Self-updating, no cleanup cron; erased by `PrivacyDataService.delete()` (userId-scoped, orphan row kept when mapping has no userId).
 
 **Prod DB:** `ai_chat_bot_db`. Old hub `writing_ai_hub_db` — Tables already dropped (ops script). All tables above have been generalized to `(platform, external_user_id)` since Phase 2 — see `docs/turborepo-migration-plan.md`.
 
@@ -90,6 +91,7 @@ When adding a new migration (Discord, Zalo, or new shared table):
 | Shared (durable webhook inbox)    | `1751029200015-AddWebhookInboundCleanupIndex`                | cleanup index on `webhook_inbound_events` (`platform, status, created_at`)                                                                                                   |
 | Zalo OAuth cleanup                | `1751029200016-AddZaloOauthStateCleanupIndex`                | cleanup index on `zalo_oauth_states` (`created_at`)                                                                                                                          |
 | Shared (reschedule approval)      | `1786932000000-HardenRescheduleConfirmationBinding`          | binds pending reschedules to platform/mapping, intent/args hashes, and a unique approval nonce                                                                                |
+| Cross-platform (generalized)      | `1786934000000-CreateWebActivityTable`                       | `web_activity`                                                                                                                                                                   |
 
 ## Notes
 
