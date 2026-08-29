@@ -1,8 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Optional } from '@nestjs/common';
 import {
+  buildConsentChangedMessage,
   buildGreetingMessage,
   buildSelfIntroMessage,
   buildUnsupportedMessageTypeReply,
+  parseConsentCommand,
+  type ConsentCommand,
 } from '@wispace/bot-common/messages';
 import {
   errorMessage,
@@ -10,6 +14,11 @@ import {
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
 import { ConfigService } from '@nestjs/config';
+import { NotificationPreferenceService } from '@wispace/database';
+import {
+  STUDY_REMINDER_JOB_REPOSITORY,
+  type StudyReminderJobRepositoryPort,
+} from '@wispace/study-reminder-shared';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { PlatformChatQueueService } from '@wispace/chat-agent';
@@ -38,6 +47,10 @@ export class ZaloChatService {
     private readonly accountLinkService: ZaloAccountLinkService,
     private readonly chatQueueService: PlatformChatQueueService,
     private readonly rescheduleConfirmationService: RescheduleConfirmationService<string>,
+    private readonly notificationPreferences: NotificationPreferenceService,
+    @Optional()
+    @Inject(STUDY_REMINDER_JOB_REPOSITORY)
+    private readonly studyReminderJobRepository?: StudyReminderJobRepositoryPort,
   ) {
     const appId = this.configService.get<string>('ZALO_APP_ID');
     const redirectUri = this.configService.get<string>(
@@ -62,6 +75,13 @@ export class ZaloChatService {
     }
     if (intent.intent === 'self_intro') {
       await this.outboundService.sendText(zaloUserId, buildSelfIntroMessage());
+      return;
+    }
+
+    // Consent commands (#596): deterministic, never through the LLM or quota.
+    const consentCommand = parseConsentCommand(text.trim());
+    if (consentCommand) {
+      await this.handleConsentCommand(zaloUserId, consentCommand);
       return;
     }
 
@@ -134,6 +154,49 @@ export class ZaloChatService {
       }
       throw error;
     }
+  }
+
+  private async handleConsentCommand(
+    zaloUserId: string,
+    command: ConsentCommand,
+  ): Promise<void> {
+    const userId = await this.accountLinkService.findUserIdByZaloId(zaloUserId);
+    if (userId === undefined) {
+      await this.outboundService.sendText(
+        zaloUserId,
+        'Bạn cần liên kết tài khoản WISPACE trước khi bật/tắt báo cáo và nhắc học nhé.',
+      );
+      return;
+    }
+
+    const enable = command.action === 'enable';
+    if (command.feature === 'report') {
+      await this.notificationPreferences.setReportEnabled(userId, enable);
+      if (enable) {
+        await this.accountLinkService
+          .suppressOptOutNotice(zaloUserId)
+          .catch(() => undefined);
+      }
+    } else {
+      await this.notificationPreferences.setReminderEnabled(userId, enable);
+      if (!enable) {
+        const cancelled =
+          (await this.studyReminderJobRepository?.cancelPendingJobsForExternalUser(
+            'zalo',
+            zaloUserId,
+          )) ?? 0;
+        this.logger.log(
+          `Reminder opt-out cancelled ${cancelled} jobs for zaloUserId=${maskExternalId(
+            zaloUserId,
+          )}`,
+        );
+      }
+    }
+
+    await this.outboundService.sendText(
+      zaloUserId,
+      buildConsentChangedMessage(command.feature, enable),
+    );
   }
 
   private isConfirmKeyword(text: string): boolean {

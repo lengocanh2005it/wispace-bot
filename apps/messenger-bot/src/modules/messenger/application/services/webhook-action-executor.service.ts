@@ -1,7 +1,15 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { buildGreetingMessage } from '@wispace/bot-common/messages';
+import {
+  buildConsentChangedMessage,
+  buildGreetingMessage,
+} from '@wispace/bot-common/messages';
 import { maskExternalId } from '@wispace/bot-common/masking';
+import { NotificationPreferenceService } from '@wispace/database';
+import {
+  STUDY_REMINDER_JOB_REPOSITORY,
+  type StudyReminderJobRepositoryPort,
+} from '@wispace/study-reminder-shared';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { UserDisplayNameService } from '@messenger/modules/display-name/application/user-display-name.service';
 import { getStudyReminderLeadTimeNotice } from '@messenger/modules/study-reminder/application/messages/study-reminder.messages';
@@ -25,6 +33,7 @@ import {
   extractRefFromEvent,
   WebhookAction,
 } from '../messenger-webhook.router';
+import type { ConsentCommand } from '@wispace/bot-common/messages';
 
 @Injectable()
 export class WebhookActionExecutorService {
@@ -40,6 +49,10 @@ export class WebhookActionExecutorService {
     private readonly reminderDeliveryService: MessengerReminderDeliveryService,
     private readonly userDisplayNameService: UserDisplayNameService,
     private readonly rescheduleConfirmationService: MessengerRescheduleConfirmationService,
+    private readonly notificationPreferences: NotificationPreferenceService,
+    @Optional()
+    @Inject(STUDY_REMINDER_JOB_REPOSITORY)
+    private readonly studyReminderJobRepository?: StudyReminderJobRepositoryPort,
     @Optional()
     @Inject(MESSENGER_REPOSITORY)
     private readonly messengerRepository?: MessengerMappingRepositoryPort,
@@ -143,6 +156,10 @@ export class WebhookActionExecutorService {
         break;
       }
 
+      case 'consent_command':
+        await this.handleConsentCommand(psid!, action.userId, action.command);
+        break;
+
       case 'send_welcome':
         await this.outbound.sendTextViaPsid({
           psid: psid!,
@@ -152,6 +169,59 @@ export class WebhookActionExecutorService {
         });
         break;
     }
+  }
+
+  private async handleConsentCommand(
+    psid: string,
+    userId: number,
+    command: ConsentCommand,
+  ): Promise<void> {
+    const mapping =
+      await this.messengerRepository?.findActiveMappingByPsid(psid);
+    const consentUserId = mapping?.userId ?? userId;
+    if (consentUserId == null) {
+      await this.outbound.sendTextViaPsid({
+        psid,
+        text: 'Bạn cần liên kết tài khoản WISPACE trước khi bật/tắt báo cáo và nhắc học nhé.',
+        messageType: 'CONSENT_NOT_LINKED',
+      });
+      return;
+    }
+
+    const enable = command.action === 'enable';
+    if (command.feature === 'report') {
+      await this.notificationPreferences.setReportEnabled(
+        consentUserId,
+        enable,
+      );
+      if (enable) {
+        // The Messenger report cron gates on cadence/topic — fill the
+        // subscription record so the consent flag actually delivers (#596).
+        await this.messengerRepository?.ensureReportSubscription(psid);
+      } else {
+        // Clearing cadence/topic stops the cron immediately, on top of the
+        // user-level consent flag.
+        await this.messengerRepository?.clearReportSubscription(psid);
+      }
+    } else {
+      await this.notificationPreferences.setReminderEnabled(
+        consentUserId,
+        enable,
+      );
+      if (!enable) {
+        await this.studyReminderJobRepository?.cancelPendingJobsForExternalUser(
+          'messenger',
+          psid,
+        );
+      }
+    }
+
+    await this.outbound.sendTextViaPsid({
+      psid,
+      userId: consentUserId,
+      text: buildConsentChangedMessage(command.feature, enable),
+      messageType: 'CONSENT_UPDATED',
+    });
   }
 
   private async attemptLinkFromEvent(

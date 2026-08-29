@@ -20,6 +20,7 @@ import {
   PlatformChatQueueService,
 } from '@wispace/chat-agent';
 import { DiscordOutboundService } from '../../application/services/discord-outbound.service';
+import { DiscordConsentService } from '../../application/services/discord-consent.service';
 import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
 import {
   RESCHEDULE_CANCEL_CUSTOM_ID,
@@ -68,6 +69,7 @@ export class DiscordChatGateway {
     private readonly menuService: DiscordMenuService,
     private readonly chatHistoryService: PlatformChatHistoryService,
     private readonly chatQueueService: PlatformChatQueueService,
+    private readonly consentService: DiscordConsentService,
     @Inject(DISCORD_LINK_VERIFY_RECORD_REPOSITORY)
     private readonly verifyRecordService: DiscordLinkVerifyRecordRepositoryPort,
     private readonly welcomeService: DiscordWelcomeService,
@@ -136,6 +138,12 @@ export class DiscordChatGateway {
           discordUserId,
           displayName,
         );
+        // One-time consent explainer after the linked welcome (#596).
+        await this.accountLinkService
+          .sendConsentExplainerIfDue(discordUserId, (text) =>
+            this.outboundService.sendText(discordUserId, text),
+          )
+          .catch(() => undefined);
       } else {
         // Join-during-callback race: the mapping may not be committed yet, but
         // a fresh verify intent means the callback is in flight and will send
@@ -246,6 +254,16 @@ export class DiscordChatGateway {
       } else {
         await this.outboundService.sendMenuButtons(discordUserId, reply);
       }
+      return;
+    }
+
+    // Consent commands (#596): deterministic, before the LLM pipeline.
+    if (
+      await this.consentService.handleIfConsentCommand(
+        discordUserId,
+        resolvedText,
+      )
+    ) {
       return;
     }
 

@@ -4,6 +4,7 @@ import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { PlatformChatQueueService } from '@wispace/chat-agent';
 import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
+import { NotificationPreferenceService } from '@wispace/database';
 
 const NO_RESCHEDULE = {
   hasPending: jest.fn().mockResolvedValue(false),
@@ -21,6 +22,12 @@ function buildConfig(): ConfigService {
 }
 
 describe('ZaloChatService', () => {
+  const makePrefs = () =>
+    ({
+      setReportEnabled: jest.fn().mockResolvedValue(undefined),
+      setReminderEnabled: jest.fn().mockResolvedValue(undefined),
+    }) as unknown as NotificationPreferenceService;
+
   it('enqueues message and resolves userId', async () => {
     const findUserIdByZaloId = jest.fn().mockResolvedValue(42);
     const enqueue = jest.fn();
@@ -31,6 +38,7 @@ describe('ZaloChatService', () => {
       { findUserIdByZaloId } as unknown as ZaloAccountLinkService,
       { enqueue } as unknown as PlatformChatQueueService,
       NO_RESCHEDULE,
+      makePrefs(),
     );
 
     await service.handleIncomingMessage('zalo-1', 'xem lich hoc cua minh');
@@ -55,6 +63,7 @@ describe('ZaloChatService', () => {
       } as unknown as ZaloAccountLinkService,
       { enqueue } as unknown as PlatformChatQueueService,
       NO_RESCHEDULE,
+      makePrefs(),
     );
 
     await expect(
@@ -73,6 +82,7 @@ describe('ZaloChatService', () => {
       {} as unknown as ZaloAccountLinkService,
       { enqueue } as unknown as PlatformChatQueueService,
       NO_RESCHEDULE,
+      makePrefs(),
     );
 
     await service.handleIncomingMessage('zalo-1', 'chào bạn');
@@ -84,6 +94,86 @@ describe('ZaloChatService', () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
+  it('handles consent commands deterministically — cancels pending reminders on opt-out (#596)', async () => {
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const enqueue = jest.fn();
+    const cancelPendingJobsForExternalUser = jest.fn().mockResolvedValue(2);
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+        suppressOptOutNotice: jest.fn().mockResolvedValue(undefined),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as PlatformChatQueueService,
+      NO_RESCHEDULE,
+      makePrefs(),
+      {
+        cancelPendingJobsForExternalUser,
+      } as never,
+    );
+
+    await service.handleIncomingMessage('zalo-1', 'Tắt nhắc học');
+
+    const prefs = service['notificationPreferences'];
+    expect(prefs.setReminderEnabled).toHaveBeenCalledWith(42, false);
+    expect(cancelPendingJobsForExternalUser).toHaveBeenCalledWith(
+      'zalo',
+      'zalo-1',
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(sendText).toHaveBeenCalledWith(
+      'zalo-1',
+      expect.stringContaining('TẮT'),
+    );
+  });
+
+  it('enables reports via command and suppresses the opt-out footer (#596)', async () => {
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const suppressOptOutNotice = jest.fn().mockResolvedValue(undefined);
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+        suppressOptOutNotice,
+      } as unknown as ZaloAccountLinkService,
+      {} as unknown as PlatformChatQueueService,
+      NO_RESCHEDULE,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', 'bật báo cáo');
+
+    const prefs = service['notificationPreferences'];
+    expect(prefs.setReportEnabled).toHaveBeenCalledWith(42, true);
+    expect(suppressOptOutNotice).toHaveBeenCalledWith('zalo-1');
+  });
+
+  it('replies with a link hint when a consent command arrives unlinked (#596)', async () => {
+    const sendText = jest.fn().mockResolvedValue(undefined);
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findUserIdByZaloId: jest.fn().mockResolvedValue(undefined),
+      } as unknown as ZaloAccountLinkService,
+      {} as unknown as PlatformChatQueueService,
+      NO_RESCHEDULE,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', 'bật báo cáo');
+
+    expect(sendText).toHaveBeenCalledWith(
+      'zalo-1',
+      expect.stringContaining('liên kết'),
+    );
+  });
+
   it('sends a welcome message on follow', async () => {
     const sendText = jest.fn().mockResolvedValue(undefined);
     const service = new ZaloChatService(
@@ -92,6 +182,7 @@ describe('ZaloChatService', () => {
       {} as unknown as ZaloAccountLinkService,
       {} as unknown as PlatformChatQueueService,
       NO_RESCHEDULE,
+      makePrefs(),
     );
 
     await service.handleFollow('zalo-1');
@@ -110,6 +201,7 @@ describe('ZaloChatService', () => {
       {} as unknown as ZaloAccountLinkService,
       {} as unknown as PlatformChatQueueService,
       NO_RESCHEDULE,
+      makePrefs(),
     );
 
     await service.handleUnsupportedMessage('zalo-1');

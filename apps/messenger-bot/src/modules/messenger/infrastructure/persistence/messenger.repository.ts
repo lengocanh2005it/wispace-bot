@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Not, Repository } from 'typeorm';
-import { buildPocPsidToken } from '@messenger/shared/config/poc.constants';
+import {
+  buildPocPsidToken,
+  DEFAULT_TOPIC,
+} from '@messenger/shared/config/poc.constants';
 import {
   MessageLogEntity,
   ScheduledReportClaimEntity,
@@ -250,6 +253,32 @@ export class MessengerRepository
     return this.mapEntity(saved);
   }
 
+  async clearReportSubscription(psid: string): Promise<void> {
+    await this.mappingRepo
+      .createQueryBuilder()
+      .update(UserPlatformMappingEntity)
+      .set({ cadence: null as never, topic: null as never })
+      .where('platform = :platform', { platform: PLATFORM })
+      .andWhere('externalUserId = :psid', { psid })
+      .andWhere("status = 'ACTIVE'")
+      .execute();
+  }
+
+  /** Consent opt-in via command (#596): Messenger's cron gates on cadence/topic. */
+  async ensureReportSubscription(psid: string): Promise<void> {
+    await this.mappingRepo
+      .createQueryBuilder()
+      .update(UserPlatformMappingEntity)
+      .set({
+        cadence: () => `COALESCE(cadence, 'daily')`,
+        topic: () => `COALESCE(topic, '${DEFAULT_TOPIC}')`,
+      })
+      .where('platform = :platform', { platform: PLATFORM })
+      .andWhere('externalUserId = :psid', { psid })
+      .andWhere("status = 'ACTIVE'")
+      .execute();
+  }
+
   async findActiveSubscribedMappings(): Promise<UserMessengerMapping[]> {
     return this.findActiveSubscribedMappingsPage(0, Number.MAX_SAFE_INTEGER);
   }
@@ -386,6 +415,13 @@ export class MessengerRepository
   ): Promise<UserMessengerMapping[]> {
     const rows = await this.mappingRepo
       .createQueryBuilder('mapping')
+      .leftJoin(
+        'user_notification_preferences',
+        'pref',
+        'pref.user_id = mapping.user_id',
+      )
+      // Reminders are opt-out (#596): no consent row still receives them.
+      .andWhere('COALESCE(pref.reminder_enabled, true) = true')
       .where('mapping.status = :status', { status: 'ACTIVE' })
       .andWhere('mapping.platform = :platform', { platform: PLATFORM })
       .andWhere('mapping.external_user_id IS NOT NULL')

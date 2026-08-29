@@ -53,8 +53,15 @@ import {
   type CalendarPort,
   type ReschedulePort,
 } from '@wispace/reschedule-confirm';
-import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
+import {
+  PlatformStudyCalendarCommandService,
+  StudyReminderJobEntity,
+  TypeormStudyReminderJobRepository,
+  STUDY_REMINDER_JOB_REPOSITORY,
+} from '@wispace/study-reminder-shared';
 import { DiscordMenuService } from './application/services/discord-menu.service';
+import { DiscordConsentService } from './application/services/discord-consent.service';
+import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
 import { DiscordChatGateway } from './presentation/gateways/discord-chat.gateway';
@@ -88,6 +95,7 @@ const REGISTER_REPORT_MESSAGE =
 @Module({
   imports: [
     BotCommonModule,
+    DatabaseModule,
     ChatMeteringModule.forPlatform('discord', {
       requireEnv: true,
       lenientEnabledCheck: true,
@@ -105,10 +113,17 @@ const REGISTER_REPORT_MESSAGE =
       RescheduleConfirmationEntity,
       LearnerProfileEntity,
       DiscordOauthStateEntity,
+      StudyReminderJobEntity,
     ]),
   ],
   providers: [
     DiscordChatGateway,
+    DiscordConsentService,
+    TypeormStudyReminderJobRepository,
+    {
+      provide: STUDY_REMINDER_JOB_REPOSITORY,
+      useExisting: TypeormStudyReminderJobRepository,
+    },
     {
       provide: PlatformChatHistoryService,
       useFactory: (

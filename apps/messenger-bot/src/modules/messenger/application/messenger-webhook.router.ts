@@ -9,6 +9,8 @@ import { IntentDetector } from '@wispace/llm-agent';
 import {
   buildGreetingMessage,
   buildSelfIntroMessage,
+  parseConsentCommand,
+  type ConsentCommand,
 } from '@wispace/bot-common/messages';
 import {
   buildChatMissingMidMessage,
@@ -80,6 +82,12 @@ export type WebhookAction =
       type: 'send_welcome';
       psid: string;
       userId?: number;
+    }
+  | {
+      type: 'consent_command';
+      psid: string;
+      userId: number;
+      command: ConsentCommand;
     }
   | { type: 'ignore' };
 
@@ -264,6 +272,19 @@ function routeTextMessage(
         userId: ctx.userId,
         text: buildSelfIntroMessage(),
         messageType: 'SELF_INTRO',
+      },
+    ];
+  }
+
+  // Consent commands (#596): deterministic, never through the LLM or quota.
+  const consentCommand = parseConsentCommand(message.text!.trim());
+  if (consentCommand) {
+    return [
+      {
+        type: 'consent_command',
+        psid,
+        userId: ctx.userId,
+        command: consentCommand,
       },
     ];
   }

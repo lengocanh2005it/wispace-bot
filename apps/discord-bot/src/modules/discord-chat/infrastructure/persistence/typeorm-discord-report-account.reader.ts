@@ -20,21 +20,37 @@ export class TypeormDiscordReportAccountReader implements DiscordReportAccountPa
   async findActiveAccountsPage(
     cursor: string | undefined,
     limit: number,
+    options?: { includeUnsubscribed?: boolean },
   ): Promise<ReportAccountRow[]> {
-    return this.repo
+    const qb = this.repo
       .createQueryBuilder('link')
+      .leftJoin(
+        'user_notification_preferences',
+        'pref',
+        'pref.user_id = link.user_id',
+      )
       .select([
         'link.id',
         'link.externalUserId',
         'link.userId',
         'link.platform',
         'link.linkState',
+        'link.optoutNoticeSentAt',
       ])
       .where('link.platform = :platform', { platform: PLATFORM })
       .andWhere("COALESCE(link.link_state, 'active') = 'active'")
       .andWhere(cursor !== undefined ? 'link.id > :cursor' : 'TRUE', { cursor })
       .orderBy('link.id', 'ASC')
-      .take(limit)
-      .getMany();
+      .take(limit);
+    if (options?.includeUnsubscribed !== true) {
+      // Reports are opt-in (#596): NULL consent row = not opted in.
+      // forceSend (ops override) skips this gate.
+      qb.andWhere('COALESCE(pref.report_enabled, false) = true');
+    }
+    return qb.getMany();
+  }
+
+  async markOptOutNoticeSent(id: string): Promise<void> {
+    await this.repo.update({ id }, { optoutNoticeSentAt: new Date() });
   }
 }

@@ -20,6 +20,9 @@ function buildRepositoryPort(): DiscordAccountLinkRepositoryPort {
     upsertLink: jest.fn().mockResolvedValue({ relinked: false }),
     findUserIdByDiscordId: jest.fn(),
     findDiscordIdByUserId: jest.fn(),
+    claimConsentPrompt: jest.fn().mockResolvedValue(false),
+    releaseConsentPrompt: jest.fn().mockResolvedValue(undefined),
+    suppressOptOutNotice: jest.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -150,6 +153,55 @@ describe('DiscordAccountLinkService', () => {
       await expect(
         service.findUserIdByDiscordId('discord-user-unknown'),
       ).resolves.toBeUndefined();
+    });
+  });
+
+  describe('sendConsentExplainerIfDue (#596 AC5)', () => {
+    it('sends the explainer exactly once — claim win sends, claim loss skips', async () => {
+      const repository = buildRepositoryPort();
+      (repository.claimConsentPrompt as jest.Mock)
+        .mockResolvedValueOnce(true)
+        .mockResolvedValueOnce(false);
+      const service = new DiscordAccountLinkService(
+        buildConfigService(),
+        repository,
+      );
+      const send = jest.fn().mockResolvedValue(undefined);
+
+      const first = await service.sendConsentExplainerIfDue(
+        'discord-user-1',
+        send,
+      );
+      const second = await service.sendConsentExplainerIfDue(
+        'discord-user-1',
+        send,
+      );
+
+      expect(first).toBe(true);
+      expect(second).toBe(false);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(send).toHaveBeenCalledWith(expect.stringContaining('báo cáo'));
+      expect(repository.releaseConsentPrompt).not.toHaveBeenCalled();
+    });
+
+    it('releases the claim when the send fails so a later path can retry', async () => {
+      const repository = buildRepositoryPort();
+      (repository.claimConsentPrompt as jest.Mock).mockResolvedValue(true);
+      const service = new DiscordAccountLinkService(
+        buildConfigService(),
+        repository,
+      );
+      const send = jest.fn().mockRejectedValue(new Error('DM failed'));
+
+      const result = await service.sendConsentExplainerIfDue(
+        'discord-user-1',
+        send,
+      );
+
+      expect(result).toBe(false);
+      expect(repository.releaseConsentPrompt).toHaveBeenCalledWith(
+        'discord-user-1',
+      );
     });
   });
 });

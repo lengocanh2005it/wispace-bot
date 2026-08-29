@@ -35,6 +35,7 @@ function buildService(overrides: {
 }) {
   const linkRepo = {
     createQueryBuilder: jest.fn(() => ({
+      leftJoin: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
@@ -46,6 +47,7 @@ function buildService(overrides: {
           Promise.resolve(overrides.pages?.shift() ?? [link]),
         ),
     })),
+    update: jest.fn().mockResolvedValue(undefined),
   } as unknown as Repository<ZaloAccountLinkEntity>;
 
   const listUserIdsWithSentReportToday =
@@ -151,9 +153,81 @@ describe('ZaloReportCronService', () => {
 
     expect(orchestrationClaimAndSend).toHaveBeenCalled();
   });
+  it('filters to report-opted-in learners (#596 AC2)', async () => {
+    const andWhere = jest.fn().mockReturnThis();
+    const leftJoin = jest.fn().mockReturnThis();
+    const linkRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue({
+        leftJoin,
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere,
+        orderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      }),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+    const claimRepo = {
+      listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
+    };
+
+    const service = new ZaloReportCronService(
+      linkRepo as unknown as never,
+      claimRepo as unknown as never,
+      { claimAndSend: jest.fn() } as unknown as never,
+      { generateReport: jest.fn() } as unknown as never,
+      {} as unknown as never,
+      { get: jest.fn() } as unknown as never,
+    );
+    await service.sendDailyReports();
+
+    expect(leftJoin).toHaveBeenCalledWith(
+      'user_notification_preferences',
+      'pref',
+      'pref.user_id = link.user_id',
+    );
+    expect(andWhere).toHaveBeenCalledWith(
+      'COALESCE(pref.report_enabled, false) = true',
+    );
+  });
+
+  it('does not apply the report consent gate for an operator forceSend (#596)', async () => {
+    const andWhere = jest.fn().mockReturnThis();
+    const linkRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue({
+        leftJoin: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere,
+        orderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+      }),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+    const claimRepo = {
+      listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
+    };
+
+    const service = new ZaloReportCronService(
+      linkRepo as unknown as never,
+      claimRepo as unknown as never,
+      { claimAndSend: jest.fn() } as unknown as never,
+      { generateReport: jest.fn() } as unknown as never,
+      {} as unknown as never,
+      { get: jest.fn() } as unknown as never,
+    );
+    await service.sendDailyReports({ forceSend: true });
+
+    expect(andWhere).not.toHaveBeenCalledWith(
+      'COALESCE(pref.report_enabled, false) = true',
+    );
+  });
   it('skips sending report when canonical platform for user is not zalo (e.g. preferred discord)', async () => {
     const linkRepo = {
       createQueryBuilder: jest.fn().mockReturnValue({
+        leftJoin: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
@@ -165,6 +239,7 @@ describe('ZaloReportCronService', () => {
             { id: '1', externalUserId: 'zalo-1', userId: 42, platform: 'zalo' },
           ]),
       }),
+      update: jest.fn().mockResolvedValue(undefined),
     };
     const canonicalService = {
       isCanonicalForUser: jest.fn().mockResolvedValue({
@@ -219,6 +294,7 @@ describe('ZaloReportCronService', () => {
     ];
     const linkRepo = {
       createQueryBuilder: jest.fn().mockReturnValue({
+        leftJoin: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
@@ -307,6 +383,7 @@ describe('ZaloReportCronService', () => {
     ];
     const linkRepo = {
       createQueryBuilder: jest.fn().mockReturnValue({
+        leftJoin: jest.fn().mockReturnThis(),
         select: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
         andWhere: jest.fn().mockReturnThis(),
@@ -317,6 +394,7 @@ describe('ZaloReportCronService', () => {
           .mockResolvedValueOnce(links)
           .mockResolvedValueOnce([]),
       }),
+      update: jest.fn().mockResolvedValue(undefined),
     };
     const claimRepo = {
       listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),

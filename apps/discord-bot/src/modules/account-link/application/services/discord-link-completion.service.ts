@@ -9,6 +9,7 @@ import {
 import { DiscordAccountLinkService } from './discord-account-link.service';
 import { DiscordGuildMembershipService } from './discord-guild-membership.service';
 import { DiscordRelinkNotifier } from './discord-relink-notifier.service';
+import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
 import { DiscordWelcomeService } from './discord-welcome.service';
 import {
   CLARIFICATION_STATE_STORE,
@@ -40,6 +41,7 @@ export class DiscordLinkCompletionService {
     private readonly verifyRecordService: DiscordLinkVerifyRecordRepositoryPort,
     private readonly guildMembershipService: DiscordGuildMembershipService,
     private readonly relinkNotifier: DiscordRelinkNotifier,
+    private readonly outboundService: DiscordOutboundService,
     private readonly welcomeService: DiscordWelcomeService,
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,
@@ -133,6 +135,13 @@ export class DiscordLinkCompletionService {
         discordUser.id,
         discordUser.username,
       );
+      // One-time consent explainer after the welcome (#596); claimed
+      // atomically, released if the DM send fails so guildMemberAdd retries.
+      await this.accountLinkService
+        .sendConsentExplainerIfDue(discordUser.id, (text) =>
+          this.outboundService.sendText(discordUser.id, text),
+        )
+        .catch(() => undefined);
       return 'success';
     }
 

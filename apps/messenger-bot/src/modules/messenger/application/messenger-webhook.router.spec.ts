@@ -112,6 +112,36 @@ describe('routeWebhookEvent', () => {
   });
 
   describe('text messages', () => {
+    it('routes consent commands to consent_command before chat (#596)', () => {
+      const actions = routeWebhookEvent(textEvent('Tắt báo cáo', 'mid-1'), {
+        ...defaultCtx,
+        userId: 42,
+      });
+      expect(actions).toEqual([
+        {
+          type: 'consent_command',
+          psid: 'psid-123',
+          userId: 42,
+          command: { feature: 'report', action: 'disable' },
+        },
+      ]);
+    });
+
+    it('routes reminder enable commands (#596)', () => {
+      const actions = routeWebhookEvent(textEvent('bật nhắc học', 'mid-1'), {
+        ...defaultCtx,
+        userId: 42,
+      });
+      expect(actions).toEqual([
+        {
+          type: 'consent_command',
+          psid: 'psid-123',
+          userId: 42,
+          command: { feature: 'reminder', action: 'enable' },
+        },
+      ]);
+    });
+
     it('returns enqueue_chat when userId exists and mid is present', () => {
       const actions = routeWebhookEvent(
         textEvent('xem lich hoc cua minh', 'mid-1'),

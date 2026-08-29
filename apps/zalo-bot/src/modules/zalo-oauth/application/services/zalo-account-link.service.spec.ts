@@ -100,4 +100,58 @@ describe('ZaloAccountLinkService', () => {
     const userId = await service.findUserIdByZaloId('zalo-user-1');
     expect(userId).toBe(42);
   });
+
+  describe('sendConsentExplainerIfDue (#596)', () => {
+    it('sends the explainer exactly once when the claim wins', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce([{ id: '1' }])
+        .mockResolvedValueOnce([]);
+      const releaseQb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue(undefined),
+      };
+      const repo = {
+        query,
+        createQueryBuilder: jest.fn().mockReturnValue(releaseQb),
+      } as unknown as Repository<ZaloAccountLinkEntity>;
+      const service = new ZaloAccountLinkService(buildConfig(), repo);
+      const send = jest.fn().mockResolvedValue(undefined);
+
+      const first = await service.sendConsentExplainerIfDue('zalo-1', send);
+      // Second reconnect: claim loses → no send.
+      const second = await service.sendConsentExplainerIfDue('zalo-1', send);
+
+      expect(first).toBe(true);
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(second).toBe(false);
+      expect(send).toHaveBeenCalledWith(expect.stringContaining('báo cáo'));
+    });
+
+    it('releases the claim when the send fails so a later path can retry', async () => {
+      const query = jest.fn().mockResolvedValue([{ id: '1' }]);
+      const execute = jest.fn().mockResolvedValue(undefined);
+      const qb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute,
+      };
+      const repo = {
+        query,
+        createQueryBuilder: jest.fn().mockReturnValue(qb),
+      } as unknown as Repository<ZaloAccountLinkEntity>;
+      const service = new ZaloAccountLinkService(buildConfig(), repo);
+      const send = jest.fn().mockRejectedValue(new Error('Zalo down'));
+
+      const result = await service.sendConsentExplainerIfDue('zalo-1', send);
+
+      expect(result).toBe(false);
+      expect(execute).toHaveBeenCalled();
+    });
+  });
 });

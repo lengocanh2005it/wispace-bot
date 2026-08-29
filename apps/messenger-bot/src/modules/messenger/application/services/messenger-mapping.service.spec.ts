@@ -1,7 +1,13 @@
 import { MessengerMappingService } from './messenger-mapping.service';
 
 describe('MessengerMappingService', () => {
+  const makePrefs = () => ({
+    setReportEnabled: jest.fn().mockResolvedValue(undefined),
+    setReminderEnabled: jest.fn().mockResolvedValue(undefined),
+  });
+
   it('detects relink when user_id changes for same PSID (L3)', async () => {
+    const notificationPreferences = makePrefs();
     const repository = {
       findActiveMappingByPsid: jest.fn(() =>
         Promise.resolve({ userId: 100, psid: 'psid-1' }),
@@ -35,6 +41,7 @@ describe('MessengerMappingService', () => {
       studyReminderSyncService as never,
       { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
       { clear: jest.fn().mockResolvedValue(true) } as never,
+      notificationPreferences as never,
     );
 
     const result = await service.relinkPsidToUserId({
@@ -53,6 +60,91 @@ describe('MessengerMappingService', () => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       getSessions: expect.any(Function),
     });
+    // Relink without cadence/topic → explainer, no consent write (#596).
+    expect(notificationPreferences.setReportEnabled).not.toHaveBeenCalled();
+  });
+
+  it('write-syncs report_enabled on a link that carries cadence+topic (#596)', async () => {
+    const notificationPreferences = makePrefs();
+    const repository = {
+      findActiveMappingByPsid: jest.fn(() => Promise.resolve(null)),
+      findActiveMappingByUserId: jest.fn(() => Promise.resolve(null)),
+      upsertPsidUserLink: jest.fn(() =>
+        Promise.resolve({
+          id: 1,
+          userId: 200,
+          psid: 'psid-1',
+          notificationMessagesToken: 'token',
+          status: 'ACTIVE',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+      ),
+    };
+    const outbound = { sendTextViaPsid: jest.fn(() => Promise.resolve()) };
+    const service = new MessengerMappingService(
+      repository as never,
+      outbound as never,
+      { syncUpcomingSessions: jest.fn().mockResolvedValue({}) } as never,
+      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
+      notificationPreferences as never,
+    );
+
+    await service.linkFromContext('psid-1', {
+      ref: 'token',
+      userId: 200,
+      topic: 'IELTS',
+      cadence: 'WEEKLY',
+    });
+
+    expect(notificationPreferences.setReportEnabled).toHaveBeenCalledWith(
+      200,
+      true,
+    );
+    // Already subscribed → no explainer prompt.
+    expect(outbound.sendTextViaPsid).not.toHaveBeenCalledWith(
+      expect.objectContaining({ messageType: 'CONSENT_EXPLAINER' }),
+    );
+  });
+
+  it('sends the consent explainer when linked without a report subscription (#596)', async () => {
+    const notificationPreferences = makePrefs();
+    const repository = {
+      findActiveMappingByPsid: jest.fn(() => Promise.resolve(null)),
+      findActiveMappingByUserId: jest.fn(() => Promise.resolve(null)),
+      upsertPsidUserLink: jest.fn(() =>
+        Promise.resolve({
+          id: 1,
+          userId: 200,
+          psid: 'psid-1',
+          notificationMessagesToken: 'token',
+          status: 'ACTIVE',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+      ),
+    };
+    const outbound = { sendTextViaPsid: jest.fn(() => Promise.resolve()) };
+    const service = new MessengerMappingService(
+      repository as never,
+      outbound as never,
+      { syncUpcomingSessions: jest.fn().mockResolvedValue({}) } as never,
+      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
+      notificationPreferences as never,
+    );
+
+    await service.relinkPsidToUserId({
+      psid: 'psid-1',
+      userId: 200,
+      notifyUser: true,
+    });
+
+    expect(outbound.sendTextViaPsid).toHaveBeenCalledWith(
+      expect.objectContaining({ messageType: 'CONSENT_EXPLAINER' }),
+    );
+    expect(notificationPreferences.setReportEnabled).not.toHaveBeenCalled();
   });
 
   it('blocks relink for webhook flow unless allowRelink is true (L4)', async () => {
@@ -159,6 +251,7 @@ describe('MessengerMappingService', () => {
       { syncUpcomingSessions: jest.fn().mockResolvedValue({}) } as never,
       { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
       clarificationStateStore as never,
+      makePrefs() as never,
     );
 
     await service.linkFromContext('psid-1', {

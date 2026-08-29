@@ -3,7 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
-import { maskExternalId } from '@wispace/bot-common/masking';
+import { maskExternalId, errorMessage } from '@wispace/bot-common/masking';
+import { buildConsentExplainerMessage } from '@wispace/bot-common/messages';
 import { readBoundedJson } from '@wispace/bot-common/utils';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 
@@ -270,5 +271,65 @@ export class ZaloAccountLinkService {
           mappingVersion: `${row.id}:${row.linkedAt.toISOString()}:${row.mappingGeneration ?? '1'}`,
         }
       : undefined;
+  }
+
+  /**
+   * Post-link consent explainer, exactly once per link (#596). The claim is
+   * atomic; a failed send releases it so a later reconnect can retry.
+   */
+  async sendConsentExplainerIfDue(
+    zaloUserId: string,
+    send: (text: string) => Promise<void>,
+  ): Promise<boolean> {
+    let claimed = false;
+    try {
+      claimed = await this.claimConsentPrompt(zaloUserId);
+      if (!claimed) return false;
+      await send(buildConsentExplainerMessage());
+      return true;
+    } catch (error) {
+      if (claimed) {
+        await this.releaseConsentPrompt(zaloUserId).catch(() => undefined);
+      }
+      this.logger.warn(
+        `Consent explainer send failed zaloUserId=${maskExternalId(
+          zaloUserId,
+        )}: ${errorMessage(error)}`,
+      );
+      return false;
+    }
+  }
+
+  private async claimConsentPrompt(zaloUserId: string): Promise<boolean> {
+    const rows = await this.repo.query<Array<{ id: string }>>(
+      `UPDATE zalo_account_links
+       SET optin_prompt_sent_at = now(), updated_at = now()
+       WHERE platform = $1 AND external_user_id = $2
+         AND optin_prompt_sent_at IS NULL
+       RETURNING id`,
+      [PLATFORM, zaloUserId],
+    );
+    return rows.length > 0;
+  }
+
+  private async releaseConsentPrompt(zaloUserId: string): Promise<void> {
+    await this.repo
+      .createQueryBuilder()
+      .update(ZaloAccountLinkEntity)
+      .set({ optinPromptSentAt: null as never })
+      .where('platform = :platform', { platform: PLATFORM })
+      .andWhere('externalUserId = :zaloUserId', { zaloUserId })
+      .execute();
+  }
+
+  /** Explicit report opt-in via command knows the toggle — no footer (#596). */
+  async suppressOptOutNotice(zaloUserId: string): Promise<void> {
+    await this.repo
+      .createQueryBuilder()
+      .update(ZaloAccountLinkEntity)
+      .set({ optoutNoticeSentAt: new Date() })
+      .where('platform = :platform', { platform: PLATFORM })
+      .andWhere('externalUserId = :zaloUserId', { zaloUserId })
+      .execute();
   }
 }
