@@ -46,6 +46,7 @@ import { DiscordSharedModule } from './discord-shared.module';
 import { BotCommonModule } from '@wispace/bot-common/guard';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { WispaceModule } from '../wispace/wispace.module';
+import { DatabaseModule } from '../../infrastructure/database/database.module';
 
 const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
 
@@ -61,6 +62,7 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
     DiscordSharedModule,
     BotCommonModule,
     WispaceModule,
+    DatabaseModule,
     ChatMeteringModule.forPlatform('discord', {
       requireEnv: true,
       lenientEnabledCheck: true,

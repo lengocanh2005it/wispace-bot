@@ -365,4 +365,93 @@ describe('DiscordReportCronService', () => {
     expect(orchestrationService.claimAndSend).not.toHaveBeenCalled();
     expect(result.skipped).toBe(1);
   });
+  it('filters dormant links and increments suppression metric when gate is enabled', async () => {
+    const links = [
+      { id: '1', externalUserId: 'discord-1', userId: 10 },
+      { id: '2', externalUserId: 'discord-2', userId: 20 },
+    ];
+    const accountReader = {
+      findActiveAccountsPage: jest
+        .fn()
+        .mockResolvedValueOnce(links)
+        .mockResolvedValueOnce([]),
+    };
+    const orchestrationService = {
+      claimAndSend: jest.fn().mockResolvedValue({ ...ZERO_RESULT, sent: 1 }),
+    };
+    const webActivityService = {
+      gateEnabled: true,
+      filterDormant: jest.fn().mockResolvedValue([20]),
+    };
+    const metrics = {
+      incScheduledSendSuppressed: jest.fn(),
+    };
+    const service = new DiscordReportCronService(
+      { get: jest.fn().mockReturnValue(undefined) } as never,
+      { shouldRunScheduledReportCron: jest.fn() } as never,
+      { tryAcquireDailyLock: jest.fn(), releaseDailyLock: jest.fn() } as never,
+      {
+        shouldSendReportToday: jest
+          .fn()
+          .mockResolvedValue({ shouldSend: true }),
+      } as never,
+      orchestrationService as never,
+      accountReader as never,
+      undefined,
+      webActivityService as never,
+      metrics as never,
+    );
+
+    const result = await service.sendScheduledReports();
+
+    expect(webActivityService.filterDormant).toHaveBeenCalledWith([10, 20]);
+    expect(orchestrationService.claimAndSend).toHaveBeenCalledTimes(1);
+    expect(orchestrationService.claimAndSend).toHaveBeenCalledWith(
+      expect.objectContaining({ externalUserId: 'discord-1' }),
+      expect.anything(),
+    );
+    expect(metrics.incScheduledSendSuppressed).toHaveBeenCalledWith('report');
+    expect(metrics.incScheduledSendSuppressed).toHaveBeenCalledTimes(1);
+    expect(result.skipped).toBe(1);
+  });
+
+  it('does not call filterDormant when gate is disabled', async () => {
+    const links = [{ id: '1', externalUserId: 'discord-1', userId: 10 }];
+    const accountReader = {
+      findActiveAccountsPage: jest
+        .fn()
+        .mockResolvedValueOnce(links)
+        .mockResolvedValueOnce([]),
+    };
+    const orchestrationService = {
+      claimAndSend: jest.fn().mockResolvedValue({ ...ZERO_RESULT, sent: 1 }),
+    };
+    const webActivityService = {
+      gateEnabled: false,
+      filterDormant: jest.fn(),
+    };
+    const metrics = {
+      incScheduledSendSuppressed: jest.fn(),
+    };
+    const service = new DiscordReportCronService(
+      { get: jest.fn().mockReturnValue(undefined) } as never,
+      { shouldRunScheduledReportCron: jest.fn() } as never,
+      { tryAcquireDailyLock: jest.fn(), releaseDailyLock: jest.fn() } as never,
+      {
+        shouldSendReportToday: jest
+          .fn()
+          .mockResolvedValue({ shouldSend: true }),
+      } as never,
+      orchestrationService as never,
+      accountReader as never,
+      undefined,
+      webActivityService as never,
+      metrics as never,
+    );
+
+    await service.sendScheduledReports();
+
+    expect(webActivityService.filterDormant).not.toHaveBeenCalled();
+    expect(metrics.incScheduledSendSuppressed).not.toHaveBeenCalled();
+  });
 });
