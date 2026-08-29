@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { Counter } from 'prom-client';
@@ -13,6 +13,10 @@ import {
   CLARIFICATION_STATE_STORE,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
+import { PlatformLinkStateService } from '@wispace/database';
+import { WispaceLinkStatusClient } from '@wispace/wispace-client';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 const DEFAULT_RECONCILE_AGE_MS = 120_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 10 * 60_000;
@@ -42,18 +46,81 @@ export class ZaloLinkReconcileCronService {
     private readonly pgLock: PgAdvisoryLockService,
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,
+    @Optional() private readonly linkState?: PlatformLinkStateService,
+    @Optional() private readonly linkStatusClient?: WispaceLinkStatusClient,
+    @Optional()
+    @Inject(REDIS_CLIENT)
+    private readonly redisClient?: RedisClientPort,
+    @Optional() private readonly metrics?: BotMetricsService,
   ) {}
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async handleReconcile(): Promise<void> {
     const result = await this.pgLock.withLock(ZALO_LINK_RECONCILE_LOCK, () =>
-      this.runReconcileBatch(),
+      this.runReconcileWithStatus(),
     );
 
     if (result === null) {
       this.logger.debug(
         'zalo-link-reconcile skipped — lock held by another pod',
       );
+    }
+  }
+
+  private async runReconcileWithStatus(): Promise<void> {
+    await this.runLinkStatusReconcile();
+    await this.runReconcileBatch();
+  }
+
+  private async runLinkStatusReconcile(): Promise<void> {
+    if (!this.linkState || !this.linkStatusClient?.enabled) return;
+    const totals = await this.linkState.reconcile(
+      'zalo',
+      this.linkStatusClient,
+      {
+        onRevoked: (externalUserId) => this.clearRevokedState(externalUserId),
+        onUnknown: (externalUserId) =>
+          this.clearRevokedState(externalUserId, false, false),
+      },
+    );
+    this.metrics?.incPlatformLinkTransition('zalo', 'revoked', totals.revoked);
+    this.metrics?.incPlatformLinkTransition('zalo', 'unknown', totals.unknown);
+    this.metrics?.incPlatformLinkTransition(
+      'zalo',
+      'recovered',
+      totals.recovered,
+    );
+    this.metrics?.incPlatformLinkTransition(
+      'zalo',
+      'stale_writer',
+      totals.staleWriter,
+    );
+  }
+
+  private async clearRevokedState(
+    externalUserId: string,
+    invalidateVerifyIntent = true,
+    clearQueuedWork = true,
+  ): Promise<void> {
+    if (invalidateVerifyIntent) {
+      await this.verifyRecordService
+        .consumeRecord(externalUserId)
+        .catch(() => undefined);
+    }
+    await this.clarificationStateStore
+      .clear(`zalo:${externalUserId}`)
+      .catch(() => undefined);
+    try {
+      await this.redisClient
+        ?.getNativeClient()
+        ?.del(
+          `chat-history:zalo:${externalUserId}`,
+          ...(clearQueuedWork
+            ? [`chat:queue:zalo:buffer:${externalUserId}`]
+            : []),
+        );
+    } catch {
+      // Cache eviction is best effort; the DB state remains authoritative.
     }
   }
 
@@ -118,9 +185,37 @@ export class ZaloLinkReconcileCronService {
           continue;
         }
 
+        const existingState = await this.linkState?.getLink(
+          'zalo',
+          record.zaloUserId,
+        );
+        if (
+          existingState &&
+          (existingState.state === 'confirmed-revoked' ||
+            (existingState.state !== 'active' &&
+              (existingState.state === 'locally-unlinked' &&
+              existingState.revokedAt &&
+              record.verifiedAt <= existingState.revokedAt
+                ? true
+                : !(await this.isFreshRelink(
+                    record.zaloUserId,
+                    record.userId,
+                  )))))
+        ) {
+          await this.dropRecord(
+            record.zaloUserId,
+            `mapping state ${existingState.state} blocks stale verify intent`,
+          );
+          dropped += 1;
+          continue;
+        }
+
         await this.accountLinkService.upsertLink(
           record.userId,
           record.zaloUserId,
+          ...(existingState?.generation
+            ? [{ expectedGeneration: existingState.generation }]
+            : []),
         );
         await this.clearClarificationState(record.zaloUserId);
         await this.verifyRecordService.consumeRecord(record.zaloUserId);
@@ -151,6 +246,15 @@ export class ZaloLinkReconcileCronService {
     );
     await this.verifyRecordService.consumeRecord(zaloUserId);
     reconcileRecordsTotal.inc({ outcome: 'dropped' });
+  }
+
+  private async isFreshRelink(
+    zaloUserId: string,
+    userId: number,
+  ): Promise<boolean> {
+    if (!this.linkStatusClient?.enabled) return false;
+    const status = await this.linkStatusClient.getStatus(zaloUserId);
+    return status.kind === 'active' && status.userId === userId;
   }
 
   private readPositiveInt(key: string, fallback: number): number {

@@ -122,6 +122,11 @@ export class PlatformChatHistoryService
     return Promise.resolve();
   }
 
+  /** Clears retained turns when ownership is revoked or cannot be verified. */
+  clear(externalUserId: string): Promise<void> {
+    return this.resolveStore().clear(externalUserId);
+  }
+
   private resolveStore(): ChatHistoryStorePort {
     if (this.storeType !== 'redis') {
       return this.memory;

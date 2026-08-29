@@ -218,9 +218,18 @@ export interface PlatformAgentToolsOptions {
    * current mapping before staging to prevent identity-hijack from a
    * stale queued snapshot.
    */
-  freshMappingProvider?: (
-    externalUserId: string,
-  ) => Promise<number | undefined>;
+  freshMappingProvider?: (externalUserId: string) => Promise<
+    | number
+    | undefined
+    | {
+        state:
+          | 'active'
+          | 'temporarily-unknown'
+          | 'confirmed-revoked'
+          | 'locally-unlinked';
+        userId?: number;
+      }
+  >;
   reschedule: {
     /** Discord validates newLocalDate/newTime; Zalo does not. */
     validateDateAndTime: boolean;
@@ -263,9 +272,18 @@ export interface PlatformChatQueueOptions {
    * Absent = no revalidation (legacy behavior, safe for platforms that manage
    * their own check upstream).
    */
-  freshMappingProvider?: (
-    externalUserId: string,
-  ) => Promise<number | undefined>;
+  freshMappingProvider?: (externalUserId: string) => Promise<
+    | number
+    | undefined
+    | {
+        state:
+          | 'active'
+          | 'temporarily-unknown'
+          | 'confirmed-revoked'
+          | 'locally-unlinked';
+        userId?: number;
+      }
+  >;
   /** Clears pending clarification when unlink/relink changes identity. */
   clarificationStateClearer?: (externalUserId: string) => Promise<void>;
   /** Re-opens a clarification only when its known outbound attempt failed. */

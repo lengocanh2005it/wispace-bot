@@ -1,5 +1,7 @@
 import type { WispaceApiClientConfig } from '../clients/wispace-client-types';
 import type { PrecreateExerciseClientConfig } from '../types/precreate-exercise.types';
+import type { WispaceLinkStatusClientConfig } from '../types/link-status.types';
+import type { WispaceIdHeader } from '../utils/wispace-headers';
 import {
   validateUpstreamUrl,
   buildUpstreamUrlPolicy,
@@ -40,6 +42,53 @@ export class WispaceConfigService {
       internalKey: config.internalKey,
       requestTimeoutMs: this.readRequiredPositiveInt(
         'WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS',
+      ),
+    };
+  }
+
+  buildLinkStatusClientConfig(
+    header: WispaceIdHeader,
+  ): WispaceLinkStatusClientConfig {
+    const url = this.getConfig('WISPACE_API_LINK_STATUS_URL')?.trim();
+    const production =
+      this.getConfig('NODE_ENV')?.trim() === 'production' ||
+      ['true', '1', 'yes'].includes(
+        this.getConfig('ENFORCE_PROD_CHAT_QUOTA')?.trim().toLowerCase() ?? '',
+      );
+    if (!url && production) {
+      throw new Error(
+        'WISPACE_API_LINK_STATUS_URL must be set in production — link ownership reconciliation is required',
+      );
+    }
+    const disabled =
+      this.getConfig('WISPACE_LINK_STATUS_ENABLED')?.trim().toLowerCase() ===
+      'false';
+    if (disabled && production) {
+      throw new Error(
+        'WISPACE_LINK_STATUS_ENABLED=false is not allowed in production',
+      );
+    }
+    if (!url) {
+      return { header, enabled: false };
+    }
+
+    validateUpstreamUrl(
+      url,
+      buildUpstreamUrlPolicy('WISPACE_API_LINK_STATUS_URL', {
+        get: this.getConfig,
+      }),
+    );
+
+    return {
+      url,
+      internalKey: this.getInternalKey(),
+      header,
+      enabled: !disabled,
+      maxRetries: this.readPositiveInt('WISPACE_API_MAX_RETRIES', 2),
+      baseDelayMs: this.readPositiveInt('WISPACE_API_RETRY_BASE_DELAY_MS', 500),
+      requestTimeoutMs: this.readPositiveInt(
+        'WISPACE_API_LINK_STATUS_TIMEOUT_MS',
+        5_000,
       ),
     };
   }

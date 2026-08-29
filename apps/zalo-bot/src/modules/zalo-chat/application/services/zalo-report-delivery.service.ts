@@ -8,6 +8,7 @@ import {
   isZaloRetryableError,
 } from './zalo-outbound.service';
 import { WispaceApiError } from '@wispace/wispace-client';
+import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 
 /**
  * Zalo implementation of `ReportDeliveryPort` — wraps `sendTextForRetry`
@@ -17,7 +18,10 @@ import { WispaceApiError } from '@wispace/wispace-client';
 export class ZaloReportDeliveryService implements ReportDeliveryPort {
   private readonly logger = new Logger(ZaloReportDeliveryService.name);
 
-  constructor(private readonly outbound: ZaloOutboundService) {}
+  constructor(
+    private readonly outbound: ZaloOutboundService,
+    private readonly accountLinkService: ZaloAccountLinkService,
+  ) {}
 
   async sendReport(input: {
     mapping: { externalUserId: string; userId?: number };
@@ -28,6 +32,19 @@ export class ZaloReportDeliveryService implements ReportDeliveryPort {
     const { mapping, reportText, deliveryKey } = input;
 
     try {
+      const current = await this.accountLinkService.findCurrentIdentity(
+        mapping.externalUserId,
+      );
+      if (
+        !current ||
+        (mapping.userId !== undefined && current.userId !== mapping.userId)
+      ) {
+        this.logger.warn(
+          `Skip Zalo report for inactive mapping ${maskExternalId(mapping.externalUserId)}`,
+        );
+        return { ok: false, reason: 'NOT_LINKED' };
+      }
+
       const outcome = await this.outbound.sendTextForRetry(
         mapping.externalUserId,
         reportText,

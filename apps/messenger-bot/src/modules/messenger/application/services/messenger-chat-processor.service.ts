@@ -71,6 +71,7 @@ export interface ChatBatchInput {
 export class MessengerChatProcessorService {
   private readonly logger = new Logger(MessengerChatProcessorService.name);
   private readonly pipeline: ChatPipeline;
+  private queueClearer?: (psid: string) => Promise<void>;
   private readonly retryEnabled: boolean;
   private readonly retryDelayMs: number;
   private readonly fallbackSentThisCycle = new Set<string>();
@@ -189,6 +190,11 @@ export class MessengerChatProcessorService {
     );
   }
 
+  /** Wired by the enqueue service so privacy erasure clears memory queues too. */
+  setQueueClearer(clearer: (psid: string) => Promise<void>): void {
+    this.queueClearer = clearer;
+  }
+
   /** H7: worker/cron entry for shared queue flush. */
   async flushReady(psid: string): Promise<void> {
     if (this.isDistributedMode()) {
@@ -245,9 +251,15 @@ export class MessengerChatProcessorService {
       const freshMapping =
         await this.mappingRepository.findActiveMappingByPsid(psid);
       if (!freshMapping) {
+        const state =
+          await this.mappingRepository.findMappingStateByPsid?.(psid);
+        if (state === 'temporarily-unknown') {
+          await this.deferDistributedFlush(psid, snapshot.leaseToken);
+          return;
+        }
         await this.clearClarificationState(psid);
         this.logger.warn(
-          `Dropping queued messages for psid=${maskExternalId(psid)}: no active mapping (user may have unlinked)`,
+          `Dropping queued messages for psid=${maskExternalId(psid)}: no active mapping (state=${state ?? 'locally-unlinked'})`,
         );
         return;
       }
@@ -507,16 +519,22 @@ export class MessengerChatProcessorService {
       let resultMessage: string;
       switch (pendingAction) {
         case 'unlink': {
-          const result = await this.privacyService!.unlink('messenger', psid);
-          await this.clearClarificationState(psid);
+          const result = await this.privacyService!.unlink('messenger', psid, {
+            clearHistory: (id) => this.historyService.clear(id),
+            clearQueuedWork: (id) => this.clearQueuedWork(id),
+            clearClarification: (id) => this.clearClarificationState(id),
+          });
           resultMessage = result.deleted
             ? 'Đã ngắt kết nối tài khoản thành công.'
             : 'Tài khoản chưa được liên kết.';
           break;
         }
         case 'delete': {
-          await this.privacyService!.delete('messenger', psid);
-          await this.clearClarificationState(psid);
+          await this.privacyService!.delete('messenger', psid, {
+            clearHistory: (id) => this.historyService.clear(id),
+            clearQueuedWork: (id) => this.clearQueuedWork(id),
+            clearClarification: (id) => this.clearClarificationState(id),
+          });
           resultMessage = 'Đã xóa toàn bộ dữ liệu thành công.';
           break;
         }
@@ -555,6 +573,14 @@ export class MessengerChatProcessorService {
       text: 'Reply "Có" để xác nhận hoặc "Không" để hủy.',
       messageType: 'PRIVACY_REMIND',
     });
+  }
+
+  private clearQueuedWork(psid: string): Promise<void> {
+    if (this.queueClearer) return this.queueClearer(psid);
+    return (
+      this.chatQueueStore?.clearChatBuffer?.(psid).then(() => undefined) ??
+      Promise.resolve()
+    );
   }
 
   private async clearClarificationState(psid: string): Promise<void> {
@@ -630,6 +656,29 @@ export class MessengerChatProcessorService {
       );
     }
     return this.chatQueueStore;
+  }
+
+  private async deferDistributedFlush(
+    psid: string,
+    leaseToken: string,
+  ): Promise<void> {
+    if (!this.retryEnabled) return;
+    try {
+      const scheduled = await this.getChatQueueStore().scheduleRetryFlush(
+        psid,
+        this.retryDelayMs,
+        leaseToken,
+      );
+      if (scheduled) {
+        this.logger.log(
+          `Deferred queued Messenger batch for psid=${maskExternalId(psid)} after mapping status became temporarily unknown`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Messenger unknown mapping retry scheduling failed psid=${maskExternalId(psid)}: ${maskExternalIdInText(errorMessage(error), psid)}`,
+      );
+    }
   }
 
   private isDistributedMode(): boolean {

@@ -69,6 +69,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private chatIdentityStaleDetected: Counter;
   private chatRevalidationSkip: Counter;
   private chatFlushRecovery: Counter;
+  private platformLinkTransitions: Counter;
 
   constructor(config: MetricsConfig) {
     this.prefix = config.prefix;
@@ -259,6 +260,12 @@ export class BotMetricsService implements OnModuleDestroy {
     this.chatFlushRecovery = new Counter({
       name: `${this.prefix}_chat_flush_recovery_total`,
       help: 'Distributed chat flush recovery outcomes',
+      labelNames: ['platform', 'outcome'],
+      registers: [this.registry],
+    });
+    this.platformLinkTransitions = new Counter({
+      name: `${this.prefix}_platform_link_transition_total`,
+      help: 'Canonical platform-link ownership transitions',
       labelNames: ['platform', 'outcome'],
       registers: [this.registry],
     });
@@ -455,6 +462,14 @@ export class BotMetricsService implements OnModuleDestroy {
   /** Distributed chat flush recovery outcome (#406). */
   incChatFlushRecovery(platform: string, outcome: string): void {
     this.chatFlushRecovery.inc({ platform, outcome });
+  }
+
+  incPlatformLinkTransition(
+    platform: string,
+    outcome: string,
+    count = 1,
+  ): void {
+    this.platformLinkTransitions.inc({ platform, outcome }, count);
   }
 
   registerDbCircuitBreaker(breaker: {

@@ -3,6 +3,8 @@
  * (account-linking use case) depends only on this port; the TypeORM
  * implementation lives in `infrastructure/persistence/`.
  */
+import type { PlatformLinkState } from '@wispace/database';
+
 export interface DiscordAccountLinkRepositoryPort {
   /**
    * Commits the mapping atomically: removes other links of the WISPACE user,
@@ -12,8 +14,13 @@ export interface DiscordAccountLinkRepositoryPort {
   upsertLink(
     userId: number,
     discordUserId: string,
+    options?: { expectedGeneration?: string },
   ): Promise<{ relinked: boolean; previousUserId?: number }>;
   findUserIdByDiscordId(discordUserId: string): Promise<number | undefined>;
+  findMappingStateByDiscordId?(discordUserId: string): Promise<{
+    state: PlatformLinkState;
+    userId?: number;
+  }>;
   findLinkByDiscordId?(discordUserId: string): Promise<
     | {
         userId: number;

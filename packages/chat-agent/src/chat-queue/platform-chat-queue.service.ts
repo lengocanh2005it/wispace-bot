@@ -274,6 +274,14 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
     await this.queue?.destroy();
   }
 
+  async clear(externalUserId: string): Promise<void> {
+    if (this.distributed) {
+      await this.queueStore?.clearChatBuffer?.(externalUserId);
+      return;
+    }
+    this.queue?.clear(externalUserId);
+  }
+
   async enqueue(
     externalUserId: string,
     text: string,
@@ -324,55 +332,31 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
     // (user relinked) the fresh value replaces the stale snapshot.
     if (this.options.freshMappingProvider) {
       try {
-        const freshUserId =
-          await this.options.freshMappingProvider(externalUserId);
-        if (freshUserId === undefined) {
-          await this.clearClarificationState(externalUserId);
-          this.logger.warn(
-            `Dropping batch for ${maskExternalId(externalUserId)}: no active mapping (user may have unlinked)`,
-          );
-          // Batch was claimed — always complete it even when dropping.
-          await this.queueStore!.completeChatBuffer({
-            externalUserId,
-            debounceMs: this.debounceMs,
-            leaseToken: batch.leaseToken,
-          });
+        const freshMapping = this.normalizeFreshMapping(
+          await this.options.freshMappingProvider(externalUserId),
+        );
+        if (
+          (await this.applyFreshMapping(batch, freshMapping)) !== 'continue'
+        ) {
           return;
         }
-        if (batch.userId !== undefined && batch.userId !== freshUserId) {
-          await this.clearClarificationState(externalUserId);
-          this.logger.warn(
-            `Stale mapping for ${maskExternalId(externalUserId)}: buffered userId=${maskExternalId(String(batch.userId))} → fresh userId=${maskExternalId(String(freshUserId))}`,
-          );
-        }
-        batch.userId = freshUserId;
       } catch (error) {
-        // Retry once, then fail closed: a stale userId must never reach a
-        // personal tool when the authoritative mapping cannot be read.
+        // Retry once, then defer: a stale userId must never reach a personal
+        // tool, and transient lookup failures must not destroy queued work.
         this.logger.error(
           `Fresh-mapping query failed for ${maskExternalId(
             externalUserId,
           )}: ${maskExternalIdInText(errorMessage(error), externalUserId)}`,
         );
         try {
-          const retryUserId =
-            await this.options.freshMappingProvider!(externalUserId);
-          if (retryUserId === undefined) {
-            await this.clearClarificationState(externalUserId);
-            this.logger.warn(
-              `Dropping batch for ${maskExternalId(externalUserId)}: no active mapping after retry`,
-            );
-            await this.queueStore!.completeChatBuffer({
-              externalUserId,
-              debounceMs: this.debounceMs,
-              leaseToken: batch.leaseToken,
-            });
+          const retryMapping = this.normalizeFreshMapping(
+            await this.options.freshMappingProvider!(externalUserId),
+          );
+          if (
+            (await this.applyFreshMapping(batch, retryMapping)) !== 'continue'
+          ) {
             return;
           }
-          if (batch.userId !== undefined && batch.userId !== retryUserId) {
-            await this.clearClarificationState(externalUserId);
-          }
-          batch.userId = retryUserId;
         } catch (retryError) {
           this.logger.error(
             `Fresh-mapping retry failed for ${maskExternalId(
@@ -380,14 +364,9 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
             )}: ${maskExternalIdInText(
               errorMessage(retryError),
               externalUserId,
-            )} — dropping buffered batch`,
+            )} — deferring buffered batch`,
           );
-          await this.clearClarificationState(externalUserId);
-          await this.queueStore!.completeChatBuffer({
-            externalUserId,
-            debounceMs: this.debounceMs,
-            leaseToken: batch.leaseToken,
-          });
+          await this.deferFreshMappingBatch(batch);
           return;
         }
       }
@@ -498,6 +477,81 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
         `Clarification state clear failed for ${maskExternalId(
           externalUserId,
         )}: ${maskExternalIdInText(errorMessage(error), externalUserId)}`,
+      );
+    }
+  }
+
+  private normalizeFreshMapping(
+    result:
+      | number
+      | undefined
+      | {
+          state:
+            | 'active'
+            | 'temporarily-unknown'
+            | 'confirmed-revoked'
+            | 'locally-unlinked';
+          userId?: number;
+        },
+  ): {
+    state:
+      | 'active'
+      | 'temporarily-unknown'
+      | 'confirmed-revoked'
+      | 'locally-unlinked';
+    userId?: number;
+  } {
+    if (typeof result === 'number') return { state: 'active', userId: result };
+    if (result === undefined) return { state: 'locally-unlinked' };
+    return result;
+  }
+
+  private async applyFreshMapping(
+    batch: ChatQueueBufferSnapshot,
+    mapping: {
+      state:
+        | 'active'
+        | 'temporarily-unknown'
+        | 'confirmed-revoked'
+        | 'locally-unlinked';
+      userId?: number;
+    },
+  ): Promise<'continue' | 'deferred' | 'dropped'> {
+    if (mapping.state === 'temporarily-unknown') {
+      await this.deferFreshMappingBatch(batch);
+      return 'deferred';
+    }
+
+    if (mapping.state !== 'active' || mapping.userId === undefined) {
+      await this.clearClarificationState(batch.externalUserId);
+      this.logger.warn(
+        `Dropping batch for ${maskExternalId(batch.externalUserId)}: no active mapping (state=${mapping.state})`,
+      );
+      await this.queueStore!.completeChatBuffer({
+        externalUserId: batch.externalUserId,
+        debounceMs: this.debounceMs,
+        leaseToken: batch.leaseToken,
+      });
+      return 'dropped';
+    }
+
+    if (batch.userId !== undefined && batch.userId !== mapping.userId) {
+      await this.clearClarificationState(batch.externalUserId);
+      this.logger.warn(
+        `Stale mapping for ${maskExternalId(batch.externalUserId)}: buffered userId=${maskExternalId(String(batch.userId))} → fresh userId=${maskExternalId(String(mapping.userId))}`,
+      );
+    }
+    batch.userId = mapping.userId;
+    return 'continue';
+  }
+
+  private async deferFreshMappingBatch(
+    batch: ChatQueueBufferSnapshot,
+  ): Promise<void> {
+    const outcome = await this.scheduleRetryForFailedBatch(batch);
+    if (outcome === 'deferred') {
+      this.logger.warn(
+        `Deferring queued batch for ${maskExternalId(batch.externalUserId)}: mapping status temporarily unknown`,
       );
     }
   }

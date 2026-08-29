@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import { retryWithBackoff } from '@discord/shared/utils/retry.utils';
@@ -14,6 +14,7 @@ import {
   CLARIFICATION_STATE_STORE,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
+import { PlatformLinkStateService } from '@wispace/database';
 
 const UPSERT_MAX_ATTEMPTS = 3;
 const UPSERT_BASE_BACKOFF_MS = 500;
@@ -42,6 +43,7 @@ export class DiscordLinkCompletionService {
     private readonly welcomeService: DiscordWelcomeService,
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,
+    @Optional() private readonly linkState?: PlatformLinkStateService,
   ) {}
 
   /**
@@ -54,6 +56,10 @@ export class DiscordLinkCompletionService {
   ): Promise<DiscordLinkCompletionOutcome> {
     const discordUser =
       await this.accountLinkService.exchangeCodeForDiscordUser(code);
+    const observedLink = await this.linkState?.getLink(
+      'discord',
+      discordUser.id,
+    );
 
     const verifyResult = await this.tokenVerifyService.verifyToken(
       token,
@@ -75,7 +81,18 @@ export class DiscordLinkCompletionService {
 
     const linkResult = await retryWithBackoff(
       () =>
-        this.accountLinkService.upsertLink(verifyResult.userId, discordUser.id),
+        observedLink?.generation === undefined
+          ? this.accountLinkService.upsertLink(
+              verifyResult.userId,
+              discordUser.id,
+            )
+          : this.accountLinkService.upsertLink(
+              verifyResult.userId,
+              discordUser.id,
+              {
+                expectedGeneration: observedLink.generation,
+              },
+            ),
       UPSERT_MAX_ATTEMPTS,
       UPSERT_BASE_BACKOFF_MS,
     );

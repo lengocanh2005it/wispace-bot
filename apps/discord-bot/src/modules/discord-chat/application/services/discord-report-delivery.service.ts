@@ -46,10 +46,14 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
           platform: PLATFORM,
           externalUserId: mapping.externalUserId,
         },
-        select: { id: true },
+        select: { id: true, linkState: true, userId: true },
       });
 
-      if (!hasLink) {
+      if (
+        !hasLink ||
+        (hasLink.linkState && hasLink.linkState !== 'active') ||
+        (mapping.userId !== undefined && hasLink.userId !== mapping.userId)
+      ) {
         this.logger.warn(
           `No Discord account link for externalUserId=${maskExternalId(
             mapping.externalUserId,
@@ -63,6 +67,25 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
         ? deliveryKey.replace(/[^a-zA-Z0-9]/g, '').slice(0, 25)
         : undefined;
       for (const chunk of chunks) {
+        const current = await this.accountLinkRepo.findOne({
+          where: {
+            platform: PLATFORM,
+            externalUserId: mapping.externalUserId,
+          },
+          select: { id: true, linkState: true, userId: true },
+        });
+        if (
+          !current ||
+          (current.linkState && current.linkState !== 'active') ||
+          (mapping.userId !== undefined && current.userId !== mapping.userId)
+        ) {
+          this.logger.warn(
+            `Discord link changed before report send externalUserId=${maskExternalId(
+              mapping.externalUserId,
+            )}`,
+          );
+          return { ok: false, reason: 'NOT_LINKED' };
+        }
         await this.outboundService.sendText(mapping.externalUserId, chunk, {
           skipDeadLetter: true,
           nonce,

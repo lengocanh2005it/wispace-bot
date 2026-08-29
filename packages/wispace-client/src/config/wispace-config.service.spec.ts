@@ -102,3 +102,44 @@ describe('WispaceConfigService upstream URL fail-closed', () => {
     ).toThrow();
   });
 });
+
+describe('WispaceConfigService link-status config', () => {
+  it('is disabled when no status URL is configured outside production', () => {
+    expect(buildService().buildLinkStatusClientConfig('x-psid')).toEqual({
+      header: 'x-psid',
+      enabled: false,
+    });
+  });
+
+  it('requires a status URL in production', () => {
+    expect(() =>
+      buildService({ NODE_ENV: 'production' }).buildLinkStatusClientConfig(
+        'x-psid',
+      ),
+    ).toThrow('WISPACE_API_LINK_STATUS_URL');
+  });
+
+  it('rejects disabling status reconciliation in production', () => {
+    expect(() =>
+      buildService({
+        NODE_ENV: 'production',
+        WISPACE_API_LINK_STATUS_URL: 'https://backend.example.com/link-status',
+        WISPACE_LINK_STATUS_ENABLED: 'false',
+      }).buildLinkStatusClientConfig('x-psid'),
+    ).toThrow('WISPACE_LINK_STATUS_ENABLED=false');
+  });
+
+  it('validates the status URL and shares the internal key', () => {
+    const config = buildService({
+      WISPACE_API_LINK_STATUS_URL: 'https://backend.example.com/link-status',
+      WISPACE_API_LINK_STATUS_TIMEOUT_MS: '7000',
+    }).buildLinkStatusClientConfig('x-discordid');
+    expect(config).toMatchObject({
+      url: 'https://backend.example.com/link-status',
+      internalKey: 'internal-key',
+      header: 'x-discordid',
+      requestTimeoutMs: 7000,
+      enabled: true,
+    });
+  });
+});

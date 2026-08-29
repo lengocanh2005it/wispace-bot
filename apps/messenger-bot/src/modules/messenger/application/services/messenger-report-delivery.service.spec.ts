@@ -25,7 +25,8 @@ describe('MessengerReportDeliveryService', () => {
 
     const repository = {
       findActiveMappingByPsid:
-        overrides?.findActiveMappingByPsid ?? jest.fn().mockResolvedValue(null),
+        overrides?.findActiveMappingByPsid ??
+        jest.fn().mockResolvedValue({ psid: 'psid-1', userId: 10 }),
       upsertPocSubscription:
         overrides?.upsertPocSubscription ??
         jest.fn().mockResolvedValue(undefined),

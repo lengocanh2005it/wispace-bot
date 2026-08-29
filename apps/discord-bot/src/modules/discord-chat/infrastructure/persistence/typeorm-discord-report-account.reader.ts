@@ -28,8 +28,10 @@ export class TypeormDiscordReportAccountReader implements DiscordReportAccountPa
         'link.externalUserId',
         'link.userId',
         'link.platform',
+        'link.linkState',
       ])
       .where('link.platform = :platform', { platform: PLATFORM })
+      .andWhere("COALESCE(link.link_state, 'active') = 'active'")
       .andWhere(cursor !== undefined ? 'link.id > :cursor' : 'TRUE', { cursor })
       .orderBy('link.id', 'ASC')
       .take(limit)

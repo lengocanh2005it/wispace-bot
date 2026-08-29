@@ -87,8 +87,12 @@ export class DiscordAccountLinkService {
   async upsertLink(
     userId: number,
     discordUserId: string,
+    options: { expectedGeneration?: string } = {},
   ): Promise<{ relinked: boolean; previousUserId?: number }> {
-    const result = await this.repository.upsertLink(userId, discordUserId);
+    const result =
+      options.expectedGeneration === undefined
+        ? await this.repository.upsertLink(userId, discordUserId)
+        : await this.repository.upsertLink(userId, discordUserId, options);
 
     this.logger.log(
       `Linked Discord account discordUserId=${maskExternalId(
@@ -107,6 +111,19 @@ export class DiscordAccountLinkService {
     discordUserId: string,
   ): Promise<number | undefined> {
     return this.repository.findUserIdByDiscordId(discordUserId);
+  }
+
+  async findMappingStateByDiscordId(discordUserId: string): Promise<{
+    state: import('@wispace/database').PlatformLinkState;
+    userId?: number;
+  }> {
+    if (this.repository.findMappingStateByDiscordId) {
+      return this.repository.findMappingStateByDiscordId(discordUserId);
+    }
+    const userId = await this.repository.findUserIdByDiscordId(discordUserId);
+    return userId === undefined
+      ? { state: 'locally-unlinked' }
+      : { state: 'active', userId };
   }
 
   async findCurrentIdentity(discordUserId: string): Promise<

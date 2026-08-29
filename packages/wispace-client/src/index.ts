@@ -53,6 +53,15 @@ export type {
   WispaceApiClientConfig,
   WispaceClientLogger,
 } from './clients/wispace-client-types';
+export {
+  WispaceLinkStatusClient,
+  type WispaceLinkStatusLogger,
+} from './clients/wispace-link-status.client';
+export type {
+  WispaceLinkStatusClientConfig,
+  WispaceLinkStatusResult,
+  WispaceLinkStatus,
+} from './types/link-status.types';
 export { NOOP_WISPACE_LOGGER } from './clients/wispace-client-types';
 export { UserGoalsApiClient } from './clients/user-goals-api.client';
 export { TaskScoreAverageApiClient } from './clients/task-score-average-api.client';

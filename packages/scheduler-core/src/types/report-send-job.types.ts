@@ -1,4 +1,9 @@
-export type ReportSendJobStatus = 'pending' | 'processing' | 'sent' | 'failed';
+export type ReportSendJobStatus =
+  | 'pending'
+  | 'processing'
+  | 'sent'
+  | 'failed'
+  | 'cancelled';
 
 export interface ReportSendJob {
   id: number;

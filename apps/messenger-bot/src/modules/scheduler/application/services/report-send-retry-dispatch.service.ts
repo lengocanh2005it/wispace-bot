@@ -121,6 +121,23 @@ export class ReportSendRetryDispatchService {
       );
 
       if (!mapping?.psid) {
+        const linkState = await this.messengerRepository.findMappingStateByPsid(
+          claimedJob.externalUserId,
+        );
+        if (linkState === 'temporarily-unknown') {
+          const nextRetryCount = claimedJob.retryCount + 1;
+          await this.reportSendJobRepository.markFailed({
+            jobId: claimedJob.id,
+            leaseToken,
+            errorMessage: 'WISPACE link status temporarily unknown',
+            retryCount: nextRetryCount,
+            nextRetryAt: addMinutes(new Date(), settings.retryBackoffMinutes),
+            terminal: nextRetryCount >= claimedJob.maxRetries,
+          });
+          if (nextRetryCount >= claimedJob.maxRetries) failed += 1;
+          else retried += 1;
+          continue;
+        }
         await this.reportSendJobRepository.markFailed({
           jobId: claimedJob.id,
           leaseToken,

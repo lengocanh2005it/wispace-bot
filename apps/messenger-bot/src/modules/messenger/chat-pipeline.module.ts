@@ -123,7 +123,7 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
           if (!mapping?.userId) return undefined;
           return {
             userId: mapping.userId,
-            mappingVersion: `${mapping.id}:${mapping.updatedAt}`,
+            mappingVersion: `${mapping.id}:${mapping.updatedAt}:${mapping.mappingGeneration ?? '1'}`,
           };
         },
       inject: [MESSENGER_REPOSITORY],
@@ -404,6 +404,7 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
     MessengerAgentToolsService,
     MessengerRescheduleConfirmationService,
     MessengerChatSharedConfigService,
+    PlatformChatHistoryService,
   ],
 })
 export class ChatPipelineModule {}

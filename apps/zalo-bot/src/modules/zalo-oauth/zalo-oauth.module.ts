@@ -8,7 +8,12 @@ import {
   createClarificationStateStore,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
-import { WispaceTokenVerifyService } from '@wispace/wispace-client';
+import {
+  WispaceConfigService,
+  WispaceLinkStatusClient,
+  WispaceTokenVerifyService,
+} from '@wispace/wispace-client';
+import { PlatformLinkStateService } from '@wispace/database';
 import { ZaloOaTokenEntity } from '../../infrastructure/database/entities/zalo-oa-token.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
@@ -38,6 +43,19 @@ import { ZALO_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/zalo-link-ver
     ZaloOauthStateService,
     ZaloAccountLinkService,
     ZaloLinkReconcileCronService,
+    PlatformLinkStateService,
+    {
+      provide: WispaceLinkStatusClient,
+      useFactory: (configService: ConfigService) => {
+        const wispace = new WispaceConfigService((key) =>
+          configService.get<string>(key),
+        );
+        return new WispaceLinkStatusClient(
+          wispace.buildLinkStatusClientConfig('x-zaloid'),
+        );
+      },
+      inject: [ConfigService],
+    },
     {
       provide: ZALO_LINK_VERIFY_RECORD_REPOSITORY,
       useClass: TypeormZaloLinkVerifyRecordRepository,
@@ -65,6 +83,7 @@ import { ZALO_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/zalo-link-ver
   exports: [
     ZaloTokenService,
     ZaloAccountLinkService,
+    PlatformLinkStateService,
     ZaloOauthStateService,
     WispaceTokenVerifyService,
     ZALO_LINK_VERIFY_RECORD_REPOSITORY,

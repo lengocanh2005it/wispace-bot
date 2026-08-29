@@ -5,6 +5,7 @@ import {
   Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import type { PlatformLinkState } from '@wispace/database';
 
 /** Maps the `discord_account_links` table — see migration in apps/messenger-bot. */
 @Entity('discord_account_links')
@@ -33,4 +34,43 @@ export class DiscordAccountLinkEntity {
 
   @CreateDateColumn({ name: 'linked_at', type: 'timestamptz' })
   linkedAt: Date;
+
+  @Column({ name: 'updated_at', type: 'timestamptz', default: () => 'now()' })
+  updatedAt: Date;
+
+  @Column({
+    name: 'link_state',
+    type: 'varchar',
+    length: 24,
+    default: 'active',
+  })
+  linkState: PlatformLinkState;
+
+  @Column({ name: 'mapping_generation', type: 'bigint', default: 1 })
+  mappingGeneration: string;
+
+  @Column({ name: 'last_verified_at', type: 'timestamptz', nullable: true })
+  lastVerifiedAt: Date | null;
+
+  @Column({ name: 'last_unknown_at', type: 'timestamptz', nullable: true })
+  lastUnknownAt: Date | null;
+
+  @Column({ name: 'revoked_at', type: 'timestamptz', nullable: true })
+  revokedAt: Date | null;
+
+  @Column({
+    name: 'revocation_reason',
+    type: 'varchar',
+    length: 160,
+    nullable: true,
+  })
+  revocationReason: string | null;
+
+  @Column({
+    name: 'upstream_ownership_version',
+    type: 'varchar',
+    length: 160,
+    nullable: true,
+  })
+  upstreamOwnershipVersion: string | null;
 }

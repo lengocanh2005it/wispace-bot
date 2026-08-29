@@ -588,6 +588,7 @@ describe('PlatformChatQueueService', () => {
         texts: ['hello'],
         lastIdempotencyKey: 'key-1',
         userId: 42,
+        leaseToken: 'lease-1',
         leaseToken: 'lease-discord-1',
       });
 
@@ -872,10 +873,9 @@ describe('PlatformChatQueueService', () => {
 
   describe('fresh-mapping revalidation (#397)', () => {
     const buildDistributedService = (
-      freshMappingProvider?: (
-        externalUserId: string,
-      ) => Promise<number | undefined>,
+      freshMappingProvider?: (externalUserId: string) => Promise<unknown>,
       clarificationStateClearer?: (externalUserId: string) => Promise<void>,
+      retryEnabled = false,
     ) => {
       const queueStore = {
         isAvailable: jest.fn().mockReturnValue(true),
@@ -887,6 +887,9 @@ describe('PlatformChatQueueService', () => {
         get: jest.fn((key: string) => {
           if (key === 'CHAT_QUEUE_STORE') return 'redis';
           if (key === 'CHAT_DEBOUNCE_MS') return '2000';
+          if (key === 'CHAT_FLUSH_RETRY_ENABLED') {
+            return retryEnabled ? 'true' : 'false';
+          }
           return undefined;
         }),
       } as unknown as ConfigService;
@@ -926,6 +929,7 @@ describe('PlatformChatQueueService', () => {
         texts: ['hello'],
         lastIdempotencyKey: 'key-1',
         userId: 42,
+        leaseToken: 'lease-1',
       });
 
       const warnSpy = jest
@@ -939,13 +943,50 @@ describe('PlatformChatQueueService', () => {
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining('no active mapping'),
       );
-      // completeChatBuffer should still be called (batch claimed → always complete)
+      // A confirmed local unlink is terminal for the buffered work.
       expect(
         (queueStore as unknown as { completeChatBuffer: jest.Mock })
           .completeChatBuffer,
-      ).toHaveBeenCalled();
+      ).toHaveBeenCalledWith({
+        externalUserId: 'discord-1',
+        debounceMs: 2000,
+        leaseToken: 'lease-1',
+      });
 
       warnSpy.mockRestore();
+    });
+
+    it('defers batch when fresh-mapping provider reports temporarily unknown', async () => {
+      const freshMappingProvider = jest.fn().mockResolvedValue({
+        state: 'temporarily-unknown',
+      });
+      const { service, queueStore } = buildDistributedService(
+        freshMappingProvider as never,
+        undefined,
+        true,
+      );
+      (
+        queueStore as unknown as { scheduleRetryFlush: jest.Mock }
+      ).scheduleRetryFlush = jest.fn().mockResolvedValue(true);
+      await service.onModuleInit();
+      (
+        queueStore as unknown as { claimReadyBuffer: jest.Mock }
+      ).claimReadyBuffer.mockResolvedValue({
+        externalUserId: 'discord-unknown',
+        texts: ['hello'],
+        lastIdempotencyKey: 'key-unknown',
+        userId: 42,
+        leaseToken: 'lease-unknown',
+      });
+
+      await service.flushReady('discord-unknown');
+
+      expect(queueStore.scheduleRetryFlush).toHaveBeenCalledWith(
+        'discord-unknown',
+        expect.any(Number),
+        'lease-unknown',
+      );
+      expect(queueStore.completeChatBuffer).not.toHaveBeenCalled();
     });
 
     it('adopts fresh userId when mapping changed (relinked)', async () => {
@@ -1033,7 +1074,7 @@ describe('PlatformChatQueueService', () => {
       errorSpy.mockRestore();
     });
 
-    it('fails closed when both authoritative mapping attempts fail', async () => {
+    it('defers when both authoritative mapping attempts fail', async () => {
       const freshMappingProvider = jest
         .fn()
         .mockRejectedValue(new Error('Redis down'));
@@ -1066,7 +1107,7 @@ describe('PlatformChatQueueService', () => {
         expect.stringContaining('Fresh-mapping retry failed'),
       );
       expect(pipelineFlush).not.toHaveBeenCalled();
-      expect(queueStore.completeChatBuffer).toHaveBeenCalled();
+      expect(queueStore.completeChatBuffer).not.toHaveBeenCalled();
 
       errorSpy.mockRestore();
     });

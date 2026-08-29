@@ -76,6 +76,20 @@ groups:
           summary: '{{ $labels.job }} study reminder failure rate elevated'
           description: '{{ $labels.job }} is failing study reminder dispatches.'
 
+      - alert: PlatformLinkStatusUnknown
+        expr: |
+          (
+            sum(rate(messenger_platform_link_transition_total{outcome="unknown"}[15m])) by (job)
+            or sum(rate(discord_platform_link_transition_total{outcome="unknown"}[15m])) by (job)
+            or sum(rate(zalo_platform_link_transition_total{outcome="unknown"}[15m])) by (job)
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} WISPACE link ownership checks are unavailable'
+          description: 'Mappings remain preserved but sensitive operations are fail-closed until the upstream status endpoint recovers.'
+
   - name: slos
     rules:
       - alert: ChatAvailabilityLow

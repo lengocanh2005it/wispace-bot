@@ -388,12 +388,22 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
     let resolvedUserId = ctx.userId!;
     if (this.options.freshMappingProvider) {
       try {
-        const freshUserId = await this.options.freshMappingProvider(
+        const freshMapping = await this.options.freshMappingProvider(
           ctx.externalUserId,
         );
+        const freshUserId =
+          typeof freshMapping === 'number'
+            ? freshMapping
+            : freshMapping?.state === 'active'
+              ? freshMapping.userId
+              : undefined;
         if (freshUserId === undefined) {
           this.logger.warn(
-            `Reschedule blocked for ${maskExternalId(ctx.externalUserId)}: no active mapping`,
+            `Reschedule blocked for ${maskExternalId(ctx.externalUserId)}: no active mapping${
+              typeof freshMapping === 'object' && freshMapping
+                ? ` (state=${freshMapping.state})`
+                : ''
+            }`,
           );
           return { error: this.options.getNotLinkedMessage() };
         }

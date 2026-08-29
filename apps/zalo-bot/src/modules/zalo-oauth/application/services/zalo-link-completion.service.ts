@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { buildLinkSuccessMessage } from '@wispace/bot-common/messages';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { sleep } from '@wispace/bot-common/utils';
@@ -13,6 +13,7 @@ import {
   CLARIFICATION_STATE_STORE,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
+import { PlatformLinkStateService } from '@wispace/database';
 
 const UPSERT_MAX_ATTEMPTS = 3;
 const UPSERT_BASE_BACKOFF_MS = 500;
@@ -42,6 +43,7 @@ export class ZaloLinkCompletionService {
     private readonly outboundService: ZaloOutboundService,
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,
+    @Optional() private readonly linkState?: PlatformLinkStateService,
   ) {}
 
   /**
@@ -57,6 +59,7 @@ export class ZaloLinkCompletionService {
       code,
       codeVerifier,
     );
+    const observedLink = await this.linkState?.getLink('zalo', zaloUser.id);
 
     const verifyResult = await this.tokenVerifyService.verifyToken(
       linkToken,
@@ -75,7 +78,11 @@ export class ZaloLinkCompletionService {
       verifyResult.userId,
     );
 
-    await this.retryUpsert(verifyResult.userId, zaloUser.id);
+    await this.retryUpsert(
+      verifyResult.userId,
+      zaloUser.id,
+      observedLink?.generation,
+    );
     await this.clarificationStateStore
       .clear(`zalo:${zaloUser.id}`)
       .catch((error: unknown) => {
@@ -111,11 +118,21 @@ export class ZaloLinkCompletionService {
       });
   }
 
-  private async retryUpsert(userId: number, zaloUserId: string): Promise<void> {
+  private async retryUpsert(
+    userId: number,
+    zaloUserId: string,
+    expectedGeneration?: string,
+  ): Promise<void> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= UPSERT_MAX_ATTEMPTS; attempt++) {
       try {
-        await this.accountLinkService.upsertLink(userId, zaloUserId);
+        if (expectedGeneration === undefined) {
+          await this.accountLinkService.upsertLink(userId, zaloUserId);
+        } else {
+          await this.accountLinkService.upsertLink(userId, zaloUserId, {
+            expectedGeneration,
+          });
+        }
         return;
       } catch (error) {
         lastError = error;

@@ -14,6 +14,7 @@ export interface ChatQueueStorePort {
     processingStuckMs: number,
   ): Promise<ChatQueueBufferSnapshot | null>;
   completeChatBuffer(input: CompleteChatBufferInput): Promise<boolean>;
+  clearChatBuffer?(psid: string): Promise<boolean>;
   listPsidsReadyForFlush(limit: number): Promise<string[]>;
   scheduleRetryFlush(
     psid: string,

@@ -793,6 +793,27 @@ describe('PlatformAgentToolsService', () => {
       });
     });
 
+    it.each(['temporarily-unknown', 'confirmed-revoked', 'locally-unlinked'])(
+      'blocks non-active mapping state %s',
+      async (state) => {
+        freshMappingProvider.mockResolvedValue({ state });
+
+        const result = await serviceWithProvider.execute(
+          'reschedule_study_session',
+          JSON.stringify({
+            calendarId: 42,
+            schedulingMode: 'default_next_day_same_time',
+          }),
+          { externalUserId: 'discord-1', userId: 143 },
+        );
+
+        expect(result).toMatchObject({
+          error: expect.stringContaining('liên kết'),
+        });
+        expect(stagePort.stage).not.toHaveBeenCalled();
+      },
+    );
+
     it('rejects reschedule when fresh-mapping query fails (fail-closed)', async () => {
       freshMappingProvider.mockRejectedValue(new Error('DB timeout'));
 

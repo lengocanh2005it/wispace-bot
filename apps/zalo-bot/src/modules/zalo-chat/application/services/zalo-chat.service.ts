@@ -76,6 +76,13 @@ export class ZaloChatService {
         await this.rescheduleConfirmationService.hasPending(zaloUserId);
 
       if (hasPending && this.isConfirmKeyword(text.trim())) {
+        if (!identity) {
+          await this.outboundService.sendText(
+            zaloUserId,
+            'Mình không thể xác thực liên kết WISPACE hiện tại. Bạn liên kết lại rồi thử lại nhé.',
+          );
+          return;
+        }
         const approvalToken = this.readApprovalToken(text.trim());
         const result = approvalToken
           ? await this.rescheduleConfirmationService.confirm(

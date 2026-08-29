@@ -36,6 +36,16 @@ export interface StudyReminderDispatchResult {
 }
 
 export interface StudyReminderDispatchServiceOptions {
+  /** Re-check ownership after claiming and immediately before any send. */
+  getMappingState?: (
+    externalUserId: string,
+  ) => Promise<
+    | 'active'
+    | 'confirmed-revoked'
+    | 'temporarily-unknown'
+    | 'locally-unlinked'
+    | null
+  >;
   /**
    * 'exponential' (default): backoff grows 2^retryCount.
    * 'flat' (Messenger): fixed retryBackoffMinutes between attempts.
@@ -124,6 +134,29 @@ export class StudyReminderDispatchService {
 
       claimed += 1;
       const leaseToken = claimedJob.leaseToken ?? '';
+      const checkMappingBeforeSend = async (): Promise<boolean> => {
+        if (!this.options?.getMappingState) return true;
+        const state = await this.options.getMappingState(
+          claimedJob.externalUserId,
+        );
+        if (state === 'active') return true;
+        if (state === 'confirmed-revoked' || state === 'locally-unlinked') {
+          await this.jobRepository.markCancelled(
+            claimedJob.id,
+            leaseToken,
+            `link_${state}`,
+          );
+          this.hooks?.onCancelled?.({
+            jobId: claimedJob.id,
+            externalUserId: claimedJob.externalUserId,
+          });
+          cancelled += 1;
+          return false;
+        }
+        // Unknown/no-row is retried through the normal bounded failure path;
+        // never turn an upstream outage into permanent data loss.
+        throw new Error(`link status unavailable (${state ?? 'missing'})`);
+      };
 
       // Skip re-send if already delivered (#181) — crash between send and
       // markSent left a delivery_record; re-claim sees it and marks sent
@@ -149,21 +182,25 @@ export class StudyReminderDispatchService {
         return;
       }
 
-      if (this.scheduleService.isSessionStarted(claimedJob.scheduledAt, now)) {
-        await this.jobRepository.markCancelled(
-          claimedJob.id,
-          leaseToken,
-          'session already started',
-        );
-        this.hooks?.onCancelled?.({
-          jobId: claimedJob.id,
-          externalUserId: claimedJob.externalUserId,
-        });
-        cancelled += 1;
-        return;
-      }
-
       try {
+        if (!(await checkMappingBeforeSend())) return;
+
+        if (
+          this.scheduleService.isSessionStarted(claimedJob.scheduledAt, now)
+        ) {
+          await this.jobRepository.markCancelled(
+            claimedJob.id,
+            leaseToken,
+            'session already started',
+          );
+          this.hooks?.onCancelled?.({
+            jobId: claimedJob.id,
+            externalUserId: claimedJob.externalUserId,
+          });
+          cancelled += 1;
+          return;
+        }
+
         const timeLabel = this.scheduleService.formatScheduledTimeLabel(
           claimedJob.scheduledAt,
         );
@@ -184,6 +221,10 @@ export class StudyReminderDispatchService {
         const deliveryKey = `reminder:${claimedJob.id}:${claimedJob.sessionKey}`;
 
         await this.jobRepository.markDeliveryKey(claimedJob.id, deliveryKey);
+
+        // The ownership check is repeated immediately before the provider
+        // call so a revoke during LLM/text generation cannot leak the reply.
+        if (!(await checkMappingBeforeSend())) return;
 
         let outcome: OutboundDeliveryOutcome;
         let sendError: unknown;

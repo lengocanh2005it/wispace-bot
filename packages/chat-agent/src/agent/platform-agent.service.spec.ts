@@ -42,6 +42,9 @@ describe('PlatformAgentService', () => {
       clarificationStore?: ClarificationStateStore;
       platform?: string;
       clarificationOutcomeInc?: (outcome: string) => void;
+      currentIdentityProvider?: (
+        externalUserId: string,
+      ) => Promise<{ userId: number; mappingVersion: string } | undefined>;
     } = {},
   ) {
     const config = {
@@ -61,10 +64,12 @@ describe('PlatformAgentService', () => {
         promptDir: '/prompts',
         promptFile: 'chat.system.txt',
         platform: overrides.platform,
-        currentIdentityProvider: async () => ({
-          userId: 42,
-          mappingVersion: 'test:platform-agent',
-        }),
+        currentIdentityProvider:
+          overrides.currentIdentityProvider ??
+          (async () => ({
+            userId: 42,
+            mappingVersion: 'test:platform-agent',
+          })),
         clarificationStore: overrides.clarificationStore,
         clarificationOutcomeInc: overrides.clarificationOutcomeInc,
       },
@@ -510,6 +515,45 @@ describe('PlatformAgentService', () => {
       'zalo-user-1',
       'first question',
       'next answer',
+    );
+  });
+
+  it('reloads history when the authoritative mapping generation changes', async () => {
+    const historyService = {
+      getHistory: jest
+        .fn()
+        .mockResolvedValue([{ role: 'user', content: 'fresh owner history' }]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+      clear: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const currentIdentityProvider = jest
+      .fn()
+      .mockResolvedValueOnce({ userId: 42, mappingVersion: 'mapping:v1' })
+      .mockResolvedValueOnce({ userId: 99, mappingVersion: 'mapping:v2' });
+    const service = buildService(historyService, {
+      currentIdentityProvider,
+    });
+    const staleSnapshot = [{ role: 'user' as const, content: 'old owner' }];
+
+    await service.reply({
+      externalUserId: 'discord-relinked',
+      userText: 'first owner question',
+      history: staleSnapshot,
+    });
+    await service.reply({
+      externalUserId: 'discord-relinked',
+      userText: 'new owner question',
+      history: staleSnapshot,
+    });
+
+    expect(historyService.clear).toHaveBeenCalledWith('discord-relinked');
+    expect(historyService.getHistory).toHaveBeenCalledWith('discord-relinked');
+    expect(mockLlmReply).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        history: [{ role: 'user', content: 'fresh owner history' }],
+      }),
+      expect.anything(),
     );
   });
 

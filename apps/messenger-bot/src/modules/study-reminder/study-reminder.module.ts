@@ -105,6 +105,8 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
                   }
                 : null,
             ),
+          getMappingState: (_platform, externalUserId) =>
+            repository.findMappingStateByPsid(externalUserId),
         }),
         inject: [MESSENGER_REPOSITORY],
       },
@@ -225,6 +227,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         hooks: DispatchHooksPort,
         sessionSource: StudySessionSourceService,
         reminderService: StudyReminderService,
+        mappingReader: MappingReaderPort,
       ) =>
         new StudyReminderDispatchService(
           jobRepository,
@@ -233,6 +236,20 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
           'messenger',
           hooks,
           {
+            getMappingState: async (externalUserId) => {
+              if (mappingReader.getMappingState) {
+                return mappingReader.getMappingState(
+                  'messenger',
+                  externalUserId,
+                );
+              }
+              return (await mappingReader.findActiveMappingByExternalUserId(
+                'messenger',
+                externalUserId,
+              ))
+                ? 'active'
+                : null;
+            },
             backoffMode: 'flat',
             preloadDisplayNames: (userIds) =>
               reminderService.preloadDisplayNames(userIds),
@@ -253,6 +270,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         DISPATCH_HOOKS,
         StudySessionSourceService,
         StudyReminderService,
+        MAPPING_READER,
       ],
     },
 

@@ -132,6 +132,23 @@ export class DebounceChatQueue<TContext = Record<string, unknown>> {
     await this.flush(externalUserId);
   }
 
+  /** Discards buffered work for one external identity without cancelling an in-flight flush. */
+  clear(externalUserId: string): void {
+    const state = this.queues.get(externalUserId);
+    if (!state) return;
+    if (state.debounceTimer) {
+      clearTimeout(state.debounceTimer);
+      state.debounceTimer = undefined;
+    }
+    state.texts = [];
+    state.pendingWhileProcessing = [];
+    state.lastIdempotencyKey = undefined;
+    state.lastPendingIdempotencyKey = undefined;
+    if (!state.processing) {
+      this.queues.delete(externalUserId);
+    }
+  }
+
   /** Flushes every buffered user (best-effort) — used on graceful shutdown. */
   async drain(): Promise<void> {
     // Each flush can promote pendingWhileProcessing texts, so keep draining
