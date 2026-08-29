@@ -15,6 +15,7 @@ import { CronLeaderLeaseEntity } from './entities/cron-leader-lease.entity';
 import { LearnerProfileEntity } from './entities/learner-profile.entity';
 import { UserNotificationPreferenceEntity } from './entities/user-notification-preference.entity';
 import { PlatformLinkAuditEventEntity } from './entities/platform-link-audit-event.entity';
+import { WebActivityEntity } from './entities/web-activity.entity';
 
 export type EntityClass = new (...args: unknown[]) => unknown;
 
@@ -79,6 +80,7 @@ export const SHARED_ENTITIES: EntityClass[] = [
   LearnerProfileEntity,
   UserNotificationPreferenceEntity,
   PlatformLinkAuditEventEntity,
+  WebActivityEntity,
 ];
 
 /**
