@@ -199,4 +199,169 @@ describe('ZaloReportCronService', () => {
     expect(reportService.generateReport).not.toHaveBeenCalled();
     expect(orchestration.claimAndSend).not.toHaveBeenCalled();
   });
+
+  it('filters dormant links and increments suppression metric when gate is enabled', async () => {
+    const links = [
+      {
+        id: '1',
+        externalUserId: 'zalo-1',
+        userId: 5,
+        platform: 'zalo',
+        linkState: 'active',
+      },
+      {
+        id: '2',
+        externalUserId: 'zalo-2',
+        userId: 6,
+        platform: 'zalo',
+        linkState: 'active',
+      },
+    ];
+    const linkRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest
+          .fn()
+          .mockResolvedValueOnce(links)
+          .mockResolvedValueOnce([]),
+      }),
+    };
+    const claimRepo = {
+      listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
+    };
+    const orchestration = {
+      claimAndSend: jest
+        .fn()
+        .mockResolvedValue({
+          sent: 1,
+          skipped: 0,
+          deferred: 0,
+          windowClosed: 0,
+          claimSkipped: 0,
+          retryQueued: 0,
+          failures: [],
+        }),
+    };
+    const reportService = { generateReport: jest.fn() };
+    const reportScheduleService = {
+      getExamReminderWindow: jest
+        .fn()
+        .mockReturnValue({ minDays: 1, maxDays: 30 }),
+    };
+    const configService = { get: jest.fn() };
+    const webActivityService = {
+      gateEnabled: true,
+      filterDormant: jest.fn().mockResolvedValue([5]),
+    };
+    const metrics = {
+      incScheduledSendSuppressed: jest.fn(),
+    };
+
+    const service = new ZaloReportCronService(
+      linkRepo as unknown as never,
+      claimRepo as unknown as never,
+      orchestration as unknown as never,
+      reportService as unknown as never,
+      reportScheduleService as unknown as never,
+      configService as unknown as never,
+      undefined,
+      webActivityService as never,
+      metrics as never,
+    );
+
+    const sendReportForUserSpy = jest
+      .spyOn(service as any, 'sendReportForUser')
+      .mockResolvedValue('sent');
+
+    await service.sendDailyReports({ forceSend: true });
+
+    expect(webActivityService.filterDormant).toHaveBeenCalledWith([5, 6]);
+    expect(sendReportForUserSpy).toHaveBeenCalledTimes(1);
+    expect(sendReportForUserSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ externalUserId: 'zalo-2', userId: 6 }),
+      expect.anything(),
+      expect.anything(),
+      true,
+    );
+    expect(metrics.incScheduledSendSuppressed).toHaveBeenCalledWith('report');
+    expect(metrics.incScheduledSendSuppressed).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call filterDormant when gate is disabled', async () => {
+    const links = [
+      {
+        id: '1',
+        externalUserId: 'zalo-1',
+        userId: 5,
+        platform: 'zalo',
+        linkState: 'active',
+      },
+    ];
+    const linkRepo = {
+      createQueryBuilder: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getMany: jest
+          .fn()
+          .mockResolvedValueOnce(links)
+          .mockResolvedValueOnce([]),
+      }),
+    };
+    const claimRepo = {
+      listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
+    };
+    const orchestration = {
+      claimAndSend: jest
+        .fn()
+        .mockResolvedValue({
+          sent: 1,
+          skipped: 0,
+          deferred: 0,
+          windowClosed: 0,
+          claimSkipped: 0,
+          retryQueued: 0,
+          failures: [],
+        }),
+    };
+    const reportService = { generateReport: jest.fn() };
+    const reportScheduleService = {
+      getExamReminderWindow: jest
+        .fn()
+        .mockReturnValue({ minDays: 1, maxDays: 30 }),
+    };
+    const configService = { get: jest.fn() };
+    const webActivityService = {
+      gateEnabled: false,
+      filterDormant: jest.fn(),
+    };
+    const metrics = {
+      incScheduledSendSuppressed: jest.fn(),
+    };
+
+    const service = new ZaloReportCronService(
+      linkRepo as unknown as never,
+      claimRepo as unknown as never,
+      orchestration as unknown as never,
+      reportService as unknown as never,
+      reportScheduleService as unknown as never,
+      configService as unknown as never,
+      undefined,
+      webActivityService as never,
+      metrics as never,
+    );
+
+    jest.spyOn(service as any, 'sendReportForUser').mockResolvedValue('sent');
+
+    await service.sendDailyReports({ forceSend: true });
+
+    expect(webActivityService.filterDormant).not.toHaveBeenCalled();
+    expect(metrics.incScheduledSendSuppressed).not.toHaveBeenCalled();
+  });
 });

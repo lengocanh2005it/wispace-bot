@@ -1,5 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { CanonicalPlatformService } from '@wispace/database';
+import {
+  CanonicalPlatformService,
+  WebActivityService,
+} from '@wispace/database';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { ConfigService } from '@nestjs/config';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { Cron } from '@nestjs/schedule';
@@ -40,6 +44,12 @@ export class ZaloReportCronService {
     @Optional()
     @Inject(CanonicalPlatformService)
     private readonly canonicalPlatformService?: CanonicalPlatformService,
+    @Optional()
+    @Inject(WebActivityService)
+    private readonly webActivityService?: WebActivityService,
+    @Optional()
+    @Inject(BotMetricsService)
+    private readonly metrics?: BotMetricsService,
   ) {}
 
   @Cron('0 8 * * *', {
@@ -68,8 +78,31 @@ export class ZaloReportCronService {
     let hasMore = true;
 
     while (hasMore) {
-      const page = await this.loadPage(cursor);
+      let page = await this.loadPage(cursor);
       if (page.length === 0) break;
+      const rawPageLen = page.length;
+      const lastId = page[page.length - 1].id;
+
+      if (this.webActivityService?.gateEnabled) {
+        const ids = page
+          .map((l) => l.userId)
+          .filter((id): id is number => typeof id === 'number');
+        const dormant = new Set(
+          await this.webActivityService.filterDormant(ids),
+        );
+        if (dormant.size > 0) {
+          const before = page.length;
+          page = page.filter(
+            (l) => !(l.userId != null && dormant.has(l.userId)),
+          );
+          const suppressed = before - page.length;
+          for (let i = 0; i < suppressed; i += 1) {
+            this.metrics?.incScheduledSendSuppressed('report');
+          }
+          skipped += suppressed;
+        }
+      }
+
       total += page.length;
 
       const results = await runBatched(page, CONCURRENCY, (link) =>
@@ -90,8 +123,8 @@ export class ZaloReportCronService {
       this.logger.log(
         `Zalo report batch: total=${total} sent=${sent} skipped=${skipped} failed=${failed}`,
       );
-      cursor = page[page.length - 1].id;
-      hasMore = page.length === PAGE_SIZE;
+      cursor = lastId;
+      hasMore = rawPageLen === PAGE_SIZE;
     }
 
     this.logger.log(
