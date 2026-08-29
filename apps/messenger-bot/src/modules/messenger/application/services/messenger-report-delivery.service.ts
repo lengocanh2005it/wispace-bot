@@ -137,6 +137,17 @@ export class MessengerReportDeliveryService {
     text: string;
     messageType: string;
   }): Promise<void> {
+    const current = await this.repository.findActiveMappingByPsid(params.psid);
+    if (
+      !current ||
+      (params.userId !== undefined && current.userId !== params.userId)
+    ) {
+      this.logger.warn(
+        `Skip report delivery for inactive PSID ${maskExternalId(params.psid)}`,
+      );
+      throw new Error('Messenger mapping is no longer active');
+    }
+
     const { maxBubbles, maxCharsPerBubble } = readMessengerBubbleLimits(
       this.configService,
     );

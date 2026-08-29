@@ -285,12 +285,22 @@ export class DiscordChatGateway {
 
     let content: string;
     try {
-      const userId =
-        await this.accountLinkService.findUserIdByDiscordId(discordUserId);
-      const result = await this.rescheduleConfirmationService.confirm(
-        discordUserId,
-        userId,
-      );
+      const identity =
+        await this.accountLinkService.findCurrentIdentity(discordUserId);
+      const result = identity
+        ? await this.rescheduleConfirmationService.confirm(
+            discordUserId,
+            identity.userId,
+            undefined,
+            {
+              platform: 'discord',
+              mappingVersion: identity.mappingVersion,
+            },
+          )
+        : {
+            confirmed: false as const,
+            message: DISCORD_NOT_LINKED_MESSAGE,
+          };
       content = result.confirmed
         ? `Đã dời lịch sang ${result.scheduledTimeLabel}.`
         : result.message;

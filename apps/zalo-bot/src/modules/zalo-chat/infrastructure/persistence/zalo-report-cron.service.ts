@@ -109,8 +109,10 @@ export class ZaloReportCronService {
         'link.externalUserId',
         'link.userId',
         'link.platform',
+        'link.linkState',
       ])
       .where('link.platform = :platform', { platform: 'zalo' })
+      .andWhere("COALESCE(link.link_state, 'active') = 'active'")
       .andWhere(cursor !== undefined ? 'link.id > :cursor' : 'TRUE', { cursor })
       .orderBy('link.id', 'ASC')
       .take(PAGE_SIZE)
@@ -147,6 +149,10 @@ export class ZaloReportCronService {
         );
         return 'skipped';
       }
+    }
+
+    if (link.linkState && link.linkState !== 'active') {
+      return 'skipped';
     }
 
     if (!forceSend) {

@@ -119,10 +119,19 @@ export class MessengerChatEnqueueService implements OnModuleDestroy {
         },
       },
     );
+    this.processor.setQueueClearer?.((psid) => this.clear(psid));
   }
 
   async onModuleDestroy(): Promise<void> {
     await this.debounceQueue.destroy();
+  }
+
+  async clear(psid: string): Promise<void> {
+    if (this.isDistributedMode()) {
+      await this.chatQueueStore?.clearChatBuffer?.(psid);
+      return;
+    }
+    this.debounceQueue.clear(psid);
   }
 
   async enqueue(input: EnqueueChatMessageInput): Promise<void> {

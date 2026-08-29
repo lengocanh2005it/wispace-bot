@@ -15,6 +15,8 @@ export interface ChatQueueStorePort {
     processingStuckMs: number,
   ): Promise<ChatQueueBufferSnapshot | null>;
   completeChatBuffer(input: CompleteChatBufferInput): Promise<boolean>;
+  /** Removes queued (including in-flight) work for a privacy/link invalidation. */
+  clearChatBuffer?(externalUserId: string): Promise<boolean>;
   listReadyExternalUserIds(limit: number): Promise<string[]>;
   /**
    * Re-enqueue the currently processing batch for a delayed retry (#406).

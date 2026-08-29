@@ -19,6 +19,7 @@ describe('PrivacyDataService', () => {
   let mockIdempotencyRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockDiscordMappingRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockZaloMappingRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockManagerQuery: jest.Mock;
 
   const makeRepo = () =>
     ({
@@ -41,7 +42,9 @@ describe('PrivacyDataService', () => {
     mockDiscordMappingRepo = makeRepo();
     mockZaloMappingRepo = makeRepo();
 
+    mockManagerQuery = jest.fn().mockResolvedValue([]);
     mockManager = {
+      query: mockManagerQuery,
       getRepository: jest.fn().mockImplementation((entityName: string) => {
         switch (entityName) {
           case 'UserPlatformMapping':
@@ -123,7 +126,39 @@ describe('PrivacyDataService', () => {
       const result = await service.unlink('messenger', 'psid-123');
 
       expect(result).toEqual({ deleted: true, userId: 42 });
-      expect(mockMappingRepo.remove).toHaveBeenCalledWith(mockMapping);
+      expect(mockDataSource.transaction).toHaveBeenCalled();
+      expect(mockMappingRepo.remove).not.toHaveBeenCalled();
+    });
+
+    it('invalidates local state and preserves a generation fence', async () => {
+      const mockMapping = {
+        id: 1,
+        userId: 42,
+        platform: 'discord',
+        externalUserId: 'discord-1',
+        mappingGeneration: '7',
+      };
+      mockMappingRepo.findOne.mockResolvedValue(mockMapping);
+      const historyClearer: ChatHistoryClearer = {
+        clear: jest.fn().mockResolvedValue(undefined),
+      };
+      const serviceWithCleanup = new PrivacyDataService(
+        mockDataSource,
+        historyClearer,
+      );
+
+      await serviceWithCleanup.unlink('discord', 'discord-1');
+
+      expect(mockManagerQuery).toHaveBeenCalledWith(
+        expect.stringContaining("link_state = 'locally-unlinked'"),
+        ['discord', 'discord-1', '8'],
+      );
+      expect(mockManagerQuery).toHaveBeenCalledWith(
+        expect.stringContaining('discord_link_verify_records'),
+        ['discord-1'],
+      );
+      expect(historyClearer.clear).toHaveBeenCalledWith('discord-1');
+      expect(mockMappingRepo.remove).not.toHaveBeenCalled();
     });
 
     it('is idempotent - calling twice returns deleted:false second time', async () => {
@@ -138,6 +173,23 @@ describe('PrivacyDataService', () => {
 
       expect(first.deleted).toBe(true);
       expect(second.deleted).toBe(false);
+    });
+
+    it('does not advance an existing local-unlink tombstone', async () => {
+      mockMappingRepo.findOne.mockResolvedValue({
+        id: 1,
+        userId: 42,
+        platform: 'discord',
+        externalUserId: 'discord-1',
+        linkState: 'locally-unlinked',
+        mappingGeneration: '8',
+      });
+
+      await expect(service.unlink('discord', 'discord-1')).resolves.toEqual({
+        deleted: false,
+        userId: 42,
+      });
+      expect(mockDataSource.transaction).not.toHaveBeenCalled();
     });
   });
 

@@ -1,8 +1,11 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
-import type { Repository } from 'typeorm';
-import { CleanupCronService } from '@wispace/cleanup-cron';
+import { DataSource, type Repository } from 'typeorm';
+import {
+  CleanupCronService,
+  PlatformLinkAuditCleanupService,
+} from '@wispace/cleanup-cron';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import {
   PlatformWebhookInboundCleanupService,
@@ -108,6 +111,21 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       ],
     },
     CleanupCronService,
+    {
+      provide: PlatformLinkAuditCleanupService,
+      useFactory: (
+        cleanupCron: CleanupCronService,
+        configService: ConfigService,
+        dataSource: DataSource,
+      ) =>
+        new PlatformLinkAuditCleanupService(
+          cleanupCron,
+          configService,
+          dataSource,
+          { platform: 'messenger', advisoryLockId: 884_200_942 },
+        ),
+      inject: [CleanupCronService, ConfigService, DataSource],
+    },
     MessengerMessageLogCleanupService,
     {
       provide: PlatformWebhookInboundCleanupService,

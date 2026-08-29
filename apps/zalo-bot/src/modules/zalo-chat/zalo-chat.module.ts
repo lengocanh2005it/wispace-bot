@@ -74,6 +74,7 @@ import type { LearnerProfileStorePort } from '@wispace/learner-profile';
 import {
   CleanupCronService,
   PlatformCleanupCronService,
+  PlatformLinkAuditCleanupService,
 } from '@wispace/cleanup-cron';
 import { ZaloMessageLogEntity } from '../../infrastructure/database/entities/zalo-message-log.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
@@ -319,7 +320,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           {
             // #397: fresh-mapping revalidation before pipeline flush
             freshMappingProvider: (externalUserId) =>
-              accountLinkService.findUserIdByZaloId(externalUserId),
+              accountLinkService.findMappingStateByZaloId(externalUserId),
             clarificationStateClearer: (externalUserId) =>
               agentService.clearClarificationState(externalUserId),
             clarificationDeliveryFailure: (externalUserId, eventId) =>
@@ -445,6 +446,21 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     },
     ZaloOutboundService,
     CleanupCronService,
+    {
+      provide: PlatformLinkAuditCleanupService,
+      useFactory: (
+        cleanupCron: CleanupCronService,
+        configService: ConfigService,
+        dataSource: DataSource,
+      ) =>
+        new PlatformLinkAuditCleanupService(
+          cleanupCron,
+          configService,
+          dataSource,
+          { platform: 'zalo', advisoryLockId: 884_200_942 },
+        ),
+      inject: [CleanupCronService, ConfigService, DataSource],
+    },
     LlmSafetyCleanupService,
     {
       provide: PlatformDeadLetterCronService,
@@ -534,6 +550,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
   exports: [
     'LLM_PROVIDER_ADAPTER',
     PlatformAgentService,
+    PlatformChatHistoryService,
+    PlatformChatQueueService,
     ZaloChatService,
     ZaloOutboundService,
     PlatformDeadLetterService,

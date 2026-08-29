@@ -10,7 +10,11 @@ import { DopplerRuntimeSyncService } from '@wispace/doppler-sync';
 import type { DopplerWebhookPayload } from '@wispace/doppler-sync';
 import { PrivacyDataService } from '@wispace/database';
 import { DiscordReportCronService } from '../discord-chat/application/services/discord-report-cron.service';
-import { PlatformAgentService } from '@wispace/chat-agent';
+import {
+  PlatformAgentService,
+  PlatformChatHistoryService,
+  PlatformChatQueueService,
+} from '@wispace/chat-agent';
 
 @Controller('discord')
 @UseGuards(InternalApiKeyGuard)
@@ -22,6 +26,8 @@ export class DiscordOpsController extends PlatformOpsController<DopplerWebhookPa
     dopplerRuntimeSyncService: DopplerRuntimeSyncService,
     privacyService: PrivacyDataService,
     clarificationAgent: PlatformAgentService,
+    historyService: PlatformChatHistoryService,
+    queueService: PlatformChatQueueService,
   ) {
     super({
       dopplerRuntimeSync: (body) =>
@@ -33,13 +39,21 @@ export class DiscordOpsController extends PlatformOpsController<DopplerWebhookPa
           getSessions: createCalendarGetSessions(calendarService),
         }),
       unlinkUser: async (externalUserId) => {
-        const result = await privacyService.unlink('discord', externalUserId);
-        await clarificationAgent.clearClarificationState(externalUserId);
+        const result = await privacyService.unlink('discord', externalUserId, {
+          clearHistory: (id) => historyService.clear(id),
+          clearQueuedWork: (id) => queueService.clear(id),
+          clearClarification: (id) =>
+            clarificationAgent.clearClarificationState(id),
+        });
         return result;
       },
       deleteUser: async (externalUserId) => {
-        await privacyService.delete('discord', externalUserId);
-        await clarificationAgent.clearClarificationState(externalUserId);
+        await privacyService.delete('discord', externalUserId, {
+          clearHistory: (id) => historyService.clear(id),
+          clearQueuedWork: (id) => queueService.clear(id),
+          clearClarification: (id) =>
+            clarificationAgent.clearClarificationState(id),
+        });
       },
       exportUser: (externalUserId) =>
         privacyService.export('discord', externalUserId),

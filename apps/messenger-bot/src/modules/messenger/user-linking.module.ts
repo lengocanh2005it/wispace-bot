@@ -18,6 +18,11 @@ import { WispaceMessengerTokenVerifyService } from './infrastructure/wispace/wis
 import { MessengerLinkVerifyRecordEntity } from '../../infrastructure/database/entities/messenger-link-verify-record.entity';
 import { TypeormMessengerLinkVerifyRecordRepository } from './infrastructure/persistence/typeorm-messenger-link-verify-record.repository';
 import { MESSENGER_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/messenger-link-verify-record.repository.port';
+import { PlatformLinkStateService } from '@wispace/database';
+import {
+  WispaceConfigService,
+  WispaceLinkStatusClient,
+} from '@wispace/wispace-client';
 
 /**
  * Self-contained module for user linking flow:
@@ -38,6 +43,19 @@ import { MESSENGER_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/messenge
     MessengerLinkStartupService,
     WispaceMessengerTokenVerifyService,
     MessengerLinkReconcileCronService,
+    PlatformLinkStateService,
+    {
+      provide: WispaceLinkStatusClient,
+      useFactory: (configService: ConfigService) => {
+        const wispace = new WispaceConfigService((key) =>
+          configService.get<string>(key),
+        );
+        return new WispaceLinkStatusClient(
+          wispace.buildLinkStatusClientConfig('x-psid'),
+        );
+      },
+      inject: [ConfigService],
+    },
     {
       provide: MESSENGER_LINK_VERIFY_RECORD_REPOSITORY,
       useClass: TypeormMessengerLinkVerifyRecordRepository,

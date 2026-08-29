@@ -59,9 +59,9 @@ export class CanonicalPlatformService {
       `
       SELECT
         pref.preferred_platform,
-        (SELECT zal.external_user_id FROM zalo_account_links zal WHERE zal.user_id = $1 LIMIT 1) AS zalo_id,
-        (SELECT dal.external_user_id FROM discord_account_links dal WHERE dal.user_id = $1 LIMIT 1) AS discord_id,
-        (SELECT upm.external_user_id FROM user_platform_mappings upm WHERE upm.user_id = $1 AND upm.status = 'ACTIVE' LIMIT 1) AS messenger_id
+        (SELECT zal.external_user_id FROM zalo_account_links zal WHERE zal.user_id = $1 AND COALESCE(zal.link_state, 'active') = 'active' LIMIT 1) AS zalo_id,
+        (SELECT dal.external_user_id FROM discord_account_links dal WHERE dal.user_id = $1 AND COALESCE(dal.link_state, 'active') = 'active' LIMIT 1) AS discord_id,
+        (SELECT upm.external_user_id FROM user_platform_mappings upm WHERE upm.user_id = $1 AND upm.status = 'ACTIVE' AND COALESCE(upm.link_state, 'active') = 'active' LIMIT 1) AS messenger_id
       FROM (SELECT $1::int AS user_id) u
       LEFT JOIN user_notification_preferences pref ON pref.user_id = u.user_id
       `,

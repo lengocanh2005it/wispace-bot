@@ -1,7 +1,12 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { WispaceTokenVerifyService } from '@wispace/wispace-client';
+import {
+  WispaceConfigService,
+  WispaceLinkStatusClient,
+  WispaceTokenVerifyService,
+} from '@wispace/wispace-client';
+import { PlatformLinkStateService } from '@wispace/database';
 import { BotCommonModule } from '@wispace/bot-common/guard';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import {
@@ -53,6 +58,19 @@ import { DiscordOauthStateService } from './application/services/discord-oauth-s
     DiscordGuildMembershipService,
     DiscordLinkCompletionService,
     DiscordLinkReconcileCronService,
+    PlatformLinkStateService,
+    {
+      provide: WispaceLinkStatusClient,
+      useFactory: (configService: ConfigService) => {
+        const wispace = new WispaceConfigService((key) =>
+          configService.get<string>(key),
+        );
+        return new WispaceLinkStatusClient(
+          wispace.buildLinkStatusClientConfig('x-discordid'),
+        );
+      },
+      inject: [ConfigService],
+    },
     DiscordRelinkNotifier,
     DiscordWelcomeService,
     DiscordOauthStateService,

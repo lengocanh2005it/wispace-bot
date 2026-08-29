@@ -6,7 +6,10 @@ import type { WispaceCalendarService } from '@wispace/wispace-client';
 import type { Repository } from 'typeorm';
 import { MESSAGE_SENDER } from '../ports/message-sender.port';
 import type { MessageSenderPort } from '../ports/message-sender.port';
-import { MAPPING_READER } from '../ports/mapping-reader.port';
+import {
+  MAPPING_READER,
+  type MappingReaderPort,
+} from '../ports/mapping-reader.port';
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
@@ -187,17 +190,36 @@ export function createStudyReminderProviders(
         jobRepository: StudyReminderJobRepositoryPort,
         messageSender: MessageSenderPort,
         scheduleService: StudyReminderScheduleService,
+        mappingReader: MappingReaderPort,
       ) =>
         new StudyReminderDispatchService(
           jobRepository,
           messageSender,
           scheduleService,
           options.platform,
+          undefined,
+          {
+            getMappingState: async (externalUserId) => {
+              if (mappingReader.getMappingState) {
+                return mappingReader.getMappingState(
+                  options.platform,
+                  externalUserId,
+                );
+              }
+              const link =
+                await mappingReader.findActiveMappingByExternalUserId(
+                  options.platform,
+                  externalUserId,
+                );
+              return link ? 'active' : null;
+            },
+          },
         ),
       inject: [
         STUDY_REMINDER_JOB_REPOSITORY,
         MESSAGE_SENDER,
         StudyReminderScheduleService,
+        MAPPING_READER,
       ],
     },
     {

@@ -82,6 +82,10 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     });
   }
 
+  clearChatBuffer(psid: string): Promise<boolean> {
+    return this.sharedStore.clearChatBuffer(psid);
+  }
+
   listPsidsReadyForFlush(limit: number): Promise<string[]> {
     return this.sharedStore.listReadyExternalUserIds(limit);
   }

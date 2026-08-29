@@ -33,6 +33,7 @@ import {
 import { BotCommonModule } from '@wispace/bot-common/guard';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { ZaloChatModule } from './zalo-chat.module';
+import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloReportCronService } from './infrastructure/persistence/zalo-report-cron.service';
 import { ZaloReportDeliveryService } from './application/services/zalo-report-delivery.service';
@@ -46,6 +47,7 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
       ScheduledReportClaimEntity,
     ]),
     ZaloChatModule,
+    ZaloOauthModule,
     ZaloWispaceModule,
     BotCommonModule,
     ChatMeteringModule.forPlatform('zalo'),

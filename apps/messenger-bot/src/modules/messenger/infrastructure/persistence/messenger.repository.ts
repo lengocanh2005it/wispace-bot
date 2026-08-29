@@ -12,6 +12,7 @@ import { MessengerRepositoryPort } from '../../domain/repositories/messenger.rep
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
+import type { PlatformLinkState } from '@wispace/database';
 import {
   MessengerMessageLog,
   NotificationCadence,
@@ -45,7 +46,17 @@ export class MessengerRepository
       where: { platform: PLATFORM, externalUserId: psid, status: 'ACTIVE' },
     });
 
-    return row ? this.mapEntity(row) : null;
+    return row && this.isUsableLink(row) ? this.mapEntity(row) : null;
+  }
+
+  async findMappingStateByPsid(
+    psid: string,
+  ): Promise<PlatformLinkState | null> {
+    const row = await this.mappingRepo.findOne({
+      where: { platform: PLATFORM, externalUserId: psid },
+      select: { linkState: true },
+    });
+    return row?.linkState ?? (row ? 'active' : null);
   }
 
   async findActiveMappingByUserId(
@@ -56,7 +67,7 @@ export class MessengerRepository
       order: { id: 'DESC' },
     });
 
-    if (!row?.externalUserId) {
+    if (!row?.externalUserId || !this.isUsableLink(row)) {
       return null;
     }
 
@@ -68,14 +79,16 @@ export class MessengerRepository
     userId: number;
     topic?: string;
     cadence?: NotificationCadence;
+    expectedGeneration?: string;
   }): Promise<UserMessengerMapping | null> {
     const token = buildPocPsidToken(params.psid);
 
     // 1. Re-activate a previously deactivated mapping (keeps its id) — the
     //    INSERT below can only conflict with ACTIVE rows, so an INACTIVE row
     //    would otherwise be left behind while a duplicate ACTIVE row is created.
-    await this.mappingRepo.manager.query(
-      `
+    const reactivatedRows: Array<Record<string, unknown>> =
+      await this.mappingRepo.manager.query(
+        `
       UPDATE user_platform_mappings
       SET
         user_id = $3,
@@ -83,20 +96,46 @@ export class MessengerRepository
         topic = COALESCE($5, topic),
         cadence = COALESCE($6, cadence),
         status = 'ACTIVE',
+        link_state = 'active',
+        mapping_generation = CASE WHEN link_state <> 'active' THEN mapping_generation + 1 ELSE mapping_generation END,
+        revoked_at = NULL,
+        revocation_reason = NULL,
         updated_at = now()
       WHERE platform = $1
         AND external_user_id = $2
         AND status = 'INACTIVE'
+        AND mapping_generation = COALESCE($7::bigint, mapping_generation)
+      RETURNING id
     `,
-      [
-        PLATFORM,
-        params.psid,
-        params.userId,
-        token,
-        params.topic ?? null,
-        params.cadence ?? null,
-      ],
-    );
+        [
+          PLATFORM,
+          params.psid,
+          params.userId,
+          token,
+          params.topic ?? null,
+          params.cadence ?? null,
+          params.expectedGeneration ?? null,
+        ],
+      );
+
+    if (
+      params.expectedGeneration !== undefined &&
+      reactivatedRows.length === 0
+    ) {
+      const existingRows: Array<Record<string, unknown>> =
+        await this.mappingRepo.manager.query(
+          `SELECT id, mapping_generation FROM user_platform_mappings
+           WHERE platform = $1 AND external_user_id = $2`,
+          [PLATFORM, params.psid],
+        );
+      if (
+        existingRows.length > 0 &&
+        String(existingRows[0].mapping_generation ?? '1') !==
+          params.expectedGeneration
+      ) {
+        return null;
+      }
+    }
 
     // 2. Atomic upsert against the partial unique index
     //    (platform, external_user_id WHERE status='ACTIVE'): concurrent link
@@ -107,8 +146,8 @@ export class MessengerRepository
       await this.mappingRepo.manager.query(
         `
         INSERT INTO user_platform_mappings
-          (platform, external_user_id, user_id, notification_messages_token, topic, cadence, status)
-        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE')
+          (platform, external_user_id, user_id, notification_messages_token, topic, cadence, status, link_state)
+        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', 'active')
         ON CONFLICT (platform, external_user_id)
           WHERE status = 'ACTIVE' AND external_user_id IS NOT NULL
         DO UPDATE SET
@@ -120,10 +159,18 @@ export class MessengerRepository
           topic = COALESCE(EXCLUDED.topic, user_platform_mappings.topic),
           cadence = COALESCE(EXCLUDED.cadence, user_platform_mappings.cadence),
           status = 'ACTIVE',
+          link_state = 'active',
+          mapping_generation = CASE WHEN user_platform_mappings.link_state <> 'active'
+            OR user_platform_mappings.user_id <> EXCLUDED.user_id
+            THEN user_platform_mappings.mapping_generation + 1
+            ELSE user_platform_mappings.mapping_generation END,
+          revoked_at = NULL,
+          revocation_reason = NULL,
           updated_at = now()
         -- #383 CAS guard: skip update when concurrent write changed the userId,
         -- preventing a check-then-write race from bypassing the relink policy.
         WHERE user_platform_mappings.user_id = EXCLUDED.user_id
+          AND user_platform_mappings.mapping_generation = COALESCE($7::bigint, user_platform_mappings.mapping_generation)
         RETURNING *
       `,
         [
@@ -133,6 +180,7 @@ export class MessengerRepository
           token,
           params.topic ?? null,
           params.cadence ?? null,
+          params.expectedGeneration ?? null,
         ],
       );
 
@@ -172,6 +220,15 @@ export class MessengerRepository
       existing.cadence = params.cadence;
       existing.topic = params.topic;
       existing.status = 'ACTIVE';
+      existing.mappingGeneration =
+        existing.linkState && existing.linkState !== 'active'
+          ? String(BigInt(existing.mappingGeneration ?? '1') + 1n)
+          : (existing.mappingGeneration ?? '1');
+      existing.linkState = 'active';
+      existing.lastVerifiedAt = new Date();
+      existing.lastUnknownAt = null;
+      existing.revokedAt = null;
+      existing.revocationReason = null;
 
       const saved = await this.mappingRepo.save(existing);
       return this.mapEntity(saved);
@@ -185,6 +242,8 @@ export class MessengerRepository
       cadence: params.cadence,
       topic: params.topic,
       status: 'ACTIVE',
+      linkState: 'active',
+      mappingGeneration: '1',
     });
 
     const saved = await this.mappingRepo.save(created);
@@ -218,7 +277,11 @@ export class MessengerRepository
       .take(limit)
       .getMany();
 
-    return this.dedupeMappingsByPsid(rows.map((row) => this.mapEntity(row)));
+    return this.dedupeMappingsByPsid(
+      rows
+        .filter((row) => this.isUsableLink(row))
+        .map((row) => this.mapEntity(row)),
+    );
   }
 
   private dedupeMappingsByPsid(
@@ -331,7 +394,11 @@ export class MessengerRepository
       .take(limit)
       .getMany();
 
-    return this.dedupeMappingsByPsid(rows.map((row) => this.mapEntity(row)));
+    return this.dedupeMappingsByPsid(
+      rows
+        .filter((row) => this.isUsableLink(row))
+        .map((row) => this.mapEntity(row)),
+    );
   }
 
   async hasSentScheduledReportToday(externalUserId: string): Promise<boolean> {
@@ -597,6 +664,23 @@ export class MessengerRepository
       cadence: (row.cadence as NotificationCadence | null) ?? null,
       topic: (row.topic as string | null) ?? null,
       status: (row.status as 'ACTIVE' | 'INACTIVE') ?? 'ACTIVE',
+      linkState:
+        (row.link_state as
+          | 'active'
+          | 'confirmed-revoked'
+          | 'temporarily-unknown'
+          | 'locally-unlinked') ?? 'active',
+      mappingGeneration: String(row.mapping_generation ?? '1'),
+      lastVerifiedAt: row.last_verified_at
+        ? new Date(String(row.last_verified_at))
+        : null,
+      lastUnknownAt: row.last_unknown_at
+        ? new Date(String(row.last_unknown_at))
+        : null,
+      revokedAt: row.revoked_at ? new Date(String(row.revoked_at)) : null,
+      revocationReason: (row.revocation_reason as string | null) ?? null,
+      upstreamOwnershipVersion:
+        (row.upstream_ownership_version as string | null) ?? null,
       createdAt: new Date(String(row.created_at)),
       updatedAt: new Date(String(row.updated_at)),
     };
@@ -611,9 +695,14 @@ export class MessengerRepository
       cadence: entity.cadence ?? undefined,
       topic: entity.topic ?? undefined,
       status: entity.status,
+      mappingGeneration: entity.mappingGeneration ?? '1',
       createdAt: entity.createdAt.toISOString(),
       updatedAt: entity.updatedAt.toISOString(),
     };
+  }
+
+  private isUsableLink(entity: UserPlatformMappingEntity): boolean {
+    return !entity.linkState || entity.linkState === 'active';
   }
 
   private mapLogEntity(entity: MessageLogEntity): MessengerMessageLog {

@@ -21,6 +21,8 @@ import { ReportCronService } from '../../application/services/report-cron.servic
 import { ReportSendRetryDispatchService } from '../../application/services/report-send-retry-dispatch.service';
 import { PrivacyDataService } from '@wispace/database';
 import { MessengerAgentService } from '@messenger/modules/messenger/application/agent/messenger-agent.service';
+import { MessengerChatEnqueueService } from '@messenger/modules/messenger/application/services/messenger-chat-enqueue.service';
+import { PlatformChatHistoryService } from '@wispace/chat-agent';
 
 class SyncStudyCalendarBody {
   @IsNumber()
@@ -69,6 +71,8 @@ export class SchedulerController {
     private readonly dopplerRuntimeSyncService: DopplerRuntimeSyncService,
     private readonly privacyService: PrivacyDataService,
     private readonly clarificationAgent: MessengerAgentService,
+    private readonly historyService: PlatformChatHistoryService,
+    private readonly chatEnqueueService: MessengerChatEnqueueService,
   ) {}
 
   @Post('ops/doppler-sync')
@@ -165,24 +169,23 @@ export class SchedulerController {
   @Post('privacy/unlink')
   @HttpCode(200)
   unlinkUser(@Body() body: PrivacyActionBody) {
-    return this.privacyService
-      .unlink('messenger', body.externalUserId)
-      .then(async (result) => {
-        await this.clarificationAgent.clearClarificationState(
-          body.externalUserId,
-        );
-        return result;
-      });
+    return this.privacyService.unlink('messenger', body.externalUserId, {
+      clearHistory: (id) => this.historyService.clear(id),
+      clearQueuedWork: (id) => this.chatEnqueueService.clear(id),
+      clearClarification: (id) =>
+        this.clarificationAgent.clearClarificationState(id),
+    });
   }
 
   @Post('privacy/delete')
   @HttpCode(200)
   deleteUser(@Body() body: PrivacyActionBody) {
-    return this.privacyService
-      .delete('messenger', body.externalUserId)
-      .then(() =>
-        this.clarificationAgent.clearClarificationState(body.externalUserId),
-      );
+    return this.privacyService.delete('messenger', body.externalUserId, {
+      clearHistory: (id) => this.historyService.clear(id),
+      clearQueuedWork: (id) => this.chatEnqueueService.clear(id),
+      clearClarification: (id) =>
+        this.clarificationAgent.clearClarificationState(id),
+    });
   }
 
   @Post('privacy/export')

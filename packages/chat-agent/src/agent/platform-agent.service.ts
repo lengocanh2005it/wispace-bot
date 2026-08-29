@@ -72,6 +72,7 @@ import { buildLlmExecutionConfig } from '@wispace/llm-agent';
 export class PlatformAgentService {
   private readonly logger = new Logger(PlatformAgentService.name);
   private agent?: LlmAgentService<PlatformAgentToolContext>;
+  private readonly identityVersions = new Map<string, string>();
   private readonly clarificationMachine: ClarificationStateMachine;
   private readonly clarificationStore: ClarificationStateStore;
 
@@ -148,6 +149,25 @@ export class PlatformAgentService {
     }
     const effectiveInput = clarification.input ?? input;
     const identity = await this.resolveCurrentIdentity(effectiveInput);
+    const identityChanged = identity
+      ? this.rememberIdentityVersion(
+          effectiveInput.externalUserId,
+          identity.mappingVersion,
+        )
+      : this.forgetIdentityVersion(effectiveInput.externalUserId);
+    if (!identity) {
+      // Fail closed: never feed turns belonging to a revoked/unknown mapping
+      // back to the model. This also clears the memory backend, not only Redis.
+      await this.historyService
+        .clear(effectiveInput.externalUserId)
+        .catch(() => undefined);
+    } else if (identityChanged) {
+      // A queued pipeline turn may carry history read before a relink/revoke.
+      // Never let that snapshot cross an ownership generation boundary.
+      await this.historyService
+        .clear(effectiveInput.externalUserId)
+        .catch(() => undefined);
+    }
     const resolvedInput = identity
       ? {
           ...effectiveInput,
@@ -183,9 +203,11 @@ export class PlatformAgentService {
       };
     }
 
-    const history =
-      effectiveInput.history ??
-      (await this.historyService.getHistory(resolvedInput.externalUserId));
+    const history = identity
+      ? identityChanged || effectiveInput.history === undefined
+        ? await this.historyService.getHistory(resolvedInput.externalUserId)
+        : effectiveInput.history
+      : [];
 
     const result = await this.agent.reply(
       {
@@ -257,6 +279,26 @@ export class PlatformAgentService {
       );
       return undefined;
     }
+  }
+
+  private rememberIdentityVersion(
+    externalUserId: string,
+    mappingVersion: string,
+  ): boolean {
+    const previous = this.identityVersions.get(externalUserId);
+    this.identityVersions.delete(externalUserId);
+    this.identityVersions.set(externalUserId, mappingVersion);
+    while (this.identityVersions.size > 10_000) {
+      const oldest = this.identityVersions.keys().next().value;
+      if (oldest === undefined) break;
+      this.identityVersions.delete(oldest);
+    }
+    return previous !== undefined && previous !== mappingVersion;
+  }
+
+  private forgetIdentityVersion(externalUserId: string): boolean {
+    const hadIdentity = this.identityVersions.delete(externalUserId);
+    return hadIdentity;
   }
 
   private async handleClarification(input: PlatformAgentInput): Promise<{

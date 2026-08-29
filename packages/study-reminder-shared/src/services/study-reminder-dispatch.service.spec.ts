@@ -141,6 +141,41 @@ describe('StudyReminderDispatchService', () => {
     expect(result).toMatchObject({ claimed: 1, sent: 1, cancelled: 0 });
   });
 
+  it('does not send a claimed reminder after revoke and retries unknown state', async () => {
+    const job = makeJob({ leaseToken: 'lease-1' });
+    jobRepo.findDueJobs.mockResolvedValue([job]);
+    jobRepo.claimJob.mockResolvedValue(job);
+    const getMappingState = jest
+      .fn()
+      .mockResolvedValueOnce('confirmed-revoked')
+      .mockResolvedValueOnce('temporarily-unknown');
+    service = new StudyReminderDispatchService(
+      jobRepo,
+      messageSender,
+      scheduleService,
+      'messenger',
+      hooks,
+      { getMappingState },
+    );
+
+    const first = await service.dispatchDueReminders();
+    expect(first.cancelled).toBe(1);
+    expect(messageSender.sendText).not.toHaveBeenCalled();
+    expect(jobRepo.markCancelled).toHaveBeenCalledWith(
+      1,
+      'lease-1',
+      'link_confirmed-revoked',
+    );
+
+    jobRepo.findDueJobs.mockResolvedValue([job]);
+    jobRepo.claimJob.mockResolvedValue(job);
+    const second = await service.dispatchDueReminders();
+    expect(second.retried).toBe(1);
+    expect(jobRepo.markFailed).toHaveBeenCalledWith(
+      expect.objectContaining({ terminal: false }),
+    );
+  });
+
   it('scopes every due/claim/reset query to its own platform (#180)', async () => {
     // eslint-disable-next-line @typescript-eslint/unbound-method
     const { findDueJobs, claimJob, resetStuckProcessingJobs } = jobRepo;

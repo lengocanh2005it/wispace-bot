@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { Counter } from 'prom-client';
@@ -11,6 +11,14 @@ import {
 } from '../../domain/ports/messenger-link-verify-record.repository.port';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
+import { PlatformLinkStateService } from '@wispace/database';
+import { WispaceLinkStatusClient } from '@wispace/wispace-client';
+import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
+import {
+  CLARIFICATION_STATE_STORE,
+  type ClarificationStateStore,
+} from '@wispace/chat-agent';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 const DEFAULT_RECONCILE_AGE_MS = 60_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 3_600_000;
@@ -40,13 +48,25 @@ export class MessengerLinkReconcileCronService {
     private readonly mappingRepository: MessengerMappingRepositoryPort,
     private readonly configService: ConfigService,
     private readonly pgLock: PgAdvisoryLockService,
+    @Optional() private readonly linkState?: PlatformLinkStateService,
+    @Optional() private readonly linkStatusClient?: WispaceLinkStatusClient,
+    @Optional()
+    @Inject(REDIS_CLIENT)
+    private readonly redisClient?: RedisClientPort,
+    @Optional()
+    @Inject(CLARIFICATION_STATE_STORE)
+    private readonly clarificationStateStore?: ClarificationStateStore,
+    @Optional() private readonly metrics?: BotMetricsService,
   ) {}
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async handleReconcile(): Promise<void> {
     const result = await this.pgLock.withLock(
       ADVISORY_LOCK.MESSENGER_LINK_RECONCILE,
-      () => this.runReconcileBatch(),
+      async () => {
+        await this.runLinkStatusReconcile();
+        await this.runReconcileBatch();
+      },
     );
 
     if (result === null) {
@@ -99,6 +119,26 @@ export class MessengerLinkReconcileCronService {
         continue;
       }
 
+      const existingState = await this.linkState?.getLink(
+        'messenger',
+        record.psid,
+      );
+      if (
+        existingState &&
+        (existingState.state === 'confirmed-revoked' ||
+          (existingState.state !== 'active' &&
+            (existingState.state === 'locally-unlinked' &&
+            existingState.revokedAt &&
+            record.verifiedAt <= existingState.revokedAt
+              ? true
+              : !(await this.isFreshRelink(record.psid, record.userId)))))
+      ) {
+        await this.verifyRecordService.consumeRecord(record.psid);
+        dropped += 1;
+        reconcileRecordsTotal.inc({ outcome: 'stale_writer' });
+        continue;
+      }
+
       try {
         // Re-commit the mapping with just psid+userId (topic/cadence
         // will be COALESCEd to null on first commit; the user can refine
@@ -106,6 +146,9 @@ export class MessengerLinkReconcileCronService {
         await this.mappingRepository.upsertPsidUserLink({
           psid: record.psid,
           userId: record.userId,
+          ...(existingState?.generation
+            ? { expectedGeneration: existingState.generation }
+            : {}),
         });
         await this.verifyRecordService.consumeRecord(record.psid);
         this.logger.log(
@@ -129,6 +172,75 @@ export class MessengerLinkReconcileCronService {
     this.logger.log(
       `Messenger link reconcile batch: records=${records.length} reconciled=${reconciled} alreadyCommitted=${alreadyCommitted} dropped=${dropped} failed=${failed}`,
     );
+  }
+
+  private async runLinkStatusReconcile(): Promise<void> {
+    if (!this.linkState || !this.linkStatusClient?.enabled) return;
+    const totals = await this.linkState.reconcile(
+      'messenger',
+      this.linkStatusClient,
+      {
+        onRevoked: (externalUserId, userId) =>
+          this.clearRevokedState(externalUserId, userId),
+        onUnknown: (externalUserId, userId) =>
+          this.clearRevokedState(externalUserId, userId, false, false),
+      },
+    );
+    this.metrics?.incPlatformLinkTransition(
+      'messenger',
+      'revoked',
+      totals.revoked,
+    );
+    this.metrics?.incPlatformLinkTransition(
+      'messenger',
+      'unknown',
+      totals.unknown,
+    );
+    this.metrics?.incPlatformLinkTransition(
+      'messenger',
+      'recovered',
+      totals.recovered,
+    );
+    this.metrics?.incPlatformLinkTransition(
+      'messenger',
+      'stale_writer',
+      totals.staleWriter,
+    );
+  }
+
+  private async clearRevokedState(
+    externalUserId: string,
+    userId?: number,
+    invalidateVerifyIntent = true,
+    clearQueuedWork = true,
+  ): Promise<void> {
+    if (invalidateVerifyIntent) {
+      await this.verifyRecordService
+        .consumeRecord(externalUserId)
+        .catch(() => undefined);
+    }
+    await this.clarificationStateStore
+      ?.clear(`messenger:${externalUserId}`)
+      .catch(() => undefined);
+    try {
+      await this.redisClient
+        ?.getNativeClient()
+        ?.del(
+          `chat:history:${externalUserId}`,
+          ...(clearQueuedWork ? [`chat:queue:buffer:${externalUserId}`] : []),
+          ...(userId !== undefined
+            ? [`cache:user:display:messenger:${userId}`]
+            : []),
+        );
+    } catch {
+      // Cache eviction is best effort; the DB state remains authoritative.
+    }
+  }
+
+  private async isFreshRelink(psid: string, userId: number): Promise<boolean> {
+    if (!this.linkStatusClient?.enabled) return false;
+    const status = await this.linkStatusClient.getStatus(psid);
+    return status.kind === 'active' && status.userId === userId;
   }
 
   private readPositiveInt(key: string, fallback: number): number {

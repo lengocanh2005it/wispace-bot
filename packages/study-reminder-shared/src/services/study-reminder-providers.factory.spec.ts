@@ -59,6 +59,7 @@ describe('createStudyReminderProviders', () => {
         STUDY_REMINDER_JOB_REPOSITORY,
         MESSAGE_SENDER,
         StudyReminderScheduleService,
+        MAPPING_READER,
       ],
     });
     expect(p[6]).toMatchObject({

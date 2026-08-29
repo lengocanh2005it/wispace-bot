@@ -2,9 +2,11 @@ import {
   NotificationCadence,
   UserMessengerMapping,
 } from '../entities/messenger.types';
+import type { PlatformLinkState } from '@wispace/database';
 
 export interface MessengerMappingRepositoryPort {
   findActiveMappingByPsid(psid: string): Promise<UserMessengerMapping | null>;
+  findMappingStateByPsid(psid: string): Promise<PlatformLinkState | null>;
   findActiveMappingByUserId(
     userId: number,
   ): Promise<UserMessengerMapping | null>;
@@ -13,6 +15,7 @@ export interface MessengerMappingRepositoryPort {
     userId: number;
     topic?: string;
     cadence?: NotificationCadence;
+    expectedGeneration?: string;
   }): Promise<UserMessengerMapping | null>;
   findActiveSubscribedMappings(): Promise<UserMessengerMapping[]>;
   findActiveSubscribedMappingsPage(

@@ -381,6 +381,18 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     );
   }
 
+  async clearChatBuffer(externalUserId: string): Promise<boolean> {
+    return (
+      (await this.withExternalUserIdLock(externalUserId, async (client) => {
+        const deleted = await client.del(this.bufferKey(externalUserId));
+        await client.srem(this.activeSet, externalUserId);
+        await client.zrem(this.flushSet, externalUserId);
+        await client.zrem(this.stuckSet, externalUserId);
+        return deleted > 0;
+      })) ?? false
+    );
+  }
+
   async listReadyExternalUserIds(limit: number): Promise<string[]> {
     const client = this.redisClient.getNativeClient();
     if (!client) {

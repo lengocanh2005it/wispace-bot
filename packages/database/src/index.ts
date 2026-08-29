@@ -9,6 +9,7 @@ export { RescheduleConfirmationEntity } from './entities/reschedule-confirmation
 export { CronLeaderLeaseEntity } from './entities/cron-leader-lease.entity';
 export { LearnerProfileEntity } from './entities/learner-profile.entity';
 export { UserNotificationPreferenceEntity } from './entities/user-notification-preference.entity';
+export { PlatformLinkAuditEventEntity } from './entities/platform-link-audit-event.entity';
 export {
   SHARED_ENTITIES,
   getTypeOrmOptions,
@@ -38,6 +39,9 @@ export {
 // Shared types
 export {
   type Platform,
+  type PlatformLinkState,
+  type PlatformLinkObservation,
+  type PlatformLinkAuditEventType,
   type ChatQuotaDenyReason,
   type ChatIdempotencyStatus,
   type ChatQuotaReleaseReason,
@@ -49,6 +53,12 @@ export {
   type OutboundDeliveryOutcome,
   MessageType,
 } from './types';
+export {
+  PlatformLinkStateService,
+  type PlatformLinkRow,
+  type PlatformLinkTransition,
+  type PlatformLinkStatusReader,
+} from './services/platform-link-state.service';
 
 export { PlatformDeadLetterService } from './services/platform-dead-letter.service';
 export {

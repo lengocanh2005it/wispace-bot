@@ -10,3 +10,4 @@ data/*.json
 GUIDE.md
 .turbo/
 .commandcode/
+.temp/

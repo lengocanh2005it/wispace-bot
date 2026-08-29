@@ -11,7 +11,11 @@ import { DopplerRuntimeSyncService } from '@wispace/doppler-sync';
 import type { DopplerWebhookPayload } from '@wispace/doppler-sync';
 import { PrivacyDataService } from '@wispace/database';
 import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
-import { PlatformAgentService } from '@wispace/chat-agent';
+import {
+  PlatformAgentService,
+  PlatformChatHistoryService,
+  PlatformChatQueueService,
+} from '@wispace/chat-agent';
 
 class SyncStudyCalendarBody {
   @IsNumber()
@@ -35,6 +39,8 @@ export class ZaloOpsController extends PlatformOpsController<DopplerWebhookPaylo
     dopplerRuntimeSyncService: DopplerRuntimeSyncService,
     privacyService: PrivacyDataService,
     clarificationAgent: PlatformAgentService,
+    historyService: PlatformChatHistoryService,
+    queueService: PlatformChatQueueService,
   ) {
     super({
       dopplerRuntimeSync: (body) =>
@@ -49,13 +55,21 @@ export class ZaloOpsController extends PlatformOpsController<DopplerWebhookPaylo
           getSessions: createCalendarGetSessions(calendarService),
         }),
       unlinkUser: async (externalUserId) => {
-        const result = await privacyService.unlink('zalo', externalUserId);
-        await clarificationAgent.clearClarificationState(externalUserId);
+        const result = await privacyService.unlink('zalo', externalUserId, {
+          clearHistory: (id) => historyService.clear(id),
+          clearQueuedWork: (id) => queueService.clear(id),
+          clearClarification: (id) =>
+            clarificationAgent.clearClarificationState(id),
+        });
         return result;
       },
       deleteUser: async (externalUserId) => {
-        await privacyService.delete('zalo', externalUserId);
-        await clarificationAgent.clearClarificationState(externalUserId);
+        await privacyService.delete('zalo', externalUserId, {
+          clearHistory: (id) => historyService.clear(id),
+          clearQueuedWork: (id) => queueService.clear(id),
+          clearClarification: (id) =>
+            clarificationAgent.clearClarificationState(id),
+        });
       },
       exportUser: (externalUserId) =>
         privacyService.export('zalo', externalUserId),

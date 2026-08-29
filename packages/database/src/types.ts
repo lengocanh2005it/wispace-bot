@@ -4,6 +4,25 @@ export type Platform = 'messenger' | 'discord' | 'zalo';
 /** Mapping status — only ACTIVE mappings receive notifications and are synced. */
 export type MappingStatus = 'ACTIVE' | 'INACTIVE';
 
+/** Canonical ownership state of a platform mapping. */
+export type PlatformLinkState =
+  | 'active'
+  | 'confirmed-revoked'
+  | 'temporarily-unknown'
+  | 'locally-unlinked';
+
+export type PlatformLinkObservation =
+  | { kind: 'active'; userId: number; ownershipVersion?: string }
+  | { kind: 'revoked'; reason: string; ownershipVersion?: string }
+  | { kind: 'unknown'; reason: string };
+
+export type PlatformLinkAuditEventType =
+  | 'revoked'
+  | 'unknown'
+  | 'recovered'
+  | 'stale_writer'
+  | 'locally_unlinked';
+
 /** Message log delivery status. */
 export type MessageLogStatus = 'SENT' | 'FAILED';
 
@@ -31,10 +50,19 @@ export type ChatQuotaEventType =
 export type ChatQuotaReleaseReason = 'send_failed' | 'stuck_recover';
 
 /** Report send job status. */
-export type ReportSendJobStatus = 'pending' | 'processing' | 'sent' | 'failed';
+export type ReportSendJobStatus =
+  | 'pending'
+  | 'processing'
+  | 'sent'
+  | 'failed'
+  | 'cancelled';
 
 /** Scheduled report claim status. */
-export type ScheduledReportClaimStatus = 'claimed' | 'sent' | 'released';
+export type ScheduledReportClaimStatus =
+  | 'claimed'
+  | 'sent'
+  | 'released'
+  | 'cancelled';
 
 /** Webhook dead letter status. */
 export type WebhookDeadLetterStatus = 'pending' | 'replayed' | 'abandoned';

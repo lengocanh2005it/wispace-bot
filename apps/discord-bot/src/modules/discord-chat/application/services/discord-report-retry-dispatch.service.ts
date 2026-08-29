@@ -61,7 +61,21 @@ export class DiscordReportRetryDispatchService {
         },
       });
 
-      if (!link) {
+      if (!link || (link.linkState && link.linkState !== 'active')) {
+        if (link?.linkState === 'temporarily-unknown') {
+          const nextRetryCount = job.retryCount + 1;
+          await this.jobRepository.markFailed({
+            jobId: job.id,
+            leaseToken,
+            errorMessage: 'WISPACE link status temporarily unknown',
+            retryCount: nextRetryCount,
+            nextRetryAt: addMinutes(new Date(), 15),
+            terminal: nextRetryCount >= job.maxRetries,
+          });
+          if (nextRetryCount < job.maxRetries) retryQueued += 1;
+          else failed += 1;
+          continue;
+        }
         await this.jobRepository.markFailed({
           jobId: job.id,
           leaseToken,

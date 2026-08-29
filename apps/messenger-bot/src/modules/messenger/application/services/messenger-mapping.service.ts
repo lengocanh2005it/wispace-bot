@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import {
@@ -19,6 +19,7 @@ import {
   CLARIFICATION_STATE_STORE,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
+import { PlatformLinkStateService } from '@wispace/database';
 
 @Injectable()
 export class MessengerMappingService {
@@ -32,6 +33,7 @@ export class MessengerMappingService {
     private readonly sessionSourceService: StudySessionSourceService,
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,
+    @Optional() private readonly linkState?: PlatformLinkStateService,
   ) {}
 
   async linkFromContext(
@@ -139,11 +141,18 @@ export class MessengerMappingService {
       });
     }
 
+    const observedLink = await this.linkState?.getLink(
+      'messenger',
+      params.psid,
+    );
     const mapping = await this.repository.upsertPsidUserLink({
       psid: params.psid,
       userId: params.userId,
       topic: params.topic,
       cadence: params.cadence,
+      ...(observedLink?.generation
+        ? { expectedGeneration: observedLink.generation }
+        : {}),
     });
 
     // #383: CAS guard may have blocked the upsert when a concurrent write

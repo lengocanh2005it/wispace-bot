@@ -1,4 +1,5 @@
 import type { UserLink } from '../types/study-reminder.types';
+import type { PlatformLinkState } from '@wispace/database';
 
 export const MAPPING_READER = Symbol('MAPPING_READER');
 
@@ -23,4 +24,9 @@ export interface MappingReaderPort {
     platform: string,
     externalUserId: string,
   ): Promise<UserLink | null>;
+  /** Current local ownership state, including transient/terminal states. */
+  getMappingState?(
+    platform: string,
+    externalUserId: string,
+  ): Promise<PlatformLinkState | null>;
 }

@@ -6,6 +6,7 @@ import { join } from 'path';
 import {
   CleanupCronService,
   PlatformCleanupCronService,
+  PlatformLinkAuditCleanupService,
 } from '@wispace/cleanup-cron';
 import {
   ADVISORY_LOCKS,
@@ -293,7 +294,7 @@ const REGISTER_REPORT_MESSAGE =
             propagateServerChannel: true,
             // #397: fresh-mapping revalidation before pipeline flush
             freshMappingProvider: (externalUserId) =>
-              accountLinkService.findUserIdByDiscordId(externalUserId),
+              accountLinkService.findMappingStateByDiscordId(externalUserId),
             clarificationStateClearer: (externalUserId) =>
               agentService.clearClarificationState(externalUserId),
             clarificationDeliveryFailure: (externalUserId, eventId) =>
@@ -407,6 +408,21 @@ const REGISTER_REPORT_MESSAGE =
     },
     DiscordMenuService,
     CleanupCronService,
+    {
+      provide: PlatformLinkAuditCleanupService,
+      useFactory: (
+        cleanupCron: CleanupCronService,
+        configService: ConfigService,
+        dataSource: DataSource,
+      ) =>
+        new PlatformLinkAuditCleanupService(
+          cleanupCron,
+          configService,
+          dataSource,
+          { platform: 'discord', advisoryLockId: 884_200_942 },
+        ),
+      inject: [CleanupCronService, ConfigService, DataSource],
+    },
     LlmSafetyCleanupService,
     {
       provide: PlatformDeadLetterCronService,
@@ -492,6 +508,10 @@ const REGISTER_REPORT_MESSAGE =
       ],
     },
   ],
-  exports: [PlatformAgentService],
+  exports: [
+    PlatformAgentService,
+    PlatformChatHistoryService,
+    PlatformChatQueueService,
+  ],
 })
 export class DiscordChatModule {}

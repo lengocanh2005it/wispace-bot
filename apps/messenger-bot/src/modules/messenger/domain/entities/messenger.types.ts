@@ -60,6 +60,7 @@ export interface UserMessengerMapping {
   cadence?: NotificationCadence;
   topic?: string;
   status: 'ACTIVE' | 'INACTIVE';
+  mappingGeneration?: string;
   createdAt: string;
   updatedAt: string;
 }

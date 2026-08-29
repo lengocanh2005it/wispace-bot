@@ -37,6 +37,14 @@ export function createLearnerProfileSuffix(
   return async (
     input: LearnerProfileSuffixInput,
   ): Promise<string | undefined> => {
+    const userId = input.userId;
+    if (
+      typeof userId !== 'number' ||
+      !Number.isInteger(userId) ||
+      userId <= 0
+    ) {
+      return undefined;
+    }
     try {
       const profile = await store.get(platform, input.externalUserId);
       return buildLearnerProfileSection(profile, new Date(), options.ttlMs);
