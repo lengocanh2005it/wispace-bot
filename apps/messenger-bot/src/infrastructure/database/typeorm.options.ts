@@ -3,6 +3,7 @@ import { DataSourceOptions } from 'typeorm';
 import {
   getTypeOrmOptions as buildSharedOptions,
   SHARED_ENTITIES,
+  WebActivityEntity,
 } from '@wispace/database';
 import {
   ChatDailyUsageEntity,
@@ -34,6 +35,7 @@ export function getTypeOrmOptions(
     LlmSafetyEventEntity,
     ChatIdempotencyEntity,
     StudyReminderJobEntity,
+    WebActivityEntity,
     ...(options?.includeUsers ? [UserEntity] : []),
   ];
   return buildSharedOptions(source, entities);

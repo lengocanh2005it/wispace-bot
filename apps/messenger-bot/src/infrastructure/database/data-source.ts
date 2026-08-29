@@ -1,5 +1,9 @@
 import 'reflect-metadata';
-import { buildCliDataSource, SHARED_ENTITIES } from '@wispace/database';
+import {
+  buildCliDataSource,
+  SHARED_ENTITIES,
+  WebActivityEntity,
+} from '@wispace/database';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
@@ -21,4 +25,5 @@ export default buildCliDataSource([
   LlmSafetyEventEntity,
   ChatIdempotencyEntity,
   StudyReminderJobEntity,
+  WebActivityEntity,
 ]);

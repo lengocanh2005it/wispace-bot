@@ -5,6 +5,8 @@ import {
   createCircuitBreakerDataSourceFactory,
   DbCircuitBreakerService,
   CanonicalPlatformService,
+  WebActivityService,
+  WebActivityEntity,
   UserNotificationPreferenceEntity,
 } from '@wispace/database';
 import {
@@ -37,9 +39,14 @@ import { getAppTypeOrmOptions } from './typeorm.options';
       StudyReminderJobEntity,
       UserEntity,
       UserNotificationPreferenceEntity,
+      WebActivityEntity,
     ]),
   ],
-  providers: [DbCircuitBreakerService, CanonicalPlatformService],
-  exports: [TypeOrmModule, CanonicalPlatformService],
+  providers: [
+    DbCircuitBreakerService,
+    CanonicalPlatformService,
+    WebActivityService,
+  ],
+  exports: [TypeOrmModule, CanonicalPlatformService, WebActivityService],
 })
 export class DatabaseModule {}
