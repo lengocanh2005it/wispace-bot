@@ -67,6 +67,17 @@ EOF
 if run_check; then fail "inline import() type not detected"; else pass "inline import() type detected"; fi
 rm "$TEST_ROOT/apps/demo/inline-type.ts"
 
+# 5b) double-quoted forms fail too (oxfmt enforces single quotes, but the
+# check must not silently depend on formatting).
+write "apps/demo/double-quoted.ts" <<'EOF'
+import type { Platform } from "@wispace/database";
+export interface Row2 {
+  state: import("@wispace/database").PlatformLinkState;
+}
+EOF
+if run_check; then fail "double-quoted type import not detected"; else pass "double-quoted type import detected"; fi
+rm "$TEST_ROOT/apps/demo/double-quoted.ts"
+
 # 6) Value imports from @wispace/database + type imports from owners pass.
 write "apps/demo/value-import.ts" <<'EOF'
 import { PlatformDeadLetterService } from '@wispace/database';

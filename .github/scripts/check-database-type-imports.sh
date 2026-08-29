@@ -21,13 +21,13 @@ scan_file() { # file
   local f="$1"
   local content
   content=$(tr '\n' ' ' < "$f")
-  if printf '%s' "$content" | grep -qE "import type[^;]*from '@wispace/database'"; then
+  if printf '%s' "$content" | grep -qE "import type[^;]*from ['\"]@wispace/database['\"]"; then
     fail "$f: type-only import from @wispace/database"
   fi
-  if printf '%s' "$content" | grep -qE "export type[^;]*from '@wispace/database'"; then
+  if printf '%s' "$content" | grep -qE "export type[^;]*from ['\"]@wispace/database['\"]"; then
     fail "$f: type-only re-export from @wispace/database"
   fi
-  if printf '%s' "$content" | grep -qF "import('@wispace/database')"; then
+  if printf '%s' "$content" | grep -qE "import\(['\"]@wispace/database['\"]\)"; then
     fail "$f: inline import('@wispace/database') type reference"
   fi
 }

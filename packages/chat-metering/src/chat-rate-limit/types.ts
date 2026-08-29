@@ -1,19 +1,14 @@
-/** Chat quota deny reasons. */
-export type ChatQuotaDenyReason =
-  | 'DAILY_LIMIT'
-  | 'BURST_LIMIT'
-  | 'NOT_LINKED'
-  | 'IDEMPOTENCY_CONFLICT';
+import type {
+  ChatIdempotencyStatus,
+  ChatQuotaDenyReason,
+  ChatQuotaReleaseReason,
+} from '../chat-quota.types';
 
-/** Chat idempotency row status. */
-export type ChatIdempotencyStatus =
-  | 'reserved'
-  | 'delivered'
-  | 'completed'
-  | 'refunded';
-
-/** Chat quota release reasons. */
-export type ChatQuotaReleaseReason = 'send_failed' | 'stuck_recover';
+export type {
+  ChatQuotaDenyReason,
+  ChatIdempotencyStatus,
+  ChatQuotaReleaseReason,
+} from '../chat-quota.types';
 
 export interface ChatQuotaCheckResult {
   allowed: boolean;

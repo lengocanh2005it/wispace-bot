@@ -6,7 +6,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import type { Platform } from '@wispace/contracts';
-import type { ChatIdempotencyStatus } from '../chat-rate-limit/types';
+import type { ChatIdempotencyStatus } from '../chat-quota.types';
 
 @Entity('chat_idempotency')
 @Index('idx_chat_idempotency_platform_external_date', [
