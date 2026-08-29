@@ -80,25 +80,17 @@ export class ZaloReportCronService {
     while (hasMore) {
       let page = await this.loadPage(cursor);
       if (page.length === 0) break;
+      // Pagination advances by the raw page — filtering must not shorten it.
       const rawPageLen = page.length;
       const lastId = page[page.length - 1].id;
 
-      if (this.webActivityService?.gateEnabled) {
-        const ids = page
-          .map((l) => l.userId)
-          .filter((id): id is number => typeof id === 'number');
-        const dormant = new Set(
-          await this.webActivityService.filterDormant(ids),
-        );
-        if (dormant.size > 0) {
-          const before = page.length;
-          page = page.filter(
-            (l) => !(l.userId != null && dormant.has(l.userId)),
-          );
-          const suppressed = before - page.length;
-          for (let i = 0; i < suppressed; i += 1) {
-            this.metrics?.incScheduledSendSuppressed('report');
-          }
+      // Skip web-dormant learners — never for an operator forceSend override.
+      if (!forceSend && this.webActivityService) {
+        const { active, suppressed } =
+          await this.webActivityService.partitionDormant(page, (l) => l.userId);
+        page = active;
+        if (suppressed > 0) {
+          this.metrics?.incScheduledSendSuppressed('report', suppressed);
           skipped += suppressed;
         }
       }

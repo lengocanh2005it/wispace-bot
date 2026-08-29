@@ -24,7 +24,10 @@ import {
 } from '../infrastructure/typeorm-mapping-reader';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { StudyReminderSyncService } from './study-reminder-sync.service';
-import { StudyReminderDispatchService } from './study-reminder-dispatch.service';
+import {
+  DORMANT_REASON,
+  StudyReminderDispatchService,
+} from './study-reminder-dispatch.service';
 import { StudyReminderWorkerService } from './study-reminder-worker.service';
 import { TypeormStudyReminderJobRepository } from '../infrastructure/typeorm-study-reminder-job.repository';
 import type { GetSessionsFn } from '../types/study-reminder.types';
@@ -67,7 +70,10 @@ export interface CreateStudyReminderProvidersOptions {
   }>;
   /** Discord/Zalo: BotMetricsService — meters reminder suppression via a minimal DISPATCH_HOOKS. */
   dormancySuppressionMetric?: ClassOf<{
-    incScheduledSendSuppressed(feature: 'reminder' | 'report'): void;
+    incScheduledSendSuppressed(
+      feature: 'reminder' | 'report',
+      count?: number,
+    ): void;
   }>;
 }
 
@@ -201,7 +207,10 @@ export function createStudyReminderProviders(
         mappingReader: MappingReaderPort,
         dormancyGate?: { filterDormant(ids: number[]): Promise<number[]> },
         suppressionMetric?: {
-          incScheduledSendSuppressed(f: 'reminder' | 'report'): void;
+          incScheduledSendSuppressed(
+            f: 'reminder' | 'report',
+            count?: number,
+          ): void;
         },
       ) =>
         new StudyReminderDispatchService(
@@ -212,7 +221,7 @@ export function createStudyReminderProviders(
           suppressionMetric
             ? {
                 onCancelled: (ctx) => {
-                  if (ctx.reason === 'recipient dormant (web inactivity)') {
+                  if (ctx.reason === DORMANT_REASON) {
                     suppressionMetric.incScheduledSendSuppressed('reminder');
                   }
                 },

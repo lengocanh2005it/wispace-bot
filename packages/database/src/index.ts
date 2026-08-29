@@ -105,7 +105,6 @@ export {
 export {
   WebActivityService,
   normalizeToUtcIso,
-  DORMANT_REASON,
 } from './services/web-activity.service';
 export { WebActivityEntity } from './entities/web-activity.entity';
 export {

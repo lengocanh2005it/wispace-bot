@@ -1,4 +1,3 @@
-const DORMANT_REASON = 'recipient dormant (web inactivity)';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import type { OutboundDeliveryOutcome } from '@wispace/database';
@@ -18,6 +17,13 @@ import { StudyReminderScheduleService } from './study-reminder-schedule.service'
 import { subMilliseconds } from 'date-fns';
 import type { Platform } from '@wispace/database';
 import type { StudyReminderJob } from '../types/study-reminder.types';
+
+/**
+ * Cancellation reason for a reminder suppressed by the web-activity dormancy
+ * gate. Single source of truth — written to study_reminder_jobs, matched by the
+ * per-bot DISPATCH_HOOKS to meter suppression.
+ */
+export const DORMANT_REASON = 'recipient dormant (web inactivity)';
 
 export interface StudyReminderDispatchFailure {
   jobId: number;

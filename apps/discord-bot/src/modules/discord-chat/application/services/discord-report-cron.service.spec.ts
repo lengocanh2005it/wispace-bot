@@ -365,7 +365,7 @@ describe('DiscordReportCronService', () => {
     expect(orchestrationService.claimAndSend).not.toHaveBeenCalled();
     expect(result.skipped).toBe(1);
   });
-  it('filters dormant links and increments suppression metric when gate is enabled', async () => {
+  it('drops dormant links via partitionDormant and meters suppression by count', async () => {
     const links = [
       { id: '1', externalUserId: 'discord-1', userId: 10 },
       { id: '2', externalUserId: 'discord-2', userId: 20 },
@@ -380,8 +380,9 @@ describe('DiscordReportCronService', () => {
       claimAndSend: jest.fn().mockResolvedValue({ ...ZERO_RESULT, sent: 1 }),
     };
     const webActivityService = {
-      gateEnabled: true,
-      filterDormant: jest.fn().mockResolvedValue([20]),
+      partitionDormant: jest
+        .fn()
+        .mockResolvedValue({ active: [links[0]], suppressed: 1 }),
     };
     const metrics = {
       incScheduledSendSuppressed: jest.fn(),
@@ -404,18 +405,23 @@ describe('DiscordReportCronService', () => {
 
     const result = await service.sendScheduledReports();
 
-    expect(webActivityService.filterDormant).toHaveBeenCalledWith([10, 20]);
+    expect(webActivityService.partitionDormant).toHaveBeenCalledWith(
+      links,
+      expect.any(Function),
+    );
     expect(orchestrationService.claimAndSend).toHaveBeenCalledTimes(1);
     expect(orchestrationService.claimAndSend).toHaveBeenCalledWith(
       expect.objectContaining({ externalUserId: 'discord-1' }),
       expect.anything(),
     );
-    expect(metrics.incScheduledSendSuppressed).toHaveBeenCalledWith('report');
-    expect(metrics.incScheduledSendSuppressed).toHaveBeenCalledTimes(1);
+    expect(metrics.incScheduledSendSuppressed).toHaveBeenCalledWith(
+      'report',
+      1,
+    );
     expect(result.skipped).toBe(1);
   });
 
-  it('does not call filterDormant when gate is disabled', async () => {
+  it('does not consult the gate for an operator forceSend', async () => {
     const links = [{ id: '1', externalUserId: 'discord-1', userId: 10 }];
     const accountReader = {
       findActiveAccountsPage: jest
@@ -426,13 +432,8 @@ describe('DiscordReportCronService', () => {
     const orchestrationService = {
       claimAndSend: jest.fn().mockResolvedValue({ ...ZERO_RESULT, sent: 1 }),
     };
-    const webActivityService = {
-      gateEnabled: false,
-      filterDormant: jest.fn(),
-    };
-    const metrics = {
-      incScheduledSendSuppressed: jest.fn(),
-    };
+    const webActivityService = { partitionDormant: jest.fn() };
+    const metrics = { incScheduledSendSuppressed: jest.fn() };
     const service = new DiscordReportCronService(
       { get: jest.fn().mockReturnValue(undefined) } as never,
       { shouldRunScheduledReportCron: jest.fn() } as never,
@@ -449,9 +450,9 @@ describe('DiscordReportCronService', () => {
       metrics as never,
     );
 
-    await service.sendScheduledReports();
+    await service.sendScheduledReports({ forceSend: true });
 
-    expect(webActivityService.filterDormant).not.toHaveBeenCalled();
+    expect(webActivityService.partitionDormant).not.toHaveBeenCalled();
     expect(metrics.incScheduledSendSuppressed).not.toHaveBeenCalled();
   });
 });
