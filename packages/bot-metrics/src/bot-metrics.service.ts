@@ -56,6 +56,8 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmAdmissionQueueDepth: Gauge;
   private quotaDenied: Counter;
   private reminderDispatch: Counter;
+  private webActivityWebhookReceived: Counter;
+  private scheduledSendSuppressed: Counter;
   private dmDeliveryFailures: Counter;
   private welcomeAttempts: Counter;
   private tokenRefreshFailures: Counter;
@@ -185,6 +187,19 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_reminder_dispatch_total`,
       help: 'Study reminder dispatch outcomes',
       labelNames: ['status'],
+      registers: [this.registry],
+    });
+
+    this.webActivityWebhookReceived = new Counter({
+      name: `${this.prefix}_web_activity_webhook_received_total`,
+      help: 'WISPACE web-activity webhook deliveries received',
+      registers: [this.registry],
+    });
+
+    this.scheduledSendSuppressed = new Counter({
+      name: `${this.prefix}_scheduled_send_suppressed_total`,
+      help: 'Scheduled sends suppressed because the learner is dormant on WISPACE web',
+      labelNames: ['feature'],
       registers: [this.registry],
     });
 
@@ -355,6 +370,16 @@ export class BotMetricsService implements OnModuleDestroy {
 
   incReminderDispatch(status: string): void {
     this.reminderDispatch.inc({ status });
+  }
+
+  /** WISPACE web-activity webhook received (messenger only). */
+  incWebActivityWebhookReceived(): void {
+    this.webActivityWebhookReceived.inc();
+  }
+
+  /** A scheduled send was skipped for a web-inactive learner. */
+  incScheduledSendSuppressed(feature: 'report' | 'reminder'): void {
+    this.scheduledSendSuppressed.inc({ feature });
   }
 
   /** DM delivery failure (e.g. user privacy settings block DMs) — ops signal. */
