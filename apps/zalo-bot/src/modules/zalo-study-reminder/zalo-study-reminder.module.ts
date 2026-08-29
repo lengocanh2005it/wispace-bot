@@ -14,6 +14,9 @@ import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloOutboundService } from '../zalo-chat/application/services/zalo-outbound.service';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { WispaceCalendarService } from '@wispace/wispace-client';
+import { WebActivityService } from '@wispace/database';
+import { BotMetricsService } from '@wispace/bot-metrics';
+import { DatabaseModule } from '../../infrastructure/database/database.module';
 
 @Module({
   imports: [
@@ -25,6 +28,7 @@ import { WispaceCalendarService } from '@wispace/wispace-client';
     BotCommonModule,
     ZaloChatModule,
     ZaloWispaceModule,
+    DatabaseModule,
   ],
   providers: createStudyReminderProviders({
     platform: 'zalo',
@@ -32,6 +36,8 @@ import { WispaceCalendarService } from '@wispace/wispace-client';
     mappingEntity: ZaloAccountLinkEntity,
     outboundService: ZaloOutboundService,
     calendarService: WispaceCalendarService,
+    dormancyGate: WebActivityService,
+    dormancySuppressionMetric: BotMetricsService,
   }),
   exports: [
     StudyReminderSyncService,

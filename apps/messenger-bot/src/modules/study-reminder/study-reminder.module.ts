@@ -31,6 +31,8 @@ import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
 import { LlmUsageModule } from '../llm-usage/llm-usage.module';
 import { DisplayNameModule } from '../display-name/display-name.module';
 import { BotMetricsService } from '@wispace/bot-metrics';
+import { WebActivityService } from '@wispace/database';
+import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { StudyCalendarCommandService } from './application/services/study-calendar-command.service';
 import { StudyReminderService } from './application/services/study-reminder.service';
 import { StudySessionSourceService } from './application/services/study-session-source.service';
@@ -62,6 +64,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     LlmExecutionModule,
     LlmUsageModule,
     DisplayNameModule,
+    DatabaseModule,
   ],
   providers: [
     // ── Shared package wiring (@wispace/study-reminder-shared) ────────────
@@ -190,7 +193,12 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         onSent: () => metrics.incReminderDispatch('sent'),
         onFailed: () => metrics.incReminderDispatch('failed'),
         onRetried: () => metrics.incReminderDispatch('retried'),
-        onCancelled: () => metrics.incReminderDispatch('cancelled'),
+        onCancelled: (ctx) => {
+          metrics.incReminderDispatch('cancelled');
+          if (ctx.reason === 'recipient dormant (web inactivity)') {
+            metrics.incScheduledSendSuppressed('reminder');
+          }
+        },
       }),
       inject: [StudyReminderService, BotMetricsService],
     },
@@ -228,6 +236,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         sessionSource: StudySessionSourceService,
         reminderService: StudyReminderService,
         mappingReader: MappingReaderPort,
+        webActivity: WebActivityService,
       ) =>
         new StudyReminderDispatchService(
           jobRepository,
@@ -261,6 +270,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
                 retryCount: job.retryCount,
                 maxRetries: job.maxRetries,
               }),
+            filterDormantUserIds: (ids) => webActivity.filterDormant(ids),
           },
         ),
       inject: [
@@ -271,6 +281,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         StudySessionSourceService,
         StudyReminderService,
         MAPPING_READER,
+        WebActivityService,
       ],
     },
 

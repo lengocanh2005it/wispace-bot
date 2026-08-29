@@ -61,6 +61,14 @@ export interface CreateStudyReminderProvidersOptions {
   workerLockIds?: StudyReminderWorkerLockIds;
   /** Messenger: worker options (logLockSkips, startupSyncSwallowErrors). */
   workerOptions?: StudyReminderWorkerOptions;
+  /** Discord/Zalo: WebActivityService — enables the dispatch dormancy gate. */
+  dormancyGate?: ClassOf<{
+    filterDormant(userIds: number[]): Promise<number[]>;
+  }>;
+  /** Discord/Zalo: BotMetricsService — meters reminder suppression via a minimal DISPATCH_HOOKS. */
+  dormancySuppressionMetric?: ClassOf<{
+    incScheduledSendSuppressed(feature: 'reminder' | 'report'): void;
+  }>;
 }
 
 /** Structural surface of messenger's StudySessionSourceService (no cross-app import). */
@@ -191,13 +199,25 @@ export function createStudyReminderProviders(
         messageSender: MessageSenderPort,
         scheduleService: StudyReminderScheduleService,
         mappingReader: MappingReaderPort,
+        dormancyGate?: { filterDormant(ids: number[]): Promise<number[]> },
+        suppressionMetric?: {
+          incScheduledSendSuppressed(f: 'reminder' | 'report'): void;
+        },
       ) =>
         new StudyReminderDispatchService(
           jobRepository,
           messageSender,
           scheduleService,
           options.platform,
-          undefined,
+          suppressionMetric
+            ? {
+                onCancelled: (ctx) => {
+                  if (ctx.reason === 'recipient dormant (web inactivity)') {
+                    suppressionMetric.incScheduledSendSuppressed('reminder');
+                  }
+                },
+              }
+            : undefined,
           {
             getMappingState: async (externalUserId) => {
               if (mappingReader.getMappingState) {
@@ -213,6 +233,9 @@ export function createStudyReminderProviders(
                 );
               return link ? 'active' : null;
             },
+            filterDormantUserIds: dormancyGate
+              ? (ids) => dormancyGate.filterDormant(ids)
+              : undefined,
           },
         ),
       inject: [
@@ -220,6 +243,12 @@ export function createStudyReminderProviders(
         MESSAGE_SENDER,
         StudyReminderScheduleService,
         MAPPING_READER,
+        ...(options.dormancyGate
+          ? [{ token: options.dormancyGate, optional: true }]
+          : []),
+        ...(options.dormancySuppressionMetric
+          ? [{ token: options.dormancySuppressionMetric, optional: true }]
+          : []),
       ],
     },
     {

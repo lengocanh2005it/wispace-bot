@@ -150,4 +150,35 @@ describe('createStudyReminderProviders', () => {
     );
     expect(service).toBeInstanceOf(StudyReminderWorkerService);
   });
+
+  it('includes dormancy tokens in StudyReminderDispatchService inject when provided', () => {
+    class FakeGate {
+      filterDormant() {
+        return Promise.resolve([]);
+      }
+    }
+    class FakeMetric {
+      incScheduledSendSuppressed() {}
+    }
+    const withGate = createStudyReminderProviders({
+      platform: 'discord',
+      mappingTable: 'discord_account_links',
+      mappingEntity: FakeMappingEntity,
+      outboundService: FakeOutbound,
+      calendarService: FakeCalendarService,
+      dormancyGate: FakeGate,
+      dormancySuppressionMetric: FakeMetric,
+    });
+    const dispatchProvider = withGate[5] as unknown as {
+      inject: unknown[];
+    };
+    expect(dispatchProvider.inject).toContainEqual({
+      token: FakeGate,
+      optional: true,
+    });
+    expect(dispatchProvider.inject).toContainEqual({
+      token: FakeMetric,
+      optional: true,
+    });
+  });
 });
