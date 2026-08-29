@@ -29,6 +29,15 @@ export interface DiscordAccountLinkRepositoryPort {
     | undefined
   >;
   findDiscordIdByUserId(userId: number): Promise<string | undefined>;
+  /**
+   * Consent explainer exactly-once claim (#596): true when the caller won
+   * the right to send the post-link prompt. Release returns the claim when
+   * the send failed so a later path (guildMemberAdd) can retry.
+   */
+  claimConsentPrompt?(discordUserId: string): Promise<boolean>;
+  releaseConsentPrompt?(discordUserId: string): Promise<void>;
+  /** Marks the opt-out footer as unnecessary (explicit report opt-in, #596). */
+  markOptOutNoticeSent?(discordUserId: string): Promise<void>;
 }
 
 export const DISCORD_ACCOUNT_LINK_REPOSITORY = Symbol(

@@ -103,7 +103,7 @@ export class DiscordReportCronService {
     let hasMore = true;
 
     while (hasMore) {
-      let page = await this.loadPage(cursor);
+      let page = await this.loadPage(cursor, opts.forceSend === true);
       if (page.length === 0) break;
       // Pagination advances by the raw page — filtering must not shorten it.
       const rawPageLen = page.length;
@@ -135,46 +135,20 @@ export class DiscordReportCronService {
             status: 'ACTIVE',
           };
 
-          // Window gate: only auto-send inside the days-before-exam window
-          // (same as Messenger). forceSend bypasses the window but still
-          // respects already-sent-today unless the caller clears it.
-          if (link.userId && this.canonicalPlatformService) {
-            const { isCanonical, canonicalPlatform } =
-              await this.canonicalPlatformService.isCanonicalForUser(
-                link.userId,
-                PLATFORM,
-              );
-            if (!isCanonical) {
-              this.logger.log(
-                `Skip Discord user ${maskExternalId(
-                  link.externalUserId,
-                )}: canonical platform is ${canonicalPlatform} for userId=${maskExternalId(
-                  link.userId,
-                )}`,
-              );
-              return { ...ZERO, skipped: 1 };
-            }
-          }
-
-          const window = await evaluateExamWindow(
-            link.externalUserId,
-            this.reportScheduleService,
-            opts.forceSend === true,
-          );
-          if (window.skip) {
-            this.logger.log(
-              `Skip Discord user ${maskExternalId(
-                link.externalUserId,
-              )}: outside exam window or schedule unavailable`,
-            );
-            return { ...ZERO, skipped: 1 };
-          }
-
-          return this.orchestrationService.claimAndSend(mapping, {
-            reportDate,
-            skipAlreadySentToday: !opts.forceSend,
-            examDateForOutbox: window.examDate,
+          // One-time opt-out footer for consent rows we can't distinguish
+          // from explicitly opted-in learners (#596 Q10).
+          const pendingNotice = link.optoutNoticeSentAt == null;
+          const result = await this.sendForLink(mapping, {
+            reportDate: reportDate,
+            forceSend: opts.forceSend === true,
+            appendOptOutFooter: pendingNotice,
           });
+          if (pendingNotice && result.sent > 0) {
+            await this.accountReader
+              .markOptOutNoticeSent?.(link.id)
+              .catch(() => undefined);
+          }
+          return result;
         },
       );
 
@@ -220,12 +194,71 @@ export class DiscordReportCronService {
     };
   }
 
+  private async sendForLink(
+    mapping: ReportMapping,
+    opts: {
+      reportDate: string;
+      forceSend: boolean;
+      appendOptOutFooter: boolean;
+    },
+  ): Promise<ClaimAndSendResult> {
+    // Window gate: only auto-send inside the days-before-exam window
+    // (same as Messenger). forceSend bypasses the window but still
+    // respects already-sent-today unless the caller clears it.
+    if (mapping.userId && this.canonicalPlatformService) {
+      const { isCanonical, canonicalPlatform } =
+        await this.canonicalPlatformService.isCanonicalForUser(
+          mapping.userId,
+          PLATFORM,
+        );
+      if (!isCanonical) {
+        this.logger.log(
+          `Skip Discord user ${maskExternalId(
+            mapping.externalUserId,
+          )}: canonical platform is ${canonicalPlatform} for userId=${maskExternalId(
+            mapping.userId,
+          )}`,
+        );
+        return { ...ZERO, skipped: 1 };
+      }
+    }
+
+    const window = await evaluateExamWindow(
+      mapping.externalUserId,
+      this.reportScheduleService,
+      opts.forceSend,
+    );
+    if (window.skip) {
+      this.logger.log(
+        `Skip Discord user ${maskExternalId(
+          mapping.externalUserId,
+        )}: outside exam window or schedule unavailable`,
+      );
+      return { ...ZERO, skipped: 1 };
+    }
+
+    return this.orchestrationService.claimAndSend(mapping, {
+      reportDate: opts.reportDate,
+      skipAlreadySentToday: !opts.forceSend,
+      examDateForOutbox: window.examDate,
+      appendOptOutFooter: opts.appendOptOutFooter,
+    });
+  }
+
   private async loadPage(
     cursor: string | undefined,
+    includeUnsubscribed: boolean,
   ): Promise<
-    Array<{ id: string; externalUserId: string; userId: number | null }>
+    Array<{
+      id: string;
+      externalUserId: string;
+      userId: number | null;
+      optoutNoticeSentAt?: Date | null;
+    }>
   > {
-    return this.accountReader.findActiveAccountsPage(cursor, PAGE_SIZE);
+    return this.accountReader.findActiveAccountsPage(cursor, PAGE_SIZE, {
+      includeUnsubscribed,
+    });
   }
 
   private pushFailure(

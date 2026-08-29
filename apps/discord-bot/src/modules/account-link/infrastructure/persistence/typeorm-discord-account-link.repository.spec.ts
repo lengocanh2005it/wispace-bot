@@ -104,4 +104,50 @@ describe('TypeormDiscordAccountLinkRepository', () => {
     ).rejects.toThrow(/stale|revoked/i);
     expect(query).toHaveBeenCalledTimes(1);
   });
+
+  describe('consent prompt claim (#596 AC5)', () => {
+    const buildRepo = (query: jest.Mock) =>
+      new TypeormDiscordAccountLinkRepository({
+        query,
+      } as unknown as Repository<DiscordAccountLinkEntity>);
+
+    it('claims once — the second claim loses (not repeated on reconnect)', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce([{ id: '1' }])
+        .mockResolvedValueOnce([]);
+      const service = buildRepo(query);
+
+      const first = await service.claimConsentPrompt('discord-user-1');
+      const second = await service.claimConsentPrompt('discord-user-1');
+
+      expect(first).toBe(true);
+      expect(second).toBe(false);
+      const [sql, params] = query.mock.calls[0];
+      expect(String(sql)).toContain('optin_prompt_sent_at IS NULL');
+      expect(params).toEqual(['discord', 'discord-user-1']);
+    });
+
+    it('releases the claim by writing NULL back to the marker', async () => {
+      const execute = jest.fn().mockResolvedValue(undefined);
+      const qb = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        execute,
+      };
+      const repo = {
+        query: jest.fn(),
+        createQueryBuilder: jest.fn().mockReturnValue(qb),
+      } as unknown as Repository<DiscordAccountLinkEntity>;
+      const service = new TypeormDiscordAccountLinkRepository(repo);
+
+      await service.releaseConsentPrompt('discord-user-1');
+
+      const setArg = qb.set.mock.calls[0][0] as Record<string, unknown>;
+      expect(setArg['optinPromptSentAt']).toBeNull();
+      expect(execute).toHaveBeenCalled();
+    });
+  });
 });

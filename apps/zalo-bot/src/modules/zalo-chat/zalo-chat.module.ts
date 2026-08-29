@@ -52,7 +52,12 @@ import {
   type CalendarPort,
   type ReschedulePort,
 } from '@wispace/reschedule-confirm';
-import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
+import {
+  PlatformStudyCalendarCommandService,
+  StudyReminderJobEntity,
+  TypeormStudyReminderJobRepository,
+  STUDY_REMINDER_JOB_REPOSITORY,
+} from '@wispace/study-reminder-shared';
 import {
   PlatformDeadLetterCronService,
   PlatformDeadLetterService,
@@ -78,6 +83,7 @@ import {
 } from '@wispace/cleanup-cron';
 import { ZaloMessageLogEntity } from '../../infrastructure/database/entities/zalo-message-log.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
+import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 
@@ -93,6 +99,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
 @Module({
   imports: [
     BotCommonModule,
+    DatabaseModule,
     ZaloOauthModule,
     ZaloWispaceModule,
     ChatMeteringModule.forPlatform('zalo'),
@@ -104,9 +111,16 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       ScheduledReportClaimEntity,
       RescheduleConfirmationEntity,
       LearnerProfileEntity,
+      StudyReminderJobEntity,
     ]),
   ],
   providers: [
+    ZaloChatService,
+    TypeormStudyReminderJobRepository,
+    {
+      provide: STUDY_REMINDER_JOB_REPOSITORY,
+      useExisting: TypeormStudyReminderJobRepository,
+    },
     {
       provide: 'LLM_PROVIDER_ADAPTER',
       useFactory: (configService: ConfigService): LlmProviderAdapter =>
@@ -545,7 +559,6 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         PlatformChatRateLimitService,
       ],
     },
-    ZaloChatService,
   ],
   exports: [
     'LLM_PROVIDER_ADAPTER',

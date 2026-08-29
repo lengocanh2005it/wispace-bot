@@ -32,6 +32,7 @@ describe('ZaloLinkCompletionService', () => {
       exchangeCodeForZaloUser,
       upsertLink,
       findUserIdByZaloId: jest.fn(),
+      sendConsentExplainerIfDue: jest.fn().mockResolvedValue(true),
     } as unknown as ZaloAccountLinkService;
     const tokenVerifyService = {
       verifyToken,
@@ -67,6 +68,7 @@ describe('ZaloLinkCompletionService', () => {
       consumeRecord,
       sendText,
       clarificationStateStore,
+      accountLinkService,
     };
   };
 
@@ -107,6 +109,7 @@ describe('ZaloLinkCompletionService', () => {
     const accountLinkService = {
       exchangeCodeForZaloUser: jest.fn().mockResolvedValue({ id: 'zalo-1' }),
       upsertLink,
+      sendConsentExplainerIfDue: jest.fn().mockResolvedValue(true),
     } as unknown as ZaloAccountLinkService;
     const verifyRecordService = {
       recordVerify: jest.fn().mockResolvedValue(undefined),
@@ -159,5 +162,19 @@ describe('ZaloLinkCompletionService', () => {
     ).resolves.toBeUndefined();
 
     expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1');
+  });
+
+  it('attempts the consent explainer after the link commits (#596)', async () => {
+    const { service, accountLinkService, upsertLink } = buildService();
+
+    await service.completeLink('code-1', 'verifier-1', 'token-1');
+
+    const order = (accountLinkService.sendConsentExplainerIfDue as jest.Mock)
+      .mock.invocationCallOrder[0];
+    expect(order).toBeGreaterThan(upsertLink.mock.invocationCallOrder[0]);
+    expect(accountLinkService.sendConsentExplainerIfDue).toHaveBeenCalledWith(
+      'zalo-user-1',
+      expect.any(Function),
+    );
   });
 });

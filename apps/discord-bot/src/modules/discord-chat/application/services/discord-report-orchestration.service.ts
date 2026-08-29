@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common/masking';
+import { buildReportOptOutFooter } from '@wispace/bot-common/messages';
 import type {
   ReportMapping,
   ClaimAndSendResult,
@@ -28,6 +29,8 @@ export class DiscordReportOrchestrationService {
       reportDate: string;
       skipAlreadySentToday: boolean;
       examDateForOutbox?: string;
+      /** One-time opt-out footer for grandfathered learners (#596). */
+      appendOptOutFooter?: boolean;
     },
   ): Promise<ClaimAndSendResult> {
     return this.orchestration.claimAndSend(mapping, {
@@ -40,7 +43,12 @@ export class DiscordReportOrchestrationService {
         this.logger.log(
           `Generating report for Discord user ${maskExternalId(mapping.externalUserId)}`,
         );
-        return this.reportService.generateReport(mapping.externalUserId);
+        const report = await this.reportService.generateReport(
+          mapping.externalUserId,
+        );
+        return opts.appendOptOutFooter
+          ? report + buildReportOptOutFooter()
+          : report;
       },
     });
   }

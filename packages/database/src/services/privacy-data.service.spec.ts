@@ -17,6 +17,7 @@ describe('PrivacyDataService', () => {
   let mockDailyUsageRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockLlmUsageRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockIdempotencyRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockNotificationPrefRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockDiscordMappingRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockWebActivityRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockZaloMappingRepo: jest.Mocked<Repository<ObjectLiteral>>;
@@ -40,6 +41,7 @@ describe('PrivacyDataService', () => {
     mockDailyUsageRepo = makeRepo();
     mockLlmUsageRepo = makeRepo();
     mockIdempotencyRepo = makeRepo();
+    mockNotificationPrefRepo = makeRepo();
     mockDiscordMappingRepo = makeRepo();
     mockWebActivityRepo = makeRepo();
     mockZaloMappingRepo = makeRepo();
@@ -69,6 +71,8 @@ describe('PrivacyDataService', () => {
             return mockLlmUsageRepo;
           case 'ChatIdempotency':
             return mockIdempotencyRepo;
+          case 'UserNotificationPreference':
+            return mockNotificationPrefRepo;
           case 'WebActivity':
             return mockWebActivityRepo;
           default:
@@ -235,6 +239,9 @@ describe('PrivacyDataService', () => {
       expect(mockLlmUsageRepo.delete).toHaveBeenCalledWith({ userId: 42 });
       expect(mockIdempotencyRepo.delete).toHaveBeenCalledWith({ userId: 42 });
       expect(mockWebActivityRepo.delete).toHaveBeenCalledWith({ userId: 42 });
+      expect(mockNotificationPrefRepo.delete).toHaveBeenCalledWith({
+        userId: 42,
+      });
     });
 
     it('does not attempt web_activity deletion when mapping has no userId', async () => {

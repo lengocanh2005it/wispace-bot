@@ -33,6 +33,7 @@ function buildGateway(overrides: {
 } {
   const accountLinkService = {
     findUserIdByDiscordId: jest.fn().mockResolvedValue(143),
+    sendConsentExplainerIfDue: jest.fn().mockResolvedValue(true),
     ...overrides.accountLink,
   } as unknown as DiscordAccountLinkService;
   const outboundService = {
@@ -60,6 +61,9 @@ function buildGateway(overrides: {
     {} as DiscordMenuService,
     {} as PlatformChatHistoryService,
     {} as PlatformChatQueueService,
+    {
+      handleIfConsentCommand: jest.fn().mockResolvedValue(false),
+    } as never,
     verifyRecordService,
     welcomeService,
   );

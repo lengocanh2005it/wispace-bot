@@ -5,6 +5,7 @@ import {
   createCircuitBreakerDataSourceFactory,
   DbCircuitBreakerService,
   CanonicalPlatformService,
+  NotificationPreferenceService,
   WebActivityService,
   WebActivityEntity,
   UserNotificationPreferenceEntity,
@@ -45,8 +46,14 @@ import { getAppTypeOrmOptions } from './typeorm.options';
   providers: [
     DbCircuitBreakerService,
     CanonicalPlatformService,
+    NotificationPreferenceService,
     WebActivityService,
   ],
-  exports: [TypeOrmModule, CanonicalPlatformService, WebActivityService],
+  exports: [
+    TypeOrmModule,
+    CanonicalPlatformService,
+    NotificationPreferenceService,
+    WebActivityService,
+  ],
 })
 export class DatabaseModule {}

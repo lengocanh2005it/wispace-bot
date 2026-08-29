@@ -19,6 +19,7 @@ import {
   createCircuitBreakerDataSourceFactory,
   DbCircuitBreakerService,
   CanonicalPlatformService,
+  NotificationPreferenceService,
   WebActivityService,
   UserNotificationPreferenceEntity,
 } from '@wispace/database';
@@ -66,8 +67,14 @@ export function buildTypeOrmOptions(config: ConfigService) {
   providers: [
     DbCircuitBreakerService,
     CanonicalPlatformService,
+    NotificationPreferenceService,
     WebActivityService,
   ],
-  exports: [TypeOrmModule, CanonicalPlatformService, WebActivityService],
+  exports: [
+    TypeOrmModule,
+    CanonicalPlatformService,
+    NotificationPreferenceService,
+    WebActivityService,
+  ],
 })
 export class DatabaseModule {}

@@ -10,6 +10,7 @@ import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PlatformStudentReportService } from '@wispace/student-report';
+import { buildReportOptOutFooter } from '@wispace/bot-common/messages';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import {
   REPORT_CLAIM_REPOSITORY,
@@ -78,7 +79,7 @@ export class ZaloReportCronService {
     let hasMore = true;
 
     while (hasMore) {
-      let page = await this.loadPage(cursor);
+      let page = await this.loadPage(cursor, forceSend);
       if (page.length === 0) break;
       // Pagination advances by the raw page — filtering must not shorten it.
       const rawPageLen = page.length;
@@ -126,22 +127,34 @@ export class ZaloReportCronService {
 
   private async loadPage(
     cursor: string | undefined,
+    includeUnsubscribed: boolean,
   ): Promise<ZaloAccountLinkEntity[]> {
-    return this.linkRepo
+    const qb = this.linkRepo
       .createQueryBuilder('link')
+      .leftJoin(
+        'user_notification_preferences',
+        'pref',
+        'pref.user_id = link.user_id',
+      )
       .select([
         'link.id',
         'link.externalUserId',
         'link.userId',
         'link.platform',
         'link.linkState',
+        'link.optoutNoticeSentAt',
       ])
       .where('link.platform = :platform', { platform: 'zalo' })
       .andWhere("COALESCE(link.link_state, 'active') = 'active'")
       .andWhere(cursor !== undefined ? 'link.id > :cursor' : 'TRUE', { cursor })
       .orderBy('link.id', 'ASC')
-      .take(PAGE_SIZE)
-      .getMany();
+      .take(PAGE_SIZE);
+    if (!includeUnsubscribed) {
+      // Reports are opt-in (#596): NULL consent row = not opted in.
+      // forceSend (ops override) skips this gate.
+      qb.andWhere('COALESCE(pref.report_enabled, false) = true');
+    }
+    return qb.getMany();
   }
 
   private pushError(errors: string[], error: string): void {
@@ -215,16 +228,30 @@ export class ZaloReportCronService {
         status: 'ACTIVE',
       };
 
+      // One-time opt-out footer for consent rows we can't distinguish from
+      // explicitly opted-in learners (#596 Q10).
+      const pendingNotice = link.optoutNoticeSentAt == null;
       const result = await this.orchestration.claimAndSend(mapping, {
         reportDate,
         skipAlreadySentToday: link.userId !== undefined,
         reportText: '',
         classifyError: classifyZaloError,
-        generateReport: async () =>
-          this.reportService.generateReport(link.externalUserId),
+        generateReport: async () => {
+          const report = await this.reportService.generateReport(
+            link.externalUserId,
+          );
+          return pendingNotice ? report + buildReportOptOutFooter() : report;
+        },
       });
 
-      if (result.sent > 0) return 'sent';
+      if (result.sent > 0) {
+        if (pendingNotice) {
+          await this.linkRepo
+            .update({ id: link.id }, { optoutNoticeSentAt: new Date() })
+            .catch(() => undefined);
+        }
+        return 'sent';
+      }
       if (result.skipped > 0 || result.claimSkipped > 0) return 'skipped';
       return 'error';
     } catch (error) {

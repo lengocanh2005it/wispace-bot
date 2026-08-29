@@ -267,6 +267,28 @@ wispace-bot/                          # Turborepo root
 
 Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 
+### Scheduled-notification consent (#596)
+
+`user_notification_preferences` (one row per WISPACE `user_id`) carries explicit
+consent per feature:
+
+| Column             | Default (`NULL`) | Meaning                                    |
+| ------------------ | ---------------- | ------------------------------------------ |
+| `report_enabled`   | off              | Reports are **opt-in**                      |
+| `reminder_enabled` | on               | Reminders are **opt-out** (own calendar)    |
+
+- Discord/Zalo report crons and every study-reminder mapping reader filter on
+  these columns; ops `forceSend` bypasses the report gate.
+- Messenger keeps its `cadence`/`topic` subscription; any link that carries
+  them write-syncs `report_enabled = true` (one consent per human,
+  cross-platform).
+- Deterministic chat commands (`bật/tắt báo cáo`, `bật/tắt nhắc học` — parsed
+  pre-LLM via `parseConsentCommand` in `@wispace/bot-common`) toggle both on
+  all 3 bots; reminder opt-out cancels pending jobs immediately.
+- Post-link explainer is sent once per platform (`optin_prompt_sent_at` on the
+  D/Z link rows); grandfathered learners get a one-time opt-out footer on
+  their next D/Z report (`optout_notice_sent_at`).
+
 ### CI database checks
 
 The database smoke scripts discover compiled Discord/Zalo TypeORM entities from

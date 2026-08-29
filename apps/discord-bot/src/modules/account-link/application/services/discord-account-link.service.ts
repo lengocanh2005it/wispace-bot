@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Inject } from '@nestjs/common';
-import { maskExternalId } from '@wispace/bot-common/masking';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import { buildConsentExplainerMessage } from '@wispace/bot-common/messages';
 import { readBoundedJson } from '@wispace/bot-common/utils';
 import {
   DISCORD_ACCOUNT_LINK_REPOSITORY,
@@ -143,5 +144,40 @@ export class DiscordAccountLinkService {
 
   async findDiscordIdByUserId(userId: number): Promise<string | undefined> {
     return this.repository.findDiscordIdByUserId(userId);
+  }
+
+  /**
+   * Post-link consent explainer, exactly once per link (#596). The claim is
+   * atomic; a failed send releases it so `guildMemberAdd` can retry.
+   */
+  async sendConsentExplainerIfDue(
+    discordUserId: string,
+    send: (text: string) => Promise<void>,
+  ): Promise<boolean> {
+    if (!this.repository.claimConsentPrompt) return false;
+    let claimed = false;
+    try {
+      claimed = await this.repository.claimConsentPrompt(discordUserId);
+      if (!claimed) return false;
+      await send(buildConsentExplainerMessage());
+      return true;
+    } catch (error) {
+      if (claimed && this.repository.releaseConsentPrompt) {
+        await this.repository
+          .releaseConsentPrompt(discordUserId)
+          .catch(() => undefined);
+      }
+      this.logger.warn(
+        `Consent explainer send failed discordUserId=${maskExternalId(
+          discordUserId,
+        )}: ${errorMessage(error)}`,
+      );
+      return false;
+    }
+  }
+
+  /** Explicit report opt-in via command knows the toggle — no footer (#596). */
+  async suppressOptOutNotice(discordUserId: string): Promise<void> {
+    await this.repository.markOptOutNoticeSent?.(discordUserId);
   }
 }

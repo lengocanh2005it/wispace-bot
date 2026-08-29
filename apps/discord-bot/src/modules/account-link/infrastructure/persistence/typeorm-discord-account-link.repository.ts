@@ -153,4 +153,36 @@ export class TypeormDiscordAccountLinkRepository implements DiscordAccountLinkRe
       ? row.externalUserId
       : undefined;
   }
+
+  async claimConsentPrompt(discordUserId: string): Promise<boolean> {
+    const rows = await this.repo.query<Array<{ id: string }>>(
+      `UPDATE discord_account_links
+       SET optin_prompt_sent_at = now(), updated_at = now()
+       WHERE platform = $1 AND external_user_id = $2
+         AND optin_prompt_sent_at IS NULL
+       RETURNING id`,
+      [PLATFORM, discordUserId],
+    );
+    return rows.length > 0;
+  }
+
+  async releaseConsentPrompt(discordUserId: string): Promise<void> {
+    await this.repo
+      .createQueryBuilder()
+      .update(DiscordAccountLinkEntity)
+      .set({ optinPromptSentAt: null as never })
+      .where('platform = :platform', { platform: PLATFORM })
+      .andWhere('externalUserId = :discordUserId', { discordUserId })
+      .execute();
+  }
+
+  async markOptOutNoticeSent(discordUserId: string): Promise<void> {
+    await this.repo
+      .createQueryBuilder()
+      .update(DiscordAccountLinkEntity)
+      .set({ optoutNoticeSentAt: new Date() })
+      .where('platform = :platform', { platform: PLATFORM })
+      .andWhere('externalUserId = :discordUserId', { discordUserId })
+      .execute();
+  }
 }

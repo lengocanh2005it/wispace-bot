@@ -8,6 +8,7 @@ import {
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
 import { CommonModule } from '../../shared/common/common.module';
+import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
 import { MessengerOutboundModule } from './messenger-outbound.module';
 import { MessengerMappingService } from './application/services/messenger-mapping.service';
@@ -33,6 +34,7 @@ import {
 @Module({
   imports: [
     CommonModule,
+    DatabaseModule,
     MessengerOutboundModule,
     StudyReminderModule,
     TypeOrmModule.forFeature([MessengerLinkVerifyRecordEntity]),

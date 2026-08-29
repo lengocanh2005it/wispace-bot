@@ -116,6 +116,14 @@ export class ZaloLinkCompletionService {
           )}: ${errorMessage(error, zaloUser.id)}`,
         );
       });
+
+    // One-time consent explainer after the welcome (#596); claimed
+    // atomically on the link row, released if the send fails.
+    await this.accountLinkService
+      .sendConsentExplainerIfDue(zaloUser.id, (text) =>
+        this.outboundService.sendText(zaloUser.id, text),
+      )
+      .catch(() => undefined);
   }
 
   private async retryUpsert(

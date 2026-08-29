@@ -373,6 +373,24 @@ export class TypeormStudyReminderJobRepository
     return result.affected ?? 0;
   }
 
+  async cancelPendingJobsForExternalUser(
+    platform: Platform,
+    externalUserId: string,
+    reason = 'reminder_opted_out',
+  ): Promise<number> {
+    // Same status trio + lease clearing as privacy unlink: an in-flight send
+    // completes, but nothing retries or fires afterwards.
+    const result = await this.repo.manager.query<{ rowCount: number }>(
+      `UPDATE study_reminder_jobs
+       SET status = 'cancelled', lease_token = NULL, lease_expires_at = NULL,
+           last_error = $3, updated_at = now()
+       WHERE platform = $1 AND external_user_id = $2
+         AND status IN ('pending', 'processing', 'failed')`,
+      [platform, externalUserId, reason],
+    );
+    return result?.rowCount ?? 0;
+  }
+
   async cancelJobsFromOtherPlatforms(
     userId: number,
     currentPlatform: string,

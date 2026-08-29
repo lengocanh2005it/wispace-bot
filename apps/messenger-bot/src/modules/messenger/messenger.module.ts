@@ -16,6 +16,7 @@ import {
   WebhookInboundEventEntity,
 } from '@wispace/database';
 import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities';
+import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { StudentReportModule } from '../student-report/student-report.module';
@@ -47,6 +48,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 @Module({
   imports: [
     CommonModule,
+    DatabaseModule,
     MessengerOutboundModule,
     ChatRateLimitModule,
     StudentReportModule,

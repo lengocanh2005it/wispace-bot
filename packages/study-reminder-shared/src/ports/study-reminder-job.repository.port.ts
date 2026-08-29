@@ -94,6 +94,16 @@ export interface StudyReminderJobRepositoryPort {
     horizonEnd?: Date,
     options?: { statuses?: StudyReminderJobStatus[] },
   ): Promise<number>;
+  /**
+   * Consent opt-out (#596): cancel every cancellable job for this learner on
+   * this platform so "tắt nhắc học" takes effect immediately, not at the
+   * next sync.
+   */
+  cancelPendingJobsForExternalUser(
+    platform: Platform,
+    externalUserId: string,
+    reason?: string,
+  ): Promise<number>;
   cancelJobsFromOtherPlatforms(
     userId: number,
     currentPlatform: Platform,

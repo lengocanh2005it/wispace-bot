@@ -377,8 +377,10 @@ describe('MessengerRepository platform-scoped user lookups (#191)', () => {
     const orderBy = jest.fn().mockReturnThis();
     const take = jest.fn().mockReturnThis();
     const getMany = jest.fn().mockResolvedValue([]);
+    const leftJoin = jest.fn().mockReturnThis();
     const createQueryBuilder = jest.fn().mockReturnValue({
       select: jest.fn().mockReturnThis(),
+      leftJoin,
       where,
       andWhere,
       orderBy,
@@ -393,7 +395,7 @@ describe('MessengerRepository platform-scoped user lookups (#191)', () => {
     const logRepo = {} as unknown as Repository<MessageLogEntity>;
     const claimRepo = {} as unknown as Repository<ScheduledReportClaimEntity>;
     const repo = new MessengerRepository(mappingRepo, logRepo, claimRepo);
-    return { repo, andWhere };
+    return { repo, andWhere, leftJoin };
   };
 
   it('scopes findActiveSubscribedMappings to the messenger platform', async () => {
@@ -427,6 +429,21 @@ describe('MessengerRepository platform-scoped user lookups (#191)', () => {
     expect(andWhere).toHaveBeenCalledWith('mapping.platform = :platform', {
       platform: 'messenger',
     });
+  });
+
+  it('filters reminders by consent — opt-out default keeps everyone (#596)', async () => {
+    const { repo, andWhere, leftJoin } = buildRepoWithQueryBuilder();
+
+    await repo.findActiveMappingsPage(0, 100);
+
+    expect(leftJoin).toHaveBeenCalledWith(
+      'user_notification_preferences',
+      'pref',
+      'pref.user_id = mapping.user_id',
+    );
+    expect(andWhere).toHaveBeenCalledWith(
+      'COALESCE(pref.reminder_enabled, true) = true',
+    );
   });
 });
 

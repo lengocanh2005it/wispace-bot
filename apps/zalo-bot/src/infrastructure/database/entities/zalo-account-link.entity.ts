@@ -73,4 +73,16 @@ export class ZaloAccountLinkEntity {
     nullable: true,
   })
   upstreamOwnershipVersion: string | null;
+
+  /** Post-link consent explainer sent once (#596). */
+  @Column({ name: 'optin_prompt_sent_at', type: 'timestamptz', nullable: true })
+  optinPromptSentAt: Date | null;
+
+  /** One-time opt-out footer appended to a scheduled report (#596). */
+  @Column({
+    name: 'optout_notice_sent_at',
+    type: 'timestamptz',
+    nullable: true,
+  })
+  optoutNoticeSentAt: Date | null;
 }

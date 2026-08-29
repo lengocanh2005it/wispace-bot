@@ -15,7 +15,11 @@ export interface DiscordReportAccountPageReaderPort {
   findActiveAccountsPage(
     cursor: string | undefined,
     limit: number,
+    /** forceSend ops override reads past the report consent gate (#596). */
+    options?: { includeUnsubscribed?: boolean },
   ): Promise<ReportAccountRow[]>;
+  /** Marks the one-time opt-out footer as delivered on the link row (#596). */
+  markOptOutNoticeSent?(id: string): Promise<void>;
 }
 
 export const DISCORD_REPORT_ACCOUNT_READER = Symbol(

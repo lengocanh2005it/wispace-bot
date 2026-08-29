@@ -48,6 +48,31 @@ export function buildLinkSuccessMessage(): string {
   return 'Tài khoản WISPACE của bạn đã liên kết thành công! 🎉';
 }
 
+/** Post-link consent explainer (#596) — sent once per platform after linking. */
+export function buildConsentExplainerMessage(): string {
+  return (
+    'Mình có thể hỗ trợ bạn 2 việc tự động nhé:\n' +
+    '📈 Báo cáo tiến độ học mỗi ngày\n' +
+    '⏰ Nhắc lịch học sắp tới\n\n' +
+    'Bật/tắt bất cứ lúc nào bằng tin nhắn: "bật báo cáo", "tắt báo cáo", "bật nhắc học", "tắt nhắc học".'
+  );
+}
+
+export function buildConsentChangedMessage(
+  feature: 'report' | 'reminder',
+  enabled: boolean,
+): string {
+  const label = feature === 'report' ? 'báo cáo tiến độ' : 'nhắc lịch học';
+  return enabled
+    ? `Đã BẬT ${label} cho bạn nhé ✅`
+    : `Đã TẮT ${label} cho bạn nhé. Bạn bật lại bất cứ lúc nào bằng tin nhắn nhé.`;
+}
+
+/** One-time opt-out footer appended to grandfathered learners' next report (#596). */
+export function buildReportOptOutFooter(): string {
+  return '\n\n—\nBạn không muốn nhận báo cáo tự động? Nhắn "tắt báo cáo" để tắt nhé.';
+}
+
 /** Shared bounded response for unsupported/non-text user messages. */
 export function buildUnsupportedMessageTypeReply(): string {
   return 'Mình chỉ đọc được tin nhắn chữ/văn bản thôi nhé. Bạn gửi lại câu hỏi bằng chữ để mình hỗ trợ bạn.';

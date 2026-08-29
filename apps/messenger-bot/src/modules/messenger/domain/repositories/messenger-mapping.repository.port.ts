@@ -27,6 +27,10 @@ export interface MessengerMappingRepositoryPort {
     limit: number,
   ): Promise<UserMessengerMapping[]>;
   cleanupActiveDuplicateMappings(): Promise<number>;
+  /** Consent opt-out (#596): clear cadence/topic so the report cron skips this learner. */
+  clearReportSubscription(psid: string): Promise<void>;
+  /** Consent opt-in via command (#596): fill default cadence/topic so the Messenger cron delivers. */
+  ensureReportSubscription(psid: string): Promise<void>;
   deactivateConflictingActiveMappings(params: {
     psid: string;
     userId: number;

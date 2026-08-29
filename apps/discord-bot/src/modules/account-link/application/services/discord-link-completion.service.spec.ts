@@ -27,6 +27,7 @@ function buildHarness(overrides: {
       : jest
           .fn()
           .mockResolvedValue(overrides.upsertResult ?? { relinked: false }),
+    sendConsentExplainerIfDue: jest.fn().mockResolvedValue(true),
   } as unknown as DiscordAccountLinkService;
 
   const tokenVerifyService = {
@@ -52,6 +53,10 @@ function buildHarness(overrides: {
     notify: jest.fn().mockResolvedValue(undefined),
   } as unknown as DiscordRelinkNotifier;
 
+  const outboundService = {
+    sendText: jest.fn().mockResolvedValue(undefined),
+  } as never;
+
   const welcomeService = {
     welcomeIfDue: jest
       .fn()
@@ -70,6 +75,7 @@ function buildHarness(overrides: {
     verifyRecordService,
     guildMembershipService,
     relinkNotifier,
+    outboundService,
     welcomeService,
     clarificationStateStore as never,
   );
@@ -81,6 +87,7 @@ function buildHarness(overrides: {
     verifyRecordService,
     guildMembershipService,
     relinkNotifier,
+    outboundService,
     welcomeService,
     clearClarificationState,
     clarificationStateStore,
@@ -216,5 +223,33 @@ describe('DiscordLinkCompletionService', () => {
       'discord-user-1',
     );
     expect(outcome).toBe('success');
+  });
+
+  it('attempts the consent explainer after the in-guild welcome (#596)', async () => {
+    const { service, accountLinkService, welcomeService } = buildHarness({
+      inGuild: true,
+    });
+
+    await service.completeLink('code', 'good-token');
+
+    const explainerOrder = (
+      accountLinkService.sendConsentExplainerIfDue as jest.Mock
+    ).mock.invocationCallOrder[0];
+    expect(explainerOrder).toBeGreaterThan(
+      welcomeService.welcomeIfDue.mock.invocationCallOrder[0],
+    );
+    expect(accountLinkService.sendConsentExplainerIfDue).toHaveBeenCalledWith(
+      'discord-user-1',
+      expect.any(Function),
+    );
+  });
+
+  it('does not send the consent explainer when the user is not in the guild yet (#596)', async () => {
+    const { service, accountLinkService } = buildHarness({ inGuild: false });
+
+    await service.completeLink('code', 'good-token');
+
+    // DMs require a shared guild — the explainer waits for guildMemberAdd.
+    expect(accountLinkService.sendConsentExplainerIfDue).not.toHaveBeenCalled();
   });
 });

@@ -19,7 +19,11 @@ import {
   CLARIFICATION_STATE_STORE,
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
-import { PlatformLinkStateService } from '@wispace/database';
+import {
+  PlatformLinkStateService,
+  NotificationPreferenceService,
+} from '@wispace/database';
+import { buildConsentExplainerMessage } from '@wispace/bot-common/messages';
 
 @Injectable()
 export class MessengerMappingService {
@@ -33,6 +37,7 @@ export class MessengerMappingService {
     private readonly sessionSourceService: StudySessionSourceService,
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,
+    private readonly notificationPreferences: NotificationPreferenceService,
     @Optional() private readonly linkState?: PlatformLinkStateService,
   ) {}
 
@@ -183,6 +188,32 @@ export class MessengerMappingService {
     }
 
     await this.clearClarificationState(params.psid);
+
+    // Consent write-sync (#596): a link that carries cadence+topic IS a report
+    // subscription (opt-in event / register_report / referral with defaults).
+    // Keep the user-level consent row in step so cross-platform reads see it.
+    if (params.topic && params.cadence) {
+      await this.notificationPreferences
+        .setReportEnabled(params.userId, true)
+        .catch((error: unknown) => {
+          this.logger.warn(
+            `Report consent write-sync failed userId=${maskExternalId(
+              String(params.userId),
+            )}: ${errorMessage(error)}`,
+          );
+        });
+    } else if (params.notifyUser !== false) {
+      // Linked without a report subscription — one explainer so the learner
+      // knows reports/reminders exist and how to toggle them (#596).
+      await this.outbound
+        .sendTextViaPsid({
+          psid: params.psid,
+          userId: params.userId,
+          text: buildConsentExplainerMessage(),
+          messageType: 'CONSENT_EXPLAINER',
+        })
+        .catch(() => undefined);
+    }
 
     if (relinked) {
       this.logger.warn(

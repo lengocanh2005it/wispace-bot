@@ -10,6 +10,7 @@ describe('TypeormStudyReminderJobRepository', () => {
   let queryLog: Array<{ method: string; args: unknown[] }>;
   let updateMock: jest.Mock;
   let transactionMock: jest.Mock;
+  let managerQuery: jest.Mock;
   let createQueryBuilderMock: jest.Mock;
 
   const baseInput = (
@@ -147,6 +148,8 @@ describe('TypeormStudyReminderJobRepository', () => {
       async <T>(callback: (manager: typeof transactionManager) => Promise<T>) =>
         callback(transactionManager),
     );
+
+    managerQuery = transactionManager.query;
 
     createQueryBuilderMock = jest.fn(() => buildQb());
 
@@ -855,6 +858,35 @@ describe('TypeormStudyReminderJobRepository', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].status).toBe('processing');
+    });
+  });
+
+  describe('cancelPendingJobsForExternalUser (#596)', () => {
+    it('cancels every cancellable job for the learner on this platform', async () => {
+      managerQuery.mockResolvedValueOnce({ rowCount: 3 });
+
+      const cancelled = await repository.cancelPendingJobsForExternalUser(
+        'discord',
+        'discord-1',
+      );
+
+      expect(cancelled).toBe(3);
+      const [sql, params] = managerQuery.mock.calls[0];
+      expect(String(sql)).toContain(`status = 'cancelled'`);
+      expect(String(sql)).toContain(`lease_token = NULL`);
+      expect(String(sql)).toContain(`external_user_id = $2`);
+      expect(params).toEqual(['discord', 'discord-1', 'reminder_opted_out']);
+    });
+
+    it('returns 0 when the query reports no rows', async () => {
+      managerQuery.mockResolvedValueOnce(undefined);
+
+      const cancelled = await repository.cancelPendingJobsForExternalUser(
+        'zalo',
+        'zalo-1',
+      );
+
+      expect(cancelled).toBe(0);
     });
   });
 });

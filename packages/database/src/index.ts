@@ -95,6 +95,7 @@ export {
   resolveCanonicalPlatform,
   DEFAULT_PLATFORM_PRIORITY,
 } from './services/canonical-platform.service';
+export { NotificationPreferenceService } from './services/notification-preference.service';
 export {
   WebActivityService,
   normalizeToUtcIso,

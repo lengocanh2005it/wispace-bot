@@ -33,6 +33,7 @@ export interface PrivacyStateCleanup {
  *   - Chat daily usage (group A — user data directly)
  *   - LLM usage events (group A)
  *   - Chat idempotency records (group A)
+ *   - Notification consent (user_notification_preferences, #596)
  *   - Web activity (userId-scoped; orphan row kept when mapping has no userId)
  *   - Redis chat history (if ChatHistoryClearer provided)
  *
@@ -84,6 +85,7 @@ const ENTITY_NAMES = {
   llmUsageEvent: 'LlmUsageEvent',
   chatIdempotency: 'ChatIdempotency',
   webActivity: 'WebActivity',
+  notificationPreference: 'UserNotificationPreference',
 } as const;
 
 const MAPPING_TABLES: Record<string, string> = {
@@ -310,6 +312,12 @@ export class PrivacyDataService {
       await deleteByUser(ENTITY_NAMES.chatDailyUsage, uid);
       await deleteByUser(ENTITY_NAMES.llmUsageEvent, uid);
       await deleteByUser(ENTITY_NAMES.chatIdempotency, uid);
+      if (uid) {
+        // Notification consent state (#596) is keyed by userId only.
+        await manager
+          .getRepository(ENTITY_NAMES.notificationPreference)
+          .delete({ userId: uid });
+      }
       await deleteVerifyIntent(manager, platform, externalUserId);
     });
 

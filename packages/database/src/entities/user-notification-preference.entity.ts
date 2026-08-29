@@ -25,6 +25,20 @@ export class UserNotificationPreferenceEntity {
   })
   preferredPlatform!: Platform | null;
 
+  /**
+   * Explicit consent for scheduled learning reports (#596).
+   * NULL = opted out (reports are opt-in).
+   */
+  @Column({ name: 'report_enabled', type: 'boolean', nullable: true })
+  reportEnabled!: boolean | null;
+
+  /**
+   * Explicit consent for study session reminders (#596).
+   * NULL = opted in (reminders are opt-out — they mirror the learner's own calendar).
+   */
+  @Column({ name: 'reminder_enabled', type: 'boolean', nullable: true })
+  reminderEnabled!: boolean | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

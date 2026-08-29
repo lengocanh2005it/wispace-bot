@@ -128,22 +128,22 @@ describe('DiscordReportCronService', () => {
     expect(orchestrationService.claimAndSend).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ externalUserId: 'discord-1' }),
-      {
+      expect.objectContaining({
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
         skipAlreadySentToday: true,
         examDateForOutbox: '2026-08-14',
-      },
+      }),
     );
     expect(orchestrationService.claimAndSend).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({ externalUserId: 'discord-2' }),
-      {
+      expect.objectContaining({
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
         skipAlreadySentToday: true,
         examDateForOutbox: '2026-08-14',
-      },
+      }),
     );
   });
 
@@ -183,11 +183,13 @@ describe('DiscordReportCronService', () => {
       1,
       undefined,
       200,
+      { includeUnsubscribed: false },
     );
     expect(pageMock.findActiveAccountsPage).toHaveBeenNthCalledWith(
       2,
       '200',
       200,
+      { includeUnsubscribed: false },
     );
   });
 
@@ -226,12 +228,12 @@ describe('DiscordReportCronService', () => {
 
     expect(orchestrationService.claimAndSend).toHaveBeenCalledWith(
       expect.objectContaining({ externalUserId: 'discord-1' }),
-      {
+      expect.objectContaining({
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
         skipAlreadySentToday: false,
         examDateForOutbox: '2026-09-10',
-      },
+      }),
     );
   });
 
@@ -326,6 +328,7 @@ describe('DiscordReportCronService', () => {
     expect(accountLinkRepo.findActiveAccountsPage).toHaveBeenCalledWith(
       undefined,
       200,
+      { includeUnsubscribed: false },
     );
   });
   it('skips sending report when canonical platform for user is not discord (e.g. zalo)', async () => {
