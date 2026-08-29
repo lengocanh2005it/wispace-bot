@@ -92,4 +92,23 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     );
     expect(output).not.toContain('external_user_id');
   });
+
+  it('exposes web-activity webhook + scheduled-send-suppressed counters', async () => {
+    const svc = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+    svc.incWebActivityWebhookReceived();
+    svc.incScheduledSendSuppressed('report');
+    svc.incScheduledSendSuppressed('reminder');
+    svc.incScheduledSendSuppressed('reminder');
+    const out = await svc.getMetrics();
+    expect(out).toContain('test_web_activity_webhook_received_total 1');
+    expect(out).toContain(
+      'test_scheduled_send_suppressed_total{feature="report"} 1',
+    );
+    expect(out).toContain(
+      'test_scheduled_send_suppressed_total{feature="reminder"} 2',
+    );
+  });
 });
