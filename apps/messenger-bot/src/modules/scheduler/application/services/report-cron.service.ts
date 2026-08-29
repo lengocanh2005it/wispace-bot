@@ -5,7 +5,11 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
-import { CanonicalPlatformService } from '@wispace/database';
+import {
+  CanonicalPlatformService,
+  WebActivityService,
+} from '@wispace/database';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { maskExternalId } from '@wispace/bot-common/masking';
@@ -41,6 +45,8 @@ export class ReportCronService {
     @Optional()
     @Inject(CanonicalPlatformService)
     private readonly canonicalPlatformService?: CanonicalPlatformService,
+    private readonly webActivityService?: WebActivityService,
+    private readonly metrics?: BotMetricsService,
   ) {}
 
   @Cron('0 3 * * 1', {
@@ -135,6 +141,26 @@ export class ReportCronService {
       let mappings = page;
       if (psidFilter) {
         mappings = mappings.filter((m) => m.psid === psidFilter);
+      }
+
+      if (this.webActivityService?.gateEnabled) {
+        const pageUserIds = mappings
+          .map((m) => m.userId)
+          .filter((id): id is number => typeof id === 'number');
+        const dormant = new Set(
+          await this.webActivityService.filterDormant(pageUserIds),
+        );
+        if (dormant.size > 0) {
+          const before = mappings.length;
+          mappings = mappings.filter(
+            (m) => !(m.userId != null && dormant.has(m.userId)),
+          );
+          const suppressed = before - mappings.length;
+          for (let i = 0; i < suppressed; i += 1) {
+            this.metrics?.incScheduledSendSuppressed('report');
+          }
+          skipped += suppressed;
+        }
       }
 
       totalMappings += mappings.length;
