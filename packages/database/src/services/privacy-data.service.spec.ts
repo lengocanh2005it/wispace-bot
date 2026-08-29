@@ -18,6 +18,7 @@ describe('PrivacyDataService', () => {
   let mockLlmUsageRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockIdempotencyRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockDiscordMappingRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockWebActivityRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockZaloMappingRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockManagerQuery: jest.Mock;
 
@@ -40,6 +41,7 @@ describe('PrivacyDataService', () => {
     mockLlmUsageRepo = makeRepo();
     mockIdempotencyRepo = makeRepo();
     mockDiscordMappingRepo = makeRepo();
+    mockWebActivityRepo = makeRepo();
     mockZaloMappingRepo = makeRepo();
 
     mockManagerQuery = jest.fn().mockResolvedValue([]);
@@ -67,6 +69,8 @@ describe('PrivacyDataService', () => {
             return mockLlmUsageRepo;
           case 'ChatIdempotency':
             return mockIdempotencyRepo;
+          case 'WebActivity':
+            return mockWebActivityRepo;
           default:
             throw new Error(`Unknown entity: ${entityName}`);
         }
@@ -230,6 +234,24 @@ describe('PrivacyDataService', () => {
       expect(mockDailyUsageRepo.delete).toHaveBeenCalledWith({ userId: 42 });
       expect(mockLlmUsageRepo.delete).toHaveBeenCalledWith({ userId: 42 });
       expect(mockIdempotencyRepo.delete).toHaveBeenCalledWith({ userId: 42 });
+      expect(mockWebActivityRepo.delete).toHaveBeenCalledWith({ userId: 42 });
+    });
+
+    it('does not attempt web_activity deletion when mapping has no userId', async () => {
+      const mockMapping = { id: 1, userId: undefined, platform: 'messenger' };
+      mockMappingRepo.findOne.mockResolvedValue(mockMapping);
+      mockMappingRepo.remove.mockResolvedValue(mockMapping);
+      mockLearnerRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      mockReminderRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      mockClaimRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      mockReportRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      mockDailyUsageRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      mockLlmUsageRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      mockIdempotencyRepo.delete.mockResolvedValue({ affected: 0 } as never);
+
+      await service.delete('messenger', 'psid-123');
+
+      expect(mockWebActivityRepo.delete).not.toHaveBeenCalled();
     });
 
     it('does not fail when mapping does not exist', async () => {
