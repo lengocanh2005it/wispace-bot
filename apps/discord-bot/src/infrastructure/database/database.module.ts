@@ -14,6 +14,7 @@ import {
   createCircuitBreakerDataSourceFactory,
   DbCircuitBreakerService,
   CanonicalPlatformService,
+  WebActivityService,
   UserNotificationPreferenceEntity,
 } from '@wispace/database';
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
@@ -62,7 +63,11 @@ export function buildTypeOrmOptions(config: ConfigService) {
       UserNotificationPreferenceEntity,
     ]),
   ],
-  providers: [DbCircuitBreakerService, CanonicalPlatformService],
-  exports: [TypeOrmModule, CanonicalPlatformService],
+  providers: [
+    DbCircuitBreakerService,
+    CanonicalPlatformService,
+    WebActivityService,
+  ],
+  exports: [TypeOrmModule, CanonicalPlatformService, WebActivityService],
 })
 export class DatabaseModule {}
