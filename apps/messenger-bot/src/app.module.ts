@@ -13,6 +13,7 @@ import {
 import { HealthController } from '@wispace/bot-common/health';
 import { MessengerModule } from './modules/messenger/messenger.module';
 import { SchedulerModule } from './modules/scheduler/scheduler.module';
+import { WebActivityModule } from './modules/web-activity/web-activity.module';
 import { StudentReportModule } from './modules/student-report/student-report.module';
 import { StudyReminderModule } from './modules/study-reminder/study-reminder.module';
 import { ChatRateLimitModule } from './modules/chat-rate-limit/chat-rate-limit.module';
@@ -44,6 +45,7 @@ import { OpsHealthModule } from '@wispace/ops-health';
     StudyReminderModule,
     MessengerModule,
     SchedulerModule,
+    WebActivityModule,
     ChatRateLimitModule,
     LlmUsageModule,
     createMetricsModule('messenger', 'messenger-ai-for-student'),
