@@ -33,6 +33,7 @@ export interface PrivacyStateCleanup {
  *   - Chat daily usage (group A — user data directly)
  *   - LLM usage events (group A)
  *   - Chat idempotency records (group A)
+ *   - Web activity (userId-scoped; orphan row kept when mapping has no userId)
  *   - Redis chat history (if ChatHistoryClearer provided)
  *
  * Preserved (audit trail, auto-cleaned by retention cron):
@@ -82,6 +83,7 @@ const ENTITY_NAMES = {
   chatDailyUsage: 'ChatDailyUsage',
   llmUsageEvent: 'LlmUsageEvent',
   chatIdempotency: 'ChatIdempotency',
+  webActivity: 'WebActivity',
 } as const;
 
 const MAPPING_TABLES: Record<string, string> = {
@@ -296,6 +298,13 @@ export class PrivacyDataService {
       await deleteByUser(ENTITY_NAMES.studyReminderJob, uid);
       await deleteByUser(ENTITY_NAMES.scheduledReportClaim, uid);
       await deleteByUser(ENTITY_NAMES.reportSendJob, uid);
+      if (uid) {
+        // web_activity is keyed by userId only — no (platform, externalUserId) fallback.
+        // A mapping with no userId leaves a harmless orphan row (no cleanup cron).
+        await manager
+          .getRepository(ENTITY_NAMES.webActivity)
+          .delete({ userId: uid });
+      }
 
       // Group A: user data directly (new tables)
       await deleteByUser(ENTITY_NAMES.chatDailyUsage, uid);
