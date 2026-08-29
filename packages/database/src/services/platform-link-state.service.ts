@@ -2,11 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { createHash } from 'crypto';
 import { errorMessage } from '@wispace/bot-common/masking';
-import type { Platform } from '../types';
+import type { Platform, PlatformLinkState } from '@wispace/contracts';
 import type {
   PlatformLinkAuditEventType,
   PlatformLinkObservation,
-  PlatformLinkState,
 } from '../types';
 
 const TABLES: Record<Platform, { table: string; idType: 'number' | 'string' }> =

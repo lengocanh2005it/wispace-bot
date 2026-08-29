@@ -6,7 +6,8 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { Platform, WebhookInboundEventStatus } from '../types';
+import type { Platform } from '@wispace/contracts';
+import type { WebhookInboundEventStatus } from '../types';
 
 /**
  * Durable inbox for authenticated inbound webhook events (Messenger/Zalo).

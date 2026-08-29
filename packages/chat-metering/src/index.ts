@@ -32,7 +32,10 @@ export type {
   ReserveFreeFormSlotOutcome,
   ReserveIdempotencyInput,
 } from './chat-rate-limit/types';
-export type { ChatQuotaDenyReason } from '@wispace/database';
+export type {
+  ChatQuotaDenyReason,
+  ChatQuotaReleaseReason,
+} from './chat-rate-limit/types';
 
 export {
   buildInputCostEnvKey,

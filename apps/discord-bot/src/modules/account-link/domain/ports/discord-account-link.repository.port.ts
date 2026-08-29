@@ -3,7 +3,7 @@
  * (account-linking use case) depends only on this port; the TypeORM
  * implementation lives in `infrastructure/persistence/`.
  */
-import type { PlatformLinkState } from '@wispace/database';
+import type { PlatformLinkState } from '@wispace/contracts';
 
 export interface DiscordAccountLinkRepositoryPort {
   /**

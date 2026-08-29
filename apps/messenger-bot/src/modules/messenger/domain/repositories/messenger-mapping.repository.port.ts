@@ -2,7 +2,7 @@ import {
   NotificationCadence,
   UserMessengerMapping,
 } from '../entities/messenger.types';
-import type { PlatformLinkState } from '@wispace/database';
+import type { PlatformLinkState } from '@wispace/contracts';
 
 export interface MessengerMappingRepositoryPort {
   findActiveMappingByPsid(psid: string): Promise<UserMessengerMapping | null>;

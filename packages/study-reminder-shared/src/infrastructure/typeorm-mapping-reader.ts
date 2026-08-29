@@ -6,8 +6,7 @@ import type {
   MappingReaderPort,
 } from '../ports/mapping-reader.port';
 import type { UserLink } from '../types/study-reminder.types';
-import type { Platform } from '@wispace/database';
-import type { PlatformLinkState } from '@wispace/database';
+import type { Platform, PlatformLinkState } from '@wispace/contracts';
 
 /** Minimum column shape shared by the per-app account-link entities. */
 export interface AccountLinkRow {

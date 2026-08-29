@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import { todayReportDate } from '@wispace/scheduler-core';
 import { ScheduledReportClaimEntity } from '../entities/scheduled-report-claim.entity';
-import type { Platform } from '../types';
+import type { Platform } from '@wispace/contracts';
 import { listUserIdsWithSentReport } from './list-user-ids-with-sent-report';
 
 /**

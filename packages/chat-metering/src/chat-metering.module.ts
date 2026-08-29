@@ -2,7 +2,7 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
-import type { Platform } from '@wispace/database';
+import type { Platform } from '@wispace/contracts';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,

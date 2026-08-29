@@ -22,7 +22,7 @@ import type {
   GetSessionsFn,
   StudyReminderSyncResult,
 } from '../types/study-reminder.types';
-import type { Platform } from '@wispace/database';
+import type { Platform } from '@wispace/contracts';
 import type { StudyReminderDispatchResult } from './study-reminder-dispatch.service';
 
 const ADVISORY_LOCK_SYNC = 884_200_901;

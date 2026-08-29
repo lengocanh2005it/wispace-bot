@@ -1,14 +1,18 @@
 import type {
+  MessageType,
   OutboundDeliveryOutcome,
   Platform,
-  StudyReminderJobStatus,
-  MessageType,
-} from '@wispace/database';
+} from '@wispace/contracts';
 
-export type {
-  StudyReminderJobStatus,
-  OutboundDeliveryOutcome,
-} from '@wispace/database';
+/** Study reminder job status. */
+export type StudyReminderJobStatus =
+  | 'pending'
+  | 'processing'
+  | 'sent'
+  | 'failed'
+  | 'cancelled';
+
+export type { OutboundDeliveryOutcome };
 
 export interface StudyReminderJob {
   id: number;

@@ -63,6 +63,7 @@
     "@wispace/chat-metering": "*",
     "@wispace/chat-queue-core": "*",
     "@wispace/cleanup-cron": "*",
+    "@wispace/contracts": "*",
     "@wispace/database": "*",
     "@wispace/llm-agent": "*",
     "@wispace/learner-profile": "*",

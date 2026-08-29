@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import type { Platform } from '@wispace/database';
+import type { Platform } from '@wispace/contracts';
 import {
   StudyReminderScheduleService,
   StudyReminderSyncService,

@@ -7,7 +7,7 @@ import {
   REPORT_CLAIM_REPOSITORY,
   type ReportClaimRepositoryPort,
 } from '@wispace/scheduler-core';
-import type { Platform } from '../types';
+import type { Platform } from '@wispace/contracts';
 
 export const DEFAULT_REPORT_CLAIM_LEASE_MS = 2 * 60 * 60 * 1000;
 

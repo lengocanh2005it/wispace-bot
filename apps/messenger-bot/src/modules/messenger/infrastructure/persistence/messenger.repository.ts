@@ -12,7 +12,7 @@ import { MessengerRepositoryPort } from '../../domain/repositories/messenger.rep
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
-import type { PlatformLinkState } from '@wispace/database';
+import type { PlatformLinkState } from '@wispace/contracts';
 import {
   MessengerMessageLog,
   NotificationCadence,

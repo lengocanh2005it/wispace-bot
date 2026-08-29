@@ -241,3 +241,6 @@ jobs:
 
       - name: Test VPS deploy script (fail-closed + crash-safety + migration lock, #199/#201/#203/#204)
         run: bash .github/scripts/tests/vps-deploy.test.sh
+
+      - name: Check type-only @wispace/database imports (#423)
+        run: bash .github/scripts/check-database-type-imports.sh

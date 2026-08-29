@@ -3,7 +3,7 @@ import type {
   StudyReminderJobStatus,
   UpsertStudyReminderJobInput,
 } from '../types/study-reminder.types';
-import type { Platform } from '@wispace/database';
+import type { Platform } from '@wispace/contracts';
 
 export type {
   StudyReminderJob,

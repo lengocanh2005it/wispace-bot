@@ -5,6 +5,7 @@ import type Redis from 'ioredis';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { REDIS_CLIENT } from '@wispace/bot-common/redis';
 import type { RedisClientPort } from '@wispace/bot-common/redis';
+import type { Platform } from '@wispace/contracts';
 import type {
   AppendChatBufferInput,
   ChatQueueBufferSnapshot,
@@ -43,10 +44,8 @@ interface RedisChatQueueBufferState {
   updatedAt: number;
 }
 
-export type ChatQueuePlatform = 'messenger' | 'discord' | 'zalo';
-
 export interface RedisChatQueueStoreOptions {
-  platform?: ChatQueuePlatform;
+  platform?: Platform;
   /** Keep the original Messenger keys so existing buffers remain readable. */
   legacyKeys?: boolean;
   /** Bounded telemetry callback; failures must never affect queue behavior. */

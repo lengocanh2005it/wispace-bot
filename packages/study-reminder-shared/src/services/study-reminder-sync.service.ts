@@ -19,7 +19,7 @@ import type {
   UserLink,
   StudySessionRecord,
 } from '../types/study-reminder.types';
-import type { Platform } from '@wispace/database';
+import type { Platform } from '@wispace/contracts';
 
 const DEFAULT_PLATFORM = 'messenger';
 const DEFAULT_PAGE_SIZE = 100;

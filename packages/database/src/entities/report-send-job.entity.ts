@@ -6,7 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { Platform, ReportSendJobStatus } from '../types';
+import type { Platform, ReportSendJobStatus } from '@wispace/contracts';
 
 /** R5: outbox retry báo cáo cron khi Wispace 5xx — một job / (platform, external_user_id, exam_date). */
 @Entity('report_send_jobs')

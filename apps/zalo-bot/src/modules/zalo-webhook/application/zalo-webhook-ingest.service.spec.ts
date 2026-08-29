@@ -4,7 +4,7 @@ import {
   buildZaloEventId,
 } from './zalo-webhook-ingest.service';
 import type { ZaloWebhookEvent } from '../domain/entities/zalo-webhook-event.types';
-import type { PlatformWebhookInboundEventService } from '@wispace/database';
+import { PlatformWebhookInboundEventService } from '@wispace/database';
 
 function textEvent(
   overrides: Partial<ZaloWebhookEvent> = {},

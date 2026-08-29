@@ -7,7 +7,7 @@ import {
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
-import type { OutboundDeliveryOutcome } from '../types';
+import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 import { PlatformDeadLetterService } from './platform-dead-letter.service';
 
 const DEFAULT_MAX_RETRIES = 3;

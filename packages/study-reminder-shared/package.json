@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@wispace/bot-common": "*",
-    "@wispace/database": "*",
+    "@wispace/contracts": "*",
     "@wispace/date-utils": "*",
     "date-fns": "^4.4.0",
     "@nestjs/common": "^11.0.1",

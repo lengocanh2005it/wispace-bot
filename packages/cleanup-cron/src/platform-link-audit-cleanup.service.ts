@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { CronJob } from 'cron';
 import { DataSource } from 'typeorm';
-import type { Platform } from '@wispace/database';
+import type { Platform } from '@wispace/contracts';
 import { CleanupCronService } from './cleanup-cron.service';
 
 const DEFAULT_RETENTION_DAYS = 90;

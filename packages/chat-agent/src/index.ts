@@ -37,7 +37,6 @@ export { PlatformChatHistoryService } from './chat-history/platform-chat-history
 export { PlatformChatQueueService } from './chat-queue/platform-chat-queue.service';
 export {
   RedisChatQueueStore,
-  type ChatQueuePlatform,
   type RedisChatQueueStoreOptions,
 } from './chat-queue/redis-chat-queue.store';
 export { RedisChatQueueWorkerService } from './chat-queue/redis-chat-queue.worker';

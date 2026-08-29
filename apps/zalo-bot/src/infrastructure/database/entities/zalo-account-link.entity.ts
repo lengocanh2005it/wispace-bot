@@ -5,7 +5,7 @@ import {
   Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import type { PlatformLinkState } from '@wispace/database';
+import type { PlatformLinkState } from '@wispace/contracts';
 
 /** Maps the `zalo_account_links` table — see migration in apps/messenger-bot. */
 @Entity('zalo_account_links')

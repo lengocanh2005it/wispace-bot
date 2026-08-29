@@ -5,7 +5,7 @@ import {
   todayUsageDate,
 } from '@wispace/chat-metering';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
-import type { Platform } from '@wispace/database';
+import type { Platform } from '@wispace/contracts';
 import type {
   UserGoalsRecord,
   TaskScoreAverageRecord,

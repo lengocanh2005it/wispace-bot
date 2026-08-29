@@ -109,7 +109,7 @@ export class TypeormDiscordAccountLinkRepository implements DiscordAccountLinkRe
   }
 
   async findMappingStateByDiscordId(discordUserId: string): Promise<{
-    state: import('@wispace/database').PlatformLinkState;
+    state: import('@wispace/contracts').PlatformLinkState;
     userId?: number;
   }> {
     const row = await this.repo.findOne({

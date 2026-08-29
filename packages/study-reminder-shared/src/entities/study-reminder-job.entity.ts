@@ -6,11 +6,8 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type {
-  OutboundDeliveryOutcome,
-  Platform,
-  StudyReminderJobStatus,
-} from '@wispace/database';
+import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
+import type { StudyReminderJobStatus } from '../types/study-reminder.types';
 
 @Entity('study_reminder_jobs')
 @Index(

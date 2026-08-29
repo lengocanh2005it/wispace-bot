@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import type { OutboundDeliveryOutcome } from '@wispace/database';
+import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 import type { MessageSenderPort } from '../ports/message-sender.port';
 import type { SendMessageInput } from '../types/study-reminder.types';
 

@@ -1,9 +1,6 @@
-export type ReportSendJobStatus =
-  | 'pending'
-  | 'processing'
-  | 'sent'
-  | 'failed'
-  | 'cancelled';
+import type { ReportSendJobStatus } from '@wispace/contracts';
+
+export type { ReportSendJobStatus };
 
 export interface ReportSendJob {
   id: number;
