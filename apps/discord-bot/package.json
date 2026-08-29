@@ -34,6 +34,7 @@
     "@wispace/chat-metering": "*",
     "@wispace/chat-pipeline": "*",
     "@wispace/cleanup-cron": "*",
+    "@wispace/contracts": "*",
     "@wispace/database": "*",
     "@wispace/doppler-sync": "*",
     "@wispace/llm-agent": "*",

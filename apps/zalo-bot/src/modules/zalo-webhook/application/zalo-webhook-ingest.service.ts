@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { maskEventId } from '@wispace/bot-common/masking';
-import { PlatformWebhookInboundEventService } from '@wispace/database';
-import type { WebhookInboundIngressPort } from '@wispace/database';
+import {
+  PlatformWebhookInboundEventService,
+  type WebhookInboundIngressPort,
+} from '@wispace/database';
 import type { ZaloWebhookEvent } from '../domain/entities/zalo-webhook-event.types';
 
 /** Stable per-delivery event id for the durable inbox. */

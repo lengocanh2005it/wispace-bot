@@ -114,7 +114,7 @@ export class DiscordAccountLinkService {
   }
 
   async findMappingStateByDiscordId(discordUserId: string): Promise<{
-    state: import('@wispace/database').PlatformLinkState;
+    state: import('@wispace/contracts').PlatformLinkState;
     userId?: number;
   }> {
     if (this.repository.findMappingStateByDiscordId) {

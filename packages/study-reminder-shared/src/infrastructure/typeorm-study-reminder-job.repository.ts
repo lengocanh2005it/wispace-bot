@@ -12,7 +12,7 @@ import type { SyncJobRepository } from '../ports/study-reminder-sync-job.reposit
 import type { DispatchJobRepository } from '../ports/study-reminder-dispatch-job.repository.port';
 import type { OpsJobRepository } from '../ports/study-reminder-ops-job.repository.port';
 import { StudyReminderJobEntity } from '../entities/study-reminder-job.entity';
-import type { Platform } from '@wispace/database';
+import type { Platform } from '@wispace/contracts';
 
 const DEFAULT_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
   'pending',

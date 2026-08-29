@@ -1,5 +1,5 @@
 import type { StudyReminderJob } from '../types/study-reminder.types';
-import type { Platform } from '@wispace/database';
+import type { Platform } from '@wispace/contracts';
 
 /**
  * Focused lifecycle interface for study-reminder dispatch operations.

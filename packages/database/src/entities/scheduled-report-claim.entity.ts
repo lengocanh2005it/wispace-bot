@@ -6,11 +6,8 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type {
-  OutboundDeliveryOutcome,
-  Platform,
-  ScheduledReportClaimStatus,
-} from '../types';
+import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
+import type { ScheduledReportClaimStatus } from '../types';
 
 @Entity('scheduled_report_claims')
 @Index(

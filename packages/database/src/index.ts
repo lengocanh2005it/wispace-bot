@@ -36,22 +36,15 @@ export {
   type CircuitBreakerProtectedDataSource,
 } from './db-circuit-breaker';
 
-// Shared types
+// Persistence-only types owned by this package — cross-context contracts
+// (Platform, PlatformLinkState, ReportSendJobStatus, OutboundDeliveryOutcome,
+// MessageType) are owned by @wispace/contracts and must not be re-exported here.
 export {
-  type Platform,
-  type PlatformLinkState,
   type PlatformLinkObservation,
   type PlatformLinkAuditEventType,
-  type ChatQuotaDenyReason,
-  type ChatIdempotencyStatus,
-  type ChatQuotaReleaseReason,
-  type ReportSendJobStatus,
   type ScheduledReportClaimStatus,
   type WebhookDeadLetterStatus,
   type WebhookInboundEventStatus,
-  type StudyReminderJobStatus,
-  type OutboundDeliveryOutcome,
-  MessageType,
 } from './types';
 export {
   PlatformLinkStateService,

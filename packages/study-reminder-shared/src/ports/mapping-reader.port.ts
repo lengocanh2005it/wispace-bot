@@ -1,5 +1,5 @@
 import type { UserLink } from '../types/study-reminder.types';
-import type { PlatformLinkState } from '@wispace/database';
+import type { PlatformLinkState } from '@wispace/contracts';
 
 export const MAPPING_READER = Symbol('MAPPING_READER');
 

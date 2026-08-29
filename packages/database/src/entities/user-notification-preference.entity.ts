@@ -5,7 +5,7 @@ import {
   PrimaryColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type { Platform } from '../types';
+import type { Platform } from '@wispace/contracts';
 
 /**
  * Stores explicit learner notification channel preference (Messenger, Discord, Zalo).

@@ -5,7 +5,8 @@ import {
   Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import type { Platform, PlatformLinkAuditEventType } from '../types';
+import type { Platform } from '@wispace/contracts';
+import type { PlatformLinkAuditEventType } from '../types';
 
 /** Redacted ownership transition audit; external identifiers are hashed. */
 @Entity('platform_link_audit_events')

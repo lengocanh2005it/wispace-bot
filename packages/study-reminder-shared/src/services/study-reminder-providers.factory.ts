@@ -31,7 +31,7 @@ import {
 import { StudyReminderWorkerService } from './study-reminder-worker.service';
 import { TypeormStudyReminderJobRepository } from '../infrastructure/typeorm-study-reminder-job.repository';
 import type { GetSessionsFn } from '../types/study-reminder.types';
-import type { Platform } from '@wispace/database';
+import type { Platform } from '@wispace/contracts';
 import type {
   StudyReminderWorkerLockIds,
   StudyReminderWorkerOptions,

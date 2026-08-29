@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import type { Platform } from '../types';
+import type { Platform } from '@wispace/contracts';
 import { UserNotificationPreferenceEntity } from '../entities/user-notification-preference.entity';
 
 export const DEFAULT_PLATFORM_PRIORITY: Platform[] = [

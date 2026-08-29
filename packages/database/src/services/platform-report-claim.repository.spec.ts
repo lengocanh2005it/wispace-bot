@@ -1,6 +1,6 @@
 import { Repository } from 'typeorm';
 import { ScheduledReportClaimEntity } from '../entities/scheduled-report-claim.entity';
-import type { Platform } from '../types';
+import type { Platform } from '@wispace/contracts';
 import { PlatformReportClaimRepository } from './platform-report-claim.repository';
 
 type ClaimRow = {

@@ -6,11 +6,8 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
-import type {
-  OutboundDeliveryOutcome,
-  Platform,
-  WebhookDeadLetterStatus,
-} from '../types';
+import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
+import type { WebhookDeadLetterStatus } from '../types';
 
 /** Direction of the dead-lettered operation — retry only replays outbound sends. */
 export type WebhookDeadLetterDirection = 'inbound' | 'outbound';

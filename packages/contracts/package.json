@@ -1,0 +1,16 @@
+{
+  "name": "@wispace/contracts",
+  "version": "0.0.1",
+  "description": "Shared kernel contracts (platform identity + cross-context status types) for WISPACE bots (pure, no deps)",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "lint": "oxlint",
+    "format:check": "oxfmt --check",
+    "format": "oxfmt"
+  }
+}

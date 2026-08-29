@@ -10,7 +10,7 @@ import { CronJob } from 'cron';
 import { DataSource, LessThan, Repository } from 'typeorm';
 import { ChatIdempotencyEntity } from '@wispace/chat-metering';
 import { WebhookDeadLetterEntity } from '@wispace/database';
-import type { Platform } from '@wispace/database';
+import type { Platform } from '@wispace/contracts';
 import { subMinutes } from 'date-fns';
 import { CleanupCronService } from './cleanup-cron.service';
 

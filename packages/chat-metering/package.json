@@ -19,7 +19,7 @@
     "@nestjs/config": "^4.0.4",
     "@nestjs/typeorm": "^11.0.1",
     "@wispace/bot-common": "*",
-    "@wispace/database": "*",
+    "@wispace/contracts": "*",
     "@wispace/date-utils": "*",
     "date-fns": "^4.4.0",
     "typeorm": "^1.1.0"

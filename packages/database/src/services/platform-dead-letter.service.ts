@@ -10,7 +10,7 @@ import {
   WebhookDeadLetterEntity,
   type WebhookDeadLetterEntry,
 } from '../entities/webhook-dead-letter.entity';
-import type { OutboundDeliveryOutcome, Platform } from '../types';
+import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
 
 /** Result of an atomic dead-letter claim — the caller owns the row until it
  * marks/abandons with the lease token. */

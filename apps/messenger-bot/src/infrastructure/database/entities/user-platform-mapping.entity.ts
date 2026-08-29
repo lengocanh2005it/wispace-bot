@@ -7,7 +7,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { NotificationCadence } from '@messenger/modules/messenger/domain/entities/messenger.types';
-import type { PlatformLinkState } from '@wispace/database';
+import type { PlatformLinkState } from '@wispace/contracts';
 
 @Index('idx_mapping_platform_ext_status', [
   'platform',
