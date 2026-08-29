@@ -35,7 +35,7 @@ export type {
 export type {
   ChatQuotaDenyReason,
   ChatQuotaReleaseReason,
-} from './chat-rate-limit/types';
+} from './chat-quota.types';
 
 export {
   buildInputCostEnvKey,

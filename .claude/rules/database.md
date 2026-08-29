@@ -95,6 +95,8 @@ When adding a new migration (Discord, Zalo, or new shared table):
 
 ## Notes
 
+- Cross-context contracts are **no longer owned here** (#423): `Platform`, `PlatformLinkState`, `ReportSendJobStatus`, `OutboundDeliveryOutcome`, `MessageType` moved to `packages/contracts` (`@wispace/contracts`); chat-quota contracts live in `packages/chat-metering`, `StudyReminderJobStatus` in `packages/study-reminder-shared`. This package keeps persistence-only states in `src/types.ts` and must not re-export contracts — `.github/scripts/check-database-type-imports.sh` (CI `deploy-scripts-test`) fails on any type-only import of `@wispace/database` outside this package.
+
 - `data-source.ts` is used by TypeORM CLI (`dist/infrastructure/database/data-source.js`).
 - App uses `typeorm.options.ts` via `DatabaseModule`.
 - `DB_MIGRATIONS_RUN=true` → auto migrate on start.

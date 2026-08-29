@@ -2,6 +2,15 @@
 
 Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (reference: [clean-nestjs-cli](https://github.com/jheisonnovak/clean-nestjs-cli), [NestJS-DDD-DevOps](https://andrea-acampora.github.io/nestjs-ddd-devops/)), inside `apps/messenger-bot/src/`. Paths below are relative to `apps/messenger-bot/src/` unless stated otherwise.
 
+## Monorepo boundary: `packages/contracts`
+
+`packages/contracts` (`@wispace/contracts`) is the shared kernel of cross-context contracts — `Platform`, `PlatformLinkState`, `ReportSendJobStatus`, `OutboundDeliveryOutcome`, `MessageType` (const + type) — plus the canonical owners for every type-only import that used to live in `@wispace/database`.
+
+- **Zero dependencies** — pure types + one const object; no NestJS, no TypeORM, no imports at all. It must stay a leaf: nothing it imports may pull runtime code into every consumer.
+- **Canonical ownership** (#423): cross-context contracts live here; context-owned contracts live with their context (`ChatQuotaDenyReason`/`ChatQuotaReleaseReason`/`ChatIdempotencyStatus` in `packages/chat-metering`, `StudyReminderJobStatus` in `packages/study-reminder-shared`); persistence-only states (`WebhookDeadLetterStatus`, `WebhookInboundEventStatus`, `ScheduledReportClaimStatus`, `PlatformLinkObservation`, `PlatformLinkAuditEventType`) stay local to `packages/database`. Do not re-export contracts from `@wispace/database` — that coupling is banned by `.github/scripts/check-database-type-imports.sh` (CI job `deploy-scripts-test`).
+- **No type-only imports of `@wispace/database`** anywhere outside that package — import the type from its canonical owner instead; files needing runtime values from `@wispace/database` use value imports.
+- Modify package → rebuild everything that depends on it (`npx turbo run build test --filter=@wispace/database... --filter=@wispace/chat-metering...`).
+
 ## Monorepo boundary: `packages/llm-agent`
 
 `packages/llm-agent` (`@wispace/llm-agent`) is a **framework-agnostic** package shared across all bots (Messenger, Discord, Zalo) — contains LLM function-calling orchestration (`LlmAgentService`), provider abstraction (`LlmProviderAdapter` interface + OpenAI/OpenAI-compatible adapters), tool schema (`AGENT_TOOLS`), safety utils (prompt injection, grounding, LLM error), and WISPACE domain text/scope utils.
