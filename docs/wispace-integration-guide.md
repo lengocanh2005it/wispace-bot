@@ -233,6 +233,42 @@ Bot team provides `INTERNAL_API_KEY` (same header used for ops endpoints).
 
 ---
 
+## Part 7 — Web-Activity Dormancy Webhook (WISPACE pushes to bot)
+
+To prevent outbound notification spam (scheduled study reminders + 08:00 daily reports) to inactive learners, WISPACE should push a ping whenever a learner is active on the WISPACE web application.
+
+### Endpoint
+`POST https://<messenger-bot-host>/v1/messenger/wispace/web-activity`
+
+### Headers
+```http
+Content-Type: application/json
+X-Internal-Api-Key: <INTERNAL_API_KEY>
+```
+*(Alternatively, `Authorization: Bearer <INTERNAL_API_KEY>`)*
+
+### Request body
+```json
+{
+  "userId": 42,
+  "activeAt": "2026-08-29T10:00:00Z"
+}
+```
+- `userId`: (required, positive integer) WISPACE student ID.
+- `activeAt`: (optional, ISO 8601 string) Timestamp of the web interaction. Defaults to `now()` if omitted. A timestamp in the future is clamped to current server time. Strings without timezone offsets are interpreted as UTC.
+
+### Response
+```json
+{ "ok": true }
+```
+
+### Delivery & Debounce Guidance
+- **Do not fire on every pageview/action.** Debounce client-side or in the WISPACE backend: send at most 1 ping per learner per 5–15 minutes of continuous session.
+- **Idempotent & order-independent:** The bot merges timestamps with `GREATEST(last_active_at, incoming)`. Duplicate or out-of-order deliveries are completely harmless.
+- **No retry worker needed on WISPACE:** Since missed pings self-heal on the learner's next visit, fire-and-forget delivery from WISPACE is recommended.
+
+---
+
 ## Summary of tasks
 
 | #   | Task                                                                                                                            | Owner                    |
