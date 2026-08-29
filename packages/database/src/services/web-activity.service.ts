@@ -4,11 +4,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
 const DEFAULT_DORMANT_DAYS = 7;
-const DORMANT_REASON = 'recipient dormant (web inactivity)';
 const TZ_SUFFIX = /(Z|[+-]\d{2}:?\d{2})$/;
-
-/** Cancellation reason written to study_reminder_jobs + used as the metric branch key. */
-export { DORMANT_REASON };
 
 /**
  * Append 'Z' when an ISO-8601 string carries no timezone designator, so a bare
@@ -57,10 +53,6 @@ export class WebActivityService {
         : DEFAULT_DORMANT_DAYS;
   }
 
-  get gateEnabled(): boolean {
-    return this.enabled;
-  }
-
   /**
    * Upsert one row per userId. Single statement => atomic, no race. GREATEST
    * merge makes duplicate/out-of-order deliveries harmless; LEAST(...,now())
@@ -99,5 +91,30 @@ export class WebActivityService {
       );
       return [];
     }
+  }
+
+  /**
+   * Split a list into { active, suppressed } by dormancy — the shared shape used
+   * by every scheduled-send path. `getUserId` maps an item to its WISPACE userId
+   * (null/undefined => never dormant). Short-circuits with no DB query when the
+   * gate is disabled or the list is empty.
+   */
+  async partitionDormant<T>(
+    items: T[],
+    getUserId: (item: T) => number | null | undefined,
+  ): Promise<{ active: T[]; suppressed: number }> {
+    if (!this.enabled || items.length === 0) {
+      return { active: items, suppressed: 0 };
+    }
+    const ids = items
+      .map(getUserId)
+      .filter((id): id is number => typeof id === 'number');
+    const dormant = new Set(await this.filterDormant(ids));
+    if (dormant.size === 0) return { active: items, suppressed: 0 };
+    const active = items.filter((item) => {
+      const id = getUserId(item);
+      return id == null || !dormant.has(id);
+    });
+    return { active, suppressed: items.length - active.length };
   }
 }

@@ -36,6 +36,7 @@ export {
 } from './services/study-reminder-sync.service';
 export {
   StudyReminderDispatchService,
+  DORMANT_REASON,
   type StudyReminderDispatchServiceOptions,
   type StudyReminderDispatchResult,
   type StudyReminderDispatchFailure,

@@ -377,9 +377,9 @@ export class BotMetricsService implements OnModuleDestroy {
     this.webActivityWebhookReceived.inc();
   }
 
-  /** A scheduled send was skipped for a web-inactive learner. */
-  incScheduledSendSuppressed(feature: 'report' | 'reminder'): void {
-    this.scheduledSendSuppressed.inc({ feature });
+  /** A scheduled send was skipped for a web-inactive learner (count defaults to 1). */
+  incScheduledSendSuppressed(feature: 'report' | 'reminder', count = 1): void {
+    this.scheduledSendSuppressed.inc({ feature }, count);
   }
 
   /** DM delivery failure (e.g. user privacy settings block DMs) — ops signal. */

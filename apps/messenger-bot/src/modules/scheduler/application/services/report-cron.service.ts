@@ -45,7 +45,11 @@ export class ReportCronService {
     @Optional()
     @Inject(CanonicalPlatformService)
     private readonly canonicalPlatformService?: CanonicalPlatformService,
+    @Optional()
+    @Inject(WebActivityService)
     private readonly webActivityService?: WebActivityService,
+    @Optional()
+    @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
   ) {}
 
@@ -143,22 +147,17 @@ export class ReportCronService {
         mappings = mappings.filter((m) => m.psid === psidFilter);
       }
 
-      if (this.webActivityService?.gateEnabled) {
-        const pageUserIds = mappings
-          .map((m) => m.userId)
-          .filter((id): id is number => typeof id === 'number');
-        const dormant = new Set(
-          await this.webActivityService.filterDormant(pageUserIds),
-        );
-        if (dormant.size > 0) {
-          const before = mappings.length;
-          mappings = mappings.filter(
-            (m) => !(m.userId != null && dormant.has(m.userId)),
+      // Skip web-dormant learners — but never for an operator forceSend, which
+      // is an explicit "send now" override (same posture as the exam-window gate).
+      if (!forceSend && this.webActivityService) {
+        const { active, suppressed } =
+          await this.webActivityService.partitionDormant(
+            mappings,
+            (m) => m.userId,
           );
-          const suppressed = before - mappings.length;
-          for (let i = 0; i < suppressed; i += 1) {
-            this.metrics?.incScheduledSendSuppressed('report');
-          }
+        mappings = active;
+        if (suppressed > 0) {
+          this.metrics?.incScheduledSendSuppressed('report', suppressed);
           skipped += suppressed;
         }
       }

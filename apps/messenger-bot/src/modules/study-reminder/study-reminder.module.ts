@@ -13,6 +13,7 @@ import {
   MESSAGE_SENDER,
   STUDY_REMINDER_JOB_REPOSITORY,
   DISPATCH_HOOKS,
+  DORMANT_REASON,
   createStudyReminderProviders,
   type MappingReaderPort,
   type MessageSenderPort,
@@ -195,7 +196,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         onRetried: () => metrics.incReminderDispatch('retried'),
         onCancelled: (ctx) => {
           metrics.incReminderDispatch('cancelled');
-          if (ctx.reason === 'recipient dormant (web inactivity)') {
+          if (ctx.reason === DORMANT_REASON) {
             metrics.incScheduledSendSuppressed('reminder');
           }
         },

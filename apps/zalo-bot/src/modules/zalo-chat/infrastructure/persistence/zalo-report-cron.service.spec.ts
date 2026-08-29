@@ -234,17 +234,15 @@ describe('ZaloReportCronService', () => {
       listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
     };
     const orchestration = {
-      claimAndSend: jest
-        .fn()
-        .mockResolvedValue({
-          sent: 1,
-          skipped: 0,
-          deferred: 0,
-          windowClosed: 0,
-          claimSkipped: 0,
-          retryQueued: 0,
-          failures: [],
-        }),
+      claimAndSend: jest.fn().mockResolvedValue({
+        sent: 1,
+        skipped: 0,
+        deferred: 0,
+        windowClosed: 0,
+        claimSkipped: 0,
+        retryQueued: 0,
+        failures: [],
+      }),
     };
     const reportService = { generateReport: jest.fn() };
     const reportScheduleService = {
@@ -254,8 +252,9 @@ describe('ZaloReportCronService', () => {
     };
     const configService = { get: jest.fn() };
     const webActivityService = {
-      gateEnabled: true,
-      filterDormant: jest.fn().mockResolvedValue([5]),
+      partitionDormant: jest
+        .fn()
+        .mockResolvedValue({ active: [links[1]], suppressed: 1 }),
     };
     const metrics = {
       incScheduledSendSuppressed: jest.fn(),
@@ -277,21 +276,26 @@ describe('ZaloReportCronService', () => {
       .spyOn(service as any, 'sendReportForUser')
       .mockResolvedValue('sent');
 
-    await service.sendDailyReports({ forceSend: true });
+    await service.sendDailyReports();
 
-    expect(webActivityService.filterDormant).toHaveBeenCalledWith([5, 6]);
+    expect(webActivityService.partitionDormant).toHaveBeenCalledWith(
+      links,
+      expect.any(Function),
+    );
     expect(sendReportForUserSpy).toHaveBeenCalledTimes(1);
     expect(sendReportForUserSpy).toHaveBeenCalledWith(
       expect.objectContaining({ externalUserId: 'zalo-2', userId: 6 }),
       expect.anything(),
       expect.anything(),
-      true,
+      false,
     );
-    expect(metrics.incScheduledSendSuppressed).toHaveBeenCalledWith('report');
-    expect(metrics.incScheduledSendSuppressed).toHaveBeenCalledTimes(1);
+    expect(metrics.incScheduledSendSuppressed).toHaveBeenCalledWith(
+      'report',
+      1,
+    );
   });
 
-  it('does not call filterDormant when gate is disabled', async () => {
+  it('does not consult the gate for an operator forceSend', async () => {
     const links = [
       {
         id: '1',
@@ -318,17 +322,15 @@ describe('ZaloReportCronService', () => {
       listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
     };
     const orchestration = {
-      claimAndSend: jest
-        .fn()
-        .mockResolvedValue({
-          sent: 1,
-          skipped: 0,
-          deferred: 0,
-          windowClosed: 0,
-          claimSkipped: 0,
-          retryQueued: 0,
-          failures: [],
-        }),
+      claimAndSend: jest.fn().mockResolvedValue({
+        sent: 1,
+        skipped: 0,
+        deferred: 0,
+        windowClosed: 0,
+        claimSkipped: 0,
+        retryQueued: 0,
+        failures: [],
+      }),
     };
     const reportService = { generateReport: jest.fn() };
     const reportScheduleService = {
@@ -337,10 +339,7 @@ describe('ZaloReportCronService', () => {
         .mockReturnValue({ minDays: 1, maxDays: 30 }),
     };
     const configService = { get: jest.fn() };
-    const webActivityService = {
-      gateEnabled: false,
-      filterDormant: jest.fn(),
-    };
+    const webActivityService = { partitionDormant: jest.fn() };
     const metrics = {
       incScheduledSendSuppressed: jest.fn(),
     };
@@ -361,7 +360,7 @@ describe('ZaloReportCronService', () => {
 
     await service.sendDailyReports({ forceSend: true });
 
-    expect(webActivityService.filterDormant).not.toHaveBeenCalled();
+    expect(webActivityService.partitionDormant).not.toHaveBeenCalled();
     expect(metrics.incScheduledSendSuppressed).not.toHaveBeenCalled();
   });
 });
