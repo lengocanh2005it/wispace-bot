@@ -451,5 +451,116 @@ describe('StudyReminderDispatchService', () => {
         'reminder:1:calendar:99',
       );
     });
+
+    describe('dormancy gate', () => {
+      it('cancels dormant recipient job with exact reason and triggers hook', async () => {
+        const job = makeJob({ id: 1, userId: 101, externalUserId: 'u101' });
+        jobRepo.findDueJobs.mockResolvedValue([job]);
+        jobRepo.claimJob.mockResolvedValue({
+          ...job,
+          leaseToken: 'lease-token-1',
+        });
+
+        const filterDormantUserIds = jest.fn().mockResolvedValue([101]);
+        options.filterDormantUserIds = filterDormantUserIds;
+        hooks.onCancelled = jest.fn();
+
+        build();
+
+        const result = await service.dispatchDueReminders();
+
+        expect(filterDormantUserIds).toHaveBeenCalledWith([101]);
+        expect(jobRepo.markCancelled).toHaveBeenCalledWith(
+          1,
+          'lease-token-1',
+          'recipient dormant (web inactivity)',
+        );
+        expect(result.cancelled).toBe(1);
+        expect(messageSender.sendText).not.toHaveBeenCalled();
+        expect(hooks.onCancelled).toHaveBeenCalledWith({
+          jobId: 1,
+          externalUserId: 'u101',
+          reason: 'recipient dormant (web inactivity)',
+        });
+      });
+
+      it('sends to active recipient in same batch when only one is dormant', async () => {
+        const job1 = makeJob({ id: 1, userId: 101, externalUserId: 'u101' });
+        const job2 = makeJob({ id: 2, userId: 102, externalUserId: 'u102' });
+        jobRepo.findDueJobs.mockResolvedValue([job1, job2]);
+        jobRepo.claimJob
+          .mockResolvedValueOnce({ ...job1, leaseToken: 'lease-1' })
+          .mockResolvedValueOnce({ ...job2, leaseToken: 'lease-2' });
+
+        options.filterDormantUserIds = jest.fn().mockResolvedValue([101]);
+        build();
+
+        const result = await service.dispatchDueReminders();
+
+        expect(result.cancelled).toBe(1);
+        expect(result.sent).toBe(1);
+        expect(jobRepo.markCancelled).toHaveBeenCalledWith(
+          1,
+          'lease-1',
+          'recipient dormant (web inactivity)',
+        );
+        expect(jobRepo.markSent).toHaveBeenCalledWith(
+          2,
+          'lease-2',
+          expect.any(String),
+          expect.any(String),
+        );
+      });
+
+      it('does not pass userId == null to filterDormantUserIds and proceeds', async () => {
+        const job = makeJob({
+          id: 1,
+          userId: undefined,
+          externalUserId: 'u-anon',
+        });
+        jobRepo.findDueJobs.mockResolvedValue([job]);
+        jobRepo.claimJob.mockResolvedValue({
+          ...job,
+          leaseToken: 'lease-anon',
+        });
+
+        const filterDormantUserIds = jest.fn().mockResolvedValue([]);
+        options.filterDormantUserIds = filterDormantUserIds;
+        build();
+
+        const result = await service.dispatchDueReminders();
+
+        expect(filterDormantUserIds).not.toHaveBeenCalled();
+        expect(result.sent).toBe(1);
+      });
+
+      it('fails open when filterDormantUserIds throws', async () => {
+        const job = makeJob({ id: 1, userId: 101, externalUserId: 'u101' });
+        jobRepo.findDueJobs.mockResolvedValue([job]);
+        jobRepo.claimJob.mockResolvedValue({ ...job, leaseToken: 'lease-1' });
+
+        options.filterDormantUserIds = jest
+          .fn()
+          .mockRejectedValue(new Error('db timeout'));
+        build();
+
+        const result = await service.dispatchDueReminders();
+
+        expect(result.cancelled).toBe(0);
+        expect(result.sent).toBe(1);
+      });
+
+      it('never calls filterDormantUserIds when option is absent', async () => {
+        const job = makeJob({ id: 1, userId: 101, externalUserId: 'u101' });
+        jobRepo.findDueJobs.mockResolvedValue([job]);
+        jobRepo.claimJob.mockResolvedValue({ job, leaseToken: 'lease-1' });
+
+        build();
+
+        const result = await service.dispatchDueReminders();
+
+        expect(result.sent).toBe(1);
+      });
+    });
   });
 });

@@ -39,8 +39,12 @@ export interface DispatchHooksPort {
     retryCount: number;
   }): void;
 
-  /** Called when a job is cancelled (e.g. session already started). */
-  onCancelled?(ctx: { jobId: number; externalUserId: string }): void;
+  /** Called when a job is cancelled (session started, link revoked, dormant). */
+  onCancelled?(ctx: {
+    jobId: number;
+    externalUserId: string;
+    reason: string;
+  }): void;
 
   /** Returns true if the error should NOT be retried (mark job terminal). */
   isTerminalError?(error: unknown): boolean;
