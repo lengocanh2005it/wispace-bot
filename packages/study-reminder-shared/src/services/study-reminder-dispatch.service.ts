@@ -1,3 +1,4 @@
+const DORMANT_REASON = 'recipient dormant (web inactivity)';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import type { OutboundDeliveryOutcome } from '@wispace/database';
@@ -56,6 +57,13 @@ export interface StudyReminderDispatchServiceOptions {
    * instead of N lazy DB reads). Errors are logged and ignored.
    */
   preloadDisplayNames?: (userIds: number[]) => Promise<void>;
+  /**
+   * Returns the dormant subset of the numeric userIds collected from due jobs.
+   * Called once per run after preloadDisplayNames. A dormant recipient's claimed
+   * job is cancelled with reason 'recipient dormant (web inactivity)'. Errors
+   * are logged and ignored (fail-open: nobody suppressed).
+   */
+  filterDormantUserIds?: (userIds: number[]) => Promise<number[]>;
   /**
    * Messenger: classifies a send failure as terminal (24h window, non-retryable
    * Wispace error) and normalizes the persisted error message. When it returns
@@ -116,6 +124,19 @@ export class StudyReminderDispatchService {
       }
     }
 
+    let dormantUserIds = new Set<number>();
+    if (uniqueUserIds.length > 0 && this.options?.filterDormantUserIds) {
+      try {
+        dormantUserIds = new Set(
+          await this.options.filterDormantUserIds(uniqueUserIds),
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Dormancy filter failed, no recipients suppressed: ${errorMessage(error)}`,
+        );
+      }
+    }
+
     let claimed = 0;
     let sent = 0;
     let cancelled = 0;
@@ -149,6 +170,7 @@ export class StudyReminderDispatchService {
           this.hooks?.onCancelled?.({
             jobId: claimedJob.id,
             externalUserId: claimedJob.externalUserId,
+            reason: `link_${state}`,
           });
           cancelled += 1;
           return false;
@@ -186,6 +208,24 @@ export class StudyReminderDispatchService {
         if (!(await checkMappingBeforeSend())) return;
 
         if (
+          claimedJob.userId != null &&
+          dormantUserIds.has(claimedJob.userId)
+        ) {
+          await this.jobRepository.markCancelled(
+            claimedJob.id,
+            leaseToken,
+            DORMANT_REASON,
+          );
+          this.hooks?.onCancelled?.({
+            jobId: claimedJob.id,
+            externalUserId: claimedJob.externalUserId,
+            reason: DORMANT_REASON,
+          });
+          cancelled += 1;
+          return;
+        }
+
+        if (
           this.scheduleService.isSessionStarted(claimedJob.scheduledAt, now)
         ) {
           await this.jobRepository.markCancelled(
@@ -196,6 +236,7 @@ export class StudyReminderDispatchService {
           this.hooks?.onCancelled?.({
             jobId: claimedJob.id,
             externalUserId: claimedJob.externalUserId,
+            reason: 'session already started',
           });
           cancelled += 1;
           return;
