@@ -413,5 +413,36 @@ describe('LlmExecutionService', () => {
       expect(capturedSignal).toBeInstanceOf(AbortSignal);
       expect(capturedSignal?.aborted).toBe(true);
     });
+
+    it('reuses one deadline signal across provider retries', async () => {
+      const config = createConfig({
+        enabled: true,
+        retryMaxAttempts: 2,
+        retryBackoffMs: 1,
+        requestTimeoutMs: 1_000,
+      });
+      const service = new LlmExecutionService(config, noopMetrics, mockAdapter);
+      const signals: AbortSignal[] = [];
+      let attempts = 0;
+
+      await service.run(
+        (signal) => {
+          signals.push(signal as AbortSignal);
+          attempts += 1;
+          return attempts === 1
+            ? Promise.reject(
+                Object.assign(new Error('rate limit'), {
+                  name: 'RateLimitError',
+                  status: 429,
+                }),
+              )
+            : Promise.resolve('ok');
+        },
+        { feature: 'STUDENT_REPORT' },
+      );
+
+      expect(signals).toHaveLength(2);
+      expect(signals[1]).toBe(signals[0]);
+    });
   });
 });

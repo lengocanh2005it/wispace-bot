@@ -8,9 +8,9 @@ export interface ReminderStudentDataPort {
     psid: string,
   ): Promise<{ targetScore?: number; examDate?: string }>;
   getCapacityData(psid: string): Promise<{
-    task1_band?: number;
-    task2_band?: number;
-    target_band?: number;
+    task1_band?: number | null;
+    task2_band?: number | null;
+    target_band?: number | null;
   }>;
 }
 

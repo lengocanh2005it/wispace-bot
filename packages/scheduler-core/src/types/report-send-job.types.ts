@@ -1,4 +1,7 @@
-import type { ReportSendJobStatus } from '@wispace/contracts';
+import type {
+  OutboundDeliveryOutcome,
+  ReportSendJobStatus,
+} from '@wispace/contracts';
 
 export type { ReportSendJobStatus };
 
@@ -58,6 +61,8 @@ export interface ScheduledReportClaim {
 export interface ReportDeliveryResult {
   ok: boolean;
   reason?: 'WINDOW_CLOSED' | 'DELIVERY_FAILED' | 'RETRYABLE' | 'NOT_LINKED';
+  /** Provider delivery verdict used to persist terminal ambiguity. */
+  outcome?: OutboundDeliveryOutcome;
 }
 
 export interface SendScheduledReportsOptions {

@@ -397,6 +397,31 @@ describe('createEnvLlmExecutionPort', () => {
     expect(calls).toBe(3);
   });
 
+  it('opens a shared execution circuit after repeated provider failures', async () => {
+    const adapter = makeAdapter();
+    const calls = jest.fn().mockRejectedValue(new Error('provider down'));
+    const port = createEnvLlmExecutionPort(
+      {
+        ...DEFAULT_CONFIG,
+        maxAttempts: 1,
+        requestTimeoutMs: 1_000,
+      },
+      adapter,
+      noopLogger,
+    );
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await expect(
+        port.run(calls, { feature: 'FREE_FORM_CHAT' }),
+      ).rejects.toThrow('provider down');
+    }
+
+    await expect(
+      port.run(calls, { feature: 'FREE_FORM_CHAT' }),
+    ).rejects.toThrow(/circuit/i);
+    expect(calls).toHaveBeenCalledTimes(3);
+  });
+
   it('acquires a Redis-distributed slot when enabled and releases after', async () => {
     const redis = {
       eval: jest.fn().mockResolvedValue(1),

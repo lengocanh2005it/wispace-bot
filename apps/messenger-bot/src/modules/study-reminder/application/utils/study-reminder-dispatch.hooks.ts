@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { maskExternalId } from '@wispace/bot-common/masking';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { isProactiveMessenger24hError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
 // ponytail: deduped — using shared WispaceApiError from @wispace/wispace-client
 import { WispaceApiError } from '@wispace/wispace-client';
@@ -17,8 +17,7 @@ export function classifyMessengerDispatchFailure(params: {
   retryCount: number;
   maxRetries: number;
 }): { terminal: boolean; errorMessage: string } {
-  const message =
-    params.error instanceof Error ? params.error.message : String(params.error);
+  const message = errorMessage(params.error, params.externalUserId);
   const is24hWindow = isProactiveMessenger24hError(params.error);
   const isNonRetryableWispace =
     params.error instanceof WispaceApiError && !params.error.isRetryable();

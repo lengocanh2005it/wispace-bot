@@ -1,3 +1,5 @@
+import type { OutboundDeliveryOutcome } from '@wispace/contracts';
+
 export const REPORT_CLAIM_REPOSITORY = Symbol('REPORT_CLAIM_REPOSITORY');
 
 export interface ReportClaimRepositoryPort {
@@ -29,6 +31,7 @@ export interface ReportClaimRepositoryPort {
     leaseToken: string,
     deliveryRecord?: string,
     deliveryKey?: string,
+    deliveryStatus?: OutboundDeliveryOutcome,
   ): Promise<boolean>;
   releaseScheduledReportClaim(
     params: {

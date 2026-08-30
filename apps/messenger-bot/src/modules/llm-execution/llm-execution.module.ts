@@ -8,6 +8,7 @@ import {
   createFailoverProviderEntries,
 } from '@wispace/llm-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 /**
  * Provides LLM execution infrastructure: concurrency control, retry, timeout,
@@ -22,6 +23,7 @@ import type { LlmProviderAdapter } from '@wispace/llm-agent';
       useFactory: (
         config: LlmExecutionConfigService,
         configService: ConfigService,
+        metrics: BotMetricsService,
       ): LlmProviderAdapter => {
         const order = config.getFailoverOrder();
 
@@ -53,10 +55,20 @@ import type { LlmProviderAdapter } from '@wispace/llm-agent';
             cooldownLongMs: config.getFailoverCooldownLongMs(),
             cooldownShortMs: config.getFailoverCooldownShortMs(),
             quickRetryDelayMs: config.getFailoverQuickRetryDelayMs(),
+            onCircuitEvent: (event) =>
+              metrics.incLlmProviderCircuitEvent(
+                event.provider,
+                event.action,
+                event.reason,
+              ),
+            onProviderAttempt: (provider, feature) =>
+              metrics.incLlmProviderAttempt(provider, feature),
+            onProvidersExhausted: (providers, feature) =>
+              metrics.incLlmProvidersExhausted(providers.length, feature),
           },
         );
       },
-      inject: [LlmExecutionConfigService, ConfigService],
+      inject: [LlmExecutionConfigService, ConfigService, BotMetricsService],
     },
   ],
   exports: [

@@ -1,4 +1,7 @@
 import { maskExternalId } from '@wispace/bot-common/masking';
+import { isAbortError } from '@wispace/bot-common/utils';
+import { LlmAllProvidersExhaustedError } from '@wispace/llm-agent';
+import { LlmOverloadError } from '@wispace/llm-agent/execution';
 
 /** Thrown by `CapacityDataPort` when the platform has no scored Writing tasks yet. */
 export class StudentReportNoScoreDataError extends Error {
@@ -28,4 +31,14 @@ export class StudentReportRetryableError extends Error {
     super(cause.message);
     this.name = 'StudentReportRetryableError';
   }
+}
+
+/** Errors that should return the report job to its bounded durable retry owner. */
+export function isStudentReportRetryableError(error: unknown): boolean {
+  return (
+    error instanceof StudentReportRetryableError ||
+    error instanceof LlmAllProvidersExhaustedError ||
+    error instanceof LlmOverloadError ||
+    isAbortError(error)
+  );
 }

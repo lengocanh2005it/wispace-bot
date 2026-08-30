@@ -1,6 +1,9 @@
 import type { LlmProviderAdapter } from './llm-provider.adapter';
 import { OpenAiAdapter } from './openai/openai-adapter';
-import { FailoverLlmProviderAdapter } from './failover/failover-adapter';
+import {
+  FailoverLlmProviderAdapter,
+  type FailoverCircuitEvent,
+} from './failover/failover-adapter';
 
 export type LlmProviderType = string;
 
@@ -10,6 +13,9 @@ export interface LlmProviderEntryConfig {
   getModel: () => string;
   getBaseUrl?: () => string | undefined;
 }
+
+const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+const MINIMAX_BASE_URL = 'https://api.minimax.chat/v1';
 
 /**
  * Factory to create the appropriate LlmProviderAdapter based on the
@@ -21,7 +27,7 @@ export function createLlmProviderAdapter(config: {
   getBaseUrl?: () => string | undefined;
   provider?: LlmProviderType;
 }): LlmProviderAdapter {
-  const provider = config.provider ?? 'openai';
+  const provider = (config.provider ?? 'openai').trim().toLowerCase();
 
   switch (provider) {
     case 'openai':
@@ -32,7 +38,11 @@ export function createLlmProviderAdapter(config: {
       );
 
     case 'openai-compatible':
-      // ponytail: inline — OpenAiCompatibleAdapter was just a 15-line subclass passing one string
+      if (!config.getBaseUrl?.()?.trim()) {
+        throw new Error(
+          'OPENAI-compatible provider requires a base URL (OPENAI_COMPATIBLE_BASE_URL)',
+        );
+      }
       return new OpenAiAdapter(
         config.getApiKey,
         config.getModel,
@@ -40,13 +50,25 @@ export function createLlmProviderAdapter(config: {
         'openai-compatible',
       );
 
-    default:
-      // Fallback: try OpenAI adapter for unknown providers (may work if compatible)
+    case 'openrouter':
       return new OpenAiAdapter(
         config.getApiKey,
         config.getModel,
-        config.getBaseUrl,
-        provider,
+        () => config.getBaseUrl?.()?.trim() || OPENROUTER_BASE_URL,
+        'openrouter',
+      );
+
+    case 'minimax':
+      return new OpenAiAdapter(
+        config.getApiKey,
+        config.getModel,
+        () => config.getBaseUrl?.()?.trim() || MINIMAX_BASE_URL,
+        'minimax',
+      );
+
+    default:
+      throw new Error(
+        `Unsupported LLM provider configuration: ${provider || '<empty>'}`,
       );
   }
 }
@@ -70,30 +92,43 @@ export function createFailoverProviderEntries(
       provider: 'openrouter',
       getApiKey: () => get('OPENROUTER_API_KEY'),
       getModel: () => get('OPENROUTER_MODEL') ?? 'openai/gpt-4o-mini',
-      getBaseUrl: () => get('OPENROUTER_BASE_URL'),
+      getBaseUrl: () => get('OPENROUTER_BASE_URL') ?? OPENROUTER_BASE_URL,
     }),
     minimax: () => ({
       provider: 'minimax',
       getApiKey: () => get('MINIMAX_API_KEY'),
       getModel: () => get('MINIMAX_MODEL') ?? 'MiniMax-Text-01',
-      getBaseUrl: () => get('MINIMAX_BASE_URL'),
+      getBaseUrl: () => get('MINIMAX_BASE_URL') ?? MINIMAX_BASE_URL,
+    }),
+    'openai-compatible': () => ({
+      provider: 'openai-compatible',
+      getApiKey: () => get('OPENAI_COMPATIBLE_API_KEY'),
+      getModel: () => get('OPENAI_COMPATIBLE_MODEL') ?? 'gpt-5.4',
+      getBaseUrl: () => get('OPENAI_COMPATIBLE_BASE_URL'),
     }),
   };
 
-  return order
-    .map((name) => entryFor[name]?.())
-    .filter((e): e is LlmProviderEntryConfig => Boolean(e));
+  return order.map((name) => {
+    const createEntry = entryFor[name];
+    if (!createEntry) {
+      throw new Error(`Unsupported LLM provider configuration: ${name}`);
+    }
+    return createEntry();
+  });
 }
 
 export interface FailoverConfig {
   cooldownLongMs?: number;
   cooldownShortMs?: number;
   quickRetryDelayMs?: number;
+  onCircuitEvent?: (event: FailoverCircuitEvent) => void;
+  onProviderAttempt?: (provider: string, feature?: string) => void;
+  onProvidersExhausted?: (providers: string[], feature?: string) => void;
 }
 
 /**
  * Build a failover chain following the given `order`.
- * Providers without configured API key are filtered out at build time.
+ * Every provider in the requested order must be known and configured.
  * If 0–1 provider is configured → returns that adapter directly (no failover wrapper),
  * preserving current behavior/latency for the most common case.
  */
@@ -104,11 +139,21 @@ export function createFailoverLlmProviderAdapter(
   failoverConfig?: FailoverConfig,
 ): LlmProviderAdapter {
   const byProvider = new Map(entries.map((e) => [e.provider, e]));
-  const orderedAdapters = order
-    .map((name) => byProvider.get(name))
-    .filter((e): e is LlmProviderEntryConfig => !!e)
-    .map((e) => createLlmProviderAdapter(e))
-    .filter((a) => a.isConfigured());
+  const orderedAdapters = order.map((name) => {
+    const entry = byProvider.get(name);
+    if (!entry) {
+      throw new Error(
+        `LLM provider ${name} is listed in failover order but has no configuration`,
+      );
+    }
+    const adapter = createLlmProviderAdapter(entry);
+    if (!adapter.isConfigured()) {
+      throw new Error(
+        `LLM provider ${name} is listed in failover order but missing API key`,
+      );
+    }
+    return adapter;
+  });
 
   if (orderedAdapters.length === 0) {
     throw new Error('No LLM provider configured in failover order');
@@ -123,5 +168,8 @@ export function createFailoverLlmProviderAdapter(
     failoverConfig?.cooldownLongMs,
     failoverConfig?.cooldownShortMs,
     failoverConfig?.quickRetryDelayMs,
+    failoverConfig?.onCircuitEvent,
+    failoverConfig?.onProviderAttempt,
+    failoverConfig?.onProvidersExhausted,
   );
 }

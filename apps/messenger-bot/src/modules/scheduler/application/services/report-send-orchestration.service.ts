@@ -11,6 +11,7 @@ import { MessengerReportDeliveryService } from '@messenger/modules/messenger/app
 import {
   MessengerApiError,
   MessengerPartialSendError,
+  isMessengerAmbiguousDeliveryError,
 } from '@messenger/modules/messenger/application/services/messenger-outbound.service';
 import {
   REPORT_SEND_JOB_REPOSITORY,
@@ -18,7 +19,7 @@ import {
 } from '@wispace/scheduler-core';
 import { ReportSendScheduleService } from '@wispace/scheduler-core';
 import type { ClaimAndSendResult } from '@wispace/scheduler-core';
-import { StudentReportRetryableError } from '@messenger/modules/student-report/domain/errors/wispace-api.error';
+import { isStudentReportRetryableError } from '@wispace/student-report';
 import { ProactiveMessenger24hSkippedError } from '@messenger/modules/messenger/application/utils/proactive-send.utils';
 
 export const ZERO: ClaimAndSendResult = {
@@ -37,7 +38,7 @@ function isMessengerApiRetryable(error: unknown): boolean {
     return false;
   }
   if (error instanceof MessengerApiError) {
-    return error.status >= 500 || error.status === 408 || error.status === 0;
+    return error.status >= 500 || error.status === 0;
   }
   return false;
 }
@@ -193,15 +194,28 @@ export class ReportSendOrchestrationService {
           )}: ${error.bubblesSent} bubble(s) delivered before failure — marking sent`,
         );
         if (claimedForSend) {
-          await this.messengerRepository.markScheduledReportClaimSent(
-            {
-              externalUserId: mapping.psid,
-              reportDate,
-            },
-            claimLeaseToken,
-            'sent',
-            deliveryKey,
-          );
+          if (isMessengerAmbiguousDeliveryError(error)) {
+            await this.messengerRepository.markScheduledReportClaimSent(
+              {
+                externalUserId: mapping.psid,
+                reportDate,
+              },
+              claimLeaseToken,
+              'sent',
+              deliveryKey,
+              'ambiguous',
+            );
+          } else {
+            await this.messengerRepository.markScheduledReportClaimSent(
+              {
+                externalUserId: mapping.psid,
+                reportDate,
+              },
+              claimLeaseToken,
+              'sent',
+              deliveryKey,
+            );
+          }
         }
         if (examDateForOutbox) {
           await this.reportSendJobRepository.markSentByExternalUserExamDate(
@@ -210,6 +224,31 @@ export class ReportSendOrchestrationService {
           );
         }
         return { ...ZERO, sent: 1 };
+      }
+
+      // A Send API timeout has no delivery verdict. Burn the scheduled slot
+      // with an explicit ambiguous outcome; retrying could duplicate a report.
+      if (isMessengerAmbiguousDeliveryError(error)) {
+        const deliveryKey = `messenger-report:${mapping.psid}:${reportDate}`;
+        if (claimedForSend) {
+          await this.messengerRepository.markScheduledReportClaimSent(
+            {
+              externalUserId: mapping.psid,
+              reportDate,
+            },
+            claimLeaseToken,
+            'sent',
+            deliveryKey,
+            'ambiguous',
+          );
+          if (examDateForOutbox) {
+            await this.reportSendJobRepository.markSentByExternalUserExamDate(
+              mapping.psid,
+              examDateForOutbox,
+            );
+          }
+          return { ...ZERO, sent: 1 };
+        }
       }
 
       // Release the claim on EVERY other failure — a leak here would silently
@@ -225,7 +264,7 @@ export class ReportSendOrchestrationService {
       }
 
       if (
-        error instanceof StudentReportRetryableError ||
+        isStudentReportRetryableError(error) ||
         isMessengerApiRetryable(error)
       ) {
         let retryQueued = 0;
@@ -243,7 +282,7 @@ export class ReportSendOrchestrationService {
               firstAttemptDate: reportDate,
               maxRetries: settings.maxRetries,
               nextRetryAt,
-              errorMessage: errorMessage(error),
+              errorMessage: errorMessage(error, mapping.psid),
             },
           );
           if (job.nextRetryAt) retryQueued = 1;
@@ -265,7 +304,7 @@ export class ReportSendOrchestrationService {
         return { ...ZERO, windowClosed: 1 };
       }
 
-      const message = errorMessage(error);
+      const message = errorMessage(error, mapping.psid);
       this.logger.error(
         `Failed to send report for PSID ${maskExternalId(mapping.psid)}`,
         error,

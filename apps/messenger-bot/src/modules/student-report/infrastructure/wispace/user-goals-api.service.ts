@@ -29,9 +29,12 @@ export class UserGoalsApiService {
     private readonly metrics: BotMetricsService,
   ) {}
 
-  async getUserGoals(psid: string): Promise<UserGoalsRecord> {
+  async getUserGoals(
+    psid: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<UserGoalsRecord> {
     return this.metrics.timeWispaceCall('UserGoals', 'get', () =>
-      this.getClient().getUserGoals(ID_HEADER, psid),
+      this.getClient().getUserGoals(ID_HEADER, psid, options),
     );
   }
 

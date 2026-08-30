@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import { todayReportDate } from '@wispace/scheduler-core';
 import { ScheduledReportClaimEntity } from '../entities/scheduled-report-claim.entity';
-import type { Platform } from '@wispace/contracts';
+import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
 import { listUserIdsWithSentReport } from './list-user-ids-with-sent-report';
 
 /**
@@ -132,6 +132,7 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
     leaseToken: string,
     deliveryRecord?: string,
     deliveryKey?: string,
+    deliveryStatus?: OutboundDeliveryOutcome,
   ): Promise<boolean> {
     const result = await this.claimRepo
       .createQueryBuilder()
@@ -140,6 +141,7 @@ export class PlatformReportClaimRepository implements ReportClaimRepositoryPort 
         status: 'sent',
         ...(deliveryRecord !== undefined ? { deliveryRecord } : {}),
         ...(deliveryKey !== undefined ? { deliveryKey } : {}),
+        ...(deliveryStatus !== undefined ? { deliveryStatus } : {}),
       })
       .where('platform = :platform', { platform: this.platform })
       .andWhere('external_user_id = :externalUserId', {

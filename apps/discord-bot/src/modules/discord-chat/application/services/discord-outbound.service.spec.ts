@@ -183,6 +183,21 @@ describe('DiscordOutboundService', () => {
     );
   });
 
+  it('allows the report outbox to own retryable delivery', async () => {
+    const fetch = jest
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('Internal Server Error'), { status: 500 }),
+      );
+
+    const service = new DiscordOutboundService(buildClientStub(fetch));
+
+    await expect(
+      service.sendText('discord-1', 'report', { retryOn: 'none' }),
+    ).rejects.toThrow();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('#156: retries network failures and counts them as ambiguous (delivery outcome unknown)', async () => {
     const fetch = jest.fn().mockRejectedValue(new TypeError('fetch failed'));
     const metrics = buildMetricsStub();

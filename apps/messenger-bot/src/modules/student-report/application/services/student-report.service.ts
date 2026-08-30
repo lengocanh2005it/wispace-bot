@@ -117,6 +117,7 @@ export class StudentReportService {
           this.llmUsageRecorder.recordFromCompletion({
             feature: 'STUDENT_REPORT',
             psid: params.externalUserId,
+            provider: params.provider,
             model: params.model,
             response: params.response as Parameters<
               LlmUsageRecorderService['recordFromCompletion']
@@ -125,8 +126,8 @@ export class StudentReportService {
           }),
       },
       capacityData: {
-        getCapacityData: (psid) =>
-          this.taskScoreAverageApi.getCapacityData(psid),
+        getCapacityData: (psid, options) =>
+          this.taskScoreAverageApi.getCapacityData(psid, options),
       },
       logger: {
         log: (message) => this.logger.log(message),

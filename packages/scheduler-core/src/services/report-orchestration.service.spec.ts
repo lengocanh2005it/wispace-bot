@@ -158,5 +158,116 @@ describe('ReportOrchestrationService', () => {
         expect.objectContaining({ reportText: 'pre-generated text' }),
       );
     });
+
+    it('persists an ambiguous provider outcome as terminal claim state', async () => {
+      const claimRepo = buildClaimRepo();
+      const delivery = {
+        sendReport: jest.fn().mockResolvedValue({
+          ok: true,
+          outcome: 'ambiguous',
+        }),
+      } as unknown as ReportDeliveryPort;
+
+      const service = new ReportOrchestrationService(
+        claimRepo,
+        delivery,
+        buildJobRepo(),
+        buildScheduleService(),
+        buildConfig(),
+      );
+
+      const result = await service.claimAndSend(MAPPING, {
+        reportDate: '2026-08-07',
+        skipAlreadySentToday: true,
+        reportText: 'pre-generated text',
+      });
+
+      expect(result.sent).toBe(1);
+      expect(claimRepo.markScheduledReportClaimSent).toHaveBeenCalledWith(
+        { externalUserId: 'discord-1', reportDate: '2026-08-07' },
+        'token-1',
+        'sent',
+        expect.any(String),
+        'ambiguous',
+      );
+    });
+
+    it('does not misclassify permanent delivery failures as a closed window', async () => {
+      const claimRepo = buildClaimRepo();
+      const delivery = buildDelivery(false);
+      (delivery.sendReport as jest.Mock).mockResolvedValue({
+        ok: false,
+        reason: 'DELIVERY_FAILED',
+      });
+      const service = new ReportOrchestrationService(
+        claimRepo,
+        delivery,
+        buildJobRepo(),
+        buildScheduleService(),
+        buildConfig(),
+      );
+
+      const result = await service.claimAndSend(MAPPING, {
+        reportDate: '2026-08-07',
+        skipAlreadySentToday: true,
+        reportText: 'pre-generated text',
+      });
+
+      expect(result.windowClosed).toBe(0);
+      expect(result.failures).toEqual([
+        { externalUserId: 'discord-1', error: 'DELIVERY_FAILED' },
+      ]);
+    });
+
+    it('counts an inactive mapping as skipped', async () => {
+      const claimRepo = buildClaimRepo();
+      const delivery = buildDelivery(false);
+      (delivery.sendReport as jest.Mock).mockResolvedValue({
+        ok: false,
+        reason: 'NOT_LINKED',
+      });
+      const service = new ReportOrchestrationService(
+        claimRepo,
+        delivery,
+        buildJobRepo(),
+        buildScheduleService(),
+        buildConfig(),
+      );
+
+      const result = await service.claimAndSend(MAPPING, {
+        reportDate: '2026-08-07',
+        skipAlreadySentToday: true,
+        reportText: 'pre-generated text',
+      });
+
+      expect(result.skipped).toBe(1);
+      expect(result.windowClosed).toBe(0);
+    });
+
+    it('preserves a skipped exception classification', async () => {
+      const claimRepo = buildClaimRepo();
+      const delivery = buildDelivery(true);
+      const service = new ReportOrchestrationService(
+        claimRepo,
+        delivery,
+        null,
+        buildScheduleService(),
+        buildConfig(),
+      );
+
+      const result = await service.claimAndSend(MAPPING, {
+        reportDate: '2026-08-07',
+        skipAlreadySentToday: true,
+        reportText: 'pre-generated text',
+        classifyError: () => ({
+          kind: 'skipped',
+          message: 'mapping revoked',
+        }),
+        generateReport: jest.fn().mockRejectedValue(new Error('revoked')),
+      });
+
+      expect(result.skipped).toBe(1);
+      expect(result.windowClosed).toBe(0);
+    });
   });
 });

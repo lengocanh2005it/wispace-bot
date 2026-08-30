@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { maskExternalId } from '@wispace/bot-common/masking';
+import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { buildReportOptOutFooter } from '@wispace/bot-common/messages';
 import type {
   ReportMapping,
@@ -7,7 +7,10 @@ import type {
   ClassifiedError,
 } from '@wispace/scheduler-core';
 import { ReportOrchestrationService } from '@wispace/scheduler-core';
-import { PlatformStudentReportService } from '@wispace/student-report';
+import {
+  isStudentReportRetryableError,
+  PlatformStudentReportService,
+} from '@wispace/student-report';
 
 /**
  * Discord-specific wrapper around the shared ReportOrchestrationService.
@@ -38,7 +41,8 @@ export class DiscordReportOrchestrationService {
       skipAlreadySentToday: opts.skipAlreadySentToday,
       reportText: '', // ignored when generateReport is provided
       examDateForOutbox: opts.examDateForOutbox,
-      classifyError: classifyDiscordError,
+      classifyError: (error) =>
+        classifyDiscordError(error, mapping.externalUserId),
       generateReport: async () => {
         this.logger.log(
           `Generating report for Discord user ${maskExternalId(mapping.externalUserId)}`,
@@ -54,6 +58,15 @@ export class DiscordReportOrchestrationService {
   }
 }
 
-function classifyDiscordError(error: unknown): ClassifiedError {
-  return { kind: 'failure', message: String(error) };
+function classifyDiscordError(
+  error: unknown,
+  externalUserId?: string,
+): ClassifiedError {
+  if (isStudentReportRetryableError(error)) {
+    return {
+      kind: 'retryable',
+      message: 'Report generation temporarily unavailable',
+    };
+  }
+  return { kind: 'failure', message: errorMessage(error, externalUserId) };
 }

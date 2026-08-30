@@ -11,7 +11,10 @@ import type {
   ReportDeliveryResult,
   ReportMapping,
 } from '@wispace/scheduler-core';
-import { DiscordOutboundService } from './discord-outbound.service';
+import {
+  DiscordDeliveryFailureError,
+  DiscordOutboundService,
+} from './discord-outbound.service';
 import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
 
 const PLATFORM = 'discord' as const;
@@ -89,6 +92,7 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
         await this.outboundService.sendText(mapping.externalUserId, chunk, {
           skipDeadLetter: true,
           nonce,
+          retryOn: 'none',
         });
       }
 
@@ -104,7 +108,13 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
         )}: ${msg}`,
       );
 
-      if (msg.includes('429') || msg.includes('rate limit')) {
+      if (
+        error instanceof DiscordDeliveryFailureError &&
+        error.ambiguousDelivery
+      ) {
+        return { ok: true, outcome: 'ambiguous' };
+      }
+      if (error instanceof DiscordDeliveryFailureError && error.retryable) {
         return { ok: false, reason: 'RETRYABLE' };
       }
       return { ok: false, reason: 'DELIVERY_FAILED' };

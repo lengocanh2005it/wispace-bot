@@ -29,4 +29,28 @@ describe('createLlmProviderAdapterFromEnv', () => {
     );
     expect(adapter).toBeInstanceOf(OpenAiAdapter);
   });
+
+  it('fails startup when an explicitly ordered provider has no key', () => {
+    expect(() =>
+      createLlmProviderAdapterFromEnv((key) =>
+        key === 'LLM_PROVIDER_FAILOVER_ORDER'
+          ? 'openai,openrouter'
+          : key === 'OPENAI_API_KEY'
+            ? 'key'
+            : undefined,
+      ),
+    ).toThrow(/openrouter.*missing API key/i);
+  });
+
+  it('fails startup for an unknown provider name', () => {
+    expect(() =>
+      createLlmProviderAdapterFromEnv((key) =>
+        key === 'LLM_PROVIDER_FAILOVER_ORDER'
+          ? 'openai,typo'
+          : key === 'OPENAI_API_KEY'
+            ? 'key'
+            : undefined,
+      ),
+    ).toThrow(/unsupported|unknown|typo/i);
+  });
 });

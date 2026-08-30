@@ -607,6 +607,7 @@ export class PlatformAgentService {
             feature: FEATURE,
             externalUserId: params.externalUserId,
             userId: params.userId,
+            provider: params.provider,
             model: params.model,
             response: params.response as Parameters<
               PlatformLlmUsageRecorderAdapter['recordFromCompletion']

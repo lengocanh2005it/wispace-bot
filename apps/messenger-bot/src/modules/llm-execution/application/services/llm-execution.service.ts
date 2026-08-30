@@ -13,7 +13,6 @@ import {
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { LlmExecutionConfigService } from './llm-execution-config.service';
 import type { LlmExecutionContext } from '../types/llm-execution.types';
-import { withTimeout } from '@messenger/shared/utils/promise-timeout.utils';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import type Redis from 'ioredis';
 
@@ -66,7 +65,9 @@ export class LlmExecutionService {
       (fn: () => Promise<unknown>, context?: LlmExecutionContext) =>
         this.runWithRetry(fn, context),
       {
-        timeout: this.config.getRequestTimeoutMs() + 5_000,
+        // The request signal is the single timeout budget. A second Opossum
+        // timeout would make retries outlive the caller's deadline.
+        timeout: false,
         errorThresholdPercentage: 50,
         resetTimeout: 60_000,
         volumeThreshold: 3,
@@ -98,12 +99,31 @@ export class LlmExecutionService {
       return fn(undefined);
     }
 
+    // Create the one deadline before admission so queueing, Redis acquisition,
+    // provider retries, and the provider call share the same remaining budget.
+    const deadlineSignal = AbortSignal.timeout(
+      this.config.getRequestTimeoutMs(),
+    );
+    const signal = context?.signal
+      ? AbortSignal.any([context.signal, deadlineSignal])
+      : deadlineSignal;
+    const executionContext: LlmExecutionContext = {
+      feature: context?.feature ?? 'unknown',
+      ...(context?.correlationId
+        ? { correlationId: context.correlationId }
+        : {}),
+      signal,
+    };
+
     const startedAtMs = Date.now();
     let ticket: AdmissionTicket;
     try {
       ticket = await this.queue.acquire({
-        signal: context?.signal,
-        waitBudgetMs: admissionWaitBudgetMs(this.budgets, context?.feature),
+        signal,
+        waitBudgetMs: admissionWaitBudgetMs(
+          this.budgets,
+          executionContext.feature,
+        ),
       });
     } catch (error) {
       if (error instanceof LlmOverloadError) {
@@ -118,14 +138,8 @@ export class LlmExecutionService {
     let releaseGlobal: (() => Promise<void>) | undefined;
     try {
       if (this.globalRedis) {
-        // Compose deadline + caller signal BEFORE slot acquisition so
-        // cancellation aborts the retry loop (#364 parity on Messenger).
-        const deadlineSignal = AbortSignal.timeout(
-          this.config.getRequestTimeoutMs(),
-        );
-        const acquireSignal = context?.signal
-          ? AbortSignal.any([context.signal, deadlineSignal])
-          : deadlineSignal;
+        // Cancellation aborts the Redis retry loop and avoids holding a local
+        // admission slot while spinning (#364 parity on Messenger).
         releaseGlobal = await acquireRedisSlot(
           this.globalRedis,
           'llm:concurrency:global',
@@ -133,13 +147,16 @@ export class LlmExecutionService {
           { warn: (message) => this.logger.warn(message) },
           {
             metrics: this.metrics.llmAdmission,
-            signal: acquireSignal,
-            waitBudgetMs: admissionWaitBudgetMs(this.budgets, context?.feature),
+            signal,
+            waitBudgetMs: admissionWaitBudgetMs(
+              this.budgets,
+              executionContext.feature,
+            ),
           },
         );
       }
 
-      return (await this.breaker.fire(fn, context)) as Promise<T>;
+      return (await this.breaker.fire(fn, executionContext)) as Promise<T>;
     } finally {
       await releaseGlobal?.();
       ticket.release();
@@ -153,24 +170,13 @@ export class LlmExecutionService {
   ): Promise<T> {
     const maxAttempts = this.config.getRetryMaxAttempts();
     const baseBackoffMs = this.config.getRetryBackoffMs();
-    const timeoutMs = this.config.getRequestTimeoutMs();
     const feature = context?.feature ?? 'unknown';
     const correlation = context?.correlationId ?? 'n/a';
-
-    // Per-call deadline + optional caller signal: cancels retries and backoff
-    // sleeps immediately AND aborts the in-flight provider request — a timeout
-    // never leaves the original request running while a retry starts.
-    const deadlineSignal = AbortSignal.timeout(timeoutMs);
-    const signal = context?.signal
-      ? AbortSignal.any([context.signal, deadlineSignal])
-      : deadlineSignal;
+    const signal = context?.signal;
 
     // ponytail: shared retry helper from llm-agent (was a local sleep+backoff copy)
     return retryWithBackoff(
-      () =>
-        this.metrics.timeLlmExecution(feature, () =>
-          withTimeout(() => fn(signal), timeoutMs, 'LLM request'),
-        ),
+      () => this.metrics.timeLlmExecution(feature, () => fn(signal)),
       {
         maxAttempts,
         baseDelayMs: baseBackoffMs,

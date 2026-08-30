@@ -22,6 +22,7 @@ describe('createLlmProviderAdapter', () => {
     const adapter = createLlmProviderAdapter({
       getApiKey: () => 'key',
       getModel: () => 'model',
+      getBaseUrl: () => 'https://llm.example.test/v1',
       provider: 'openai-compatible',
     });
     expect(adapter).toBeInstanceOf(OpenAiAdapter);
@@ -35,6 +36,26 @@ describe('createLlmProviderAdapter', () => {
     });
     expect(adapter).toBeInstanceOf(OpenAiAdapter);
   });
+
+  it('rejects an unknown provider instead of silently using OpenAI', () => {
+    expect(() =>
+      createLlmProviderAdapter({
+        getApiKey: () => 'key',
+        getModel: () => 'model',
+        provider: 'typo-provider',
+      }),
+    ).toThrow('Unsupported LLM provider configuration: typo-provider');
+  });
+
+  it('requires an explicit endpoint for a custom OpenAI-compatible provider', () => {
+    expect(() =>
+      createLlmProviderAdapter({
+        getApiKey: () => 'key',
+        getModel: () => 'model',
+        provider: 'openai-compatible',
+      }),
+    ).toThrow('OPENAI-compatible provider requires a base URL');
+  });
 });
 
 describe('createFailoverLlmProviderAdapter', () => {
@@ -47,13 +68,11 @@ describe('createFailoverLlmProviderAdapter', () => {
     provider: 'openai-compatible',
     getApiKey: () => 'key-b',
     getModel: () => 'model-b',
+    getBaseUrl: () => 'https://llm.example.test/v1',
   };
 
   it('returns single adapter directly when only 1 provider configured', () => {
-    const result = createFailoverLlmProviderAdapter(
-      [entryA],
-      ['openai', 'openai-compatible'],
-    );
+    const result = createFailoverLlmProviderAdapter([entryA], ['openai']);
     expect(result).toBeInstanceOf(OpenAiAdapter);
     expect(result).not.toBeInstanceOf(FailoverLlmProviderAdapter);
   });
@@ -66,19 +85,21 @@ describe('createFailoverLlmProviderAdapter', () => {
     expect(result).toBeInstanceOf(FailoverLlmProviderAdapter);
   });
 
-  it('filters out providers without API key', () => {
+  it('fails startup when a provider listed in the order is missing credentials', () => {
     const entryNoKey: LlmProviderEntryConfig = {
       provider: 'openai-compatible',
       getApiKey: () => undefined,
       getModel: () => 'model',
+      getBaseUrl: () => 'https://llm.example.test/v1',
     };
-    const result = createFailoverLlmProviderAdapter(
-      [entryA, entryNoKey],
-      ['openai', 'openai-compatible'],
+    expect(() =>
+      createFailoverLlmProviderAdapter(
+        [entryA, entryNoKey],
+        ['openai', 'openai-compatible'],
+      ),
+    ).toThrow(
+      'LLM provider openai-compatible is listed in failover order but missing API key',
     );
-    // Only openai has key → single adapter, no failover
-    expect(result).toBeInstanceOf(OpenAiAdapter);
-    expect(result).not.toBeInstanceOf(FailoverLlmProviderAdapter);
   });
 
   it('follows order parameter', () => {
@@ -93,11 +114,10 @@ describe('createFailoverLlmProviderAdapter', () => {
 
   it('throws when no providers configured in order', () => {
     expect(() =>
-      createFailoverLlmProviderAdapter(
-        [entryA],
-        ['openai-compatible'], // openai-compatible not in entries
-      ),
-    ).toThrow('No LLM provider configured in failover order');
+      createFailoverLlmProviderAdapter([entryA], ['openai-compatible']),
+    ).toThrow(
+      'LLM provider openai-compatible is listed in failover order but has no configuration',
+    );
   });
 
   it('throws when order is empty and no entries match', () => {

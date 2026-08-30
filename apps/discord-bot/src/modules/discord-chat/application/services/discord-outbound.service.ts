@@ -84,6 +84,7 @@ export class DiscordDeliveryFailureError extends Error {
   constructor(
     message: string,
     readonly ambiguousDelivery: boolean,
+    readonly retryable = false,
   ) {
     super(message);
     this.name = 'DiscordDeliveryFailureError';
@@ -125,6 +126,7 @@ export class DiscordOutboundService {
       nonce?: string;
       deliveryKey?: string;
       clarification?: boolean;
+      retryOn?: 'all' | 'none';
     },
   ): Promise<void> {
     const channelId = await this.sendTextAndGetChannelId(
@@ -159,6 +161,7 @@ export class DiscordOutboundService {
       nonce?: string;
       deliveryKey?: string;
       clarification?: boolean;
+      retryOn?: 'all' | 'none';
     },
   ): Promise<string | undefined> {
     const nonce =
@@ -166,7 +169,12 @@ export class DiscordOutboundService {
       (options?.deliveryKey
         ? this.toDiscordNonce(options.deliveryKey)
         : randomUUID().replaceAll('-', '').slice(0, 25));
-    const result = await this.sendCore(discordUserId, text, nonce);
+    const result = await this.sendCore(
+      discordUserId,
+      text,
+      nonce,
+      options?.retryOn,
+    );
     if (result.ok) {
       await this.deliveryLog?.logDelivery({
         externalUserId: discordUserId,
@@ -215,6 +223,7 @@ export class DiscordOutboundService {
     throw new DiscordDeliveryFailureError(
       `Discord DM delivery failed for ${maskExternalId(discordUserId)}`,
       result.ambiguous,
+      result.retryable,
     );
   }
 
@@ -264,9 +273,15 @@ export class DiscordOutboundService {
     discordUserId: string,
     text: string,
     nonce: string,
+    retryOn: 'all' | 'none' = 'all',
   ): Promise<
     | { ok: true; channelId: string }
-    | { ok: false; error: string; ambiguous: boolean }
+    | {
+        ok: false;
+        error: string;
+        ambiguous: boolean;
+        retryable: boolean;
+      }
   > {
     let ambiguousDeliveryRecorded = false;
     try {
@@ -278,7 +293,8 @@ export class DiscordOutboundService {
         {
           maxRetries: 1,
           baseDelayMs: 1_000,
-          shouldRetry: isDiscordRetryableError,
+          shouldRetry: (error) =>
+            retryOn === 'none' ? false : isDiscordRetryableError(error),
           onRetry: (attempt, maxRetries, error) => {
             // Network/unknown failures have no delivery verdict — the
             // provider may have accepted the first attempt (#156).
@@ -304,7 +320,12 @@ export class DiscordOutboundService {
       if (ambiguous) {
         this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
       }
-      return { ok: false, error: errorMsg, ambiguous };
+      return {
+        ok: false,
+        error: errorMsg,
+        ambiguous,
+        retryable: isDiscordRetryableError(error),
+      };
     }
   }
 

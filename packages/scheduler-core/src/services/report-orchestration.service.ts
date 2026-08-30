@@ -147,7 +147,8 @@ export class ReportOrchestrationService {
       try {
         reportText = await opts.generateReport();
       } catch (genError) {
-        // Generation failed inside claim — release and record retryable.
+        // Generation failed inside claim — release and let the classifier choose
+        // durable retry versus a terminal/window-closed outcome.
         if (claimedForSend) {
           await this.claimRepo.releaseScheduledReportClaim(
             {
@@ -158,7 +159,10 @@ export class ReportOrchestrationService {
           );
         }
         const classified = classifyError(genError);
-        if (this.jobRepo) {
+        const shouldQueueRetry =
+          classified.kind === 'retryable' ||
+          (classified.kind === 'failure' && opts.classifyError === undefined);
+        if (shouldQueueRetry && this.jobRepo) {
           const settings = this.reportSendScheduleService.getOutboxSettings();
           const nextRetryAt = new Date(
             Date.now() + settings.retryBackoffMinutes * 60 * 1000,
@@ -174,6 +178,12 @@ export class ReportOrchestrationService {
             errorMessage: `Generation failed: ${classified.message}`,
           });
           return { ...ZERO, deferred: 1, retryQueued: 1 };
+        }
+        if (classified.kind === 'window_closed') {
+          return { ...ZERO, windowClosed: 1 };
+        }
+        if (classified.kind === 'skipped') {
+          return { ...ZERO, skipped: 1 };
         }
         return {
           ...ZERO,
@@ -205,6 +215,7 @@ export class ReportOrchestrationService {
             claimLeaseToken,
             'sent',
             deliveryKey,
+            result.outcome ?? 'sent',
           );
         }
         if (examDateForOutbox && this.jobRepo) {
@@ -245,7 +256,22 @@ export class ReportOrchestrationService {
         return { ...ZERO, deferred: 1, retryQueued: 1 };
       }
 
-      return { ...ZERO, windowClosed: 1 };
+      if (result.reason === 'WINDOW_CLOSED') {
+        return { ...ZERO, windowClosed: 1 };
+      }
+      if (result.reason === 'NOT_LINKED') {
+        return { ...ZERO, skipped: 1 };
+      }
+
+      return {
+        ...ZERO,
+        failures: [
+          {
+            externalUserId: mapping.externalUserId,
+            error: result.reason ?? 'DELIVERY_FAILED',
+          },
+        ],
+      };
     } catch (error) {
       // ── Step 7: exception — release + classify ────────────────────────
       if (claimedForSend) {
@@ -278,11 +304,11 @@ export class ReportOrchestrationService {
         return { ...ZERO, deferred: 1, retryQueued: 1 };
       }
 
-      if (
-        classified.kind === 'window_closed' ||
-        classified.kind === 'skipped'
-      ) {
+      if (classified.kind === 'window_closed') {
         return { ...ZERO, windowClosed: 1 };
+      }
+      if (classified.kind === 'skipped') {
+        return { ...ZERO, skipped: 1 };
       }
 
       return {

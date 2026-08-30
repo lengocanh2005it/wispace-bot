@@ -15,7 +15,10 @@ import { MessengerRepositoryPort } from '../../domain/repositories/messenger.rep
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
-import type { PlatformLinkState } from '@wispace/contracts';
+import type {
+  OutboundDeliveryOutcome,
+  PlatformLinkState,
+} from '@wispace/contracts';
 import {
   MessengerMessageLog,
   NotificationCadence,
@@ -602,6 +605,7 @@ export class MessengerRepository
     leaseToken: string,
     deliveryRecord?: string,
     deliveryKey?: string,
+    deliveryStatus?: OutboundDeliveryOutcome,
   ): Promise<boolean> {
     const result = await this.reportClaimRepo
       .createQueryBuilder()
@@ -610,6 +614,7 @@ export class MessengerRepository
         status: 'sent',
         ...(deliveryRecord !== undefined ? { deliveryRecord } : {}),
         ...(deliveryKey !== undefined ? { deliveryKey } : {}),
+        ...(deliveryStatus !== undefined ? { deliveryStatus } : {}),
       })
       .where('platform = :platform', { platform: PLATFORM })
       .andWhere('external_user_id = :externalUserId', {

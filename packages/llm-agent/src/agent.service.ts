@@ -342,7 +342,8 @@ export class LlmAgentService<TToolContext> {
           feature: FEATURE,
           externalUserId: input.externalUserId,
           userId: input.userId,
-          model,
+          provider: response.metadata.provider,
+          model: response.metadata.model,
           response: {
             id: response.metadata.responseId ?? '',
             usage: response.metadata.usage

@@ -4,6 +4,7 @@ export interface RecordLlmUsageInput {
   feature: string;
   externalUserId?: string;
   userId?: number;
+  provider?: string;
   model: string;
   promptTokens: number;
   completionTokens: number;

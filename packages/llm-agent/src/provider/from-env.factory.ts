@@ -3,6 +3,7 @@ import {
   createFailoverLlmProviderAdapter,
   createFailoverProviderEntries,
 } from './factory';
+import type { FailoverConfig } from './factory';
 
 const DEFAULT_COOLDOWN_LONG_MS = 600_000;
 const DEFAULT_COOLDOWN_SHORT_MS = 5_000;
@@ -16,7 +17,10 @@ const DEFAULT_QUICK_RETRY_DELAY_MS = 150;
  */
 export function createLlmProviderAdapterFromEnv(
   getEnv: (key: string) => string | undefined,
-  options?: { defaultProviderOrder?: string[] },
+  options?: Pick<
+    FailoverConfig,
+    'onCircuitEvent' | 'onProviderAttempt' | 'onProvidersExhausted'
+  > & { defaultProviderOrder?: string[] },
 ): LlmProviderAdapter {
   const order = (getEnv('LLM_PROVIDER_FAILOVER_ORDER') ?? '')
     .split(',')
@@ -39,6 +43,13 @@ export function createLlmProviderAdapterFromEnv(
     entries,
     providerOrder,
     { warn: (m) => console.warn(m) },
-    { cooldownLongMs, cooldownShortMs, quickRetryDelayMs },
+    {
+      cooldownLongMs,
+      cooldownShortMs,
+      quickRetryDelayMs,
+      onCircuitEvent: options?.onCircuitEvent,
+      onProviderAttempt: options?.onProviderAttempt,
+      onProvidersExhausted: options?.onProvidersExhausted,
+    },
   );
 }

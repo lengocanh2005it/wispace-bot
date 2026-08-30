@@ -157,7 +157,7 @@ export class StudentReportCore {
 
   private throwIfAborted(signal?: AbortSignal): void {
     if (signal?.aborted) {
-      throw new Error('Tool execution aborted (timeout)');
+      throw signal.reason ?? new Error('Tool execution aborted (timeout)');
     }
   }
 
@@ -219,7 +219,8 @@ export class StudentReportCore {
     this.ports.usageRecorder.recordFromCompletion({
       feature: FEATURE,
       externalUserId,
-      model,
+      provider: response.metadata.provider,
+      model: response.metadata.model,
       response: {
         id: response.metadata.responseId ?? '',
         usage: response.metadata.usage

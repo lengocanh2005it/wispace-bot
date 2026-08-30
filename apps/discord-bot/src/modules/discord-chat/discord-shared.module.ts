@@ -10,6 +10,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { DiscordOutboundModule } from './discord-outbound.module';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 /**
  * Shared providers for Discord modules — breaks circular dependency between
@@ -26,11 +27,26 @@ import { DiscordOutboundModule } from './discord-outbound.module';
   providers: [
     {
       provide: 'LLM_PROVIDER_ADAPTER',
-      useFactory: (configService: ConfigService): LlmProviderAdapter =>
-        createLlmProviderAdapterFromEnv((key) =>
-          configService.get<string>(key)?.trim(),
+      useFactory: (
+        configService: ConfigService,
+        metrics: BotMetricsService,
+      ): LlmProviderAdapter =>
+        createLlmProviderAdapterFromEnv(
+          (key) => configService.get<string>(key)?.trim(),
+          {
+            onCircuitEvent: (event) =>
+              metrics.incLlmProviderCircuitEvent(
+                event.provider,
+                event.action,
+                event.reason,
+              ),
+            onProviderAttempt: (provider, feature) =>
+              metrics.incLlmProviderAttempt(provider, feature),
+            onProvidersExhausted: (providers, feature) =>
+              metrics.incLlmProvidersExhausted(providers.length, feature),
+          },
         ),
-      inject: [ConfigService],
+      inject: [ConfigService, BotMetricsService],
     },
     DiscordReportDeliveryService,
     {

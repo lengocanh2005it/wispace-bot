@@ -12,6 +12,7 @@ export interface RecordLlmUsageFromCompletionInput {
   feature: LlmUsageFeature;
   psid?: string;
   userId?: number;
+  provider?: string;
   model: string;
   response: Pick<ChatCompletion, 'id' | 'usage'>;
   correlationId?: string;
@@ -22,6 +23,7 @@ export interface RecordLlmUsageInput {
   feature: LlmUsageFeature;
   psid?: string;
   userId?: number;
+  provider?: string;
   model: string;
   promptTokens: number;
   completionTokens: number;

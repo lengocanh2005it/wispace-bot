@@ -4,6 +4,7 @@ export interface RecordLlmUsageFromCompletionInput {
   feature: string;
   externalUserId?: string;
   userId?: number;
+  provider?: string;
   model: string;
   response: { id: string; usage?: unknown };
   correlationId?: string;
@@ -83,6 +84,7 @@ export class LlmUsageRecorderCore {
       feature: input.feature,
       externalUserId: input.externalUserId,
       userId: input.userId,
+      provider: input.provider ?? 'unknown',
       model: input.model,
       promptTokens,
       completionTokens,

@@ -4,6 +4,7 @@ import { createEnvLlmExecutionPort } from '@wispace/llm-agent';
 import type { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering';
 import type { WispaceGoalsService } from '@wispace/wispace-client';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import { StudentReportNoScoreDataError } from './errors';
 
 jest.mock('@wispace/llm-agent', () => ({
   ...jest.requireActual('@wispace/llm-agent'),
@@ -14,11 +15,15 @@ jest.mock('@wispace/llm-agent', () => ({
 const mockGenerateReport = jest
   .fn<Promise<string>, unknown[]>()
   .mockResolvedValue('mock report');
+let mockPorts: unknown;
 
 jest.mock('./student-report.service', () => ({
-  StudentReportCore: jest.fn().mockImplementation(() => ({
-    generateReport: mockGenerateReport,
-  })),
+  StudentReportCore: jest
+    .fn()
+    .mockImplementation((_config: unknown, ports: unknown) => {
+      mockPorts = ports;
+      return { generateReport: mockGenerateReport };
+    }),
 }));
 
 describe('PlatformStudentReportService', () => {
@@ -47,6 +52,7 @@ describe('PlatformStudentReportService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPorts = undefined;
   });
 
   it('creates StudentReportCore lazily on first generateReport call', async () => {
@@ -79,6 +85,57 @@ describe('PlatformStudentReportService', () => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       correlationId: expect.stringContaining('external-1:'),
     });
+  });
+
+  it('forwards caller cancellation to the report core', async () => {
+    const service = buildService();
+    const controller = new AbortController();
+
+    await service.generateReport('external-1', { signal: controller.signal });
+
+    expect(mockGenerateReport).toHaveBeenCalledWith('external-1', {
+      correlationId: expect.stringContaining('external-1:'),
+      signal: controller.signal,
+    });
+  });
+
+  it('classifies an empty score response as no-score data', async () => {
+    const goalsService = {
+      getTaskScoreAverages: jest.fn().mockResolvedValue([]),
+      getUserGoals: jest.fn().mockResolvedValue({
+        targetScore: 7,
+        examDate: '2026-09-01',
+      }),
+    } as unknown as WispaceGoalsService;
+    const service = new PlatformStudentReportService(
+      'discord',
+      {
+        get: jest.fn((key: string) =>
+          key === 'STUDY_REMINDER_TIMEZONE' ? 'Asia/Ho_Chi_Minh' : undefined,
+        ),
+      } as unknown as ConfigService,
+      goalsService,
+      {} as unknown as PlatformLlmUsageRecorderAdapter,
+      {} as unknown as LlmProviderAdapter,
+      '/prompts',
+    );
+
+    await service.generateReport('external-1');
+    const capacityData = (
+      mockPorts as {
+        capacityData: {
+          getCapacityData(
+            externalUserId: string,
+            options?: { signal?: AbortSignal },
+          ): Promise<unknown>;
+        };
+      }
+    ).capacityData;
+
+    await expect(
+      capacityData.getCapacityData('external-1'),
+    ).rejects.toBeInstanceOf(StudentReportNoScoreDataError);
+    expect(goalsService.getUserGoals).not.toHaveBeenCalled();
   });
 
   it('returns the report text from the core', async () => {

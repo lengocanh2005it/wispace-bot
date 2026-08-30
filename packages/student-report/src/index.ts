@@ -8,6 +8,7 @@ export type { StudentCapacityInput, StudentCapacityReport } from './types';
 export {
   StudentReportNoScoreDataError,
   StudentReportRetryableError,
+  isStudentReportRetryableError,
   type RetryableApiError,
 } from './errors';
 export {

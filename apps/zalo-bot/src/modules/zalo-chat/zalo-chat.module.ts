@@ -123,11 +123,26 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     },
     {
       provide: 'LLM_PROVIDER_ADAPTER',
-      useFactory: (configService: ConfigService): LlmProviderAdapter =>
-        createLlmProviderAdapterFromEnv((key) =>
-          configService.get<string>(key)?.trim(),
+      useFactory: (
+        configService: ConfigService,
+        metrics: BotMetricsService,
+      ): LlmProviderAdapter =>
+        createLlmProviderAdapterFromEnv(
+          (key) => configService.get<string>(key)?.trim(),
+          {
+            onCircuitEvent: (event) =>
+              metrics.incLlmProviderCircuitEvent(
+                event.provider,
+                event.action,
+                event.reason,
+              ),
+            onProviderAttempt: (provider, feature) =>
+              metrics.incLlmProviderAttempt(provider, feature),
+            onProvidersExhausted: (providers, feature) =>
+              metrics.incLlmProvidersExhausted(providers.length, feature),
+          },
         ),
-      inject: [ConfigService],
+      inject: [ConfigService, BotMetricsService],
     },
     {
       provide: DeliveryLogService,

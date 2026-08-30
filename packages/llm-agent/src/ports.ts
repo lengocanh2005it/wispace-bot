@@ -17,6 +17,7 @@ export interface LlmUsageRecorderPort {
     feature: string;
     externalUserId: string;
     userId?: number;
+    provider?: string;
     model: string;
     response: unknown;
     correlationId?: string;

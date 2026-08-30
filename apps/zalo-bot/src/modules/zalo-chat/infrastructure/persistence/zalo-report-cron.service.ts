@@ -23,6 +23,7 @@ import {
 import type { ClassifiedError } from '@wispace/scheduler-core';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloSendError } from '../../application/services/zalo-outbound.service';
+import { isStudentReportRetryableError } from '@wispace/student-report';
 import { WispaceApiError } from '@wispace/wispace-client';
 
 const CONCURRENCY = 3;
@@ -235,7 +236,7 @@ export class ZaloReportCronService {
         reportDate,
         skipAlreadySentToday: link.userId !== undefined,
         reportText: '',
-        classifyError: classifyZaloError,
+        classifyError: (error) => classifyZaloError(error, link.externalUserId),
         generateReport: async () => {
           const report = await this.reportService.generateReport(
             link.externalUserId,
@@ -258,14 +259,17 @@ export class ZaloReportCronService {
       this.logger.error(
         `Failed to send report to Zalo user ${maskExternalId(
           link.externalUserId,
-        )}: ${errorMessage(error)}`,
+        )}: ${errorMessage(error, link.externalUserId)}`,
       );
       return 'error';
     }
   }
 }
 
-function classifyZaloError(error: unknown): ClassifiedError {
+function classifyZaloError(
+  error: unknown,
+  externalUserId?: string,
+): ClassifiedError {
   if (error instanceof ZaloSendError && error.is48hWindowError()) {
     return { kind: 'window_closed', message: '48h window closed' };
   }
@@ -277,5 +281,12 @@ function classifyZaloError(error: unknown): ClassifiedError {
     return { kind: 'skipped', message: 'Wispace access denied' };
   }
 
-  return { kind: 'failure', message: errorMessage(error) };
+  if (isStudentReportRetryableError(error)) {
+    return {
+      kind: 'retryable',
+      message: 'Report generation temporarily unavailable',
+    };
+  }
+
+  return { kind: 'failure', message: errorMessage(error, externalUserId) };
 }

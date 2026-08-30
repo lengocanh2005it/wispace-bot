@@ -60,13 +60,21 @@ export function parseReportOutput(
 
 /** Deterministic factual headline from source data (exam date / days left). */
 export function buildFactualHeadline(input: StudentCapacityInput): string {
+  const examDate = input.exam_date_display || 'chưa có ngày thi';
+  const target =
+    input.target_band == null
+      ? 'chưa đặt mục tiêu'
+      : `band ${input.target_band}`;
+  if (!input.exam_date_display) {
+    return `Chưa có ngày thi, mục tiêu ${target}.`;
+  }
   if (input.exam_has_passed) {
-    return `Kỳ thi ngày ${input.exam_date_display} đã qua. Mục tiêu band ${input.target_band} — hãy xem lại tiến độ và lên kế hoạch tiếp theo.`;
+    return `Kỳ thi ngày ${examDate} đã qua. Mục tiêu ${target} — hãy xem lại tiến độ và lên kế hoạch tiếp theo.`;
   }
   if (input.days_until_exam === 0) {
-    return `Hôm nay là ngày thi ${input.exam_date_display}, mục tiêu band ${input.target_band}.`;
+    return `Hôm nay là ngày thi ${examDate}, mục tiêu ${target}.`;
   }
-  return `Bạn còn ${input.days_until_exam} ngày nữa đến kỳ thi ${input.exam_date_display}, mục tiêu band ${input.target_band}.`;
+  return `Bạn còn ${input.days_until_exam} ngày nữa đến kỳ thi ${examDate}, mục tiêu ${target}.`;
 }
 
 /** Deterministic factual fields from source data — never model-provided. */
@@ -76,12 +84,27 @@ export function buildFactualFields(
   StudentCapacityReport,
   'streak' | 'tình trạng task 2' | 'tình trạng task 1'
 > {
+  const streak =
+    input.total_essays_task1 == null || input.total_essays_task2 == null
+      ? 'Chưa đủ dữ liệu số bài đã làm để tổng hợp streak.'
+      : `Bạn đã làm ${input.total_essays_task1} bài Task 1 và ${input.total_essays_task2} bài Task 2.`;
+  const task2 =
+    input.task2_band == null
+      ? 'Chưa có dữ liệu Task 2 để đánh giá.'
+      : `Task 2 đang ở band ${input.task2_band} — khả năng lập luận tốt.`;
+  const task1 =
+    input.task1_band == null
+      ? 'Chưa có dữ liệu Task 1 để đánh giá.'
+      : input.target_band == null
+        ? `Task 1 đang ở band ${input.task1_band}; chưa có mục tiêu để so sánh.`
+        : `Task 1 đang ở band ${input.task1_band}, thấp hơn mục tiêu ${(
+            input.target_band - input.task1_band
+          ).toFixed(1)} band — cần luyện mô tả biểu đồ.`;
+
   return {
-    streak: `Bạn đã làm ${input.total_essays_task1} bài Task 1 và ${input.total_essays_task2} bài Task 2.`,
-    'tình trạng task 2': `Task 2 đang ở band ${input.task2_band} — khả năng lập luận tốt.`,
-    'tình trạng task 1': `Task 1 đang ở band ${input.task1_band}, thấp hơn mục tiêu ${(
-      input.target_band - input.task1_band
-    ).toFixed(1)} band — cần luyện mô tả biểu đồ.`,
+    streak,
+    'tình trạng task 2': task2,
+    'tình trạng task 1': task1,
   };
 }
 

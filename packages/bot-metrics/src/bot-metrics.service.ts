@@ -54,6 +54,9 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmAdmissionRejected: Counter;
   private llmAdmissionWait: Histogram;
   private llmAdmissionQueueDepth: Gauge;
+  private llmProviderAttempts: Counter;
+  private llmProviderCircuitEvents: Counter;
+  private llmProvidersExhausted: Counter;
   private quotaDenied: Counter;
   private reminderDispatch: Counter;
   private webActivityWebhookReceived: Counter;
@@ -173,6 +176,27 @@ export class BotMetricsService implements OnModuleDestroy {
     this.llmAdmissionQueueDepth = new Gauge({
       name: `${this.prefix}_llm_admission_queue_depth`,
       help: 'Current number of LLM calls waiting for a local admission slot (#389)',
+      registers: [this.registry],
+    });
+
+    this.llmProviderAttempts = new Counter({
+      name: `${this.prefix}_llm_provider_attempts_total`,
+      help: 'LLM provider attempts made by the failover adapter',
+      labelNames: ['provider', 'feature'],
+      registers: [this.registry],
+    });
+
+    this.llmProviderCircuitEvents = new Counter({
+      name: `${this.prefix}_llm_provider_circuit_events_total`,
+      help: 'LLM provider circuit state changes and cooldown skips',
+      labelNames: ['provider', 'action', 'reason'],
+      registers: [this.registry],
+    });
+
+    this.llmProvidersExhausted = new Counter({
+      name: `${this.prefix}_llm_providers_exhausted_total`,
+      help: 'LLM requests for which every configured provider failed',
+      labelNames: ['provider_count', 'feature'],
       registers: [this.registry],
     });
 
@@ -435,6 +459,25 @@ export class BotMetricsService implements OnModuleDestroy {
   /** Current local admission queue depth — saturation signal (#389). */
   setLlmAdmissionQueueDepth(depth: number): void {
     this.llmAdmissionQueueDepth.set(depth);
+  }
+
+  incLlmProviderAttempt(provider: string, feature = 'unknown'): void {
+    this.llmProviderAttempts.inc({ provider, feature });
+  }
+
+  incLlmProviderCircuitEvent(
+    provider: string,
+    action: string,
+    reason = 'unknown',
+  ): void {
+    this.llmProviderCircuitEvents.inc({ provider, action, reason });
+  }
+
+  incLlmProvidersExhausted(providerCount: number, feature = 'unknown'): void {
+    this.llmProvidersExhausted.inc({
+      provider_count: String(Math.max(0, Math.floor(providerCount))),
+      feature,
+    });
   }
 
   /** Structural AdmissionMetrics adapter for the shared llm-agent port (#389). */

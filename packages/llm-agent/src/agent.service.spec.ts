@@ -203,6 +203,28 @@ describe('LlmAgentService', () => {
     });
   });
 
+  it('records provider and model returned by the completion metadata', async () => {
+    const response = makeTextResponse('actual provider', {
+      metadata: {
+        provider: 'openrouter',
+        model: 'openrouter/actual-model',
+        responseId: 'resp-actual',
+        usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
+      },
+    });
+    const adapter = makeAdapter([response]);
+    const { service, usageRecorder } = buildService({ adapter });
+
+    await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+    expect(usageRecorder.recordFromCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'openrouter',
+        model: 'openrouter/actual-model',
+      }),
+    );
+  });
+
   describe('reply() — prompt injection (provider configured)', () => {
     it('blocks injection attempt and does not call LLM', async () => {
       const adapter = makeAdapter([]);

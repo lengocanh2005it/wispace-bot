@@ -27,6 +27,7 @@ export interface PlatformRecordLlmUsageInput {
   feature: string;
   externalUserId: string;
   userId?: number;
+  provider?: string;
   model: string;
   response: { id: string; usage?: unknown };
   correlationId?: string;
@@ -61,6 +62,7 @@ export class PlatformLlmUsageRecorderAdapter implements OnModuleDestroy {
       feature: input.feature,
       externalUserId: input.externalUserId,
       userId: input.userId,
+      provider: input.provider,
       model: input.model,
       response: input.response,
       correlationId: input.correlationId,

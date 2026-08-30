@@ -326,6 +326,45 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     );
   });
 
+  it('Meta Send API timeout → mark claim ambiguous without replay', async () => {
+    const { service, messengerRepository, reportSendJobRepository } =
+      buildService({
+        sendError: new MessengerApiError(
+          'Meta timeout',
+          408,
+          'Request Timeout',
+          '',
+        ),
+      });
+
+    const result = await service.claimAndSend(mapping, {
+      reportDate: '2026-07-11',
+      skipAlreadySentToday: true,
+      examDateForOutbox: '2026-07-15',
+    });
+
+    expect(result.sent).toBe(1);
+    expect(result.deferred).toBe(0);
+    expect(
+      reportSendJobRepository.recordRetryableFailure,
+    ).not.toHaveBeenCalled();
+    expect(
+      messengerRepository.releaseScheduledReportClaim,
+    ).not.toHaveBeenCalled();
+    expect(
+      messengerRepository.markScheduledReportClaimSent,
+    ).toHaveBeenCalledWith(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-07-11',
+      },
+      'lease-1',
+      'sent',
+      'messenger-report:psid-1:2026-07-11',
+      'ambiguous',
+    );
+  });
+
   it('partial bubble send → mark sent, no re-send, no release', async () => {
     const { service, messengerRepository, reportSendJobRepository } =
       buildService({

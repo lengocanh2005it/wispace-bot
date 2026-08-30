@@ -272,10 +272,10 @@ Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 `user_notification_preferences` (one row per WISPACE `user_id`) carries explicit
 consent per feature:
 
-| Column             | Default (`NULL`) | Meaning                                    |
-| ------------------ | ---------------- | ------------------------------------------ |
-| `report_enabled`   | off              | Reports are **opt-in**                      |
-| `reminder_enabled` | on               | Reminders are **opt-out** (own calendar)    |
+| Column             | Default (`NULL`) | Meaning                                  |
+| ------------------ | ---------------- | ---------------------------------------- |
+| `report_enabled`   | off              | Reports are **opt-in**                   |
+| `reminder_enabled` | on               | Reminders are **opt-out** (own calendar) |
 
 - Discord/Zalo report crons and every study-reminder mapping reader filter on
   these columns; ops `forceSend` bypasses the report gate.
@@ -410,7 +410,9 @@ System prompts are in `src/shared/prompts/*.system.txt`, loaded via `load-system
 | `study-reminder.system.txt` | `modules/study-reminder/application/services/study-reminder.service.ts` |
 | `messenger-chat.system.txt` | `modules/messenger/application/agent/messenger-agent.service.ts`        |
 
-Missing `OPENAI_API_KEY` → fallback to hardcoded templates in service (no API call).
+Messenger's direct adapter with missing `OPENAI_API_KEY` uses hardcoded templates
+(no API call); any provider listed in `LLM_PROVIDER_FAILOVER_ORDER` must be
+configured or startup fails closed.
 
 All `chat.completions.create` calls go through **bounded admission control** (#389) — Messenger's `LlmExecutionService` and the shared env-driven port (`createEnvLlmExecutionPort` in `packages/llm-agent`, used by Discord/Zalo chat + reports) both run on one `BoundedAdmissionQueue` core: `LLM_MAX_CONCURRENT` caps in-flight provider calls, `LLM_MAX_QUEUE_DEPTH` (default 50) hard-caps the wait queue, and `LLM_ADMISSION_WAIT_MS` (default 8000, chat) / `LLM_BACKGROUND_ADMISSION_WAIT_MS` (default 1500, reports/reminders — background sheds first) bound how long a call may wait before a typed `LlmOverloadError` (`queue_full` | `wait_timeout` | `global_saturated` | `redis_unavailable`) is thrown before the provider is ever invoked. Retries 429/5xx (`LLM_OPENAI_RETRY_*`) and per-request deadline (`LLM_REQUEST_TIMEOUT_MS`) still **abort the in-flight request** (composed with the caller's AbortSignal), not just the wrapper promise; caller cancellation also cancels admission waiting including Redis-global slot acquisition. Disable gate: `LLM_EXECUTION_ENABLED=false`. Scaling ≥2 pods: set `LLM_GLOBAL_CONCURRENCY_ENABLED=true` (+ `REDIS_ENABLED`) for one Redis-distributed aggregate budget (key `llm:concurrency:global`) shared across all pods and bots — startup fails closed when the flag is set without Redis. Metrics: `<prefix>_llm_admission_rejected_total{reason}`, `<prefix>_llm_admission_wait_seconds`, `<prefix>_llm_admission_queue_depth`.
 
@@ -435,6 +437,18 @@ Timeout/cancellation now aborts the underlying request instead of only rejecting
 - **Budgets** — circuit-breaker timeout = total budget: `computeCircuitBreakerTimeout(requestTimeoutMs, maxRetries)` = `requestTimeoutMs * (maxRetries + 1) + 10_000` (see `packages/wispace-client/src/utils/with-retry.ts`).
 - `UserCalendarScheduleClient.getCalendarSessions({ swallowErrors: true })` rethrows abort errors — cancellation is never masked as "no sessions".
 
+## 7.2. LLM fallback and delivery policy (#422)
+
+The fault matrix, operator thresholds, rollout, and manual-recovery steps are
+maintained in [the LLM fallback policy](llm-fallback-policy.md).
+
+- **Provider configuration is explicit:** the supported provider names are `openai`, `openrouter`, `minimax`, and `openai-compatible`. An unknown provider, or an `openai-compatible` entry without `OPENAI_COMPATIBLE_BASE_URL`, fails startup. A failover order is strict: every listed provider must have a valid API key; no entry is silently dropped.
+- **One operation has one budget:** admission, Redis-global concurrency, provider retries, failover, and the caller deadline share one `AbortSignal` and one total timeout. `LLM_EXECUTION_ENABLED=false` is the incident kill switch.
+- **Chat fallback is deterministic:** provider exhaustion, queue overload, malformed model output, tool timeout, WISPACE failure, and history-unavailable paths use the platform's fixed fallback/error response. A chat fallback is never re-enqueued as a new chat turn.
+- **Reports/reminders keep durable ownership:** deterministic source facts are still sent when available. Retryable, non-ambiguous delivery failures belong to the report/reminder outbox; the platform send service does not run a second retry loop. Ambiguous delivery is recorded as `ambiguous` and is not blindly replayed unless the platform provides an idempotency key.
+- **Usage and failover telemetry use actual metadata:** persisted LLM usage records the provider/model returned by the adapter, while low-cardinality metrics cover provider attempts, circuit transitions, and provider exhaustion (`<prefix>_llm_provider_attempts_total`, `<prefix>_llm_provider_circuit_events_total`, `<prefix>_llm_providers_exhausted_total`).
+- **No-score semantics are explicit:** missing goals, task bands, essay counts, or exam dates remain `null`/unknown in the report contract and render as “chưa có dữ liệu”; they are never converted to zero.
+
 ---
 
 ## 8. `.env` Configuration
@@ -443,7 +457,7 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 
 - **Meta:** `PAGE_ACCESS_TOKEN`, `VERIFY_TOKEN`, `MESSENGER_APP_SECRET`, `MESSENGER_WEBHOOK_SIGNATURE_VERIFY`, `MESSENGER_PAGE_ID`, `GRAPH_API_VERSION`
 - **OpenAI (shared):** `OPENAI_API_KEY`, `OPENAI_MODEL`
-- **LLM failover (shared):** `LLM_PROVIDER_FAILOVER_ORDER` (CSV: `openai,openrouter,minimax`; empty = no failover), `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, `MINIMAX_API_KEY`, `MINIMAX_MODEL`, `MINIMAX_BASE_URL`, `LLM_FAILOVER_COOLDOWN_LONG_MS`, `LLM_FAILOVER_COOLDOWN_SHORT_MS`, `LLM_FAILOVER_QUICK_RETRY_DELAY_MS`
+- **LLM failover (shared):** `LLM_PROVIDER_FAILOVER_ORDER` (CSV: `openai,openrouter,minimax,openai-compatible`; empty = no failover), `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, `MINIMAX_API_KEY`, `MINIMAX_MODEL`, `MINIMAX_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY`, `OPENAI_COMPATIBLE_MODEL`, `OPENAI_COMPATIBLE_BASE_URL`, `LLM_FAILOVER_COOLDOWN_LONG_MS`, `LLM_FAILOVER_COOLDOWN_SHORT_MS`, `LLM_FAILOVER_QUICK_RETRY_DELAY_MS`
 - **LLM execution gate:** `LLM_EXECUTION_ENABLED`, `LLM_MAX_CONCURRENT`, `LLM_MAX_QUEUE_DEPTH`, `LLM_ADMISSION_WAIT_MS`, `LLM_BACKGROUND_ADMISSION_WAIT_MS`, `LLM_OPENAI_RETRY_MAX_ATTEMPTS`, `LLM_OPENAI_RETRY_BACKOFF_MS`, `LLM_REQUEST_TIMEOUT_MS`
 - **LLM global concurrency:** `LLM_GLOBAL_CONCURRENCY_ENABLED`, `LLM_GLOBAL_MAX_CONCURRENT` — Redis-distributed aggregate provider budget across all pods/bots (key `llm:concurrency:global`)
 - **LLM usage (C2):** `LLM_USAGE_*`; USD estimate: `LLM_COST_USD_PER_1M_INPUT_TOKENS_<MODEL>` / `LLM_COST_USD_PER_1M_OUTPUT_TOKENS_<MODEL>` (e.g. `gpt-5.4` → `GPT_5_4`: input `2.50`, output `15.00` per [OpenAI pricing](https://developers.openai.com/api/docs/pricing); ≠ actual invoice)

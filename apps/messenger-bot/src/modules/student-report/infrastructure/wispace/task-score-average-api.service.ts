@@ -28,17 +28,21 @@ export class TaskScoreAverageApiService {
     private readonly userGoalsApiService: UserGoalsApiService,
   ) {}
 
-  async getCapacityData(psid: string): Promise<StudentCapacityInput> {
+  async getCapacityData(
+    psid: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<StudentCapacityInput> {
     const records = await this.getClient().getTaskScoreAverages(
       ID_HEADER,
       psid,
+      options,
     );
 
     if (records.length === 0) {
       throw new StudentReportNoScoreDataError(psid);
     }
 
-    const goals = await this.userGoalsApiService.getUserGoals(psid);
+    const goals = await this.userGoalsApiService.getUserGoals(psid, options);
 
     return this.mapToCapacityInput(records, goals);
   }
@@ -85,17 +89,19 @@ export class TaskScoreAverageApiService {
       current_date: currentDate,
       days_until_exam: daysUntilExam,
       exam_has_passed: examHasPassed,
-      target_band: goals.targetScore,
+      target_band: Number.isFinite(goals.targetScore)
+        ? goals.targetScore
+        : null,
       task1_band: this.roundBand(task1?.avgTotalScore),
       task2_band: this.roundBand(task2?.avgTotalScore),
-      total_essays_task1: task1?.task1Count ?? 0,
-      total_essays_task2: task2?.task2Count ?? 0,
+      total_essays_task1: task1?.task1Count ?? null,
+      total_essays_task2: task2?.task2Count ?? null,
     };
   }
 
-  private roundBand(value?: number): number {
-    if (value === undefined || Number.isNaN(value)) {
-      return 0;
+  private roundBand(value?: number): number | null {
+    if (value === undefined || !Number.isFinite(value)) {
+      return null;
     }
 
     return Math.round(value * 10) / 10;

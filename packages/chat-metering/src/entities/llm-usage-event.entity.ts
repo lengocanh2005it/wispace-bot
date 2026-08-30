@@ -31,6 +31,9 @@ export class LlmUsageEventEntity {
   @Column({ type: 'varchar', length: 16, default: 'messenger' })
   platform: string;
 
+  @Column({ type: 'varchar', length: 32, default: 'unknown' })
+  provider: string;
+
   @Column({
     name: 'external_user_id',
     type: 'varchar',

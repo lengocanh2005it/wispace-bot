@@ -11,6 +11,7 @@ import type {
   TaskScoreAverageRecord,
 } from '@wispace/wispace-client';
 import {
+  buildLlmExecutionConfig,
   createEnvLlmExecutionPort,
   type AdmissionMetrics,
   loadSystemPromptFile,
@@ -20,6 +21,7 @@ import {
   StudentReportCore,
   type StudentReportPorts,
 } from './student-report.service';
+import { StudentReportNoScoreDataError } from './errors';
 import type { StudentCapacityInput } from './types';
 
 const FEATURE = 'STUDENT_REPORT';
@@ -40,7 +42,6 @@ export interface ReportGoalsPort {
 // Execution-control defaults — same contract and env keys as the Messenger
 // app's `LlmExecutionConfigService`, so Discord/Zalo reports share the same
 // documented path as chat and Messenger reports.
-import { buildLlmExecutionConfig } from '@wispace/llm-agent';
 
 /**
  * Thin NestJS adapter around the platform-agnostic `StudentReportCore`
@@ -68,7 +69,10 @@ export class PlatformStudentReportService {
     private readonly llmAdmissionMetrics?: AdmissionMetrics,
   ) {}
 
-  generateReport(externalUserId: string): Promise<string> {
+  generateReport(
+    externalUserId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<string> {
     if (!this.core) {
       this.core = this.buildCore();
     }
@@ -78,7 +82,10 @@ export class PlatformStudentReportService {
       'Asia/Ho_Chi_Minh';
     const correlationId = `${externalUserId}:${todayUsageDate(timezone)}`;
 
-    return this.core.generateReport(externalUserId, { correlationId });
+    return this.core.generateReport(externalUserId, {
+      correlationId,
+      ...(options?.signal ? { signal: options.signal } : {}),
+    });
   }
 
   private buildCore(): StudentReportCore {
@@ -103,6 +110,7 @@ export class PlatformStudentReportService {
           this.usageRecorder.recordFromCompletion({
             feature: FEATURE,
             externalUserId: params.externalUserId,
+            provider: params.provider,
             model: params.model,
             response: params.response as Parameters<
               PlatformLlmUsageRecorderAdapter['recordFromCompletion']
@@ -113,15 +121,20 @@ export class PlatformStudentReportService {
       capacityData: {
         getCapacityData: async (
           externalUserId,
+          options,
         ): Promise<StudentCapacityInput> => {
-          const [taskScores, goals] = await Promise.all([
-            this.goalsService.getTaskScoreAverages(externalUserId),
-            this.goalsService.getUserGoals(externalUserId),
-          ]);
-
+          const taskScores = await this.goalsService.getTaskScoreAverages(
+            externalUserId,
+            options,
+          );
           if (!taskScores || taskScores.length === 0) {
-            throw new Error('No score data available');
+            throw new StudentReportNoScoreDataError(externalUserId);
           }
+
+          const goals = await this.goalsService.getUserGoals(
+            externalUserId,
+            options,
+          );
 
           const task1 = taskScores.find((r) =>
             r.task.toLowerCase().includes('task 1'),
@@ -152,15 +165,13 @@ export class PlatformStudentReportService {
             current_date: currentDate,
             days_until_exam: Math.max(0, daysUntilExam),
             exam_has_passed: examHasPassed,
-            target_band: goals.targetScore ?? 0,
-            task1_band: task1
-              ? Math.round((task1.avgTotalScore ?? 0) * 10) / 10
-              : 0,
-            task2_band: task2
-              ? Math.round((task2.avgTotalScore ?? 0) * 10) / 10
-              : 0,
-            total_essays_task1: task1?.task1Count ?? 0,
-            total_essays_task2: task2?.task2Count ?? 0,
+            target_band: Number.isFinite(goals.targetScore)
+              ? goals.targetScore
+              : null,
+            task1_band: task1 ? this.roundBand(task1.avgTotalScore) : null,
+            task2_band: task2 ? this.roundBand(task2.avgTotalScore) : null,
+            total_essays_task1: task1?.task1Count ?? null,
+            total_essays_task2: task2?.task2Count ?? null,
           };
         },
       },
@@ -180,6 +191,12 @@ export class PlatformStudentReportService {
       },
       ports,
     );
+  }
+
+  private roundBand(value?: number): number | null {
+    return value !== undefined && Number.isFinite(value)
+      ? Math.round(value * 10) / 10
+      : null;
   }
 
   private readEnvBoolean(key: string, defaultValue: boolean): boolean {

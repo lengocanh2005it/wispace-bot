@@ -111,4 +111,25 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
       'test_scheduled_send_suppressed_total{feature="reminder"} 2',
     );
   });
+
+  it('exposes provider failover telemetry with bounded labels', async () => {
+    const svc = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+    svc.incLlmProviderAttempt('openai', 'FREE_FORM_CHAT');
+    svc.incLlmProviderCircuitEvent('openai', 'open', 'quota_exceeded');
+    svc.incLlmProvidersExhausted(2, 'FREE_FORM_CHAT');
+
+    const out = await svc.getMetrics();
+    expect(out).toContain(
+      'test_llm_provider_attempts_total{provider="openai",feature="FREE_FORM_CHAT"} 1',
+    );
+    expect(out).toContain(
+      'test_llm_provider_circuit_events_total{provider="openai",action="open",reason="quota_exceeded"} 1',
+    );
+    expect(out).toContain(
+      'test_llm_providers_exhausted_total{provider_count="2",feature="FREE_FORM_CHAT"} 1',
+    );
+  });
 });

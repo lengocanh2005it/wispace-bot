@@ -31,6 +31,7 @@ describe('Discord chat module — LLM provider factory', () => {
           provider: 'openai-compatible',
           getApiKey: () => 'key-b',
           getModel: () => 'openai/gpt-4o-mini',
+          getBaseUrl: () => 'https://llm.example.test/v1',
         },
       ];
       const adapter = createFailoverLlmProviderAdapter(entries, [
@@ -42,7 +43,7 @@ describe('Discord chat module — LLM provider factory', () => {
   });
 
   describe('when only 1 provider configured in order', () => {
-    it('returns single adapter directly (no failover wrapper)', () => {
+    it('fails closed when the configured order names a missing provider', () => {
       const entries: LlmProviderEntryConfig[] = [
         {
           provider: 'openai',
@@ -50,12 +51,12 @@ describe('Discord chat module — LLM provider factory', () => {
           getModel: () => 'gpt-5.4',
         },
       ];
-      const adapter = createFailoverLlmProviderAdapter(
-        entries,
-        ['openai', 'openai-compatible'], // openai-compatible not in entries
-      );
-      expect(adapter).toBeInstanceOf(OpenAiAdapter);
-      expect(adapter).not.toBeInstanceOf(FailoverLlmProviderAdapter);
+      expect(() =>
+        createFailoverLlmProviderAdapter(entries, [
+          'openai',
+          'openai-compatible',
+        ]),
+      ).toThrow(/missing provider|no configuration/i);
     });
   });
 });

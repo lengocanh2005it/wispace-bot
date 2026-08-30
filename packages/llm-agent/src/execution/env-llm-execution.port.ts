@@ -1,4 +1,5 @@
 import { errorMessage } from '@wispace/bot-common/masking';
+import { isAbortError } from '@wispace/bot-common/utils';
 import type Redis from 'ioredis';
 import type { LlmProviderAdapter } from '../provider/llm-provider.adapter';
 import type { LlmExecutionPort } from '../ports';
@@ -44,6 +45,8 @@ export interface EnvLlmExecutionConfig {
 
 /** Shared Redis keyspace for the cross-pod aggregate LLM budget. */
 const REDIS_SLOT_KEY = 'llm:concurrency:global';
+const EXECUTION_CIRCUIT_FAILURE_THRESHOLD = 3;
+const EXECUTION_CIRCUIT_RESET_MS = 60_000;
 
 /**
  * Admission telemetry for all three bots (#389): low-cardinality rejection
@@ -66,6 +69,7 @@ export interface AdmissionMetrics {
  *  - per-instance bounded admission queue on provider calls (#389)
  *  - per-request deadline composed with the caller signal, aborts the
  *    in-flight provider request (issue #121)
+ *  - shared execution circuit breaker for provider exhaustion
  *  - retry budget (429/5xx) with abort-aware backoff
  *  - optional Redis-distributed aggregate budget shared across pods/bots
  */
@@ -87,6 +91,45 @@ export function createEnvLlmExecutionPort(
   const nativeRedis = config.globalConcurrencyEnabled
     ? (config.redis ?? null)
     : null;
+  let consecutiveFailures = 0;
+  let circuitOpenedAt = 0;
+  let halfOpenInFlight = false;
+
+  const assertCircuitAvailable = (): void => {
+    if (!circuitOpenedAt) return;
+
+    if (Date.now() - circuitOpenedAt < EXECUTION_CIRCUIT_RESET_MS) {
+      throw new Error('LLM provider execution circuit is open');
+    }
+
+    if (halfOpenInFlight) {
+      throw new Error('LLM provider execution circuit is half-open');
+    }
+    halfOpenInFlight = true;
+  };
+
+  const recordSuccess = (): void => {
+    if (circuitOpenedAt) {
+      logger.warn('LLM provider execution circuit closed — recovered');
+    }
+    consecutiveFailures = 0;
+    circuitOpenedAt = 0;
+    halfOpenInFlight = false;
+  };
+
+  const recordFailure = (error: unknown): void => {
+    if (isAbortError(error)) {
+      halfOpenInFlight = false;
+      return;
+    }
+
+    consecutiveFailures += 1;
+    if (consecutiveFailures >= EXECUTION_CIRCUIT_FAILURE_THRESHOLD) {
+      circuitOpenedAt = Date.now();
+      halfOpenInFlight = false;
+      logger.warn('LLM provider execution circuit OPEN — failing fast');
+    }
+  };
 
   return {
     run: async <T>(
@@ -96,6 +139,14 @@ export function createEnvLlmExecutionPort(
       if (!config.enabled) {
         return fn(undefined);
       }
+      assertCircuitAvailable();
+
+      // One deadline covers admission, the optional Redis slot, retries, and
+      // the provider request; no nested layer gets a fresh timeout budget.
+      const deadlineSignal = AbortSignal.timeout(config.requestTimeoutMs);
+      const signal = meta?.signal
+        ? AbortSignal.any([meta.signal, deadlineSignal])
+        : deadlineSignal;
 
       // Acquire global Redis slot INSIDE the local limiter callback (#153) —
       // slots are only held during actual LLM execution, not while waiting
@@ -104,10 +155,13 @@ export function createEnvLlmExecutionPort(
       let ticket: AdmissionTicket;
       try {
         ticket = await queue.acquire({
-          signal: meta?.signal,
+          signal,
           waitBudgetMs: admissionWaitBudgetMs(config, meta?.feature),
         });
       } catch (error) {
+        // A half-open probe may be rejected before a provider call (queue or
+        // Redis failure); do not leave the execution circuit wedged forever.
+        halfOpenInFlight = false;
         if (error instanceof LlmOverloadError) {
           metrics?.incrementCounter('llm_admission_rejected_total', {
             reason: error.reason,
@@ -126,11 +180,6 @@ export function createEnvLlmExecutionPort(
           // Compose deadline + caller signal BEFORE slot acquisition so
           // cancellation aborts the Redis retry loop and avoids holding
           // a local admission slot while spinning (#364).
-          const deadlineSignal = AbortSignal.timeout(config.requestTimeoutMs);
-          const acquireSignal = meta?.signal
-            ? AbortSignal.any([meta.signal, deadlineSignal])
-            : deadlineSignal;
-
           release = await acquireRedisSlot(
             nativeRedis,
             REDIS_SLOT_KEY,
@@ -138,7 +187,7 @@ export function createEnvLlmExecutionPort(
             logger,
             {
               metrics,
-              signal: acquireSignal,
+              signal,
               leaseMs: Math.max(config.requestTimeoutMs, 60_000),
               maxRetries: config.globalAcquireMaxRetries,
               retryDelayMs: config.globalAcquireRetryDelayMs,
@@ -146,27 +195,31 @@ export function createEnvLlmExecutionPort(
             },
           );
         }
-        const deadlineSignal = AbortSignal.timeout(config.requestTimeoutMs);
-        const signal = meta?.signal
-          ? AbortSignal.any([meta.signal, deadlineSignal])
-          : deadlineSignal;
-        return await retryWithBackoff(() => fn(signal), {
-          maxAttempts: config.maxAttempts,
-          baseDelayMs: config.baseBackoffMs,
-          isRetryable: (error) => adapter.isRetryableError(error),
-          onRetry: (attempt, backoffMs, error) =>
-            logger.warn(
-              `LLM provider retry feature=${
-                meta?.feature ?? FEATURE
-              } correlation=${
-                meta?.correlationId ?? 'n/a'
-              } attempt=${attempt}/${config.maxAttempts} backoffMs=${backoffMs}: ${errorMessage(
-                error,
-              )}`,
-            ),
-          signal,
-        });
+        try {
+          const result = await retryWithBackoff(() => fn(signal), {
+            maxAttempts: config.maxAttempts,
+            baseDelayMs: config.baseBackoffMs,
+            isRetryable: (error) => adapter.isRetryableError(error),
+            onRetry: (attempt, backoffMs, error) =>
+              logger.warn(
+                `LLM provider retry feature=${
+                  meta?.feature ?? FEATURE
+                } correlation=${
+                  meta?.correlationId ?? 'n/a'
+                } attempt=${attempt}/${config.maxAttempts} backoffMs=${backoffMs}: ${errorMessage(
+                  error,
+                )}`,
+              ),
+            signal,
+          });
+          recordSuccess();
+          return result;
+        } catch (error) {
+          recordFailure(error);
+          throw error;
+        }
       } finally {
+        halfOpenInFlight = false;
         await release?.();
         ticket.release();
         metrics?.observeQueueDepth?.(queue.waitingCount);

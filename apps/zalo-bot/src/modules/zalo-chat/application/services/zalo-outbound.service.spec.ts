@@ -209,6 +209,40 @@ describe('ZaloOutboundService', () => {
     delete global.fetch;
   });
 
+  it('lets the report outbox own retryable delivery without a second local send', async () => {
+    const tokenService = {
+      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
+    } as unknown as ZaloTokenService;
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      statusText: 'Service Unavailable',
+      json: () => Promise.resolve({ error: 503, message: 'temporary outage' }),
+    });
+    const deadLetter = { save: jest.fn().mockResolvedValue(true) };
+
+    global.fetch = fetchMock;
+
+    const service = new ZaloOutboundService(
+      tokenService,
+      deliveryLog as never,
+      deadLetter as never,
+    );
+
+    await expect(
+      service.sendText('zalo-1', 'report', {
+        deliveryKey: 'zalo-report:zalo-1:2026-08-30',
+        deadLetterOn: 'ambiguous',
+        retryOn: 'none',
+      }),
+    ).rejects.toBeInstanceOf(ZaloSendError);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(deadLetter.save).not.toHaveBeenCalled();
+
+    delete global.fetch;
+  });
+
   it('#156: retries network errors and records ambiguous delivery', async () => {
     const tokenService = {
       getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),

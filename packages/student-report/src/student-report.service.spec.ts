@@ -1,6 +1,7 @@
 import { StudentReportCore } from './student-report.service';
 import {
   StudentReportNoScoreDataError,
+  isStudentReportRetryableError,
   type RetryableApiError,
 } from './errors';
 import type { StudentCapacityInput } from './types';
@@ -157,8 +158,8 @@ describe('StudentReportCore', () => {
     const response: LlmJsonResponse = {
       content: JSON.stringify({ headline: 'Headline' }),
       metadata: {
-        provider: 'openai',
-        model: 'gpt-5.4',
+        provider: 'openrouter',
+        model: 'openrouter/quality-model',
         responseId: 'resp-1',
         usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
       },
@@ -192,6 +193,8 @@ describe('StudentReportCore', () => {
       expect.objectContaining({
         feature: 'STUDENT_REPORT',
         externalUserId: 'user-1',
+        provider: 'openrouter',
+        model: 'openrouter/quality-model',
       }),
     );
   });
@@ -294,5 +297,24 @@ describe('StudentReportCore', () => {
     ).rejects.toThrow('aborted');
     // No capacity fetch after the caller gave up.
     expect(capacityData.getCapacityData).not.toHaveBeenCalled();
+  });
+
+  it('classifies an aborted report generation as retryable', async () => {
+    const controller = new AbortController();
+    controller.abort(new DOMException('deadline exceeded', 'TimeoutError'));
+    const core = new StudentReportCore(
+      { adapter: {} as LlmProviderAdapter, systemPrompt: 'prompt' },
+      {
+        llmExecution: { run: jest.fn() },
+        usageRecorder: { recordFromCompletion: jest.fn() },
+        capacityData: { getCapacityData: jest.fn() },
+      },
+    );
+
+    const error = await core
+      .generateReportStatic('user-1', controller.signal)
+      .catch((value: unknown) => value);
+
+    expect(isStudentReportRetryableError(error)).toBe(true);
   });
 });

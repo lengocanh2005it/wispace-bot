@@ -138,10 +138,10 @@ export class StudyReminderService {
 
     try {
       const capacity = await this.studentData.getCapacityData(psid);
-      input.task1Band = capacity.task1_band;
-      input.task2Band = capacity.task2_band;
-      if (!input.targetScore) {
-        input.targetScore = capacity.target_band;
+      input.task1Band = capacity.task1_band ?? undefined;
+      input.task2Band = capacity.task2_band ?? undefined;
+      if (input.targetScore == null) {
+        input.targetScore = capacity.target_band ?? undefined;
       }
     } catch (error) {
       this.logger.warn(
@@ -187,7 +187,8 @@ export class StudyReminderService {
       feature: 'STUDY_REMINDER',
       psid: context.psid,
       userId: context.userId,
-      model,
+      provider: response.metadata.provider,
+      model: response.metadata.model,
       response: {
         id: response.metadata.responseId ?? '',
         usage: response.metadata.usage

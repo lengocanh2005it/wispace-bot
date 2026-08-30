@@ -62,6 +62,26 @@ describe('buildReport', () => {
     expect(report['tình trạng task 1']).toContain('band 6');
   });
 
+  it('omits unknown facts instead of rendering fabricated zero values', () => {
+    const report = buildFallbackReport({
+      ...baseInput,
+      exam_date: '',
+      exam_date_display: '',
+      target_band: null,
+      task1_band: null,
+      task2_band: null,
+      total_essays_task1: null,
+      total_essays_task2: null,
+    });
+
+    expect(report.headline).toMatch(/chưa có ngày thi/i);
+    expect(report.headline).toMatch(/chưa đặt mục tiêu/i);
+    expect(report.streak).toContain('Chưa đủ dữ liệu');
+    expect(report['tình trạng task 1']).toMatch(/chưa có dữ liệu/i);
+    expect(report['tình trạng task 2']).toMatch(/chưa có dữ liệu/i);
+    expect(formatReport(report)).not.toContain('0 bài');
+  });
+
   it('prepends the deterministic factual headline to the LLM prose', () => {
     const report = buildReport({ headline: 'Cố lên nhé!' }, baseInput);
 

@@ -175,6 +175,49 @@ describe('FailoverLlmProviderAdapter', () => {
         LlmAllProvidersExhaustedError,
       );
     });
+
+    it('emits bounded provider attempt, circuit, and exhaustion telemetry', async () => {
+      const attempts: Array<[string, string | undefined]> = [];
+      const circuitEvents: string[] = [];
+      const exhausted: string[][] = [];
+      const candidateA = makeCandidate({
+        name: 'a',
+        generateJson: () => {
+          throw Object.assign(new Error('quota'), { status: 402 });
+        },
+        normalizeError: () => quotaError(),
+      });
+      const candidateB = makeCandidate({
+        name: 'b',
+        generateJson: () => {
+          throw Object.assign(new Error('server'), { status: 500 });
+        },
+        normalizeError: () => serverError(),
+      });
+
+      const adapter = new FailoverLlmProviderAdapter(
+        [candidateA, candidateB],
+        undefined,
+        Date.now,
+        undefined,
+        undefined,
+        0,
+        (event) => circuitEvents.push(`${event.provider}:${event.action}`),
+        (provider, feature) => attempts.push([provider, feature]),
+        (providers) => exhausted.push(providers),
+      );
+
+      await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+        LlmAllProvidersExhaustedError,
+      );
+      expect(attempts).toEqual([
+        ['a', 'FREE_FORM_CHAT'],
+        ['b', 'FREE_FORM_CHAT'],
+        ['b', 'FREE_FORM_CHAT'],
+      ]);
+      expect(circuitEvents).toEqual(['a:open', 'b:open']);
+      expect(exhausted).toEqual([['a', 'b']]);
+    });
   });
 
   describe('chatWithTools — failover', () => {

@@ -105,6 +105,8 @@ export class ZaloOutboundService {
       skipDeadLetter?: boolean;
       deliveryKey?: string;
       clarification?: boolean;
+      deadLetterOn?: 'all' | 'ambiguous' | 'none';
+      retryOn?: 'all' | 'none';
     },
   ): Promise<void> {
     let ambiguousDeliveryRecorded = false;
@@ -112,12 +114,17 @@ export class ZaloOutboundService {
       await withRetry(() => this.sendTextOnce(zaloUserId, text), {
         maxRetries: 1,
         baseDelayMs: 1_000,
-        shouldRetry: (error) =>
-          options?.clarification === true &&
-          error instanceof ZaloSendError &&
-          error.isAmbiguousDelivery()
-            ? false
-            : isZaloRetryableError(error),
+        shouldRetry: (error) => {
+          if (options?.retryOn === 'none') return false;
+          if (
+            options?.clarification === true &&
+            error instanceof ZaloSendError &&
+            error.isAmbiguousDelivery()
+          ) {
+            return false;
+          }
+          return isZaloRetryableError(error);
+        },
         onRetry: (attempt, maxRetries, error) => {
           if (error instanceof ZaloSendError && error.isAmbiguousDelivery()) {
             this.metrics?.incDmDeliveryFailure(SEND_FAILURE_REASON_AMBIGUOUS);
@@ -150,10 +157,14 @@ export class ZaloOutboundService {
       });
       const ambiguous =
         error instanceof ZaloSendError && error.isAmbiguousDelivery();
-      if (
-        options?.skipDeadLetter !== true &&
-        (options?.clarification !== true || !ambiguous)
-      ) {
+      const shouldPersistDeadLetter =
+        options?.deadLetterOn === 'ambiguous'
+          ? ambiguous
+          : options?.deadLetterOn === 'none'
+            ? false
+            : options?.skipDeadLetter !== true &&
+              (options?.clarification !== true || !ambiguous);
+      if (shouldPersistDeadLetter) {
         const persisted = await this.deadLetter?.save({
           externalUserId: zaloUserId,
           rawPayload: { zaloUserId, text },

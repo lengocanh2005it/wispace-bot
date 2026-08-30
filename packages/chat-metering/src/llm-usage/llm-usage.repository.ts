@@ -41,6 +41,7 @@ export class LlmUsageRepository {
           usage_date,
           feature,
           platform,
+          provider,
           external_user_id,
           user_id,
           model,
@@ -55,12 +56,13 @@ export class LlmUsageRepository {
           error_message,
           estimated_cost_usd
         )
-        VALUES ($1::date, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        VALUES ($1::date, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       `,
       [
         input.usageDate,
         input.feature,
         this.platform,
+        input.provider ?? 'unknown',
         input.externalUserId ?? null,
         input.userId ?? null,
         input.model,
