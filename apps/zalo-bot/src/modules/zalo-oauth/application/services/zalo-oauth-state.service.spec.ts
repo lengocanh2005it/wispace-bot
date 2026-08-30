@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto';
+import { Logger } from '@nestjs/common';
 import type { Repository } from 'typeorm';
 import { ZaloOauthStateService } from './zalo-oauth-state.service';
 import { ZaloOauthStateEntity } from '@zalo/infrastructure/database/entities/zalo-oauth-state.entity';
@@ -48,6 +49,35 @@ describe('ZaloOauthStateService', () => {
     const savedArg = save.mock.calls[0][0];
     expect(savedArg.codeVerifier).not.toContain('verifier-123');
     expect(savedArg.linkToken).not.toContain('link-token-123');
+  });
+
+  it('deletes expired states (older than TTL, bounded) when creating a new state', async () => {
+    const query = jest.fn().mockResolvedValue([]);
+    const service = new ZaloOauthStateService(
+      buildRepo({ query, save: jest.fn().mockResolvedValue(undefined) }),
+    );
+
+    await service.create('verifier-123', 'link-token-123');
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('DELETE FROM "zalo_oauth_states"'),
+      // 10 minutes in ms — the agreed TTL; pins cleanup to consume()'s expiry.
+      [600_000],
+    );
+    const cleanupSql = query.mock.calls[0][0] as string;
+    expect(cleanupSql).toContain("interval '1 millisecond'");
+    expect(cleanupSql).toContain('LIMIT 100');
+  });
+
+  it('still creates the state when the cleanup query fails', async () => {
+    const query = jest.fn().mockRejectedValueOnce(new Error('db down'));
+    const save = jest.fn().mockResolvedValue(undefined);
+    const service = new ZaloOauthStateService(buildRepo({ query, save }));
+
+    const state = await service.create('verifier-123', 'link-token-123');
+
+    expect(state.length).toBeGreaterThan(10);
+    expect(save).toHaveBeenCalled();
   });
 
   it('atomically consumes and decrypts a fresh state', async () => {
@@ -130,5 +160,40 @@ describe('ZaloOauthStateService', () => {
 
     const consumed = await service.consume('state-1');
     expect(consumed).toBeUndefined();
+  });
+
+  it('does not log the raw state nonce when decryption fails', async () => {
+    const warnSpy = jest
+      .spyOn(Logger.prototype, 'warn')
+      .mockImplementation(() => undefined);
+    const query = jest.fn().mockResolvedValue([
+      {
+        code_verifier: 'legacy-verifier',
+        link_token: 'legacy-token',
+        created_at: new Date(),
+      },
+    ]);
+    const service = new ZaloOauthStateService(buildRepo({ query }));
+
+    await service.consume('raw-state-nonce-123');
+
+    const warnCalls = warnSpy.mock.calls.map((call) => String(call[0]));
+    for (const line of warnCalls) {
+      expect(line).not.toContain('raw-state-nonce-123');
+    }
+    warnSpy.mockRestore();
+  });
+
+  it('consumes via a single atomic DELETE..RETURNING (no read-then-delete race)', async () => {
+    const query = jest.fn().mockResolvedValue([]);
+    const service = new ZaloOauthStateService(buildRepo({ query }));
+
+    await service.consume('state-1');
+
+    expect(query).toHaveBeenCalledTimes(1);
+    const sql = query.mock.calls[0][0] as string;
+    expect(sql).toContain('DELETE FROM "zalo_oauth_states"');
+    expect(sql).toContain('RETURNING');
+    expect(sql).not.toMatch(/^\s*SELECT/i);
   });
 });

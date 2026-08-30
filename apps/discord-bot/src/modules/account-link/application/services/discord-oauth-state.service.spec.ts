@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto';
+import { Logger } from '@nestjs/common';
 import { DiscordOauthStateService } from './discord-oauth-state.service';
 import { encryptAesGcm } from '@wispace/bot-common/utils';
 
@@ -46,6 +47,33 @@ describe('DiscordOauthStateService', () => {
       // Ensure plaintext is not stored
       const savedArg = repo.save.mock.calls[0][0];
       expect(savedArg.linkToken).not.toContain('link-token-123');
+    });
+
+    it('deletes expired states (older than TTL, bounded) when creating a new state', async () => {
+      const repo = mockRepo();
+      const service = new DiscordOauthStateService(repo as never);
+
+      await service.create('link-token-123');
+
+      expect(repo.query).toHaveBeenCalledWith(
+        expect.stringContaining('DELETE FROM "discord_oauth_states"'),
+        // 10 minutes in ms — the agreed TTL; pins cleanup to consume()'s expiry.
+        [600_000],
+      );
+      const cleanupSql = repo.query.mock.calls[0][0] as string;
+      expect(cleanupSql).toContain("interval '1 millisecond'");
+      expect(cleanupSql).toContain('LIMIT 100');
+    });
+
+    it('still creates the state when the cleanup query fails', async () => {
+      const repo = mockRepo();
+      repo.query.mockRejectedValueOnce(new Error('db down'));
+      const service = new DiscordOauthStateService(repo as never);
+
+      const state = await service.create('link-token-123');
+
+      expect(typeof state).toBe('string');
+      expect(repo.save).toHaveBeenCalled();
     });
   });
 
@@ -111,6 +139,38 @@ describe('DiscordOauthStateService', () => {
 
       const result = await service.consume('some-state');
       expect(result).toBeUndefined();
+    });
+
+    it('does not log the raw state nonce when decryption fails', async () => {
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      const repo = mockRepo();
+      repo.query.mockResolvedValue([
+        { link_token: 'legacy-plaintext-token', created_at: new Date() },
+      ]);
+      const service = new DiscordOauthStateService(repo as never);
+
+      await service.consume('raw-state-nonce-123');
+
+      const warnCalls = warnSpy.mock.calls.map((call) => String(call[0]));
+      for (const line of warnCalls) {
+        expect(line).not.toContain('raw-state-nonce-123');
+      }
+      warnSpy.mockRestore();
+    });
+
+    it('consumes via a single atomic DELETE..RETURNING (no read-then-delete race)', async () => {
+      const repo = mockRepo();
+      const service = new DiscordOauthStateService(repo as never);
+
+      await service.consume('some-state');
+
+      expect(repo.query).toHaveBeenCalledTimes(1);
+      const sql = repo.query.mock.calls[0][0] as string;
+      expect(sql).toContain('DELETE FROM "discord_oauth_states"');
+      expect(sql).toContain('RETURNING');
+      expect(sql).not.toMatch(/^\s*SELECT/i);
     });
   });
 });

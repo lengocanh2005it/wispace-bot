@@ -98,4 +98,14 @@ describe('DiscordOauthController HTTP binding (#388)', () => {
     expect(stateService.consume).not.toHaveBeenCalledWith('state-nonce');
     expect(completionService.completeLink).not.toHaveBeenCalled();
   });
+
+  it('rejects an oversized link token like a missing one (indistinguishable)', async () => {
+    const response = await fetch(
+      `${baseUrl}/discord/oauth/url?state=${'a'.repeat(513)}`,
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ url: '' });
+    expect(stateService.create).not.toHaveBeenCalled();
+  });
 });
