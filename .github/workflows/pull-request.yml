@@ -18,6 +18,11 @@ jobs:
   secret-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # gitleaks-action v3 lists PR commits during pull_request scans — needs
+    # pull-requests: read in addition to contents: read, else 403.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout code (full history for gitleaks)
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
