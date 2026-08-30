@@ -252,3 +252,6 @@ jobs:
 
       - name: Check chat-agent WISPACE client imports (#425)
         run: bash .github/scripts/check-chat-agent-wispace-imports.sh
+
+      - name: Check study-reminder-shared WISPACE client imports (#424)
+        run: bash .github/scripts/check-study-reminder-shared-wispace-imports.sh

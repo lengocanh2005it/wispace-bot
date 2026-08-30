@@ -75,6 +75,7 @@ Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (re
 `packages/study-reminder-shared` (`@wispace/study-reminder-shared`) contains pure functions for computing study reminder schedules (`computeRemindAt`, `getMinutesUntilSession`, `isSessionStarted`, `formatScheduledTimeLabel`) in `src/utils/schedule.ts`, plus dispatch/sync/worker services for all platforms.
 
 - **Do not** import anything beyond `Intl`/`Date` built-ins for the pure functions. App reads `STUDY_REMINDER_*` from `ConfigService` then passes values (minutesBefore, minLeadMinutes, timezone) into pure functions — see `apps/messenger-bot/src/modules/study-reminder/application/services/study-reminder-schedule.service.ts` for a thin adapter.
+- **Do not** reference the concrete WISPACE client classes (#424): the worker's session source is injected via the required `GET_SESSIONS` token (`GetSessionsFn`), and the reschedule command consumes the structural `StudyCalendarPort` + `RescheduleConfigPort` — each bot's composition root bridges its adapter (`createCalendarGetSessions` for Discord/Zalo, `createSessionSourceGetSessions` for Messenger). Pure helpers + type-only contracts from `wispace-client` stay allowed. Enforced by `.github/scripts/check-study-reminder-shared-wispace-imports.sh`.
 - Modify package → rebuild + test `apps/messenger-bot` (`npx turbo run build test --filter=@wispace/messenger-bot... --filter=@wispace/study-reminder-shared`).
 
 ## Dependency flow within one app (mandatory)

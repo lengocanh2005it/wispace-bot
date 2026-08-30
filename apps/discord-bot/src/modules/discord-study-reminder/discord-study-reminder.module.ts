@@ -6,6 +6,8 @@ import {
   StudyReminderWorkerService,
   StudyReminderJobEntity,
   createStudyReminderProviders,
+  createCalendarGetSessions,
+  GET_SESSIONS,
 } from '@wispace/study-reminder-shared';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
 import { BotCommonModule } from '@wispace/bot-common/guard';
@@ -28,15 +30,24 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
     WispaceModule,
     DatabaseModule,
   ],
-  providers: createStudyReminderProviders({
-    platform: 'discord',
-    mappingTable: 'discord_account_links',
-    mappingEntity: DiscordAccountLinkEntity,
-    outboundService: DiscordOutboundService,
-    calendarService: WispaceCalendarService,
-    dormancyGate: WebActivityService,
-    dormancySuppressionMetric: BotMetricsService,
-  }),
+  providers: [
+    {
+      // Worker session source — structural bridge over the concrete WISPACE
+      // calendar client wired by WispaceModule (#424).
+      provide: GET_SESSIONS,
+      useFactory: (calendarService: WispaceCalendarService) =>
+        createCalendarGetSessions(calendarService),
+      inject: [WispaceCalendarService],
+    },
+    ...createStudyReminderProviders({
+      platform: 'discord',
+      mappingTable: 'discord_account_links',
+      mappingEntity: DiscordAccountLinkEntity,
+      outboundService: DiscordOutboundService,
+      dormancyGate: WebActivityService,
+      dormancySuppressionMetric: BotMetricsService,
+    }),
+  ],
   exports: [
     StudyReminderSyncService,
     StudyReminderDispatchService,

@@ -14,6 +14,8 @@ export * from './ports/message-sender.port';
 export * from './ports/mapping-reader.port';
 export * from './ports/study-reminder-job.repository.port';
 export * from './ports/dispatch-hooks.port';
+export * from './ports/get-sessions.port';
+export * from './ports/study-calendar.port';
 
 // Entities
 export { StudyReminderJobEntity } from './entities/study-reminder-job.entity';

@@ -2,14 +2,16 @@ import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import { sleep } from '@wispace/bot-common/utils';
 import {
-  WispaceCalendarService,
-  WispaceConfigService,
   resolveRescheduleSlot,
   resolveScheduledAtFromEventDate,
   type CalendarSessionTimeRange,
   type RescheduleSchedulingMode,
   type UserCalendarRecord,
 } from '@wispace/wispace-client';
+import type {
+  RescheduleConfigPort,
+  StudyCalendarPort,
+} from '../ports/study-calendar.port';
 import type {
   RescheduleStudySessionResult,
   StudyCalendarEntryView,
@@ -31,9 +33,9 @@ export interface PlatformStudyCalendarCommandOptions {
 
 /**
  * Delete-recreate calendar reschedule flow + upcoming-session listing,
- * shared by the Discord and Zalo bots. Uses the same write-capable Wispace
- * calendar client + pure scheduling math as messenger-bot's
- * `StudyCalendarCommandService`.
+ * shared by the Discord and Zalo bots. Consumes the structural calendar
+ * port (`StudyCalendarPort`) + scheduling config (`RescheduleConfigPort`) —
+ * concrete WISPACE adapters are wired at each bot's composition root (#424).
  */
 export class PlatformStudyCalendarCommandService {
   private readonly logger = new Logger(
@@ -42,8 +44,8 @@ export class PlatformStudyCalendarCommandService {
 
   constructor(
     private readonly options: PlatformStudyCalendarCommandOptions,
-    private readonly calendarService: WispaceCalendarService,
-    private readonly configService: WispaceConfigService,
+    private readonly calendarService: StudyCalendarPort,
+    private readonly configService: RescheduleConfigPort,
   ) {}
 
   async listEntries(

@@ -1,16 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
 import type {
-  WispaceCalendarService,
-  WispaceConfigService,
-} from '@wispace/wispace-client';
+  RescheduleConfigPort,
+  StudyCalendarPort,
+} from '../ports/study-calendar.port';
 import { PlatformStudyCalendarCommandService } from './platform-study-calendar-command.service';
 
 describe('PlatformStudyCalendarCommandService', () => {
   const timezone = 'Asia/Ho_Chi_Minh';
 
-  function buildCalendarService(
-    overrides: Partial<WispaceCalendarService> = {},
-  ) {
+  function buildCalendarService(overrides: Partial<StudyCalendarPort> = {}) {
     return {
       listCalendars: jest.fn(),
       getCalendarSessions: jest.fn(),
@@ -18,15 +16,15 @@ describe('PlatformStudyCalendarCommandService', () => {
       deleteCalendar: jest.fn(),
       createCalendar: jest.fn(),
       ...overrides,
-    } as unknown as WispaceCalendarService;
+    } as unknown as StudyCalendarPort;
   }
 
-  function buildConfigService(overrides: Partial<WispaceConfigService> = {}) {
+  function buildConfigService(overrides: Partial<RescheduleConfigPort> = {}) {
     return {
       getTimezone: jest.fn(() => timezone),
       getMinLeadMinutes: jest.fn(() => 120),
       ...overrides,
-    } as unknown as WispaceConfigService;
+    } as unknown as RescheduleConfigPort;
   }
 
   it('listEntries maps sessions to calendar entries sorted by time', async () => {

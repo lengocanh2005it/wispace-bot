@@ -6,6 +6,8 @@ import {
   StudyReminderWorkerService,
   StudyReminderJobEntity,
   createStudyReminderProviders,
+  createCalendarGetSessions,
+  GET_SESSIONS,
 } from '@wispace/study-reminder-shared';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
@@ -30,15 +32,24 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
     ZaloWispaceModule,
     DatabaseModule,
   ],
-  providers: createStudyReminderProviders({
-    platform: 'zalo',
-    mappingTable: 'zalo_account_links',
-    mappingEntity: ZaloAccountLinkEntity,
-    outboundService: ZaloOutboundService,
-    calendarService: WispaceCalendarService,
-    dormancyGate: WebActivityService,
-    dormancySuppressionMetric: BotMetricsService,
-  }),
+  providers: [
+    {
+      // Worker session source — structural bridge over the concrete WISPACE
+      // calendar client wired by ZaloWispaceModule (#424).
+      provide: GET_SESSIONS,
+      useFactory: (calendarService: WispaceCalendarService) =>
+        createCalendarGetSessions(calendarService),
+      inject: [WispaceCalendarService],
+    },
+    ...createStudyReminderProviders({
+      platform: 'zalo',
+      mappingTable: 'zalo_account_links',
+      mappingEntity: ZaloAccountLinkEntity,
+      outboundService: ZaloOutboundService,
+      dormancyGate: WebActivityService,
+      dormancySuppressionMetric: BotMetricsService,
+    }),
+  ],
   exports: [
     StudyReminderSyncService,
     StudyReminderDispatchService,

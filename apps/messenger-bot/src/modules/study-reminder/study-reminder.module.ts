@@ -15,6 +15,8 @@ import {
   DISPATCH_HOOKS,
   DORMANT_REASON,
   createStudyReminderProviders,
+  createSessionSourceGetSessions,
+  GET_SESSIONS,
   type MappingReaderPort,
   type MessageSenderPort,
   type DispatchHooksPort,
@@ -114,7 +116,6 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         }),
         inject: [MESSENGER_REPOSITORY],
       },
-      getSessionsService: StudySessionSourceService,
       workerLockIds: {
         sync: ADVISORY_LOCK.STUDY_REMINDER_SYNC,
         cleanup: ADVISORY_LOCK.STUDY_REMINDER_CLEANUP,
@@ -122,6 +123,15 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
       },
       workerOptions: { logLockSkips: true, startupSyncSwallowErrors: true },
     }),
+
+    {
+      // Worker session source — structural bridge over the messenger-local
+      // StudySessionSourceService (psid-based upcoming sessions, #424).
+      provide: GET_SESSIONS,
+      useFactory: (sessionSource: StudySessionSourceService) =>
+        createSessionSourceGetSessions(sessionSource),
+      inject: [StudySessionSourceService],
+    },
 
     // ── Messenger-local services (kept) ──────────────────────────────────
     UserCalendarApiService,

@@ -3,11 +3,13 @@ import { createStudyReminderProviders } from './study-reminder-providers.factory
 import { MESSAGE_SENDER } from '../ports/message-sender.port';
 import { MAPPING_READER } from '../ports/mapping-reader.port';
 import { STUDY_REMINDER_JOB_REPOSITORY } from '../ports/study-reminder-job.repository.port';
+import { GET_SESSIONS } from '../ports/get-sessions.port';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { StudyReminderSyncService } from './study-reminder-sync.service';
 import { StudyReminderDispatchService } from './study-reminder-dispatch.service';
 import { StudyReminderWorkerService } from './study-reminder-worker.service';
 import { TypeormStudyReminderJobRepository } from '../infrastructure/typeorm-study-reminder-job.repository';
+import type { GetSessionsFn } from '../types/study-reminder.types';
 
 class FakeOutbound {
   sendText(): Promise<void> {
@@ -17,11 +19,7 @@ class FakeOutbound {
 
 class FakeMappingEntity {}
 
-class FakeCalendarService {
-  getCalendarSessions(): Promise<unknown[]> {
-    return Promise.resolve([]);
-  }
-}
+const fakeGetSessions: GetSessionsFn = () => Promise.resolve([]);
 
 describe('createStudyReminderProviders', () => {
   const providers = createStudyReminderProviders({
@@ -29,7 +27,6 @@ describe('createStudyReminderProviders', () => {
     mappingTable: 'discord_account_links',
     mappingEntity: FakeMappingEntity,
     outboundService: FakeOutbound,
-    calendarService: FakeCalendarService,
   });
   const p = providers as unknown as Array<{
     provide?: unknown;
@@ -71,7 +68,7 @@ describe('createStudyReminderProviders', () => {
         {},
         {},
         { token: STUDY_REMINDER_JOB_REPOSITORY, optional: true },
-        FakeCalendarService,
+        GET_SESSIONS,
       ],
     });
     expect(providers[7]).toBe(TypeormStudyReminderJobRepository);
@@ -81,15 +78,7 @@ describe('createStudyReminderProviders', () => {
     const worker = providers[6] as unknown as {
       useFactory: (...deps: unknown[]) => unknown;
     };
-    const service = worker.useFactory(
-      {},
-      {},
-      {},
-      {},
-      {},
-      {},
-      new FakeCalendarService(),
-    );
+    const service = worker.useFactory({}, {}, {}, {}, {}, {}, fakeGetSessions);
     expect(service).toBeInstanceOf(StudyReminderWorkerService);
   });
 
@@ -116,19 +105,17 @@ describe('createStudyReminderProviders', () => {
       platform: 'messenger',
       outboundService: FakeOutbound,
       mappingReader: customReader,
-      getSessionsService: FakeCalendarService,
     });
 
     expect(withReader[1]).toBe(customReader);
   });
 
-  it('builds the worker from getSessionsService + worker lock ids when provided (messenger)', () => {
+  it('requires the GET_SESSIONS token (fail-closed) and passes it straight to the worker factory', () => {
     const lockIds = { sync: 1, cleanup: 2, rollover: 3 };
     const withReader = createStudyReminderProviders({
       platform: 'messenger',
       outboundService: FakeOutbound,
       mappingReader: { provide: MAPPING_READER, useValue: {} },
-      getSessionsService: FakeCalendarService,
       workerLockIds: lockIds,
       workerOptions: { logLockSkips: true, startupSyncSwallowErrors: true },
     });
@@ -137,7 +124,8 @@ describe('createStudyReminderProviders', () => {
       useFactory: (...deps: unknown[]) => unknown;
       inject: unknown[];
     };
-    expect(workerProvider.inject[6]).toBe(FakeCalendarService);
+    // Required, non-optional injection: a missing provider fails startup.
+    expect(workerProvider.inject[6]).toBe(GET_SESSIONS);
 
     const service = workerProvider.useFactory(
       {},
@@ -146,7 +134,7 @@ describe('createStudyReminderProviders', () => {
       {},
       {},
       {},
-      new FakeCalendarService(),
+      fakeGetSessions,
     );
     expect(service).toBeInstanceOf(StudyReminderWorkerService);
   });
@@ -165,7 +153,6 @@ describe('createStudyReminderProviders', () => {
       mappingTable: 'discord_account_links',
       mappingEntity: FakeMappingEntity,
       outboundService: FakeOutbound,
-      calendarService: FakeCalendarService,
       dormancyGate: FakeGate,
       dormancySuppressionMetric: FakeMetric,
     });
