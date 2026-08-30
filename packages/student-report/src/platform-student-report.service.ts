@@ -115,9 +115,7 @@ export class PlatformStudentReportService {
             externalUserId: params.externalUserId,
             provider: params.provider,
             model: params.model,
-            response: params.response as Parameters<
-              PlatformLlmUsageRecorderAdapter['recordFromCompletion']
-            >[0]['response'],
+            response: params.response,
             correlationId: params.correlationId,
           }),
       },

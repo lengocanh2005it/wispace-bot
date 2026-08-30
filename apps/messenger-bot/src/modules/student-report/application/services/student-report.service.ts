@@ -122,9 +122,7 @@ export class StudentReportService {
             psid: params.externalUserId,
             provider: params.provider,
             model: params.model,
-            response: params.response as Parameters<
-              LlmUsageRecorderService['recordFromCompletion']
-            >[0]['response'],
+            response: params.response,
             correlationId: params.correlationId,
           }),
       },

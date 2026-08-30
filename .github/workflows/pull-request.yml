@@ -258,3 +258,6 @@ jobs:
 
       - name: Check webhook inbound package boundary (#426)
         run: bash .github/scripts/check-webhook-inbound-database-imports.sh
+
+      - name: Check OpenAI SDK import boundary (#427)
+        run: bash .github/scripts/check-openai-sdk-imports.sh

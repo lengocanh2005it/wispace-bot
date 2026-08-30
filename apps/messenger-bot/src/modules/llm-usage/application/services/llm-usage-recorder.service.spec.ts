@@ -24,7 +24,7 @@ describe('LlmUsageRecorderService', () => {
       model: 'gpt-5.4',
       response: {
         id: 'resp-1',
-        usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+        usage: { promptTokens: 1, completionTokens: 2, totalTokens: 3 },
       },
       correlationId: 'mid-1',
       toolRound: 0,

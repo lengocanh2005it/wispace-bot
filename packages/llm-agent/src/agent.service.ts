@@ -379,17 +379,9 @@ export class LlmAgentService<TToolContext> {
           model: response.metadata.model,
           response: {
             id: response.metadata.responseId ?? '',
-            usage: response.metadata.usage
-              ? {
-                  prompt_tokens: response.metadata.usage.promptTokens,
-                  completion_tokens: response.metadata.usage.completionTokens,
-                  total_tokens: response.metadata.usage.totalTokens,
-                  prompt_tokens_details:
-                    response.metadata.usage.cachedTokens !== undefined
-                      ? { cached_tokens: response.metadata.usage.cachedTokens }
-                      : undefined,
-                }
-              : null,
+            // Chat path forwards the full LlmUsage (cached tokens included),
+            // as before typing — report/reminder callers stay field-preserving.
+            usage: response.metadata.usage ?? null,
           },
           correlationId: input.correlationId,
           toolRound: round,

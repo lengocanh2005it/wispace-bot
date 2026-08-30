@@ -238,11 +238,12 @@ export class StudyReminderService {
       model: response.metadata.model,
       response: {
         id: response.metadata.responseId ?? '',
+        // Field-preserving (pre-typing behavior): no cached tokens here.
         usage: response.metadata.usage
           ? {
-              prompt_tokens: response.metadata.usage.promptTokens,
-              completion_tokens: response.metadata.usage.completionTokens,
-              total_tokens: response.metadata.usage.totalTokens,
+              promptTokens: response.metadata.usage.promptTokens,
+              completionTokens: response.metadata.usage.completionTokens,
+              totalTokens: response.metadata.usage.totalTokens,
             }
           : undefined,
       },

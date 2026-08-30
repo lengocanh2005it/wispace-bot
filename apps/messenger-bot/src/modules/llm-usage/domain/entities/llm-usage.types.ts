@@ -1,4 +1,4 @@
-import type { ChatCompletion } from 'openai/resources/chat/completions';
+import type { LlmUsage } from '@wispace/llm-agent';
 
 export type LlmUsageFeature =
   | 'FREE_FORM_CHAT'
@@ -14,7 +14,7 @@ export interface RecordLlmUsageFromCompletionInput {
   userId?: number;
   provider?: string;
   model: string;
-  response: Pick<ChatCompletion, 'id' | 'usage'>;
+  response: { id: string; usage?: LlmUsage | null };
   correlationId?: string;
   toolRound?: number;
 }

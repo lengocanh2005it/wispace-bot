@@ -1,3 +1,4 @@
+import type { LlmUsage } from '@wispace/llm-agent';
 import type { UsageWriterPort } from './types';
 
 export interface RecordLlmUsageFromCompletionInput {
@@ -6,16 +7,14 @@ export interface RecordLlmUsageFromCompletionInput {
   userId?: number;
   provider?: string;
   model: string;
-  response: { id: string; usage?: unknown };
+  /**
+   * Provider-neutral completion snapshot — the OpenAI adapter maps its
+   * native usage into `LlmUsage` at the outer boundary (#427); the usage
+   * domain never sees provider-specific response shapes.
+   */
+  response: { id: string; usage?: LlmUsage | null };
   correlationId?: string;
   toolRound?: number;
-}
-
-interface OpenAiUsageShape {
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
-  prompt_tokens_details?: { cached_tokens?: number };
 }
 
 export interface LlmUsageRecorderLogger {
@@ -51,7 +50,7 @@ export class LlmUsageRecorderCore {
 
   /** Non-blocking. */
   recordFromCompletion(input: RecordLlmUsageFromCompletionInput): void {
-    const usage = input.response.usage as OpenAiUsageShape | undefined;
+    const usage = input.response.usage;
     if (!usage) {
       this.logger.warn(
         `LLM_USAGE_MISSING_TOKENS feature=${input.feature} correlation=${input.correlationId ?? 'n/a'}`,
@@ -59,9 +58,9 @@ export class LlmUsageRecorderCore {
       this.metrics?.incMissingTokens(input.feature);
     }
 
-    const promptTokens = usage?.prompt_tokens ?? 0;
-    const completionTokens = usage?.completion_tokens ?? 0;
-    const cachedTokens = usage?.prompt_tokens_details?.cached_tokens ?? 0;
+    const promptTokens = usage?.promptTokens ?? 0;
+    const completionTokens = usage?.completionTokens ?? 0;
+    const cachedTokens = usage?.cachedTokens ?? 0;
 
     const estimatedCostUsd = this.estimateCostUsdForModel(
       input.model,
@@ -88,7 +87,7 @@ export class LlmUsageRecorderCore {
       model: input.model,
       promptTokens,
       completionTokens,
-      totalTokens: usage?.total_tokens ?? 0,
+      totalTokens: usage?.totalTokens ?? 0,
       cachedTokens,
       openaiResponseId: input.response.id,
       correlationId: input.correlationId,

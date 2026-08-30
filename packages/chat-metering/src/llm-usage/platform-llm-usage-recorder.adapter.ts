@@ -2,6 +2,7 @@ import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { errorMessage } from '@wispace/bot-common/masking';
+import type { LlmUsage } from '@wispace/llm-agent';
 import { LlmUsageEventEntity } from '../entities';
 import { DirectUsageWriter } from './direct-usage-writer';
 import {
@@ -29,7 +30,7 @@ export interface PlatformRecordLlmUsageInput {
   userId?: number;
   provider?: string;
   model: string;
-  response: { id: string; usage?: unknown };
+  response: { id: string; usage?: LlmUsage | null };
   correlationId?: string;
   toolRound?: number;
 }

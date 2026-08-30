@@ -19,7 +19,8 @@ export interface LlmUsageRecorderPort {
     userId?: number;
     provider?: string;
     model: string;
-    response: unknown;
+    /** Provider-neutral completion snapshot — usage is already `LlmUsage` (#427). */
+    response: { id: string; usage?: LlmUsage | null };
     correlationId?: string;
     toolRound: number;
   }): void;
@@ -129,4 +130,5 @@ export const NOOP_METRICS_PORT: AgentMetricsPort = {
   toolPolicyDeniedInc: () => undefined,
   degradedModeInc: () => undefined,
 };
+import type { LlmUsage } from './provider/types';
 import type { ToolObservationOutcome } from './utils/tool-observation';
