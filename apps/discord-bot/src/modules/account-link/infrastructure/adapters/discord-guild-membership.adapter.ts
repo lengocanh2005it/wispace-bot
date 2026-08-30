@@ -1,10 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client } from 'discord.js';
+import type { DiscordGuildMembershipPort } from '../../domain/ports/discord-guild-membership.port';
 
+/** discord.js guild-membership check behind the application port (#428). */
 @Injectable()
-export class DiscordGuildMembershipService {
-  private readonly logger = new Logger(DiscordGuildMembershipService.name);
+export class DiscordGuildMembershipAdapter implements DiscordGuildMembershipPort {
+  private readonly logger = new Logger(DiscordGuildMembershipAdapter.name);
   private readonly guildId: string | undefined;
 
   constructor(

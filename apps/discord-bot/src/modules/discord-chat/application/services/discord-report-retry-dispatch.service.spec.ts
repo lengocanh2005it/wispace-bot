@@ -17,10 +17,8 @@ const JOB = {
 
 const LINK = {
   id: '1',
-  platform: 'discord',
-  externalUserId: 'discord-1',
   userId: 10,
-  linkedAt: new Date(),
+  linkState: 'active',
 };
 
 const SENT_RESULT = {
@@ -64,8 +62,8 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
         .mockResolvedValue(overrides?.claimAndSendResult ?? SENT_RESULT),
     };
 
-    const accountLinkRepo = {
-      findOne: jest
+    const accountLinkReader = {
+      findLinkStateByExternalUserId: jest
         .fn()
         .mockResolvedValue(
           overrides?.link !== undefined ? overrides.link : LINK,
@@ -76,14 +74,14 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
       { get: jest.fn() } as never,
       jobRepository as never,
       orchestrationService as never,
-      accountLinkRepo as never,
+      accountLinkReader as never,
     );
 
-    return { service, jobRepository, orchestrationService, accountLinkRepo };
+    return { service, jobRepository, orchestrationService, accountLinkReader };
   };
 
   it('picks up due job, claims, sends and marks sent', async () => {
-    const { service, jobRepository, orchestrationService, accountLinkRepo } =
+    const { service, jobRepository, orchestrationService, accountLinkReader } =
       buildService({ dueJobs: [JOB] });
 
     const result = await service.dispatchDueReportRetries();
@@ -91,9 +89,9 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
     expect(jobRepository.resetStuckProcessingJobs).toHaveBeenCalled();
     expect(jobRepository.findDueJobs).toHaveBeenCalledWith(expect.any(Date));
     expect(jobRepository.claimJob).toHaveBeenCalledWith(1, 600_000);
-    expect(accountLinkRepo.findOne).toHaveBeenCalledWith({
-      where: { platform: 'discord', externalUserId: 'discord-1' },
-    });
+    expect(
+      accountLinkReader.findLinkStateByExternalUserId,
+    ).toHaveBeenCalledWith('discord-1');
     expect(orchestrationService.claimAndSend).toHaveBeenCalledWith(
       expect.objectContaining({ externalUserId: 'discord-1' }),
       {
@@ -221,7 +219,9 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
       { get: jest.fn() } as never,
       jobRepository as never,
       orchestrationService as never,
-      { findOne: jest.fn().mockResolvedValue(LINK) } as never,
+      {
+        findLinkStateByExternalUserId: jest.fn().mockResolvedValue(LINK),
+      } as never,
     );
 
     const first = service.dispatchDueReportRetries();

@@ -6,9 +6,10 @@ import {
   type ReportSendJobRepositoryPort,
 } from '@wispace/scheduler-core';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
-import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import {
+  DISCORD_REPORT_ACCOUNT_READER,
+  type DiscordReportAccountPageReaderPort,
+} from '../../domain/ports/discord-report-account-reader.port';
 import type { ReportMapping } from '@wispace/scheduler-core';
 import { todayReportDate } from '@wispace/scheduler-core';
 import { subMilliseconds, addMinutes } from 'date-fns';
@@ -24,8 +25,8 @@ export class DiscordReportRetryDispatchService {
     @Inject(REPORT_SEND_JOB_REPOSITORY)
     private readonly jobRepository: ReportSendJobRepositoryPort,
     private readonly orchestrationService: DiscordReportOrchestrationService,
-    @InjectRepository(DiscordAccountLinkEntity)
-    private readonly accountLinkRepo: Repository<DiscordAccountLinkEntity>,
+    @Inject(DISCORD_REPORT_ACCOUNT_READER)
+    private readonly accountLinkReader: DiscordReportAccountPageReaderPort,
   ) {}
 
   @Cron('*/15 * * * *', {
@@ -54,12 +55,9 @@ export class DiscordReportRetryDispatchService {
 
       const leaseToken = claimed.leaseToken ?? '';
 
-      const link = await this.accountLinkRepo.findOne({
-        where: {
-          platform: PLATFORM,
-          externalUserId: job.externalUserId,
-        },
-      });
+      const link = await this.accountLinkReader.findLinkStateByExternalUserId(
+        job.externalUserId,
+      );
 
       if (!link || (link.linkState && link.linkState !== 'active')) {
         if (link?.linkState === 'temporarily-unknown') {
@@ -90,7 +88,7 @@ export class DiscordReportRetryDispatchService {
       const mapping: ReportMapping = {
         id: link.id,
         platform: PLATFORM,
-        externalUserId: link.externalUserId,
+        externalUserId: job.externalUserId,
         userId: link.userId ?? undefined,
         notificationCadence: 'daily',
         status: 'ACTIVE',

@@ -50,6 +50,19 @@ export class TypeormDiscordReportAccountReader implements DiscordReportAccountPa
     return qb.getMany();
   }
 
+  async findLinkStateByExternalUserId(externalUserId: string): Promise<{
+    id: string;
+    userId: number | null;
+    linkState: string | null;
+  } | null> {
+    const link = await this.repo.findOne({
+      where: { platform: PLATFORM, externalUserId },
+      select: { id: true, userId: true, linkState: true },
+    });
+    if (!link) return null;
+    return { id: link.id, userId: link.userId, linkState: link.linkState };
+  }
+
   async markOptOutNoticeSent(id: string): Promise<void> {
     await this.repo.update({ id }, { optoutNoticeSentAt: new Date() });
   }

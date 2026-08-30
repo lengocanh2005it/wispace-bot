@@ -1,9 +1,20 @@
-import { Controller, Get, Logger, Query, Res, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Inject,
+  Logger,
+  Query,
+  Res,
+  UseGuards,
+} from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common/masking';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import type { Response } from 'express';
 import { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';
-import { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
+import {
+  DISCORD_GUILD_MEMBERSHIP,
+  type DiscordGuildMembershipPort,
+} from '../../domain/ports/discord-guild-membership.port';
 
 /**
  * Link status for the WISPACE frontend — lets the portal show the right UI:
@@ -18,7 +29,8 @@ export class DiscordLinkStatusController {
 
   constructor(
     private readonly accountLinkService: DiscordAccountLinkService,
-    private readonly guildMembershipService: DiscordGuildMembershipService,
+    @Inject(DISCORD_GUILD_MEMBERSHIP)
+    private readonly guildMembershipService: DiscordGuildMembershipPort,
   ) {}
 
   @Get('link-status')

@@ -1,25 +1,32 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'crypto';
-import { Repository } from 'typeorm';
 import {
   decryptAesGcm,
   encryptAesGcm,
   parseEncryptionKey,
 } from '@wispace/bot-common/utils';
 import { errorMessage } from '@wispace/bot-common/masking';
-import { DiscordOauthStateEntity } from '../../../../infrastructure/database/entities/discord-oauth-state.entity';
+import {
+  DISCORD_OAUTH_STATE_REPOSITORY,
+  type DiscordOauthStateRepositoryPort,
+} from '../../domain/ports/discord-oauth-state.repository.port';
 
 const STATE_TTL_MS = 10 * 60_000;
 
+/**
+ * Single-use OAuth link-state use case — owns state generation, TTL
+ * judgment, and AES-GCM decryption. Persistence flows through
+ * `DiscordOauthStateRepositoryPort` (bound to the TypeORM implementation in
+ * module wiring, #428).
+ */
 @Injectable()
 export class DiscordOauthStateService {
   private readonly logger = new Logger(DiscordOauthStateService.name);
 
   constructor(
-    @InjectRepository(DiscordOauthStateEntity)
-    private readonly repo: Repository<DiscordOauthStateEntity>,
+    @Inject(DISCORD_OAUTH_STATE_REPOSITORY)
+    private readonly repo: DiscordOauthStateRepositoryPort,
     @Optional()
     private readonly configService?: ConfigService,
   ) {}
@@ -44,13 +51,11 @@ export class DiscordOauthStateService {
       linkToken,
       this.getEncryptionKey(),
     );
-    await this.repo.save(
-      this.repo.create({
-        state,
-        linkToken: encryptedLinkToken,
-        createdAt: new Date(),
-      }),
-    );
+    await this.repo.saveState({
+      state,
+      encryptedLinkToken,
+      createdAt: new Date(),
+    });
     await this.cleanupExpired();
     return state;
   }
@@ -60,14 +65,9 @@ export class DiscordOauthStateService {
   // never deleted.
   private async cleanupExpired(): Promise<void> {
     try {
-      await this.repo.query(
-        `DELETE FROM "discord_oauth_states"
-         WHERE "state" IN (
-           SELECT "state" FROM "discord_oauth_states"
-           WHERE "created_at" < NOW() - ($1 * interval '1 millisecond')
-           LIMIT 100
-         )`,
-        [STATE_TTL_MS],
+      await this.repo.deleteExpiredBefore(
+        new Date(Date.now() - STATE_TTL_MS),
+        100,
       );
     } catch (error) {
       this.logger.warn(
@@ -77,24 +77,15 @@ export class DiscordOauthStateService {
   }
 
   async consume(state: string): Promise<{ linkToken: string } | undefined> {
-    const rows = await this.repo.query<
-      Array<{ link_token: string; created_at: Date }>
-    >(
-      `DELETE FROM "discord_oauth_states"
-       WHERE "state" = $1
-       RETURNING "link_token", "created_at"`,
-      [state],
-    );
-    const row = rows[0];
+    const row = await this.repo.deleteByState(state);
     if (!row) return undefined;
 
-    const isExpired =
-      Date.now() - new Date(row.created_at).getTime() > STATE_TTL_MS;
+    const isExpired = Date.now() - row.createdAt.getTime() > STATE_TTL_MS;
     if (isExpired) return undefined;
 
     try {
       const linkToken = decryptAesGcm(
-        row.link_token,
+        row.linkToken,
         this.getEncryptionKey(),
         'discord_oauth_states link_token',
       );

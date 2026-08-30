@@ -19,7 +19,6 @@ import { DiscordLinkVerifyRecordEntity } from '../../infrastructure/database/ent
 import { DiscordWelcomeRecordEntity } from '../../infrastructure/database/entities/discord-welcome-record.entity';
 import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { DiscordAccountLinkService } from './application/services/discord-account-link.service';
-import { DiscordGuildMembershipService } from './application/services/discord-guild-membership.service';
 import { DiscordLinkCompletionService } from './application/services/discord-link-completion.service';
 import { DiscordLinkReconcileCronService } from './application/services/discord-link-reconcile-cron.service';
 import { DiscordRelinkNotifier } from './application/services/discord-relink-notifier.service';
@@ -27,9 +26,15 @@ import { DiscordWelcomeService } from './application/services/discord-welcome.se
 import { TypeormDiscordAccountLinkRepository } from './infrastructure/persistence/typeorm-discord-account-link.repository';
 import { TypeormDiscordLinkVerifyRecordRepository } from './infrastructure/persistence/typeorm-discord-link-verify-record.repository';
 import { TypeormDiscordWelcomeRecordRepository } from './infrastructure/persistence/typeorm-discord-welcome-record.repository';
+import { TypeormDiscordOauthStateRepository } from './infrastructure/persistence/typeorm-discord-oauth-state.repository';
+import { DiscordOauthHttpExchange } from './infrastructure/discord-oauth-http.exchange';
+import { DiscordGuildMembershipAdapter } from './infrastructure/adapters/discord-guild-membership.adapter';
 import { DISCORD_ACCOUNT_LINK_REPOSITORY } from './domain/ports/discord-account-link.repository.port';
 import { DISCORD_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/discord-link-verify-record.repository.port';
 import { DISCORD_WELCOME_RECORD_REPOSITORY } from './domain/ports/discord-welcome-record.repository.port';
+import { DISCORD_OAUTH_STATE_REPOSITORY } from './domain/ports/discord-oauth-state.repository.port';
+import { DISCORD_OAUTH_EXCHANGE } from './domain/ports/discord-oauth-exchange.port';
+import { DISCORD_GUILD_MEMBERSHIP } from './domain/ports/discord-guild-membership.port';
 import { DiscordOauthController } from './presentation/controllers/discord-oauth.controller';
 import { DiscordLinkStatusController } from './presentation/controllers/discord-link-status.controller';
 import { DiscordOauthStateEntity } from '../../infrastructure/database/entities/discord-oauth-state.entity';
@@ -55,7 +60,6 @@ import { DiscordOauthStateService } from './application/services/discord-oauth-s
       inject: [ConfigService],
     },
     DiscordAccountLinkService,
-    DiscordGuildMembershipService,
     DiscordLinkCompletionService,
     DiscordLinkReconcileCronService,
     PlatformLinkStateService,
@@ -77,6 +81,9 @@ import { DiscordOauthStateService } from './application/services/discord-oauth-s
     TypeormDiscordAccountLinkRepository,
     TypeormDiscordLinkVerifyRecordRepository,
     TypeormDiscordWelcomeRecordRepository,
+    TypeormDiscordOauthStateRepository,
+    DiscordOauthHttpExchange,
+    DiscordGuildMembershipAdapter,
     {
       provide: DISCORD_ACCOUNT_LINK_REPOSITORY,
       useExisting: TypeormDiscordAccountLinkRepository,
@@ -88,6 +95,18 @@ import { DiscordOauthStateService } from './application/services/discord-oauth-s
     {
       provide: DISCORD_WELCOME_RECORD_REPOSITORY,
       useExisting: TypeormDiscordWelcomeRecordRepository,
+    },
+    {
+      provide: DISCORD_OAUTH_STATE_REPOSITORY,
+      useExisting: TypeormDiscordOauthStateRepository,
+    },
+    {
+      provide: DISCORD_OAUTH_EXCHANGE,
+      useExisting: DiscordOauthHttpExchange,
+    },
+    {
+      provide: DISCORD_GUILD_MEMBERSHIP,
+      useExisting: DiscordGuildMembershipAdapter,
     },
     {
       provide: CLARIFICATION_STATE_STORE,

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mocks */
 import type { DiscordAccountLinkService } from './discord-account-link.service';
-import type { DiscordGuildMembershipService } from './discord-guild-membership.service';
+import type { DiscordGuildMembershipPort } from '../../domain/ports/discord-guild-membership.port';
 import type { DiscordRelinkNotifier } from './discord-relink-notifier.service';
 import type { DiscordWelcomeService } from './discord-welcome.service';
 import type { DiscordLinkVerifyRecordRepositoryPort } from '../../domain/ports/discord-link-verify-record.repository.port';
@@ -47,7 +47,7 @@ function buildHarness(overrides: {
 
   const guildMembershipService = {
     isMember: jest.fn().mockResolvedValue(overrides.inGuild ?? true),
-  } as unknown as DiscordGuildMembershipService;
+  } as unknown as DiscordGuildMembershipPort;
 
   const relinkNotifier = {
     notify: jest.fn().mockResolvedValue(undefined),

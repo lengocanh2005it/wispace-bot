@@ -7,7 +7,10 @@ import {
   type DiscordLinkVerifyRecordRepositoryPort,
 } from '../../domain/ports/discord-link-verify-record.repository.port';
 import { DiscordAccountLinkService } from './discord-account-link.service';
-import { DiscordGuildMembershipService } from './discord-guild-membership.service';
+import {
+  DISCORD_GUILD_MEMBERSHIP,
+  type DiscordGuildMembershipPort,
+} from '../../domain/ports/discord-guild-membership.port';
 import { DiscordRelinkNotifier } from './discord-relink-notifier.service';
 import { DiscordOutboundService } from '@discord/modules/discord-chat/application/services/discord-outbound.service';
 import { DiscordWelcomeService } from './discord-welcome.service';
@@ -39,7 +42,8 @@ export class DiscordLinkCompletionService {
     private readonly tokenVerifyService: WispaceTokenVerifyService,
     @Inject(DISCORD_LINK_VERIFY_RECORD_REPOSITORY)
     private readonly verifyRecordService: DiscordLinkVerifyRecordRepositoryPort,
-    private readonly guildMembershipService: DiscordGuildMembershipService,
+    @Inject(DISCORD_GUILD_MEMBERSHIP)
+    private readonly guildMembershipService: DiscordGuildMembershipPort,
     private readonly relinkNotifier: DiscordRelinkNotifier,
     private readonly outboundService: DiscordOutboundService,
     private readonly welcomeService: DiscordWelcomeService,

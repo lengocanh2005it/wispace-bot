@@ -100,3 +100,35 @@ describe('TypeormDiscordReportAccountReader — report consent gate (#596)', () 
     );
   });
 });
+
+describe('TypeormDiscordReportAccountReader.findLinkStateByExternalUserId (#428)', () => {
+  it('selects only id/userId/linkState for the single-link lookup', async () => {
+    const findOne = jest.fn().mockResolvedValue({
+      id: 'row-1',
+      userId: 10,
+      linkState: 'active',
+    });
+    const reader = new TypeormDiscordReportAccountReader({
+      findOne,
+    } as unknown as Repository<never>);
+
+    await expect(
+      reader.findLinkStateByExternalUserId('discord-1'),
+    ).resolves.toEqual({ id: 'row-1', userId: 10, linkState: 'active' });
+    expect(findOne).toHaveBeenCalledWith({
+      where: { platform: 'discord', externalUserId: 'discord-1' },
+      select: { id: true, userId: true, linkState: true },
+    });
+  });
+
+  it('returns null when the external user has no link row', async () => {
+    const findOne = jest.fn().mockResolvedValue(null);
+    const reader = new TypeormDiscordReportAccountReader({
+      findOne,
+    } as unknown as Repository<never>);
+
+    await expect(
+      reader.findLinkStateByExternalUserId('unknown'),
+    ).resolves.toBeNull();
+  });
+});

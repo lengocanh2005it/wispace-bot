@@ -1,11 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   errorMessage,
   maskExternalId,
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import type {
   ReportDeliveryPort,
   ReportDeliveryResult,
@@ -15,9 +13,10 @@ import {
   DiscordDeliveryFailureError,
   DiscordOutboundService,
 } from './discord-outbound.service';
-import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
-
-const PLATFORM = 'discord' as const;
+import {
+  DISCORD_REPORT_ACCOUNT_READER,
+  type DiscordReportAccountPageReaderPort,
+} from '../../domain/ports/discord-report-account-reader.port';
 
 const DISCORD_MAX_MESSAGE_LENGTH = 2000;
 
@@ -31,8 +30,8 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
 
   constructor(
     private readonly outboundService: DiscordOutboundService,
-    @InjectRepository(DiscordAccountLinkEntity)
-    private readonly accountLinkRepo: Repository<DiscordAccountLinkEntity>,
+    @Inject(DISCORD_REPORT_ACCOUNT_READER)
+    private readonly accountLinkReader: DiscordReportAccountPageReaderPort,
   ) {}
 
   async sendReport(input: {
@@ -44,13 +43,10 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
     const { mapping, reportText, deliveryKey } = input;
 
     try {
-      const hasLink = await this.accountLinkRepo.findOne({
-        where: {
-          platform: PLATFORM,
-          externalUserId: mapping.externalUserId,
-        },
-        select: { id: true, linkState: true, userId: true },
-      });
+      const hasLink =
+        await this.accountLinkReader.findLinkStateByExternalUserId(
+          mapping.externalUserId,
+        );
 
       if (
         !hasLink ||
@@ -70,13 +66,10 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
         ? deliveryKey.replace(/[^a-zA-Z0-9]/g, '').slice(0, 25)
         : undefined;
       for (const chunk of chunks) {
-        const current = await this.accountLinkRepo.findOne({
-          where: {
-            platform: PLATFORM,
-            externalUserId: mapping.externalUserId,
-          },
-          select: { id: true, linkState: true, userId: true },
-        });
+        const current =
+          await this.accountLinkReader.findLinkStateByExternalUserId(
+            mapping.externalUserId,
+          );
         if (
           !current ||
           (current.linkState && current.linkState !== 'active') ||

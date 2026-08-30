@@ -6,6 +6,8 @@ import {
 } from '@wispace/llm-agent';
 import { REPORT_DELIVERY_PORT } from '@wispace/scheduler-core';
 import { DiscordReportDeliveryService } from './application/services/discord-report-delivery.service';
+import { TypeormDiscordReportAccountReader } from './infrastructure/persistence/typeorm-discord-report-account.reader';
+import { DISCORD_REPORT_ACCOUNT_READER } from './domain/ports/discord-report-account-reader.port';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DiscordMessageLogEntity } from '../../infrastructure/database/entities/discord-message-log.entity';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
@@ -49,6 +51,11 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       inject: [ConfigService, BotMetricsService],
     },
     DiscordReportDeliveryService,
+    TypeormDiscordReportAccountReader,
+    {
+      provide: DISCORD_REPORT_ACCOUNT_READER,
+      useExisting: TypeormDiscordReportAccountReader,
+    },
     {
       provide: REPORT_DELIVERY_PORT,
       useExisting: DiscordReportDeliveryService,

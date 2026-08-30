@@ -2,7 +2,7 @@
 import type { Response } from 'express';
 import { DiscordLinkStatusController } from './discord-link-status.controller';
 import type { DiscordAccountLinkService } from '../../application/services/discord-account-link.service';
-import type { DiscordGuildMembershipService } from '../../application/services/discord-guild-membership.service';
+import type { DiscordGuildMembershipPort } from '../../domain/ports/discord-guild-membership.port';
 
 function buildResponse(): Response {
   const res: Partial<Response> = {};
@@ -13,7 +13,7 @@ function buildResponse(): Response {
 
 function buildServices(options: { discordId?: string; inGuild?: boolean }): {
   accountLinkService: DiscordAccountLinkService;
-  guildMembershipService: DiscordGuildMembershipService;
+  guildMembershipService: DiscordGuildMembershipPort;
 } {
   return {
     accountLinkService: {
@@ -21,7 +21,7 @@ function buildServices(options: { discordId?: string; inGuild?: boolean }): {
     } as unknown as DiscordAccountLinkService,
     guildMembershipService: {
       isMember: jest.fn().mockResolvedValue(options.inGuild ?? false),
-    } as unknown as DiscordGuildMembershipService,
+    } as unknown as DiscordGuildMembershipPort,
   };
 }
 
@@ -98,7 +98,7 @@ describe('DiscordLinkStatusController', () => {
     const { accountLinkService } = buildServices({});
     const controller = new DiscordLinkStatusController(
       accountLinkService,
-      {} as DiscordGuildMembershipService,
+      {} as DiscordGuildMembershipPort,
     );
     const res = buildResponse();
 

@@ -8,7 +8,10 @@ import {
 } from '@wispace/bot-common/locks';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { DiscordAccountLinkService } from './discord-account-link.service';
-import { DiscordGuildMembershipService } from './discord-guild-membership.service';
+import {
+  DISCORD_GUILD_MEMBERSHIP,
+  type DiscordGuildMembershipPort,
+} from '../../domain/ports/discord-guild-membership.port';
 import { DiscordRelinkNotifier } from './discord-relink-notifier.service';
 import { DiscordWelcomeService } from './discord-welcome.service';
 import { retryWithBackoff } from '@discord/shared/utils/retry.utils';
@@ -55,7 +58,8 @@ export class DiscordLinkReconcileCronService {
     private readonly configService: ConfigService,
     private readonly pgLock: PgAdvisoryLockService,
     private readonly relinkNotifier: DiscordRelinkNotifier,
-    private readonly guildMembershipService: DiscordGuildMembershipService,
+    @Inject(DISCORD_GUILD_MEMBERSHIP)
+    private readonly guildMembershipService: DiscordGuildMembershipPort,
     private readonly welcomeService: DiscordWelcomeService,
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,

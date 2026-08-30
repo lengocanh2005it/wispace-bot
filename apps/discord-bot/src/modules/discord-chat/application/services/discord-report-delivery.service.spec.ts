@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
-import type { Repository } from 'typeorm';
-import type { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
+import type { DiscordReportAccountPageReaderPort } from '../../domain/ports/discord-report-account-reader.port';
 import { DiscordReportDeliveryService } from './discord-report-delivery.service';
 import {
   DiscordDeliveryFailureError,
@@ -12,19 +11,18 @@ describe('DiscordReportDeliveryService', () => {
     const outbound = {
       sendText: jest.fn(),
     } as unknown as DiscordOutboundService;
-    const accountLinkRepo = {
-      findOne: jest.fn().mockResolvedValue({
-        id: 1,
-        platform: 'discord',
-        externalUserId: 'discord-1',
+    const accountLinkReader = {
+      findLinkStateByExternalUserId: jest.fn().mockResolvedValue({
+        id: '1',
         userId: 10,
         linkState: 'active',
       }),
-    } as unknown as Repository<DiscordAccountLinkEntity>;
+    } as unknown as DiscordReportAccountPageReaderPort;
 
     return {
-      service: new DiscordReportDeliveryService(outbound, accountLinkRepo),
+      service: new DiscordReportDeliveryService(outbound, accountLinkReader),
       outbound,
+      accountLinkReader,
     };
   }
 
@@ -75,5 +73,26 @@ describe('DiscordReportDeliveryService', () => {
     });
 
     expect(result).toEqual({ ok: true, outcome: 'ambiguous' });
+  });
+
+  it('re-checks the link state through the reader port before each chunk (#428)', async () => {
+    const { service, outbound, accountLinkReader } = buildService();
+    (outbound.sendText as jest.Mock).mockResolvedValue(undefined);
+
+    await service.sendReport({
+      mapping: {
+        id: 1,
+        platform: 'discord',
+        externalUserId: 'discord-1',
+        userId: 10,
+        status: 'ACTIVE',
+      },
+      reportText: 'report',
+      reportDate: '2026-08-30',
+    });
+
+    expect(
+      accountLinkReader.findLinkStateByExternalUserId,
+    ).toHaveBeenCalledWith('discord-1');
   });
 });

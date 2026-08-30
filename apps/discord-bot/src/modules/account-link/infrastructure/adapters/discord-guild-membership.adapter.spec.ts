@@ -1,6 +1,6 @@
 import type { ConfigService } from '@nestjs/config';
 import type { Client } from 'discord.js';
-import { DiscordGuildMembershipService } from './discord-guild-membership.service';
+import { DiscordGuildMembershipAdapter } from './discord-guild-membership.adapter';
 
 function buildConfigService(guildId?: string): ConfigService {
   return {
@@ -8,15 +8,15 @@ function buildConfigService(guildId?: string): ConfigService {
   } as unknown as ConfigService;
 }
 
-describe('DiscordGuildMembershipService (#232 fail-closed)', () => {
+describe('DiscordGuildMembershipAdapter (#232 fail-closed)', () => {
   it('returns false when DISCORD_GUILD_ID is not set (cannot verify)', async () => {
     const client = {} as unknown as Client;
-    const service = new DiscordGuildMembershipService(
+    const adapter = new DiscordGuildMembershipAdapter(
       client,
       buildConfigService(undefined),
     );
 
-    await expect(service.isMember('discord-user-1')).resolves.toBe(false);
+    await expect(adapter.isMember('discord-user-1')).resolves.toBe(false);
   });
 
   it('returns true when the user is a member', async () => {
@@ -29,12 +29,12 @@ describe('DiscordGuildMembershipService (#232 fail-closed)', () => {
         }),
       },
     } as unknown as Client;
-    const service = new DiscordGuildMembershipService(
+    const adapter = new DiscordGuildMembershipAdapter(
       client,
       buildConfigService('guild-1'),
     );
 
-    await expect(service.isMember('discord-user-1')).resolves.toBe(true);
+    await expect(adapter.isMember('discord-user-1')).resolves.toBe(true);
   });
 
   it('returns false when membership lookup fails', async () => {
@@ -47,11 +47,11 @@ describe('DiscordGuildMembershipService (#232 fail-closed)', () => {
         }),
       },
     } as unknown as Client;
-    const service = new DiscordGuildMembershipService(
+    const adapter = new DiscordGuildMembershipAdapter(
       client,
       buildConfigService('guild-1'),
     );
 
-    await expect(service.isMember('discord-user-1')).resolves.toBe(false);
+    await expect(adapter.isMember('discord-user-1')).resolves.toBe(false);
   });
 });
