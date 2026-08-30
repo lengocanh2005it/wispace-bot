@@ -183,4 +183,4 @@ Implementation status: provider adapters expose `chatStream()`. `LlmAgentService
   - `OpenRouterAdapter` + `MiniMaxAdapter` extending `OpenAiAdapter`
   - `FailoverLlmProviderAdapter` — greedy failover by priority, circuit breaker, quick-retry (150ms × 1) for transient errors, fast-fail (quota/auth) with long cooldown
   - Wired into `LlmExecutionModule` (messenger-bot) and the shared `@wispace/chat-agent` provider wiring (discord-bot/zalo-bot) via `LLM_PROVIDER_FAILOVER_ORDER` env var
-  - Default behavior unchanged when env var is unset (single adapter, no failover wrapper)
+  - A single adapter remains direct for callers without failover telemetry or a retry budget; the app wiring wraps it when those shared controls are enabled

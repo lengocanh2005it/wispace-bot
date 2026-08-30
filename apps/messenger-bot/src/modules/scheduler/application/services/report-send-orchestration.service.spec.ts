@@ -5,6 +5,7 @@ import {
   MessengerApiError,
   MessengerPartialSendError,
 } from '@messenger/modules/messenger/application/services/messenger-outbound.service';
+import { LlmProviderCircuitOpenError } from '@wispace/llm-agent';
 
 describe('ReportSendOrchestrationService.claimAndSend', () => {
   const mapping = {
@@ -207,6 +208,30 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
         maxRetries: 3,
       }),
     );
+  });
+
+  it('provider circuit open → release claim, record outbox retry', async () => {
+    const { service, messengerRepository, reportSendJobRepository } =
+      buildService({ sendError: new LlmProviderCircuitOpenError() });
+
+    const result = await service.claimAndSend(mapping, {
+      reportDate: '2026-07-11',
+      skipAlreadySentToday: true,
+      examDateForOutbox: '2026-07-15',
+    });
+
+    expect(result.deferred).toBe(1);
+    expect(result.retryQueued).toBe(1);
+    expect(
+      messengerRepository.releaseScheduledReportClaim,
+    ).toHaveBeenCalledWith(
+      {
+        externalUserId: 'psid-1',
+        reportDate: '2026-07-11',
+      },
+      'lease-1',
+    );
+    expect(reportSendJobRepository.recordRetryableFailure).toHaveBeenCalled();
   });
 
   it('ProactiveMessenger24hSkippedError → release claim', async () => {

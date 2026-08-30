@@ -59,6 +59,7 @@ describe('StudentReportCore', () => {
     const capacityData = {
       getCapacityData: jest.fn().mockResolvedValue(baseInput),
     };
+    const degradedMode = jest.fn();
     const adapter = {
       isConfigured: () => false,
       getDefaultModel: () => 'gpt-5.4',
@@ -66,13 +67,26 @@ describe('StudentReportCore', () => {
 
     const core = new StudentReportCore(
       { adapter, systemPrompt: 'prompt' },
-      { llmExecution, usageRecorder, capacityData },
+      {
+        llmExecution,
+        usageRecorder,
+        capacityData,
+        platform: 'discord',
+        degradedMode,
+      },
     );
 
     const result = await core.generateReport('user-1');
 
     expect(result).toContain('còn 31 ngày');
     expect(llmExecution.run).not.toHaveBeenCalled();
+    expect(degradedMode).toHaveBeenCalledWith({
+      platform: 'discord',
+      feature: 'STUDENT_REPORT',
+      failureClass: 'provider_unconfigured',
+      action: 'report_fallback',
+      correlationId: 'user-1',
+    });
   });
 
   it('throws StudentReportRetryableError after exhausting 5xx fetch retries', async () => {

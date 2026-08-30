@@ -43,6 +43,48 @@ export type LlmRoundOutcome =
   | 'exhausted'
   | 'duplicate_tool_calls';
 
+export type LlmDegradedFailureClass =
+  | 'provider_unconfigured'
+  | 'provider_exhausted'
+  | 'provider_circuit_open'
+  | 'execution_overload'
+  | 'timeout'
+  | 'tool_failure'
+  | 'tool_round_exhausted'
+  | 'invalid_output'
+  | 'grounding_blocked'
+  | 'safety_blocked'
+  | 'upstream_unavailable'
+  | 'no_score_data'
+  | 'history_unavailable'
+  | 'queue_failure'
+  | 'outbound_failure'
+  | 'unknown';
+
+export type LlmDegradedAction =
+  | 'chat_fallback'
+  | 'partial_answer'
+  | 'block_response'
+  | 'report_fallback'
+  | 'report_retry'
+  | 'report_unavailable'
+  | 'reminder_fallback'
+  | 'durable_retry'
+  | 'continue_with_partial_data'
+  | 'unknown';
+
+/**
+ * Context for a degraded/fallback response. The metric adapter must use only
+ * the bounded fields as labels; correlationId is for structured logs/traces.
+ */
+export interface LlmDegradedModeEvent {
+  platform: string;
+  feature: string;
+  failureClass: LlmDegradedFailureClass;
+  action: LlmDegradedAction;
+  correlationId?: string;
+}
+
 export interface AgentMetricsPort {
   timeLlmCall<T>(
     feature: string,
@@ -63,6 +105,8 @@ export interface AgentMetricsPort {
   ): void;
   /** Bounded policy-denial telemetry; never receives raw arguments or ids. */
   toolPolicyDeniedInc?(toolName: string, reason: string): void;
+  /** Degraded/fallback telemetry; correlationId must never become a metric label. */
+  degradedModeInc?(event: LlmDegradedModeEvent): void;
 }
 
 /** Executes a single tool call against platform-specific business services. */
@@ -83,5 +127,6 @@ export const NOOP_METRICS_PORT: AgentMetricsPort = {
   compactionOutcomeInc: () => undefined,
   observationOutcomeInc: () => undefined,
   toolPolicyDeniedInc: () => undefined,
+  degradedModeInc: () => undefined,
 };
 import type { ToolObservationOutcome } from './utils/tool-observation';

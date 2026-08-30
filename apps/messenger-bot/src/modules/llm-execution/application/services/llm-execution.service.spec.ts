@@ -229,6 +229,33 @@ describe('LlmExecutionService', () => {
     expect(attempts).toBe(1);
   });
 
+  it('returns a typed circuit-open error after Opossum opens', async () => {
+    const config = createConfig({
+      enabled: true,
+      retryMaxAttempts: 1,
+      retryBackoffMs: 1,
+      requestTimeoutMs: 1_000,
+    });
+    const service = new LlmExecutionService(config, noopMetrics, mockAdapter);
+    const providerCall = jest
+      .fn()
+      .mockRejectedValue(new Error('provider down'));
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await expect(
+        service.run(providerCall, { feature: 'STUDENT_REPORT' }),
+      ).rejects.toThrow('provider down');
+    }
+
+    await expect(
+      service.run(providerCall, { feature: 'STUDENT_REPORT' }),
+    ).rejects.toMatchObject({
+      name: 'LlmProviderCircuitOpenError',
+      state: 'open',
+    });
+    expect(providerCall).toHaveBeenCalledTimes(3);
+  });
+
   describe('metrics — timeLlmExecution', () => {
     it('passes the feature label from context to timeLlmExecution', async () => {
       const config = createConfig({

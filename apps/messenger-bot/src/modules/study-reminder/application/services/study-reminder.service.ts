@@ -3,10 +3,26 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  Optional,
 } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+  sanitizeLogValue,
+} from '@wispace/bot-common/masking';
 import { FALLBACK_DISPLAY_NAME } from '@wispace/bot-common/messages';
-import { type LlmProviderAdapter } from '@wispace/llm-agent';
+import {
+  LlmAllProvidersExhaustedError,
+  LlmOverloadError,
+  LlmProviderCircuitOpenError,
+  type LlmDegradedAction,
+  type LlmDegradedFailureClass,
+  type LlmDegradedModeEvent,
+  type LlmProviderAdapter,
+} from '@wispace/llm-agent';
+import { isAbortError } from '@wispace/bot-common/utils';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
 import {
@@ -48,6 +64,8 @@ export class StudyReminderService {
     private readonly llmExecution: LlmExecutionService,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
+    @Optional()
+    private readonly metrics?: BotMetricsService,
   ) {}
 
   async generateReminderForSession(
@@ -129,6 +147,12 @@ export class StudyReminderService {
       const goals = await this.studentData.getUserGoals(psid);
       input.targetScore = goals.targetScore;
     } catch (error) {
+      this.recordDegraded(
+        psid,
+        'upstream_unavailable',
+        'continue_with_partial_data',
+        psid,
+      );
       this.logger.warn(
         `Could not load user goals for study reminder (psid=${maskExternalId(
           psid,
@@ -144,6 +168,12 @@ export class StudyReminderService {
         input.targetScore = capacity.target_band ?? undefined;
       }
     } catch (error) {
+      this.recordDegraded(
+        psid,
+        'upstream_unavailable',
+        'continue_with_partial_data',
+        psid,
+      );
       this.logger.warn(
         `Could not load capacity data for study reminder (psid=${maskExternalId(
           psid,
@@ -159,6 +189,12 @@ export class StudyReminderService {
     context: { psid: string; userId?: number; jobId?: number },
   ): Promise<StudyReminderLlmOutput> {
     if (!this.adapter.isConfigured()) {
+      this.recordDegraded(
+        context.psid,
+        'provider_unconfigured',
+        'reminder_fallback',
+        context.jobId !== undefined ? String(context.jobId) : context.psid,
+      );
       return buildFallbackReminder(input);
     }
 
@@ -166,22 +202,33 @@ export class StudyReminderService {
     const correlationId =
       context.jobId !== undefined ? String(context.jobId) : context.psid;
 
-    const response = await this.llmExecution.run(
-      (execSignal) =>
-        this.adapter.generateJson({
+    let response;
+    try {
+      response = await this.llmExecution.run(
+        (execSignal) =>
+          this.adapter.generateJson({
+            feature: 'STUDY_REMINDER',
+            model,
+            systemPrompt: loadSystemPrompt('studyReminder'),
+            userContent: JSON.stringify(input),
+            correlationId,
+            maxOutputTokens: REMINDER_MAX_OUTPUT_TOKENS,
+            signal: execSignal,
+          }),
+        {
           feature: 'STUDY_REMINDER',
-          model,
-          systemPrompt: loadSystemPrompt('studyReminder'),
-          userContent: JSON.stringify(input),
           correlationId,
-          maxOutputTokens: REMINDER_MAX_OUTPUT_TOKENS,
-          signal: execSignal,
-        }),
-      {
-        feature: 'STUDY_REMINDER',
+        },
+      );
+    } catch (error) {
+      this.recordDegraded(
+        context.psid,
+        this.classifyLlmFailure(error),
+        'durable_retry',
         correlationId,
-      },
-    );
+      );
+      throw error;
+    }
 
     this.llmUsageRecorder.recordFromCompletion({
       feature: 'STUDY_REMINDER',
@@ -204,6 +251,12 @@ export class StudyReminderService {
 
     const content = response.content;
     if (!content) {
+      this.recordDegraded(
+        context.psid,
+        'invalid_output',
+        'reminder_fallback',
+        correlationId,
+      );
       throw new InternalServerErrorException(
         'LLM provider returned empty content',
       );
@@ -225,6 +278,12 @@ export class StudyReminderService {
       // model's `scheduledTime` (if any) is never rendered.
       return buildReminderOutput(prose, input.scheduledTimeLabel);
     } catch (error) {
+      this.recordDegraded(
+        context.psid,
+        'invalid_output',
+        'reminder_fallback',
+        correlationId,
+      );
       this.logger.warn(
         `Invalid study reminder LLM output psid=${maskExternalId(
           context.psid,
@@ -232,6 +291,46 @@ export class StudyReminderService {
       );
       return buildFallbackReminder(input);
     }
+  }
+
+  private classifyLlmFailure(error: unknown): LlmDegradedFailureClass {
+    if (error instanceof LlmAllProvidersExhaustedError) {
+      return 'provider_exhausted';
+    }
+    if (error instanceof LlmProviderCircuitOpenError) {
+      return 'provider_circuit_open';
+    }
+    if (error instanceof LlmOverloadError) {
+      return 'execution_overload';
+    }
+    if (isAbortError(error)) return 'timeout';
+    return 'unknown';
+  }
+
+  private recordDegraded(
+    psid: string,
+    failureClass: LlmDegradedFailureClass,
+    action: LlmDegradedAction,
+    correlationId: string,
+  ): void {
+    const event: LlmDegradedModeEvent = {
+      platform: 'messenger',
+      feature: 'STUDY_REMINDER',
+      failureClass,
+      action,
+      correlationId,
+    };
+    try {
+      this.metrics?.incLlmDegradedMode(event);
+    } catch {
+      // Telemetry must never change reminder delivery or durable retry behavior.
+    }
+    this.logger.warn(
+      `Study reminder degraded platform=messenger feature=STUDY_REMINDER failure_class=${failureClass} action=${action} correlation=${maskExternalIdInText(
+        sanitizeLogValue(correlationId, 120),
+        psid,
+      )} psid=${maskExternalId(psid)}`,
+    );
   }
 
   private sanitizeDisplayName(displayName: string, psid: string): string {

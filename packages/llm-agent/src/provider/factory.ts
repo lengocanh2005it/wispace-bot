@@ -124,13 +124,14 @@ export interface FailoverConfig {
   onCircuitEvent?: (event: FailoverCircuitEvent) => void;
   onProviderAttempt?: (provider: string, feature?: string) => void;
   onProvidersExhausted?: (providers: string[], feature?: string) => void;
+  maxAttempts?: number;
 }
 
 /**
  * Build a failover chain following the given `order`.
  * Every provider in the requested order must be known and configured.
- * If 0–1 provider is configured → returns that adapter directly (no failover wrapper),
- * preserving current behavior/latency for the most common case.
+ * A single provider stays direct unless failover telemetry or a retry budget is
+ * requested; those options need the shared wrapper even without a fallback.
  */
 export function createFailoverLlmProviderAdapter(
   entries: LlmProviderEntryConfig[],
@@ -158,7 +159,13 @@ export function createFailoverLlmProviderAdapter(
   if (orderedAdapters.length === 0) {
     throw new Error('No LLM provider configured in failover order');
   }
-  if (orderedAdapters.length === 1) {
+  const needsFailoverWrapper = Boolean(
+    failoverConfig?.maxAttempts !== undefined ||
+    failoverConfig?.onCircuitEvent ||
+    failoverConfig?.onProviderAttempt ||
+    failoverConfig?.onProvidersExhausted,
+  );
+  if (orderedAdapters.length === 1 && !needsFailoverWrapper) {
     return orderedAdapters[0];
   }
   return new FailoverLlmProviderAdapter(
@@ -171,5 +178,6 @@ export function createFailoverLlmProviderAdapter(
     failoverConfig?.onCircuitEvent,
     failoverConfig?.onProviderAttempt,
     failoverConfig?.onProvidersExhausted,
+    failoverConfig?.maxAttempts,
   );
 }

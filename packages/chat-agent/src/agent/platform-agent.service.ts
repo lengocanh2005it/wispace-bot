@@ -17,6 +17,9 @@ import {
   buildClarificationMessage,
   buildWispaceScopeRedirectMessage,
   sanitizeUntrustedTextForLlm,
+  type LlmDegradedAction,
+  type LlmDegradedFailureClass,
+  type LlmDegradedModeEvent,
 } from '@wispace/llm-agent';
 import {
   PlatformLlmSafetyEventAdapter,
@@ -26,6 +29,7 @@ import {
   errorMessage,
   maskExternalId,
   maskExternalIdInText,
+  sanitizeLogValue,
 } from '@wispace/bot-common/masking';
 import { buildUnsupportedMessageTypeReply } from '@wispace/bot-common/messages';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
@@ -203,11 +207,21 @@ export class PlatformAgentService {
       };
     }
 
-    const history = identity
-      ? identityChanged || effectiveInput.history === undefined
-        ? await this.historyService.getHistory(resolvedInput.externalUserId)
-        : effectiveInput.history
-      : [];
+    let history = identity ? effectiveInput.history : [];
+    if (identity && (identityChanged || effectiveInput.history === undefined)) {
+      try {
+        history = await this.historyService.getHistory(
+          resolvedInput.externalUserId,
+        );
+      } catch (error) {
+        this.recordDegraded(
+          effectiveInput,
+          'history_unavailable',
+          'chat_fallback',
+        );
+        throw error;
+      }
+    }
 
     const result = await this.agent.reply(
       {
@@ -232,11 +246,20 @@ export class PlatformAgentService {
       this.options.appendHistory !== false &&
       resolvedInput.history === undefined
     ) {
-      await this.historyService.appendTurn(
-        resolvedInput.externalUserId,
-        resolvedInput.userText,
-        text,
-      );
+      try {
+        await this.historyService.appendTurn(
+          resolvedInput.externalUserId,
+          resolvedInput.userText,
+          text,
+        );
+      } catch (error) {
+        this.recordDegraded(
+          effectiveInput,
+          'history_unavailable',
+          'chat_fallback',
+        );
+        throw error;
+      }
     }
 
     return {
@@ -523,6 +546,7 @@ export class PlatformAgentService {
     } catch (error) {
       this.recordClarificationOutcome('unavailable');
       this.recordClarificationOutcome('blocked_tool');
+      this.recordDegraded(input, 'history_unavailable', 'block_response');
       this.logger.error(
         `Clarification state unavailable externalUserId=${maskExternalId(input.externalUserId)} error=${errorMessage(error, input.externalUserId)}`,
       );
@@ -538,6 +562,34 @@ export class PlatformAgentService {
     } catch {
       // Metrics must never change chat behavior.
     }
+  }
+
+  private recordDegraded(
+    input: PlatformAgentInput,
+    failureClass: LlmDegradedFailureClass,
+    action: LlmDegradedAction,
+  ): void {
+    const event: LlmDegradedModeEvent = {
+      platform: this.options.platform ?? 'unknown',
+      feature: FEATURE,
+      failureClass,
+      action,
+      ...(input.correlationId ? { correlationId: input.correlationId } : {}),
+    };
+    try {
+      this.options.metrics?.degradedModeInc?.(event);
+    } catch {
+      // Telemetry must never change the fail-closed history policy.
+    }
+    const correlation = input.correlationId
+      ? maskExternalIdInText(
+          sanitizeLogValue(input.correlationId, 120),
+          input.externalUserId,
+        )
+      : 'n/a';
+    this.logger.warn(
+      `Chat degraded platform=${event.platform} feature=${FEATURE} failure_class=${failureClass} action=${action} correlation=${correlation} externalUserId=${maskExternalId(input.externalUserId)}`,
+    );
   }
 
   private staticReply(
@@ -598,6 +650,7 @@ export class PlatformAgentService {
     };
 
     const ports: LlmAgentPorts<PlatformAgentToolContext> = {
+      platform: this.options.platform,
       // ponytail: shared retry helper from llm-agent (was 3 local copies of sleep+backoff)
       llmExecution:
         this.options.llmExecution ?? this.buildEnvLlmExecutionPort(),

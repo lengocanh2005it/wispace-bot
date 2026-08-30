@@ -218,6 +218,32 @@ describe('FailoverLlmProviderAdapter', () => {
       expect(circuitEvents).toEqual(['a:open', 'b:open']);
       expect(exhausted).toEqual([['a', 'b']]);
     });
+
+    it('uses the configured retry budget for retryable provider failures', async () => {
+      const generateJson = jest.fn().mockRejectedValue(new Error('server'));
+      const candidate = makeCandidate({
+        name: 'a',
+        generateJson,
+        normalizeError: () => serverError(),
+      });
+      const adapter = new FailoverLlmProviderAdapter(
+        [candidate],
+        undefined,
+        Date.now,
+        undefined,
+        undefined,
+        0,
+        undefined,
+        undefined,
+        undefined,
+        4,
+      );
+
+      await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+        LlmAllProvidersExhaustedError,
+      );
+      expect(generateJson).toHaveBeenCalledTimes(4);
+    });
   });
 
   describe('chatWithTools — failover', () => {

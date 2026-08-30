@@ -5,6 +5,7 @@ import {
   LlmRetryExhaustedError,
 } from './agent.service';
 import { NOOP_METRICS_PORT } from './ports';
+import type { AgentMetricsPort } from './ports';
 import type { LlmAgentInput } from './types';
 import type { LlmProviderAdapter } from './provider/llm-provider.adapter';
 import type { LlmToolChatResponse } from './provider/types';
@@ -124,6 +125,8 @@ function buildService(
   overrides: {
     execute?: jest.Mock;
     adapter?: LlmProviderAdapter;
+    metrics?: AgentMetricsPort;
+    platform?: string;
   } = {},
 ) {
   const usageRecorder = { recordFromCompletion: jest.fn() };
@@ -148,7 +151,8 @@ function buildService(
     safetyEvents,
     toolExecutor,
     adapter: overrides.adapter ?? makeAdapter([makeTextResponse('stub')]),
-    metrics: NOOP_METRICS_PORT,
+    metrics: overrides.metrics ?? NOOP_METRICS_PORT,
+    platform: overrides.platform,
     logger: { warn: jest.fn(), debug: jest.fn() },
   };
 
@@ -200,6 +204,25 @@ describe('LlmAgentService', () => {
       );
 
       expect(result.text).toMatch(/WISPACE/);
+    });
+
+    it('records a bounded degraded event with platform and correlation context', async () => {
+      const degradedModeInc = jest.fn();
+      const { service } = buildService({
+        adapter: makeNotConfiguredAdapter(),
+        platform: 'discord',
+        metrics: { ...NOOP_METRICS_PORT, degradedModeInc },
+      });
+
+      await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(degradedModeInc).toHaveBeenCalledWith({
+        platform: 'discord',
+        feature: 'FREE_FORM_CHAT',
+        failureClass: 'provider_unconfigured',
+        action: 'chat_fallback',
+        correlationId: 'mid-abc',
+      });
     });
   });
 

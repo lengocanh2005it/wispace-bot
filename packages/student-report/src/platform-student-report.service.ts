@@ -14,6 +14,7 @@ import {
   buildLlmExecutionConfig,
   createEnvLlmExecutionPort,
   type AdmissionMetrics,
+  type LlmDegradedModeEvent,
   loadSystemPromptFile,
   type LlmProviderAdapter,
 } from '@wispace/llm-agent';
@@ -67,6 +68,8 @@ export class PlatformStudentReportService {
     private readonly redisClient?: RedisClientPort,
     @Optional()
     private readonly llmAdmissionMetrics?: AdmissionMetrics,
+    @Optional()
+    private readonly degradedMode?: (event: LlmDegradedModeEvent) => void,
   ) {}
 
   generateReport(
@@ -175,6 +178,8 @@ export class PlatformStudentReportService {
           };
         },
       },
+      platform: this.platform,
+      degradedMode: this.degradedMode,
       logger: {
         log: (message) => this.logger.log(message),
         warn: (message) => this.logger.warn(message),

@@ -1,5 +1,4 @@
 import { createLlmProviderAdapterFromEnv } from './from-env.factory';
-import { OpenAiAdapter } from './openai/openai-adapter';
 import { FailoverLlmProviderAdapter } from './failover/failover-adapter';
 
 describe('createLlmProviderAdapterFromEnv', () => {
@@ -7,8 +6,7 @@ describe('createLlmProviderAdapterFromEnv', () => {
     const adapter = createLlmProviderAdapterFromEnv((key) =>
       key === 'OPENAI_API_KEY' ? 'key' : undefined,
     );
-    expect(adapter).toBeInstanceOf(OpenAiAdapter);
-    expect(adapter).not.toBeInstanceOf(FailoverLlmProviderAdapter);
+    expect(adapter).toBeInstanceOf(FailoverLlmProviderAdapter);
   });
 
   it('returns failover adapter when order env is set with multiple providers', () => {
@@ -27,7 +25,17 @@ describe('createLlmProviderAdapterFromEnv', () => {
       (key) => (key === 'OPENAI_API_KEY' ? 'key' : undefined),
       { defaultProviderOrder: ['openai'] },
     );
-    expect(adapter).toBeInstanceOf(OpenAiAdapter);
+    expect(adapter).toBeInstanceOf(FailoverLlmProviderAdapter);
+  });
+
+  it('passes the configured retry budget to the adapter', () => {
+    const adapter = createLlmProviderAdapterFromEnv((key) => {
+      if (key === 'OPENAI_API_KEY') return 'key';
+      if (key === 'LLM_OPENAI_RETRY_MAX_ATTEMPTS') return '4';
+      return undefined;
+    });
+
+    expect((adapter as unknown as { maxAttempts: number }).maxAttempts).toBe(4);
   });
 
   it('fails startup when an explicitly ordered provider has no key', () => {

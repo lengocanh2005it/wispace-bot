@@ -141,6 +141,9 @@ export type {
 export { NOOP_METRICS_PORT } from './ports';
 export type {
   AgentMetricsPort,
+  LlmDegradedAction,
+  LlmDegradedFailureClass,
+  LlmDegradedModeEvent,
   LlmExecutionPort,
   LlmRoundOutcome,
   LlmSafetyEventPort,
@@ -158,10 +161,12 @@ export {
   createEnvLlmExecutionPort,
   buildLlmExecutionConfig,
   acquireRedisSlot,
+  LlmProviderCircuitOpenError,
 } from './execution/index';
 export type {
   AdmissionTicket,
   LlmOverloadReason,
   AdmissionMetrics,
   EnvLlmExecutionConfig,
+  LlmProviderCircuitState,
 } from './execution/index';

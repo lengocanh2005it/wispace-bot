@@ -14,3 +14,7 @@ export type {
 } from './env-llm-execution.port';
 export { buildLlmExecutionConfig } from './llm-execution.config';
 export { acquireRedisSlot } from './redis-slot-limiter';
+export {
+  LlmProviderCircuitOpenError,
+  type LlmProviderCircuitState,
+} from './circuit-error';

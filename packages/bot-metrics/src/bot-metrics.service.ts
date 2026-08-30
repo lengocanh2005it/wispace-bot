@@ -57,6 +57,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmProviderAttempts: Counter;
   private llmProviderCircuitEvents: Counter;
   private llmProvidersExhausted: Counter;
+  private llmDegradedMode: Counter;
   private quotaDenied: Counter;
   private reminderDispatch: Counter;
   private webActivityWebhookReceived: Counter;
@@ -197,6 +198,13 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_llm_providers_exhausted_total`,
       help: 'LLM requests for which every configured provider failed',
       labelNames: ['provider_count', 'feature'],
+      registers: [this.registry],
+    });
+
+    this.llmDegradedMode = new Counter({
+      name: `${this.prefix}_llm_degraded_mode_total`,
+      help: 'Fallback and degraded responses with bounded operational context',
+      labelNames: ['platform', 'feature', 'failure_class', 'action'],
       registers: [this.registry],
     });
 
@@ -477,6 +485,25 @@ export class BotMetricsService implements OnModuleDestroy {
     this.llmProvidersExhausted.inc({
       provider_count: String(Math.max(0, Math.floor(providerCount))),
       feature,
+    });
+  }
+
+  /**
+   * Records a degraded response without accepting correlation/user data as
+   * labels. The caller logs the correlation id separately after redaction.
+   */
+  incLlmDegradedMode(event: {
+    platform: string;
+    feature: string;
+    failureClass: string;
+    action: string;
+    correlationId?: string;
+  }): void {
+    this.llmDegradedMode.inc({
+      platform: event.platform,
+      feature: event.feature,
+      failure_class: event.failureClass,
+      action: event.action,
     });
   }
 

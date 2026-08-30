@@ -8,6 +8,7 @@ import type { FailoverConfig } from './factory';
 const DEFAULT_COOLDOWN_LONG_MS = 600_000;
 const DEFAULT_COOLDOWN_SHORT_MS = 5_000;
 const DEFAULT_QUICK_RETRY_DELAY_MS = 150;
+const DEFAULT_RETRY_MAX_ATTEMPTS = 3;
 
 /**
  * Build the LLM provider adapter from environment variables — the shared
@@ -19,7 +20,10 @@ export function createLlmProviderAdapterFromEnv(
   getEnv: (key: string) => string | undefined,
   options?: Pick<
     FailoverConfig,
-    'onCircuitEvent' | 'onProviderAttempt' | 'onProvidersExhausted'
+    | 'onCircuitEvent'
+    | 'onProviderAttempt'
+    | 'onProvidersExhausted'
+    | 'maxAttempts'
   > & { defaultProviderOrder?: string[] },
 ): LlmProviderAdapter {
   const order = (getEnv('LLM_PROVIDER_FAILOVER_ORDER') ?? '')
@@ -39,6 +43,13 @@ export function createLlmProviderAdapterFromEnv(
   const quickRetryDelayMs = Number(
     getEnv('LLM_FAILOVER_QUICK_RETRY_DELAY_MS') ?? DEFAULT_QUICK_RETRY_DELAY_MS,
   );
+  const configuredMaxAttempts = Number(
+    getEnv('LLM_OPENAI_RETRY_MAX_ATTEMPTS') ?? DEFAULT_RETRY_MAX_ATTEMPTS,
+  );
+  const maxAttempts =
+    Number.isFinite(configuredMaxAttempts) && configuredMaxAttempts > 0
+      ? Math.floor(configuredMaxAttempts)
+      : DEFAULT_RETRY_MAX_ATTEMPTS;
   return createFailoverLlmProviderAdapter(
     entries,
     providerOrder,
@@ -50,6 +61,7 @@ export function createLlmProviderAdapterFromEnv(
       onCircuitEvent: options?.onCircuitEvent,
       onProviderAttempt: options?.onProviderAttempt,
       onProvidersExhausted: options?.onProvidersExhausted,
+      maxAttempts: options?.maxAttempts ?? maxAttempts,
     },
   );
 }

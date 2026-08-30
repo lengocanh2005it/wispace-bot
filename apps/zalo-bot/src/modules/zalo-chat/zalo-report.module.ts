@@ -122,6 +122,7 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
           join(__dirname, '../../shared/prompts'),
           undefined,
           metrics.llmAdmission,
+          (event) => metrics.incLlmDegradedMode(event),
         ),
       inject: [
         ConfigService,

@@ -20,6 +20,9 @@ import { isObviouslyOffTopic, isAmbiguousMessage } from './utils/scope.utils';
 import { sanitizeReplyText } from './utils/text.utils';
 import { checkFinalOutputSafety } from './utils/final-output.utils';
 import { sleep, isAbortError } from './utils/retry.utils';
+import { LlmAllProvidersExhaustedError } from './provider/failover/failover.errors';
+import { LlmOverloadError } from './execution/bounded-admission';
+import { LlmProviderCircuitOpenError } from './execution/circuit-error';
 import {
   buildExhaustionPartialAnswer,
   buildFinalOutputBlockedMessage,
@@ -33,12 +36,15 @@ import {
   errorMessage,
   maskExternalId,
   maskExternalIdInText,
+  sanitizeLogValue,
 } from '@wispace/bot-common/masking';
 import {
   AgentMetricsPort,
   LlmExecutionPort,
   LlmSafetyEventPort,
   LlmUsageRecorderPort,
+  type LlmDegradedAction,
+  type LlmDegradedFailureClass,
   NOOP_METRICS_PORT,
   ToolExecutorPort,
 } from './ports';
@@ -61,6 +67,22 @@ const DEFAULT_COMPACTION_SUMMARY_MAX_TOKENS = 500;
 const DEFAULT_COMPACTION_RECENT_TURNS = 2;
 const COMPACTION_MIN_DROPPED_TOKENS = 100;
 const FEATURE = 'FREE_FORM_CHAT';
+
+function classifyAgentFailure(error: unknown): LlmDegradedFailureClass {
+  if (error instanceof LlmAllProvidersExhaustedError) {
+    return 'provider_exhausted';
+  }
+  if (error instanceof LlmProviderCircuitOpenError) {
+    return 'provider_circuit_open';
+  }
+  if (error instanceof LlmOverloadError) {
+    return 'execution_overload';
+  }
+  if (isAbortError(error)) {
+    return 'timeout';
+  }
+  return 'unknown';
+}
 
 /**
  * Simple token estimator — Vietnamese text averages ~1.8 tokens/char due to
@@ -85,6 +107,8 @@ Trước khi trả lời, hãy:
 `.trim();
 
 export interface LlmAgentPorts<TToolContext> {
+  /** Platform label used for bounded degraded-mode telemetry. */
+  platform?: string;
   llmExecution: LlmExecutionPort;
   usageRecorder: LlmUsageRecorderPort;
   safetyEvents: LlmSafetyEventPort;
@@ -293,6 +317,15 @@ export class LlmAgentService<TToolContext> {
 
     const earlyReturn = this.checkEarlyReturns(input);
     if (earlyReturn) {
+      if (!adapter.isConfigured()) {
+        this.recordDegraded(
+          input,
+          metrics,
+          logger,
+          'provider_unconfigured',
+          'chat_fallback',
+        );
+      }
       yield { type: 'done', reply: earlyReturn.reply };
       return;
     }
@@ -378,6 +411,13 @@ export class LlmAgentService<TToolContext> {
             input.userText,
           );
           if (groundingCheck.suspicious) {
+            this.recordDegraded(
+              input,
+              metrics,
+              logger,
+              'grounding_blocked',
+              'block_response',
+            );
             logger.warn(
               `LLM_GROUNDING_WARNING feature=${FEATURE} externalUserId=${maskExternalId(
                 input.externalUserId,
@@ -416,6 +456,13 @@ export class LlmAgentService<TToolContext> {
           // closed to a generic message.
           const safety = checkFinalOutputSafety(sanitized);
           if (safety.unsafe) {
+            this.recordDegraded(
+              input,
+              metrics,
+              logger,
+              'safety_blocked',
+              'block_response',
+            );
             logger.warn(
               `LLM final output blocked reason=${safety.reason} externalUserId=${maskExternalId(
                 input.externalUserId,
@@ -444,6 +491,13 @@ export class LlmAgentService<TToolContext> {
         const uniqueCallCount = this.countUniqueToolCalls(toolCalls);
         if (uniqueCallCount > this.getMaxToolCallsPerRound()) {
           metrics.llmRoundOutcomeInc(FEATURE, 'duplicate_tool_calls');
+          this.recordDegraded(
+            input,
+            metrics,
+            logger,
+            'tool_failure',
+            'block_response',
+          );
           logger.warn(
             `LLM agent blocked tool round: ${uniqueCallCount} unique calls exceed cap=${this.getMaxToolCallsPerRound()} externalUserId=${maskExternalId(
               input.externalUserId,
@@ -462,6 +516,13 @@ export class LlmAgentService<TToolContext> {
           // stuck in a loop. A failed round re-calling the same tool is a
           // legitimate retry and must not be cut off.
           metrics.llmRoundOutcomeInc(FEATURE, 'duplicate_tool_calls');
+          this.recordDegraded(
+            input,
+            metrics,
+            logger,
+            'tool_failure',
+            'block_response',
+          );
           logger.warn(
             `LLM agent detected duplicate tool calls, stopping early round=${round} externalUserId=${maskExternalId(
               input.externalUserId,
@@ -513,6 +574,13 @@ export class LlmAgentService<TToolContext> {
         // the oldest loop-generated messages until the total fits.
         this.trimLoopMessages(messages, loopMessagesStart, metrics);
       } catch (err) {
+        this.recordDegraded(
+          input,
+          metrics,
+          logger,
+          classifyAgentFailure(err),
+          'chat_fallback',
+        );
         yield { type: 'error', error: err };
         return;
       }
@@ -521,6 +589,13 @@ export class LlmAgentService<TToolContext> {
     // Exhausted all rounds without a final text reply — give a partial
     // answer listing the grounded data actually retrieved (#207 item 4).
     metrics.llmRoundOutcomeInc(FEATURE, 'exhausted');
+    this.recordDegraded(
+      input,
+      metrics,
+      logger,
+      'tool_round_exhausted',
+      'partial_answer',
+    );
     logger.warn(
       `LLM agent exhausted maxToolRounds=${this.getMaxToolRounds()} externalUserId=${maskExternalId(
         input.externalUserId,
@@ -964,6 +1039,36 @@ Summary:`;
     const v = this.config.toolExecutionTimeoutMs;
     if (v && Number.isFinite(v) && v > 0) return Math.floor(v);
     return DEFAULT_TOOL_EXECUTION_TIMEOUT_MS;
+  }
+
+  private recordDegraded(
+    input: LlmAgentInput,
+    metrics: AgentMetricsPort,
+    logger: { warn: (message: string) => void },
+    failureClass: LlmDegradedFailureClass,
+    action: LlmDegradedAction,
+  ): void {
+    const correlationId = input.correlationId
+      ? maskExternalIdInText(
+          sanitizeLogValue(input.correlationId, 120),
+          input.externalUserId,
+        )
+      : 'n/a';
+    const event = {
+      platform: this.ports.platform ?? 'unknown',
+      feature: FEATURE,
+      failureClass,
+      action,
+      ...(input.correlationId ? { correlationId: input.correlationId } : {}),
+    };
+    try {
+      metrics.degradedModeInc?.(event);
+    } catch {
+      // Telemetry must never change the user-visible fallback behavior.
+    }
+    logger.warn(
+      `LLM degraded platform=${event.platform} feature=${FEATURE} failure_class=${failureClass} action=${action} correlation=${correlationId} externalUserId=${maskExternalId(input.externalUserId)}`,
+    );
   }
 
   private getGlobalAgentTimeoutMs(): number {

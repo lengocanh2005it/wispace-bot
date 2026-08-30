@@ -132,4 +132,26 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
       'test_llm_providers_exhausted_total{provider_count="2",feature="FREE_FORM_CHAT"} 1',
     );
   });
+
+  it('records degraded responses with platform and bounded failure/action labels', async () => {
+    const svc = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+
+    svc.incLlmDegradedMode({
+      platform: 'discord',
+      feature: 'FREE_FORM_CHAT',
+      failureClass: 'provider_exhausted',
+      action: 'chat_fallback',
+      correlationId: 'message-123',
+    });
+
+    const out = await svc.getMetrics();
+    expect(out).toContain(
+      'test_llm_degraded_mode_total{platform="discord",feature="FREE_FORM_CHAT",failure_class="provider_exhausted",action="chat_fallback"} 1',
+    );
+    expect(out).not.toContain('correlation_id');
+    expect(out).not.toContain('external_user_id');
+  });
 });

@@ -253,6 +253,7 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
                 metrics.incObservationOutcome(toolName, 'messenger', outcome),
               toolPolicyDeniedInc: (toolName, reason) =>
                 metrics.incLlmToolPolicyDenied(toolName, 'messenger', reason),
+              degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
             },
             clarificationOutcomeInc: (outcome) =>
               metrics.incClarificationOutcome(outcome),

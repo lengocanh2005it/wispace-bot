@@ -7,6 +7,7 @@ import {
   retryWithBackoff,
   BoundedAdmissionQueue,
   LlmOverloadError,
+  LlmProviderCircuitOpenError,
   type AdmissionTicket,
   type LlmProviderAdapter,
 } from '@wispace/llm-agent';
@@ -20,6 +21,14 @@ export type {
   LlmExecutionFeature,
   LlmExecutionContext,
 } from '../types/llm-execution.types';
+
+function isOpossumOpenError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { code?: unknown }).code === 'EOPENBREAKER'
+  );
+}
 
 @Injectable()
 export class LlmExecutionService {
@@ -156,7 +165,14 @@ export class LlmExecutionService {
         );
       }
 
-      return (await this.breaker.fire(fn, executionContext)) as Promise<T>;
+      try {
+        return (await this.breaker.fire(fn, executionContext)) as Promise<T>;
+      } catch (error) {
+        if (isOpossumOpenError(error)) {
+          throw new LlmProviderCircuitOpenError('open');
+        }
+        throw error;
+      }
     } finally {
       await releaseGlobal?.();
       ticket.release();

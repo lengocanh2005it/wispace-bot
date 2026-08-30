@@ -85,6 +85,19 @@ describe('createFailoverLlmProviderAdapter', () => {
     expect(result).toBeInstanceOf(FailoverLlmProviderAdapter);
   });
 
+  it('wraps one provider when telemetry or retry budget is configured', () => {
+    const onProviderAttempt = jest.fn();
+    const result = createFailoverLlmProviderAdapter(
+      [entryA],
+      ['openai'],
+      undefined,
+      { maxAttempts: 4, onProviderAttempt },
+    );
+
+    expect(result).toBeInstanceOf(FailoverLlmProviderAdapter);
+    expect((result as unknown as { maxAttempts: number }).maxAttempts).toBe(4);
+  });
+
   it('fails startup when a provider listed in the order is missing credentials', () => {
     const entryNoKey: LlmProviderEntryConfig = {
       provider: 'openai-compatible',

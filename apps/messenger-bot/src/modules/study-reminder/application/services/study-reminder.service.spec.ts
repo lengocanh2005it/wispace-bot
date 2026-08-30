@@ -71,6 +71,46 @@ describe('StudyReminderService', () => {
     expect(result).not.toContain('### System');
   });
 
+  it('records provider-unconfigured degraded telemetry for the deterministic fallback', async () => {
+    const degradedMode = jest.fn();
+    const service = new StudyReminderService(
+      {
+        getUpcomingSessions: jest.fn(),
+      } as unknown as StudySessionSourceService,
+      {
+        getMinutesUntilSession: jest.fn(() => 60),
+        formatScheduledTimeLabel: jest.fn(() => '09:00 01/07/2026'),
+      } as unknown as StudyReminderScheduleService,
+      {
+        getUserGoals: jest.fn(() => Promise.resolve({ targetScore: 7 })),
+        getCapacityData: jest.fn(() => Promise.resolve({})),
+      },
+      {
+        resolveDisplayName: jest.fn(() => Promise.resolve('Mai')),
+      } as unknown as UserDisplayNameService,
+      { recordFromCompletion: jest.fn() } as never,
+      { run: jest.fn() } as never,
+      {
+        ...mockAdapter,
+        isConfigured: () => false,
+      },
+      { incLlmDegradedMode: degradedMode } as never,
+    );
+
+    await service.generateReminderForSession('psid-1', {
+      ...session,
+      topic: 'Task 2',
+    });
+
+    expect(degradedMode).toHaveBeenCalledWith({
+      platform: 'messenger',
+      feature: 'STUDY_REMINDER',
+      failureClass: 'provider_unconfigured',
+      action: 'reminder_fallback',
+      correlationId: 'psid-1',
+    });
+  });
+
   it('validates LLM output shape before formatting reminder', async () => {
     const service = buildService(
       JSON.stringify({

@@ -418,7 +418,10 @@ describe('createEnvLlmExecutionPort', () => {
 
     await expect(
       port.run(calls, { feature: 'FREE_FORM_CHAT' }),
-    ).rejects.toThrow(/circuit/i);
+    ).rejects.toMatchObject({
+      name: 'LlmProviderCircuitOpenError',
+      state: 'open',
+    });
     expect(calls).toHaveBeenCalledTimes(3);
   });
 

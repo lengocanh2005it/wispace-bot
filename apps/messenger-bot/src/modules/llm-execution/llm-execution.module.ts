@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { LlmExecutionConfigService } from './application/services/llm-execution-config.service';
 import { LlmExecutionService } from './application/services/llm-execution.service';
 import {
-  createLlmProviderAdapter,
   createFailoverLlmProviderAdapter,
   createFailoverProviderEntries,
 } from '@wispace/llm-agent';
@@ -26,15 +25,10 @@ import { BotMetricsService } from '@wispace/bot-metrics';
         metrics: BotMetricsService,
       ): LlmProviderAdapter => {
         const order = config.getFailoverOrder();
-
-        if (order.length === 0) {
-          return createLlmProviderAdapter({
-            getApiKey: () => config.getApiKey(),
-            getModel: () => config.getModel(),
-            getBaseUrl: () => config.getBaseUrl(),
-            provider: config.getProvider(),
-          });
-        }
+        const configuredProvider = (config.getProvider() ?? 'openai')
+          .trim()
+          .toLowerCase();
+        const providerOrder = order.length ? order : [configuredProvider];
 
         const get = (key: string): string | undefined => {
           if (key === 'OPENAI_API_KEY') return config.getApiKey();
@@ -43,11 +37,20 @@ import { BotMetricsService } from '@wispace/bot-metrics';
           return configService.get<string>(key)?.trim();
         };
 
-        const entries = createFailoverProviderEntries(get, order);
+        const entries = order.length
+          ? createFailoverProviderEntries(get, providerOrder)
+          : [
+              {
+                provider: configuredProvider,
+                getApiKey: () => config.getApiKey(),
+                getModel: () => config.getModel(),
+                getBaseUrl: () => config.getBaseUrl(),
+              },
+            ];
 
         return createFailoverLlmProviderAdapter(
           entries,
-          order,
+          providerOrder,
           {
             warn: (msg) => console.warn(msg),
           },
@@ -55,6 +58,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
             cooldownLongMs: config.getFailoverCooldownLongMs(),
             cooldownShortMs: config.getFailoverCooldownShortMs(),
             quickRetryDelayMs: config.getFailoverQuickRetryDelayMs(),
+            maxAttempts: config.getRetryMaxAttempts(),
             onCircuitEvent: (event) =>
               metrics.incLlmProviderCircuitEvent(
                 event.provider,

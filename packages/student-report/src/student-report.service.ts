@@ -1,14 +1,29 @@
+import {
+  LlmAllProvidersExhaustedError,
+  LlmOverloadError,
+  LlmProviderCircuitOpenError,
+} from '@wispace/llm-agent';
 import type {
   LlmExecutionPort,
+  LlmDegradedAction,
+  LlmDegradedFailureClass,
+  LlmDegradedModeEvent,
   LlmProviderAdapter,
   LlmUsageRecorderPort,
 } from '@wispace/llm-agent';
 import { retryWithBackoff } from '@wispace/llm-agent';
-import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+  sanitizeLogValue,
+} from '@wispace/bot-common/masking';
+import { isAbortError } from '@wispace/bot-common/utils';
 import type { CapacityDataPort } from './ports';
 import {
   StudentReportNoScoreDataError,
   StudentReportRetryableError,
+  isStudentReportRetryableError,
   type RetryableApiError,
 } from './errors';
 import {
@@ -43,6 +58,9 @@ export interface StudentReportPorts {
   llmExecution: LlmExecutionPort;
   usageRecorder: LlmUsageRecorderPort;
   capacityData: CapacityDataPort;
+  /** Platform label and degraded-event sink for bounded fallback telemetry. */
+  platform?: string;
+  degradedMode?: (event: LlmDegradedModeEvent) => void;
   logger?: {
     log: (message: string) => void;
     warn: (message: string) => void;
@@ -125,6 +143,13 @@ export class StudentReportCore {
       return await generate(input);
     } catch (error) {
       if (error instanceof StudentReportNoScoreDataError) {
+        this.recordDegraded(
+          externalUserId,
+          correlationId,
+          'no_score_data',
+          'report_unavailable',
+          logger,
+        );
         logger.log(
           `No score data for report externalUserId=${maskExternalId(
             externalUserId,
@@ -138,11 +163,28 @@ export class StudentReportCore {
           logger.warn(
             `Retryable API error for report externalUserId=${maskExternalId(
               externalUserId,
+            )} platform=${this.ports.platform ?? 'unknown'} feature=${FEATURE} correlation=${this.safeCorrelation(
+              correlationId,
+              externalUserId,
             )} status=${error.statusCode} endpoint=${error.endpoint}`,
+          );
+          this.recordDegraded(
+            externalUserId,
+            correlationId,
+            'upstream_unavailable',
+            'durable_retry',
+            logger,
           );
           throw new StudentReportRetryableError(externalUserId, error);
         }
 
+        this.recordDegraded(
+          externalUserId,
+          correlationId,
+          'upstream_unavailable',
+          'report_unavailable',
+          logger,
+        );
         logger.warn(
           `API unavailable for report externalUserId=${maskExternalId(
             externalUserId,
@@ -151,6 +193,15 @@ export class StudentReportCore {
         return buildStudentReportApiUnavailableMessage();
       }
 
+      if (isStudentReportRetryableError(error)) {
+        this.recordDegraded(
+          externalUserId,
+          correlationId,
+          this.classifyRetryableFailure(error),
+          'durable_retry',
+          logger,
+        );
+      }
       throw error;
     }
   }
@@ -196,6 +247,13 @@ export class StudentReportCore {
     const adapter = this.config.adapter;
 
     if (!adapter.isConfigured()) {
+      this.recordDegraded(
+        externalUserId,
+        correlationId,
+        'provider_unconfigured',
+        'report_fallback',
+        logger,
+      );
       logger.warn('LLM provider missing, using fallback report content');
       return buildFallbackReport(input);
     }
@@ -237,7 +295,14 @@ export class StudentReportCore {
 
     const content = response.content;
     if (!content) {
-      throw new Error('LLM provider returned empty content');
+      this.recordDegraded(
+        externalUserId,
+        correlationId,
+        'invalid_output',
+        'report_fallback',
+        logger,
+      );
+      return buildFallbackReport(input);
     }
 
     try {
@@ -245,6 +310,13 @@ export class StudentReportCore {
       // #124: factual fields come from source data; the LLM only supplies prose.
       return buildReport(prose, input);
     } catch (error) {
+      this.recordDegraded(
+        externalUserId,
+        correlationId,
+        'invalid_output',
+        'report_fallback',
+        logger,
+      );
       logger.warn(
         `Invalid student report LLM output externalUserId=${maskExternalId(
           externalUserId,
@@ -252,5 +324,61 @@ export class StudentReportCore {
       );
       return buildFallbackReport(input);
     }
+  }
+
+  private classifyRetryableFailure(error: unknown): LlmDegradedFailureClass {
+    if (error instanceof StudentReportRetryableError) {
+      return 'upstream_unavailable';
+    }
+    if (error instanceof LlmAllProvidersExhaustedError) {
+      return 'provider_exhausted';
+    }
+    if (error instanceof LlmProviderCircuitOpenError) {
+      return 'provider_circuit_open';
+    }
+    if (error instanceof LlmOverloadError) {
+      return 'execution_overload';
+    }
+    if (isAbortError(error)) {
+      return 'timeout';
+    }
+    return 'unknown';
+  }
+
+  private recordDegraded(
+    externalUserId: string,
+    correlationId: string,
+    failureClass: LlmDegradedFailureClass,
+    action: LlmDegradedAction,
+    logger: { warn: (message: string) => void },
+  ): void {
+    const event: LlmDegradedModeEvent = {
+      platform: this.ports.platform ?? 'unknown',
+      feature: FEATURE,
+      failureClass,
+      action,
+      correlationId,
+    };
+    try {
+      this.ports.degradedMode?.(event);
+    } catch {
+      // Telemetry must never change report delivery or durable retry behavior.
+    }
+    logger.warn(
+      `Student report degraded platform=${event.platform} feature=${FEATURE} failure_class=${failureClass} action=${action} correlation=${this.safeCorrelation(
+        correlationId,
+        externalUserId,
+      )} externalUserId=${maskExternalId(externalUserId)}`,
+    );
+  }
+
+  private safeCorrelation(
+    correlationId: string,
+    externalUserId: string,
+  ): string {
+    return maskExternalIdInText(
+      sanitizeLogValue(correlationId, 120),
+      externalUserId,
+    );
   }
 }

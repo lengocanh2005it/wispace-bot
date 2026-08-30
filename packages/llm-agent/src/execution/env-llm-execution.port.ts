@@ -11,6 +11,7 @@ import {
   admissionWaitBudgetMs,
   type AdmissionTicket,
 } from './bounded-admission';
+import { LlmProviderCircuitOpenError } from './circuit-error';
 
 const FEATURE = 'FREE_FORM_CHAT';
 
@@ -99,11 +100,11 @@ export function createEnvLlmExecutionPort(
     if (!circuitOpenedAt) return;
 
     if (Date.now() - circuitOpenedAt < EXECUTION_CIRCUIT_RESET_MS) {
-      throw new Error('LLM provider execution circuit is open');
+      throw new LlmProviderCircuitOpenError('open');
     }
 
     if (halfOpenInFlight) {
-      throw new Error('LLM provider execution circuit is half-open');
+      throw new LlmProviderCircuitOpenError('half_open');
     }
     halfOpenInFlight = true;
   };

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import {
@@ -6,6 +6,7 @@ import {
   type StudentReportPorts,
 } from '@wispace/student-report';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { todayUsageDate } from '@wispace/chat-metering';
 import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 import { loadSystemPrompt } from '@messenger/shared/prompts/load-system-prompt';
@@ -44,6 +45,8 @@ export class StudentReportService {
     private readonly llmExecution: LlmExecutionService,
     @Inject('LLM_PROVIDER_ADAPTER')
     private readonly adapter: LlmProviderAdapter,
+    @Optional()
+    private readonly metrics?: BotMetricsService,
   ) {}
 
   generateReport(psid: string): Promise<string> {
@@ -129,6 +132,8 @@ export class StudentReportService {
         getCapacityData: (psid, options) =>
           this.taskScoreAverageApi.getCapacityData(psid, options),
       },
+      platform: 'messenger',
+      degradedMode: (event) => this.metrics?.incLlmDegradedMode(event),
       logger: {
         log: (message) => this.logger.log(message),
         warn: (message) => this.logger.warn(message),

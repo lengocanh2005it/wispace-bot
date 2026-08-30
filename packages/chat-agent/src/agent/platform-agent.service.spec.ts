@@ -2,7 +2,7 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LlmAgentService } from '@wispace/llm-agent';
-import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import type { AgentMetricsPort, LlmProviderAdapter } from '@wispace/llm-agent';
 import type {
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
@@ -42,6 +42,7 @@ describe('PlatformAgentService', () => {
       clarificationStore?: ClarificationStateStore;
       platform?: string;
       clarificationOutcomeInc?: (outcome: string) => void;
+      metrics?: AgentMetricsPort;
       currentIdentityProvider?: (
         externalUserId: string,
       ) => Promise<{ userId: number; mappingVersion: string } | undefined>;
@@ -72,6 +73,7 @@ describe('PlatformAgentService', () => {
           })),
         clarificationStore: overrides.clarificationStore,
         clarificationOutcomeInc: overrides.clarificationOutcomeInc,
+        metrics: overrides.metrics,
       },
     );
   }
@@ -455,6 +457,38 @@ describe('PlatformAgentService', () => {
     expect(result.text).toContain('chưa thể xử lý');
     expect(result.skipHistory).toBe(true);
     expect(mockLlmReply).not.toHaveBeenCalled();
+  });
+
+  it('records bounded degraded telemetry for clarification storage failure', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const clarificationStore: ClarificationStateStore = {
+      get: jest.fn().mockRejectedValue(new Error('store unavailable')),
+      set: jest.fn(),
+      clear: jest.fn(),
+    };
+    const degradedModeInc = jest.fn();
+    const service = buildService(historyService, {
+      clarificationStore,
+      platform: 'zalo',
+      metrics: { degradedModeInc } as AgentMetricsPort,
+    });
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'tiến độ',
+      correlationId: 'event-clarification-1',
+    });
+
+    expect(degradedModeInc).toHaveBeenCalledWith({
+      platform: 'zalo',
+      feature: 'FREE_FORM_CHAT',
+      failureClass: 'history_unavailable',
+      action: 'block_response',
+      correlationId: 'event-clarification-1',
+    });
   });
 
   it('treats contradictory debounce text as a bounded clarification, not a tool turn', async () => {

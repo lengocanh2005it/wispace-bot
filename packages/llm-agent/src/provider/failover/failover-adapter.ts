@@ -30,6 +30,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
   private readonly cooldownLongMs: number;
   private readonly cooldownShortMs: number;
   private readonly quickRetryDelayMs: number;
+  private readonly maxAttempts: number;
 
   constructor(
     private readonly candidates: LlmProviderAdapter[],
@@ -47,10 +48,15 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
       providers: string[],
       feature?: string,
     ) => void,
+    configuredMaxAttempts?: number,
   ) {
     this.cooldownLongMs = cooldownLongMs ?? COOLDOWN_LONG_MS;
     this.cooldownShortMs = cooldownShortMs ?? COOLDOWN_SHORT_MS;
     this.quickRetryDelayMs = quickRetryDelayMs ?? QUICK_RETRY_DELAY_MS;
+    const normalizedMaxAttempts = Number.isFinite(configuredMaxAttempts)
+      ? Math.floor(configuredMaxAttempts as number)
+      : 2;
+    this.maxAttempts = Math.max(1, normalizedMaxAttempts);
   }
 
   isConfigured(): boolean {
@@ -222,8 +228,10 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     _candidate: LlmProviderAdapter,
     lastError: unknown,
   ): number {
-    if (!lastError) return 2;
+    if (!lastError) return this.maxAttempts;
     const { reason } = _candidate.normalizeError(lastError);
-    return reason === 'quota_exceeded' || reason === 'auth' ? 1 : 2;
+    return reason === 'quota_exceeded' || reason === 'auth'
+      ? 1
+      : this.maxAttempts;
   }
 }
