@@ -29,6 +29,33 @@ describe('RedisChatQueueWorkerService', () => {
     expect(flushReady).toHaveBeenCalledWith('zalo-1');
   });
 
+  it('does not stack overlapping poll waves while a flush is in flight (#454)', async () => {
+    let releaseFlush!: () => void;
+    const flushGate = new Promise<void>((resolve) => {
+      releaseFlush = resolve;
+    });
+    const listReadyExternalUserIds = jest.fn().mockResolvedValue(['user-1']);
+    const flushReady = jest.fn().mockReturnValue(flushGate);
+    const configService = {
+      get: (key: string) => (key === 'CHAT_QUEUE_STORE' ? 'redis' : undefined),
+    } as unknown as ConfigService;
+    const worker = new RedisChatQueueWorkerService(
+      configService,
+      listReadyExternalUserIds,
+      flushReady,
+    );
+
+    const firstWave = worker.pollReadyBuffers();
+    await worker.pollReadyBuffers();
+    await worker.pollReadyBuffers();
+    expect(listReadyExternalUserIds).toHaveBeenCalledTimes(1);
+
+    releaseFlush();
+    await firstWave;
+    await worker.pollReadyBuffers();
+    expect(listReadyExternalUserIds).toHaveBeenCalledTimes(2);
+  });
+
   it('does not start a timer for the memory queue', () => {
     const configService = {
       get: () => 'memory',

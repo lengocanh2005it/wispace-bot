@@ -18,6 +18,8 @@ export class RedisChatQueueWorkerService
 {
   private readonly logger = new Logger(RedisChatQueueWorkerService.name);
   private timer?: NodeJS.Timeout;
+  /** #454: one poll wave at a time — a flush contains an LLM call that outlasts the 2s tick. */
+  private polling = false;
 
   constructor(
     private readonly configService: ConfigService,
@@ -43,9 +45,10 @@ export class RedisChatQueueWorkerService
   }
 
   async pollReadyBuffers(): Promise<void> {
-    if (!this.isDistributedQueueEnabled()) {
+    if (this.polling || !this.isDistributedQueueEnabled()) {
       return;
     }
+    this.polling = true;
 
     try {
       const externalUserIds = await this.listReadyExternalUserIds(POLL_LIMIT);
@@ -56,6 +59,8 @@ export class RedisChatQueueWorkerService
       this.logger.error(
         `Shared chat queue poll failed: ${errorMessage(error)}`,
       );
+    } finally {
+      this.polling = false;
     }
   }
 
