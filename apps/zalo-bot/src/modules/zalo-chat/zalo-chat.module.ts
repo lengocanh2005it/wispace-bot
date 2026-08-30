@@ -36,6 +36,11 @@ import {
   WispaceGoalsService,
 } from '@wispace/wispace-client';
 import {
+  ZaloCalendarCapabilityAdapter,
+  ZaloExerciseCapabilityAdapter,
+  ZaloGoalsCapabilityAdapter,
+} from './infrastructure/adapters/zalo-wispace-capability.adapters';
+import {
   ADVISORY_LOCKS,
   PgAdvisoryLockService,
 } from '@wispace/bot-common/locks';
@@ -191,8 +196,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             : '';
 
         return new PlatformAgentToolsService(
-          goalsService,
-          calendarService,
+          new ZaloGoalsCapabilityAdapter(goalsService),
+          new ZaloCalendarCapabilityAdapter(calendarService),
           rescheduleConfirmationService,
           {
             platform: 'zalo',
@@ -226,8 +231,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
                 ),
             },
           },
-          exerciseClient,
-          'x-zaloid',
+          new ZaloExerciseCapabilityAdapter(exerciseClient, 'x-zaloid'),
         );
       },
       inject: [

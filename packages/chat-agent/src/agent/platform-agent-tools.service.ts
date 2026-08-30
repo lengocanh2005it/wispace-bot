@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   isAgentToolName,
   type AgentToolName,
@@ -15,16 +15,15 @@ import {
   sanitizeUntrustedTextForLlm,
 } from '@wispace/llm-agent';
 import {
-  WispaceCalendarService,
-  WispaceGoalsService,
-  PrecreateExerciseApiClient,
-  type WispaceIdHeader,
-} from '@wispace/wispace-client';
-import {
   errorMessage,
   maskExternalId,
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
+import type {
+  CalendarCapabilityPort,
+  ExerciseCapabilityPort,
+  GoalsCapabilityPort,
+} from './wispace-capability.ports';
 import type {
   PlatformAgentToolContext,
   PlatformAgentToolsOptions,
@@ -35,27 +34,21 @@ import { executePrecreateExerciseTool } from './precreate-exercise-result';
 
 /**
  * Shared WISPACE tool executor for the agent loop — implements the Discord
- * and Zalo tool sets (the platform-neutral behavior). Messenger provides its
- * own app-owned executor via `PlatformToolExecutorPort` because every tool
- * there uses Messenger data sources (LLM report, StudyReminderOperationsPort,
- * real subscription upsert) and pushes Messenger quick-reply follow-ups.
+ * and Zalo tool sets (the platform-neutral behavior). WISPACE data access goes
+ * through the capability ports (#425); each bot's composition root wires the
+ * concrete wispace-client adapters. Messenger provides its own app-owned
+ * executor via `PlatformToolExecutorPort`.
  */
 @Injectable()
 export class PlatformAgentToolsService implements PlatformToolExecutorPort {
   private readonly logger = new Logger(PlatformAgentToolsService.name);
 
   constructor(
-    // Messenger overrides every tool, so the shared Wispace services are
-    // optional — Discord/Zalo always inject them.
-    @Optional()
-    private readonly goalsService: WispaceGoalsService | undefined,
-    @Optional()
-    private readonly calendarService: WispaceCalendarService | undefined,
+    private readonly goalsPort: GoalsCapabilityPort,
+    private readonly calendarPort: CalendarCapabilityPort,
     private readonly stagePort: RescheduleStagePort,
     private readonly options: PlatformAgentToolsOptions,
-    @Optional()
-    private readonly exerciseClient?: PrecreateExerciseApiClient,
-    private readonly exerciseIdHeader?: WispaceIdHeader,
+    private readonly exercisePort?: ExerciseCapabilityPort,
   ) {}
 
   async execute(
@@ -198,7 +191,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
       case 'get_user_goals':
         return this.withLinkedAccount(ctx, () => {
           ctx.privateDataFetched = true;
-          return this.goalsService!.getUserGoals(
+          return this.goalsPort.getUserGoals(
             this.options.wispaceExternalId(ctx),
             { signal },
           );
@@ -207,11 +200,10 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
         return this.withLinkedAccount(ctx, async () => {
           ctx.privateDataFetched = true;
           const [goals, taskScores] = await Promise.all([
-            this.goalsService!.getUserGoals(
-              this.options.wispaceExternalId(ctx),
-              { signal },
-            ),
-            this.goalsService!.getTaskScoreAverages(
+            this.goalsPort.getUserGoals(this.options.wispaceExternalId(ctx), {
+              signal,
+            }),
+            this.goalsPort.getTaskScoreAverages(
               this.options.wispaceExternalId(ctx),
               { signal },
             ),
@@ -222,7 +214,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
         return this.withLinkedAccount(ctx, async () => {
           ctx.privateDataFetched = true;
           const limit = readPositiveLimit(args.limit, 5);
-          const sessions = await this.calendarService!.getCalendarSessions(
+          const sessions = await this.calendarPort.getCalendarSessions(
             this.options.wispaceExternalId(ctx),
             { timeRange: 'upcoming', limit, signal },
           );
@@ -235,7 +227,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
         return this.withLinkedAccount(ctx, async () => {
           ctx.privateDataFetched = true;
           const timeRange = readCalendarTimeRange(args.timeRange) ?? 'upcoming';
-          const sessions = await this.calendarService!.getCalendarSessions(
+          const sessions = await this.calendarPort.getCalendarSessions(
             this.options.wispaceExternalId(ctx),
             {
               timeRange,
@@ -249,7 +241,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
       case 'preview_next_study_reminder':
         return this.withLinkedAccount(ctx, async () => {
           ctx.privateDataFetched = true;
-          const sessions = await this.calendarService!.getCalendarSessions(
+          const sessions = await this.calendarPort.getCalendarSessions(
             this.options.wispaceExternalId(ctx),
             { timeRange: 'upcoming', limit: 1, signal },
           );
@@ -277,8 +269,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
       case 'precreate_next_exercise':
         return executePrecreateExerciseTool(
           ctx,
-          this.exerciseClient,
-          this.exerciseIdHeader ?? 'x-psid',
+          this.exercisePort,
           {
             getNotLinkedMessage: this.options.getNotLinkedMessage,
             logger: this.logger,

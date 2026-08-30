@@ -1,16 +1,14 @@
-import { isAbortError } from '@wispace/bot-common/utils';
+import { isAbortError, readHttpsUrl } from '@wispace/bot-common/utils';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import {
   buildPrecreateExerciseUnavailableMessage,
   detectPromptInjection,
   sanitizeUntrustedTextForLlm,
 } from '@wispace/llm-agent';
-import {
-  readHttpsUrl,
-  type PrecreateExerciseResult,
-  type PrecreateExerciseApiClient,
-  type WispaceIdHeader,
-} from '@wispace/wispace-client';
+import type {
+  ExerciseCapabilityPort,
+  WispaceExercisePrecreateResult,
+} from './wispace-capability.ports';
 import { buildExerciseUrlFact } from './pinned-facts';
 import type { PlatformAgentToolContext } from './platform-agent.types';
 
@@ -18,7 +16,7 @@ type PrecreateExerciseLogger = { warn(message: string): void };
 
 export function normalizePrecreateExerciseResult(
   ctx: PlatformAgentToolContext,
-  result: PrecreateExerciseResult,
+  result: WispaceExercisePrecreateResult,
 ): Record<string, unknown> {
   const messageHint =
     typeof result.message === 'string' && result.message.trim()
@@ -106,8 +104,7 @@ export function checkPrecreateIntent(
 
 export async function executePrecreateExerciseTool(
   ctx: PlatformAgentToolContext,
-  exerciseClient: PrecreateExerciseApiClient | undefined,
-  idHeader: WispaceIdHeader,
+  exercisePort: ExerciseCapabilityPort | undefined,
   options: {
     getNotLinkedMessage: () => string;
     logger?: PrecreateExerciseLogger;
@@ -132,14 +129,13 @@ export async function executePrecreateExerciseTool(
 
   ctx.privateDataFetched = true;
 
-  if (!exerciseClient) {
+  if (!exercisePort) {
     logUnavailable(options.logger, ctx.externalUserId, 'missing_client');
     return unavailablePrecreateExerciseResult();
   }
 
   try {
-    const result = await exerciseClient.precreateNextExercise(
-      idHeader,
+    const result = await exercisePort.precreateNextExercise(
       ctx.externalUserId,
       { signal },
     );

@@ -16,6 +16,16 @@ export type {
 } from './clarification/clarification-state';
 export { CLARIFICATION_STATE_STORE } from './clarification/clarification-state';
 export { PlatformAgentToolsService } from './agent/platform-agent-tools.service';
+export type {
+  CalendarCapabilityPort,
+  ExerciseCapabilityPort,
+  GoalsCapabilityPort,
+  WispaceCalendarSessionView,
+  WispaceCalendarTimeRange,
+  WispaceExercisePrecreateResult,
+  WispaceGoalsRecord,
+  WispaceTaskScoreView,
+} from './agent/wispace-capability.ports';
 export {
   executePrecreateExerciseTool,
   normalizePrecreateExerciseResult,

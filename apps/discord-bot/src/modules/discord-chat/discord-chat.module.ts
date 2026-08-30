@@ -49,6 +49,11 @@ import {
   WispaceGoalsService,
 } from '@wispace/wispace-client';
 import {
+  DiscordCalendarCapabilityAdapter,
+  DiscordExerciseCapabilityAdapter,
+  DiscordGoalsCapabilityAdapter,
+} from './infrastructure/adapters/discord-wispace-capability.adapters';
+import {
   RescheduleConfirmationService,
   type CalendarPort,
   type ReschedulePort,
@@ -149,8 +154,8 @@ const REGISTER_REPORT_MESSAGE =
         metrics: BotMetricsService,
       ) =>
         new PlatformAgentToolsService(
-          goalsService,
-          calendarService,
+          new DiscordGoalsCapabilityAdapter(goalsService),
+          new DiscordCalendarCapabilityAdapter(calendarService),
           rescheduleConfirmationService,
           {
             platform: 'discord',
@@ -179,8 +184,7 @@ const REGISTER_REPORT_MESSAGE =
                 ),
             },
           },
-          exerciseClient,
-          'x-discordid',
+          new DiscordExerciseCapabilityAdapter(exerciseClient, 'x-discordid'),
         ),
       inject: [
         WispaceGoalsService,

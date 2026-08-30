@@ -249,3 +249,6 @@ jobs:
 
       - name: Check type-only @wispace/database imports (#423)
         run: bash .github/scripts/check-database-type-imports.sh
+
+      - name: Check chat-agent WISPACE client imports (#425)
+        run: bash .github/scripts/check-chat-agent-wispace-imports.sh

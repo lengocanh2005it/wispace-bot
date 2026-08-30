@@ -308,8 +308,15 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
   ): Promise<unknown> {
     return executePrecreateExerciseTool(
       ctx,
-      this.exerciseClient,
-      'x-psid',
+      // Messenger bakes its platform identity header at the app boundary (#425).
+      {
+        precreateNextExercise: (externalId, options) =>
+          this.exerciseClient.precreateNextExercise(
+            'x-psid',
+            externalId,
+            options,
+          ),
+      },
       {
         getNotLinkedMessage: () => MESSENGER_NOT_LINKED_MESSAGE,
         logger: this.logger,

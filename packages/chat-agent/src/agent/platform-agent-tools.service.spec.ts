@@ -1,10 +1,10 @@
 import { AGENT_TOOL_NAMES } from '@wispace/llm-agent';
-import type {
-  WispaceCalendarService,
-  PrecreateExerciseApiClient,
-  WispaceGoalsService,
-} from '@wispace/wispace-client';
 import { PlatformAgentToolsService } from './platform-agent-tools.service';
+import type {
+  CalendarCapabilityPort,
+  ExerciseCapabilityPort,
+  GoalsCapabilityPort,
+} from './wispace-capability.ports';
 import type {
   PlatformAgentToolContext,
   PlatformAgentToolsOptions,
@@ -87,7 +87,7 @@ function buildZaloOptions(
   };
 }
 
-function buildGoalsService(): WispaceGoalsService {
+function buildGoalsService(): GoalsCapabilityPort {
   return {
     getUserGoals: () =>
       Promise.resolve({
@@ -98,23 +98,23 @@ function buildGoalsService(): WispaceGoalsService {
       }),
     getTaskScoreAverages: () =>
       Promise.resolve([{ task1Count: 10, task2Count: 15 }]),
-  } as unknown as WispaceGoalsService;
+  } as unknown as GoalsCapabilityPort;
 }
 
-function buildCalendarService(): WispaceCalendarService {
+function buildCalendarService(): CalendarCapabilityPort {
   return {
     getCalendarSessions: () => Promise.resolve([]),
-  } as unknown as WispaceCalendarService;
+  } as unknown as CalendarCapabilityPort;
 }
 
 describe('PlatformAgentToolsService', () => {
   let goalsService: jest.Mocked<
-    Pick<WispaceGoalsService, 'getUserGoals' | 'getTaskScoreAverages'>
+    Pick<GoalsCapabilityPort, 'getUserGoals' | 'getTaskScoreAverages'>
   >;
   let calendarService: jest.Mocked<
-    Pick<WispaceCalendarService, 'getCalendarSessions'>
+    Pick<CalendarCapabilityPort, 'getCalendarSessions'>
   >;
-  let exerciseClient: jest.Mocked<PrecreateExerciseApiClient>;
+  let exerciseClient: jest.Mocked<ExerciseCapabilityPort>;
   let stagePort: { stage: jest.Mock };
   let confirmSender: jest.Mock;
   let service: PlatformAgentToolsService;
@@ -129,7 +129,7 @@ describe('PlatformAgentToolsService', () => {
     };
     exerciseClient = {
       precreateNextExercise: jest.fn(),
-    } as unknown as jest.Mocked<PrecreateExerciseApiClient>;
+    } as unknown as jest.Mocked<ExerciseCapabilityPort>;
     stagePort = { stage: jest.fn() };
     confirmSender = jest.fn().mockResolvedValue(undefined);
   });
@@ -137,12 +137,11 @@ describe('PlatformAgentToolsService', () => {
   describe('discord behavior', () => {
     beforeEach(() => {
       service = new PlatformAgentToolsService(
-        goalsService as unknown as WispaceGoalsService,
-        calendarService as unknown as WispaceCalendarService,
+        goalsService,
+        calendarService,
         stagePort,
         buildDiscordOptions(confirmSender),
         exerciseClient,
-        'x-discordid',
       );
     });
 
@@ -185,15 +184,14 @@ describe('PlatformAgentToolsService', () => {
     it('fails closed when the authoritative mapping disappears', async () => {
       const currentIdentityProvider = jest.fn().mockResolvedValue(undefined);
       service = new PlatformAgentToolsService(
-        goalsService as unknown as WispaceGoalsService,
-        calendarService as unknown as WispaceCalendarService,
+        goalsService,
+        calendarService,
         stagePort,
         {
           ...buildDiscordOptions(confirmSender),
           currentIdentityProvider,
         },
         exerciseClient,
-        'x-discordid',
       );
 
       const result = await service.execute('get_user_goals', '{}', {
@@ -280,7 +278,6 @@ describe('PlatformAgentToolsService', () => {
       );
 
       expect(exerciseClient.precreateNextExercise).toHaveBeenCalledWith(
-        'x-discordid',
         'zalo-1',
         expect.any(Object),
       );
@@ -581,7 +578,6 @@ describe('PlatformAgentToolsService', () => {
         stagePort,
         buildZaloOptions(confirmSender),
         exerciseClient,
-        'x-zaloid',
       );
     });
 
@@ -623,7 +619,6 @@ describe('PlatformAgentToolsService', () => {
       });
 
       expect(exerciseClient.precreateNextExercise).toHaveBeenCalledWith(
-        'x-zaloid',
         'zalo-1',
         expect.any(Object),
       );
@@ -636,7 +631,7 @@ describe('PlatformAgentToolsService', () => {
         getTaskScoreAverages: jest.fn(),
       };
       const zaloService = new PlatformAgentToolsService(
-        goalsServiceWithSpy as unknown as WispaceGoalsService,
+        goalsServiceWithSpy,
         buildCalendarService(),
         stagePort,
         buildZaloOptions(confirmSender),
@@ -735,15 +730,14 @@ describe('PlatformAgentToolsService', () => {
     beforeEach(() => {
       freshMappingProvider = jest.fn();
       serviceWithProvider = new PlatformAgentToolsService(
-        goalsService as unknown as WispaceGoalsService,
-        calendarService as unknown as WispaceCalendarService,
+        goalsService,
+        calendarService,
         stagePort,
         {
           ...buildDiscordOptions(confirmSender),
           freshMappingProvider,
         },
         exerciseClient,
-        'x-discordid',
       );
     });
 
