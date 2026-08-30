@@ -49,7 +49,9 @@ export class DiscordOauthController {
       'DISCORD_OAUTH_REDIRECT_URI',
     );
 
-    if (!linkToken?.trim()) {
+    // Oversized tokens get the same empty response as a missing one — no
+    // validity signal (mirrors the Zalo authorize 512-char cap).
+    if (!linkToken?.trim() || linkToken.trim().length > 512) {
       res.json({ url: '' });
       return;
     }

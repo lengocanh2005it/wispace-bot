@@ -51,7 +51,29 @@ export class DiscordOauthStateService {
         createdAt: new Date(),
       }),
     );
+    await this.cleanupExpired();
     return state;
+  }
+
+  // ponytail: opportunistic cleanup instead of a cron — bounded to 100 rows per
+  // create; strictly older than STATE_TTL_MS so an in-flight valid callback is
+  // never deleted.
+  private async cleanupExpired(): Promise<void> {
+    try {
+      await this.repo.query(
+        `DELETE FROM "discord_oauth_states"
+         WHERE "state" IN (
+           SELECT "state" FROM "discord_oauth_states"
+           WHERE "created_at" < NOW() - ($1 * interval '1 millisecond')
+           LIMIT 100
+         )`,
+        [STATE_TTL_MS],
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Discord OAuth state cleanup failed: ${errorMessage(error)}`,
+      );
+    }
   }
 
   async consume(state: string): Promise<{ linkToken: string } | undefined> {
@@ -79,7 +101,7 @@ export class DiscordOauthStateService {
       return { linkToken };
     } catch (err) {
       this.logger.warn(
-        `Discord OAuth state decryption failed for state=${state}: ${errorMessage(err)}`,
+        `Discord OAuth state decryption failed: ${errorMessage(err)}`,
       );
       return undefined;
     }

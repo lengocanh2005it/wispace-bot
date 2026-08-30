@@ -60,7 +60,29 @@ export class ZaloOauthStateService {
       linkToken: encryptedLinkToken,
       createdAt: new Date(),
     });
+    await this.cleanupExpired();
     return state;
+  }
+
+  // ponytail: opportunistic cleanup instead of a cron — bounded to 100 rows per
+  // create; strictly older than STATE_TTL_MS so an in-flight valid callback is
+  // never deleted.
+  private async cleanupExpired(): Promise<void> {
+    try {
+      await this.repo.query(
+        `DELETE FROM "zalo_oauth_states"
+         WHERE "state" IN (
+           SELECT "state" FROM "zalo_oauth_states"
+           WHERE "created_at" < NOW() - ($1 * interval '1 millisecond')
+           LIMIT 100
+         )`,
+        [STATE_TTL_MS],
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Zalo OAuth state cleanup failed: ${errorMessage(error)}`,
+      );
+    }
   }
 
   /** Deletes the row regardless of outcome (single-use, even if expired). */
@@ -103,7 +125,7 @@ export class ZaloOauthStateService {
       return { codeVerifier, linkToken };
     } catch (err) {
       this.logger.warn(
-        `Zalo OAuth state decryption failed for state=${state}: ${errorMessage(err)}`,
+        `Zalo OAuth state decryption failed: ${errorMessage(err)}`,
       );
       return undefined;
     }
