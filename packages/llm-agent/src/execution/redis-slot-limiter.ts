@@ -18,11 +18,17 @@ export interface SlotMetrics {
  * the current owner can release its slot; stale releases are harmless no-ops.
  * Acquire uses a Lua script for atomic INCR + PEXPIRE + lease store.
  *
- * Same key/algorithm as Messenger's RedisConcurrencyLimiter, so all pods
- * of all bots share one aggregate provider budget.
+ * Acquisition is bounded and herd-safe (#453): retries use exponentially
+ * growing, fully jittered delays (no fixed cadence, so saturated waiters
+ * never EVAL in sync), the total wait respects the caller's admission
+ * budget (#389), and sustained Redis failures trip an explicit fail-fast
+ * (`maxConsecutiveRedisErrors`) instead of burning the whole wait budget
+ * against a dead Redis.
  */
-const RETRY_DELAY_MS = 50;
+const RETRY_BASE_DELAY_MS = 50;
+const RETRY_MAX_DELAY_MS = 1000;
 const MAX_RETRIES = 200;
+const DEFAULT_MAX_CONSECUTIVE_REDIS_ERRORS = 3;
 const DEFAULT_LEASE_MS = 60_000;
 const LEASE_PREFIX = ':lease:';
 
@@ -77,9 +83,16 @@ export async function acquireRedisSlot(
     signal?: AbortSignal;
     leaseMs?: number;
     maxRetries?: number;
+    /** Base delay for the jittered exponential backoff (doubles per attempt, capped). */
     retryDelayMs?: number;
     /** Total acquire budget in ms — caps retry attempts against retryDelayMs (#389). */
     waitBudgetMs?: number;
+    /**
+     * Fail fast after this many consecutive Redis failures (#453) — a dead
+     * Redis rejects with `redis_unavailable` in ~milliseconds instead of
+     * burning the whole wait budget. Any successful EVAL resets the counter.
+     */
+    maxConsecutiveRedisErrors?: number;
   },
 ): Promise<() => Promise<void>> {
   const {
@@ -87,22 +100,13 @@ export async function acquireRedisSlot(
     signal,
     leaseMs = DEFAULT_LEASE_MS,
     maxRetries = MAX_RETRIES,
-    retryDelayMs = RETRY_DELAY_MS,
+    retryDelayMs = RETRY_BASE_DELAY_MS,
     waitBudgetMs,
+    maxConsecutiveRedisErrors = DEFAULT_MAX_CONSECUTIVE_REDIS_ERRORS,
   } = options ?? {};
   const uuid = randomUUID();
   const leaseKey = `${key}${LEASE_PREFIX}${uuid}`;
   let sawRedisError = false;
-  // Cap the total acquire wait to the caller's admission budget (#389):
-  // with the default 50ms cadence a 1500ms background budget yields ~30
-  // attempts instead of the previous 200 (~10s).
-  const effectiveMaxRetries =
-    waitBudgetMs !== undefined && retryDelayMs > 0
-      ? Math.max(
-          1,
-          Math.min(maxRetries, Math.ceil(waitBudgetMs / retryDelayMs)),
-        )
-      : maxRetries;
   const acquireCommand = (): Promise<unknown> =>
     redis.eval(
       ACQUIRE_SCRIPT,
@@ -119,16 +123,24 @@ export async function acquireRedisSlot(
     throw new DOMException('Aborted', 'AbortError');
   }
 
-  for (let i = 0; i < effectiveMaxRetries; i++) {
+  const startedAt = Date.now();
+  let consecutiveRedisErrors = 0;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
     // Check cancellation between retries
     if (signal?.aborted) {
       throw new DOMException('Aborted', 'AbortError');
+    }
+    // Bounded wait — aligned with the caller's admission budget (#389/#453).
+    if (waitBudgetMs !== undefined && Date.now() - startedAt >= waitBudgetMs) {
+      break;
     }
 
     try {
       // Signal-aware: a caller abort or request deadline rejects even when
       // the Redis command itself hangs (#389).
       const result = await raceAbort(acquireCommand, signal);
+      // Any Redis response proves reachability — reset the fail-fast counter.
+      consecutiveRedisErrors = 0;
 
       if (result === 1) {
         metrics?.incrementCounter('llm_concurrency_acquired');
@@ -143,12 +155,28 @@ export async function acquireRedisSlot(
         throw err;
       }
       sawRedisError = true;
+      consecutiveRedisErrors += 1;
       logger.warn(`Redis acquire error: ${errorMessage(err)}`);
       metrics?.incrementCounter('llm_concurrency_rejected');
+      if (consecutiveRedisErrors >= maxConsecutiveRedisErrors) {
+        // Explicit outage policy (#453): fail fast instead of fail late.
+        break;
+      }
     }
 
-    // Abort-aware sleep — reject if signal fires during delay
-    await abortableSleep(retryDelayMs, signal);
+    // Full-jitter exponential backoff — no fixed cadence, so waiting callers
+    // never EVAL in sync (#453). Still abort-aware. Skip the trailing sleep
+    // when no further attempt can happen (last attempt or budget spent).
+    const anotherAttempt =
+      attempt + 1 < maxRetries &&
+      (waitBudgetMs === undefined || Date.now() - startedAt < waitBudgetMs);
+    if (anotherAttempt) {
+      const backoffMs = Math.min(
+        RETRY_MAX_DELAY_MS,
+        retryDelayMs * 2 ** attempt,
+      );
+      await abortableSleep(Math.random() * backoffMs, signal);
+    }
   }
 
   const reason = sawRedisError ? 'redis_unavailable' : 'global_saturated';
