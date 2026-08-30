@@ -4,6 +4,10 @@ import { dirname, join, relative, resolve } from 'path';
 import type { ChatHistoryMessage } from '@wispace/chat-history';
 import { errorMessage } from '@wispace/bot-common/masking';
 import { LlmAgentService } from '../agent.service';
+import {
+  CHAT_SYSTEM_PROMPT_CORE,
+  composeChatSystemPrompt,
+} from '../chat-system-prompt';
 import { isAgentToolName, parseAndValidateToolArguments } from '../agent.tools';
 import { NOOP_METRICS_PORT } from '../ports';
 import type {
@@ -36,9 +40,11 @@ import type { LlmAgentReply } from '../types';
  * scenario: which tools are called in which order, what tool results feed
  * back into the loop, and what the final reply should look like.
  *
- * Fixtures reference the *real* chat system prompts by path + sha256 hash,
- * so any prompt/tool change fails the eval until the fixtures are
- * re-validated (see the repo AGENTS.md testing notes).
+ * Fixtures pin the *real* chat prompts: `coreHash` is the sha256 of the
+ * `CHAT_SYSTEM_PROMPT_CORE` value the runtime actually sends (LF-normalized),
+ * and overlay files are referenced by path + sha256 — so any prompt change
+ * fails the eval until the fixtures are re-validated (see AGENTS.md testing
+ * notes).
  */
 
 /**
@@ -155,10 +161,17 @@ export interface EvalFixture {
   name: string;
   description?: string;
   /**
-   * Real prompt files this scenario runs against (e.g. the shared chat core
-   * `packages/llm-agent/src/chat-system-prompt.ts` + a platform overlay),
-   * composed with `\n\n` exactly like `PlatformAgentService.buildSystemPrompt`.
-   * Hashes are of LF-normalized content, so checkouts with CRLF still match.
+   * sha256 (hex) of the LF-normalized `CHAT_SYSTEM_PROMPT_CORE` value — the
+   * exact core text production composes. A prompt edit fails the eval until
+   * the hash is re-validated and updated deliberately (#646).
+   */
+  coreHash: string;
+  /**
+   * Overlay prompt files this scenario runs against (platform-specific rules
+   * — e.g. `apps/discord-bot/src/shared/prompts/discord-chat.system.txt`),
+   * LF-normalized and hash-pinned. The full system prompt is composed by the
+   * shared `composeChatSystemPrompt` (core + overlays + suffix) — the same
+   * function `PlatformAgentService.buildSystemPrompt` calls.
    */
   promptFiles: EvalPromptFile[];
   /** Optional suffix appended to the system prompt (e.g. linkage note). */
@@ -305,6 +318,14 @@ export function parseFixture(
         );
       }
     }
+  }
+  if (
+    typeof raw.coreHash !== 'string' ||
+    !/^[0-9a-f]{64}$/i.test(raw.coreHash)
+  ) {
+    errors.push(
+      'coreHash must be a sha256 hex string of the LF-normalized CHAT_SYSTEM_PROMPT_CORE value (#646)',
+    );
   }
   if (
     raw.systemPromptSuffix !== undefined &&
@@ -501,6 +522,7 @@ export function parseFixture(
       name: String(name),
       description:
         typeof raw.description === 'string' ? raw.description : undefined,
+      coreHash: String(raw.coreHash).toLowerCase(),
       promptFiles: (raw.promptFiles as EvalPromptFile[]).map((file) => ({
         path: String(file.path),
         hash: String(file.hash).toLowerCase(),
@@ -571,8 +593,9 @@ export function loadPrompt(path: string, hash: string): PromptLoadResult {
 }
 
 /**
- * Loads all prompt files a fixture depends on and composes them with `\n\n`,
- * mirroring `PlatformAgentService.buildSystemPrompt` (core + overlay).
+ * Loads the overlay prompt files a fixture depends on. The full system
+ * prompt (core + overlays + suffix) is composed by the shared
+ * `composeChatSystemPrompt` — the same function the runtime uses (#646).
  */
 export function loadPromptFiles(
   promptFiles: EvalPromptFile[],
@@ -770,6 +793,29 @@ export async function runEvalFixture(
   }
   const fixture = parsed.fixture;
 
+  // The core is composed from the imported runtime constant — the exact text
+  // `PlatformAgentService.buildSystemPrompt` sends — and its hash is pinned
+  // per fixture so prompt edits fail the eval until re-validated (#646).
+  const actualCoreHash = sha256Hex(
+    CHAT_SYSTEM_PROMPT_CORE.replace(/\r\n/g, '\n'),
+  );
+  if (actualCoreHash !== fixture.coreHash) {
+    return {
+      name: fixture.name,
+      ok: false,
+      failures: [
+        [
+          `core hash mismatch for CHAT_SYSTEM_PROMPT_CORE`,
+          `  fixture expects ${fixture.coreHash}`,
+          `  actual is      ${actualCoreHash}`,
+          'The shared core changed — re-validate the fixture expected behavior,',
+          'then update coreHash (and the script) deliberately.',
+        ].join('\n'),
+      ],
+      summary: 'prompt mismatch',
+    };
+  }
+
   const prompt = loadPromptFiles(fixture.promptFiles);
   if (!prompt.ok) {
     return {
@@ -779,9 +825,11 @@ export async function runEvalFixture(
       summary: 'prompt mismatch',
     };
   }
-  const systemPrompt = fixture.systemPromptSuffix
-    ? `${prompt.content}\n\n${fixture.systemPromptSuffix}`
-    : prompt.content;
+  const systemPrompt = composeChatSystemPrompt({
+    core: CHAT_SYSTEM_PROMPT_CORE,
+    overlay: prompt.content,
+    suffix: fixture.systemPromptSuffix,
+  });
 
   const adapter = new ScriptedAdapter(fixture.script);
   const executor = new ScriptedToolExecutor(fixture.script);

@@ -6,6 +6,7 @@ import {
   LlmAgentPorts,
   NOOP_METRICS_PORT,
   ToolExecutorPort,
+  composeChatSystemPrompt,
   createEnvLlmExecutionPort,
   type LlmExecutionPort,
   type LlmProviderAdapter,
@@ -751,8 +752,13 @@ export class PlatformAgentService {
       this.options.promptDir,
       this.options.promptFile,
     );
-    const base = `${CHAT_SYSTEM_PROMPT_CORE}\n\n${overlay}`;
+    // Shared composer (#646) — the eval harness composes through the same
+    // function, so the two paths cannot drift apart.
     const suffix = await this.options.systemPromptSuffix?.(input);
-    return suffix ? `${base}\n\n${suffix}` : base;
+    return composeChatSystemPrompt({
+      core: CHAT_SYSTEM_PROMPT_CORE,
+      overlay,
+      suffix,
+    });
   }
 }

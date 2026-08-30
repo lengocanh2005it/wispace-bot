@@ -1,11 +1,8 @@
 {
   "name": "discord-overlay-user-goals",
   "description": "Discord overlay contract: the request carries the Discord platform rules (DM privacy for personal data) alongside the shared core; tool args and tool choice are asserted.",
+  "coreHash": "d5230e286b434fcd54f8951652a403c3c8280185596cae0a8d581c2d0a3be37e",
   "promptFiles": [
-    {
-      "path": "packages/llm-agent/src/chat-system-prompt.ts",
-      "hash": "bae3da004a84005e8f7757533ff5db7d27b8963038200547cbeaf719ef722730"
-    },
     {
       "path": "apps/discord-bot/src/shared/prompts/discord-chat.system.txt",
       "hash": "7e5295bfd56b0dd52cba0896477cf1651248c6c79cdd89e063594cc2c3737dd1"
@@ -22,7 +19,7 @@
           "name": "get_user_goals",
           "args": {},
           "result": {
-            "targetBand": 7.0,
+            "targetBand": 7,
             "examDate": "2026-11-20"
           }
         }

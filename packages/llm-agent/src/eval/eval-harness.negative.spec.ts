@@ -27,6 +27,30 @@ describe('eval harness self-checks (negative assertions)', () => {
     expect(result.failures.join('\n')).toContain('prompt hash mismatch');
   });
 
+  it('fails when the core hash is stale (#646)', async () => {
+    const fixture = JSON.parse(
+      readFileSync(join(__dirname, '../../fixtures/greeting.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    fixture.coreHash = 'b'.repeat(64);
+    const result = await runEvalFixture(fixture);
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toContain(
+      'core hash mismatch for CHAT_SYSTEM_PROMPT_CORE',
+    );
+  });
+
+  it('fails when coreHash is missing (schema, #646)', async () => {
+    const fixture = JSON.parse(
+      readFileSync(join(__dirname, '../../fixtures/greeting.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    delete fixture.coreHash;
+    const result = await runEvalFixture(fixture);
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toContain(
+      'coreHash must be a sha256 hex string',
+    );
+  });
+
   it('fails on a fabricated reply via the no-fabrication guard', async () => {
     const fixture = JSON.parse(
       readFileSync(

@@ -46,3 +46,19 @@ General rules:
 Rescheduling (important):
 - Use ONLY list_study_calendar_entries to view the schedule and get calendarId when rescheduling. Do NOT call get_upcoming_study_sessions in the same reschedule flow.
 - get_upcoming_study_sessions is only for when the learner simply asks to see upcoming sessions, not to reschedule.`;
+
+/**
+ * Single source of truth for composing the free-form chat system prompt
+ * (#646): part order (core → overlay → suffix), the `\n\n` separator, and
+ * suffix handling live ONLY here — both `PlatformAgentService.buildSystemPrompt`
+ * (runtime) and the eval harness call this function, so the two paths cannot
+ * drift apart.
+ */
+export function composeChatSystemPrompt(parts: {
+  core: string;
+  overlay: string;
+  suffix?: string | null;
+}): string {
+  const base = `${parts.core}\n\n${parts.overlay}`;
+  return parts.suffix ? `${base}\n\n${parts.suffix}` : base;
+}

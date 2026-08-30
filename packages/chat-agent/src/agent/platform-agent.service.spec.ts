@@ -46,6 +46,7 @@ describe('PlatformAgentService', () => {
       currentIdentityProvider?: (
         externalUserId: string,
       ) => Promise<{ userId: number; mappingVersion: string } | undefined>;
+      systemPromptSuffix?: () => Promise<string | undefined>;
     } = {},
   ) {
     const config = {
@@ -74,6 +75,7 @@ describe('PlatformAgentService', () => {
         clarificationStore: overrides.clarificationStore,
         clarificationOutcomeInc: overrides.clarificationOutcomeInc,
         metrics: overrides.metrics,
+        systemPromptSuffix: overrides.systemPromptSuffix,
       },
     );
   }
@@ -123,6 +125,39 @@ describe('PlatformAgentService', () => {
     expect(mockLlmReply).toHaveBeenCalledWith(
       expect.objectContaining({
         systemPrompt: 'core prompt\n\nsystem prompt',
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('composes the system prompt through the shared composer — runtime output is byte-identical to the harness path (#646)', async () => {
+    const { composeChatSystemPrompt: realCompose } =
+      jest.requireActual<typeof import('@wispace/llm-agent')>(
+        '@wispace/llm-agent',
+      );
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const service = buildService(historyService, {
+      systemPromptSuffix: async () => 'linkage suffix',
+    });
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'next question',
+    });
+
+    // The runtime sees the mocked module's core ('core prompt') and overlay
+    // ('system prompt') — the shared composer must produce exactly what the
+    // service sends, including the suffix block.
+    expect(mockLlmReply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        systemPrompt: realCompose({
+          core: 'core prompt',
+          overlay: 'system prompt',
+          suffix: 'linkage suffix',
+        }),
       }),
       expect.anything(),
     );

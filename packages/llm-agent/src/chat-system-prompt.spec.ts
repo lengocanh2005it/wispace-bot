@@ -1,4 +1,7 @@
-import { CHAT_SYSTEM_PROMPT_CORE } from './chat-system-prompt';
+import {
+  CHAT_SYSTEM_PROMPT_CORE,
+  composeChatSystemPrompt,
+} from './chat-system-prompt';
 
 describe('CHAT_SYSTEM_PROMPT_CORE', () => {
   it('keeps the universal instruction sections (English)', () => {
@@ -31,5 +34,29 @@ describe('CHAT_SYSTEM_PROMPT_CORE', () => {
     expect(CHAT_SYSTEM_PROMPT_CORE).not.toContain('Messenger');
     expect(CHAT_SYSTEM_PROMPT_CORE).not.toContain('Discord');
     expect(CHAT_SYSTEM_PROMPT_CORE).not.toContain('Zalo');
+  });
+});
+
+describe('composeChatSystemPrompt (#646)', () => {
+  it('joins core and overlay with \\n\\n', () => {
+    expect(composeChatSystemPrompt({ core: 'C', overlay: 'O' })).toBe('C\n\nO');
+  });
+
+  it('appends the suffix with \\n\\n when one resolves', () => {
+    expect(
+      composeChatSystemPrompt({ core: 'C', overlay: 'O', suffix: 'S' }),
+    ).toBe('C\n\nO\n\nS');
+  });
+
+  it('omits the suffix block when the resolver returns nothing', () => {
+    expect(
+      composeChatSystemPrompt({ core: 'C', overlay: 'O', suffix: undefined }),
+    ).toBe('C\n\nO');
+    expect(
+      composeChatSystemPrompt({ core: 'C', overlay: 'O', suffix: null }),
+    ).toBe('C\n\nO');
+    expect(
+      composeChatSystemPrompt({ core: 'C', overlay: 'O', suffix: '' }),
+    ).toBe('C\n\nO');
   });
 });

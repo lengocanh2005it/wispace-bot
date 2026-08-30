@@ -1,11 +1,8 @@
 {
   "name": "zalo-overlay-reschedule-confirm",
   "description": "Zalo overlay contract: the request carries the Zalo keyword-confirmation rule; reschedule flows through calendar lookup then the reschedule call with exact args.",
+  "coreHash": "d5230e286b434fcd54f8951652a403c3c8280185596cae0a8d581c2d0a3be37e",
   "promptFiles": [
-    {
-      "path": "packages/llm-agent/src/chat-system-prompt.ts",
-      "hash": "bae3da004a84005e8f7757533ff5db7d27b8963038200547cbeaf719ef722730"
-    },
     {
       "path": "apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt",
       "hash": "b40f8cdb3b194a4414e5ae59f6be8fdf51fb43985f5a86bd98d8f949318ae913"

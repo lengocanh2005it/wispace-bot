@@ -6,7 +6,10 @@
 // Core agent
 export { LlmAgentService, LlmRetryExhaustedError } from './agent.service';
 export type { LlmAgentPorts } from './agent.service';
-export { CHAT_SYSTEM_PROMPT_CORE } from './chat-system-prompt';
+export {
+  CHAT_SYSTEM_PROMPT_CORE,
+  composeChatSystemPrompt,
+} from './chat-system-prompt';
 
 // Core types
 export type {
