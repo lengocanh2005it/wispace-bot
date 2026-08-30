@@ -37,6 +37,7 @@
     "@wispace/cleanup-cron": "*",
     "@wispace/contracts": "*",
     "@wispace/database": "*",
+    "@wispace/webhook-inbound": "*",
     "@wispace/doppler-sync": "*",
     "@wispace/llm-agent": "*",
     "@wispace/learner-profile": "*",

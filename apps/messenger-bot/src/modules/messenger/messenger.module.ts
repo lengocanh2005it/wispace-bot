@@ -8,13 +8,15 @@ import {
 } from '@wispace/cleanup-cron';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import {
-  PlatformWebhookInboundCleanupService,
-  PlatformWebhookInboundEventService,
-  PlatformWebhookInboundRetryCronService,
   PlatformDeadLetterCronService,
   PlatformDeadLetterService,
   WebhookInboundEventEntity,
 } from '@wispace/database';
+import {
+  PlatformWebhookInboundCleanupService,
+  PlatformWebhookInboundEventService,
+  PlatformWebhookInboundRetryCronService,
+} from '@wispace/webhook-inbound';
 import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { CommonModule } from '../../shared/common/common.module';

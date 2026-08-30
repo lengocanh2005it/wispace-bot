@@ -78,6 +78,15 @@ Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (re
 - **Do not** reference the concrete WISPACE client classes (#424): the worker's session source is injected via the required `GET_SESSIONS` token (`GetSessionsFn`), and the reschedule command consumes the structural `StudyCalendarPort` + `RescheduleConfigPort` — each bot's composition root bridges its adapter (`createCalendarGetSessions` for Discord/Zalo, `createSessionSourceGetSessions` for Messenger). Pure helpers + type-only contracts from `wispace-client` stay allowed. Enforced by `.github/scripts/check-study-reminder-shared-wispace-imports.sh`.
 - Modify package → rebuild + test `apps/messenger-bot` (`npx turbo run build test --filter=@wispace/messenger-bot... --filter=@wispace/study-reminder-shared`).
 
+## Monorepo boundary: `packages/webhook-inbound`
+
+`packages/webhook-inbound` (`@wispace/webhook-inbound`) is the webhook-owned package for the durable inbound inbox — `PlatformWebhookInboundEventService` (ingest/claim/lease/terminalize/retention), `PlatformWebhookInboundRetryCronService`, `PlatformWebhookInboundCleanupService`, and the `WebhookInboundIngressPort` + `WEBHOOK_INBOUND_INGRESS_PORT` symbol — extracted from `packages/database` by #426.
+
+- **`@wispace/database` keeps only** the `WebhookInboundEventEntity`, migrations, `WebhookInboundEventStatus` type, and TypeORM options — the workflow services must not be re-exported or re-imported from `@wispace/database` (apps import them from `@wispace/webhook-inbound`). Enforced by `.github/scripts/check-webhook-inbound-database-imports.sh`.
+- Services consume the TypeORM entity from `@wispace/database` (move-as-is — no repository port abstraction, #426 scope); the advisory lock ids, `processEvent` dispatch callback, and metrics hooks stay app-provided at each bot's composition root.
+- Ingest-before-ack ordering, idempotent `(platform, event_id)` dedupe, lease ownership, bounded backoff, terminalization, and retention semantics are unchanged by the extraction — schema untouched.
+- Modify package → rebuild + test both consumers (`npx turbo run build test --filter=@wispace/messenger-bot --filter=@wispace/zalo-bot --filter=@wispace/webhook-inbound`).
+
 ## Dependency flow within one app (mandatory)
 
 ```

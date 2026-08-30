@@ -7,12 +7,12 @@ import {
   PgAdvisoryLockService,
 } from '@wispace/bot-common/locks';
 import { BotCommonModule } from '@wispace/bot-common/guard';
+import { WebhookInboundEventEntity } from '@wispace/database';
 import {
   PlatformWebhookInboundCleanupService,
   PlatformWebhookInboundEventService,
   PlatformWebhookInboundRetryCronService,
-  WebhookInboundEventEntity,
-} from '@wispace/database';
+} from '@wispace/webhook-inbound';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloWebhookController } from './presentation/controllers/zalo-webhook.controller';
 import { ZaloWebhookSignatureGuard } from './presentation/guards/zalo-webhook-signature.guard';

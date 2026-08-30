@@ -59,22 +59,6 @@ export {
   type DeadLetterCronOptions,
 } from './services/platform-dead-letter-cron.service';
 export {
-  PlatformWebhookInboundEventService,
-  readInboundRetryConfig,
-  type IngestInboundEventInput,
-  type IngestInboundEventResult,
-  type InboundEventRow,
-  type InboundRetryConfig,
-} from './services/platform-webhook-inbound-event.service';
-export {
-  PlatformWebhookInboundRetryCronService,
-  type WebhookInboundRetryCronOptions,
-} from './services/platform-webhook-inbound-retry-cron.service';
-export {
-  PlatformWebhookInboundCleanupService,
-  type WebhookInboundCleanupOptions,
-} from './services/platform-webhook-inbound-cleanup.service';
-export {
   DeliveryLogService,
   type MessageLogRow,
 } from './services/delivery-log.service';
@@ -101,8 +85,3 @@ export {
   normalizeToUtcIso,
 } from './services/web-activity.service';
 export { WebActivityEntity } from './entities/web-activity.entity';
-export {
-  type WebhookInboundIngressPort,
-  WEBHOOK_INBOUND_INGRESS_PORT,
-  type WebhookIngestResult,
-} from './domain/ports/webhook-inbound-ingress.port';

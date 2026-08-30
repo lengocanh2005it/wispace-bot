@@ -4,7 +4,7 @@ import { maskEventId } from '@wispace/bot-common/masking';
 import {
   PlatformWebhookInboundEventService,
   type WebhookInboundIngressPort,
-} from '@wispace/database';
+} from '@wispace/webhook-inbound';
 import type { ZaloWebhookEvent } from '../domain/entities/zalo-webhook-event.types';
 
 /** Stable per-delivery event id for the durable inbox. */

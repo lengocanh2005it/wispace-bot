@@ -255,3 +255,6 @@ jobs:
 
       - name: Check study-reminder-shared WISPACE client imports (#424)
         run: bash .github/scripts/check-study-reminder-shared-wispace-imports.sh
+
+      - name: Check webhook inbound package boundary (#426)
+        run: bash .github/scripts/check-webhook-inbound-database-imports.sh

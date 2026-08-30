@@ -9,7 +9,7 @@ const webhookInboundRetentionDeletedTotal = new Counter({
   name: 'webhook_inbound_retention_deleted_total',
   help: 'Total rows deleted by webhook inbound retention cleanup',
 });
-import { WebhookInboundEventEntity } from '../entities/webhook-inbound-event.entity';
+import { WebhookInboundEventEntity } from '@wispace/database';
 import type { Platform } from '@wispace/contracts';
 
 export interface IngestInboundEventInput {
