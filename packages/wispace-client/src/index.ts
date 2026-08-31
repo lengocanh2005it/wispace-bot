@@ -78,6 +78,9 @@ export {
   WISPACE_CACHE_POLICY,
   type WispaceCacheKind,
 } from './cache/wispace-cache-policy';
+export { RedisWispaceCacheStore } from './cache/redis-wispace-cache.store';
+export type { WispaceCacheRedisCommands } from './cache/redis-wispace-cache.store';
+export type { WispaceCacheSharedStore } from './cache/wispace-cache-shared-store.port';
 export { WispaceCalendarService } from './clients/wispace-calendar.service';
 export { WispaceTokenVerifyService } from './clients/wispace-token-verify.service';
 export { PrecreateExerciseApiClient } from './clients/precreate-exercise-api.client';

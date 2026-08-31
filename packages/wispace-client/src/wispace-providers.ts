@@ -15,6 +15,12 @@ export interface WispaceProvidersOptions {
    * (already created) and returns hours. Default: undefined (= 24h).
    */
   horizonHours?: (configService: WispaceConfigService) => () => number;
+  /**
+   * Replaces the default in-memory-only `WispaceDataCache` provider — the
+   * app wires its Redis-backed shared store here (#568). Must keep the
+   * `WispaceDataCache` token.
+   */
+  cacheProvider?: Provider;
 }
 
 /**
@@ -24,6 +30,15 @@ export interface WispaceProvidersOptions {
 export function createWispaceProviders(
   options: WispaceProvidersOptions,
 ): Provider[] {
+  const defaultCacheProvider: Provider = {
+    // One cache instance per app — chat tools and the report pipeline share
+    // it so a bot-side mutation invalidates every consumer's view (#636).
+    // Cross-pod shared-store wiring (#568) lives in the app modules, which
+    // own the Redis client DI token.
+    provide: WispaceDataCache,
+    useFactory: () => new WispaceDataCache(),
+  };
+
   return [
     {
       provide: WispaceConfigService,
@@ -55,11 +70,6 @@ export function createWispaceProviders(
         ),
       inject: [WispaceConfigService],
     },
-    {
-      // One cache instance per app — chat tools and the report pipeline share
-      // it so a bot-side mutation invalidates every consumer's view (#636).
-      provide: WispaceDataCache,
-      useFactory: () => new WispaceDataCache(),
-    },
+    options.cacheProvider ?? defaultCacheProvider,
   ];
 }
