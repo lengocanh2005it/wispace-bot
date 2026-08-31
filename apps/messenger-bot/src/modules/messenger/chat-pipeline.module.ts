@@ -61,7 +61,12 @@ import { MessengerAgentToolsService } from './application/agent/messenger-agent-
 import {
   MESSENGER_TOOL_IDENTITY_PROVIDER,
   MESSENGER_TOOL_POLICY_DENIED_INC,
+  MESSENGER_WRITE_TOOL_BUDGET,
+  MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS,
+  MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC,
 } from './application/agent/messenger-agent-tools.service';
+import { PlatformWriteToolBudgetService } from '@wispace/chat-metering';
+import { buildWriteToolDailyBudgetMessage } from '@wispace/llm-agent';
 import { MessengerAgentService } from './application/agent/messenger-agent.service';
 import { MessengerChatSharedConfigService } from './application/services/messenger-chat-shared-config.service';
 import { MessengerChatEnqueueService } from './application/services/messenger-chat-enqueue.service';
@@ -365,21 +370,52 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
     MessengerAgentService,
     MessengerAgentToolsService,
     {
+      provide: MESSENGER_WRITE_TOOL_BUDGET,
+      useExisting: PlatformWriteToolBudgetService,
+    },
+    {
+      provide: MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS,
+      useFactory: (b: PlatformWriteToolBudgetService) => b.perMessageCaps(),
+      inject: [PlatformWriteToolBudgetService],
+    },
+    {
+      provide: MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC,
+      useFactory:
+        (m: BotMetricsService) => (tool: string, reason: 'per_message') =>
+          m.incWriteToolBudgetDenied(tool, 'messenger', reason),
+      inject: [BotMetricsService],
+    },
+    {
       provide: MessengerRescheduleConfirmationService,
       useFactory: (
         calendarPort: CalendarPort<string>,
         reschedulePort: ReschedulePort<string>,
         store: TypeormRescheduleStore<string>,
+        writeToolBudget: PlatformWriteToolBudgetService,
       ) =>
         new MessengerRescheduleConfirmationService(
           calendarPort,
           reschedulePort,
           store,
+          {
+            consumeRescheduleBudget: (userId: number, externalId: string) =>
+              writeToolBudget.consumeDaily(
+                String(externalId),
+                userId,
+                'reschedule_study_session',
+              ),
+            refundRescheduleBudget: (userId: number, _externalId: string) =>
+              writeToolBudget.refundDaily(userId, 'reschedule_study_session'),
+            rescheduleBudgetExceededMessage: buildWriteToolDailyBudgetMessage(
+              'reschedule_study_session',
+            ),
+          },
         ),
       inject: [
         'MessengerCalendarPort',
         'MessengerReschedulePort',
         TypeormRescheduleStore,
+        PlatformWriteToolBudgetService,
       ],
     },
     MessengerChatProcessorService,

@@ -10,9 +10,16 @@ import type {
   PlatformToolExecutorPort,
   CurrentPlatformIdentity,
 } from '@wispace/chat-agent';
-import { executePrecreateExerciseTool } from '@wispace/chat-agent';
+import {
+  executePrecreateExerciseTool,
+  isWriteToolName,
+  type WriteToolBudgetPort,
+  type WriteToolName,
+} from '@wispace/chat-agent';
 import {
   isAgentToolName,
+  buildWriteToolDailyBudgetMessage,
+  buildWriteToolPerMessageBudgetMessage,
   parseAndValidateToolArguments,
   sanitizeUntrustedTextForLlm,
   type AgentToolName,
@@ -68,6 +75,15 @@ export const MESSENGER_TOOL_IDENTITY_PROVIDER = Symbol(
 export const MESSENGER_TOOL_POLICY_DENIED_INC = Symbol(
   'MESSENGER_TOOL_POLICY_DENIED_INC',
 );
+export const MESSENGER_WRITE_TOOL_BUDGET = Symbol(
+  'MESSENGER_WRITE_TOOL_BUDGET',
+);
+export const MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS = Symbol(
+  'MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS',
+);
+export const MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC = Symbol(
+  'MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC',
+);
 const REPORT_SUBSCRIPTION_INTENT_UNCLEAR_RESULT = {
   registered: false,
   reason: 'intent_unclear',
@@ -104,6 +120,18 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     private readonly policyDeniedInc?: (
       toolName: string,
       reason: string,
+    ) => void,
+    @Optional()
+    @Inject(MESSENGER_WRITE_TOOL_BUDGET)
+    private readonly writeToolBudget?: WriteToolBudgetPort,
+    @Optional()
+    @Inject(MESSENGER_WRITE_TOOL_PER_MESSAGE_CAPS)
+    private readonly writeToolPerMessageCaps?: Record<string, number>,
+    @Optional()
+    @Inject(MESSENGER_WRITE_TOOL_BUDGET_DENIED_INC)
+    private readonly writeToolBudgetDeniedInc?: (
+      tool: string,
+      reason: 'per_message',
     ) => void,
   ) {}
 
@@ -153,6 +181,11 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
         this.policyDeniedInc?.(toolName, 'mapping_lookup_failed');
         return { available: false, message: MESSENGER_NOT_LINKED_MESSAGE };
       }
+    }
+
+    if (isWriteToolName(toolName) && this.writeToolBudget && ctx.userId) {
+      const denial = await this.enforceWriteToolBudget(toolName, ctx);
+      if (denial) return denial;
     }
 
     try {
@@ -211,13 +244,88 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
         return this.rescheduleStudySession(ctx, args, canonicalArgs);
       case 'register_exam_report_notifications':
         return this.registerExamReportNotifications(ctx);
-      case 'precreate_next_exercise':
-        return this.precreateNextExercise(ctx, signal);
+      case 'precreate_next_exercise': {
+        const precreateResult = await this.precreateNextExercise(ctx, signal);
+        await this.refundPrecreateBudgetIfNeeded(ctx, precreateResult);
+        return precreateResult;
+      }
       default: {
         const unknownTool = toolName as string;
         return { error: `Unhandled tool: ${unknownTool}` };
       }
     }
+  }
+
+  private async enforceWriteToolBudget(
+    toolName: WriteToolName,
+    ctx: PlatformAgentToolContext,
+  ): Promise<{ status: 'budget_exceeded'; messageHint: string } | undefined> {
+    const budget = this.writeToolBudget!;
+    const userId = ctx.userId!;
+
+    const perMessageCap = this.writeToolPerMessageCaps?.[toolName];
+    if (perMessageCap !== undefined) {
+      ctx.writeToolCalls ??= new Map();
+      const soFar = ctx.writeToolCalls.get(toolName) ?? 0;
+      if (soFar >= perMessageCap) {
+        this.writeToolBudgetDeniedInc?.(toolName, 'per_message');
+        return {
+          status: 'budget_exceeded',
+          messageHint: buildWriteToolPerMessageBudgetMessage(
+            toolName,
+            perMessageCap,
+          ),
+        };
+      }
+      ctx.writeToolCalls.set(toolName, soFar + 1);
+    }
+
+    if (toolName === 'reschedule_study_session') {
+      const allowed = await budget.checkDailyAllowed(
+        ctx.externalUserId,
+        userId,
+        toolName,
+      );
+      if (!allowed) {
+        return {
+          status: 'budget_exceeded',
+          messageHint: buildWriteToolDailyBudgetMessage(toolName),
+        };
+      }
+      return undefined;
+    }
+
+    const consumed = await budget.consumeDaily(
+      ctx.externalUserId,
+      userId,
+      toolName,
+    );
+    if (!consumed) {
+      return {
+        status: 'budget_exceeded',
+        messageHint: buildWriteToolDailyBudgetMessage(toolName),
+      };
+    }
+    ctx.writeToolDailyConsumed ??= new Set();
+    ctx.writeToolDailyConsumed.add(toolName);
+    return undefined;
+  }
+
+  private async refundPrecreateBudgetIfNeeded(
+    ctx: PlatformAgentToolContext,
+    result: unknown,
+  ): Promise<void> {
+    if (!ctx.writeToolDailyConsumed?.has('precreate_next_exercise')) return;
+    const created =
+      !!result &&
+      typeof result === 'object' &&
+      (result as { status?: unknown }).status === 'created';
+    if (created) return;
+    await this.writeToolBudget?.refundDaily(
+      ctx.userId!,
+      'precreate_next_exercise',
+    );
+    ctx.writeToolDailyConsumed.delete('precreate_next_exercise');
   }
 
   private async getUserGoals(ctx: PlatformAgentToolContext): Promise<unknown> {

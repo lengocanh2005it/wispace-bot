@@ -4,6 +4,7 @@ import {
   type CalendarPort,
   type ReschedulePort,
   type RescheduleStorePort,
+  type RescheduleConfirmationOptions,
 } from '@wispace/reschedule-confirm';
 import { buildRescheduleConfirmFollowUp } from '../formatters/messenger-rich-message.builder';
 import type { MessengerStageResult } from '../types/messenger-reschedule-confirmation.types';
@@ -18,8 +19,9 @@ export class MessengerRescheduleConfirmationService extends RescheduleConfirmati
     calendarPort: CalendarPort<string>,
     reschedulePort: ReschedulePort<string>,
     store?: RescheduleStorePort<string>,
+    options?: RescheduleConfirmationOptions<string>,
   ) {
-    super(calendarPort, reschedulePort, store);
+    super(calendarPort, reschedulePort, store, options);
   }
 
   async stage(input: {

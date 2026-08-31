@@ -7,7 +7,10 @@ import {
   CleanupCronService,
   type CleanupCronConfig,
 } from '@wispace/cleanup-cron';
-import { ChatIdempotencyEntity } from '@wispace/chat-metering';
+import {
+  ChatIdempotencyEntity,
+  ChatToolDailyUsageEntity,
+} from '@wispace/chat-metering';
 
 const CLEANUP_CONFIG: CleanupCronConfig = {
   name: 'chat-idempotency-cleanup',
@@ -33,6 +36,8 @@ export class ChatIdempotencyCleanupCronService {
     private readonly configService: ConfigService,
     @InjectRepository(ChatIdempotencyEntity)
     private readonly idempotencyRepo: Repository<ChatIdempotencyEntity>,
+    @InjectRepository(ChatToolDailyUsageEntity)
+    private readonly toolDailyUsageRepo: Repository<ChatToolDailyUsageEntity>,
     private readonly cleanupCron: CleanupCronService,
   ) {}
 
@@ -79,6 +84,21 @@ export class ChatIdempotencyCleanupCronService {
         break;
       }
     }
+
+    // #626: prune aged write-tool budget counters (self-bounded by the date key,
+    // kept ~7 days so ops can inspect "who hit caps").
+    const toolRetentionDays =
+      Number(
+        this.configService.get<string>(
+          'CHAT_TOOL_DAILY_USAGE_RETENTION_DAYS',
+        ) ?? '7',
+      ) || 7;
+    const toolCutoff = new Date();
+    toolCutoff.setUTCDate(toolCutoff.getUTCDate() - toolRetentionDays);
+    await this.toolDailyUsageRepo.manager.query(
+      `DELETE FROM chat_tool_daily_usage WHERE platform = 'messenger' AND usage_date < $1::date`,
+      [toolCutoff.toISOString().slice(0, 10)],
+    );
 
     return totalDeleted;
   }

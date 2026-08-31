@@ -1,7 +1,10 @@
 import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { CleanupCronService } from '@wispace/cleanup-cron';
-import { ChatIdempotencyEntity } from '@wispace/chat-metering';
+import {
+  ChatIdempotencyEntity,
+  ChatToolDailyUsageEntity,
+} from '@wispace/chat-metering';
 import { ChatIdempotencyCleanupCronService } from './chat-idempotency-cleanup-cron.service';
 
 describe('ChatIdempotencyCleanupCronService', () => {
@@ -23,6 +26,10 @@ describe('ChatIdempotencyCleanupCronService', () => {
         }),
       })),
     } as unknown as Repository<ChatIdempotencyEntity>;
+    const toolQueryMock = jest.fn().mockResolvedValue([]);
+    const toolDailyUsageRepo = {
+      manager: { query: toolQueryMock },
+    } as unknown as Repository<ChatToolDailyUsageEntity>;
     const executeMock = jest
       .fn()
       .mockImplementation(
@@ -36,10 +43,11 @@ describe('ChatIdempotencyCleanupCronService', () => {
     const service = new ChatIdempotencyCleanupCronService(
       configService,
       idempotencyRepo,
+      toolDailyUsageRepo,
       cleanupCron,
     );
 
-    return { service, queryMock, deleteWhereMock, executeMock };
+    return { service, queryMock, toolQueryMock, deleteWhereMock, executeMock };
   };
 
   it('deletes terminal idempotency rows older than the cutoff using bounded batch', async () => {
@@ -61,6 +69,16 @@ describe('ChatIdempotencyCleanupCronService', () => {
       expect.any(Function),
       expect.any(Function),
       expect.any(Function),
+    );
+  });
+  it('prunes aged chat_tool_daily_usage rows (#626)', async () => {
+    const { service, toolQueryMock } = buildService();
+    await service.handleDailyCleanup();
+    expect(toolQueryMock).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'DELETE FROM chat_tool_daily_usage WHERE platform = \x27messenger\x27 AND usage_date <',
+      ),
+      expect.any(Array),
     );
   });
 });

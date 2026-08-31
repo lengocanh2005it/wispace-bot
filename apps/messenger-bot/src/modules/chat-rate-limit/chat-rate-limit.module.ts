@@ -2,9 +2,15 @@ import { Module, Logger } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { CommonModule } from '../../shared/common/common.module';
+import { ConfigService } from '@nestjs/config';
+import { getRepositoryToken } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
+  ChatToolDailyUsageEntity,
+  PlatformWriteToolBudgetService,
   MemoryBurstCounter,
   PostgresBurstCounter,
   RedisBurstCounter,
@@ -33,10 +39,30 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
     TypeOrmModule.forFeature([
       ChatDailyUsageEntity,
       ChatIdempotencyEntity,
+      ChatToolDailyUsageEntity,
       ChatQuotaEventEntity,
     ]),
   ],
   providers: [
+    {
+      provide: PlatformWriteToolBudgetService,
+      useFactory: (
+        configService: ConfigService,
+        toolDailyUsageRepo: Repository<ChatToolDailyUsageEntity>,
+        metrics: BotMetricsService,
+      ) =>
+        new PlatformWriteToolBudgetService(
+          { platform: 'messenger' },
+          configService,
+          toolDailyUsageRepo,
+          metrics,
+        ),
+      inject: [
+        ConfigService,
+        getRepositoryToken(ChatToolDailyUsageEntity),
+        BotMetricsService,
+      ],
+    },
     ChatRateLimitConfigService,
     ChatRateLimitStartupService,
     {
@@ -128,6 +154,7 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
     },
   ],
   exports: [
+    PlatformWriteToolBudgetService,
     ChatRateLimitConfigService,
     ChatRateLimitService,
     ChatQuotaOpsService,

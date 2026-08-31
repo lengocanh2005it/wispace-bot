@@ -14,6 +14,11 @@ import type { PrecreateExerciseApiClient } from '@wispace/wispace-client';
 describe('MessengerAgentToolsService', () => {
   const createService = (
     overrides: Partial<Record<string, jest.Mock>> = {},
+    budgetDeps?: {
+      writeToolBudget?: unknown;
+      writeToolPerMessageCaps?: Record<string, number>;
+      writeToolBudgetDeniedInc?: (tool: string, reason: 'per_message') => void;
+    },
   ) => {
     const repository: jest.Mocked<MessengerMappingRepositoryPort> = {
       logMessage: jest.fn(),
@@ -72,6 +77,10 @@ describe('MessengerAgentToolsService', () => {
           userId: 42,
           mappingVersion: 'test:psid-123',
         }),
+      overrides.policyDeniedInc,
+      budgetDeps?.writeToolBudget,
+      budgetDeps?.writeToolPerMessageCaps,
+      budgetDeps?.writeToolBudgetDeniedInc,
     );
 
     const ctx: PlatformAgentToolContext = {
@@ -660,6 +669,167 @@ describe('MessengerAgentToolsService', () => {
 
       expect(result.text).toContain('Xác nhận đổi lịch');
       expect(result.richFollowUps).toHaveLength(1);
+    });
+  });
+  describe('write-tool budget (#626)', () => {
+    it('precreate: consumes a daily unit before calling the exercise port', async () => {
+      const budget = {
+        checkDailyAllowed: jest.fn().mockResolvedValue(true),
+        consumeDaily: jest.fn().mockResolvedValue(true),
+        refundDaily: jest.fn().mockResolvedValue(undefined),
+      };
+      const precreateNextExercise = jest.fn().mockResolvedValue({
+        status: 'created',
+        exerciseUrl: 'https://x/y',
+      });
+      const { service, ctx } = createService(
+        { precreateNextExercise },
+        { writeToolBudget: budget },
+      );
+      const result = await service.execute(
+        'precreate_next_exercise',
+        '{}',
+        ctx,
+      );
+      expect(budget.consumeDaily).toHaveBeenCalledWith(
+        'psid-123',
+        42,
+        'precreate_next_exercise',
+      );
+      expect((result as { status?: string }).status).toBe('created');
+      expect(budget.refundDaily).not.toHaveBeenCalled();
+    });
+
+    it('precreate: returns a relayable budget_exceeded result when the daily cap is hit', async () => {
+      const budget = {
+        checkDailyAllowed: jest.fn(),
+        consumeDaily: jest.fn().mockResolvedValue(false),
+        refundDaily: jest.fn(),
+      };
+      const precreateNextExercise = jest.fn();
+      const { service, ctx } = createService(
+        { precreateNextExercise },
+        { writeToolBudget: budget },
+      );
+      const result = await service.execute(
+        'precreate_next_exercise',
+        '{}',
+        ctx,
+      );
+      expect(result).toEqual({
+        status: 'budget_exceeded',
+        messageHint:
+          'Bạn đã dùng hết số lần tạo bài tập mới trong hôm nay rồi. Bạn thử lại vào ngày mai nhé.',
+      });
+      expect(precreateNextExercise).not.toHaveBeenCalled();
+    });
+
+    it('precreate: refunds the daily unit when the write did not create', async () => {
+      const budget = {
+        checkDailyAllowed: jest.fn(),
+        consumeDaily: jest.fn().mockResolvedValue(true),
+        refundDaily: jest.fn().mockResolvedValue(undefined),
+      };
+      const precreateNextExercise = jest
+        .fn()
+        .mockResolvedValue({ status: 'finished_all' });
+      const { service, ctx } = createService(
+        { precreateNextExercise },
+        { writeToolBudget: budget },
+      );
+      await service.execute('precreate_next_exercise', '{}', ctx);
+      expect(budget.refundDaily).toHaveBeenCalledWith(
+        42,
+        'precreate_next_exercise',
+      );
+    });
+
+    it('precreate: second call in the same turn hits the per-message cap of 2', async () => {
+      const budget = {
+        checkDailyAllowed: jest.fn(),
+        consumeDaily: jest.fn().mockResolvedValue(true),
+        refundDaily: jest.fn(),
+      };
+      const precreateNextExercise = jest.fn().mockResolvedValue({
+        status: 'created',
+        exerciseUrl: 'https://x/y',
+      });
+      const deniedInc = jest.fn();
+      const { service, ctx } = createService(
+        { precreateNextExercise },
+        {
+          writeToolBudget: budget,
+          writeToolPerMessageCaps: { precreate_next_exercise: 2 },
+          writeToolBudgetDeniedInc: deniedInc,
+        },
+      );
+      ctx.userText = 'cho mình 3 bài tập mới';
+      await service.execute('precreate_next_exercise', '{}', ctx);
+      await service.execute('precreate_next_exercise', '{}', ctx);
+      const third = await service.execute('precreate_next_exercise', '{}', ctx);
+      expect((third as { status?: string }).status).toBe('budget_exceeded');
+      expect((third as { messageHint?: string }).messageHint).toContain(
+        'tối đa 2 lần',
+      );
+      expect(deniedInc).toHaveBeenCalledWith(
+        'precreate_next_exercise',
+        'per_message',
+      );
+      expect(budget.consumeDaily).toHaveBeenCalledTimes(2);
+    });
+
+    it('reschedule: stage-gate denies when checkDailyAllowed is false and never stages', async () => {
+      const budget = {
+        checkDailyAllowed: jest.fn().mockResolvedValue(false),
+        consumeDaily: jest.fn(),
+        refundDaily: jest.fn(),
+      };
+      const stage = jest.fn();
+      const { service, ctx } = createService(
+        { stage },
+        { writeToolBudget: budget },
+      );
+      ctx.userText = 'đổi lịch học giúp mình';
+      const result = await service.execute(
+        'reschedule_study_session',
+        JSON.stringify({
+          calendarId: 1,
+          schedulingMode: 'default_next_day_same_time',
+        }),
+        ctx,
+      );
+      expect((result as { status?: string }).status).toBe('budget_exceeded');
+      expect(stage).not.toHaveBeenCalled();
+    });
+
+    it('no budget port wired → tools run unchanged', async () => {
+      const precreateNextExercise = jest.fn().mockResolvedValue({
+        status: 'created',
+        exerciseUrl: 'https://x/y',
+      });
+      const { service, ctx } = createService({ precreateNextExercise });
+      const result = await service.execute(
+        'precreate_next_exercise',
+        '{}',
+        ctx,
+      );
+      expect((result as { status?: string }).status).toBe('created');
+    });
+
+    it('read-only tools never touch the budget', async () => {
+      const budget = {
+        checkDailyAllowed: jest.fn(),
+        consumeDaily: jest.fn(),
+        refundDaily: jest.fn(),
+      };
+      const getUserGoals = jest.fn().mockResolvedValue({ targetScore: 7 });
+      const { service, ctx } = createService(
+        { getUserGoals },
+        { writeToolBudget: budget },
+      );
+      await service.execute('get_user_goals', '{}', ctx);
+      expect(budget.checkDailyAllowed).not.toHaveBeenCalled();
+      expect(budget.consumeDaily).not.toHaveBeenCalled();
     });
   });
 });
