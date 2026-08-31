@@ -1,0 +1,46 @@
+# No auto-merge: merging to main triggers deploy-bots.yml (VPS blue-green) immediately.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    versioning-strategy: increase-if-necessary
+    groups:
+      nestjs:
+        patterns:
+          - "@nestjs/*"
+      oxc-tooling:
+        patterns:
+          - "oxlint*"
+          - "oxfmt"
+      types:
+        patterns:
+          - "@types/*"
+      # Catch-all for minor/patch bumps outside the named groups above.
+      minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # typescript is an alias to npm:@typescript/typescript6, deliberately pinned to the TS6 line.
+      - dependency-name: typescript
+      # @swc/core is caret but its linux binaries are deliberately pinned exact in
+      # optionalDependencies; bumping one side alone breaks the native binding. Bump swc manually.
+      - dependency-name: "@swc/core*"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: docker
+    directory: "/deploy"
+    schedule:
+      interval: weekly
