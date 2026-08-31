@@ -8,6 +8,7 @@ import {
   type ReschedulePort,
 } from './reschedule-confirm.service';
 import { MemoryRescheduleStore } from './reschedule-store.port';
+import { WispaceDataCache } from '@wispace/wispace-client';
 
 function mockCalendarPort(): CalendarPort<string> {
   return {
@@ -403,6 +404,123 @@ describe('RescheduleConfirmationService', () => {
         confirmed: true,
         scheduledTimeLabel: 'Ngày mai lúc 19:00',
       });
+    });
+  });
+
+  describe('onConfirmed hook (#636 cache invalidation)', () => {
+    const stageValid = (service: RescheduleConfirmationService<string>) =>
+      service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 1,
+        schedulingMode: 'explicit',
+      });
+
+    it('fires after a successful write with the external id', async () => {
+      const calendar = mockCalendarPort();
+      const reschedule = mockReschedulePort();
+      const onConfirmed = jest.fn();
+      const service = new RescheduleConfirmationService(
+        calendar,
+        reschedule,
+        undefined,
+        { onConfirmed },
+      );
+
+      await stageValid(service);
+      const result = await service.confirm('user-1');
+
+      expect(result.confirmed).toBe(true);
+      expect(onConfirmed).toHaveBeenCalledTimes(1);
+      expect(onConfirmed).toHaveBeenCalledWith('user-1');
+    });
+
+    it('does not fire when the write fails', async () => {
+      const calendar = mockCalendarPort();
+      const reschedule = mockReschedulePort();
+      (reschedule.rescheduleSession as jest.Mock).mockRejectedValue(
+        new Error('Wispace down'),
+      );
+      const onConfirmed = jest.fn();
+      const service = new RescheduleConfirmationService(
+        calendar,
+        reschedule,
+        undefined,
+        { onConfirmed },
+      );
+
+      await stageValid(service);
+      const result = await service.confirm('user-1');
+
+      expect(result.confirmed).toBe(false);
+      expect(onConfirmed).not.toHaveBeenCalled();
+    });
+
+    it('a hook failure must not fail the already-committed confirmation', async () => {
+      const calendar = mockCalendarPort();
+      const reschedule = mockReschedulePort();
+      const onConfirmed = jest.fn().mockRejectedValue(new Error('cache down'));
+      const service = new RescheduleConfirmationService(
+        calendar,
+        reschedule,
+        undefined,
+        { onConfirmed },
+      );
+
+      await stageValid(service);
+      const result = await service.confirm('user-1');
+
+      expect(result).toEqual({
+        confirmed: true,
+        scheduledTimeLabel: expect.any(String),
+      });
+      expect(onConfirmed).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('read-your-writes (#636): reschedule then ask upcoming sessions', () => {
+    it('the next cached calendar read after confirm returns the new schedule', async () => {
+      const calendar = mockCalendarPort();
+      const reschedule = mockReschedulePort();
+      const cache = new WispaceDataCache();
+      const onConfirmed = jest.fn((externalId: string) => {
+        cache.invalidateUser(externalId, ['calendar']);
+      });
+      const service = new RescheduleConfirmationService(
+        calendar,
+        reschedule,
+        undefined,
+        { onConfirmed },
+      );
+
+      // The same read path the chat tools use: cache.getOrFetch('calendar').
+      const upstream = jest
+        .fn()
+        .mockResolvedValueOnce([{ calendarId: 1, label: 'Hôm nay 14:00' }])
+        .mockResolvedValueOnce([{ calendarId: 1, label: 'Ngày mai 10:00' }]);
+      const askUpcomingSessions = () =>
+        cache.getOrFetch('calendar', 'user-1', undefined, upstream);
+
+      // Pre-mutation conversation read — cached.
+      expect(await askUpcomingSessions()).toEqual([
+        { calendarId: 1, label: 'Hôm nay 14:00' },
+      ]);
+
+      await service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 1,
+        schedulingMode: 'explicit',
+      });
+      const result = await service.confirm('user-1');
+      expect(result.confirmed).toBe(true);
+
+      // Post-mutation read must reflect the new schedule, not the cache.
+      expect(await askUpcomingSessions()).toEqual([
+        { calendarId: 1, label: 'Ngày mai 10:00' },
+      ]);
+      expect(upstream).toHaveBeenCalledTimes(2);
+      expect(onConfirmed).toHaveBeenCalledWith('user-1');
     });
   });
 });

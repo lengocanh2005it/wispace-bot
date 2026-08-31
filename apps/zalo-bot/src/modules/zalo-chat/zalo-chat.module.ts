@@ -34,11 +34,13 @@ import {
   WispaceConfigService,
   PrecreateExerciseApiClient,
   WispaceGoalsService,
+  WispaceDataCache,
 } from '@wispace/wispace-client';
 import {
   ZaloCalendarCapabilityAdapter,
   ZaloExerciseCapabilityAdapter,
   ZaloGoalsCapabilityAdapter,
+  ZaloWispaceCacheInvalidationAdapter,
 } from './infrastructure/adapters/zalo-wispace-capability.adapters';
 import {
   ADVISORY_LOCKS,
@@ -185,6 +187,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         outboundService: ZaloOutboundService,
         accountLinkService: ZaloAccountLinkService,
         metrics: BotMetricsService,
+        cache: WispaceDataCache,
       ) => {
         const appId = configService.get<string>('ZALO_APP_ID');
         const redirectUri = configService.get<string>(
@@ -196,8 +199,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             : '';
 
         return new PlatformAgentToolsService(
-          new ZaloGoalsCapabilityAdapter(goalsService),
-          new ZaloCalendarCapabilityAdapter(calendarService),
+          new ZaloGoalsCapabilityAdapter(goalsService, cache),
+          new ZaloCalendarCapabilityAdapter(calendarService, cache),
           rescheduleConfirmationService,
           {
             platform: 'zalo',
@@ -215,6 +218,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
               accountLinkService.findCurrentIdentity(externalUserId),
             policyDeniedInc: (toolName, reason) =>
               metrics.incLlmToolPolicyDenied(toolName, 'zalo', reason),
+            cacheInvalidation: new ZaloWispaceCacheInvalidationAdapter(cache),
             reschedule: {
               validateDateAndTime: false,
               messages: {
@@ -243,6 +247,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         ZaloOutboundService,
         ZaloAccountLinkService,
         BotMetricsService,
+        WispaceDataCache,
       ],
     },
     {
@@ -470,12 +475,21 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         calendar: CalendarPort<string>,
         reschedule: ReschedulePort<string>,
         store: TypeormRescheduleStore<string>,
+        cache: WispaceDataCache,
       ) =>
-        new RescheduleConfirmationService<string>(calendar, reschedule, store),
+        new RescheduleConfirmationService<string>(calendar, reschedule, store, {
+          // The calendar write commits here — drop cached reads for the user
+          // so the next "upcoming sessions" question re-fetches (#636).
+          onConfirmed: (externalId) =>
+            new ZaloWispaceCacheInvalidationAdapter(cache).invalidateCalendar(
+              externalId,
+            ),
+        }),
       inject: [
         'ZaloCalendarPort',
         'ZaloReschedulePort',
         TypeormRescheduleStore,
+        WispaceDataCache,
       ],
     },
     ZaloOutboundService,

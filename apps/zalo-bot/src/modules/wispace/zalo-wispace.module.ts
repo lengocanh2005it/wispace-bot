@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import {
   createWispaceProviders,
   WispaceConfigService,
+  WispaceDataCache,
   WispaceGoalsService,
   WispaceCalendarService,
   PrecreateExerciseApiClient,
@@ -14,6 +15,7 @@ import {
     WispaceGoalsService,
     WispaceCalendarService,
     PrecreateExerciseApiClient,
+    WispaceDataCache,
   ],
 })
 export class ZaloWispaceModule {}

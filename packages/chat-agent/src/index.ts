@@ -20,6 +20,7 @@ export type {
   CalendarCapabilityPort,
   ExerciseCapabilityPort,
   GoalsCapabilityPort,
+  WispaceCacheInvalidationPort,
   WispaceCalendarSessionView,
   WispaceCalendarTimeRange,
   WispaceExercisePrecreateResult,

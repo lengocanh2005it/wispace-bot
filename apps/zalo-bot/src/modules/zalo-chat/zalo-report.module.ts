@@ -12,6 +12,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
   MemoizedWispaceGoalsService,
+  WispaceDataCache,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
 import {
@@ -62,15 +63,15 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
     ReportSendScheduleService,
     ReportOrchestrationService,
     // Request-scoped goals memoization: exam-window check and report
-    // generation both fetch goals within one execution — one upstream call.
+    // generation both fetch goals within one execution — one upstream call
+    // (TTL from the central #636 policy).
     {
       provide: MemoizedWispaceGoalsService,
-      useFactory: (goalsService: WispaceGoalsService) =>
-        new MemoizedWispaceGoalsService(goalsService, {
-          ttlMs: 60_000,
-          maxEntries: 10_000,
-        }),
-      inject: [WispaceGoalsService],
+      useFactory: (
+        goalsService: WispaceGoalsService,
+        cache: WispaceDataCache,
+      ) => new MemoizedWispaceGoalsService(goalsService, cache),
+      inject: [WispaceGoalsService, WispaceDataCache],
     },
     {
       provide: GOALS_DATA_PORT,

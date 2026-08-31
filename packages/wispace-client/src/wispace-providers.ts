@@ -4,6 +4,7 @@ import { WispaceCalendarService } from './clients/wispace-calendar.service';
 import { WispaceGoalsService } from './clients/wispace-goals.service';
 import { PrecreateExerciseApiClient } from './clients/precreate-exercise-api.client';
 import { WispaceConfigService } from './config/wispace-config.service';
+import { WispaceDataCache } from './cache/wispace-data-cache';
 import type { WispaceIdHeader } from './utils/wispace-headers';
 
 export interface WispaceProvidersOptions {
@@ -53,6 +54,12 @@ export function createWispaceProviders(
           configService.buildPrecreateExerciseClientConfig(),
         ),
       inject: [WispaceConfigService],
+    },
+    {
+      // One cache instance per app — chat tools and the report pipeline share
+      // it so a bot-side mutation invalidates every consumer's view (#636).
+      provide: WispaceDataCache,
+      useFactory: () => new WispaceDataCache(),
     },
   ];
 }

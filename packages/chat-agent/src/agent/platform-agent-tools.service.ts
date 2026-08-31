@@ -273,6 +273,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
           {
             getNotLinkedMessage: this.options.getNotLinkedMessage,
             logger: this.logger,
+            cacheInvalidation: this.options.cacheInvalidation,
           },
           signal,
         );

@@ -7,6 +7,7 @@ import {
 } from '@wispace/llm-agent';
 import type {
   ExerciseCapabilityPort,
+  WispaceCacheInvalidationPort,
   WispaceExercisePrecreateResult,
 } from './wispace-capability.ports';
 import { buildExerciseUrlFact } from './pinned-facts';
@@ -108,6 +109,8 @@ export async function executePrecreateExerciseTool(
   options: {
     getNotLinkedMessage: () => string;
     logger?: PrecreateExerciseLogger;
+    /** Drops cached WISPACE reads after a successful write (#636). */
+    cacheInvalidation?: WispaceCacheInvalidationPort;
   },
   signal?: AbortSignal,
 ): Promise<unknown> {
@@ -139,6 +142,11 @@ export async function executePrecreateExerciseTool(
       ctx.externalUserId,
       { signal },
     );
+    // The write landed (or the roadmap exercise already exists) — drop the
+    // cached goals so the next read in this conversation re-fetches (#636).
+    if (result.status === 'created' || result.status === 'already_exists') {
+      options.cacheInvalidation?.invalidateGoals(ctx.externalUserId);
+    }
     return normalizePrecreateExerciseResult(ctx, result);
   } catch (error) {
     logUnavailable(

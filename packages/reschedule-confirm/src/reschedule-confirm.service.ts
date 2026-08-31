@@ -111,6 +111,15 @@ export interface ReschedulePort<TExternalId> {
   }): Promise<RescheduleResult>;
 }
 
+export interface RescheduleConfirmationOptions<TExternalId> {
+  /**
+   * Runs after the reschedule write commits (#636) — bots wire cache
+   * invalidation here so the next calendar read re-fetches. A hook failure
+   * is logged and swallowed: the write already succeeded.
+   */
+  onConfirmed?: (externalId: TExternalId) => Promise<void> | void;
+}
+
 /**
  * Generic reschedule confirmation service — handles the stage/confirm/cancel
  * flow for rescheduling study sessions. Platform-specific bots provide
@@ -126,13 +135,16 @@ export interface ReschedulePort<TExternalId> {
 export class RescheduleConfirmationService<TExternalId> {
   private readonly logger = new Logger(RescheduleConfirmationService.name);
   private readonly store: RescheduleStorePort<TExternalId>;
+  private readonly options: RescheduleConfirmationOptions<TExternalId>;
 
   constructor(
     private readonly calendarPort: CalendarPort<TExternalId>,
     private readonly reschedulePort: ReschedulePort<TExternalId>,
     store?: RescheduleStorePort<TExternalId>,
+    options?: RescheduleConfirmationOptions<TExternalId>,
   ) {
     this.store = store ?? new MemoryRescheduleStore<TExternalId>();
+    this.options = options ?? {};
   }
 
   async stage(
@@ -275,6 +287,8 @@ export class RescheduleConfirmationService<TExternalId> {
 
       await this.store.cancel(externalId, pending.leaseToken);
 
+      await this.runOnConfirmed(externalId);
+
       this.logger.log(
         `RESCHEDULE_CONFIRMED externalId=${maskExternalId(
           String(externalId),
@@ -324,6 +338,21 @@ export class RescheduleConfirmationService<TExternalId> {
   /** Whether a valid (unexpired) pending reschedule exists for this user. */
   hasPending(externalId: TExternalId): Promise<boolean> {
     return this.store.hasPending(externalId);
+  }
+
+  private async runOnConfirmed(externalId: TExternalId): Promise<void> {
+    if (!this.options.onConfirmed) {
+      return;
+    }
+    try {
+      await this.options.onConfirmed(externalId);
+    } catch (error) {
+      this.logger.warn(
+        `RESCHEDULE_ON_CONFIRMED_HOOK_FAILED externalId=${maskExternalId(
+          String(externalId),
+        )}: ${sanitizeLogValue(errorMessage(error), 200)}`,
+      );
+    }
   }
 
   private buildSummary(

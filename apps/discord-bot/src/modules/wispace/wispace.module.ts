@@ -3,6 +3,7 @@ import {
   createWispaceProviders,
   WispaceCalendarService,
   WispaceConfigService,
+  WispaceDataCache,
   WispaceGoalsService,
   PrecreateExerciseApiClient,
 } from '@wispace/wispace-client';
@@ -34,6 +35,7 @@ import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-sha
     WispaceCalendarService,
     PrecreateExerciseApiClient,
     WispaceConfigService,
+    WispaceDataCache,
     PlatformStudyCalendarCommandService,
   ],
 })

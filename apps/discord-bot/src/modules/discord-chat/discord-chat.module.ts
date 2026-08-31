@@ -47,11 +47,13 @@ import {
   WispaceCalendarService,
   PrecreateExerciseApiClient,
   WispaceGoalsService,
+  WispaceDataCache,
 } from '@wispace/wispace-client';
 import {
   DiscordCalendarCapabilityAdapter,
   DiscordExerciseCapabilityAdapter,
   DiscordGoalsCapabilityAdapter,
+  DiscordWispaceCacheInvalidationAdapter,
 } from './infrastructure/adapters/discord-wispace-capability.adapters';
 import {
   RescheduleConfirmationService,
@@ -152,10 +154,11 @@ const REGISTER_REPORT_MESSAGE =
         outboundService: DiscordOutboundService,
         accountLinkService: DiscordAccountLinkService,
         metrics: BotMetricsService,
+        cache: WispaceDataCache,
       ) =>
         new PlatformAgentToolsService(
-          new DiscordGoalsCapabilityAdapter(goalsService),
-          new DiscordCalendarCapabilityAdapter(calendarService),
+          new DiscordGoalsCapabilityAdapter(goalsService, cache),
+          new DiscordCalendarCapabilityAdapter(calendarService, cache),
           rescheduleConfirmationService,
           {
             platform: 'discord',
@@ -166,6 +169,9 @@ const REGISTER_REPORT_MESSAGE =
               accountLinkService.findCurrentIdentity(externalUserId),
             policyDeniedInc: (toolName, reason) =>
               metrics.incLlmToolPolicyDenied(toolName, 'discord', reason),
+            cacheInvalidation: new DiscordWispaceCacheInvalidationAdapter(
+              cache,
+            ),
             reschedule: {
               validateDateAndTime: true,
               messages: {
@@ -194,6 +200,7 @@ const REGISTER_REPORT_MESSAGE =
         DiscordOutboundService,
         DiscordAccountLinkService,
         BotMetricsService,
+        WispaceDataCache,
       ],
     },
     {
@@ -418,12 +425,21 @@ const REGISTER_REPORT_MESSAGE =
         calendar: CalendarPort<string>,
         reschedule: ReschedulePort<string>,
         store: TypeormRescheduleStore<string>,
+        cache: WispaceDataCache,
       ) =>
-        new RescheduleConfirmationService<string>(calendar, reschedule, store),
+        new RescheduleConfirmationService<string>(calendar, reschedule, store, {
+          // The calendar write commits here — drop cached reads for the user
+          // so the next "upcoming sessions" question re-fetches (#636).
+          onConfirmed: (externalId) =>
+            new DiscordWispaceCacheInvalidationAdapter(
+              cache,
+            ).invalidateCalendar(externalId),
+        }),
       inject: [
         'DiscordCalendarPort',
         'DiscordReschedulePort',
         TypeormRescheduleStore,
+        WispaceDataCache,
       ],
     },
     DiscordMenuService,

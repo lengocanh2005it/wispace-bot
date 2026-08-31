@@ -65,3 +65,14 @@ export interface ExerciseCapabilityPort {
     options?: { signal?: AbortSignal },
   ): Promise<WispaceExercisePrecreateResult>;
 }
+
+/**
+ * Cache invalidation for the WISPACE read cache (#636): after a bot-side
+ * mutation the affected per-user entries must be dropped so the next read
+ * re-fetches (read-your-writes). Wired by the composition root to the
+ * shared `WispaceDataCache`; optional for executors without a cache.
+ */
+export interface WispaceCacheInvalidationPort {
+  invalidateGoals(externalUserId: string): void;
+  invalidateCalendar(externalUserId: string): void;
+}

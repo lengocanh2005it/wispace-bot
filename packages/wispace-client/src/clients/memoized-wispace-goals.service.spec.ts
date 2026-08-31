@@ -1,4 +1,6 @@
 import { MemoizedWispaceGoalsService } from './memoized-wispace-goals.service';
+import { WispaceDataCache } from '../cache/wispace-data-cache';
+import { WISPACE_CACHE_POLICY } from '../cache/wispace-cache-policy';
 import type { WispaceGoalsService } from './wispace-goals.service';
 import type { UserGoalsRecord } from '../types/user-goals.types';
 
@@ -21,7 +23,10 @@ describe('MemoizedWispaceGoalsService', () => {
   it('returns cached goals within TTL — one upstream call per user', async () => {
     const { delegate, getUserGoals } = createDelegate();
     getUserGoals.mockResolvedValue(GOALS);
-    const memo = new MemoizedWispaceGoalsService(delegate, { ttlMs: 60_000 });
+    const memo = new MemoizedWispaceGoalsService(
+      delegate,
+      new WispaceDataCache(),
+    );
 
     await memo.getUserGoals('user-1');
     await memo.getUserGoals('user-1');
@@ -30,29 +35,34 @@ describe('MemoizedWispaceGoalsService', () => {
     expect(getUserGoals).toHaveBeenCalledTimes(1);
   });
 
-  it('refetches after TTL expiry', async () => {
-    jest.useFakeTimers();
+  it('refetches after the policy TTL expiry', async () => {
+    const now = 1_700_000_000_000;
+    const nowSpy = jest.spyOn(Date, 'now').mockReturnValue(now);
     try {
       const { delegate, getUserGoals } = createDelegate();
       getUserGoals.mockResolvedValue(GOALS);
-      const memo = new MemoizedWispaceGoalsService(delegate, {
-        ttlMs: 10_000,
-      });
+      const memo = new MemoizedWispaceGoalsService(
+        delegate,
+        new WispaceDataCache(),
+      );
 
       await memo.getUserGoals('user-1');
-      jest.advanceTimersByTime(10_001);
+      nowSpy.mockReturnValue(now + WISPACE_CACHE_POLICY.goals + 1);
       await memo.getUserGoals('user-1');
 
       expect(getUserGoals).toHaveBeenCalledTimes(2);
     } finally {
-      jest.useRealTimers();
+      nowSpy.mockRestore();
     }
   });
 
   it('caches per user — different users hit upstream separately', async () => {
     const { delegate, getUserGoals } = createDelegate();
     getUserGoals.mockResolvedValue(GOALS);
-    const memo = new MemoizedWispaceGoalsService(delegate, { ttlMs: 60_000 });
+    const memo = new MemoizedWispaceGoalsService(
+      delegate,
+      new WispaceDataCache(),
+    );
 
     await memo.getUserGoals('user-a');
     await memo.getUserGoals('user-b');
@@ -61,13 +71,26 @@ describe('MemoizedWispaceGoalsService', () => {
     expect(getUserGoals).toHaveBeenCalledTimes(2);
   });
 
+  it('invalidation forces a refetch — read-your-writes (#636)', async () => {
+    const { delegate, getUserGoals } = createDelegate();
+    getUserGoals.mockResolvedValue(GOALS);
+    const cache = new WispaceDataCache();
+    const memo = new MemoizedWispaceGoalsService(delegate, cache);
+
+    await memo.getUserGoals('user-1');
+    cache.invalidateUser('user-1');
+    await memo.getUserGoals('user-1');
+
+    expect(getUserGoals).toHaveBeenCalledTimes(2);
+  });
+
   it('evicts the oldest entry when over maxEntries', async () => {
     const { delegate, getUserGoals } = createDelegate();
     getUserGoals.mockResolvedValue(GOALS);
-    const memo = new MemoizedWispaceGoalsService(delegate, {
-      ttlMs: 60_000,
-      maxEntries: 2,
-    });
+    const memo = new MemoizedWispaceGoalsService(
+      delegate,
+      new WispaceDataCache({ maxEntries: 2 }),
+    );
 
     await memo.getUserGoals('u1');
     await memo.getUserGoals('u2');
@@ -80,7 +103,10 @@ describe('MemoizedWispaceGoalsService', () => {
   it('delegates task score averages without caching', async () => {
     const { delegate, getTaskScoreAverages } = createDelegate();
     getTaskScoreAverages.mockResolvedValue([]);
-    const memo = new MemoizedWispaceGoalsService(delegate, { ttlMs: 60_000 });
+    const memo = new MemoizedWispaceGoalsService(
+      delegate,
+      new WispaceDataCache(),
+    );
 
     await memo.getTaskScoreAverages('user-1');
     await memo.getTaskScoreAverages('user-1');

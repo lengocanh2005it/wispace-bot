@@ -5,6 +5,7 @@ import type {
   LlmExecutionPort,
 } from '@wispace/llm-agent';
 import type { PinnedFact } from './pinned-facts';
+import type { WispaceCacheInvalidationPort } from './wispace-capability.ports';
 import type { ClarificationStateStore } from '../clarification/clarification-state';
 
 /**
@@ -212,6 +213,12 @@ export interface PlatformAgentToolsOptions {
   ) => Promise<CurrentPlatformIdentity | undefined>;
   /** Bounded policy-denial metric; arguments and identities are never passed. */
   policyDeniedInc?: (toolName: string, reason: string) => void;
+  /**
+   * WISPACE cache invalidation (#636): mutating tools drop the affected
+   * per-user cache entries after a successful write so the next read
+   * re-fetches. Optional — apps without a WISPACE read cache omit it.
+   */
+  cacheInvalidation?: WispaceCacheInvalidationPort;
   /**
    * Defense-in-depth fresh-mapping check (#397) for destructive tools
    * (reschedule_study_session). When present, the tool re-verifies the

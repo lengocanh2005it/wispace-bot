@@ -31,6 +31,7 @@ import {
 import { ChatMeteringModule } from '@wispace/chat-metering';
 import {
   MemoizedWispaceGoalsService,
+  WispaceDataCache,
   WispaceGoalsService,
 } from '@wispace/wispace-client';
 import { DiscordAccountLinkEntity } from '../../infrastructure/database/entities/discord-account-link.entity';
@@ -71,15 +72,14 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
   providers: [
     // Request-scoped goals memoization: exam window, orchestration and report
     // generation all fetch goals within one report execution — collapse them
-    // into a single upstream call (short TTL, bounded cache).
+    // into a single upstream call (TTL from the central #636 policy).
     {
       provide: MemoizedWispaceGoalsService,
-      useFactory: (goalsService: WispaceGoalsService) =>
-        new MemoizedWispaceGoalsService(goalsService, {
-          ttlMs: 60_000,
-          maxEntries: 10_000,
-        }),
-      inject: [WispaceGoalsService],
+      useFactory: (
+        goalsService: WispaceGoalsService,
+        cache: WispaceDataCache,
+      ) => new MemoizedWispaceGoalsService(goalsService, cache),
+      inject: [WispaceGoalsService, WispaceDataCache],
     },
     {
       provide: GOALS_DATA_PORT,

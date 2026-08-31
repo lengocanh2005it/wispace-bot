@@ -827,3 +827,96 @@ describe('PlatformAgentToolsService', () => {
     });
   });
 });
+
+describe('PlatformAgentToolsService cache invalidation (#636)', () => {
+  const INTENT_TEXT = 'Tạo cho mình bài tập mới với';
+
+  const buildService = (
+    precreateMock: jest.Mock,
+  ): {
+    service: PlatformAgentToolsService;
+    invalidateGoals: jest.Mock;
+    invalidateCalendar: jest.Mock;
+  } => {
+    const invalidateGoals = jest.fn();
+    const invalidateCalendar = jest.fn();
+    const options: PlatformAgentToolsOptions = {
+      ...buildDiscordOptions(jest.fn().mockResolvedValue(undefined)),
+      cacheInvalidation: { invalidateGoals, invalidateCalendar },
+    };
+    const service = new PlatformAgentToolsService(
+      buildGoalsService(),
+      buildCalendarService(),
+      { stage: jest.fn() },
+      options,
+      {
+        precreateNextExercise: precreateMock,
+      } as unknown as ExerciseCapabilityPort,
+    );
+    return { service, invalidateGoals, invalidateCalendar };
+  };
+
+  it('drops cached goals after a successful create (read-your-writes)', async () => {
+    const precreate = jest.fn().mockResolvedValue({ status: 'created' });
+    const { service, invalidateGoals, invalidateCalendar } =
+      buildService(precreate);
+
+    await service.execute('precreate_next_exercise', '{}', {
+      externalUserId: 'discord-1',
+      userText: INTENT_TEXT,
+    });
+
+    expect(precreate).toHaveBeenCalledTimes(1);
+    expect(invalidateGoals).toHaveBeenCalledWith('discord-1');
+    expect(invalidateCalendar).not.toHaveBeenCalled();
+  });
+
+  it('drops cached goals when the exercise already exists', async () => {
+    const precreate = jest.fn().mockResolvedValue({ status: 'already_exists' });
+    const { service, invalidateGoals } = buildService(precreate);
+
+    await service.execute('precreate_next_exercise', '{}', {
+      externalUserId: 'discord-1',
+      userText: INTENT_TEXT,
+    });
+
+    expect(invalidateGoals).toHaveBeenCalledWith('discord-1');
+  });
+
+  it('does not invalidate when no write happened', async () => {
+    const precreate = jest.fn().mockResolvedValue({ status: 'no_roadmap' });
+    const { service, invalidateGoals } = buildService(precreate);
+
+    await service.execute('precreate_next_exercise', '{}', {
+      externalUserId: 'discord-1',
+      userText: INTENT_TEXT,
+    });
+
+    expect(invalidateGoals).not.toHaveBeenCalled();
+  });
+
+  it('does not invalidate when the create request fails', async () => {
+    const precreate = jest.fn().mockRejectedValue(new Error('Wispace down'));
+    const { service, invalidateGoals } = buildService(precreate);
+
+    await service.execute('precreate_next_exercise', '{}', {
+      externalUserId: 'discord-1',
+      userText: INTENT_TEXT,
+    });
+
+    expect(invalidateGoals).not.toHaveBeenCalled();
+  });
+
+  it('does not invalidate when the intent gate blocks the create', async () => {
+    const precreate = jest.fn().mockResolvedValue({ status: 'created' });
+    const { service, invalidateGoals } = buildService(precreate);
+
+    await service.execute('precreate_next_exercise', '{}', {
+      externalUserId: 'discord-1',
+      userText: 'cho mình task 1',
+    });
+
+    expect(precreate).not.toHaveBeenCalled();
+    expect(invalidateGoals).not.toHaveBeenCalled();
+  });
+});

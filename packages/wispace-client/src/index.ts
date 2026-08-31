@@ -69,10 +69,15 @@ export { UserCalendarApiClient } from './clients/user-calendar-api.client';
 export { UserCalendarScheduleClient } from './clients/user-calendar-schedule.client';
 export type { ListCalendarsFn } from './clients/user-calendar-schedule.client';
 export { WispaceGoalsService } from './clients/wispace-goals.service';
+export { MemoizedWispaceGoalsService } from './clients/memoized-wispace-goals.service';
 export {
-  MemoizedWispaceGoalsService,
-  type MemoizedGoalsServiceOptions,
-} from './clients/memoized-wispace-goals.service';
+  WispaceDataCache,
+  type WispaceDataCacheOptions,
+} from './cache/wispace-data-cache';
+export {
+  WISPACE_CACHE_POLICY,
+  type WispaceCacheKind,
+} from './cache/wispace-cache-policy';
 export { WispaceCalendarService } from './clients/wispace-calendar.service';
 export { WispaceTokenVerifyService } from './clients/wispace-token-verify.service';
 export { PrecreateExerciseApiClient } from './clients/precreate-exercise-api.client';
