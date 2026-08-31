@@ -50,6 +50,16 @@ describe('CHAT_SYSTEM_PROMPT_CORE', () => {
     expect(CHAT_SYSTEM_PROMPT_CORE).not.toContain('Discord');
     expect(CHAT_SYSTEM_PROMPT_CORE).not.toContain('Zalo');
   });
+
+  it('stays under the size budget (#648) — raising the ceiling is a deliberate act, not a reflex', () => {
+    expect(CHAT_SYSTEM_PROMPT_CORE.length).toBeLessThanOrEqual(5000);
+  });
+
+  it('states the no-tools rule exactly 5 times (#648) — one per category, no restatements', () => {
+    const count = (CHAT_SYSTEM_PROMPT_CORE.match(/do NOT call tools/gi) ?? [])
+      .length;
+    expect(count).toBe(5);
+  });
 });
 
 describe('composeChatSystemPrompt (#646)', () => {
