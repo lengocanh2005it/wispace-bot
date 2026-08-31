@@ -18,6 +18,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   ChatMeteringModule,
   PlatformChatRateLimitService,
+  PlatformWriteToolBudgetService,
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
   ChatIdempotencyEntity,
@@ -43,6 +44,7 @@ import type {
   ClarificationStateStore,
 } from '@wispace/chat-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import { buildWriteToolDailyBudgetMessage } from '@wispace/llm-agent';
 import {
   WispaceCalendarService,
   PrecreateExerciseApiClient,
@@ -155,6 +157,7 @@ const REGISTER_REPORT_MESSAGE =
         accountLinkService: DiscordAccountLinkService,
         metrics: BotMetricsService,
         cache: WispaceDataCache,
+        budgetService: PlatformWriteToolBudgetService,
       ) =>
         new PlatformAgentToolsService(
           new DiscordGoalsCapabilityAdapter(goalsService, cache),
@@ -169,6 +172,10 @@ const REGISTER_REPORT_MESSAGE =
               accountLinkService.findCurrentIdentity(externalUserId),
             policyDeniedInc: (toolName, reason) =>
               metrics.incLlmToolPolicyDenied(toolName, 'discord', reason),
+            writeToolBudget: budgetService,
+            writeToolPerMessageCaps: budgetService.perMessageCaps(),
+            writeToolBudgetDeniedInc: (tool, reason) =>
+              metrics.incWriteToolBudgetDenied(tool, 'discord', reason),
             cacheInvalidation: new DiscordWispaceCacheInvalidationAdapter(
               cache,
             ),
@@ -201,6 +208,7 @@ const REGISTER_REPORT_MESSAGE =
         DiscordAccountLinkService,
         BotMetricsService,
         WispaceDataCache,
+        PlatformWriteToolBudgetService,
       ],
     },
     {
@@ -426,8 +434,20 @@ const REGISTER_REPORT_MESSAGE =
         reschedule: ReschedulePort<string>,
         store: TypeormRescheduleStore<string>,
         cache: WispaceDataCache,
+        budgetService: PlatformWriteToolBudgetService,
       ) =>
         new RescheduleConfirmationService<string>(calendar, reschedule, store, {
+          consumeRescheduleBudget: (userId, externalId) =>
+            budgetService.consumeDaily(
+              String(externalId),
+              userId,
+              'reschedule_study_session',
+            ),
+          refundRescheduleBudget: (userId) =>
+            budgetService.refundDaily(userId, 'reschedule_study_session'),
+          rescheduleBudgetExceededMessage: buildWriteToolDailyBudgetMessage(
+            'reschedule_study_session',
+          ),
           // The calendar write commits here — drop cached reads for the user
           // so the next "upcoming sessions" question re-fetches (#636).
           onConfirmed: (externalId) =>
