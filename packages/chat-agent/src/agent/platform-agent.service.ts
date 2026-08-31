@@ -17,6 +17,7 @@ import {
   buildClarificationUnavailableMessage,
   buildClarificationMessage,
   buildWispaceScopeRedirectMessage,
+  redactSecrets,
   sanitizeUntrustedTextForLlm,
   type LlmDegradedAction,
   type LlmDegradedFailureClass,
@@ -753,12 +754,15 @@ export class PlatformAgentService {
       this.options.promptFile,
     );
     // Shared composer (#646) — the eval harness composes through the same
-    // function, so the two paths cannot drift apart.
+    // function, so the two paths cannot drift apart. Suffixes carry
+    // user-controlled data (display name, profile facts) — the no-secrets
+    // invariant (#632) applies at this single consumption point, so every
+    // current and future suffix builder inherits it.
     const suffix = await this.options.systemPromptSuffix?.(input);
     return composeChatSystemPrompt({
       core: CHAT_SYSTEM_PROMPT_CORE,
       overlay,
-      suffix,
+      suffix: suffix ? redactSecrets(suffix).text : undefined,
     });
   }
 }

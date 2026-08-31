@@ -1,5 +1,10 @@
 import { AGENT_TOOL_NAMES } from '@wispace/llm-agent';
+import { Logger } from '@nestjs/common';
 import { PlatformAgentToolsService } from './platform-agent-tools.service';
+import {
+  registerRuntimeSecrets,
+  resetRuntimeSecretsForTests,
+} from '@wispace/llm-agent';
 import type {
   CalendarCapabilityPort,
   ExerciseCapabilityPort,
@@ -918,5 +923,69 @@ describe('PlatformAgentToolsService cache invalidation (#636)', () => {
 
     expect(precreate).not.toHaveBeenCalled();
     expect(invalidateGoals).not.toHaveBeenCalled();
+  });
+});
+
+describe('PlatformAgentToolsService no-secrets boundary (#632)', () => {
+  afterEach(() => resetRuntimeSecretsForTests());
+
+  const buildGoalsErrorService = (goals: GoalsCapabilityPort) => {
+    const service = new PlatformAgentToolsService(
+      goals,
+      buildCalendarService(),
+      { stage: jest.fn() },
+      buildDiscordOptions(jest.fn().mockResolvedValue(undefined)),
+    );
+    return service;
+  };
+
+  it('a WISPACE error string carrying a credential shape reaches neither the agent nor the log', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    const seededError = new Error(
+      'User goals API failed: HTTP 401 Authorization: Bearer wispace-seeded-secret-token-42',
+    );
+    const goals = {
+      getUserGoals: jest.fn().mockRejectedValue(seededError),
+      getTaskScoreAverages: jest.fn(),
+    } as unknown as GoalsCapabilityPort;
+    const service = buildGoalsErrorService(goals);
+
+    const result = (await service.execute('get_user_goals', '{}', {
+      externalUserId: 'discord-1',
+    })) as { error?: string };
+
+    expect(result.error).toBeDefined();
+    expect(result.error).not.toContain('wispace-seeded-secret-token-42');
+    expect(result.error).toContain('[REDACTED]');
+    const logged = warnSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(logged).not.toContain('wispace-seeded-secret-token-42');
+    expect(logged).toContain('[REDACTED]');
+    warnSpy.mockRestore();
+  });
+
+  it('a WISPACE error string carrying a runtime-registered secret reaches neither the agent nor the log', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+    registerRuntimeSecrets(['internal-ops-key-runtime-seeded-99']);
+    const goals = {
+      getUserGoals: jest
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            'request rejected with X-Internal-Key internal-ops-key-runtime-seeded-99',
+          ),
+        ),
+      getTaskScoreAverages: jest.fn(),
+    } as unknown as GoalsCapabilityPort;
+    const service = buildGoalsErrorService(goals);
+
+    const result = (await service.execute('get_user_goals', '{}', {
+      externalUserId: 'discord-1',
+    })) as { error?: string };
+
+    expect(result.error).not.toContain('internal-ops-key-runtime-seeded-99');
+    expect(result.error).toContain('[REDACTED]');
+    const logged = warnSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(logged).not.toContain('internal-ops-key-runtime-seeded-99');
+    warnSpy.mockRestore();
   });
 });

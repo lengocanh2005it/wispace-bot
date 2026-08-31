@@ -52,6 +52,7 @@ Deploy hardening updates for #271/#284 must keep `vps-deploy.sh` fail-closed on 
 - LLM safety: free-form chat blocks prompt injection before calling LLM, sanitizes history/tool results; external data for reminders/reports must go through `prompt-injection.utils` / validate JSON output (`llm-json-output.utils`) before formatting/sending. **Safety telemetry never stores raw text** — `LlmSafetyCore.recordGroundingWarning` persists sanitized excerpt (control chars stripped, credential patterns → `[REDACTED]`) + SHA-256 hash + length only. **Reminder time** always renders the server-derived `scheduledTimeLabel` (model value ignored, mismatch logged). **Student-report facts** (streak, task statuses, dates, counts, bands) are generated deterministically from source data — the LLM only writes prose.
 - In-run tool observations (#414) are projected to allowlisted server-derived fields, bounded per result and cumulatively per round (tool-call arguments included), then marked when truncated/reused/dropped/fallback. The shared loop preserves one provider-valid tool message per call; metrics use `<prefix>_llm_observation_outcome_total{tool_name,platform,outcome}`.
 - Ops health I1+S1: `npm run ops:health` (cron 09:00 ICT in-app when `OPS_HEALTH_ALERT_ENABLED=true`).
+- Data quality #642: `npm run ops:data-quality` (read-only, advisory-locked; Messenger cron 09:15 ICT in production).
 - Production env sync: use the manual `sync-env.yml` workflow; the in-container Doppler webhook is disabled because bot containers do not receive the host Docker socket.
 - Audit log cleanup: cron `messenger-message-log-cleanup` — 03:00 ICT every Monday; `MESSENGER_MESSAGE_LOG_RETENTION_DAYS=90` (disable: `MESSENGER_MESSAGE_LOG_CLEANUP_ENABLED=false`).
 - Health endpoints (shared `HealthController` in `packages/bot-common`, same semantics on all 3 bots): `GET /health` = **public liveness** (generic `{status:"ok"}`, never leaks dependency details); `GET /health/ready` = **public readiness** (200 only when DB + configured Redis reachable; 503 body is status-only); `GET /health/detail` = **internal** (`X-Internal-Api-Key`) full DB/Redis detail. Deploy gates and `vps-self-pull-deploy.sh` use `/health/ready`; Nginx rate-limits public readiness probes.
@@ -125,6 +126,7 @@ npm run study-reminder:sync-only    # sync jobs, no migration
 npm run study-reminder:sync         # build + migrate + sync + dispatch
 npm run study-reminder:jobs         # print jobs in DB (--failed, --stuck, --summary)
 npm run ops:health                  # I1+S1 combined ops snapshot
+npm run ops:data-quality             # #642 read-only anomaly checks
 npm run chat-quota:status           # query chat quota (psid / userId / date / --ops)
 npm run chat-quota:rebuild            # rebuild counter from chat_quota_events (--dry-run)
 npm run llm-usage:status              # query LLM tokens by feature/psid (--ops)
@@ -438,6 +440,7 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 - Wispace API: send the platform identity header (`x-psid` for Messenger, `x-discordid` for Discord, or `x-zaloid` for Zalo) plus `X-Internal-Key`; do not store/log the user's full access token.
 - Meta webhook: verified via `VERIFY_TOKEN` (GET `/v1/webhook`); POST `/v1/webhook` verifies `X-Hub-Signature-256` with `MESSENGER_APP_SECRET` (disable: `MESSENGER_WEBHOOK_SIGNATURE_VERIFY=false`). `ENFORCE_PROD_CHAT_QUOTA=true` or `NODE_ENV=production` → startup fails if secret is missing / verify is disabled / `CHAT_RATE_LIMIT_ENABLED=false`.
 - LLM prompt injection: do not pass user/Wispace strings directly into prompts or tool results. Use `sanitizeUntrustedTextForLlm` / `sanitizeToolResultContent`; JSON output from LLM providers must be parsed + shape-validated, with template fallback on error.
+- LLM no-secrets invariant (#632): prompt, tool schema and tool results are a no-secrets zone enforced at the boundary — `redactSecrets` (shapes via `CREDENTIAL_SHAPES` shared with the output guard + runtime values registered per-app at boot) runs inside the sanitizers and on every system-prompt suffix; audit table in `.claude/rules/prompts.md`.
 
 ## Privacy erasure (GDPR Art. 17)
 

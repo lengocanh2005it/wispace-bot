@@ -163,6 +163,27 @@ describe('PlatformAgentService', () => {
     );
   });
 
+  it('redacts credential-shaped content in the system prompt suffix — no-secrets zone (#632)', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const service = buildService(historyService, {
+      systemPromptSuffix: async () =>
+        'Learner facts: target 7.0, token Bearer abcdef1234567890abcd leaked here',
+    });
+
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'next question',
+    });
+
+    const call = mockLlmReply.mock.calls[0][0] as { systemPrompt: string };
+    expect(call.systemPrompt).toContain('Learner facts: target 7.0');
+    expect(call.systemPrompt).not.toContain('abcdef1234567890abcd');
+    expect(call.systemPrompt).toContain('[REDACTED]');
+  });
+
   it('routes every platform through the shared agent loop (#414)', async () => {
     const historyService = {
       getHistory: jest.fn().mockResolvedValue([]),

@@ -4,6 +4,10 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import { errorMessage, sanitizeErrorStack } from '@wispace/bot-common/masking';
+import {
+  collectRuntimeSecretValues,
+  registerRuntimeSecrets,
+} from '@wispace/llm-agent';
 import { AppModule } from './app.module';
 import { loadVaultSecrets } from './shared/config/vault-secrets';
 
@@ -29,6 +33,13 @@ process.on('uncaughtException', (error) => {
 
 async function bootstrap() {
   await loadVaultSecrets();
+
+  // No-secrets-in-model-context invariant (#632): register the process's
+  // known secret values so every model-context boundary can redact them.
+  const runtimeSecretCount = registerRuntimeSecrets(
+    collectRuntimeSecretValues((key) => process.env[key]),
+  );
+  logger.log(`Registered ${runtimeSecretCount} runtime secrets`);
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,

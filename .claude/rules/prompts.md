@@ -66,3 +66,25 @@ Nest copies assets to `apps/*/dist/shared/prompts/` (`nest-cli.json` → `assets
 - Missing `OPENAI_API_KEY` → hardcoded template fallback (handled in `LlmAgentService.reply()` in `packages/llm-agent`, no API call).
 - Do not pass user/WISPACE strings directly to LLM if they may contain instructions: use `sanitizeUntrustedTextForLlm` (from `@wispace/llm-agent`) for individual fields and `sanitizeToolResultContent` for JSON tool results.
 - Do not directly cast JSON output from the model and format it; parse + validate shape with `llm-json-output.utils.ts` (app), fallback to template on error.
+
+## No-secrets-in-model-context invariant (#632)
+
+Prompt, tool schema, and tool results are a **no-secrets zone**: no secret ever reaches model context, enforced at the boundary — new code adding a field to any of them inherits the guard automatically.
+
+**Boundary map (audit of every string path into model context):**
+
+| Path | Carrier | Guard |
+| --- | --- | --- |
+| Prompt core + per-bot overlay | Static TS module / prompt files | Static content — nothing user- or env-derived |
+| System prompt suffix (display name, learner facts, per-bot extras) | User-controlled / DB data | Redacted at the single consumption point, `PlatformAgentService.buildSystemPrompt` (`redactSecrets`) — every suffix builder inherits it |
+| Tool schemas (`AGENT_TOOLS`) | Static TS module | Static content |
+| Tool results | WISPACE data, upstream messages | `sanitizeToolResultContent` (recursive value redaction + injection scan) |
+| Agent-facing error strings | Upstream errors (`WispaceApiError`, fetch failures) | `errorMessage()` (bot-common) masks shapes; `sanitizeUntrustedTextForLlm` redacts shapes + registered runtime values |
+| Tool result pinned facts (exercise URL) | Config-derived URL | `WISPACE_API_*` URLs fail closed via `validateUpstreamUrl` (HTTPS-only, credentials in URLs rejected) |
+| History / user messages | Learner's own text | Untrusted input — never a *system* secret carrier (a learner's own pasted secret is their data, replayed as their data); injection guard + sanitizers apply |
+| Retry / circuit-breaker errors | Static typed reasons (`queue_full`, `wait_timeout`, …) | Static content |
+| Correlation ids (`mid`, event ids) | Platform ids, no secret material | `maskEventId`/`maskExternalId` for logs only |
+
+**Enforcement:** `redactSecrets` (`packages/llm-agent/src/utils/secret-redaction.utils.ts`) matches credential shapes (`CREDENTIAL_SHAPES` — shared with the output guard `checkFinalOutputSafety`, one list for both sides) **and** the process's runtime secret values registered at boot via `registerRuntimeSecrets(collectRuntimeSecretValues(...))` in each app's `main.ts`. Placeholder: `[REDACTED]` (same as bot-common masking). When you add a new secret env var, also add its key to `RUNTIME_SECRET_ENV_KEYS`.
+
+**When you add anything that flows into model context:** route it through one of the boundary functions above — do not interpolate config values into prompts, tool descriptions, or tool results, and do not return raw upstream error bodies to the agent. Seeded-secret tests (search `#632` in specs) pin the guarantee: a secret planted in a WISPACE error, a tool-result field, or a suffix reaches neither the model input nor the logs.

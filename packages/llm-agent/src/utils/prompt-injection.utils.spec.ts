@@ -2,7 +2,12 @@ import {
   detectDisclosureProbe,
   detectPromptInjection,
   sanitizeToolResultContent,
+  sanitizeUntrustedTextForLlm,
 } from './prompt-injection.utils';
+import {
+  registerRuntimeSecrets,
+  resetRuntimeSecretsForTests,
+} from './secret-redaction.utils';
 
 describe('detectPromptInjection', () => {
   describe('clean messages — should NOT be flagged', () => {
@@ -207,6 +212,77 @@ describe('detectPromptInjection', () => {
     it('returns no reason when clean', () => {
       const result = detectPromptInjection('Lịch học hôm nay');
       expect(result).toEqual({ isInjection: false });
+    });
+  });
+
+  describe('secret redaction (#632)', () => {
+    afterEach(() => resetRuntimeSecretsForTests());
+
+    it('redacts credential shapes in untrusted text', () => {
+      const result = sanitizeUntrustedTextForLlm(
+        'goals API said Authorization: Bearer abcdef1234567890abcd was rejected',
+      );
+      expect(result.text).not.toContain('abcdef1234567890abcd');
+      expect(result.text).toContain('[REDACTED]');
+      expect(result.wasSanitized).toBe(true);
+      expect(result.reason).toBe('secret_redacted');
+    });
+
+    it('redacts runtime-registered secret values in untrusted text', () => {
+      registerRuntimeSecrets(['wispace-internal-key-seeded-42']);
+      const result = sanitizeUntrustedTextForLlm(
+        'request used wispace-internal-key-seeded-42 against /v1/goals',
+      );
+      expect(result.text).not.toContain('wispace-internal-key-seeded-42');
+      expect(result.text).toContain('[REDACTED]');
+      expect(result.text).toContain('/v1/goals');
+      expect(result.reason).toBe('secret_redacted');
+    });
+
+    it('redacts nested credential values inside tool results', () => {
+      const content = JSON.stringify({
+        message: 'TaskScoreAverage API failed: HTTP 500',
+        debug: {
+          auth: 'Bearer abcdef1234567890abcd',
+          conn: 'postgres://admin:hunter2@db.internal:5432/app',
+        },
+      });
+      const result = sanitizeToolResultContent(content);
+      expect(result.wasSanitized).toBe(true);
+      expect(result.content).not.toContain('abcdef1234567890abcd');
+      expect(result.content).not.toContain('hunter2');
+      expect(result.content).toContain('[REDACTED]');
+    });
+
+    it('does not flag or change clean content', () => {
+      const result = sanitizeUntrustedTextForLlm(
+        'Lịch học tuần này có 3 buổi speaking',
+      );
+      expect(result.wasSanitized).toBe(false);
+      expect(result.reason).toBeUndefined();
+      expect(result.text).toBe('Lịch học tuần này có 3 buổi speaking');
+    });
+
+    const longVariedText = Array.from(
+      { length: 150 },
+      (_, i) => `từ vựng IELTS số ${i} `,
+    ).join('');
+
+    it('keeps text_too_long when only truncation applies', () => {
+      const result = sanitizeUntrustedTextForLlm(longVariedText);
+      expect(result.wasSanitized).toBe(true);
+      expect(result.reason).toBe('text_too_long');
+    });
+
+    it('reports secret_redacted when both redaction and truncation apply', () => {
+      const result = sanitizeUntrustedTextForLlm(
+        `Bearer abcdef1234567890abcd ${longVariedText}`,
+      );
+      expect(result.text).not.toContain('abcdef1234567890abcd');
+      expect(result.reason).toBe('secret_redacted');
+      expect(result.text.length).toBeLessThanOrEqual(
+        1000 + '... [truncated]'.length,
+      );
     });
   });
 });

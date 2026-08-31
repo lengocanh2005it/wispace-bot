@@ -60,3 +60,14 @@ export {
   checkFinalOutputSafety,
   type FinalOutputSafetyResult,
 } from './final-output.utils';
+export {
+  CREDENTIAL_SHAPES,
+  findCredentialShape,
+} from './secret-patterns.utils';
+export {
+  collectRuntimeSecretValues,
+  redactSecrets,
+  registerRuntimeSecrets,
+  resetRuntimeSecretsForTests,
+  REDACTED_PLACEHOLDER,
+} from './secret-redaction.utils';

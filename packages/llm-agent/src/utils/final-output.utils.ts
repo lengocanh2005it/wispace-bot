@@ -1,3 +1,5 @@
+import { CREDENTIAL_SHAPES } from './secret-patterns.utils';
+
 /**
  * Final-output safety guardrail (#165): the last thing an LLM-generated
  * reply passes through before delivery. Input scanning and tool-result
@@ -19,15 +21,6 @@ export const SYSTEM_PROMPT_LEAK_MARKERS = [
   'Multi-intent requests (2+ tasks in one message)',
   'Personal data — never fabricate',
 ] as const;
-
-const CREDENTIAL_PATTERNS: Array<RegExp> = [
-  // OpenAI-style keys.
-  /\bsk-[A-Za-z0-9]{16,}\b/i,
-  // Bearer tokens.
-  /\bBearer\s+[A-Za-z0-9._~+/-]{20,}\b/i,
-  // Explicit secret assignments (api_key/password/secret = value).
-  /\b(?:api[_-]?key|password|passwd|secret)\s*[:=]\s*\S{8,}\b/i,
-];
 
 /**
  * Vendor / model identifier tokens that must never appear in a REPLY (#625) —
@@ -61,7 +54,7 @@ export function checkFinalOutputSafety(text: string): FinalOutputSafetyResult {
       return { unsafe: true, reason: 'prompt_leak' };
     }
   }
-  for (const pattern of CREDENTIAL_PATTERNS) {
+  for (const pattern of CREDENTIAL_SHAPES) {
     if (pattern.test(text)) {
       return { unsafe: true, reason: 'credential_leak' };
     }

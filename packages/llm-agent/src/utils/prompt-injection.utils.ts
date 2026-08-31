@@ -1,3 +1,5 @@
+import { redactSecrets } from './secret-redaction.utils';
+
 export interface InjectionCheckResult {
   isInjection: boolean;
   reason?: string;
@@ -508,18 +510,26 @@ export function sanitizeUntrustedTextForLlm(
     };
   }
 
-  const normalized = withoutControlChars.replace(/\s+/g, ' ').trim();
+  // Input-side secret hygiene (#632): shapes + registered runtime values
+  // never reach model context through this boundary.
+  const normalized0 = withoutControlChars.replace(/\s+/g, ' ').trim();
+  const secretCheck = redactSecrets(normalized0);
+  let normalized = secretCheck.text;
+  let truncated = false;
   const maxChars = options?.maxChars ?? MAX_UNTRUSTED_TEXT_CHARS;
   if (normalized.length > maxChars) {
     const suffix =
       maxChars > TRUNCATED_SUFFIX.length ? TRUNCATED_SUFFIX : '...';
-    return {
-      text: `${normalized.slice(0, maxChars - suffix.length).trimEnd()}${suffix}`,
-      wasSanitized: true,
-      reason: 'text_too_long',
-    };
+    normalized = `${normalized.slice(0, maxChars - suffix.length).trimEnd()}${suffix}`;
+    truncated = true;
   }
 
+  if (secretCheck.redacted) {
+    return { text: normalized, wasSanitized: true, reason: 'secret_redacted' };
+  }
+  if (truncated) {
+    return { text: normalized, wasSanitized: true, reason: 'text_too_long' };
+  }
   return { text: normalized, wasSanitized: normalized !== value };
 }
 
