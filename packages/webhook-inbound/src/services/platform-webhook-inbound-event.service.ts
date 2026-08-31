@@ -3,7 +3,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import { Counter } from 'prom-client';
-import { maskExternalIdInText } from '@wispace/bot-common/masking';
+import {
+  maskExternalIdInText,
+  truncatePersistedError,
+} from '@wispace/bot-common/masking';
 
 const webhookInboundRetentionDeletedTotal = new Counter({
   name: 'webhook_inbound_retention_deleted_total',
@@ -205,7 +208,7 @@ export class PlatformWebhookInboundEventService {
       .update(WebhookInboundEventEntity)
       .set({
         status: 'abandoned',
-        lastError: maskExternalIdInText(errorMessage),
+        lastError: truncatePersistedError(maskExternalIdInText(errorMessage)),
         nextRetryAt: null,
         processedAt: new Date(),
       })
@@ -245,7 +248,9 @@ export class PlatformWebhookInboundEventService {
     return this.updateOwnedProcessing(id, leaseToken, {
       status: nextRetryCount >= opts.maxRetries ? 'abandoned' : 'failed',
       retryCount: nextRetryCount,
-      lastError: maskExternalIdInText(errorMessage, row?.externalUserId),
+      lastError: truncatePersistedError(
+        maskExternalIdInText(errorMessage, row?.externalUserId),
+      ),
       nextRetryAt: nextRetryCount >= opts.maxRetries ? null : nextRetryAt,
       processedAt: new Date(),
     });

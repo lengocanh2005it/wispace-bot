@@ -42,8 +42,9 @@ export interface PrivacyStateCleanup {
  *   - webhook_inbound_events, webhook_dead_letters
  *   - discord_welcome_records
  *
- * Not covered (no per-user identifier):
- *   - chat_quota_events (uses aggregate_id, documented only)
+ * Not covered (no raw per-user identifier — aggregate_id is a SHA-256
+ * pseudonym since #640, see docs/data-minimization-audit.md):
+ *   - chat_quota_events (uses hashed aggregate_id)
  */
 
 export interface PrivacyUnlinkResult {

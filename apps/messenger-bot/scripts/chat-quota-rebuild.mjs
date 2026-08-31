@@ -101,13 +101,25 @@ async function main() {
   await client.connect();
 
   try {
+    // aggregate_id is a SHA-256 hex of the PSID (#640), so raw user ids are
+    // taken from chat_daily_usage (which stores the raw id for quota logic)
+    // and joined to the events by hashing. Users whose events are missing
+    // (quota events disabled that day, or older than the events retention)
+    // are SKIPPED — rebuilding from an empty event stream would zero their
+    // live counter.
     const pairs = await client.query(
       `
-        SELECT DISTINCT aggregate_id AS external_user_id, usage_date::text AS usage_date
-        FROM chat_quota_events
-        WHERE platform = 'messenger'
-          AND usage_date >= $1::date AND usage_date <= $2::date
-        ORDER BY usage_date, aggregate_id
+        SELECT du.external_user_id, du.usage_date::text AS usage_date
+        FROM chat_daily_usage du
+        WHERE du.platform = 'messenger'
+          AND du.usage_date >= $1::date AND du.usage_date <= $2::date
+          AND EXISTS (
+            SELECT 1 FROM chat_quota_events e
+            WHERE e.platform = 'messenger'
+              AND e.aggregate_id = encode(sha256(convert_to(du.external_user_id, 'UTF8')), 'hex')
+              AND e.usage_date = du.usage_date
+          )
+        ORDER BY du.usage_date, du.external_user_id
       `,
       [from, to],
     );
@@ -119,7 +131,8 @@ async function main() {
           SELECT event_type
           FROM chat_quota_events
           WHERE platform = 'messenger'
-            AND aggregate_id = $1 AND usage_date = $2::date
+            AND aggregate_id = encode(sha256(convert_to($1, 'UTF8')), 'hex')
+            AND usage_date = $2::date
           ORDER BY occurred_at ASC, id ASC
         `,
         [pair.external_user_id, pair.usage_date],
@@ -142,7 +155,6 @@ async function main() {
       if (before === capped) {
         continue;
       }
-
       console.log(
         `${args.dryRun ? '[dry-run] ' : ''}externalUserId=${maskExternalId(pair.external_user_id)} date=${pair.usage_date} ${before} -> ${capped} (raw=${used}, limit=${dailyLimit})`,
       );

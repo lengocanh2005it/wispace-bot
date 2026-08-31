@@ -9,3 +9,4 @@ export {
   maskExternalIdInText,
   sanitizeLogValue,
 } from './mask-external-id';
+export { hashExternalId, truncatePersistedError } from './hash-external-id';

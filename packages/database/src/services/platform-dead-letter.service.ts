@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import {
   errorMessage,
   maskExternalIdInText,
+  truncatePersistedError,
 } from '@wispace/bot-common/masking';
 import { sleep } from '@wispace/bot-common/utils';
 import {
@@ -42,6 +43,13 @@ export class PlatformDeadLetterService {
     private readonly repo: Repository<WebhookDeadLetterEntity>,
   ) {}
 
+  /** Mask external ids, then cap length — uniform for every error write (#640). */
+  private sanitizeError(text: string, externalUserId?: string): string {
+    return (
+      truncatePersistedError(maskExternalIdInText(text, externalUserId)) ?? ''
+    );
+  }
+
   /**
    * Persists a dead-letter entry with bounded retries.
    * @returns `true` when a durable record exists, `false` when persistence
@@ -68,7 +76,7 @@ export class PlatformDeadLetterService {
           externalUserId: input.externalUserId,
           direction: input.direction ?? 'inbound',
           rawPayload: input.rawPayload as object,
-          errorMessage: maskExternalIdInText(
+          errorMessage: this.sanitizeError(
             input.errorMessage,
             input.externalUserId,
           ),
@@ -196,7 +204,7 @@ export class PlatformDeadLetterService {
   ): Promise<boolean> {
     const patch: Partial<WebhookDeadLetterEntity> = {
       status: 'abandoned',
-      errorMessage: maskExternalIdInText(reason, externalUserId),
+      errorMessage: this.sanitizeError(reason, externalUserId),
     };
     if (opts?.deliveryStatus !== undefined) {
       patch.deliveryStatus = opts.deliveryStatus;
@@ -231,7 +239,7 @@ export class PlatformDeadLetterService {
   ): Promise<boolean> {
     const set: Record<string, unknown> = {
       retryCount: () => 'retry_count + 1',
-      errorMessage: maskExternalIdInText(errorMessage, externalUserId),
+      errorMessage: this.sanitizeError(errorMessage, externalUserId),
       status: 'pending',
       leaseToken: null,
       leaseExpiresAt: null,

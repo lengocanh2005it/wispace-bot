@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Repository, type DeepPartial } from 'typeorm';
-import { errorMessage } from '@wispace/bot-common/masking';
+import {
+  errorMessage,
+  truncatePersistedError,
+} from '@wispace/bot-common/masking';
 
 /** Minimum column shape shared by the per-app message log entities. */
 export interface MessageLogRow {
@@ -35,7 +38,7 @@ export class DeliveryLogService<Entity extends MessageLogRow = MessageLogRow> {
       await this.repo.save({
         externalUserId: input.externalUserId,
         status: input.status,
-        error: input.error ?? null,
+        error: truncatePersistedError(input.error ?? null),
         messageType: input.messageType ?? 'chat',
         ...(this.platform
           ? {

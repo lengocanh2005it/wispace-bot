@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { Counter } from 'prom-client';
+import { hashExternalId } from '@wispace/bot-common/masking';
 import { ChatQuotaEventEntity } from '@messenger/infrastructure/database/entities/chat-quota-event.entity';
 import type {
   ChatQuotaEventRepositoryPort,
@@ -45,7 +46,7 @@ export class ChatQuotaEventRepository implements ChatQuotaEventRepositoryPort {
       `,
       [
         PLATFORM,
-        input.psid,
+        hashExternalId(input.psid),
         JSON.stringify(input.payload),
         input.usageDate,
         input.userId ?? null,
@@ -74,7 +75,7 @@ export class ChatQuotaEventRepository implements ChatQuotaEventRepositoryPort {
       `,
       [
         PLATFORM,
-        input.psid,
+        hashExternalId(input.psid),
         JSON.stringify(input.payload),
         input.usageDate,
         input.userId ?? null,
@@ -100,7 +101,7 @@ export class ChatQuotaEventRepository implements ChatQuotaEventRepositoryPort {
       `,
       [
         PLATFORM,
-        input.psid,
+        hashExternalId(input.psid),
         JSON.stringify(input.payload),
         input.usageDate,
         input.userId ?? null,

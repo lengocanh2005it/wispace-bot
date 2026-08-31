@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
+import { truncatePersistedError } from '@wispace/bot-common/masking';
 import type {
   StudyReminderJobRepositoryPort,
   StudyReminderJob,
@@ -310,7 +311,7 @@ export class TypeormStudyReminderJobRepository
       .set({
         status: 'failed',
         retryCount: params.retryCount,
-        lastError: params.errorMessage,
+        lastError: truncatePersistedError(params.errorMessage),
         nextRetryAt: params.terminal ? null : (params.nextRetryAt ?? null),
       })
       .where('id = :id', { id: params.jobId })
@@ -330,7 +331,7 @@ export class TypeormStudyReminderJobRepository
   ): Promise<void> {
     const patch: Partial<StudyReminderJobEntity> = { status: 'cancelled' };
     if (reason) {
-      patch.lastError = reason;
+      patch.lastError = truncatePersistedError(reason);
       patch.nextRetryAt = null;
     }
     const result = await this.repo
@@ -386,7 +387,7 @@ export class TypeormStudyReminderJobRepository
            last_error = $3, updated_at = now()
        WHERE platform = $1 AND external_user_id = $2
          AND status IN ('pending', 'processing', 'failed')`,
-      [platform, externalUserId, reason],
+      [platform, externalUserId, truncatePersistedError(reason)],
     );
     return result?.rowCount ?? 0;
   }

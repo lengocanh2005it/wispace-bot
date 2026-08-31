@@ -248,7 +248,7 @@ type ChatEventType =
 ```sql
 CREATE TABLE chat_quota_events (
   id              BIGSERIAL PRIMARY KEY,
-  aggregate_id    VARCHAR(64) NOT NULL,   -- psid
+  aggregate_id    VARCHAR(64) NOT NULL,   -- sha256(psid) since #640
   aggregate_type  VARCHAR(32) NOT NULL DEFAULT 'chat_quota',
   event_type      VARCHAR(64) NOT NULL,
   payload         JSONB NOT NULL,
@@ -639,7 +639,7 @@ class ChatRateLimitService {
 | **V4 Event store** | `chat_quota_events` + replay / billing              | ✓ `chat_quota_events` table + `ChatQuotaEventRecorderService` dual-write + cleanup cron |
 | **H1–H7**          | Operational edge case hardening (§5.10, after §5.9) | H1 ✓; H2 ✓; H4 ✓; H5 ✓; **H3 ✓**; **H6 ✓**; **H7 ✓**                                    |
 
-**V4 details:** `chat_quota_events` entity (from `@wispace/chat-metering`) dual-writes events alongside the counter. `ChatQuotaEventCleanupCronService` runs monthly cleanup (`CHAT_QUOTA_EVENTS_CLEANUP_ENABLED`). Env: `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`.
+**V4 details:** `chat_quota_events` entity (from `@wispace/chat-metering`) dual-writes events alongside the counter. `ChatQuotaEventCleanupCronService` runs monthly cleanup (`CHAT_QUOTA_EVENTS_CLEANUP_ENABLED`). Env: `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`. `aggregate_id` stores `sha256(psid)` since #640 — see `docs/data-minimization-audit.md`; `chat-quota:rebuild` joins daily-usage rows to events by hashing the PSID.
 
 ### 5.9. Phased Implementation Plan (full rate limit)
 

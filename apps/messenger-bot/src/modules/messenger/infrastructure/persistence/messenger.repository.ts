@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Not, Repository } from 'typeorm';
+import { truncatePersistedError } from '@wispace/bot-common/masking';
 import {
   buildPocPsidToken,
   DEFAULT_TOPIC,
@@ -683,7 +684,7 @@ export class MessengerRepository
       externalUserId: params.psid ?? null,
       messageType: params.messageType,
       status: params.status,
-      errorMessage: params.errorMessage ?? null,
+      errorMessage: truncatePersistedError(params.errorMessage ?? null),
     });
 
     const saved = await this.logRepo.save(created);

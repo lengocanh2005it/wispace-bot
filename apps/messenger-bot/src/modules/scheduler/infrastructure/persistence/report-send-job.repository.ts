@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { truncatePersistedError } from '@wispace/bot-common/masking';
 import type {
   ReportSendJobRepositoryPort,
   ReportSendJob,
@@ -42,7 +43,7 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
     if (existing) {
       existing.retryCount = nextRetryCount;
       existing.maxRetries = params.maxRetries;
-      existing.lastError = params.errorMessage;
+      existing.lastError = truncatePersistedError(params.errorMessage);
       existing.nextRetryAt = terminal ? null : params.nextRetryAt;
       existing.status = terminal ? 'failed' : 'failed';
       if (params.userId != null) {
@@ -64,7 +65,7 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
       maxRetries: params.maxRetries,
       nextRetryAt:
         nextRetryCount >= params.maxRetries ? null : params.nextRetryAt,
-      lastError: params.errorMessage,
+      lastError: truncatePersistedError(params.errorMessage),
     });
 
     const saved = await this.jobRepo.save(created);
@@ -136,7 +137,7 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
       .set({
         status: 'failed',
         retryCount: params.retryCount,
-        lastError: params.errorMessage,
+        lastError: truncatePersistedError(params.errorMessage),
         nextRetryAt: params.terminal ? null : (params.nextRetryAt ?? null),
       })
       .where('id = :id', { id: params.jobId });

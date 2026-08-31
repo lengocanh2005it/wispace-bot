@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { randomUUID } from 'node:crypto';
+import { truncatePersistedError } from '@wispace/bot-common/masking';
 import type {
   ReportSendJobRepositoryPort,
   ReportSendJob,
@@ -42,7 +43,7 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
     if (existing) {
       existing.retryCount = nextRetryCount;
       existing.maxRetries = params.maxRetries;
-      existing.lastError = params.errorMessage;
+      existing.lastError = truncatePersistedError(params.errorMessage);
       existing.nextRetryAt = terminal ? null : params.nextRetryAt;
       existing.status = 'failed';
       if (params.userId != null) {
@@ -63,7 +64,7 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
       retryCount: nextRetryCount,
       maxRetries: params.maxRetries,
       nextRetryAt: terminal ? null : params.nextRetryAt,
-      lastError: params.errorMessage,
+      lastError: truncatePersistedError(params.errorMessage),
     });
 
     const saved = await this.jobRepo.save(created);
@@ -135,7 +136,7 @@ export class DiscordReportSendJobRepository implements ReportSendJobRepositoryPo
     const result = await this.jobRepo.update(where, {
       status: 'failed',
       retryCount: params.retryCount,
-      lastError: params.errorMessage,
+      lastError: truncatePersistedError(params.errorMessage),
       nextRetryAt: params.terminal ? null : (params.nextRetryAt ?? null),
     });
     if (params.leaseToken && !result.affected) {
