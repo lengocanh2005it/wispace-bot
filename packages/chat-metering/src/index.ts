@@ -60,3 +60,13 @@ export { LlmSafetyEventRepository } from './llm-safety/llm-safety.repository';
 export { LlmSafetyCore } from './llm-safety/llm-safety-core.service';
 export { PlatformLlmSafetyEventAdapter } from './llm-safety/platform-llm-safety-event.adapter';
 export { LlmSafetyCleanupService } from './llm-safety/llm-safety-cleanup.service';
+
+export { WriteToolBudgetCore } from './write-tool-budget/write-tool-budget-core.service';
+export { WriteToolBudgetRepository } from './write-tool-budget/write-tool-budget.repository';
+export { PlatformWriteToolBudgetService } from './write-tool-budget/platform-write-tool-budget.service';
+export { readWriteToolBudgetConfig } from './write-tool-budget/write-tool-budget-config';
+export type {
+  WriteToolBudgetSettings,
+  WriteToolBudgetRepositoryPort,
+  WriteToolBudgetDeniedReason,
+} from './write-tool-budget/write-tool-budget.types';

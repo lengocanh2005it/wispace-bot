@@ -6,6 +6,7 @@ import type { Platform } from '@wispace/contracts';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
+  ChatToolDailyUsageEntity,
   LlmSafetyEventEntity,
   LlmUsageEventEntity,
 } from './entities';
@@ -16,6 +17,7 @@ import {
 import { LlmUsageConfigService } from './llm-usage/llm-usage-config.service';
 import { PlatformLlmUsageRecorderAdapter } from './llm-usage/platform-llm-usage-recorder.adapter';
 import { PlatformLlmSafetyEventAdapter } from './llm-safety/platform-llm-safety-event.adapter';
+import { PlatformWriteToolBudgetService } from './write-tool-budget/platform-write-tool-budget.service';
 
 /**
  * Shared NestJS wiring for chat quota/rate-limit + LLM usage/safety tracking —
@@ -43,6 +45,7 @@ export class ChatMeteringModule {
         TypeOrmModule.forFeature([
           ChatDailyUsageEntity,
           ChatIdempotencyEntity,
+          ChatToolDailyUsageEntity,
           LlmUsageEventEntity,
           LlmSafetyEventEntity,
         ]),
@@ -97,11 +100,25 @@ export class ChatMeteringModule {
             ),
           inject: [getRepositoryToken(LlmSafetyEventEntity), ConfigService],
         },
+        {
+          provide: PlatformWriteToolBudgetService,
+          useFactory: (
+            configService: ConfigService,
+            toolDailyUsageRepo: Repository<ChatToolDailyUsageEntity>,
+          ) =>
+            new PlatformWriteToolBudgetService(
+              { platform },
+              configService,
+              toolDailyUsageRepo,
+            ),
+          inject: [ConfigService, getRepositoryToken(ChatToolDailyUsageEntity)],
+        },
       ],
       exports: [
         PlatformChatRateLimitService,
         PlatformLlmUsageRecorderAdapter,
         PlatformLlmSafetyEventAdapter,
+        PlatformWriteToolBudgetService,
       ],
     };
   }
