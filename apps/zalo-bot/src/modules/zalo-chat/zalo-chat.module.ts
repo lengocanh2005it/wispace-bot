@@ -5,11 +5,13 @@ import { join } from 'path';
 import {
   createLlmProviderAdapterFromEnv,
   type LlmProviderAdapter,
+  buildWriteToolDailyBudgetMessage,
 } from '@wispace/llm-agent';
 import {
   ChatMeteringModule,
   ChatIdempotencyEntity,
   PlatformChatRateLimitService,
+  PlatformWriteToolBudgetService,
   PlatformLlmUsageRecorderAdapter,
   PlatformLlmSafetyEventAdapter,
   LlmSafetyCleanupService,
@@ -188,6 +190,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         accountLinkService: ZaloAccountLinkService,
         metrics: BotMetricsService,
         cache: WispaceDataCache,
+        budgetService: PlatformWriteToolBudgetService,
       ) => {
         const appId = configService.get<string>('ZALO_APP_ID');
         const redirectUri = configService.get<string>(
@@ -218,6 +221,10 @@ const RESCHEDULE_CONFIRM_SUFFIX =
               accountLinkService.findCurrentIdentity(externalUserId),
             policyDeniedInc: (toolName, reason) =>
               metrics.incLlmToolPolicyDenied(toolName, 'zalo', reason),
+            writeToolBudget: budgetService,
+            writeToolPerMessageCaps: budgetService.perMessageCaps(),
+            writeToolBudgetDeniedInc: (tool, reason) =>
+              metrics.incWriteToolBudgetDenied(tool, 'zalo', reason),
             cacheInvalidation: new ZaloWispaceCacheInvalidationAdapter(cache),
             reschedule: {
               validateDateAndTime: false,
@@ -248,6 +255,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         ZaloAccountLinkService,
         BotMetricsService,
         WispaceDataCache,
+        PlatformWriteToolBudgetService,
       ],
     },
     {
@@ -476,8 +484,20 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         reschedule: ReschedulePort<string>,
         store: TypeormRescheduleStore<string>,
         cache: WispaceDataCache,
+        budgetService: PlatformWriteToolBudgetService,
       ) =>
         new RescheduleConfirmationService<string>(calendar, reschedule, store, {
+          consumeRescheduleBudget: (userId, externalId) =>
+            budgetService.consumeDaily(
+              String(externalId),
+              userId,
+              'reschedule_study_session',
+            ),
+          refundRescheduleBudget: (userId) =>
+            budgetService.refundDaily(userId, 'reschedule_study_session'),
+          rescheduleBudgetExceededMessage: buildWriteToolDailyBudgetMessage(
+            'reschedule_study_session',
+          ),
           // The calendar write commits here — drop cached reads for the user
           // so the next "upcoming sessions" question re-fetches (#636).
           onConfirmed: (externalId) =>
@@ -490,6 +510,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         'ZaloReschedulePort',
         TypeormRescheduleStore,
         WispaceDataCache,
+        PlatformWriteToolBudgetService,
       ],
     },
     ZaloOutboundService,
