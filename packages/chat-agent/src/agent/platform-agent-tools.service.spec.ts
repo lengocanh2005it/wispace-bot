@@ -831,6 +831,181 @@ describe('PlatformAgentToolsService', () => {
       expect(stagePort.stage).not.toHaveBeenCalled();
     });
   });
+
+  describe('write-tool budget (#626)', () => {
+    function makeService(
+      customOptions: Partial<PlatformAgentToolsOptions> = {},
+    ) {
+      const options: PlatformAgentToolsOptions = {
+        ...buildDiscordOptions(confirmSender),
+        ...customOptions,
+      };
+      return new PlatformAgentToolsService(
+        goalsService,
+        calendarService,
+        stagePort,
+        options,
+        exerciseClient,
+      );
+    }
+
+    function makeCtx(
+      over: Partial<PlatformAgentToolContext> = {},
+    ): PlatformAgentToolContext {
+      return {
+        externalUserId: 'discord-1',
+        userId: 143,
+        userText: 'cho mình bài tập mới',
+        ...over,
+      };
+    }
+
+    it('precreate: consumes a daily unit before calling the exercise port', async () => {
+      const budget = {
+        checkDailyAllowed: jest.fn().mockResolvedValue(true),
+        consumeDaily: jest.fn().mockResolvedValue(true),
+        refundDaily: jest.fn().mockResolvedValue(undefined),
+      };
+      exerciseClient.precreateNextExercise.mockResolvedValue({
+        status: 'created',
+        exerciseUrl: 'https://x/y',
+      } as any);
+      const svc = makeService({ writeToolBudget: budget });
+      const result = await svc.execute(
+        'precreate_next_exercise',
+        '{}',
+        makeCtx({ userText: 'cho mình bài tập mới' }),
+      );
+      expect(budget.consumeDaily).toHaveBeenCalledWith(
+        'discord-1',
+        143,
+        'precreate_next_exercise',
+      );
+      expect((result as { status?: string }).status).toBe('created');
+      expect(budget.refundDaily).not.toHaveBeenCalled();
+    });
+
+    it('precreate: returns a relayable budget_exceeded result when the daily cap is hit', async () => {
+      const budget = {
+        checkDailyAllowed: jest.fn(),
+        consumeDaily: jest.fn().mockResolvedValue(false),
+        refundDaily: jest.fn(),
+      };
+      const svc = makeService({ writeToolBudget: budget });
+      const result = await svc.execute(
+        'precreate_next_exercise',
+        '{}',
+        makeCtx({ userText: 'cho mình bài tập mới' }),
+      );
+      expect(result).toEqual({
+        status: 'budget_exceeded',
+        messageHint:
+          'Bạn đã dùng hết số lần tạo bài tập mới trong hôm nay rồi. Bạn thử lại vào ngày mai nhé.',
+      });
+      expect(exerciseClient.precreateNextExercise).not.toHaveBeenCalled();
+    });
+
+    it('precreate: refunds the daily unit when the write did not create', async () => {
+      const budget = {
+        checkDailyAllowed: jest.fn(),
+        consumeDaily: jest.fn().mockResolvedValue(true),
+        refundDaily: jest.fn().mockResolvedValue(undefined),
+      };
+      exerciseClient.precreateNextExercise.mockResolvedValue({
+        status: 'finished_all',
+      } as any);
+      const svc = makeService({ writeToolBudget: budget });
+      await svc.execute(
+        'precreate_next_exercise',
+        '{}',
+        makeCtx({ userText: 'cho mình bài tập mới' }),
+      );
+      expect(budget.refundDaily).toHaveBeenCalledWith(
+        143,
+        'precreate_next_exercise',
+      );
+    });
+
+    it('precreate: second call in the same turn hits the per-message cap of 2', async () => {
+      const budget = {
+        checkDailyAllowed: jest.fn(),
+        consumeDaily: jest.fn().mockResolvedValue(true),
+        refundDaily: jest.fn(),
+      };
+      exerciseClient.precreateNextExercise.mockResolvedValue({
+        status: 'created',
+        exerciseUrl: 'https://x/y',
+      } as any);
+      const deniedInc = jest.fn();
+      const svc = makeService({
+        writeToolBudget: budget,
+        writeToolPerMessageCaps: { precreate_next_exercise: 2 },
+        writeToolBudgetDeniedInc: deniedInc,
+      });
+      const ctx = makeCtx({ userText: 'cho mình 3 bài tập mới' });
+      await svc.execute('precreate_next_exercise', '{}', ctx);
+      await svc.execute('precreate_next_exercise', '{}', ctx);
+      const third = await svc.execute('precreate_next_exercise', '{}', ctx);
+      expect((third as { status?: string }).status).toBe('budget_exceeded');
+      expect((third as { messageHint?: string }).messageHint).toContain(
+        'tối đa 2 lần',
+      );
+      expect(deniedInc).toHaveBeenCalledWith(
+        'precreate_next_exercise',
+        'per_message',
+      );
+      expect(budget.consumeDaily).toHaveBeenCalledTimes(2);
+    });
+
+    it('reschedule: stage-gate denies when checkDailyAllowed is false and never stages', async () => {
+      const budget = {
+        checkDailyAllowed: jest.fn().mockResolvedValue(false),
+        consumeDaily: jest.fn(),
+        refundDaily: jest.fn(),
+      };
+      const svc = makeService({ writeToolBudget: budget });
+      const result = await svc.execute(
+        'reschedule_study_session',
+        JSON.stringify({
+          calendarId: 1,
+          schedulingMode: 'default_next_day_same_time',
+        }),
+        makeCtx({ userText: 'đổi lịch học giúp mình' }),
+      );
+      expect((result as { status?: string }).status).toBe('budget_exceeded');
+      expect(stagePort.stage).not.toHaveBeenCalled();
+    });
+
+    it('no budget port wired → tools run unchanged', async () => {
+      exerciseClient.precreateNextExercise.mockResolvedValue({
+        status: 'created',
+        exerciseUrl: 'https://x/y',
+      } as any);
+      const svc = makeService({ writeToolBudget: undefined });
+      const result = await svc.execute(
+        'precreate_next_exercise',
+        '{}',
+        makeCtx({ userText: 'cho mình bài tập mới' }),
+      );
+      expect((result as { status?: string }).status).toBe('created');
+    });
+
+    it('read-only tools never touch the budget', async () => {
+      const budget = {
+        checkDailyAllowed: jest.fn(),
+        consumeDaily: jest.fn(),
+        refundDaily: jest.fn(),
+      };
+      goalsService.getUserGoals.mockResolvedValue({
+        targetScore: 7,
+        examDate: '2026-08-01',
+      } as any);
+      const svc = makeService({ writeToolBudget: budget });
+      await svc.execute('get_user_goals', '{}', makeCtx({}));
+      expect(budget.checkDailyAllowed).not.toHaveBeenCalled();
+      expect(budget.consumeDaily).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('PlatformAgentToolsService cache invalidation (#636)', () => {
