@@ -143,19 +143,16 @@ export class MessengerService {
     duplicates: number;
   }> {
     // Count entries BEFORE flatten to reject oversized batches early (#365).
-    // The DTO permits up to 50 entries × 500 events, but the service default
-    // accepts only 50 total events. Reject before per-event logging or
-    // construction of the full ingestion work list.
+    // The boundary mapper permits up to 50 entries × 500 events, but the
+    // service default accepts only 50 total events. Reject before per-event
+    // logging or construction of the full ingestion work list.
     const maxBatchSize = this.configService.get<number>(
       'WEBHOOK_MAX_BATCH_SIZE',
       50,
     );
-    const entries = Array.isArray(payload.entry) ? payload.entry : [];
     let totalEventCount = 0;
-    for (const entry of entries) {
-      if (Array.isArray(entry.messaging)) {
-        totalEventCount += entry.messaging.length;
-      }
+    for (const entry of payload.entry) {
+      totalEventCount += entry.messaging.length;
     }
     if (totalEventCount > maxBatchSize) {
       this.logger.warn(
@@ -172,10 +169,8 @@ export class MessengerService {
       eventId: string;
     }> = [];
 
-    for (const entry of entries) {
-      for (const event of Array.isArray(entry.messaging)
-        ? entry.messaging
-        : []) {
+    for (const entry of payload.entry) {
+      for (const event of entry.messaging) {
         this.logIncomingWebhookEvent(event);
         const eventId = buildEventId(event, event.sender?.id ?? '');
         events.push({ event, eventId });

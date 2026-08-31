@@ -83,7 +83,7 @@ describe('MessengerService (durable webhook ingestion)', () => {
     events: MessengerWebhookEvent[],
   ): MessengerWebhookPayload => ({
     object: 'page',
-    entry: [{ id: 'page-1', time: 1_700_000_000_000, messaging: events }],
+    entry: [{ messaging: events }],
   });
 
   describe('#383 referral verification (pre-resolve)', () => {

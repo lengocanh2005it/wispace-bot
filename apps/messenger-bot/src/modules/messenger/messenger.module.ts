@@ -34,6 +34,7 @@ import { MessengerOutboundModule } from './messenger-outbound.module';
 import { MessengerOutboundService } from './application/services/messenger-outbound.service';
 import { MessengerReportModule } from './messenger-report.module';
 import { MessengerController } from './presentation/controllers/messenger.controller';
+import { validateAndMapMessengerEvent } from './presentation/mappers/messenger-webhook.mapper';
 import { ChatPipelineModule } from './chat-pipeline.module';
 import { UserLinkingModule } from './user-linking.module';
 import { WEBHOOK_INBOUND_EVENTS_PORT } from './domain/repositories/webhook-inbound-events.port';
@@ -100,7 +101,11 @@ import { BotMetricsService } from '@wispace/bot-metrics';
           {
             lockId: ADVISORY_LOCK.MESSENGER_WEBHOOK_INBOUND_RETRY,
             processEvent: async (rawPayload) => {
-              await messengerService.processEvent(rawPayload);
+              // Re-validate stored payloads before dispatch — replay must
+              // never trust the persisted raw shape (#436).
+              await messengerService.processEvent(
+                await validateAndMapMessengerEvent(rawPayload),
+              );
             },
             onTickComplete: (stats) =>
               metrics.setWebhookInboundBacklog(stats.backlog),

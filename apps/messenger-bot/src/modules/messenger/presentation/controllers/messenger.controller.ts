@@ -13,9 +13,9 @@ import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { WebhookThrottle } from '@wispace/bot-common/redis';
 import { MessengerWebhookSignatureGuard } from '@messenger/shared/common/guards/messenger-webhook-signature.guard';
 import { MessengerService } from '../../application/services/messenger.service';
-import type { MessengerWebhookPayload } from '../../domain/entities/messenger.types';
 import { MessengerProfileService } from '../../infrastructure/meta/messenger-profile.service';
 import { MessengerWebhookPayloadDto } from '../dto/messenger-webhook-payload.dto';
+import { mapMessengerPayload } from '../mappers/messenger-webhook.mapper';
 
 @Controller()
 export class MessengerController {
@@ -44,7 +44,7 @@ export class MessengerController {
     }
 
     const result = await this.messengerService.handleWebhook(
-      payload as unknown as MessengerWebhookPayload,
+      mapMessengerPayload(payload),
     );
     return {
       ok: true,

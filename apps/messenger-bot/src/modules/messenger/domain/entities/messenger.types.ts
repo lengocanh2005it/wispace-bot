@@ -47,8 +47,8 @@ export interface MessengerWebhookEvent {
 
 export interface MessengerWebhookPayload {
   object?: string;
-  entry?: Array<{
-    messaging?: MessengerWebhookEvent[];
+  entry: Array<{
+    messaging: MessengerWebhookEvent[];
   }>;
 }
 
