@@ -1,6 +1,7 @@
 export {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
+  ChatToolDailyUsageEntity,
   LlmUsageEventEntity,
   LlmSafetyEventEntity,
 } from './entities';
