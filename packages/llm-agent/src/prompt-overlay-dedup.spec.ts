@@ -18,6 +18,7 @@ const CORE_RULE_MARKERS = [
   'do not call get_upcoming_study_sessions in the same',
   'reply warmly only',
   'bạn là ai',
+  'gian lận học thuật',
 ];
 
 describe.each(OVERLAY_PATHS)('overlay drift guard (#648): %s', (path) => {

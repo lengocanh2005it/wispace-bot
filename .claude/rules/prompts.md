@@ -12,7 +12,7 @@ Composed in `PlatformAgentService.buildSystemPrompt` (`packages/chat-agent`):
 
 | Part    | File                                                                       | Content                                                                                                              |
 | ------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Core    | `packages/llm-agent/src/chat-system-prompt.ts` (`CHAT_SYSTEM_PROMPT_CORE`) | Scope, out-of-scope, non-disclosure of internal details (#625), no-tool rules, no-fabrication, `precreate_next_exercise`, general rules — **shared, edit once** |
+| Core    | `packages/llm-agent/src/chat-system-prompt.ts` (`CHAT_SYSTEM_PROMPT_CORE`) | Scope, out-of-scope, academic-integrity boundary (#628), non-disclosure of internal details (#625), no-tool rules, no-fabrication, `precreate_next_exercise`, general rules — **shared, edit once** |
 | Overlay | `apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt`          | Identity, report registration, cards, reschedule buttons                                                             |
 | Overlay | `apps/discord-bot/src/shared/prompts/discord-chat.system.txt`              | Identity, server-channel DM privacy, reschedule buttons                                                              |
 | Overlay | `apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt`                    | Identity, reschedule confirm flow                                                                                    |
@@ -20,7 +20,7 @@ Composed in `PlatformAgentService.buildSystemPrompt` (`packages/chat-agent`):
 Rule: universal rule → core; platform mechanism → overlay. Never duplicate a core rule into an overlay (or the drift problem returns).
 
 - **Canonical home of the no-tools rule (#648)** — the "When NOT to call tools" section in the core; greeting/self-intro bullets live only there, not in "WISPACE scope". Do not restate it in other sections or overlays — `chat-system-prompt.spec.ts` asserts the exact occurrence count, and `prompt-overlay-dedup.spec.ts` fails when a core-rule marker reappears in an overlay.
-- **Size budget (#648)** — the spec asserts `CHAT_SYSTEM_PROMPT_CORE.length <= 5000`. Adding prose without cutting something else fails CI; raising the ceiling is a deliberate act (consolidate first). Any core edit requires re-hashing the eval fixtures (`packages/llm-agent/fixtures/*.json` — see AGENTS.md re-hash command).
+- **Size budget (#648)** — the spec asserts `CHAT_SYSTEM_PROMPT_CORE.length <= 5300` (raised from 5,000 for the #628 academic-integrity section, after cutting the multi-intent example). Adding prose without cutting something else fails CI; raising the ceiling is a deliberate act (consolidate first). Any core edit requires re-hashing the eval fixtures (`packages/llm-agent/fixtures/*.json` — see AGENTS.md re-hash command).
 
 ## Standalone prompts (Messenger)
 
@@ -41,6 +41,17 @@ A single fixed line — `NON_DISCLOSURE_REPLY` / `buildNonDisclosureReply()` in 
 - **Detector** — `detectDisclosureProbe()` (`prompt-injection.utils.ts`), VN + EN + basic zh, resilient to diacritics / `đ` / confusables / zero-width / spacing / leetspeak. Run at each bot gateway **before** `IntentDetector.detect()` and again in `LlmAgentService.checkEarlyReturns` (defense-in-depth). A match → `buildNonDisclosureReply()`, not a "blocked" message. Bare `extraction` injection hits also route there. base64/ROT13-encoded probes (taxonomy G) are **not** decoded at runtime (perf/false-positive surface) — the prompt core still forbids answering them.
 - **Output guard** — `checkFinalOutputSafety` reason `vendor_leak` (+ `prompt_leak`) → redacted to `buildNonDisclosureReply()`; `credential_leak` still → `buildFinalOutputBlockedMessage()`.
 - **Not covered by the offline eval harness** (scripted model, no multi-turn reasoning): taxonomy H (progressive multi-turn) and the debounce-split part of G — prompt-core only. Taxonomy I (error/debug probing) is detected (`category: 'debug'`); base64/ROT13 framings of G are prompt-core only.
+
+## Academic-integrity boundary (#628)
+
+Policy — **Hybrid, coach-first**. The bot is an IELTS Writing coach, not a ghost-writer.
+
+- **In scope:** feedback on the learner's own draft, outlines, structure, model sentences, one sample paragraph. A full essay is allowed **only** when clearly labelled in Vietnamese as a study sample, not to be submitted as the learner's own.
+- **Refused + reframed:** an essay the learner frames as their own assignment / submission ("đề cô giao", "mình nộp luôn", "bài nộp của em") — the same regardless of framing ("just an example", hypothetical, split across messages, any language). One fixed Vietnamese line, spec-pinned verbatim (`nộp bài người khác viết bị tính là gian lận học thuật`).
+
+Enforcement is **prompt-core only** — the `Academic integrity (coaching vs ghost-writing) — mandatory:` section in `CHAT_SYSTEM_PROMPT_CORE`, right after `WISPACE scope`. No runtime detector, no output guard (unlike #625): a differential reply here is not a security oracle, and a detector on "write my essay" phrasings has a high false-positive cost against legitimate coaching. Section presence + the verbatim decline fragment are asserted by `chat-system-prompt.spec.ts`; `gian lận học thuật` is a `prompt-overlay-dedup.spec.ts` marker (never restate it in an overlay).
+
+**Not covered by the offline eval harness** (scripted model): wrapped ("just an example") and multi-turn ("now make it my submission") ghost-write requests are prompt-core only. The golden lane has just two fixtures — `ghost-write-submit-refused.json` (direct submit-as-own → the decline line, no tools) and `ghost-write-sample-allowed.json` (full-essay request, no submit signal → answered, must not carry the decline line). Move the wrapped/multi-turn cases to a live/nightly lane if one lands (#505).
 
 ## Adding a new tool (convention)
 

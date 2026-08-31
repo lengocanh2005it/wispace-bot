@@ -1,7 +1,7 @@
 {
   "name": "injection-confusable",
   "description": "A Cyrillic confusable probe (рrint with Cyrillic р) is normalized and deflected to the standard non-disclosure line before the LLM is called (#625 taxonomy G).",
-  "coreHash": "919078778d9156dc6f9b322d815ba6f9c3155031dd4c51e24c14996bf0211f44",
+  "coreHash": "2de277b2bb324df2312a1a0afe3dd81f525e18fbdd04be0339e5db02fb99cab3",
   "promptFiles": [
     {
       "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
