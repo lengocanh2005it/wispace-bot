@@ -118,6 +118,22 @@ export interface RescheduleConfirmationOptions<TExternalId> {
    * is logged and swallowed: the write already succeeded.
    */
   onConfirmed?: (externalId: TExternalId) => Promise<void> | void;
+  /** #626: atomically consume one daily write-tool-budget unit for
+   *  `reschedule_study_session` BEFORE the calendar write. Returns false when
+   *  the learner is over their daily cap — confirm() then aborts with
+   *  `rescheduleBudgetExceededMessage` and reverts the pending row. */
+  consumeRescheduleBudget?: (
+    userId: number,
+    externalId: string,
+  ) => Promise<boolean>;
+  /** #626: refund the unit consumed above if `rescheduleSession` throws. */
+  refundRescheduleBudget?: (
+    userId: number,
+    externalId: string,
+  ) => Promise<void>;
+  /** #626: Vietnamese reply shown when `consumeRescheduleBudget` returns false.
+   *  Passed in (not imported) so this package keeps no llm-agent dependency. */
+  rescheduleBudgetExceededMessage?: string;
 }
 
 /**
@@ -275,6 +291,25 @@ export class RescheduleConfirmationService<TExternalId> {
       };
     }
 
+    if (this.options.consumeRescheduleBudget) {
+      const consumed = await this.options.consumeRescheduleBudget(
+        pending.userId,
+        String(pending.externalId),
+      );
+      if (!consumed) {
+        await this.store.revertToPending(externalId, pending.leaseToken);
+        this.logger.log(
+          `RESCHEDULE_BUDGET_EXCEEDED externalId=${maskExternalId(String(externalId))}`,
+        );
+        return {
+          confirmed: false,
+          message:
+            this.options.rescheduleBudgetExceededMessage ??
+            'Bạn đã dùng hết số lần đổi lịch học trong hôm nay rồi. Bạn thử lại vào ngày mai nhé.',
+        };
+      }
+    }
+
     try {
       const result = await this.reschedulePort.rescheduleSession({
         externalId: pending.externalId,
@@ -300,6 +335,10 @@ export class RescheduleConfirmationService<TExternalId> {
         scheduledTimeLabel: result.scheduledTimeLabel,
       };
     } catch (error) {
+      await this.options.refundRescheduleBudget?.(
+        pending.userId,
+        String(pending.externalId),
+      );
       const message = errorMessage(error);
       this.logger.warn(
         `RESCHEDULE_CONFIRM_FAILED externalId=${maskExternalId(

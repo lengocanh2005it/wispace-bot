@@ -523,4 +523,108 @@ describe('RescheduleConfirmationService', () => {
       expect(onConfirmed).toHaveBeenCalledWith('user-1');
     });
   });
+  describe('write-tool daily budget at confirm time (#626)', () => {
+    const FIXED_MSG =
+      'Bạn đã dùng hết số lần đổi lịch học trong hôm nay rồi. Bạn thử lại vào ngày mai nhé.';
+    const EXTERNAL_ID = 'user-1';
+    const USER_ID = 42;
+    const BINDING = { platform: 'discord' as const, mappingVersion: 'v1' };
+
+    async function stageAPendingReschedule(
+      svc: RescheduleConfirmationService<string>,
+    ): Promise<string> {
+      const staged = await svc.stage({
+        externalId: EXTERNAL_ID,
+        userId: USER_ID,
+        calendarId: 1,
+        schedulingMode: 'default_next_day_same_time',
+        platform: 'discord',
+        mappingVersion: 'v1',
+        intent: 'đổi lịch học',
+        canonicalArgs: '{"calendarId":1}',
+      });
+      return (staged as { confirmationToken: string }).confirmationToken;
+    }
+
+    it('aborts the reschedule and reverts the pending row when the daily budget is exhausted', async () => {
+      const consume = jest.fn().mockResolvedValue(false);
+      const reschedulePort = mockReschedulePort();
+      const store = new MemoryRescheduleStore<string>();
+      (store as { requiresApprovalToken?: boolean }).requiresApprovalToken =
+        true;
+      const revertSpy = jest.spyOn(store, 'revertToPending');
+      const svc = new RescheduleConfirmationService(
+        mockCalendarPort(),
+        reschedulePort,
+        store,
+        {
+          consumeRescheduleBudget: consume,
+          rescheduleBudgetExceededMessage: FIXED_MSG,
+        },
+      );
+      const token = await stageAPendingReschedule(svc);
+      const result = await svc.confirm(EXTERNAL_ID, USER_ID, token, BINDING);
+      expect(result).toEqual({ confirmed: false, message: FIXED_MSG });
+      expect(reschedulePort.rescheduleSession).not.toHaveBeenCalled();
+      expect(revertSpy).toHaveBeenCalled();
+      expect(consume).toHaveBeenCalledWith(USER_ID, EXTERNAL_ID);
+    });
+
+    it('consumes exactly one unit on a successful confirm', async () => {
+      const consume = jest.fn().mockResolvedValue(true);
+      const refund = jest.fn();
+      const reschedulePort = mockReschedulePort();
+      const store = new MemoryRescheduleStore<string>();
+      (store as { requiresApprovalToken?: boolean }).requiresApprovalToken =
+        true;
+      const svc = new RescheduleConfirmationService(
+        mockCalendarPort(),
+        reschedulePort,
+        store,
+        { consumeRescheduleBudget: consume, refundRescheduleBudget: refund },
+      );
+      const token = await stageAPendingReschedule(svc);
+      const result = await svc.confirm(EXTERNAL_ID, USER_ID, token, BINDING);
+      expect(result.confirmed).toBe(true);
+      expect(consume).toHaveBeenCalledWith(USER_ID, EXTERNAL_ID);
+      expect(refund).not.toHaveBeenCalled();
+    });
+
+    it('refunds the consumed unit when the calendar write throws', async () => {
+      const consume = jest.fn().mockResolvedValue(true);
+      const refund = jest.fn().mockResolvedValue(undefined);
+      const reschedulePort = mockReschedulePort();
+      reschedulePort.rescheduleSession.mockRejectedValue(
+        new Error('WISPACE 500'),
+      );
+      const store = new MemoryRescheduleStore<string>();
+      (store as { requiresApprovalToken?: boolean }).requiresApprovalToken =
+        true;
+      const svc = new RescheduleConfirmationService(
+        mockCalendarPort(),
+        reschedulePort,
+        store,
+        { consumeRescheduleBudget: consume, refundRescheduleBudget: refund },
+      );
+      const token = await stageAPendingReschedule(svc);
+      const result = await svc.confirm(EXTERNAL_ID, USER_ID, token, BINDING);
+      expect(result.confirmed).toBe(false);
+      expect(refund).toHaveBeenCalledWith(USER_ID, EXTERNAL_ID);
+    });
+
+    it('is unchanged when no budget hooks are provided', async () => {
+      const store = new MemoryRescheduleStore<string>();
+      (store as { requiresApprovalToken?: boolean }).requiresApprovalToken =
+        true;
+      const svc = new RescheduleConfirmationService(
+        mockCalendarPort(),
+        mockReschedulePort(),
+        store,
+        {},
+      );
+      const token = await stageAPendingReschedule(svc);
+      const result = await svc.confirm(EXTERNAL_ID, USER_ID, token, BINDING);
+      expect(result.confirmed).toBe(true);
+    });
+  });
 });
