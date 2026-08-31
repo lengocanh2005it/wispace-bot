@@ -86,13 +86,15 @@ export class ChatIdempotencyCleanupCronService {
     }
 
     // #626: prune aged write-tool budget counters (self-bounded by the date key,
-    // kept ~7 days so ops can inspect "who hit caps").
+    // kept ~7 days so ops can inspect "who hit caps"). A non-positive / invalid
+    // override falls back to the default — never delete same-day counters.
+    const rawToolRetention = Number(
+      this.configService.get<string>('CHAT_TOOL_DAILY_USAGE_RETENTION_DAYS'),
+    );
     const toolRetentionDays =
-      Number(
-        this.configService.get<string>(
-          'CHAT_TOOL_DAILY_USAGE_RETENTION_DAYS',
-        ) ?? '7',
-      ) || 7;
+      Number.isFinite(rawToolRetention) && rawToolRetention > 0
+        ? Math.floor(rawToolRetention)
+        : 7;
     const toolCutoff = new Date();
     toolCutoff.setUTCDate(toolCutoff.getUTCDate() - toolRetentionDays);
     await this.toolDailyUsageRepo.manager.query(

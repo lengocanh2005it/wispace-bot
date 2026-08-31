@@ -79,8 +79,13 @@ export {
   WRITE_TOOL_NAMES,
   isWriteToolName,
   BUDGET_EXEMPT_TOOLS,
+  runWriteToolBudgetGate,
+  refundConsumedWriteToolBudget,
 } from './agent/write-tool-budget';
 export type {
   WriteToolName,
   WriteToolBudgetPort,
+  WriteToolBudgetContext,
+  WriteToolBudgetGateDeps,
+  BudgetExceededResult,
 } from './agent/write-tool-budget';

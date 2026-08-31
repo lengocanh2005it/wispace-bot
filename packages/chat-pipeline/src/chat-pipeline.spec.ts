@@ -297,6 +297,36 @@ describe('ChatPipeline', () => {
     expect(outbound.sendText).not.toHaveBeenCalled();
   });
 
+  it('a redelivered batch (idempotency conflict) never re-enters the agent loop — no write-tool budget double-spend (#626)', async () => {
+    // A genuine retry of the same batch resolves to the same idempotencyKey;
+    // ChatRateLimitCore returns allowed:false (in_flight/completed). The agent
+    // loop — and therefore every write-tool budget consume inside the tool
+    // executor — is never reached on the retry, so nothing is double-spent.
+    const rateLimiter = mockRateLimiter({
+      reserve: jest
+        .fn()
+        .mockResolvedValue({ allowed: false, reason: 'IDEMPOTENCY_CONFLICT' }),
+    });
+    const agent = mockAgent();
+    const outbound = mockOutbound();
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      mockHistory(),
+      agent,
+      outbound,
+    );
+
+    const delivered = await pipeline.flush({
+      externalUserId: 'user-1',
+      texts: ['tạo cho mình 3 bài tập mới'],
+      idempotencyKey: 'redelivered-mid',
+    });
+
+    expect(delivered).toBe(false);
+    expect(agent.reply).not.toHaveBeenCalled();
+    expect(outbound.sendText).not.toHaveBeenCalled();
+  });
+
   it('skips reserve when no idempotencyKey', async () => {
     const rateLimiter = mockRateLimiter();
     const agent = mockAgent();

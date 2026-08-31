@@ -442,6 +442,35 @@ describe('LlmAgentService', () => {
       expect(adapter.chatWithTools).toHaveBeenCalledTimes(2);
     });
 
+    it('relays a budget_exceeded tool result to the learner without erroring the turn (#626)', async () => {
+      const budgetHint =
+        'Bạn đã dùng hết số lần tạo bài tập mới trong hôm nay rồi. Bạn thử lại vào ngày mai nhé.';
+      const adapter = makeAdapter([
+        makeToolCallResponse('precreate_next_exercise'),
+        makeTextResponse(budgetHint),
+      ]);
+      const execute = jest.fn().mockResolvedValue({
+        status: 'budget_exceeded',
+        messageHint: budgetHint,
+      });
+
+      const { service } = buildService({ adapter, execute });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      // The observation handed back to the model carries the relayable hint,
+      // and the loop runs a normal second round (no turn error / exhaustion).
+      const secondRequest = (adapter.chatWithTools as jest.Mock).mock
+        .calls[1][0];
+      const toolMessage = secondRequest.messages.find(
+        (message: { role: string }) => message.role === 'tool',
+      );
+      expect(toolMessage.content).toContain(budgetHint);
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(2);
+      expect(result.text).toBe(budgetHint);
+      expect(result.exhausted).toBeFalsy();
+    });
+
     it('includes toolSummary listing tools called when tool round completes', async () => {
       const toolResponse = makeToolCallResponse('get_learning_progress_report');
       const textResponse = makeTextResponse('Đây là kết quả.');

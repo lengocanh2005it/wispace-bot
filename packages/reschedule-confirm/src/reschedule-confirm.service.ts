@@ -16,6 +16,17 @@ import {
 } from './reschedule-store.port';
 
 export const PENDING_RESCHEDULE_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Generic "couldn't reschedule right now" reply — used for a transient WISPACE
+ * failure and as the last-resort fallback when the caller wired
+ * `consumeRescheduleBudget` but not `rescheduleBudgetExceededMessage` (#626).
+ * The canonical budget-exhausted copy lives in `@wispace/llm-agent`
+ * (`buildWriteToolDailyBudgetMessage`) and is always passed in by the apps.
+ */
+const RESCHEDULE_UNAVAILABLE_MESSAGE =
+  'Mình chưa đổi được lịch lúc này. Bạn thử lại sau hoặc đổi trực tiếp trên app WISPACE nhé.';
+
 const APPROVAL_TOKEN_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -305,7 +316,7 @@ export class RescheduleConfirmationService<TExternalId> {
           confirmed: false,
           message:
             this.options.rescheduleBudgetExceededMessage ??
-            'Bạn đã dùng hết số lần đổi lịch học trong hôm nay rồi. Bạn thử lại vào ngày mai nhé.',
+            RESCHEDULE_UNAVAILABLE_MESSAGE,
         };
       }
     }
@@ -350,8 +361,7 @@ export class RescheduleConfirmationService<TExternalId> {
       await this.store.revertToPending(externalId, pending.leaseToken);
       return {
         confirmed: false,
-        message:
-          'Mình chưa đổi được lịch lúc này. Bạn thử lại sau hoặc đổi trực tiếp trên app WISPACE nhé.',
+        message: RESCHEDULE_UNAVAILABLE_MESSAGE,
       };
     }
   }

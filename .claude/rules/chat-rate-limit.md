@@ -35,6 +35,7 @@ Menu postback, reminder cron, proactive reports do **not** go through this modul
 | H6 ops         | `CHAT_IDEMPOTENCY_RETENTION_DAYS`                                                                     |
 | C2 Q0          | `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`, `chat-quota:rebuild`                 |
 | UX             | `CHAT_QUOTA_REMAINING_HINT_THRESHOLD`                                                                 |
+| Write-tool budget (#626) | `CHAT_WRITE_TOOL_BUDGET_ENABLED`, `CHAT_WRITE_TOOL_DAILY_CAP_RESCHEDULE`, `CHAT_WRITE_TOOL_DAILY_CAP_PRECREATE`, `CHAT_WRITE_TOOL_PER_MESSAGE_CAP_RESCHEDULE`, `CHAT_WRITE_TOOL_PER_MESSAGE_CAP_PRECREATE`, `CHAT_TOOL_DAILY_USAGE_RETENTION_DAYS` — per-user daily + per-message caps for `reschedule_study_session` / `precreate_next_exercise` (reuses `CHAT_RATE_LIMIT_WHITELIST_PSIDS` + `CHAT_USAGE_TIMEZONE`); engine in `packages/chat-metering` (`WriteToolBudgetCore`), enforced in the tool executor + reschedule confirm handler |
 
 Adding a new variable → update `.env.example`.
 

@@ -87,6 +87,29 @@ describe('WriteToolBudgetCore', () => {
     expect(repo.tryConsumeDaily).not.toHaveBeenCalled();
   });
 
+  it('does not double-spend when a replayed consume is rejected by the atomic guard (#626)', async () => {
+    // The repo op is `INSERT … ON CONFLICT DO UPDATE SET count = count + 1
+    // WHERE count < cap RETURNING count` — a replay that lands after the cap
+    // is reached returns { ok: false } and increments nothing. The core must
+    // surface that as a denial with no compensating write.
+    const tryConsumeDaily = jest
+      .fn()
+      .mockResolvedValueOnce({ ok: true, count: 15 })
+      .mockResolvedValueOnce({ ok: false, count: 15 });
+    const repo = makeRepo({ tryConsumeDaily });
+    const core = new WriteToolBudgetCore(repo, SETTINGS);
+
+    await expect(
+      core.consumeDaily('ext-1', 10, 'precreate_next_exercise'),
+    ).resolves.toBe(true);
+    await expect(
+      core.consumeDaily('ext-1', 10, 'precreate_next_exercise'),
+    ).resolves.toBe(false);
+
+    expect(tryConsumeDaily).toHaveBeenCalledTimes(2);
+    expect(repo.refundDaily).not.toHaveBeenCalled();
+  });
+
   it('refundDaily is a no-op when disabled or unbudgeted', async () => {
     const repo = makeRepo();
     const disabled = new WriteToolBudgetCore(repo, {
