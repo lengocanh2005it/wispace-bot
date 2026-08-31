@@ -109,3 +109,41 @@ export function buildExhaustionPartialAnswer(
     'Mình chưa tổng hợp xong — bạn thử lại hoặc hỏi rõ một mục nhé.'
   );
 }
+
+/**
+ * Learner-facing action labels for the mutating tools — used by the
+ * per-user write-tool budget denial copy (#626). Server-controlled.
+ */
+const WRITE_TOOL_ACTION_LABELS: Record<string, string> = {
+  reschedule_study_session: 'đổi lịch học',
+  precreate_next_exercise: 'tạo bài tập mới',
+};
+
+function writeToolAction(toolName: string): string {
+  return WRITE_TOOL_ACTION_LABELS[toolName] ?? 'thao tác này';
+}
+
+/**
+ * Relayable result when a learner has used up a mutating tool's per-day
+ * budget (#626). Not an error — the model paraphrases it as a normal limit.
+ */
+export function buildWriteToolDailyBudgetMessage(toolName: string): string {
+  return (
+    `Bạn đã dùng hết số lần ${writeToolAction(toolName)} trong hôm nay rồi. ` +
+    'Bạn thử lại vào ngày mai nhé.'
+  );
+}
+
+/**
+ * Relayable result when one learner message asks for more repetitions of a
+ * mutating tool than the per-message cap allows (#626).
+ */
+export function buildWriteToolPerMessageBudgetMessage(
+  toolName: string,
+  limit: number,
+): string {
+  return (
+    `Trong một tin nhắn mình chỉ xử lý được tối đa ${limit} lần ` +
+    `${writeToolAction(toolName)} thôi. Bạn nhắn lại phần còn lại giúp mình nhé.`
+  );
+}
