@@ -26,6 +26,11 @@ import {
   MENU_LEARNING_PROGRESS_CUSTOM_ID,
   MENU_UPCOMING_SESSIONS_CUSTOM_ID,
 } from '../constants/discord-menu.constants';
+import {
+  prepareDiscordOutbound,
+  type DiscordOutboundNeutralized,
+  type DiscordOutboundPreparation,
+} from '../utils/discord-outbound-guard';
 import { withRetry } from '@wispace/wispace-client';
 
 const DM_FAILURE_REASON_SEND = 'dm_send_error';
@@ -42,6 +47,7 @@ const NETWORK_ERROR_CODES = new Set([
   'UND_ERR_CONNECT_TIMEOUT',
   'UND_ERR_SOCKET',
 ]);
+const DISCORD_ACTION_KINDS = ['everyone', 'here', 'role', 'user'] as const;
 
 function isDiscordNetworkError(error: unknown): boolean {
   if (error instanceof TypeError) {
@@ -116,6 +122,37 @@ export class DiscordOutboundService {
 
   isAmbiguousDeliveryError(error: unknown): boolean {
     return isAmbiguousDeliveryError(error);
+  }
+
+  prepareText(
+    text: string,
+    options?: {
+      externalUserId?: string;
+      allowedUserIds?: readonly string[];
+    },
+  ): Pick<DiscordOutboundPreparation, 'content' | 'allowedMentions'> {
+    const prepared = prepareDiscordOutbound(text, options?.allowedUserIds);
+    this.recordNeutralized(options?.externalUserId, prepared.neutralized);
+    return {
+      content: prepared.content,
+      allowedMentions: prepared.allowedMentions,
+    };
+  }
+
+  private recordNeutralized(
+    externalUserId: string | undefined,
+    neutralized: DiscordOutboundNeutralized,
+  ): void {
+    for (const kind of DISCORD_ACTION_KINDS) {
+      const count = neutralized[kind];
+      if (count === 0) continue;
+      this.metrics?.incOutboundActionNeutralized(kind, count);
+      this.logger.warn(
+        `Neutralized Discord outbound action token(s) discordUserId=${maskExternalId(
+          externalUserId,
+        )} kind=${kind} count=${count}`,
+      );
+    }
   }
 
   async sendText(
@@ -284,11 +321,18 @@ export class DiscordOutboundService {
       }
   > {
     let ambiguousDeliveryRecorded = false;
+    const prepared = this.prepareText(text, {
+      externalUserId: discordUserId,
+    });
     try {
       const msg = await withRetry(
         async () => {
           const user = await this.client.users.fetch(discordUserId);
-          return user.send({ content: text, nonce, enforceNonce: true });
+          return user.send({
+            ...prepared,
+            nonce,
+            enforceNonce: true,
+          });
         },
         {
           maxRetries: 1,
@@ -341,6 +385,9 @@ export class DiscordOutboundService {
   ): Promise<boolean> {
     try {
       const user = await this.client.users.fetch(discordUserId);
+      const prepared = this.prepareText(content ?? '', {
+        externalUserId: discordUserId,
+      });
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
           .setCustomId(MENU_UPCOMING_SESSIONS_CUSTOM_ID)
@@ -351,7 +398,11 @@ export class DiscordOutboundService {
           .setLabel('📊 Xem tiến độ')
           .setStyle(ButtonStyle.Primary),
       );
-      await user.send({ content, components: [row] });
+      await user.send({
+        ...(content !== undefined ? { content: prepared.content } : {}),
+        allowedMentions: prepared.allowedMentions,
+        components: [row],
+      });
       return true;
     } catch (error) {
       this.logger.warn(
@@ -365,11 +416,23 @@ export class DiscordOutboundService {
   }
 
   /** Sends a text message to a server channel (not a DM). */
-  async sendToChannel(channelId: string, text: string): Promise<void> {
+  async sendToChannel(
+    channelId: string,
+    text: string,
+    options?: {
+      externalUserId?: string;
+      allowedUserIds?: readonly string[];
+    },
+  ): Promise<void> {
     try {
       const channel = await this.client.channels.fetch(channelId);
       if (channel instanceof TextChannel) {
-        await channel.send(text);
+        await channel.send(
+          this.prepareText(text, {
+            externalUserId: options?.externalUserId,
+            allowedUserIds: options?.allowedUserIds,
+          }),
+        );
       } else {
         this.logger.warn(
           `Channel ${maskExternalId(channelId)} is not a TextChannel — skipping server welcome`,
@@ -392,6 +455,9 @@ export class DiscordOutboundService {
   ): Promise<void> {
     try {
       const user = await this.client.users.fetch(discordUserId);
+      const prepared = this.prepareText(summary, {
+        externalUserId: discordUserId,
+      });
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
           .setCustomId(
@@ -410,7 +476,7 @@ export class DiscordOutboundService {
           .setLabel('Hủy')
           .setStyle(ButtonStyle.Danger),
       );
-      await user.send({ content: summary, components: [row] });
+      await user.send({ ...prepared, components: [row] });
     } catch (error) {
       this.logger.warn(
         `Failed to send reschedule confirmation to discordUserId=${maskExternalId(

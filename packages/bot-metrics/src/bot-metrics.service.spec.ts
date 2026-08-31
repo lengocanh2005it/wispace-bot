@@ -93,6 +93,25 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     expect(output).not.toContain('external_user_id');
   });
 
+  it('exposes outbound action neutralization counts without user labels', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'discord',
+      collectDefaults: false,
+    });
+
+    metrics.incOutboundActionNeutralized('everyone', 2);
+    metrics.incOutboundActionNeutralized('role');
+
+    const output = await metrics.getMetrics();
+    expect(output).toContain(
+      'discord_outbound_action_neutralized_total{kind="everyone"} 2',
+    );
+    expect(output).toContain(
+      'discord_outbound_action_neutralized_total{kind="role"} 1',
+    );
+    expect(output).not.toContain('external_user_id');
+  });
+
   it('exposes web-activity webhook + scheduled-send-suppressed counters', async () => {
     const svc = new BotMetricsService({
       prefix: 'test',

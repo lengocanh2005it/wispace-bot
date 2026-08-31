@@ -1,15 +1,20 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
+import { TextChannel } from 'discord.js';
 import type { Client } from 'discord.js';
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import { DiscordOutboundService } from './discord-outbound.service';
 
-function buildClientStub(fetch: jest.Mock): Client {
-  return { users: { fetch } } as unknown as Client;
+function buildClientStub(fetch: jest.Mock, channelFetch?: jest.Mock): Client {
+  return {
+    users: { fetch },
+    channels: { fetch: channelFetch ?? jest.fn() },
+  } as unknown as Client;
 }
 
 function buildMetricsStub(): BotMetricsService {
   return {
     incDmDeliveryFailure: jest.fn(),
+    incOutboundActionNeutralized: jest.fn(),
   } as unknown as BotMetricsService;
 }
 
@@ -17,6 +22,12 @@ type DiscordTextPayload = {
   content: string;
   nonce: string;
   enforceNonce: boolean;
+  allowedMentions: {
+    parse: string[];
+    roles: string[];
+    users: string[];
+    repliedUser: boolean;
+  };
 };
 
 describe('DiscordOutboundService', () => {
@@ -34,6 +45,50 @@ describe('DiscordOutboundService', () => {
     expect(payload.content).toBe('hello');
     expect(payload.enforceNonce).toBe(true);
     expect(payload.nonce).toHaveLength(25);
+    expect(payload.allowedMentions).toEqual({
+      parse: [],
+      roles: [],
+      users: [],
+      repliedUser: false,
+    });
+  });
+
+  it('neutralizes model mentions and records each token occurrence', async () => {
+    const send = jest
+      .fn<Promise<{ channelId: string }>, [DiscordTextPayload]>()
+      .mockResolvedValue({ channelId: 'dm-1' });
+    const fetch = jest.fn().mockResolvedValue({ send });
+    const metrics = buildMetricsStub();
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      undefined,
+      metrics,
+    );
+    await service.sendText('discord-1', 'Ping @everyone <@&123> <@456> <@789>');
+
+    expect(send.mock.calls[0][0].content).toBe(
+      'Ping [mọi người] [vai trò] [người dùng] [người dùng]',
+    );
+    expect(send.mock.calls[0][0].allowedMentions).toEqual({
+      parse: [],
+      roles: [],
+      users: [],
+      repliedUser: false,
+    });
+    expect(metrics.incOutboundActionNeutralized).toHaveBeenCalledWith(
+      'everyone',
+      1,
+    );
+    expect(metrics.incOutboundActionNeutralized).toHaveBeenCalledWith(
+      'role',
+      1,
+    );
+    expect(metrics.incOutboundActionNeutralized).toHaveBeenCalledWith(
+      'user',
+      2,
+    );
   });
 
   it('throws when the DM fails to send after retries', async () => {
@@ -60,7 +115,10 @@ describe('DiscordOutboundService', () => {
 
   it('sends a reschedule confirmation DM with confirm/cancel buttons', async () => {
     const send = jest
-      .fn<Promise<void>, [{ content: string; components: unknown[] }]>()
+      .fn<
+        Promise<void>,
+        [{ content: string; components: unknown[]; allowedMentions: unknown }]
+      >()
       .mockResolvedValue(undefined);
     const fetch = jest.fn().mockResolvedValue({ send });
 
@@ -71,6 +129,12 @@ describe('DiscordOutboundService', () => {
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({ content: 'Dời buổi học?' }),
     );
+    expect(send.mock.calls[0][0].allowedMentions).toEqual({
+      parse: [],
+      roles: [],
+      users: [],
+      repliedUser: false,
+    });
     expect(send.mock.calls[0][0].components).toHaveLength(1);
   });
 
@@ -78,7 +142,7 @@ describe('DiscordOutboundService', () => {
     const send = jest
       .fn<
         Promise<{ channelId: string }>,
-        [{ content?: string; components: unknown[] }]
+        [{ content?: string; components: unknown[]; allowedMentions: unknown }]
       >()
       .mockResolvedValue({ channelId: 'dm-1' });
     const fetch = jest.fn().mockResolvedValue({ send });
@@ -90,8 +154,40 @@ describe('DiscordOutboundService', () => {
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({ content: 'Chào bạn!' }),
     );
+    expect(send.mock.calls[0][0].allowedMentions).toEqual({
+      parse: [],
+      roles: [],
+      users: [],
+      repliedUser: false,
+    });
     expect(send.mock.calls[0][0].components).toHaveLength(1);
     expect(sent).toBe(true);
+  });
+
+  it('neutralizes channel content while allowing only the trusted welcome user', async () => {
+    const send = jest.fn().mockResolvedValue(undefined);
+    const channel = Object.create(TextChannel.prototype) as TextChannel;
+    channel.send = send;
+    const fetch = jest.fn().mockResolvedValue({ send: jest.fn() });
+    const channelFetch = jest.fn().mockResolvedValue(channel);
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch, channelFetch),
+    );
+    await service.sendToChannel('channel-1', 'Chào <@123> @everyone', {
+      externalUserId: '123',
+      allowedUserIds: ['123'],
+    });
+
+    expect(send).toHaveBeenCalledWith({
+      content: 'Chào <@123> [mọi người]',
+      allowedMentions: {
+        parse: [],
+        roles: [],
+        users: ['123'],
+        repliedUser: false,
+      },
+    });
   });
 
   it('#232: sendMenuButtons returns false (no throw) when the DM fails', async () => {
@@ -231,6 +327,35 @@ describe('DiscordOutboundService', () => {
     expect(firstPayload.enforceNonce).toBe(true);
     expect(secondPayload.enforceNonce).toBe(true);
     expect(secondPayload.nonce).toBe(firstPayload.nonce);
+  });
+
+  it('keeps sanitized content across retries without double-counting the message', async () => {
+    const send = jest
+      .fn<Promise<{ channelId: string }>, [DiscordTextPayload]>()
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce({ channelId: 'dm-1' });
+    const fetch = jest.fn().mockResolvedValue({ send });
+    const metrics = buildMetricsStub();
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      undefined,
+      metrics,
+    );
+    await service.sendText('discord-1', '@here <@&123>');
+
+    expect(send.mock.calls[0][0].content).toBe('[kênh này] [vai trò]');
+    expect(send.mock.calls[1][0].content).toBe('[kênh này] [vai trò]');
+    expect(metrics.incOutboundActionNeutralized).toHaveBeenCalledTimes(2);
+    expect(metrics.incOutboundActionNeutralized).toHaveBeenCalledWith(
+      'here',
+      1,
+    );
+    expect(metrics.incOutboundActionNeutralized).toHaveBeenCalledWith(
+      'role',
+      1,
+    );
   });
 
   it('uses the clarification delivery key as a stable nonce and persists definitive failures for replay', async () => {

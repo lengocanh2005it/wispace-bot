@@ -45,6 +45,8 @@ flowchart LR
 | **Cleanup**          | Daily at 03:00                                                                          | Delete `cancelled` / `failed` jobs that exhausted retries past `JOB_RETENTION_DAYS` |
 | **Preview**          | On demand (bot menu)                                                                    | Read schedule directly from API/DB — send immediately, bypassing job queue          |
 
+> **Outbound action safety (#633):** Discord report/reminder sends use the shared `DiscordOutboundService` guard, which disables platform-wide mentions and neutralizes model-generated mention tokens before delivery. The Zalo and Messenger outbound audits found no equivalent action markup.
+
 ---
 
 ## 3. Detailed Flow

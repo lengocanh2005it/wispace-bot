@@ -10,6 +10,7 @@ import type { DiscordMenuService } from '../../application/services/discord-menu
 import type { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
 import type { DiscordWelcomeService } from '@discord/modules/account-link/application/services/discord-welcome.service';
 import type { DiscordLinkVerifyRecordRepositoryPort } from '@discord/modules/account-link/domain/ports/discord-link-verify-record.repository.port';
+import { prepareDiscordOutbound } from '../../application/utils/discord-outbound-guard';
 import { DiscordChatGateway } from './discord-chat.gateway';
 import { ChannelType } from 'discord.js';
 
@@ -23,6 +24,7 @@ function buildGateway(overrides: {
   accountLink?: Partial<DiscordAccountLinkService>;
   outbound?: Partial<DiscordOutboundService>;
   welcome?: Partial<DiscordWelcomeService>;
+  menu?: Partial<DiscordMenuService>;
   pendingVerify?: DiscordLinkVerifyRecordRepositoryPort['findPending'];
 }): {
   gateway: DiscordChatGateway;
@@ -37,6 +39,15 @@ function buildGateway(overrides: {
     ...overrides.accountLink,
   } as unknown as DiscordAccountLinkService;
   const outboundService = {
+    prepareText: jest.fn((text: string) => ({
+      content: text,
+      allowedMentions: {
+        parse: [],
+        roles: [],
+        users: [],
+        repliedUser: false,
+      },
+    })),
     sendMenuButtons: jest.fn().mockResolvedValue(true),
     sendToChannel: jest.fn().mockResolvedValue(undefined),
     ...overrides.outbound,
@@ -50,6 +61,11 @@ function buildGateway(overrides: {
     findPending:
       overrides.pendingVerify ?? jest.fn().mockResolvedValue(undefined),
   } as unknown as DiscordLinkVerifyRecordRepositoryPort;
+  const menuService = {
+    getUpcomingSessions: jest.fn().mockResolvedValue('upcoming'),
+    getLearningProgress: jest.fn().mockResolvedValue('progress'),
+    ...overrides.menu,
+  } as unknown as DiscordMenuService;
 
   const gateway = new DiscordChatGateway(
     buildConfigService(),
@@ -58,7 +74,7 @@ function buildGateway(overrides: {
     {} as PlatformChatRateLimitService,
     accountLinkService,
     {} as RescheduleConfirmationService<string>,
-    {} as DiscordMenuService,
+    menuService,
     {} as PlatformChatHistoryService,
     {} as PlatformChatQueueService,
     {
@@ -281,5 +297,84 @@ describe('DiscordChatGateway non-text messages (#401)', () => {
       'discord-user-1',
       expect.stringContaining('tin nhắn chữ'),
     );
+  });
+
+  it('guards direct server replies with Discord mention policy', async () => {
+    const prepareText = jest.fn((text: string) => ({
+      content: '[safe] ' + text,
+      allowedMentions: {
+        parse: [],
+        roles: [],
+        users: [],
+        repliedUser: false,
+      },
+    }));
+    const reply = jest.fn().mockResolvedValue(undefined);
+    const { gateway } = buildGateway({ outbound: { prepareText } });
+    const message = {
+      author: { bot: false, id: 'discord-user-1' },
+      channel: { type: ChannelType.GuildText },
+      content: '',
+      attachments: { size: 1 },
+      stickers: { size: 0 },
+      embeds: [],
+      mentions: { users: new Map([['bot-1', {}]]) },
+      client: { user: { id: 'bot-1' } },
+      reply,
+    };
+
+    await gateway.onMessageCreate([message] as never);
+
+    expect(prepareText).toHaveBeenCalledWith(
+      expect.stringContaining('tin nhắn chữ'),
+      { externalUserId: 'discord-user-1' },
+    );
+    expect(reply).toHaveBeenCalledWith({
+      content: expect.stringContaining('[safe]'),
+      allowedMentions: {
+        parse: [],
+        roles: [],
+        users: [],
+        repliedUser: false,
+      },
+    });
+  });
+
+  it('guards direct interaction edits with Discord mention policy', async () => {
+    const prepareText = jest.fn((text: string) => {
+      const prepared = prepareDiscordOutbound(text);
+      return {
+        content: prepared.content,
+        allowedMentions: prepared.allowedMentions,
+      };
+    });
+    const editReply = jest.fn().mockResolvedValue(undefined);
+    const { gateway } = buildGateway({
+      outbound: { prepareText },
+      menu: {
+        getUpcomingSessions: jest.fn().mockResolvedValue('@everyone'),
+      },
+    });
+    const interaction = {
+      user: { id: 'discord-user-1' },
+      deferReply: jest.fn().mockResolvedValue(undefined),
+      editReply,
+      isButton: () => true,
+    };
+
+    await gateway.onMenuUpcomingSessions([interaction] as never);
+
+    expect(prepareText).toHaveBeenCalledWith('@everyone', {
+      externalUserId: 'discord-user-1',
+    });
+    expect(editReply).toHaveBeenCalledWith({
+      content: '[mọi người]',
+      allowedMentions: {
+        parse: [],
+        roles: [],
+        users: [],
+        repliedUser: false,
+      },
+    });
   });
 });

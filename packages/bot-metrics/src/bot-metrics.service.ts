@@ -63,6 +63,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private webActivityWebhookReceived: Counter;
   private scheduledSendSuppressed: Counter;
   private dmDeliveryFailures: Counter;
+  private outboundActionNeutralized: Counter;
   private welcomeAttempts: Counter;
   private tokenRefreshFailures: Counter;
   private webhookInboundBacklog: Gauge;
@@ -242,6 +243,13 @@ export class BotMetricsService implements OnModuleDestroy {
       registers: [this.registry],
     });
 
+    this.outboundActionNeutralized = new Counter({
+      name: `${this.prefix}_outbound_action_neutralized_total`,
+      help: 'Outbound platform-action tokens neutralized before delivery',
+      labelNames: ['kind'],
+      registers: [this.registry],
+    });
+
     this.welcomeAttempts = new Counter({
       name: `${this.prefix}_welcome_attempts_total`,
       help: 'Welcome DM delivery outcomes (skipped = deduped within the re-welcome window)',
@@ -417,6 +425,17 @@ export class BotMetricsService implements OnModuleDestroy {
   /** DM delivery failure (e.g. user privacy settings block DMs) — ops signal. */
   incDmDeliveryFailure(reason: string): void {
     this.dmDeliveryFailures.inc({ reason });
+  }
+
+  /** Outbound action token neutralized before provider delivery (#633). */
+  incOutboundActionNeutralized(
+    kind: 'everyone' | 'here' | 'role' | 'user',
+    count = 1,
+  ): void {
+    const boundedCount = Math.max(0, Math.floor(count));
+    if (boundedCount > 0) {
+      this.outboundActionNeutralized.inc({ kind }, boundedCount);
+    }
   }
 
   /** Welcome-DM attempt outcome — success | error | skipped (#232/#234). */

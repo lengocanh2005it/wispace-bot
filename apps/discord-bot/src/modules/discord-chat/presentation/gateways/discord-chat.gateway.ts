@@ -75,6 +75,17 @@ export class DiscordChatGateway {
     private readonly welcomeService: DiscordWelcomeService,
   ) {}
 
+  private prepareReply(
+    discordUserId: string,
+    text: string,
+    allowedUserIds?: readonly string[],
+  ) {
+    return this.outboundService.prepareText(text, {
+      externalUserId: discordUserId,
+      ...(allowedUserIds ? { allowedUserIds } : {}),
+    });
+  }
+
   @Once('clientReady')
   onReady(@Context() [client]: ContextOf<'clientReady'>) {
     this.logger.log(`Discord bot online as ${client.user.tag}`);
@@ -117,7 +128,10 @@ export class DiscordChatGateway {
           : `Chào mừng <@${discordUserId}> đến với server WISPACE! 👋\n\n` +
             `${GREETING_INTRO} 🎓\n\n` +
             `Để dùng đầy đủ tính năng, bạn cần liên kết tài khoản WISPACE với Discord trước nhé. Vào WISPACE và chọn "Kết nối Discord" để bắt đầu!`;
-        await this.outboundService.sendToChannel(welcomeChannelId, serverMsg);
+        await this.outboundService.sendToChannel(welcomeChannelId, serverMsg, {
+          externalUserId: discordUserId,
+          allowedUserIds: [discordUserId],
+        });
       } catch (error) {
         this.logger.error(
           `guildMemberAdd channel welcome failed channelId=${maskExternalId(
@@ -214,7 +228,7 @@ export class DiscordChatGateway {
 
       const fallback = buildUnsupportedMessageTypeReply();
       if (isServerChannel) {
-        await message.reply(fallback);
+        await message.reply(this.prepareReply(discordUserId, fallback));
       } else {
         await this.outboundService.sendMenuButtons(discordUserId, fallback);
       }
@@ -241,7 +255,7 @@ export class DiscordChatGateway {
         message.member?.displayName ?? message.author.displayName;
       const reply = buildGreetingMessage(displayName);
       if (isServerChannel) {
-        await message.reply(reply);
+        await message.reply(this.prepareReply(discordUserId, reply));
       } else {
         await this.outboundService.sendMenuButtons(discordUserId, reply);
       }
@@ -250,7 +264,7 @@ export class DiscordChatGateway {
     if (intent.intent === 'self_intro') {
       const reply = buildSelfIntroMessage();
       if (isServerChannel) {
-        await message.reply(reply);
+        await message.reply(this.prepareReply(discordUserId, reply));
       } else {
         await this.outboundService.sendMenuButtons(discordUserId, reply);
       }
@@ -286,7 +300,9 @@ export class DiscordChatGateway {
         formatError(error),
       );
       if (isServerChannel) {
-        await message.reply(CHAT_FAILURE_FALLBACK_MESSAGE);
+        await message.reply(
+          this.prepareReply(discordUserId, CHAT_FAILURE_FALLBACK_MESSAGE),
+        );
       } else {
         await this.outboundService.sendText(
           discordUserId,
@@ -332,7 +348,10 @@ export class DiscordChatGateway {
       content = CHAT_FAILURE_FALLBACK_MESSAGE;
     }
 
-    await interaction.editReply({ content, components: [] });
+    await interaction.editReply({
+      ...this.prepareReply(discordUserId, content),
+      components: [],
+    });
   }
 
   @On('interactionCreate')
@@ -390,7 +409,10 @@ export class DiscordChatGateway {
       );
       content = CHAT_FAILURE_FALLBACK_MESSAGE;
     }
-    await interaction.editReply({ content, components: [] });
+    await interaction.editReply({
+      ...this.prepareReply(discordUserId, content),
+      components: [],
+    });
   }
 
   @Button(RESCHEDULE_CANCEL_CUSTOM_ID)
@@ -411,42 +433,49 @@ export class DiscordChatGateway {
       content = CHAT_FAILURE_FALLBACK_MESSAGE;
     }
 
-    await interaction.editReply({ content, components: [] });
+    await interaction.editReply({
+      ...this.prepareReply(discordUserId, content),
+      components: [],
+    });
   }
 
   @Button(MENU_UPCOMING_SESSIONS_CUSTOM_ID)
   async onMenuUpcomingSessions(@Context() [interaction]: ButtonContext) {
     await interaction.deferReply();
+    const discordUserId = interaction.user.id;
     try {
-      const discordUserId = interaction.user.id;
       const userId =
         await this.accountLinkService.findUserIdByDiscordId(discordUserId);
       const text = await this.menuService.getUpcomingSessions(
         discordUserId,
         userId,
       );
-      await interaction.editReply(text);
+      await interaction.editReply(this.prepareReply(discordUserId, text));
     } catch (error) {
       this.logger.error(`menu_upcoming failed`, formatError(error));
-      await interaction.editReply(CHAT_FAILURE_FALLBACK_MESSAGE);
+      await interaction.editReply(
+        this.prepareReply(discordUserId, CHAT_FAILURE_FALLBACK_MESSAGE),
+      );
     }
   }
 
   @Button(MENU_LEARNING_PROGRESS_CUSTOM_ID)
   async onMenuLearningProgress(@Context() [interaction]: ButtonContext) {
     await interaction.deferReply();
+    const discordUserId = interaction.user.id;
     try {
-      const discordUserId = interaction.user.id;
       const userId =
         await this.accountLinkService.findUserIdByDiscordId(discordUserId);
       const text = await this.menuService.getLearningProgress(
         discordUserId,
         userId,
       );
-      await interaction.editReply(text);
+      await interaction.editReply(this.prepareReply(discordUserId, text));
     } catch (error) {
       this.logger.error(`menu_progress failed`, formatError(error));
-      await interaction.editReply(CHAT_FAILURE_FALLBACK_MESSAGE);
+      await interaction.editReply(
+        this.prepareReply(discordUserId, CHAT_FAILURE_FALLBACK_MESSAGE),
+      );
     }
   }
 }
