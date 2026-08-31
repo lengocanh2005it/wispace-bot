@@ -3,6 +3,7 @@ import { Inject, Optional } from '@nestjs/common';
 import {
   buildConsentChangedMessage,
   buildGreetingMessage,
+  buildNonDisclosureReply,
   buildSelfIntroMessage,
   buildUnsupportedMessageTypeReply,
   parseConsentCommand,
@@ -33,6 +34,7 @@ import {
 import {
   CHAT_FAILURE_FALLBACK_MESSAGE,
   IntentDetector,
+  detectDisclosureProbe,
 } from '@wispace/llm-agent';
 
 @Injectable()
@@ -67,6 +69,16 @@ export class ZaloChatService {
     text: string,
     idempotencyKey?: string,
   ): Promise<void> {
+    // Non-disclosure probe (#625): internal-details questions → standard
+    // non-disclosure line, before intent detection.
+    if (detectDisclosureProbe(text.trim()).probed) {
+      await this.outboundService.sendText(
+        zaloUserId,
+        buildNonDisclosureReply(),
+      );
+      return;
+    }
+
     // Intent detection: greeting/self-intro → reply directly, skip LLM
     const intent = this.intentDetector.detect(text.trim());
     if (intent.intent === 'greeting') {

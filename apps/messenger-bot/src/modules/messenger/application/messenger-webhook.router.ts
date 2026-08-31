@@ -5,9 +5,10 @@ import {
   CONFIRM_RESCHEDULE_POSTBACK,
   CANCEL_RESCHEDULE_POSTBACK,
 } from './constants/messenger-reschedule.constants';
-import { IntentDetector } from '@wispace/llm-agent';
+import { IntentDetector, detectDisclosureProbe } from '@wispace/llm-agent';
 import {
   buildGreetingMessage,
+  buildNonDisclosureReply,
   buildSelfIntroMessage,
   parseConsentCommand,
   type ConsentCommand,
@@ -247,6 +248,21 @@ function routeTextMessage(
         psid,
         text: 'Vui lòng mở Messenger từ liên kết WISPACE (có đủ topic, cadence và ref) để kết nối tài khoản trước khi sử dụng.',
         messageType: 'MISSING_USER_REF',
+      },
+    ];
+  }
+
+  // Non-disclosure probe (#625): model/provider/prompt/architecture/params/
+  // infra/guardrail/tool-capability questions → standard non-disclosure line,
+  // before intent detection so "giới thiệu <probe>" cannot slip through.
+  if (detectDisclosureProbe(message.text!.trim()).probed) {
+    return [
+      {
+        type: 'send_text',
+        psid,
+        userId: ctx.userId,
+        text: buildNonDisclosureReply(),
+        messageType: 'NON_DISCLOSURE',
       },
     ];
   }

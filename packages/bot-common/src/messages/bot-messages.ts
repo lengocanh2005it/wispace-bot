@@ -26,22 +26,30 @@ export function buildGreetingMessage(
   return `${prefix} 👋 ${GREETING_VARIANTS[index] ?? GREETING_INTRO}`;
 }
 
-/** Self-intro variants the bot rotates through so repeated "bạn là ai" gets variety. */
-export const SELF_INTRO_VARIANTS: readonly string[] = [
-  'Mình là WISPACE Bot — trợ lý AI học IELTS Writing. Bạn cứ nhắn nhu cầu tự nhiên, mình sẽ hỗ trợ bạn nhé! 🎓',
-  'Mình là WISPACE Bot — trợ lý AI đồng hành học IELTS Writing cùng bạn. Cứ nhắn bất cứ điều gì, mình sẽ giúp bạn nhé! 🎓',
-  'Mình là WISPACE Bot — trợ lý AI hỗ trợ bạn luyện IELTS Writing. Nhắn cho mình nhu cầu của bạn, mình sẽ hỗ trợ tận tình nhé! 🎓',
-  'Mình là WISPACE Bot — trợ lý AI chuyên đồng hành học IELTS Writing. Bạn cứ nhắn tự nhiên, mình sẽ lo phần còn lại nhé! 🎓',
-];
+/**
+ * Single fixed reply for both "who are you" self-intro and any probe for
+ * internal details (model/provider/prompt/architecture/params/infra) — #625.
+ * It MUST NOT vary by how the question was framed: a differential reply is
+ * itself an oracle. A normal WISPACE/IELTS self-intro plus an offer to help
+ * with Writing; acknowledging "trợ lý AI của WISPACE" is allowed, naming a
+ * vendor/model is not.
+ */
+export const NON_DISCLOSURE_REPLY =
+  'Mình là trợ lý AI của WISPACE, đồng hành cùng bạn luyện IELTS Writing — theo dõi tiến độ, lịch học và cách làm Task 1/2. Bạn muốn mình hỗ trợ phần nào của Writing không?';
 
-export function buildSelfIntroMessage(
-  random: () => number = Math.random,
-): string {
-  const index = Math.min(
-    SELF_INTRO_VARIANTS.length - 1,
-    Math.floor(random() * SELF_INTRO_VARIANTS.length),
-  );
-  return SELF_INTRO_VARIANTS[index] ?? SELF_INTRO_VARIANTS[0];
+/** Non-disclosure / internal-details probe reply (#625). */
+export function buildNonDisclosureReply(): string {
+  return NON_DISCLOSURE_REPLY;
+}
+
+/**
+ * Self-introduction reply ("bạn là ai"). Collapsed to {@link NON_DISCLOSURE_REPLY}
+ * (#625) so a self-intro and an internal-details probe are indistinguishable —
+ * a rotating self-intro next to a fixed non-disclosure line reintroduces the
+ * oracle the guard removes.
+ */
+export function buildSelfIntroMessage(): string {
+  return NON_DISCLOSURE_REPLY;
 }
 
 export function buildLinkSuccessMessage(): string {

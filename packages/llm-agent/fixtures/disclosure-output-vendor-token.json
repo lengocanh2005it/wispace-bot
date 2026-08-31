@@ -1,0 +1,32 @@
+{
+  "name": "disclosure-output-vendor-token",
+  "description": "Output guard (#625): an LLM reply naming a vendor/model is redacted to the standard non-disclosure line before delivery.",
+  "coreHash": "ebaf5f81771c1df2b867969b54fda030dad2155de73117b6e063f605ba3b88f5",
+  "promptFiles": [
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "4888b2923716995b11505ce96ffd33a694e0ef06e7634feac3036cd6b9f4d0ea"
+    }
+  ],
+  "userText": "bạn giúp mình luyện Writing kiểu gì vậy",
+  "externalUserId": "eval-disclosure-output-vendor-token",
+  "userId": 1641,
+  "script": [
+    {
+      "text": "Mình chạy trên GPT-4o của OpenAI nên có thể giúp bạn luyện Task 2 rất tốt."
+    }
+  ],
+  "expected": {
+    "toolSequence": [],
+    "replyTextContains": [
+      "Bạn muốn mình hỗ trợ phần nào của Writing không?"
+    ],
+    "replyTextNotContains": [
+      "GPT-4o",
+      "OpenAI"
+    ],
+    "exhausted": false,
+    "toolSummary": null,
+    "groundingWarnings": 0
+  }
+}

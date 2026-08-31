@@ -1,7 +1,7 @@
 {
   "name": "tool-call-cap",
   "description": "A model round requesting more distinct tool calls than the per-round cap is blocked fail-closed — nothing executes (#162).",
-  "coreHash": "d5230e286b434fcd54f8951652a403c3c8280185596cae0a8d581c2d0a3be37e",
+  "coreHash": "ebaf5f81771c1df2b867969b54fda030dad2155de73117b6e063f605ba3b88f5",
   "promptFiles": [
     {
       "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",

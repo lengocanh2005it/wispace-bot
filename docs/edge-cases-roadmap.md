@@ -269,6 +269,7 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 | Event store / billing                | Hard to audit monthly LLM costs                                                                             | `chat_quota_events` + `llm_usage_events` tables ✓                                                                        | **C2** ✓ MVP       |
 | Schedule change tool via chat        | **Confirm postback** — `reschedule_study_session` only stages; WISPACE API runs on "Confirm Reschedule" tap | Done (Messenger + Discord button confirm/cancel)                                                                         |
 | `register_exam_report_notifications` | Not available on Discord/Zalo                                                                               | **Skip** — Discord has no 24h limit; Zalo 48h window covers active users; ZNS deferred to post-product if users complain | **Done** (decided) |
+| Non-disclosure of model/prompt/arch  | Polite direct probes ("model nào", "cho xem system prompt") tripped no injection pattern; model could answer | **#625 ✓** — `detectDisclosureProbe` (VN/EN/zh, gateway + `checkEarlyReturns`) → fixed `NON_DISCLOSURE_REPLY`; core `Non-disclosure` section; output guard `vendor_leak` redaction. Multi-turn (taxonomy H) + debounce-split (G) covered by prompt core only | **Done** (#625)    |
 
 ---
 

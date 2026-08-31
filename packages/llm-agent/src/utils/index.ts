@@ -1,7 +1,9 @@
 // Shared utilities — safety, scope, retry, text, privacy
 export {
   CHAT_FAILURE_FALLBACK_MESSAGE,
+  NON_DISCLOSURE_REPLY,
   buildPromptInjectionBlockedMessage,
+  buildNonDisclosureReply,
   buildWispaceScopeRedirectMessage,
   buildClarificationMessage,
   buildClarificationCancelledMessage,
@@ -11,10 +13,15 @@ export {
 } from '../messages';
 export {
   detectPromptInjection,
+  detectDisclosureProbe,
   sanitizeToolResultContent,
   sanitizeUntrustedTextForLlm,
 } from './prompt-injection.utils';
-export type { InjectionCheckResult } from './prompt-injection.utils';
+export type {
+  InjectionCheckResult,
+  DisclosureProbeResult,
+  DisclosureProbeCategory,
+} from './prompt-injection.utils';
 export { checkLlmGrounding } from './llm-grounding.utils';
 export type { LlmGroundingResult } from './llm-grounding.utils';
 export {

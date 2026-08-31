@@ -12,7 +12,7 @@ Composed in `PlatformAgentService.buildSystemPrompt` (`packages/chat-agent`):
 
 | Part    | File                                                                       | Content                                                                                                              |
 | ------- | -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Core    | `packages/llm-agent/src/chat-system-prompt.ts` (`CHAT_SYSTEM_PROMPT_CORE`) | Scope, out-of-scope, no-tool rules, no-fabrication, `precreate_next_exercise`, general rules — **shared, edit once** |
+| Core    | `packages/llm-agent/src/chat-system-prompt.ts` (`CHAT_SYSTEM_PROMPT_CORE`) | Scope, out-of-scope, non-disclosure of internal details (#625), no-tool rules, no-fabrication, `precreate_next_exercise`, general rules — **shared, edit once** |
 | Overlay | `apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt`          | Identity, report registration, cards, reschedule buttons                                                             |
 | Overlay | `apps/discord-bot/src/shared/prompts/discord-chat.system.txt`              | Identity, server-channel DM privacy, reschedule buttons                                                              |
 | Overlay | `apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt`                    | Identity, reschedule confirm flow                                                                                    |
@@ -29,6 +29,15 @@ Rule: universal rule → core; platform mechanism → overlay. Never duplicate a
 Loaded via `@wispace/llm-agent`'s `loadSystemPromptFile()` (apps pass their own `promptDir`/`promptFile`).
 
 Shared messages (not platform-specific) — `buildPromptInjectionBlockedMessage`, `buildWispaceScopeRedirectMessage` — live in `packages/llm-agent/src/messages.ts`, shared across all bots.
+
+## Non-disclosure guard (#625)
+
+A single fixed line — `NON_DISCLOSURE_REPLY` / `buildNonDisclosureReply()` in `packages/bot-common/src/messages/bot-messages.ts` (re-exported from `@wispace/llm-agent`) — answers **both** the self-intro path (`buildSelfIntroMessage()` collapses to it) and any probe for internal details. It must never vary by framing: a differential reply is an oracle.
+
+- **Prompt core** — `Non-disclosure of internal details (mandatory):` section in `CHAT_SYSTEM_PROMPT_CORE`. Its header is in `SYSTEM_PROMPT_LEAK_MARKERS` (`final-output.utils.ts`) and asserted by `chat-system-prompt.spec.ts`.
+- **Detector** — `detectDisclosureProbe()` (`prompt-injection.utils.ts`), VN + EN + basic zh, resilient to diacritics / `đ` / confusables / zero-width / spacing / leetspeak. Run at each bot gateway **before** `IntentDetector.detect()` and again in `LlmAgentService.checkEarlyReturns` (defense-in-depth). A match → `buildNonDisclosureReply()`, not a "blocked" message. Bare `extraction` injection hits also route there. base64/ROT13-encoded probes (taxonomy G) are **not** decoded at runtime (perf/false-positive surface) — the prompt core still forbids answering them.
+- **Output guard** — `checkFinalOutputSafety` reason `vendor_leak` (+ `prompt_leak`) → redacted to `buildNonDisclosureReply()`; `credential_leak` still → `buildFinalOutputBlockedMessage()`.
+- **Not covered by the offline eval harness** (scripted model, no multi-turn reasoning): taxonomy H (progressive multi-turn) and the debounce-split part of G — prompt-core only. Taxonomy I (error/debug probing) is detected (`category: 'debug'`); base64/ROT13 framings of G are prompt-core only.
 
 ## Adding a new tool (convention)
 

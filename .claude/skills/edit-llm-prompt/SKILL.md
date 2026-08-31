@@ -9,7 +9,7 @@ description: Edit LLM system prompts for student reports, study reminders, or th
 
 | Prompt                                                                     | Service                                                                                             | Where                                          |
 | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `packages/llm-agent/src/chat-system-prompt.ts` (`CHAT_SYSTEM_PROMPT_CORE`) | Chat AI — universal rules (scope, no-tool, no-fabrication, precreate, general) shared by all 3 bots | TS module — packages do not ship `.txt` assets |
+| `packages/llm-agent/src/chat-system-prompt.ts` (`CHAT_SYSTEM_PROMPT_CORE`) | Chat AI — universal rules (scope, non-disclosure of internals #625, no-tool, no-fabrication, precreate, general) shared by all 3 bots | TS module — packages do not ship `.txt` assets |
 | `apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt`          | Chat AI — Messenger overlay (identity, cards, reschedule buttons, report registration)              | Overlay of the core                            |
 | `apps/discord-bot/src/shared/prompts/discord-chat.system.txt`              | Chat AI — Discord overlay (identity, DM privacy, reschedule buttons)                                | Overlay of the core                            |
 | `apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt`                    | Chat AI — Zalo overlay (identity, reschedule confirm)                                               | Overlay of the core                            |
@@ -23,7 +23,8 @@ Read `.claude/rules/prompts.md` before editing.
 1. Decide where the change belongs: **core** (applies to all bots) vs **overlay** (one platform). Never duplicate a core rule into an overlay.
 2. Edit the file — output targets Vietnamese bot messages.
 3. `npx turbo run build --filter=@wispace/chat-agent... --filter=@wispace/messenger-bot...` (chat core) or `--filter=@wispace/messenger-bot...` (app prompt files — copies to `apps/messenger-bot/dist/shared/prompts/`).
-4. Test: bot preview menu or `POST /messenger/send-reports` with `{ "psid": "..." }` (ops key).
+4. **Editing `CHAT_SYSTEM_PROMPT_CORE`** also: (a) update the section-presence guards in `packages/llm-agent/src/chat-system-prompt.spec.ts` and `SYSTEM_PROMPT_LEAK_MARKERS` in `final-output.utils.ts` if you added/renamed a section; (b) re-hash every `packages/llm-agent/fixtures/*.json` `coreHash` — build `@wispace/llm-agent`, then `node -e "const{createHash}=require('crypto');const{CHAT_SYSTEM_PROMPT_CORE}=require('./packages/llm-agent/dist/chat-system-prompt.js');console.log(createHash('sha256').update(CHAT_SYSTEM_PROMPT_CORE.replace(/\r\n/g,'\n'),'utf8').digest('hex'))"` and replace the old hash across the fixtures.
+5. Test: bot preview menu or `POST /messenger/send-reports` with `{ "psid": "..." }` (ops key).
 
 ## Do not
 

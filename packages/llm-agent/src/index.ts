@@ -101,7 +101,9 @@ export type {
 // Utils — safety, scope, retry, text, privacy
 export {
   CHAT_FAILURE_FALLBACK_MESSAGE,
+  NON_DISCLOSURE_REPLY,
   buildPromptInjectionBlockedMessage,
+  buildNonDisclosureReply,
   buildWispaceScopeRedirectMessage,
   buildClarificationMessage,
   buildClarificationCancelledMessage,
@@ -109,6 +111,7 @@ export {
   buildGroundingBlockedMessage,
   buildPrecreateExerciseUnavailableMessage,
   detectPromptInjection,
+  detectDisclosureProbe,
   sanitizeToolResultContent,
   sanitizeUntrustedTextForLlm,
   checkLlmGrounding,
@@ -134,6 +137,8 @@ export {
 } from './utils/index';
 export type {
   InjectionCheckResult,
+  DisclosureProbeResult,
+  DisclosureProbeCategory,
   LlmGroundingResult,
   PrivacyIntent,
   ReducedToolObservation,

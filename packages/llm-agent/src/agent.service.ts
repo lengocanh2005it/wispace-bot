@@ -9,6 +9,7 @@ import {
 import { checkLlmGrounding } from './utils/llm-grounding.utils';
 import {
   detectPromptInjection,
+  detectDisclosureProbe,
   sanitizeUntrustedTextForLlm,
 } from './utils/prompt-injection.utils';
 import {
@@ -26,6 +27,7 @@ import { LlmProviderCircuitOpenError } from './execution/circuit-error';
 import {
   buildExhaustionPartialAnswer,
   buildFinalOutputBlockedMessage,
+  buildNonDisclosureReply,
   buildPromptInjectionBlockedMessage,
   buildToolCallCapMessage,
   buildWispaceScopeRedirectMessage,
@@ -445,7 +447,9 @@ export class LlmAgentService<TToolContext> {
 
           // Final-output guardrail (#165): never deliver a reply that leaks
           // system-prompt material or credential-shaped content — fail
-          // closed to a generic message.
+          // closed. A system-prompt echo or a vendor/model identifier is
+          // redacted to the standard non-disclosure line (#625); a
+          // credential leak still falls to the generic blocked message.
           const safety = checkFinalOutputSafety(sanitized);
           if (safety.unsafe) {
             this.recordDegraded(
@@ -460,7 +464,10 @@ export class LlmAgentService<TToolContext> {
                 input.externalUserId,
               )} tools_called=${[...toolsCalledThisTurn].join(',') || 'none'}`,
             );
-            const blockedText = buildFinalOutputBlockedMessage();
+            const blockedText =
+              safety.reason === 'credential_leak'
+                ? buildFinalOutputBlockedMessage()
+                : buildNonDisclosureReply();
             yield {
               type: 'final_text',
               text: blockedText,
@@ -1126,9 +1133,34 @@ Summary:`;
           input.externalUserId,
         )} reason=${injectionCheck.reason}`,
       );
+      // System-prompt/instruction extraction routes to the standard
+      // non-disclosure reply, not a distinct "blocked" message — a
+      // differential response is itself an oracle (#625).
       return {
         blocked: true,
-        reply: { text: buildPromptInjectionBlockedMessage() },
+        reply: {
+          text:
+            injectionCheck.reason === 'extraction'
+              ? buildNonDisclosureReply()
+              : buildPromptInjectionBlockedMessage(),
+        },
+      };
+    }
+
+    // Non-disclosure probe (#625): polite/direct questions for model,
+    // provider, prompt, architecture, params, infra, guardrails or tool
+    // capabilities. Defense-in-depth — the bot gateways run the same check
+    // before the LLM pipeline.
+    const disclosureProbe = detectDisclosureProbe(input.userText);
+    if (disclosureProbe.probed) {
+      logger.warn(
+        `Disclosure probe deflected externalUserId=${maskExternalId(
+          input.externalUserId,
+        )} category=${disclosureProbe.category}`,
+      );
+      return {
+        blocked: true,
+        reply: { text: buildNonDisclosureReply() },
       };
     }
 

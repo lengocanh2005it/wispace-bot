@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   GREETING_INTRO,
   buildGreetingMessage,
+  buildNonDisclosureReply,
   buildSelfIntroMessage,
   buildUnsupportedMessageTypeReply,
 } from '@wispace/bot-common/messages';
@@ -11,7 +12,7 @@ import {
   sanitizeLogValue,
 } from '@wispace/bot-common/masking';
 import { ConfigService } from '@nestjs/config';
-import { ChannelType } from 'discord.js';
+import { ChannelType, type Message } from 'discord.js';
 import { Button, Context, On, Once } from 'necord';
 import type { ButtonContext, ContextOf } from 'necord';
 import {
@@ -42,6 +43,7 @@ import { WispaceApiError } from '@wispace/wispace-client';
 import {
   CHAT_FAILURE_FALLBACK_MESSAGE,
   IntentDetector,
+  detectDisclosureProbe,
 } from '@wispace/llm-agent';
 
 const DISCORD_NOT_LINKED_MESSAGE =
@@ -84,6 +86,23 @@ export class DiscordChatGateway {
       externalUserId: discordUserId,
       ...(allowedUserIds ? { allowedUserIds } : {}),
     });
+  }
+
+  /**
+   * Deliver a canned pre-LLM reply (greeting / self-intro / non-disclosure):
+   * inline in a server channel, or via DM menu buttons otherwise.
+   */
+  private async sendDirectReply(
+    message: Message,
+    discordUserId: string,
+    isServerChannel: boolean,
+    text: string,
+  ): Promise<void> {
+    if (isServerChannel) {
+      await message.reply(this.prepareReply(discordUserId, text));
+    } else {
+      await this.outboundService.sendMenuButtons(discordUserId, text);
+    }
   }
 
   @Once('clientReady')
@@ -248,26 +267,38 @@ export class DiscordChatGateway {
       }
     }
 
+    // Non-disclosure probe (#625): internal-details questions → standard
+    // non-disclosure line, before intent detection.
+    if (detectDisclosureProbe(resolvedText).probed) {
+      await this.sendDirectReply(
+        message,
+        discordUserId,
+        isServerChannel,
+        buildNonDisclosureReply(),
+      );
+      return;
+    }
+
     // Intent detection: greeting/self-intro → reply directly, skip LLM
     const intent = this.intentDetector.detect(resolvedText);
     if (intent.intent === 'greeting') {
       const displayName =
         message.member?.displayName ?? message.author.displayName;
-      const reply = buildGreetingMessage(displayName);
-      if (isServerChannel) {
-        await message.reply(this.prepareReply(discordUserId, reply));
-      } else {
-        await this.outboundService.sendMenuButtons(discordUserId, reply);
-      }
+      await this.sendDirectReply(
+        message,
+        discordUserId,
+        isServerChannel,
+        buildGreetingMessage(displayName),
+      );
       return;
     }
     if (intent.intent === 'self_intro') {
-      const reply = buildSelfIntroMessage();
-      if (isServerChannel) {
-        await message.reply(this.prepareReply(discordUserId, reply));
-      } else {
-        await this.outboundService.sendMenuButtons(discordUserId, reply);
-      }
+      await this.sendDirectReply(
+        message,
+        discordUserId,
+        isServerChannel,
+        buildSelfIntroMessage(),
+      );
       return;
     }
 

@@ -1,9 +1,10 @@
 import {
   FALLBACK_DISPLAY_NAME,
   GREETING_VARIANTS,
-  SELF_INTRO_VARIANTS,
+  NON_DISCLOSURE_REPLY,
   buildGreetingMessage,
   buildLinkSuccessMessage,
+  buildNonDisclosureReply,
   buildSelfIntroMessage,
 } from './bot-messages';
 
@@ -49,26 +50,25 @@ describe('buildGreetingMessage', () => {
   });
 });
 
-describe('buildSelfIntroMessage', () => {
-  it('introduces the bot without naming any platform', () => {
-    for (const variant of SELF_INTRO_VARIANTS) {
-      expect(variant).toContain('WISPACE Bot');
-      expect(variant).toContain('IELTS Writing');
-      expect(variant).not.toContain('Messenger');
-      expect(variant).not.toContain('Discord');
-      expect(variant).not.toContain('Zalo');
-    }
+describe('buildNonDisclosureReply / buildSelfIntroMessage (#625)', () => {
+  it('introduces the bot without naming any platform, vendor or model', () => {
+    const text = buildNonDisclosureReply();
+    expect(text).toContain('WISPACE');
+    expect(text).toContain('IELTS Writing');
+    expect(text).not.toContain('Messenger');
+    expect(text).not.toContain('Discord');
+    expect(text).not.toContain('Zalo');
+    expect(text).not.toMatch(/openai|gpt|claude|gemini|anthropic/i);
   });
 
-  it('picks one of the predefined variants', () => {
-    expect(SELF_INTRO_VARIANTS).toContain(buildSelfIntroMessage());
+  it('is a single fixed line — self-intro and internal-details probe are indistinguishable', () => {
+    expect(buildNonDisclosureReply()).toBe(NON_DISCLOSURE_REPLY);
+    expect(buildSelfIntroMessage()).toBe(NON_DISCLOSURE_REPLY);
   });
 
-  it('rotates through variants via the injected random', () => {
-    expect(buildSelfIntroMessage(() => 0)).toBe(SELF_INTRO_VARIANTS[0]);
-    expect(buildSelfIntroMessage(() => 0.999)).toBe(
-      SELF_INTRO_VARIANTS[SELF_INTRO_VARIANTS.length - 1],
-    );
+  it('does not confirm or deny that internal details exist', () => {
+    const text = buildNonDisclosureReply();
+    expect(text).not.toMatch(/không (thể |được )?(tiết lộ|chia sẻ|nói)/i);
   });
 });
 
