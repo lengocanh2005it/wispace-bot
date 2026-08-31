@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import { DataSource } from 'typeorm';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import {
   ReportScheduleService,
@@ -20,6 +21,13 @@ import {
   ReportClaimStaleResetCronService,
 } from '@wispace/database';
 import { LlmSafetyEventEntity } from '@wispace/chat-metering';
+import { BotMetricsService } from '@wispace/bot-metrics';
+import {
+  DataQualityService,
+  TypeormDataQualityDatabase,
+  TypeormDataQualityRepository,
+  readDataQualityConfig,
+} from '@wispace/ops-health';
 import { CommonModule } from '../../shared/common/common.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { ChatPipelineModule } from '../messenger/chat-pipeline.module';
@@ -32,6 +40,7 @@ import { StudyReminderModule } from '../study-reminder/study-reminder.module';
 import { UserGoalsApiService } from '../student-report/infrastructure/wispace/user-goals-api.service';
 import { DopplerRuntimeSyncService } from './application/services/doppler-runtime-sync.service';
 import { OpsHealthCronService } from './application/services/ops-health-cron.service';
+import { DataQualityCronService } from './application/services/data-quality-cron.service';
 import { OpsHealthService } from './application/services/ops-health.service';
 import { ReportCronService } from './application/services/report-cron.service';
 import { ReportSendOrchestrationService } from './application/services/report-send-orchestration.service';
@@ -106,8 +115,37 @@ import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
       provide: REPORT_SEND_JOB_REPOSITORY,
       useExisting: ReportSendJobRepository,
     },
+    {
+      provide: DataQualityService,
+      useFactory: (
+        dataSource: DataSource,
+        configService: ConfigService,
+        pgLock: PgAdvisoryLockService,
+        metrics: BotMetricsService,
+      ) =>
+        new DataQualityService(
+          new TypeormDataQualityRepository(
+            new TypeormDataQualityDatabase(dataSource),
+          ),
+          pgLock,
+          readDataQualityConfig((key) => configService.get<string>(key)),
+          {
+            setCheckStatus: (check, status) =>
+              metrics.setDataQualityCheckStatus(check, status),
+            incRun: (outcome) => metrics.incDataQualityRun(outcome),
+            incFailure: (check) => metrics.incDataQualityFailure(check),
+          },
+        ),
+      inject: [
+        DataSource,
+        ConfigService,
+        PgAdvisoryLockService,
+        BotMetricsService,
+      ],
+    },
     OpsHealthService,
     OpsHealthCronService,
+    DataQualityCronService,
     DopplerRuntimeSyncService,
     LlmSafetyService,
     PrivacyDataService,

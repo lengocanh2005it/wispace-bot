@@ -173,4 +173,30 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     expect(out).not.toContain('correlation_id');
     expect(out).not.toContain('external_user_id');
   });
+
+  it('exposes data-quality status and run outcomes without high-cardinality labels', async () => {
+    const svc = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+
+    svc.setDataQualityCheckStatus('null_spike', 'fail');
+    svc.setDataQualityCheckStatus('future_timestamps', 'pass');
+    svc.incDataQualityFailure('null_spike');
+    svc.incDataQualityRun('fail');
+    svc.incDataQualityRun('skipped');
+
+    const out = await svc.getMetrics();
+    expect(out).toContain(
+      'test_data_quality_check_status{check="null_spike"} 0',
+    );
+    expect(out).toContain(
+      'test_data_quality_check_status{check="future_timestamps"} 1',
+    );
+    expect(out).toContain(
+      'test_data_quality_check_failures_total{check="null_spike"} 1',
+    );
+    expect(out).toContain('test_data_quality_runs_total{outcome="fail"} 1');
+    expect(out).not.toContain('external_user_id');
+  });
 });

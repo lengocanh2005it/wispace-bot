@@ -77,6 +77,9 @@ export class BotMetricsService implements OnModuleDestroy {
   private chatRevalidationSkip: Counter;
   private chatFlushRecovery: Counter;
   private platformLinkTransitions: Counter;
+  private dataQualityCheckStatus: Gauge;
+  private dataQualityRuns: Counter;
+  private dataQualityFailures: Counter;
 
   constructor(config: MetricsConfig) {
     this.prefix = config.prefix;
@@ -322,6 +325,24 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_platform_link_transition_total`,
       help: 'Canonical platform-link ownership transitions',
       labelNames: ['platform', 'outcome'],
+      registers: [this.registry],
+    });
+    this.dataQualityCheckStatus = new Gauge({
+      name: `${this.prefix}_data_quality_check_status`,
+      help: 'Latest scheduled data-quality check status (1=pass, 0=fail)',
+      labelNames: ['check'],
+      registers: [this.registry],
+    });
+    this.dataQualityRuns = new Counter({
+      name: `${this.prefix}_data_quality_runs_total`,
+      help: 'Scheduled data-quality run outcomes',
+      labelNames: ['outcome'],
+      registers: [this.registry],
+    });
+    this.dataQualityFailures = new Counter({
+      name: `${this.prefix}_data_quality_check_failures_total`,
+      help: 'Data-quality check failures',
+      labelNames: ['check'],
       registers: [this.registry],
     });
     this.dbCircuitBreakerState = new Gauge({
@@ -584,6 +605,18 @@ export class BotMetricsService implements OnModuleDestroy {
     count = 1,
   ): void {
     this.platformLinkTransitions.inc({ platform, outcome }, count);
+  }
+
+  setDataQualityCheckStatus(check: string, status: 'pass' | 'fail'): void {
+    this.dataQualityCheckStatus.set({ check }, status === 'pass' ? 1 : 0);
+  }
+
+  incDataQualityRun(outcome: 'pass' | 'fail' | 'skipped'): void {
+    this.dataQualityRuns.inc({ outcome });
+  }
+
+  incDataQualityFailure(check: string): void {
+    this.dataQualityFailures.inc({ check });
   }
 
   registerDbCircuitBreaker(breaker: {

@@ -21,6 +21,7 @@
     "study-reminder:sync-only": "npm run build && node --env-file=.env scripts/sync-study-reminder-jobs.mjs --sync-only",
     "study-reminder:jobs": "node --env-file=.env scripts/show-study-reminder-jobs.mjs",
     "ops:health": "node --env-file=.env scripts/ops-daily-health.mjs",
+    "ops:data-quality": "node --env-file=.env scripts/ops-data-quality.mjs",
     "messenger:relink": "node --env-file=.env scripts/relink-messenger-mapping.mjs",
     "chat-quota:status": "node --env-file=.env scripts/chat-quota-status.mjs",
     "chat-quota:recover-stuck": "node --env-file=.env scripts/chat-quota-recover-stuck.mjs",

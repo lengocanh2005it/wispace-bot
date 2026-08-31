@@ -37,6 +37,15 @@ groups:
           summary: '{{ $labels.job }} inbound webhook backlog growing'
           description: '{{ $labels.job }} has {{ $value }} webhook events waiting for retry for 5 minutes.'
 
+      - alert: DataQualityCheckFailed
+        expr: (messenger_data_quality_check_status or discord_data_quality_check_status or zalo_data_quality_check_status) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} data-quality check failed ({{ $labels.check }})'
+          description: '{{ $labels.job }} reported a failed scheduled data-quality check; inspect OPS_HEALTH_ALERT logs and run `npm run ops:data-quality`.'
+
       - alert: LlmAdmissionSaturated
         expr: |
           (

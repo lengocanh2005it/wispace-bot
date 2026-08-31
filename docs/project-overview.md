@@ -380,6 +380,7 @@ Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP �
 | `report-send-retry`                 | `*/15 * * * *`                                | `ReportSendRetryDispatchService` — outbox R5 retry                                                                                                                                                                      |
 | `report-claims-stale-reset`         | `*/30 * * * *`                                | `ReportClaimStaleResetCronService` — per-platform lease recovery for `scheduled_report_claims` (`REPORT_CLAIM_STALE_RESET_MS`=2h)                                                                                       |
 | `ops-health-daily`                  | `0 0 9 * * *` (09:00 ICT)                     | `OpsHealthCronService` — ops health alert                                                                                                                                                                               |
+| `data-quality-daily`               | `0 15 9 * * *` (09:15 ICT)                    | `DataQualityCronService` — bounded read-only anomaly checks (production default; `DATA_QUALITY_CRON_ENABLED=false` disables)                                                                                           |
 | `study-reminder-sync`               | `0 */30 * * * *` (every 30 min)               | `StudyReminderWorkerService` — sync upcoming sessions                                                                                                                                                                   |
 | `study-reminder-dispatch`           | Adaptive 30s–3.5min (`STUDY_REMINDER_POLL_*`) | `StudyReminderWorkerService` — S2 adaptive dispatch                                                                                                                                                                     |
 | `study-reminder-cleanup`            | `0 0 3 * * *` (03:00)                         | `StudyReminderWorkerService` — purge old terminal jobs                                                                                                                                                                  |
@@ -469,6 +470,7 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 - **Chat quota events:** `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`, `CHAT_QUOTA_EVENTS_CLEANUP_ENABLED`
 - **Chat queue:** `CHAT_DEBOUNCE_MS`, `CHAT_MAX_BUBBLES`, `CHAT_BUBBLE_MAX_CHARS`, `CHAT_QUEUE_STORE` (Redis is mandatory in production on all three bots), `CHAT_QUEUE_SHARED` (legacy alias), `CHAT_HISTORY_STORE` (R1), `CHAT_QUEUE_PROCESSING_STUCK_MS`, `CHAT_QUEUE_STALE_TTL_MS`, `CHAT_QUEUE_CLEANUP_INTERVAL_MS`, `CHAT_FLUSH_RETRY_ENABLED`, `CHAT_FLUSH_RETRY_DELAY_MS`, `CHAT_FLUSH_MAX_RETRIES`, `CHAT_HISTORY_TTL_MS`, `CHAT_HISTORY_MAX_MESSAGES`. A shared 2s poller claims ready Redis buffers with per-user locks; failed flushes retain the original idempotency key across retries/restarts, stop after the bounded retry budget, and remain as an abandoned Redis record for operator recovery. The durable inbox completes only after enqueue persistence.
 - **Ops API:** `INTERNAL_API_KEY` — header `X-Internal-Api-Key` for sync / send-reports / profile setup
+- **Data quality (#642):** `DATA_QUALITY_CRON_ENABLED`, `DATA_QUALITY_LOCK_ID`, `DATA_QUALITY_STATEMENT_TIMEOUT_MS` (default 5000), `DATA_QUALITY_SAMPLE_LIMIT` (default 5), `DATA_QUALITY_TIMEZONE` (default `Asia/Ho_Chi_Minh`), `DATA_QUALITY_BASELINE_DAYS` (default 7), `DATA_QUALITY_BASELINE_MIN_ROWS` (default 10), `DATA_QUALITY_FUTURE_SKEW_MS` (default 300000), `DATA_QUALITY_NULL_RESOLUTION_AGE_MS` (default 86400000), `DATA_QUALITY_STUCK_GRACE_MS` (default 300000), `DATA_QUALITY_STUCK_RESERVED_MS` (default 600000), `DATA_QUALITY_WEBHOOK_PROCESSING_STUCK_MS` (default 300000), `DATA_QUALITY_STUDY_REMINDER_PROCESSING_STUCK_MS` (default 600000), `DATA_QUALITY_REPORT_SEND_PROCESSING_STUCK_MS` (default 600000), `DATA_QUALITY_REPORT_CLAIM_PROCESSING_STUCK_MS` (default 7200000), `DATA_QUALITY_NULL_SPIKE_RATIO` (default 2), `DATA_QUALITY_NULL_SPIKE_MIN_COUNT` (default 10), `DATA_QUALITY_NULL_SPIKE_MIN_RATE_DELTA` (default 0.1), `DATA_QUALITY_ORPHAN_GROWTH_RATIO` (default 2), `DATA_QUALITY_ORPHAN_MIN_DELTA` (default 1), `DATA_QUALITY_VOLUME_LOW_RATIO` (default 0.5), `DATA_QUALITY_VOLUME_HIGH_RATIO` (default 2). The runner is read-only, uses advisory lock `884200943`, compares the previous complete ICT day with a seven-day median, masks sample keys, and never repairs rows.
 - **Doppler:** production env is applied by the manual `sync-env.yml` workflow; `DOPPLER_RUNTIME_SYNC_ENABLED=false` in deployed containers.
 - **Deploy:** `GHCR_PULL_TOKEN`, `GHCR_USER`, `DEPLOY_UID`, `DEPLOY_GID`
 - **Exam reports:** `WISPACE_REPORT_DAYS_BEFORE_EXAM_MIN/MAX`, `REPORT_SEND_CONCURRENCY`
@@ -493,6 +495,8 @@ npm run study-reminder:jobs    # Print jobs in DB
 npm run study-reminder:jobs -- --failed   # S1: terminal failed
 npm run study-reminder:jobs -- --stuck    # S1: stuck processing
 npm run ops:health             # I1+S1 combined ops snapshot
+npm run ops:data-quality       # #642 bounded read-only data-quality pass
+npm run ops:data-quality -- --json
 npm run chat-quota:status      # Query chat quota (psid / userId / date)
 npm run chat-quota:status -- --ops   # I1 fleet summary
 npm run chat-quota:status -- --psid=<psid> --date=2026-06-15
@@ -590,6 +594,23 @@ npm run study-reminder:jobs -- --failed --hours=48 --limit=20
 ```
 
 Combined I1+S1 snapshot: `npm run ops:health`.
+
+**#642 — scheduled data-quality pass:**
+
+```bash
+npm run ops:data-quality
+npm run ops:data-quality -- --json
+```
+
+The command runs six bounded checks: unresolved `user_id` spikes (excluding
+expected pre-link mapping rows), future or missing terminal timestamps, stuck
+states, orphan growth, and daily volume anomalies. It compares the previous complete ICT day with a seven-day median,
+uses PostgreSQL advisory lock `884200943`, and emits masked samples only.
+`DATA_QUALITY_CRON_ENABLED` defaults to enabled in production; the in-process
+Messenger cron runs at 09:15 ICT. A lock-held run is skipped, baseline gaps are
+reported as `baseline_insufficient`, and a failed check exits 1 without
+mutating data. `DataQualityCheckFailed` is routed through the existing
+Prometheus/Alertmanager path.
 
 **Scale ≥2 instances (H7):**
 
