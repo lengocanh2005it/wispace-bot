@@ -1,3 +1,4 @@
+import type { WriteToolBudgetPort } from './write-tool-budget';
 import type { StageInput, StageResult } from '@wispace/reschedule-confirm';
 import type {
   AdmissionMetrics,
@@ -47,6 +48,12 @@ export interface PlatformAgentToolContext {
    * and Zalo resolve links through their own account-link flows.
    */
   linkContext?: unknown;
+  /** In-memory per-turn count of write-tool executions, keyed by tool name.
+   *  Enforces the per-message cap (#626); never persisted. */
+  writeToolCalls?: Map<string, number>;
+  /** Tools whose daily budget unit was consumed this turn — refunded if the
+   *  mutation did not ultimately succeed (#626). */
+  writeToolDailyConsumed?: Set<string>;
 }
 
 export interface PlatformAgentReply {
@@ -213,6 +220,13 @@ export interface PlatformAgentToolsOptions {
   ) => Promise<CurrentPlatformIdentity | undefined>;
   /** Bounded policy-denial metric; arguments and identities are never passed. */
   policyDeniedInc?: (toolName: string, reason: string) => void;
+  /** Per-user write-tool budget (#626). Absent = enforcement disabled. */
+  writeToolBudget?: WriteToolBudgetPort;
+  /** tool name → per-message cap (#626). */
+  writeToolPerMessageCaps?: Record<string, number>;
+  /** Bounded denial metric (#626); no ids. reason is always 'per_message' at
+   *  this call site — daily denials are emitted inside WriteToolBudgetCore. */
+  writeToolBudgetDeniedInc?: (toolName: string, reason: 'per_message') => void;
   /**
    * WISPACE cache invalidation (#636): mutating tools drop the affected
    * per-user cache entries after a successful write so the next read

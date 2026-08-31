@@ -74,3 +74,13 @@ export {
   createChatPipelineAdapters,
   type OutboundServicePort,
 } from './chat-pipeline-adapters';
+
+export {
+  WRITE_TOOL_NAMES,
+  isWriteToolName,
+  BUDGET_EXEMPT_TOOLS,
+} from './agent/write-tool-budget';
+export type {
+  WriteToolName,
+  WriteToolBudgetPort,
+} from './agent/write-tool-budget';
