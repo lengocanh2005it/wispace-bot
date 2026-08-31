@@ -59,6 +59,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmProvidersExhausted: Counter;
   private llmDegradedMode: Counter;
   private quotaDenied: Counter;
+  private writeToolBudgetDenied: Counter;
   private reminderDispatch: Counter;
   private webActivityWebhookReceived: Counter;
   private scheduledSendSuppressed: Counter;
@@ -209,6 +210,13 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_llm_degraded_mode_total`,
       help: 'Fallback and degraded responses with bounded operational context',
       labelNames: ['platform', 'feature', 'failure_class', 'action'],
+      registers: [this.registry],
+    });
+
+    this.writeToolBudgetDenied = new Counter({
+      name: `${this.prefix}_write_tool_budget_denied_total`,
+      help: 'Mutating LLM tool calls denied by the per-user write-tool budget (#626)',
+      labelNames: ['tool', 'platform', 'reason'],
       registers: [this.registry],
     });
 
@@ -423,6 +431,15 @@ export class BotMetricsService implements OnModuleDestroy {
       end({ status });
       this.llmToolCalls.inc({ tool_name: toolName, status });
     });
+  }
+
+  /** A mutating tool call was denied by the per-user write-tool budget (#626). */
+  incWriteToolBudgetDenied(
+    tool: string,
+    platform: string,
+    reason: 'daily' | 'per_message',
+  ): void {
+    this.writeToolBudgetDenied.inc({ tool, platform, reason });
   }
 
   incQuotaDenied(reason: string): void {

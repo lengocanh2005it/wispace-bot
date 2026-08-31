@@ -199,4 +199,27 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     expect(out).toContain('test_data_quality_runs_total{outcome="fail"} 1');
     expect(out).not.toContain('external_user_id');
   });
+  it('exposes write_tool_budget_denied_total with tool/platform/reason labels (#626)', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'discord',
+      collectDefaults: false,
+    });
+    metrics.incWriteToolBudgetDenied(
+      'precreate_next_exercise',
+      'discord',
+      'daily',
+    );
+    metrics.incWriteToolBudgetDenied(
+      'reschedule_study_session',
+      'discord',
+      'per_message',
+    );
+    const out = await metrics.getMetrics();
+    expect(out).toContain(
+      'discord_write_tool_budget_denied_total{tool="precreate_next_exercise",platform="discord",reason="daily"} 1',
+    );
+    expect(out).toContain(
+      'discord_write_tool_budget_denied_total{tool="reschedule_study_session",platform="discord",reason="per_message"} 1',
+    );
+  });
 });
