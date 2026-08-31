@@ -102,10 +102,17 @@ export class PlatformStudyCalendarCommandService {
     newLocalDate?: string;
     newTime?: string;
   }): Promise<RescheduleStudySessionResult> {
-    const source = await this.findCalendarRecord(
+    // One calendar GET per confirmation (#455): the same snapshot drives the
+    // source lookup and the idempotent-create duplicate check.
+    const records = await this.calendarService.listCalendars(
       params.externalUserId,
-      params.calendarId,
     );
+    const source = records.find((record) => record.id === params.calendarId);
+    if (!source) {
+      throw new NotFoundException(
+        `Calendar id=${params.calendarId} not found for this user`,
+      );
+    }
     const timezone = this.configService.getTimezone();
     const target = resolveRescheduleSlot({
       schedulingMode: params.schedulingMode,
@@ -128,6 +135,7 @@ export class PlatformStudyCalendarCommandService {
     try {
       created = await this.createTargetIdempotent(
         params.externalUserId,
+        records,
         target.eventDate,
         target.time,
         params.userId,
@@ -174,14 +182,15 @@ export class PlatformStudyCalendarCommandService {
   /**
    * Creates the replacement slot unless one already exists (idempotent retry
    * after a crash between create and delete — never a duplicate replacement).
+   * Reuses the flow's already-fetched records — no second list GET (#455).
    */
   private async createTargetIdempotent(
     externalUserId: string,
+    records: UserCalendarRecord[],
     eventDate: string,
     time: string,
     userId: number,
   ): Promise<UserCalendarRecord> {
-    const records = await this.calendarService.listCalendars(externalUserId);
     const existing = records.find(
       (record) => record.eventDate === eventDate && record.time === time,
     );
@@ -217,24 +226,6 @@ export class PlatformStudyCalendarCommandService {
     throw lastError instanceof Error
       ? lastError
       : new Error('unknown delete error');
-  }
-
-  private async findCalendarRecord(
-    externalUserId: string,
-    calendarId: number,
-  ): Promise<UserCalendarRecord> {
-    const source = await this.calendarService.findCalendarRecord(
-      externalUserId,
-      calendarId,
-    );
-
-    if (!source) {
-      throw new NotFoundException(
-        `Calendar id=${calendarId} not found for this user`,
-      );
-    }
-
-    return source;
   }
 
   private assertFutureSlot(

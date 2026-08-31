@@ -126,8 +126,12 @@ describe('StudyCalendarCommandService', () => {
   });
 
   describe('rescheduleSession', () => {
+    const record = makeRecord();
+    const listWithSource = () =>
+      calendarData.listCalendars.mockResolvedValue([record]);
+
     it('throws NotFoundException when calendar record not found', async () => {
-      calendarData.findCalendarRecord.mockResolvedValue(null);
+      calendarData.listCalendars.mockResolvedValue([]);
 
       await expect(
         service.rescheduleSession({
@@ -139,9 +143,24 @@ describe('StudyCalendarCommandService', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
+    it('fetches the calendar list exactly once and never via the find port (#455)', async () => {
+      listWithSource();
+      scheduleService.getMinutesUntilSession.mockReturnValue(120);
+      calendarData.createCalendar.mockResolvedValue(makeRecord({ id: 100 }));
+
+      await service.rescheduleSession({
+        psid: 'psid-1',
+        userId: 1,
+        calendarId: 42,
+        schedulingMode: 'default_next_day_same_time',
+      });
+
+      expect(calendarData.listCalendars).toHaveBeenCalledTimes(1);
+      expect(calendarData.findCalendarRecord).not.toHaveBeenCalled();
+    });
+
     it('throws BadRequestException when new slot is too close', async () => {
-      const record = makeRecord();
-      calendarData.findCalendarRecord.mockResolvedValue(record);
+      listWithSource();
       scheduleService.getMinutesUntilSession.mockReturnValue(5); // < minLeadMinutes (10)
 
       await expect(
@@ -155,9 +174,8 @@ describe('StudyCalendarCommandService', () => {
     });
 
     it('creates the replacement first, deletes the source, and triggers background sync', async () => {
-      const record = makeRecord();
       const created = makeRecord({ id: 100 });
-      calendarData.findCalendarRecord.mockResolvedValue(record);
+      listWithSource();
       calendarData.createCalendar.mockResolvedValue(created);
       scheduleService.getMinutesUntilSession.mockReturnValue(120);
 
@@ -189,8 +207,7 @@ describe('StudyCalendarCommandService', () => {
     });
 
     it('keeps the original session when creation fails (no delete before create)', async () => {
-      const record = makeRecord();
-      calendarData.findCalendarRecord.mockResolvedValue(record);
+      listWithSource();
       calendarData.createCalendar.mockRejectedValue(new Error('API down'));
       scheduleService.getMinutesUntilSession.mockReturnValue(120);
 
@@ -207,15 +224,14 @@ describe('StudyCalendarCommandService', () => {
     });
 
     it('reuses an existing replacement on retry (no duplicate creation)', async () => {
-      const record = makeRecord();
-      calendarData.findCalendarRecord.mockResolvedValue(record);
-      // Crash between create and delete: the replacement already exists.
+      // Crash between create and delete: the replacement already exists in
+      // the same snapshot the idempotency check reuses.
       const existing = makeRecord({
         id: 100,
         eventDate: '2026-07-16',
         time: '10:00',
       });
-      calendarData.listCalendars.mockResolvedValue([existing]);
+      calendarData.listCalendars.mockResolvedValue([record, existing]);
       scheduleService.getMinutesUntilSession.mockReturnValue(120);
 
       const result = await service.rescheduleSession({

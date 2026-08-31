@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type {
   RescheduleConfigPort,
   StudyCalendarPort,
@@ -64,17 +64,64 @@ describe('PlatformStudyCalendarCommandService', () => {
     expect(entries[0].scheduledTimeLabel).toBeTruthy();
   });
 
-  it('rescheduleSession creates the replacement first, then deletes the source', async () => {
-    const findCalendarRecord = jest.fn().mockResolvedValue({
-      id: 7,
-      eventDate: '2026-08-10',
-      time: '09:00',
+  it('rescheduleSession fetches the calendar list exactly once (#455)', async () => {
+    const listCalendars = jest
+      .fn()
+      .mockResolvedValue([{ id: 7, eventDate: '2026-08-10', time: '09:00' }]);
+    const calendarService = buildCalendarService({
+      listCalendars,
+      deleteCalendar: jest.fn().mockResolvedValue(undefined),
+      createCalendar: jest.fn().mockResolvedValue({ id: 8 }),
     });
-    const listCalendars = jest.fn().mockResolvedValue([]);
+    const service = new PlatformStudyCalendarCommandService(
+      { platform: 'zalo' },
+      calendarService,
+      buildConfigService(),
+    );
+
+    await service.rescheduleSession({
+      externalUserId: 'u1',
+      userId: 3,
+      calendarId: 7,
+      schedulingMode: 'default_next_day_same_time',
+    });
+
+    expect(listCalendars).toHaveBeenCalledTimes(1);
+    expect(calendarService.findCalendarRecord).not.toHaveBeenCalled();
+  });
+
+  it('rescheduleSession rejects when the source is missing from the fetched list', async () => {
+    const calendarService = buildCalendarService({
+      listCalendars: jest
+        .fn()
+        .mockResolvedValue([
+          { id: 11, eventDate: '2026-08-12', time: '10:00' },
+        ]),
+    });
+    const service = new PlatformStudyCalendarCommandService(
+      { platform: 'zalo' },
+      calendarService,
+      buildConfigService(),
+    );
+
+    await expect(
+      service.rescheduleSession({
+        externalUserId: 'u1',
+        userId: 3,
+        calendarId: 7,
+        schedulingMode: 'default_next_day_same_time',
+      }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(calendarService.createCalendar).not.toHaveBeenCalled();
+  });
+
+  it('rescheduleSession creates the replacement first, then deletes the source', async () => {
+    const listCalendars = jest
+      .fn()
+      .mockResolvedValue([{ id: 7, eventDate: '2026-08-10', time: '09:00' }]);
     const deleteCalendar = jest.fn().mockResolvedValue(undefined);
     const createCalendar = jest.fn().mockResolvedValue({ id: 8 });
     const calendarService = buildCalendarService({
-      findCalendarRecord,
       listCalendars,
       deleteCalendar,
       createCalendar,
@@ -106,19 +153,15 @@ describe('PlatformStudyCalendarCommandService', () => {
   });
 
   it('reuses an existing replacement on retry (no duplicate creation)', async () => {
-    const findCalendarRecord = jest.fn().mockResolvedValue({
-      id: 7,
-      eventDate: '2026-08-10',
-      time: '09:00',
-    });
-    // Crash between create and delete: the replacement already exists.
-    const listCalendars = jest
-      .fn()
-      .mockResolvedValue([{ id: 8, eventDate: '2026-08-11', time: '09:00' }]);
+    // Crash between create and delete: the replacement already exists in the
+    // same snapshot the idempotency check reuses.
+    const listCalendars = jest.fn().mockResolvedValue([
+      { id: 7, eventDate: '2026-08-10', time: '09:00' },
+      { id: 8, eventDate: '2026-08-11', time: '09:00' },
+    ]);
     const deleteCalendar = jest.fn().mockResolvedValue(undefined);
     const createCalendar = jest.fn();
     const calendarService = buildCalendarService({
-      findCalendarRecord,
       listCalendars,
       deleteCalendar,
       createCalendar,
@@ -142,18 +185,14 @@ describe('PlatformStudyCalendarCommandService', () => {
   });
 
   it('keeps the original session when creation fails (no delete before create)', async () => {
-    const findCalendarRecord = jest.fn().mockResolvedValue({
-      id: 7,
-      eventDate: '2026-08-10',
-      time: '09:00',
-    });
-    const listCalendars = jest.fn().mockResolvedValue([]);
+    const listCalendars = jest
+      .fn()
+      .mockResolvedValue([{ id: 7, eventDate: '2026-08-10', time: '09:00' }]);
     const deleteCalendar = jest.fn();
     const createCalendar = jest
       .fn()
       .mockRejectedValue(new Error('WISPACE timeout'));
     const calendarService = buildCalendarService({
-      findCalendarRecord,
       listCalendars,
       deleteCalendar,
       createCalendar,
@@ -176,12 +215,9 @@ describe('PlatformStudyCalendarCommandService', () => {
   });
 
   it('create timeout after a crash retry keeps the original and converges without duplicates', async () => {
-    const findCalendarRecord = jest.fn().mockResolvedValue({
-      id: 7,
-      eventDate: '2026-08-10',
-      time: '09:00',
-    });
-    const listCalendars = jest.fn().mockResolvedValue([]);
+    const listCalendars = jest
+      .fn()
+      .mockResolvedValue([{ id: 7, eventDate: '2026-08-10', time: '09:00' }]);
     const deleteCalendar = jest.fn();
     // First attempt times out mid-create (no session lost, nothing deleted).
     const createCalendar = jest
@@ -189,7 +225,6 @@ describe('PlatformStudyCalendarCommandService', () => {
       .mockRejectedValueOnce(new Error('timed out'))
       .mockResolvedValueOnce({ id: 8 });
     const calendarService = buildCalendarService({
-      findCalendarRecord,
       listCalendars,
       deleteCalendar,
       createCalendar,
@@ -224,18 +259,14 @@ describe('PlatformStudyCalendarCommandService', () => {
   });
 
   it('retries the source deletion and throws when it still fails', async () => {
-    const findCalendarRecord = jest.fn().mockResolvedValue({
-      id: 7,
-      eventDate: '2026-08-10',
-      time: '09:00',
-    });
-    const listCalendars = jest.fn().mockResolvedValue([]);
+    const listCalendars = jest
+      .fn()
+      .mockResolvedValue([{ id: 7, eventDate: '2026-08-10', time: '09:00' }]);
     const deleteCalendar = jest
       .fn()
       .mockRejectedValue(new Error('delete down'));
     const createCalendar = jest.fn().mockResolvedValue({ id: 8 });
     const calendarService = buildCalendarService({
-      findCalendarRecord,
       listCalendars,
       deleteCalendar,
       createCalendar,
@@ -259,15 +290,13 @@ describe('PlatformStudyCalendarCommandService', () => {
   });
 
   it('enforceLeadTime rejects slots too close to now', async () => {
-    const findCalendarRecord = jest.fn().mockResolvedValue({
-      id: 7,
-      eventDate: '2026-08-10',
-      time: '09:00',
-    });
+    const listCalendars = jest
+      .fn()
+      .mockResolvedValue([{ id: 7, eventDate: '2026-08-10', time: '09:00' }]);
     const deleteCalendar = jest.fn().mockResolvedValue(undefined);
     const createCalendar = jest.fn().mockResolvedValue({ id: 8 });
     const calendarService = buildCalendarService({
-      findCalendarRecord,
+      listCalendars,
       deleteCalendar,
       createCalendar,
     });

@@ -108,10 +108,15 @@ export class StudyCalendarCommandService {
     newLocalDate?: string;
     newTime?: string;
   }): Promise<RescheduleStudySessionResult> {
-    const source = await this.findCalendarRecord(
-      params.psid,
-      params.calendarId,
-    );
+    // One calendar GET per confirmation (#455): the same snapshot drives the
+    // source lookup and the idempotent-create duplicate check.
+    const records = await this.calendarData.listCalendars(params.psid);
+    const source = records.find((record) => record.id === params.calendarId);
+    if (!source) {
+      throw new NotFoundException(
+        `Calendar id=${params.calendarId} not found for this user`,
+      );
+    }
     const timezone =
       this.studyReminderScheduleService.getOutboxSettings().timezone;
     const target = resolveRescheduleSlot({
@@ -133,6 +138,7 @@ export class StudyCalendarCommandService {
     try {
       created = await this.createTargetIdempotent(
         params.psid,
+        records,
         target.eventDate,
         target.time,
         params.userId,
@@ -206,14 +212,15 @@ export class StudyCalendarCommandService {
   /**
    * Creates the replacement slot unless one already exists (idempotent retry
    * after a crash between create and delete — never a duplicate replacement).
+   * Reuses the flow's already-fetched records — no second list GET (#455).
    */
   private async createTargetIdempotent(
     psid: string,
+    records: UserCalendarRecord[],
     eventDate: string,
     time: string,
     userId: number,
   ): Promise<UserCalendarRecord> {
-    const records = await this.calendarData.listCalendars(psid);
     const existing = records.find(
       (record) => record.eventDate === eventDate && record.time === time,
     );
