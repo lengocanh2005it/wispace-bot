@@ -12,6 +12,7 @@ export {
   type ConfirmError,
   type CalendarPort,
   type ReschedulePort,
+  type RescheduleConfirmationOptions,
 } from './reschedule-confirm.service';
 export {
   MemoryRescheduleStore,
