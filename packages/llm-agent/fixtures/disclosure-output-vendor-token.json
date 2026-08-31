@@ -18,13 +18,8 @@
   ],
   "expected": {
     "toolSequence": [],
-    "replyTextContains": [
-      "Bạn muốn mình hỗ trợ phần nào của Writing không?"
-    ],
-    "replyTextNotContains": [
-      "GPT-4o",
-      "OpenAI"
-    ],
+    "replyTextContains": ["Bạn muốn mình hỗ trợ phần nào của Writing không?"],
+    "replyTextNotContains": ["GPT-4o", "OpenAI"],
     "exhausted": false,
     "toolSummary": null,
     "groundingWarnings": 0

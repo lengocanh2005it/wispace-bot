@@ -18,12 +18,8 @@
   ],
   "expected": {
     "toolSequence": [],
-    "replyTextContains": [
-      "Bạn muốn mình hỗ trợ phần nào của Writing không?"
-    ],
-    "replyTextNotContains": [
-      "You are the WISPACE assistant"
-    ],
+    "replyTextContains": ["Bạn muốn mình hỗ trợ phần nào của Writing không?"],
+    "replyTextNotContains": ["You are the WISPACE assistant"],
     "exhausted": false,
     "toolSummary": null,
     "groundingWarnings": 0

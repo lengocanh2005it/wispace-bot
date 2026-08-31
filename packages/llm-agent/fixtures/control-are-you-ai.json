@@ -18,9 +18,7 @@
   ],
   "expected": {
     "toolSequence": [],
-    "replyTextContains": [
-      "trợ lý AI của WISPACE"
-    ],
+    "replyTextContains": ["trợ lý AI của WISPACE"],
     "exhausted": false,
     "toolSummary": null,
     "groundingWarnings": 0

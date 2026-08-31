@@ -18,9 +18,7 @@
   ],
   "expected": {
     "toolSequence": [],
-    "replyTextContains": [
-      "Task 1/2"
-    ],
+    "replyTextContains": ["Task 1/2"],
     "exhausted": false,
     "toolSummary": null,
     "groundingWarnings": 0

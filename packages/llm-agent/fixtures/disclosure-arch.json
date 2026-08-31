@@ -14,9 +14,7 @@
   "script": [],
   "expected": {
     "toolSequence": [],
-    "replyTextContains": [
-      "Bạn muốn mình hỗ trợ phần nào của Writing không?"
-    ],
+    "replyTextContains": ["Bạn muốn mình hỗ trợ phần nào của Writing không?"],
     "exhausted": false,
     "toolSummary": null,
     "groundingWarnings": 0
