@@ -30,6 +30,8 @@ import type { MessengerMappingRepositoryPort } from '../messenger/domain/reposit
 import { MessengerOutboundModule } from '../messenger/messenger-outbound.module';
 import { MessengerOutboundService } from '../messenger/application/services/messenger-outbound.service';
 import { StudentReportModule } from '../student-report/student-report.module';
+import { WispaceModule } from '../wispace/wispace.module';
+import { MemoizedWispaceGoalsService } from '@wispace/wispace-client';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
 import { LlmUsageModule } from '../llm-usage/llm-usage.module';
 import { DisplayNameModule } from '../display-name/display-name.module';
@@ -49,7 +51,6 @@ import { classifyMessengerDispatchFailure } from './application/utils/study-remi
 import { DEFAULT_TOPIC } from '@messenger/shared/config/poc.constants';
 import { STUDY_REMINDER_OPERATIONS_PORT } from './domain/ports/study-reminder-operations.port';
 import type { StudyReminderOperationsPort } from './domain/ports/study-reminder-operations.port';
-import { UserGoalsApiService } from '../student-report/infrastructure/wispace/user-goals-api.service';
 import { TaskScoreAverageApiService } from '../student-report/infrastructure/wispace/task-score-average-api.service';
 
 const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
@@ -64,6 +65,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     TypeOrmModule.forFeature([StudyReminderJobEntity, UserEntity]),
     MessengerOutboundModule,
     StudentReportModule,
+    WispaceModule,
     LlmExecutionModule,
     LlmUsageModule,
     DisplayNameModule,
@@ -157,13 +159,13 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     {
       provide: REMINDER_STUDENT_DATA_PORT,
       useFactory: (
-        goalsApi: UserGoalsApiService,
+        memoizedGoals: MemoizedWispaceGoalsService,
         taskScoreAverageApi: TaskScoreAverageApiService,
       ): ReminderStudentDataPort => ({
-        getUserGoals: (psid) => goalsApi.getUserGoals(psid),
+        getUserGoals: (psid) => memoizedGoals.getUserGoals(psid),
         getCapacityData: (psid) => taskScoreAverageApi.getCapacityData(psid),
       }),
-      inject: [UserGoalsApiService, TaskScoreAverageApiService],
+      inject: [MemoizedWispaceGoalsService, TaskScoreAverageApiService],
     },
     StudyCalendarCommandService,
     StudySessionSourceService,

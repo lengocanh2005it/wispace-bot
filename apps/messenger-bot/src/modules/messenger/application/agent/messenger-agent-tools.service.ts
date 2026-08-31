@@ -41,7 +41,7 @@ import type { MessengerMappingRepositoryPort } from '../../domain/repositories/m
 import { MessengerMappingService } from '../services/messenger-mapping.service';
 import { STUDY_REMINDER_OPERATIONS_PORT } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
 import type { StudyReminderOperationsPort } from '@messenger/modules/study-reminder/domain/ports/study-reminder-operations.port';
-import { UserGoalsApiService } from '../../../student-report/infrastructure/wispace/user-goals-api.service';
+import { MemoizedWispaceGoalsService } from '@wispace/wispace-client';
 import { StudentReportService } from '../../../student-report/application/services/student-report.service';
 import {
   buildCalendarEntriesRichFollowUp,
@@ -88,7 +88,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
     @Inject(MESSENGER_REPOSITORY)
     private readonly repository: MessengerMappingRepositoryPort,
     private readonly studentReportService: StudentReportService,
-    private readonly userGoalsApiService: UserGoalsApiService,
+    private readonly memoizedGoals: MemoizedWispaceGoalsService,
     @Inject(STUDY_REMINDER_OPERATIONS_PORT)
     private readonly studyPort: StudyReminderOperationsPort,
     private readonly rescheduleConfirmationService: MessengerRescheduleConfirmationService,
@@ -221,9 +221,7 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
   }
 
   private async getUserGoals(ctx: PlatformAgentToolContext): Promise<unknown> {
-    const goals = await this.userGoalsApiService.getUserGoals(
-      ctx.externalUserId,
-    );
+    const goals = await this.memoizedGoals.getUserGoals(ctx.externalUserId);
     this.pushRichFollowUp(ctx, buildUserGoalsRichFollowUp(goals));
     return goals;
   }

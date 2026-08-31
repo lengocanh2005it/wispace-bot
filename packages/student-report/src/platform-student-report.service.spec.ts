@@ -135,7 +135,12 @@ describe('PlatformStudentReportService', () => {
     await expect(
       capacityData.getCapacityData('external-1'),
     ).rejects.toBeInstanceOf(StudentReportNoScoreDataError);
-    expect(goalsService.getUserGoals).not.toHaveBeenCalled();
+    // Parallelized fetches (#456): goals runs concurrently with scores, so it
+    // is requested even when the scores turn out to be empty.
+    expect(goalsService.getUserGoals).toHaveBeenCalledWith(
+      'external-1',
+      undefined,
+    );
   });
 
   it('returns the report text from the core', async () => {

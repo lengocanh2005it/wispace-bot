@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   TaskScoreAverageApiClient,
@@ -6,11 +10,12 @@ import {
 } from '@wispace/wispace-client';
 import { StudentReportNoScoreDataError } from '../../domain/errors/student-report-no-score-data.error';
 import type { StudentCapacityInput } from '@wispace/student-report';
-import { UserGoalsApiService } from './user-goals-api.service';
+import { MemoizedWispaceGoalsService } from '@wispace/wispace-client';
 import { resolveAppTimezone } from '@messenger/shared/config/app-timezone';
 // ponytail: shared date utils live in scheduler-core (same byte-identical copy was local)
 import {
   formatExamDateDisplay,
+  parseExamDateToIso,
   resolveExamCountdown,
   todayReportDate,
 } from '@wispace/scheduler-core';
@@ -25,24 +30,23 @@ export class TaskScoreAverageApiService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly userGoalsApiService: UserGoalsApiService,
+    private readonly memoizedGoals: MemoizedWispaceGoalsService,
   ) {}
 
   async getCapacityData(
     psid: string,
     options?: { signal?: AbortSignal },
   ): Promise<StudentCapacityInput> {
-    const records = await this.getClient().getTaskScoreAverages(
-      ID_HEADER,
-      psid,
-      options,
-    );
+    // Independent inputs — fetch concurrently; the goals leg is served by the
+    // shared memoizer, so repeated calls in one window collapse (#456).
+    const [records, goals] = await Promise.all([
+      this.getClient().getTaskScoreAverages(ID_HEADER, psid, options),
+      this.memoizedGoals.getUserGoals(psid, options),
+    ]);
 
     if (records.length === 0) {
       throw new StudentReportNoScoreDataError(psid);
     }
-
-    const goals = await this.userGoalsApiService.getUserGoals(psid, options);
 
     return this.mapToCapacityInput(records, goals);
   }
@@ -65,6 +69,17 @@ export class TaskScoreAverageApiService {
     return this.client;
   }
 
+  /** Same behavior as the removed UserGoalsApiService.parseExamDate. */
+  private parseExamDate(examDate: string): string {
+    try {
+      return parseExamDateToIso(examDate);
+    } catch {
+      throw new InternalServerErrorException(
+        `Invalid exam date format: ${examDate}`,
+      );
+    }
+  }
+
   private mapToCapacityInput(
     records: TaskScoreAverageRecord[],
     goals: { targetScore: number; examDate: string },
@@ -76,7 +91,7 @@ export class TaskScoreAverageApiService {
       record.task.toLowerCase().includes('task 2'),
     );
 
-    const examDate = this.userGoalsApiService.parseExamDate(goals.examDate);
+    const examDate = this.parseExamDate(goals.examDate);
     const currentDate = todayReportDate(resolveAppTimezone(this.configService));
     const { daysUntilExam, examHasPassed } = resolveExamCountdown(
       examDate,

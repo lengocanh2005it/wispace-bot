@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { join } from 'path';
 import { trace } from '@opentelemetry/api';
 import { Repository } from 'typeorm';
+import { WispaceModule } from '../wispace/wispace.module';
 import type { CalendarPort, ReschedulePort } from '@wispace/reschedule-confirm';
 import {
   PlatformAgentService,
@@ -100,6 +101,7 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
     LlmUsageModule,
     StudentReportModule,
     StudyReminderModule,
+    WispaceModule,
     DisplayNameModule,
     UserLinkingModule,
     TypeOrmModule.forFeature([

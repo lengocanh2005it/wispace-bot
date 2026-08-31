@@ -124,18 +124,16 @@ export class PlatformStudentReportService {
           externalUserId,
           options,
         ): Promise<StudentCapacityInput> => {
-          const taskScores = await this.goalsService.getTaskScoreAverages(
-            externalUserId,
-            options,
-          );
+          // Independent inputs — fetch concurrently (#456); the goals leg is
+          // served by the shared memoizer, so repeated calls in one window
+          // collapse into a single upstream fetch.
+          const [taskScores, goals] = await Promise.all([
+            this.goalsService.getTaskScoreAverages(externalUserId, options),
+            this.goalsService.getUserGoals(externalUserId, options),
+          ]);
           if (!taskScores || taskScores.length === 0) {
             throw new StudentReportNoScoreDataError(externalUserId);
           }
-
-          const goals = await this.goalsService.getUserGoals(
-            externalUserId,
-            options,
-          );
 
           const task1 = taskScores.find((r) =>
             r.task.toLowerCase().includes('task 1'),

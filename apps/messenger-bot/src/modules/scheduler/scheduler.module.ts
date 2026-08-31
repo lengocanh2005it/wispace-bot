@@ -12,6 +12,7 @@ import {
   REPORT_SEND_JOB_REPOSITORY,
   REPORT_CLAIM_REPOSITORY,
   GOALS_DATA_PORT,
+  parseExamDateToIso,
   type ReportClaimRepositoryPort,
 } from '@wispace/scheduler-core';
 import { ReportSendJobEntity, PrivacyDataService } from '@wispace/database';
@@ -37,7 +38,8 @@ import { MessengerOutboundModule } from '../messenger/messenger-outbound.module'
 import { UserLinkingModule } from '../messenger/user-linking.module';
 import { StudentReportModule } from '../student-report/student-report.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
-import { UserGoalsApiService } from '../student-report/infrastructure/wispace/user-goals-api.service';
+import { WispaceModule } from '../wispace/wispace.module';
+import { MemoizedWispaceGoalsService } from '@wispace/wispace-client';
 import { DopplerRuntimeSyncService } from './application/services/doppler-runtime-sync.service';
 import { OpsHealthCronService } from './application/services/ops-health-cron.service';
 import { DataQualityCronService } from './application/services/data-quality-cron.service';
@@ -65,16 +67,18 @@ import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
     MessengerReportModule,
     UserLinkingModule,
     StudentReportModule,
+    WispaceModule,
     StudyReminderModule,
   ],
   controllers: [SchedulerController],
   providers: [
     {
       provide: GOALS_DATA_PORT,
-      useFactory: (goalsApi: UserGoalsApiService) => ({
-        getUserGoals: (psid: string) => goalsApi.getUserGoals(psid),
+      useFactory: (memoizedGoals: MemoizedWispaceGoalsService) => ({
+        getUserGoals: (psid: string) => memoizedGoals.getUserGoals(psid),
+        parseExamDate: (examDate: string) => parseExamDateToIso(examDate),
       }),
-      inject: [UserGoalsApiService],
+      inject: [MemoizedWispaceGoalsService],
     },
     ReportScheduleService,
     CronLeaderLeaseService,
