@@ -198,12 +198,25 @@ export class PlatformCleanupCronService
         retentionDaysConfigKey: '',
         defaultRetentionDays: retentionDays,
       },
-      (cutoff) =>
-        this.deleteBatched(
+      async (cutoff) => {
+        const deleted = await this.deleteBatched(
           'chat_idempotency',
           `"platform" = $1 AND "status" IN ('completed','refunded') AND "reserved_at" < $2`,
           [this.config.platform, cutoff],
-        ),
+        );
+        const toolRetentionDays = this.parseRetentionDays(
+          'CHAT_TOOL_DAILY_USAGE_RETENTION_DAYS',
+          7,
+        )();
+        const toolCutoff = new Date();
+        toolCutoff.setUTCDate(toolCutoff.getUTCDate() - toolRetentionDays);
+        await this.deleteBatched(
+          'chat_tool_daily_usage',
+          `"platform" = $1 AND "usage_date" < $2::date`,
+          [this.config.platform, toolCutoff.toISOString().slice(0, 10)],
+        );
+        return deleted;
+      },
       () => true,
       () => retentionDays,
     );

@@ -248,4 +248,16 @@ describe('PlatformCleanupCronService', () => {
     // rows with createdAt >= cutoff (fresh) are excluded by TypeORM's WHERE clause
     expect(cutoffMs).toBeLessThan(now.getTime());
   });
+  it('idempotency cleanup also prunes aged chat_tool_daily_usage rows (#626)', async () => {
+    const { service, cleanupService, dataSource } = buildService(buildConfig());
+    await service.handleIdempotencyCleanup();
+    const deleteFn = cleanupService.execute.mock.calls[0]?.[1];
+    await deleteFn?.(new Date());
+    const prune = dataSource.query.mock.calls.find((call) =>
+      call[0].includes('chat_tool_daily_usage'),
+    );
+    expect(prune).toBeDefined();
+    expect(prune[0]).toMatch(/"usage_date" < /);
+    expect(prune[1]).toEqual(expect.arrayContaining(['discord']));
+  });
 });
