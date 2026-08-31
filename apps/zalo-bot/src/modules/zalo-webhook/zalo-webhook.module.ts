@@ -18,7 +18,7 @@ import { ZaloWebhookController } from './presentation/controllers/zalo-webhook.c
 import { ZaloWebhookSignatureGuard } from './presentation/guards/zalo-webhook-signature.guard';
 import { ZaloWebhookDispatchService } from './application/zalo-webhook-dispatch.service';
 import { ZaloWebhookIngestService } from './application/zalo-webhook-ingest.service';
-import type { ZaloWebhookEvent } from './domain/entities/zalo-webhook-event.types';
+import { validateAndMapZaloEvent } from './presentation/mappers/zalo-webhook.mapper';
 
 @Module({
   imports: [
@@ -51,8 +51,13 @@ import type { ZaloWebhookEvent } from './domain/entities/zalo-webhook-event.type
           pgLock,
           {
             lockId: ADVISORY_LOCKS.ZALO_WEBHOOK_INBOUND_RETRY,
-            processEvent: (rawPayload) =>
-              dispatcher.dispatch(rawPayload as ZaloWebhookEvent),
+            processEvent: async (rawPayload) => {
+              // Re-validate stored payloads before dispatch — replay must
+              // never trust the persisted raw shape (#436).
+              await dispatcher.dispatch(
+                await validateAndMapZaloEvent(rawPayload),
+              );
+            },
           },
         ),
       inject: [
