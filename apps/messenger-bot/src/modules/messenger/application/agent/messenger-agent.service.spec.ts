@@ -72,6 +72,7 @@ function buildService(
 
   const safetyEventService = {
     recordGroundingWarning: jest.fn(),
+    recordInjectionEvent: jest.fn(),
   };
 
   const adapter = {

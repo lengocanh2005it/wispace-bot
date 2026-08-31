@@ -10,6 +10,7 @@ import { checkLlmGrounding } from './utils/llm-grounding.utils';
 import {
   detectPromptInjection,
   detectDisclosureProbe,
+  isInjectionSanitizeReason,
   sanitizeUntrustedTextForLlm,
 } from './utils/prompt-injection.utils';
 import {
@@ -47,6 +48,7 @@ import {
   LlmUsageRecorderPort,
   type LlmDegradedAction,
   type LlmDegradedFailureClass,
+  type LlmInjectionSource,
   NOOP_METRICS_PORT,
   ToolExecutorPort,
 } from './ports';
@@ -68,6 +70,9 @@ const DEFAULT_GLOBAL_AGENT_TIMEOUT_MS = 60_000;
 const DEFAULT_COMPACTION_SUMMARY_MAX_TOKENS = 500;
 const DEFAULT_COMPACTION_RECENT_TURNS = 2;
 const COMPACTION_MIN_DROPPED_TOKENS = 100;
+// Generous per-entry cap for history re-sanitization (#629) — normal turns
+// pass through untouched; the token-budget loop below handles real trimming.
+const MAX_HISTORY_ENTRY_CHARS = 8_000;
 const FEATURE = 'FREE_FORM_CHAT';
 
 function classifyAgentFailure(error: unknown): LlmDegradedFailureClass {
@@ -724,11 +729,16 @@ export class LlmAgentService<TToolContext> {
   }
 
   /**
-   * Fix 2 — redact history entries containing injection patterns.
+   * Fix 2 — re-sanitize every replayed history entry with the SAME pipeline as
+   * fresh input (#629): control-char stripping, secret redaction and the
+   * injection pattern scan all run again on replay — a stored turn is never
+   * trusted because it "passed once". An injection hit is metered
+   * (`source: 'history'`); benign trims (`secret_redacted`, length) are not.
    * Fix 3 — truncate history to stay within context token budget.
    * #413 — semantic compaction: summarize old entries instead of dropping them.
    */
   private async buildSafeHistory(
+    input: LlmAgentInput,
     history: ChatHistoryMessage[],
     systemPrompt: string,
     userText: string,
@@ -739,16 +749,24 @@ export class LlmAgentService<TToolContext> {
     },
   ): Promise<ChatHistoryMessage[]> {
     const redacted = history.map((entry) => {
-      const check = detectPromptInjection(entry.content);
-      if (check.isInjection) {
+      const clean = sanitizeUntrustedTextForLlm(entry.content, {
+        maxChars: MAX_HISTORY_ENTRY_CHARS,
+      });
+      if (!clean.wasSanitized) return entry;
+      if (isInjectionSanitizeReason(clean.reason)) {
         logger.warn(
           `History entry redacted externalUserId=${maskExternalId(
             externalUserId,
-          )} reason=${check.reason}`,
+          )} reason=${clean.reason}`,
         );
-        return { ...entry, content: '[redacted]' };
+        this.recordInjection(
+          input,
+          'history',
+          clean.reason ?? 'unknown',
+          entry.content,
+        );
       }
-      return entry;
+      return { ...entry, content: clean.text };
     });
 
     const maxTokens = this.getMaxInputTokens();
@@ -1100,6 +1118,35 @@ Summary:`;
       : DEFAULT_MAX_OUTPUT_TOKENS;
   }
 
+  /**
+   * #629 — record a neutralized prompt-injection payload (fresh input, a tool
+   * result, or a replayed history entry). Best-effort telemetry: the redacted
+   * excerpt + hash are persisted by the safety-event port, never the raw text
+   * (#122), and this must never break the reply path.
+   */
+  private recordInjection(
+    input: LlmAgentInput,
+    source: LlmInjectionSource,
+    reason: string,
+    textPreview: string,
+    toolName?: string,
+  ): void {
+    try {
+      this.ports.safetyEvents.recordInjectionEvent({
+        externalUserId: input.externalUserId,
+        userId: input.userId,
+        correlationId: input.correlationId,
+        source,
+        reason,
+        textPreview: textPreview.slice(0, 200),
+        toolName,
+      });
+    } catch {
+      // best-effort — telemetry failure never blocks the reply
+    }
+    (this.ports.metrics ?? NOOP_METRICS_PORT).injectionBlockedInc?.(source);
+  }
+
   /** Detects the model repeating an identical tool call across rounds (stuck loop). */
   private buildToolCallSignature(
     toolCalls: Array<{ name: string; arguments: string }>,
@@ -1132,6 +1179,12 @@ Summary:`;
         `Prompt injection blocked externalUserId=${maskExternalId(
           input.externalUserId,
         )} reason=${injectionCheck.reason}`,
+      );
+      this.recordInjection(
+        input,
+        'user_input',
+        injectionCheck.reason ?? 'unknown',
+        input.userText,
       );
       // System-prompt/instruction extraction routes to the standard
       // non-disclosure reply, not a distinct "blocked" message — a
@@ -1184,6 +1237,7 @@ Summary:`;
   private async buildMessages(input: LlmAgentInput): Promise<LlmMessage[]> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
     const safeHistory = await this.buildSafeHistory(
+      input,
       input.history ?? [],
       input.systemPrompt,
       input.userText,
@@ -1385,6 +1439,24 @@ Summary:`;
         succeeded: false,
       };
       fullByKey.set(this.toolCallKey(call), result.observation);
+      // #629 — a learner-authored upstream field carried an injection payload
+      // that `sanitizeToolResultContent` neutralized; meter it before the
+      // observation is allocated into the message list.
+      const injection = result.observation.injection;
+      if (injection) {
+        logger.warn(
+          `Tool result injection neutralized externalUserId=${maskExternalId(
+            input.externalUserId,
+          )} tool=${call.name} reason=${injection.reason}`,
+        );
+        this.recordInjection(
+          input,
+          'tool_result',
+          injection.reason,
+          injection.rawPreview,
+          call.name,
+        );
+      }
     }
 
     const minimumMarkerBudget = toolCalls.reduce((sum, call) => {

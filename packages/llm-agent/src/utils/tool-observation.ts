@@ -1,4 +1,7 @@
-import { sanitizeToolResultContent } from './prompt-injection.utils';
+import {
+  isInjectionSanitizeReason,
+  sanitizeToolResultContent,
+} from './prompt-injection.utils';
 
 export type ToolObservationOutcome =
   | 'kept'
@@ -7,11 +10,25 @@ export type ToolObservationOutcome =
   | 'dropped'
   | 'fallback';
 
+/** First N chars of the pre-sanitization result, for injection-event triage (#629). */
+const INJECTION_PREVIEW_CHARS = 200;
+
+/**
+ * A neutralized injection in a tool result (#629). `rawPreview` is
+ * pre-sanitization and capped — the caller redacts it before persisting.
+ */
+export interface ToolObservationInjection {
+  reason: string;
+  rawPreview: string;
+}
+
 export interface ReducedToolObservation {
   content: string;
   canonical: string;
   outcome: Extract<ToolObservationOutcome, 'kept' | 'truncated' | 'fallback'>;
   wasTruncated: boolean;
+  /** Present when `sanitizeToolResultContent` neutralized an injection pattern. */
+  injection?: ToolObservationInjection;
 }
 
 const MAX_TOOL_OBSERVATION_CHARS = 8_000;
@@ -316,7 +333,12 @@ function serializeEnvelope(
   data: unknown,
   error: string | undefined,
   options: BoundOptions,
-): { content: string; truncated: boolean; omittedCount: number } | null {
+): {
+  content: string;
+  truncated: boolean;
+  omittedCount: number;
+  injection?: ToolObservationInjection;
+} | null {
   const bounded = ok
     ? boundValue(data, options, new WeakSet<object>())
     : boundValue(
@@ -338,6 +360,12 @@ function serializeEnvelope(
     const sanitized = sanitizeToolResultContent(raw);
     const sanitizedChanged =
       sanitized.wasSanitized || sanitized.content.length < raw.length;
+    const injection = isInjectionSanitizeReason(sanitized.reason)
+      ? {
+          reason: sanitized.reason as string,
+          rawPreview: raw.slice(0, INJECTION_PREVIEW_CHARS),
+        }
+      : undefined;
     let content = sanitized.content;
     if (sanitizedChanged) {
       try {
@@ -362,6 +390,7 @@ function serializeEnvelope(
       content,
       truncated: bounded.truncated || sanitizedChanged,
       omittedCount: Math.max(bounded.omittedCount, sanitizedChanged ? 1 : 0),
+      injection,
     };
   } catch {
     return null;
@@ -400,6 +429,7 @@ function buildReducedObservation(
   content: string,
   outcome: ReducedToolObservation['outcome'],
   wasTruncated: boolean,
+  injection?: ToolObservationInjection,
 ): ReducedToolObservation {
   let parsed: unknown = content;
   try {
@@ -412,6 +442,7 @@ function buildReducedObservation(
     canonical: canonicalizeToolObservation(parsed),
     outcome,
     wasTruncated,
+    ...(injection ? { injection } : {}),
   };
 }
 
@@ -500,6 +531,11 @@ function reduceBoundedObservation(
     { depth: 0, maxStringChars: 40, maxKeys: 4, maxItems: 1 },
   ];
 
+  // An injection hit is a property of the payload, not of which truncation
+  // attempt fit — capture it from any attempt so it survives even a fall
+  // through to the fallback marker (#629).
+  let injection: ToolObservationInjection | undefined;
+
   for (const options of attempts) {
     const candidate = serializeEnvelope(
       input.ok,
@@ -507,17 +543,24 @@ function reduceBoundedObservation(
       input.error,
       options,
     );
+    injection ??= candidate?.injection;
     if (!candidate || candidate.content.length > maxChars) continue;
     const wasTruncated =
       candidate.truncated || input.projectionWasTruncated === true;
     if (wasTruncated) outcome = 'truncated';
-    return buildReducedObservation(candidate.content, outcome, wasTruncated);
+    return buildReducedObservation(
+      candidate.content,
+      outcome,
+      wasTruncated,
+      injection,
+    );
   }
 
   return buildReducedObservation(
     fallbackObservation(input.ok, input.error),
     input.ok ? 'truncated' : 'fallback',
     true,
+    injection,
   );
 }
 

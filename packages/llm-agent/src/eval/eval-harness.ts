@@ -145,6 +145,8 @@ export interface EvalExpectation {
   toolSummary?: string | null;
   /** Expected grounding-warning count (default 0). */
   groundingWarnings?: number;
+  /** Expected neutralized-injection event count — tool result or replayed history (#629, default 0). */
+  injectionEvents?: number;
   /** Request-contract assertions run against the recorded provider requests. */
   requestContracts?: EvalRequestContract[];
 }
@@ -443,6 +445,14 @@ export function parseFixture(
         expected.groundingWarnings < 0)
     ) {
       errors.push('expected.groundingWarnings must be a non-negative integer');
+    }
+    if (
+      expected.injectionEvents !== undefined &&
+      (typeof expected.injectionEvents !== 'number' ||
+        !Number.isInteger(expected.injectionEvents) ||
+        expected.injectionEvents < 0)
+    ) {
+      errors.push('expected.injectionEvents must be a non-negative integer');
     }
     if (
       expected.planRemainder !== undefined &&
@@ -834,6 +844,7 @@ export async function runEvalFixture(
   const adapter = new ScriptedAdapter(fixture.script);
   const executor = new ScriptedToolExecutor(fixture.script);
   let groundingWarnings = 0;
+  let injectionEvents = 0;
 
   const llmExecution: LlmExecutionPort = {
     run: async (fn, meta) => fn(meta.signal),
@@ -844,6 +855,9 @@ export async function runEvalFixture(
   const safetyEvents: LlmSafetyEventPort = {
     recordGroundingWarning: () => {
       groundingWarnings += 1;
+    },
+    recordInjectionEvent: () => {
+      injectionEvents += 1;
     },
   };
 
@@ -972,6 +986,12 @@ export async function runEvalFixture(
       if (groundingWarnings !== expectedWarnings) {
         failures.push(
           `grounding warnings: expected ${expectedWarnings} got ${groundingWarnings}`,
+        );
+      }
+      const expectedInjectionEvents = fixture.expected.injectionEvents ?? 0;
+      if (injectionEvents !== expectedInjectionEvents) {
+        failures.push(
+          `injection events: expected ${expectedInjectionEvents} got ${injectionEvents}`,
         );
       }
       // Plan step (#207 item 2): a scripted plan line (`content` on a tool

@@ -26,6 +26,9 @@ export interface LlmUsageRecorderPort {
   }): void;
 }
 
+/** Where a neutralized prompt-injection payload came from (#629). */
+export type LlmInjectionSource = 'user_input' | 'tool_result' | 'history';
+
 export interface LlmSafetyEventPort {
   recordGroundingWarning(params: {
     externalUserId: string;
@@ -35,6 +38,21 @@ export interface LlmSafetyEventPort {
     userTextPreview: string;
     assistantTextPreview: string;
     toolNamesUsed: string[];
+  }): void;
+  /**
+   * A prompt-injection pattern was detected and neutralized before it reached
+   * model context (#629). `textPreview` is the offending pre-sanitization
+   * text — the implementer redacts it to an excerpt/hash before persisting,
+   * never stores it raw (#122).
+   */
+  recordInjectionEvent(params: {
+    externalUserId: string;
+    userId?: number;
+    correlationId?: string;
+    source: LlmInjectionSource;
+    reason: string;
+    textPreview: string;
+    toolName?: string;
   }): void;
 }
 
@@ -108,6 +126,8 @@ export interface AgentMetricsPort {
   toolPolicyDeniedInc?(toolName: string, reason: string): void;
   /** Degraded/fallback telemetry; correlationId must never become a metric label. */
   degradedModeInc?(event: LlmDegradedModeEvent): void;
+  /** #629: a prompt-injection payload was neutralized. `source` is a bounded label. */
+  injectionBlockedInc?(source: LlmInjectionSource): void;
 }
 
 /** Executes a single tool call against platform-specific business services. */
@@ -129,6 +149,7 @@ export const NOOP_METRICS_PORT: AgentMetricsPort = {
   observationOutcomeInc: () => undefined,
   toolPolicyDeniedInc: () => undefined,
   degradedModeInc: () => undefined,
+  injectionBlockedInc: () => undefined,
 };
 import type { LlmUsage } from './provider/types';
 import type { ToolObservationOutcome } from './utils/tool-observation';

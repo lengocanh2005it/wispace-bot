@@ -50,6 +50,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmRoundOutcome: Counter;
   private llmObservationOutcome: Counter;
   private llmToolPolicyDenied: Counter;
+  private llmInjectionBlocked: Counter;
   private clarificationOutcomes: Counter;
   private llmAdmissionRejected: Counter;
   private llmAdmissionWait: Histogram;
@@ -155,6 +156,13 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_llm_tool_policy_denied_total`,
       help: 'LLM tool calls blocked by capability, argument, or identity policy',
       labelNames: ['tool', 'platform', 'reason'],
+      registers: [this.registry],
+    });
+
+    this.llmInjectionBlocked = new Counter({
+      name: `${this.prefix}_llm_injection_blocked_total`,
+      help: 'Prompt-injection payloads neutralized before reaching model context (#629)',
+      labelNames: ['source', 'platform'],
       registers: [this.registry],
     });
 
@@ -505,6 +513,11 @@ export class BotMetricsService implements OnModuleDestroy {
 
   incLlmToolPolicyDenied(tool: string, platform: string, reason: string): void {
     this.llmToolPolicyDenied.inc({ tool, platform, reason });
+  }
+
+  /** #629 — a neutralized prompt-injection payload; `source` ∈ user_input | tool_result | history. */
+  incLlmInjectionBlocked(source: string, platform: string): void {
+    this.llmInjectionBlocked.inc({ source, platform });
   }
 
   incClarificationOutcome(outcome: string): void {

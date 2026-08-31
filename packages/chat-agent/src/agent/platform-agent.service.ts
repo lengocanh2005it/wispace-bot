@@ -680,6 +680,16 @@ export class PlatformAgentService {
             assistantTextPreview: params.assistantTextPreview,
             toolNamesUsed: params.toolNamesUsed,
           }),
+        recordInjectionEvent: (params) =>
+          this.safetyEventService.recordInjectionEvent({
+            externalUserId: params.externalUserId,
+            userId: params.userId,
+            correlationId: params.correlationId,
+            source: params.source,
+            reason: params.reason,
+            textPreview: params.textPreview,
+            toolName: params.toolName,
+          }),
       },
       metrics: NOOP_METRICS_PORT,
       toolExecutor,

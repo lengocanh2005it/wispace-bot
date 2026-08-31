@@ -626,3 +626,23 @@ export function sanitizeToolResultContent(content: string): {
     reason,
   };
 }
+
+/**
+ * Benign sanitizer reasons that are NOT prompt injection — length trims and
+ * the #632 secret-redaction path have their own handling. Anything else a
+ * sanitizer reports (`instruction_override`, `injected_role_marker`,
+ * `persona_override`, `extraction`, `delimiter_injection`, `repetition_flood`,
+ * `message_too_long`, or any pattern added later) is treated as an injection
+ * hit worth metering (#629). Denylist, not allowlist, so new patterns are
+ * covered automatically.
+ */
+const BENIGN_SANITIZE_REASONS = new Set([
+  'secret_redacted',
+  'text_too_long',
+  'tool_result_too_long',
+]);
+
+/** True when a `sanitize*` reason indicates a neutralized injection (#629). */
+export function isInjectionSanitizeReason(reason?: string): boolean {
+  return reason !== undefined && !BENIGN_SANITIZE_REASONS.has(reason);
+}

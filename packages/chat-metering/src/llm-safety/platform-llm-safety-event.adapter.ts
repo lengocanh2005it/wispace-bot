@@ -6,7 +6,10 @@ import { subHours } from 'date-fns';
 import { LlmSafetyEventEntity } from '../entities';
 import { LlmSafetyCore } from './llm-safety-core.service';
 import { LlmSafetyEventRepository } from './llm-safety.repository';
-import type { RecordGroundingWarningInput } from './types';
+import type {
+  RecordGroundingWarningInput,
+  RecordInjectionEventInput,
+} from './types';
 
 /**
  * Thin NestJS adapter around `LlmSafetyCore` — shared by Discord and Zalo.
@@ -26,6 +29,10 @@ export class PlatformLlmSafetyEventAdapter {
 
   recordGroundingWarning(input: RecordGroundingWarningInput): void {
     this.getCore().recordGroundingWarning(input);
+  }
+
+  recordInjectionEvent(input: RecordInjectionEventInput): void {
+    this.getCore().recordInjectionEvent(input);
   }
 
   async countWarnings24h(): Promise<number> {

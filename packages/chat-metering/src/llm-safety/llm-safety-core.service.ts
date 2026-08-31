@@ -1,6 +1,9 @@
 import { errorMessage } from '@wispace/bot-common/masking';
 import type { LlmSafetyEventRepository } from './llm-safety.repository';
-import type { RecordGroundingWarningInput } from './types';
+import type {
+  RecordGroundingWarningInput,
+  RecordInjectionEventInput,
+} from './types';
 import { redactSafetyText } from './redact-safety-text';
 
 export interface LlmSafetyLogger {
@@ -52,6 +55,40 @@ export class LlmSafetyCore {
       .catch((err: unknown) => {
         this.logger.warn(
           `LlmSafetyCore.recordGroundingWarning failed: ${errorMessage(err)}`,
+        );
+      });
+  }
+
+  /**
+   * #629 — a prompt-injection pattern was neutralized before it reached model
+   * context. Only a redacted excerpt + hash of the offending text is persisted
+   * (#122). Best-effort; never throws.
+   */
+  recordInjectionEvent(input: RecordInjectionEventInput): void {
+    const payload: Record<string, unknown> = { source: input.source };
+    if (input.toolName) {
+      payload['toolName'] = input.toolName;
+    }
+    if (input.textPreview) {
+      const redacted = redactSafetyText(input.textPreview);
+      payload['textExcerpt'] = redacted.excerpt;
+      payload['textHash'] = redacted.hash;
+      payload['textLength'] = redacted.originalLength;
+    }
+
+    this.repository
+      .insert({
+        feature: 'FREE_FORM_CHAT',
+        eventType: 'INJECTION_BLOCKED',
+        reason: input.reason,
+        externalUserId: input.externalUserId,
+        userId: input.userId,
+        correlationId: input.correlationId,
+        payload,
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `LlmSafetyCore.recordInjectionEvent failed: ${errorMessage(err)}`,
         );
       });
   }

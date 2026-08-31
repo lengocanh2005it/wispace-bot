@@ -17,6 +17,7 @@
     "replyTextContains": ["Mình không thể xử lý tin nhắn này"],
     "exhausted": false,
     "toolSummary": null,
-    "groundingWarnings": 0
+    "groundingWarnings": 0,
+    "injectionEvents": 1
   }
 }
