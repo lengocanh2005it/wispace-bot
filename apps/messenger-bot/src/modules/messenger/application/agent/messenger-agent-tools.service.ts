@@ -10,6 +10,7 @@ import type {
   PlatformToolExecutorPort,
   CurrentPlatformIdentity,
 } from '@wispace/chat-agent';
+import { RESCHEDULE_SCOPE_ERROR_MESSAGE } from '@wispace/reschedule-confirm';
 import {
   executePrecreateExerciseTool,
   isWriteToolName,
@@ -380,13 +381,17 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
         pastDays: readPastDays(args.pastDays),
       },
     );
-    this.pushRichFollowUp(ctx, buildCalendarEntriesRichFollowUp(list.entries));
+    const entries = list.entries.map(
+      ({ ownerUserId: _ownerUserId, ...entry }) => entry,
+    );
+    this.pushRichFollowUp(ctx, buildCalendarEntriesRichFollowUp(entries));
     const minutesBefore = this.studyPort.getOutboxSettings().minutesBefore;
 
     return {
       ...list,
+      entries,
       reminderNotice:
-        list.timeRange === 'upcoming' && list.entries.length > 0
+        list.timeRange === 'upcoming' && entries.length > 0
           ? getStudyReminderLeadTimeNotice(minutesBefore)
           : undefined,
     };
@@ -506,12 +511,13 @@ export class MessengerAgentToolsService implements PlatformToolExecutorPort {
       (entry) => entry.calendarId === calendarId,
     );
     if (!matchedEntry) {
-      const options = upcoming.entries
-        .map((entry) => `${entry.calendarId} (${entry.scheduledTimeLabel})`)
-        .join(', ');
-      return {
-        error: `calendarId ${calendarId} không có trong lịch sắp tới. Dùng đúng id từ list_study_calendar_entries${options ? `: ${options}` : ''}.`,
-      };
+      this.policyDeniedInc?.('reschedule_study_session', 'scope_unverified');
+      this.logger.warn(
+        `Reschedule scope could not be verified for ${maskExternalId(
+          ctx.externalUserId,
+        )} calendarId=${maskExternalId(String(calendarId))}`,
+      );
+      return { error: RESCHEDULE_SCOPE_ERROR_MESSAGE };
     }
 
     const newLocalDate = readValidatedDate(args.newLocalDate);

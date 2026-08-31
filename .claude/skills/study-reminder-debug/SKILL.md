@@ -45,6 +45,12 @@ POST /messenger/send-study-reminders
 - [ ] `remind_at` has passed but `scheduled_at` is still in the future?
 - [ ] Wispace called sync after changing schedule? (common integration gap)
 - [ ] UserCalendar API returns correct schedule for `x-psid`?
+- [ ] Chat reschedule used `list_study_calendar_entries` first and a caller-scoped entry?
+- [ ] Check `RESCHEDULE_SCOPE_BLOCKED` and `*_llm_tool_policy_denied_total` for
+      `scope_mismatch`/`scope_unverified`; these denials are deterministic and
+      must not be retried.
+- [ ] WISPACE per-endpoint resource authorization against the identity header
+      is confirmed in the issue conversation (external integration evidence).
 
 ## 5. Code changes
 

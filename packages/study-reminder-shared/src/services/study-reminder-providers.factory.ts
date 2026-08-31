@@ -124,9 +124,12 @@ export function createStudyReminderWorker(
 export function createCalendarGetSessions(
   service: Pick<StudyCalendarPort, 'getCalendarSessions'>,
 ): GetSessionsFn {
-  return (externalUserId: string) =>
+  return (externalUserId: string, userId?: number) =>
     service
-      .getCalendarSessions(externalUserId, { timeRange: 'upcoming' })
+      .getCalendarSessions(externalUserId, {
+        timeRange: 'upcoming',
+        userId,
+      })
       .then((sessions) =>
         sessions.map((s) => ({
           calendarId: s.sessionKey,

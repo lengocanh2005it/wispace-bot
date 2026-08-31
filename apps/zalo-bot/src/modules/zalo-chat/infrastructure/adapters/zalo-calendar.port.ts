@@ -18,6 +18,7 @@ export class ZaloCalendarPort implements CalendarPort<string> {
     return records.map((record) => ({
       calendarId: record.id,
       scheduledTimeLabel: `${record.eventDate} ${record.time ?? ''}`.trim(),
+      ownerUserId: record.userId,
     }));
   }
 }

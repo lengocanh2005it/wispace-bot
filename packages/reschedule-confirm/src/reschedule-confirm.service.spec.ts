@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-assignment -- Jest mock internal access */
 
 import {
+  RescheduleScopeError,
   RescheduleConfirmationService,
   type CalendarPort,
   type ReschedulePort,
@@ -13,8 +14,16 @@ import { WispaceDataCache } from '@wispace/wispace-client';
 function mockCalendarPort(): CalendarPort<string> {
   return {
     listUpcomingEntries: jest.fn().mockResolvedValue([
-      { calendarId: 1, scheduledTimeLabel: 'Hôm nay 14:00' },
-      { calendarId: 2, scheduledTimeLabel: 'Ngày mai 10:00' },
+      {
+        calendarId: 1,
+        scheduledTimeLabel: 'Hôm nay 14:00',
+        ownerUserId: 42,
+      },
+      {
+        calendarId: 2,
+        scheduledTimeLabel: 'Ngày mai 10:00',
+        ownerUserId: 42,
+      },
     ]),
   };
 }
@@ -53,7 +62,13 @@ describe('RescheduleConfirmationService', () => {
     it('returns error for invalid calendarId', async () => {
       const calendar = mockCalendarPort();
       const reschedule = mockReschedulePort();
-      const service = new RescheduleConfirmationService(calendar, reschedule);
+      const scopeFailureInc = jest.fn();
+      const service = new RescheduleConfirmationService(
+        calendar,
+        reschedule,
+        undefined,
+        { scopeFailureInc },
+      );
 
       const result = await service.stage({
         externalId: 'user-1',
@@ -63,7 +78,89 @@ describe('RescheduleConfirmationService', () => {
       });
 
       expect(result).toHaveProperty('error');
-      expect((result as { error: string }).error).toContain('999');
+      expect((result as { error: string }).error).not.toContain('999');
+      expect(scopeFailureInc).toHaveBeenCalledWith('scope_unverified');
+    });
+
+    it('rejects a calendar entry owned by another WISPACE user before staging', async () => {
+      const calendar: CalendarPort<string> = {
+        listUpcomingEntries: jest.fn().mockResolvedValue([
+          {
+            calendarId: 99,
+            scheduledTimeLabel: 'Ngày mai 10:00',
+            ownerUserId: 7,
+          },
+        ]),
+      };
+      const reschedule = mockReschedulePort();
+      const service = new RescheduleConfirmationService(calendar, reschedule);
+
+      const result = await service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 99,
+        schedulingMode: 'explicit',
+      });
+
+      expect(result).toEqual({
+        error:
+          'Không thể xác thực buổi học này trong lịch của bạn. Bạn chọn lại từ danh sách lịch học nhé.',
+      });
+      expect(reschedule.rescheduleSession).not.toHaveBeenCalled();
+    });
+
+    it('rejects an entry without valid ownership proof before staging', async () => {
+      const calendar: CalendarPort<string> = {
+        listUpcomingEntries: jest.fn().mockResolvedValue([
+          {
+            calendarId: 99,
+            scheduledTimeLabel: 'Ngày mai 10:00',
+          },
+        ]),
+      };
+      const reschedule = mockReschedulePort();
+      const service = new RescheduleConfirmationService(calendar, reschedule);
+
+      const result = await service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 99,
+        schedulingMode: 'explicit',
+      });
+
+      expect(result).toEqual({
+        error:
+          'Không thể xác thực buổi học này trong lịch của bạn. Bạn chọn lại từ danh sách lịch học nhé.',
+      });
+      expect(reschedule.rescheduleSession).not.toHaveBeenCalled();
+    });
+
+    it('records a masked scope denial when ownership does not match', async () => {
+      const calendar: CalendarPort<string> = {
+        listUpcomingEntries: jest.fn().mockResolvedValue([
+          {
+            calendarId: 99,
+            scheduledTimeLabel: 'Ngày mai 10:00',
+            ownerUserId: 7,
+          },
+        ]),
+      };
+      const scopeFailureInc = jest.fn();
+      const service = new RescheduleConfirmationService(
+        calendar,
+        mockReschedulePort(),
+        undefined,
+        { scopeFailureInc },
+      );
+
+      await service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 99,
+        schedulingMode: 'explicit',
+      });
+
+      expect(scopeFailureInc).toHaveBeenCalledWith('scope_mismatch');
     });
 
     it('builds next-slot summary for default_next_day_same_time mode', async () => {
@@ -304,6 +401,39 @@ describe('RescheduleConfirmationService', () => {
         confirmed: false,
         message: expect.any(String),
       });
+    });
+
+    it('cancels a pending request when the write scope cannot be verified', async () => {
+      const calendar = mockCalendarPort();
+      const reschedule = mockReschedulePort();
+      (reschedule.rescheduleSession as jest.Mock).mockRejectedValue(
+        new RescheduleScopeError('scope_mismatch'),
+      );
+      const store = new MemoryRescheduleStore<string>();
+      const scopeFailureInc = jest.fn();
+      const service = new RescheduleConfirmationService(
+        calendar,
+        reschedule,
+        store,
+        { scopeFailureInc },
+      );
+
+      await service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 1,
+        schedulingMode: 'explicit',
+      });
+
+      const result = await service.confirm('user-1');
+
+      expect(result).toEqual({
+        confirmed: false,
+        message:
+          'Không thể xác thực buổi học này trong lịch của bạn. Bạn chọn lại từ danh sách lịch học nhé.',
+      });
+      expect(scopeFailureInc).toHaveBeenCalledWith('scope_mismatch');
+      expect(await service.hasPending('user-1')).toBe(false);
     });
 
     it('clears pending after confirm', async () => {

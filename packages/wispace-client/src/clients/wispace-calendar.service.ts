@@ -36,6 +36,7 @@ export class WispaceCalendarService {
       timeRange?: CalendarSessionTimeRange;
       pastDays?: number;
       limit?: number;
+      userId?: number;
       signal?: AbortSignal;
     } = {},
   ): Promise<NormalizedStudySession[]> {

@@ -448,6 +448,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             calendarId: record.id,
             scheduledTimeLabel:
               `${record.eventDate} ${record.time ?? ''}`.trim(),
+            ownerUserId: record.userId,
           }));
         },
       }),
@@ -485,6 +486,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         store: TypeormRescheduleStore<string>,
         cache: WispaceDataCache,
         budgetService: PlatformWriteToolBudgetService,
+        metrics: BotMetricsService,
       ) =>
         new RescheduleConfirmationService<string>(calendar, reschedule, store, {
           consumeRescheduleBudget: (userId, externalId) =>
@@ -504,6 +506,12 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             new ZaloWispaceCacheInvalidationAdapter(cache).invalidateCalendar(
               externalId,
             ),
+          scopeFailureInc: (reason) =>
+            metrics.incLlmToolPolicyDenied(
+              'reschedule_study_session',
+              'zalo',
+              reason,
+            ),
         }),
       inject: [
         'ZaloCalendarPort',
@@ -511,6 +519,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         TypeormRescheduleStore,
         WispaceDataCache,
         PlatformWriteToolBudgetService,
+        BotMetricsService,
       ],
     },
     ZaloOutboundService,

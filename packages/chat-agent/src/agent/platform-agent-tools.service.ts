@@ -234,7 +234,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
           const limit = readPositiveLimit(args.limit, 5);
           const sessions = await this.calendarPort.getCalendarSessions(
             this.options.wispaceExternalId(ctx),
-            { timeRange: 'upcoming', limit, signal },
+            { timeRange: 'upcoming', limit, userId: ctx.userId, signal },
           );
           return {
             count: sessions.length,
@@ -251,6 +251,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
               timeRange,
               limit: readPositiveLimit(args.limit, 10),
               pastDays: readPastDays(args.pastDays),
+              userId: ctx.userId,
               signal,
             },
           );
@@ -261,7 +262,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
           ctx.privateDataFetched = true;
           const sessions = await this.calendarPort.getCalendarSessions(
             this.options.wispaceExternalId(ctx),
-            { timeRange: 'upcoming', limit: 1, signal },
+            { timeRange: 'upcoming', limit: 1, userId: ctx.userId, signal },
           );
           const session = sessions[0];
           return session

@@ -52,6 +52,35 @@ describe('UserCalendarScheduleService', () => {
     expect(sessions[0]?.sessionKey).toBe('calendar:42');
   });
 
+  it('filters normalized sessions to the caller userId', async () => {
+    const service = createService(() =>
+      Promise.resolve([
+        {
+          id: 42,
+          userId: 143,
+          eventDate: '2026-06-20T10:00:00.000Z',
+          time: '17:00',
+        },
+        {
+          id: 99,
+          userId: 7,
+          eventDate: '2026-06-20T11:00:00.000Z',
+          time: '18:00',
+        },
+      ]),
+    );
+
+    const sessions = await service.getUpcomingSessions(
+      'psid-1',
+      horizonEnd,
+      143,
+    );
+
+    expect(sessions.map((session) => session.sessionKey)).toEqual([
+      'calendar:42',
+    ]);
+  });
+
   it('rethrows API errors for linked sync users so sync skips cancellation', async () => {
     const service = createService(() => {
       throw new WispaceApiError('down', 503, 'psid-1', 'UserCalendar');

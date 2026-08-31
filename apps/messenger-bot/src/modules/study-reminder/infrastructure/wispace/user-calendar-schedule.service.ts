@@ -60,6 +60,7 @@ export class UserCalendarScheduleService {
       timeRange: options.timeRange,
       pastDays: options.pastDays,
       limit: options.limit,
+      userId: options.userId,
       // Swallow only for unlinked accounts (no data is expected there). For
       // linked users an API failure must propagate: sync skips cancellation
       // and agent tools surface an error to the LLM instead of a fake empty list.

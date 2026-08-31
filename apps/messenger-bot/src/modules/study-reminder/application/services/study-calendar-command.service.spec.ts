@@ -123,6 +123,17 @@ describe('StudyCalendarCommandService', () => {
 
       expect(result.entries[0]?.topic).toBeDefined();
     });
+
+    it('filters entries outside the caller scope when userId is supplied', async () => {
+      calendarData.listCalendars.mockResolvedValue([
+        makeRecord({ id: 42, userId: 99 }),
+      ]);
+      calendarData.getCalendarSessions.mockResolvedValue([makeSession()]);
+
+      const result = await service.listEntries('psid-1', 1);
+
+      expect(result.entries).toEqual([]);
+    });
   });
 
   describe('rescheduleSession', () => {
@@ -141,6 +152,65 @@ describe('StudyCalendarCommandService', () => {
           schedulingMode: 'default_next_day_same_time',
         }),
       ).rejects.toThrow(NotFoundException);
+    });
+
+    it('rejects a source owned by another WISPACE user before creating or deleting', async () => {
+      calendarData.listCalendars.mockResolvedValue([
+        makeRecord({ id: 42, userId: 99 }),
+      ]);
+
+      await expect(
+        service.rescheduleSession({
+          psid: 'psid-1',
+          userId: 1,
+          calendarId: 42,
+          schedulingMode: 'default_next_day_same_time',
+        }),
+      ).rejects.toThrow('scope');
+      expect(calendarData.createCalendar).not.toHaveBeenCalled();
+      expect(calendarData.deleteCalendar).not.toHaveBeenCalled();
+    });
+
+    it('does not reuse a replacement owned by another WISPACE user', async () => {
+      calendarData.listCalendars.mockResolvedValue([
+        makeRecord({ id: 42, userId: 1 }),
+        makeRecord({
+          id: 99,
+          userId: 99,
+          eventDate: '2026-07-16T00:00:00Z',
+          time: '10:00',
+        }),
+      ]);
+      calendarData.createCalendar.mockResolvedValue(makeRecord({ id: 100 }));
+      scheduleService.getMinutesUntilSession.mockReturnValue(120);
+
+      await service.rescheduleSession({
+        psid: 'psid-1',
+        userId: 1,
+        calendarId: 42,
+        schedulingMode: 'default_next_day_same_time',
+      });
+
+      expect(calendarData.createCalendar).toHaveBeenCalledTimes(1);
+      expect(calendarData.deleteCalendar).toHaveBeenCalledWith('psid-1', 42);
+    });
+
+    it('does not delete the source when the created record is not owned by the caller', async () => {
+      calendarData.listCalendars.mockResolvedValue([makeRecord({ id: 42 })]);
+      calendarData.createCalendar.mockResolvedValue(
+        makeRecord({ id: 100, userId: 99 }),
+      );
+      scheduleService.getMinutesUntilSession.mockReturnValue(120);
+
+      await expect(
+        service.rescheduleSession({
+          psid: 'psid-1',
+          userId: 1,
+          calendarId: 42,
+          schedulingMode: 'default_next_day_same_time',
+        }),
+      ).rejects.toThrow('scope');
+      expect(calendarData.deleteCalendar).not.toHaveBeenCalled();
     });
 
     it('fetches the calendar list exactly once and never via the find port (#455)', async () => {

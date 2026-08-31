@@ -54,6 +54,8 @@ export interface CalendarCapabilityPort {
       timeRange?: WispaceCalendarTimeRange;
       pastDays?: number;
       limit?: number;
+      /** Local defense-in-depth scope for normalized calendar reads. */
+      userId?: number;
       signal?: AbortSignal;
     },
   ): Promise<WispaceCalendarSessionView[]>;

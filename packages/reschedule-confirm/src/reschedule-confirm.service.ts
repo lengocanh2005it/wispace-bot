@@ -27,6 +27,48 @@ export const PENDING_RESCHEDULE_TTL_MS = 10 * 60 * 1000;
 const RESCHEDULE_UNAVAILABLE_MESSAGE =
   'Mình chưa đổi được lịch lúc này. Bạn thử lại sau hoặc đổi trực tiếp trên app WISPACE nhé.';
 
+export const RESCHEDULE_SCOPE_ERROR_MESSAGE =
+  'Không thể xác thực buổi học này trong lịch của bạn. Bạn chọn lại từ danh sách lịch học nhé.';
+
+export type RescheduleScopeFailureReason =
+  | 'scope_mismatch'
+  | 'scope_unverified';
+
+/** Deterministic ownership failure; callers must not retry or mutate. */
+export class RescheduleScopeError extends Error {
+  constructor(readonly reason: RescheduleScopeFailureReason) {
+    super(`Calendar scope ${reason}`);
+    this.name = RescheduleScopeError.name;
+  }
+}
+
+export function getRescheduleScopeFailureReason(
+  ownerUserId: unknown,
+  expectedUserId: unknown,
+): RescheduleScopeFailureReason | undefined {
+  if (
+    typeof ownerUserId !== 'number' ||
+    !Number.isSafeInteger(ownerUserId) ||
+    ownerUserId <= 0 ||
+    typeof expectedUserId !== 'number' ||
+    !Number.isSafeInteger(expectedUserId) ||
+    expectedUserId <= 0
+  ) {
+    return 'scope_unverified';
+  }
+  return ownerUserId === expectedUserId ? undefined : 'scope_mismatch';
+}
+
+export function assertRescheduleRecordOwnership(
+  record: Pick<UserCalendarRecord, 'userId'>,
+  expectedUserId: number,
+): void {
+  const reason = getRescheduleScopeFailureReason(record.userId, expectedUserId);
+  if (reason) {
+    throw new RescheduleScopeError(reason);
+  }
+}
+
 const APPROVAL_TOKEN_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -37,6 +79,8 @@ export function isValidApprovalToken(value: string): boolean {
 export interface CalendarEntryView {
   calendarId: number;
   scheduledTimeLabel: string;
+  /** Internal ownership proof; strip before returning model-facing data. */
+  ownerUserId?: number;
 }
 
 /** Rich calendar entry view produced by platform calendar services. */
@@ -46,6 +90,8 @@ export interface StudyCalendarEntryView {
   time: string | null;
   scheduledTimeLabel: string;
   topic: string;
+  /** Internal ownership proof; strip before returning model-facing data. */
+  ownerUserId?: number;
 }
 
 export interface RescheduleResult {
@@ -145,6 +191,8 @@ export interface RescheduleConfirmationOptions<TExternalId> {
   /** #626: Vietnamese reply shown when `consumeRescheduleBudget` returns false.
    *  Passed in (not imported) so this package keeps no llm-agent dependency. */
   rescheduleBudgetExceededMessage?: string;
+  /** Bounded scope-mismatch telemetry; no identifiers are passed. */
+  scopeFailureInc?: (reason: RescheduleScopeFailureReason) => void;
 }
 
 /**
@@ -198,12 +246,26 @@ export class RescheduleConfirmationService<TExternalId> {
       (entry) => entry.calendarId === input.calendarId,
     );
     if (!matchedEntry) {
-      const options = upcoming
-        .map((entry) => `${entry.calendarId} (${entry.scheduledTimeLabel})`)
-        .join(', ');
-      return {
-        error: `calendarId ${input.calendarId} không có trong lịch sắp tới. Dùng đúng id từ list_study_calendar_entries${options ? `: ${options}` : ''}.`,
-      };
+      this.recordScopeFailure(
+        input.externalId,
+        'scope_unverified',
+        input.calendarId,
+      );
+      return { error: RESCHEDULE_SCOPE_ERROR_MESSAGE };
+    }
+
+    const scopeFailure = getRescheduleScopeFailureReason(
+      matchedEntry.ownerUserId,
+      input.userId,
+    );
+    if (scopeFailure) {
+      this.recordScopeFailure(
+        input.externalId,
+        scopeFailure,
+        matchedEntry.calendarId,
+        matchedEntry.ownerUserId,
+      );
+      return { error: RESCHEDULE_SCOPE_ERROR_MESSAGE };
     }
 
     const sessionLabel = matchedEntry.scheduledTimeLabel;
@@ -240,7 +302,7 @@ export class RescheduleConfirmationService<TExternalId> {
     this.logger.log(
       `RESCHEDULE_PENDING externalId=${maskExternalId(
         String(input.externalId),
-      )} calendarId=${matchedEntry.calendarId} mode=${input.schedulingMode}`,
+      )} calendarId=${maskExternalId(String(matchedEntry.calendarId))} mode=${input.schedulingMode}`,
     );
 
     const result: StageResult = {
@@ -338,7 +400,7 @@ export class RescheduleConfirmationService<TExternalId> {
       this.logger.log(
         `RESCHEDULE_CONFIRMED externalId=${maskExternalId(
           String(externalId),
-        )} calendarId=${pending.calendarId}`,
+        )} calendarId=${maskExternalId(String(pending.calendarId))}`,
       );
 
       return {
@@ -350,6 +412,14 @@ export class RescheduleConfirmationService<TExternalId> {
         pending.userId,
         String(pending.externalId),
       );
+      if (error instanceof RescheduleScopeError) {
+        await this.store.cancel(externalId, pending.leaseToken);
+        this.recordScopeFailure(externalId, error.reason, pending.calendarId);
+        return {
+          confirmed: false,
+          message: RESCHEDULE_SCOPE_ERROR_MESSAGE,
+        };
+      }
       const message = errorMessage(error);
       this.logger.warn(
         `RESCHEDULE_CONFIRM_FAILED externalId=${maskExternalId(
@@ -402,6 +472,26 @@ export class RescheduleConfirmationService<TExternalId> {
         )}: ${sanitizeLogValue(errorMessage(error), 200)}`,
       );
     }
+  }
+
+  private recordScopeFailure(
+    externalId: TExternalId,
+    reason: RescheduleScopeFailureReason,
+    calendarId?: number,
+    ownerUserId?: number,
+  ): void {
+    this.options.scopeFailureInc?.(reason);
+    this.logger.warn(
+      `RESCHEDULE_SCOPE_BLOCKED externalId=${maskExternalId(String(externalId))}${
+        calendarId === undefined
+          ? ''
+          : ` calendarId=${maskExternalId(String(calendarId))}`
+      }${
+        ownerUserId === undefined
+          ? ''
+          : ` ownerUserId=${maskExternalId(String(ownerUserId))}`
+      } reason=${reason}`,
+    );
   }
 
   private buildSummary(

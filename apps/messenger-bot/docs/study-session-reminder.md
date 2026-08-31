@@ -163,6 +163,27 @@ Both automatic dispatch and menu preview use this same service. Without `OPENAI_
 | `POST /messenger/send-study-reminders` | Sync + dispatch due jobs                              |
 | `npm run study-reminder:jobs`          | View job list in DB                                   |
 
+### 3.5.1. Chat reschedule scope (#627)
+
+Calendar IDs supplied by the chat model or learner are **untrusted**. The bot
+must list upcoming entries first and only stage a reschedule for an ID returned
+by that caller-scoped list. Calendar reads include the linked WISPACE
+`userId`; the internal `ownerUserId` proof is stripped before tool results are
+returned to the model.
+
+The shared confirmation stage and the write command both validate ownership.
+If ownership is mismatched or cannot be proven, the bot returns a generic
+Vietnamese error, performs no WISPACE write, does not retry, and emits
+`RESCHEDULE_SCOPE_BLOCKED` plus `*_llm_tool_policy_denied_total` with reason
+`scope_mismatch` or `scope_unverified`. External IDs and calendar IDs are
+masked in logs.
+
+The WISPACE backend must also confirm, per endpoint, that a calendar resource
+in the request body is authorized for the identity header (`x-psid`,
+`x-discordid`, or `x-zaloid`). Record that confirmation in the issue
+conversation; it is an external integration prerequisite, not a runtime code
+dependency.
+
 ### 3.6. Sync API on Schedule Change
 
 `study_reminder_jobs` reflects the schedule **snapshot** at sync time. When schedule changes without timely sync, old jobs remain `pending` → wrong-time reminders or reminders for cancelled classes.

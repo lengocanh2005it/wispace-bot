@@ -29,11 +29,16 @@ export class UserCalendarScheduleClient {
     idHeader: WispaceIdHeader,
     externalId: string,
     horizonEnd: Date,
-    options?: { swallowErrors?: boolean; signal?: AbortSignal },
+    options?: {
+      swallowErrors?: boolean;
+      userId?: number;
+      signal?: AbortSignal;
+    },
   ): Promise<NormalizedStudySession[]> {
     return this.getCalendarSessions(idHeader, externalId, horizonEnd, {
       timeRange: 'upcoming',
       swallowErrors: options?.swallowErrors,
+      userId: options?.userId,
       signal: options?.signal,
     });
   }
@@ -57,6 +62,7 @@ export class UserCalendarScheduleClient {
       pastDays?: number;
       limit?: number;
       swallowErrors?: boolean;
+      userId?: number;
       signal?: AbortSignal;
     } = {},
   ): Promise<NormalizedStudySession[]> {
@@ -65,7 +71,11 @@ export class UserCalendarScheduleClient {
 
     try {
       const records = await this.listCalendars(idHeader, externalId, options);
-      let sessions = records
+      const scopedRecords =
+        options.userId === undefined
+          ? records
+          : records.filter((record) => record.userId === options.userId);
+      let sessions = scopedRecords
         .map((record) => this.buildSession(record))
         .filter(
           (session): session is NormalizedStudySession => session !== null,

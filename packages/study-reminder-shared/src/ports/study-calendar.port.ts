@@ -21,6 +21,8 @@ export interface StudyCalendarPort {
       timeRange?: CalendarSessionTimeRange;
       pastDays?: number;
       limit?: number;
+      /** Local defense-in-depth scope for normalized calendar reads. */
+      userId?: number;
       signal?: AbortSignal;
     },
   ): Promise<Array<{ sessionKey: string; scheduledAt: Date; topic?: string }>>;

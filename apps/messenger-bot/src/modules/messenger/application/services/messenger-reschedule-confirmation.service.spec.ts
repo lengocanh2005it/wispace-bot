@@ -20,6 +20,7 @@ describe('MessengerRescheduleConfirmationService', () => {
             {
               calendarId: 42,
               scheduledTimeLabel: 'Ngày mai lúc 09:00',
+              ownerUserId: 143,
             },
           ]),
         ),
@@ -55,6 +56,7 @@ describe('MessengerRescheduleConfirmationService', () => {
             {
               calendarId: 42,
               scheduledTimeLabel: 'Ngày mai lúc 09:00',
+              ownerUserId: 143,
             },
           ]),
         ),
@@ -108,7 +110,8 @@ describe('MessengerRescheduleConfirmationService', () => {
     });
 
     expect(result).toMatchObject({
-      error: expect.stringContaining('calendarId 999') as string,
+      error:
+        'Không thể xác thực buổi học này trong lịch của bạn. Bạn chọn lại từ danh sách lịch học nhé.',
     });
   });
 
@@ -120,6 +123,7 @@ describe('MessengerRescheduleConfirmationService', () => {
             {
               calendarId: 42,
               scheduledTimeLabel: 'Ngày mai lúc 09:00',
+              ownerUserId: 143,
             },
           ]),
         ),

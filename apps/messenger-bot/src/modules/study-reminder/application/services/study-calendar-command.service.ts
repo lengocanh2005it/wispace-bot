@@ -21,6 +21,11 @@ import type {
   RescheduleStudySessionResult,
   StudyCalendarEntryView,
 } from '@wispace/reschedule-confirm';
+import {
+  assertRescheduleRecordOwnership,
+  getRescheduleScopeFailureReason,
+  RescheduleScopeError,
+} from '@wispace/reschedule-confirm';
 import { StudyReminderScheduleService } from '@wispace/study-reminder-shared';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
 import { createSessionSourceGetSessions } from '@wispace/study-reminder-shared';
@@ -75,7 +80,7 @@ export class StudyCalendarCommandService {
         (left, right) =>
           left.scheduledAt.getTime() - right.scheduledAt.getTime(),
       )
-      .map((session) => {
+      .map((session): StudyCalendarEntryView | null => {
         const match = /^calendar:(\d+)$/.exec(session.sessionKey);
         if (!match) {
           return null;
@@ -83,11 +88,15 @@ export class StudyCalendarCommandService {
 
         const calendarId = Number(match[1]);
         const record = recordById.get(calendarId);
+        if (userId !== undefined && record?.userId !== userId) {
+          return null;
+        }
 
         return {
           calendarId,
           eventDate: record?.eventDate ?? '',
           time: record?.time ?? null,
+          ownerUserId: record?.userId,
           scheduledTimeLabel:
             this.studyReminderScheduleService.formatScheduledTimeLabel(
               session.scheduledAt,
@@ -113,10 +122,9 @@ export class StudyCalendarCommandService {
     const records = await this.calendarData.listCalendars(params.psid);
     const source = records.find((record) => record.id === params.calendarId);
     if (!source) {
-      throw new NotFoundException(
-        `Calendar id=${params.calendarId} not found for this user`,
-      );
+      throw new NotFoundException('Calendar entry not found');
     }
+    assertRescheduleRecordOwnership(source, params.userId);
     const timezone =
       this.studyReminderScheduleService.getOutboxSettings().timezone;
     const target = resolveRescheduleSlot({
@@ -143,11 +151,12 @@ export class StudyCalendarCommandService {
         target.time,
         params.userId,
       );
+      assertRescheduleRecordOwnership(created, params.userId);
     } catch (error) {
       // Original session is untouched — the confirmation flow keeps the
       // request pending so the user can simply try again.
       this.logger.error(
-        `Reschedule create failed calendarId=${params.calendarId} psid=${maskExternalId(
+        `Reschedule create failed calendarId=${maskExternalId(String(params.calendarId))} psid=${maskExternalId(
           params.psid,
         )}`,
       );
@@ -161,7 +170,7 @@ export class StudyCalendarCommandService {
       await this.deleteWithRetry(params.psid, params.calendarId);
     } catch (error) {
       this.logger.error(
-        `Reschedule delete failed after create calendarId=${params.calendarId} psid=${maskExternalId(
+        `Reschedule delete failed after create calendarId=${maskExternalId(String(params.calendarId))} psid=${maskExternalId(
           params.psid,
         )} — duplicate session may exist on WISPACE`,
       );
@@ -221,12 +230,22 @@ export class StudyCalendarCommandService {
     time: string,
     userId: number,
   ): Promise<UserCalendarRecord> {
-    const existing = records.find(
+    const matching = records.filter(
       (record) => record.eventDate === eventDate && record.time === time,
     );
+    if (
+      matching.some(
+        (record) =>
+          getRescheduleScopeFailureReason(record.userId, userId) ===
+          'scope_unverified',
+      )
+    ) {
+      throw new RescheduleScopeError('scope_unverified');
+    }
+    const existing = matching.find((record) => record.userId === userId);
     if (existing) {
       this.logger.log(
-        `Reschedule target already exists calendarId=${existing.id} — reusing it (idempotent retry)`,
+        `Reschedule target already exists calendarId=${maskExternalId(String(existing.id))} — reusing it (idempotent retry)`,
       );
       return existing;
     }
@@ -265,9 +284,7 @@ export class StudyCalendarCommandService {
     const source = await this.calendarData.findCalendarRecord(psid, calendarId);
 
     if (!source) {
-      throw new NotFoundException(
-        `Calendar id=${calendarId} not found for this user`,
-      );
+      throw new NotFoundException('Calendar entry not found');
     }
 
     return source;

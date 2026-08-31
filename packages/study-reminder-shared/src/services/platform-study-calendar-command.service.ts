@@ -17,6 +17,11 @@ import type {
   StudyCalendarEntryView,
 } from '@wispace/reschedule-confirm';
 import {
+  assertRescheduleRecordOwnership,
+  getRescheduleScopeFailureReason,
+  RescheduleScopeError,
+} from '@wispace/reschedule-confirm';
+import {
   formatScheduledTimeLabel,
   getMinutesUntilSession,
 } from '../utils/schedule';
@@ -69,7 +74,7 @@ export class PlatformStudyCalendarCommandService {
         (left, right) =>
           left.scheduledAt.getTime() - right.scheduledAt.getTime(),
       )
-      .map((session) => {
+      .map((session): StudyCalendarEntryView | null => {
         const match = /^calendar:(\d+)$/.exec(session.sessionKey);
         if (!match) {
           return null;
@@ -82,6 +87,7 @@ export class PlatformStudyCalendarCommandService {
           calendarId,
           eventDate: record?.eventDate ?? '',
           time: record?.time ?? null,
+          ownerUserId: record?.userId,
           scheduledTimeLabel: formatScheduledTimeLabel(
             session.scheduledAt,
             this.configService.getTimezone(),
@@ -109,10 +115,9 @@ export class PlatformStudyCalendarCommandService {
     );
     const source = records.find((record) => record.id === params.calendarId);
     if (!source) {
-      throw new NotFoundException(
-        `Calendar id=${params.calendarId} not found for this user`,
-      );
+      throw new NotFoundException('Calendar entry not found');
     }
+    assertRescheduleRecordOwnership(source, params.userId);
     const timezone = this.configService.getTimezone();
     const target = resolveRescheduleSlot({
       schedulingMode: params.schedulingMode,
@@ -140,11 +145,12 @@ export class PlatformStudyCalendarCommandService {
         target.time,
         params.userId,
       );
+      assertRescheduleRecordOwnership(created, params.userId);
     } catch (error) {
       // Original session is untouched — the confirmation flow keeps the
       // request pending so the user can simply try again.
       this.logger.error(
-        `Reschedule create failed calendarId=${params.calendarId} ${this.options.platform}UserId=${maskExternalId(
+        `Reschedule create failed calendarId=${maskExternalId(String(params.calendarId))} ${this.options.platform}UserId=${maskExternalId(
           params.externalUserId,
         )}`,
       );
@@ -158,7 +164,7 @@ export class PlatformStudyCalendarCommandService {
       await this.deleteWithRetry(params.externalUserId, params.calendarId);
     } catch (error) {
       this.logger.error(
-        `Reschedule delete failed after create calendarId=${params.calendarId} ${this.options.platform}UserId=${maskExternalId(
+        `Reschedule delete failed after create calendarId=${maskExternalId(String(params.calendarId))} ${this.options.platform}UserId=${maskExternalId(
           params.externalUserId,
         )} — duplicate session may exist on WISPACE`,
       );
@@ -191,12 +197,22 @@ export class PlatformStudyCalendarCommandService {
     time: string,
     userId: number,
   ): Promise<UserCalendarRecord> {
-    const existing = records.find(
+    const matching = records.filter(
       (record) => record.eventDate === eventDate && record.time === time,
     );
+    if (
+      matching.some(
+        (record) =>
+          getRescheduleScopeFailureReason(record.userId, userId) ===
+          'scope_unverified',
+      )
+    ) {
+      throw new RescheduleScopeError('scope_unverified');
+    }
+    const existing = matching.find((record) => record.userId === userId);
     if (existing) {
       this.logger.log(
-        `Reschedule target already exists calendarId=${existing.id} — reusing it (idempotent retry)`,
+        `Reschedule target already exists calendarId=${maskExternalId(String(existing.id))} — reusing it (idempotent retry)`,
       );
       return existing;
     }

@@ -331,6 +331,7 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
       useFactory: (
         operations: StudyReminderOperationsPort,
       ): CalendarPort<string> => ({
+        // Keep the stage lookup scoped to the caller's WISPACE user.
         listUpcomingEntries: (psid: string, userId: number) =>
           operations
             .listEntries(psid, userId, { timeRange: 'upcoming' })
@@ -338,6 +339,7 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
               result.entries.map((entry) => ({
                 calendarId: entry.calendarId,
                 scheduledTimeLabel: entry.scheduledTimeLabel,
+                ownerUserId: entry.ownerUserId,
               })),
             ),
       }),
@@ -392,6 +394,7 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
         reschedulePort: ReschedulePort<string>,
         store: TypeormRescheduleStore<string>,
         writeToolBudget: PlatformWriteToolBudgetService,
+        policyDeniedInc: (toolName: string, reason: string) => void,
       ) =>
         new MessengerRescheduleConfirmationService(
           calendarPort,
@@ -409,6 +412,8 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
             rescheduleBudgetExceededMessage: buildWriteToolDailyBudgetMessage(
               'reschedule_study_session',
             ),
+            scopeFailureInc: (reason) =>
+              policyDeniedInc('reschedule_study_session', reason),
           },
         ),
       inject: [
@@ -416,6 +421,7 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
         'MessengerReschedulePort',
         TypeormRescheduleStore,
         PlatformWriteToolBudgetService,
+        MESSENGER_TOOL_POLICY_DENIED_INC,
       ],
     },
     MessengerChatProcessorService,

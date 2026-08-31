@@ -17,6 +17,18 @@ POST /messenger/study-calendar/sync { userId }
 
 Wispace **must** call sync after POST/DELETE `UserCalendar`. The 30-minute cron is only a fallback.
 
+## Chat reschedule scope (#627)
+
+- Treat every model- or learner-supplied `calendarId` as untrusted; list
+  upcoming entries first and use only an ID from the caller-scoped list.
+- Calendar reads and the shared confirmation/write stages validate the linked
+  WISPACE `userId`. Never expose the internal ownership proof to the model.
+- Scope mismatch or an unverified owner fails closed before any WISPACE write;
+  do not retry. Return the generic scope error and meter
+  `scope_mismatch`/`scope_unverified` with masked IDs in logs.
+- Before release, record WISPACE's per-endpoint confirmation that resource IDs
+  are authorized against the identity header in the issue conversation.
+
 ## Required config
 
 `STUDY_REMINDER_*` variables in `.env` — use `readRequiredPositiveNumber`, **no** hardcoded fallback values in code.

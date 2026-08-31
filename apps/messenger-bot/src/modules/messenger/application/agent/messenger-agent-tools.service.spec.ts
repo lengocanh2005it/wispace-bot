@@ -10,6 +10,7 @@ import type { MessengerRescheduleConfirmationService } from '../services/messeng
 import { MemoizedWispaceGoalsService } from '@wispace/wispace-client';
 import type { StudentReportService } from '../../../student-report/application/services/student-report.service';
 import type { PrecreateExerciseApiClient } from '@wispace/wispace-client';
+import { RESCHEDULE_SCOPE_ERROR_MESSAGE } from '@wispace/reschedule-confirm';
 
 describe('MessengerAgentToolsService', () => {
   const createService = (
@@ -278,6 +279,7 @@ describe('MessengerAgentToolsService', () => {
         {
           calendarId: 1,
           scheduledTimeLabel: 'Thứ 3, 09:00',
+          ownerUserId: 42,
         },
       ];
       const { service, ctx } = createService({
@@ -295,7 +297,12 @@ describe('MessengerAgentToolsService', () => {
       );
 
       expect(result).toMatchObject({
-        entries,
+        entries: [
+          {
+            calendarId: 1,
+            scheduledTimeLabel: 'Thứ 3, 09:00',
+          },
+        ],
         timeRange: 'upcoming',
         reminderNotice: expect.any(String),
       });
@@ -321,8 +328,10 @@ describe('MessengerAgentToolsService', () => {
     });
 
     it('returns error when calendarId not found', async () => {
+      const policyDeniedInc = jest.fn();
       const { service, ctx } = createService({
         listEntries: jest.fn().mockResolvedValue({ entries: [], total: 0 }),
+        policyDeniedInc,
       });
       ctx.userText = 'mình muốn đổi lịch học';
 
@@ -333,8 +342,12 @@ describe('MessengerAgentToolsService', () => {
       );
 
       expect(result).toMatchObject({
-        error: expect.stringContaining('calendarId 999 không có'),
+        error: RESCHEDULE_SCOPE_ERROR_MESSAGE,
       });
+      expect(policyDeniedInc).toHaveBeenCalledWith(
+        'reschedule_study_session',
+        'scope_unverified',
+      );
     });
 
     it('stages reschedule when valid', async () => {

@@ -1,6 +1,10 @@
 export {
   RescheduleConfirmationService,
   PENDING_RESCHEDULE_TTL_MS,
+  RESCHEDULE_SCOPE_ERROR_MESSAGE,
+  RescheduleScopeError,
+  getRescheduleScopeFailureReason,
+  assertRescheduleRecordOwnership,
   isValidApprovalToken,
   type CalendarEntryView,
   type StudyCalendarEntryView,
@@ -13,6 +17,7 @@ export {
   type CalendarPort,
   type ReschedulePort,
   type RescheduleConfirmationOptions,
+  type RescheduleScopeFailureReason,
 } from './reschedule-confirm.service';
 export {
   MemoryRescheduleStore,

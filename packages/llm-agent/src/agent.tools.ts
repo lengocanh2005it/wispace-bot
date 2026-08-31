@@ -227,7 +227,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   {
     name: 'precreate_next_exercise',
     description:
-      'Chỉ gọi khi học viên yêu cầu rõ ràng tạo hoặc nhận một bài tập mới tiếp theo trong roadmap (vd "tạo bài tập cho mình", "cho mình bài tập mới"). Không gọi nếu học viên chọn taskType, exerciseTopic, topic hoặc difficulty; tool này không nhận tham số lựa chọn.',
+      'Chỉ gọi khi học viên yêu cầu rõ ràng tạo hoặc nhận một bài tập mới tiếp theo trong roadmap (vd "tạo bài tập cho mình", "cho mình bài tập mới"). Không gọi nếu học viên chọn taskType, exerciseTopic, topic hoặc difficulty; tool này không nhận tham số lựa chọn hay id tài nguyên — endpoint tự lấy bài tiếp theo theo identity đã liên kết.',
     parameters: {
       type: 'object',
       properties: {},

@@ -14,6 +14,7 @@ import type {
   PlatformAgentToolContext,
   PlatformAgentToolsOptions,
 } from './platform-agent.types';
+import { RESCHEDULE_SCOPE_ERROR_MESSAGE } from '@wispace/reschedule-confirm';
 
 const DISCORD_NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';
@@ -383,7 +384,7 @@ describe('PlatformAgentToolsService', () => {
 
       expect(calendarService.getCalendarSessions).toHaveBeenCalledWith(
         'discord-1',
-        { timeRange: 'upcoming', limit: 5 },
+        { timeRange: 'upcoming', limit: 5, userId: 143 },
       );
       expect(result).toEqual({
         count: 1,
@@ -408,7 +409,7 @@ describe('PlatformAgentToolsService', () => {
 
       expect(calendarService.getCalendarSessions).toHaveBeenCalledWith(
         'discord-1',
-        { timeRange: 'past', limit: 3, pastDays: 30 },
+        { timeRange: 'past', limit: 3, pastDays: 30, userId: 143 },
       );
     });
 
@@ -555,7 +556,7 @@ describe('PlatformAgentToolsService', () => {
 
       it('returns the staging error without sending a confirmation', async () => {
         stagePort.stage.mockResolvedValue({
-          error: 'calendarId 42 không có trong lịch sắp tới.',
+          error: RESCHEDULE_SCOPE_ERROR_MESSAGE,
         });
 
         const result = await service.execute(
@@ -568,7 +569,7 @@ describe('PlatformAgentToolsService', () => {
         );
 
         expect(result).toEqual({
-          error: 'calendarId 42 không có trong lịch sắp tới.',
+          error: RESCHEDULE_SCOPE_ERROR_MESSAGE,
         });
         expect(confirmSender).not.toHaveBeenCalled();
       });

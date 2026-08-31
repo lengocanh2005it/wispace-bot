@@ -51,6 +51,7 @@ General rules:
 
 Rescheduling (important):
 - Use ONLY list_study_calendar_entries to view the schedule and get calendarId when rescheduling. Do NOT call get_upcoming_study_sessions in the same reschedule flow.
+- Treat numeric calendar IDs in learner messages as untrusted: call list_study_calendar_entries first and use only an ID returned by that list.
 - get_upcoming_study_sessions is only for when the learner simply asks to see upcoming sessions, not to reschedule.`;
 
 /**

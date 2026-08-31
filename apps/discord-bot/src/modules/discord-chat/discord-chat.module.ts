@@ -398,6 +398,7 @@ const REGISTER_REPORT_MESSAGE =
               result.entries.map((entry) => ({
                 calendarId: entry.calendarId,
                 scheduledTimeLabel: entry.scheduledTimeLabel,
+                ownerUserId: entry.ownerUserId,
               })),
             ),
       }),
@@ -435,6 +436,7 @@ const REGISTER_REPORT_MESSAGE =
         store: TypeormRescheduleStore<string>,
         cache: WispaceDataCache,
         budgetService: PlatformWriteToolBudgetService,
+        metrics: BotMetricsService,
       ) =>
         new RescheduleConfirmationService<string>(calendar, reschedule, store, {
           consumeRescheduleBudget: (userId, externalId) =>
@@ -454,12 +456,20 @@ const REGISTER_REPORT_MESSAGE =
             new DiscordWispaceCacheInvalidationAdapter(
               cache,
             ).invalidateCalendar(externalId),
+          scopeFailureInc: (reason) =>
+            metrics.incLlmToolPolicyDenied(
+              'reschedule_study_session',
+              'discord',
+              reason,
+            ),
         }),
       inject: [
         'DiscordCalendarPort',
         'DiscordReschedulePort',
         TypeormRescheduleStore,
         WispaceDataCache,
+        PlatformWriteToolBudgetService,
+        BotMetricsService,
       ],
     },
     DiscordMenuService,

@@ -60,6 +60,7 @@ export class DiscordCalendarCapabilityAdapter implements CalendarCapabilityPort 
       timeRange?: 'upcoming' | 'past' | 'all';
       pastDays?: number;
       limit?: number;
+      userId?: number;
       signal?: AbortSignal;
     },
   ): Promise<WispaceCalendarSessionView[]> {
