@@ -4,6 +4,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import helmet from 'helmet';
 import { errorMessage, sanitizeErrorStack } from '@wispace/bot-common/masking';
+import { RedactedLogger } from '@wispace/bot-common/logging';
 import {
   collectRuntimeSecretValues,
   registerRuntimeSecrets,
@@ -43,6 +44,10 @@ async function bootstrap() {
 
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
+    // Global log redaction (#610): every Logger call passes digit-run
+    // external-id masking before the transport. Must be set before module
+    // init so all Logger instances delegate to it.
+    logger: new RedactedLogger(),
   });
 
   const corsOrigin = process.env.CORS_ORIGIN?.trim();

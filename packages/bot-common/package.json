@@ -58,6 +58,11 @@
       "require": "./dist/locks/index.js",
       "types": "./dist/locks/index.d.ts"
     },
+    "./logging": {
+      "import": "./dist/logging/index.js",
+      "require": "./dist/logging/index.js",
+      "types": "./dist/logging/index.d.ts"
+    },
     "./messages": {
       "import": "./dist/messages/index.js",
       "require": "./dist/messages/index.js",

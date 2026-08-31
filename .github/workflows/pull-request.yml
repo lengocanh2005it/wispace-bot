@@ -261,3 +261,6 @@ jobs:
 
       - name: Check OpenAI SDK import boundary (#427)
         run: bash .github/scripts/check-openai-sdk-imports.sh
+
+      - name: Check log redaction — raw external ids in logger calls (#610)
+        run: node .github/scripts/check-log-redaction.js

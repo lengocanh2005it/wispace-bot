@@ -1,5 +1,6 @@
 export * from './guard/index';
 export * from './locks/index';
+export * from './logging/index';
 export * from './messages/index';
 export * from './masking/index';
 export * from './utils/index';
