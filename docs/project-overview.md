@@ -267,6 +267,25 @@ wispace-bot/                          # Turborepo root
 
 Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 
+### Write-tool budget (#626)
+
+Mutating chat tools are capped per WISPACE user per day and per message, on top of
+the inbound-message chat quota:
+
+| Env | Default | Meaning |
+| --- | --- | --- |
+| `CHAT_WRITE_TOOL_BUDGET_ENABLED` | `true` | Kill-switch; only `false`/`0`/`no` disables |
+| `CHAT_WRITE_TOOL_DAILY_CAP_RESCHEDULE` | `8` | Confirmed reschedules / user / day |
+| `CHAT_WRITE_TOOL_DAILY_CAP_PRECREATE` | `15` | `precreate_next_exercise` creates / user / day |
+| `CHAT_WRITE_TOOL_PER_MESSAGE_CAP_RESCHEDULE` | `1` | Reschedule prompts staged per learner message |
+| `CHAT_WRITE_TOOL_PER_MESSAGE_CAP_PRECREATE` | `3` | Precreate calls per learner message |
+| `CHAT_TOOL_DAILY_USAGE_RETENTION_DAYS` | `7` | `chat_tool_daily_usage` prune window |
+
+Whitelisted ids (`CHAT_RATE_LIMIT_WHITELIST_PSIDS`) bypass the budget. On breach the
+tool returns a Vietnamese "try again tomorrow / next message" result the model relays —
+never a turn error. Alert on `rate(<prefix>_write_tool_budget_denied_total[15m])`;
+`reason="per_message"` = one message fanning out, `reason="daily"` = sustained grind.
+
 ### Scheduled-notification consent (#596)
 
 `user_notification_preferences` (one row per WISPACE `user_id`) carries explicit
