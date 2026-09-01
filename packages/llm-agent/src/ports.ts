@@ -143,6 +143,8 @@ export interface AgentMetricsPort {
   degradedModeInc?(event: LlmDegradedModeEvent): void;
   /** #629: a prompt-injection payload was neutralized. `source` is a bounded label. */
   injectionBlockedInc?(source: LlmInjectionSource): void;
+  /** #649: an LLM input-classifier verdict. `label` and `mode` are bounded labels. */
+  classifierVerdictInc?(label: string, mode: 'shadow' | 'enforce'): void;
 }
 
 /** Executes a single tool call against platform-specific business services. */
@@ -165,6 +167,7 @@ export const NOOP_METRICS_PORT: AgentMetricsPort = {
   toolPolicyDeniedInc: () => undefined,
   degradedModeInc: () => undefined,
   injectionBlockedInc: () => undefined,
+  classifierVerdictInc: () => undefined,
 };
 import type { LlmUsage } from './provider/types';
 import type { ToolObservationOutcome } from './utils/tool-observation';

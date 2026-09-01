@@ -222,4 +222,20 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
       'discord_write_tool_budget_denied_total{tool="reschedule_study_session",platform="discord",reason="per_message"} 1',
     );
   });
+
+  it('exposes llm_classifier_verdict_total with label/mode/platform', async () => {
+    const svc = new BotMetricsService({
+      prefix: 'messenger',
+      collectDefaults: false,
+    });
+    svc.incClassifierVerdict('INJECTION', 'shadow', 'messenger');
+    svc.incClassifierVerdict('SAFE', 'enforce', 'messenger');
+    const out = await svc.getMetrics();
+    expect(out).toContain(
+      '_llm_classifier_verdict_total{label="INJECTION",mode="shadow",platform="messenger"} 1',
+    );
+    expect(out).toContain(
+      '_llm_classifier_verdict_total{label="SAFE",mode="enforce",platform="messenger"} 1',
+    );
+  });
 });

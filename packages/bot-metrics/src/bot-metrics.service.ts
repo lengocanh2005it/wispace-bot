@@ -82,6 +82,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private dataQualityCheckStatus: Gauge;
   private dataQualityRuns: Counter;
   private dataQualityFailures: Counter;
+  private llmClassifierVerdict: Counter<string>;
 
   constructor(config: MetricsConfig) {
     this.prefix = config.prefix;
@@ -371,6 +372,12 @@ export class BotMetricsService implements OnModuleDestroy {
       help: 'Database circuit breaker failure events',
       registers: [this.registry],
     });
+    this.llmClassifierVerdict = new Counter({
+      name: `${this.prefix}_llm_classifier_verdict_total`,
+      help: 'LLM input-classifier verdicts by label and rollout mode (#649)',
+      labelNames: ['label', 'mode', 'platform'],
+      registers: [this.registry],
+    });
   }
 
   async timeStep<T>(step: string, fn: () => Promise<T>): Promise<T> {
@@ -518,6 +525,11 @@ export class BotMetricsService implements OnModuleDestroy {
   /** #629 — a neutralized prompt-injection payload; `source` ∈ user_input | tool_result | history. */
   incLlmInjectionBlocked(source: string, platform: string): void {
     this.llmInjectionBlocked.inc({ source, platform });
+  }
+
+  /** #649 — an LLM input-classifier verdict. `label` ∈ SAFE|INJECTION|DISCLOSURE_PROBE or an unavailable reason. */
+  incClassifierVerdict(label: string, mode: string, platform: string): void {
+    this.llmClassifierVerdict.inc({ label, mode, platform });
   }
 
   incClarificationOutcome(outcome: string): void {
