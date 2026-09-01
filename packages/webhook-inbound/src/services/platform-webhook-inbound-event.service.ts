@@ -7,6 +7,7 @@ import {
   maskExternalIdInText,
   truncatePersistedError,
 } from '@wispace/bot-common/masking';
+import { jitteredDelayMs } from '@wispace/bot-common/utils';
 
 const webhookInboundRetentionDeletedTotal = new Counter({
   name: 'webhook_inbound_retention_deleted_total',
@@ -46,6 +47,9 @@ export interface InboundRetryConfig {
   maxRetries: number;
   baseRetryMs: number;
   capRetryMs: number;
+  /** Injectable RNG for equal-jitter on `next_retry_at` — tests pass a stub,
+   *  production leaves it undefined (`Math.random`). */
+  rng?: () => number;
 }
 
 const DEFAULT_MAX_RETRIES = 5;
@@ -221,7 +225,10 @@ export class PlatformWebhookInboundEventService {
 
   /**
    * Record a processing failure with bounded exponential backoff:
-   * `next_retry_at = now + min(base * 2^(retry_count), cap)`.
+   * `next_retry_at = now + jitter(min(base * 2^(retry_count), cap))`, where
+   * `jitter` is the shared equal-jitter policy (50–100% of nominal) so many
+   * rows that failed on the same upstream error do not all become due in the
+   * same cron tick (thundering herd).
    * When the retry budget is exhausted the event becomes `abandoned`
    * (terminal failure state). Requires the lease token — a stale worker
    * whose ownership was lost no-ops (#149). Returns false on no-op.
@@ -239,10 +246,11 @@ export class PlatformWebhookInboundEventService {
     const nextRetryCount = (row?.retryCount ?? 0) + 1;
 
     const cap = opts.capRetryMs;
-    const delay = Math.min(
+    const nominalDelay = Math.min(
       opts.baseRetryMs * Math.pow(2, nextRetryCount - 1),
       cap,
     );
+    const delay = jitteredDelayMs(nominalDelay, opts.rng);
     const nextRetryAt = new Date(Date.now() + delay);
 
     return this.updateOwnedProcessing(id, leaseToken, {

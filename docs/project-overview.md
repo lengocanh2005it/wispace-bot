@@ -457,6 +457,32 @@ Timeout/cancellation now aborts the underlying request instead of only rejecting
 - **Budgets** — circuit-breaker timeout = total budget: `computeCircuitBreakerTimeout(requestTimeoutMs, maxRetries)` = `requestTimeoutMs * (maxRetries + 1) + 10_000` (see `packages/wispace-client/src/utils/with-retry.ts`).
 - `UserCalendarScheduleClient.getCalendarSessions({ swallowErrors: true })` rethrows abort errors — cancellation is never masked as "no sessions".
 
+## 7.1.1. Retry jitter — thundering-herd protection (#577)
+
+Every retry delay that many independent requests/jobs can align on after the
+same upstream failure passes through **one equal-jitter policy**:
+`jitteredDelayMs(nominalMs, rng = Math.random)` in
+`packages/bot-common/src/utils/jitter.utils.ts` — returns a value uniformly in
+`[nominalMs / 2, nominalMs)`. The 50% floor keeps backoff growing roughly
+monotonically; the spread stops a batch from firing in the same instant / same
+cron tick. `rng` is injectable so tests are deterministic (`() => 1` pins the
+ceiling, `() => 0` the floor); production passes nothing.
+
+| Retry path | Nominal backoff | Jitter |
+| --- | --- | --- |
+| Shared LLM retry — `retryWithBackoff` (`packages/llm-agent`) | `baseDelayMs * 2^(attempt-1)`, optional `maxDelayMs` cap | equal jitter **after** the cap |
+| WISPACE client — `withRetry` (`packages/wispace-client`) | `baseDelayMs * 2^attempt` | equal jitter (was already jittered; now via the shared helper) |
+| Redis global slot acquire — `acquireRedisSlot` (#453) | exponential | full-jitter, unchanged (already herd-safe) |
+| Durable webhook inbox — `markFailed` (`packages/webhook-inbound`) | `min(base * 2^(n-1), cap)` | equal jitter after the cap; `InboundRetryConfig.rng` seam |
+| Durable study-reminder outbox — `StudyReminderDispatchService` | flat `retryBackoffMinutes` (Messenger) or `× 2^retryCount` | equal jitter; `StudyReminderDispatchServiceOptions.rng` seam |
+| Durable report-send outbox — `reportRetryAt` (`report-send-retry-dispatch.service`) | flat `retryBackoffMinutes` | equal jitter; `rng`/`now` params |
+
+Retryable-error classification, caps, deadlines, `AbortSignal` cancellation,
+lease ownership, idempotency, and ambiguous-delivery handling are unchanged —
+only the delay value moves. Out of scope (no herd risk): account-link
+reconciliation, single-row token refresh, periodic crons. **Always-on, no
+runtime flag** — rollback is a revert.
+
 ## 7.2. LLM fallback and delivery policy (#422)
 
 The fault matrix, operator thresholds, rollout, and manual-recovery steps are

@@ -12,9 +12,24 @@ import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/reposi
 import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
 import { maskExternalId } from '@wispace/bot-common/masking';
+import { jitteredDelayMs } from '@wispace/bot-common/utils';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
-import { subMilliseconds, addMinutes } from 'date-fns';
+import { subMilliseconds } from 'date-fns';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
+
+/**
+ * `next_retry_at` for a failed report-send job: the flat `retryBackoffMinutes`
+ * window with the shared equal-jitter (50–100% of nominal) applied, so a batch
+ * of jobs that failed on the same WISPACE outage do not all come due on the
+ * same poll tick. `rng`/`now` are injectable for deterministic tests.
+ */
+export function reportRetryAt(
+  retryBackoffMinutes: number,
+  rng?: () => number,
+  now: number = Date.now(),
+): Date {
+  return new Date(now + jitteredDelayMs(retryBackoffMinutes * 60_000, rng));
+}
 
 @Injectable()
 export class ReportSendRetryDispatchService {
@@ -131,7 +146,7 @@ export class ReportSendRetryDispatchService {
             leaseToken,
             errorMessage: 'WISPACE link status temporarily unknown',
             retryCount: nextRetryCount,
-            nextRetryAt: addMinutes(new Date(), settings.retryBackoffMinutes),
+            nextRetryAt: reportRetryAt(settings.retryBackoffMinutes),
             terminal: nextRetryCount >= claimedJob.maxRetries,
           });
           if (nextRetryCount >= claimedJob.maxRetries) failed += 1;
@@ -163,10 +178,7 @@ export class ReportSendRetryDispatchService {
         await this.reportSendJobRepository.markSent(claimedJob.id, leaseToken);
         sent += 1;
       } else if (orchestrationResult.claimSkipped > 0) {
-        const nextRetryAt = addMinutes(
-          new Date(),
-          settings.retryBackoffMinutes,
-        );
+        const nextRetryAt = reportRetryAt(settings.retryBackoffMinutes);
         await this.reportSendJobRepository.markFailed({
           jobId: claimedJob.id,
           leaseToken,
@@ -179,10 +191,7 @@ export class ReportSendRetryDispatchService {
       } else if (orchestrationResult.deferred > 0) {
         const nextRetryCount = claimedJob.retryCount + 1;
         const terminal = nextRetryCount >= claimedJob.maxRetries;
-        const nextRetryAt = addMinutes(
-          new Date(),
-          settings.retryBackoffMinutes,
-        );
+        const nextRetryAt = reportRetryAt(settings.retryBackoffMinutes);
 
         await this.reportSendJobRepository.markFailed({
           jobId: claimedJob.id,

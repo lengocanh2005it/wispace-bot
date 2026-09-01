@@ -15,6 +15,7 @@ describe('StudyReminderDispatchService', () => {
     backoffMode: 'exponential' | 'flat';
     preloadDisplayNames: jest.Mock;
     classifyFailure: jest.Mock;
+    rng?: () => number;
   };
 
   const defaultSettings = {
@@ -92,6 +93,7 @@ describe('StudyReminderDispatchService', () => {
       backoffMode: 'flat',
       preloadDisplayNames: jest.fn().mockResolvedValue(undefined),
       classifyFailure: jest.fn().mockReturnValue(undefined),
+      rng: () => 1, // pin equal-jitter to its ceiling: next_retry_at == nominal
     };
   });
 
@@ -282,6 +284,47 @@ describe('StudyReminderDispatchService', () => {
         expected.getTime(),
         -3,
       );
+    });
+  });
+
+  describe('equal jitter on next_retry_at', () => {
+    it('spreads the retry within [50%, 100%] of the nominal backoff', async () => {
+      delete options.rng; // real Math.random
+      const now = Date.now();
+      const job = makeJob({ retryCount: 0, maxRetries: 3 });
+      jobRepo.findDueJobs.mockResolvedValue([job]);
+      jobRepo.claimJob.mockResolvedValue(job);
+      messageSender.sendText.mockRejectedValue(new Error('Transient'));
+      build();
+
+      await service.dispatchDueReminders();
+
+      const nominal = 2 * 60 * 1000; // flat mode, retryCount 0
+      const markFailedCall = jobRepo.markFailed.mock.calls[0]?.[0] as {
+        nextRetryAt?: Date;
+      };
+      const delay = (markFailedCall.nextRetryAt?.getTime() ?? 0) - now;
+      expect(delay).toBeGreaterThanOrEqual(nominal / 2 - 50);
+      expect(delay).toBeLessThanOrEqual(nominal);
+    });
+
+    it('uses the injected rng deterministically (floor)', async () => {
+      options.rng = () => 0;
+      const now = Date.now();
+      const job = makeJob({ retryCount: 0, maxRetries: 3 });
+      jobRepo.findDueJobs.mockResolvedValue([job]);
+      jobRepo.claimJob.mockResolvedValue(job);
+      messageSender.sendText.mockRejectedValue(new Error('Transient'));
+      build();
+
+      await service.dispatchDueReminders();
+
+      const markFailedCall = jobRepo.markFailed.mock.calls[0]?.[0] as {
+        nextRetryAt?: Date;
+      };
+      const delay = (markFailedCall.nextRetryAt?.getTime() ?? 0) - now;
+      expect(delay).toBeGreaterThanOrEqual(60_000 - 50);
+      expect(delay).toBeLessThanOrEqual(60_000);
     });
   });
 

@@ -1,5 +1,9 @@
 import CircuitBreaker from 'opossum';
-import { isAbortError, sleep } from '@wispace/bot-common/utils';
+import {
+  isAbortError,
+  jitteredDelayMs,
+  sleep,
+} from '@wispace/bot-common/utils';
 
 export { isAbortError, sleep } from '@wispace/bot-common/utils';
 
@@ -41,8 +45,9 @@ export async function withRetry<T>(
         throw error;
       }
       opts.onRetry?.(attempt + 1, opts.maxRetries, error);
-      const delay =
-        opts.baseDelayMs * Math.pow(2, attempt) * (0.5 + Math.random() * 0.5);
+      // Shared equal-jitter policy (packages/bot-common) — spreads retries that
+      // aligned on the same upstream failure so they do not stampede.
+      const delay = jitteredDelayMs(opts.baseDelayMs * Math.pow(2, attempt));
       await sleep(delay, opts.signal);
     }
   }

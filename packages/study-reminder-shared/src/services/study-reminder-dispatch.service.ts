@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import { jitteredDelayMs } from '@wispace/bot-common/utils';
 import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
 import {
   STUDY_REMINDER_JOB_REPOSITORY,
@@ -78,6 +79,13 @@ export interface StudyReminderDispatchServiceOptions {
     error: unknown;
     job: StudyReminderJob;
   }) => { terminal: boolean; errorMessage: string } | undefined;
+  /**
+   * Injectable RNG for the equal-jitter applied to `next_retry_at` — spreads
+   * a batch of jobs that failed on the same upstream error so their retries do
+   * not all become due in the same tick. Tests pass a stub; production leaves
+   * it undefined (`Math.random`).
+   */
+  rng?: () => number;
 }
 
 @Injectable()
@@ -338,13 +346,15 @@ export class StudyReminderDispatchService {
 
         const nextRetryCount = claimedJob.retryCount + 1;
         const backoffMs = settings.retryBackoffMinutes * 60 * 1000;
+        const nominalBackoffMs =
+          this.options?.backoffMode === 'flat'
+            ? backoffMs
+            : backoffMs * Math.pow(2, claimedJob.retryCount);
         const nextRetryAt = terminal
           ? undefined
           : new Date(
               now.getTime() +
-                (this.options?.backoffMode === 'flat'
-                  ? backoffMs
-                  : backoffMs * Math.pow(2, claimedJob.retryCount)),
+                jitteredDelayMs(nominalBackoffMs, this.options?.rng),
             );
 
         await this.jobRepository.markFailed({

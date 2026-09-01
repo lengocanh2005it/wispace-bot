@@ -1,4 +1,8 @@
-import { isAbortError, sleep } from '@wispace/bot-common/utils';
+import {
+  isAbortError,
+  jitteredDelayMs,
+  sleep,
+} from '@wispace/bot-common/utils';
 
 export { isAbortError, sleep } from '@wispace/bot-common/utils';
 
@@ -9,6 +13,12 @@ export interface RetryBackoffOptions {
   onRetry?: (attempt: number, delayMs: number, error: unknown) => void;
   /** Backoff for attempt (1-based). Default: exponential `baseDelayMs * 2^(attempt-1)`. */
   backoff?: (attempt: number) => number;
+  /** Cap the pre-jitter backoff so a synchronized retry wave never aligns on an
+   *  unbounded delay. Default: uncapped. */
+  maxDelayMs?: number;
+  /** Injectable RNG for the equal-jitter spread — tests pass a stub, production
+   *  uses `Math.random`. */
+  rng?: () => number;
   /** Optional AbortSignal to cancel retries immediately. */
   signal?: AbortSignal;
 }
@@ -40,9 +50,16 @@ export async function retryWithBackoff<T>(
       ) {
         throw error;
       }
-      const delayMs = options.backoff
+      const nominalMs = options.backoff
         ? options.backoff(attempt)
         : options.baseDelayMs * 2 ** (attempt - 1);
+      const cappedMs =
+        options.maxDelayMs !== undefined
+          ? Math.min(nominalMs, options.maxDelayMs)
+          : nominalMs;
+      // Equal jitter after the cap — spreads many requests that failed on the
+      // same upstream error so their retries do not fire in the same instant.
+      const delayMs = jitteredDelayMs(cappedMs, options.rng);
       options.onRetry?.(attempt, delayMs, error);
       await sleep(delayMs, options.signal);
     }

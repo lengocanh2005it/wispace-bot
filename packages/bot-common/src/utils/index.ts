@@ -1,4 +1,5 @@
 export { isAbortError, sleep } from './abort.utils';
+export { jitteredDelayMs } from './jitter.utils';
 export { parseCookieHeader } from './cookie-header';
 export { readHttpsUrl } from './https-url';
 export { readResponseText } from './read-response-text';

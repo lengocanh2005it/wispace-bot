@@ -263,12 +263,36 @@ describe('PlatformWebhookInboundEventService', () => {
       );
       const patch = claimSetMock.mock.calls[0][0];
       expect(patch['processedAt']).toBeInstanceOf(Date);
-      expect((patch['nextRetryAt'] as Date).getTime()).toBeGreaterThanOrEqual(
-        now + 60_000,
-      );
+      // Equal jitter: 50–100% of the 60_000ms nominal backoff.
+      const delay = (patch['nextRetryAt'] as Date).getTime() - now;
+      expect(delay).toBeGreaterThanOrEqual(30_000);
+      expect(delay).toBeLessThanOrEqual(60_000);
     });
 
-    it('caps the backoff at the cap', async () => {
+    it('applies the injected RNG to next_retry_at (deterministic jitter)', async () => {
+      const { service, claimSetMock, findOneMock, claimExecuteMock } =
+        buildService();
+      findOneMock.mockResolvedValue({ id: 1, retryCount: 0 });
+      claimExecuteMock.mockResolvedValue({ affected: 1 });
+      const now = Date.now();
+
+      await service.markFailed(1, 'token-1', 'boom', {
+        maxRetries: 5,
+        baseRetryMs: 60_000,
+        capRetryMs: 8 * 60_000,
+        rng: () => 0, // jitter floor: nominal / 2
+      });
+
+      const patch = claimSetMock.mock.calls[0][0];
+      expect(
+        (patch['nextRetryAt'] as Date).getTime() - now,
+      ).toBeGreaterThanOrEqual(30_000 - 50);
+      expect(
+        (patch['nextRetryAt'] as Date).getTime() - now,
+      ).toBeLessThanOrEqual(30_000);
+    });
+
+    it('caps the backoff at the cap (before jitter)', async () => {
       const { service, claimSetMock, findOneMock } = buildService();
       findOneMock.mockResolvedValue({ id: 1, retryCount: 10 });
 
@@ -276,6 +300,7 @@ describe('PlatformWebhookInboundEventService', () => {
         maxRetries: 15,
         baseRetryMs: 60_000,
         capRetryMs: 8 * 60_000,
+        rng: () => 1, // jitter ceiling: delay == cap
       });
 
       const patch = claimSetMock.mock.calls[0][0];
