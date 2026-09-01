@@ -115,7 +115,9 @@ export class LlmSafetyCore {
       .insert({
         feature: 'FREE_FORM_CHAT',
         eventType: 'CLASSIFIER_FLAGGED',
-        reason: input.reason,
+        // `reason` column is varchar(100) — bound it here too, not only in
+        // the classifier, so any future caller is safe.
+        reason: input.reason.slice(0, 100),
         externalUserId: input.externalUserId,
         userId: input.userId,
         correlationId: input.correlationId,

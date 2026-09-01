@@ -15,21 +15,20 @@ export interface ClassifierVerdict {
   reason: string;
 }
 
+/** Why the classifier produced no usable verdict. */
+export type ClassifyFailureReason =
+  | 'timeout'
+  | 'error'
+  | 'parse_failed'
+  | 'circuit_open';
+
 /**
  * Discriminated result. `ok: false` means the classifier produced nothing
  * usable — the caller MUST fail open (proceed as if the tier were absent).
  */
 export type ClassifyResult =
   | { ok: true; verdict: ClassifierVerdict }
-  | {
-      ok: false;
-      reason:
-        | 'disabled'
-        | 'timeout'
-        | 'error'
-        | 'parse_failed'
-        | 'circuit_open';
-    };
+  | { ok: false; reason: ClassifyFailureReason };
 
 export interface ContentClassifierPort {
   /**

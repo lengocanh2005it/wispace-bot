@@ -698,17 +698,6 @@ export class PlatformAgentService {
             textPreview: params.textPreview,
             toolName: params.toolName,
           }),
-        recordClassifierVerdict: (params) =>
-          this.safetyEventService.recordClassifierVerdict({
-            externalUserId: params.externalUserId,
-            userId: params.userId,
-            correlationId: params.correlationId,
-            label: params.label,
-            mode: params.mode,
-            confidence: params.confidence,
-            reason: params.reason,
-            textPreview: params.textPreview,
-          }),
       },
       metrics: NOOP_METRICS_PORT,
       toolExecutor,
@@ -815,11 +804,11 @@ export class PlatformAgentService {
         input.correlationId,
       );
       if (!result.ok) {
-        this.options.classifierVerdictInc?.(result.reason, mode);
+        this.options.metrics?.classifierVerdictInc?.(result.reason, mode);
         return null;
       }
       const { label, confidence, reason } = result.verdict;
-      this.options.classifierVerdictInc?.(label, mode);
+      this.options.metrics?.classifierVerdictInc?.(label, mode);
       if (label === 'SAFE') return null;
 
       this.safetyEventService.recordClassifierVerdict({
@@ -836,8 +825,12 @@ export class PlatformAgentService {
       if (mode === 'shadow' || confidence < this.classifierMinConfidence)
         return null;
 
+      // Extraction-flavoured injection routes to the same non-disclosure line
+      // as a probe — a distinct "blocked" reply would itself be an oracle
+      // (#625). The classifier prompt emits `reason: "extraction"` for this.
       const text =
-        label === 'DISCLOSURE_PROBE' || /extraction|prompt/i.test(reason)
+        label === 'DISCLOSURE_PROBE' ||
+        reason.toLowerCase().includes('extraction')
           ? buildNonDisclosureReply()
           : buildPromptInjectionBlockedMessage();
       return this.blockedReply(text);

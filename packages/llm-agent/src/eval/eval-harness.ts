@@ -875,7 +875,6 @@ export async function runEvalFixture(
     recordInjectionEvent: () => {
       injectionEvents += 1;
     },
-    recordClassifierVerdict: () => undefined,
   };
 
   const agent = new LlmAgentService<Record<string, never>>(

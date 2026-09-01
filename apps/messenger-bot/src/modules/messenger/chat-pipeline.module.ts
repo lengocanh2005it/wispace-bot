@@ -1,8 +1,7 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { join } from 'path';
-import { Logger } from '@nestjs/common';
 import { trace } from '@opentelemetry/api';
 import { Repository } from 'typeorm';
 import { WispaceModule } from '../wispace/wispace.module';
@@ -86,6 +85,9 @@ import {
   type StudyReminderOperationsPort,
 } from '../study-reminder/domain/ports/study-reminder-operations.port';
 import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository.port';
+
+/** Fallback model id for the #649 input classifier (see `.env.example`). */
+const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
 
 /**
  * Self-contained module for the chat pipeline:
@@ -233,26 +235,23 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
           learnerProfileStore,
           'messenger',
         );
-        const classifierEnabled =
-          configService
-            .get<string>('LLM_INPUT_CLASSIFIER_ENABLED')
-            ?.toLowerCase() === 'true';
-        const contentClassifier = classifierEnabled
-          ? new LlmContentClassifier({
-              adapter,
-              model:
-                configService
-                  .get<string>('LLM_INPUT_CLASSIFIER_MODEL')
-                  ?.trim() || 'google/gemini-2.0-flash-lite',
-              timeoutMs: (() => {
-                const v = Number(
-                  configService.get<string>('LLM_INPUT_CLASSIFIER_TIMEOUT_MS'),
-                );
-                return Number.isFinite(v) && v > 0 ? Math.floor(v) : 1200;
-              })(),
-              logger: new Logger('LlmContentClassifier'),
-            })
-          : undefined;
+        // Always constructed (the constructor does no I/O). Whether it runs is
+        // decided by LLM_INPUT_CLASSIFIER_ENABLED inside PlatformAgentService —
+        // one source of truth for the flag (#649).
+        const classifierTimeoutRaw = Number(
+          configService.get<string>('LLM_INPUT_CLASSIFIER_TIMEOUT_MS'),
+        );
+        const contentClassifier = new LlmContentClassifier({
+          adapter,
+          model:
+            configService.get<string>('LLM_INPUT_CLASSIFIER_MODEL')?.trim() ||
+            DEFAULT_CLASSIFIER_MODEL,
+          timeoutMs:
+            Number.isFinite(classifierTimeoutRaw) && classifierTimeoutRaw > 0
+              ? Math.floor(classifierTimeoutRaw)
+              : 1200,
+          logger: new Logger('LlmContentClassifier'),
+        });
         return new PlatformAgentService(
           configService,
           toolsService,
@@ -285,6 +284,8 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
               degradedModeInc: (event) => metrics.incLlmDegradedMode(event),
               injectionBlockedInc: (source) =>
                 metrics.incLlmInjectionBlocked(source, 'messenger'),
+              classifierVerdictInc: (label, mode) =>
+                metrics.incClassifierVerdict(label, mode, 'messenger'),
             },
             clarificationOutcomeInc: (outcome) =>
               metrics.incClarificationOutcome(outcome),
@@ -324,8 +325,6 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
             tryFastReschedule: (ctx, userText) =>
               messengerTools.tryFastDefaultReschedule(ctx, userText),
             contentClassifier,
-            classifierVerdictInc: (label, mode) =>
-              metrics.incClassifierVerdict(label, mode, 'messenger'),
           },
           redisClient,
         );

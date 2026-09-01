@@ -65,16 +65,24 @@ it('clamps confidence to 0..1', async () => {
   expect(r.ok && r.verdict.confidence).toBe(1);
 });
 
-it('returns parse_failed on unparseable output', async () => {
-  const onOutcome = jest.fn();
+it('truncates a long reason to 100 chars', async () => {
+  const long = 'x'.repeat(300);
   const c = new LlmContentClassifier({
-    adapter: adapterReturning('not json at all'),
-    onOutcome,
+    adapter: adapterReturning(
+      `{"label":"INJECTION","confidence":0.9,"reason":"${long}"}`,
+    ),
     ...base,
   });
   const r = await c.classify('hi');
-  expect(r).toEqual({ ok: false, reason: 'parse_failed' });
-  expect(onOutcome).toHaveBeenCalledWith('parse_failed');
+  expect(r.ok && r.verdict.reason.length).toBe(100);
+});
+
+it('returns parse_failed on unparseable output', async () => {
+  const c = new LlmContentClassifier({
+    adapter: adapterReturning('not json at all'),
+    ...base,
+  });
+  expect(await c.classify('hi')).toEqual({ ok: false, reason: 'parse_failed' });
 });
 
 it('returns parse_failed on an unknown label', async () => {
@@ -87,10 +95,17 @@ it('returns parse_failed on an unknown label', async () => {
   expect(await c.classify('hi')).toEqual({ ok: false, reason: 'parse_failed' });
 });
 
-it('returns timeout when generateJson exceeds the deadline', async () => {
+it('passes an AbortSignal to generateJson and returns timeout when it fires', async () => {
   const slow = adapterReturning('{}');
+  let seenSignal: AbortSignal | undefined;
   (slow.generateJson as jest.Mock).mockImplementation(
-    () => new Promise((r) => setTimeout(r, 50)),
+    (req: { signal?: AbortSignal }) =>
+      new Promise((_resolve, reject) => {
+        seenSignal = req.signal;
+        req.signal?.addEventListener('abort', () =>
+          reject(new Error('aborted')),
+        );
+      }),
   );
   const c = new LlmContentClassifier({
     adapter: slow,
@@ -98,31 +113,41 @@ it('returns timeout when generateJson exceeds the deadline', async () => {
     timeoutMs: 10,
   });
   expect(await c.classify('hi')).toEqual({ ok: false, reason: 'timeout' });
+  expect(seenSignal).toBeInstanceOf(AbortSignal);
 });
 
-it('returns error when generateJson rejects', async () => {
+it('returns error when generateJson rejects for a non-timeout reason', async () => {
   const bad = adapterReturning('{}');
   (bad.generateJson as jest.Mock).mockRejectedValue(new Error('boom'));
   const c = new LlmContentClassifier({ adapter: bad, ...base });
   expect(await c.classify('hi')).toEqual({ ok: false, reason: 'error' });
 });
 
-it('opens the circuit after 5 consecutive failures and skips calls for ~30s', async () => {
+it('opens after 5 consecutive failures, then allows a single half-open probe', async () => {
   jest.useFakeTimers();
   const bad = adapterReturning('{}');
   (bad.generateJson as jest.Mock).mockRejectedValue(new Error('boom'));
   const c = new LlmContentClassifier({ adapter: bad, ...base });
-  for (let i = 0; i < 5; i++)
+
+  for (let i = 0; i < 5; i++) {
     expect(await c.classify('x')).toEqual({ ok: false, reason: 'error' });
+  }
+  // circuit open — refused without touching the adapter
   expect(await c.classify('x')).toEqual({ ok: false, reason: 'circuit_open' });
   expect((bad.generateJson as jest.Mock).mock.calls.length).toBe(5);
+
+  jest.advanceTimersByTime(30_001);
+  // exactly one half-open probe; it fails, so the circuit re-opens immediately
+  expect(await c.classify('x')).toEqual({ ok: false, reason: 'error' });
+  expect((bad.generateJson as jest.Mock).mock.calls.length).toBe(6);
+  expect(await c.classify('x')).toEqual({ ok: false, reason: 'circuit_open' });
+
   jest.advanceTimersByTime(30_001);
   (bad.generateJson as jest.Mock).mockResolvedValue({
     content: '{"label":"SAFE","confidence":0.9,"reason":"ok"}',
     metadata: {},
   });
-  const r = await c.classify('x');
-  expect(r.ok).toBe(true); // half-open probe succeeded, circuit closed
+  expect((await c.classify('x')).ok).toBe(true); // succeeding probe closes it
   jest.useRealTimers();
 });
 
@@ -139,4 +164,18 @@ it('redacts secrets and truncates to 512 chars before calling the model', async 
   expect(arg.systemPrompt).toContain('"label"');
   expect(arg.feature).toBe('FREE_FORM_CHAT');
   expect(arg.model).toBe('m');
+});
+
+it('sends only the single user message — no history, no other adapter method', async () => {
+  const adapter = adapterReturning(
+    '{"label":"SAFE","confidence":0.9,"reason":"ok"}',
+  );
+  const c = new LlmContentClassifier({ adapter, ...base });
+  await c.classify('cách viết task 1');
+  const arg = (adapter.generateJson as jest.Mock).mock.calls[0][0];
+  expect(arg.userContent).toBe('cách viết task 1');
+  expect(arg).not.toHaveProperty('messages');
+  expect(arg).not.toHaveProperty('history');
+  expect(adapter.chatWithTools).not.toHaveBeenCalled();
+  expect(adapter.chatStream).not.toHaveBeenCalled();
 });

@@ -171,10 +171,9 @@ export interface PlatformAgentOptions {
    * #649 — optional second-tier input classifier. Present only on bots that
    * wire it (Messenger during the shadow window). Gated at runtime by
    * `LLM_INPUT_CLASSIFIER_ENABLED`; enforcement by `LLM_INPUT_CLASSIFIER_ENFORCE`.
+   * Verdict telemetry goes through `metrics.classifierVerdictInc` (#649).
    */
   contentClassifier?: ContentClassifierPort;
-  /** #649: classifier verdict metric inc — bounded labels, no user data. */
-  classifierVerdictInc?(label: string, mode: 'shadow' | 'enforce'): void;
 }
 
 /**

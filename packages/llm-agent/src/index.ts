@@ -195,5 +195,6 @@ export type {
   ClassifierLabel,
   ClassifierVerdict,
   ClassifyResult,
+  ClassifyFailureReason,
   ContentClassifierPort,
 } from './classifier/content-classifier.port';

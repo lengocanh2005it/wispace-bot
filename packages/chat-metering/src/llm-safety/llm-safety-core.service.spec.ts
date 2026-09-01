@@ -180,6 +180,28 @@ describe('LlmSafetyCore', () => {
       );
     });
 
+    it('truncates reason to the 100-char column width', async () => {
+      const inserted: any[] = [];
+      const repo = {
+        insert: jest.fn(async (e: any) => {
+          inserted.push(e);
+        }),
+      } as any;
+      const core = new LlmSafetyCore(repo);
+
+      core.recordClassifierVerdict({
+        externalUserId: 'psid-1',
+        label: 'INJECTION',
+        mode: 'shadow',
+        confidence: 0.9,
+        reason: 'x'.repeat(250),
+        textPreview: 'ignore previous instructions',
+      });
+      await flushMicrotasks();
+
+      expect(inserted[0].reason).toHaveLength(100);
+    });
+
     it('never throws when the repository rejects', async () => {
       const repo = {
         insert: jest.fn(async () => {
