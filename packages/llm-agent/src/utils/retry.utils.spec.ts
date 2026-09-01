@@ -103,7 +103,7 @@ describe('retry.utils', () => {
       jest.useRealTimers();
     });
 
-    it('caps the pre-jitter backoff at maxDelayMs', async () => {
+    it('grows the backoff each attempt (pinned rng) and never exceeds nominal', async () => {
       jest.useFakeTimers();
       const fn = jest
         .fn()
@@ -114,18 +114,17 @@ describe('retry.utils', () => {
 
       const promise = retryWithBackoff(fn, {
         maxAttempts: 4,
-        baseDelayMs: 1000, // attempt 2 nominal would be 2000ms without the cap
-        maxDelayMs: 1500,
+        baseDelayMs: 1000,
         isRetryable: () => true,
         onRetry,
-        rng: () => 1,
+        rng: () => 1, // ceiling: delay == nominal
       });
 
-      await jest.advanceTimersByTimeAsync(1000); // attempt 1: min(1000, 1500) = 1000
-      await jest.advanceTimersByTimeAsync(1500); // attempt 2: min(2000, 1500) = 1500
+      await jest.advanceTimersByTimeAsync(1000); // attempt 1: 1000 * 2^0
+      await jest.advanceTimersByTimeAsync(2000); // attempt 2: 1000 * 2^1
       await promise;
       expect(onRetry).toHaveBeenNthCalledWith(1, 1, 1000, expect.any(Error));
-      expect(onRetry).toHaveBeenNthCalledWith(2, 2, 1500, expect.any(Error));
+      expect(onRetry).toHaveBeenNthCalledWith(2, 2, 2000, expect.any(Error));
       jest.useRealTimers();
     });
 

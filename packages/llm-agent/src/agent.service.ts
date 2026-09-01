@@ -22,6 +22,7 @@ import { isObviouslyOffTopic, isAmbiguousMessage } from './utils/scope.utils';
 import { sanitizeReplyText } from './utils/text.utils';
 import { checkFinalOutputSafety } from './utils/final-output.utils';
 import { sleep, isAbortError } from './utils/retry.utils';
+import { jitteredDelayMs } from '@wispace/bot-common/utils';
 import { LlmAllProvidersExhaustedError } from './provider/failover/failover.errors';
 import { LlmOverloadError } from './execution/bounded-admission';
 import { LlmProviderCircuitOpenError } from './execution/circuit-error';
@@ -1021,9 +1022,11 @@ Summary:`;
         ) {
           break;
         }
-        const delay = Math.min(
-          baseDelay * Math.pow(2, attempt) * (0.5 + Math.random() * 0.5),
-          MAX_RETRY_DELAY_MS,
+        // Shared equal-jitter policy (packages/bot-common) applied after the
+        // cap — spreads concurrent chat retries that aligned on the same
+        // provider 429/5xx so they do not stampede.
+        const delay = jitteredDelayMs(
+          Math.min(baseDelay * Math.pow(2, attempt), MAX_RETRY_DELAY_MS),
         );
         logger.warn(
           `LLM_RETRY attempt=${attempt + 1}/${maxRetries} round=${round} delay=${Math.round(delay)}ms`,

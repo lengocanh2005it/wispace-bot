@@ -463,25 +463,33 @@ Every retry delay that many independent requests/jobs can align on after the
 same upstream failure passes through **one equal-jitter policy**:
 `jitteredDelayMs(nominalMs, rng = Math.random)` in
 `packages/bot-common/src/utils/jitter.utils.ts` — returns a value uniformly in
-`[nominalMs / 2, nominalMs)`. The 50% floor keeps backoff growing roughly
+`[nominalMs / 2, nominalMs)`. Max never exceeds `nominalMs`, so it stays within
+the caller's existing cap/deadline. The 50% floor keeps backoff growing roughly
 monotonically; the spread stops a batch from firing in the same instant / same
-cron tick. `rng` is injectable so tests are deterministic (`() => 1` pins the
-ceiling, `() => 0` the floor); production passes nothing.
+cron tick. A caller that needs a ceiling caps **before** calling the helper
+(`jitteredDelayMs(Math.min(nominal, cap))`). `rng` is injectable so tests are
+deterministic (`() => 1` pins the ceiling, `() => 0` the floor); production
+passes nothing.
 
-| Retry path | Nominal backoff | Jitter |
+**Inventory** — every retry path in the repo, classified:
+
+| Retry path | Current shape | In scope? |
 | --- | --- | --- |
-| Shared LLM retry — `retryWithBackoff` (`packages/llm-agent`) | `baseDelayMs * 2^(attempt-1)`, optional `maxDelayMs` cap | equal jitter **after** the cap |
-| WISPACE client — `withRetry` (`packages/wispace-client`) | `baseDelayMs * 2^attempt` | equal jitter (was already jittered; now via the shared helper) |
-| Redis global slot acquire — `acquireRedisSlot` (#453) | exponential | full-jitter, unchanged (already herd-safe) |
-| Durable webhook inbox — `markFailed` (`packages/webhook-inbound`) | `min(base * 2^(n-1), cap)` | equal jitter after the cap; `InboundRetryConfig.rng` seam |
-| Durable study-reminder outbox — `StudyReminderDispatchService` | flat `retryBackoffMinutes` (Messenger) or `× 2^retryCount` | equal jitter; `StudyReminderDispatchServiceOptions.rng` seam |
-| Durable report-send outbox — `reportRetryAt` (`report-send-retry-dispatch.service`) | flat `retryBackoffMinutes` | equal jitter; `rng`/`now` params |
+| Agent-loop LLM retry — `AgentService.withRetry` (`packages/llm-agent`) | exponential, `min(base·2^n, MAX_RETRY_DELAY_MS)` | ✅ jittered via the shared helper (cap applied before jitter) |
+| Execution-port LLM retry — `retryWithBackoff` (`packages/llm-agent`, used by `createEnvLlmExecutionPort` + Messenger `LlmExecutionService`) | `baseDelayMs * 2^(attempt-1)`, bounded by `maxAttempts` (default 3) | ✅ jittered; `rng` seam |
+| WISPACE client — `withRetry` (`packages/wispace-client`) | `baseDelayMs * 2^attempt` | ✅ was already jittered; now via the shared helper; `rng` seam |
+| Redis global slot acquire — `acquireRedisSlot` (#453) | exponential, cap 1s | already full-jitter, unchanged (herd-safe) |
+| Durable webhook inbox — `markFailed` (`packages/webhook-inbound`) | `min(base * 2^(n-1), cap)` | ✅ jittered after the cap; `InboundRetryConfig.rng` seam |
+| Durable study-reminder outbox — `StudyReminderDispatchService` | flat `retryBackoffMinutes` (Messenger) or `× 2^retryCount` | ✅ jittered; `StudyReminderDispatchServiceOptions.rng` seam |
+| Durable report-send outbox — `reportRetryAt` (`scheduler/application/utils`) | flat `retryBackoffMinutes` | ✅ jittered; `rng`/`now` params |
+| Dead-letter replay — `PlatformDeadLetterCronService.handleRetry` | 5h `@Cron`, eligibility `updated_at < now − minRetryAgeMs`, bounded batch (`RETRY_LIMIT`) processed **sequentially** — no `next_retry_at` | ❌ herd-safe by construction (coarse cron + bounded sequential drip); nothing to jitter |
+| Dead-letter save retry — `PlatformDeadLetterService.SAVE_RETRY_DELAYS_MS` `[0, 50, 100]` | in-process DB-write retry, sub-100ms | ❌ not an outbound retry; no herd shape |
+| WISPACE OA token refresh, account-link reconciliation | single-row, low-cardinality | ❌ not a batch — no alignment risk |
 
 Retryable-error classification, caps, deadlines, `AbortSignal` cancellation,
 lease ownership, idempotency, and ambiguous-delivery handling are unchanged —
-only the delay value moves. Out of scope (no herd risk): account-link
-reconciliation, single-row token refresh, periodic crons. **Always-on, no
-runtime flag** — rollback is a revert.
+only the delay value moves. **Always-on, no runtime flag** — rollback is a
+revert.
 
 ## 7.2. LLM fallback and delivery policy (#422)
 

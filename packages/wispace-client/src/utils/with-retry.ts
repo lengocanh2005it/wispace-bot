@@ -16,6 +16,9 @@ export interface WithRetryOptions {
   shouldRetry?: (error: unknown) => boolean;
   /** Called before each retry sleep — useful for logging. */
   onRetry?: (attempt: number, maxRetries: number, error: unknown) => void;
+  /** Injectable RNG for the equal-jitter spread — tests pass a stub, production
+   *  uses `Math.random`. */
+  rng?: () => number;
   /** Optional signal to cancel retries immediately. */
   signal?: AbortSignal;
 }
@@ -47,7 +50,10 @@ export async function withRetry<T>(
       opts.onRetry?.(attempt + 1, opts.maxRetries, error);
       // Shared equal-jitter policy (packages/bot-common) — spreads retries that
       // aligned on the same upstream failure so they do not stampede.
-      const delay = jitteredDelayMs(opts.baseDelayMs * Math.pow(2, attempt));
+      const delay = jitteredDelayMs(
+        opts.baseDelayMs * Math.pow(2, attempt),
+        opts.rng,
+      );
       await sleep(delay, opts.signal);
     }
   }

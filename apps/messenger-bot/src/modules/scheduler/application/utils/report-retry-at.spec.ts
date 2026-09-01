@@ -1,4 +1,4 @@
-import { reportRetryAt } from './report-send-retry-dispatch.service';
+import { reportRetryAt } from './report-retry-at';
 
 describe('reportRetryAt', () => {
   const NOW = 1_700_000_000_000;

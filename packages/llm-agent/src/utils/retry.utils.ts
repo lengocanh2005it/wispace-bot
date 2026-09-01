@@ -11,11 +11,9 @@ export interface RetryBackoffOptions {
   baseDelayMs: number;
   isRetryable: (error: unknown) => boolean;
   onRetry?: (attempt: number, delayMs: number, error: unknown) => void;
-  /** Backoff for attempt (1-based). Default: exponential `baseDelayMs * 2^(attempt-1)`. */
+  /** Backoff for attempt (1-based). Default: exponential `baseDelayMs * 2^(attempt-1)`.
+   *  A caller that needs a ceiling caps here (before jitter). */
   backoff?: (attempt: number) => number;
-  /** Cap the pre-jitter backoff so a synchronized retry wave never aligns on an
-   *  unbounded delay. Default: uncapped. */
-  maxDelayMs?: number;
   /** Injectable RNG for the equal-jitter spread — tests pass a stub, production
    *  uses `Math.random`. */
   rng?: () => number;
@@ -53,13 +51,9 @@ export async function retryWithBackoff<T>(
       const nominalMs = options.backoff
         ? options.backoff(attempt)
         : options.baseDelayMs * 2 ** (attempt - 1);
-      const cappedMs =
-        options.maxDelayMs !== undefined
-          ? Math.min(nominalMs, options.maxDelayMs)
-          : nominalMs;
-      // Equal jitter after the cap — spreads many requests that failed on the
-      // same upstream error so their retries do not fire in the same instant.
-      const delayMs = jitteredDelayMs(cappedMs, options.rng);
+      // Equal jitter — spreads many requests that failed on the same upstream
+      // error so their retries do not fire in the same instant.
+      const delayMs = jitteredDelayMs(nominalMs, options.rng);
       options.onRetry?.(attempt, delayMs, error);
       await sleep(delayMs, options.signal);
     }

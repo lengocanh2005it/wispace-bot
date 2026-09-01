@@ -12,24 +12,10 @@ import { MESSENGER_REPOSITORY } from '@messenger/modules/messenger/domain/reposi
 import type { MessengerMappingRepositoryPort } from '@messenger/modules/messenger/domain/repositories/messenger-mapping.repository.port';
 import { ReportSendOrchestrationService } from './report-send-orchestration.service';
 import { maskExternalId } from '@wispace/bot-common/masking';
-import { jitteredDelayMs } from '@wispace/bot-common/utils';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { subMilliseconds } from 'date-fns';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
-
-/**
- * `next_retry_at` for a failed report-send job: the flat `retryBackoffMinutes`
- * window with the shared equal-jitter (50–100% of nominal) applied, so a batch
- * of jobs that failed on the same WISPACE outage do not all come due on the
- * same poll tick. `rng`/`now` are injectable for deterministic tests.
- */
-export function reportRetryAt(
-  retryBackoffMinutes: number,
-  rng?: () => number,
-  now: number = Date.now(),
-): Date {
-  return new Date(now + jitteredDelayMs(retryBackoffMinutes * 60_000, rng));
-}
+import { reportRetryAt } from '../utils/report-retry-at';
 
 @Injectable()
 export class ReportSendRetryDispatchService {

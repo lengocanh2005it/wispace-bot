@@ -151,6 +151,29 @@ describe('wispace-client/with-retry', () => {
       expect(fn).toHaveBeenCalledTimes(3); // initial + 2 retries
     });
 
+    it('jitters each retry delay within [50%, 100%] of the nominal backoff', async () => {
+      jest.useFakeTimers();
+      const fn = jest
+        .fn()
+        .mockRejectedValueOnce(new TypeError('fetch failed'))
+        .mockResolvedValue('ok');
+
+      // rng floor → first retry delay is exactly baseDelayMs * 2^0 * 0.5.
+      const promise = withRetry(fn, {
+        maxRetries: 2,
+        baseDelayMs: 1000,
+        shouldRetry: isWispaceRetryable,
+        rng: () => 0,
+      });
+
+      await jest.advanceTimersByTimeAsync(499);
+      expect(fn).toHaveBeenCalledTimes(1); // not yet — delay is 500ms
+      await jest.advanceTimersByTimeAsync(1);
+      await promise;
+      expect(fn).toHaveBeenCalledTimes(2);
+      jest.useRealTimers();
+    });
+
     it('aborts the in-flight attempt before any retry starts (no overlap)', async () => {
       const controller = new AbortController();
       let inFlightSettled = false;
