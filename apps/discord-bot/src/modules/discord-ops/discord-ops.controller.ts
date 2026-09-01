@@ -6,8 +6,6 @@ import {
   StudyReminderSyncService,
 } from '@wispace/study-reminder-shared';
 import { WispaceCalendarService } from '@wispace/wispace-client';
-import { DopplerRuntimeSyncService } from '@wispace/doppler-sync';
-import type { DopplerWebhookPayload } from '@wispace/doppler-sync';
 import { PrivacyDataService } from '@wispace/database';
 import { DiscordReportCronService } from '../discord-chat/application/services/discord-report-cron.service';
 import {
@@ -18,20 +16,17 @@ import {
 
 @Controller('discord')
 @UseGuards(InternalApiKeyGuard)
-export class DiscordOpsController extends PlatformOpsController<DopplerWebhookPayload> {
+export class DiscordOpsController extends PlatformOpsController {
   constructor(
     reportCronService: DiscordReportCronService,
     studyReminderSyncService: StudyReminderSyncService,
     calendarService: WispaceCalendarService,
-    dopplerRuntimeSyncService: DopplerRuntimeSyncService,
     privacyService: PrivacyDataService,
     clarificationAgent: PlatformAgentService,
     historyService: PlatformChatHistoryService,
     queueService: PlatformChatQueueService,
   ) {
     super({
-      dopplerRuntimeSync: (body) =>
-        dopplerRuntimeSyncService.scheduleSync(body),
       sendReports: () => reportCronService.sendScheduledReports(),
       syncStudyReminders: () =>
         studyReminderSyncService.syncUpcomingSessions({

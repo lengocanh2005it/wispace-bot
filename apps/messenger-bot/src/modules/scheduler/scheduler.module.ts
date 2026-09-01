@@ -40,7 +40,6 @@ import { StudentReportModule } from '../student-report/student-report.module';
 import { StudyReminderModule } from '../study-reminder/study-reminder.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { MemoizedWispaceGoalsService } from '@wispace/wispace-client';
-import { DopplerRuntimeSyncService } from './application/services/doppler-runtime-sync.service';
 import { OpsHealthCronService } from './application/services/ops-health-cron.service';
 import { DataQualityCronService } from './application/services/data-quality-cron.service';
 import { OpsHealthService } from './application/services/ops-health.service';
@@ -150,7 +149,6 @@ import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
     OpsHealthService,
     OpsHealthCronService,
     DataQualityCronService,
-    DopplerRuntimeSyncService,
     LlmSafetyService,
     PrivacyDataService,
   ],

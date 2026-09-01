@@ -513,6 +513,32 @@ grep -q ' -> ' "$dir/mv.log" || fail "atomic mv was not recorded"
 [ "$(find "$dir/deploy" -maxdepth 1 -name '.env.install.*' | wc -l)" -eq 0 ] || fail "temporary install file was not cleaned up"
 pass "Vault bootstrap uses a mode-600 atomic replacement"
 
+echo "Test 21b: retired runtime-sync flags are removed before bootstrap validation (#655)"
+dir=$(make_env retired-runtime-flag-bootstrap)
+write_env "$dir"
+printf 'VAULT_REQUIRED=true\nVAULT_ADDR=https://vault.example.test\nVAULT_ROLE_ID=role-new\nVAULT_SECRET_ID=secret-new\nDOPPLER_RUNTIME_SYNC_ENABLED=false\n' > "$dir/deploy/vault-bootstrap.env"
+chmod 600 "$dir/deploy/vault-bootstrap.env"
+code=$(run_script "$dir" SKIP_NGINX_CHECK=true)
+[ "$code" -eq 0 ] || fail "retired bootstrap flag was not migrated, exit $code: $(cat "$dir/run.out")"
+! grep -q '_RUNTIME_SYNC_ENABLED=' "$dir/deploy/.env" || fail "retired bootstrap flag survived migration"
+pass "retired bootstrap flag is stripped"
+
+dir=$(make_env retired-runtime-flag-existing)
+write_env "$dir"
+printf 'DOPPLER_RUNTIME_SYNC_ENABLED=false\n' >> "$dir/deploy/.env"
+code=$(run_script "$dir" SKIP_NGINX_CHECK=true)
+[ "$code" -eq 0 ] || fail "retired existing flag was not migrated, exit $code: $(cat "$dir/run.out")"
+! grep -q '_RUNTIME_SYNC_ENABLED=' "$dir/deploy/.env" || fail "retired existing flag survived migration"
+pass "retired existing flag is stripped"
+
+dir=$(make_env unsupported-runtime-flag)
+write_env "$dir"
+printf 'FOO_RUNTIME_SYNC_ENABLED=false\n' >> "$dir/deploy/.env"
+code=$(run_script "$dir" SKIP_NGINX_CHECK=true)
+[ "$code" -eq 1 ] || fail "unrelated runtime-sync flag was silently accepted, exit $code"
+grep -q "unsupported setting" "$dir/run.out" || fail "unrelated runtime-sync flag did not fail validation"
+pass "unrelated runtime-sync flags remain fail-closed"
+
 echo "Test 22: env permission/temp/mv failures stop deployment (#276)"
 dir=$(make_env fail-existing-chmod)
 write_env "$dir"

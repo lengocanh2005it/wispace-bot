@@ -7,8 +7,6 @@ import {
   StudyReminderSyncService,
 } from '@wispace/study-reminder-shared';
 import { WispaceCalendarService } from '@wispace/wispace-client';
-import { DopplerRuntimeSyncService } from '@wispace/doppler-sync';
-import type { DopplerWebhookPayload } from '@wispace/doppler-sync';
 import { PrivacyDataService } from '@wispace/database';
 import { ZaloReportCronService } from '../zalo-chat/infrastructure/persistence/zalo-report-cron.service';
 import {
@@ -31,20 +29,17 @@ class SendReportsBody {
 
 @Controller('zalo')
 @UseGuards(InternalApiKeyGuard)
-export class ZaloOpsController extends PlatformOpsController<DopplerWebhookPayload> {
+export class ZaloOpsController extends PlatformOpsController {
   constructor(
     private readonly studyReminderSyncService: StudyReminderSyncService,
     private readonly reportCronService: ZaloReportCronService,
     private readonly calendarService: WispaceCalendarService,
-    dopplerRuntimeSyncService: DopplerRuntimeSyncService,
     privacyService: PrivacyDataService,
     clarificationAgent: PlatformAgentService,
     historyService: PlatformChatHistoryService,
     queueService: PlatformChatQueueService,
   ) {
     super({
-      dopplerRuntimeSync: (body) =>
-        dopplerRuntimeSyncService.scheduleSync(body),
       sendReports: (body?: SendReportsBody) =>
         reportCronService.sendDailyReports({
           forceSend: body?.forceSend === true,

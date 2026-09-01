@@ -66,10 +66,10 @@ container, pass its health gate, then retire the old container. Reads use the
 current KV version; restoring a previous KV version is an operator action
 before a later restart.
 
-## Production delivery (#654)
+## Production delivery (#654/#655)
 
 Production deploys deliver only a short-lived `vault-bootstrap.env`; a full
-secret-bearing `production.env` is not created, uploaded, or retained. The
+secret-bearing runtime env file is not created, uploaded, or retained. The
 reusable workflow requires the repository/environment variable `VAULT_ADDR` and
 these per-bot GitHub Actions secrets:
 
@@ -98,8 +98,6 @@ container; it does not roll back Vault data.
 
 The deployment regression suite covers fresh/manual/self-pull delivery,
 rotation, rollback, migration fencing, and rejection of full-secret artifacts.
-The legacy Doppler runtime code and local-development instructions remain only
-for the follow-up cleanup in issue #655.
 
 ## Preflight and tests
 
@@ -112,5 +110,4 @@ bootstrap-adapter smoke test.
 
 Before a deploy, verify AppRole policy access to the shared and per-bot paths
 without printing values. The runtime contract and this delivery flow are
-implemented together; removal of the remaining legacy Doppler tooling is tracked
-separately in issue #655.
+Vault-only.

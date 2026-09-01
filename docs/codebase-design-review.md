@@ -39,7 +39,7 @@ study reminder (`MessageSenderPort` ×3), quota/metering (`BurstCounterPort` ×3
 Nợ thiết kế không nằm ở "thiếu abstraction" mà ở 4 chỗ:
 
 1. **Seam đã xây nhưng một platform chưa chuyển** — Messenger vẫn chạy bản copy riêng của report
-   orchestration (279 dòng), calendar command (291 dòng), doppler-sync (fork 184 dòng).
+   orchestration (279 dòng), calendar command (291 dòng).
 2. **Clone Discord ↔ Zalo ở lifecycle chưa được extract** — account-link (~92% giống nhau ở reconcile
    cron), copy-drift đã **mất behavior thật** trên Zalo (relink-notification, welcome dedupe).
 3. **Các khớp nối ("joints") giữa core đã extract** — quyền reserve quota nằm ở 2 tầng,
@@ -71,7 +71,6 @@ Nợ thiết kế không nằm ở "thiếu abstraction" mà ở 4 chỗ:
 | `getTypeOrmOptions` (@wispace/database) | 1 call | TLS fail-closed policy + pool tuning + migration glob — xoá đi là policy tái xuất ×3 apps |
 | `PlatformWebhookInboundEventService` / `PlatformDeadLetterService` | 9/6 methods | idempotent ingest, lease claim, backoff, bounded retention |
 | `learner-profile` pure fns | 2 fns + hooks | grounding/TTL logic đáng lẽ tái xuất ×3 apps |
-| `doppler-sync::scheduleSync` | 1 method | debounce + payload filter + atomic 0600 env-write |
 
 ### 2.2 Shallow / rác cần dọn
 
@@ -258,8 +257,8 @@ app service) · `ToolExecutorPort<T>` ×2+scripted · `RedisClientPort` + fakes 
 6. **`ChatRuntimeConfig`** (M8) — 1 parser cho ~25 keys, xoá clamp/default duplicated.
 7. **Shrink `CleanupCronService.execute(name, advisoryLockId, deleteFn)`** + `withLockedTick(...)` wrapper
    cho 5 cron trong database package (fix unlocked recovery cron by construction).
-8. **Finish doppler**: Messenger chuyển sang `DopplerSyncModule.forPlatform('messenger')`, port spec sang
-   package (hiện package 0 specs, twin mới có tests).
+8. **Keep Vault delivery single-path**: production receives only the validated AppRole bootstrap;
+   runtime secret sync adapters and developer CLI helpers are retired.
 9. **Adopt `PlatformStudyCalendarCommandService` trong Messenger** (M7) — signature khớp sẵn.
 
 ---
@@ -288,7 +287,7 @@ app service) · `ToolExecutorPort<T>` ×2+scripted · `RedisClientPort` + fakes 
 | `packages/database` | Đa số DEEP services; leaky `PrivacyDataService` (latent defect), triplicated inbox port, cron skeleton ×4 |
 | `packages/wispace-client` | Endpoint clients deep; internals shallow (resilience ×3, 5 endpoints naked) |
 | `packages/bot-common` | Grab-bag MIXED — deep units chôn trong barrel; cần split |
-| `packages/bot-metrics`, `doppler-sync`, `date-utils` | DEEP/MIXED — đủ giá trị; doppler bị fork, date-utils thừa aliases |
+| `packages/bot-metrics`, `date-utils` | DEEP/MIXED — metrics remain useful; date-utils still has a few aliases |
 | `packages/ops-health` | SHALLOW + orphaned — fix-or-delete |
 | `apps/discord-bot` / `zalo-bot` | Adapter shells tốt trên shared seams; debt = account-link clones + composition roots |
 | `apps/messenger-bot` | Package-backed tốt; debt = constructor-width processor, rename layer, 2 mảnh logic WISPACE-domain còn mặc đồ Messenger |

@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { BotCommonModule } from '@wispace/bot-common/guard';
-import { DopplerSyncModule } from '@wispace/doppler-sync';
 import { PrivacyDataService } from '@wispace/database';
 import { DiscordReportModule } from '../discord-chat/discord-report.module';
 import { DiscordChatModule } from '../discord-chat/discord-chat.module';
@@ -16,7 +15,6 @@ import { DiscordOpsController } from './discord-ops.controller';
     DiscordStudyReminderModule,
     // Authoritative session source for direct sync entry points (#111).
     WispaceModule,
-    DopplerSyncModule.forPlatform('discord-bot'),
   ],
   controllers: [DiscordOpsController],
   providers: [PrivacyDataService],

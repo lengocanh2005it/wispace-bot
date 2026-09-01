@@ -45,7 +45,7 @@ The wispace-bot monorepo demonstrates **strong security fundamentals** in its co
 | A-17 | INFO       | Injection        | `apps/messenger-bot/src/shared/utils/llm-json-output.utils.ts`                                      | ✅ LLM JSON output parsed + shape-validated before use                                                                                            |
 | A-18 | INFO       | Data Integrity   | `packages/chat-metering/src/chat-rate-limit/chat-rate-limit.repository.ts:77-123`                   | ✅ Idempotency key handling prevents duplicate rate-limit reservations                                                                            |
 | A-19 | INFO       | Resilience       | `packages/database/src/services/platform-dead-letter.service.ts`                                    | ✅ Dead-letter queue captures failed webhook events for retry                                                                                     |
-| A-20 | INFO       | Secrets          | `apps/messenger-bot/src/modules/scheduler/application/services/doppler-runtime-sync.service.ts:282` | ✅ Doppler sync writes `.env` with mode `0o600` (owner-only)                                                                                      |
+| A-20 | INFO       | Secrets          | `.github/scripts/vps-deploy.sh`                                                                      | ✅ Vault bootstrap files are validated, installed atomically, and kept mode `0o600` (owner-only)                                                     |
 
 ---
 
@@ -257,7 +257,7 @@ No string interpolation or concatenation was found in any SQL query.
 
 - `.env` and `.env.shared` are gitignored
 - All secrets read via `ConfigService` (NestJS DI)
-- Doppler integration for production secrets
+- Vault AppRole bootstrap for production secrets
 - `.env` files written with mode `0o600` (owner-only read/write)
 - No hardcoded secrets found in source code
 

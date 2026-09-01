@@ -15,8 +15,6 @@ import {
 } from '@wispace/study-reminder-shared';
 import { StudySessionSourceService } from '@messenger/modules/study-reminder/application/services/study-session-source.service';
 import { MessengerMappingService } from '@messenger/modules/messenger/application/services/messenger-mapping.service';
-import { DopplerRuntimeSyncService } from '../../application/services/doppler-runtime-sync.service';
-import type { DopplerWebhookPayload } from '../../domain/entities/doppler-runtime-sync.types';
 import { ReportCronService } from '../../application/services/report-cron.service';
 import { ReportSendRetryDispatchService } from '../../application/services/report-send-retry-dispatch.service';
 import { PrivacyDataService } from '@wispace/database';
@@ -68,18 +66,11 @@ export class SchedulerController {
     private readonly sessionSourceService: StudySessionSourceService,
     private readonly messengerMappingService: MessengerMappingService,
     private readonly reportSendRetryDispatchService: ReportSendRetryDispatchService,
-    private readonly dopplerRuntimeSyncService: DopplerRuntimeSyncService,
     private readonly privacyService: PrivacyDataService,
     private readonly clarificationAgent: MessengerAgentService,
     private readonly historyService: PlatformChatHistoryService,
     private readonly chatEnqueueService: MessengerChatEnqueueService,
   ) {}
-
-  @Post('ops/doppler-sync')
-  @HttpCode(202)
-  dopplerRuntimeSync(@Body() body?: DopplerWebhookPayload) {
-    return this.dopplerRuntimeSyncService.scheduleSync(body);
-  }
 
   @Post('send-reports')
   @HttpCode(200)

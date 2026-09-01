@@ -14,7 +14,7 @@ See the full design at [docs/superpowers/specs/2026-07-20-zalo-bot-mvp-design.md
 - Account linking via Zalo Login PKCE OAuth2 (`GET /v1/zalo/oauth/authorize` + `/callback`) → shared `WISPACE_API_VERIFY_TOKEN_URL`.
 - OA access-token lifecycle: `zalo_oa_tokens` (AES-256-GCM encrypted at rest, `version` CAS), proactive refresh cron (default every 45 min).
 - 08:00 report cron with LLM enrichment (`ZaloStudentReportService`), study reminders (shared `@wispace/study-reminder-shared`), durable webhook inbox + retry/cleanup, outbound dead-letter retry, message-log cleanup, report-claims retention — all advisory-locked.
-- Ops endpoints `POST /v1/zalo/{send-reports, study-calendar/sync, sync-study-reminders, ops/doppler-sync}` + `GET /metrics` — `InternalApiKeyGuard`.
+- Ops endpoints `POST /v1/zalo/{send-reports, study-calendar/sync, sync-study-reminders}` + `GET /metrics` — `InternalApiKeyGuard`.
 - Health endpoints (shared `HealthController`): `/health` public liveness, `/health/ready` public readiness, `/health/detail` internal.
 - CI/CD: `deploy-bots.yml` job + shared `deploy/Dockerfile.bot` + VPS self-pull deploy.
 

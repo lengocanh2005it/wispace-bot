@@ -6,8 +6,7 @@ export class PrivacyActionBody {
   externalUserId!: string;
 }
 
-export interface PlatformOpsHandlers<TDopplerBody> {
-  dopplerRuntimeSync(body?: TDopplerBody): unknown;
+export interface PlatformOpsHandlers {
   sendReports(body?: unknown): unknown;
   syncStudyReminders(): unknown;
   unlinkUser(externalUserId: string): unknown;
@@ -16,16 +15,8 @@ export interface PlatformOpsHandlers<TDopplerBody> {
   clearClarification(externalUserId: string): unknown;
 }
 
-export abstract class PlatformOpsController<TDopplerBody = unknown> {
-  protected constructor(
-    protected readonly ops: PlatformOpsHandlers<TDopplerBody>,
-  ) {}
-
-  @Post('ops/doppler-sync')
-  @HttpCode(202)
-  dopplerRuntimeSync(@Body() body?: TDopplerBody) {
-    return this.ops.dopplerRuntimeSync(body);
-  }
+export abstract class PlatformOpsController {
+  protected constructor(protected readonly ops: PlatformOpsHandlers) {}
 
   @Post('send-reports')
   @HttpCode(200)

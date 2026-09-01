@@ -124,7 +124,7 @@ Zalo bot has chat + quota/usage/safety + account-linking OAuth2 + 7/7 real WISPA
 - Durable webhook inbox via PostgreSQL `webhook_inbound_events` with unique `(platform, event_id)`
 - Chat history via `@wispace/chat-history` (memory + Redis)
 - Health endpoints via shared `HealthController` (`GET /health` liveness, `GET /health/ready` readiness, `GET /health/detail` internal)
-- Legacy Doppler webhook endpoint (`POST /zalo/ops/doppler-sync`) retained for compatibility; production env sync uses the manual workflow
+- Historical migration note (pre-#655): production delivery once used Doppler; current releases are Vault-only.
 
 **Recently added (commits 9b9ff9a, 66352b7, ad8a196):**
 
@@ -152,5 +152,5 @@ Single `deploy-bots.yml` with 3 jobs (messenger/discord/zalo) + shared `deploy-b
 | 1     | Turborepo scaffold + extract `packages/llm-agent` + discord/zalo placeholders | ✅ Completed                                                                                                                                                                                                                                                                                          |
 | 2     | Generalize DB key `(platform, external_user_id)`                              | ✅ Completed — migration ran on VPS production, verified via SSH                                                                                                                                                                                                                                      |
 | 3     | Implement Discord bot                                                         | ✅ Features complete (chat + quota + account-linking OAuth2 + 7/7 real tools + reschedule + 08:00 report cron + leader-election + retry dispatch + study reminders + dead letter + message log + CI/CD workflow + deploy scripts) — no real end-to-end testing yet                                    |
-| 4     | Implement Zalo bot                                                            | ✅ Features complete (chat + quota + account-linking + 7/7 tools + LLM report + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD + health endpoints + Redis queue/history options + chat queue; legacy Doppler webhook retained but disabled in hardened production containers) |
+| 4     | Implement Zalo bot                                                            | ✅ Features complete (chat + quota + account-linking + 7/7 tools + LLM report + study reminders + dead letter + stuck recovery + ops endpoints + CI/CD + health endpoints + Redis queue/history options + chat queue; production secrets delivered through Vault) |
 | 5     | Fully independent CI/CD                                                       | ✅ Single `deploy-bots.yml` with 3 jobs (messenger/discord/zalo) + shared `deploy-bot-reusable.yml` + `deploy/Dockerfile.bot`                                                                                                                                                                         |

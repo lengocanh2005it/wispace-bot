@@ -4,10 +4,9 @@ import {
   PrivacyActionBody,
 } from './platform-ops.controller';
 
-class TestOpsController extends PlatformOpsController<string> {}
+class TestOpsController extends PlatformOpsController {}
 
 const handlers = {
-  dopplerRuntimeSync: jest.fn(),
   sendReports: jest.fn(),
   syncStudyReminders: jest.fn(),
   unlinkUser: jest.fn(),
@@ -24,10 +23,8 @@ describe('PlatformOpsController', () => {
   });
 
   it('delegates shared ops actions', async () => {
-    const dopplerBody = 'doppler';
     const reportBody = { forceSend: true };
 
-    controller.dopplerRuntimeSync(dopplerBody);
     controller.sendReports(reportBody);
     controller.syncStudyReminders();
     controller.unlinkUser({ externalUserId: 'u1' });
@@ -35,7 +32,6 @@ describe('PlatformOpsController', () => {
     controller.exportUser({ externalUserId: 'u3' });
     controller.clearClarificationState({ externalUserId: 'u4' });
 
-    expect(handlers.dopplerRuntimeSync).toHaveBeenCalledWith(dopplerBody);
     expect(handlers.sendReports).toHaveBeenCalledWith(reportBody);
     expect(handlers.syncStudyReminders).toHaveBeenCalledWith();
     expect(handlers.unlinkUser).toHaveBeenLastCalledWith('u1');
@@ -46,7 +42,6 @@ describe('PlatformOpsController', () => {
 
   it('binds the shared routes and status codes', () => {
     const routes = [
-      ['dopplerRuntimeSync', 'ops/doppler-sync', RequestMethod.POST, 202],
       ['sendReports', 'send-reports', RequestMethod.POST, HttpStatus.OK],
       [
         'syncStudyReminders',
@@ -71,6 +66,12 @@ describe('PlatformOpsController', () => {
       expect(Reflect.getMetadata('method', handler)).toBe(requestMethod);
       expect(Reflect.getMetadata('__httpCode__', handler)).toBe(statusCode);
     }
+  });
+
+  it('does not expose the retired runtime secret sync route', () => {
+    expect(TestOpsController.prototype).not.toHaveProperty(
+      'dopplerRuntimeSync',
+    );
   });
 
   it('keeps the privacy action body contract', () => {

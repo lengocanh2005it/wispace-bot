@@ -11,7 +11,7 @@ SYNC_ENV="$ROOT/.github/workflows/sync-env.yml"
 VPS_DEPLOY="$ROOT/.github/scripts/vps-deploy.sh"
 SELF_PULL="$ROOT/.github/scripts/vps-self-pull-deploy.sh"
 MIGRATION_RUNNER="$ROOT/apps/messenger-bot/src/infrastructure/database/vault-migrations.ts"
-LEGACY_DOPPLER_DOC="$ROOT/apps/messenger-bot/docs/doppler-secrets.md"
+SECRET_MANAGER_GUARD="$ROOT/.github/scripts/check-secret-manager-references.sh"
 
 fail() { echo "FAIL: $1" >&2; exit 1; }
 pass() { echo "  ok: $1"; }
@@ -44,16 +44,11 @@ grep -q 'PGPASSWORD' "$MIGRATION_RUNNER" \
   || fail "Vault migration runner does not pass the DB password to pg_dump"
 pass "VPS deploy consumes bootstrap-only env and in-container probes"
 
-! grep -Eq 'Doppler|doppler|production\.env' "$SELF_PULL" \
+! grep -Eq 'production\.env' "$SELF_PULL" \
   || fail "self-pull still references the legacy runtime secret path"
 grep -q 'validate_bootstrap_env' "$SELF_PULL" \
   || fail "self-pull does not validate the bootstrap env"
-pass "self-pull is Vault-only"
-
-grep -q 'Production delivery is Vault-only' "$LEGACY_DOPPLER_DOC" \
-  || fail "legacy Doppler document lacks the production Vault-only warning"
-! grep -Eq 'production\.env|DOPPLER_TOKEN|Sync production env' "$LEGACY_DOPPLER_DOC" \
-  || fail "legacy Doppler document still contains production delivery instructions"
-pass "operator docs point production users to Vault"
+bash "$SECRET_MANAGER_GUARD" || fail "active legacy secret-manager reference detected"
+pass "self-pull and tracked docs are Vault-only"
 
 echo "ALL TESTS PASSED"

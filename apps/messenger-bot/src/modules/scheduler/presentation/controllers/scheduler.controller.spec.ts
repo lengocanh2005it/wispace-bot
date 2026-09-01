@@ -15,7 +15,6 @@ describe('SchedulerController ops clarification recovery', () => {
     {} as never,
     {} as never,
     {} as never,
-    {} as never,
     mockClarificationAgent as never,
   );
 
@@ -36,6 +35,12 @@ describe('SchedulerController ops clarification recovery', () => {
     expect(Reflect.getMetadata('method', handler)).toBe(RequestMethod.POST);
     expect(Reflect.getMetadata('__httpCode__', handler)).toBe(
       HttpStatus.NO_CONTENT,
+    );
+  });
+
+  it('does not expose the retired runtime secret sync route', () => {
+    expect(SchedulerController.prototype).not.toHaveProperty(
+      'dopplerRuntimeSync',
     );
   });
 

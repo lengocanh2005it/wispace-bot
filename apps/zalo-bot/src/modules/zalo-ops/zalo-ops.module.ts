@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { BotCommonModule } from '@wispace/bot-common/guard';
-import { DopplerSyncModule } from '@wispace/doppler-sync';
 import { PrivacyDataService } from '@wispace/database';
 import { ZaloReportModule } from '../zalo-chat/zalo-report.module';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
@@ -16,7 +15,6 @@ import { ZaloOpsController } from './zalo-ops.controller';
     ZaloStudyReminderModule,
     // Authoritative session source for direct sync entry points (#111).
     ZaloWispaceModule,
-    DopplerSyncModule.forPlatform('zalo-bot'),
   ],
   controllers: [ZaloOpsController],
   providers: [PrivacyDataService],

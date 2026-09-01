@@ -2,7 +2,7 @@
 
 **Preparation document** for operating when the project scales from **1 instance** to **2 NestJS instances** behind Nginx — **not yet implemented** until metrics trigger (section 2).
 
-Related: [project-overview.md](../../../docs/project-overview.md) §10, [chat-rate-limit-quota.md](./chat-rate-limit-quota.md) §H7, [doppler-secrets.md](./doppler-secrets.md), `deploy/nginx/`.
+Related: [project-overview.md](../../../docs/project-overview.md) §10, [chat-rate-limit-quota.md](./chat-rate-limit-quota.md) §H7, [vault-secrets.md](../../../docs/vault-secrets.md), `deploy/nginx/`.
 
 ---
 
@@ -83,7 +83,7 @@ Benefits are **most clear** when **many PSIDs chat simultaneously** and **single
 | Trade-off                                | Details                                                                                                                   |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | **Operational complexity**               | 2 containers, 2 ports, Nginx upstream, env leader, dual health checks, more complex rollback than 1 pod.                  |
-| **Doppler + Compose**                    | Shared `.env` insufficient — `INSTANCE_ID` override per service; easy to misconfigure leader.                             |
+| **Vault bootstrap + Compose**            | Shared runtime secrets stay in Vault; `INSTANCE_ID` still needs a per-service override to keep leader identity unique.    |
 | **2 vCPU VPS shared**                    | 2 pods + Postgres + Redis + other services **compete for CPU** — not "double the power".                                  |
 | **RAM & DB connections**                 | ~2× app process footprint; ~2× TypeORM connection pool to PostgreSQL.                                                     |
 | **Cron / loop runs twice**               | Reminder adaptive dispatch: **both pods** poll DB (`claimJob` prevents duplicate sends, but **extra queries**).           |
@@ -130,7 +130,7 @@ On a **2-core** VPS with **~0% CPU** load (prod reference) → benefits are **ne
 - [ ] Redis stable: `curl -sf http://127.0.0.1:5007/health/ready` → `{"status":"ok"}` (fails while Redis configured but unreachable)
 - [ ] Prod has: `REDIS_ENABLED=true`, `CHAT_QUEUE_STORE=redis`, `CHAT_HISTORY_STORE=redis`; webhook delivery dedupe is handled by the durable `webhook_inbound_events` inbox (there is no `CHAT_DEDUPE_STORE`)
 - [ ] `CHAT_RATE_LIMIT_ENABLED=true`, `ENFORCE_PROD_CHAT_QUOTA=true`
-- [ ] Backup `.env` / Doppler config `prd` (snapshot before change)
+- [ ] Record the Vault KV version and back up the local bootstrap metadata (never secret values)
 - [ ] Deploy window: **outside peak chat hours** (avoid evenings after announcements)
 - [ ] `sudo` access on VPS for `nginx -t && systemctl reload nginx`
 
@@ -138,7 +138,7 @@ On a **2-core** VPS with **~0% CPU** load (prod reference) → benefits are **ne
 
 ## 6. Environment Variables
 
-### 6.1. Shared (`.env` / Doppler `prd` — **same** on both pods)
+### 6.1. Shared (`.env` / Vault KV — **same** on both pods)
 
 Add or change when scaling:
 
@@ -160,7 +160,7 @@ CHAT_HISTORY_STORE=redis
 CHAT_RATE_LIMIT_ENABLED=true
 ```
 
-**Don't** set `INSTANCE_ID` in Doppler if using shared config — it will be identical on both pods (see 6.2).
+**Don't** set `INSTANCE_ID` in the shared Vault path — it will be identical on both pods (see 6.2).
 
 ### 6.2. Per-Pod Override (Docker Compose — **Required**)
 
@@ -184,11 +184,15 @@ Leader election is now lease-based (`cron_leader_leases` table): `CRON_LEADER_EN
 
 **Warning:** leaving `CRON_LEADER_ENABLED=false` (default) means **both pods** run cron — the R4 advisory lock/claim still prevents duplicates but wastes resources.
 
-### 6.4. Doppler
+### 6.4. Vault
 
-- Shared secrets: `CHAT_QUEUE_SHARED`, `CRON_LEADER_ENABLED` — upload to `prd` config.
-- `INSTANCE_ID` / pod 2 port: **don't** put in shared Doppler — override in `docker-compose` per service.
-- After changing Doppler: run the manual **Sync production env** workflow. Bot containers do not receive the host Docker socket.
+- Shared secrets: `CHAT_QUEUE_SHARED`, `CRON_LEADER_ENABLED` — write to
+  `secret/data/wispace-bots/messenger/prd` (or the shared path when all bots
+  need the value).
+- `INSTANCE_ID` / pod 2 port: **don't** put in shared Vault — override in
+  `docker-compose` per service.
+- After changing Vault: run the manual **Sync production env** workflow. Bot
+  containers do not receive the host Docker socket.
 
 ---
 
@@ -285,9 +289,9 @@ Needs expansion for real implementation:
 
 ### 9.1. Pre-Cutover
 
-1. Snapshot Doppler `prd` + backup `~/messenger-bot/.env`
+1. Record the Vault KV version + back up `~/messenger-bot/.env`
 2. Merge ops PR (compose + nginx + deploy script) — when code is ready
-3. Set Doppler: `CHAT_QUEUE_SHARED=true`, `CRON_LEADER_ENABLED=true`
+3. Set Vault: `CHAT_QUEUE_SHARED=true`, `CRON_LEADER_ENABLED=true`
 4. Deploy new image + compose 2 services
 5. Update Nginx upstream → `nginx -t` → reload
 

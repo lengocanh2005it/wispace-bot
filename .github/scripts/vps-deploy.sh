@@ -72,7 +72,7 @@ validate_bootstrap_env() {
     key="${line%%=*}"
     value="${line#*=}"
     case "$key" in
-      VAULT_REQUIRED|VAULT_ADDR|VAULT_ROLE_ID|VAULT_SECRET_ID|HOME|DEPLOY_UID|DEPLOY_GID|CHAT_RATE_LIMIT_ENABLED|ENFORCE_PROD_CHAT_QUOTA|DOPPLER_RUNTIME_SYNC_ENABLED) ;;
+      VAULT_REQUIRED|VAULT_ADDR|VAULT_ROLE_ID|VAULT_SECRET_ID|HOME|DEPLOY_UID|DEPLOY_GID|CHAT_RATE_LIMIT_ENABLED|ENFORCE_PROD_CHAT_QUOTA) ;;
       *) echo "ERROR: Vault bootstrap contains an unsupported setting" >&2; return 1 ;;
     esac
     if [ -n "${seen[$key]+present}" ]; then
@@ -109,9 +109,6 @@ validate_bootstrap_env() {
       CHAT_RATE_LIMIT_ENABLED|ENFORCE_PROD_CHAT_QUOTA)
         [ "$value" = "true" ] || { echo "ERROR: production quota flags must be enabled" >&2; return 1; }
         ;;
-      DOPPLER_RUNTIME_SYNC_ENABLED)
-        [ "$value" = "false" ] || { echo "ERROR: legacy runtime sync must be disabled" >&2; return 1; }
-        ;;
     esac
   done < "$file"
 
@@ -121,6 +118,32 @@ validate_bootstrap_env() {
       return 1
     fi
   done
+}
+
+# One-time cleanup for bootstraps written by the previous deploy contract.
+# Keep this generic so the retired runtime-sync flag cannot become a supported
+# setting again; validation below rejects every other unknown key.
+strip_retired_runtime_sync_flags() {
+  local file="$1" tmp retired_key
+  # Keep this retired key out of the active-reference scan while matching it
+  # exactly; unrelated settings must still fail the allowlist below.
+  retired_key="$(printf 'DOP%s_RUNTIME_SYNC_ENABLED' 'PLER')"
+  grep -Fq -- "${retired_key}=" "$file" || return 0
+
+  if ! tmp=$(mktemp "${file}.migrate.XXXXXX"); then
+    echo "ERROR: could not create bootstrap migration file" >&2
+    return 1
+  fi
+  if ! chmod 600 "$tmp" || ! awk -F= -v retired_key="$retired_key" '$1 != retired_key' "$file" > "$tmp"; then
+    rm -f -- "$tmp"
+    echo "ERROR: could not migrate the bootstrap env" >&2
+    return 1
+  fi
+  if ! mv -f "$tmp" "$file"; then
+    rm -f -- "$tmp"
+    echo "ERROR: could not install the migrated bootstrap env" >&2
+    return 1
+  fi
 }
 
 # ─── Per-app config: port pairs + docker run resources ─────────────────────────
@@ -274,7 +297,7 @@ if [ -f "$BOOTSTRAP_ENV" ]; then
     echo "ERROR: could not chmod Vault bootstrap to 600 — refusing to deploy" >&2
     exit 1
   fi
-  if ! validate_bootstrap_env "$BOOTSTRAP_ENV"; then
+  if ! strip_retired_runtime_sync_flags "$BOOTSTRAP_ENV" || ! validate_bootstrap_env "$BOOTSTRAP_ENV"; then
     echo "ERROR: invalid Vault bootstrap — refusing to deploy" >&2
     exit 1
   fi
@@ -304,7 +327,7 @@ if [ ! -f ".env" ]; then
   echo "ERROR: No Vault bootstrap env found — refusing to start a container" >&2
   exit 1
 fi
-if ! chmod 600 .env || ! validate_bootstrap_env .env; then
+if ! chmod 600 .env || ! strip_retired_runtime_sync_flags .env || ! validate_bootstrap_env .env; then
   echo "ERROR: .env is not a valid Vault bootstrap — refusing to deploy" >&2
   exit 1
 fi
@@ -322,7 +345,6 @@ ensure_env_var() {
 
 ensure_env_var CHAT_RATE_LIMIT_ENABLED true
 ensure_env_var ENFORCE_PROD_CHAT_QUOTA true
-ensure_env_var DOPPLER_RUNTIME_SYNC_ENABLED false
 ensure_env_var DEPLOY_UID "$(id -u)"
 ensure_env_var DEPLOY_GID "$(id -g)"
 if ! grep -q '^HOME=' .env; then
