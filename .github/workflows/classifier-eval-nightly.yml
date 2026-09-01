@@ -1,0 +1,43 @@
+# #649 / #505 — nightly + on-demand label-accuracy check for the LLM input
+# classifier. It calls a real provider, so it is NOT part of PR `verify` and
+# is NOT a required check. Set an `OPENROUTER_API_KEY` (or `OPENAI_API_KEY`)
+# repo secret to activate; without it the job runs and reports "skipping"
+# (green). Tune with repo variables `CLASSIFIER_EVAL_MODEL` and
+# `CLASSIFIER_EVAL_MIN_ACCURACY`.
+name: classifier-eval-nightly
+
+on:
+  schedule:
+    - cron: '30 18 * * *' # 01:30 Asia/Ho_Chi_Minh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c448fc0a4a # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build llm-agent
+        run: npx turbo run build --filter=@wispace/llm-agent
+
+      - name: Run classifier label-accuracy eval (#649, #505)
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LLM_INPUT_CLASSIFIER_MODEL: ${{ vars.CLASSIFIER_EVAL_MODEL }}
+          CLASSIFIER_EVAL_MIN_ACCURACY: ${{ vars.CLASSIFIER_EVAL_MIN_ACCURACY }}
+        run: npm run classifier:eval --workspace=@wispace/llm-agent

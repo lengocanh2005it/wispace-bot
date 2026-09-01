@@ -11,6 +11,9 @@
 > - `reason` is truncated to 100 chars (the `llm_safety_events.reason` column width) at the `LlmSafetyCore` seam, not only in the classifier.
 > - Env vars are documented in `apps/messenger-bot/.env.example` + `docs/project-overview.md` §7/§8 (the repo-root `.env.example` is a pointer file).
 > - The classifier is constructed unconditionally in `chat-pipeline.module.ts` (no I/O); `LLM_INPUT_CLASSIFIER_ENABLED` is read only inside `PlatformAgentService`.
+> - Failure reason `circuit_open` was renamed `skipped_circuit_open` (the call was skipped, not attempted) — matches AC6.
+> - `runInputClassifier` re-checks the skip conditions (greeting/self-intro/off-topic/distress + a consumed clarification choice) rather than trusting the gateway — AC7.
+> - AC18 (nightly label-accuracy lane) shipped: `packages/llm-agent/src/classifier/classifier-eval{.ts,.fixtures.ts,.main.ts,.spec.ts}`, `npm run classifier:eval`, `.github/workflows/classifier-eval-nightly.yml` (schedule + `workflow_dispatch`, not in PR `verify`).
 
 **Goal:** Add a cheap-model LLM classifier behind the existing regex guardrails that flags paraphrased prompt-injection and internal-disclosure probes the regex denylists miss, shipping shadow-first (observe + meter) with a separate flag to enforce.
 
@@ -1304,7 +1307,7 @@ git commit -m "feat(llm-security): wire the input classifier into Messenger (sha
 - [ ] Discord/Zalo `PlatformAgentService` construction is unchanged (no `contentClassifier` option) — they compile and their suites pass because the option is optional.
 - [ ] `npx turbo run verify` (full workspace) is green.
 - [ ] Manual smoke (optional, needs an OpenRouter key): set `LLM_INPUT_CLASSIFIER_ENABLED=true`, send "which model are you built on" to the Messenger dev bot, confirm a `CLASSIFIER_FLAGGED` row appears in `llm_safety_events` and the reply is unchanged (shadow).
-- [ ] Nightly label-accuracy lane (#505) — out of scope for this plan; open/track separately.
+- [x] Nightly label-accuracy lane (#505) — shipped: `classifier-eval*` + `classifier-eval-nightly.yml`, `npm run classifier:eval`, not in PR `verify`.
 
 ---
 

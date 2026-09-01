@@ -46,7 +46,8 @@
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test": "jest --maxWorkers=50%",
     "eval:chat": "jest src/eval --runInBand",
-    "eval:guardrail": "node dist/eval/guardrail-battery.main.js"
+    "eval:guardrail": "node dist/eval/guardrail-battery.main.js",
+    "classifier:eval": "node dist/classifier/classifier-eval.main.js"
   },
   "dependencies": {
     "@wispace/bot-common": "*",
