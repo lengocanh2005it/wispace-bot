@@ -831,4 +831,27 @@ describe('PlatformAgentService', () => {
 
     errorSpy.mockRestore();
   });
+
+  it('routes short distress messages to the LLM instead of the pre-LLM gates (#598)', async () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+    const service = buildService(historyService);
+
+    // 4 words — would be isAmbiguousMessage=true and 3 words "muốn bỏ cuộc"
+    // likewise; both must reach the LLM where the empathy-first branch lives.
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'áp lực thi quá',
+    });
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'muốn bỏ cuộc',
+    });
+
+    // The static clarification/off-topic replies never fire; both messages
+    // produce an LLM reply round.
+    expect(mockLlmReply).toHaveBeenCalledTimes(2);
+  });
 });

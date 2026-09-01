@@ -23,6 +23,38 @@ const OFF_TOPIC_PATTERNS = [
   /bac\s*si|kham\s*benh|thuoc|dieu\s*tri|y\s*khoa|phap\s*luat|luat\s*su|tu\s*van\s*phap\s*luat|tam\s*ly|tu\s*van\s*tam\s*ly/i,
 ] as const;
 
+/**
+ * Study-related stress / discouragement (#598): these messages deserve the
+ * empathy-first prompt branch, so they must reach the LLM instead of the
+ * pre-LLM canned replies. Tight hand-rolled list — a false positive only
+ * means a warmer reply; keep crisis/self-harm vocabulary OUT (explicit
+ * non-goal of #598).
+ */
+const DISTRESS_PATTERNS = [
+  /ap\s*luc/,
+  /chan\s*(qua|roai|roi|lam)/,
+  /bo\s*cuoc/,
+  /met\s*(moi|qua|roi|lam)/,
+  /\bnan\b|nan\s*(qua|roai|roi|lam)/,
+  /that\s*vong/,
+  /hoc\s*mai\s*(ma)?\s*khong/,
+  /khong\s*(the\s*)?(hoc|noi)\s*noi/,
+  /stress(ed)?/,
+  /burn(t|ing)?\s*out/,
+] as const;
+
+/** True when the message expresses study stress / discouragement (#598). */
+export function isDistressExpression(userText: string): boolean {
+  const normalized = normalizeScopeText(userText.trim());
+  if (!normalized) return false;
+  return matchesDistress(normalized);
+}
+
+/** Rescue shared by both pre-LLM gates — normalization is idempotent. */
+function matchesDistress(normalized: string): boolean {
+  return DISTRESS_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 const GREETING_ONLY =
   /^(?:hello|hi|hey|chao|xin\s*chao|alo)(?:\s+(?:ban|bot|oi|nhe|nha|a|shop))*[\s!.,?]*$|^(?:ok|oke|okay|u|vang|da|cam\s*on|thanks|thank\s*you)[\s!.?]*$/i;
 
@@ -33,6 +65,12 @@ export function isObviouslyOffTopic(userText: string): boolean {
   const text = userText.trim();
   const normalized = normalizeScopeText(text);
   if (!text || GREETING_ONLY.test(normalized)) {
+    return false;
+  }
+
+  // A distressed learner must reach the empathy-first prompt branch (#598),
+  // even when the message mentions off-topic vocab (e.g. "đi khám tâm lý").
+  if (matchesDistress(normalized)) {
     return false;
   }
 
@@ -65,6 +103,11 @@ export function isAmbiguousMessage(userText: string): boolean {
   const rawText = userText.trim();
   const text = normalizeScopeText(rawText);
   if (!text) return true;
+  // A distressed learner reaches the empathy-first branch (#598), never the
+  // clarification menu — short cries like "áp lực thi quá" must reach the LLM.
+  if (matchesDistress(text)) {
+    return false;
+  }
   // Random/accidental: non-alphanumeric chars dominate (>=50% of length)
   const nonAlpha = rawText.replace(/[\p{L}\p{N}]/gu, '');
   if (nonAlpha.length >= rawText.length / 2 && rawText.length <= 20)

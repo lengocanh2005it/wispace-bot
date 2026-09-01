@@ -1,0 +1,27 @@
+{
+  "name": "distress-study-stress",
+  "description": "#598: a stressed learner gets a warm acknowledgement plus one concrete WISPACE next step — never the bare scope redirect, never tool calls.",
+  "coreHash": "2406849abda03274e9681b0cf9ddfa78f16680ac09722d950b53bb8b4703ad39",
+  "promptFiles": [
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "846abeac04ed2fb760a912ee024c5a0b547fd5adc47b07482a950ef07921d0eb"
+    }
+  ],
+  "userText": "Học mãi không lên band, áp lực thi quá, mình muốn bỏ cuộc luôn 🙁",
+  "externalUserId": "eval-distress-0001",
+  "userId": 1101,
+  "script": [
+    {
+      "text": "Mình hiểu cảm giác học mãi mà band chưa lên như mong muốn thật sự rất nản. Nhưng đừng bỏ cuộc nha 💪 Mình gợi ý: mình xem lại kế hoạch học của bạn và mình gửi 1 bài Task 1 nhỏ để bạn khởi động lại nhé? Bạn nhắn \"xem kế hoạch học\" nha."
+    }
+  ],
+  "expected": {
+    "toolSequence": [],
+    "replyTextContains": ["hiểu", "Task 1"],
+    "replyTextNotContains": ["chỉ hỗ trợ", "WISPACE/IELTS Writing"],
+    "exhausted": false,
+    "toolSummary": null,
+    "groundingWarnings": 0
+  }
+}

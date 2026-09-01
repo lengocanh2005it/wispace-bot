@@ -7,6 +7,7 @@ describe('CHAT_SYSTEM_PROMPT_CORE', () => {
   it('keeps the universal instruction sections (English)', () => {
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('WISPACE scope');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('OUT-OF-SCOPE');
+    expect(CHAT_SYSTEM_PROMPT_CORE).toContain('Study stress & discouragement');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('Academic integrity');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('When NOT to call tools');
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('never fabricate');
@@ -66,7 +67,7 @@ describe('CHAT_SYSTEM_PROMPT_CORE', () => {
   });
 
   it('stays under the size budget (#648) — raising the ceiling is a deliberate act, not a reflex', () => {
-    expect(CHAT_SYSTEM_PROMPT_CORE.length).toBeLessThanOrEqual(5300);
+    expect(CHAT_SYSTEM_PROMPT_CORE.length).toBeLessThanOrEqual(5800);
   });
 
   it('states the no-tools rule exactly 5 times (#648) — one per category, no restatements', () => {

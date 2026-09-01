@@ -1,7 +1,7 @@
 {
   "name": "discord-overlay-user-goals",
   "description": "Discord overlay contract: the request carries the Discord platform rules (DM privacy for personal data) alongside the shared core; tool args and tool choice are asserted.",
-  "coreHash": "2de277b2bb324df2312a1a0afe3dd81f525e18fbdd04be0339e5db02fb99cab3",
+  "coreHash": "2406849abda03274e9681b0cf9ddfa78f16680ac09722d950b53bb8b4703ad39",
   "promptFiles": [
     {
       "path": "apps/discord-bot/src/shared/prompts/discord-chat.system.txt",

@@ -2,6 +2,7 @@ import {
   isObviouslyOffTopic,
   isGreetingOnly,
   isAmbiguousMessage,
+  isDistressExpression,
 } from './scope.utils';
 
 describe('isObviouslyOffTopic', () => {
@@ -132,4 +133,54 @@ describe('isAmbiguousMessage', () => {
       expect(isAmbiguousMessage(text)).toBe(false);
     },
   );
+});
+
+describe('isDistressExpression (#598 study-stress rescue)', () => {
+  it.each([
+    'áp lực thi quá',
+    'áp lực qua',
+    'hoc mai khong len, chan qua',
+    'mình chán quá',
+    'muốn bỏ cuộc',
+    'bo cuoc thoi',
+    'học mãi không lên band',
+    'mệt quá không học nổi',
+    'nan qua di',
+    'thất vọng điểm quá',
+    'so stressed about the exam',
+    'i feel burnt out',
+  ])('detects study distress: "%s"', (text) => {
+    expect(isDistressExpression(text)).toBe(true);
+  });
+
+  it.each([
+    'xem lịch học tuần tới',
+    'tiến độ IELTS của mình',
+    'thời tiết hôm nay',
+    'bóng đá world cup',
+    'luyện Task 2 thế nào',
+    'band của mình bao nhiêu',
+  ])('does not flag in-scope or off-topic text: "%s"', (text) => {
+    expect(isDistressExpression(text)).toBe(false);
+  });
+
+  it('does not flag mild neutral mentions of study words', () => {
+    expect(isDistressExpression('học từ vựng mỗi ngày')).toBe(false);
+  });
+
+  describe('rescue from pre-LLM gates', () => {
+    it('short distress messages are not ambiguous', () => {
+      expect(isAmbiguousMessage('áp lực thi quá')).toBe(false);
+      expect(isAmbiguousMessage('muốn bỏ cuộc')).toBe(false);
+    });
+
+    it('distress mentioning off-topic vocab (bác sĩ/tâm lý) is not off-topic', () => {
+      expect(isObviouslyOffTopic('áp lực quá muốn đi khám tâm lý')).toBe(false);
+    });
+
+    it('plain off-topic is still off-topic (rescue does not widen scope)', () => {
+      expect(isObviouslyOffTopic('thời tiết hôm nay ra sao')).toBe(true);
+      expect(isAmbiguousMessage('mai')).toBe(true);
+    });
+  });
 });
