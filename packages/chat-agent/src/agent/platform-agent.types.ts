@@ -173,6 +173,8 @@ export interface PlatformAgentOptions {
    * `LLM_INPUT_CLASSIFIER_ENABLED`; enforcement by `LLM_INPUT_CLASSIFIER_ENFORCE`.
    */
   contentClassifier?: ContentClassifierPort;
+  /** #649: classifier verdict metric inc — bounded labels, no user data. */
+  classifierVerdictInc?(label: string, mode: 'shadow' | 'enforce'): void;
 }
 
 /**

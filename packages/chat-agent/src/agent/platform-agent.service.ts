@@ -815,11 +815,11 @@ export class PlatformAgentService {
         input.correlationId,
       );
       if (!result.ok) {
-        this.options.metrics?.classifierVerdictInc?.(result.reason, mode);
+        this.options.classifierVerdictInc?.(result.reason, mode);
         return null;
       }
       const { label, confidence, reason } = result.verdict;
-      this.options.metrics?.classifierVerdictInc?.(label, mode);
+      this.options.classifierVerdictInc?.(label, mode);
       if (label === 'SAFE') return null;
 
       this.safetyEventService.recordClassifierVerdict({

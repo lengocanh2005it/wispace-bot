@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { join } from 'path';
+import { Logger } from '@nestjs/common';
 import { trace } from '@opentelemetry/api';
 import { Repository } from 'typeorm';
 import { WispaceModule } from '../wispace/wispace.module';
@@ -12,6 +13,7 @@ import {
   PlatformChatHistoryService,
   RedisChatQueueWorkerService,
   CLARIFICATION_STATE_STORE,
+  LlmContentClassifier,
 } from '@wispace/chat-agent';
 import type { ClarificationStateStore } from '@wispace/chat-agent';
 import {
@@ -231,6 +233,26 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
           learnerProfileStore,
           'messenger',
         );
+        const classifierEnabled =
+          configService
+            .get<string>('LLM_INPUT_CLASSIFIER_ENABLED')
+            ?.toLowerCase() === 'true';
+        const contentClassifier = classifierEnabled
+          ? new LlmContentClassifier({
+              adapter,
+              model:
+                configService
+                  .get<string>('LLM_INPUT_CLASSIFIER_MODEL')
+                  ?.trim() || 'google/gemini-2.0-flash-lite',
+              timeoutMs: (() => {
+                const v = Number(
+                  configService.get<string>('LLM_INPUT_CLASSIFIER_TIMEOUT_MS'),
+                );
+                return Number.isFinite(v) && v > 0 ? Math.floor(v) : 1200;
+              })(),
+              logger: new Logger('LlmContentClassifier'),
+            })
+          : undefined;
         return new PlatformAgentService(
           configService,
           toolsService,
@@ -301,6 +323,9 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
             ),
             tryFastReschedule: (ctx, userText) =>
               messengerTools.tryFastDefaultReschedule(ctx, userText),
+            contentClassifier,
+            classifierVerdictInc: (label, mode) =>
+              metrics.incClassifierVerdict(label, mode, 'messenger'),
           },
           redisClient,
         );
