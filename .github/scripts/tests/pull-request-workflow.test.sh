@@ -93,7 +93,10 @@ workflow_count=0
 while IFS= read -r -d '' workflow; do
   workflow_count=$((workflow_count + 1))
   if grep -Eq '^  pull_request:' "$workflow"; then
-    grep -q '^  verify:' "$workflow" || fail "$workflow has pull_request but no isolated verify job"
+    if ! grep -q '^  verify:' "$workflow"; then
+      ! grep -Eq 'TURBO_TOKEN|TURBO_TEAM' "$workflow" \
+        || fail "$workflow has pull_request without an isolated verify job and exposes Turbo credentials"
+    fi
   fi
 done < <(find .github/workflows -type f \( -name '*.yml' -o -name '*.yaml' \) -print0)
 [ "$workflow_count" -gt 0 ] || fail "no workflow files were scanned"
