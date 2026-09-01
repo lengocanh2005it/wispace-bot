@@ -20,9 +20,9 @@ set -euo pipefail
 # Telegram alert via the local Alertmanager (default route) instead of
 # silently stalling (#144); the next cron tick retries.
 #
-# .env for each app is NOT touched here — Doppler webhook → each bot's
-# /v1/*/ops/doppler-sync endpoint already keeps .env current independently
-# (see packages/doppler-sync). This script only rolls the image forward.
+# Each app directory keeps only its Vault bootstrap `.env`. This script
+# validates that bootstrap before rolling an image forward; runtime secrets
+# are fetched by the container during startup.
 
 REPO_DIR="${REPO_DIR:-$HOME/wispace-bot-src}"
 STATE_DIR="${STATE_DIR:-$HOME/.vps-deploy-state}"
@@ -79,6 +79,16 @@ notify_app_failed() { # app sha
   local app="$1" sha="$2"
   post_alert "$APP_FAIL_ALERT" "{\"summary\":\"$app deploy failed\",\"description\":\"$app @ $sha failed at $(date -Is); next cron tick retries.\"}" \
     || echo "WARN [$(date -Is)] Alertmanager notify failed (curl)" >&2
+}
+
+validate_bootstrap_env() { # app directory
+  local file="$1/.env"
+  [ -f "$file" ] || return 1
+  chmod 600 "$file" 2>/dev/null || return 1
+  grep -q '^VAULT_REQUIRED=true$' "$file" || return 1
+  grep -q '^VAULT_ADDR=https://' "$file" || return 1
+  grep -Eq '^VAULT_ROLE_ID=.+$' "$file" || return 1
+  grep -Eq '^VAULT_SECRET_ID=.+$' "$file" || return 1
 }
 
 resolve_app_failed() { # app
@@ -151,6 +161,11 @@ deploy_app() {
   state_file="$STATE_DIR/${app}.sha"
   fail_marker="$STATE_DIR/${app}.failed"
 
+  if ! validate_bootstrap_env "$target_dir"; then
+    echo "ERROR: $app has no valid Vault bootstrap — refusing to deploy" >&2
+    return 1
+  fi
+
   if [ -f "$state_file" ] && [ "$(cat "$state_file")" = "$NEW_SHA" ]; then
     return 0
   fi
@@ -211,7 +226,7 @@ deploy_app() {
 
   migration_cmd=""
   if [ "$run_migrations" = "true" ]; then
-    migration_cmd="npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js"
+    migration_cmd="node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run"
   fi
 
   if (
@@ -219,6 +234,8 @@ deploy_app() {
     IMAGE="$image" IMAGE_DIGEST="$image_digest" DEPLOY_MODE=self-pull APP_NAME="$app" HEALTH_PATH="$health_path" \
     GHCR_PULL_TOKEN="$GHCR_PULL_TOKEN" GHCR_USER="$GHCR_USER" \
     RUN_MIGRATIONS="$run_migrations" MIGRATION_CMD="$migration_cmd" \
+    MIGRATION_PREFLIGHT_CMD="node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js preflight" \
+    MIGRATION_STATUS_CMD="node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js show" \
     MIGRATION_LOCK_ID="$MIGRATION_LOCK_ID" \
     NGINX_UPSTREAM_DIR="$NGINX_UPSTREAM_DIR" \
     APP_NETWORK="$APP_NETWORK" \

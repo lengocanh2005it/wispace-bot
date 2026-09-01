@@ -23,6 +23,11 @@ make_env() { # name -> creates fake repo/PATH-fakes/state dirs; prints dir
     "$dir/repo/apps/zalo-bot" "$dir/repo/.github/scripts" \
     "$dir/repo/deploy/nginx/upstreams" "$dir/bin" "$dir/state" "$dir/target" "$dir/upstreams"
   for app in messenger-bot discord-bot zalo-bot; do
+    mkdir -p "$dir/target/$app"
+    printf 'VAULT_REQUIRED=true\nVAULT_ADDR=https://vault.test\nVAULT_ROLE_ID=role-%s\nVAULT_SECRET_ID=secret-%s\n' "$app" "$app" > "$dir/target/$app/.env"
+    chmod 600 "$dir/target/$app/.env"
+  done
+  for app in messenger-bot discord-bot zalo-bot; do
     printf 'server 127.0.0.1:1;\n' > "$dir/repo/deploy/nginx/upstreams/$app.conf"
   done
   cat > "$dir/repo/.github/scripts/vps-deploy.sh" <<'STUB'

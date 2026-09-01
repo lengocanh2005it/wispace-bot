@@ -22,8 +22,8 @@ chmod 600 "$HOME/.ssh/known_hosts"
 # Exponential backoff: the VPS provider (Hostinger) rate-limits new SSH
 # connections from GitHub runner IPs and drops them for a few minutes.
 # Retry long enough (8 attempts, ~8 min) to ride through the block.
-# --exclude .env: never let rsync --delete remove the live .env on the VPS
-# when the bundle has no production.env (e.g. DOPPLER_TOKEN unset) (#199).
+# --exclude .env: the live Vault bootstrap remains in place until the deploy
+# script atomically installs the new bootstrap file (#654).
 attempt=1
 while [ "$attempt" -le 8 ]; do
   if rsync -avz --delete --exclude '.env' \

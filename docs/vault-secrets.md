@@ -66,6 +66,41 @@ container, pass its health gate, then retire the old container. Reads use the
 current KV version; restoring a previous KV version is an operator action
 before a later restart.
 
+## Production delivery (#654)
+
+Production deploys deliver only a short-lived `vault-bootstrap.env`; a full
+secret-bearing `production.env` is not created, uploaded, or retained. The
+reusable workflow requires the repository/environment variable `VAULT_ADDR` and
+these per-bot GitHub Actions secrets:
+
+```text
+VAULT_ROLE_ID_MESSENGER / VAULT_SECRET_ID_MESSENGER
+VAULT_ROLE_ID_DISCORD  / VAULT_SECRET_ID_DISCORD
+VAULT_ROLE_ID_ZALO     / VAULT_SECRET_ID_ZALO
+```
+
+The workflow writes the bootstrap atomically with mode `600`, uploads it with
+the release, and the VPS replaces the app's `.env` atomically after validating
+the allowlist. The file contains only Vault bootstrap and deploy-owned flags;
+the bot loads the actual runtime secrets from Vault inside the container.
+Missing credentials, invalid bootstrap content, Vault startup failure, failed
+migrations, health/readiness failure, or metrics/nginx verification failure
+stops before cutover and leaves the healthy container serving traffic.
+
+Use the manual **Sync production env** workflow to refresh AppRole bootstrap
+credentials and force a recreate. Self-pull deploys reuse the existing
+mode-600 bootstrap on the VPS; a missing or invalid file fails closed and
+alerts the operator. A fresh install provisions the same bootstrap through the
+SSH deploy workflow before starting any bot. For rotation, update the new
+AppRole credentials in GitHub, deploy and verify all three bots, then revoke the
+old AppRole credentials. Rollback changes nginx back to the previous healthy
+container; it does not roll back Vault data.
+
+The deployment regression suite covers fresh/manual/self-pull delivery,
+rotation, rollback, migration fencing, and rejection of full-secret artifacts.
+The legacy Doppler runtime code and local-development instructions remain only
+for the follow-up cleanup in issue #655.
+
 ## Preflight and tests
 
 Before a production deploy, verify that each AppRole can read the shared path
@@ -75,5 +110,7 @@ canonical paths, merge/collision behavior, malformed responses, timeouts,
 redaction, limits, atomic injection, and restart rotation. Each bot also has a
 bootstrap-adapter smoke test.
 
-Production delivery is migrated separately by issue #654; this document defines
-the runtime contract used by that deployment work.
+Before a deploy, verify AppRole policy access to the shared and per-bot paths
+without printing values. The runtime contract and this delivery flow are
+implemented together; removal of the remaining legacy Doppler tooling is tracked
+separately in issue #655.

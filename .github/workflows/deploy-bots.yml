@@ -30,8 +30,10 @@ jobs:
       vps_target_dir: /home/ngoc_anh/messenger-bot
       force_build: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build }}
       health_path: /health/ready
+      vault_addr: ${{ vars.VAULT_ADDR }}
     secrets:
-      doppler_token: ${{ secrets.DOPPLER_TOKEN_MESSENGER }}
+      vault_role_id: ${{ secrets.VAULT_ROLE_ID_MESSENGER }}
+      vault_secret_id: ${{ secrets.VAULT_SECRET_ID_MESSENGER }}
       ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
       ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       vps_host: ${{ secrets.VPS_HOST }}
@@ -48,8 +50,10 @@ jobs:
       vps_target_dir: /home/ngoc_anh/discord-bot
       force_build: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build }}
       health_path: /health/ready
+      vault_addr: ${{ vars.VAULT_ADDR }}
     secrets:
-      doppler_token: ${{ secrets.DOPPLER_TOKEN_DISCORD }}
+      vault_role_id: ${{ secrets.VAULT_ROLE_ID_DISCORD }}
+      vault_secret_id: ${{ secrets.VAULT_SECRET_ID_DISCORD }}
       ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
       ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       vps_host: ${{ secrets.VPS_HOST }}
@@ -63,8 +67,10 @@ jobs:
       vps_target_dir: /home/ngoc_anh/zalo-bot
       force_build: ${{ github.event_name == 'workflow_dispatch' && inputs.force_build }}
       health_path: /health/ready
+      vault_addr: ${{ vars.VAULT_ADDR }}
     secrets:
-      doppler_token: ${{ secrets.DOPPLER_TOKEN_ZALO }}
+      vault_role_id: ${{ secrets.VAULT_ROLE_ID_ZALO }}
+      vault_secret_id: ${{ secrets.VAULT_SECRET_ID_ZALO }}
       ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
       ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       vps_host: ${{ secrets.VPS_HOST }}

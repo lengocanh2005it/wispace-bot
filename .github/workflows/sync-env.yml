@@ -18,8 +18,44 @@ jobs:
       vps_target_dir: /home/ngoc_anh/messenger-bot
       health_path: /health/ready
       env_only: true
+      vault_addr: ${{ vars.VAULT_ADDR }}
     secrets:
-      doppler_token: ${{ secrets.DOPPLER_TOKEN_MESSENGER }}
+      vault_role_id: ${{ secrets.VAULT_ROLE_ID_MESSENGER }}
+      vault_secret_id: ${{ secrets.VAULT_SECRET_ID_MESSENGER }}
+      ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
+      ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      vps_host: ${{ secrets.VPS_HOST }}
+      vps_known_hosts: ${{ secrets.VPS_KNOWN_HOSTS }}
+      vps_user: ${{ secrets.VPS_USER }}
+
+  sync-env-discord-bot:
+    uses: ./.github/workflows/deploy-bot-reusable.yml
+    with:
+      app: discord-bot
+      vps_target_dir: /home/ngoc_anh/discord-bot
+      health_path: /health/ready
+      env_only: true
+      vault_addr: ${{ vars.VAULT_ADDR }}
+    secrets:
+      vault_role_id: ${{ secrets.VAULT_ROLE_ID_DISCORD }}
+      vault_secret_id: ${{ secrets.VAULT_SECRET_ID_DISCORD }}
+      ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
+      ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      vps_host: ${{ secrets.VPS_HOST }}
+      vps_known_hosts: ${{ secrets.VPS_KNOWN_HOSTS }}
+      vps_user: ${{ secrets.VPS_USER }}
+
+  sync-env-zalo-bot:
+    uses: ./.github/workflows/deploy-bot-reusable.yml
+    with:
+      app: zalo-bot
+      vps_target_dir: /home/ngoc_anh/zalo-bot
+      health_path: /health/ready
+      env_only: true
+      vault_addr: ${{ vars.VAULT_ADDR }}
+    secrets:
+      vault_role_id: ${{ secrets.VAULT_ROLE_ID_ZALO }}
+      vault_secret_id: ${{ secrets.VAULT_SECRET_ID_ZALO }}
       ghcr_pull_token: ${{ secrets.GHCR_PULL_TOKEN }}
       ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       vps_host: ${{ secrets.VPS_HOST }}

@@ -23,11 +23,17 @@ on:
       env_only:
         required: false
         type: boolean
-        description: Skip image build/migrations, only push .env from Doppler and restart (FORCE_RECREATE=true)
+        description: Skip image build/migrations, refresh the Vault bootstrap and restart (FORCE_RECREATE=true)
         default: false
+      vault_addr:
+        required: true
+        type: string
+        description: HTTPS Vault address from the repository/environment variable
     secrets:
-      doppler_token:
-        required: false
+      vault_role_id:
+        required: true
+      vault_secret_id:
+        required: true
       ghcr_pull_token:
         required: true
       ssh_private_key:
@@ -244,7 +250,9 @@ jobs:
       VPS_KNOWN_HOSTS: ${{ secrets.vps_known_hosts }}
       VPS_USER: ${{ secrets.vps_user }}
       VPS_SSH_PORT: ${{ vars.VPS_SSH_PORT || '22' }}
-      MIGRATION_CMD: ${{ !inputs.env_only && inputs.app == 'messenger-bot' && 'npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js' || '' }}
+      MIGRATION_CMD: ${{ !inputs.env_only && inputs.app == 'messenger-bot' && 'node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run' || '' }}
+      MIGRATION_PREFLIGHT_CMD: ${{ !inputs.env_only && inputs.app == 'messenger-bot' && 'node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js preflight' || '' }}
+      MIGRATION_STATUS_CMD: ${{ !inputs.env_only && inputs.app == 'messenger-bot' && 'node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js show' || '' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -260,40 +268,60 @@ jobs:
             echo "DEPLOY_MODE=reuse-latest" >> "$GITHUB_ENV"
           fi
 
-      - name: Install Doppler CLI
-        uses: dopplerhq/cli-action@014df23b1329b615816a38eb5f473bb9000700b1 # v3
-
-      - name: Download production env from Doppler
+      - name: Prepare Vault bootstrap
         env:
-          DOPPLER_TOKEN: ${{ secrets.doppler_token }}
+          VAULT_ADDR: ${{ inputs.vault_addr }}
+          VAULT_ROLE_ID: ${{ secrets.vault_role_id }}
+          VAULT_SECRET_ID: ${{ secrets.vault_secret_id }}
         run: |
-          if [ -z "${DOPPLER_TOKEN:-}" ]; then
-            echo "DOPPLER_TOKEN not set — VPS will keep existing .env"
-            exit 0
-          fi
-          doppler secrets download --no-file --format env > production.env
-          chmod 600 production.env
-          echo "Downloaded $(wc -l < production.env) lines from Doppler"
-          echo "has_production_env=true" >> "$GITHUB_ENV"
+          set -euo pipefail
+          [ -n "$VAULT_ADDR" ] || { echo "ERROR: VAULT_ADDR is required" >&2; exit 1; }
+          [ -n "$VAULT_ROLE_ID" ] || { echo "ERROR: Vault role credential is required" >&2; exit 1; }
+          [ -n "$VAULT_SECRET_ID" ] || { echo "ERROR: Vault secret credential is required" >&2; exit 1; }
+          case "$VAULT_ADDR" in
+            https://*) ;;
+            *) echo "ERROR: VAULT_ADDR must use HTTPS" >&2; exit 1 ;;
+          esac
+          umask 077
+          bootstrap_tmp=$(mktemp)
+          trap 'rm -f -- "$bootstrap_tmp"' EXIT
+          {
+            printf 'VAULT_REQUIRED=true\n'
+            printf 'VAULT_ADDR=%s\n' "$VAULT_ADDR"
+            printf 'VAULT_ROLE_ID=%s\n' "$VAULT_ROLE_ID"
+            printf 'VAULT_SECRET_ID=%s\n' "$VAULT_SECRET_ID"
+          } > "$bootstrap_tmp"
+          chmod 600 "$bootstrap_tmp"
+          mv -f -- "$bootstrap_tmp" vault-bootstrap.env
+          bootstrap_tmp=
 
       - name: Prepare VPS upload bundle
         run: |
+          set -euo pipefail
+          [ -f vault-bootstrap.env ] || { echo "ERROR: Vault bootstrap is missing" >&2; exit 1; }
           mkdir -p upload-bundle
           cp .github/scripts/vps-deploy.sh upload-bundle/
           # Copy nginx upstream config for zero-downtime deploy
           mkdir -p upload-bundle/upstreams
           cp deploy/nginx/upstreams/${{ inputs.app }}.conf upload-bundle/upstreams/ 2>/dev/null || true
-          if [ -f production.env ]; then
-            cp production.env upload-bundle/
-          fi
+          cp vault-bootstrap.env upload-bundle/
 
       - name: Validate bundle contents
         run: |
+          set -euo pipefail
           if [ ! -f upload-bundle/vps-deploy.sh ]; then
             echo "ERROR: Required bundle artifact missing: vps-deploy.sh"
             exit 1
           fi
-          echo "Bundle OK: $(ls upload-bundle/ | tr '\n' ', ')"
+          if [ ! -f upload-bundle/vault-bootstrap.env ]; then
+            echo "ERROR: Required bundle artifact missing: vault-bootstrap.env"
+            exit 1
+          fi
+          if find upload-bundle -maxdepth 1 -type f -name '*.env' ! -name 'vault-bootstrap.env' -print -quit | grep -q .; then
+            echo "ERROR: full runtime env artifacts are forbidden in the upload bundle"
+            exit 1
+          fi
+          echo "Bundle OK: $(find upload-bundle -maxdepth 2 -type f -printf '%P\n' | sort | tr '\n' ', ')"
 
       - name: Upload bundle to VPS (retry)
         env:
@@ -313,8 +341,12 @@ jobs:
           RUN_MIGRATIONS: ${{ !inputs.env_only && inputs.app == 'messenger-bot' && 'true' || 'false' }}
           MIGRATION_CMD: ${{ env.MIGRATION_CMD }}
           NGINX_UPSTREAM_DIR: /home/ngoc_anh/infra/nginx/upstreams
-          VAULT_ROLE_ID: ${{ secrets.vault_role_id }}
-          VAULT_SECRET_ID: ${{ secrets.vault_secret_id }}
+          MIGRATION_PREFLIGHT_CMD: ${{ env.MIGRATION_PREFLIGHT_CMD }}
+          MIGRATION_STATUS_CMD: ${{ env.MIGRATION_STATUS_CMD }}
         run: |
-          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH RUN_MIGRATIONS MIGRATION_CMD NGINX_UPSTREAM_DIR VAULT_ROLE_ID VAULT_SECRET_ID
+          export IMAGE DEPLOY_MODE FORCE_RECREATE GHCR_PULL_TOKEN GHCR_USER APP_NAME HEALTH_PATH RUN_MIGRATIONS MIGRATION_CMD MIGRATION_PREFLIGHT_CMD MIGRATION_STATUS_CMD NGINX_UPSTREAM_DIR
           bash .github/scripts/ssh-deploy-vps.sh ${{ inputs.vps_target_dir }}/vps-deploy.sh
+
+      - name: Remove Vault bootstrap workspace files
+        if: always()
+        run: rm -rf -- vault-bootstrap.env upload-bundle

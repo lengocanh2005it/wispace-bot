@@ -6,7 +6,8 @@ set -euo pipefail
 umask 077
 
 # Zero-downtime VPS deploy script for all WISPACE bots.
-# Runs in the deploy dir (cwd) containing docker-compose.prod.yml (+ optional production.env).
+# Runs in the deploy dir (cwd) containing docker-compose.prod.yml and, for an
+# SSH-delivered deploy, a temporary vault-bootstrap.env.
 #
 # Flow: start new container (docker run, NOT compose — compose would recreate
 # the old container instead of running both side by side) → health check →
@@ -15,7 +16,8 @@ umask 077
 # Requires env: IMAGE, DEPLOY_MODE, APP_NAME
 # Optional env: FORCE_RECREATE, GHCR_PULL_TOKEN, GHCR_USER, HEALTH_PATH,
 #               HEALTH_MAX_ATTEMPTS, DEPLOY_HOST_DIR, RUN_MIGRATIONS, MIGRATION_CMD,
-#               MIGRATION_LOCK_ID, NGINX_UPSTREAM_DIR,
+#               MIGRATION_LOCK_ID, MIGRATION_PREFLIGHT_CMD,
+#               MIGRATION_STATUS_CMD, NGINX_UPSTREAM_DIR,
 #               PUBLIC_HOST, DOCKER_STOP_TIMEOUT, SKIP_NGINX_CHECK, IMAGE_DIGEST
 
 : "${IMAGE:?IMAGE is required}"
@@ -37,15 +39,16 @@ umask 077
 MONITORING_NETWORK="monitoring"
 APP_NETWORK="${APP_NETWORK:-app_n8n_db_network}"
 METRICS_PATH="/metrics"
+BOOTSTRAP_ENV="vault-bootstrap.env"
 
 ENV_INSTALL_TMP=""
 ENV_FILE=""
-PRODUCTION_ENV_PRESENT=false
+BOOTSTRAP_ENV_PRESENT=false
 cleanup_env_install() {
   [ -z "$ENV_INSTALL_TMP" ] || rm -f -- "$ENV_INSTALL_TMP"
   [ -z "$ENV_FILE" ] || rm -f -- "$ENV_FILE"
-  [ "$PRODUCTION_ENV_PRESENT" = true ] || return 0
-  rm -f -- production.env
+  [ "$BOOTSTRAP_ENV_PRESENT" = true ] || return 0
+  rm -f -- "$BOOTSTRAP_ENV"
 }
 trap cleanup_env_install EXIT
 
@@ -55,15 +58,69 @@ if [ -f .env ] && ! chmod 600 .env; then
   exit 1
 fi
 
-write_production_env() {
-  local grep_status
-  if grep -v -E '^(DEPLOY_UID|DEPLOY_GID)=' production.env; then
-    :
-  else
-    grep_status=$?
-    [ "$grep_status" -eq 1 ] || return "$grep_status"
-  fi
-  printf 'DEPLOY_UID=%s\nDEPLOY_GID=%s\n' "$DEPLOY_UID" "$DEPLOY_GID"
+validate_bootstrap_env() {
+  local file="$1" line key value
+  declare -A seen=()
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -z "$line" ] && continue
+    case "$line" in
+      \#*) continue ;;
+      *=*) ;;
+      *) echo "ERROR: Vault bootstrap contains an invalid line" >&2; return 1 ;;
+    esac
+    key="${line%%=*}"
+    value="${line#*=}"
+    case "$key" in
+      VAULT_REQUIRED|VAULT_ADDR|VAULT_ROLE_ID|VAULT_SECRET_ID|HOME|DEPLOY_UID|DEPLOY_GID|CHAT_RATE_LIMIT_ENABLED|ENFORCE_PROD_CHAT_QUOTA|DOPPLER_RUNTIME_SYNC_ENABLED) ;;
+      *) echo "ERROR: Vault bootstrap contains an unsupported setting" >&2; return 1 ;;
+    esac
+    if [ -n "${seen[$key]+present}" ]; then
+      echo "ERROR: Vault bootstrap contains a duplicate setting" >&2
+      return 1
+    fi
+    seen[$key]=1
+    if [[ "$value" == *$'\r'* ]]; then
+      echo "ERROR: Vault bootstrap contains an invalid value" >&2
+      return 1
+    fi
+    case "$key" in
+      VAULT_REQUIRED)
+        [ "$value" = "true" ] || { echo "ERROR: Vault bootstrap must require Vault" >&2; return 1; }
+        ;;
+      VAULT_ADDR)
+        case "$value" in
+          https://*) ;;
+          *) echo "ERROR: Vault address is invalid" >&2; return 1 ;;
+        esac
+        case "$value" in
+          *'?'*|*'#'*|*'@'*) echo "ERROR: Vault address is invalid" >&2; return 1 ;;
+        esac
+        ;;
+      VAULT_ROLE_ID|VAULT_SECRET_ID)
+        [ -n "$value" ] || { echo "ERROR: Vault AppRole credential is missing" >&2; return 1; }
+        ;;
+      HOME)
+        [ "$value" = "/tmp" ] || { echo "ERROR: HOME must be /tmp" >&2; return 1; }
+        ;;
+      DEPLOY_UID|DEPLOY_GID)
+        [[ "$value" =~ ^[1-9][0-9]*$ ]] || { echo "ERROR: deploy identity is invalid" >&2; return 1; }
+        ;;
+      CHAT_RATE_LIMIT_ENABLED|ENFORCE_PROD_CHAT_QUOTA)
+        [ "$value" = "true" ] || { echo "ERROR: production quota flags must be enabled" >&2; return 1; }
+        ;;
+      DOPPLER_RUNTIME_SYNC_ENABLED)
+        [ "$value" = "false" ] || { echo "ERROR: legacy runtime sync must be disabled" >&2; return 1; }
+        ;;
+    esac
+  done < "$file"
+
+  for key in VAULT_REQUIRED VAULT_ADDR VAULT_ROLE_ID VAULT_SECRET_ID; do
+    if [ -z "${seen[$key]+present}" ]; then
+      echo "ERROR: Vault bootstrap is incomplete" >&2
+      return 1
+    fi
+  done
 }
 
 # ─── Per-app config: port pairs + docker run resources ─────────────────────────
@@ -179,8 +236,26 @@ restore_metrics_alias() {
 }
 
 verify_metrics_endpoint() {
-  local url="$1"
-  curl -sf --max-time 3 -H "Authorization: Bearer ${INTERNAL_API_KEY}" "$url" >/dev/null 2>&1
+  local port="$1" status
+  # Vault injects INTERNAL_API_KEY after process start, so it is intentionally
+  # absent from Docker's bootstrap environment. A 401/403 proves the live
+  # metrics route is reachable and still protected without moving the key to
+  # the host or a diagnostic command.
+  status=$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' \
+    "http://127.0.0.1:${port}${METRICS_PATH}" 2>/dev/null || true)
+  case "$status" in
+    401|403) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+verify_metrics_route() {
+  local url="$1" status
+  status=$(curl -sS --max-time 3 -o /dev/null -w '%{http_code}' "$url" 2>/dev/null || true)
+  case "$status" in
+    401|403) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 rollback_metrics_cutover() {
@@ -192,15 +267,17 @@ rollback_metrics_cutover() {
   docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
 }
 
-# ─── Prepare .env from production.env (Doppler download from CI) ─────────────
-if [ -f "production.env" ]; then
-  PRODUCTION_ENV_PRESENT=true
-  if ! chmod 600 production.env; then
-    echo "ERROR: could not chmod production.env to 600 — refusing to deploy" >&2
+# ─── Install and validate the Vault bootstrap environment ────────────────────
+if [ -f "$BOOTSTRAP_ENV" ]; then
+  BOOTSTRAP_ENV_PRESENT=true
+  if ! chmod 600 "$BOOTSTRAP_ENV"; then
+    echo "ERROR: could not chmod Vault bootstrap to 600 — refusing to deploy" >&2
     exit 1
   fi
-  DEPLOY_UID=$(id -u)
-  DEPLOY_GID=$(id -g)
+  if ! validate_bootstrap_env "$BOOTSTRAP_ENV"; then
+    echo "ERROR: invalid Vault bootstrap — refusing to deploy" >&2
+    exit 1
+  fi
   ENV_INSTALL_TMP="$(mktemp "${PWD}/.env.install.XXXXXX")" || {
     echo "ERROR: could not create temporary env file — refusing to deploy" >&2
     exit 1
@@ -209,22 +286,26 @@ if [ -f "production.env" ]; then
     echo "ERROR: could not chmod temporary env file to 600 — refusing to deploy" >&2
     exit 1
   fi
-  if ! write_production_env > "$ENV_INSTALL_TMP"; then
-    echo "ERROR: could not prepare production env — refusing to deploy" >&2
+  if ! cp "$BOOTSTRAP_ENV" "$ENV_INSTALL_TMP"; then
+    echo "ERROR: could not prepare Vault bootstrap — refusing to deploy" >&2
     exit 1
   fi
   if ! mv -f "$ENV_INSTALL_TMP" .env; then
-    echo "ERROR: could not atomically install .env — refusing to deploy" >&2
+    echo "ERROR: could not atomically install Vault bootstrap — refusing to deploy" >&2
     exit 1
   fi
   ENV_INSTALL_TMP=""
-  echo ".env installed"
+  echo "Vault bootstrap installed"
 fi
 
-# Fail closed: a container without credentials cannot boot, and the health
-# check would roll it back anyway — fail early instead (#199).
+# A self-pull/retry uses the already-installed bootstrap. Never accept a
+# legacy full runtime env: all application secrets must come from Vault.
 if [ ! -f ".env" ]; then
-  echo "ERROR: No .env file found — refusing to start a container without env (#199)" >&2
+  echo "ERROR: No Vault bootstrap env found — refusing to start a container" >&2
+  exit 1
+fi
+if ! chmod 600 .env || ! validate_bootstrap_env .env; then
+  echo "ERROR: .env is not a valid Vault bootstrap — refusing to deploy" >&2
   exit 1
 fi
 
@@ -244,14 +325,6 @@ ensure_env_var ENFORCE_PROD_CHAT_QUOTA true
 ensure_env_var DOPPLER_RUNTIME_SYNC_ENABLED false
 ensure_env_var DEPLOY_UID "$(id -u)"
 ensure_env_var DEPLOY_GID "$(id -g)"
-# ─── Vault runtime secrets (fetched by app at startup) ──────────────────────
-ensure_env_var VAULT_ADDR "https://vault.wispace.app"
-if [ -n "${VAULT_ROLE_ID:-}" ]; then
-  ensure_env_var VAULT_ROLE_ID "$VAULT_ROLE_ID"
-fi
-if [ -n "${VAULT_SECRET_ID:-}" ]; then
-  ensure_env_var VAULT_SECRET_ID "$VAULT_SECRET_ID"
-fi
 if ! grep -q '^HOME=' .env; then
   ensure_env_var HOME /tmp
 fi
@@ -271,8 +344,8 @@ if [ "$DEPLOY_UID" = "0" ]; then
 fi
 # ensure_env_var wrote these into .env, but they are not shell variables yet
 # ─── Prepare env file for docker run (strip quotes) ───────────────────────────
-# docker run --env-file does NOT strip surrounding quotes like compose does,
-# and Doppler downloads values as KEY="value" — strip them here.
+# docker run --env-file does NOT strip surrounding quotes like compose does;
+# strip optional quotes from the local bootstrap file here.
 # mktemp (predictable-path removal) + chmod 600 + EXIT trap: never leave
 # credentials on disk after the deploy (#204).
 ENV_FILE="$(mktemp "${TMPDIR:-/tmp}/${APP_NAME}.docker-env.XXXXXX")"
@@ -283,16 +356,6 @@ sed 's/^\([A-Za-z_][A-Za-z0-9_]*\)="\(.*\)"$/\1=\2/' .env > "$ENV_FILE"
 env_mode=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo 000)
 if [ "$env_mode" != "600" ]; then
   echo "ERROR: env file $ENV_FILE has unsafe mode $env_mode (expected 600) — aborting (#204)" >&2
-  exit 1
-fi
-
-INTERNAL_API_KEY=$(grep -E '^INTERNAL_API_KEY=' .env | tail -1 | cut -d= -f2- | tr -d '\r' || true)
-INTERNAL_API_KEY="${INTERNAL_API_KEY%\"}"
-INTERNAL_API_KEY="${INTERNAL_API_KEY#\"}"
-INTERNAL_API_KEY="${INTERNAL_API_KEY%\'}"
-INTERNAL_API_KEY="${INTERNAL_API_KEY#\'}"
-if [ -z "$INTERNAL_API_KEY" ]; then
-  echo "ERROR: INTERNAL_API_KEY is missing — refusing to verify protected metrics (#278)" >&2
   exit 1
 fi
 
@@ -445,7 +508,7 @@ if [ -z "$healthy" ]; then
 fi
 
 echo "Checking protected metrics endpoint on standby port $STANDBY_PORT ..."
-if ! verify_metrics_endpoint "http://127.0.0.1:${STANDBY_PORT}${METRICS_PATH}"; then
+if ! verify_metrics_endpoint "$STANDBY_PORT"; then
   echo "ERROR: New container metrics endpoint failed auth/health check — rolling back (#278)" >&2
   docker logs "$NEW_CONTAINER" --tail 80 2>/dev/null || true
   docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
@@ -457,91 +520,44 @@ fi
 # the writer role and holds the advisory lock on a dedicated session while the
 # migration executor runs, so a shell escape cannot bypass the fence.
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
-  if [ -z "${MIGRATION_CMD:-}" ]; then
-    echo "ERROR: RUN_MIGRATIONS=true requires MIGRATION_CMD — refusing to deploy (#271)" >&2
+  MIGRATION_CMD="${MIGRATION_CMD:-}"
+  MIGRATION_PREFLIGHT_CMD="${MIGRATION_PREFLIGHT_CMD:-}"
+  MIGRATION_STATUS_CMD="${MIGRATION_STATUS_CMD:-}"
+  if [ -z "$MIGRATION_CMD" ] || [ -z "$MIGRATION_PREFLIGHT_CMD" ] || [ -z "$MIGRATION_STATUS_CMD" ]; then
+    echo "ERROR: RUN_MIGRATIONS=true requires MIGRATION_CMD, MIGRATION_PREFLIGHT_CMD, and MIGRATION_STATUS_CMD — refusing to deploy (#271)" >&2
     docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
     exit 1
   fi
   MIGRATION_LOCK_ID="${MIGRATION_LOCK_ID:-4242424242}"
-  DB_USER_ENV=$(grep -E '^DB_USER=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
-  DB_NAME_ENV=$(grep -E '^DB_NAME=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
-  DB_PASSWORD_ENV=$(grep -E '^DB_PASSWORD=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
-  DB_HOST_ENV=$(grep -E '^DB_HOST=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
-  DB_PORT_ENV=$(grep -E '^DB_PORT=' .env | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'")
-  # Validate config values at trust boundary — reject shell metacharacters
-  # and SQL injection vectors before interpolation into migration commands (#357)
-  validate_db_config() {
-    local field="$1" value="$2"
-    case "$field" in
-      DB_HOST)
-        # RFC 952/1123 hostname or IP; allow localhost, dots, hyphens, alphanumerics
-        if ! printf '%s' "$value" | grep -Eq '^[a-zA-Z0-9._-]+$'; then
-          echo "ERROR: $field contains invalid characters: $value" >&2
-          return 1
-        fi
-        ;;
-      DB_PORT)
-        # Numeric port 1-65535
-        if ! printf '%s' "$value" | grep -Eq '^[0-9]+$' || [ "$value" -lt 1 ] || [ "$value" -gt 65535 ] 2>/dev/null; then
-          echo "ERROR: $field must be a numeric port (1-65535): $value" >&2
-          return 1
-        fi
-        ;;
-      DB_USER|DB_NAME)
-        # Alphanumeric + underscore only (PostgreSQL identifier rules)
-        if ! printf '%s' "$value" | grep -Eq '^[a-zA-Z_][a-zA-Z0-9_]*$'; then
-          echo "ERROR: $field contains invalid characters: $value" >&2
-          return 1
-        fi
-        ;;
-      MIGRATION_LOCK_ID)
-        # Positive safe integer — the migration data source uses the same
-        # value for its session-level advisory lock.
-        if ! printf '%s' "$value" | grep -Eq '^[1-9][0-9]{0,15}$'; then
-          echo "ERROR: $field must be a numeric integer greater than zero: $value" >&2
-          return 1
-        fi
-        ;;
-    esac
-  }
-  validate_db_config DB_HOST "$DB_HOST_ENV" || exit 1
-  validate_db_config DB_PORT "${DB_PORT_ENV:-5432}" || exit 1
-  validate_db_config DB_USER "$DB_USER_ENV" || exit 1
-  validate_db_config DB_NAME "$DB_NAME_ENV" || exit 1
-  validate_db_config MIGRATION_LOCK_ID "$MIGRATION_LOCK_ID" || exit 1
+  if ! printf '%s' "$MIGRATION_LOCK_ID" | grep -Eq '^[1-9][0-9]{0,15}$'; then
+    echo "ERROR: MIGRATION_LOCK_ID must be a numeric integer greater than zero" >&2
+    exit 1
+  fi
+  VAULT_MIGRATION_RUN_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run'
+  VAULT_MIGRATION_PREFLIGHT_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js preflight'
+  VAULT_MIGRATION_STATUS_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js show'
   case "$MIGRATION_CMD" in
-    'npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
-      ;;
+    "$VAULT_MIGRATION_RUN_CMD") ;;
     *)
       echo "ERROR: unsupported migration command" >&2
       exit 1
       ;;
   esac
-  # Fail closed: probe the same stable writer endpoint used by the release
-  # image. This also works when production PostgreSQL is managed outside the
-  # VPS; a local container remains valid when DB_HOST points at it.
-  if [ -z "$DB_USER_ENV" ] || [ -z "$DB_NAME_ENV" ] || [ -z "$DB_PASSWORD_ENV" ] || [ -z "$DB_HOST_ENV" ] || ! docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$NEW_CONTAINER" pg_isready -h "$DB_HOST_ENV" -p "${DB_PORT_ENV:-5432}" -U "$DB_USER_ENV" -d "$DB_NAME_ENV" >/dev/null 2>&1; then
-    echo "ERROR: RUN_MIGRATIONS enabled but DB_* / writer endpoint unavailable — refusing to deploy (#199)" >&2
-    exit 1
-  fi
-  writer_status=$(docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$NEW_CONTAINER" \
-    psql -v ON_ERROR_STOP=1 -h "$DB_HOST_ENV" -p "${DB_PORT_ENV:-5432}" \
-    -U "$DB_USER_ENV" -d "$DB_NAME_ENV" -tAc 'SELECT NOT pg_is_in_recovery()' 2>/dev/null | tr -d '[:space:]') || {
-    echo "ERROR: could not verify that the database endpoint is the writable primary — refusing to deploy" >&2
-    exit 1
-  }
-  if [ "$writer_status" != "t" ]; then
-    echo "ERROR: database endpoint is not the writable primary — refusing to deploy" >&2
-    exit 1
-  fi
+  case "$MIGRATION_PREFLIGHT_CMD" in
+    "$VAULT_MIGRATION_PREFLIGHT_CMD") ;;
+    *) echo "ERROR: unsupported migration preflight command" >&2; exit 1 ;;
+  esac
+  case "$MIGRATION_STATUS_CMD" in
+    "$VAULT_MIGRATION_STATUS_CMD") ;;
+    *) echo "ERROR: unsupported migration status command" >&2; exit 1 ;;
+  esac
   # Safety net: quick pg_dump before migrations
   PRE_MIGRATE_DIR="${PRE_MIGRATE_DIR:-/home/ngoc_anh/backups/ai_chat_bot_db/pre-migrate}"
   mkdir -p "$PRE_MIGRATE_DIR"
   PRE_MIGRATE_DUMP="$PRE_MIGRATE_DIR/pre-migrate-$(date +%Y%m%d-%H%M%S).dump"
   echo "Pre-migration safety dump → $PRE_MIGRATE_DUMP"
-  if ! docker exec -e PGPASSWORD="$DB_PASSWORD_ENV" "$NEW_CONTAINER" \
-    pg_dump -U "$DB_USER_ENV" -d "$DB_NAME_ENV" -h "$DB_HOST_ENV" -p "${DB_PORT_ENV:-5432}" -Fc \
-    > "$PRE_MIGRATE_DUMP" 2>/dev/null || [ ! -s "$PRE_MIGRATE_DUMP" ]; then
+  if ! docker exec -e MIGRATION_LOCK_ID="$MIGRATION_LOCK_ID" "$NEW_CONTAINER" \
+    sh -c "$MIGRATION_PREFLIGHT_CMD" > "$PRE_MIGRATE_DUMP" 2>/dev/null || [ ! -s "$PRE_MIGRATE_DUMP" ]; then
     echo "ERROR: pre-migration dump failed or was empty — refusing to deploy (#271)" >&2
     rm -f "$PRE_MIGRATE_DUMP"
     docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
@@ -551,14 +567,14 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
 
   echo "Applying migrations (advisory lock $MIGRATION_LOCK_ID held by the migration data source): $MIGRATION_CMD"
   if ! docker exec -e MIGRATION_LOCK_ID="$MIGRATION_LOCK_ID" "$NEW_CONTAINER" \
-    sh -c "$MIGRATION_CMD"; then
+    sh -c "$MIGRATION_CMD" >/dev/null; then
     echo "ERROR: migrations failed — rolling back" >&2
     docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
     exit 1
   fi
   echo "Migrations applied OK"
   migration_status=$(docker exec "$NEW_CONTAINER" sh -c \
-    'npx --no-install typeorm migration:show -d apps/messenger-bot/dist/infrastructure/database/data-source.js' 2>&1) || {
+    "$MIGRATION_STATUS_CMD" 2>&1) || {
     echo "ERROR: could not verify migration status for the release image — refusing to deploy (#275)" >&2
     docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
     exit 1
@@ -627,7 +643,7 @@ if ! attach_metrics_alias "$NEW_CONTAINER"; then
 fi
 
 NEW_CONTAINER_IP=$(docker inspect -f "{{(index .NetworkSettings.Networks \"${MONITORING_NETWORK}\").IPAddress}}" "$NEW_CONTAINER" 2>/dev/null || true)
-if [ -z "$NEW_CONTAINER_IP" ] || ! verify_metrics_endpoint "http://${NEW_CONTAINER_IP}:${CONTAINER_PORT}${METRICS_PATH}"; then
+if [ -z "$NEW_CONTAINER_IP" ] || ! verify_metrics_route "http://${NEW_CONTAINER_IP}:${CONTAINER_PORT}${METRICS_PATH}"; then
   echo "ERROR: metrics endpoint is not reachable through $MONITORING_NETWORK — rolling back (#278)" >&2
   rollback_metrics_cutover
   exit 1

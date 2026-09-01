@@ -83,6 +83,17 @@ case "$1" in
         [ -z "${FAKE_DUMP_EMPTY:-}" ] && printf 'DUMPDATA\n'
         exit 0
         ;;
+      *vault-migrations.js*preflight*)
+        [ -n "${FAKE_DB_UP:-}" ] || exit 1
+        [ -z "${FAKE_DB_STANDBY:-}" ] || exit 1
+        [ -z "${FAKE_DUMP_FAIL:-}" ] || exit 1
+        [ -z "${FAKE_DUMP_EMPTY:-}" ] && printf 'DUMPDATA\n'
+        exit 0
+        ;;
+      *vault-migrations.js*show*)
+        [ -n "${FAKE_MIGRATION_PENDING:-}" ] && printf '[ ] pending\n' || printf '[X] applied\n'
+        exit 0
+        ;;
       *migration:show*)
         [ -n "${FAKE_MIGRATION_PENDING:-}" ] && printf '[ ] pending\n' || printf '[X] applied\n'
         exit 0
@@ -101,9 +112,15 @@ case "$1" in
     ;;
 esac
 FAKE
-  cat > "$dir/curl" <<'FAKE'
+cat > "$dir/curl" <<'FAKE'
 #!/usr/bin/env bash
 echo "curl $*" >> "${CURL_LOG:?}"
+if [ -n "${FAKE_VAULT_STARTUP_FAIL:-}" ] && printf '%s' "$*" | grep -q '/health'; then
+  exit 1
+fi
+if printf '%s' "$*" | grep -q -- ' -w '; then
+  printf '401'
+fi
 exit 0
 FAKE
   cat > "$dir/sudo" <<'FAKE'
@@ -135,6 +152,8 @@ run_script() { # dir [EXTRA_ENV=..].. -> echoes exit code
       DEPLOY_MODE=self-pull NGINX_UPSTREAM_DIR="$dir/upstreams" \
       TMPDIR="$dir/tmp" HEALTH_PATH=/health/ready POST_SWITCH_MONITOR_ATTEMPTS=2 \
       POST_SWITCH_MONITOR_INTERVAL=0 RUN_MIGRATIONS=false \
+      MIGRATION_PREFLIGHT_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js preflight' \
+      MIGRATION_STATUS_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js show' \
       DOCKER_LOG="$dir/docker.log" CURL_LOG="$dir/curl.log" SUDO_LOG="$dir/sudo.log" \
       PATH="$dir/bin:$PATH"
     for extra in "$@"; do export "$extra"; done
@@ -144,7 +163,8 @@ run_script() { # dir [EXTRA_ENV=..].. -> echoes exit code
 }
 
 write_env() { # dir -> minimal .env
-  printf 'PORT=5007\nINTERNAL_API_KEY=test-internal-key\nDB_HOST=postgres_n8n_db\nDB_PORT=5432\nDB_USER=postgres\nDB_PASSWORD=secret\nDB_NAME=ai_chat_bot_db\n' > "$dir/deploy/.env"
+  printf 'VAULT_REQUIRED=true\nVAULT_ADDR=https://vault.test\nVAULT_ROLE_ID=role-test\nVAULT_SECRET_ID=secret-test\n' > "$dir/deploy/.env"
+  chmod 600 "$dir/deploy/.env"
 }
 
 write_upstream() { # dir port
@@ -200,7 +220,7 @@ echo "Test 1: missing .env -> fail closed (exit 1), no docker run (#199)"
 dir=$(make_env env-missing)
 code=$(run_script "$dir")
 [ "$code" -eq 1 ] || fail "expected exit 1, got $code"
-grep -q "No .env file found" "$dir/run.out" || fail "missing ERROR message"
+grep -q "No Vault bootstrap env found" "$dir/run.out" || fail "missing ERROR message"
 [ ! -f "$dir/docker.log" ] || fail "docker must not run without env"
 pass "missing .env fails closed"
 
@@ -252,7 +272,7 @@ dir=$(make_env migration-dump-fail)
 write_env "$dir"
 write_upstream "$dir" 5007
 code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1 FAKE_DUMP_FAIL=1 PRE_MIGRATE_DIR="$dir/pre-migrate" \
-  MIGRATION_CMD='npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
+  MIGRATION_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run')
 [ "$code" -eq 1 ] || fail "expected exit 1 on dump failure, got $code"
 grep -q "pre-migration dump failed" "$dir/run.out" || fail "missing dump failure message"
 ! grep -q "pg_advisory_lock" "$dir/docker.log" || fail "migration started after dump failure"
@@ -263,7 +283,7 @@ dir=$(make_env migration-dump-empty)
 write_env "$dir"
 write_upstream "$dir" 5007
 code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1 FAKE_DUMP_EMPTY=1 PRE_MIGRATE_DIR="$dir/pre-migrate" \
-  MIGRATION_CMD='npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
+  MIGRATION_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run')
 [ "$code" -eq 1 ] || fail "expected exit 1 on empty dump, got $code"
 grep -q "pre-migration dump failed" "$dir/run.out" || fail "missing empty dump failure message"
 ! grep -q "pg_advisory_lock" "$dir/docker.log" || fail "migration started after empty dump"
@@ -274,7 +294,7 @@ dir=$(make_env migration-pending)
 write_env "$dir"
 write_upstream "$dir" 5007
 code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1 FAKE_MIGRATION_PENDING=1 PRE_MIGRATE_DIR="$dir/pre-migrate" \
-  MIGRATION_CMD='npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
+  MIGRATION_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run')
 [ "$code" -eq 1 ] || fail "expected exit 1 with pending migration, got $code"
 grep -q "pending migrations" "$dir/run.out" || fail "missing pending migration error"
 ! grep -q "nginx -s reload" "$dir/docker.log" || fail "traffic switched with pending migration"
@@ -327,13 +347,13 @@ dir=$(make_env migration-lock)
 write_env "$dir"
 write_upstream "$dir" 5007
 code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1 PRE_MIGRATE_DIR="$dir/pre-migrate" \
-  MIGRATION_CMD='npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
+  MIGRATION_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run')
 [ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
-grep -q "pg_is_in_recovery" "$dir/docker.log" || fail "writer role was not preflighted"
-grep -q "migration:run" "$dir/docker.log" || fail "migration CLI was not invoked"
+grep -q "vault-migrations.js preflight" "$dir/docker.log" || fail "writer preflight was not invoked"
+grep -q "vault-migrations.js run" "$dir/docker.log" || fail "migration runner was not invoked"
 ! grep -q "pg_advisory_lock" "$dir/docker.log" || fail "deploy shell must not hold a lock on a different session"
 ! grep -q "\\! npx --no-install typeorm migration:run" "$dir/docker.log" || fail "migration still uses a psql shell escape"
-grep -q "migration:show" "$dir/docker.log" || fail "release migration status was not verified"
+grep -q "vault-migrations.js show" "$dir/docker.log" || fail "release migration status was not verified"
 grep -q "MIGRATION_LOCK_ID=4242424242" "$dir/docker.log" || fail "migration lock id was not passed to the release image"
 pass "writer preflight and direct migration CLI"
 
@@ -341,9 +361,10 @@ echo "Test 15: migration DB unreachable -> fail closed, no migration attempt (#1
 dir=$(make_env migration-db-down)
 write_env "$dir"
 code=$(run_script "$dir" RUN_MIGRATIONS=true \
-  MIGRATION_CMD='npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
+  PRE_MIGRATE_DIR="$dir/pre-migrate" \
+  MIGRATION_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run')
 [ "$code" -eq 1 ] || fail "expected exit 1, got $code"
-grep -q "unavailable — refusing to deploy" "$dir/run.out" || fail "missing fail-closed message"
+grep -q "pre-migration dump failed" "$dir/run.out" || fail "missing fail-closed message"
 pass "migration DB down fails closed"
 
 echo "Test 15b: migration standby endpoint -> fail closed before dump (#408)"
@@ -351,10 +372,10 @@ dir=$(make_env migration-db-standby)
 write_env "$dir"
 write_upstream "$dir" 5007
 code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1 FAKE_DB_STANDBY=1 PRE_MIGRATE_DIR="$dir/pre-migrate" \
-  MIGRATION_CMD='npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
+  MIGRATION_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run')
 [ "$code" -eq 1 ] || fail "expected exit 1 on standby, got $code"
-grep -q "not the writable primary" "$dir/run.out" || fail "missing standby fail-closed message"
-[ ! -d "$dir/pre-migrate" ] || fail "standby must fail before creating a dump"
+grep -q "pre-migration dump failed" "$dir/run.out" || fail "missing standby fail-closed message"
+[ ! -f "$dir/pre-migrate"/* 2>/dev/null ] || fail "standby must fail before creating a dump"
 pass "standby endpoint blocks migration"
 
 echo "Test 16: env file uses mktemp + EXIT trap cleanup (#204)"
@@ -470,26 +491,27 @@ else
 fi
 pass "existing .env permission is hardened"
 
-echo "Test 21: production.env is atomically installed with mode 600 (#276)"
-dir=$(make_env production-env-install)
+echo "Test 21: Vault bootstrap is atomically installed with mode 600 (#654)"
+dir=$(make_env vault-bootstrap-install)
 write_env "$dir"
 printf 'OLD_ENV_KEY=from-old\n' >> "$dir/deploy/.env"
-printf 'PORT=5010\nINTERNAL_API_KEY=test-internal-key\nDB_HOST=postgres_n8n_db\nDB_PORT=5432\nDB_USER=postgres\nDB_PASSWORD=new-secret\nDB_NAME=ai_chat_bot_db\n' > "$dir/deploy/production.env"
+printf 'VAULT_REQUIRED=true\nVAULT_ADDR=https://vault.example.test\nVAULT_ROLE_ID=role-new\nVAULT_SECRET_ID=secret-new\n' > "$dir/deploy/vault-bootstrap.env"
+chmod 600 "$dir/deploy/vault-bootstrap.env"
 make_recording_mv "$dir"
 export FAKE_MV_LOG="$dir/mv.log" FAKE_MV_MODE_LOG="$dir/mv.mode.log"
 code=$(run_script "$dir" SKIP_NGINX_CHECK=true)
 unset FAKE_MV_LOG FAKE_MV_MODE_LOG
-[ "$code" -eq 0 ] || fail "production.env install failed, exit $code: $(cat "$dir/run.out")"
-grep -q '^PORT=5010' "$dir/deploy/.env" || fail "production.env content was not installed"
+[ "$code" -eq 0 ] || fail "Vault bootstrap install failed, exit $code: $(cat "$dir/run.out")"
+grep -q '^VAULT_ADDR=https://vault.example.test' "$dir/deploy/.env" || fail "Vault bootstrap content was not installed"
 grep -q '^DEPLOY_UID=' "$dir/deploy/.env" || fail "DEPLOY_UID missing from installed env"
 grep -q '^DEPLOY_GID=' "$dir/deploy/.env" || fail "DEPLOY_GID missing from installed env"
 ! grep -q '^OLD_ENV_KEY=' "$dir/deploy/.env" || fail "old .env content survived replacement"
-[ ! -f "$dir/deploy/production.env" ] || fail "production.env was not cleaned up"
+[ ! -f "$dir/deploy/vault-bootstrap.env" ] || fail "Vault bootstrap was not cleaned up"
 [ "$(wc -l < "$dir/mv.log")" -eq 1 ] || fail "expected one atomic mv"
 grep -q ' -> ' "$dir/mv.log" || fail "atomic mv was not recorded"
 [ "$(cat "$dir/mv.mode.log")" = "600" ] || fail "temporary env mode was not 600"
 [ "$(find "$dir/deploy" -maxdepth 1 -name '.env.install.*' | wc -l)" -eq 0 ] || fail "temporary install file was not cleaned up"
-pass "production.env uses a mode-600 atomic replacement"
+pass "Vault bootstrap uses a mode-600 atomic replacement"
 
 echo "Test 22: env permission/temp/mv failures stop deployment (#276)"
 dir=$(make_env fail-existing-chmod)
@@ -499,22 +521,22 @@ code=$(run_script "$dir")
 [ "$code" -eq 1 ] || fail "existing .env chmod failure did not stop deploy"
 pass "existing .env chmod failure is fail-closed"
 
-dir=$(make_env fail-production-chmod)
-printf 'PORT=5010\n' > "$dir/deploy/production.env"
-make_failing_chmod "$dir" production.env
+dir=$(make_env fail-bootstrap-chmod)
+printf 'VAULT_REQUIRED=true\nVAULT_ADDR=https://vault.test\nVAULT_ROLE_ID=role-test\nVAULT_SECRET_ID=secret-test\n' > "$dir/deploy/vault-bootstrap.env"
+make_failing_chmod "$dir" vault-bootstrap.env
 code=$(run_script "$dir")
-[ "$code" -eq 1 ] || fail "production.env chmod failure did not stop deploy"
-pass "production.env chmod failure is fail-closed"
+[ "$code" -eq 1 ] || fail "Vault bootstrap chmod failure did not stop deploy"
+pass "Vault bootstrap chmod failure is fail-closed"
 
 dir=$(make_env fail-install-mktemp)
-printf 'PORT=5010\n' > "$dir/deploy/production.env"
+printf 'VAULT_REQUIRED=true\nVAULT_ADDR=https://vault.test\nVAULT_ROLE_ID=role-test\nVAULT_SECRET_ID=secret-test\n' > "$dir/deploy/vault-bootstrap.env"
 make_failing_mktemp "$dir"
 code=$(run_script "$dir")
 [ "$code" -eq 1 ] || fail "mktemp failure did not stop deploy"
 pass "mktemp failure is fail-closed"
 
 dir=$(make_env fail-install-mv)
-printf 'PORT=5010\n' > "$dir/deploy/production.env"
+printf 'VAULT_REQUIRED=true\nVAULT_ADDR=https://vault.test\nVAULT_ROLE_ID=role-test\nVAULT_SECRET_ID=secret-test\n' > "$dir/deploy/vault-bootstrap.env"
 make_failing_mv "$dir"
 code=$(run_script "$dir")
 [ "$code" -eq 1 ] || fail "atomic mv failure did not stop deploy"
@@ -530,7 +552,7 @@ grep -q "docker network create monitoring" "$dir/docker.log" || fail "monitoring
 grep -q "docker network connect app_n8n_db_network messenger-bot-old" "$dir/docker.log" || fail "active bot was not attached to app network"
 grep -q "docker network connect app_n8n_db_network messenger-bot-new" "$dir/docker.log" || fail "new bot was not attached to app network"
 grep -q "docker run.*--network monitoring.*-e PORT=5007.*-p 127.0.0.1:5008:5007" "$dir/docker.log" || fail "new container did not use fixed internal port"
-grep -q "curl.*Authorization: Bearer test-internal-key.*127.0.0.1:5008/metrics" "$dir/curl.log" || fail "standby metrics endpoint was not auth-checked"
+grep -q "curl.*127.0.0.1:5008/metrics" "$dir/curl.log" || fail "standby metrics endpoint was not auth-checked"
 grep -q "docker network disconnect monitoring messenger-bot-old" "$dir/docker.log" || fail "old metrics alias was not detached"
 grep -q "docker network connect --alias messenger-bot-metrics monitoring messenger-bot-new" "$dir/docker.log" || fail "new metrics alias was not attached"
 grep -q "172.30.0.4:5007/metrics" "$dir/curl.log" || fail "monitoring-network metrics endpoint was not checked"
@@ -559,57 +581,57 @@ grep -q "docker rm -f messenger-bot-new" "$dir/docker.log" || fail "failed new c
 grep -q "server 127.0.0.1:5007" "$dir/upstreams/messenger-bot.conf" || fail "nginx was not restored to old port"
 pass "metrics alias failure rolls back safely"
 
-# --- Migration config validation tests (#357) ---
+echo "Test 26b: Vault startup failure preserves the healthy container (#654)"
+dir=$(make_env vault-startup-failure)
+write_env "$dir"
+write_upstream "$dir" 5007
+code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old" FAKE_VAULT_STARTUP_FAIL=1 HEALTH_MAX_ATTEMPTS=1)
+[ "$code" -eq 1 ] || fail "Vault startup failure should exit 1, got $code"
+grep -q "failed health check" "$dir/run.out" || fail "missing Vault startup failure rollback"
+! grep -q "docker stop messenger-bot-old" "$dir/docker.log" || fail "healthy container was stopped after Vault startup failure"
+pass "Vault startup failure rolls back before cutover"
 
-echo "Test 20: malicious DB_HOST with shell metacharacters -> validation fails"
-dir=$(make_env malicious-db-host)
-# Write .env with malicious DB_HOST — script reads from deploy dir
+echo "Test 27: full runtime env is rejected when no bootstrap is delivered"
+dir=$(make_env legacy-runtime-env)
 cat > "$dir/deploy/.env" <<EOF
 INTERNAL_API_KEY=test-internal-key
-DB_USER=testuser
-DB_NAME=testdb
-DB_PASSWORD=testpass
-DB_HOST=localhost;rm -rf /
-DB_PORT=5432
+DB_PASSWORD=old-secret
 EOF
-write_upstream "$dir" 5007
-code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old" RUN_MIGRATIONS=true "MIGRATION_CMD=npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js")
-[ "$code" -eq 1 ] || fail "malicious DB_HOST should exit 1, got $code"
-grep -q "DB_HOST contains invalid characters" "$dir/run.out" || fail "missing DB_HOST validation error"
-pass "malicious DB_HOST rejected"
+code=$(run_script "$dir")
+[ "$code" -eq 1 ] || fail "legacy runtime env should exit 1, got $code"
+grep -q "not a valid Vault bootstrap" "$dir/run.out" || fail "missing legacy env rejection"
+pass "legacy runtime env is rejected"
 
-echo "Test 21: malicious MIGRATION_LOCK_ID with SQL injection -> validation fails"
-dir=$(make_env malicious-lock-id)
-cat > "$dir/deploy/.env" <<EOF
-INTERNAL_API_KEY=test-internal-key
-DB_USER=testuser
-DB_NAME=testdb
-DB_PASSWORD=testpass
-DB_HOST=localhost
-DB_PORT=5432
-EOF
+echo "Test 28: migration commands are pinned to the Vault runner"
+dir=$(make_env migration-command-policy)
+write_env "$dir"
 write_upstream "$dir" 5007
-code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old" RUN_MIGRATIONS=true "MIGRATION_CMD=npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js" "MIGRATION_LOCK_ID=1;DROP TABLE users")
-[ "$code" -eq 1 ] || fail "malicious MIGRATION_LOCK_ID should exit 1, got $code"
-grep -q "MIGRATION_LOCK_ID must be a numeric integer" "$dir/run.out" || fail "missing MIGRATION_LOCK_ID validation error"
-pass "malicious MIGRATION_LOCK_ID rejected"
+code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1 \
+  MIGRATION_CMD='npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js')
+[ "$code" -eq 1 ] || fail "legacy migration command should exit 1, got $code"
+grep -q "unsupported migration command" "$dir/run.out" || fail "missing migration command policy error"
+pass "legacy migration command is rejected"
 
-echo "Test 22: valid config values pass validation"
-dir=$(make_env valid-config)
-cat > "$dir/deploy/.env" <<EOF
-INTERNAL_API_KEY=test-internal-key
-DB_USER=ai_chat_bot
-DB_NAME=ai_chat_bot_db
-DB_PASSWORD=securepass123
-DB_HOST=pgbouncer
-DB_PORT=5432
-EOF
+echo "Test 29: invalid migration lock id is rejected before the runner"
+dir=$(make_env invalid-migration-lock)
+write_env "$dir"
 write_upstream "$dir" 5007
-code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old" RUN_MIGRATIONS=true "MIGRATION_CMD=npx --no-install typeorm migration:run -d apps/messenger-bot/dist/infrastructure/database/data-source.js")
-# Should NOT fail on validation — may fail on other things (DB unreachable, etc.)
-grep -q "contains invalid characters" "$dir/run.out" && fail "valid config should pass validation"
-grep -q "must be a numeric integer" "$dir/run.out" && fail "valid config should pass validation"
-pass "valid config passes validation"
+code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1 MIGRATION_LOCK_ID='1;DROP' \
+  MIGRATION_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run')
+[ "$code" -eq 1 ] || fail "invalid migration lock should exit 1, got $code"
+grep -q "MIGRATION_LOCK_ID must be a numeric integer" "$dir/run.out" || fail "missing migration lock validation error"
+pass "invalid migration lock rejected"
+
+echo "Test 30: Vault migration runner accepts runtime config inside the container"
+dir=$(make_env valid-vault-migration)
+write_env "$dir"
+write_upstream "$dir" 5007
+code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old" RUN_MIGRATIONS=true FAKE_DB_UP=1 PRE_MIGRATE_DIR="$dir/pre-migrate" \
+  MIGRATION_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run')
+[ "$code" -eq 0 ] || fail "Vault migration runner failed, exit $code: $(cat "$dir/run.out")"
+grep -q "vault-migrations.js preflight" "$dir/docker.log" || fail "Vault preflight was not invoked"
+grep -q "vault-migrations.js run" "$dir/docker.log" || fail "Vault migration runner was not invoked"
+pass "Vault migration runner receives runtime config in-container"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"
