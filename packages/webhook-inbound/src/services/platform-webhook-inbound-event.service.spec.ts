@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-assignment -- fluent Jest query-builder fake */
 import { PlatformWebhookInboundEventService } from './platform-webhook-inbound-event.service';
 import type { Repository } from 'typeorm';
-import type { WebhookInboundEventEntity } from '@wispace/database';
+import { WebhookInboundEventEntity } from '@wispace/database';
 
 describe('PlatformWebhookInboundEventService', () => {
   const buildService = () => {
