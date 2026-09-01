@@ -11,6 +11,7 @@ const DEFAULT_CONFIG: EnvLlmExecutionConfig = {
   globalMaxConcurrent: 10,
   maxAttempts: 2,
   baseBackoffMs: 1,
+  retryMaxDelayMs: 10_000,
   requestTimeoutMs: 30_000,
   globalConcurrencyEnabled: false,
   redis: null,

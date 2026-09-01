@@ -136,6 +136,7 @@ export {
   sanitizeReplyText,
   sleep,
   retryWithBackoff,
+  cappedExponentialBackoff,
   loadSystemPromptFile,
   canonicalizeToolObservation,
   fitToolObservation,

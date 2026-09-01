@@ -1,6 +1,22 @@
-import { retryWithBackoff } from './retry.utils';
+import { cappedExponentialBackoff, retryWithBackoff } from './retry.utils';
 
 describe('retry.utils', () => {
+  describe('cappedExponentialBackoff', () => {
+    const backoff = cappedExponentialBackoff(1000, 8000);
+
+    it('doubles each attempt below the cap', () => {
+      expect(backoff(1)).toBe(1000);
+      expect(backoff(2)).toBe(2000);
+      expect(backoff(3)).toBe(4000);
+    });
+
+    it('clamps at maxDelayMs once the exponential passes it', () => {
+      expect(backoff(4)).toBe(8000); // 1000 * 2^3 = 8000
+      expect(backoff(5)).toBe(8000); // 16000 clamped
+      expect(backoff(9)).toBe(8000);
+    });
+  });
+
   describe('retryWithBackoff', () => {
     it('returns result on first attempt', async () => {
       const fn = jest.fn().mockResolvedValue('ok');

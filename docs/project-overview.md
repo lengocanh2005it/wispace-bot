@@ -476,7 +476,7 @@ passes nothing.
 | Retry path | Current shape | In scope? |
 | --- | --- | --- |
 | Agent-loop LLM retry — `AgentService.withRetry` (`packages/llm-agent`) | exponential, `min(base·2^n, MAX_RETRY_DELAY_MS)` | ✅ jittered via the shared helper (cap applied before jitter) |
-| Execution-port LLM retry — `retryWithBackoff` (`packages/llm-agent`, used by `createEnvLlmExecutionPort` + Messenger `LlmExecutionService`) | `baseDelayMs * 2^(attempt-1)`, bounded by `maxAttempts` (default 3) | ✅ jittered; `rng` seam |
+| Execution-port LLM retry — `retryWithBackoff` (`packages/llm-agent`, used by `createEnvLlmExecutionPort` + Messenger `LlmExecutionService`) | `min(baseDelayMs * 2^(attempt-1), LLM_OPENAI_RETRY_MAX_DELAY_MS)` via `cappedExponentialBackoff`, `maxAttempts` default 3 | ✅ jittered after the cap; `rng` seam |
 | WISPACE client — `withRetry` (`packages/wispace-client`) | `baseDelayMs * 2^attempt` | ✅ was already jittered; now via the shared helper; `rng` seam |
 | Redis global slot acquire — `acquireRedisSlot` (#453) | exponential, cap 1s | already full-jitter, unchanged (herd-safe) |
 | Durable webhook inbox — `markFailed` (`packages/webhook-inbound`) | `min(base * 2^(n-1), cap)` | ✅ jittered after the cap; `InboundRetryConfig.rng` seam |
@@ -512,7 +512,7 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 - **Meta:** `PAGE_ACCESS_TOKEN`, `VERIFY_TOKEN`, `MESSENGER_APP_SECRET`, `MESSENGER_WEBHOOK_SIGNATURE_VERIFY`, `MESSENGER_PAGE_ID`, `GRAPH_API_VERSION`
 - **OpenAI (shared):** `OPENAI_API_KEY`, `OPENAI_MODEL`
 - **LLM failover (shared):** `LLM_PROVIDER_FAILOVER_ORDER` (CSV: `openai,openrouter,minimax,openai-compatible`; empty = no failover), `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`, `MINIMAX_API_KEY`, `MINIMAX_MODEL`, `MINIMAX_BASE_URL`, `OPENAI_COMPATIBLE_API_KEY`, `OPENAI_COMPATIBLE_MODEL`, `OPENAI_COMPATIBLE_BASE_URL`, `LLM_FAILOVER_COOLDOWN_LONG_MS`, `LLM_FAILOVER_COOLDOWN_SHORT_MS`, `LLM_FAILOVER_QUICK_RETRY_DELAY_MS`
-- **LLM execution gate:** `LLM_EXECUTION_ENABLED`, `LLM_MAX_CONCURRENT`, `LLM_MAX_QUEUE_DEPTH`, `LLM_ADMISSION_WAIT_MS`, `LLM_BACKGROUND_ADMISSION_WAIT_MS`, `LLM_OPENAI_RETRY_MAX_ATTEMPTS`, `LLM_OPENAI_RETRY_BACKOFF_MS`, `LLM_REQUEST_TIMEOUT_MS`
+- **LLM execution gate:** `LLM_EXECUTION_ENABLED`, `LLM_MAX_CONCURRENT`, `LLM_MAX_QUEUE_DEPTH`, `LLM_ADMISSION_WAIT_MS`, `LLM_BACKGROUND_ADMISSION_WAIT_MS`, `LLM_OPENAI_RETRY_MAX_ATTEMPTS`, `LLM_OPENAI_RETRY_BACKOFF_MS`, `LLM_OPENAI_RETRY_MAX_DELAY_MS` (default `10000` — pre-jitter backoff ceiling, #577), `LLM_REQUEST_TIMEOUT_MS`
 - **LLM global concurrency:** `LLM_GLOBAL_CONCURRENCY_ENABLED`, `LLM_GLOBAL_MAX_CONCURRENT` — Redis-distributed aggregate provider budget across all pods/bots (key `llm:concurrency:global`)
 - **LLM usage (C2):** `LLM_USAGE_*`; USD estimate: `LLM_COST_USD_PER_1M_INPUT_TOKENS_<MODEL>` / `LLM_COST_USD_PER_1M_OUTPUT_TOKENS_<MODEL>` (e.g. `gpt-5.4` → `GPT_5_4`: input `2.50`, output `15.00` per [OpenAI pricing](https://developers.openai.com/api/docs/pricing); ≠ actual invoice)
 - **LLM safety:** `LLM_SAFETY_EVENTS_ENABLED`, `LLM_SAFETY_WARNING_DAILY_THRESHOLD`, `LLM_SAFETY_EVENT_RETENTION_DAYS`

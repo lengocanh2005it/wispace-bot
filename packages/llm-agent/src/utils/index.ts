@@ -44,7 +44,11 @@ export {
 } from './privacy-intent.utils';
 export { PrivacyStateService } from './privacy-state.service';
 export { sanitizeReplyText } from './text.utils';
-export { sleep, retryWithBackoff } from './retry.utils';
+export {
+  sleep,
+  retryWithBackoff,
+  cappedExponentialBackoff,
+} from './retry.utils';
 export { loadSystemPromptFile } from './load-system-prompt';
 export {
   canonicalizeToolObservation,

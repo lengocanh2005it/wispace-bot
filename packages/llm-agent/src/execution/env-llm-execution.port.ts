@@ -3,7 +3,10 @@ import { isAbortError } from '@wispace/bot-common/utils';
 import type Redis from 'ioredis';
 import type { LlmProviderAdapter } from '../provider/llm-provider.adapter';
 import type { LlmExecutionPort } from '../ports';
-import { retryWithBackoff } from '../utils/retry.utils';
+import {
+  cappedExponentialBackoff,
+  retryWithBackoff,
+} from '../utils/retry.utils';
 import { acquireRedisSlot, type SlotLogger } from './redis-slot-limiter';
 import {
   BoundedAdmissionQueue,
@@ -26,6 +29,8 @@ export interface EnvLlmExecutionConfig {
   maxAttempts: number;
   /** `LLM_OPENAI_RETRY_BACKOFF_MS` — base backoff between attempts. */
   baseBackoffMs: number;
+  /** `LLM_OPENAI_RETRY_MAX_DELAY_MS` — ceiling on the pre-jitter backoff. */
+  retryMaxDelayMs: number;
   /** `LLM_REQUEST_TIMEOUT_MS` — per-request deadline. */
   requestTimeoutMs: number;
   /** `LLM_GLOBAL_CONCURRENCY_ENABLED` — enables the Redis aggregate budget. */
@@ -200,6 +205,10 @@ export function createEnvLlmExecutionPort(
           const result = await retryWithBackoff(() => fn(signal), {
             maxAttempts: config.maxAttempts,
             baseDelayMs: config.baseBackoffMs,
+            backoff: cappedExponentialBackoff(
+              config.baseBackoffMs,
+              config.retryMaxDelayMs,
+            ),
             isRetryable: (error) => adapter.isRetryableError(error),
             onRetry: (attempt, backoffMs, error) =>
               logger.warn(

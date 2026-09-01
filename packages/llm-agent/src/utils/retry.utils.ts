@@ -22,6 +22,18 @@ export interface RetryBackoffOptions {
 }
 
 /**
+ * Exponential backoff (`baseDelayMs * 2^(attempt-1)`) clamped at `maxDelayMs`.
+ * Pass as `RetryBackoffOptions.backoff` so the ceiling is applied *before* the
+ * equal jitter — the shape every capped retry path in this repo uses.
+ */
+export function cappedExponentialBackoff(
+  baseDelayMs: number,
+  maxDelayMs: number,
+): (attempt: number) => number {
+  return (attempt) => Math.min(baseDelayMs * 2 ** (attempt - 1), maxDelayMs);
+}
+
+/**
  * Retry `fn` with backoff while errors are retryable. Throws the last error
  * when attempts run out or the error is not retryable or the signal is aborted.
  */

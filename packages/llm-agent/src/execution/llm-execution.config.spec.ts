@@ -13,6 +13,7 @@ describe('buildLlmExecutionConfig', () => {
     delete process.env.LLM_GLOBAL_MAX_CONCURRENT;
     delete process.env.LLM_OPENAI_RETRY_MAX_ATTEMPTS;
     delete process.env.LLM_OPENAI_RETRY_BACKOFF_MS;
+    delete process.env.LLM_OPENAI_RETRY_MAX_DELAY_MS;
     delete process.env.LLM_REQUEST_TIMEOUT_MS;
     delete process.env.LLM_GLOBAL_CONCURRENCY_ENABLED;
   });
@@ -33,6 +34,7 @@ describe('buildLlmExecutionConfig', () => {
       globalMaxConcurrent: LLM_EXECUTION_DEFAULTS.globalMaxConcurrent,
       maxAttempts: LLM_EXECUTION_DEFAULTS.retryMaxAttempts,
       baseBackoffMs: LLM_EXECUTION_DEFAULTS.retryBackoffMs,
+      retryMaxDelayMs: LLM_EXECUTION_DEFAULTS.retryMaxDelayMs,
       requestTimeoutMs: LLM_EXECUTION_DEFAULTS.requestTimeoutMs,
       globalConcurrencyEnabled: LLM_EXECUTION_DEFAULTS.globalConcurrencyEnabled,
     });
@@ -44,6 +46,7 @@ describe('buildLlmExecutionConfig', () => {
     process.env.LLM_GLOBAL_MAX_CONCURRENT = '20';
     process.env.LLM_OPENAI_RETRY_MAX_ATTEMPTS = '1';
     process.env.LLM_OPENAI_RETRY_BACKOFF_MS = '500';
+    process.env.LLM_OPENAI_RETRY_MAX_DELAY_MS = '4000';
     process.env.LLM_REQUEST_TIMEOUT_MS = '60000';
     process.env.LLM_GLOBAL_CONCURRENCY_ENABLED = 'true';
 
@@ -53,6 +56,7 @@ describe('buildLlmExecutionConfig', () => {
     expect(config.globalMaxConcurrent).toBe(20);
     expect(config.maxAttempts).toBe(1);
     expect(config.baseBackoffMs).toBe(500);
+    expect(config.retryMaxDelayMs).toBe(4000);
     expect(config.requestTimeoutMs).toBe(60000);
     expect(config.globalConcurrencyEnabled).toBe(true);
   });

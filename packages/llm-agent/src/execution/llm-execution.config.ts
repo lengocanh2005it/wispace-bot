@@ -6,8 +6,8 @@
  *
  * Env vars: LLM_EXECUTION_ENABLED, LLM_MAX_CONCURRENT,
  * LLM_GLOBAL_MAX_CONCURRENT, LLM_OPENAI_RETRY_MAX_ATTEMPTS,
- * LLM_OPENAI_RETRY_BACKOFF_MS, LLM_REQUEST_TIMEOUT_MS,
- * LLM_GLOBAL_CONCURRENCY_ENABLED
+ * LLM_OPENAI_RETRY_BACKOFF_MS, LLM_OPENAI_RETRY_MAX_DELAY_MS,
+ * LLM_REQUEST_TIMEOUT_MS, LLM_GLOBAL_CONCURRENCY_ENABLED
  */
 
 export const LLM_EXECUTION_DEFAULTS = {
@@ -19,6 +19,7 @@ export const LLM_EXECUTION_DEFAULTS = {
   globalMaxConcurrent: 10,
   retryMaxAttempts: 3,
   retryBackoffMs: 2_000,
+  retryMaxDelayMs: 10_000,
   requestTimeoutMs: 30_000,
   globalConcurrencyEnabled: false,
 } as const;
@@ -56,6 +57,7 @@ export function buildLlmExecutionConfig(
   globalMaxConcurrent: number;
   maxAttempts: number;
   baseBackoffMs: number;
+  retryMaxDelayMs: number;
   requestTimeoutMs: number;
   globalConcurrencyEnabled: boolean;
 } {
@@ -93,6 +95,10 @@ export function buildLlmExecutionConfig(
     baseBackoffMs: readPositiveInt(
       get('LLM_OPENAI_RETRY_BACKOFF_MS'),
       LLM_EXECUTION_DEFAULTS.retryBackoffMs,
+    ),
+    retryMaxDelayMs: readPositiveInt(
+      get('LLM_OPENAI_RETRY_MAX_DELAY_MS'),
+      LLM_EXECUTION_DEFAULTS.retryMaxDelayMs,
     ),
     requestTimeoutMs: readPositiveInt(
       get('LLM_REQUEST_TIMEOUT_MS'),

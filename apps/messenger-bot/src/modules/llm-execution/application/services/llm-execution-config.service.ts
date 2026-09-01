@@ -69,6 +69,14 @@ export class LlmExecutionConfigService {
     );
   }
 
+  getRetryMaxDelayMs(): number {
+    return readEnvPositiveInt(
+      this.configService,
+      'LLM_OPENAI_RETRY_MAX_DELAY_MS',
+      10_000,
+    );
+  }
+
   getRequestTimeoutMs(): number {
     return readEnvPositiveInt(
       this.configService,

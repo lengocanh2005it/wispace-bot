@@ -4,6 +4,7 @@ import CircuitBreaker from 'opossum';
 import {
   acquireRedisSlot,
   admissionWaitBudgetMs,
+  cappedExponentialBackoff,
   retryWithBackoff,
   BoundedAdmissionQueue,
   LlmOverloadError,
@@ -186,6 +187,7 @@ export class LlmExecutionService {
   ): Promise<T> {
     const maxAttempts = this.config.getRetryMaxAttempts();
     const baseBackoffMs = this.config.getRetryBackoffMs();
+    const maxDelayMs = this.config.getRetryMaxDelayMs();
     const feature = context?.feature ?? 'unknown';
     const correlation = context?.correlationId ?? 'n/a';
     const signal = context?.signal;
@@ -196,6 +198,7 @@ export class LlmExecutionService {
       {
         maxAttempts,
         baseDelayMs: baseBackoffMs,
+        backoff: cappedExponentialBackoff(baseBackoffMs, maxDelayMs),
         isRetryable: (error) => this.adapter.isRetryableError(error),
         onRetry: (attempt, backoffMs, error) =>
           this.logger.warn(
