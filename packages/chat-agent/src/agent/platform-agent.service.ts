@@ -690,6 +690,17 @@ export class PlatformAgentService {
             textPreview: params.textPreview,
             toolName: params.toolName,
           }),
+        recordClassifierVerdict: (params) =>
+          this.safetyEventService.recordClassifierVerdict({
+            externalUserId: params.externalUserId,
+            userId: params.userId,
+            correlationId: params.correlationId,
+            label: params.label,
+            mode: params.mode,
+            confidence: params.confidence,
+            reason: params.reason,
+            textPreview: params.textPreview,
+          }),
       },
       metrics: NOOP_METRICS_PORT,
       toolExecutor,

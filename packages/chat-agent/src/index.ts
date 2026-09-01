@@ -89,3 +89,6 @@ export type {
   WriteToolBudgetGateDeps,
   BudgetExceededResult,
 } from './agent/write-tool-budget';
+
+export { LlmContentClassifier } from './agent/llm-content-classifier';
+export type { LlmContentClassifierDeps } from './agent/llm-content-classifier';
