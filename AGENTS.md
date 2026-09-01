@@ -490,8 +490,9 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 | 2        | [apps/messenger-bot/docs/study-session-reminder.md](apps/messenger-bot/docs/study-session-reminder.md) | Editing reminders, jobs, sync, dispatch, rollover           |
 | 3        | [apps/messenger-bot/docs/chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md)   | Two-way chatbot, rate limit, quota                          |
 | 4        | [docs/edge-cases-roadmap.md](docs/edge-cases-roadmap.md)                                               | Project-wide gaps & remediation phases (beyond chat H1–H7)  |
-| 5        | `.env.example`                                                                                         | Required environment variables                              |
-| 6        | `apps/messenger-bot/src/shared/config/poc.constants.ts`                                                | `m.me` links, parse `userId` from `ref`                     |
+| 5        | [docs/vault-secrets.md](docs/vault-secrets.md)                                                         | Vault runtime secret contract and bootstrap                  |
+| 6        | `.env.example`                                                                                         | Required environment variables                              |
+| 7        | `apps/messenger-bot/src/shared/config/poc.constants.ts`                                                | `m.me` links, parse `userId` from `ref`                     |
 | —        | `.claude/rules/clean-architecture.md`                                                                  | Editing/adding code in `apps/messenger-bot/src/modules/`    |
 | —        | `.claude/rules/chat-rate-limit.md`                                                                     | Editing `apps/messenger-bot/src/modules/chat-rate-limit/**` |
 | —        | `.claude/rules/messenger-chat.md`                                                                      | Editing chat queue/history/worker                           |
@@ -551,6 +552,7 @@ Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global ski
 | Discord/Zalo multi-pod chat history                                                 | ✓ `CHAT_HISTORY_STORE=redis` via shared `PlatformChatHistoryService` (`chat-history:discord:` / `chat-history:zalo:` keys) — memory default, Redis optional (same as Messenger)                                                                                                                                 |
 | Learner profile (#207 item 3)                                                       | ✓ `learner_profiles` table (target_score, exam_date + per-field fetched_at) — v1 source `get_user_goals`, injected via `systemPromptSuffix` with 24h freshness; weakAreas deferred (no server-derived source yet)                                                                                               |
 | Project-wide gaps (link, reports, reminders, ops)                                   | Roadmap — [edge-cases-roadmap.md](docs/edge-cases-roadmap.md)                                                                                                                                                                                                                                                   |
+| Vault runtime secret contract (#653)                                                | Shared/per-bot KV v2 bootstrap — [vault-secrets.md](docs/vault-secrets.md); production delivery remains #654 and Doppler removal remains #655                                      |
 
 When closing a gap: update the feature runbook (`apps/messenger-bot/docs/chat-rate-limit-quota.md` or `apps/messenger-bot/docs/study-session-reminder.md`), `docs/project-overview.md`, `docs/edge-cases-roadmap.md`, and the table above.
 

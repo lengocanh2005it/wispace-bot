@@ -23,7 +23,7 @@ packages/bot-metrics/           Prometheus metrics (prom-client)
 packages/cleanup-cron/          Advisory-lock cleanup cron service
 packages/ops-health/            Ops health snapshot + alerts
 packages/reschedule-confirm/    Generic reschedule confirmation service
-packages/bot-common/            Shared NestJS infrastructure: ops API guard, advisory locks
+packages/bot-common/            Shared NestJS infrastructure: ops API guard, advisory locks, Vault bootstrap
 packages/database/              Shared TypeORM entities + migrations
 packages/doppler-sync/          Doppler runtime secret sync helpers
 packages/date-utils/            Timezone-aware date helpers (date-fns)
@@ -49,6 +49,7 @@ packages/date-utils/            Timezone-aware date helpers (date-fns)
 | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
 | [docs/turborepo-migration-plan.md](docs/turborepo-migration-plan.md)                                   | Monorepo roadmap: cross-platform DB, independent CI/CD     |
 | [docs/project-overview.md](docs/project-overview.md)                                                   | Architecture, code structure, DB, API, cron, quota runbook |
+| [docs/vault-secrets.md](docs/vault-secrets.md)                                                         | Vault runtime secret contract and bootstrap runbook         |
 | [apps/messenger-bot/docs/chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md)   | Chat rate limit V1 + H1–H7                                 |
 | [docs/edge-cases-roadmap.md](docs/edge-cases-roadmap.md)                                               | Project-wide gaps + QA checklist + remediation phases      |
 | [apps/messenger-bot/docs/study-session-reminder.md](apps/messenger-bot/docs/study-session-reminder.md) | Study session reminders (detailed)                         |

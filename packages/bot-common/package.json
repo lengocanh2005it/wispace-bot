@@ -88,6 +88,11 @@
       "import": "./dist/health/index.js",
       "require": "./dist/health/index.js",
       "types": "./dist/health/index.d.ts"
+    },
+    "./secrets": {
+      "import": "./dist/secrets/index.js",
+      "require": "./dist/secrets/index.js",
+      "types": "./dist/secrets/index.d.ts"
     }
   }
 }

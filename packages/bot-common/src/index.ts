@@ -6,3 +6,4 @@ export * from './masking/index';
 export * from './utils/index';
 export * from './redis/index';
 export * from './health/index';
+export * from './secrets/index';

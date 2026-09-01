@@ -528,6 +528,7 @@ See `.env.example` (app-specific) + `.env.shared.example` (cross-bot shared conf
 - **Ops API:** `INTERNAL_API_KEY` — header `X-Internal-Api-Key` for sync / send-reports / profile setup
 - **Data quality (#642):** `DATA_QUALITY_CRON_ENABLED`, `DATA_QUALITY_LOCK_ID`, `DATA_QUALITY_STATEMENT_TIMEOUT_MS` (default 5000), `DATA_QUALITY_SAMPLE_LIMIT` (default 5), `DATA_QUALITY_TIMEZONE` (default `Asia/Ho_Chi_Minh`), `DATA_QUALITY_BASELINE_DAYS` (default 7), `DATA_QUALITY_BASELINE_MIN_ROWS` (default 10), `DATA_QUALITY_FUTURE_SKEW_MS` (default 300000), `DATA_QUALITY_NULL_RESOLUTION_AGE_MS` (default 86400000), `DATA_QUALITY_STUCK_GRACE_MS` (default 300000), `DATA_QUALITY_STUCK_RESERVED_MS` (default 600000), `DATA_QUALITY_WEBHOOK_PROCESSING_STUCK_MS` (default 300000), `DATA_QUALITY_STUDY_REMINDER_PROCESSING_STUCK_MS` (default 600000), `DATA_QUALITY_REPORT_SEND_PROCESSING_STUCK_MS` (default 600000), `DATA_QUALITY_REPORT_CLAIM_PROCESSING_STUCK_MS` (default 7200000), `DATA_QUALITY_NULL_SPIKE_RATIO` (default 2), `DATA_QUALITY_NULL_SPIKE_MIN_COUNT` (default 10), `DATA_QUALITY_NULL_SPIKE_MIN_RATE_DELTA` (default 0.1), `DATA_QUALITY_ORPHAN_GROWTH_RATIO` (default 2), `DATA_QUALITY_ORPHAN_MIN_DELTA` (default 1), `DATA_QUALITY_VOLUME_LOW_RATIO` (default 0.5), `DATA_QUALITY_VOLUME_HIGH_RATIO` (default 2). The runner is read-only, uses advisory lock `884200943`, compares the previous complete ICT day with a seven-day median, masks sample keys, and never repairs rows.
 - **Doppler:** production env is applied by the manual `sync-env.yml` workflow; `DOPPLER_RUNTIME_SYNC_ENABLED=false` in deployed containers.
+- **Vault runtime bootstrap (#653):** application startup loads string-valued secrets from the canonical shared and per-bot KV v2 paths described in [the Vault runbook](vault-secrets.md). Production uses `prd` and requires Vault; delivery of those bootstrap variables is tracked separately in #654.
 - **Deploy:** `GHCR_PULL_TOKEN`, `GHCR_USER`, `DEPLOY_UID`, `DEPLOY_GID`
 - **Exam reports:** `WISPACE_REPORT_DAYS_BEFORE_EXAM_MIN/MAX`, `REPORT_SEND_CONCURRENCY`
 - **DB:** `DB_HOST`, `DB_PORT`, `DB_NAME` (`ai_chat_bot_db`), `DB_USER`, `DB_PASSWORD`, `DB_MIGRATIONS_RUN`, `DB_POOL_SIZE`, `DB_POOL_IDLE_TIMEOUT_MS`, `DB_POOL_CONNECTION_TIMEOUT_MS`, `DB_QUERY_TIMEOUT_MS`, `DB_MIGRATION_QUERY_TIMEOUT_MS`, `MIGRATION_LOCK_ID` — **TLS is enforced independent of `NODE_ENV`**: any host that is not localhost/a private IPv4 address fails startup and migration commands when `DB_SSL != true`. `DB_ALLOW_INSECURE_HOSTS` (comma-separated) is the only plaintext exception — for hostnames that cannot be IP-classified (e.g. Docker-internal `postgres`). TLS always verifies the peer (`rejectUnauthorized: true`); supply the CA via `DB_SSL_CA`. Production must use a stable PostgreSQL writer endpoint. If PgBouncer is used, it is session-mode, uses `DB_HOST=pgbouncer`/`DB_PORT=5432` on the monitoring network, and receives its backend credentials through `PGBOUNCER_DB_USER`/`PGBOUNCER_DB_PASSWORD` in `deploy/docker-compose.pgbouncer.yml`. See [the PostgreSQL HA runbook](postgres-ha-runbook.md).
@@ -692,6 +693,8 @@ npm run start:dev
 
 Or **Doppler** (no `.env` on disk): see [doppler-secrets.md](../apps/messenger-bot/docs/doppler-secrets.md) → `doppler setup` + `npm run start:dev:doppler`.
 
+Vault runtime contract and local bootstrap examples: [docs/vault-secrets.md](vault-secrets.md).
+
 Meta webhook points to public URL (ngrok / tunnel) → `POST /v1/webhook`.
 
 After first menu deploy: `POST /v1/messenger/profile/setup`.
@@ -768,7 +771,7 @@ Measured locally on 2026-08-13 for messenger-bot with docker image inspect: pre-
 
 ### Secrets & local env files
 
-- Local `.env` / `.env.shared` (and `apps/*/.env`) are git-ignored and excluded from Docker build contexts (`.dockerignore`), deployment bundles (built from the git checkout), and backups. Runtime secrets live in Doppler; containers never mount `.env`.
+- Local `.env` / `.env.shared` (and `apps/*/.env`) are git-ignored and excluded from Docker build contexts (`.dockerignore`), deployment bundles (built from the git checkout), and backups. Runtime startup loads secrets from Vault; the current production delivery path remains tracked in #654. Containers never mount `.env`.
 - **CI secret scanning:** the PR workflow runs [Gitleaks](https://github.com/gitleaks/gitleaks-action) on every push and pull request — a new secret fails the build.
 - Production image hygiene is verified by `deploy/verify-runtime-image.mjs` (no TypeScript toolchain in the runtime image).
 
