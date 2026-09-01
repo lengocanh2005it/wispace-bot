@@ -15,12 +15,16 @@ export interface ClassifierVerdict {
   reason: string;
 }
 
-/** Why the classifier produced no usable verdict. */
+/**
+ * Why the classifier produced no usable verdict. `skipped_circuit_open` means
+ * the local circuit breaker was open and the call was not attempted; the
+ * others mean the call ran and failed.
+ */
 export type ClassifyFailureReason =
   | 'timeout'
   | 'error'
   | 'parse_failed'
-  | 'circuit_open';
+  | 'skipped_circuit_open';
 
 /**
  * Discriminated result. `ok: false` means the classifier produced nothing

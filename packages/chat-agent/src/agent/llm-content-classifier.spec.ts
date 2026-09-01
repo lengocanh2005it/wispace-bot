@@ -1,4 +1,5 @@
 import { LlmContentClassifier } from './llm-content-classifier';
+import { REDACTED_PLACEHOLDER } from '@wispace/llm-agent';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 
 function adapterReturning(content: string): LlmProviderAdapter {
@@ -133,14 +134,20 @@ it('opens after 5 consecutive failures, then allows a single half-open probe', a
     expect(await c.classify('x')).toEqual({ ok: false, reason: 'error' });
   }
   // circuit open — refused without touching the adapter
-  expect(await c.classify('x')).toEqual({ ok: false, reason: 'circuit_open' });
+  expect(await c.classify('x')).toEqual({
+    ok: false,
+    reason: 'skipped_circuit_open',
+  });
   expect((bad.generateJson as jest.Mock).mock.calls.length).toBe(5);
 
   jest.advanceTimersByTime(30_001);
   // exactly one half-open probe; it fails, so the circuit re-opens immediately
   expect(await c.classify('x')).toEqual({ ok: false, reason: 'error' });
   expect((bad.generateJson as jest.Mock).mock.calls.length).toBe(6);
-  expect(await c.classify('x')).toEqual({ ok: false, reason: 'circuit_open' });
+  expect(await c.classify('x')).toEqual({
+    ok: false,
+    reason: 'skipped_circuit_open',
+  });
 
   jest.advanceTimersByTime(30_001);
   (bad.generateJson as jest.Mock).mockResolvedValue({
@@ -151,7 +158,7 @@ it('opens after 5 consecutive failures, then allows a single half-open probe', a
   jest.useRealTimers();
 });
 
-it('redacts secrets and truncates to 512 chars before calling the model', async () => {
+it('#632 — routes classifier input through redactSecrets; truncates to 512 chars', async () => {
   const spy = adapterReturning(
     '{"label":"SAFE","confidence":0.9,"reason":"ok"}',
   );
@@ -159,7 +166,9 @@ it('redacts secrets and truncates to 512 chars before calling the model', async 
   const secret = 'sk-' + 'a'.repeat(40);
   await c.classify(`${secret} ` + 'z'.repeat(2000));
   const arg = (spy.generateJson as jest.Mock).mock.calls[0][0];
+  // the seeded secret never reaches the model; redactSecrets left its marker
   expect(arg.userContent).not.toContain(secret);
+  expect(arg.userContent).toContain(REDACTED_PLACEHOLDER);
   expect(arg.userContent.length).toBeLessThanOrEqual(512);
   expect(arg.systemPrompt).toContain('"label"');
   expect(arg.feature).toBe('FREE_FORM_CHAT');

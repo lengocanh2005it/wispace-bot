@@ -11,7 +11,9 @@ import {
   type LlmExecutionPort,
   type LlmProviderAdapter,
   loadSystemPromptFile,
+  IntentDetector,
   isAmbiguousMessage,
+  isGreetingOnly,
   isObviouslyOffTopic,
   isDistressExpression,
   buildClarificationCancelledMessage,
@@ -81,6 +83,9 @@ import { buildLlmExecutionConfig } from '@wispace/llm-agent';
 export class PlatformAgentService {
   private readonly logger = new Logger(PlatformAgentService.name);
   private agent?: LlmAgentService<PlatformAgentToolContext>;
+  /** #649 — belt-and-braces: greeting/self-intro are normally filtered at the
+   *  bot gateway, but the classifier still checks so it never runs on them. */
+  private readonly intentDetector = new IntentDetector();
   private readonly identityVersions = new Map<string, string>();
   private readonly clarificationMachine: ClarificationStateMachine;
   private readonly clarificationStore: ClarificationStateStore;
@@ -228,7 +233,9 @@ export class PlatformAgentService {
       }
     }
 
-    const classifierBlock = await this.runInputClassifier(resolvedInput);
+    const classifierBlock = clarification.choiceConsumed
+      ? null
+      : await this.runInputClassifier(resolvedInput);
     if (classifierBlock) {
       return classifierBlock;
     }
@@ -337,6 +344,9 @@ export class PlatformAgentService {
   private async handleClarification(input: PlatformAgentInput): Promise<{
     input?: PlatformAgentInput;
     reply?: PlatformAgentReply;
+    /** #649 — the message was a clarification-menu choice, rewritten to a
+     *  canned prompt; the input classifier must not run on it. */
+    choiceConsumed?: boolean;
   }> {
     const key = this.clarificationKey(input.externalUserId);
     const now = Date.now();
@@ -445,6 +455,7 @@ export class PlatformAgentService {
             ...input,
             userText: this.buildChoicePrompt(choice),
           },
+          choiceConsumed: true,
         };
       }
 
@@ -793,7 +804,18 @@ export class PlatformAgentService {
   ): Promise<PlatformAgentReply | null> {
     const classifier = this.options.contentClassifier;
     if (!classifier || !this.classifierEnabled) return null;
-    if (isDistressExpression(input.userText)) return null;
+    // Skip conditions (#649). Greeting / self-intro / off-topic / clarification
+    // are normally consumed upstream (bot gateway `IntentDetector`, then
+    // `handleClarification`); the checks here make that a guarantee, not an
+    // assumption, and keep the classifier off distress messages (#598).
+    if (
+      isDistressExpression(input.userText) ||
+      isGreetingOnly(input.userText) ||
+      isObviouslyOffTopic(input.userText) ||
+      this.intentDetector.detect(input.userText).intent !== 'unknown'
+    ) {
+      return null;
+    }
 
     const mode: 'shadow' | 'enforce' = this.classifierEnforce
       ? 'enforce'

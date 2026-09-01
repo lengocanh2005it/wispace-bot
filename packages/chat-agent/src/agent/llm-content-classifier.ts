@@ -49,7 +49,7 @@ export class LlmContentClassifier implements ContentClassifierPort {
     correlationId?: string,
   ): Promise<ClassifyResult> {
     if (!this.admit()) {
-      return { ok: false, reason: 'circuit_open' };
+      return { ok: false, reason: 'skipped_circuit_open' };
     }
 
     const cleaned = redactSecrets(userText).text.slice(0, MAX_INPUT_CHARS);
