@@ -40,19 +40,20 @@
             "schedulingMode": "default_next_day_same_time"
           },
           "result": {
+            "pendingConfirmation": true,
             "scheduledTimeLabel": "Ngày kia lúc 19:00"
           }
         }
       ]
     },
     {
-      "text": "Đã dời buổi học sang ngày kia lúc 19:00 nhé."
+      "text": "Mình đã gửi yêu cầu xác nhận dời buổi học sang ngày kia lúc 19:00 nha. Bạn xác nhận trong tin nhắn để mình đổi nhé."
     }
   ],
   "expected": {
     "toolSequence": ["list_study_calendar_entries", "reschedule_study_session"],
     "replyTextContains": ["19:00"],
-    "replyTextNotContains": ["chưa thể tổng hợp"],
+    "replyTextNotContains": ["đã đổi buổi học", "chưa thể tổng hợp"],
     "exhausted": false,
     "toolSummary": "[Đã tra cứu: list_study_calendar_entries; reschedule_study_session]",
     "groundingWarnings": 0
