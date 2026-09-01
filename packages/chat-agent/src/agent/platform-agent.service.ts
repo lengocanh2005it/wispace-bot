@@ -13,10 +13,13 @@ import {
   loadSystemPromptFile,
   isAmbiguousMessage,
   isObviouslyOffTopic,
+  isDistressExpression,
   buildClarificationCancelledMessage,
   buildClarificationUnavailableMessage,
   buildClarificationMessage,
   buildWispaceScopeRedirectMessage,
+  buildPromptInjectionBlockedMessage,
+  buildNonDisclosureReply,
   redactSecrets,
   sanitizeUntrustedTextForLlm,
   type LlmDegradedAction,
@@ -223,6 +226,11 @@ export class PlatformAgentService {
         );
         throw error;
       }
+    }
+
+    const classifierBlock = await this.runInputClassifier(resolvedInput);
+    if (classifierBlock) {
+      return classifierBlock;
     }
 
     const result = await this.agent.reply(
@@ -767,6 +775,78 @@ export class PlatformAgentService {
     return Number.isFinite(value) && value > 0
       ? Math.floor(value)
       : defaultValue;
+  }
+
+  private get classifierEnabled(): boolean {
+    return this.readEnvBoolean('LLM_INPUT_CLASSIFIER_ENABLED', false);
+  }
+  private get classifierEnforce(): boolean {
+    return this.readEnvBoolean('LLM_INPUT_CLASSIFIER_ENFORCE', false);
+  }
+  private get classifierMinConfidence(): number {
+    const raw = Number(
+      this.configService.get<string>('LLM_INPUT_CLASSIFIER_MIN_CONFIDENCE'),
+    );
+    return Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 0;
+  }
+
+  private blockedReply(text: string): PlatformAgentReply {
+    return {
+      text,
+      privateDataFetched: false,
+      richFollowUps: [],
+      skipHistory: true,
+    };
+  }
+
+  private async runInputClassifier(
+    input: PlatformAgentInput,
+  ): Promise<PlatformAgentReply | null> {
+    const classifier = this.options.contentClassifier;
+    if (!classifier || !this.classifierEnabled) return null;
+    if (isDistressExpression(input.userText)) return null;
+
+    const mode: 'shadow' | 'enforce' = this.classifierEnforce
+      ? 'enforce'
+      : 'shadow';
+    try {
+      const result = await classifier.classify(
+        input.userText,
+        input.correlationId,
+      );
+      if (!result.ok) {
+        this.options.metrics?.classifierVerdictInc?.(result.reason, mode);
+        return null;
+      }
+      const { label, confidence, reason } = result.verdict;
+      this.options.metrics?.classifierVerdictInc?.(label, mode);
+      if (label === 'SAFE') return null;
+
+      this.safetyEventService.recordClassifierVerdict({
+        externalUserId: input.externalUserId,
+        userId: input.userId,
+        correlationId: input.correlationId,
+        label,
+        mode,
+        confidence,
+        reason,
+        textPreview: input.userText,
+      });
+
+      if (mode === 'shadow' || confidence < this.classifierMinConfidence)
+        return null;
+
+      const text =
+        label === 'DISCLOSURE_PROBE' || /extraction|prompt/i.test(reason)
+          ? buildNonDisclosureReply()
+          : buildPromptInjectionBlockedMessage();
+      return this.blockedReply(text);
+    } catch {
+      this.logger.warn(
+        `Input classifier failed externalUserId=${maskExternalId(input.externalUserId)}`,
+      );
+      return null;
+    }
   }
 
   private async buildSystemPrompt(input: PlatformAgentInput): Promise<string> {

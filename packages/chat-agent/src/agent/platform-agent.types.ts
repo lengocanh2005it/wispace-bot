@@ -3,6 +3,7 @@ import type { StageInput, StageResult } from '@wispace/reschedule-confirm';
 import type {
   AdmissionMetrics,
   AgentMetricsPort,
+  ContentClassifierPort,
   LlmExecutionPort,
 } from '@wispace/llm-agent';
 import type { PinnedFact } from './pinned-facts';
@@ -166,6 +167,12 @@ export interface PlatformAgentOptions {
    * Callers that provide preloaded history own the append after delivery.
    */
   appendHistory?: boolean;
+  /**
+   * #649 — optional second-tier input classifier. Present only on bots that
+   * wire it (Messenger during the shadow window). Gated at runtime by
+   * `LLM_INPUT_CLASSIFIER_ENABLED`; enforcement by `LLM_INPUT_CLASSIFIER_ENFORCE`.
+   */
+  contentClassifier?: ContentClassifierPort;
 }
 
 /**
