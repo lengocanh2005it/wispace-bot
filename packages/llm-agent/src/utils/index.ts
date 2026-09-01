@@ -35,6 +35,7 @@ export {
   isGreetingOnly,
   isAmbiguousMessage,
   normalizeScopeText,
+  isDistressExpression,
 } from './scope.utils';
 export {
   detectPrivacyIntent,

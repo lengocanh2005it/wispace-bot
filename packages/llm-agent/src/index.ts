@@ -129,6 +129,7 @@ export {
   isGreetingOnly,
   isAmbiguousMessage,
   normalizeScopeText,
+  isDistressExpression,
   detectPrivacyIntent,
   isConfirmationResponse,
   isCancellationResponse,
@@ -187,3 +188,12 @@ export type {
   EnvLlmExecutionConfig,
   LlmProviderCircuitState,
 } from './execution/index';
+
+// Input classifier (#649) — port + prompt; implementation lives in @wispace/chat-agent
+export { CLASSIFIER_SYSTEM_PROMPT } from './classifier/classifier-prompt';
+export type {
+  ClassifierLabel,
+  ClassifierVerdict,
+  ClassifyResult,
+  ContentClassifierPort,
+} from './classifier/content-classifier.port';
