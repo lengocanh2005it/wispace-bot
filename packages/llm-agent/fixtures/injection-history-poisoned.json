@@ -1,5 +1,6 @@
 {
   "name": "injection-history-poisoned",
+  "tier": "adversarial",
   "description": "#629 — a crafted earlier user turn carries a role-marker payload. On replay it is re-sanitized with the same pipeline as fresh input (metered as a history injection event) and the current turn still gets a normal reply.",
   "coreHash": "2406849abda03274e9681b0cf9ddfa78f16680ac09722d950b53bb8b4703ad39",
   "promptFiles": [

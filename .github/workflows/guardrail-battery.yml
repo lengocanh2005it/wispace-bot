@@ -1,0 +1,39 @@
+# #635 — required guardrail battery: 100% on the must-block core set,
+# adversarial bypass rate within threshold. Path-filtered to prompt /
+# agent / tool-schema changes; skipped (no status reported) for
+# unrelated PRs. Maintainers: enable branch protection for the
+# `guardrail-battery` check once merged.
+name: guardrail-battery
+
+on:
+  pull_request:
+    paths:
+      - 'packages/llm-agent/**'
+      - 'packages/chat-agent/src/agent/**'
+      - 'apps/*/src/shared/prompts/**'
+
+permissions:
+  contents: read
+
+jobs:
+  battery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c448fc0a4a # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build llm-agent
+        run: npx turbo run build --filter=@wispace/llm-agent
+
+      - name: Run guardrail battery (#635)
+        run: npm run eval:guardrail --workspace=@wispace/llm-agent

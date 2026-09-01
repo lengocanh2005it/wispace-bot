@@ -1,5 +1,6 @@
 {
   "name": "disclosure-output-vendor-token",
+  "tier": "adversarial",
   "description": "Output guard (#625): an LLM reply naming a vendor/model is redacted to the standard non-disclosure line before delivery.",
   "coreHash": "2406849abda03274e9681b0cf9ddfa78f16680ac09722d950b53bb8b4703ad39",
   "promptFiles": [

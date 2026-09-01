@@ -163,6 +163,12 @@ export interface EvalFixture {
   name: string;
   description?: string;
   /**
+   * #635 battery tier. `must-block` (default) fixtures are never allowed to
+   * fail; `adversarial` probes tolerate a configured bypass rate so a newly
+   * discovered bypass can land as a failing fixture before its fix.
+   */
+  tier: 'must-block' | 'adversarial';
+  /**
    * sha256 (hex) of the LF-normalized `CHAT_SYSTEM_PROMPT_CORE` value — the
    * exact core text production composes. A prompt edit fails the eval until
    * the hash is re-validated and updated deliberately (#646).
@@ -297,6 +303,12 @@ export function parseFixture(
   }
   if (raw.description !== undefined && typeof raw.description !== 'string') {
     errors.push('description must be a string');
+  }
+  if (
+    raw.tier !== undefined &&
+    !['must-block', 'adversarial'].includes(String(raw.tier))
+  ) {
+    errors.push('tier must be "must-block" or "adversarial" (#635)');
   }
   const promptFiles = raw.promptFiles;
   if (!Array.isArray(promptFiles) || promptFiles.length === 0) {
@@ -532,6 +544,10 @@ export function parseFixture(
       name: String(name),
       description:
         typeof raw.description === 'string' ? raw.description : undefined,
+      tier:
+        raw.tier === 'adversarial'
+          ? ('adversarial' as const)
+          : ('must-block' as const),
       coreHash: String(raw.coreHash).toLowerCase(),
       promptFiles: (raw.promptFiles as EvalPromptFile[]).map((file) => ({
         path: String(file.path),

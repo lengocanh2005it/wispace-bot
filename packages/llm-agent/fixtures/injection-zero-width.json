@@ -1,5 +1,6 @@
 {
   "name": "injection-zero-width",
+  "tier": "adversarial",
   "description": "A zero-width space injection attempt is blocked before the LLM is called — the hidden characters do not bypass the guardrail.",
   "coreHash": "2406849abda03274e9681b0cf9ddfa78f16680ac09722d950b53bb8b4703ad39",
   "promptFiles": [

@@ -45,7 +45,8 @@
     "lint": "oxlint",
     "typecheck": "tsc -p tsconfig.build.json --noEmit",
     "test": "jest --maxWorkers=50%",
-    "eval:chat": "jest src/eval --runInBand"
+    "eval:chat": "jest src/eval --runInBand",
+    "eval:guardrail": "node dist/eval/guardrail-battery.main.js"
   },
   "dependencies": {
     "@wispace/bot-common": "*",

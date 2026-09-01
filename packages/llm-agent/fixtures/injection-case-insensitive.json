@@ -1,5 +1,6 @@
 {
   "name": "injection-case-insensitive",
+  "tier": "adversarial",
   "description": "A case-insensitive variant of the ignore-instructions injection (IGNORE ALL PREVIOUS INSTRUCTIONS) is blocked.",
   "coreHash": "2406849abda03274e9681b0cf9ddfa78f16680ac09722d950b53bb8b4703ad39",
   "promptFiles": [

@@ -1,5 +1,6 @@
 {
   "name": "disclosure-tool-probe",
+  "tier": "adversarial",
   "description": "K — a tool-capability probe is deflected to the standard non-disclosure line (#625).",
   "coreHash": "2406849abda03274e9681b0cf9ddfa78f16680ac09722d950b53bb8b4703ad39",
   "promptFiles": [
