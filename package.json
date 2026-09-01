@@ -28,6 +28,7 @@
     "@swc/core": "^1.15.46",
     "@swc/jest": "^0.2.39",
     "@types/opossum": "^8.1.9",
+    "fast-check": "^4.9.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
     "oxfmt": "^0.64.0",
