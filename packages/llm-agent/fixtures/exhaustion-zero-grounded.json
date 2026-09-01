@@ -1,0 +1,86 @@
+{
+  "name": "exhaustion-zero-grounded-tools",
+  "description": "#505 golden: every round's tool call fails — exhaustion with ZERO grounded tools yields the no-data partial answer (no tool labels), not a fabricated summary.",
+  "coreHash": "2406849abda03274e9681b0cf9ddfa78f16680ac09722d950b53bb8b4703ad39",
+  "promptFiles": [
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "846abeac04ed2fb760a912ee024c5a0b547fd5adc47b07482a950ef07921d0eb"
+    }
+  ],
+  "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=1507).",
+  "userText": "tổng hợp hết mọi thứ về việc học của mình",
+  "externalUserId": "eval-505-exhaust0",
+  "userId": 1507,
+  "script": [
+    {
+      "toolCalls": [
+        {
+          "name": "get_user_goals",
+          "args": {},
+          "fail": "wispace down"
+        }
+      ]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": { "limit": 5 },
+          "fail": "wispace still down"
+        }
+      ]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": { "limit": 5 },
+          "fail": "wispace still down"
+        }
+      ]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": { "limit": 5 },
+          "fail": "wispace still down"
+        }
+      ]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": { "limit": 5 },
+          "fail": "wispace still down"
+        }
+      ]
+    },
+    {
+      "toolCalls": [
+        {
+          "name": "get_upcoming_study_sessions",
+          "args": { "limit": 5 },
+          "fail": "wispace still down"
+        }
+      ]
+    }
+  ],
+  "expected": {
+    "toolSequence": [
+      "get_user_goals",
+      "get_upcoming_study_sessions",
+      "get_upcoming_study_sessions",
+      "get_upcoming_study_sessions",
+      "get_upcoming_study_sessions",
+      "get_upcoming_study_sessions"
+    ],
+    "replyTextContains": ["Mình chưa tổng hợp xong câu trả lời"],
+    "replyTextNotContains": ["Đã lấy được dữ liệu"],
+    "exhausted": true,
+    "toolSummary": "[Đã tra cứu: get_user_goals; get_upcoming_study_sessions]",
+    "groundingWarnings": 0
+  }
+}

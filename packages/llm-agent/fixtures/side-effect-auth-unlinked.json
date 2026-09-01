@@ -1,6 +1,6 @@
 {
   "name": "side-effect-auth-unlinked",
-  "description": "An unlinked user attempting register_exam_report_notifications is blocked — the tool is never called, the LLM replies with a link prompt.",
+  "description": "Unlinked-user guidance for register_exam_report_notifications at the eval layer: the harness has no auth gate (that lives in the app-level executor - see platform-agent-tools.service.spec unlinked coverage), so this fixture is a passthrough labeling of the scripted reply, NOT a claim that the tool was blocked here.",
   "coreHash": "2406849abda03274e9681b0cf9ddfa78f16680ac09722d950b53bb8b4703ad39",
   "promptFiles": [
     {

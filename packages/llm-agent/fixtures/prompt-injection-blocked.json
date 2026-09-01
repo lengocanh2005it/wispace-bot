@@ -14,7 +14,7 @@
   "script": [],
   "expected": {
     "toolSequence": [],
-    "replyTextContains": ["Mình không thể xử lý tin nhắn này"],
+    "replyTextContains": ["{{prompt_injection_blocked}}"],
     "exhausted": false,
     "toolSummary": null,
     "groundingWarnings": 0,

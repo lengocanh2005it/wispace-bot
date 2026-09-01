@@ -14,9 +14,7 @@
   "script": [],
   "expected": {
     "toolSequence": [],
-    "replyTextContains": [
-      "Mình chỉ hỗ trợ các câu hỏi về WISPACE và IELTS Writing"
-    ],
+    "replyTextContains": ["{{scope_redirect}}"],
     "exhausted": false,
     "toolSummary": null,
     "groundingWarnings": 0

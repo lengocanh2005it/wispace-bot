@@ -155,3 +155,61 @@ describe('eval harness self-checks (negative assertions)', () => {
     );
   });
 });
+
+describe('#505 state-based + token mechanisms', () => {
+  const baseFixture = () =>
+    JSON.parse(
+      readFileSync(
+        join(__dirname, '../../fixtures/single-tool-user-goals.json'),
+        'utf8',
+      ),
+    ) as Record<string, unknown>;
+
+  it('requestNotContains: fails when the guarded string appears in a provider request', async () => {
+    const fixture = baseFixture();
+    // The goals tool name legitimately appears in every request's tool list —
+    // a guard for it must fail (proves the assertion is state-based, not
+    // tautological).
+    fixture.expected = {
+      ...fixture.expected,
+      requestNotContains: ['get_user_goals'],
+    };
+    const result = await runEvalFixture(fixture);
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toContain('requestNotContains');
+  });
+
+  it('requestNotContains: passes when the string never reaches any request', async () => {
+    const fixture = baseFixture();
+    fixture.expected = {
+      ...fixture.expected,
+      requestNotContains: ['totally-absent-secret-marker'],
+    };
+    const result = await runEvalFixture(fixture);
+    expect(result.ok).toBe(true);
+  });
+
+  it('{{token}} placeholders resolve from messages.ts constants', async () => {
+    const fixture = baseFixture();
+    fixture.expected = {
+      ...fixture.expected,
+      replyTextContains: ['{{scope_redirect}}'],
+    };
+    // single-tool fixture's scripted reply is a goals answer, NOT the scope
+    // redirect — the resolved constant must not match → fail (proves
+    // resolution happened; a substring of the reply would pass vacuously).
+    const result = await runEvalFixture(fixture);
+    expect(result.ok).toBe(false);
+  });
+
+  it('unknown {{token}} placeholders are a fixture error', async () => {
+    const fixture = baseFixture();
+    fixture.expected = {
+      ...fixture.expected,
+      replyTextContains: ['{{no_such_token}}'],
+    };
+    const result = await runEvalFixture(fixture);
+    expect(result.ok).toBe(false);
+    expect(result.failures.join('\n')).toContain('unknown placeholder');
+  });
+});

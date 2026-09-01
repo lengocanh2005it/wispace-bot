@@ -9,6 +9,18 @@ import {
   composeChatSystemPrompt,
 } from '../chat-system-prompt';
 import { isAgentToolName, parseAndValidateToolArguments } from '../agent.tools';
+import {
+  buildClarificationCancelledMessage,
+  buildClarificationMessage,
+  buildClarificationUnavailableMessage,
+  buildFinalOutputBlockedMessage,
+  buildGroundingBlockedMessage,
+  buildPrecreateExerciseUnavailableMessage,
+  buildPromptInjectionBlockedMessage,
+  buildToolCallCapMessage,
+  buildWispaceScopeRedirectMessage,
+  CHAT_FAILURE_FALLBACK_MESSAGE,
+} from '../messages';
 import { NOOP_METRICS_PORT } from '../ports';
 import type {
   LlmExecutionPort,
@@ -140,6 +152,13 @@ export interface EvalExpectation {
    * sanitized before it reaches the model context, #161).
    */
   toolResultsNotContain?: string[];
+  /**
+   * State-based leak guard (#505): none of these may appear in ANY part of
+   * any recorded provider request (system prompt, user text, tool messages,
+   * tool definitions). Unlike reply assertions, this checks what the system
+   * actually sends the model — a scripted reply cannot satisfy it.
+   */
+  requestNotContains?: string[];
   exhausted?: boolean;
   /** null = must be absent; string = must match exactly. */
   toolSummary?: string | null;
@@ -197,6 +216,11 @@ export interface EvalFixture {
    * Used to test the agent loop's behavior when the LLM attempts unknown tools.
    */
   allowUnknown?: boolean;
+  /**
+   * #505: default true. When false, `ScriptedAdapter.isConfigured()` returns
+   * false so the loop's adapter-not-configured fallback path is exercised.
+   */
+  adapterConfigured?: boolean;
 }
 
 export interface EvalFixtureResult {
@@ -382,6 +406,12 @@ export function parseFixture(
   if (raw.allowUnknown !== undefined && typeof raw.allowUnknown !== 'boolean') {
     errors.push('allowUnknown must be a boolean');
   }
+  if (
+    raw.adapterConfigured !== undefined &&
+    typeof raw.adapterConfigured !== 'boolean'
+  ) {
+    errors.push('adapterConfigured must be a boolean');
+  }
   if (!Array.isArray(raw.script)) {
     errors.push('script must be an array of rounds');
   } else if (raw.script.length === 0) {
@@ -435,6 +465,14 @@ export function parseFixture(
         errors.push(
           'expected.toolResultsNotContain must be an array of strings',
         );
+      }
+    }
+    if (expected.requestNotContains !== undefined) {
+      if (
+        !Array.isArray(expected.requestNotContains) ||
+        expected.requestNotContains.some((t) => typeof t !== 'string')
+      ) {
+        errors.push('expected.requestNotContains must be an array of strings');
       }
     }
     if (
@@ -565,6 +603,7 @@ export function parseFixture(
         : undefined,
       script: raw.script as EvalScriptRound[],
       expected: raw.expected as EvalExpectation,
+      adapterConfigured: raw.adapterConfigured === false ? false : true,
     },
   };
 }
@@ -656,12 +695,15 @@ export class ScriptedAdapter implements LlmProviderAdapter {
     return this.allRequests[this.allRequests.length - 1]?.messages ?? [];
   }
 
-  constructor(private readonly script: EvalScriptRound[]) {}
+  constructor(
+    private readonly script: EvalScriptRound[],
+    private readonly configured = true,
+  ) {}
 
   readonly providerName = 'eval';
 
   isConfigured(): boolean {
-    return true;
+    return this.configured;
   }
 
   getDefaultModel(): string {
@@ -803,6 +845,49 @@ function sortRecord(value: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
+ * Token map for {{token}} placeholders in reply-text expectations (#505).
+ * Built from the shared `messages.ts` builders so canned-reply assertions
+ * cannot drift from production copy — one source, no inlined fragments.
+ */
+const REPLY_TOKENS: Record<string, string> = {
+  scope_redirect: buildWispaceScopeRedirectMessage(),
+  prompt_injection_blocked: buildPromptInjectionBlockedMessage(),
+  grounding_blocked: buildGroundingBlockedMessage(),
+  clarification: buildClarificationMessage(),
+  clarification_cancelled: buildClarificationCancelledMessage(),
+  clarification_unavailable: buildClarificationUnavailableMessage(),
+  precreate_unavailable: buildPrecreateExerciseUnavailableMessage(),
+  tool_call_cap: buildToolCallCapMessage(),
+  final_output_blocked: buildFinalOutputBlockedMessage(),
+  chat_failure_fallback: CHAT_FAILURE_FALLBACK_MESSAGE,
+};
+
+/**
+ * Resolves {{token}} placeholders in reply-text expectation fragments.
+ * Unknown tokens are pushed as fixture failures (typo protection) and the
+ * fragment is dropped from matching.
+ */
+function resolveReplyFragments(
+  fragments: string[],
+  failures: string[],
+): string[] {
+  return fragments
+    .map((fragment) => {
+      const token = /^\{\{([a-z_]+)\}\}$/.exec(fragment);
+      if (!token) return fragment;
+      const resolved = REPLY_TOKENS[token[1]];
+      if (resolved === undefined) {
+        failures.push(
+          `unknown placeholder "{{${token[1]}}}" — expected one of: ${Object.keys(REPLY_TOKENS).join(', ')}`,
+        );
+        return undefined;
+      }
+      return resolved;
+    })
+    .filter((fragment): fragment is string => fragment !== undefined);
+}
+
+/**
  * Runs a single fixture end-to-end and returns per-assertion results.
  */
 export async function runEvalFixture(
@@ -857,7 +942,10 @@ export async function runEvalFixture(
     suffix: fixture.systemPromptSuffix,
   });
 
-  const adapter = new ScriptedAdapter(fixture.script);
+  const adapter = new ScriptedAdapter(
+    fixture.script,
+    fixture.adapterConfigured !== false,
+  );
   const executor = new ScriptedToolExecutor(fixture.script);
   let groundingWarnings = 0;
   let injectionEvents = 0;
@@ -976,12 +1064,18 @@ export async function runEvalFixture(
           );
         }
       }
-      for (const fragment of fixture.expected.replyTextContains ?? []) {
+      for (const fragment of resolveReplyFragments(
+        fixture.expected.replyTextContains ?? [],
+        failures,
+      )) {
         if (!reply.text.includes(fragment)) {
           failures.push(`reply is missing fragment "${fragment}"`);
         }
       }
-      for (const fragment of fixture.expected.replyTextNotContains ?? []) {
+      for (const fragment of resolveReplyFragments(
+        fixture.expected.replyTextNotContains ?? [],
+        failures,
+      )) {
         if (reply.text.includes(fragment)) {
           failures.push(`reply contains forbidden fragment "${fragment}"`);
         }
@@ -995,6 +1089,17 @@ export async function runEvalFixture(
         if (serializedToolResults.includes(fragment)) {
           failures.push(
             `tool results sent to the model contain forbidden fragment "${fragment}"`,
+          );
+        }
+      }
+      // State-based leak guard (#505): nothing in ANY recorded provider
+      // request may carry the forbidden fragments — this asserts system
+      // behavior (what was sent), not the scripted reply, so it cannot be
+      // satisfied tautologically.
+      for (const fragment of fixture.expected.requestNotContains ?? []) {
+        if (serializedToolResults.includes(fragment)) {
+          failures.push(
+            `requestNotContains: forbidden fragment "${fragment}" reached a provider request`,
           );
         }
       }
