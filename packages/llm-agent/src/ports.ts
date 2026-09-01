@@ -54,6 +54,21 @@ export interface LlmSafetyEventPort {
     textPreview: string;
     toolName?: string;
   }): void;
+  /**
+   * #649 — an LLM input-classifier flagged a message as INJECTION or
+   * DISCLOSURE_PROBE. Implementer redacts `textPreview` to an excerpt/hash
+   * before persisting (#122). Only non-SAFE verdicts reach this method.
+   */
+  recordClassifierVerdict(params: {
+    externalUserId: string;
+    userId?: number;
+    correlationId?: string;
+    label: 'INJECTION' | 'DISCLOSURE_PROBE';
+    mode: 'shadow' | 'enforce';
+    confidence: number;
+    reason: string;
+    textPreview: string;
+  }): void;
 }
 
 export type LlmRoundOutcome =

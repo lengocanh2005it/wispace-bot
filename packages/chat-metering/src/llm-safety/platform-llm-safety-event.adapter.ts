@@ -9,6 +9,7 @@ import { LlmSafetyEventRepository } from './llm-safety.repository';
 import type {
   RecordGroundingWarningInput,
   RecordInjectionEventInput,
+  RecordClassifierVerdictInput,
 } from './types';
 
 /**
@@ -33,6 +34,10 @@ export class PlatformLlmSafetyEventAdapter {
 
   recordInjectionEvent(input: RecordInjectionEventInput): void {
     this.getCore().recordInjectionEvent(input);
+  }
+
+  recordClassifierVerdict(input: RecordClassifierVerdictInput): void {
+    this.getCore().recordClassifierVerdict(input);
   }
 
   async countWarnings24h(): Promise<number> {

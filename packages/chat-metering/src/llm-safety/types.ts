@@ -31,3 +31,16 @@ export interface RecordInjectionEventInput {
   textPreview?: string;
   toolName?: string;
 }
+
+export interface RecordClassifierVerdictInput {
+  externalUserId: string;
+  userId?: number;
+  correlationId?: string;
+  /** Only non-SAFE verdicts are recorded. */
+  label: 'INJECTION' | 'DISCLOSURE_PROBE';
+  mode: 'shadow' | 'enforce';
+  confidence: number;
+  reason: string;
+  /** Classifier input text — persisted only as a redacted excerpt + hash (#122). */
+  textPreview: string;
+}

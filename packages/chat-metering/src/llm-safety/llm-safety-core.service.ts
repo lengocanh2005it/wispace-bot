@@ -3,6 +3,7 @@ import type { LlmSafetyEventRepository } from './llm-safety.repository';
 import type {
   RecordGroundingWarningInput,
   RecordInjectionEventInput,
+  RecordClassifierVerdictInput,
 } from './types';
 import { redactSafetyText } from './redact-safety-text';
 
@@ -89,6 +90,40 @@ export class LlmSafetyCore {
       .catch((err: unknown) => {
         this.logger.warn(
           `LlmSafetyCore.recordInjectionEvent failed: ${errorMessage(err)}`,
+        );
+      });
+  }
+
+  /**
+   * #649 — an LLM input-classifier verdict flagged a message as INJECTION or
+   * DISCLOSURE_PROBE. Records the label, rollout mode and confidence; the
+   * classifier input is persisted only as a redacted excerpt + hash (#122).
+   * Best-effort; never throws. SAFE verdicts are not recorded here.
+   */
+  recordClassifierVerdict(input: RecordClassifierVerdictInput): void {
+    const redacted = redactSafetyText(input.textPreview);
+    const payload: Record<string, unknown> = {
+      label: input.label,
+      mode: input.mode,
+      confidence: input.confidence,
+      textExcerpt: redacted.excerpt,
+      textHash: redacted.hash,
+      textLength: redacted.originalLength,
+    };
+
+    this.repository
+      .insert({
+        feature: 'FREE_FORM_CHAT',
+        eventType: 'CLASSIFIER_FLAGGED',
+        reason: input.reason,
+        externalUserId: input.externalUserId,
+        userId: input.userId,
+        correlationId: input.correlationId,
+        payload,
+      })
+      .catch((err: unknown) => {
+        this.logger.warn(
+          `LlmSafetyCore.recordClassifierVerdict failed: ${errorMessage(err)}`,
         );
       });
   }
