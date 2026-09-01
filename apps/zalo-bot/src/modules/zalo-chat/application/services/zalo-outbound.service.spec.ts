@@ -12,6 +12,29 @@ describe('ZaloOutboundService', () => {
     deliveryLog.logDelivery.mockClear();
   });
 
+  it('returns rate_limited before token or HTTP work', async () => {
+    const tokenService = { getValidAccessToken: jest.fn() };
+    const limiter = {
+      admit: jest.fn().mockResolvedValue({
+        allowed: false,
+        outcome: 'limited',
+        reason: 'cap_exceeded',
+      }),
+    };
+    const service = new ZaloOutboundService(
+      tokenService as never,
+      deliveryLog as never,
+      undefined,
+      undefined,
+      limiter as never,
+    );
+
+    await expect(service.sendText('zalo-1', 'hello')).resolves.toBe(
+      'rate_limited',
+    );
+    expect(tokenService.getValidAccessToken).not.toHaveBeenCalled();
+  });
+
   function buildMetricsStub(): BotMetricsService {
     return {
       incDmDeliveryFailure: jest.fn(),

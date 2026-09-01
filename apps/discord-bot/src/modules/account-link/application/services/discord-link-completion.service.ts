@@ -121,7 +121,7 @@ export class DiscordLinkCompletionService {
       // #137 item 5: the Discord id was linked to a different WISPACE user
       // — notify the account holder that the previous link was displaced.
       await this.relinkNotifier
-        .notify(discordUser.id, linkResult.previousUserId)
+        .notify(discordUser.id, linkResult.previousUserId, verifyResult.userId)
         .catch((error: unknown) => {
           this.logger.warn(
             `Discord relink notification failed for discordUserId=${maskExternalId(
@@ -138,13 +138,16 @@ export class DiscordLinkCompletionService {
       await this.welcomeService.welcomeIfDue(
         discordUser.id,
         discordUser.username,
+        verifyResult.userId,
       );
       // One-time consent explainer after the welcome (#596); claimed
       // atomically, released if the DM send fails so guildMemberAdd retries.
       await this.accountLinkService
-        .sendConsentExplainerIfDue(discordUser.id, (text) =>
-          this.outboundService.sendText(discordUser.id, text),
-        )
+        .sendConsentExplainerIfDue(discordUser.id, async (text) => {
+          await this.outboundService.sendText(discordUser.id, text, {
+            userId: verifyResult.userId,
+          });
+        })
         .catch(() => undefined);
       return 'success';
     }

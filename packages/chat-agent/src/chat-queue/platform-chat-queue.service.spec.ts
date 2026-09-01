@@ -869,6 +869,37 @@ describe('PlatformChatQueueService', () => {
         leaseToken: 'lease-quota-denied',
       });
     });
+
+    it('completes a rate-limited false result without fallback or retry', async () => {
+      const { service, queueStore } = buildDistributedServiceWithRetry(true);
+      await service.onModuleInit();
+
+      queueStore.claimReadyBuffer.mockResolvedValue({
+        externalUserId: 'discord-rate-limited',
+        texts: ['hello'],
+        lastIdempotencyKey: 'key-rate-limited',
+        leaseToken: 'lease-rate-limited',
+      });
+
+      const hooks = jest.mocked(ChatPipeline).mock.calls.at(-1)![4] as {
+        onRateLimited: (ctx: unknown) => Promise<void>;
+      };
+      (
+        service as unknown as { pipeline: { flush: jest.Mock } }
+      ).pipeline.flush.mockImplementation(async () => {
+        await hooks.onRateLimited({ externalUserId: 'discord-rate-limited' });
+        return false;
+      });
+
+      await service.flushReady('discord-rate-limited');
+
+      expect(queueStore.scheduleRetryFlush).not.toHaveBeenCalled();
+      expect(queueStore.completeChatBuffer).toHaveBeenCalledWith({
+        externalUserId: 'discord-rate-limited',
+        debounceMs: 2000,
+        leaseToken: 'lease-rate-limited',
+      });
+    });
   });
 
   describe('fresh-mapping revalidation (#397)', () => {

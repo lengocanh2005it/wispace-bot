@@ -9,6 +9,7 @@ import type {
   SendResult,
   ChatHistoryMessage,
 } from '@wispace/chat-pipeline';
+import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 import { PlatformAgentService } from './agent/platform-agent.service';
 import { PlatformChatHistoryService } from './chat-history/platform-chat-history.service';
 import type { PlatformChatRateLimitService } from '@wispace/chat-metering';
@@ -21,8 +22,12 @@ export interface OutboundServicePort {
   sendText(
     externalUserId: string,
     text: string,
-    options?: { deliveryKey?: string; clarification?: boolean },
-  ): Promise<unknown>;
+    options?: {
+      deliveryKey?: string;
+      clarification?: boolean;
+      userId?: number;
+    },
+  ): Promise<OutboundDeliveryOutcome | void>;
   isAmbiguousDeliveryError?(error: unknown): boolean;
 }
 
@@ -122,13 +127,22 @@ export function createChatPipelineAdapters(
       text: string,
       context?: Record<string, unknown>,
     ): Promise<SendResult> {
-      await outboundService.sendText(externalUserId, text, {
+      const outcome = await outboundService.sendText(externalUserId, text, {
+        ...(typeof context?.userId === 'number'
+          ? { userId: context.userId }
+          : {}),
         ...(typeof context?.deliveryKey === 'string'
           ? { deliveryKey: context.deliveryKey }
           : {}),
         ...(context?.clarification === true ? { clarification: true } : {}),
       });
-      return { delivered: true };
+      if (outcome === 'rate_limited') {
+        return { delivered: false, outcome };
+      }
+      if (outcome === 'ambiguous' || outcome === 'not_sent') {
+        return { delivered: false, outcome };
+      }
+      return { delivered: true, outcome: 'sent' };
     },
   };
 

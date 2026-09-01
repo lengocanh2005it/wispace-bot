@@ -235,11 +235,18 @@ const RESCHEDULE_CONFIRM_SUFFIX =
                 newLocalDateInvalid: '',
                 newTimeInvalid: '',
               },
-              confirmSender: (externalUserId, summary, confirmationToken) =>
-                outboundService.sendText(
+              confirmSender: async (
+                externalUserId,
+                summary,
+                confirmationToken,
+                userId,
+              ) => {
+                await outboundService.sendText(
                   externalUserId,
                   `${summary}${RESCHEDULE_CONFIRM_SUFFIX}${confirmationToken ? ` Mã: ${confirmationToken}` : ''}`,
-                ),
+                  userId === undefined ? undefined : { userId },
+                );
+              },
             },
           },
           new ZaloExerciseCapabilityAdapter(exerciseClient, 'x-zaloid'),
@@ -363,7 +370,15 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           adapters.history,
           adapters.agent,
           adapters.outbound,
-          outboundService,
+          {
+            sendText: async (externalUserId, text, options) => {
+              await outboundService.sendText(externalUserId, text, {
+                ...(options?.userId === undefined
+                  ? {}
+                  : { userId: options.userId }),
+              });
+            },
+          },
           {
             // #397: fresh-mapping revalidation before pipeline flush
             freshMappingProvider: (externalUserId) =>

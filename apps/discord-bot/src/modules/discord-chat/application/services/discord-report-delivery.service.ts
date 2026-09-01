@@ -65,7 +65,7 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
       const nonce = deliveryKey
         ? deliveryKey.replace(/[^a-zA-Z0-9]/g, '').slice(0, 25)
         : undefined;
-      for (const chunk of chunks) {
+      for (const [index, chunk] of chunks.entries()) {
         const current =
           await this.accountLinkReader.findLinkStateByExternalUserId(
             mapping.externalUserId,
@@ -82,11 +82,26 @@ export class DiscordReportDeliveryService implements ReportDeliveryPort {
           );
           return { ok: false, reason: 'NOT_LINKED' };
         }
-        await this.outboundService.sendText(mapping.externalUserId, chunk, {
-          skipDeadLetter: true,
-          nonce,
-          retryOn: 'none',
-        });
+        const outcome = await this.outboundService.sendText(
+          mapping.externalUserId,
+          chunk,
+          {
+            skipDeadLetter: true,
+            nonce,
+            retryOn: 'none',
+            userId: mapping.userId,
+            ...(index === 0
+              ? { units: chunks.length }
+              : { skipRateLimit: true }),
+          },
+        );
+        if (outcome === 'rate_limited') {
+          return {
+            ok: false,
+            reason: 'RATE_LIMITED',
+            outcome,
+          };
+        }
       }
 
       return { ok: true };

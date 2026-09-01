@@ -125,6 +125,7 @@ export class MessengerMappingService {
       if (params.notifyUser !== false) {
         await this.outbound.sendTextViaPsid({
           psid: params.psid,
+          userId: params.userId,
           text: buildMappingUserLinkedOtherPsidMessage(),
           messageType: 'MAPPING_USER_PSID_CONFLICT',
         });

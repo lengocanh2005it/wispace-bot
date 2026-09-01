@@ -105,6 +105,13 @@ stateDiagram-v2
 
 **Delivery crash safety (#294):** A stable `delivery_key` is persisted to the job before calling the provider. The sender returns `OutboundDeliveryOutcome` (`sent` | `ambiguous` | `not_sent`). On `sent`, the job is marked with the key. On `ambiguous` (provider may have accepted), the job is terminal — no auto-resend. On `not_sent`, existing retry logic applies. `resetStuckProcessingJobs` sets `delivery_status = 'ambiguous'` on stuck rows so a re-claim does not blind-resend.
 
+**Outbound rate-limit backstop (#622):** The shared limiter admits each
+learner-facing provider attempt (including retry/chunk units) before send. A
+`rate_limited` result is terminal for the reminder: persist
+`outbound_rate_limited`, do not schedule another retry, and investigate the
+upstream fan-out/retry source before replaying. See
+[outbound-rate-limit.md](../../../docs/outbound-rate-limit.md).
+
 ### 3.3. Cleanup & Evening Rollover
 
 The `study_reminder_jobs` table is a **snapshot outbox** (send queue), not a history store. Message audit is in `message_logs`.

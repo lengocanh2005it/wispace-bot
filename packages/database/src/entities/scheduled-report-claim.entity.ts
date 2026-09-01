@@ -60,7 +60,7 @@ export class ScheduledReportClaimEntity {
   @Column({ name: 'delivery_key', type: 'text', nullable: true })
   deliveryKey!: string | null;
 
-  /** Explicit delivery outcome: sent | ambiguous | not_sent (#294). */
+  /** Explicit delivery outcome, including local rate-limit containment (#294/#622). */
   @Column({
     name: 'delivery_status',
     type: 'varchar',

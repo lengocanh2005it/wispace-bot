@@ -22,6 +22,23 @@ describe('ZaloReportDeliveryService', () => {
     };
   }
 
+  it('returns RATE_LIMITED without treating the report as sent', async () => {
+    const { service, outbound } = buildService();
+    (outbound.sendText as jest.Mock).mockResolvedValue('rate_limited');
+
+    await expect(
+      service.sendReport({
+        mapping: { externalUserId: 'zalo-1', userId: 10 },
+        reportText: 'report',
+        reportDate: '2026-08-30',
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      reason: 'RATE_LIMITED',
+      outcome: 'rate_limited',
+    });
+  });
+
   it('maps a transient outbound failure to RETRYABLE for the report outbox', async () => {
     const { service, outbound } = buildService();
     (outbound.sendText as jest.Mock).mockRejectedValue(

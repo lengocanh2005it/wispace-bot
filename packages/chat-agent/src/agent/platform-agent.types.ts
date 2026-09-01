@@ -273,6 +273,7 @@ export interface PlatformAgentToolsOptions {
       externalUserId: string,
       summary: string,
       confirmationToken?: string,
+      userId?: number,
     ) => Promise<void>;
   };
 }

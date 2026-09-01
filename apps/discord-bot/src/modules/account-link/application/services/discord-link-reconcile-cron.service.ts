@@ -194,6 +194,7 @@ export class DiscordLinkReconcileCronService {
           await this.relinkNotifier.notify(
             record.discordUserId,
             result.previousUserId,
+            record.userId,
           );
         }
 
@@ -201,7 +202,11 @@ export class DiscordLinkReconcileCronService {
         // missing (the gateway skipped the organic welcome because a fresh
         // verify intent existed) — deliver the linked welcome now.
         if (await this.guildMembershipService.isMember(record.discordUserId)) {
-          await this.welcomeService.welcomeIfDue(record.discordUserId);
+          await this.welcomeService.welcomeIfDue(
+            record.discordUserId,
+            undefined,
+            record.userId,
+          );
         }
         reconciled += 1;
         reconcileRecordsTotal.inc({ outcome: 'reconciled' });

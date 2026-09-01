@@ -189,12 +189,19 @@ const REGISTER_REPORT_MESSAGE =
                   'newLocalDate must be in YYYY-MM-DD format',
                 newTimeInvalid: 'newTime must be in HH:MM format',
               },
-              confirmSender: (externalUserId, summary, confirmationToken) =>
-                outboundService.sendRescheduleConfirmation(
+              confirmSender: async (
+                externalUserId,
+                summary,
+                confirmationToken,
+                userId,
+              ) => {
+                await outboundService.sendRescheduleConfirmation(
                   externalUserId,
                   summary,
                   confirmationToken,
-                ),
+                  userId,
+                );
+              },
             },
           },
           new DiscordExerciseCapabilityAdapter(exerciseClient, 'x-discordid'),
@@ -317,7 +324,15 @@ const REGISTER_REPORT_MESSAGE =
           adapters.history,
           adapters.agent,
           adapters.outbound,
-          outboundService,
+          {
+            sendText: async (externalUserId, text, options) => {
+              await outboundService.sendText(externalUserId, text, {
+                ...(options?.userId === undefined
+                  ? {}
+                  : { userId: options.userId }),
+              });
+            },
+          },
           {
             mergedTextMaxChars: Math.max(
               1,

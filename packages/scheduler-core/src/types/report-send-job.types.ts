@@ -60,7 +60,12 @@ export interface ScheduledReportClaim {
 
 export interface ReportDeliveryResult {
   ok: boolean;
-  reason?: 'WINDOW_CLOSED' | 'DELIVERY_FAILED' | 'RETRYABLE' | 'NOT_LINKED';
+  reason?:
+    | 'WINDOW_CLOSED'
+    | 'DELIVERY_FAILED'
+    | 'RETRYABLE'
+    | 'NOT_LINKED'
+    | 'RATE_LIMITED';
   /** Provider delivery verdict used to persist terminal ambiguity. */
   outcome?: OutboundDeliveryOutcome;
 }

@@ -8,11 +8,12 @@ describe('DiscordRelinkNotifier (#137 item 5)', () => {
       sendText,
     } as unknown as DiscordOutboundService);
 
-    await notifier.notify('discord-user-1', 99);
+    await notifier.notify('discord-user-1', 99, 143);
 
     expect(sendText).toHaveBeenCalledWith(
       'discord-user-1',
       expect.stringContaining('WISPACE khác'),
+      { userId: 143 },
     );
   });
 

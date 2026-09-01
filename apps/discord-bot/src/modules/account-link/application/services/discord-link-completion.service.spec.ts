@@ -152,7 +152,11 @@ describe('DiscordLinkCompletionService', () => {
 
     await service.completeLink('code', 'good-token');
 
-    expect(relinkNotifier.notify).toHaveBeenCalledWith('discord-user-1', 99);
+    expect(relinkNotifier.notify).toHaveBeenCalledWith(
+      'discord-user-1',
+      99,
+      143,
+    );
     expect(clarificationStateStore.clear).toHaveBeenCalledWith(
       'discord:discord-user-1',
     );
@@ -166,6 +170,7 @@ describe('DiscordLinkCompletionService', () => {
     expect(welcomeService.welcomeIfDue).toHaveBeenCalledWith(
       'discord-user-1',
       'TestUser',
+      143,
     );
     expect(outcome).toBe('success');
   });

@@ -108,7 +108,9 @@ export class ZaloLinkCompletionService {
     // Welcome comes AFTER the mapping is committed — a send failure must not
     // make an already-committed link appear uncommitted.
     await this.outboundService
-      .sendText(zaloUser.id, buildLinkSuccessMessage())
+      .sendText(zaloUser.id, buildLinkSuccessMessage(), {
+        userId: verifyResult.userId,
+      })
       .catch((error: unknown) => {
         this.logger.warn(
           `Zalo link welcome send failed for zaloUserId=${maskExternalId(
@@ -120,9 +122,11 @@ export class ZaloLinkCompletionService {
     // One-time consent explainer after the welcome (#596); claimed
     // atomically on the link row, released if the send fails.
     await this.accountLinkService
-      .sendConsentExplainerIfDue(zaloUser.id, (text) =>
-        this.outboundService.sendText(zaloUser.id, text),
-      )
+      .sendConsentExplainerIfDue(zaloUser.id, async (text) => {
+        await this.outboundService.sendText(zaloUser.id, text, {
+          userId: verifyResult.userId,
+        });
+      })
       .catch(() => undefined);
   }
 

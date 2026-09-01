@@ -53,6 +53,7 @@ export class DiscordConsentService {
     await this.outboundService.sendText(
       discordUserId,
       buildConsentChangedMessage(command.feature, command.action === 'enable'),
+      { userId },
     );
     return true;
   }

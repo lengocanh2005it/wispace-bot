@@ -116,6 +116,7 @@ export class DiscordChatGateway {
     const discordUserId = member.id;
 
     let isLinked: boolean | undefined;
+    let linkedUserId: number | undefined;
     let dmOutcome = 'skipped';
 
     try {
@@ -124,6 +125,7 @@ export class DiscordChatGateway {
       // sent earlier because Discord DMs require a shared guild.
       const wispaceUserId =
         await this.accountLinkService.findUserIdByDiscordId(discordUserId);
+      linkedUserId = wispaceUserId;
       isLinked = wispaceUserId !== undefined;
     } catch (error) {
       this.logger.error(
@@ -170,12 +172,17 @@ export class DiscordChatGateway {
         dmOutcome = await this.welcomeService.welcomeIfDue(
           discordUserId,
           displayName,
+          linkedUserId,
         );
         // One-time consent explainer after the linked welcome (#596).
         await this.accountLinkService
-          .sendConsentExplainerIfDue(discordUserId, (text) =>
-            this.outboundService.sendText(discordUserId, text),
-          )
+          .sendConsentExplainerIfDue(discordUserId, async (text) => {
+            await this.outboundService.sendText(
+              discordUserId,
+              text,
+              linkedUserId === undefined ? undefined : { userId: linkedUserId },
+            );
+          })
           .catch(() => undefined);
       } else {
         // Join-during-callback race: the mapping may not be committed yet, but
@@ -312,15 +319,16 @@ export class DiscordChatGateway {
       return;
     }
 
+    let linkedUserId: number | undefined;
     try {
       await message.channel.sendTyping();
-      const userId =
+      linkedUserId =
         await this.accountLinkService.findUserIdByDiscordId(discordUserId);
 
       await this.chatQueueService.enqueue(
         discordUserId,
         resolvedText,
-        { userId, isServerChannel },
+        { userId: linkedUserId, isServerChannel },
         `discord:${message.id}`,
       );
     } catch (error) {
@@ -338,6 +346,7 @@ export class DiscordChatGateway {
         await this.outboundService.sendText(
           discordUserId,
           CHAT_FAILURE_FALLBACK_MESSAGE,
+          linkedUserId === undefined ? undefined : { userId: linkedUserId },
         );
       }
     }

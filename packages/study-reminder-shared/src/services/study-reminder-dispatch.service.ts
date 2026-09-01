@@ -307,6 +307,26 @@ export class StudyReminderDispatchService {
             externalUserId: claimedJob.externalUserId,
           });
           sent += 1;
+        } else if (outcome === 'rate_limited') {
+          const rateLimitError = 'outbound_rate_limited';
+          await this.jobRepository.markFailed({
+            jobId: claimedJob.id,
+            leaseToken,
+            errorMessage: rateLimitError,
+            retryCount: claimedJob.retryCount + 1,
+            terminal: true,
+          });
+          this.hooks?.onFailed?.({
+            jobId: claimedJob.id,
+            externalUserId: claimedJob.externalUserId,
+            error: rateLimitError,
+          });
+          failures.push({
+            jobId: claimedJob.id,
+            externalUserId: claimedJob.externalUserId,
+            error: rateLimitError,
+          });
+          failed += 1;
         } else if (outcome === 'ambiguous') {
           // Messenger/Zalo: provider may have accepted — no auto-resend (#294).
           await this.jobRepository.markFailed({

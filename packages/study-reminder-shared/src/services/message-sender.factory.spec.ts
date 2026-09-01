@@ -23,6 +23,15 @@ describe('wrapMessageSender', () => {
     expect(result).toBe('sent');
   });
 
+  it('forwards a rate-limit outcome without converting it to success', async () => {
+    const sendText = jest.fn().mockResolvedValue('rate_limited');
+    const sender = wrapMessageSender({ sendText });
+
+    await expect(
+      sender.sendText({ externalUserId: 'u1', text: 'hello' }),
+    ).resolves.toBe('rate_limited');
+  });
+
   it('logs warning and re-throws on failure', async () => {
     const sendText = jest.fn().mockRejectedValue(new Error('send failed'));
     const sender = wrapMessageSender({ sendText });

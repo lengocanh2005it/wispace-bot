@@ -126,6 +126,7 @@ describe('ZaloChatService', () => {
     expect(sendText).toHaveBeenCalledWith(
       'zalo-1',
       expect.stringContaining('TẮT'),
+      { userId: 42 },
     );
   });
 

@@ -15,7 +15,8 @@
     "test": "jest --maxWorkers=50%"
   },
   "dependencies": {
-    "@wispace/chat-history": "*"
+    "@wispace/chat-history": "*",
+    "@wispace/contracts": "*"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

@@ -182,6 +182,30 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
     ]);
   });
 
+  it('marks a rate-limited report terminally without scheduling another retry', async () => {
+    const { service, jobRepository } = buildService({
+      dueJobs: [JOB],
+      claimAndSendResult: {
+        sent: 0,
+        failures: [
+          { externalUserId: 'discord-1', error: 'outbound_rate_limited' },
+        ],
+      },
+    });
+
+    const result = await service.dispatchDueReportRetries();
+
+    expect(jobRepository.markFailed).toHaveBeenCalledWith({
+      jobId: 1,
+      leaseToken: 'lease-1',
+      errorMessage: 'outbound_rate_limited',
+      retryCount: 1,
+      terminal: true,
+    });
+    expect(result.retryQueued).toBe(0);
+    expect(result.failed).toBe(1);
+  });
+
   it('slow-send regression: reopens only an expired lease and delivers exactly once per owner (#113)', async () => {
     let resolveSlowSend!: () => void;
     const slowSendGate = new Promise<void>((resolve) => {

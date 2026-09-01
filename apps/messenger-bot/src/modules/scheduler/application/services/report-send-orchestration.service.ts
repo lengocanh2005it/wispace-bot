@@ -151,7 +151,7 @@ export class ReportSendOrchestrationService {
       const result =
         await this.messengerReportDeliveryService.sendReportForMapping(mapping);
 
-      if (result) {
+      if (result && result !== 'rate_limited') {
         if (claimedForSend) {
           await this.messengerRepository.markScheduledReportClaimSent(
             {
@@ -170,6 +170,27 @@ export class ReportSendOrchestrationService {
           );
         }
         return { ...ZERO, sent: 1 };
+      }
+
+      if (result === 'rate_limited') {
+        if (claimedForSend) {
+          await this.messengerRepository.markScheduledReportClaimSent(
+            { externalUserId: mapping.psid, reportDate },
+            claimLeaseToken,
+            undefined,
+            `messenger-report:${mapping.psid}:${reportDate}`,
+            'rate_limited',
+          );
+        }
+        return {
+          ...ZERO,
+          failures: [
+            {
+              externalUserId: mapping.psid,
+              error: 'outbound_rate_limited',
+            },
+          ],
+        };
       }
 
       if (claimedForSend) {

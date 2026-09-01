@@ -25,6 +25,9 @@ import { splitMessengerBubbles } from '@messenger/shared/utils/messenger-text.ut
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
 import { keepAliveFetch } from '@messenger/shared/http/http-agent';
 import { PlatformDeadLetterService } from '@wispace/database';
+import { BotMetricsService } from '@wispace/bot-metrics';
+import { OutboundRateLimiter } from '@wispace/bot-common/redis';
+import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 
 export class MessengerApiError extends Error {
   constructor(
@@ -82,6 +85,12 @@ export class MessengerOutboundService {
     @Optional()
     @Inject(PlatformDeadLetterService)
     private readonly deadLetter?: PlatformDeadLetterService,
+    @Optional()
+    @Inject(OutboundRateLimiter)
+    private readonly outboundRateLimiter?: OutboundRateLimiter,
+    @Optional()
+    @Inject(BotMetricsService)
+    private readonly metrics?: BotMetricsService,
   ) {
     const raw = this.configService.get<string>('MESSENGER_SEND_API_TIMEOUT_MS');
     const parsed = raw ? Number(raw) : NaN;
@@ -147,7 +156,7 @@ export class MessengerOutboundService {
     deliveryKey?: string;
     clarification?: boolean;
     skipDeadLetter?: boolean;
-  }): Promise<number> {
+  }): Promise<number | 'rate_limited'> {
     const defaults = readMessengerBubbleLimits(this.configService);
     const bubbles = splitMessengerBubbles(
       params.text,
@@ -157,6 +166,13 @@ export class MessengerOutboundService {
 
     if (!bubbles.length) {
       return 0;
+    }
+
+    if (
+      (await this.admitOutbound(params.psid, params.userId, bubbles.length)) ===
+      'rate_limited'
+    ) {
+      return 'rate_limited';
     }
 
     let sentCount = 0;
@@ -172,6 +188,7 @@ export class MessengerOutboundService {
             : bubbles.length > 1
               ? `${params.messageType}_PART_${index + 1}_OF_${bubbles.length}`
               : params.messageType,
+          skipRateLimit: true,
         });
         sentCount += 1;
       } catch (error) {
@@ -212,26 +229,50 @@ export class MessengerOutboundService {
     psid: string;
     userId?: number;
     followUps: MessengerRichFollowUp[];
-  }): Promise<void> {
-    for (const followUp of params.followUps) {
+  }): Promise<OutboundDeliveryOutcome> {
+    const followUps = params.followUps.filter((followUp) =>
+      followUp.kind === 'generic'
+        ? followUp.elements.length > 0
+        : followUp.buttons.length > 0,
+    );
+    if (!followUps.length) {
+      return 'sent';
+    }
+
+    if (
+      (await this.admitOutbound(
+        params.psid,
+        params.userId,
+        followUps.length,
+      )) === 'rate_limited'
+    ) {
+      return 'rate_limited';
+    }
+
+    for (const followUp of followUps) {
       if (followUp.kind === 'generic') {
-        await this.sendGenericTemplate({
+        const outcome = await this.sendGenericTemplate({
           psid: params.psid,
           userId: params.userId,
           messageType: followUp.messageType,
           elements: followUp.elements,
+          skipRateLimit: true,
         });
+        if (outcome === 'rate_limited') return outcome;
         continue;
       }
 
-      await this.sendButtonTemplate({
+      const outcome = await this.sendButtonTemplate({
         psid: params.psid,
         userId: params.userId,
         messageType: followUp.messageType,
         text: followUp.text,
         buttons: followUp.buttons,
+        skipRateLimit: true,
       });
+      if (outcome === 'rate_limited') return outcome;
     }
+    return 'sent';
   }
 
   async sendGenericTemplate(params: {
@@ -247,9 +288,18 @@ export class MessengerOutboundService {
         payload: string;
       }>;
     }>;
-  }): Promise<void> {
+    skipRateLimit?: boolean;
+  }): Promise<OutboundDeliveryOutcome> {
     if (!params.elements.length) {
-      return;
+      return 'sent';
+    }
+
+    if (
+      params.skipRateLimit !== true &&
+      (await this.admitOutbound(params.psid, params.userId, 1)) ===
+        'rate_limited'
+    ) {
+      return 'rate_limited';
     }
 
     const payload = {
@@ -272,6 +322,7 @@ export class MessengerOutboundService {
         messageType: params.messageType,
         status: 'SENT',
       });
+      return 'sent';
     } catch (error) {
       const errorText = maskExternalIdInText(errorMessage(error), params.psid);
       await this.repository.logMessage({
@@ -295,9 +346,18 @@ export class MessengerOutboundService {
       title: string;
       payload: string;
     }>;
-  }): Promise<void> {
+    skipRateLimit?: boolean;
+  }): Promise<OutboundDeliveryOutcome> {
     if (!params.buttons.length) {
-      return;
+      return 'sent';
+    }
+
+    if (
+      params.skipRateLimit !== true &&
+      (await this.admitOutbound(params.psid, params.userId, 1)) ===
+        'rate_limited'
+    ) {
+      return 'rate_limited';
     }
 
     const payload = {
@@ -321,6 +381,7 @@ export class MessengerOutboundService {
         messageType: params.messageType,
         status: 'SENT',
       });
+      return 'sent';
     } catch (error) {
       const errorText = maskExternalIdInText(errorMessage(error), params.psid);
       void this.repository.logMessage({
@@ -339,7 +400,16 @@ export class MessengerOutboundService {
     text: string;
     messageType: string;
     userId?: number;
-  }): Promise<void> {
+    skipRateLimit?: boolean;
+  }): Promise<OutboundDeliveryOutcome> {
+    if (
+      params.skipRateLimit !== true &&
+      (await this.admitOutbound(params.psid, params.userId, 1)) ===
+        'rate_limited'
+    ) {
+      return 'rate_limited';
+    }
+
     try {
       await this.callSendApiByPsid(params.psid, {
         message: { text: params.text },
@@ -350,6 +420,7 @@ export class MessengerOutboundService {
         messageType: params.messageType,
         status: 'SENT',
       });
+      return 'sent';
     } catch (error) {
       await this.logSendFailure(params, error);
       throw error;
@@ -369,13 +440,15 @@ export class MessengerOutboundService {
       userId?: number;
       deliveryKey?: string;
       clarification?: boolean;
+      skipRateLimit?: boolean;
     },
-  ): Promise<void> {
-    await this.sendTextViaPsid({
+  ): Promise<OutboundDeliveryOutcome> {
+    return this.sendTextViaPsid({
       psid: externalUserId,
       text,
       messageType: input?.messageType ?? 'STUDY_REMINDER',
       userId: input?.userId,
+      skipRateLimit: input?.skipRateLimit,
     });
   }
 
@@ -387,9 +460,9 @@ export class MessengerOutboundService {
     psid: string,
     text: string,
     deliveryKey: string,
-  ): Promise<'sent' | 'ambiguous' | 'not_sent'> {
+  ): Promise<OutboundDeliveryOutcome> {
     try {
-      await this.sendTextBubblesViaPsid({
+      const result = await this.sendTextBubblesViaPsid({
         psid,
         text,
         messageType: 'FREE_FORM_CHAT_OUT',
@@ -397,12 +470,29 @@ export class MessengerOutboundService {
         deliveryKey,
         skipDeadLetter: true,
       });
+      if (result === 'rate_limited') return result;
       return 'sent';
     } catch (error) {
       return isMessengerAmbiguousDeliveryError(error)
         ? 'ambiguous'
         : 'not_sent';
     }
+  }
+
+  private async admitOutbound(
+    externalUserId: string,
+    userId: number | undefined,
+    units: number,
+  ): Promise<'allowed' | 'rate_limited'> {
+    if (!this.outboundRateLimiter) return 'allowed';
+    const result = await this.outboundRateLimiter.admit({
+      platform: 'messenger',
+      externalUserId,
+      userId,
+      units,
+    });
+    this.metrics?.incOutboundRateLimitDecision('messenger', result.outcome);
+    return result.allowed ? 'allowed' : 'rate_limited';
   }
 
   private async logSendFailure(

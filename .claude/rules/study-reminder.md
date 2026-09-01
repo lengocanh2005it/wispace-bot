@@ -17,6 +17,11 @@ POST /messenger/study-calendar/sync { userId }
 
 Wispace **must** call sync after POST/DELETE `UserCalendar`. The 30-minute cron is only a fallback.
 
+Reminder delivery uses the shared outbound learner-message backstop (#622).
+Treat `rate_limited` as terminal (`outbound_rate_limited`), do not retry it,
+and use `docs/outbound-rate-limit.md` for first triage. A normal reminder must
+not trip the default cap.
+
 ## Chat reschedule scope (#627)
 
 - Treat every model- or learner-supplied `calendarId` as untrusted; list

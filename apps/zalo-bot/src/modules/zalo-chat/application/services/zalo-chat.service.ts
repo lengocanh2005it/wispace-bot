@@ -97,10 +97,11 @@ export class ZaloChatService {
       return;
     }
 
+    let userId: number | undefined;
     try {
       const identity =
         await this.accountLinkService.findCurrentIdentity?.(zaloUserId);
-      const userId =
+      userId =
         identity?.userId ??
         (await this.accountLinkService.findUserIdByZaloId(zaloUserId));
 
@@ -112,6 +113,7 @@ export class ZaloChatService {
           await this.outboundService.sendText(
             zaloUserId,
             'Mình không thể xác thực liên kết WISPACE hiện tại. Bạn liên kết lại rồi thử lại nhé.',
+            { userId },
           );
           return;
         }
@@ -134,17 +136,20 @@ export class ZaloChatService {
           await this.outboundService.sendText(
             zaloUserId,
             `Đã dời buổi học sang ${result.scheduledTimeLabel} nhé.`,
+            { userId },
           );
           return;
         }
-        await this.outboundService.sendText(zaloUserId, result.message);
+        await this.outboundService.sendText(zaloUserId, result.message, {
+          userId,
+        });
         return;
       }
 
       if (hasPending && this.isCancelKeyword(text.trim())) {
         const message =
           await this.rescheduleConfirmationService.cancel(zaloUserId);
-        await this.outboundService.sendText(zaloUserId, message);
+        await this.outboundService.sendText(zaloUserId, message, { userId });
         return;
       }
 
@@ -160,6 +165,7 @@ export class ZaloChatService {
         await this.outboundService.sendText(
           zaloUserId,
           CHAT_FAILURE_FALLBACK_MESSAGE,
+          userId === undefined ? undefined : { userId },
         );
       } catch {
         // ignore
@@ -208,6 +214,7 @@ export class ZaloChatService {
     await this.outboundService.sendText(
       zaloUserId,
       buildConsentChangedMessage(command.feature, enable),
+      { userId },
     );
   }
 

@@ -15,6 +15,7 @@
     "test": "jest --maxWorkers=50%"
   },
   "dependencies": {
+    "@wispace/contracts": "*",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/throttler": "^6.5.0",

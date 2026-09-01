@@ -461,6 +461,41 @@ describe('ChatPipeline', () => {
     expect(onAfterSend).not.toHaveBeenCalled();
   });
 
+  it('refunds quota and suppresses fallback when outbound is rate limited', async () => {
+    const rateLimiter = mockRateLimiter();
+    const onError = jest.fn().mockResolvedValue(undefined);
+    const outbound = mockOutbound({
+      sendText: jest.fn().mockResolvedValue({
+        delivered: false,
+        outcome: 'rate_limited',
+      }),
+    });
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      mockHistory(),
+      mockAgent(),
+      outbound,
+      { onError },
+    );
+
+    await expect(
+      pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['Hello'],
+        idempotencyKey: 'limited-1',
+      }),
+    ).resolves.toBe(false);
+
+    expect(rateLimiter.refund).toHaveBeenCalledWith(
+      'user-1',
+      '2026-07-29',
+      'limited-1',
+    );
+    expect(onError).not.toHaveBeenCalled();
+    expect(rateLimiter.markDelivered).not.toHaveBeenCalled();
+    expect(rateLimiter.markCompleted).not.toHaveBeenCalled();
+  });
+
   it('calls onError hook on error before delivery', async () => {
     const onError = jest.fn().mockResolvedValue(undefined);
     const agent = mockAgent({

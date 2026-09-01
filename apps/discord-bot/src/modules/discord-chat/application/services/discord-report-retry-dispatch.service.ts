@@ -110,16 +110,20 @@ export class DiscordReportRetryDispatchService {
         sent += 1;
       } else if (result.failures.length > 0) {
         const error = result.failures[0].error;
-        const nextRetryAt = addMinutes(new Date(), 15);
+        const rateLimited = error === 'outbound_rate_limited';
+        const nextRetryAt = rateLimited
+          ? undefined
+          : addMinutes(new Date(), 15);
+        const nextRetryCount = job.retryCount + 1;
         await this.jobRepository.markFailed({
           jobId: job.id,
           leaseToken,
           errorMessage: error,
-          retryCount: job.retryCount + 1,
+          retryCount: nextRetryCount,
           nextRetryAt,
-          terminal: job.retryCount + 1 >= job.maxRetries,
+          terminal: rateLimited || nextRetryCount >= job.maxRetries,
         });
-        if (job.retryCount + 1 >= job.maxRetries) {
+        if (rateLimited || nextRetryCount >= job.maxRetries) {
           failed += 1;
           failures.push({ externalUserId: job.externalUserId, error });
         } else {

@@ -38,7 +38,9 @@ export class MessengerReportDeliveryService {
     private readonly mappingService: MessengerMappingService,
   ) {}
 
-  async sendReportForMapping(mapping: UserMessengerMapping): Promise<string> {
+  async sendReportForMapping(
+    mapping: UserMessengerMapping,
+  ): Promise<string | 'rate_limited'> {
     if (!mapping.psid) {
       throw new InternalServerErrorException(
         `Mapping ${mapping.id} has no PSID for Send API delivery`,
@@ -52,18 +54,22 @@ export class MessengerReportDeliveryService {
     );
   }
 
-  async sendReport(psid: string, userId?: number): Promise<string> {
+  async sendReport(
+    psid: string,
+    userId?: number,
+  ): Promise<string | 'rate_limited'> {
     try {
       return await this.sendReportCore(psid, userId, 'LEARNING_PROGRESS');
     } catch (error) {
       if (error instanceof StudentReportRetryableError) {
         const retryMessage = buildStudentReportApiRetryMessage();
-        await this.sendReportBubbles({
+        const result = await this.sendReportBubbles({
           psid,
           userId,
           text: retryMessage,
           messageType: 'LEARNING_PROGRESS_API_DEFERRED',
         });
+        if (result === 'rate_limited') return result;
         return retryMessage;
       }
 
@@ -117,10 +123,16 @@ export class MessengerReportDeliveryService {
     psid: string,
     userId: number | undefined,
     messageType: string,
-  ): Promise<string> {
+  ): Promise<string | 'rate_limited'> {
     try {
       const report = await this.studentReportService.generateReport(psid);
-      await this.sendReportBubbles({ psid, userId, text: report, messageType });
+      const result = await this.sendReportBubbles({
+        psid,
+        userId,
+        text: report,
+        messageType,
+      });
+      if (result === 'rate_limited') return result;
       return report;
     } catch (error) {
       if (error instanceof ProactiveMessenger24hSkippedError) {
@@ -136,7 +148,7 @@ export class MessengerReportDeliveryService {
     userId?: number;
     text: string;
     messageType: string;
-  }): Promise<void> {
+  }): Promise<void | 'rate_limited'> {
     const current = await this.repository.findActiveMappingByPsid(params.psid);
     if (
       !current ||
@@ -153,7 +165,7 @@ export class MessengerReportDeliveryService {
     );
 
     try {
-      await this.outbound.sendTextBubblesViaPsid({
+      const result = await this.outbound.sendTextBubblesViaPsid({
         psid: params.psid,
         userId: params.userId,
         text: params.text,
@@ -161,6 +173,7 @@ export class MessengerReportDeliveryService {
         maxBubbles,
         maxCharsPerBubble,
       });
+      if (result === 'rate_limited') return result;
     } catch (error) {
       if (isProactiveMessenger24hError(error)) {
         this.logger.warn(

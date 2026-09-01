@@ -547,6 +547,8 @@ describe('PlatformAgentToolsService', () => {
         expect(confirmSender).toHaveBeenCalledWith(
           'discord-1',
           'Dời buổi Ngày mai lúc 19:00 sang ngày kế tiếp cùng giờ?',
+          undefined,
+          143,
         );
         expect(result).toEqual({
           pendingConfirmation: true,
@@ -709,6 +711,8 @@ describe('PlatformAgentToolsService', () => {
       expect(confirmSender).toHaveBeenCalledWith(
         'zalo-1',
         'Dời buổi Ngày mai lúc 19:00 sang ngày kế tiếp cùng giờ?',
+        undefined,
+        42,
       );
       expect(result).toEqual({
         pendingConfirmation: true,

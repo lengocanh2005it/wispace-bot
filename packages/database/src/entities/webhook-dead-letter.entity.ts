@@ -84,7 +84,7 @@ export class WebhookDeadLetterEntity {
   @Column({ name: 'delivery_key', type: 'text', nullable: true })
   deliveryKey!: string | null;
 
-  /** Explicit delivery outcome: sent | ambiguous | not_sent (#291). */
+  /** Explicit delivery outcome, including local rate-limit containment (#291/#622). */
   @Column({
     name: 'delivery_status',
     type: 'varchar',

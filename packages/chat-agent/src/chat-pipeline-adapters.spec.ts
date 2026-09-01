@@ -59,4 +59,23 @@ describe('createChatPipelineAdapters', () => {
       }),
     ).resolves.toEqual({ text: 'private answer', privateDataFetched: true });
   });
+
+  it('propagates an outbound rate-limit outcome to the shared pipeline', async () => {
+    const outboundService = {
+      sendText: jest.fn().mockResolvedValue('rate_limited'),
+    };
+    const adapters = createChatPipelineAdapters(
+      {} as never,
+      {} as unknown as PlatformChatHistoryService,
+      {} as never,
+      outboundService,
+    );
+
+    await expect(
+      adapters.outbound.sendText('discord-user-1', 'hello'),
+    ).resolves.toEqual({
+      delivered: false,
+      outcome: 'rate_limited',
+    });
+  });
 });

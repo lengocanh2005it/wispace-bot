@@ -46,6 +46,7 @@ const DROPPED_MESSAGE =
 export const fallbackSentThisCycle = new Set<string>();
 /** Distinguishes a delivery failure from a normal quota-denied false result. */
 const failedFlushThisCycle = new Set<string>();
+const rateLimitedFlushThisCycle = new Set<string>();
 
 interface QueueCtx {
   userId?: number;
@@ -70,7 +71,11 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
   private readonly retryEnabled: boolean;
   private readonly retryDelayMs: number;
   private readonly directTextSender: {
-    sendText(externalUserId: string, text: string): Promise<void>;
+    sendText(
+      externalUserId: string,
+      text: string,
+      options?: { userId?: number },
+    ): Promise<void>;
   };
 
   constructor(
@@ -80,7 +85,11 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
     agent: AgentPort,
     outbound: OutboundPort,
     directTextSender: {
-      sendText(externalUserId: string, text: string): Promise<void>;
+      sendText(
+        externalUserId: string,
+        text: string,
+        options?: { userId?: number },
+      ): Promise<void>;
     },
     private readonly options: PlatformChatQueueOptions = {},
     private readonly queueStore?: ChatQueueStorePort,
@@ -166,10 +175,18 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
         try {
           // #406: Only send fallback once per processing cycle.
           if (!fallbackSentThisCycle.has(ctx.externalUserId)) {
-            await directTextSender.sendText(
-              ctx.externalUserId,
-              CHAT_FAILURE_FALLBACK_MESSAGE,
-            );
+            if (ctx.userId === undefined) {
+              await directTextSender.sendText(
+                ctx.externalUserId,
+                CHAT_FAILURE_FALLBACK_MESSAGE,
+              );
+            } else {
+              await directTextSender.sendText(
+                ctx.externalUserId,
+                CHAT_FAILURE_FALLBACK_MESSAGE,
+                { userId: ctx.userId },
+              );
+            }
             fallbackSentThisCycle.add(ctx.externalUserId);
           }
         } catch (fallbackError) {
@@ -182,6 +199,9 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
             )}`,
           );
         }
+      },
+      onRateLimited: async (ctx: PipelineContext) => {
+        rateLimitedFlushThisCycle.add(ctx.externalUserId);
       },
     };
 
@@ -375,7 +395,7 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
     let outcome: FlushOutcome = 'deferred';
     try {
       if (batch.droppedNoticePending) {
-        await this.sendDroppedNotice(externalUserId);
+        await this.sendDroppedNotice(externalUserId, batch.userId);
       }
       outcome = await this.handleFlush(batch);
     } finally {
@@ -396,6 +416,7 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
     // #406: clear the fallback gate for this processing cycle.
     fallbackSentThisCycle.delete(batch.externalUserId);
     failedFlushThisCycle.delete(batch.externalUserId);
+    rateLimitedFlushThisCycle.delete(batch.externalUserId);
 
     try {
       const context = batch.context as QueueCtx | undefined;
@@ -414,6 +435,9 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
       });
 
       if (!delivered) {
+        if (rateLimitedFlushThisCycle.has(batch.externalUserId)) {
+          return 'completed';
+        }
         if (!failedFlushThisCycle.has(batch.externalUserId)) {
           // Quota denial is a handled pipeline outcome, not a delivery
           // failure. Do not retry or leave the Redis lease in-flight.
@@ -457,15 +481,23 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
     } finally {
       this.droppedNotified.delete(batch.externalUserId);
       failedFlushThisCycle.delete(batch.externalUserId);
+      rateLimitedFlushThisCycle.delete(batch.externalUserId);
     }
   }
 
-  private async sendDroppedNotice(externalUserId: string): Promise<void> {
+  private async sendDroppedNotice(
+    externalUserId: string,
+    userId?: number,
+  ): Promise<void> {
     // The shared store owns the durable flag; delivery is best effort like the
     // old in-memory callback and the flag is cleared with the completed batch.
-    await this.directTextSender
-      .sendText(externalUserId, DROPPED_MESSAGE)
-      .catch(() => {});
+    await (
+      userId === undefined
+        ? this.directTextSender.sendText(externalUserId, DROPPED_MESSAGE)
+        : this.directTextSender.sendText(externalUserId, DROPPED_MESSAGE, {
+            userId,
+          })
+    ).catch(() => {});
   }
 
   private async clearClarificationState(externalUserId: string): Promise<void> {

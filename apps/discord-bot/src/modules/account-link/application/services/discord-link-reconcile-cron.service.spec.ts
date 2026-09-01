@@ -231,7 +231,11 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
 
     await cron.handleReconcile();
 
-    expect(relinkNotifier.notify).toHaveBeenCalledWith('discord-user-1', 99);
+    expect(relinkNotifier.notify).toHaveBeenCalledWith(
+      'discord-user-1',
+      99,
+      143,
+    );
   });
 
   it('#137 item 4: welcomes the user after re-commit when already in the guild (crash case)', async () => {
@@ -264,7 +268,11 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
 
     await cron.handleReconcile();
 
-    expect(welcomeService.welcomeIfDue).toHaveBeenCalledWith('discord-user-1');
+    expect(welcomeService.welcomeIfDue).toHaveBeenCalledWith(
+      'discord-user-1',
+      undefined,
+      143,
+    );
   });
 
   it('processes at most the batch size returned by the repository', async () => {

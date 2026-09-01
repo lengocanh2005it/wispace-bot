@@ -39,6 +39,7 @@ export interface HistoryPort {
 }
 
 import type { ChatHistoryMessage } from '@wispace/chat-history';
+import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 export type { ChatHistoryMessage };
 
 // ── Agent ───────────────────────────────────────────────────────────────────
@@ -76,6 +77,7 @@ export interface AgentPort {
 
 export interface SendResult {
   delivered: boolean;
+  outcome?: OutboundDeliveryOutcome;
   /** At least one message unit was sent before a later failure. */
   partial?: boolean;
 }
@@ -117,6 +119,8 @@ export interface ChatPipelineHooks {
   onAfterSend?: (ctx: PipelineContext) => Promise<void>;
   /** Called on error before main reply delivered. E.g. fallback error message. */
   onError?: (ctx: PipelineContext) => Promise<void>;
+  /** Called when the outbound limiter intentionally drops a reply. */
+  onRateLimited?: (ctx: PipelineContext) => Promise<void>;
   /** Called at each pipeline step for tracing/metrics. */
   onStep?: (step: string, ctx: PipelineContext) => Promise<void>;
 }

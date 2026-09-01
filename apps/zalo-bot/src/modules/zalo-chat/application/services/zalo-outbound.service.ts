@@ -12,6 +12,8 @@ import {
   PlatformDeadLetterService,
 } from '@wispace/database';
 import { withRetry } from '@wispace/wispace-client';
+import { OutboundRateLimiter } from '@wispace/bot-common/redis';
+import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 
 const SEND_TEXT_ENDPOINT = 'https://openapi.zalo.me/v3.0/oa/message/cs';
 const SEND_TIMEOUT_MS = 10_000;
@@ -66,6 +68,13 @@ export class ZaloSendError extends Error {
   }
 }
 
+class ZaloRateLimitError extends Error {
+  constructor() {
+    super('Outbound message rate limit exceeded');
+    this.name = 'ZaloRateLimitError';
+  }
+}
+
 export function isZaloRetryableError(error: unknown): boolean {
   return error instanceof ZaloSendError && error.isRetryable();
 }
@@ -92,6 +101,9 @@ export class ZaloOutboundService {
     @Optional()
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
+    @Optional()
+    @Inject(OutboundRateLimiter)
+    private readonly outboundRateLimiter?: OutboundRateLimiter,
   ) {}
 
   isAmbiguousDeliveryError(error: unknown): boolean {
@@ -107,40 +119,68 @@ export class ZaloOutboundService {
       clarification?: boolean;
       deadLetterOn?: 'all' | 'ambiguous' | 'none';
       retryOn?: 'all' | 'none';
+      userId?: number;
+      units?: number;
+      skipRateLimit?: boolean;
     },
-  ): Promise<void> {
+  ): Promise<OutboundDeliveryOutcome> {
     let ambiguousDeliveryRecorded = false;
+    let providerAttempt = 0;
     try {
-      await withRetry(() => this.sendTextOnce(zaloUserId, text), {
-        maxRetries: 1,
-        baseDelayMs: 1_000,
-        shouldRetry: (error) => {
-          if (options?.retryOn === 'none') return false;
-          if (
-            options?.clarification === true &&
-            error instanceof ZaloSendError &&
-            error.isAmbiguousDelivery()
-          ) {
-            return false;
-          }
-          return isZaloRetryableError(error);
+      await withRetry(
+        () => {
+          const units = providerAttempt === 0 ? (options?.units ?? 1) : 1;
+          providerAttempt += 1;
+          return this.sendTextOnce(zaloUserId, text, {
+            userId: options?.userId,
+            units,
+            skipRateLimit: options?.skipRateLimit,
+          });
         },
-        onRetry: (attempt, maxRetries, error) => {
-          if (error instanceof ZaloSendError && error.isAmbiguousDelivery()) {
-            this.metrics?.incDmDeliveryFailure(SEND_FAILURE_REASON_AMBIGUOUS);
-            ambiguousDeliveryRecorded = true;
-          }
-          this.logger.warn(
-            `Zalo send attempt ${attempt}/${maxRetries + 1} failed for zaloUserId=${maskExternalId(zaloUserId)}, retrying`,
-          );
+        {
+          maxRetries: 1,
+          baseDelayMs: 1_000,
+          shouldRetry: (error) => {
+            if (options?.retryOn === 'none') return false;
+            if (
+              options?.clarification === true &&
+              error instanceof ZaloSendError &&
+              error.isAmbiguousDelivery()
+            ) {
+              return false;
+            }
+            return isZaloRetryableError(error);
+          },
+          onRetry: (attempt, maxRetries, error) => {
+            if (error instanceof ZaloSendError && error.isAmbiguousDelivery()) {
+              this.metrics?.incDmDeliveryFailure(SEND_FAILURE_REASON_AMBIGUOUS);
+              ambiguousDeliveryRecorded = true;
+            }
+            this.logger.warn(
+              `Zalo send attempt ${attempt}/${maxRetries + 1} failed for zaloUserId=${maskExternalId(zaloUserId)}, retrying`,
+            );
+          },
         },
-      });
+      );
       await this.deliveryLogService.logDelivery({
         externalUserId: zaloUserId,
         status: 'SENT',
         messageType: 'chat',
       });
+      return 'sent';
     } catch (error) {
+      if (error instanceof ZaloRateLimitError) {
+        if (ambiguousDeliveryRecorded) {
+          throw new ZaloSendError(
+            'Zalo delivery outcome is ambiguous after an outbound rate-limit denial',
+            0,
+            'Unknown',
+            '',
+            0,
+          );
+        }
+        return 'rate_limited';
+      }
       const errorMsg = maskExternalIdInText(errorMessage(error), zaloUserId);
       if (
         !ambiguousDeliveryRecorded &&
@@ -194,7 +234,8 @@ export class ZaloOutboundService {
     zaloUserId: string,
     text: string,
     _deliveryKey: string,
-  ): Promise<'sent' | 'ambiguous' | 'not_sent'> {
+  ): Promise<OutboundDeliveryOutcome> {
+    let ambiguousDeliveryRecorded = false;
     try {
       await withRetry(() => this.sendTextOnce(zaloUserId, text), {
         maxRetries: 1,
@@ -203,6 +244,7 @@ export class ZaloOutboundService {
         onRetry: (attempt, maxRetries, error) => {
           if (error instanceof ZaloSendError && error.isAmbiguousDelivery()) {
             this.metrics?.incDmDeliveryFailure(SEND_FAILURE_REASON_AMBIGUOUS);
+            ambiguousDeliveryRecorded = true;
           }
           this.logger.warn(
             `Zalo send attempt ${attempt}/${maxRetries + 1} failed for zaloUserId=${maskExternalId(zaloUserId)}, retrying`,
@@ -216,6 +258,9 @@ export class ZaloOutboundService {
       });
       return 'sent';
     } catch (error) {
+      if (error instanceof ZaloRateLimitError) {
+        return ambiguousDeliveryRecorded ? 'ambiguous' : 'rate_limited';
+      }
       const errorMsg = maskExternalIdInText(errorMessage(error), zaloUserId);
       await this.deliveryLogService.logDelivery({
         externalUserId: zaloUserId,
@@ -231,7 +276,21 @@ export class ZaloOutboundService {
     }
   }
 
-  private async sendTextOnce(zaloUserId: string, text: string): Promise<void> {
+  private async sendTextOnce(
+    zaloUserId: string,
+    text: string,
+    options?: { userId?: number; units?: number; skipRateLimit?: boolean },
+  ): Promise<void> {
+    if (
+      options?.skipRateLimit !== true &&
+      !(await this.admitOutbound(
+        zaloUserId,
+        options?.userId,
+        options?.units ?? 1,
+      ))
+    ) {
+      throw new ZaloRateLimitError();
+    }
     const accessToken = await this.tokenService.getValidAccessToken();
 
     let response: Response;
@@ -295,5 +354,21 @@ export class ZaloOutboundService {
         response.status,
       );
     }
+  }
+
+  private async admitOutbound(
+    externalUserId: string,
+    userId: number | undefined,
+    units: number,
+  ): Promise<boolean> {
+    if (!this.outboundRateLimiter) return true;
+    const result = await this.outboundRateLimiter.admit({
+      platform: 'zalo',
+      externalUserId,
+      userId,
+      units,
+    });
+    this.metrics?.incOutboundRateLimitDecision('zalo', result.outcome);
+    return result.allowed;
   }
 }

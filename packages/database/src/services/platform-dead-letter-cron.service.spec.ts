@@ -202,6 +202,25 @@ describe('PlatformDeadLetterCronService', () => {
     expect(deadLetterService.markReplayed).not.toHaveBeenCalled();
   });
 
+  it('abandons a rate-limited replay without incrementing retry count', async () => {
+    const options = buildOptions({
+      sendText: jest.fn().mockResolvedValue('rate_limited'),
+    });
+    const { service, deadLetterService } = buildService(options);
+    deadLetterService.listPendingForRetry.mockResolvedValue([entry()]);
+
+    await service.handleRetry();
+
+    expect(deadLetterService.markAbandoned).toHaveBeenCalledWith(
+      1,
+      'outbound_rate_limited',
+      'user-1',
+      { leaseToken: 'lease-1', deliveryStatus: 'rate_limited' },
+    );
+    expect(deadLetterService.incrementRetry).not.toHaveBeenCalled();
+    expect(deadLetterService.markReplayed).not.toHaveBeenCalled();
+  });
+
   it('retries ambiguous delivery with the same delivery key when retryAmbiguous is true', async () => {
     const options = buildOptions({
       retryAmbiguous: true,

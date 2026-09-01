@@ -161,6 +161,18 @@ export class PlatformDeadLetterCronService {
               },
             );
           }
+        } else if (outcome === 'rate_limited') {
+          // Rate limiting is a local containment decision. Retrying the same
+          // row would immediately re-admit the storm and create noise.
+          await this.deadLetterService.markAbandoned(
+            entry.id,
+            'outbound_rate_limited',
+            entry.externalUserId ?? undefined,
+            {
+              leaseToken: claimed.leaseToken,
+              deliveryStatus: 'rate_limited',
+            },
+          );
         } else {
           await this.handleFailure(
             entry,

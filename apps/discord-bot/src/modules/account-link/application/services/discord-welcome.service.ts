@@ -42,12 +42,14 @@ export class DiscordWelcomeService {
   async welcomeIfDue(
     discordUserId: string,
     displayName?: string,
+    userId?: number,
   ): Promise<WelcomeDeliveryOutcome> {
     return this.sendIfDue(
       discordUserId,
       displayName,
       'linked',
       buildDiscordLinkWelcomeMessage(displayName),
+      userId,
     );
   }
 
@@ -73,6 +75,7 @@ export class DiscordWelcomeService {
     displayName: string | undefined,
     source: WelcomeSource,
     message: string,
+    userId?: number,
   ): Promise<WelcomeDeliveryOutcome> {
     const windowMs = readRewelcomeWindowMs(this.configService);
     const claimMs = readWelcomeClaimMs(this.configService);
@@ -90,10 +93,14 @@ export class DiscordWelcomeService {
       return 'skipped';
     }
 
-    const delivered = await this.outboundService.sendMenuButtons(
-      discordUserId,
-      message,
-    );
+    const delivered =
+      userId === undefined
+        ? await this.outboundService.sendMenuButtons(discordUserId, message)
+        : await this.outboundService.sendMenuButtons(
+            discordUserId,
+            message,
+            userId,
+          );
     if (!delivered) {
       // Never mark "welcomed" on a failed send — the claim expires and the
       // next join/callback/reconcile event retries (#232/#159).

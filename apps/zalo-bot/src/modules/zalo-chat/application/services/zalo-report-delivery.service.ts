@@ -46,14 +46,22 @@ export class ZaloReportDeliveryService implements ReportDeliveryPort {
         return { ok: false, reason: 'NOT_LINKED' };
       }
 
-      await this.outbound.sendText(mapping.externalUserId, reportText, {
-        deliveryKey:
-          deliveryKey ??
-          `zalo-report:${mapping.externalUserId}:${input.reportDate}`,
-        deadLetterOn: 'ambiguous',
-        retryOn: 'none',
-      });
-      return { ok: true, outcome: 'sent' };
+      const outcome = await this.outbound.sendText(
+        mapping.externalUserId,
+        reportText,
+        {
+          deliveryKey:
+            deliveryKey ??
+            `zalo-report:${mapping.externalUserId}:${input.reportDate}`,
+          deadLetterOn: 'ambiguous',
+          retryOn: 'none',
+          userId: mapping.userId,
+        },
+      );
+      if (outcome === 'rate_limited') {
+        return { ok: false, reason: 'RATE_LIMITED', outcome };
+      }
+      return { ok: true, outcome: outcome === 'ambiguous' ? outcome : 'sent' };
     } catch (error) {
       this.logger.error(
         `Zalo report delivery failed for ${maskExternalId(mapping.externalUserId)}: ${errorMessage(error, mapping.externalUserId)}`,

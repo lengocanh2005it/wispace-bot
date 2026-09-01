@@ -83,6 +83,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private dataQualityRuns: Counter;
   private dataQualityFailures: Counter;
   private llmClassifierVerdict: Counter<string>;
+  private outboundRateLimitDecisions: Counter<string>;
 
   constructor(config: MetricsConfig) {
     this.prefix = config.prefix;
@@ -378,6 +379,12 @@ export class BotMetricsService implements OnModuleDestroy {
       labelNames: ['label', 'mode', 'platform'],
       registers: [this.registry],
     });
+    this.outboundRateLimitDecisions = new Counter({
+      name: `${this.prefix}_outbound_rate_limit_decisions_total`,
+      help: 'Outbound learner-message rate-limit decisions',
+      labelNames: ['platform', 'outcome'],
+      registers: [this.registry],
+    });
   }
 
   async timeStep<T>(step: string, fn: () => Promise<T>): Promise<T> {
@@ -530,6 +537,10 @@ export class BotMetricsService implements OnModuleDestroy {
   /** #649 — an LLM input-classifier verdict. `label` ∈ SAFE|INJECTION|DISCLOSURE_PROBE or an unavailable reason. */
   incClassifierVerdict(label: string, mode: string, platform: string): void {
     this.llmClassifierVerdict.inc({ label, mode, platform });
+  }
+
+  incOutboundRateLimitDecision(platform: string, outcome: string): void {
+    this.outboundRateLimitDecisions.inc({ platform, outcome });
   }
 
   incClarificationOutcome(outcome: string): void {

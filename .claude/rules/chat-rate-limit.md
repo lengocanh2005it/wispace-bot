@@ -24,6 +24,13 @@ Reserve is **not** called from webhook — only from `MessengerChatProcessorServ
 
 Menu postback, reminder cron, proactive reports do **not** go through this module.
 
+The separate shared outbound backstop (#622) is enforced immediately before
+learner-facing delivery. It is not inbound quota: use the canonical WISPACE
+`userId` bucket when available, keep the platform/external-id fallback before
+linking, return `rate_limited` without throwing, refund chat reservations, and
+never retry or send a fallback for that outcome. See
+`docs/outbound-rate-limit.md` for the first-triage procedure.
+
 ## Config (`.env`)
 
 | Group          | Main variables                                                                                        |

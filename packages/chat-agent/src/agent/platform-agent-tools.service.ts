@@ -472,11 +472,14 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
         ctx.externalUserId,
         staged.summary,
         staged.confirmationToken,
+        ctx.userId,
       );
     } else {
       await this.options.reschedule.confirmSender(
         ctx.externalUserId,
         staged.summary,
+        undefined,
+        ctx.userId,
       );
     }
 

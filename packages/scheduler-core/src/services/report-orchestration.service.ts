@@ -227,6 +227,33 @@ export class ReportOrchestrationService {
         return { ...ZERO, sent: 1 };
       }
 
+      if (result.reason === 'RATE_LIMITED') {
+        // The outbound cap is a deliberate containment decision, not a
+        // transient provider failure. Burn this scheduled slot so the cron
+        // and outbox cannot immediately replay the same report.
+        if (claimedForSend) {
+          await this.claimRepo.markScheduledReportClaimSent(
+            {
+              externalUserId: mapping.externalUserId,
+              reportDate,
+            },
+            claimLeaseToken,
+            undefined,
+            deliveryKey,
+            'rate_limited',
+          );
+        }
+        return {
+          ...ZERO,
+          failures: [
+            {
+              externalUserId: mapping.externalUserId,
+              error: 'outbound_rate_limited',
+            },
+          ],
+        };
+      }
+
       // ── Step 6: delivery failed — release + classify ──────────────────
       if (claimedForSend) {
         await this.claimRepo.releaseScheduledReportClaim(

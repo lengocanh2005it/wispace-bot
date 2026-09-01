@@ -219,6 +219,47 @@ describe('ReportOrchestrationService', () => {
       ]);
     });
 
+    it('burns the scheduled claim and does not enqueue a rate-limited report', async () => {
+      const claimRepo = buildClaimRepo();
+      const delivery = {
+        sendReport: jest.fn().mockResolvedValue({
+          ok: false,
+          reason: 'RATE_LIMITED',
+          outcome: 'rate_limited',
+        }),
+      } as unknown as ReportDeliveryPort;
+      const jobRepo = buildJobRepo();
+
+      const service = new ReportOrchestrationService(
+        claimRepo,
+        delivery,
+        jobRepo,
+        buildScheduleService(),
+        buildConfig(),
+      );
+
+      const result = await service.claimAndSend(MAPPING, {
+        reportDate: '2026-08-07',
+        skipAlreadySentToday: true,
+        reportText: 'pre-generated text',
+        examDateForOutbox: '2026-08-20',
+      });
+
+      expect(result.failures).toEqual([
+        { externalUserId: 'discord-1', error: 'outbound_rate_limited' },
+      ]);
+      expect(result.retryQueued).toBe(0);
+      expect(jobRepo.recordRetryableFailure).not.toHaveBeenCalled();
+      expect(claimRepo.releaseScheduledReportClaim).not.toHaveBeenCalled();
+      expect(claimRepo.markScheduledReportClaimSent).toHaveBeenCalledWith(
+        { externalUserId: 'discord-1', reportDate: '2026-08-07' },
+        'token-1',
+        undefined,
+        expect.any(String),
+        'rate_limited',
+      );
+    });
+
     it('counts an inactive mapping as skipped', async () => {
       const claimRepo = buildClaimRepo();
       const delivery = buildDelivery(false);

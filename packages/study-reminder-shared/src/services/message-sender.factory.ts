@@ -10,7 +10,7 @@ export interface OutboundMessageSender {
     externalUserId: string,
     text: string,
     input?: SendMessageInput,
-  ): Promise<void>;
+  ): Promise<OutboundDeliveryOutcome | void>;
 }
 
 /**
@@ -31,8 +31,12 @@ export function wrapMessageSender(
   return {
     async sendText(input: SendMessageInput): Promise<OutboundDeliveryOutcome> {
       try {
-        await outbound.sendText(input.externalUserId, input.text, input);
-        return 'sent';
+        const outcome = await outbound.sendText(
+          input.externalUserId,
+          input.text,
+          input,
+        );
+        return outcome === 'rate_limited' ? outcome : 'sent';
       } catch (error) {
         logger.warn(
           `Failed to send study reminder to externalUserId=${maskExternalId(

@@ -32,6 +32,8 @@ import {
   type DiscordOutboundPreparation,
 } from '../utils/discord-outbound-guard';
 import { withRetry } from '@wispace/wispace-client';
+import { OutboundRateLimiter } from '@wispace/bot-common/redis';
+import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 
 const DM_FAILURE_REASON_SEND = 'dm_send_error';
 const DM_FAILURE_REASON_MENU = 'menu_send_error';
@@ -97,6 +99,13 @@ export class DiscordDeliveryFailureError extends Error {
   }
 }
 
+class DiscordRateLimitError extends Error {
+  constructor() {
+    super('Outbound message rate limit exceeded');
+    this.name = 'DiscordRateLimitError';
+  }
+}
+
 /**
  * Discord counterpart to Messenger's `MessageSenderPort` — sends by fetching
  * the DM channel from the Discord user id rather than replying inline on the
@@ -118,6 +127,9 @@ export class DiscordOutboundService {
     @Optional()
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
+    @Optional()
+    @Inject(OutboundRateLimiter)
+    private readonly outboundRateLimiter?: OutboundRateLimiter,
   ) {}
 
   isAmbiguousDeliveryError(error: unknown): boolean {
@@ -164,18 +176,23 @@ export class DiscordOutboundService {
       deliveryKey?: string;
       clarification?: boolean;
       retryOn?: 'all' | 'none';
+      userId?: number;
+      units?: number;
+      skipRateLimit?: boolean;
     },
-  ): Promise<void> {
+  ): Promise<OutboundDeliveryOutcome> {
     const channelId = await this.sendTextAndGetChannelId(
       discordUserId,
       text,
       options,
     );
+    if (channelId === 'rate_limited') return 'rate_limited';
     if (!channelId) {
       throw new Error(
         `Discord DM delivery failed for ${maskExternalId(discordUserId)}`,
       );
     }
+    return 'sent';
   }
 
   /** Sends a typing indicator to the user's DM channel (fire-and-forget). */
@@ -199,8 +216,11 @@ export class DiscordOutboundService {
       deliveryKey?: string;
       clarification?: boolean;
       retryOn?: 'all' | 'none';
+      userId?: number;
+      units?: number;
+      skipRateLimit?: boolean;
     },
-  ): Promise<string | undefined> {
+  ): Promise<string | 'rate_limited' | undefined> {
     const nonce =
       options?.nonce ??
       (options?.deliveryKey
@@ -211,6 +231,11 @@ export class DiscordOutboundService {
       text,
       nonce,
       options?.retryOn,
+      {
+        userId: options?.userId,
+        units: options?.units,
+        skipRateLimit: options?.skipRateLimit,
+      },
     );
     if (result.ok) {
       await this.deliveryLog?.logDelivery({
@@ -219,6 +244,10 @@ export class DiscordOutboundService {
         messageType: 'chat',
       });
       return result.channelId;
+    }
+
+    if (result.rateLimited && !result.ambiguous) {
+      return 'rate_limited';
     }
 
     const errorMsg = result.error;
@@ -278,7 +307,7 @@ export class DiscordOutboundService {
     discordUserId: string,
     text: string,
     deliveryKey: string,
-  ): Promise<'sent' | 'ambiguous' | 'not_sent'> {
+  ): Promise<OutboundDeliveryOutcome> {
     const result = await this.sendCore(
       discordUserId,
       text,
@@ -291,6 +320,9 @@ export class DiscordOutboundService {
         messageType: 'chat',
       });
       return 'sent';
+    }
+    if (result.rateLimited && !result.ambiguous) {
+      return 'rate_limited';
     }
     this.logger.warn(
       `Dead-letter replay failed for discordUserId=${maskExternalId(
@@ -311,6 +343,11 @@ export class DiscordOutboundService {
     text: string,
     nonce: string,
     retryOn: 'all' | 'none' = 'all',
+    options?: {
+      userId?: number;
+      units?: number;
+      skipRateLimit?: boolean;
+    },
   ): Promise<
     | { ok: true; channelId: string }
     | {
@@ -318,15 +355,27 @@ export class DiscordOutboundService {
         error: string;
         ambiguous: boolean;
         retryable: boolean;
+        rateLimited?: boolean;
       }
   > {
     let ambiguousDeliveryRecorded = false;
+    let providerAttempt = 0;
     const prepared = this.prepareText(text, {
       externalUserId: discordUserId,
     });
     try {
       const msg = await withRetry(
         async () => {
+          const units = providerAttempt === 0 ? (options?.units ?? 1) : 1;
+          providerAttempt += 1;
+          if (options?.skipRateLimit !== true) {
+            const admission = await this.admitOutbound(
+              discordUserId,
+              options?.userId,
+              units,
+            );
+            if (!admission) throw new DiscordRateLimitError();
+          }
           const user = await this.client.users.fetch(discordUserId);
           return user.send({
             ...prepared,
@@ -358,6 +407,15 @@ export class DiscordOutboundService {
       );
       return { ok: true, channelId: msg.channelId };
     } catch (error) {
+      if (error instanceof DiscordRateLimitError) {
+        return {
+          ok: false,
+          error: error.message,
+          ambiguous: ambiguousDeliveryRecorded,
+          retryable: false,
+          rateLimited: true,
+        };
+      }
       const errorMsg = maskExternalIdInText(errorMessage(error), discordUserId);
       const ambiguous =
         ambiguousDeliveryRecorded || isAmbiguousDeliveryError(error);
@@ -382,8 +440,12 @@ export class DiscordOutboundService {
   async sendMenuButtons(
     discordUserId: string,
     content?: string,
+    userId?: number,
   ): Promise<boolean> {
     try {
+      if (!(await this.admitOutbound(discordUserId, userId, 1))) {
+        return false;
+      }
       const user = await this.client.users.fetch(discordUserId);
       const prepared = this.prepareText(content ?? '', {
         externalUserId: discordUserId,
@@ -452,8 +514,12 @@ export class DiscordOutboundService {
     discordUserId: string,
     summary: string,
     confirmationToken?: string,
-  ): Promise<void> {
+    userId?: number,
+  ): Promise<void | 'rate_limited'> {
     try {
+      if (!(await this.admitOutbound(discordUserId, userId, 1))) {
+        return 'rate_limited';
+      }
       const user = await this.client.users.fetch(discordUserId);
       const prepared = this.prepareText(summary, {
         externalUserId: discordUserId,
@@ -485,5 +551,21 @@ export class DiscordOutboundService {
       );
       this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_RESCHEDULE);
     }
+  }
+
+  private async admitOutbound(
+    externalUserId: string,
+    userId: number | undefined,
+    units: number,
+  ): Promise<boolean> {
+    if (!this.outboundRateLimiter) return true;
+    const result = await this.outboundRateLimiter.admit({
+      platform: 'discord',
+      externalUserId,
+      userId,
+      units,
+    });
+    this.metrics?.incOutboundRateLimitDecision('discord', result.outcome);
+    return result.allowed;
   }
 }

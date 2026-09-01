@@ -188,3 +188,57 @@ describe('MessengerOutboundService message logging privacy (#262)', () => {
     ).toBeUndefined();
   });
 });
+
+describe('MessengerOutboundService rich follow-up rate-limit admission (#622)', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('preflights the whole follow-up batch before sending any provider message', async () => {
+    const globalFetch = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(OK_RESPONSE);
+    const admit = jest.fn().mockResolvedValue({
+      allowed: false,
+      outcome: 'limited',
+      reason: 'cap_exceeded',
+    });
+    const service = new MessengerOutboundService(
+      {
+        get: (key: string) =>
+          key === 'PAGE_ACCESS_TOKEN' ? 'page-token' : undefined,
+      } as never,
+      { logMessage: jest.fn() } as never,
+      undefined,
+      { admit } as never,
+    );
+
+    await expect(
+      service.sendRichFollowUps({
+        psid: 'psid-test',
+        userId: 143,
+        followUps: [
+          {
+            kind: 'button',
+            messageType: 'BUTTON_PROMPT',
+            text: 'Choose',
+            buttons: [{ type: 'postback', title: 'One', payload: 'ONE' }],
+          },
+          {
+            kind: 'generic',
+            messageType: 'REPORT_CAROUSEL',
+            elements: [{ title: 'Card' }],
+          },
+        ],
+      }),
+    ).resolves.toBe('rate_limited');
+
+    expect(admit).toHaveBeenCalledWith({
+      platform: 'messenger',
+      externalUserId: 'psid-test',
+      userId: 143,
+      units: 2,
+    });
+    expect(globalFetch).not.toHaveBeenCalled();
+  });
+});

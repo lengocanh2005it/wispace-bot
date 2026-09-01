@@ -175,6 +175,37 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     );
   });
 
+  it('rate-limited report burns the claim without creating an outbox retry', async () => {
+    const { service, messengerRepository, reportSendJobRepository } =
+      buildService({ sendResult: 'rate_limited' });
+
+    const result = await service.claimAndSend(mapping, {
+      reportDate: '2026-07-11',
+      skipAlreadySentToday: true,
+      examDateForOutbox: '2026-07-15',
+    });
+
+    expect(result.failures).toEqual([
+      { externalUserId: 'psid-1', error: 'outbound_rate_limited' },
+    ]);
+    expect(result.retryQueued).toBe(0);
+    expect(
+      reportSendJobRepository.recordRetryableFailure,
+    ).not.toHaveBeenCalled();
+    expect(
+      messengerRepository.releaseScheduledReportClaim,
+    ).not.toHaveBeenCalled();
+    expect(
+      messengerRepository.markScheduledReportClaimSent,
+    ).toHaveBeenCalledWith(
+      { externalUserId: 'psid-1', reportDate: '2026-07-11' },
+      'lease-1',
+      undefined,
+      'messenger-report:psid-1:2026-07-11',
+      'rate_limited',
+    );
+  });
+
   it('StudentReportRetryableError → release claim, record outbox', async () => {
     const { service, messengerRepository, reportSendJobRepository } =
       buildService({

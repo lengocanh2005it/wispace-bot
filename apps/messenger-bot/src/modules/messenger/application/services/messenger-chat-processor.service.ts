@@ -75,6 +75,7 @@ export class MessengerChatProcessorService {
   private readonly retryEnabled: boolean;
   private readonly retryDelayMs: number;
   private readonly fallbackSentThisCycle = new Set<string>();
+  private readonly rateLimitedThisCycle = new Set<string>();
 
   constructor(
     private readonly outbound: MessengerOutboundService,
@@ -165,6 +166,9 @@ export class MessengerChatProcessorService {
           );
         }
       },
+      onRateLimited: async (ctx: PipelineContext) => {
+        this.rateLimitedThisCycle.add(ctx.externalUserId);
+      },
       onAfterSend: async (ctx: PipelineContext) => {
         await this.deliverOptionalChatExtras({
           psid: ctx.externalUserId,
@@ -229,6 +233,7 @@ export class MessengerChatProcessorService {
       await this.outbound
         .sendTextViaPsid({
           psid,
+          userId: snapshot.userId,
           text: buildChatDroppedMessage(),
           messageType: 'PENDING_FEEDBACK',
         })
@@ -275,6 +280,7 @@ export class MessengerChatProcessorService {
     let retryScheduled = false;
     let shouldComplete = false;
     this.fallbackSentThisCycle.delete(psid);
+    this.rateLimitedThisCycle.delete(psid);
     try {
       const delivered = await this.processChatBatch({
         psid,
@@ -283,7 +289,11 @@ export class MessengerChatProcessorService {
         linkContext: snapshot.linkContext,
         idempotencyKey: snapshot.lastIdempotencyKey,
       });
-      if (delivered || this.fallbackSentThisCycle.has(psid)) {
+      if (
+        delivered ||
+        this.fallbackSentThisCycle.has(psid) ||
+        this.rateLimitedThisCycle.has(psid)
+      ) {
         shouldComplete = true;
       } else if (this.retryEnabled) {
         try {
@@ -332,6 +342,7 @@ export class MessengerChatProcessorService {
       throw error;
     } finally {
       this.fallbackSentThisCycle.delete(psid);
+      this.rateLimitedThisCycle.delete(psid);
       if (shouldComplete && !retryScheduled) {
         try {
           await this.getChatQueueStore().completeChatBuffer({

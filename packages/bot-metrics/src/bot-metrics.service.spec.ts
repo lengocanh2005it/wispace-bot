@@ -57,6 +57,21 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     expect(output).not.toContain('external_user_id');
   });
 
+  it('exposes outbound rate-limit decisions without learner labels', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+
+    metrics.incOutboundRateLimitDecision('discord', 'limited');
+    const output = await metrics.getMetrics();
+
+    expect(output).toContain(
+      'test_outbound_rate_limit_decisions_total{platform="discord",outcome="limited"} 1',
+    );
+    expect(output).not.toContain('external_user_id');
+  });
+
   it('exposes bounded tool-observation outcomes with tool and platform labels', async () => {
     const metrics = new BotMetricsService({
       prefix: 'test',

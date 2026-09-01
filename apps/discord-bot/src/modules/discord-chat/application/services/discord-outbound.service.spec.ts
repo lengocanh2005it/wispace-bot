@@ -31,6 +31,30 @@ type DiscordTextPayload = {
 };
 
 describe('DiscordOutboundService', () => {
+  it('returns rate_limited without touching Discord', async () => {
+    const fetch = jest.fn();
+    const limiter = {
+      admit: jest.fn().mockResolvedValue({
+        allowed: false,
+        outcome: 'limited',
+        reason: 'cap_exceeded',
+      }),
+    };
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      undefined,
+      undefined,
+      limiter as never,
+    );
+
+    await expect(service.sendText('discord-1', 'hello')).resolves.toBe(
+      'rate_limited',
+    );
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('fetches the Discord user and sends a DM', async () => {
     const send = jest
       .fn<Promise<{ channelId: string }>, [DiscordTextPayload]>()

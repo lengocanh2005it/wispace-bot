@@ -40,7 +40,35 @@ Enable enforcement: `CHAT_RATE_LIMIT_ENABLED=true`. Quick disable: `false` or `C
 
 The `message_logs` table already exists — used for sent/received message audit (`message_type`, `external_user_id`, `user_id`, `created_at`).
 
-### 1.3. What Does Meta (Facebook) Limit?
+### 1.3. Outbound learner-message backstop (#622)
+
+The shared `@wispace/bot-common` outbound limiter is separate from the inbound
+FREE_FORM quota. It contains retry storms and accidental fan-out immediately
+before learner-facing delivery across Messenger, Discord, and Zalo.
+
+- Defaults: **30 provider messages per rolling 10 minutes**; configure with
+  `OUTBOUND_RATE_LIMIT_ENABLED`, `OUTBOUND_RATE_LIMIT_MAX_MESSAGES`, and
+  `OUTBOUND_RATE_LIMIT_WINDOW_MS`.
+- Linked users share one bucket by canonical WISPACE `userId`; before linking,
+  the bucket is `platform + external id` and is not merged later.
+- Every provider attempt, retry, and text chunk consumes a unit. Multi-message
+  batches are admitted atomically, so a denied batch sends nothing.
+- A breach returns `rate_limited` without throwing. Chat refunds its inbound
+  reservation and completes the queue/inbox; reminders, reports, and
+  dead-letter replay record `outbound_rate_limited` and do not retry.
+- Production requires Redis when enabled. Redis errors after startup fail open
+  for that admission as `store_unavailable`; there is no production memory
+  fallback.
+
+This backstop should not fire during normal chat, reminder, or report traffic.
+Any `limited` decision is an upstream retry/fan-out bug to investigate, not a
+reason to raise the default cap. First triage: inspect
+`<prefix>_outbound_rate_limit_decisions_total{platform,outcome}` for `limited`,
+search logs for `Outbound message rate limit exceeded`, then inspect terminal
+`outbound_rate_limited` reminder/report/dead-letter records before replaying.
+The operational procedure is [outbound-rate-limit.md](../../../docs/outbound-rate-limit.md).
+
+### 1.4. What Does Meta (Facebook) Limit?
 
 Meta does **not** provide a "max X bot messages per user per day" API. Platform limits are primarily on the **outbound bot side**:
 

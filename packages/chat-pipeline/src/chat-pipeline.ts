@@ -55,6 +55,7 @@ export class ChatPipeline {
     let usageDate: string | undefined;
     let refundAttempted = false;
     let errorHookCalled = false;
+    let rateLimited = false;
 
     try {
       // ── Reserve quota ─────────────────────────────────────────────────────
@@ -119,6 +120,28 @@ export class ChatPipeline {
 
         delivered = sendResult.delivered;
         ctx.partialDelivery = sendResult.partial === true;
+        rateLimited = sendResult.outcome === 'rate_limited';
+      }
+
+      if (rateLimited) {
+        if (input.idempotencyKey && usageDate) {
+          refundAttempted = true;
+          try {
+            await this.rateLimiter.refund(
+              input.externalUserId,
+              usageDate,
+              input.idempotencyKey,
+            );
+          } catch (refundError) {
+            ctx.refundError = refundError;
+          }
+        }
+        try {
+          await this.hooks.onRateLimited?.(ctx);
+        } catch {
+          // Rate-limit handling must never turn a handled drop into a retry.
+        }
+        return false;
       }
 
       if (!delivered && !ctx.partialDelivery) {

@@ -116,6 +116,7 @@ describe('DiscordChatGateway onGuildMemberAdd (#137 items 2+4, #231/#232/#234)',
     expect(welcomeService.welcomeIfDue).toHaveBeenCalledWith(
       'discord-user-1',
       'Test User',
+      143,
     );
     expect(welcomeService.sendOrganicWelcomeIfDue).not.toHaveBeenCalled();
   });

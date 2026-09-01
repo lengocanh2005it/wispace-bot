@@ -143,6 +143,28 @@ describe('StudyReminderDispatchService', () => {
     expect(result).toMatchObject({ claimed: 1, sent: 1, cancelled: 0 });
   });
 
+  it('terminalizes a rate-limited reminder without scheduling a retry', async () => {
+    const job = makeJob();
+    jobRepo.findDueJobs.mockResolvedValue([job]);
+    jobRepo.claimJob.mockResolvedValue(job);
+    messageSender.sendText.mockResolvedValue('rate_limited');
+    build();
+
+    const result = await service.dispatchDueReminders();
+
+    expect(jobRepo.markFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        terminal: true,
+        retryCount: 1,
+        errorMessage: 'outbound_rate_limited',
+      }),
+    );
+    expect(result).toMatchObject({ claimed: 1, failed: 1, retried: 0 });
+    expect(result.failures).toEqual([
+      expect.objectContaining({ error: 'outbound_rate_limited' }),
+    ]);
+  });
+
   it('does not send a claimed reminder after revoke and retries unknown state', async () => {
     const job = makeJob({ leaseToken: 'lease-1' });
     jobRepo.findDueJobs.mockResolvedValue([job]);

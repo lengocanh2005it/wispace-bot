@@ -141,6 +141,9 @@ export function createMessengerChatPipelineAdapters(
             : {}),
           ...(context?.clarification === true ? { clarification: true } : {}),
         });
+        if (bubblesSent === 'rate_limited') {
+          return { delivered: false, outcome: 'rate_limited' };
+        }
         return { delivered: bubblesSent > 0 };
       } catch (error: unknown) {
         if (

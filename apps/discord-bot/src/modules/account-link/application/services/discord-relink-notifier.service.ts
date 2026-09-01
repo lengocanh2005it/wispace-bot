@@ -18,6 +18,7 @@ export class DiscordRelinkNotifier {
   async notify(
     discordUserId: string,
     previousUserId: number | undefined,
+    userId?: number,
   ): Promise<void> {
     this.logger.warn(
       `Relink displaced previous userId=${maskExternalId(
@@ -26,7 +27,11 @@ export class DiscordRelinkNotifier {
     );
 
     await this.outboundService
-      .sendText(discordUserId, buildDiscordRelinkNoticeMessage())
+      .sendText(
+        discordUserId,
+        buildDiscordRelinkNoticeMessage(),
+        userId === undefined ? undefined : { userId },
+      )
       .catch((error: unknown) => {
         this.logger.warn(
           `Discord relink notice DM failed for discordUserId=${maskExternalId(
