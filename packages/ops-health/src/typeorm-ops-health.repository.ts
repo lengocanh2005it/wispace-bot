@@ -87,7 +87,7 @@ export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
          COUNT(*) FILTER (WHERE status = 'pending')::int AS pending_count,
          COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_count,
          COUNT(*) FILTER (WHERE status = 'processing' AND updated_at < NOW() - INTERVAL '5 minutes')::int AS stuck_processing_count,
-         EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) FILTER (WHERE status IN ('pending', 'failed', 'processing'))::int AS oldest_pending_age_seconds
+         EXTRACT(EPOCH FROM (NOW() - MIN(created_at) FILTER (WHERE status IN ('pending', 'failed', 'processing'))))::int AS oldest_pending_age_seconds
        FROM webhook_inbound_events
        WHERE platform = $1`,
       [this.platform],
@@ -106,7 +106,7 @@ export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
       `SELECT
          COUNT(*) FILTER (WHERE status = 'pending')::int AS pending_count,
          COUNT(*) FILTER (WHERE status = 'failed')::int AS failed_count,
-         EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) FILTER (WHERE status IN ('pending', 'failed'))::int AS oldest_pending_age_seconds
+         EXTRACT(EPOCH FROM (NOW() - MIN(created_at) FILTER (WHERE status IN ('pending', 'failed'))))::int AS oldest_pending_age_seconds
        FROM webhook_dead_letters
        WHERE platform = $1 AND direction = 'outbound'`,
       [this.platform],

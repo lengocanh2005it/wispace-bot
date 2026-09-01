@@ -99,7 +99,9 @@ describe('TypeormOpsHealthRepository', () => {
       oldestPendingAgeSeconds: 120,
     });
     expect(query).toHaveBeenCalledWith(
-      expect.stringContaining('FROM webhook_inbound_events'),
+      expect.stringContaining(
+        "MIN(created_at) FILTER (WHERE status IN ('pending', 'failed', 'processing'))",
+      ),
       ['messenger'],
     );
   });
@@ -122,7 +124,9 @@ describe('TypeormOpsHealthRepository', () => {
       oldestPendingAgeSeconds: 300,
     });
     expect(query).toHaveBeenCalledWith(
-      expect.stringContaining('FROM webhook_dead_letters'),
+      expect.stringContaining(
+        "MIN(created_at) FILTER (WHERE status IN ('pending', 'failed'))",
+      ),
       ['discord'],
     );
   });
