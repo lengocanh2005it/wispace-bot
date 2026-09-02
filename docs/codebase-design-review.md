@@ -21,7 +21,7 @@ Các thay đổi sau bản review ban đầu đã làm seam hiện tại rõ hơ
 | **Đã cải thiện** | `CanonicalPlatformService` được dùng trong report cron của Messenger/Discord/Zalo; policy gửi đa nền tảng đã nằm sau một resolver dùng chung. |
 | **Đã cải thiện một phần** | `WebhookInboundIngressPort` nay ở `packages/database/src/domain/ports`, và Zalo bind port này; Messenger vẫn dùng `WebhookInboundEventsPort` riêng nên vẫn còn hai interface cho cùng write-ahead inbox. |
 | **Đã harden nhưng chưa deepen** | Discord/Zalo reconcile đã có advisory lock, stale-record drop và retry/telemetry; lifecycle vẫn là hai implementation gần clone, với behavior Discord (relink/welcome) không xuất hiện đầy đủ ở Zalo. |
-| **Còn nguyên** | `PrivacyDataService` vẫn resolve entity bằng tên chuỗi (`packages/database/src/services/privacy-data.service.ts:64-190`); `PlatformStudentReportService` vẫn tự map capacity và throw `Error` thường (`packages/student-report/src/platform-student-report.service.ts:101-161`); Messenger vẫn reserve quota trước rồi `ChatPipeline` reserve lại (`apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts:299-339`, `packages/chat-pipeline/src/chat-pipeline.ts:68-83`). |
+| **Còn nguyên** | ~~`PrivacyDataService` vẫn resolve entity bằng tên chuỗi~~ (đã xử lý #461, 2026-09-02 — xem §3.1); `PlatformStudentReportService` vẫn tự map capacity và throw `Error` thường (`packages/student-report/src/platform-student-report.service.ts:101-161`); Messenger vẫn reserve quota trước rồi `ChatPipeline` reserve lại (`apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts:299-339`, `packages/chat-pipeline/src/chat-pipeline.ts:68-83`). |
 | **Còn nguyên** | `OpsHealthRepositoryPort` yêu cầu `getLlmSafetyWarningsCount(since)` nhưng adapter bỏ qua `since` và hardcode 24 giờ (`packages/ops-health/src/types.ts:20`, `packages/ops-health/src/typeorm-ops-health.repository.ts:55-63`); package `ops-health` không có consumer runtime, Messenger giữ implementation riêng. |
 
 Kết luận refresh: chưa có lý do để tạo thêm package/port tổng quát. Ưu tiên sửa các seam đang nói dối hoặc
@@ -105,6 +105,10 @@ Nợ thiết kế không nằm ở "thiếu abstraction" mà ở 4 chỗ:
    qua tên chuỗi (`dataSource.getRepository(name)`), ngầm đòi DataSource đăng ký entity của cả 3 platform —
    không app nào làm vậy. Unit fake trả repo cho *mọi* tên nên test không thấy. Sửa bằng inject explicit
    `{ mappings: Record<Platform, EntityTarget>; scoped: EntityTarget[] }` + startup check.
+   > **Đã xử lý (#461, 2026-09-02).** Registry inject qua constructor, `ENTITY_NAMES` + `as never` đã xoá,
+   > startup fail-fast nêu tên entity thiếu. Mỗi app export `buildPrivacyEntityRegistry()`;
+   > `database:privacy-smoke` gọi đúng builder đó trên Postgres thật cho cả 3 platform, seed platform khác
+   > bằng external id **riêng biệt** và assert audit row của nhánh fan-out.
 2. **Capacity-mapping drift gây sai UX thật**: bản copy trong `PlatformStudentReportService` throw
    `Error('No score data available')` thay vì `StudentReportNoScoreDataError` → catch-site `instanceof`
    hụt → user Discord/Zalo hết điểm nhận exception path thay vì thông báo hướng dẫn. Nguyên nhân gốc:
@@ -189,7 +193,8 @@ app service) · `ToolExecutorPort<T>` ×2+scripted · `RedisClientPort` + fakes 
    `createGoalsCapacityDataAdapter(goals: ReportGoalsPort): CapacityDataPort` (port đã khai báo sẵn),
    throw đúng `StudentReportNoScoreDataError`. Fix luôn bug UX #3.2. Consumers: messenger
    `TaskScoreAverageApiService` + platform service. Spec cũ của 2 bản copy gộp thành 1 mapper suite.
-2. **Sửa `PrivacyDataService`**: inject entity registry tường minh; xoá `ENTITY_NAMES` + `as never` casts.
+2. ~~**Sửa `PrivacyDataService`**: inject entity registry tường minh; xoá `ENTITY_NAMES` + `as never` casts.~~
+   **Xong (#461, 2026-09-02)** — xem ghi chú ở §3.1.
 3. **Fix-or-delete `ops-health`**: hoặc xoá svc/repo (giữ types Messenger dùng), hoặc cho Messenger delegate;
    implement `since` trung thực.
 4. **Xoá double translation quanh agent**: adapters factory capture thẳng `PlatformAgentService`;

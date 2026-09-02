@@ -479,7 +479,7 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 
 **Cross-platform**: delete uses WISPACE `user_id` (root identifier), so deleting via Messenger also cleans Discord/Zalo records.
 
-**Entity registration**: each app's `DatabaseModule` provides `PrivacyDataService` with an explicit `PrivacyEntityRegistry`: all three mapping entity classes, the scoped entity targets, and that app's message-log entity. The constructor checks `DataSource.hasMetadata()` for every target and fails startup with the missing target name. Mapping entities are canonical exports from `@wispace/database` and included in shared TypeORM options; app-local entity paths re-export them for existing consumers. Calls are scoped to the app's configured platform.
+**Entity registration**: each app's `DatabaseModule` exports `buildPrivacyEntityRegistry()` and provides `PrivacyDataService` with its result — an explicit `PrivacyEntityRegistry` holding all three mapping entity classes, the scoped entity targets, and that app's message-log entity. `database:privacy-smoke` calls those same exported builders, so the smoke exercises the registry each app really wires instead of a copy that can drift. The constructor checks `DataSource.hasMetadata()` for every target and fails startup with the missing target name. Mapping entities are canonical exports from `@wispace/database` and included in shared TypeORM options; app-local entity paths re-export them for existing consumers. Calls are scoped to the app's configured platform.
 
 **Redis cleanup**: `ChatHistoryClearer` is an optional registry field; per-call cleanup callbacks can also clear history/queued work/clarification. Best-effort, outside transaction.
 

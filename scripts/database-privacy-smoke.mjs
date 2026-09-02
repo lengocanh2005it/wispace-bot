@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -8,23 +9,9 @@ const require = createRequire(import.meta.url);
 const rootDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const { ConfigService } = require('@nestjs/config');
 const { DataSource } = require('typeorm');
-const {
-  ChatDailyUsageEntity,
-  ChatIdempotencyEntity,
-  LlmUsageEventEntity,
-} = require('@wispace/chat-metering');
-const { StudyReminderJobEntity } = require('@wispace/study-reminder-shared');
-const {
-  DiscordAccountLinkEntity,
-  LearnerProfileEntity,
-  PrivacyDataService,
-  ReportSendJobEntity,
-  ScheduledReportClaimEntity,
-  UserNotificationPreferenceEntity,
-  UserPlatformMappingEntity,
-  WebActivityEntity,
-  ZaloAccountLinkEntity,
-} = require('@wispace/database');
+// Entity targets are not listed here on purpose — they come from each app's
+// exported `buildPrivacyEntityRegistry` below (#461).
+const { PrivacyDataService } = require('@wispace/database');
 
 const requiredEnv = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
 for (const key of requiredEnv) {
@@ -50,57 +37,65 @@ const messengerTypeOrm = require(
     'apps/messenger-bot/dist/infrastructure/database/typeorm.options.js',
   ),
 );
-const messengerLog = require(
+const messengerDatabase = require(
   resolve(
     rootDir,
-    'apps/messenger-bot/dist/infrastructure/database/entities/message-log.entity.js',
+    'apps/messenger-bot/dist/infrastructure/database/database.module.js',
   ),
-).MessageLogEntity;
+);
 const discordDatabase = require(
   resolve(
     rootDir,
     'apps/discord-bot/dist/infrastructure/database/database.module.js',
   ),
 );
-const discordLog = require(
-  resolve(
-    rootDir,
-    'apps/discord-bot/dist/infrastructure/database/entities/discord-message-log.entity.js',
-  ),
-).DiscordMessageLogEntity;
 const zaloDatabase = require(
   resolve(
     rootDir,
     'apps/zalo-bot/dist/infrastructure/database/database.module.js',
   ),
 );
-const zaloLog = require(
-  resolve(
-    rootDir,
-    'apps/zalo-bot/dist/infrastructure/database/entities/zalo-message-log.entity.js',
-  ),
-).ZaloMessageLogEntity;
 
-const mappings = {
-  messenger: UserPlatformMappingEntity,
-  discord: DiscordAccountLinkEntity,
-  zalo: ZaloAccountLinkEntity,
-};
-const scoped = {
-  learnerProfile: LearnerProfileEntity,
-  studyReminderJob: StudyReminderJobEntity,
-  scheduledReportClaim: ScheduledReportClaimEntity,
-  reportSendJob: ReportSendJobEntity,
-  chatDailyUsage: ChatDailyUsageEntity,
-  llmUsageEvent: LlmUsageEventEntity,
-  chatIdempotency: ChatIdempotencyEntity,
-  webActivity: WebActivityEntity,
-  notificationPreference: UserNotificationPreferenceEntity,
+// The registries the apps actually wire (#461). Built by each app's own
+// `buildPrivacyEntityRegistry`, not restated here — a local copy would pass
+// this smoke while an app's real registration was wrong, which is the blind
+// spot the issue was about.
+const appRegistries = {
+  messenger: messengerDatabase.buildPrivacyEntityRegistry(),
+  discord: discordDatabase.buildPrivacyEntityRegistry(),
+  zalo: zaloDatabase.buildPrivacyEntityRegistry(),
 };
 
-function registry(platform, messageLog) {
-  return { platform, mappings, scoped, messageLog };
+// Only `platform` and `messageLog` may differ between apps; every shared
+// target must be the identical class, or one app is erasing different rows.
+for (const [platform, appRegistry] of Object.entries(appRegistries)) {
+  assert.equal(
+    appRegistry.platform,
+    platform,
+    `${platform} registry declares platform=${appRegistry.platform}`,
+  );
+  for (const key of Object.keys(appRegistries.messenger.mappings)) {
+    assert.equal(
+      appRegistry.mappings[key],
+      appRegistries.messenger.mappings[key],
+      `${platform} registry disagrees on mappings.${key}`,
+    );
+  }
+  for (const key of Object.keys(appRegistries.messenger.scoped)) {
+    assert.equal(
+      appRegistry.scoped[key],
+      appRegistries.messenger.scoped[key],
+      `${platform} registry disagrees on scoped.${key}`,
+    );
+  }
 }
+
+const mappings = appRegistries.messenger.mappings;
+const scoped = appRegistries.messenger.scoped;
+// Per-app, so these come from each registry rather than a separate require.
+const messengerLog = appRegistries.messenger.messageLog;
+const discordLog = appRegistries.discord.messageLog;
+const zaloLog = appRegistries.zalo.messageLog;
 
 function options(builder, { dropSchema, synchronize }) {
   return {
@@ -112,7 +107,21 @@ function options(builder, { dropSchema, synchronize }) {
   };
 }
 
+/** Column each platform's verify-record table is keyed on. */
+const VERIFY_INTENT_COLUMNS = {
+  messenger: ['messenger_link_verify_records', 'psid'],
+  discord: ['discord_link_verify_records', 'discord_user_id'],
+  zalo: ['zalo_link_verify_records', 'zalo_user_id'],
+};
+
 async function ensureVerifyIntentTables(dataSource) {
+  await dataSource.query(`
+    CREATE TABLE IF NOT EXISTS "messenger_link_verify_records" (
+      "psid" varchar(64) PRIMARY KEY,
+      "user_id" integer NOT NULL,
+      "verified_at" timestamptz NOT NULL DEFAULT now()
+    )
+  `);
   await dataSource.query(`
     CREATE TABLE IF NOT EXISTS "discord_link_verify_records" (
       "discord_user_id" varchar(64) PRIMARY KEY,
@@ -269,23 +278,72 @@ async function assertDeleted(dataSource, platform, externalUserId, userId) {
   );
 }
 
-async function runPlatform({
-  platform,
-  builder,
-  messageLog,
-  dropSchema,
-  synchronize,
-}) {
+async function seedVerifyIntent(dataSource, crossIds, userId) {
+  for (const [mappingPlatform, externalId] of Object.entries(crossIds)) {
+    const [table, column] = VERIFY_INTENT_COLUMNS[mappingPlatform];
+    await dataSource.query(
+      `INSERT INTO "${table}" ("${column}", "user_id", "verified_at")
+       VALUES ($1, $2, now()) ON CONFLICT DO NOTHING`,
+      [externalId, userId],
+    );
+  }
+}
+
+/**
+ * Outcomes that only the cross-platform fan-out can produce (#461).
+ *
+ * - An audit row per OTHER platform, hashed on that platform's own external
+ *   id — proves delete() reached the learner's other identities by userId,
+ *   not just the id it was called with.
+ * - That platform's verify-record is gone. Verify-records are not part of the
+ *   scoped userId sweep, so their deletion is attributable to the fan-out.
+ *
+ * Deliberately NOT asserted: reminder jobs moving to `cancelled`. The fan-out
+ * does set that, but `delete()` then removes those rows by userId anyway, so
+ * the final state is identical either way and the assertion would prove
+ * nothing. It is observable on the `unlink()` path, not here.
+ */
+async function assertCrossPlatformFanOut(dataSource, platform, crossIds) {
+  for (const [mappingPlatform, externalId] of Object.entries(crossIds)) {
+    if (mappingPlatform === platform) continue;
+    const hash = createHash('sha256').update(externalId).digest('hex');
+    const audit = await dataSource.query(
+      `SELECT 1 FROM platform_link_audit_events
+       WHERE platform = $1 AND external_user_hash = $2
+         AND event_type = 'locally_unlinked'`,
+      [mappingPlatform, hash],
+    );
+    assert.equal(
+      audit.length > 0,
+      true,
+      `${platform}: no cross-platform unlink audit for ${mappingPlatform} (${externalId})`,
+    );
+  }
+
+  // Every identity's verify-record must be gone: the current platform's via
+  // its own delete path, the others via the fan-out.
+  for (const [mappingPlatform, externalId] of Object.entries(crossIds)) {
+    const [table, column] = VERIFY_INTENT_COLUMNS[mappingPlatform];
+    const remaining = await dataSource.query(
+      `SELECT 1 FROM "${table}" WHERE "${column}" = $1`,
+      [externalId],
+    );
+    assert.equal(
+      remaining.length,
+      0,
+      `${platform}: ${mappingPlatform} verify-record survived delete (${externalId})`,
+    );
+  }
+}
+
+async function runPlatform({ platform, builder, dropSchema, synchronize }) {
   const dataSource = new DataSource(
     options(builder, { dropSchema, synchronize }),
   );
   try {
     await dataSource.initialize();
     await ensureVerifyIntentTables(dataSource);
-    const service = new PrivacyDataService(
-      dataSource,
-      registry(platform, messageLog),
-    );
+    const service = new PrivacyDataService(dataSource, appRegistries[platform]);
     const seed = { messenger: 1, discord: 2, zalo: 3 }[platform];
 
     const unlinkId = `${platform}-privacy-unlink`;
@@ -299,20 +357,30 @@ async function runPlatform({
 
     const deleteId = `${platform}-privacy-delete`;
     const deleteUserId = 7200 + seed;
-    // Mappings must share the exact externalUserId passed to delete() so the
-    // current-platform mapping is found and the cross-platform delete runs.
+    // The current platform's mapping must carry the exact externalUserId
+    // passed to delete(). The OTHER platforms are reached by userId alone, so
+    // they get DISTINCT ids here — seeding them with the same id would make
+    // the cross-platform fan-out indistinguishable from the current-platform
+    // path, which is the branch #461 is about.
+    const crossIds = {};
     for (const mappingPlatform of Object.keys(mappings)) {
+      crossIds[mappingPlatform] =
+        mappingPlatform === platform
+          ? deleteId
+          : `${mappingPlatform}-cross-of-${platform}`;
       await insertMapping(
         dataSource,
         mappingPlatform,
-        deleteId,
+        crossIds[mappingPlatform],
         deleteUserId,
       );
     }
     await insertScopedRows(dataSource, platform, deleteId, deleteUserId);
     await insertMessageLog(dataSource, platform, deleteId, deleteUserId);
+    await seedVerifyIntent(dataSource, crossIds, deleteUserId);
     await service.delete(platform, deleteId);
     await assertDeleted(dataSource, platform, deleteId, deleteUserId);
+    await assertCrossPlatformFanOut(dataSource, platform, crossIds);
 
     const exportId = `${platform}-privacy-export`;
     const exportUserId = 7300 + seed;
@@ -334,21 +402,18 @@ async function runPlatform({
 await runPlatform({
   platform: 'messenger',
   builder: messengerTypeOrm.getTypeOrmOptions,
-  messageLog: messengerLog,
   dropSchema: true,
   synchronize: true,
 });
 await runPlatform({
   platform: 'discord',
   builder: discordDatabase.buildTypeOrmOptions,
-  messageLog: discordLog,
   dropSchema: false,
   synchronize: false,
 });
 await runPlatform({
   platform: 'zalo',
   builder: zaloDatabase.buildTypeOrmOptions,
-  messageLog: zaloLog,
   dropSchema: false,
   synchronize: false,
 });

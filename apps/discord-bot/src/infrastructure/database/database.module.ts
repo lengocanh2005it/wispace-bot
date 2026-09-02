@@ -19,6 +19,7 @@ import {
   WebActivityService,
   UserNotificationPreferenceEntity,
   PrivacyDataService,
+  type PrivacyEntityRegistry,
   UserPlatformMappingEntity,
   DiscordAccountLinkEntity as CanonicalDiscordAccountLinkEntity,
   ZaloAccountLinkEntity,
@@ -47,6 +48,35 @@ export function buildTypeOrmOptions(config: ConfigService) {
     StudyReminderJobEntity,
   ];
   return buildSharedOptions(config, entities);
+}
+
+/**
+ * The explicit privacy entity targets this app registers (#461).
+ *
+ * Exported so `scripts/database-privacy-smoke.mjs` verifies the registry the
+ * app actually wires, rather than a copy that can drift from it.
+ */
+export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
+  return {
+    platform: 'discord',
+    mappings: {
+      messenger: UserPlatformMappingEntity,
+      discord: CanonicalDiscordAccountLinkEntity,
+      zalo: ZaloAccountLinkEntity,
+    },
+    scoped: {
+      learnerProfile: LearnerProfileEntity,
+      studyReminderJob: StudyReminderJobEntity,
+      scheduledReportClaim: ScheduledReportClaimEntity,
+      reportSendJob: ReportSendJobEntity,
+      chatDailyUsage: ChatDailyUsageEntity,
+      llmUsageEvent: LlmUsageEventEntity,
+      chatIdempotency: ChatIdempotencyEntity,
+      webActivity: WebActivityEntity,
+      notificationPreference: UserNotificationPreferenceEntity,
+    },
+    messageLog: DiscordMessageLogEntity,
+  };
 }
 
 @Module({
@@ -80,26 +110,7 @@ export function buildTypeOrmOptions(config: ConfigService) {
     {
       provide: PrivacyDataService,
       useFactory: (dataSource: DataSource) =>
-        new PrivacyDataService(dataSource, {
-          platform: 'discord',
-          mappings: {
-            messenger: UserPlatformMappingEntity,
-            discord: CanonicalDiscordAccountLinkEntity,
-            zalo: ZaloAccountLinkEntity,
-          },
-          scoped: {
-            learnerProfile: LearnerProfileEntity,
-            studyReminderJob: StudyReminderJobEntity,
-            scheduledReportClaim: ScheduledReportClaimEntity,
-            reportSendJob: ReportSendJobEntity,
-            chatDailyUsage: ChatDailyUsageEntity,
-            llmUsageEvent: LlmUsageEventEntity,
-            chatIdempotency: ChatIdempotencyEntity,
-            webActivity: WebActivityEntity,
-            notificationPreference: UserNotificationPreferenceEntity,
-          },
-          messageLog: DiscordMessageLogEntity,
-        }),
+        new PrivacyDataService(dataSource, buildPrivacyEntityRegistry()),
       inject: [DataSource],
     },
   ],

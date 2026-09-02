@@ -338,28 +338,21 @@ export class PrivacyDataService {
         for (const p of PLATFORMS) {
           if (p === currentPlatform) continue;
           const repo = manager.getRepository(this.registry.mappings[p]);
-          const find = (
-            repo as unknown as {
-              find?: (options: unknown) => Promise<ObjectLiteral[]>;
-            }
-          ).find;
-          if (find) {
-            const mappings = await find.call(repo, { where: { userId } });
-            for (const otherMapping of mappings) {
-              const externalId = (otherMapping as { externalUserId?: string })
-                .externalUserId;
-              if (externalId) {
-                cleanupExternalIds.add(externalId);
-                await writeLocalUnlinkAudit(
-                  manager,
-                  p,
-                  externalId,
-                  (otherMapping as { mappingGeneration?: string })
-                    .mappingGeneration,
-                );
-                await cancelLocalUnlinkWork(manager, p, externalId);
-                await deleteVerifyIntent(manager, p, externalId);
-              }
+          const mappings = await repo.find({ where: { userId } });
+          for (const otherMapping of mappings) {
+            const externalId = (otherMapping as { externalUserId?: string })
+              .externalUserId;
+            if (externalId) {
+              cleanupExternalIds.add(externalId);
+              await writeLocalUnlinkAudit(
+                manager,
+                p,
+                externalId,
+                (otherMapping as { mappingGeneration?: string })
+                  .mappingGeneration,
+              );
+              await cancelLocalUnlinkWork(manager, p, externalId);
+              await deleteVerifyIntent(manager, p, externalId);
             }
           }
           await repo.delete({ userId });

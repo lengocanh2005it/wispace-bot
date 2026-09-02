@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { DataSource, ObjectLiteral, Repository } from 'typeorm';
 import {
   PrivacyDataService,
@@ -79,9 +80,13 @@ describe('PrivacyDataService', () => {
     ...overrides,
   });
 
+  // `find` is part of the contract the service relies on for the
+  // cross-platform fan-out (#461); a fake without it silently skips that
+  // branch instead of exercising it.
   const makeRepo = () =>
     ({
       findOne: jest.fn(),
+      find: jest.fn().mockResolvedValue([]),
       remove: jest.fn(),
       count: jest.fn(),
       delete: jest.fn(),
@@ -299,6 +304,59 @@ describe('PrivacyDataService', () => {
       });
     });
 
+    // Regression for #461: the cross-platform fan-out was previously guarded
+    // by `if (find)`, so a fake repo without `find` skipped it silently and no
+    // test covered the branch. Asserts the outcomes for a DISTINCT external id
+    // on another platform, which is what the fan-out exists to reach.
+    it('fans out to another platform: audits, cancels work, deletes verify intent and clears its distinct external id', async () => {
+      const mockMapping = { id: 1, userId: 42, platform: 'messenger' };
+      mockMappingRepo.findOne.mockResolvedValue(mockMapping);
+      mockMappingRepo.remove.mockResolvedValue(mockMapping);
+      // Same learner, linked on Discord under a different external id.
+      mockDiscordMappingRepo.find.mockResolvedValue([
+        {
+          externalUserId: 'discord-user-9',
+          userId: 42,
+          mappingGeneration: 'gen-7',
+        },
+      ]);
+      mockDiscordMappingRepo.delete.mockResolvedValue({ affected: 1 } as never);
+      const clearHistory = jest.fn().mockResolvedValue(undefined);
+
+      await service.delete('messenger', 'psid-123', { clearHistory });
+
+      expect(mockDiscordMappingRepo.find).toHaveBeenCalledWith({
+        where: { userId: 42 },
+      });
+
+      // Audit row is written for the OTHER platform, keyed by the hash of its
+      // own external id — not the messenger one.
+      expect(mockManagerQuery).toHaveBeenCalledWith(
+        expect.stringContaining('platform_link_audit_events'),
+        [
+          'discord',
+          createHash('sha256').update('discord-user-9').digest('hex'),
+          'gen-7',
+        ],
+      );
+
+      // Queued reminder work for that identity is cancelled.
+      expect(mockManagerQuery).toHaveBeenCalledWith(
+        expect.stringContaining('UPDATE study_reminder_jobs'),
+        ['discord', 'discord-user-9'],
+      );
+
+      // Pending verify intent on that platform is removed.
+      expect(mockManagerQuery).toHaveBeenCalledWith(
+        expect.stringContaining('discord_link_verify_records'),
+        ['discord-user-9'],
+      );
+
+      // Redis-side state is cleared for BOTH identities, not just the caller's.
+      expect(clearHistory).toHaveBeenCalledWith('psid-123');
+      expect(clearHistory).toHaveBeenCalledWith('discord-user-9');
+    });
+
     it('does not attempt web_activity deletion when mapping has no userId', async () => {
       const mockMapping = { id: 1, userId: undefined, platform: 'messenger' };
       mockMappingRepo.findOne.mockResolvedValue(mockMapping);
@@ -448,41 +506,68 @@ describe('PrivacyDataService', () => {
       });
     });
 
-    it('works for discord platform', async () => {
-      mockMappingRepo.findOne.mockResolvedValue(null);
-      mockLearnerRepo.findOne.mockResolvedValue(null);
-      mockReminderRepo.count.mockResolvedValue(0);
-      mockClaimRepo.count.mockResolvedValue(0);
-      mockReportRepo.count.mockResolvedValue(0);
-      mockLogRepo.count.mockResolvedValue(0);
+    // These two previously primed the messenger mapping mock and asserted
+    // only the echoed input arguments, so they passed even if export read the
+    // wrong platform's repository. Prime that platform's own repo and assert
+    // a value that can only have come from it.
+    it.each(['discord', 'zalo'] as const)(
+      'reads the %s mapping repository on export',
+      async (platform) => {
+        const platformRepo =
+          platform === 'discord' ? mockDiscordMappingRepo : mockZaloMappingRepo;
+        const externalUserId = `${platform}-123`;
+        const linkedAt = new Date('2026-07-04T00:00:00Z');
 
-      const discordService = new PrivacyDataService(
-        mockDataSource,
-        makeRegistry('discord'),
-      );
-      const result = await discordService.export('discord', 'discord-123');
+        // Only this platform's repo has a mapping; messenger's must not be read.
+        platformRepo.findOne.mockResolvedValue({
+          id: 1,
+          userId: 42,
+          platform,
+          externalUserId,
+          createdAt: linkedAt,
+        });
+        mockMappingRepo.findOne.mockResolvedValue(null);
+        mockLearnerRepo.findOne.mockResolvedValue({
+          targetScore: '6.5',
+          examDate: '2026-11-30',
+          fetchedAt: new Date('2026-07-01'),
+        });
+        mockReminderRepo.count.mockResolvedValue(2);
+        mockClaimRepo.count.mockResolvedValue(1);
+        mockReportRepo.count.mockResolvedValue(4);
+        mockLogRepo.count.mockResolvedValue(9);
 
-      expect(result.platform).toBe('discord');
-      expect(result.externalUserId).toBe('discord-123');
-    });
+        const platformService = new PrivacyDataService(
+          mockDataSource,
+          makeRegistry(platform),
+        );
+        const result = await platformService.export(platform, externalUserId);
 
-    it('works for zalo platform', async () => {
-      mockMappingRepo.findOne.mockResolvedValue(null);
-      mockLearnerRepo.findOne.mockResolvedValue(null);
-      mockReminderRepo.count.mockResolvedValue(0);
-      mockClaimRepo.count.mockResolvedValue(0);
-      mockReportRepo.count.mockResolvedValue(0);
-      mockLogRepo.count.mockResolvedValue(0);
+        // Queried its own repo, scoped to its own platform.
+        expect(platformRepo.findOne).toHaveBeenCalledWith({
+          where: { platform, externalUserId },
+        });
+        expect(mockMappingRepo.findOne).not.toHaveBeenCalled();
 
-      const zaloService = new PrivacyDataService(
-        mockDataSource,
-        makeRegistry('zalo'),
-      );
-      const result = await zaloService.export('zalo', 'zalo-123');
-
-      expect(result.platform).toBe('zalo');
-      expect(result.externalUserId).toBe('zalo-123');
-    });
+        // `linkedAt` can only come from the row that repo returned — the
+        // messenger mock returns null, so an assertion on it fails if export
+        // read the wrong repository.
+        expect(result).toEqual({
+          platform,
+          externalUserId,
+          linkedAt,
+          learnerProfile: {
+            targetScore: '6.5',
+            examDate: '2026-11-30',
+            fetchedAt: new Date('2026-07-01'),
+          },
+          studyReminderJobs: 2,
+          scheduledReportClaims: 1,
+          reportSendJobs: 4,
+          messageLogs: 9,
+        });
+      },
+    );
   });
 
   describe('getMappingRepo', () => {
