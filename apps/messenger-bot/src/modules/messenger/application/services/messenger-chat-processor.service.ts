@@ -47,6 +47,7 @@ import {
   PlatformChatHistoryService,
   readChatFlushRetrySettings,
 } from '@wispace/chat-agent';
+import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
 
 export interface ChatBatchInput {
   psid: string;
@@ -94,6 +95,7 @@ export class MessengerChatProcessorService {
     private readonly privacyService?: PrivacyDataService,
     @Inject(MESSENGER_REPOSITORY)
     private readonly mappingRepository?: MessengerMappingRepositoryPort,
+    private readonly displayNameCache?: RedisUserDisplayNameCache,
   ) {
     const retrySettings = readChatFlushRetrySettings(configService);
     this.retryEnabled = retrySettings.enabled;
@@ -534,6 +536,8 @@ export class MessengerChatProcessorService {
             clearHistory: (id) => this.historyService.clear(id),
             clearQueuedWork: (id) => this.clearQueuedWork(id),
             clearClarification: (id) => this.clearClarificationState(id),
+            clearUserCache: (userId) =>
+              this.displayNameCache?.del(userId) ?? Promise.resolve(),
           });
           resultMessage = result.deleted
             ? 'Đã ngắt kết nối tài khoản thành công.'
@@ -545,6 +549,8 @@ export class MessengerChatProcessorService {
             clearHistory: (id) => this.historyService.clear(id),
             clearQueuedWork: (id) => this.clearQueuedWork(id),
             clearClarification: (id) => this.clearClarificationState(id),
+            clearUserCache: (userId) =>
+              this.displayNameCache?.del(userId) ?? Promise.resolve(),
           });
           resultMessage = 'Đã xóa toàn bộ dữ liệu thành công.';
           break;

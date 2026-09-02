@@ -19,4 +19,3 @@ export {
   type RedisUserDisplayNameCacheOptions,
   type CachedUserDisplayName,
 } from './redis-user-display-name.cache';
-export { CrossPlatformRedisCleaner } from './cross-platform-redis-cleaner';

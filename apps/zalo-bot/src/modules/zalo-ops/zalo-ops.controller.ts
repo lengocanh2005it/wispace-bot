@@ -14,7 +14,6 @@ import {
   PlatformChatHistoryService,
   PlatformChatQueueService,
 } from '@wispace/chat-agent';
-import { CrossPlatformRedisCleaner } from '@wispace/bot-common/redis';
 
 class SyncStudyCalendarBody {
   @IsNumber()
@@ -39,7 +38,6 @@ export class ZaloOpsController extends PlatformOpsController {
     clarificationAgent: PlatformAgentService,
     historyService: PlatformChatHistoryService,
     queueService: PlatformChatQueueService,
-    redisCleaner: CrossPlatformRedisCleaner,
   ) {
     super({
       sendReports: (body?: SendReportsBody) =>
@@ -53,7 +51,7 @@ export class ZaloOpsController extends PlatformOpsController {
         }),
       unlinkUser: async (externalUserId) => {
         const result = await privacyService.unlink('zalo', externalUserId, {
-          clearHistory: (id) => redisCleaner.clean(id),
+          clearHistory: (id) => historyService.clear(id),
           clearQueuedWork: (id) => queueService.clear(id),
           clearClarification: (id) =>
             clarificationAgent.clearClarificationState(id),
@@ -62,7 +60,7 @@ export class ZaloOpsController extends PlatformOpsController {
       },
       deleteUser: async (externalUserId) => {
         await privacyService.delete('zalo', externalUserId, {
-          clearHistory: (id) => redisCleaner.clean(id),
+          clearHistory: (id) => historyService.clear(id),
           clearQueuedWork: (id) => queueService.clear(id),
           clearClarification: (id) =>
             clarificationAgent.clearClarificationState(id),

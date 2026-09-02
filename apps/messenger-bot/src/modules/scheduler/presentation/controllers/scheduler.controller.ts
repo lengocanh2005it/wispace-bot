@@ -21,8 +21,7 @@ import { PrivacyDataService } from '@wispace/database';
 import { MessengerAgentService } from '@messenger/modules/messenger/application/agent/messenger-agent.service';
 import { MessengerChatEnqueueService } from '@messenger/modules/messenger/application/services/messenger-chat-enqueue.service';
 import { PlatformChatHistoryService } from '@wispace/chat-agent';
-import type { RedisUserDisplayNameCache } from '@wispace/bot-common';
-import { CrossPlatformRedisCleaner } from '@wispace/bot-common/redis';
+import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
 
 class SyncStudyCalendarBody {
   @IsNumber()
@@ -73,7 +72,6 @@ export class SchedulerController {
     private readonly historyService: PlatformChatHistoryService,
     private readonly chatEnqueueService: MessengerChatEnqueueService,
     private readonly displayNameCache: RedisUserDisplayNameCache,
-    private readonly redisCleaner: CrossPlatformRedisCleaner,
   ) {}
 
   @Post('send-reports')
@@ -165,7 +163,7 @@ export class SchedulerController {
   @HttpCode(200)
   unlinkUser(@Body() body: PrivacyActionBody) {
     return this.privacyService.unlink('messenger', body.externalUserId, {
-      clearHistory: (id) => this.redisCleaner.clean(id),
+      clearHistory: (id) => this.historyService.clear(id),
       clearQueuedWork: (id) => this.chatEnqueueService.clear(id),
       clearClarification: (id) =>
         this.clarificationAgent.clearClarificationState(id),
@@ -177,7 +175,7 @@ export class SchedulerController {
   @HttpCode(200)
   deleteUser(@Body() body: PrivacyActionBody) {
     return this.privacyService.delete('messenger', body.externalUserId, {
-      clearHistory: (id) => this.redisCleaner.clean(id),
+      clearHistory: (id) => this.historyService.clear(id),
       clearQueuedWork: (id) => this.chatEnqueueService.clear(id),
       clearClarification: (id) =>
         this.clarificationAgent.clearClarificationState(id),

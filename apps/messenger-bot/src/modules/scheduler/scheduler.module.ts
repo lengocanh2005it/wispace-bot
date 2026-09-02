@@ -50,11 +50,7 @@ import { ReportSendJobRepository } from './infrastructure/persistence/report-sen
 import { LlmSafetyService } from './application/services/llm-safety.service';
 import { SchedulerController } from './presentation/controllers/scheduler.controller';
 import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
-import {
-  CrossPlatformRedisCleaner,
-  REDIS_CLIENT,
-  type RedisClientPort,
-} from '@wispace/bot-common/redis';
+import { DisplayNameModule } from '../display-name/display-name.module';
 
 @Module({
   imports: [
@@ -73,6 +69,7 @@ import {
     StudentReportModule,
     WispaceModule,
     StudyReminderModule,
+    DisplayNameModule,
   ],
   controllers: [SchedulerController],
   providers: [
@@ -155,12 +152,6 @@ import {
     OpsHealthCronService,
     DataQualityCronService,
     LlmSafetyService,
-    {
-      provide: CrossPlatformRedisCleaner,
-      useFactory: (redisClient: RedisClientPort) =>
-        new CrossPlatformRedisCleaner(redisClient, 'messenger'),
-      inject: [REDIS_CLIENT],
-    },
   ],
 })
 export class SchedulerModule {}

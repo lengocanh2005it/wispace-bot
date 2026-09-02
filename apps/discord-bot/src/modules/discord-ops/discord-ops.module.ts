@@ -1,10 +1,5 @@
 import { Module } from '@nestjs/common';
 import { BotCommonModule } from '@wispace/bot-common/guard';
-import {
-  CrossPlatformRedisCleaner,
-  REDIS_CLIENT,
-  type RedisClientPort,
-} from '@wispace/bot-common/redis';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { DiscordReportModule } from '../discord-chat/discord-report.module';
 import { DiscordChatModule } from '../discord-chat/discord-chat.module';
@@ -23,13 +18,5 @@ import { DiscordOpsController } from './discord-ops.controller';
     WispaceModule,
   ],
   controllers: [DiscordOpsController],
-  providers: [
-    {
-      provide: CrossPlatformRedisCleaner,
-      useFactory: (redisClient: RedisClientPort) =>
-        new CrossPlatformRedisCleaner(redisClient, 'discord'),
-      inject: [REDIS_CLIENT],
-    },
-  ],
 })
 export class DiscordOpsModule {}

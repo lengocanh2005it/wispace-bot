@@ -117,6 +117,18 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      # Real Redis for the privacy-erasure smoke below (#537) — history,
+      # queue buffer, and display-name cache erasure are only proven
+      # correct against the real key shapes/data structures, not a mock.
+      redis:
+        image: redis:8-alpine@sha256:becdda6c7f4b3fb42e42fd7f120bbf5c54c4caaaf16f26da24e4563d2c1f0576
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     env:
       DB_HOST: 127.0.0.1
       DB_PORT: '5432'
@@ -124,6 +136,8 @@ jobs:
       DB_USER: postgres
       DB_PASSWORD: postgres
       NODE_ENV: test
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: '6379'
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -149,7 +163,7 @@ jobs:
       - name: Run real TypeORM database bootstrap smoke test
         run: npm run database:bootstrap-smoke
 
-      - name: Run real PrivacyDataService cross-platform smoke test
+      - name: Run real PrivacyDataService cross-platform smoke test (Postgres + Redis)
         run: npm run database:privacy-smoke
 
   database-migration-compatibility:

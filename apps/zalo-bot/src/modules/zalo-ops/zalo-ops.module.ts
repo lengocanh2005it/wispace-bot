@@ -1,10 +1,5 @@
 import { Module } from '@nestjs/common';
 import { BotCommonModule } from '@wispace/bot-common/guard';
-import {
-  CrossPlatformRedisCleaner,
-  REDIS_CLIENT,
-  type RedisClientPort,
-} from '@wispace/bot-common/redis';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { ZaloReportModule } from '../zalo-chat/zalo-report.module';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
@@ -23,13 +18,5 @@ import { ZaloOpsController } from './zalo-ops.controller';
     ZaloWispaceModule,
   ],
   controllers: [ZaloOpsController],
-  providers: [
-    {
-      provide: CrossPlatformRedisCleaner,
-      useFactory: (redisClient: RedisClientPort) =>
-        new CrossPlatformRedisCleaner(redisClient, 'zalo'),
-      inject: [REDIS_CLIENT],
-    },
-  ],
 })
 export class ZaloOpsModule {}

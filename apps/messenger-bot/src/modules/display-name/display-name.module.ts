@@ -41,6 +41,8 @@ import { USER_DISPLAY_NAME_CACHE } from './domain/user-display-name-cache.port';
       useExisting: RedisUserDisplayNameCache,
     },
   ],
-  exports: [UserDisplayNameService],
+  // `RedisUserDisplayNameCache` is exported alongside the service so
+  // erasure flows (#537) can evict a learner's cache entry directly.
+  exports: [UserDisplayNameService, RedisUserDisplayNameCache],
 })
 export class DisplayNameModule {}

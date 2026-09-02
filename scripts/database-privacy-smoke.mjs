@@ -30,6 +30,20 @@ if (
   );
 }
 
+// Redis verification is opt-in via REDIS_HOST (loopback-only, same
+// discipline as DB_HOST) so the script still runs Postgres-only where no
+// Redis is available. CI wires a real Redis service so this is exercised
+// on every PR (#537).
+const redisEnabled = Boolean(process.env.REDIS_HOST?.trim());
+if (
+  redisEnabled &&
+  !['127.0.0.1', 'localhost', '::1'].includes(
+    process.env.REDIS_HOST.trim().toLowerCase(),
+  )
+) {
+  throw new Error('database privacy smoke requires a loopback REDIS_HOST');
+}
+
 const config = new ConfigService({ ...process.env });
 const messengerTypeOrm = require(
   resolve(
@@ -96,6 +110,168 @@ const scoped = appRegistries.messenger.scoped;
 const messengerLog = appRegistries.messenger.messageLog;
 const discordLog = appRegistries.discord.messageLog;
 const zaloLog = appRegistries.zalo.messageLog;
+
+// ── Redis erasure verification (#537) ───────────────────────────────────
+// Real key shapes each app actually configures (verified against
+// apps/*/src/**/*.module.ts — not restated as a guess): messenger keeps the
+// legacy unprefixed-by-platform shape, discord/zalo are platform-prefixed.
+const REDIS_PLATFORM_CONFIG = {
+  messenger: {
+    historyKeyPrefix: 'chat:history:',
+    queueOptions: { platform: 'messenger', legacyKeys: true },
+  },
+  discord: {
+    historyKeyPrefix: 'chat-history:discord:',
+    queueOptions: { platform: 'discord' },
+  },
+  zalo: {
+    historyKeyPrefix: 'chat-history:zalo:',
+    queueOptions: { platform: 'zalo' },
+  },
+};
+
+let redis;
+let RedisChatHistoryStore;
+let RedisChatQueueStore;
+let RedisUserDisplayNameCache;
+if (redisEnabled) {
+  ({ RedisChatHistoryStore } = require('@wispace/chat-history'));
+  ({ RedisChatQueueStore } = require('@wispace/chat-agent'));
+  ({ RedisUserDisplayNameCache } = require('@wispace/bot-common/redis'));
+  const IORedis = require('ioredis');
+  redis = new IORedis({
+    host: process.env.REDIS_HOST,
+    port: Number(process.env.REDIS_PORT ?? 6379),
+    lazyConnect: true,
+  });
+  await redis.connect();
+}
+
+/** Minimal RedisClientPort — the same 4-method surface the apps depend on. */
+function redisClientPort() {
+  return {
+    isEnabled: () => true,
+    isConfiguredEnabled: () => true,
+    ping: () => redis.ping(),
+    getNativeClient: () => redis,
+  };
+}
+
+function buildRedisStores(platform) {
+  const { historyKeyPrefix, queueOptions } = REDIS_PLATFORM_CONFIG[platform];
+  // RedisChatHistoryStore takes the native client directly (its own
+  // RedisChatHistoryClient shape), unlike the other two, which take a
+  // RedisClientPort and call getNativeClient() internally — matching how
+  // chat-history.store.resolver.ts wires it in production.
+  const historyStore = new RedisChatHistoryStore(redis, {
+    ttlSec: 3600,
+    maxMessages: 40,
+    keyPrefix: historyKeyPrefix,
+  });
+  const queueStore = new RedisChatQueueStore(redisClientPort(), config, {
+    ...queueOptions,
+    // Distinct from real traffic's default so a stuck smoke run never
+    // collides with the retry cron's own polling.
+    debounceMs: 5000,
+  });
+  const displayNameCache =
+    platform === 'messenger'
+      ? new RedisUserDisplayNameCache(redisClientPort(), config, {
+          platform: 'messenger',
+        })
+      : undefined;
+  return { historyStore, queueStore, displayNameCache };
+}
+
+/** Seeds the exact Redis state a real conversation leaves behind. */
+async function seedRedisState(stores, externalUserId, userId) {
+  await stores.historyStore.appendTurn(
+    externalUserId,
+    'smoke user turn',
+    'smoke assistant turn',
+  );
+  await stores.queueStore.appendChatBuffer({
+    externalUserId,
+    userText: 'smoke queued turn',
+    userId,
+    debounceMs: 5000,
+  });
+  await stores.displayNameCache?.set(userId, { displayName: 'Smoke Learner' });
+}
+
+/** Same formulas `RedisChatQueueStore`'s constructor uses for its keys. */
+function queueKeys(platform) {
+  const { legacyKeys } = REDIS_PLATFORM_CONFIG[platform].queueOptions;
+  const prefix = legacyKeys ? 'chat:queue:' : `chat:queue:${platform}:`;
+  return {
+    buffer: (id) => `${prefix}buffer:${id}`,
+    activeSet: legacyKeys ? 'chat:queue:active-psids' : `${prefix}active-users`,
+  };
+}
+
+async function assertRedisStatePresent(
+  platform,
+  stores,
+  externalUserId,
+  userId,
+  label,
+) {
+  const history = await stores.historyStore.getHistory(externalUserId);
+  assert.equal(
+    history.length > 0,
+    true,
+    `${label}: history missing before delete`,
+  );
+  const { buffer, activeSet } = queueKeys(platform);
+  assert.equal(
+    await redis.exists(buffer(externalUserId)),
+    1,
+    `${label}: queue buffer missing before delete`,
+  );
+  // Membership in the shared active-set, not just the buffer key, is what
+  // the queue worker actually reads to discover pending work — the
+  // regression this guards against wiped the whole set instead of one
+  // member, which the buffer key alone would not reveal (#537).
+  assert.equal(
+    await redis.sismember(activeSet, externalUserId),
+    1,
+    `${label}: active-set membership missing before delete`,
+  );
+  if (stores.displayNameCache) {
+    const cached = await stores.displayNameCache.get(userId);
+    assert.equal(
+      cached?.displayName,
+      'Smoke Learner',
+      `${label}: display-name cache missing before delete`,
+    );
+  }
+}
+
+async function assertRedisStateErased(
+  platform,
+  stores,
+  externalUserId,
+  userId,
+  label,
+) {
+  const history = await stores.historyStore.getHistory(externalUserId);
+  assert.equal(history.length, 0, `${label}: history survived delete`);
+  const { buffer, activeSet } = queueKeys(platform);
+  assert.equal(
+    await redis.exists(buffer(externalUserId)),
+    0,
+    `${label}: queue buffer survived delete`,
+  );
+  assert.equal(
+    await redis.sismember(activeSet, externalUserId),
+    0,
+    `${label}: active-set membership survived delete`,
+  );
+  if (stores.displayNameCache) {
+    const cached = await stores.displayNameCache.get(userId);
+    assert.equal(cached, null, `${label}: display-name cache survived delete`);
+  }
+}
 
 function options(builder, { dropSchema, synchronize }) {
   return {
@@ -378,9 +554,64 @@ async function runPlatform({ platform, builder, dropSchema, synchronize }) {
     await insertScopedRows(dataSource, platform, deleteId, deleteUserId);
     await insertMessageLog(dataSource, platform, deleteId, deleteUserId);
     await seedVerifyIntent(dataSource, crossIds, deleteUserId);
-    await service.delete(platform, deleteId);
+
+    let redisStores;
+    let cleanup;
+    let controlId;
+    let controlUserId;
+    if (redisEnabled) {
+      redisStores = buildRedisStores(platform);
+      await seedRedisState(redisStores, deleteId, deleteUserId);
+      await assertRedisStatePresent(
+        platform,
+        redisStores,
+        deleteId,
+        deleteUserId,
+        platform,
+      );
+
+      // A DIFFERENT learner's Redis state on the same platform. Erasing
+      // `deleteId` must never touch this — the regression this guards
+      // against deleted the platform's *entire* shared queue sets, not one
+      // member (#537).
+      controlId = `${platform}-privacy-control`;
+      controlUserId = deleteUserId + 500;
+      await seedRedisState(redisStores, controlId, controlUserId);
+      await assertRedisStatePresent(
+        platform,
+        redisStores,
+        controlId,
+        controlUserId,
+        `${platform} control`,
+      );
+
+      cleanup = {
+        clearHistory: (id) => redisStores.historyStore.clear(id),
+        clearQueuedWork: (id) => redisStores.queueStore.clearChatBuffer(id),
+        clearUserCache: (userId) => redisStores.displayNameCache?.del(userId),
+      };
+    }
+
+    await service.delete(platform, deleteId, cleanup);
     await assertDeleted(dataSource, platform, deleteId, deleteUserId);
     await assertCrossPlatformFanOut(dataSource, platform, crossIds);
+    if (redisEnabled) {
+      await assertRedisStateErased(
+        platform,
+        redisStores,
+        deleteId,
+        deleteUserId,
+        platform,
+      );
+      // The control identity's state must be exactly as seeded.
+      await assertRedisStatePresent(
+        platform,
+        redisStores,
+        controlId,
+        controlUserId,
+        `${platform} control (post-delete)`,
+      );
+    }
 
     const exportId = `${platform}-privacy-export`;
     const exportUserId = 7300 + seed;
@@ -417,3 +648,8 @@ await runPlatform({
   dropSchema: false,
   synchronize: false,
 });
+
+if (redisEnabled) {
+  await redis.quit();
+  console.log('redis erasure verified: history + queue buffer + display-name cache');
+}
