@@ -77,6 +77,17 @@ describe('createFailoverLlmProviderAdapter', () => {
     expect(result).not.toBeInstanceOf(FailoverLlmProviderAdapter);
   });
 
+  it('warns loudly when only one provider is configured', () => {
+    const warn = jest.fn();
+
+    createFailoverLlmProviderAdapter([entryA], ['openai'], { warn });
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringMatching(/only one LLM provider/i),
+    );
+  });
+
   it('returns FailoverLlmProviderAdapter when ≥2 providers configured', () => {
     const result = createFailoverLlmProviderAdapter(
       [entryA, entryB],

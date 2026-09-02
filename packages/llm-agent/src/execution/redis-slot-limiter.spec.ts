@@ -12,15 +12,25 @@ describe('acquireRedisSlot', () => {
 
   it('acquires slot and returns release function', async () => {
     const redis = makeRedis(1);
+    const metrics = { incrementCounter: jest.fn() };
     const release = await acquireRedisSlot(
       redis as never,
       'test',
       10,
       mockLogger,
+      { metrics },
     );
 
     expect(typeof release).toBe('function');
     expect(redis.eval).toHaveBeenCalledTimes(1);
+    expect(metrics.incrementCounter).toHaveBeenCalledWith(
+      'llm_concurrency_acquired',
+    );
+
+    await release();
+    expect(metrics.incrementCounter).toHaveBeenCalledWith(
+      'llm_concurrency_released',
+    );
   });
 
   it('passes leaseMs to Lua script', async () => {
@@ -110,8 +120,48 @@ describe('acquireRedisSlot', () => {
       reason: 'global_saturated',
     });
     expect(metrics.incrementCounter).toHaveBeenCalledWith(
+      'llm_concurrency_rejected',
+    );
+    expect(metrics.incrementCounter).toHaveBeenCalledWith(
       'llm_admission_rejected_total',
       { reason: 'global_saturated' },
+    );
+  });
+
+  it('records stale and failed releases as lifecycle outcomes', async () => {
+    const staleRedis = {
+      eval: jest.fn().mockResolvedValueOnce(1).mockResolvedValueOnce(0),
+    };
+    const staleMetrics = { incrementCounter: jest.fn() };
+    const staleRelease = await acquireRedisSlot(
+      staleRedis as never,
+      'test',
+      10,
+      mockLogger,
+      { metrics: staleMetrics },
+    );
+    await staleRelease();
+    expect(staleMetrics.incrementCounter).toHaveBeenCalledWith(
+      'llm_concurrency_stale_release',
+    );
+
+    const failedRedis = {
+      eval: jest
+        .fn()
+        .mockResolvedValueOnce(1)
+        .mockRejectedValueOnce(new Error('release down')),
+    };
+    const failedMetrics = { incrementCounter: jest.fn() };
+    const failedRelease = await acquireRedisSlot(
+      failedRedis as never,
+      'test',
+      10,
+      mockLogger,
+      { metrics: failedMetrics },
+    );
+    await failedRelease();
+    expect(failedMetrics.incrementCounter).toHaveBeenCalledWith(
+      'llm_concurrency_release_error',
     );
   });
 

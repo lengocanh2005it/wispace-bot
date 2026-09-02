@@ -132,6 +132,7 @@ export interface FailoverConfig {
  * Every provider in the requested order must be known and configured.
  * A single provider stays direct unless failover telemetry or a retry budget is
  * requested; those options need the shared wrapper even without a fallback.
+ * A warning is emitted when only one provider is configured.
  */
 export function createFailoverLlmProviderAdapter(
   entries: LlmProviderEntryConfig[],
@@ -158,6 +159,11 @@ export function createFailoverLlmProviderAdapter(
 
   if (orderedAdapters.length === 0) {
     throw new Error('No LLM provider configured in failover order');
+  }
+  if (orderedAdapters.length === 1) {
+    logger?.warn(
+      `Only one LLM provider configured (${orderedAdapters[0].providerName}); failover redundancy is unavailable`,
+    );
   }
   const needsFailoverWrapper = Boolean(
     failoverConfig?.maxAttempts !== undefined ||

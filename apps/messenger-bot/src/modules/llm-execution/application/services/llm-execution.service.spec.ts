@@ -7,6 +7,7 @@ const noopMetrics = {
   incLlmAdmissionRejected: jest.fn(),
   observeLlmAdmissionWait: jest.fn(),
   setLlmAdmissionQueueDepth: jest.fn(),
+  setLlmAdmissionDrainLag: jest.fn(),
 } as unknown as BotMetricsService;
 
 const mockAdapter = {
@@ -271,6 +272,7 @@ describe('LlmExecutionService', () => {
         incLlmAdmissionRejected: jest.fn(),
         observeLlmAdmissionWait: jest.fn(),
         setLlmAdmissionQueueDepth: jest.fn(),
+        setLlmAdmissionDrainLag: jest.fn(),
       } as unknown as BotMetricsService;
       const service = new LlmExecutionService(config, metrics, mockAdapter);
 
@@ -298,6 +300,7 @@ describe('LlmExecutionService', () => {
         incLlmAdmissionRejected: jest.fn(),
         observeLlmAdmissionWait: jest.fn(),
         setLlmAdmissionQueueDepth: jest.fn(),
+        setLlmAdmissionDrainLag: jest.fn(),
       } as unknown as BotMetricsService;
       const service = new LlmExecutionService(config, metrics, mockAdapter);
 
@@ -324,6 +327,7 @@ describe('LlmExecutionService', () => {
         incLlmAdmissionRejected: jest.fn(),
         observeLlmAdmissionWait: jest.fn(),
         setLlmAdmissionQueueDepth: jest.fn(),
+        setLlmAdmissionDrainLag: jest.fn(),
       } as unknown as BotMetricsService;
       const service = new LlmExecutionService(config, metrics, mockAdapter);
       let attempts = 0;

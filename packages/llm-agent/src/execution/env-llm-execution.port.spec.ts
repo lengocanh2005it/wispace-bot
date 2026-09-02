@@ -1,9 +1,15 @@
 import type { LlmProviderAdapter } from '../provider/llm-provider.adapter';
+import { createLlmProviderAdapterFromEnv } from '../provider/from-env.factory';
+import { OpenAiAdapter } from '../provider/openai/openai-adapter';
+import type { LlmJsonRequest } from '../provider/types';
+import { LlmAllProvidersExhaustedError } from '../provider/failover/failover.errors';
 import { LlmOverloadError } from './bounded-admission';
 import {
   createEnvLlmExecutionPort,
+  type LlmExecutionPort,
   type EnvLlmExecutionConfig,
 } from './env-llm-execution.port';
+import { LlmProviderCircuitOpenError } from './circuit-error';
 
 const DEFAULT_CONFIG: EnvLlmExecutionConfig = {
   enabled: true,
@@ -21,6 +27,31 @@ const DEFAULT_CONFIG: EnvLlmExecutionConfig = {
 };
 
 const noopLogger = { warn: jest.fn() };
+
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
+function makeJsonRequest(signal?: AbortSignal): LlmJsonRequest {
+  return {
+    feature: 'FREE_FORM_CHAT',
+    systemPrompt: 'test',
+    userContent: 'hello',
+    ...(signal ? { signal } : {}),
+  };
+}
+
+function makeEnvExecutionPort(adapter: LlmProviderAdapter): LlmExecutionPort {
+  return createEnvLlmExecutionPort(
+    {
+      ...DEFAULT_CONFIG,
+      maxAttempts: 1,
+      requestTimeoutMs: 1_000,
+    },
+    adapter,
+    noopLogger,
+  );
+}
 
 function makeAdapter(): LlmProviderAdapter {
   return {
@@ -248,7 +279,14 @@ describe('createEnvLlmExecutionPort', () => {
   it('emits low-cardinality rejection reasons and admission wait metrics (#389)', async () => {
     const incrementCounter = jest.fn();
     const observeWaitSeconds = jest.fn();
-    const metrics = { incrementCounter, observeWaitSeconds };
+    const observeQueueDepth = jest.fn();
+    const observeQueueDrainLag = jest.fn();
+    const metrics = {
+      incrementCounter,
+      observeWaitSeconds,
+      observeQueueDepth,
+      observeQueueDrainLag,
+    };
     const port = createEnvLlmExecutionPort(
       {
         ...DEFAULT_CONFIG,
@@ -271,6 +309,9 @@ describe('createEnvLlmExecutionPort', () => {
     void port
       .run(() => Promise.resolve('bg'), { feature: 'STUDENT_REPORT' })
       .catch(() => undefined);
+
+    expect(observeQueueDepth).toHaveBeenCalledWith(1);
+    expect(observeQueueDrainLag).toHaveBeenCalled();
 
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(incrementCounter).toHaveBeenCalledWith(
@@ -424,6 +465,87 @@ describe('createEnvLlmExecutionPort', () => {
       state: 'open',
     });
     expect(calls).toHaveBeenCalledTimes(3);
+  });
+
+  describe('provider failover integration', () => {
+    const env: Record<string, string> = {
+      LLM_PROVIDER_FAILOVER_ORDER: 'openai,openrouter',
+      OPENAI_API_KEY: 'primary-key',
+      OPENAI_MODEL: 'gpt-primary',
+      OPENROUTER_API_KEY: 'secondary-key',
+      OPENROUTER_MODEL: 'openrouter/secondary',
+      LLM_OPENAI_RETRY_MAX_ATTEMPTS: '1',
+      LLM_FAILOVER_COOLDOWN_SHORT_MS: '1',
+    };
+
+    it('moves to the configured secondary through the execution port', async () => {
+      const adapter = createLlmProviderAdapterFromEnv((key) => env[key], {
+        maxAttempts: 1,
+      });
+      const providerAttempts: string[] = [];
+
+      jest
+        .spyOn(OpenAiAdapter.prototype, 'generateJson')
+        .mockImplementation(function (this: OpenAiAdapter, request) {
+          providerAttempts.push(this.providerName);
+          if (this.providerName === 'openai') {
+            return Promise.reject(
+              Object.assign(new Error('primary unavailable'), { status: 503 }),
+            );
+          }
+          return Promise.resolve({
+            content: '{"ok":true}',
+            metadata: {
+              provider: this.providerName,
+              model: request.model ?? this.getDefaultModel(),
+            },
+          });
+        });
+
+      const execution = makeEnvExecutionPort(adapter);
+      const result = await execution.run(
+        (signal) => adapter.generateJson(makeJsonRequest(signal)),
+        { feature: 'FREE_FORM_CHAT' },
+      );
+
+      expect(providerAttempts).toEqual(['openai', 'openrouter']);
+      expect(result.metadata.provider).toBe('openrouter');
+      expect(result.metadata.model).toBe('openrouter/secondary');
+    });
+
+    it('opens the execution circuit after the failover chain is exhausted', async () => {
+      const adapter = createLlmProviderAdapterFromEnv((key) => env[key], {
+        maxAttempts: 1,
+      });
+      const providerAttempts: string[] = [];
+
+      jest
+        .spyOn(OpenAiAdapter.prototype, 'generateJson')
+        .mockImplementation(function (this: OpenAiAdapter) {
+          providerAttempts.push(this.providerName);
+          return Promise.reject(
+            Object.assign(new Error('provider unavailable'), { status: 503 }),
+          );
+        });
+
+      const execution = makeEnvExecutionPort(adapter);
+      const run = (): Promise<unknown> =>
+        execution.run(
+          (signal) => adapter.generateJson(makeJsonRequest(signal)),
+          { feature: 'FREE_FORM_CHAT' },
+        );
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        await expect(run()).rejects.toBeInstanceOf(
+          LlmAllProvidersExhaustedError,
+        );
+      }
+
+      const attemptsBeforeCircuitOpen = providerAttempts.length;
+      await expect(run()).rejects.toBeInstanceOf(LlmProviderCircuitOpenError);
+      expect(providerAttempts).toHaveLength(attemptsBeforeCircuitOpen);
+      expect(attemptsBeforeCircuitOpen).toBeGreaterThanOrEqual(3);
+    });
   });
 
   it('acquires a Redis-distributed slot when enabled and releases after', async () => {

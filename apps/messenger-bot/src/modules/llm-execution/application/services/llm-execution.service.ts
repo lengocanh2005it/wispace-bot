@@ -128,22 +128,24 @@ export class LlmExecutionService {
     const startedAtMs = Date.now();
     let ticket: AdmissionTicket;
     try {
-      ticket = await this.queue.acquire({
+      const admission = this.queue.acquire({
         signal,
         waitBudgetMs: admissionWaitBudgetMs(
           this.budgets,
           executionContext.feature,
         ),
       });
+      this.observeQueueState();
+      ticket = await admission;
     } catch (error) {
       if (error instanceof LlmOverloadError) {
         this.metrics.incLlmAdmissionRejected(error.reason);
-        this.metrics.setLlmAdmissionQueueDepth(this.queue.waitingCount);
       }
+      this.observeQueueState();
       throw error;
     }
     this.metrics.observeLlmAdmissionWait((Date.now() - startedAtMs) / 1000);
-    this.metrics.setLlmAdmissionQueueDepth(this.queue.waitingCount);
+    this.observeQueueState();
 
     let releaseGlobal: (() => Promise<void>) | undefined;
     try {
@@ -177,8 +179,13 @@ export class LlmExecutionService {
     } finally {
       await releaseGlobal?.();
       ticket.release();
-      this.metrics.setLlmAdmissionQueueDepth(this.queue.waitingCount);
+      this.observeQueueState();
     }
+  }
+
+  private observeQueueState(): void {
+    this.metrics.setLlmAdmissionQueueDepth(this.queue.waitingCount);
+    this.metrics.setLlmAdmissionDrainLag(this.queue.oldestWaitingAgeMs / 1000);
   }
 
   private async runWithRetry<T>(
