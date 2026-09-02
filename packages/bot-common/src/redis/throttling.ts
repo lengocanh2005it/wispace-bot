@@ -56,6 +56,24 @@ export function WebhookThrottle(): MethodDecorator & ClassDecorator {
   });
 }
 
+/**
+ * Read nginx X-Real-IP (forged-safe — nginx overwrites it) instead of
+ * enabling Express trust proxy, which would change req.ip semantics for
+ * every middleware in the app. X-Forwarded-For is deliberately ignored
+ * because nginx appends to it, letting clients forge the leftmost entry.
+ * Falls back to the TCP connection address (fail closed). Exported for
+ * direct unit testing — inline into the lambda once a second call site
+ * appears.
+ *
+ * Ponytail: 3 lines of logic, no subclass, no trust proxy.
+ */
+export function throttleTracker(req: Record<string, any>): string {
+  return req.headers?.['x-real-ip'] || req.socket?.remoteAddress;
+}
+
+// AC5: Webhook routes (Discord/Zalo) apply @WebhookThrottle() which
+// overrides the global throttle with its own limit (120 req/60s).
+// The getTracker change here does NOT affect webhook redelivery.
 export function createBotThrottlerOptions(
   configService: ConfigService,
   redisService: RedisService,
@@ -64,8 +82,12 @@ export function createBotThrottlerOptions(
     configService.get<string>(key),
   );
 
+  // AC6: 20 req/min was sized for a single global bucket shared by all
+  // clients. Now genuinely per-client, revisit if legitimate OAuth
+  // linking bursts (e.g. start-of-term class onboardings) hit the cap.
   return {
     throttlers: [{ ttl: config.ttlMs, limit: config.limit }],
     storage: new RedisThrottlerStorage(redisService),
+    getTracker: (req) => throttleTracker(req),
   };
 }
