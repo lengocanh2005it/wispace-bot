@@ -2,7 +2,22 @@ import { DataSource, ObjectLiteral, Repository } from 'typeorm';
 import {
   PrivacyDataService,
   type ChatHistoryClearer,
+  type PrivacyEntityRegistry,
 } from './privacy-data.service';
+
+class MessengerMappingTarget {}
+class DiscordMappingTarget {}
+class ZaloMappingTarget {}
+class LearnerProfileTarget {}
+class StudyReminderTarget {}
+class ScheduledReportClaimTarget {}
+class ReportSendJobTarget {}
+class ChatDailyUsageTarget {}
+class LlmUsageEventTarget {}
+class ChatIdempotencyTarget {}
+class WebActivityTarget {}
+class NotificationPreferenceTarget {}
+class MessageLogTarget {}
 
 describe('PrivacyDataService', () => {
   let service: PrivacyDataService;
@@ -22,6 +37,47 @@ describe('PrivacyDataService', () => {
   let mockWebActivityRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockZaloMappingRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockManagerQuery: jest.Mock;
+
+  const targets = {
+    messenger: MessengerMappingTarget,
+    discord: DiscordMappingTarget,
+    zalo: ZaloMappingTarget,
+    learnerProfile: LearnerProfileTarget,
+    studyReminderJob: StudyReminderTarget,
+    scheduledReportClaim: ScheduledReportClaimTarget,
+    reportSendJob: ReportSendJobTarget,
+    chatDailyUsage: ChatDailyUsageTarget,
+    llmUsageEvent: LlmUsageEventTarget,
+    chatIdempotency: ChatIdempotencyTarget,
+    webActivity: WebActivityTarget,
+    notificationPreference: NotificationPreferenceTarget,
+    messageLog: MessageLogTarget,
+  } as const;
+
+  const makeRegistry = (
+    platform: PrivacyEntityRegistry['platform'] = 'messenger',
+    overrides: Partial<PrivacyEntityRegistry> = {},
+  ): PrivacyEntityRegistry => ({
+    platform,
+    mappings: {
+      messenger: targets.messenger,
+      discord: targets.discord,
+      zalo: targets.zalo,
+    },
+    scoped: {
+      learnerProfile: targets.learnerProfile,
+      studyReminderJob: targets.studyReminderJob,
+      scheduledReportClaim: targets.scheduledReportClaim,
+      reportSendJob: targets.reportSendJob,
+      chatDailyUsage: targets.chatDailyUsage,
+      llmUsageEvent: targets.llmUsageEvent,
+      chatIdempotency: targets.chatIdempotency,
+      webActivity: targets.webActivity,
+      notificationPreference: targets.notificationPreference,
+    },
+    messageLog: targets.messageLog,
+    ...overrides,
+  });
 
   const makeRepo = () =>
     ({
@@ -47,71 +103,64 @@ describe('PrivacyDataService', () => {
     mockZaloMappingRepo = makeRepo();
 
     mockManagerQuery = jest.fn().mockResolvedValue([]);
+    const repoByTarget = new Map<unknown, Repository<ObjectLiteral>>([
+      [targets.messenger, mockMappingRepo],
+      [targets.discord, mockDiscordMappingRepo],
+      [targets.zalo, mockZaloMappingRepo],
+      [targets.learnerProfile, mockLearnerRepo],
+      [targets.studyReminderJob, mockReminderRepo],
+      [targets.scheduledReportClaim, mockClaimRepo],
+      [targets.reportSendJob, mockReportRepo],
+      [targets.chatDailyUsage, mockDailyUsageRepo],
+      [targets.llmUsageEvent, mockLlmUsageRepo],
+      [targets.chatIdempotency, mockIdempotencyRepo],
+      [targets.webActivity, mockWebActivityRepo],
+      [targets.notificationPreference, mockNotificationPrefRepo],
+      [targets.messageLog, mockLogRepo],
+    ]);
     mockManager = {
       query: mockManagerQuery,
-      getRepository: jest.fn().mockImplementation((entityName: string) => {
-        switch (entityName) {
-          case 'UserPlatformMapping':
-            return mockMappingRepo;
-          case 'DiscordAccountLink':
-            return mockDiscordMappingRepo;
-          case 'ZaloAccountLink':
-            return mockZaloMappingRepo;
-          case 'LearnerProfile':
-            return mockLearnerRepo;
-          case 'StudyReminderJob':
-            return mockReminderRepo;
-          case 'ScheduledReportClaim':
-            return mockClaimRepo;
-          case 'ReportSendJob':
-            return mockReportRepo;
-          case 'ChatDailyUsage':
-            return mockDailyUsageRepo;
-          case 'LlmUsageEvent':
-            return mockLlmUsageRepo;
-          case 'ChatIdempotency':
-            return mockIdempotencyRepo;
-          case 'UserNotificationPreference':
-            return mockNotificationPrefRepo;
-          case 'WebActivity':
-            return mockWebActivityRepo;
-          default:
-            throw new Error(`Unknown entity: ${entityName}`);
-        }
+      getRepository: jest.fn().mockImplementation((target: unknown) => {
+        const repo = repoByTarget.get(target);
+        if (!repo) throw new Error(`Unknown entity target: ${String(target)}`);
+        return repo;
       }),
     };
 
     mockDataSource = {
-      getRepository: jest.fn().mockImplementation((entityName: string) => {
-        switch (entityName) {
-          case 'UserPlatformMapping':
-          case 'DiscordAccountLink':
-          case 'ZaloAccountLink':
-            return mockMappingRepo;
-          case 'LearnerProfile':
-            return mockLearnerRepo;
-          case 'StudyReminderJob':
-            return mockReminderRepo;
-          case 'ScheduledReportClaim':
-            return mockClaimRepo;
-          case 'ReportSendJob':
-            return mockReportRepo;
-          case 'MessageLog':
-            return mockLogRepo;
-          case 'ChatDailyUsage':
-            return mockDailyUsageRepo;
-          case 'LlmUsageEvent':
-            return mockLlmUsageRepo;
-          case 'ChatIdempotency':
-            return mockIdempotencyRepo;
-          default:
-            throw new Error(`Unknown entity: ${entityName}`);
-        }
+      hasMetadata: jest.fn().mockReturnValue(true),
+      getRepository: jest.fn().mockImplementation((target: unknown) => {
+        const repo = repoByTarget.get(target);
+        if (!repo) throw new Error(`Unknown entity target: ${String(target)}`);
+        return repo;
       }),
       transaction: jest.fn().mockImplementation(async (fn) => fn(mockManager)),
     } as unknown as jest.Mocked<DataSource>;
 
-    service = new PrivacyDataService(mockDataSource);
+    service = new PrivacyDataService(mockDataSource, makeRegistry());
+  });
+
+  describe('constructor', () => {
+    it('fails fast with every required entity missing from TypeORM metadata', () => {
+      mockDataSource.hasMetadata.mockImplementation(
+        (target) => target !== targets.webActivity,
+      );
+
+      expect(
+        () => new PrivacyDataService(mockDataSource, makeRegistry()),
+      ).toThrow(/scoped\.webActivity.*WebActivityTarget/);
+    });
+
+    it('fails fast when a scoped target is omitted from the registry', () => {
+      const registry = makeRegistry();
+      delete (registry.scoped as Partial<PrivacyEntityRegistry['scoped']>)[
+        'webActivity'
+      ];
+
+      expect(() => new PrivacyDataService(mockDataSource, registry)).toThrow(
+        /scoped\.webActivity \(missing\)/,
+      );
+    });
   });
 
   describe('unlink', () => {
@@ -146,14 +195,14 @@ describe('PrivacyDataService', () => {
         externalUserId: 'discord-1',
         mappingGeneration: '7',
       };
-      mockMappingRepo.findOne.mockResolvedValue(mockMapping);
+      mockDiscordMappingRepo.findOne.mockResolvedValue(mockMapping);
       const historyClearer: ChatHistoryClearer = {
         clear: jest.fn().mockResolvedValue(undefined),
       };
-      const serviceWithCleanup = new PrivacyDataService(
-        mockDataSource,
-        historyClearer,
-      );
+      const serviceWithCleanup = new PrivacyDataService(mockDataSource, {
+        ...makeRegistry('discord'),
+        chatHistoryClearer: historyClearer,
+      });
 
       await serviceWithCleanup.unlink('discord', 'discord-1');
 
@@ -184,7 +233,7 @@ describe('PrivacyDataService', () => {
     });
 
     it('does not advance an existing local-unlink tombstone', async () => {
-      mockMappingRepo.findOne.mockResolvedValue({
+      mockDiscordMappingRepo.findOne.mockResolvedValue({
         id: 1,
         userId: 42,
         platform: 'discord',
@@ -193,7 +242,13 @@ describe('PrivacyDataService', () => {
         mappingGeneration: '8',
       });
 
-      await expect(service.unlink('discord', 'discord-1')).resolves.toEqual({
+      const discordService = new PrivacyDataService(
+        mockDataSource,
+        makeRegistry('discord'),
+      );
+      await expect(
+        discordService.unlink('discord', 'discord-1'),
+      ).resolves.toEqual({
         deleted: false,
         userId: 42,
       });
@@ -297,10 +352,10 @@ describe('PrivacyDataService', () => {
       const mockClearer: jest.Mocked<ChatHistoryClearer> = {
         clear: jest.fn().mockResolvedValue(undefined),
       };
-      const serviceWithRedis = new PrivacyDataService(
-        mockDataSource,
-        mockClearer,
-      );
+      const serviceWithRedis = new PrivacyDataService(mockDataSource, {
+        ...makeRegistry(),
+        chatHistoryClearer: mockClearer,
+      });
 
       mockMappingRepo.findOne.mockResolvedValue(null);
       mockLearnerRepo.delete.mockResolvedValue({ affected: 0 } as never);
@@ -401,7 +456,11 @@ describe('PrivacyDataService', () => {
       mockReportRepo.count.mockResolvedValue(0);
       mockLogRepo.count.mockResolvedValue(0);
 
-      const result = await service.export('discord', 'discord-123');
+      const discordService = new PrivacyDataService(
+        mockDataSource,
+        makeRegistry('discord'),
+      );
+      const result = await discordService.export('discord', 'discord-123');
 
       expect(result.platform).toBe('discord');
       expect(result.externalUserId).toBe('discord-123');
@@ -415,7 +474,11 @@ describe('PrivacyDataService', () => {
       mockReportRepo.count.mockResolvedValue(0);
       mockLogRepo.count.mockResolvedValue(0);
 
-      const result = await service.export('zalo', 'zalo-123');
+      const zaloService = new PrivacyDataService(
+        mockDataSource,
+        makeRegistry('zalo'),
+      );
+      const result = await zaloService.export('zalo', 'zalo-123');
 
       expect(result.platform).toBe('zalo');
       expect(result.externalUserId).toBe('zalo-123');

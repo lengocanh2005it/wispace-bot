@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import { ZaloOaTokenEntity } from './entities/zalo-oa-token.entity';
 import { ZaloOauthStateEntity } from './entities/zalo-oauth-state.entity';
 import { ZaloAccountLinkEntity } from './entities/zalo-account-link.entity';
@@ -22,6 +23,14 @@ import {
   NotificationPreferenceService,
   WebActivityService,
   UserNotificationPreferenceEntity,
+  PrivacyDataService,
+  UserPlatformMappingEntity,
+  DiscordAccountLinkEntity,
+  ZaloAccountLinkEntity as CanonicalZaloAccountLinkEntity,
+  LearnerProfileEntity,
+  ScheduledReportClaimEntity,
+  ReportSendJobEntity,
+  WebActivityEntity,
 } from '@wispace/database';
 
 export function buildTypeOrmOptions(config: ConfigService) {
@@ -29,7 +38,6 @@ export function buildTypeOrmOptions(config: ConfigService) {
     ...SHARED_ENTITIES,
     ZaloOaTokenEntity,
     ZaloOauthStateEntity,
-    ZaloAccountLinkEntity,
     ZaloMessageLogEntity,
     ZaloLinkVerifyRecordEntity,
     ChatDailyUsageEntity,
@@ -69,12 +77,38 @@ export function buildTypeOrmOptions(config: ConfigService) {
     CanonicalPlatformService,
     NotificationPreferenceService,
     WebActivityService,
+    {
+      provide: PrivacyDataService,
+      useFactory: (dataSource: DataSource) =>
+        new PrivacyDataService(dataSource, {
+          platform: 'zalo',
+          mappings: {
+            messenger: UserPlatformMappingEntity,
+            discord: DiscordAccountLinkEntity,
+            zalo: CanonicalZaloAccountLinkEntity,
+          },
+          scoped: {
+            learnerProfile: LearnerProfileEntity,
+            studyReminderJob: StudyReminderJobEntity,
+            scheduledReportClaim: ScheduledReportClaimEntity,
+            reportSendJob: ReportSendJobEntity,
+            chatDailyUsage: ChatDailyUsageEntity,
+            llmUsageEvent: LlmUsageEventEntity,
+            chatIdempotency: ChatIdempotencyEntity,
+            webActivity: WebActivityEntity,
+            notificationPreference: UserNotificationPreferenceEntity,
+          },
+          messageLog: ZaloMessageLogEntity,
+        }),
+      inject: [DataSource],
+    },
   ],
   exports: [
     TypeOrmModule,
     CanonicalPlatformService,
     NotificationPreferenceService,
     WebActivityService,
+    PrivacyDataService,
   ],
 })
 export class DatabaseModule {}

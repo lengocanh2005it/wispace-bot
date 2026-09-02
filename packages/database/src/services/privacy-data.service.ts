@@ -1,7 +1,13 @@
 import { Logger } from '@nestjs/common';
-import type { DataSource, ObjectLiteral, Repository } from 'typeorm';
+import type {
+  DataSource,
+  EntityTarget,
+  ObjectLiteral,
+  Repository,
+} from 'typeorm';
 import { createHash } from 'crypto';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import type { Platform } from '@wispace/contracts';
 
 /**
  * Minimal interface for Redis chat history cleanup during erasure.
@@ -15,6 +21,30 @@ export interface PrivacyStateCleanup {
   clearHistory?: (externalUserId: string) => Promise<void>;
   clearQueuedWork?: (externalUserId: string) => Promise<void>;
   clearClarification?: (externalUserId: string) => Promise<void>;
+}
+
+/** Entity classes/schemas only; string targets would recreate implicit lookup. */
+export type PrivacyEntityTarget = Exclude<EntityTarget<ObjectLiteral>, string>;
+
+export interface PrivacyScopedEntities {
+  learnerProfile: PrivacyEntityTarget;
+  studyReminderJob: PrivacyEntityTarget;
+  scheduledReportClaim: PrivacyEntityTarget;
+  reportSendJob: PrivacyEntityTarget;
+  chatDailyUsage: PrivacyEntityTarget;
+  llmUsageEvent: PrivacyEntityTarget;
+  chatIdempotency: PrivacyEntityTarget;
+  webActivity: PrivacyEntityTarget;
+  notificationPreference: PrivacyEntityTarget;
+}
+
+/** Explicit TypeORM targets required by privacy operations in one app. */
+export interface PrivacyEntityRegistry {
+  platform: Platform;
+  mappings: Record<Platform, PrivacyEntityTarget>;
+  scoped: PrivacyScopedEntities;
+  messageLog: PrivacyEntityTarget;
+  chatHistoryClearer?: ChatHistoryClearer;
 }
 
 /**
@@ -69,60 +99,111 @@ export interface PrivacyExportData {
   messageLogs: number;
 }
 
-/**
- * Entity name constants for TypeORM repository lookup.
- * These match the @Entity() decorator names in each entity file.
- */
-const ENTITY_NAMES = {
-  messenger: 'UserPlatformMapping',
-  discord: 'DiscordAccountLink',
-  zalo: 'ZaloAccountLink',
-  learnerProfile: 'LearnerProfile',
-  studyReminderJob: 'StudyReminderJob',
-  scheduledReportClaim: 'ScheduledReportClaim',
-  reportSendJob: 'ReportSendJob',
-  messageLog: 'MessageLog',
-  chatDailyUsage: 'ChatDailyUsage',
-  llmUsageEvent: 'LlmUsageEvent',
-  chatIdempotency: 'ChatIdempotency',
-  webActivity: 'WebActivity',
-  notificationPreference: 'UserNotificationPreference',
-} as const;
+const PLATFORMS = [
+  'messenger',
+  'discord',
+  'zalo',
+] as const satisfies readonly Platform[];
 
-const MAPPING_TABLES: Record<string, string> = {
+const MAPPING_TABLES: Record<Platform, string> = {
   messenger: 'user_platform_mappings',
   discord: 'discord_account_links',
   zalo: 'zalo_account_links',
 };
 
-const VERIFY_INTENT_TABLES: Record<string, string> = {
+const VERIFY_INTENT_TABLES: Record<Platform, string> = {
   messenger: 'messenger_link_verify_records',
   discord: 'discord_link_verify_records',
   zalo: 'zalo_link_verify_records',
 };
 
+const SCOPED_ENTITY_NAMES = [
+  'learnerProfile',
+  'studyReminderJob',
+  'scheduledReportClaim',
+  'reportSendJob',
+  'chatDailyUsage',
+  'llmUsageEvent',
+  'chatIdempotency',
+  'webActivity',
+  'notificationPreference',
+] as const satisfies readonly (keyof PrivacyScopedEntities)[];
+
 export class PrivacyDataService {
   private readonly logger = new Logger(PrivacyDataService.name);
-  private readonly mappingRepos: Map<string, Repository<ObjectLiteral>>;
+  private readonly mappingRepos = new Map<
+    Platform,
+    Repository<ObjectLiteral>
+  >();
+  private readonly chatHistoryClearer?: ChatHistoryClearer;
 
   constructor(
     private readonly dataSource: DataSource,
-    private readonly chatHistoryClearer?: ChatHistoryClearer,
+    private readonly registry: PrivacyEntityRegistry,
   ) {
-    this.mappingRepos = new Map();
+    if (!registry) {
+      throw new Error(
+        'PrivacyDataService requires an explicit entity registry',
+      );
+    }
+    this.chatHistoryClearer = registry.chatHistoryClearer;
+    this.assertEntityMetadata();
   }
 
   private getMappingRepo(platform: string): Repository<ObjectLiteral> {
-    if (this.mappingRepos.has(platform)) {
-      return this.mappingRepos.get(platform)!;
-    }
-    const entityName = ENTITY_NAMES[platform as keyof typeof ENTITY_NAMES];
-    if (!entityName) {
+    const target = this.registry.mappings[platform as Platform];
+    if (!target) throw new Error(`Unknown platform: ${platform}`);
+    const typedPlatform = platform as Platform;
+    const cached = this.mappingRepos.get(typedPlatform);
+    if (cached) return cached;
+    const repo = this.dataSource.getRepository(target);
+    this.mappingRepos.set(typedPlatform, repo);
+    return repo;
+  }
+
+  private assertCurrentPlatform(platform: string): Platform {
+    if (!(PLATFORMS as readonly string[]).includes(platform)) {
       throw new Error(`Unknown platform: ${platform}`);
     }
-    const repo = this.dataSource.getRepository(entityName);
-    this.mappingRepos.set(platform, repo);
-    return repo;
+    if (platform !== this.registry.platform) {
+      throw new Error(
+        `PrivacyDataService is configured for ${this.registry.platform}, not ${platform}`,
+      );
+    }
+    return platform as Platform;
+  }
+
+  private assertEntityMetadata(): void {
+    const required: Array<[string, PrivacyEntityTarget | undefined]> = [
+      ...PLATFORMS.map(
+        (platform) =>
+          [`mappings.${platform}`, this.registry.mappings?.[platform]] as [
+            string,
+            PrivacyEntityTarget | undefined,
+          ],
+      ),
+      ...SCOPED_ENTITY_NAMES.map(
+        (name) =>
+          [`scoped.${name}`, this.registry.scoped?.[name]] as [
+            string,
+            PrivacyEntityTarget | undefined,
+          ],
+      ),
+      ['messageLog', this.registry.messageLog],
+    ];
+    const missing = required
+      .filter(
+        ([, target]) =>
+          !target ||
+          typeof target === 'string' ||
+          !this.dataSource.hasMetadata(target),
+      )
+      .map(([name, target]) => `${name} (${targetName(target)})`);
+    if (missing.length > 0) {
+      throw new Error(
+        `PrivacyDataService missing TypeORM entity metadata: ${missing.join(', ')}`,
+      );
+    }
   }
 
   /**
@@ -135,21 +216,27 @@ export class PrivacyDataService {
     externalUserId: string,
     cleanup?: PrivacyStateCleanup,
   ): Promise<PrivacyUnlinkResult> {
-    const repo = this.getMappingRepo(platform);
+    const currentPlatform = this.assertCurrentPlatform(platform);
+    const repo = this.getMappingRepo(currentPlatform);
     const mapping = await repo.findOne({
-      where: { platform, externalUserId } as never,
+      where: { platform: currentPlatform, externalUserId },
     });
 
     if (!mapping) {
       await this.dataSource.transaction(async (manager) => {
-        await writeLocalUnlinkAudit(manager, platform, externalUserId, '1');
-        await cancelLocalUnlinkWork(manager, platform, externalUserId);
+        await writeLocalUnlinkAudit(
+          manager,
+          currentPlatform,
+          externalUserId,
+          '1',
+        );
+        await cancelLocalUnlinkWork(manager, currentPlatform, externalUserId);
         await manager.query(
           `DELETE FROM learner_profiles
            WHERE platform = $1 AND external_user_id = $2`,
-          [platform, externalUserId],
+          [currentPlatform, externalUserId],
         );
-        await deleteVerifyIntent(manager, platform, externalUserId);
+        await deleteVerifyIntent(manager, currentPlatform, externalUserId);
       });
       await this.runCleanup(externalUserId, cleanup);
       return { deleted: false };
@@ -174,13 +261,14 @@ export class PrivacyDataService {
     await this.dataSource.transaction(async (manager) => {
       await writeLocalUnlinkAudit(
         manager,
-        platform,
+        currentPlatform,
         externalUserId,
         generation,
       );
-      await cancelLocalUnlinkWork(manager, platform, externalUserId);
-      const table = mappingTable(platform);
-      const statusSql = platform === 'messenger' ? `, status = 'INACTIVE'` : '';
+      await cancelLocalUnlinkWork(manager, currentPlatform, externalUserId);
+      const table = mappingTable(currentPlatform);
+      const statusSql =
+        currentPlatform === 'messenger' ? `, status = 'INACTIVE'` : '';
       await manager.query(
         `UPDATE "${table}"
          SET link_state = 'locally-unlinked', mapping_generation = $3,
@@ -188,14 +276,14 @@ export class PrivacyDataService {
              updated_at = now()${statusSql}
          WHERE platform = $1 AND external_user_id = $2
            AND mapping_generation < $3::bigint`,
-        [platform, externalUserId, generation],
+        [currentPlatform, externalUserId, generation],
       );
       await manager.query(
         `DELETE FROM learner_profiles
          WHERE platform = $1 AND external_user_id = $2`,
-        [platform, externalUserId],
+        [currentPlatform, externalUserId],
       );
-      await deleteVerifyIntent(manager, platform, externalUserId);
+      await deleteVerifyIntent(manager, currentPlatform, externalUserId);
     });
     await this.runCleanup(externalUserId, cleanup);
 
@@ -219,6 +307,7 @@ export class PrivacyDataService {
     externalUserId: string,
     cleanup?: PrivacyStateCleanup,
   ): Promise<void> {
+    const currentPlatform = this.assertCurrentPlatform(platform);
     // 1. Atomic transaction: mapping removal + all userId-scoped deletes
     let userId: number | undefined;
     const cleanupExternalIds = new Set([externalUserId]);
@@ -226,33 +315,29 @@ export class PrivacyDataService {
     await this.dataSource.transaction(async (manager) => {
       // 1a. Look up and remove the platform mapping INSIDE the transaction
       const mappingRepo = manager.getRepository(
-        ENTITY_NAMES[platform as keyof typeof ENTITY_NAMES],
+        this.registry.mappings[currentPlatform],
       );
       const mapping = await mappingRepo.findOne({
-        where: { platform, externalUserId } as never,
+        where: { platform: currentPlatform, externalUserId },
       });
       if (mapping) {
         userId = (mapping as unknown as { userId?: number }).userId;
         await writeLocalUnlinkAudit(
           mockableQueryManager(manager),
-          platform,
+          currentPlatform,
           externalUserId,
           (mapping as unknown as { mappingGeneration?: string })
             .mappingGeneration,
         );
-        await cancelLocalUnlinkWork(manager, platform, externalUserId);
+        await cancelLocalUnlinkWork(manager, currentPlatform, externalUserId);
         await mappingRepo.remove(mapping);
       }
 
       // 1b. Delete mappings for OTHER platforms if userId is known
       if (userId) {
-        for (const [p, entityName] of Object.entries({
-          messenger: ENTITY_NAMES.messenger,
-          discord: ENTITY_NAMES.discord,
-          zalo: ENTITY_NAMES.zalo,
-        })) {
-          if (p === platform) continue;
-          const repo = manager.getRepository(entityName);
+        for (const p of PLATFORMS) {
+          if (p === currentPlatform) continue;
+          const repo = manager.getRepository(this.registry.mappings[p]);
           const find = (
             repo as unknown as {
               find?: (options: unknown) => Promise<ObjectLiteral[]>;
@@ -284,42 +369,45 @@ export class PrivacyDataService {
       // 1c. Delete by (platform, externalUserId) — covers current platform
       // and any remaining records if userId was null
       const deleteByUser = async (
-        entityName: string,
+        target: PrivacyEntityTarget,
         overrideUserId?: number,
       ) => {
-        const repo = manager.getRepository(entityName);
+        const repo = manager.getRepository(target);
         if (overrideUserId) {
-          await repo.delete({ userId: overrideUserId } as never);
+          await repo.delete({ userId: overrideUserId });
         } else {
-          await repo.delete({ platform, externalUserId } as never);
+          await repo.delete({
+            platform: currentPlatform,
+            externalUserId,
+          });
         }
       };
 
       const uid = userId ?? undefined;
 
-      await deleteByUser(ENTITY_NAMES.learnerProfile, uid);
-      await deleteByUser(ENTITY_NAMES.studyReminderJob, uid);
-      await deleteByUser(ENTITY_NAMES.scheduledReportClaim, uid);
-      await deleteByUser(ENTITY_NAMES.reportSendJob, uid);
+      await deleteByUser(this.registry.scoped.learnerProfile, uid);
+      await deleteByUser(this.registry.scoped.studyReminderJob, uid);
+      await deleteByUser(this.registry.scoped.scheduledReportClaim, uid);
+      await deleteByUser(this.registry.scoped.reportSendJob, uid);
       if (uid) {
         // web_activity is keyed by userId only — no (platform, externalUserId) fallback.
         // A mapping with no userId leaves a harmless orphan row (no cleanup cron).
         await manager
-          .getRepository(ENTITY_NAMES.webActivity)
+          .getRepository(this.registry.scoped.webActivity)
           .delete({ userId: uid });
       }
 
       // Group A: user data directly (new tables)
-      await deleteByUser(ENTITY_NAMES.chatDailyUsage, uid);
-      await deleteByUser(ENTITY_NAMES.llmUsageEvent, uid);
-      await deleteByUser(ENTITY_NAMES.chatIdempotency, uid);
+      await deleteByUser(this.registry.scoped.chatDailyUsage, uid);
+      await deleteByUser(this.registry.scoped.llmUsageEvent, uid);
+      await deleteByUser(this.registry.scoped.chatIdempotency, uid);
       if (uid) {
         // Notification consent state (#596) is keyed by userId only.
         await manager
-          .getRepository(ENTITY_NAMES.notificationPreference)
+          .getRepository(this.registry.scoped.notificationPreference)
           .delete({ userId: uid });
       }
-      await deleteVerifyIntent(manager, platform, externalUserId);
+      await deleteVerifyIntent(manager, currentPlatform, externalUserId);
     });
 
     // 2. Redis cleanup — outside transaction, best-effort, idempotent
@@ -336,14 +424,15 @@ export class PrivacyDataService {
     platform: string,
     externalUserId: string,
   ): Promise<PrivacyExportData> {
+    const currentPlatform = this.assertCurrentPlatform(platform);
     // 1. Mapping info
-    const repo = this.getMappingRepo(platform);
+    const repo = this.getMappingRepo(currentPlatform);
     const mapping = await repo.findOne({
-      where: { platform, externalUserId } as never,
+      where: { platform: currentPlatform, externalUserId },
     });
 
     const result: PrivacyExportData = {
-      platform,
+      platform: currentPlatform,
       externalUserId,
       linkedAt: mapping
         ? (mapping as unknown as { createdAt?: Date }).createdAt
@@ -356,10 +445,10 @@ export class PrivacyDataService {
 
     // 2. Learner profile
     const learnerRepo = this.dataSource.getRepository(
-      ENTITY_NAMES.learnerProfile,
+      this.registry.scoped.learnerProfile,
     );
     const profile = await learnerRepo.findOne({
-      where: { platform, externalUserId } as never,
+      where: { platform: currentPlatform, externalUserId },
     });
     if (profile) {
       const p = profile as unknown as {
@@ -376,29 +465,29 @@ export class PrivacyDataService {
 
     // 3. Count related data
     const reminderRepo = this.dataSource.getRepository(
-      ENTITY_NAMES.studyReminderJob,
+      this.registry.scoped.studyReminderJob,
     );
     result.studyReminderJobs = await reminderRepo.count({
-      where: { platform, externalUserId } as never,
+      where: { platform: currentPlatform, externalUserId },
     });
 
     const claimRepo = this.dataSource.getRepository(
-      ENTITY_NAMES.scheduledReportClaim,
+      this.registry.scoped.scheduledReportClaim,
     );
     result.scheduledReportClaims = await claimRepo.count({
-      where: { platform, externalUserId } as never,
+      where: { platform: currentPlatform, externalUserId },
     });
 
     const reportRepo = this.dataSource.getRepository(
-      ENTITY_NAMES.reportSendJob,
+      this.registry.scoped.reportSendJob,
     );
     result.reportSendJobs = await reportRepo.count({
-      where: { platform, externalUserId } as never,
+      where: { platform: currentPlatform, externalUserId },
     });
 
-    const logRepo = this.dataSource.getRepository(ENTITY_NAMES.messageLog);
+    const logRepo = this.dataSource.getRepository(this.registry.messageLog);
     result.messageLogs = await logRepo.count({
-      where: { platform, externalUserId } as never,
+      where: { platform: currentPlatform, externalUserId },
     });
 
     return result;
@@ -495,15 +584,25 @@ interface QueryManager {
   query(sql: string, params?: readonly unknown[]): Promise<unknown>;
 }
 
-function mappingTable(platform: string): string {
+function mappingTable(platform: Platform): string {
   const table = MAPPING_TABLES[platform];
   if (!table) throw new Error(`Unknown platform: ${platform}`);
   return table;
 }
 
+function targetName(target: PrivacyEntityTarget | undefined): string {
+  if (!target) return 'missing';
+  if (typeof target === 'string') return target;
+  const candidate = target as {
+    name?: string;
+    options?: { name?: string };
+  };
+  return candidate.name ?? candidate.options?.name ?? String(target);
+}
+
 async function deleteVerifyIntent(
   manager: unknown,
-  platform: string,
+  platform: Platform,
   externalUserId: string,
 ): Promise<void> {
   const table = VERIFY_INTENT_TABLES[platform];

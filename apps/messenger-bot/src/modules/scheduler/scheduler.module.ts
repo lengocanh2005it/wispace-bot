@@ -15,7 +15,7 @@ import {
   parseExamDateToIso,
   type ReportClaimRepositoryPort,
 } from '@wispace/scheduler-core';
-import { ReportSendJobEntity, PrivacyDataService } from '@wispace/database';
+import { ReportSendJobEntity } from '@wispace/database';
 import {
   CronLeaderLeaseService,
   CronLeaderLeaseEntity,
@@ -150,7 +150,6 @@ import { ADVISORY_LOCK } from '../../shared/common/advisory-lock-ids';
     OpsHealthCronService,
     DataQualityCronService,
     LlmSafetyService,
-    PrivacyDataService,
   ],
 })
 export class SchedulerModule {}

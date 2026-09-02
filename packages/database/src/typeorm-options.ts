@@ -16,6 +16,9 @@ import { LearnerProfileEntity } from './entities/learner-profile.entity';
 import { UserNotificationPreferenceEntity } from './entities/user-notification-preference.entity';
 import { PlatformLinkAuditEventEntity } from './entities/platform-link-audit-event.entity';
 import { WebActivityEntity } from './entities/web-activity.entity';
+import { UserPlatformMappingEntity } from './entities/user-platform-mapping.entity';
+import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
+import { ZaloAccountLinkEntity } from './entities/zalo-account-link.entity';
 
 export type EntityClass = new (...args: unknown[]) => unknown;
 
@@ -71,6 +74,9 @@ function isInsecureHostAllowlisted(source: EnvSource, host: string): boolean {
 
 /** Shared entities used by all bots — import and spread into each bot's entity list. */
 export const SHARED_ENTITIES: EntityClass[] = [
+  UserPlatformMappingEntity,
+  DiscordAccountLinkEntity,
+  ZaloAccountLinkEntity,
   WebhookDeadLetterEntity,
   WebhookInboundEventEntity,
   ScheduledReportClaimEntity,

@@ -14,7 +14,6 @@ import {
 import { ChatQuotaEventEntity } from './entities/chat-quota-event.entity';
 import { MessageLogEntity } from './entities/message-log.entity';
 import { StudyReminderJobEntity } from '@wispace/study-reminder-shared';
-import { UserPlatformMappingEntity } from './entities/user-platform-mapping.entity';
 import { UserEntity } from './entities/user.entity';
 import { MessengerLinkVerifyRecordEntity } from './entities/messenger-link-verify-record.entity';
 
@@ -26,7 +25,6 @@ export function getTypeOrmOptions(
 ): DataSourceOptions {
   const entities = [
     ...SHARED_ENTITIES,
-    UserPlatformMappingEntity,
     MessageLogEntity,
     MessengerLinkVerifyRecordEntity,
     ChatDailyUsageEntity,

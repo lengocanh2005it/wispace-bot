@@ -73,7 +73,16 @@ export { TypeormRescheduleStore } from './services/typeorm-reschedule-store';
 export { RescheduleRecoveryCronService } from './services/reschedule-recovery-cron.service';
 export { CronLeaderLeaseService } from './services/cron-leader-lease.service';
 export { listUserIdsWithSentReport } from './services/list-user-ids-with-sent-report';
-export { PrivacyDataService } from './services/privacy-data.service';
+export {
+  PrivacyDataService,
+  type ChatHistoryClearer,
+  type PrivacyEntityRegistry,
+  type PrivacyEntityTarget,
+  type PrivacyScopedEntities,
+  type PrivacyStateCleanup,
+  type PrivacyExportData,
+  type PrivacyUnlinkResult,
+} from './services/privacy-data.service';
 export {
   CanonicalPlatformService,
   resolveCanonicalPlatform,
@@ -85,3 +94,6 @@ export {
   normalizeToUtcIso,
 } from './services/web-activity.service';
 export { WebActivityEntity } from './entities/web-activity.entity';
+export { UserPlatformMappingEntity } from './entities/user-platform-mapping.entity';
+export { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
+export { ZaloAccountLinkEntity } from './entities/zalo-account-link.entity';
