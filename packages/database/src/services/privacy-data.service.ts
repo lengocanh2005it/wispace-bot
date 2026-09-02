@@ -311,6 +311,7 @@ export class PrivacyDataService {
     const currentPlatform = this.assertCurrentPlatform(platform);
     // 1. Atomic transaction: mapping removal + all userId-scoped deletes
     let userId: number | undefined;
+    const cleanupExternalIds = new Set<string>([externalUserId]);
 
     await this.dataSource.transaction(async (manager) => {
       // 1a. Look up and remove the platform mapping INSIDE the transaction
@@ -343,6 +344,7 @@ export class PrivacyDataService {
             const externalId = (otherMapping as { externalUserId?: string })
               .externalUserId;
             if (externalId) {
+              cleanupExternalIds.add(externalId);
               await writeLocalUnlinkAudit(
                 manager,
                 p,
@@ -403,8 +405,11 @@ export class PrivacyDataService {
     });
 
     // 2. Redis cleanup — outside transaction, best-effort, idempotent.
-    //    Only clears THIS app's own platform keys (#537).
-    await this.runCleanup(externalUserId, cleanup, userId);
+    //    Each bot clears its own platform's keys via per-call callbacks.
+    //    Cross-platform Redis erasure requires calling each bot's endpoint.
+    await Promise.all(
+      [...cleanupExternalIds].map((id) => this.runCleanup(id, cleanup, userId)),
+    );
   }
 
   /**

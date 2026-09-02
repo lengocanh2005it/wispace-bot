@@ -376,12 +376,11 @@ describe('PrivacyDataService', () => {
         ['discord-user-9'],
       );
 
-      // Redis-side state is cleared only for the CALLER's identity (#537 Q2):
-      // each bot clears its own platform's Redis keys, so cross-platform
-      // external ids are NOT passed to this app's own-platform callbacks —
-      // the backend calls each bot's /privacy/delete for that.
+      // Redis-side state is cleared for BOTH identities via per-call callbacks.
+      // Each bot clears its own platform's keys; cross-platform erasure
+      // requires the backend to call each bot's /privacy/delete endpoint.
       expect(clearHistory).toHaveBeenCalledWith('psid-123');
-      expect(clearHistory).not.toHaveBeenCalledWith('discord-user-9');
+      expect(clearHistory).toHaveBeenCalledWith('discord-user-9');
     });
 
     it('does not attempt web_activity deletion when mapping has no userId', async () => {

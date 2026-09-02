@@ -13,6 +13,7 @@ import {
   PlatformChatHistoryService,
   PlatformChatQueueService,
 } from '@wispace/chat-agent';
+import { CrossPlatformRedisCleaner } from '@wispace/bot-common/redis';
 
 @Controller('discord')
 @UseGuards(InternalApiKeyGuard)
@@ -25,6 +26,7 @@ export class DiscordOpsController extends PlatformOpsController {
     clarificationAgent: PlatformAgentService,
     historyService: PlatformChatHistoryService,
     queueService: PlatformChatQueueService,
+    redisCleaner: CrossPlatformRedisCleaner,
   ) {
     super({
       sendReports: () => reportCronService.sendScheduledReports(),
@@ -35,7 +37,7 @@ export class DiscordOpsController extends PlatformOpsController {
         }),
       unlinkUser: async (externalUserId) => {
         const result = await privacyService.unlink('discord', externalUserId, {
-          clearHistory: (id) => historyService.clear(id),
+          clearHistory: (id) => redisCleaner.clean(id),
           clearQueuedWork: (id) => queueService.clear(id),
           clearClarification: (id) =>
             clarificationAgent.clearClarificationState(id),
@@ -44,7 +46,7 @@ export class DiscordOpsController extends PlatformOpsController {
       },
       deleteUser: async (externalUserId) => {
         await privacyService.delete('discord', externalUserId, {
-          clearHistory: (id) => historyService.clear(id),
+          clearHistory: (id) => redisCleaner.clean(id),
           clearQueuedWork: (id) => queueService.clear(id),
           clearClarification: (id) =>
             clarificationAgent.clearClarificationState(id),
