@@ -64,6 +64,8 @@ export interface AdmissionMetrics {
   observeWaitSeconds(seconds: number): void;
   /** Optional local queue saturation gauge (#389). */
   observeQueueDepth?(depth: number): void;
+  /** Optional age of the oldest queued waiter, in seconds. */
+  observeQueueDrainLag?(seconds: number): void;
 }
 
 /**
@@ -137,6 +139,11 @@ export function createEnvLlmExecutionPort(
     }
   };
 
+  const observeQueueState = (): void => {
+    metrics?.observeQueueDepth?.(queue.waitingCount);
+    metrics?.observeQueueDrainLag?.(queue.oldestWaitingAgeMs / 1000);
+  };
+
   return {
     run: async <T>(
       fn: (signal?: AbortSignal) => Promise<T>,
@@ -160,10 +167,12 @@ export function createEnvLlmExecutionPort(
       const startedAtMs = Date.now();
       let ticket: AdmissionTicket;
       try {
-        ticket = await queue.acquire({
+        const admission = queue.acquire({
           signal,
           waitBudgetMs: admissionWaitBudgetMs(config, meta?.feature),
         });
+        observeQueueState();
+        ticket = await admission;
       } catch (error) {
         // A half-open probe may be rejected before a provider call (queue or
         // Redis failure); do not leave the execution circuit wedged forever.
@@ -172,12 +181,12 @@ export function createEnvLlmExecutionPort(
           metrics?.incrementCounter('llm_admission_rejected_total', {
             reason: error.reason,
           });
-          metrics?.observeQueueDepth?.(queue.waitingCount);
         }
+        observeQueueState();
         throw error;
       }
       metrics?.observeWaitSeconds((Date.now() - startedAtMs) / 1000);
-      metrics?.observeQueueDepth?.(queue.waitingCount);
+      observeQueueState();
 
       let release: (() => Promise<void>) | undefined;
       const waitBudgetMs = admissionWaitBudgetMs(config, meta?.feature);
@@ -232,7 +241,7 @@ export function createEnvLlmExecutionPort(
         halfOpenInFlight = false;
         await release?.();
         ticket.release();
-        metrics?.observeQueueDepth?.(queue.waitingCount);
+        observeQueueState();
       }
     },
   };

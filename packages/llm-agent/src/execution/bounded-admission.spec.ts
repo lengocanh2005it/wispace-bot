@@ -37,6 +37,25 @@ describe('BoundedAdmissionQueue', () => {
     expect(queue.activeCount).toBe(0);
   });
 
+  it('reports the age of the oldest queued waiter', async () => {
+    jest.useFakeTimers();
+    try {
+      const queue = new BoundedAdmissionQueue(1, 5);
+      const held = await queue.acquire();
+      const queued = queue.acquire();
+
+      expect(queue.oldestWaitingAgeMs).toBe(0);
+      jest.advanceTimersByTime(125);
+      expect(queue.oldestWaitingAgeMs).toBe(125);
+
+      held.release();
+      (await queued).release();
+      expect(queue.oldestWaitingAgeMs).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('rejects with a typed overload error when the queue is full', async () => {
     const queue = new BoundedAdmissionQueue(1, 1);
     const held = await queue.acquire();

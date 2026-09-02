@@ -31,7 +31,8 @@ loop around that action.
 - Provider retry and failover are bounded by `LLM_OPENAI_RETRY_MAX_ATTEMPTS`
   and the approved order in `LLM_PROVIDER_FAILOVER_ORDER`. A listed provider
   must be known and configured; unknown names and incomplete entries fail
-  startup.
+  startup. A single configured provider emits a startup warning because no
+  redundancy is available.
 - Chat queue retry is for recovering the queued user turn only. It never
   re-enqueues a fixed fallback as a new turn. Report and reminder retry is
   owned by the durable outbox/lease, not by a second platform send loop.
@@ -47,8 +48,12 @@ logs. The low-cardinality signals are:
 - `<prefix>_llm_provider_attempts_total`,
   `<prefix>_llm_provider_circuit_events_total`, and
   `<prefix>_llm_providers_exhausted_total` for provider routing;
-- `<prefix>_llm_admission_rejected_total` and
-  `<prefix>_llm_admission_queue_depth` for bounded load shedding;
+- `<prefix>_llm_admission_rejected_total`,
+  `<prefix>_llm_admission_queue_depth`, and
+  `<prefix>_llm_admission_drain_lag_seconds` for bounded load shedding;
+- `<prefix>_llm_concurrency_events_total{outcome}` for Redis-global slot
+  lifecycle outcomes (`acquired`, `rejected`, `stale_release`, `released`,
+  and `release_error`);
 - `<prefix>_llm_round_outcome_total`,
   `<prefix>_llm_observation_outcome_total`, and clarification outcomes for
   safe chat degradation;

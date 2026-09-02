@@ -38,9 +38,20 @@ webhook → durable inbox (`event_id`) → enqueue (RAM or Redis buffer)
 
 Enable enforcement: `CHAT_RATE_LIMIT_ENABLED=true`. Quick disable: `false` or `CHAT_RATE_LIMIT_WHITELIST_PSIDS`.
 
+### 1.3. Shared LLM resilience (#513)
+
+Messenger, Discord, and Zalo route provider calls through bounded admission,
+retry/failover, and an execution circuit. A single configured provider emits a
+startup warning; unknown or keyless providers fail closed. Monitor
+`<prefix>_llm_admission_rejected_total{reason}`,
+`<prefix>_llm_admission_queue_depth`,
+`<prefix>_llm_admission_drain_lag_seconds`, and
+`<prefix>_llm_concurrency_events_total{outcome}` during saturation or provider
+outages.
+
 The `message_logs` table already exists — used for sent/received message audit (`message_type`, `external_user_id`, `user_id`, `created_at`).
 
-### 1.3. Outbound learner-message backstop (#622)
+### 1.4. Outbound learner-message backstop (#622)
 
 The shared `@wispace/bot-common` outbound limiter is separate from the inbound
 FREE_FORM quota. It contains retry storms and accidental fan-out immediately
@@ -68,7 +79,7 @@ search logs for `Outbound message rate limit exceeded`, then inspect terminal
 `outbound_rate_limited` reminder/report/dead-letter records before replaying.
 The operational procedure is [outbound-rate-limit.md](../../../docs/outbound-rate-limit.md).
 
-### 1.4. What Does Meta (Facebook) Limit?
+### 1.5. What Does Meta (Facebook) Limit?
 
 Meta does **not** provide a "max X bot messages per user per day" API. Platform limits are primarily on the **outbound bot side**:
 

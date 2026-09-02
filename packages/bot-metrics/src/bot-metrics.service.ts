@@ -28,6 +28,21 @@ export interface MetricsConfig {
   traceApi?: TraceAPI;
 }
 
+type LlmConcurrencyOutcome =
+  | 'acquired'
+  | 'rejected'
+  | 'stale_release'
+  | 'released'
+  | 'release_error';
+
+const SHARED_SLOT_METRIC_OUTCOMES: Record<string, LlmConcurrencyOutcome> = {
+  llm_concurrency_acquired: 'acquired',
+  llm_concurrency_rejected: 'rejected',
+  llm_concurrency_stale_release: 'stale_release',
+  llm_concurrency_released: 'released',
+  llm_concurrency_release_error: 'release_error',
+};
+
 /**
  * Platform-agnostic Prometheus metrics with optional OpenTelemetry tracing.
  * When `tracer` is provided in config, all timing methods also emit OTel spans.
@@ -55,6 +70,8 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmAdmissionRejected: Counter;
   private llmAdmissionWait: Histogram;
   private llmAdmissionQueueDepth: Gauge;
+  private llmAdmissionDrainLag: Gauge;
+  private llmConcurrencyEvents: Counter;
   private llmProviderAttempts: Counter;
   private llmProviderCircuitEvents: Counter;
   private llmProvidersExhausted: Counter;
@@ -192,6 +209,19 @@ export class BotMetricsService implements OnModuleDestroy {
     this.llmAdmissionQueueDepth = new Gauge({
       name: `${this.prefix}_llm_admission_queue_depth`,
       help: 'Current number of LLM calls waiting for a local admission slot (#389)',
+      registers: [this.registry],
+    });
+
+    this.llmAdmissionDrainLag = new Gauge({
+      name: `${this.prefix}_llm_admission_drain_lag_seconds`,
+      help: 'Age of the oldest queued LLM admission waiter',
+      registers: [this.registry],
+    });
+
+    this.llmConcurrencyEvents = new Counter({
+      name: `${this.prefix}_llm_concurrency_events_total`,
+      help: 'Redis-global LLM concurrency slot lifecycle outcomes',
+      labelNames: ['outcome'],
       registers: [this.registry],
     });
 
@@ -562,6 +592,16 @@ export class BotMetricsService implements OnModuleDestroy {
     this.llmAdmissionQueueDepth.set(depth);
   }
 
+  /** Age of the oldest local admission waiter, or zero when the queue is empty. */
+  setLlmAdmissionDrainLag(seconds: number): void {
+    this.llmAdmissionDrainLag.set(Math.max(0, seconds));
+  }
+
+  /** Redis-global slot lifecycle outcome with bounded labels. */
+  incLlmConcurrencyEvent(outcome: LlmConcurrencyOutcome): void {
+    this.llmConcurrencyEvents.inc({ outcome });
+  }
+
   incLlmProviderAttempt(provider: string, feature = 'unknown'): void {
     this.llmProviderAttempts.inc({ provider, feature });
   }
@@ -605,12 +645,20 @@ export class BotMetricsService implements OnModuleDestroy {
     incrementCounter(name: string, labels?: Record<string, string>): void;
     observeWaitSeconds(seconds: number): void;
     observeQueueDepth(depth: number): void;
+    observeQueueDrainLag(seconds: number): void;
   } {
     return {
-      incrementCounter: (_name, labels) =>
-        this.incLlmAdmissionRejected(labels?.reason ?? 'unknown'),
+      incrementCounter: (name, labels) => {
+        const outcome = SHARED_SLOT_METRIC_OUTCOMES[name];
+        if (outcome) {
+          this.incLlmConcurrencyEvent(outcome);
+          return;
+        }
+        this.incLlmAdmissionRejected(labels?.reason ?? 'unknown');
+      },
       observeWaitSeconds: (seconds) => this.observeLlmAdmissionWait(seconds),
       observeQueueDepth: (depth) => this.setLlmAdmissionQueueDepth(depth),
+      observeQueueDrainLag: (seconds) => this.setLlmAdmissionDrainLag(seconds),
     };
   }
 

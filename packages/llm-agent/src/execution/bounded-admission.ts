@@ -79,6 +79,7 @@ export async function raceAbort<T>(
 interface Waiter {
   resolve: (ticket: AdmissionTicket) => void;
   reject: (error: unknown) => void;
+  enqueuedAt: number;
   timer?: ReturnType<typeof setTimeout>;
   signal?: AbortSignal;
   onAbort?: () => void;
@@ -116,6 +117,12 @@ export class BoundedAdmissionQueue {
     return this.waiters.length;
   }
 
+  /** Age of the oldest queued waiter, in milliseconds, or zero when empty. */
+  get oldestWaitingAgeMs(): number {
+    const oldest = this.waiters[0];
+    return oldest ? Math.max(0, Date.now() - oldest.enqueuedAt) : 0;
+  }
+
   async acquire(options?: BoundedAcquireOptions): Promise<AdmissionTicket> {
     const { signal, waitBudgetMs } = options ?? {};
     if (signal?.aborted) throw rejectionFromSignal(signal);
@@ -128,7 +135,12 @@ export class BoundedAdmissionQueue {
     }
 
     return new Promise<AdmissionTicket>((resolve, reject) => {
-      const waiter: Waiter = { resolve, reject, signal };
+      const waiter: Waiter = {
+        resolve,
+        reject,
+        signal,
+        enqueuedAt: Date.now(),
+      };
       if (waitBudgetMs !== undefined) {
         waiter.timer = setTimeout(() => {
           this.remove(waiter);

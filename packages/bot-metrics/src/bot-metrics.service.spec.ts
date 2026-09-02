@@ -167,6 +167,55 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     );
   });
 
+  it('exposes Redis concurrency lifecycle outcomes through the shared admission port', async () => {
+    const svc = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+    const admission = svc.llmAdmission;
+
+    admission.incrementCounter('llm_concurrency_acquired');
+    admission.incrementCounter('llm_concurrency_rejected');
+    admission.incrementCounter('llm_concurrency_stale_release');
+    admission.incrementCounter('llm_concurrency_released');
+    admission.incrementCounter('llm_concurrency_release_error');
+
+    const out = await svc.getMetrics();
+    expect(out).toContain(
+      'test_llm_concurrency_events_total{outcome="acquired"} 1',
+    );
+    expect(out).toContain(
+      'test_llm_concurrency_events_total{outcome="rejected"} 1',
+    );
+    expect(out).toContain(
+      'test_llm_concurrency_events_total{outcome="stale_release"} 1',
+    );
+    expect(out).toContain(
+      'test_llm_concurrency_events_total{outcome="released"} 1',
+    );
+    expect(out).toContain(
+      'test_llm_concurrency_events_total{outcome="release_error"} 1',
+    );
+    expect(out).not.toContain(
+      'test_llm_admission_rejected_total{reason="unknown"}',
+    );
+  });
+
+  it('exposes the oldest admission waiter age as a drain-lag gauge', async () => {
+    const svc = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+
+    svc.setLlmAdmissionDrainLag(1.25);
+
+    const out = await svc.getMetrics();
+    expect(out).toContain(
+      '# HELP test_llm_admission_drain_lag_seconds Age of the oldest queued LLM admission waiter',
+    );
+    expect(out).toContain('test_llm_admission_drain_lag_seconds 1.25');
+  });
+
   it('records degraded responses with platform and bounded failure/action labels', async () => {
     const svc = new BotMetricsService({
       prefix: 'test',
