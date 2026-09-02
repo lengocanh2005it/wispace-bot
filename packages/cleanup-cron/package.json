@@ -15,20 +15,20 @@
     "test": "jest --maxWorkers=50%"
   },
   "dependencies": {
+    "@nestjs/common": "^11.0.1",
+    "@nestjs/config": "^4.0.4",
+    "@nestjs/typeorm": "^11.0.1",
     "@wispace/bot-common": "*",
     "@wispace/chat-metering": "*",
     "@wispace/contracts": "*",
     "@wispace/database": "*",
-    "date-fns": "^4.4.0",
-    "@nestjs/common": "^11.0.1",
-    "@nestjs/config": "^4.0.4",
-    "@nestjs/typeorm": "^11.0.1",
-    "cron": "^4.4.0"
+    "cron": "^4.4.0",
+    "date-fns": "^4.4.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "jest": "^30.0.0",
-    "ts-jest": "^29.2.5"
+    "jest": "^30.5.0",
+    "ts-jest": "^29.4.12"
   },
   "jest": {
     "moduleFileExtensions": [

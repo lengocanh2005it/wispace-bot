@@ -21,16 +21,16 @@
     "@nestjs/typeorm": "^11.0.1",
     "@wispace/bot-common": "*",
     "@wispace/contracts": "*",
-    "date-fns": "^4.4.0",
     "@wispace/reschedule-confirm": "*",
     "@wispace/scheduler-core": "*",
+    "date-fns": "^4.4.0",
     "typeorm": "^1.1.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "jest": "^30.0.0",
+    "jest": "^30.5.0",
     "reflect-metadata": "^0.2.2",
-    "ts-jest": "^29.2.5"
+    "ts-jest": "^29.4.12"
   },
   "jest": {
     "moduleFileExtensions": [
