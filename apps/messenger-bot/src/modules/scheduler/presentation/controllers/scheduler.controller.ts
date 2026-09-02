@@ -21,6 +21,7 @@ import { PrivacyDataService } from '@wispace/database';
 import { MessengerAgentService } from '@messenger/modules/messenger/application/agent/messenger-agent.service';
 import { MessengerChatEnqueueService } from '@messenger/modules/messenger/application/services/messenger-chat-enqueue.service';
 import { PlatformChatHistoryService } from '@wispace/chat-agent';
+import type { RedisUserDisplayNameCache } from '@wispace/bot-common';
 
 class SyncStudyCalendarBody {
   @IsNumber()
@@ -70,6 +71,7 @@ export class SchedulerController {
     private readonly clarificationAgent: MessengerAgentService,
     private readonly historyService: PlatformChatHistoryService,
     private readonly chatEnqueueService: MessengerChatEnqueueService,
+    private readonly displayNameCache: RedisUserDisplayNameCache,
   ) {}
 
   @Post('send-reports')
@@ -165,6 +167,7 @@ export class SchedulerController {
       clearQueuedWork: (id) => this.chatEnqueueService.clear(id),
       clearClarification: (id) =>
         this.clarificationAgent.clearClarificationState(id),
+      clearUserCache: (userId: number) => this.displayNameCache.del(userId),
     });
   }
 
@@ -176,6 +179,7 @@ export class SchedulerController {
       clearQueuedWork: (id) => this.chatEnqueueService.clear(id),
       clearClarification: (id) =>
         this.clarificationAgent.clearClarificationState(id),
+      clearUserCache: (userId: number) => this.displayNameCache.del(userId),
     });
   }
 

@@ -111,6 +111,18 @@ export class RedisUserDisplayNameCache {
     return `cache:user:display:${this.options.platform}:${userId}`;
   }
 
+  async del(userId: number): Promise<void> {
+    const client = this.redisClient.getNativeClient();
+    if (!client || !this.isAvailable()) return;
+    try {
+      await client.del(this.key(userId));
+    } catch (error) {
+      this.logger.warn(
+        `Redis user display cache delete failed userId=${maskExternalId(userId)}: ${errorMessage(error)}`,
+      );
+    }
+  }
+
   private isCacheEnabled(): boolean {
     const raw = this.configService
       .get<string>('USER_DISPLAY_NAME_CACHE_ENABLED')

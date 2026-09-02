@@ -2,7 +2,6 @@ import { createHash } from 'crypto';
 import { DataSource, ObjectLiteral, Repository } from 'typeorm';
 import {
   PrivacyDataService,
-  type ChatHistoryClearer,
   type PrivacyEntityRegistry,
 } from './privacy-data.service';
 
@@ -201,13 +200,10 @@ describe('PrivacyDataService', () => {
         mappingGeneration: '7',
       };
       mockDiscordMappingRepo.findOne.mockResolvedValue(mockMapping);
-      const historyClearer: ChatHistoryClearer = {
-        clear: jest.fn().mockResolvedValue(undefined),
-      };
-      const serviceWithCleanup = new PrivacyDataService(mockDataSource, {
-        ...makeRegistry('discord'),
-        chatHistoryClearer: historyClearer,
-      });
+      const serviceWithCleanup = new PrivacyDataService(
+        mockDataSource,
+        makeRegistry('discord'),
+      );
 
       await serviceWithCleanup.unlink('discord', 'discord-1');
 
@@ -219,8 +215,36 @@ describe('PrivacyDataService', () => {
         expect.stringContaining('discord_link_verify_records'),
         ['discord-1'],
       );
-      expect(historyClearer.clear).toHaveBeenCalledWith('discord-1');
       expect(mockMappingRepo.remove).not.toHaveBeenCalled();
+    });
+
+    it('clears user cache via per-call cleanup when mapping has a userId', async () => {
+      const mockMapping = {
+        id: 1,
+        userId: 42,
+        platform: 'messenger',
+        externalUserId: 'psid-123',
+        mappingGeneration: '3',
+      };
+      mockMappingRepo.findOne.mockResolvedValue(mockMapping);
+      const clearUserCache = jest.fn().mockResolvedValue(undefined);
+
+      await service.unlink('messenger', 'psid-123', { clearUserCache });
+
+      expect(clearUserCache).toHaveBeenCalledWith(42);
+    });
+
+    it('does not call clearUserCache when mapping has no userId', async () => {
+      mockMappingRepo.findOne.mockResolvedValue({
+        id: 1,
+        platform: 'messenger',
+        externalUserId: 'psid-123',
+      });
+      const clearUserCache = jest.fn().mockResolvedValue(undefined);
+
+      await service.unlink('messenger', 'psid-123', { clearUserCache });
+
+      expect(clearUserCache).not.toHaveBeenCalled();
     });
 
     it('is idempotent - calling twice returns deleted:false second time', async () => {
@@ -352,9 +376,12 @@ describe('PrivacyDataService', () => {
         ['discord-user-9'],
       );
 
-      // Redis-side state is cleared for BOTH identities, not just the caller's.
+      // Redis-side state is cleared only for the CALLER's identity (#537 Q2):
+      // each bot clears its own platform's Redis keys, so cross-platform
+      // external ids are NOT passed to this app's own-platform callbacks —
+      // the backend calls each bot's /privacy/delete for that.
       expect(clearHistory).toHaveBeenCalledWith('psid-123');
-      expect(clearHistory).toHaveBeenCalledWith('discord-user-9');
+      expect(clearHistory).not.toHaveBeenCalledWith('discord-user-9');
     });
 
     it('does not attempt web_activity deletion when mapping has no userId', async () => {
@@ -406,15 +433,26 @@ describe('PrivacyDataService', () => {
       expect(mockDataSource.transaction).toHaveBeenCalled();
     });
 
-    it('clears Redis chat history when ChatHistoryClearer provided', async () => {
-      const mockClearer: jest.Mocked<ChatHistoryClearer> = {
-        clear: jest.fn().mockResolvedValue(undefined),
-      };
-      const serviceWithRedis = new PrivacyDataService(mockDataSource, {
-        ...makeRegistry(),
-        chatHistoryClearer: mockClearer,
-      });
+    it('clears user cache once via per-call cleanup when mapping has a userId', async () => {
+      const mockMapping = { id: 1, userId: 42, platform: 'messenger' };
+      mockMappingRepo.findOne.mockResolvedValue(mockMapping);
+      mockMappingRepo.remove.mockResolvedValue(mockMapping);
+      mockLearnerRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      mockReminderRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      mockClaimRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      mockReportRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      mockDailyUsageRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      mockLlmUsageRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      mockIdempotencyRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      const clearUserCache = jest.fn().mockResolvedValue(undefined);
 
+      await service.delete('messenger', 'psid-123', { clearUserCache });
+
+      expect(clearUserCache).toHaveBeenCalledTimes(1);
+      expect(clearUserCache).toHaveBeenCalledWith(42);
+    });
+
+    it('does not call clearUserCache when no mapping exists', async () => {
       mockMappingRepo.findOne.mockResolvedValue(null);
       mockLearnerRepo.delete.mockResolvedValue({ affected: 0 } as never);
       mockReminderRepo.delete.mockResolvedValue({ affected: 0 } as never);
@@ -423,13 +461,14 @@ describe('PrivacyDataService', () => {
       mockDailyUsageRepo.delete.mockResolvedValue({ affected: 0 } as never);
       mockLlmUsageRepo.delete.mockResolvedValue({ affected: 0 } as never);
       mockIdempotencyRepo.delete.mockResolvedValue({ affected: 0 } as never);
+      const clearUserCache = jest.fn().mockResolvedValue(undefined);
 
-      await serviceWithRedis.delete('messenger', 'psid-123');
+      await service.delete('messenger', 'psid-123', { clearUserCache });
 
-      expect(mockClearer.clear).toHaveBeenCalledWith('psid-123');
+      expect(clearUserCache).not.toHaveBeenCalled();
     });
 
-    it('skips Redis cleanup when no ChatHistoryClearer provided', async () => {
+    it('skips cleanup entirely when no per-call cleanup provided', async () => {
       mockMappingRepo.findOne.mockResolvedValue(null);
       mockLearnerRepo.delete.mockResolvedValue({ affected: 0 } as never);
       mockReminderRepo.delete.mockResolvedValue({ affected: 0 } as never);

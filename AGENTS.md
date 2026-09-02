@@ -465,7 +465,7 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 | `llm_usage_events` | `delete()` by userId | `repo.delete()` |
 | `chat_idempotency` | `delete()` by userId | `repo.delete()` |
 | `user_notification_preferences` (consent state #596) | `delete()` by userId | `repo.delete()` |
-| Redis chat history | `delete()` via `ChatHistoryClearer` | `redis.del()` |
+| Redis chat history | `delete()` via per-call `PrivacyStateCleanup` | `redis.del()` |
 
 **Preserved** (audit trail, auto-cleaned by retention cron):
 - `message_logs` — 90-day retention
@@ -481,7 +481,7 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 
 **Entity registration**: each app's `DatabaseModule` exports `buildPrivacyEntityRegistry()` and provides `PrivacyDataService` with its result — an explicit `PrivacyEntityRegistry` holding all three mapping entity classes, the scoped entity targets, and that app's message-log entity. `database:privacy-smoke` calls those same exported builders, so the smoke exercises the registry each app really wires instead of a copy that can drift. The constructor checks `DataSource.hasMetadata()` for every target and fails startup with the missing target name. Mapping entities are canonical exports from `@wispace/database` and included in shared TypeORM options; app-local entity paths re-export them for existing consumers. Calls are scoped to the app's configured platform.
 
-**Redis cleanup**: `ChatHistoryClearer` is an optional registry field; per-call cleanup callbacks can also clear history/queued work/clarification. Best-effort, outside transaction.
+**Redis cleanup**: each bot's ops controller wires per-call `PrivacyStateCleanup` callbacks (`clearHistory` / `clearQueuedWork` / `clearClarification` / `clearUserCache`) on every `unlink()`/`delete()` call. Callbacks clear **only this app's platform keys** — cross-platform Redis erasure requires the backend to call each bot's `/privacy/delete` endpoint (idempotent). Best-effort, outside transaction. Memory-mode fallback (`CHAT_HISTORY_STORE=memory`) clears local pod only; other pods stay stale until TTL/restart. Dequeue race (in-flight turn replies after erasure) is accepted — window is sub-second.
 
 ---
 

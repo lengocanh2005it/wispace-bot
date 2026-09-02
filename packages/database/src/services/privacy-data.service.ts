@@ -10,17 +10,17 @@ import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import type { Platform } from '@wispace/contracts';
 
 /**
- * Minimal interface for Redis chat history cleanup during erasure.
- * Avoids importing the full chat-history package into database.
+ * Per-call Redis/state cleanup callbacks, wired by each app's ops controller.
+ * All callbacks are own-platform: a bot only clears Redis keys it owns —
+ * cross-platform erasure is achieved by the backend calling each bot's
+ * privacy/delete endpoint (#537).
  */
-export interface ChatHistoryClearer {
-  clear(externalUserId: string): Promise<void>;
-}
-
 export interface PrivacyStateCleanup {
   clearHistory?: (externalUserId: string) => Promise<void>;
   clearQueuedWork?: (externalUserId: string) => Promise<void>;
   clearClarification?: (externalUserId: string) => Promise<void>;
+  /** Clears internal-userId-keyed caches (e.g. display-name cache). */
+  clearUserCache?: (userId: number) => Promise<void>;
 }
 
 /** Entity classes/schemas only; string targets would recreate implicit lookup. */
@@ -44,7 +44,6 @@ export interface PrivacyEntityRegistry {
   mappings: Record<Platform, PrivacyEntityTarget>;
   scoped: PrivacyScopedEntities;
   messageLog: PrivacyEntityTarget;
-  chatHistoryClearer?: ChatHistoryClearer;
 }
 
 /**
@@ -65,7 +64,7 @@ export interface PrivacyEntityRegistry {
  *   - Chat idempotency records (group A)
  *   - Notification consent (user_notification_preferences, #596)
  *   - Web activity (userId-scoped; orphan row kept when mapping has no userId)
- *   - Redis chat history (if ChatHistoryClearer provided)
+ *   - Redis chat history (via per-call PrivacyStateCleanup callbacks)
  *
  * Preserved (audit trail, auto-cleaned by retention cron):
  *   - message_logs
@@ -75,6 +74,10 @@ export interface PrivacyEntityRegistry {
  * Not covered (no raw per-user identifier — aggregate_id is a SHA-256
  * pseudonym since #640, see docs/data-minimization-audit.md):
  *   - chat_quota_events (uses hashed aggregate_id)
+ *
+ * Redis scope (#537): cleanup callbacks clear ONLY this app's platform keys.
+ * Cross-platform Redis erasure happens by calling each bot's privacy
+ * endpoints — all paths are idempotent, so re-calls are safe.
  */
 
 export interface PrivacyUnlinkResult {
@@ -135,7 +138,6 @@ export class PrivacyDataService {
     Platform,
     Repository<ObjectLiteral>
   >();
-  private readonly chatHistoryClearer?: ChatHistoryClearer;
 
   constructor(
     private readonly dataSource: DataSource,
@@ -146,7 +148,6 @@ export class PrivacyDataService {
         'PrivacyDataService requires an explicit entity registry',
       );
     }
-    this.chatHistoryClearer = registry.chatHistoryClearer;
     this.assertEntityMetadata();
   }
 
@@ -249,7 +250,7 @@ export class PrivacyDataService {
       currentState === 'locally-unlinked' ||
       currentState === 'confirmed-revoked'
     ) {
-      await this.runCleanup(externalUserId, cleanup);
+      await this.runCleanup(externalUserId, cleanup, userId);
       return { deleted: false, userId };
     }
     const generation = String(
@@ -285,7 +286,7 @@ export class PrivacyDataService {
       );
       await deleteVerifyIntent(manager, currentPlatform, externalUserId);
     });
-    await this.runCleanup(externalUserId, cleanup);
+    await this.runCleanup(externalUserId, cleanup, userId);
 
     return { deleted: true, userId };
   }
@@ -310,7 +311,6 @@ export class PrivacyDataService {
     const currentPlatform = this.assertCurrentPlatform(platform);
     // 1. Atomic transaction: mapping removal + all userId-scoped deletes
     let userId: number | undefined;
-    const cleanupExternalIds = new Set([externalUserId]);
 
     await this.dataSource.transaction(async (manager) => {
       // 1a. Look up and remove the platform mapping INSIDE the transaction
@@ -343,7 +343,6 @@ export class PrivacyDataService {
             const externalId = (otherMapping as { externalUserId?: string })
               .externalUserId;
             if (externalId) {
-              cleanupExternalIds.add(externalId);
               await writeLocalUnlinkAudit(
                 manager,
                 p,
@@ -403,10 +402,9 @@ export class PrivacyDataService {
       await deleteVerifyIntent(manager, currentPlatform, externalUserId);
     });
 
-    // 2. Redis cleanup — outside transaction, best-effort, idempotent
-    await Promise.all(
-      [...cleanupExternalIds].map((id) => this.runCleanup(id, cleanup)),
-    );
+    // 2. Redis cleanup — outside transaction, best-effort, idempotent.
+    //    Only clears THIS app's own platform keys (#537).
+    await this.runCleanup(externalUserId, cleanup, userId);
   }
 
   /**
@@ -489,16 +487,20 @@ export class PrivacyDataService {
   private async runCleanup(
     externalUserId: string,
     cleanup?: PrivacyStateCleanup,
+    userId?: number,
   ): Promise<void> {
-    const clearHistory =
-      cleanup?.clearHistory ?? this.chatHistoryClearer?.clear;
     const actions = [
-      clearHistory ? () => clearHistory(externalUserId) : undefined,
+      cleanup?.clearHistory
+        ? () => cleanup.clearHistory!(externalUserId)
+        : undefined,
       cleanup?.clearQueuedWork
         ? () => cleanup.clearQueuedWork!(externalUserId)
         : undefined,
       cleanup?.clearClarification
         ? () => cleanup.clearClarification!(externalUserId)
+        : undefined,
+      cleanup?.clearUserCache && userId
+        ? () => cleanup.clearUserCache!(userId)
         : undefined,
     ].filter((action): action is () => Promise<void> => action !== undefined);
     await Promise.all(

@@ -75,7 +75,6 @@ export { CronLeaderLeaseService } from './services/cron-leader-lease.service';
 export { listUserIdsWithSentReport } from './services/list-user-ids-with-sent-report';
 export {
   PrivacyDataService,
-  type ChatHistoryClearer,
   type PrivacyEntityRegistry,
   type PrivacyEntityTarget,
   type PrivacyScopedEntities,
