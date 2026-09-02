@@ -41,6 +41,7 @@ describe('AppModule boot smoke', () => {
     const dataSourceMock = new Proxy({} as DataSource, {
       get: (target, prop, receiver) => {
         if (prop === 'getRepository') return () => stubRepo;
+        if (prop === 'hasMetadata') return () => true;
         if (prop === 'getMetadata') return () => ({});
         if (prop === 'manager') {
           return {

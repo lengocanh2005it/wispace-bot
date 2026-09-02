@@ -22,7 +22,12 @@ export class ZaloMessageLogEntity {
   @Column({ name: 'error_message', type: 'text', nullable: true })
   error!: string | null;
 
-  @Column({ type: 'varchar', length: 50, default: 'chat' })
+  @Column({
+    name: 'message_type',
+    type: 'varchar',
+    length: 50,
+    default: 'chat',
+  })
   messageType!: string;
 
   @CreateDateColumn({ name: 'created_at' })

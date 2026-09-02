@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import {
   createCircuitBreakerDataSourceFactory,
   DbCircuitBreakerService,
@@ -9,10 +10,16 @@ import {
   WebActivityService,
   WebActivityEntity,
   UserNotificationPreferenceEntity,
+  PrivacyDataService,
+  UserPlatformMappingEntity as CanonicalUserPlatformMappingEntity,
+  DiscordAccountLinkEntity,
+  ZaloAccountLinkEntity,
+  LearnerProfileEntity,
 } from '@wispace/database';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
+  LlmUsageEventEntity,
   MessageLogEntity,
   ScheduledReportClaimEntity,
   ReportSendJobEntity,
@@ -48,12 +55,38 @@ import { getAppTypeOrmOptions } from './typeorm.options';
     CanonicalPlatformService,
     NotificationPreferenceService,
     WebActivityService,
+    {
+      provide: PrivacyDataService,
+      useFactory: (dataSource: DataSource) =>
+        new PrivacyDataService(dataSource, {
+          platform: 'messenger',
+          mappings: {
+            messenger: CanonicalUserPlatformMappingEntity,
+            discord: DiscordAccountLinkEntity,
+            zalo: ZaloAccountLinkEntity,
+          },
+          scoped: {
+            learnerProfile: LearnerProfileEntity,
+            studyReminderJob: StudyReminderJobEntity,
+            scheduledReportClaim: ScheduledReportClaimEntity,
+            reportSendJob: ReportSendJobEntity,
+            chatDailyUsage: ChatDailyUsageEntity,
+            llmUsageEvent: LlmUsageEventEntity,
+            chatIdempotency: ChatIdempotencyEntity,
+            webActivity: WebActivityEntity,
+            notificationPreference: UserNotificationPreferenceEntity,
+          },
+          messageLog: MessageLogEntity,
+        }),
+      inject: [DataSource],
+    },
   ],
   exports: [
     TypeOrmModule,
     CanonicalPlatformService,
     NotificationPreferenceService,
     WebActivityService,
+    PrivacyDataService,
   ],
 })
 export class DatabaseModule {}

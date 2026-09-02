@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BotCommonModule } from '@wispace/bot-common/guard';
-import { PrivacyDataService } from '@wispace/database';
+import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { DiscordReportModule } from '../discord-chat/discord-report.module';
 import { DiscordChatModule } from '../discord-chat/discord-chat.module';
 import { DiscordStudyReminderModule } from '../discord-study-reminder/discord-study-reminder.module';
@@ -10,6 +10,7 @@ import { DiscordOpsController } from './discord-ops.controller';
 @Module({
   imports: [
     BotCommonModule,
+    DatabaseModule,
     DiscordReportModule,
     DiscordChatModule,
     DiscordStudyReminderModule,
@@ -17,6 +18,5 @@ import { DiscordOpsController } from './discord-ops.controller';
     WispaceModule,
   ],
   controllers: [DiscordOpsController],
-  providers: [PrivacyDataService],
 })
 export class DiscordOpsModule {}

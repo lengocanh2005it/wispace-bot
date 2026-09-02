@@ -138,7 +138,7 @@ jobs:
         run: npm ci
 
       - name: Build database bootstrap dependencies
-        run: npx --no-install turbo run build --filter=@wispace/discord-bot... --filter=@wispace/zalo-bot...
+        run: npx --no-install turbo run build --filter=@wispace/messenger-bot... --filter=@wispace/discord-bot... --filter=@wispace/zalo-bot...
         env:
           TURBO_CONCURRENCY: 2
           NODE_OPTIONS: '--max-old-space-size=4096'
@@ -148,6 +148,9 @@ jobs:
 
       - name: Run real TypeORM database bootstrap smoke test
         run: npm run database:bootstrap-smoke
+
+      - name: Run real PrivacyDataService cross-platform smoke test
+        run: npm run database:privacy-smoke
 
   database-migration-compatibility:
     runs-on: ubuntu-latest

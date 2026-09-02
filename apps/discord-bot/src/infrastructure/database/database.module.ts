@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 import {
   ChatDailyUsageEntity,
   ChatIdempotencyEntity,
@@ -17,6 +18,14 @@ import {
   NotificationPreferenceService,
   WebActivityService,
   UserNotificationPreferenceEntity,
+  PrivacyDataService,
+  UserPlatformMappingEntity,
+  DiscordAccountLinkEntity as CanonicalDiscordAccountLinkEntity,
+  ZaloAccountLinkEntity,
+  LearnerProfileEntity,
+  ScheduledReportClaimEntity,
+  ReportSendJobEntity,
+  WebActivityEntity,
 } from '@wispace/database';
 import { DiscordAccountLinkEntity } from './entities/discord-account-link.entity';
 import { DiscordLinkVerifyRecordEntity } from './entities/discord-link-verify-record.entity';
@@ -31,7 +40,6 @@ export function buildTypeOrmOptions(config: ConfigService) {
     ChatIdempotencyEntity,
     LlmUsageEventEntity,
     LlmSafetyEventEntity,
-    DiscordAccountLinkEntity,
     DiscordLinkVerifyRecordEntity,
     DiscordMessageLogEntity,
     DiscordOauthStateEntity,
@@ -69,12 +77,38 @@ export function buildTypeOrmOptions(config: ConfigService) {
     CanonicalPlatformService,
     NotificationPreferenceService,
     WebActivityService,
+    {
+      provide: PrivacyDataService,
+      useFactory: (dataSource: DataSource) =>
+        new PrivacyDataService(dataSource, {
+          platform: 'discord',
+          mappings: {
+            messenger: UserPlatformMappingEntity,
+            discord: CanonicalDiscordAccountLinkEntity,
+            zalo: ZaloAccountLinkEntity,
+          },
+          scoped: {
+            learnerProfile: LearnerProfileEntity,
+            studyReminderJob: StudyReminderJobEntity,
+            scheduledReportClaim: ScheduledReportClaimEntity,
+            reportSendJob: ReportSendJobEntity,
+            chatDailyUsage: ChatDailyUsageEntity,
+            llmUsageEvent: LlmUsageEventEntity,
+            chatIdempotency: ChatIdempotencyEntity,
+            webActivity: WebActivityEntity,
+            notificationPreference: UserNotificationPreferenceEntity,
+          },
+          messageLog: DiscordMessageLogEntity,
+        }),
+      inject: [DataSource],
+    },
   ],
   exports: [
     TypeOrmModule,
     CanonicalPlatformService,
     NotificationPreferenceService,
     WebActivityService,
+    PrivacyDataService,
   ],
 })
 export class DatabaseModule {}

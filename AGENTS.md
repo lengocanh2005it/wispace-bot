@@ -98,10 +98,11 @@ Database CI checks (root, disposable PostgreSQL only):
 
 ```bash
 npm run database:bootstrap-smoke          # entity metadata + OAuth cleanup
+npm run database:privacy-smoke            # real cross-platform privacy unlink/delete/export
 npm run database:migration-compatibility  # canonical migration chain + bot tables
 ```
 
-Both checks require `NODE_ENV=test` and a loopback `DB_HOST`; never point them at the production DB.
+All database smoke checks require `NODE_ENV=test` and a loopback `DB_HOST`; never point them at the production DB.
 
 From `apps/messenger-bot/` (same as pre-migration commands):
 
@@ -478,7 +479,9 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 
 **Cross-platform**: delete uses WISPACE `user_id` (root identifier), so deleting via Messenger also cleans Discord/Zalo records.
 
-**Redis cleanup**: `ChatHistoryClearer` (optional constructor param) — `RedisChatHistoryStore.clear()` or `MemoryChatHistoryStore.clear()`. Best-effort, outside transaction.
+**Entity registration**: each app's `DatabaseModule` provides `PrivacyDataService` with an explicit `PrivacyEntityRegistry`: all three mapping entity classes, the scoped entity targets, and that app's message-log entity. The constructor checks `DataSource.hasMetadata()` for every target and fails startup with the missing target name. Mapping entities are canonical exports from `@wispace/database` and included in shared TypeORM options; app-local entity paths re-export them for existing consumers. Calls are scoped to the app's configured platform.
+
+**Redis cleanup**: `ChatHistoryClearer` is an optional registry field; per-call cleanup callbacks can also clear history/queued work/clarification. Best-effort, outside transaction.
 
 ---
 

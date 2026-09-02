@@ -36,7 +36,6 @@ import {
   RescheduleConfirmationEntity,
   RescheduleRecoveryCronService,
   TypeormRescheduleStore,
-  PrivacyDataService,
 } from '@wispace/database';
 import {
   LEARNER_PROFILE_STORE,
@@ -46,6 +45,7 @@ import {
 } from '@wispace/learner-profile';
 import type { LearnerProfileStorePort } from '@wispace/learner-profile';
 import { CommonModule } from '../../shared/common/common.module';
+import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { ChatRateLimitModule } from '../chat-rate-limit/chat-rate-limit.module';
 import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
 import { LlmExecutionService } from '../llm-execution/application/services/llm-execution.service';
@@ -104,6 +104,7 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
 @Module({
   imports: [
     CommonModule,
+    DatabaseModule,
     MessengerOutboundModule,
     ChatRateLimitModule,
     LlmExecutionModule,
@@ -453,7 +454,6 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
     MessengerChatProcessorService,
     MessengerChatEnqueueService,
     PrivacyStateService,
-    PrivacyDataService,
     {
       provide: RedisChatQueueWorkerService,
       useFactory: (
