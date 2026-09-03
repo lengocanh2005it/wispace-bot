@@ -1,0 +1,192 @@
+{
+  "name": "compaction-via-execution-port",
+  "description": "Over-budget history must compact through LlmExecutionPort (routing proof for #703). History is sized ~2x the minimum so prompt growth/shrinkage within a few k tokens cannot silently flip the over-budget precondition (a flip still fails LOUD via the routing assertion).",
+  "coreHash": "2406849abda03274e9681b0cf9ddfa78f16680ac09722d950b53bb8b4703ad39",
+  "promptFiles": [
+    {
+      "path": "apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt",
+      "hash": "846abeac04ed2fb760a912ee024c5a0b547fd5adc47b07482a950ef07921d0eb"
+    }
+  ],
+  "userText": "Cho mình xem tiến độ học",
+  "externalUserId": "eval-compaction-0001",
+  "userId": 1001,
+  "history": [
+    {
+      "role": "user",
+      "content": "Mình muốn cải thiện kỹ năng nghe hiểu các đoạn hội thoại học thuật dài trong thời gian tới"
+    },
+    {
+      "role": "assistant",
+      "content": "Bạn nên chia nhỏ buổi luyện thành nhiều chặng ngắn để duy trì sự tập trung tốt nhất"
+    },
+    {
+      "role": "user",
+      "content": "Bạn có thể gợi ý cho mình phương pháp luyện phát âm chuẩn ngay tại nhà mỗi buổi tối không"
+    },
+    {
+      "role": "assistant",
+      "content": "Mình gợi ý bạn luyện nghe chép chính tả mỗi ngày để cải thiện khả năng nhận diện âm"
+    },
+    {
+      "role": "user",
+      "content": "Mình hay bị bí ý khi viết đoạn văn nghị luận về chủ đề giáo dục và môi trường sống"
+    },
+    {
+      "role": "assistant",
+      "content": "Khi viết bài bạn hãy lập dàn ý trước rồi mới triển khai từng đoạn cho mạch lạc"
+    },
+    {
+      "role": "user",
+      "content": "Tuần này mình dự định dành thêm thời gian ôn tập từ vựng theo từng chủ đề quen thuộc"
+    },
+    {
+      "role": "assistant",
+      "content": "Bạn có thể dùng thẻ ghi nhớ để ôn từ vựng theo nhóm nghĩa sẽ nhớ lâu hơn nhiều"
+    },
+    {
+      "role": "user",
+      "content": "Mình muốn biết cách phân bổ thời gian hợp lý cho từng phần trong buổi luyện đề"
+    },
+    {
+      "role": "assistant",
+      "content": "Mình khuyên bạn nên bấm giờ khi luyện để quen dần với áp lực thời gian thực tế"
+    },
+    {
+      "role": "user",
+      "content": "Bạn có thể chia sẻ kinh nghiệm giữ bình tĩnh khi gặp câu hỏi khó trong phòng luyện không"
+    },
+    {
+      "role": "assistant",
+      "content": "Bạn hãy thử kỹ thuật hít thở sâu trước khi bắt đầu phần luyện khó nhất buổi đó"
+    },
+    {
+      "role": "user",
+      "content": "Mình đang tìm thêm tài liệu đọc hiểu trình độ trung cấp để luyện mỗi sáng sớm"
+    },
+    {
+      "role": "assistant",
+      "content": "Mỗi sáng bạn đọc một bài ngắn rồi tóm tắt lại bằng lời của mình sẽ tiến bộ nhanh"
+    },
+    {
+      "role": "user",
+      "content": "Nhờ bạn gợi ý lộ trình ôn tập phù hợp với người mới bắt đầu lại sau thời gian nghỉ"
+    },
+    {
+      "role": "assistant",
+      "content": "Bạn nên bắt đầu lại từ những chủ đề quen thuộc rồi nâng dần độ khó từng tuần"
+    },
+    {
+      "role": "user",
+      "content": "Mình muốn luyện thêm kỹ năng ghi chú nhanh khi nghe giảng bài bằng tiếng Anh"
+    },
+    {
+      "role": "assistant",
+      "content": "Khi nghe giảng bạn hãy ghi từ khóa thay vì chép nguyên câu sẽ theo kịp bài hơn"
+    },
+    {
+      "role": "user",
+      "content": "Bạn có mẹo nào giúp mình mở rộng vốn từ theo cụm thay vì học từng từ rời rạc không"
+    },
+    {
+      "role": "assistant",
+      "content": "Học từ theo cụm giúp bạn dùng đúng ngữ cảnh và diễn đạt tự nhiên hơn rất nhiều"
+    },
+    {
+      "role": "user",
+      "content": "Mình muốn cải thiện kỹ năng nghe hiểu các đoạn hội thoại học thuật dài trong thời gian tới"
+    },
+    {
+      "role": "assistant",
+      "content": "Bạn nên chia nhỏ buổi luyện thành nhiều chặng ngắn để duy trì sự tập trung tốt nhất"
+    },
+    {
+      "role": "user",
+      "content": "Bạn có thể gợi ý cho mình phương pháp luyện phát âm chuẩn ngay tại nhà mỗi buổi tối không"
+    },
+    {
+      "role": "assistant",
+      "content": "Mình gợi ý bạn luyện nghe chép chính tả mỗi ngày để cải thiện khả năng nhận diện âm"
+    },
+    {
+      "role": "user",
+      "content": "Mình hay bị bí ý khi viết đoạn văn nghị luận về chủ đề giáo dục và môi trường sống"
+    },
+    {
+      "role": "assistant",
+      "content": "Khi viết bài bạn hãy lập dàn ý trước rồi mới triển khai từng đoạn cho mạch lạc"
+    },
+    {
+      "role": "user",
+      "content": "Tuần này mình dự định dành thêm thời gian ôn tập từ vựng theo từng chủ đề quen thuộc"
+    },
+    {
+      "role": "assistant",
+      "content": "Bạn có thể dùng thẻ ghi nhớ để ôn từ vựng theo nhóm nghĩa sẽ nhớ lâu hơn nhiều"
+    },
+    {
+      "role": "user",
+      "content": "Mình muốn biết cách phân bổ thời gian hợp lý cho từng phần trong buổi luyện đề"
+    },
+    {
+      "role": "assistant",
+      "content": "Mình khuyên bạn nên bấm giờ khi luyện để quen dần với áp lực thời gian thực tế"
+    },
+    {
+      "role": "user",
+      "content": "Bạn có thể chia sẻ kinh nghiệm giữ bình tĩnh khi gặp câu hỏi khó trong phòng luyện không"
+    },
+    {
+      "role": "assistant",
+      "content": "Bạn hãy thử kỹ thuật hít thở sâu trước khi bắt đầu phần luyện khó nhất buổi đó"
+    },
+    {
+      "role": "user",
+      "content": "Mình đang tìm thêm tài liệu đọc hiểu trình độ trung cấp để luyện mỗi sáng sớm"
+    },
+    {
+      "role": "assistant",
+      "content": "Mỗi sáng bạn đọc một bài ngắn rồi tóm tắt lại bằng lời của mình sẽ tiến bộ nhanh"
+    },
+    {
+      "role": "user",
+      "content": "Nhờ bạn gợi ý lộ trình ôn tập phù hợp với người mới bắt đầu lại sau thời gian nghỉ"
+    },
+    {
+      "role": "assistant",
+      "content": "Bạn nên bắt đầu lại từ những chủ đề quen thuộc rồi nâng dần độ khó từng tuần"
+    },
+    {
+      "role": "user",
+      "content": "Mình muốn luyện thêm kỹ năng ghi chú nhanh khi nghe giảng bài bằng tiếng Anh"
+    },
+    {
+      "role": "assistant",
+      "content": "Khi nghe giảng bạn hãy ghi từ khóa thay vì chép nguyên câu sẽ theo kịp bài hơn"
+    },
+    {
+      "role": "user",
+      "content": "Bạn có mẹo nào giúp mình mở rộng vốn từ theo cụm thay vì học từng từ rời rạc không"
+    },
+    {
+      "role": "assistant",
+      "content": "Học từ theo cụm giúp bạn dùng đúng ngữ cảnh và diễn đạt tự nhiên hơn rất nhiều"
+    }
+  ],
+  "compaction": {
+    "enabled": true,
+    "maxInputTokens": 6500
+  },
+  "script": [
+    {
+      "text": "Mình đã tóm tắt lại toàn bộ trao đổi của bạn rồi nhé."
+    }
+  ],
+  "expected": {
+    "toolSequence": [],
+    "replyTextContains": ["tóm tắt"],
+    "exhausted": false,
+    "toolSummary": null,
+    "compactionViaExecutionPort": true
+  }
+}

@@ -168,6 +168,12 @@ export interface EvalExpectation {
   injectionEvents?: number;
   /** Request-contract assertions run against the recorded provider requests. */
   requestContracts?: EvalRequestContract[];
+  /**
+   * #721 — when true, the harness fails unless a `compaction:*` call was
+   * observed going through the fake `LlmExecutionPort`. Routing-only proof
+   * that history compaction honors the shared execution path (#703).
+   */
+  compactionViaExecutionPort?: boolean;
 }
 
 export interface EvalPromptFile {
@@ -211,6 +217,17 @@ export interface EvalFixture {
   /** One entry per LLM round (in order). Empty = the LLM is never called. */
   script: EvalScriptRound[];
   expected: EvalExpectation;
+  /**
+   * #721 — opts this fixture into history compaction: the harness enables
+   * `compactionEnabled` with the given input-token budget (compaction only
+   * cares over/under budget, so small test budgets are representative).
+   * The compaction summary is served canned by the scripted adapter and never
+   * consumes a script round.
+   */
+  compaction?: {
+    enabled: boolean;
+    maxInputTokens?: number;
+  };
   /**
    * When true, the fixture may script tool calls with names not in AGENT_TOOLS.
    * Used to test the agent loop's behavior when the LLM attempts unknown tools.
@@ -406,6 +423,20 @@ export function parseFixture(
   if (raw.allowUnknown !== undefined && typeof raw.allowUnknown !== 'boolean') {
     errors.push('allowUnknown must be a boolean');
   }
+  if (raw.compaction !== undefined) {
+    if (
+      !isRecord(raw.compaction) ||
+      typeof raw.compaction.enabled !== 'boolean' ||
+      (raw.compaction.maxInputTokens !== undefined &&
+        (typeof raw.compaction.maxInputTokens !== 'number' ||
+          !Number.isInteger(raw.compaction.maxInputTokens) ||
+          raw.compaction.maxInputTokens <= 0))
+    ) {
+      errors.push(
+        'compaction must be { enabled: boolean, maxInputTokens?: positive integer } (#721)',
+      );
+    }
+  }
   if (
     raw.adapterConfigured !== undefined &&
     typeof raw.adapterConfigured !== 'boolean'
@@ -512,6 +543,12 @@ export function parseFixture(
     ) {
       errors.push('expected.planRemainder must be a non-negative integer');
     }
+    if (
+      expected.compactionViaExecutionPort !== undefined &&
+      typeof expected.compactionViaExecutionPort !== 'boolean'
+    ) {
+      errors.push('expected.compactionViaExecutionPort must be a boolean');
+    }
     if (expected.requestContracts !== undefined) {
       if (!Array.isArray(expected.requestContracts)) {
         errors.push('expected.requestContracts must be an array');
@@ -603,6 +640,9 @@ export function parseFixture(
         : undefined,
       script: raw.script as EvalScriptRound[],
       expected: raw.expected as EvalExpectation,
+      compaction: isRecord(raw.compaction)
+        ? (raw.compaction as EvalFixture['compaction'])
+        : undefined,
       adapterConfigured: raw.adapterConfigured === false ? false : true,
     },
   };
@@ -677,12 +717,31 @@ export function loadPromptFiles(
 }
 
 /**
+ * Canned compaction summary for `compaction:*` calls (#721). Fixed benign
+ * text by design: it must survive the output safety check and the
+ * fact-stripping pass (no scores, dates, numbers, identity details), or the
+ * harness would fail on machinery instead of the scenario. The compaction
+ * answer is harness machinery, never scenario content.
+ */
+const COMPACTION_CANNED_SUMMARY = 'User discussed study plans and preferences.';
+
+/** CorrelationIds of the form `compaction:<externalUserId>`. */
+function isCompactionCorrelationId(correlationId: string | undefined): boolean {
+  return correlationId?.startsWith('compaction:') === true;
+}
+
+/**
  * Frozen LLM adapter: returns the fixture's scripted responses in round
  * order. Fails loudly when the loop asks for more responses than scripted —
  * an early return (injection/off-topic) or an unexpected extra round shows
  * up as an adapter-call-count mismatch. Every provider request is retained
  * (`allRequests`) so leak/plan/contract assertions run across ALL rounds,
  * not just the last one.
+ *
+ * Compaction calls (`correlationId: compaction:*`, #721) are answered with
+ * the canned summary WITHOUT consuming a script round: compaction is
+ * pre-loop history prep, not a tool round, so `callCount` only tracks the
+ * scripted rounds the `script.length` assertion counts.
  */
 export class ScriptedAdapter implements LlmProviderAdapter {
   callCount = 0;
@@ -711,7 +770,19 @@ export class ScriptedAdapter implements LlmProviderAdapter {
   }
 
   chatWithTools(request: LlmToolChatRequest): Promise<LlmToolChatResponse> {
+    // Kept visible to leak/plan/contract assertions on purpose: the
+    // compaction prompt carries the full dropped history, so it is the most
+    // leak-sensitive request. It is always allRequests[0] (pre-loop), so a
+    // future round-indexed contract on a compaction fixture must account
+    // for that offset.
     this.allRequests.push(request);
+    if (isCompactionCorrelationId(request.correlationId)) {
+      return Promise.resolve({
+        message: { role: 'assistant', content: COMPACTION_CANNED_SUMMARY },
+        content: COMPACTION_CANNED_SUMMARY,
+        metadata: EVAL_METADATA,
+      });
+    }
     const round = this.script[this.callCount];
     this.callCount += 1;
     if (!round) {
@@ -950,8 +1021,15 @@ export async function runEvalFixture(
   let groundingWarnings = 0;
   let injectionEvents = 0;
 
+  // #721 — correlationIds the loop routed through the execution port, in
+  // call order. The routing assertion below reads this, not the adapter.
+  const observedExecutionCorrelationIds: string[] = [];
   const llmExecution: LlmExecutionPort = {
-    run: async (fn, meta) => fn(meta.signal),
+    run: async (fn, meta) => {
+      if (meta.correlationId)
+        observedExecutionCorrelationIds.push(meta.correlationId);
+      return fn(meta.signal);
+    },
   };
   const usageRecorder: LlmUsageRecorderPort = {
     recordFromCompletion: () => undefined,
@@ -971,6 +1049,10 @@ export async function runEvalFixture(
       toolExecutionTimeoutMs: 5_000,
       globalAgentTimeoutMs: 30_000,
       maxOutputTokens: 1024,
+      // #721 — per-fixture compaction opt-in (budget override keeps the
+      // history small: compaction only cares over/under budget).
+      compactionEnabled: fixture.compaction?.enabled === true,
+      maxInputTokens: fixture.compaction?.maxInputTokens,
     },
     {
       llmExecution,
@@ -1114,6 +1196,18 @@ export async function runEvalFixture(
         failures.push(
           `injection events: expected ${expectedInjectionEvents} got ${injectionEvents}`,
         );
+      }
+      // Execution-port routing for compaction (#703/#721): the summary call
+      // must travel through llmExecution.run like every other provider call.
+      if (fixture.expected.compactionViaExecutionPort === true) {
+        const seen = observedExecutionCorrelationIds.some(
+          isCompactionCorrelationId,
+        );
+        if (!seen) {
+          failures.push(
+            'expected a compaction call through llmExecution.run but none was observed',
+          );
+        }
       }
       // Plan step (#207 item 2): a scripted plan line (`content` on a tool
       // round) must survive into the next round's messages — the loop must
