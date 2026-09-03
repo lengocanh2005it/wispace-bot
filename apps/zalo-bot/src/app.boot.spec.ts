@@ -3,6 +3,8 @@ import { DataSource, Repository } from 'typeorm';
 import { AppModule } from './app.module';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { PrecreateExerciseApiClient } from '@wispace/wispace-client';
+import { CanonicalPlatformService } from '@wispace/database';
+import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
 import { ZaloAccountLinkService } from './modules/zalo-oauth/application/services/zalo-account-link.service';
 import { ZaloLinkCompletionService } from './modules/zalo-oauth/application/services/zalo-link-completion.service';
 import { ZaloOauthStateService } from './modules/zalo-oauth/application/services/zalo-oauth-state.service';
@@ -83,6 +85,18 @@ describe('AppModule boot smoke', () => {
     const app = moduleRef.createNestApplication({ logger: false });
     try {
       await app.init();
+      const canonicalService = moduleRef.get(CanonicalPlatformService);
+      const canonicalSpy = jest
+        .spyOn(canonicalService, 'getCanonicalPlatformForUser')
+        .mockResolvedValue('zalo');
+      const syncService = moduleRef.get(StudyReminderSyncService);
+      const resolver = (
+        syncService as unknown as {
+          canonicalResolver: (userId: number) => Promise<unknown>;
+        }
+      ).canonicalResolver;
+      await expect(resolver(42)).resolves.toBe('zalo');
+      expect(canonicalSpy).toHaveBeenCalledWith(42);
       expect(moduleRef.get(InternalApiKeyGuard)).toBeInstanceOf(
         InternalApiKeyGuard,
       );

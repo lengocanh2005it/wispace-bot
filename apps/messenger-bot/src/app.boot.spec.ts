@@ -4,6 +4,8 @@ import request from 'supertest';
 import type { App } from 'supertest/types';
 import { AppModule } from './app.module';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
+import { CanonicalPlatformService } from '@wispace/database';
+import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
 
 /**
  * Boot smoke test: compiles AppModule and runs app.init() so Nest resolves
@@ -12,6 +14,10 @@ import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
  * and that otherwise only surface at the deploy health check.
  */
 describe('AppModule boot smoke', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   it('boots without DI errors', async () => {
     process.env.OPENAI_API_KEY = 'test-key';
     process.env.OPENAI_MODEL = 'test-model';
@@ -77,6 +83,19 @@ describe('AppModule boot smoke', () => {
 
     const app = moduleRef.createNestApplication({ logger: false });
     await app.init();
+
+    const canonicalService = moduleRef.get(CanonicalPlatformService);
+    const canonicalSpy = jest
+      .spyOn(canonicalService, 'getCanonicalPlatformForUser')
+      .mockResolvedValue('messenger');
+    const syncService = moduleRef.get(StudyReminderSyncService);
+    const resolver = (
+      syncService as unknown as {
+        canonicalResolver: (userId: number) => Promise<unknown>;
+      }
+    ).canonicalResolver;
+    await expect(resolver(42)).resolves.toBe('messenger');
+    expect(canonicalSpy).toHaveBeenCalledWith(42);
 
     await request(app.getHttpServer() as App)
       .get('/health/detail')
