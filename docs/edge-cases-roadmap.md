@@ -263,6 +263,7 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 - **Discord bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator (`ChatPipelineHooks.onStep`) + user feedback ("Đang xử lý tin nhắn trước...") + 7/7 real tool handlers (reschedule via button confirm/cancel, `precreate_next_exercise` wired). `register_exam_report_notifications` not needed (no 24h limit).
 - **Zalo bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + user feedback ("Đang xử lý tin nhắn trước...") + account linking + 7/7 real tools wired (incl. `precreate_next_exercise`) + 08:00 report cron + study reminders + dead letter + chat queue + ops endpoints + CI/CD. `register_exam_report_notifications` not needed (48h window covers active users; ZNS deferred).
 - **Postgres/Redis consistency (#609)** — Postgres-final burst enforcement, bounded Redis burst audit with invalidation, per-platform queue index reconciliation, malformed-state quarantine, low-cardinality drift metrics, and a two-minute Alertmanager rule. See [ADR-0007](adr/0007-postgres-redis-consistency.md).
+- **MVCC / concurrency direction (#576)** — `READ COMMITTED` is the baseline for every concurrent flow; no generic application-level MVCC layer. Per-flow mechanism (single-statement CAS, lease token, `FOR UPDATE`, one `version` CAS, advisory lock, Redis Lua) inventoried, plus read-your-writes/cache-invalidation rules. Decision only — no race found, no code changed. See [ADR-0008](adr/0008-mvcc-and-optimistic-concurrency.md).
 
 ### Gaps & Remediation
 
