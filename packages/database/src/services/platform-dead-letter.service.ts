@@ -131,11 +131,7 @@ export class PlatformDeadLetterService {
     id: number,
     leaseMs: number,
   ): Promise<DeadLetterClaim | null> {
-    const rows: Array<{
-      id: number;
-      lease_token: string;
-      delivery_key: string;
-    }> = await this.repo.manager.query(
+    const raw = await this.repo.manager.query(
       `
       UPDATE "webhook_dead_letters"
       SET status = 'processing',
@@ -149,6 +145,14 @@ export class PlatformDeadLetterService {
     `,
       [id, leaseMs],
     );
+
+    // TypeORM returns `[rows, affectedCount]` for `UPDATE … RETURNING`; older
+    // drivers hand back just `rows`. Normalize both to the row array.
+    const rows: Array<{
+      id: number;
+      lease_token: string;
+      delivery_key: string;
+    }> = Array.isArray(raw?.[0]) ? raw[0] : (raw ?? []);
 
     return rows.length > 0
       ? {
@@ -237,20 +241,18 @@ export class PlatformDeadLetterService {
     externalUserId?: string,
     opts?: { leaseToken?: string },
   ): Promise<boolean> {
-    const set: Record<string, unknown> = {
-      retryCount: () => 'retry_count + 1',
-      errorMessage: this.sanitizeError(errorMessage, externalUserId),
-      status: 'pending',
-      leaseToken: null,
-      leaseExpiresAt: null,
-      processingStartedAt: null,
-      updatedAt: new Date(),
-    };
-
     let qb = this.repo
       .createQueryBuilder()
       .update(WebhookDeadLetterEntity)
-      .set(set)
+      .set({
+        retryCount: () => 'retry_count + 1',
+        errorMessage: this.sanitizeError(errorMessage, externalUserId),
+        status: 'pending',
+        leaseToken: null,
+        leaseExpiresAt: null,
+        processingStartedAt: null,
+        updatedAt: new Date(),
+      })
       .where('id = :id', { id });
 
     if (opts?.leaseToken !== undefined) {

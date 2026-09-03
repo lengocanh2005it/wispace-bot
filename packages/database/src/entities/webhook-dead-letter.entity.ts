@@ -101,6 +101,18 @@ export class WebhookDeadLetterEntity {
   })
   processingStartedAt!: Date | null;
 
+  /**
+   * Owner lease assigned at claim time — every terminal write must match it so
+   * a stale worker (lease reopened by recovery) can never overwrite the newer
+   * owner's result (#291/#711).
+   */
+  @Column({ name: 'lease_token', type: 'uuid', nullable: true })
+  leaseToken!: string | null;
+
+  /** Deadline for the current claim; a live lease is proof the worker is active. */
+  @Column({ name: 'lease_expires_at', type: 'timestamptz', nullable: true })
+  leaseExpiresAt!: Date | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

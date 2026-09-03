@@ -121,10 +121,12 @@ describe('PlatformDeadLetterService', () => {
   });
 
   it('claims a pending row for retry and persists a stable delivery key', async () => {
+    // TypeORM returns `[rows, affectedCount]` for `UPDATE … RETURNING`.
     const managerQuery = jest
       .fn()
       .mockResolvedValue([
-        { id: 42, lease_token: 'lease-42', delivery_key: 'key-42' },
+        [{ id: 42, lease_token: 'lease-42', delivery_key: 'key-42' }],
+        1,
       ]);
     const repo = {
       manager: { query: managerQuery },
@@ -152,7 +154,7 @@ describe('PlatformDeadLetterService', () => {
 
   it('returns null when another worker already claimed the row', async () => {
     const repo = {
-      manager: { query: jest.fn().mockResolvedValue([]) },
+      manager: { query: jest.fn().mockResolvedValue([[], 0]) },
       update: jest.fn(),
       createQueryBuilder: jest.fn(),
     } as unknown as Repository<WebhookDeadLetterEntity>;

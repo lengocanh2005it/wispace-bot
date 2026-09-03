@@ -17,6 +17,9 @@ const {
   PlatformCleanupCronService,
 } = require('@wispace/cleanup-cron');
 const { PgAdvisoryLockService } = require('@wispace/bot-common/locks');
+const { PlatformDeadLetterService, WebhookDeadLetterEntity } = require(
+  '@wispace/database',
+);
 
 const requiredEnv = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
 const migrationMode = process.argv.includes('--migrations');
@@ -99,6 +102,171 @@ async function assertTables(dataSource, entities, platform) {
     }
   } finally {
     await queryRunner.release();
+  }
+}
+
+/**
+ * Every column an entity maps must exist in the migrated schema. This is the
+ * check that would have caught #711 — `PlatformDeadLetterService` read/wrote
+ * `lease_token` / `lease_expires_at` on `webhook_dead_letters` for months while
+ * no migration created them and `assertTables` (table-level only) stayed green.
+ * Entity -> DB direction only: a migration may add columns an entity does not
+ * map yet (persistence-only state), but an entity column with no DB column is
+ * always drift.
+ */
+async function assertColumns(dataSource, platform) {
+  const queryRunner = dataSource.createQueryRunner();
+  const drift = [];
+  try {
+    for (const metadata of dataSource.entityMetadatas) {
+      if (metadata.tableType === 'view') continue;
+      const table = await queryRunner.getTable(metadata.tableName);
+      if (!table) continue; // table presence is assertTables' concern
+      const present = new Set(table.columns.map((column) => column.name));
+      for (const column of metadata.columns) {
+        if (!present.has(column.databaseName)) {
+          drift.push(
+            `${metadata.tableName}.${column.databaseName} (entity ${metadata.name})`,
+          );
+        }
+      }
+    }
+  } finally {
+    await queryRunner.release();
+  }
+  if (drift.length > 0) {
+    throw new Error(
+      `${platform}: entity columns missing from the migrated schema:\n  ${drift.join('\n  ')}`,
+    );
+  }
+}
+
+/**
+ * Exercises the crash-safe dead-letter replay path against real Postgres on the
+ * migrated schema: the lease-fenced claim/mark flow (#291) that silently threw
+ * in production because its columns were never migrated (#711). Covers the
+ * claim + all three terminal writes (`markReplayed`, `incrementRetry`,
+ * `markAbandoned`), the stale-token negative, the double-claim guard, and the
+ * empty-table no-op the retry cron relies on.
+ */
+async function exerciseDeadLetterReplay(dataSource) {
+  const LEASE_MS = 600_000;
+  const repo = dataSource.getRepository(WebhookDeadLetterEntity);
+  const service = new PlatformDeadLetterService('messenger', repo);
+  const owner = `dl-smoke-${randomUUID().replaceAll('-', '')}`;
+
+  const seedPendingOutbound = async () => {
+    const saved = await repo.save({
+      platform: 'messenger',
+      externalUserId: owner,
+      direction: 'outbound',
+      rawPayload: { text: 'smoke' },
+      errorMessage: 'smoke send failed',
+      status: 'pending',
+    });
+    return saved.id;
+  };
+
+  // The retry cron must no-op cleanly when nothing is pending (#711 AC5).
+  const emptyScan = await service.listPendingForRetry({
+    limit: 10,
+    olderThan: new Date(),
+    maxRetries: 3,
+  });
+  if (emptyScan.length !== 0) {
+    throw new Error(
+      `listPendingForRetry returned ${emptyScan.length} rows against a fresh schema`,
+    );
+  }
+
+  try {
+    // Positive: claim assigns a lease + delivery key; the owner completes the row.
+    const id1 = await seedPendingOutbound();
+    const claim1 = await service.claimForRetry(id1, LEASE_MS);
+    if (!claim1?.leaseToken || !claim1?.deliveryKey) {
+      throw new Error('claimForRetry did not assign a lease token / delivery key');
+    }
+    if (
+      !(await service.markReplayed(id1, claim1.leaseToken, claim1.deliveryKey))
+    ) {
+      throw new Error('markReplayed rejected the lease owner');
+    }
+    const row1 = await repo.findOneBy({ id: id1 });
+    if (row1?.status !== 'replayed') {
+      throw new Error(`expected status 'replayed', got '${row1?.status}'`);
+    }
+
+    // Negative: a stale lease token cannot mark; the real owner still can.
+    const id2 = await seedPendingOutbound();
+    const claim2 = await service.claimForRetry(id2, LEASE_MS);
+    if (!claim2) throw new Error('second claimForRetry returned null');
+    if (await service.markReplayed(id2, randomUUID(), claim2.deliveryKey)) {
+      throw new Error('a stale lease token was allowed to mark the row');
+    }
+    if (
+      !(await service.markReplayed(id2, claim2.leaseToken, claim2.deliveryKey))
+    ) {
+      throw new Error('the real owner could not mark after a stale attempt');
+    }
+
+    // incrementRetry: the lease owner re-opens the row and clears the lease.
+    const id3 = await seedPendingOutbound();
+    const claim3 = await service.claimForRetry(id3, LEASE_MS);
+    if (!claim3) throw new Error('claimForRetry for incrementRetry returned null');
+    if (await service.incrementRetry(id3, 'retry', owner, { leaseToken: randomUUID() })) {
+      throw new Error('incrementRetry accepted a stale lease token');
+    }
+    if (
+      !(await service.incrementRetry(id3, 'retry', owner, {
+        leaseToken: claim3.leaseToken,
+      }))
+    ) {
+      throw new Error('incrementRetry rejected the lease owner');
+    }
+    const row3 = await repo.findOneBy({ id: id3 });
+    if (
+      row3?.status !== 'pending' ||
+      row3.retryCount !== 1 ||
+      row3.leaseToken !== null ||
+      row3.leaseExpiresAt !== null
+    ) {
+      throw new Error(
+        `incrementRetry left the row in a bad state: ${JSON.stringify(row3)}`,
+      );
+    }
+
+    // markAbandoned: the lease owner terminalizes the row.
+    const id4 = await seedPendingOutbound();
+    const claim4 = await service.claimForRetry(id4, LEASE_MS);
+    if (!claim4) throw new Error('claimForRetry for markAbandoned returned null');
+    if (
+      await service.markAbandoned(id4, 'stale', owner, {
+        leaseToken: randomUUID(),
+      })
+    ) {
+      throw new Error('markAbandoned accepted a stale lease token');
+    }
+    if (
+      !(await service.markAbandoned(id4, 'gave up', owner, {
+        leaseToken: claim4.leaseToken,
+      }))
+    ) {
+      throw new Error('markAbandoned rejected the lease owner');
+    }
+    const row4 = await repo.findOneBy({ id: id4 });
+    if (row4?.status !== 'abandoned') {
+      throw new Error(`expected status 'abandoned', got '${row4?.status}'`);
+    }
+
+    // A processing row cannot be claimed twice.
+    const id5 = await seedPendingOutbound();
+    const claim5a = await service.claimForRetry(id5, LEASE_MS);
+    const claim5b = await service.claimForRetry(id5, LEASE_MS);
+    if (!claim5a || claim5b !== null) {
+      throw new Error('a processing row was claimed a second time');
+    }
+  } finally {
+    await repo.delete({ externalUserId: owner });
   }
 }
 
@@ -209,6 +377,11 @@ async function runCanonicalMigrations() {
       throw new Error('migrations remain pending after run');
     }
     console.log('messenger: migration chain passed');
+    await assertColumns(dataSource, 'messenger');
+    await exerciseDeadLetterReplay(dataSource);
+    console.log(
+      'messenger: entity/schema column parity + dead-letter lease replay passed',
+    );
   } finally {
     if (dataSource.isInitialized) await dataSource.destroy();
   }
@@ -239,6 +412,7 @@ async function runPlatform({
     if (migrationMode) {
       await assertNoPendingMigrations(dataSource, platform);
       await assertTables(dataSource, entities, platform);
+      await assertColumns(dataSource, platform);
       console.log(`${platform}: metadata and migrations passed`);
     } else {
       await exerciseCleanup({
