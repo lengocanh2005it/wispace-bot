@@ -34,6 +34,7 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 - **On schedule change:** WISPACE calls `POST /messenger/study-calendar/sync` with `{ userId }` immediately after POST/DELETE `UserCalendar`.
 - **Preview:** menu **"Upcoming Study Reminders"**.
 - Schedule source: `UserCalendar` API (`x-psid`) — API-only (I3 ✓).
+- **Cross-platform ownership (#718):** Messenger, Discord, and Zalo full-sync providers resolve the canonical platform (`active` first, otherwise `zalo > discord > messenger`). Noncanonical providers skip upsert and cancel only `pending` / `failed` jobs; `processing` remains untouched. Resolver errors leave jobs unchanged and report sync failure; the next full sync converges after an ownership change.
 - Details: [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md).
 
 ### 1.4. Free-form Chat + Rate Limit (FREE_FORM)

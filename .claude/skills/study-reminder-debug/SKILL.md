@@ -45,6 +45,12 @@ POST /messenger/send-study-reminders
 - [ ] `remind_at` has passed but `scheduled_at` is still in the future?
 - [ ] Wispace called sync after changing schedule? (common integration gap)
 - [ ] UserCalendar API returns correct schedule for `x-psid`?
+- [ ] For cross-platform duplicates, does `CanonicalPlatformService` resolve
+      the expected owner (`zalo > discord > messenger` fallback)?
+- [ ] Is the mapping noncanonical? It must not upsert; only `pending` / `failed`
+      jobs may be cancelled, while `processing` stays untouched.
+- [ ] If canonical resolution errors, are jobs unchanged and the sync failure
+      visible? An undefined result may cancel actionable jobs without upsert.
 - [ ] Chat reschedule used `list_study_calendar_entries` first and a caller-scoped entry?
 - [ ] Check `RESCHEDULE_SCOPE_BLOCKED` and `*_llm_tool_policy_denied_total` for
       `scope_mismatch`/`scope_unverified`; these denials are deterministic and
@@ -55,7 +61,7 @@ POST /messenger/send-study-reminders
 ## 5. Code changes
 
 - Schedule logic → `study-reminder-schedule.service.ts` + spec
-- Sync → `study-reminder-sync.service.ts`
+- Sync → `study-reminder-sync.service.ts` (including the canonical platform gate)
 - Dispatch → `study-reminder-dispatch.service.ts`
 
 After changes: `npm run build && npm run test`

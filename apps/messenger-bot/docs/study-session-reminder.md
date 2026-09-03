@@ -70,6 +70,8 @@ For each synced user:
 
 > **Integration note (required):** The 30-minute cron is only a safety net. Every time a schedule changes (POST/DELETE `UserCalendar` or DB write) — the WISPACE system **calls the sync API** below immediately after commit. If only waiting for cron, students may receive reminders at wrong times or not receive reminders until 30 minutes after the change.
 
+**Cross-platform ownership (#718):** Messenger, Discord, and Zalo full-sync providers resolve each mapping through the required `CanonicalPlatformService`. An active mapping is preferred; otherwise the fallback order is `zalo > discord > messenger`. A noncanonical provider never upserts new jobs and cancels only its `pending` / `failed` jobs; `processing` jobs are left untouched. An undefined result may cancel those actionable jobs without an upsert, while a resolver error leaves rows unchanged and marks that sync as failed. The next full sync converges jobs after ownership changes.
+
 **First-time bootstrap** (empty jobs table but DB has old schedules):
 
 ```bash

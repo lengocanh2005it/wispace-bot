@@ -17,6 +17,17 @@ POST /messenger/study-calendar/sync { userId }
 
 Wispace **must** call sync after POST/DELETE `UserCalendar`. The 30-minute cron is only a fallback.
 
+## Canonical platform gate (#718)
+
+Every Messenger, Discord, and Zalo full-sync provider must inject the shared
+`CanonicalPlatformService` into `StudyReminderSyncService`. The resolver keeps
+an active mapping preferred, then falls back to `zalo > discord > messenger`.
+Noncanonical mappings skip upsert and cancel only `pending` / `failed` jobs on
+that platform; `processing` jobs are not force-cancelled. An undefined result
+may cancel actionable jobs without upserting, while resolver errors leave jobs
+untouched and surface a sync failure. A later full sync reconciles jobs when
+the canonical platform changes.
+
 Reminder delivery uses the shared outbound learner-message backstop (#622).
 Treat `rate_limited` as terminal (`outbound_rate_limited`), do not retry it,
 and use `docs/outbound-rate-limit.md` for first triage. A normal reminder must

@@ -218,6 +218,7 @@ Outbox `study_reminder_jobs`, retry/backoff, stuck `processing` reset, time-chan
 | -------------------------- | --------------------------------------------------------------------------------------------------------- |
 | **WISPACE wire sync**      | **S0** ✓ — `POST /messenger/study-calendar/sync` after POST/DELETE `UserCalendar`                         |
 | **Adaptive dispatch poll** | **S2** ✓ — `StudyReminderWorkerService` `setTimeout` loop; `findNextDueTime`; env `STUDY_REMINDER_POLL_*` |
+| **Canonical platform owner (#718)** | **All three full-sync providers use `CanonicalPlatformService`; noncanonical providers cancel only `pending` / `failed`, leave `processing`, and converge on the next sync after ownership changes** |
 
 ### Gaps & Remediation
 
