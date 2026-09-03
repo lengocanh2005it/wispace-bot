@@ -23,6 +23,13 @@ export interface LlmUsageRecorderPort {
     response: { id: string; usage?: LlmUsage | null };
     correlationId?: string;
     toolRound: number;
+    /**
+     * #549 — marks a zero-token failure row (LLM call never produced a
+     * completion). `errorMessage` carries the bounded failure class (e.g.
+     * `LlmDegradedFailureClass`), never raw error text. Absent = success.
+     */
+    status?: 'ok' | 'error';
+    errorMessage?: string;
   }): void;
 }
 

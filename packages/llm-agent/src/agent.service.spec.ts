@@ -3225,4 +3225,59 @@ describe('LlmAgentService', () => {
       });
     });
   });
+
+  describe('usage failure rows (#549)', () => {
+    it('records a zero-token error row when the round LLM call fails terminally', async () => {
+      const adapter = makeAdapter([makeTextResponse('unused')]);
+      const { service, usageRecorder, llmExecution } = buildService({
+        adapter,
+      });
+      llmExecution.run.mockRejectedValue(new LlmOverloadError('queue_full'));
+
+      await expect(service.reply(BASE_INPUT, TOOL_CONTEXT)).rejects.toThrow();
+
+      expect(usageRecorder.recordFromCompletion).toHaveBeenCalledWith(
+        expect.objectContaining({
+          feature: 'FREE_FORM_CHAT',
+          externalUserId: 'ext-123',
+          status: 'error',
+          errorMessage: 'execution_overload',
+          toolRound: 0,
+        }),
+      );
+      const call = (usageRecorder.recordFromCompletion as jest.Mock).mock
+        .calls[0][0] as { response: { usage: unknown } };
+      expect(call.response.usage).toBeNull();
+    });
+
+    it('records success rows without a status', async () => {
+      const { service, usageRecorder } = buildService({
+        adapter: makeAdapter([makeTextResponse('OK')]),
+      });
+
+      await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      expect(usageRecorder.recordFromCompletion).toHaveBeenCalledWith(
+        expect.not.objectContaining({ status: expect.anything() }),
+      );
+    });
+
+    it('does not emit an error row when only a tool fails', async () => {
+      const adapter = makeAdapter([
+        makeToolCallResponse('get_user_goals'),
+        makeTextResponse('Xin lỗi, không lấy được dữ liệu.'),
+      ]);
+      const execute = jest.fn().mockRejectedValue(new Error('API timeout'));
+      const { service, usageRecorder } = buildService({ adapter, execute });
+
+      await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      const calls = (usageRecorder.recordFromCompletion as jest.Mock).mock
+        .calls;
+      expect(calls.length).toBeGreaterThan(0);
+      for (const call of calls) {
+        expect(call[0]).not.toHaveProperty('status', 'error');
+      }
+    });
+  });
 });

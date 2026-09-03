@@ -7,6 +7,8 @@ import { PlatformStudentReportService } from '@wispace/student-report';
 import {
   ChatMeteringModule,
   PlatformLlmUsageRecorderAdapter,
+  LlmUsageEventEntity,
+  provideWiredUsageRecorder,
 } from '@wispace/chat-metering';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
@@ -46,6 +48,7 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
     TypeOrmModule.forFeature([
       ZaloAccountLinkEntity,
       ScheduledReportClaimEntity,
+      LlmUsageEventEntity,
     ]),
     ZaloChatModule,
     ZaloOauthModule,
@@ -56,6 +59,8 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
   providers: [
     ZaloReportCronService,
     ZaloReportDeliveryService,
+    // #549 — shadows forPlatform's unwired recorder with the metrics-wired one.
+    provideWiredUsageRecorder('zalo', BotMetricsService),
     {
       provide: REPORT_DELIVERY_PORT,
       useExisting: ZaloReportDeliveryService,

@@ -15,6 +15,9 @@ export interface RecordLlmUsageFromCompletionInput {
   response: { id: string; usage?: LlmUsage | null };
   correlationId?: string;
   toolRound?: number;
+  /** #549 — zero-token failure row marker; error class enum, never raw text. */
+  status?: 'ok' | 'error';
+  errorMessage?: string;
 }
 
 export interface LlmUsageRecorderLogger {
@@ -25,6 +28,32 @@ export interface LlmUsageRecorderMetrics {
   incMissingTokens(feature: string): void;
   incUnpricedModelTokens(model: string): void;
   incInsertFailure(reason: string): void;
+}
+
+/**
+ * Structural source type for #549 wiring — matches `BotMetricsService`
+ * method-for-method without importing `@wispace/bot-metrics` (no new
+ * package edge; the app side passes its metrics service directly).
+ */
+export interface BotMetricsUsageRecorderSource {
+  incLlmMissingTokens(feature: string): void;
+  incLlmUnpricedModelTokens(model: string): void;
+  incLlmUsageInsertFailure(reason: string): void;
+}
+
+/**
+ * #549 — adapts the app metrics service to the recorder's metrics port.
+ * Used at every recorder construction site so the counters stop being
+ * permanent no-ops.
+ */
+export function toUsageRecorderMetrics(
+  source: BotMetricsUsageRecorderSource,
+): LlmUsageRecorderMetrics {
+  return {
+    incMissingTokens: (feature) => source.incLlmMissingTokens(feature),
+    incUnpricedModelTokens: (model) => source.incLlmUnpricedModelTokens(model),
+    incInsertFailure: (reason) => source.incLlmUsageInsertFailure(reason),
+  };
 }
 
 const NOOP_LOGGER: LlmUsageRecorderLogger = { warn: () => undefined };
@@ -92,6 +121,8 @@ export class LlmUsageRecorderCore {
       openaiResponseId: input.response.id,
       correlationId: input.correlationId,
       toolRound: input.toolRound,
+      status: input.status,
+      errorMessage: input.errorMessage,
       estimatedCostUsd,
       usageDate: this.todayUsageDate(),
     });

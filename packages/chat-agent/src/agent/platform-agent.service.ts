@@ -690,6 +690,8 @@ export class PlatformAgentService {
             response: params.response,
             correlationId: params.correlationId,
             toolRound: params.toolRound,
+            status: params.status,
+            errorMessage: params.errorMessage,
           }),
       },
       safetyEvents: {

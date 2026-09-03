@@ -1,14 +1,24 @@
-import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import {
+  Injectable,
+  Logger,
+  type OnModuleDestroy,
+  type Provider,
+  type Type,
+} from '@nestjs/common';
+import { InjectRepository, getRepositoryToken } from '@nestjs/typeorm';
+import type { Repository } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { errorMessage } from '@wispace/bot-common/masking';
 import type { LlmUsage } from '@wispace/llm-agent';
 import { LlmUsageEventEntity } from '../entities';
 import { DirectUsageWriter } from './direct-usage-writer';
 import {
   LlmUsageRecorderCore,
+  toUsageRecorderMetrics,
+  type BotMetricsUsageRecorderSource,
   type LlmUsageRecorderMetrics,
 } from './llm-usage-recorder-core.service';
+import { LlmUsageConfigService } from './llm-usage-config.service';
 import { LlmUsageRepository } from './llm-usage.repository';
 
 /** Config surface the adapter needs — satisfied by each app's `LlmUsageConfigService`. */
@@ -33,6 +43,9 @@ export interface PlatformRecordLlmUsageInput {
   response: { id: string; usage?: LlmUsage | null };
   correlationId?: string;
   toolRound?: number;
+  /** #549 — marks a zero-token failure row; the class enum, never raw text. */
+  status?: 'ok' | 'error';
+  errorMessage?: string;
 }
 
 /**
@@ -68,6 +81,8 @@ export class PlatformLlmUsageRecorderAdapter implements OnModuleDestroy {
       response: input.response,
       correlationId: input.correlationId,
       toolRound: input.toolRound,
+      status: input.status,
+      errorMessage: input.errorMessage,
     });
   }
 
@@ -100,4 +115,38 @@ export class PlatformLlmUsageRecorderAdapter implements OnModuleDestroy {
   onModuleDestroy(): void {
     this.core?.dispose();
   }
+}
+
+/**
+ * #549 — app-side override that shadows `ChatMeteringModule.forPlatform`'s
+ * unwired recorder with one carrying the app metrics service, so the
+ * missing-tokens/unpriced-model/insert-failure counters stop being no-ops.
+ * The metrics token is supplied by the app (its own metrics service class)
+ * — this package never imports `@wispace/bot-metrics`, keeping the
+ * dependency direction app → shared. Within the importing module the local
+ * registration wins over the imported one.
+ */
+export function provideWiredUsageRecorder(
+  platform: string,
+  metricsToken: Type<unknown> | string | symbol,
+): Provider {
+  return {
+    provide: PlatformLlmUsageRecorderAdapter,
+    useFactory: (
+      configService: ConfigService,
+      usageRepo: Repository<LlmUsageEventEntity>,
+      metrics?: BotMetricsUsageRecorderSource,
+    ) =>
+      new PlatformLlmUsageRecorderAdapter(
+        platform,
+        new LlmUsageConfigService(configService),
+        usageRepo,
+        metrics ? toUsageRecorderMetrics(metrics) : undefined,
+      ),
+    inject: [
+      ConfigService,
+      getRepositoryToken(LlmUsageEventEntity),
+      { token: metricsToken, optional: true },
+    ],
+  };
 }

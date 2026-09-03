@@ -4,7 +4,10 @@ import { ConfigService } from '@nestjs/config';
 import { Repository } from 'typeorm';
 import { join } from 'path';
 import { PlatformStudentReportService } from '@wispace/student-report';
-import { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering';
+import {
+  PlatformLlmUsageRecorderAdapter,
+  provideWiredUsageRecorder,
+} from '@wispace/chat-metering';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
@@ -70,6 +73,8 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
     }),
   ],
   providers: [
+    // #549 — shadows forPlatform's unwired recorder with the metrics-wired one.
+    provideWiredUsageRecorder('discord', BotMetricsService),
     // Request-scoped goals memoization: exam window, orchestration and report
     // generation all fetch goals within one report execution — collapse them
     // into a single upstream call (TTL from the central #636 policy).

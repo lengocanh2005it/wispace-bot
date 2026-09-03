@@ -20,6 +20,7 @@ import {
   LlmUsageEventEntity,
   PlatformLlmSafetyEventAdapter,
   PlatformLlmUsageRecorderAdapter,
+  toUsageRecorderMetrics,
 } from '@wispace/chat-metering';
 import type { LlmProviderAdapter } from '@wispace/llm-agent';
 import {
@@ -185,8 +186,19 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
       useFactory: (
         config: LlmUsageConfigService,
         usageRepo: Repository<LlmUsageEventEntity>,
-      ) => new PlatformLlmUsageRecorderAdapter('messenger', config, usageRepo),
-      inject: [LlmUsageConfigService, getRepositoryToken(LlmUsageEventEntity)],
+        metrics: BotMetricsService,
+      ) =>
+        new PlatformLlmUsageRecorderAdapter(
+          'messenger',
+          config,
+          usageRepo,
+          toUsageRecorderMetrics(metrics),
+        ),
+      inject: [
+        LlmUsageConfigService,
+        getRepositoryToken(LlmUsageEventEntity),
+        BotMetricsService,
+      ],
     },
     {
       provide: PlatformLlmSafetyEventAdapter,

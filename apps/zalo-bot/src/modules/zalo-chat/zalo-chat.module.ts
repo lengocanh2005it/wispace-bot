@@ -15,6 +15,7 @@ import {
   PlatformLlmUsageRecorderAdapter,
   PlatformLlmSafetyEventAdapter,
   LlmSafetyCleanupService,
+  provideWiredUsageRecorder,
 } from '@wispace/chat-metering';
 import {
   PlatformAgentService,
@@ -127,6 +128,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
   providers: [
     ZaloChatService,
     TypeormStudyReminderJobRepository,
+    // #549 — shadows forPlatform's unwired recorder with the metrics-wired one.
+    provideWiredUsageRecorder('zalo', BotMetricsService),
     {
       provide: STUDY_REMINDER_JOB_REPOSITORY,
       useExisting: TypeormStudyReminderJobRepository,

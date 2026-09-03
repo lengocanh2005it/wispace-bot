@@ -838,6 +838,36 @@ flowchart LR
 | `chat_quota_events` table + replay rebuild projection | Audit & quota rule changes |
 | Per-token billing (if product requires)               | Outside scope              |
 
+##### Billable vs failed attempts (#549)
+
+`llm_usage_events` carries `status` (`'ok'` default, `'error'` for failed LLM
+rounds) + `error_message` (bounded failure class, never raw text) alongside
+zero-token rows. Billable spend vs retry-storm waste:
+
+```sql
+-- Billable tokens per feature/model (NULL-safe: pre-#549 rows have NULL status)
+SELECT feature, model,
+       COUNT(*) FILTER (WHERE status IS DISTINCT FROM 'error') AS billable_calls,
+       COALESCE(SUM(total_tokens) FILTER (WHERE status IS DISTINCT FROM 'error'), 0) AS billable_tokens,
+       COUNT(*) FILTER (WHERE status = 'error') AS failed_calls,
+       COUNT(*) FILTER (WHERE status = 'error') * 1.0 / COUNT(*) AS failure_rate
+FROM llm_usage_events
+WHERE usage_date >= CURRENT_DATE - INTERVAL '7 days'
+GROUP BY feature, model
+ORDER BY billable_tokens DESC;
+
+-- Retry-storm diagnosis: failed attempts by class
+SELECT error_message AS failure_class, COUNT(*) AS attempts
+FROM llm_usage_events
+WHERE usage_date >= CURRENT_DATE - INTERVAL '7 days'
+  AND status = 'error'
+GROUP BY error_message
+ORDER BY attempts DESC;
+```
+
+`tool_round = -1` marks non-round calls (compaction summaries, #703); exclude
+or split them when sizing per-round retry budgets (#514).
+
 ---
 
 #### V1 Effort Summary (Phase 0–5)

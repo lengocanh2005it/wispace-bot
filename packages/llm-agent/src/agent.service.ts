@@ -91,6 +91,14 @@ function classifyAgentFailure(error: unknown): LlmDegradedFailureClass {
   if (error instanceof LlmOverloadError) {
     return 'execution_overload';
   }
+  if (error instanceof LlmRetryExhaustedError) {
+    // #549 — the agent-level retry wrapper hides the terminal cause; meter
+    // the cause so retry-exhaustion keeps its retry-story meaning instead of
+    // collapsing into 'unknown'.
+    return error.cause instanceof Error
+      ? classifyAgentFailure(error.cause)
+      : 'unknown';
+  }
   if (isAbortError(error)) {
     return 'timeout';
   }
@@ -424,8 +432,11 @@ export class LlmAgentService<TToolContext> {
     let previousRoundFailed = false;
 
     for (let round = 0; round < maxToolRounds; round++) {
+      let response:
+        | Awaited<ReturnType<LlmProviderAdapter['chatWithTools']>>
+        | undefined;
       try {
-        const response = await metrics.timeLlmCall(FEATURE, model, round, () =>
+        response = await metrics.timeLlmCall(FEATURE, model, round, () =>
           this.ports.llmExecution.run(
             (execSignal) =>
               this.withRetry(
@@ -652,6 +663,19 @@ export class LlmAgentService<TToolContext> {
         // the oldest loop-generated messages until the total fits.
         this.trimLoopMessages(messages, loopMessagesStart, metrics);
       } catch (err) {
+        // #549 — emit a zero-token error row only when the LLM call itself
+        // failed (`response` never assigned). Tool/grounding failures below
+        // keep the successful round's usage row untouched: no LLM spend is
+        // hidden, and no tool failure pollutes the spend data.
+        if (response === undefined) {
+          this.recordLlmFailureRow(
+            input,
+            model,
+            round,
+            input.correlationId,
+            err,
+          );
+        }
         this.recordDegraded(
           input,
           metrics,
@@ -925,8 +949,12 @@ export class LlmAgentService<TToolContext> {
    * #703 — the call goes through `llmExecution.run` like every other provider
    * call (limiter, deadline, breaker, shared retry — no agent-level `withRetry`
    * on top, so this never recreates the stacked-retry shape from #514).
+   *
+   * #549 — a failed generation emits a zero-token error row (safety-strip
+   * nulls stay silent: no tokens were at stake, only an unusable summary).
    */
   private async compactHistory(
+    input: LlmAgentInput,
     entries: ChatHistoryMessage[],
     externalUserId: string,
     logger: {
@@ -1016,6 +1044,13 @@ Summary:`;
           externalUserId,
         )} error=${safeError}`,
       );
+      this.recordLlmFailureRow(
+        input,
+        this.ports.adapter.getDefaultModel(),
+        -1,
+        `compaction:${externalUserId}`,
+        error,
+      );
       return null;
     }
   }
@@ -1046,6 +1081,7 @@ Summary:`;
     const coverage = computeCompactionCoverage(entries);
     if (!cache || !platform || !coverage) {
       const generated = await this.compactHistory(
+        input,
         entries,
         externalUserId,
         logger,
@@ -1158,6 +1194,7 @@ Summary:`;
     signal?: AbortSignal,
   ): Promise<CompactionGeneration | null> {
     const generated = await this.compactHistory(
+      input,
       entries,
       externalUserId,
       logger,
@@ -1438,6 +1475,41 @@ Summary:`;
       // best-effort — telemetry failure never blocks the reply
     }
     (this.ports.metrics ?? NOOP_METRICS_PORT).injectionBlockedInc?.(source);
+  }
+
+  /**
+   * #549 — one zero-token failure row for an LLM call that never produced a
+   * completion, classified with the bounded failure class (never raw text).
+   * Best-effort: metering must not mask the original failure, especially
+   * under incident conditions when the telemetry path itself may be down.
+   */
+  private recordLlmFailureRow(
+    input: LlmAgentInput,
+    model: string,
+    toolRound: number,
+    correlationId: string | undefined,
+    error: unknown,
+  ): void {
+    try {
+      this.ports.usageRecorder.recordFromCompletion({
+        feature: FEATURE,
+        externalUserId: input.externalUserId,
+        userId: input.userId,
+        model,
+        response: { id: '', usage: null },
+        correlationId,
+        toolRound,
+        status: 'error',
+        errorMessage: classifyAgentFailure(error),
+      });
+    } catch (recorderError) {
+      const logger = this.ports.logger ?? NOOP_LOGGER;
+      logger.warn(
+        `LLM failure usage record failed externalUserId=${maskExternalId(
+          input.externalUserId,
+        )} error=${errorMessage(recorderError)}`,
+      );
+    }
   }
 
   /** Detects the model repeating an identical tool call across rounds (stuck loop). */

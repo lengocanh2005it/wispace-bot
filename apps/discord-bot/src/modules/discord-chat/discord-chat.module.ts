@@ -23,6 +23,7 @@ import {
   PlatformLlmUsageRecorderAdapter,
   ChatIdempotencyEntity,
   LlmSafetyCleanupService,
+  provideWiredUsageRecorder,
 } from '@wispace/chat-metering';
 import { AccountLinkModule } from '../account-link/account-link.module';
 import { DiscordAccountLinkService } from '@discord/modules/account-link/application/services/discord-account-link.service';
@@ -129,6 +130,9 @@ const REGISTER_REPORT_MESSAGE =
   providers: [
     DiscordChatGateway,
     DiscordConsentService,
+    // #549 — shadows forPlatform's unwired recorder with the metrics-wired
+    // one (local registration wins over the imported module's).
+    provideWiredUsageRecorder('discord', BotMetricsService),
     TypeormStudyReminderJobRepository,
     {
       provide: STUDY_REMINDER_JOB_REPOSITORY,

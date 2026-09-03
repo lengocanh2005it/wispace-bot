@@ -185,6 +185,27 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     );
   });
 
+  it('exposes LLM usage recorder counters for missing/unpriced/insert-failed events (#549)', async () => {
+    const svc = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+    svc.incLlmMissingTokens('FREE_FORM_CHAT');
+    svc.incLlmUnpricedModelTokens('gpt-5.4');
+    svc.incLlmUsageInsertFailure('db_error');
+
+    const out = await svc.getMetrics();
+    expect(out).toContain(
+      'test_llm_missing_tokens_total{feature="FREE_FORM_CHAT"} 1',
+    );
+    expect(out).toContain(
+      'test_llm_unpriced_model_tokens_total{model="gpt-5.4"} 1',
+    );
+    expect(out).toContain(
+      'test_llm_usage_insert_failures_total{reason="db_error"} 1',
+    );
+  });
+
   it('exposes Redis concurrency lifecycle outcomes through the shared admission port', async () => {
     const svc = new BotMetricsService({
       prefix: 'test',
