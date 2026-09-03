@@ -77,7 +77,7 @@ interface PerMappingOutcome {
 export class StudyReminderSyncService {
   private readonly logger = new Logger(StudyReminderSyncService.name);
   private readonly onUserSync?: OnUserSyncHook;
-  private readonly canonicalResolver?: CanonicalPlatformResolver;
+  private readonly canonicalResolver: CanonicalPlatformResolver;
 
   constructor(
     @Inject(MAPPING_READER)
@@ -85,9 +85,14 @@ export class StudyReminderSyncService {
     @Inject(STUDY_REMINDER_JOB_REPOSITORY)
     private readonly jobRepository: StudyReminderJobRepositoryPort,
     private readonly scheduleService: StudyReminderScheduleService,
-    @Optional() onUserSync?: OnUserSyncHook,
-    @Optional() canonicalResolver?: CanonicalPlatformResolver,
+    @Optional() onUserSync: OnUserSyncHook | undefined,
+    canonicalResolver: CanonicalPlatformResolver,
   ) {
+    if (!canonicalResolver) {
+      throw new Error(
+        'StudyReminderSyncService requires a canonical platform resolver',
+      );
+    }
     this.onUserSync = onUserSync;
     this.canonicalResolver = canonicalResolver;
   }
@@ -225,26 +230,26 @@ export class StudyReminderSyncService {
     try {
       let cancelledOtherPlatforms = 0;
 
-      if (mapping.userId && this.canonicalResolver) {
-        const canonical = await this.canonicalResolver(mapping.userId);
-        if (canonical && canonical !== platform) {
-          const cancelledCount =
-            await this.jobRepository.cancelStaleJobsForExternalUserId(
-              platform,
-              mapping.externalUserId,
-              [],
-              horizonEnd,
-              opts?.staleCancelStatuses
-                ? { statuses: opts.staleCancelStatuses }
-                : undefined,
-            );
-          return {
-            upserted: 0,
-            cancelled: cancelledCount,
-            skipped: 1,
-            cancelledOtherPlatforms: 0,
-          };
-        }
+      if (mapping.userId === undefined || mapping.userId === null) {
+        throw new Error('Missing WISPACE userId for study reminder mapping');
+      }
+
+      const canonical = await this.canonicalResolver(mapping.userId);
+      if (!canonical || canonical !== platform) {
+        const cancelledCount =
+          await this.jobRepository.cancelStaleJobsForExternalUserId(
+            platform,
+            mapping.externalUserId,
+            [],
+            horizonEnd,
+            { statuses: ['pending', 'failed'] },
+          );
+        return {
+          upserted: 0,
+          cancelled: cancelledCount,
+          skipped: 1,
+          cancelledOtherPlatforms: 0,
+        };
       }
       // Cross-platform cancel hook (Messenger cancels jobs from other platforms)
       if (opts.userId && mapping.userId) {

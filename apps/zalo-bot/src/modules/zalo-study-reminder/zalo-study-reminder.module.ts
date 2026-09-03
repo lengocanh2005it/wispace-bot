@@ -16,7 +16,10 @@ import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloOutboundService } from '../zalo-chat/application/services/zalo-outbound.service';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { WispaceCalendarService } from '@wispace/wispace-client';
-import { WebActivityService } from '@wispace/database';
+import {
+  CanonicalPlatformService,
+  WebActivityService,
+} from '@wispace/database';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 
@@ -46,6 +49,7 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
       mappingTable: 'zalo_account_links',
       mappingEntity: ZaloAccountLinkEntity,
       outboundService: ZaloOutboundService,
+      canonicalPlatformService: CanonicalPlatformService,
       dormancyGate: WebActivityService,
       dormancySuppressionMetric: BotMetricsService,
     }),

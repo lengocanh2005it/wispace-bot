@@ -19,6 +19,12 @@ class FakeOutbound {
 
 class FakeMappingEntity {}
 
+class FakeCanonicalPlatformService {
+  getCanonicalPlatformForUser(): Promise<'discord'> {
+    return Promise.resolve('discord');
+  }
+}
+
 const fakeGetSessions: GetSessionsFn = () => Promise.resolve([]);
 
 describe('createStudyReminderProviders', () => {
@@ -27,6 +33,7 @@ describe('createStudyReminderProviders', () => {
     mappingTable: 'discord_account_links',
     mappingEntity: FakeMappingEntity,
     outboundService: FakeOutbound,
+    canonicalPlatformService: FakeCanonicalPlatformService,
   });
   const p = providers as unknown as Array<{
     provide?: unknown;
@@ -49,7 +56,15 @@ describe('createStudyReminderProviders', () => {
       useExisting: TypeormStudyReminderJobRepository,
     });
     expect(providers[3]).toBe(StudyReminderScheduleService);
-    expect(providers[4]).toBe(StudyReminderSyncService);
+    expect(p[4]).toMatchObject({
+      provide: StudyReminderSyncService,
+      inject: [
+        MAPPING_READER,
+        STUDY_REMINDER_JOB_REPOSITORY,
+        StudyReminderScheduleService,
+        FakeCanonicalPlatformService,
+      ],
+    });
     expect(p[5]).toMatchObject({
       provide: StudyReminderDispatchService,
       inject: [
@@ -105,6 +120,7 @@ describe('createStudyReminderProviders', () => {
       platform: 'messenger',
       outboundService: FakeOutbound,
       mappingReader: customReader,
+      canonicalPlatformService: FakeCanonicalPlatformService,
     });
 
     expect(withReader[1]).toBe(customReader);
@@ -118,6 +134,7 @@ describe('createStudyReminderProviders', () => {
       mappingReader: { provide: MAPPING_READER, useValue: {} },
       workerLockIds: lockIds,
       workerOptions: { logLockSkips: true, startupSyncSwallowErrors: true },
+      canonicalPlatformService: FakeCanonicalPlatformService,
     });
 
     const workerProvider = withReader[6] as unknown as {
@@ -155,6 +172,7 @@ describe('createStudyReminderProviders', () => {
       outboundService: FakeOutbound,
       dormancyGate: FakeGate,
       dormancySuppressionMetric: FakeMetric,
+      canonicalPlatformService: FakeCanonicalPlatformService,
     });
     const dispatchProvider = withGate[5] as unknown as {
       inject: unknown[];
@@ -167,5 +185,69 @@ describe('createStudyReminderProviders', () => {
       token: FakeMetric,
       optional: true,
     });
+  });
+
+  it('builds the sync service with the canonical resolver from the factory', async () => {
+    const syncProvider = p[4] as unknown as {
+      useFactory: (...deps: unknown[]) => StudyReminderSyncService;
+    };
+    const jobRepository = {
+      upsertPendingJobs: jest.fn().mockResolvedValue([]),
+      cancelStaleJobsForExternalUserId: jest.fn().mockResolvedValue(1),
+    };
+    const mappingReader = {
+      findActiveMappingsPage: jest.fn().mockResolvedValue({
+        items: [
+          { externalUserId: 'discord-user', userId: 42, platform: 'discord' },
+        ],
+        nextId: undefined,
+      }),
+      findActiveMappingByExternalUserId: jest.fn(),
+    };
+    const scheduleService = {
+      getOutboxSettings: jest.fn().mockReturnValue({
+        maxRetries: 3,
+        syncHorizonHours: 168,
+      }),
+      computeRemindAt: jest.fn((date: Date) => date),
+    };
+    const canonicalPlatformService = {
+      getCanonicalPlatformForUser: jest.fn().mockResolvedValue('zalo'),
+    };
+    const syncService = syncProvider.useFactory(
+      mappingReader,
+      jobRepository,
+      scheduleService,
+      canonicalPlatformService,
+    );
+
+    const result = await syncService.syncUpcomingSessions({
+      platform: 'discord',
+      getSessions: jest.fn().mockResolvedValue([
+        {
+          calendarId: 'session-1',
+          sessionKey: 'session-1',
+          scheduledAt: new Date(Date.now() + 60 * 60 * 1000),
+        },
+      ]),
+    });
+
+    expect(
+      canonicalPlatformService.getCanonicalPlatformForUser,
+    ).toHaveBeenCalledWith(42);
+    expect(jobRepository.upsertPendingJobs).not.toHaveBeenCalled();
+    expect(jobRepository.cancelStaleJobsForExternalUserId).toHaveBeenCalled();
+    expect(result).toMatchObject({ skipped: 1, upserted: 0, cancelled: 1 });
+  });
+
+  it('rejects factory construction when the canonical service is missing', () => {
+    expect(() =>
+      createStudyReminderProviders({
+        platform: 'discord',
+        mappingTable: 'discord_account_links',
+        mappingEntity: FakeMappingEntity,
+        outboundService: FakeOutbound,
+      } as never),
+    ).toThrow('canonicalPlatformService');
   });
 });

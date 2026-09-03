@@ -34,6 +34,7 @@ export {
 export {
   StudyReminderSyncService,
   type OnUserSyncHook,
+  type CanonicalPlatformResolver,
   type StudyReminderSyncOptions,
 } from './services/study-reminder-sync.service';
 export {

@@ -15,7 +15,10 @@ import { DiscordOutboundModule } from '../discord-chat/discord-outbound.module';
 import { WispaceModule } from '../wispace/wispace.module';
 import { WispaceCalendarService } from '@wispace/wispace-client';
 import { DiscordOutboundService } from '../discord-chat/application/services/discord-outbound.service';
-import { WebActivityService } from '@wispace/database';
+import {
+  CanonicalPlatformService,
+  WebActivityService,
+} from '@wispace/database';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 
@@ -44,6 +47,7 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
       mappingTable: 'discord_account_links',
       mappingEntity: DiscordAccountLinkEntity,
       outboundService: DiscordOutboundService,
+      canonicalPlatformService: CanonicalPlatformService,
       dormancyGate: WebActivityService,
       dormancySuppressionMetric: BotMetricsService,
     }),

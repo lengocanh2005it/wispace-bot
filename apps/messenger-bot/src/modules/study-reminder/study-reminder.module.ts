@@ -36,7 +36,10 @@ import { LlmExecutionModule } from '../llm-execution/llm-execution.module';
 import { LlmUsageModule } from '../llm-usage/llm-usage.module';
 import { DisplayNameModule } from '../display-name/display-name.module';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { WebActivityService } from '@wispace/database';
+import {
+  CanonicalPlatformService,
+  WebActivityService,
+} from '@wispace/database';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { StudyCalendarCommandService } from './application/services/study-calendar-command.service';
 import { StudyReminderService } from './application/services/study-reminder.service';
@@ -82,6 +85,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
     ...createStudyReminderProviders({
       platform: 'messenger',
       outboundService: MessengerOutboundService,
+      canonicalPlatformService: CanonicalPlatformService,
       mappingReader: {
         provide: MAPPING_READER,
         useFactory: (
@@ -222,6 +226,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         mappingReader: MappingReaderPort,
         jobRepository: TypeormStudyReminderJobRepository,
         scheduleService: StudyReminderScheduleService,
+        canonicalPlatformService: CanonicalPlatformService,
       ) =>
         new StudyReminderSyncService(
           mappingReader,
@@ -231,11 +236,14 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
             jobRepository.cancelJobsFromOtherPlatforms(userId, platform, {
               statuses: MESSENGER_STALE_CANCEL_STATUSES,
             }),
+          (userId) =>
+            canonicalPlatformService.getCanonicalPlatformForUser(userId),
         ),
       inject: [
         MAPPING_READER,
         STUDY_REMINDER_JOB_REPOSITORY,
         StudyReminderScheduleService,
+        CanonicalPlatformService,
       ],
     },
 

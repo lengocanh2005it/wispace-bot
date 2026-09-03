@@ -57,6 +57,10 @@ export interface CreateStudyReminderProvidersOptions {
   workerLockIds?: StudyReminderWorkerLockIds;
   /** Messenger: worker options (logLockSkips, startupSyncSwallowErrors). */
   workerOptions?: StudyReminderWorkerOptions;
+  /** Required canonical-platform service used by every production sync worker. */
+  canonicalPlatformService: ClassOf<{
+    getCanonicalPlatformForUser(userId: number): Promise<Platform | undefined>;
+  }>;
   /** Discord/Zalo: WebActivityService — enables the dispatch dormancy gate. */
   dormancyGate?: ClassOf<{
     filterDormant(userIds: number[]): Promise<number[]>;
@@ -174,6 +178,12 @@ export function createSessionSourceGetSessions(
 export function createStudyReminderProviders(
   options: CreateStudyReminderProvidersOptions,
 ): Provider[] {
+  if (!options.canonicalPlatformService) {
+    throw new Error(
+      'createStudyReminderProviders requires canonicalPlatformService',
+    );
+  }
+
   return [
     {
       provide: MESSAGE_SENDER,
@@ -192,7 +202,33 @@ export function createStudyReminderProviders(
       useExisting: TypeormStudyReminderJobRepository,
     },
     StudyReminderScheduleService,
-    StudyReminderSyncService,
+    {
+      provide: StudyReminderSyncService,
+      useFactory: (
+        mappingReader: MappingReaderPort,
+        jobRepository: StudyReminderJobRepositoryPort,
+        scheduleService: StudyReminderScheduleService,
+        canonicalPlatformService: {
+          getCanonicalPlatformForUser(
+            userId: number,
+          ): Promise<Platform | undefined>;
+        },
+      ) =>
+        new StudyReminderSyncService(
+          mappingReader,
+          jobRepository,
+          scheduleService,
+          undefined,
+          (userId) =>
+            canonicalPlatformService.getCanonicalPlatformForUser(userId),
+        ),
+      inject: [
+        MAPPING_READER,
+        STUDY_REMINDER_JOB_REPOSITORY,
+        StudyReminderScheduleService,
+        options.canonicalPlatformService,
+      ],
+    },
     {
       // Constructed explicitly so the worker's platform is bound to every
       // due/claim/reset query (#180) — the class provider cannot inject it.
