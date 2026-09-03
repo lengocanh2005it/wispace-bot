@@ -1,5 +1,5 @@
 import type { LlmProviderAdapter } from './provider/llm-provider.adapter';
-import type { LlmMessage } from './provider/types';
+import type { LlmMessage, LlmProviderMetadata } from './provider/types';
 import {
   AGENT_TOOLS,
   getAgentToolDefinition,
@@ -180,7 +180,6 @@ function withTimeout<T>(
     );
   });
 }
-
 function linkAbortSignal(
   source: AbortSignal | undefined,
   target: AbortController,
@@ -198,6 +197,49 @@ function linkAbortSignal(
 }
 
 /**
+ * #703 — lets one waiter stop waiting for shared work without cancelling it
+ * for the other waiters. The shared promise is untouched; only this waiter's
+ * wait rejects when its own signal fires.
+ */
+function raceWithAbort<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(signal.reason ?? new Error('Aborted'));
+  }
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => {
+      cleanup();
+      reject(signal.reason ?? new Error('Aborted'));
+    };
+    const cleanup = (): void => {
+      signal.removeEventListener('abort', onAbort);
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error: unknown) => {
+        cleanup();
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+/**
+ * #703 — one compaction generation: the replayable summary message plus the
+ * provider completion metadata needed for usage metering.
+ */
+interface CompactionGeneration {
+  messages: ChatHistoryMessage[];
+  completion: LlmProviderMetadata;
+}
+
+/**
  * Framework-agnostic LLM function-calling orchestration loop, shared across
  * all WISPACE bot platforms. Tool business logic (Wispace API calls, DB reads...)
  * is NOT part of this class — it lives behind `ToolExecutorPort`, implemented per app.
@@ -209,11 +251,19 @@ export class LlmAgentService<TToolContext> {
    * #704 — in-flight compaction generations keyed by
    * `${externalUserId}:${count}:${hash}`. Concurrent over-budget turns for the
    * same dropped prefix share one LLM call instead of stampeding duplicates.
-   * Entries are removed in `finally`, so the map never grows.
+   * Entries are removed once settled, so the map never grows.
+   *
+   * #703 — the controller belongs to the entry, not to any single waiter: a
+   * waiter's own abort only stops its wait (via `raceWithAbort`); the shared
+   * request is aborted only when the last waiter leaves.
    */
   private readonly compactionInflight = new Map<
     string,
-    Promise<ChatHistoryMessage[] | null>
+    {
+      promise: Promise<CompactionGeneration | null>;
+      controller: AbortController;
+      waiters: number;
+    }
   >();
 
   constructor(
@@ -362,7 +412,7 @@ export class LlmAgentService<TToolContext> {
     }
 
     const model = adapter.getDefaultModel();
-    const messages = await this.buildMessages(input);
+    const messages = await this.buildMessages(input, signal);
 
     const toolsCalledThisTurn = new Set<string>();
     const groundedToolsThisTurn = new Set<string>();
@@ -771,6 +821,7 @@ export class LlmAgentService<TToolContext> {
       warn: (message: string) => void;
       debug: (message: string) => void;
     },
+    signal?: AbortSignal,
   ): Promise<ChatHistoryMessage[]> {
     const redacted = history.map((entry) => {
       const clean = sanitizeUntrustedTextForLlm(entry.content, {
@@ -827,6 +878,7 @@ export class LlmAgentService<TToolContext> {
         droppedEntries,
         externalUserId,
         logger,
+        signal,
       );
       if (compacted) {
         const recentTurns = this.getCompactionRecentTurns();
@@ -867,8 +919,12 @@ export class LlmAgentService<TToolContext> {
 
   /**
    * #413 — Summarize old history entries via LLM compaction call.
-   * Returns a single summary message entry, or null on failure (caller falls
-   * back to truncation).
+   * Returns a single summary message entry plus completion metadata, or null
+   * on failure (caller falls back to truncation).
+   *
+   * #703 — the call goes through `llmExecution.run` like every other provider
+   * call (limiter, deadline, breaker, shared retry — no agent-level `withRetry`
+   * on top, so this never recreates the stacked-retry shape from #514).
    */
   private async compactHistory(
     entries: ChatHistoryMessage[],
@@ -877,7 +933,8 @@ export class LlmAgentService<TToolContext> {
       warn: (message: string) => void;
       debug: (message: string) => void;
     },
-  ): Promise<ChatHistoryMessage[] | null> {
+    signal?: AbortSignal,
+  ): Promise<CompactionGeneration | null> {
     if (entries.length === 0) return null;
 
     const summaryMaxTokens = this.getCompactionSummaryMaxTokens();
@@ -895,15 +952,21 @@ Summary:`;
     try {
       const adapter = this.ports.adapter;
       const model = adapter.getDefaultModel();
-      const result = await adapter.chatWithTools({
-        feature: FEATURE,
-        model,
-        messages: [{ role: 'user', content: compactionPrompt }],
-        tools: [],
-        toolChoice: 'none',
-        correlationId: `compaction:${externalUserId}`,
-        maxOutputTokens: summaryMaxTokens,
-      });
+      const correlationId = `compaction:${externalUserId}`;
+      const result = await this.ports.llmExecution.run(
+        (execSignal) =>
+          adapter.chatWithTools({
+            feature: FEATURE,
+            model,
+            messages: [{ role: 'user', content: compactionPrompt }],
+            tools: [],
+            toolChoice: 'none',
+            correlationId,
+            maxOutputTokens: summaryMaxTokens,
+            signal: execSignal,
+          }),
+        { feature: FEATURE, correlationId, signal },
+      );
 
       const summaryText = result.content;
       if (!summaryText) {
@@ -931,13 +994,15 @@ Summary:`;
         );
         return null;
       }
-
-      return [
-        {
-          role: 'tool_summary' as const,
-          content: `[Compacted summary of ${entries.length} earlier messages] ${sanitized}`,
-        },
-      ];
+      return {
+        messages: [
+          {
+            role: 'tool_summary' as const,
+            content: `[Compacted summary of ${entries.length} earlier messages] ${sanitized}`,
+          },
+        ],
+        completion: result.metadata,
+      };
     } catch (error) {
       const safeError = maskExternalIdInText(
         sanitizeUntrustedTextForLlm(errorMessage(error), {
@@ -960,6 +1025,11 @@ Summary:`;
    * the cached summary (no LLM call, `reused: true`); a changed prefix
    * regenerates once and refreshes the cache. No cache wired or no platform
    * → legacy uncached path. Every cache failure is fail-open.
+   *
+   * #703 — `signal` is the caller's cancellation signal. The shared
+   * generation is NOT driven by any single waiter's signal: each waiter only
+   * races its own wait, and the entry-owned controller aborts the shared
+   * request when the last waiter leaves.
    */
   private async compactHistoryCached(
     input: LlmAgentInput,
@@ -969,17 +1039,21 @@ Summary:`;
       warn: (message: string) => void;
       debug: (message: string) => void;
     },
+    signal?: AbortSignal,
   ): Promise<{ messages: ChatHistoryMessage[]; reused: boolean } | null> {
     const cache = this.ports.compactionCache;
     const platform = this.ports.platform;
     const coverage = computeCompactionCoverage(entries);
     if (!cache || !platform || !coverage) {
-      const messages = await this.compactHistory(
+      const generated = await this.compactHistory(
         entries,
         externalUserId,
         logger,
+        signal,
       );
-      return messages ? { messages, reused: false } : null;
+      if (!generated) return null;
+      this.recordCompactionUsage(input, externalUserId, generated.completion);
+      return { messages: generated.messages, reused: false };
     }
 
     let cached: Awaited<ReturnType<CompactionCachePort['get']>> = null;
@@ -1023,26 +1097,43 @@ Summary:`;
     }
 
     const inflightKey = `${externalUserId}:${coverage.count}:${coverage.hash}`;
-    let inflight = this.compactionInflight.get(inflightKey);
-    if (!inflight) {
-      inflight = this.generateAndCacheSummary(
+    let entry = this.compactionInflight.get(inflightKey);
+    if (!entry) {
+      const controller = new AbortController();
+      const promise = this.generateAndCacheSummary(
         cache,
+        input,
         entries,
         externalUserId,
         logger,
         coverage,
+        controller.signal,
       );
-      this.compactionInflight.set(inflightKey, inflight);
-      void inflight
+      entry = { promise, controller, waiters: 0 };
+      this.compactionInflight.set(inflightKey, entry);
+      void promise
         .catch(() => null)
         .finally(() => {
-          if (this.compactionInflight.get(inflightKey) === inflight) {
+          if (this.compactionInflight.get(inflightKey) === entry) {
             this.compactionInflight.delete(inflightKey);
           }
         });
     }
-    const messages = await inflight;
-    return messages ? { messages, reused: false } : null;
+    entry.waiters++;
+    try {
+      const generated = signal
+        ? await raceWithAbort(entry.promise, signal)
+        : await entry.promise;
+      return generated ? { messages: generated.messages, reused: false } : null;
+    } catch {
+      // Caller aborted its own wait (or the shared generation failed) — fall
+      // back to truncation. The shared request keeps running for the
+      // remaining waiters, if any.
+      return null;
+    } finally {
+      entry.waiters--;
+      if (entry.waiters <= 0) entry.controller.abort();
+    }
   }
 
   /**
@@ -1050,9 +1141,13 @@ Summary:`;
    * the LLM, then persist exactly the replayable message (already
    * fact-stripped by `compactHistory`, never the raw model text).
    * Last-writer-wins across pods; a failed write never fails the reply.
+   *
+   * #703 — records the generation's usage exactly once (a cache hit costs no
+   * tokens, so it records nothing).
    */
   private async generateAndCacheSummary(
     cache: CompactionCachePort,
+    input: LlmAgentInput,
     entries: ChatHistoryMessage[],
     externalUserId: string,
     logger: {
@@ -1060,10 +1155,18 @@ Summary:`;
       debug: (message: string) => void;
     },
     coverage: CompactionCoverage,
-  ): Promise<ChatHistoryMessage[] | null> {
-    const messages = await this.compactHistory(entries, externalUserId, logger);
-    const content = messages?.[0]?.content;
-    if (!messages || !content) return null;
+    signal?: AbortSignal,
+  ): Promise<CompactionGeneration | null> {
+    const generated = await this.compactHistory(
+      entries,
+      externalUserId,
+      logger,
+      signal,
+    );
+    if (!generated) return null;
+    this.recordCompactionUsage(input, externalUserId, generated.completion);
+    const content = generated.messages[0]?.content;
+    if (!content) return null;
     try {
       await cache.set(externalUserId, { text: content, coverage });
     } catch (error) {
@@ -1073,7 +1176,43 @@ Summary:`;
         )} error=${errorMessage(error)}`,
       );
     }
-    return messages;
+    return generated;
+  }
+
+  /**
+   * #703 — usage for one compaction generation. `toolRound: -1` marks a
+   * non-round call so cost rollups never confuse it with a chat round
+   * (report callers already use `0` for their own non-round calls — `-1`
+   * stays distinct from both real rounds and those). Best-effort: metering
+   * must never change the reply path.
+   */
+  private recordCompactionUsage(
+    input: LlmAgentInput,
+    externalUserId: string,
+    completion: LlmProviderMetadata,
+  ): void {
+    try {
+      this.ports.usageRecorder.recordFromCompletion({
+        feature: FEATURE,
+        externalUserId,
+        userId: input.userId,
+        provider: completion.provider,
+        model: completion.model,
+        response: {
+          id: completion.responseId ?? '',
+          usage: completion.usage ?? null,
+        },
+        correlationId: `compaction:${externalUserId}`,
+        toolRound: -1,
+      });
+    } catch (error) {
+      const logger = this.ports.logger ?? NOOP_LOGGER;
+      logger.warn(
+        `Compaction usage record failed externalUserId=${maskExternalId(
+          externalUserId,
+        )} error=${errorMessage(error)}`,
+      );
+    }
   }
 
   /**
@@ -1388,7 +1527,10 @@ Summary:`;
     return null;
   }
 
-  private async buildMessages(input: LlmAgentInput): Promise<LlmMessage[]> {
+  private async buildMessages(
+    input: LlmAgentInput,
+    signal?: AbortSignal,
+  ): Promise<LlmMessage[]> {
     const logger = this.ports.logger ?? NOOP_LOGGER;
     const safeHistory = await this.buildSafeHistory(
       input,
@@ -1397,6 +1539,7 @@ Summary:`;
       input.userText,
       input.externalUserId,
       logger,
+      signal,
     );
 
     return [

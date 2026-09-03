@@ -13,6 +13,7 @@ import type {
   CompactionCachePort,
   CompactionSummary,
 } from '@wispace/chat-history';
+import { LlmOverloadError } from './execution/bounded-admission';
 
 // ---- helpers ----------------------------------------------------------------
 
@@ -2733,63 +2734,67 @@ describe('LlmAgentService', () => {
       expect(compactionOutcomeInc).toHaveBeenCalledWith('fallback');
     });
 
-    describe('compaction cache (#704)', () => {
-      function makeStubCache() {
-        const store = new Map<string, CompactionSummary>();
-        const cache: CompactionCachePort = {
-          get: jest.fn(async (id: string) => store.get(id) ?? null),
-          set: jest.fn(async (id: string, summary: CompactionSummary) => {
-            store.set(id, summary);
-          }),
-          clear: jest.fn(async (id: string) => {
-            store.delete(id);
-          }),
-        };
-        return { cache, store };
-      }
+    function makeStubCache() {
+      const store = new Map<string, CompactionSummary>();
+      const cache: CompactionCachePort = {
+        get: jest.fn(async (id: string) => store.get(id) ?? null),
+        set: jest.fn(async (id: string, summary: CompactionSummary) => {
+          store.set(id, summary);
+        }),
+        clear: jest.fn(async (id: string) => {
+          store.delete(id);
+        }),
+      };
+      return { cache, store };
+    }
 
-      function buildCachedService(
-        adapter: LlmProviderAdapter,
-        cache?: CompactionCachePort,
-        platform: string | null = 'test',
-      ) {
-        const compactionOutcomeInc = jest.fn();
-        const safetyEvents = {
-          recordGroundingWarning: jest.fn(),
-          recordInjectionEvent: jest.fn(),
-        };
-        const service = new LlmAgentService<StubToolContext>(
-          { compactionEnabled: true, maxInputTokens: 500 },
-          {
-            platform: platform ?? undefined,
-            compactionCache: cache,
-            llmExecution: {
-              run: jest
-                .fn()
-                .mockImplementation(
-                  (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
-                ),
-            },
-            usageRecorder: { recordFromCompletion: jest.fn() },
-            safetyEvents,
-            toolExecutor: {
-              execute: jest.fn().mockResolvedValue({ ok: true }),
-            },
-            adapter,
-            metrics: { ...NOOP_METRICS_PORT, compactionOutcomeInc },
-            logger: { warn: jest.fn(), debug: jest.fn() },
+    function countCompactionCalls(adapter: LlmProviderAdapter): number {
+      return (adapter.chatWithTools as jest.Mock).mock.calls.filter(
+        (call: [{ correlationId?: string }]) =>
+          call[0]?.correlationId?.startsWith('compaction:'),
+      ).length;
+    }
+
+    function isCompactionRunCall(call: [unknown, { correlationId?: string }]) {
+      return call[1]?.correlationId?.startsWith('compaction:');
+    }
+
+    function buildCachedService(
+      adapter: LlmProviderAdapter,
+      cache?: CompactionCachePort,
+      platform: string | null = 'test',
+    ) {
+      const compactionOutcomeInc = jest.fn();
+      const safetyEvents = {
+        recordGroundingWarning: jest.fn(),
+        recordInjectionEvent: jest.fn(),
+      };
+      const service = new LlmAgentService<StubToolContext>(
+        { compactionEnabled: true, maxInputTokens: 500 },
+        {
+          platform: platform ?? undefined,
+          compactionCache: cache,
+          llmExecution: {
+            run: jest
+              .fn()
+              .mockImplementation(
+                (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
+              ),
           },
-        );
-        return { service, compactionOutcomeInc, safetyEvents };
-      }
+          usageRecorder: { recordFromCompletion: jest.fn() },
+          safetyEvents,
+          toolExecutor: {
+            execute: jest.fn().mockResolvedValue({ ok: true }),
+          },
+          adapter,
+          metrics: { ...NOOP_METRICS_PORT, compactionOutcomeInc },
+          logger: { warn: jest.fn(), debug: jest.fn() },
+        },
+      );
+      return { service, compactionOutcomeInc, safetyEvents };
+    }
 
-      function countCompactionCalls(adapter: LlmProviderAdapter): number {
-        return (adapter.chatWithTools as jest.Mock).mock.calls.filter(
-          (call: [{ correlationId?: string }]) =>
-            call[0]?.correlationId?.startsWith('compaction:'),
-        ).length;
-      }
-
+    describe('compaction cache (#704)', () => {
       it('reuses the cached summary when the dropped prefix is unchanged', async () => {
         const adapter = makeCompactionAdapter('User likes evening study.');
         const { cache } = makeStubCache();
@@ -2930,6 +2935,293 @@ describe('LlmAgentService', () => {
         expect(result.text).toBeDefined();
         expect(countCompactionCalls(adapter)).toBe(1);
         expect(compactionOutcomeInc).toHaveBeenCalledWith('compacted');
+      });
+    });
+
+    describe('execution-port routing (#703)', () => {
+      function buildRoutedService(
+        adapter: LlmProviderAdapter,
+        runImpl?: (
+          fn: (signal?: AbortSignal) => Promise<unknown>,
+          meta?: { signal?: AbortSignal },
+        ) => Promise<unknown>,
+        cache?: CompactionCachePort,
+      ) {
+        const run =
+          runImpl ??
+          jest
+            .fn()
+            .mockImplementation(
+              (fn: (signal?: AbortSignal) => Promise<unknown>) => fn(),
+            );
+        const usageRecorder = { recordFromCompletion: jest.fn() };
+        const service = new LlmAgentService<StubToolContext>(
+          { compactionEnabled: true, maxInputTokens: 500 },
+          {
+            platform: 'test',
+            compactionCache: cache,
+            llmExecution: { run: run as never },
+            usageRecorder,
+            safetyEvents: {
+              recordGroundingWarning: jest.fn(),
+              recordInjectionEvent: jest.fn(),
+            },
+            toolExecutor: {
+              execute: jest.fn().mockResolvedValue({ ok: true }),
+            },
+            adapter,
+            metrics: NOOP_METRICS_PORT,
+            logger: { warn: jest.fn(), debug: jest.fn() },
+          },
+        );
+        return { service, run, usageRecorder };
+      }
+
+      function compactionRunCall(run: jest.Mock) {
+        return run.mock.calls.find(isCompactionRunCall) as
+          | [unknown, { feature: string; correlationId: string }]
+          | undefined;
+      }
+
+      it('routes the compaction call through llmExecution.run', async () => {
+        const adapter = makeCompactionAdapter('User likes evening study.');
+        const { service, run } = buildRoutedService(adapter);
+
+        await service.reply(
+          { ...BASE_INPUT, history: buildHistory(8) },
+          TOOL_CONTEXT,
+        );
+
+        const call = compactionRunCall(run as jest.Mock);
+        expect(call).toBeDefined();
+        expect(call![1]).toEqual(
+          expect.objectContaining({
+            feature: 'FREE_FORM_CHAT',
+            correlationId: 'compaction:ext-123',
+            signal: expect.any(AbortSignal),
+          }),
+        );
+      });
+
+      it('records compaction usage once with toolRound -1, never on reuse', async () => {
+        const adapter = makeCompactionAdapter('User likes evening study.');
+        const { cache } = makeStubCache();
+        const { service, usageRecorder } = buildRoutedService(
+          adapter,
+          undefined,
+          cache,
+        );
+        const history = buildHistory(8);
+
+        await service.reply({ ...BASE_INPUT, history }, TOOL_CONTEXT);
+        await service.reply({ ...BASE_INPUT, history }, TOOL_CONTEXT);
+
+        expect(countCompactionCalls(adapter)).toBe(1);
+        const compactionRecords = (
+          usageRecorder.recordFromCompletion as jest.Mock
+        ).mock.calls.filter(
+          (call: [{ toolRound?: number }]) => call[0]?.toolRound === -1,
+        );
+        expect(compactionRecords).toHaveLength(1);
+        expect(compactionRecords[0][0]).toEqual(
+          expect.objectContaining({
+            feature: 'FREE_FORM_CHAT',
+            externalUserId: 'ext-123',
+            correlationId: 'compaction:ext-123',
+            toolRound: -1,
+          }),
+        );
+      });
+
+      it('aborts the in-flight compaction request on caller abort', async () => {
+        let capturedSignal: AbortSignal | undefined;
+        let started!: () => void;
+        const startedGate = new Promise<void>((resolve) => {
+          started = resolve;
+        });
+        const adapter = makeCompactionAdapter('User likes evening study.');
+        adapter.chatWithTools = jest
+          .fn()
+          .mockImplementation(
+            (params: { correlationId?: string; signal?: AbortSignal }) => {
+              if (!params.correlationId?.startsWith('compaction:')) {
+                return Promise.resolve({
+                  message: { role: 'assistant', content: 'OK' },
+                  content: 'OK',
+                  metadata: {
+                    provider: 'openai',
+                    model: 'gpt-5.4',
+                    responseId: 'r',
+                    usage: {
+                      promptTokens: 10,
+                      completionTokens: 5,
+                      totalTokens: 15,
+                    },
+                  },
+                });
+              }
+              capturedSignal = params.signal;
+              started();
+              return new Promise((_resolve, reject) => {
+                if (params.signal) {
+                  params.signal.onabort = () => {
+                    reject(params.signal?.reason);
+                  };
+                }
+              });
+            },
+          );
+        const { service } = buildRoutedService(
+          adapter,
+          jest
+            .fn()
+            .mockImplementation(
+              (
+                fn: (signal?: AbortSignal) => Promise<unknown>,
+                meta?: { signal?: AbortSignal },
+              ) => fn(meta?.signal),
+            ),
+        );
+        const controller = new AbortController();
+
+        const pending = service.reply(
+          {
+            ...BASE_INPUT,
+            history: buildHistory(8),
+            signal: controller.signal,
+          },
+          TOOL_CONTEXT,
+        );
+        await startedGate;
+        controller.abort();
+
+        // Caller abort rejects the reply (existing abort semantics: the caller
+        // is gone). What matters here: the in-flight compaction request itself
+        // was aborted, not left running in the background.
+        await expect(pending).rejects.toThrow();
+        expect(capturedSignal?.aborted).toBe(true);
+      });
+
+      it('aborted waiter falls back while the shared generation continues', async () => {
+        let release!: (value: unknown) => void;
+        const releaseGate = new Promise<unknown>((resolve) => {
+          release = resolve;
+        });
+        let entrySignal: AbortSignal | undefined;
+        const adapter = makeCompactionAdapter('User likes evening study.');
+        const compactionResponse = {
+          message: { role: 'assistant', content: 'Shared summary.' },
+          content: 'Shared summary.',
+          metadata: {
+            provider: 'openai',
+            model: 'gpt-5.4',
+            responseId: 'chatcmpl_compact',
+            usage: { promptTokens: 50, completionTokens: 30, totalTokens: 80 },
+          },
+        };
+        adapter.chatWithTools = jest
+          .fn()
+          .mockImplementation(
+            (params: { correlationId?: string; signal?: AbortSignal }) => {
+              if (!params.correlationId?.startsWith('compaction:')) {
+                return Promise.resolve({
+                  message: { role: 'assistant', content: 'OK' },
+                  content: 'OK',
+                  metadata: {
+                    provider: 'openai',
+                    model: 'gpt-5.4',
+                    responseId: 'r',
+                    usage: {
+                      promptTokens: 10,
+                      completionTokens: 5,
+                      totalTokens: 15,
+                    },
+                  },
+                });
+              }
+              entrySignal = params.signal;
+              return releaseGate.then(() => compactionResponse);
+            },
+          );
+        const { cache } = makeStubCache();
+        const { service } = buildRoutedService(
+          adapter,
+          jest
+            .fn()
+            .mockImplementation(
+              (
+                fn: (signal?: AbortSignal) => Promise<unknown>,
+                meta?: { signal?: AbortSignal },
+              ) => fn(meta?.signal),
+            ),
+          cache,
+        );
+        const history = buildHistory(8);
+        const controllerA = new AbortController();
+
+        const pendingA = service.reply(
+          { ...BASE_INPUT, history, signal: controllerA.signal },
+          TOOL_CONTEXT,
+        );
+        const pendingB = service.reply(
+          { ...BASE_INPUT, history },
+          TOOL_CONTEXT,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        controllerA.abort();
+        // A is gone: its reply rejects (existing abort semantics)…
+        await expect(pendingA).rejects.toThrow();
+        // …but the shared generation survives for B (last waiter never left).
+        expect(entrySignal?.aborted).toBe(false);
+        release(undefined);
+        const resultB = await pendingB;
+
+        expect(resultB.text).toBeDefined();
+        expect(countCompactionCalls(adapter)).toBe(1);
+      });
+
+      it('degrades to truncation when admission rejects the compaction call', async () => {
+        const adapter = makeCompactionAdapter('User likes evening study.');
+        const compactionOutcomeInc = jest.fn();
+        const run = jest
+          .fn()
+          .mockImplementation(
+            (
+              fn: (signal?: AbortSignal) => Promise<unknown>,
+              meta?: { correlationId?: string; signal?: AbortSignal },
+            ) => {
+              if (meta?.correlationId?.startsWith('compaction:')) {
+                return Promise.reject(new LlmOverloadError('queue_full'));
+              }
+              return fn(meta?.signal);
+            },
+          );
+        const service = new LlmAgentService<StubToolContext>(
+          { compactionEnabled: true, maxInputTokens: 500 },
+          {
+            platform: 'test',
+            llmExecution: { run: run as never },
+            usageRecorder: { recordFromCompletion: jest.fn() },
+            safetyEvents: {
+              recordGroundingWarning: jest.fn(),
+              recordInjectionEvent: jest.fn(),
+            },
+            toolExecutor: {
+              execute: jest.fn().mockResolvedValue({ ok: true }),
+            },
+            adapter,
+            metrics: { ...NOOP_METRICS_PORT, compactionOutcomeInc },
+            logger: { warn: jest.fn(), debug: jest.fn() },
+          },
+        );
+
+        const result = await service.reply(
+          { ...BASE_INPUT, history: buildHistory(8) },
+          TOOL_CONTEXT,
+        );
+
+        expect(result.text).toBeDefined();
+        expect(compactionOutcomeInc).toHaveBeenCalledWith('fallback');
       });
     });
   });
