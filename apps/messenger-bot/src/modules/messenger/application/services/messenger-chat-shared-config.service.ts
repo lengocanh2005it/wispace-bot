@@ -57,6 +57,15 @@ export class MessengerChatSharedConfigService {
     );
   }
 
+  /** #660: how long a pending in-chat privacy confirm (Có/Không) stays valid. */
+  getPrivacyConfirmTtlMs(): number {
+    return readEnvPositiveInt(
+      this.configService,
+      'PRIVACY_CONFIRM_TTL_MS',
+      30 * 60 * 1000,
+    );
+  }
+
   getHistoryMaxMessages(): number {
     return readEnvPositiveInt(
       this.configService,

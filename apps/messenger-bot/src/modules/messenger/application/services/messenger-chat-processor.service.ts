@@ -15,6 +15,7 @@ import {
   isConfirmationResponse,
   isCancellationResponse,
 } from '@wispace/llm-agent';
+import type { PrivacyIntent } from '@wispace/llm-agent';
 import { ChatRateLimitService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit.service';
 import { ChatRateLimitConfigService } from '@messenger/modules/chat-rate-limit/application/services/chat-rate-limit-config.service';
 import {
@@ -426,6 +427,29 @@ export class MessengerChatProcessorService {
 
     // ── Pre-pipeline checks ──────────────────────────────────────────
 
+    // Privacy intercept — runs before the quota block so a bare "Có"/"Không"
+    // reply (or a keyword request) never reserves a free-form slot or reaches
+    // the LLM. While a privacy action is pending, EVERY message routes to the
+    // privacy handler until the user confirms/cancels or the pending TTL
+    // expires (#660).
+    if (this.privacyState && this.privacyService) {
+      const pendingAction = this.privacyState.getPendingAction(
+        psid,
+        'messenger',
+      );
+      const privacyIntent = detectPrivacyIntent(mergedText);
+      if (pendingAction || privacyIntent) {
+        await this.handlePrivacyIntent(
+          psid,
+          userId,
+          mergedText,
+          privacyIntent,
+          pendingAction,
+        );
+        return true;
+      }
+    }
+
     // Quota pre-check + deny messages (processor wrapper, not pipeline)
     if (idempotencyKey) {
       const quota = await this.metrics.timeStep('rate_limit_reserve', () =>
@@ -479,13 +503,6 @@ export class MessengerChatProcessorService {
       );
     }
 
-    // Privacy intent intercept — before pipeline (no quota consumed)
-    const privacyIntent = detectPrivacyIntent(mergedText);
-    if (privacyIntent && this.privacyState && this.privacyService) {
-      await this.handlePrivacyIntent(psid, userId, mergedText, privacyIntent);
-      return true;
-    }
-
     // ── Pipeline flush ───────────────────────────────────────────────
 
     return this.metrics.timeStep('pipeline_flush', () =>
@@ -504,14 +521,13 @@ export class MessengerChatProcessorService {
     psid: string,
     userId: number | undefined,
     mergedText: string,
-    privacyIntent: 'unlink' | 'delete' | 'export',
+    privacyIntent: PrivacyIntent,
+    pendingAction: PrivacyIntent,
   ): Promise<void> {
-    const pendingAction = this.privacyState!.getPendingAction(
-      psid,
-      'messenger',
-    );
-
     if (!pendingAction) {
+      // Caller only routes here when pendingAction || privacyIntent, so this
+      // branch always has a fresh intent.
+      if (!privacyIntent) return;
       const confirmMessage = this.privacyState!.setPendingAction(
         psid,
         'messenger',
@@ -527,6 +543,10 @@ export class MessengerChatProcessorService {
     }
 
     if (isConfirmationResponse(mergedText)) {
+      // Durable record of the consent before the irreversible action runs.
+      await this.logPrivacyInbound(psid, userId, 'PRIVACY_CONFIRM_IN');
+      // ponytail: pending is cleared before execute; in distributed mode a
+      // retry after an execute failure loses the request (out of scope — #461).
       this.privacyState!.clearPendingAction(psid, 'messenger');
 
       let resultMessage: string;
@@ -574,6 +594,7 @@ export class MessengerChatProcessorService {
     }
 
     if (isCancellationResponse(mergedText)) {
+      await this.logPrivacyInbound(psid, userId, 'PRIVACY_CANCEL_IN');
       this.privacyState!.clearPendingAction(psid, 'messenger');
       await this.outbound.sendTextViaPsid({
         psid,
@@ -590,6 +611,28 @@ export class MessengerChatProcessorService {
       text: 'Reply "Có" để xác nhận hoặc "Không" để hủy.',
       messageType: 'PRIVACY_REMIND',
     });
+  }
+
+  /** Audit trail for an in-chat privacy consent/cancellation (compliance). */
+  private async logPrivacyInbound(
+    psid: string,
+    userId: number | undefined,
+    messageType: 'PRIVACY_CONFIRM_IN' | 'PRIVACY_CANCEL_IN',
+  ): Promise<void> {
+    try {
+      await this.messengerRepository.logMessage({
+        userId,
+        psid,
+        messageType,
+        status: 'SENT',
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Privacy inbound log failed psid=${maskExternalId(
+          psid,
+        )}: ${maskExternalIdInText(errorMessage(error), psid)}`,
+      );
+    }
   }
 
   private clearQueuedWork(psid: string): Promise<void> {

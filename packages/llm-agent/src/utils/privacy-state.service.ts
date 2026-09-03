@@ -6,8 +6,12 @@ import type { PrivacyIntent } from './privacy-intent.utils';
  * In-memory state for pending privacy actions.
  * Tracks users who have initiated but not yet confirmed a privacy action.
  *
- * TTL: 5 minutes — if the user doesn't confirm/cancel within this window,
- * the pending action is cleared automatically.
+ * TTL: `ttlMs` (default 30 minutes) — if the user doesn't confirm/cancel
+ * within this window, the pending action is cleared automatically. A reply
+ * that arrives after expiry falls through to the normal chat pipeline.
+ *
+ * ponytail: in-memory, pod-local. A wider grace window is enough for the
+ * current single-instance deployment; durable + cross-pod persistence is #542.
  */
 
 interface PendingPrivacyAction {
@@ -17,12 +21,20 @@ interface PendingPrivacyAction {
   createdAt: number;
 }
 
-const PENDING_ACTION_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const DEFAULT_PENDING_ACTION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 @Injectable()
 export class PrivacyStateService {
   private readonly logger = new Logger(PrivacyStateService.name);
   private readonly pendingActions = new Map<string, PendingPrivacyAction>();
+  private readonly ttlMs: number;
+
+  constructor(ttlMs?: number) {
+    this.ttlMs =
+      typeof ttlMs === 'number' && Number.isFinite(ttlMs) && ttlMs > 0
+        ? Math.floor(ttlMs)
+        : DEFAULT_PENDING_ACTION_TTL_MS;
+  }
 
   /**
    * Store a pending privacy action for a user.
@@ -57,7 +69,7 @@ export class PrivacyStateService {
     }
 
     // Check TTL
-    if (Date.now() - action.createdAt > PENDING_ACTION_TTL_MS) {
+    if (Date.now() - action.createdAt > this.ttlMs) {
       this.logger.log(
         `Pending privacy action expired for psid=${maskExternalId(psid)}`,
       );

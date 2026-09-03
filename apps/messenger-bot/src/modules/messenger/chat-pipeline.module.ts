@@ -453,7 +453,12 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
     },
     MessengerChatProcessorService,
     MessengerChatEnqueueService,
-    PrivacyStateService,
+    {
+      provide: PrivacyStateService,
+      useFactory: (sharedConfig: MessengerChatSharedConfigService) =>
+        new PrivacyStateService(sharedConfig.getPrivacyConfirmTtlMs()),
+      inject: [MessengerChatSharedConfigService],
+    },
     {
       provide: RedisChatQueueWorkerService,
       useFactory: (

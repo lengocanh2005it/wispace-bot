@@ -97,6 +97,13 @@ Queue port: `CHAT_QUEUE_STORE`. History port: `CHAT_HISTORY_STORE`.
 - Only when user clicks `CONFIRM_RESCHEDULE` → `StudyCalendarCommandService.rescheduleSession`.
 - Postbacks: `CONFIRM_RESCHEDULE` / `CANCEL_RESCHEDULE` in `messenger.service.ts`.
 
+## In-chat privacy confirm (#660)
+
+- `MessengerChatProcessorService.processChatBatchInner` checks privacy **before** the quota block: `privacyState.getPendingAction(psid, 'messenger')` + `detectPrivacyIntent(mergedText)`. If either is truthy → `handlePrivacyIntent` → `return true` (no quota slot, no `pipeline.flush`).
+- **Intercept-all while pending:** once a pending action exists, every message routes to the handler — bare `Có`/synonym executes, bare `Không`/synonym cancels, anything else re-sends the `Có/Không` reminder. `isConfirmationResponse` / `isCancellationResponse` are anchored (`^…$`); a merged/multi-line reply is treated as "neither" → reminder.
+- Inbound consent/cancel is logged to `message_logs` as `PRIVACY_CONFIRM_IN` / `PRIVACY_CANCEL_IN` before the irreversible step (`logPrivacyInbound`, best-effort).
+- `PrivacyStateService` TTL is `PRIVACY_CONFIRM_TTL_MS` (default 30 min), read via `MessengerChatSharedConfigService.getPrivacyConfirmTtlMs()` and passed to the constructor by the `useFactory` in `chat-pipeline.module.ts`. In-memory + pod-local — durable/cross-pod persistence is #542.
+
 ## Tests
 
 - `messenger-chat-queue.service.spec.ts`

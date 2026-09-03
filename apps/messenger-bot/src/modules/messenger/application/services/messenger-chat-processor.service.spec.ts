@@ -19,6 +19,7 @@ import { MessengerChatProcessorService } from './messenger-chat-processor.servic
 import type { MessengerChatSharedConfigService } from './messenger-chat-shared-config.service';
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { PlatformChatHistoryService } from '@wispace/chat-agent';
+import { PrivacyStateService } from '@wispace/llm-agent';
 
 describe('MessengerChatProcessorService', () => {
   const quotaAllowed = (
@@ -37,6 +38,7 @@ describe('MessengerChatProcessorService', () => {
     options: {
       shouldEnforce?: boolean;
       mappingRepository?: MessengerMappingRepositoryPort;
+      withPrivacy?: boolean;
     } = {},
   ) => {
     const sendSenderActionOptional = jest.fn(() => Promise.resolve());
@@ -129,6 +131,20 @@ describe('MessengerChatProcessorService', () => {
       ),
     } as unknown as BotMetricsService;
 
+    const privacyState = options.withPrivacy
+      ? new PrivacyStateService()
+      : undefined;
+    const privacyUnlink = jest.fn(() => Promise.resolve({ deleted: true }));
+    const privacyDelete = jest.fn(() => Promise.resolve());
+    const privacyExport = jest.fn(() => Promise.resolve({ mapping: null }));
+    const privacyService = options.withPrivacy
+      ? {
+          unlink: privacyUnlink,
+          delete: privacyDelete,
+          export: privacyExport,
+        }
+      : undefined;
+
     const service = new MessengerChatProcessorService(
       outbound,
       messengerAgentService,
@@ -140,8 +156,8 @@ describe('MessengerChatProcessorService', () => {
       historyService,
       configService,
       undefined, // chatQueueStore
-      undefined, // privacyState
-      undefined, // privacyService
+      privacyState,
+      privacyService as never,
       options.mappingRepository as never,
     );
 
@@ -159,6 +175,10 @@ describe('MessengerChatProcessorService', () => {
       refundFreeFormSlot,
       getRemainingQuota,
       logMessage,
+      privacyState,
+      privacyUnlink,
+      privacyDelete,
+      privacyExport,
     };
   };
 
@@ -627,6 +647,182 @@ describe('MessengerChatProcessorService', () => {
         idempotencyKey: 'mid-match',
       });
 
+      expect(reply).toHaveBeenCalled();
+    });
+  });
+
+  describe('#660 in-chat privacy confirm routing', () => {
+    const prompt = (service: MessengerChatProcessorService) =>
+      service.process({
+        psid: 'psid-1',
+        mergedText: 'xóa dữ liệu',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-prompt',
+      });
+
+    it('keyword request stages a pending action without touching quota or the pipeline', async () => {
+      const { service, sendTextViaPsid, reserveFreeFormSlot, reply } =
+        createService({ withPrivacy: true });
+
+      await prompt(service);
+
+      expect(sendTextViaPsid).toHaveBeenCalledWith(
+        expect.objectContaining({ messageType: 'PRIVACY_CONFIRM' }),
+      );
+      expect(reserveFreeFormSlot).not.toHaveBeenCalled();
+      expect(reply).not.toHaveBeenCalled();
+    });
+
+    it('bare "Có" executes the pending action and sends the result', async () => {
+      const {
+        service,
+        sendTextViaPsid,
+        reserveFreeFormSlot,
+        reply,
+        privacyDelete,
+        logMessage,
+      } = createService({ withPrivacy: true });
+
+      await prompt(service);
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'Có',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-confirm',
+      });
+
+      expect(privacyDelete).toHaveBeenCalledWith(
+        'messenger',
+        'psid-1',
+        expect.any(Object),
+      );
+      expect(sendTextViaPsid).toHaveBeenCalledWith(
+        expect.objectContaining({ messageType: 'PRIVACY_RESULT' }),
+      );
+      expect(logMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ messageType: 'PRIVACY_CONFIRM_IN' }),
+      );
+      expect(reserveFreeFormSlot).not.toHaveBeenCalled();
+      expect(reply).not.toHaveBeenCalled();
+    });
+
+    it('bare "Không" cancels the pending action and runs no erasure', async () => {
+      const {
+        service,
+        sendTextViaPsid,
+        reserveFreeFormSlot,
+        reply,
+        privacyDelete,
+        logMessage,
+      } = createService({ withPrivacy: true });
+
+      await prompt(service);
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'Không',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-cancel',
+      });
+
+      expect(privacyDelete).not.toHaveBeenCalled();
+      expect(sendTextViaPsid).toHaveBeenCalledWith(
+        expect.objectContaining({ messageType: 'PRIVACY_CANCELLED' }),
+      );
+      expect(logMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ messageType: 'PRIVACY_CANCEL_IN' }),
+      );
+      expect(reserveFreeFormSlot).not.toHaveBeenCalled();
+      expect(reply).not.toHaveBeenCalled();
+    });
+
+    it('an unrelated reply while pending gets the reminder, not the LLM', async () => {
+      const {
+        service,
+        sendTextViaPsid,
+        reserveFreeFormSlot,
+        reply,
+        privacyDelete,
+      } = createService({ withPrivacy: true });
+
+      await prompt(service);
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'mấy giờ rồi',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-unrelated',
+      });
+
+      expect(sendTextViaPsid).toHaveBeenCalledWith(
+        expect.objectContaining({ messageType: 'PRIVACY_REMIND' }),
+      );
+      expect(privacyDelete).not.toHaveBeenCalled();
+      expect(reserveFreeFormSlot).not.toHaveBeenCalled();
+      expect(reply).not.toHaveBeenCalled();
+    });
+
+    it('a different privacy keyword while pending re-sends the reminder without swapping the intent', async () => {
+      const {
+        service,
+        sendTextViaPsid,
+        privacyDelete,
+        privacyUnlink,
+        privacyState,
+      } = createService({ withPrivacy: true });
+
+      await prompt(service); // stages a pending "delete"
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'ngắt kết nối',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-switch',
+      });
+
+      expect(sendTextViaPsid).toHaveBeenCalledWith(
+        expect.objectContaining({ messageType: 'PRIVACY_REMIND' }),
+      );
+      expect(privacyDelete).not.toHaveBeenCalled();
+      expect(privacyUnlink).not.toHaveBeenCalled();
+      expect(privacyState!.getPendingAction('psid-1', 'messenger')).toBe(
+        'delete',
+      );
+    });
+
+    it('a merged multi-line reply starting with "Có" is treated as neither → reminder', async () => {
+      const { service, sendTextViaPsid, privacyDelete } = createService({
+        withPrivacy: true,
+      });
+
+      await prompt(service);
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'Có\nà thôi khoan',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-multiline',
+      });
+
+      expect(sendTextViaPsid).toHaveBeenCalledWith(
+        expect.objectContaining({ messageType: 'PRIVACY_REMIND' }),
+      );
+      expect(privacyDelete).not.toHaveBeenCalled();
+    });
+
+    it('after the pending action expires, a bare "Có" falls through to the pipeline', async () => {
+      const { service, reply, privacyState } = createService({
+        withPrivacy: true,
+      });
+
+      await prompt(service);
+      // Past the default 30-minute TTL.
+      jest.setSystemTime(Date.now() + 31 * 60 * 1000);
+
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'Có',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-expired',
+      });
+
+      expect(privacyState!.getPendingAction('psid-1', 'messenger')).toBeNull();
       expect(reply).toHaveBeenCalled();
     });
   });
