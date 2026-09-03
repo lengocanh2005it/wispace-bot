@@ -1,6 +1,7 @@
 import type {
   AppendChatBufferInput,
   ChatQueueBufferSnapshot,
+  ChatQueueReconciliationResult,
   CompleteChatBufferInput,
 } from './chat-queue-store.types';
 
@@ -18,6 +19,7 @@ export interface ChatQueueStorePort {
   /** Removes queued (including in-flight) work for a privacy/link invalidation. */
   clearChatBuffer?(externalUserId: string): Promise<boolean>;
   listReadyExternalUserIds(limit: number): Promise<string[]>;
+  reconcile?(): Promise<ChatQueueReconciliationResult>;
   /**
    * Re-enqueue the currently processing batch for a delayed retry (#406).
    * Moves processingTexts (+ pendingTexts) back to texts and sets flushAfterAt

@@ -179,6 +179,37 @@ describe('ChatRateLimitRepository', () => {
           return [{ count: String(count) }];
         }
 
+        if (normalized.startsWith('SELECT external_user_id, COUNT(*)')) {
+          const [, bucketStart, bucketEnd, requestedLimit] = params as [
+            string,
+            Date,
+            Date,
+            number,
+          ];
+          const includeRefunded = normalized.includes('COUNT(*)::text');
+          const counts = new Map<string, number>();
+          for (const row of idempotencyStore.values()) {
+            if (row.reservedAt < bucketStart || row.reservedAt >= bucketEnd) {
+              continue;
+            }
+            if (includeRefunded || row.status !== 'refunded') {
+              counts.set(
+                row.externalUserId,
+                (counts.get(row.externalUserId) ?? 0) + 1,
+              );
+            } else if (!counts.has(row.externalUserId)) {
+              counts.set(row.externalUserId, 0);
+            }
+          }
+          return [...counts.entries()]
+            .sort(([left], [right]) => left.localeCompare(right))
+            .slice(0, requestedLimit)
+            .map(([externalUserId, count]) => ({
+              external_user_id: externalUserId,
+              count: String(count),
+            }));
+        }
+
         if (normalized.startsWith('UPDATE chat_idempotency SET status = ')) {
           if (
             normalized.includes("SET status = 'completed'") &&
@@ -996,5 +1027,56 @@ describe('ChatRateLimitRepository', () => {
     await expect(
       repository.getDailyUsageCount('ext-1', '2026-06-15'),
     ).resolves.toBe(15);
+  });
+
+  it('lists bounded fixed-bucket counts for the Redis audit', async () => {
+    idempotencyStore.set('key-a', {
+      idempotencyKey: 'key-a',
+      externalUserId: 'ext-a',
+      userId: null,
+      usageDate: '2026-06-15',
+      status: 'reserved',
+      reservedAt: new Date('2026-06-15T01:00:00Z'),
+    });
+    idempotencyStore.set('key-b', {
+      idempotencyKey: 'key-b',
+      externalUserId: 'ext-a',
+      userId: null,
+      usageDate: '2026-06-15',
+      status: 'completed',
+      reservedAt: new Date('2026-06-15T01:00:30Z'),
+    });
+
+    await expect(
+      repository.listBurstCountsForBucket(
+        new Date('2026-06-15T01:00:00Z'),
+        new Date('2026-06-15T01:01:00Z'),
+        { limit: 1 },
+      ),
+    ).resolves.toEqual({
+      rows: [{ externalUserId: 'ext-a', count: 2 }],
+      truncated: false,
+    });
+  });
+
+  it('lists refunded-only users with a zero authoritative count', async () => {
+    idempotencyStore.set('refunded-key', {
+      idempotencyKey: 'refunded-key',
+      externalUserId: 'refunded-user',
+      userId: null,
+      usageDate: '2026-06-15',
+      status: 'refunded',
+      reservedAt: new Date('2026-06-15T01:00:00Z'),
+    });
+
+    await expect(
+      repository.listBurstCountsForBucket(
+        new Date('2026-06-15T01:00:00Z'),
+        new Date('2026-06-15T01:01:00Z'),
+      ),
+    ).resolves.toEqual({
+      rows: [{ externalUserId: 'refunded-user', count: 0 }],
+      truncated: false,
+    });
   });
 });

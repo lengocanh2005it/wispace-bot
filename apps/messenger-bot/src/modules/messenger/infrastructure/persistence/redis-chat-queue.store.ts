@@ -1,6 +1,10 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { RedisChatQueueStore as SharedRedisChatQueueStore } from '@wispace/chat-agent';
+import {
+  RedisChatQueueStore as SharedRedisChatQueueStore,
+  recordChatQueueReconciliationMetrics,
+  type ChatQueueReconciliationResult,
+} from '@wispace/chat-agent';
 import { REDIS_CLIENT } from '@wispace/bot-common/redis';
 import type { RedisClientPort } from '@wispace/bot-common/redis';
 import { BotMetricsService } from '@wispace/bot-metrics';
@@ -30,6 +34,8 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
         legacyKeys: true,
         onRecoveryOutcome: (outcome) =>
           metrics?.incChatFlushRecovery('messenger', outcome),
+        onReconciliation: (result) =>
+          recordChatQueueReconciliationMetrics(metrics, result),
       },
     );
   }
@@ -88,6 +94,10 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
 
   listPsidsReadyForFlush(limit: number): Promise<string[]> {
     return this.sharedStore.listReadyExternalUserIds(limit);
+  }
+
+  reconcile(): Promise<ChatQueueReconciliationResult> {
+    return this.sharedStore.reconcile();
   }
 
   scheduleRetryFlush(

@@ -69,4 +69,22 @@ describe('RedisChatQueueWorkerService', () => {
     worker.onModuleInit();
     worker.onModuleDestroy();
   });
+
+  it('runs the bounded reconciliation at most once per minute', async () => {
+    const reconcile = jest.fn().mockResolvedValue({ status: 'clean' });
+    const configService = {
+      get: (key: string) => (key === 'CHAT_QUEUE_STORE' ? 'redis' : undefined),
+    } as unknown as ConfigService;
+    const worker = new RedisChatQueueWorkerService(
+      configService,
+      () => Promise.resolve([]),
+      jest.fn(),
+      reconcile,
+    );
+
+    await worker.pollReadyBuffers();
+    await worker.pollReadyBuffers();
+
+    expect(reconcile).toHaveBeenCalledTimes(1);
+  });
 });

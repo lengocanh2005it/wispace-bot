@@ -106,6 +106,17 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
     return this.core.countRecentReservations(psid, since, options);
   }
 
+  listBurstCountsForBucket(
+    bucketStart: Date,
+    bucketEnd: Date,
+    options: { includeRefunded?: boolean; limit?: number } = {},
+  ): Promise<{
+    rows: Array<{ externalUserId: string; count: number }>;
+    truncated: boolean;
+  }> {
+    return this.core.listBurstCountsForBucket(bucketStart, bucketEnd, options);
+  }
+
   recoverIdempotencyForRetry(
     idempotencyKey: string,
     stuckBefore: Date,

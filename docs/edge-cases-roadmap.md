@@ -262,6 +262,7 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 - **Shared packages** — `@wispace/llm-agent`, `@wispace/chat-metering`, `@wispace/wispace-client`, etc.
 - **Discord bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + typing indicator (`ChatPipelineHooks.onStep`) + user feedback ("Đang xử lý tin nhắn trước...") + 7/7 real tool handlers (reschedule via button confirm/cancel, `precreate_next_exercise` wired). `register_exam_report_notifications` not needed (no 24h limit).
 - **Zalo bot** — chat + quota + pending cap (`CHAT_MAX_PENDING_MESSAGES`) + user feedback ("Đang xử lý tin nhắn trước...") + account linking + 7/7 real tools wired (incl. `precreate_next_exercise`) + 08:00 report cron + study reminders + dead letter + chat queue + ops endpoints + CI/CD. `register_exam_report_notifications` not needed (48h window covers active users; ZNS deferred).
+- **Postgres/Redis consistency (#609)** — Postgres-final burst enforcement, bounded Redis burst audit with invalidation, per-platform queue index reconciliation, malformed-state quarantine, low-cardinality drift metrics, and a two-minute Alertmanager rule. See [ADR-0007](adr/0007-postgres-redis-consistency.md).
 
 ### Gaps & Remediation
 
@@ -275,6 +276,7 @@ Rate limit V1 + **H1–H7**, agent tools, history RAM/DB, delivery semantics H4,
 | Write-tool budget                    | Mutating tools (`reschedule_study_session`, `precreate_next_exercise`) lacked per-user rate limit     | **#626 (done, 2026-08-31)** — per-user daily budget + per-message cap for mutating tools (`reschedule_study_session`, `precreate_next_exercise`). Table `chat_tool_daily_usage`, `WriteToolBudgetCore` in `packages/chat-metering`, enforced in the tool executor (precreate) and the reschedule confirm handler (reschedule). Metric `*_write_tool_budget_denied_total{tool,platform,reason}`. | **Done** (#626)    |
 | Non-identity calendar tool args        | A model-selected `calendarId` could be sent without local ownership proof | **#627 (done in code, 2026-08-31)** — list-first caller-scoped reads, shared stage/write ownership guards, generic fail-closed errors, masked `RESCHEDULE_SCOPE_BLOCKED` logs, and `scope_mismatch`/`scope_unverified` policy metrics across Messenger/Discord/Zalo. WISPACE per-endpoint authorization confirmation is external issue evidence. | **Done (code)** |
 | Shared LLM execution resilience (#513) | Discord/Zalo provider failures could exhaust retries without the Messenger breaker posture or shared admission telemetry | **Done (#513)** — env execution breaker + configured failover, single-provider startup warning, Redis concurrency lifecycle metrics, and queue drain-lag gauge | **Done** |
+| Postgres/Redis consistency (#609) | Redis burst counters and queue indexes could diverge from their authority without bounded detection or safe repair | **Done (#609)** — Postgres-final burst check + fixed-bucket audit/invalidation; queue buffer/index reconciliation and hashed quarantine; metrics + alert | **Done** |
 
 ---
 

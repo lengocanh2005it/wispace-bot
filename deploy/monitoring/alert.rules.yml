@@ -46,6 +46,30 @@ groups:
           summary: '{{ $labels.job }} data-quality check failed ({{ $labels.check }})'
           description: '{{ $labels.job }} reported a failed scheduled data-quality check; inspect OPS_HEALTH_ALERT logs and run `npm run ops:data-quality`.'
 
+      - alert: RedisConsistencyDrift
+        expr: |
+          (
+            max by (job, datum) (
+              messenger_redis_consistency_drift
+              or discord_redis_consistency_drift
+              or zalo_redis_consistency_drift
+            ) > 0
+          )
+          or
+          (
+            sum by (job, datum) (
+              increase(messenger_redis_consistency_events_total{outcome=~"unresolved|quarantined|unavailable"}[5m])
+              or increase(discord_redis_consistency_events_total{outcome=~"unresolved|quarantined|unavailable"}[5m])
+              or increase(zalo_redis_consistency_events_total{outcome=~"unresolved|quarantined|unavailable"}[5m])
+            ) > 0
+          )
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} Postgres/Redis consistency drift ({{ $labels.datum }})'
+          description: '{{ $labels.job }} could not self-heal {{ $value }} {{ $labels.datum }} consistency mismatches for 2 minutes; inspect reconciliation metrics and quarantined queue state.'
+
       - alert: LlmAdmissionSaturated
         expr: |
           (

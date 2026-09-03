@@ -41,6 +41,7 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 - WISPACE-linked users can **send text messages** → bot replies via LLM agent (`MessengerChatEnqueueService` debounce → `MessengerChatProcessorService` → `MessengerAgentService`).
 - **Daily quota** per `(platform, external_user_id, usage_date)` ICT — `chat_daily_usage`; idempotency `message.mid` — `chat_idempotency`.
 - **Burst** `CHAT_BURST_PER_MINUTE`/min; **hard cap** concurrent (H3); **hint** "X remaining" (Phase 6).
+- **Postgres/Redis consistency (#609):** Postgres remains the final quota/burst authority; Redis burst is a fixed-minute advisory cache and divergent present keys are invalidated by the bounded Messenger audit once per minute. Queue Redis buffer JSON is authoritative for queued text; each bot's worker repairs missing/stale indexes and quarantines malformed payloads. Unresolved drift is exported as `<prefix>_redis_consistency_drift{datum}` and alerts after 2 minutes. See [ADR-0007](adr/0007-postgres-redis-consistency.md).
 - Menu postback, reminder cron, proactive reports — **no** quota deduction.
 - Messenger report registration from chat is accepted only for an explicit request such as “đăng ký nhận báo cáo” or “muốn nhận báo cáo tự động”; ambiguous requests are acknowledged without account lookup or subscription writes.
 - **Development/test:** `CHAT_QUEUE_STORE=memory` (RAM debounce). **Production:** all three bots require `CHAT_QUEUE_STORE=redis` (requires `REDIS_ENABLED=true`; `CHAT_QUEUE_SHARED=true` maps to `redis`). Enqueue writes are awaited before the Messenger/Zalo durable inbox completes; persistent Redis failures remain retryable. Redis keys use the legacy `chat:queue:*` namespace for Messenger and `chat:queue:discord:*` / `chat:queue:zalo:*` for the other bots.
@@ -676,7 +677,7 @@ CHAT_QUEUE_SHARED=true   # legacy alias for CHAT_QUEUE_STORE=redis (requires RED
 npm run migration:run
 ```
 
-Each pod runs a shared 2s poller against the platform Redis queue (`chat:queue:buffer:{psid}` for Messenger, platform-prefixed keys for Discord/Zalo) with per-user locks; ready members are tracked in bounded flush/stuck ZSET reads, and Messenger legacy active-set members are rehydrated once after deploy. Debounce buffers/history live in Redis, and webhook dedupe is the durable `webhook_inbound_events` inbox in PostgreSQL (no `CHAT_DEDUPE_STORE`).
+Each pod runs a shared 2s poller against the platform Redis queue (`chat:queue:buffer:{psid}` for Messenger, platform-prefixed keys for Discord/Zalo) with per-user locks; ready members are tracked in bounded flush/stuck ZSET reads, and Messenger legacy active-set members are rehydrated once after deploy. Once per minute the same worker performs a bounded consistency pass: valid buffer JSON rebuilds missing indexes, stale indexes are removed, and malformed JSON is quarantined under a hashed key. Debounce buffers/history live in Redis, and webhook dedupe is the durable `webhook_inbound_events` inbox in PostgreSQL (no `CHAT_DEDUPE_STORE`).
 
 Architecture details: [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md).
 

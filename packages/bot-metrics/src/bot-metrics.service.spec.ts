@@ -108,6 +108,24 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     expect(output).not.toContain('external_user_id');
   });
 
+  it('exposes bounded Redis consistency drift and reconciliation outcomes', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+
+    metrics.setRedisConsistencyDrift('burst', 2);
+    metrics.incRedisConsistencyEvent('burst', 'detected', 2);
+    metrics.incRedisConsistencyEvent('burst', 'repaired', 2);
+
+    const output = await metrics.getMetrics();
+    expect(output).toContain('test_redis_consistency_drift{datum="burst"} 2');
+    expect(output).toContain(
+      'test_redis_consistency_events_total{datum="burst",outcome="detected"} 2',
+    );
+    expect(output).not.toContain('external_user_id');
+  });
+
   it('exposes outbound action neutralization counts without user labels', async () => {
     const metrics = new BotMetricsService({
       prefix: 'discord',

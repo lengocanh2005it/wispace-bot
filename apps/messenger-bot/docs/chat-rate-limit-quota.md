@@ -198,7 +198,7 @@ DO UPDATE SET
 RETURNING free_form_count;
 ```
 
-**Note:** UPSERT ensures the **counter is correct** when multiple requests write concurrently. **H3 ✓** adds `WHERE free_form_count < limit` in the same transaction as idempotency — daily cap doesn't exceed on multi-instance. Postgres burst mode also takes the per-user advisory lock and checks the 60-second reservation window in that same transaction, so concurrent reserves cannot exceed the burst limit. **H7 ✓** persists debounce + history via Redis when `CHAT_QUEUE_SHARED=true`.
+**Note:** UPSERT ensures the **counter is correct** when multiple requests write concurrently. **H3 ✓** adds `WHERE free_form_count < limit` in the same transaction as idempotency — daily cap doesn't exceed on multi-instance. Postgres is the final authority for the burst check too: Redis/memory counters are only advisory prechecks, so an advisory reject still enters the transaction and an advisory increment is rolled back when Postgres rejects. Redis keeps a fixed epoch-minute bucket while Postgres uses the documented sliding 60-second policy; the boundary difference is an audit approximation, not a policy rewrite. **H7 ✓** persists debounce + history via Redis when `CHAT_QUEUE_SHARED=true`. See [ADR-0007](../../../docs/adr/0007-postgres-redis-consistency.md).
 
 #### Meta Webhook Idempotency
 
@@ -475,6 +475,17 @@ Postback: separate dedupe `psid:payload` (15s) — **not** related to chat quota
 | Debounce queue   | RAM `Map` per process                       | Redis `chat:queue:buffer:{psid}`                                 |
 | Chat history LLM | RAM 30 minutes                              | Redis `chat:history:{psid}`                                      |
 | Quota reserve    | DB idempotency + hard cap H3                | Same — shared PostgreSQL                                         |
+
+**Consistency (#609):** Postgres decides daily/burst quota; a Redis burst key
+is only a fast advisory count. The once-per-minute bounded audit compares the
+current fixed-minute Redis bucket with the same Postgres bucket and deletes a
+present mismatch (a missing cache key is normal). Refunds do not blindly
+decrement a tokenless advisory key; the audit also includes refunded-only
+users whose authoritative count is zero. Queue Redis buffer JSON is
+authoritative because the old Postgres queue table no longer exists. The shared
+worker rebuilds missing flush/active/stuck indexes, removes indexes whose
+buffer expired, and quarantines malformed JSON under a hashed key. It never
+replays a processing lease or fabricates text. See [ADR-0007](../../../docs/adr/0007-postgres-redis-consistency.md).
 
 #### Schema — Idempotency Table (migrated)
 

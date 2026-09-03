@@ -3,6 +3,7 @@ import type {
   ChatQueueBufferSnapshot,
   CompleteChatBufferInput,
 } from '../entities/chat-shared-state.types';
+import type { ChatQueueReconciliationResult } from '@wispace/chat-agent';
 
 export const CHAT_QUEUE_STORE = Symbol('CHAT_QUEUE_STORE');
 
@@ -16,6 +17,7 @@ export interface ChatQueueStorePort {
   completeChatBuffer(input: CompleteChatBufferInput): Promise<boolean>;
   clearChatBuffer?(psid: string): Promise<boolean>;
   listPsidsReadyForFlush(limit: number): Promise<string[]>;
+  reconcile?(): Promise<ChatQueueReconciliationResult>;
   scheduleRetryFlush(
     psid: string,
     retryDelayMs: number,

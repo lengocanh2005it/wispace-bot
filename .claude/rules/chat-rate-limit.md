@@ -68,6 +68,14 @@ Adding a new variable → update `.env.example`.
 | H5    | Cap merge text; burst does not count `refunded` by default               |
 | H6    | Log `CHAT_QUOTA_DENY` / `REFUND` / `RECOVERED`; cleanup script           |
 
+PostgreSQL is authoritative for the daily quota, idempotency state, and the
+sliding 60-second burst decision. Redis or memory burst counters are advisory
+only: an advisory reject still runs the PostgreSQL transaction, while a
+successful refund does not blindly decrement a tokenless advisory key. The
+once-per-minute Redis audit compares bounded fixed epoch-minute counts,
+invalidates divergent present keys (never overwrites them), and reports drift
+through `redis_consistency_*` metrics. See [ADR-0007](../../docs/adr/0007-postgres-redis-consistency.md).
+
 ## Ops scripts
 
 ```bash

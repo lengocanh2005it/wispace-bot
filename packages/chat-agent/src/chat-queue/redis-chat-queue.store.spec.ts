@@ -467,4 +467,129 @@ describe('RedisChatQueueStore', () => {
     expect(stored.texts).toEqual(['hello']);
     expect(transaction.set).toHaveBeenCalledTimes(1);
   });
+
+  it('repairs a missing queue index from the durable buffer state', async () => {
+    const transaction = createTransaction();
+    const client = {
+      set: jest.fn().mockResolvedValue('OK'),
+      get: jest.fn().mockResolvedValue(
+        JSON.stringify({
+          texts: ['hello'],
+          pendingTexts: [],
+          processingTexts: [],
+          processing: false,
+          flushAfterAt: Date.now() - 1,
+          idempotencyKeys: [],
+        }),
+      ),
+      eval: jest.fn().mockResolvedValue(1),
+      scan: jest
+        .fn()
+        .mockResolvedValue(['0', ['chat:queue:discord:buffer:discord-1']]),
+      sscan: jest.fn().mockResolvedValue(['0', []]),
+      zrange: jest.fn().mockResolvedValue([]),
+      sismember: jest.fn().mockResolvedValue(0),
+      zscore: jest.fn().mockResolvedValue(null),
+      multi: jest.fn().mockReturnValue(transaction),
+    };
+    const store = createStore(client, 'discord');
+
+    await expect(store.reconcile()).resolves.toMatchObject({
+      status: 'clean',
+      scanned: 1,
+      mismatches: 1,
+      repaired: 1,
+    });
+    expect(transaction.zadd).toHaveBeenCalledWith(
+      'chat:queue:discord:flush',
+      expect.any(Number),
+      'discord-1',
+    );
+  });
+
+  it('reports per-user lock contention as unresolved instead of clean', async () => {
+    const client = {
+      set: jest.fn().mockResolvedValueOnce('OK').mockResolvedValueOnce(null),
+      scan: jest
+        .fn()
+        .mockResolvedValue(['0', ['chat:queue:discord:buffer:discord-1']]),
+      sscan: jest.fn().mockResolvedValue(['0', []]),
+      zrange: jest.fn().mockResolvedValue([]),
+      eval: jest.fn().mockResolvedValue(1),
+    };
+    const store = createStore(client, 'discord');
+
+    await expect(store.reconcile()).resolves.toMatchObject({
+      status: 'drift',
+      scanned: 1,
+      unresolved: 1,
+      sampleExternalIds: ['di…'],
+    });
+  });
+
+  it('quarantines malformed queue state instead of replacing it with an empty buffer', async () => {
+    const client = {
+      set: jest.fn().mockResolvedValue('OK'),
+      get: jest.fn().mockResolvedValue('{not-json'),
+      eval: jest.fn().mockResolvedValue(1),
+      scan: jest
+        .fn()
+        .mockResolvedValue(['0', ['chat:queue:discord:buffer:discord-2']]),
+      sscan: jest.fn().mockResolvedValue(['0', []]),
+      zrange: jest.fn().mockResolvedValue([]),
+      sismember: jest.fn().mockResolvedValue(0),
+      zscore: jest.fn().mockResolvedValue(null),
+      rename: jest.fn().mockResolvedValue('OK'),
+      expire: jest.fn().mockResolvedValue(1),
+      srem: jest.fn().mockResolvedValue(1),
+      zrem: jest.fn().mockResolvedValue(1),
+    };
+    const store = createStore(client, 'discord');
+
+    await expect(store.reconcile()).resolves.toMatchObject({
+      status: 'drift',
+      mismatches: 1,
+      quarantined: 1,
+      repaired: 0,
+      unresolved: 1,
+      sampleExternalIds: ['di…'],
+    });
+    expect(client.rename).toHaveBeenCalledWith(
+      'chat:queue:discord:buffer:discord-2',
+      expect.stringMatching(/^chat:queue:quarantine:discord:[0-9a-f]{16}:/),
+    );
+  });
+
+  it('quarantines processing text left without a processing claim', async () => {
+    const client = {
+      set: jest.fn().mockResolvedValue('OK'),
+      get: jest.fn().mockResolvedValue(
+        JSON.stringify({
+          texts: [],
+          pendingTexts: [],
+          processingTexts: ['lost-message'],
+          processing: false,
+        }),
+      ),
+      eval: jest.fn().mockResolvedValue(1),
+      scan: jest
+        .fn()
+        .mockResolvedValue(['0', ['chat:queue:discord:buffer:discord-3']]),
+      sscan: jest.fn().mockResolvedValue(['0', []]),
+      zrange: jest.fn().mockResolvedValue([]),
+      sismember: jest.fn().mockResolvedValue(0),
+      zscore: jest.fn().mockResolvedValue(null),
+      rename: jest.fn().mockResolvedValue('OK'),
+      expire: jest.fn().mockResolvedValue(1),
+      srem: jest.fn().mockResolvedValue(1),
+      zrem: jest.fn().mockResolvedValue(1),
+    };
+    const store = createStore(client, 'discord');
+
+    await expect(store.reconcile()).resolves.toMatchObject({
+      status: 'drift',
+      quarantined: 1,
+      unresolved: 1,
+    });
+  });
 });

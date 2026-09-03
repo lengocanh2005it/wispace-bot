@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type Redis from 'ioredis';
@@ -9,6 +9,7 @@ import type { Platform } from '@wispace/contracts';
 import type {
   AppendChatBufferInput,
   ChatQueueBufferSnapshot,
+  ChatQueueReconciliationResult,
   ChatQueueRecoveryOutcome,
   CompleteChatBufferInput,
 } from './chat-queue-store.types';
@@ -50,6 +51,7 @@ export interface RedisChatQueueStoreOptions {
   legacyKeys?: boolean;
   /** Bounded telemetry callback; failures must never affect queue behavior. */
   onRecoveryOutcome?: (outcome: ChatQueueRecoveryOutcome) => void;
+  onReconciliation?: (result: ChatQueueReconciliationResult) => void;
 }
 
 @Injectable()
@@ -58,19 +60,25 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
   private static readonly DEFAULT_LOCK_TTL_MS = 30_000;
   private static readonly DEFAULT_PROCESSING_STUCK_MS = 300_000;
   private static readonly REHYDRATE_LOCK_TTL_MS = 60_000;
+  private static readonly RECONCILE_LOCK_TTL_MS = 60_000;
 
   private readonly logger = new Logger(RedisChatQueueStore.name);
   private readonly lockTtlMs: number;
   private readonly stuckMs: number;
   private readonly bufferPrefix: string;
+  private readonly platform: Platform;
   private readonly lockPrefix: string;
   private readonly activeSet: string;
   private readonly flushSet: string;
   private readonly stuckSet: string;
   private readonly rehydrateLock: string;
+  private readonly reconcileLock: string;
   private readonly maxFlushRetries: number;
   private readonly onRecoveryOutcome?: (
     outcome: ChatQueueRecoveryOutcome,
+  ) => void;
+  private readonly onReconciliation?: (
+    result: ChatQueueReconciliationResult,
   ) => void;
 
   constructor(
@@ -80,6 +88,7 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     options: RedisChatQueueStoreOptions = {},
   ) {
     const platform = options.platform ?? 'messenger';
+    this.platform = platform;
     const legacyKeys = options.legacyKeys ?? platform === 'messenger';
     const prefix = legacyKeys ? 'chat:queue:' : `chat:queue:${platform}:`;
     this.bufferPrefix = `${prefix}buffer:`;
@@ -92,8 +101,12 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     this.rehydrateLock = legacyKeys
       ? 'chat:queue:rehydrate-lock'
       : `${prefix}rehydrate-lock`;
+    this.reconcileLock = legacyKeys
+      ? 'chat:queue:reconcile-lock'
+      : `${prefix}reconcile-lock`;
     this.maxFlushRetries = readChatFlushRetrySettings(configService).maxRetries;
     this.onRecoveryOutcome = options.onRecoveryOutcome;
+    this.onReconciliation = options.onReconciliation;
 
     const raw = configService.get<string>('CHAT_QUEUE_LOCK_TTL_MS');
     const parsed = raw ? Number(raw) : NaN;
@@ -392,6 +405,133 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     );
   }
 
+  /**
+   * Repair Redis queue indexes without inventing or replaying learner text.
+   * Buffer JSON is authoritative for queue state; malformed payloads are
+   * quarantined for operator inspection instead of being silently discarded.
+   */
+  async reconcile(): Promise<ChatQueueReconciliationResult> {
+    const empty = (
+      status: ChatQueueReconciliationResult['status'],
+      unresolved = 0,
+    ): ChatQueueReconciliationResult => ({
+      status,
+      scanned: 0,
+      mismatches: 0,
+      repaired: 0,
+      quarantined: 0,
+      unresolved,
+      truncated: false,
+      sampleExternalIds: [],
+    });
+    const client = this.redisClient.getNativeClient();
+    if (!this.redisClient.isEnabled() || !client) {
+      const result = empty('unavailable');
+      this.recordReconciliation(result);
+      return result;
+    }
+
+    const lockValue = randomUUID();
+    let acquired: string | null;
+    try {
+      acquired = await client.set(
+        this.reconcileLock,
+        lockValue,
+        'PX',
+        RedisChatQueueStore.RECONCILE_LOCK_TTL_MS,
+        'NX',
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Redis queue reconciliation lock unavailable: ${errorMessage(error)}`,
+      );
+      const result = empty('unavailable', 1);
+      this.recordReconciliation(result);
+      return result;
+    }
+    if (acquired !== 'OK') {
+      const result = empty('locked');
+      this.recordReconciliation(result);
+      return result;
+    }
+
+    const maxCandidates = 100;
+    try {
+      const [scanResult, activeResult, flushIds, stuckIds] = await Promise.all([
+        client.scan(
+          '0',
+          'MATCH',
+          `${this.bufferPrefix}*`,
+          'COUNT',
+          String(maxCandidates + 1),
+        ),
+        client.sscan(this.activeSet, '0', 'COUNT', String(maxCandidates + 1)),
+        client.zrange(this.flushSet, 0, maxCandidates),
+        client.zrange(this.stuckSet, 0, maxCandidates),
+      ]);
+      const [scanCursor, bufferKeys] = scanResult;
+      const [activeCursor, activeIds] = activeResult;
+      const ids = new Set<string>([
+        ...bufferKeys
+          .slice(0, maxCandidates + 1)
+          .map((key) => key.slice(this.bufferPrefix.length))
+          .filter(Boolean),
+        ...activeIds.slice(0, maxCandidates + 1),
+        ...flushIds.slice(0, maxCandidates + 1),
+        ...stuckIds.slice(0, maxCandidates + 1),
+      ]);
+      const truncated =
+        scanCursor !== '0' ||
+        activeCursor !== '0' ||
+        bufferKeys.length > maxCandidates ||
+        activeIds.length > maxCandidates ||
+        flushIds.length > maxCandidates ||
+        stuckIds.length > maxCandidates ||
+        ids.size > maxCandidates;
+
+      let mismatches = 0;
+      let repaired = 0;
+      let quarantined = 0;
+      let unresolved = 0;
+      const sampleExternalIds: string[] = [];
+      for (const externalUserId of [...ids].slice(0, maxCandidates)) {
+        const outcome = await this.reconcileUser(externalUserId);
+        mismatches += outcome.mismatch ? 1 : 0;
+        repaired += outcome.repaired ? 1 : 0;
+        quarantined += outcome.quarantined ? 1 : 0;
+        unresolved += outcome.unresolved ? 1 : 0;
+        if (
+          (outcome.mismatch || outcome.quarantined || outcome.unresolved) &&
+          sampleExternalIds.length < 5
+        ) {
+          sampleExternalIds.push(maskExternalId(externalUserId));
+        }
+      }
+
+      const result: ChatQueueReconciliationResult = {
+        status: unresolved > 0 ? 'drift' : truncated ? 'partial' : 'clean',
+        scanned: Math.min(ids.size, maxCandidates),
+        mismatches,
+        repaired,
+        quarantined,
+        unresolved,
+        truncated,
+        sampleExternalIds,
+      };
+      this.recordReconciliation(result);
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Redis queue reconciliation failed: ${errorMessage(error)}`,
+      );
+      const result = empty('drift', 1);
+      this.recordReconciliation(result);
+      return result;
+    } finally {
+      await this.releaseLock(client, this.reconcileLock, lockValue);
+    }
+  }
+
   async listReadyExternalUserIds(limit: number): Promise<string[]> {
     const client = this.redisClient.getNativeClient();
     if (!client) {
@@ -524,6 +664,158 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     return result;
   }
 
+  private async reconcileUser(externalUserId: string): Promise<{
+    mismatch: boolean;
+    repaired: boolean;
+    quarantined: boolean;
+    unresolved: boolean;
+  }> {
+    try {
+      return (
+        (await this.withExternalUserIdLock(
+          externalUserId,
+          async (client) => {
+            const key = this.bufferKey(externalUserId);
+            const [raw, active, flushScore, stuckScore] = await Promise.all([
+              client.get(key),
+              client.sismember(this.activeSet, externalUserId),
+              client.zscore(this.flushSet, externalUserId),
+              client.zscore(this.stuckSet, externalUserId),
+            ]);
+            const hasIndexes =
+              active === 1 || flushScore !== null || stuckScore !== null;
+
+            if (raw === null) {
+              if (!hasIndexes) {
+                return {
+                  mismatch: false,
+                  repaired: false,
+                  quarantined: false,
+                  unresolved: false,
+                };
+              }
+              await client.srem(this.activeSet, externalUserId);
+              await client.zrem(this.flushSet, externalUserId);
+              await client.zrem(this.stuckSet, externalUserId);
+              return {
+                mismatch: true,
+                repaired: true,
+                quarantined: false,
+                unresolved: false,
+              };
+            }
+
+            let state: RedisChatQueueBufferState;
+            try {
+              state = this.parseState(raw);
+            } catch {
+              const quarantined = await this.quarantineState(
+                client,
+                externalUserId,
+              );
+              return {
+                mismatch: true,
+                repaired: false,
+                quarantined,
+                unresolved: true,
+              };
+            }
+
+            const hasBufferedWork =
+              state.texts.length > 0 ||
+              state.pendingTexts.length > 0 ||
+              state.processingTexts.length > 0 ||
+              state.processing;
+            const expectedActive = hasBufferedWork;
+            const expectedFlush =
+              !state.processing && !state.abandoned && state.texts.length > 0;
+            const expectedStuck = state.processing;
+            const actualFlush = flushScore !== null;
+            const actualStuck = stuckScore !== null;
+            const mismatch =
+              (active === 1) !== expectedActive ||
+              actualFlush !== expectedFlush ||
+              actualStuck !== expectedStuck;
+
+            if (!mismatch) {
+              return {
+                mismatch: false,
+                repaired: false,
+                quarantined: false,
+                unresolved: false,
+              };
+            }
+
+            await this.writeState(client, externalUserId, state);
+            return {
+              mismatch: true,
+              repaired: true,
+              quarantined: false,
+              unresolved: false,
+            };
+          },
+          true,
+        )) ?? {
+          mismatch: false,
+          repaired: false,
+          quarantined: false,
+          unresolved: true,
+        }
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Redis queue reconciliation user failed externalUserId=${maskExternalId(
+          externalUserId,
+        )}: ${errorMessage(error)}`,
+      );
+      return {
+        mismatch: false,
+        repaired: false,
+        quarantined: false,
+        unresolved: true,
+      };
+    }
+  }
+
+  private async quarantineState(
+    client: Redis,
+    externalUserId: string,
+  ): Promise<boolean> {
+    const digest = createHash('sha256')
+      .update(externalUserId)
+      .digest('hex')
+      .slice(0, 16);
+    const quarantineKey = `chat:queue:quarantine:${this.platform}:${digest}:${Date.now()}:${randomUUID().slice(0, 8)}`;
+    try {
+      await client.rename(this.bufferKey(externalUserId), quarantineKey);
+      await client.expire(quarantineKey, CHAT_QUEUE_BUFFER_TTL_SECONDS);
+      await client.srem(this.activeSet, externalUserId);
+      await client.zrem(this.flushSet, externalUserId);
+      await client.zrem(this.stuckSet, externalUserId);
+      return true;
+    } catch (error) {
+      this.logger.error(
+        `Redis queue quarantine failed externalUserId=${maskExternalId(
+          externalUserId,
+        )}: ${errorMessage(error)}`,
+      );
+      return false;
+    }
+  }
+
+  private recordReconciliation(result: ChatQueueReconciliationResult): void {
+    try {
+      this.onReconciliation?.(result);
+      if (result.mismatches > 0 || result.unresolved > 0) {
+        this.logger.warn(
+          `Redis queue reconciliation status=${result.status} scanned=${result.scanned} mismatches=${result.mismatches} repaired=${result.repaired} quarantined=${result.quarantined} unresolved=${result.unresolved} sampleExternalIds=${result.sampleExternalIds.join(',')}`,
+        );
+      }
+    } catch {
+      // Telemetry must never change queue state transitions.
+    }
+  }
+
   private async releaseLock(
     client: Redis,
     lockKey: string,
@@ -597,7 +889,13 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     try {
       const psids = await client.smembers(this.activeSet);
       for (const externalUserId of psids) {
-        const state = await this.readState(client, externalUserId);
+        let state: RedisChatQueueBufferState;
+        try {
+          state = await this.readState(client, externalUserId);
+        } catch {
+          await this.quarantineState(client, externalUserId);
+          continue;
+        }
         if (state.abandoned) {
           // Retained dead-letter state is intentionally not scheduled until a
           // new message or an operator explicitly requeues it.
@@ -697,39 +995,102 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
     externalUserId: string,
   ): Promise<RedisChatQueueBufferState> {
     const raw = await client.get(this.bufferKey(externalUserId));
-    if (!raw) {
+    if (raw === null) {
       return this.emptyState();
     }
 
+    return this.parseState(raw);
+  }
+
+  private parseState(raw: string): RedisChatQueueBufferState {
+    let parsed: Partial<RedisChatQueueBufferState>;
     try {
-      const parsed = JSON.parse(raw) as RedisChatQueueBufferState;
-      const legacyIdempotencyKeys = [
-        parsed.lastIdempotencyKey,
-        parsed.lastPendingIdempotencyKey,
-      ].filter((key): key is string => typeof key === 'string');
-      return {
-        ...this.emptyState(),
-        ...parsed,
-        context: parsed.context ?? parsed.linkContext ?? null,
-        texts: Array.isArray(parsed.texts) ? parsed.texts : [],
-        pendingTexts: Array.isArray(parsed.pendingTexts)
-          ? parsed.pendingTexts
-          : [],
-        processingTexts: Array.isArray(parsed.processingTexts)
-          ? parsed.processingTexts
-          : [],
-        retryCount:
-          typeof parsed.retryCount === 'number' && parsed.retryCount >= 0
-            ? Math.floor(parsed.retryCount)
-            : 0,
-        abandoned: parsed.abandoned === true,
-        idempotencyKeys: Array.isArray(parsed.idempotencyKeys)
-          ? parsed.idempotencyKeys
-          : legacyIdempotencyKeys,
-      };
+      parsed = JSON.parse(raw) as Partial<RedisChatQueueBufferState>;
     } catch {
-      return this.emptyState();
+      throw new Error('Invalid Redis chat queue JSON');
     }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Invalid Redis chat queue state');
+    }
+
+    const isStringArray = (value: unknown): value is string[] =>
+      Array.isArray(value) && value.every((item) => typeof item === 'string');
+    for (const value of [
+      parsed.texts,
+      parsed.pendingTexts,
+      parsed.processingTexts,
+      parsed.idempotencyKeys,
+    ]) {
+      if (value !== undefined && !isStringArray(value)) {
+        throw new Error('Invalid Redis chat queue array');
+      }
+    }
+    if (
+      parsed.processing !== undefined &&
+      typeof parsed.processing !== 'boolean'
+    ) {
+      throw new Error('Invalid Redis chat queue processing flag');
+    }
+    if (parsed.processing !== true && parsed.processingTexts?.length) {
+      throw new Error(
+        'Invalid Redis chat queue state: processingTexts without processing',
+      );
+    }
+    if (
+      parsed.retryCount !== undefined &&
+      (typeof parsed.retryCount !== 'number' ||
+        !Number.isFinite(parsed.retryCount) ||
+        parsed.retryCount < 0)
+    ) {
+      throw new Error('Invalid Redis chat queue retry count');
+    }
+    if (
+      parsed.abandoned !== undefined &&
+      parsed.abandoned !== null &&
+      typeof parsed.abandoned !== 'boolean'
+    ) {
+      throw new Error('Invalid Redis chat queue abandoned flag');
+    }
+    for (const timestamp of [
+      parsed.processingStartedAt,
+      parsed.flushAfterAt,
+      parsed.updatedAt,
+    ]) {
+      if (
+        timestamp !== undefined &&
+        timestamp !== null &&
+        (typeof timestamp !== 'number' || !Number.isFinite(timestamp))
+      ) {
+        throw new Error('Invalid Redis chat queue timestamp');
+      }
+    }
+    for (const context of [parsed.context, parsed.linkContext]) {
+      if (
+        context !== undefined &&
+        context !== null &&
+        (typeof context !== 'object' || Array.isArray(context))
+      ) {
+        throw new Error('Invalid Redis chat queue context');
+      }
+    }
+
+    const legacyIdempotencyKeys = [
+      parsed.lastIdempotencyKey,
+      parsed.lastPendingIdempotencyKey,
+    ].filter((key): key is string => typeof key === 'string');
+    const defaults = this.emptyState();
+    return {
+      ...defaults,
+      ...parsed,
+      context: parsed.context ?? parsed.linkContext ?? null,
+      texts: parsed.texts ?? [],
+      pendingTexts: parsed.pendingTexts ?? [],
+      processingTexts: parsed.processingTexts ?? [],
+      retryCount:
+        parsed.retryCount === undefined ? 0 : Math.floor(parsed.retryCount),
+      abandoned: parsed.abandoned === true,
+      idempotencyKeys: parsed.idempotencyKeys ?? legacyIdempotencyKeys,
+    };
   }
 
   private async writeState(
