@@ -49,8 +49,8 @@ app wiring convention, not by construction:
   are memoized), so Messenger cannot serve a stale calendar read — a known and
   acceptable divergence, not a bug. The gap is that any *new* calendar-mutating
   path on Discord/Zalo could silently lose read-your-writes because the
-  invalidation does not live next to the mutation in shared code. Tracked as a
-  follow-up (see "Follow-up" below).
+  invalidation does not live next to the mutation in shared code. Tracked as
+  #705.
 - **Cross-pod invalidation** — `deleteByPrefix` on the shared Redis cache store
   (`packages/wispace-client/src/cache/redis-wispace-cache.store.ts`) is
   deliberately best-effort: its failure is caught and swallowed, with the
@@ -93,11 +93,11 @@ forgotten by a platform.
 
 ## Follow-up
 
-- Move `invalidateCalendar` invocation into shared `packages/chat-agent` code
-  next to the calendar-mutating tool handler, so read-your-writes for calendar
-  cannot be forgotten per platform (low priority — no stale read today because
-  the only two platforms that cache calendar both wire it, and Messenger does
-  not cache).
+- #705 — move `invalidateCalendar` invocation into shared `packages/chat-agent`
+  code next to the calendar-mutating tool handler, so read-your-writes for
+  calendar cannot be forgotten per platform (low priority — no stale read today
+  because the only two platforms that cache calendar both wire it, and Messenger
+  does not cache).
 
 ## References
 
