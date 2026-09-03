@@ -18,6 +18,7 @@ import {
   isDateString,
 } from '../utils/validate-shape';
 import { fetchWispaceJson } from '../utils/fetch-wispace-json';
+import { keepAliveFetch } from '../utils/keep-alive-agent';
 import type { UserGoalsRecord } from '../types/user-goals.types';
 import {
   NOOP_WISPACE_LOGGER,
@@ -77,14 +78,18 @@ export class UserGoalsApiClient {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
     const fetchSignal = mergeWithTimeout(signal, timeoutMs);
 
-    const response = await fetch(this.config.url, {
-      headers: buildWispaceHeaders(
-        idHeader,
-        externalId,
-        this.config.internalKey,
-      ),
-      signal: fetchSignal,
-    });
+    const response = await keepAliveFetch(
+      this.config.url,
+      {
+        headers: buildWispaceHeaders(
+          idHeader,
+          externalId,
+          this.config.internalKey,
+        ),
+        signal: fetchSignal,
+      },
+      { poolSize: this.config.poolSize, logger: this.logger },
+    );
 
     if (!response.ok) {
       throw new WispaceApiError(

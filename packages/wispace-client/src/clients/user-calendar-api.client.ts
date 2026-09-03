@@ -14,6 +14,7 @@ import {
 } from '../utils/wispace-headers';
 import { formatEventDateForApiWrite } from '../utils/study-calendar.utils';
 import { fetchWispaceJson, ARRAY_MAX_BYTES } from '../utils/fetch-wispace-json';
+import { keepAliveFetch } from '../utils/keep-alive-agent';
 import type {
   CreateUserCalendarInput,
   UserCalendarRecord,
@@ -80,14 +81,18 @@ export class UserCalendarApiClient {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
     const fetchSignal = mergeWithTimeout(signal, timeoutMs);
 
-    const response = await fetch(this.config.url, {
-      headers: buildWispaceHeaders(
-        idHeader,
-        externalId,
-        this.config.internalKey,
-      ),
-      signal: fetchSignal,
-    });
+    const response = await keepAliveFetch(
+      this.config.url,
+      {
+        headers: buildWispaceHeaders(
+          idHeader,
+          externalId,
+          this.config.internalKey,
+        ),
+        signal: fetchSignal,
+      },
+      { poolSize: this.config.poolSize, logger: this.logger },
+    );
 
     if (!response.ok) {
       throw new WispaceApiError(
@@ -121,18 +126,22 @@ export class UserCalendarApiClient {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
     const fetchSignal = mergeWithTimeout(options?.signal, timeoutMs);
 
-    const response = await fetch(this.config.url, {
-      method: 'POST',
-      headers: {
-        ...buildWispaceHeaders(idHeader, externalId, this.config.internalKey),
-        'Content-Type': 'application/json',
+    const response = await keepAliveFetch(
+      this.config.url,
+      {
+        method: 'POST',
+        headers: {
+          ...buildWispaceHeaders(idHeader, externalId, this.config.internalKey),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          eventDate: formatEventDateForApiWrite(input.eventDate),
+          time: input.time,
+        }),
+        signal: fetchSignal,
       },
-      body: JSON.stringify({
-        eventDate: formatEventDateForApiWrite(input.eventDate),
-        time: input.time,
-      }),
-      signal: fetchSignal,
-    });
+      { poolSize: this.config.poolSize, logger: this.logger },
+    );
 
     if (!response.ok) {
       throw new WispaceApiError(
@@ -171,15 +180,19 @@ export class UserCalendarApiClient {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
     const fetchSignal = mergeWithTimeout(options?.signal, timeoutMs);
 
-    const response = await fetch(`${this.config.url}/${calendarId}`, {
-      method: 'DELETE',
-      headers: buildWispaceHeaders(
-        idHeader,
-        externalId,
-        this.config.internalKey,
-      ),
-      signal: fetchSignal,
-    });
+    const response = await keepAliveFetch(
+      `${this.config.url}/${calendarId}`,
+      {
+        method: 'DELETE',
+        headers: buildWispaceHeaders(
+          idHeader,
+          externalId,
+          this.config.internalKey,
+        ),
+        signal: fetchSignal,
+      },
+      { poolSize: this.config.poolSize, logger: this.logger },
+    );
 
     if (!response.ok) {
       throw new WispaceApiError(

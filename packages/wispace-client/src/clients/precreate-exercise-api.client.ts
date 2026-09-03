@@ -6,6 +6,7 @@ import {
   type WispaceIdHeader,
 } from '../utils/wispace-headers';
 import { readHttpsUrl } from '../utils/https-url';
+import { keepAliveFetch } from '../utils/keep-alive-agent';
 import type { PrecreateExerciseResult } from '../types/precreate-exercise.types';
 import type { PrecreateExerciseClientConfig } from '../types/precreate-exercise.types';
 
@@ -17,15 +18,19 @@ export class PrecreateExerciseApiClient {
     externalUserId: string,
     options?: { signal?: AbortSignal },
   ): Promise<PrecreateExerciseResult> {
-    const response = await fetch(this.config.url, {
-      method: 'POST',
-      headers: buildWispaceHeaders(
-        idHeader,
-        externalUserId,
-        this.config.internalKey,
-      ),
-      signal: mergeWithTimeout(options?.signal, this.config.requestTimeoutMs),
-    });
+    const response = await keepAliveFetch(
+      this.config.url,
+      {
+        method: 'POST',
+        headers: buildWispaceHeaders(
+          idHeader,
+          externalUserId,
+          this.config.internalKey,
+        ),
+        signal: mergeWithTimeout(options?.signal, this.config.requestTimeoutMs),
+      },
+      { poolSize: this.config.poolSize },
+    );
 
     if (!response.ok) {
       throw new WispaceApiError(

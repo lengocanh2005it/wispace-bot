@@ -12,6 +12,7 @@ import {
   PlatformDeadLetterService,
 } from '@wispace/database';
 import { withRetry } from '@wispace/wispace-client';
+import { keepAliveFetch } from '@wispace/wispace-client';
 import { OutboundRateLimiter } from '@wispace/bot-common/redis';
 import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 
@@ -295,18 +296,22 @@ export class ZaloOutboundService {
 
     let response: Response;
     try {
-      response = await fetch(SEND_TEXT_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          access_token: accessToken,
+      response = await keepAliveFetch(
+        SEND_TEXT_ENDPOINT,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            access_token: accessToken,
+          },
+          body: JSON.stringify({
+            recipient: { user_id: zaloUserId },
+            message: { text },
+          }),
+          signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
         },
-        body: JSON.stringify({
-          recipient: { user_id: zaloUserId },
-          message: { text },
-        }),
-        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-      });
+        { logger: this.logger },
+      );
     } catch (error) {
       const msg = maskExternalIdInText(errorMessage(error), zaloUserId);
       this.logger.warn(

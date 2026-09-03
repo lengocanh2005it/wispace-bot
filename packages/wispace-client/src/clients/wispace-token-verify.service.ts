@@ -7,6 +7,7 @@ import { ConfigService } from '@nestjs/config';
 import { maskExternalId } from '@wispace/bot-common/masking';
 import { readResponseText } from '@wispace/bot-common/utils';
 import { mergeWithTimeout } from '../utils/abort-signal.utils';
+import { keepAliveFetch } from '../utils/keep-alive-agent';
 import {
   validateUpstreamUrl,
   buildUpstreamUrlPolicy,
@@ -48,19 +49,23 @@ export class WispaceTokenVerifyService {
     const url = this.getVerifyUrl();
     const fetchSignal = mergeWithTimeout(options?.signal, 10_000);
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Key': this.getInternalKey(),
+    const response = await keepAliveFetch(
+      url,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Internal-Key': this.getInternalKey(),
+        },
+        body: JSON.stringify({
+          token: token.trim(),
+          value: value.trim(),
+          platform: this.platform,
+        }),
+        signal: fetchSignal,
       },
-      body: JSON.stringify({
-        token: token.trim(),
-        value: value.trim(),
-        platform: this.platform,
-      }),
-      signal: fetchSignal,
-    });
+      { logger: this.logger },
+    );
 
     const payload: unknown = await this.readJsonBody(response);
 

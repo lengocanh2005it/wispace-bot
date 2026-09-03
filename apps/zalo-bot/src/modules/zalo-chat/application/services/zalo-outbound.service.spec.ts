@@ -71,6 +71,10 @@ describe('ZaloOutboundService', () => {
       recipient: { user_id: 'zalo-1' },
       message: { text: 'hello' },
     });
+    // #567 — sends go through the shared keep-alive agent.
+    expect(calls[0]?.[1] as Record<string, unknown>).toEqual(
+      expect.objectContaining({ dispatcher: expect.anything() }),
+    );
 
     delete global.fetch;
   });

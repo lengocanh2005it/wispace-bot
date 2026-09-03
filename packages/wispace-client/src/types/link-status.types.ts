@@ -26,4 +26,6 @@ export interface WispaceLinkStatusClientConfig {
   maxRetries?: number;
   baseDelayMs?: number;
   enabled?: boolean;
+  /** Keep-alive connections per host (#567). Default: 6. */
+  poolSize?: number;
 }

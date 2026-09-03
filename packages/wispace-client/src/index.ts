@@ -26,6 +26,14 @@ export {
   type UpstreamUrlPolicy,
 } from './utils/upstream-url.utils';
 export { fetchWispaceJson, ARRAY_MAX_BYTES } from './utils/fetch-wispace-json';
+export {
+  keepAliveFetch,
+  getKeepAliveAgent,
+  closeKeepAliveAgents,
+  DEFAULT_KEEP_ALIVE_POOL_SIZE,
+  type KeepAliveFetchOptions,
+  type KeepAliveLogger,
+} from './utils/keep-alive-agent';
 export * from './utils/study-calendar.utils';
 export {
   formatLocalDate,

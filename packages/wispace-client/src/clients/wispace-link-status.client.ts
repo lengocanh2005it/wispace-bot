@@ -2,6 +2,7 @@ import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { WispaceApiError } from '../errors/wispace-api.error';
 import { isAbortError } from '@wispace/bot-common/utils';
 import { fetchWispaceJson } from '../utils/fetch-wispace-json';
+import { keepAliveFetch } from '../utils/keep-alive-agent';
 import { buildWispaceHeaders } from '../utils/wispace-headers';
 import { isWispaceRetryable, withRetry } from '../utils/with-retry';
 import type {
@@ -82,16 +83,20 @@ export class WispaceLinkStatusClient {
     );
     let response: Response;
     try {
-      response = await fetch(this.config.url!, {
-        headers: buildWispaceHeaders(
-          this.config.header,
-          externalUserId,
-          this.config.internalKey!,
-        ),
-        signal: signal
-          ? AbortSignal.any([signal, timeoutSignal])
-          : timeoutSignal,
-      });
+      response = await keepAliveFetch(
+        this.config.url!,
+        {
+          headers: buildWispaceHeaders(
+            this.config.header,
+            externalUserId,
+            this.config.internalKey!,
+          ),
+          signal: signal
+            ? AbortSignal.any([signal, timeoutSignal])
+            : timeoutSignal,
+        },
+        { poolSize: this.config.poolSize },
+      );
     } catch (error) {
       // A request-local timeout is transient and must pass through the retry
       // policy. Only a caller-owned abort cancels reconciliation outright.

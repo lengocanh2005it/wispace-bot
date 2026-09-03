@@ -6,6 +6,7 @@ import {
   validateUpstreamUrl,
   buildUpstreamUrlPolicy,
 } from '../utils/upstream-url.utils';
+import { DEFAULT_KEEP_ALIVE_POOL_SIZE } from '../utils/keep-alive-agent';
 
 export type WispaceConfigGetter = (key: string) => string | undefined;
 
@@ -43,6 +44,7 @@ export class WispaceConfigService {
       requestTimeoutMs: this.readRequiredPositiveInt(
         'WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS',
       ),
+      poolSize: config.poolSize,
     };
   }
 
@@ -90,6 +92,7 @@ export class WispaceConfigService {
         'WISPACE_API_LINK_STATUS_TIMEOUT_MS',
         5_000,
       ),
+      poolSize: this.getPoolSize(),
     };
   }
 
@@ -150,6 +153,7 @@ export class WispaceConfigService {
       internalKey: this.getInternalKey(),
       maxRetries: this.readPositiveInt('WISPACE_API_MAX_RETRIES', 3),
       baseDelayMs: this.readPositiveInt('WISPACE_API_RETRY_BASE_DELAY_MS', 500),
+      poolSize: this.getPoolSize(),
     };
   }
 
@@ -160,6 +164,20 @@ export class WispaceConfigService {
     }
 
     return key;
+  }
+
+  /**
+   * Keep-alive connections per host (#567). `readPositiveInt` lets an
+   * explicit `0` through, which is not a usable pool — clamp it (and any
+   * other non-positive) back to the default so the config never lies.
+   */
+  private getPoolSize(): number {
+    return (
+      this.readPositiveInt(
+        'WISPACE_HTTP_POOL_SIZE',
+        DEFAULT_KEEP_ALIVE_POOL_SIZE,
+      ) || DEFAULT_KEEP_ALIVE_POOL_SIZE
+    );
   }
 
   private readPositiveInt(key: string, defaultValue: number): number {

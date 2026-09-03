@@ -19,6 +19,7 @@ import {
   isNonEmptyString,
 } from '../utils/validate-shape';
 import { fetchWispaceJson, ARRAY_MAX_BYTES } from '../utils/fetch-wispace-json';
+import { keepAliveFetch } from '../utils/keep-alive-agent';
 import type { TaskScoreAverageRecord } from '../types/task-score-average.types';
 import {
   NOOP_WISPACE_LOGGER,
@@ -79,14 +80,18 @@ export class TaskScoreAverageApiClient {
     const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
     const fetchSignal = mergeWithTimeout(signal, timeoutMs);
 
-    const response = await fetch(this.config.url, {
-      headers: buildWispaceHeaders(
-        idHeader,
-        externalId,
-        this.config.internalKey,
-      ),
-      signal: fetchSignal,
-    });
+    const response = await keepAliveFetch(
+      this.config.url,
+      {
+        headers: buildWispaceHeaders(
+          idHeader,
+          externalId,
+          this.config.internalKey,
+        ),
+        signal: fetchSignal,
+      },
+      { poolSize: this.config.poolSize, logger: this.logger },
+    );
 
     if (!response.ok) {
       throw new WispaceApiError(

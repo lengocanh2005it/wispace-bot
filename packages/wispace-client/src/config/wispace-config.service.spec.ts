@@ -1,3 +1,4 @@
+import { DEFAULT_KEEP_ALIVE_POOL_SIZE } from '../utils/keep-alive-agent';
 import { WispaceConfigService } from './wispace-config.service';
 
 function buildService(
@@ -141,5 +142,26 @@ describe('WispaceConfigService link-status config', () => {
       requestTimeoutMs: 7000,
       enabled: true,
     });
+  });
+
+  it('defaults the keep-alive pool size and reads an override', () => {
+    expect(buildService().buildGoalsClientConfig().poolSize).toBe(
+      DEFAULT_KEEP_ALIVE_POOL_SIZE,
+    );
+    expect(
+      buildService({ WISPACE_HTTP_POOL_SIZE: '2' }).buildGoalsClientConfig()
+        .poolSize,
+    ).toBe(2);
+    expect(
+      buildService({
+        WISPACE_HTTP_POOL_SIZE: '0',
+      }).buildGoalsClientConfig().poolSize,
+    ).toBe(DEFAULT_KEEP_ALIVE_POOL_SIZE);
+    expect(
+      buildService({
+        WISPACE_HTTP_POOL_SIZE: '2',
+        WISPACE_API_LINK_STATUS_URL: 'https://backend.example.com/link-status',
+      }).buildLinkStatusClientConfig('x-psid').poolSize,
+    ).toBe(2);
   });
 });
