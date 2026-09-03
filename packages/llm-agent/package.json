@@ -55,9 +55,9 @@
     "openai": "^6.42.0"
   },
   "devDependencies": {
+    "@swc/jest": "^0.2.39",
     "@types/jest": "^30.0.0",
-    "jest": "^30.0.0",
-    "ts-jest": "^29.2.5"
+    "jest": "^30.0.0"
   },
   "jest": {
     "moduleFileExtensions": [
@@ -68,7 +68,7 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": "@swc/jest"
     },
     "testEnvironment": "node"
   }
