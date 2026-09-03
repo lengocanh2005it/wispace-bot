@@ -281,15 +281,10 @@ export class StudentReportCore {
       model: response.metadata.model,
       response: {
         id: response.metadata.responseId ?? '',
-        // Field-preserving (pre-typing behavior): this caller never sent
-        // cached tokens, so cost keeps computing without the cache discount.
-        usage: response.metadata.usage
-          ? {
-              promptTokens: response.metadata.usage.promptTokens,
-              completionTokens: response.metadata.usage.completionTokens,
-              totalTokens: response.metadata.usage.totalTokens,
-            }
-          : null,
+        // #553 — pass usage through unmodified so cached tokens reach the
+        // usage events (cache-savings measurement starts at this deploy;
+        // older rows read cached_tokens 0).
+        usage: response.metadata.usage ?? null,
       },
       correlationId,
       toolRound: 0,

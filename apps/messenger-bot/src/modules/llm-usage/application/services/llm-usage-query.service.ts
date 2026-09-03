@@ -16,6 +16,17 @@ import { LlmUsageConfigService } from './llm-usage-config.service';
 
 const USAGE_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * #553 — share of prompt tokens served from cache; null when there were no
+ * prompt tokens (distinguishes "no data" from a zero hit-rate).
+ */
+function cacheHitRateFor(
+  cachedTokens: number,
+  promptTokens: number,
+): number | null {
+  return promptTokens > 0 ? cachedTokens / promptTokens : null;
+}
+
 @Injectable()
 export class LlmUsageQueryService {
   constructor(
@@ -132,6 +143,7 @@ export class LlmUsageQueryService {
         completionTokens: 0,
         totalTokens: 0,
         cachedTokens: 0,
+        cacheHitRate: null as number | null,
         estimatedCostUsd: null as string | null,
       };
 
@@ -140,6 +152,10 @@ export class LlmUsageQueryService {
       existing.completionTokens += row.completionTokens;
       existing.totalTokens += row.totalTokens;
       existing.cachedTokens += row.cachedTokens;
+      existing.cacheHitRate = cacheHitRateFor(
+        existing.cachedTokens,
+        existing.promptTokens,
+      );
       existing.estimatedCostUsd = addCostUsdStrings(
         existing.estimatedCostUsd,
         this.estimateRowCostUsd(row),
@@ -170,13 +186,14 @@ export class LlmUsageQueryService {
   private sumFeatureSummaries(
     summaries: LlmUsageFeatureSummary[],
   ): Omit<LlmUsageFeatureSummary, 'feature'> {
-    return summaries.reduce(
+    const totals = summaries.reduce(
       (acc, row) => ({
         calls: acc.calls + row.calls,
         promptTokens: acc.promptTokens + row.promptTokens,
         completionTokens: acc.completionTokens + row.completionTokens,
         totalTokens: acc.totalTokens + row.totalTokens,
         cachedTokens: acc.cachedTokens + row.cachedTokens,
+        cacheHitRate: null as number | null,
         estimatedCostUsd: addCostUsdStrings(
           acc.estimatedCostUsd,
           row.estimatedCostUsd,
@@ -188,8 +205,14 @@ export class LlmUsageQueryService {
         completionTokens: 0,
         totalTokens: 0,
         cachedTokens: 0,
+        cacheHitRate: null as number | null,
         estimatedCostUsd: null as string | null,
       },
     );
+    totals.cacheHitRate = cacheHitRateFor(
+      totals.cachedTokens,
+      totals.promptTokens,
+    );
+    return totals;
   }
 }

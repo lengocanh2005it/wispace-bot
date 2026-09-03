@@ -16,6 +16,11 @@ export interface LlmUsageFeatureSummary {
   completionTokens: number;
   totalTokens: number;
   cachedTokens: number;
+  /**
+   * #553 — share of prompt tokens served from cache
+   * (`cachedTokens / promptTokens`); null when there were no prompt tokens.
+   */
+  cacheHitRate: number | null;
   estimatedCostUsd: string | null;
 }
 

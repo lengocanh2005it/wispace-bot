@@ -213,6 +213,51 @@ describe('StudentReportCore', () => {
     );
   });
 
+  it('passes cached tokens through to usage recording (#553)', async () => {
+    const response: LlmJsonResponse = {
+      content: JSON.stringify({ headline: 'Headline' }),
+      metadata: {
+        provider: 'openai',
+        model: 'gpt-5.4',
+        responseId: 'resp-1',
+        usage: {
+          promptTokens: 100,
+          completionTokens: 5,
+          totalTokens: 105,
+          cachedTokens: 60,
+        },
+      },
+    };
+
+    const llmExecution = {
+      run: jest.fn().mockResolvedValue(response),
+    };
+    const usageRecorder = { recordFromCompletion: jest.fn() };
+    const capacityData = {
+      getCapacityData: jest.fn().mockResolvedValue(baseInput),
+    };
+    const adapter = {
+      isConfigured: () => true,
+      getDefaultModel: () => 'gpt-5.4',
+      generateJson: jest.fn().mockResolvedValue(response),
+    } as unknown as LlmProviderAdapter;
+
+    const core = new StudentReportCore(
+      { adapter, systemPrompt: 'prompt' },
+      { llmExecution, usageRecorder, capacityData },
+    );
+
+    await core.generateReport('user-1');
+
+    expect(usageRecorder.recordFromCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        response: expect.objectContaining({
+          usage: expect.objectContaining({ cachedTokens: 60 }),
+        }),
+      }),
+    );
+  });
+
   it('keeps the delivered report factually consistent when the LLM output contradicts the source', async () => {
     const response: LlmJsonResponse = {
       content: JSON.stringify({

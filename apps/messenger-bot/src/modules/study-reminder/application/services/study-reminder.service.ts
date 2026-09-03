@@ -238,14 +238,10 @@ export class StudyReminderService {
       model: response.metadata.model,
       response: {
         id: response.metadata.responseId ?? '',
-        // Field-preserving (pre-typing behavior): no cached tokens here.
-        usage: response.metadata.usage
-          ? {
-              promptTokens: response.metadata.usage.promptTokens,
-              completionTokens: response.metadata.usage.completionTokens,
-              totalTokens: response.metadata.usage.totalTokens,
-            }
-          : undefined,
+        // #553 — pass usage through unmodified so cached tokens reach the
+        // usage events (cache-savings measurement starts at this deploy;
+        // older rows read cached_tokens 0).
+        usage: response.metadata.usage,
       },
       correlationId,
     });

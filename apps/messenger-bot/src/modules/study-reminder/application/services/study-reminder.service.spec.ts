@@ -154,4 +154,66 @@ describe('StudyReminderService', () => {
     expect(result).not.toContain('23:59');
     expect(result).not.toContain('31/12/2099');
   });
+
+  it('passes cached tokens through to usage recording (#553)', async () => {
+    const usageRecorder = { recordFromCompletion: jest.fn() };
+    const response = {
+      content: JSON.stringify({
+        greeting: 'Chào Mai,',
+        intro: 'mình nhắc bạn về buổi học nhé.',
+        scheduledTime: '09:00 01/07/2026',
+        tasks: ['Ôn feedback'],
+        motivation: 'Cố lên nhé!',
+        signoff: 'Hẹn gặp bạn!',
+      }),
+      metadata: {
+        provider: 'openai',
+        model: 'gpt-5.4',
+        responseId: 'resp-1',
+        usage: {
+          promptTokens: 100,
+          completionTokens: 5,
+          totalTokens: 105,
+          cachedTokens: 40,
+        },
+      },
+    };
+    const service = new StudyReminderService(
+      {
+        getUpcomingSessions: jest.fn(),
+      } as unknown as StudySessionSourceService,
+      {
+        getMinutesUntilSession: jest.fn(() => 60),
+        formatScheduledTimeLabel: jest.fn(() => '09:00 01/07/2026'),
+      } as unknown as StudyReminderScheduleService,
+      {
+        getUserGoals: jest.fn(() => Promise.reject(new Error('skip goals'))),
+        getCapacityData: jest.fn(() =>
+          Promise.reject(new Error('skip scores')),
+        ),
+      },
+      {
+        resolveDisplayName: jest.fn(() => Promise.resolve('Mai')),
+      } as unknown as UserDisplayNameService,
+      usageRecorder as never,
+      {
+        run: jest.fn(() => Promise.resolve(response)),
+      } as never,
+      mockAdapter,
+    );
+
+    await service.generateReminderForSession('psid-1', {
+      ...session,
+      topic: 'Task 2',
+    });
+
+    expect(usageRecorder.recordFromCompletion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        feature: 'STUDY_REMINDER',
+        response: expect.objectContaining({
+          usage: expect.objectContaining({ cachedTokens: 40 }),
+        }),
+      }),
+    );
+  });
 });

@@ -98,4 +98,47 @@ describe('LlmUsageQueryService', () => {
     expect(result.date).toBe('2026-06-17');
     expect(result.totals.calls).toBe(0);
   });
+
+  it('surfaces per-feature cache hit-rate in fleet summaries (#553)', async () => {
+    aggregateFleetByDate.mockResolvedValue([
+      {
+        feature: 'STUDY_REMINDER',
+        model: 'gpt-5.4',
+        calls: 2,
+        promptTokens: 200,
+        completionTokens: 10,
+        totalTokens: 210,
+        cachedTokens: 150,
+        storedCostUsd: '0.001000',
+        unstoredPromptTokens: 0,
+        unstoredCompletionTokens: 0,
+        unstoredCachedTokens: 0,
+      },
+      {
+        feature: 'FREE_FORM_CHAT',
+        model: 'gpt-5.4',
+        calls: 1,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        cachedTokens: 0,
+        storedCostUsd: null,
+        unstoredPromptTokens: 0,
+        unstoredCompletionTokens: 0,
+        unstoredCachedTokens: 0,
+      },
+    ]);
+
+    const result = await service.getFleetSummary({ date: '2026-06-17' });
+
+    const reminder = result.byFeature.find(
+      (row) => row.feature === 'STUDY_REMINDER',
+    );
+    expect(reminder?.cacheHitRate).toBeCloseTo(0.75);
+    const chat = result.byFeature.find(
+      (row) => row.feature === 'FREE_FORM_CHAT',
+    );
+    expect(chat?.cacheHitRate).toBeNull();
+    expect(result.totals.cacheHitRate).toBeCloseTo(150 / 200);
+  });
 });
