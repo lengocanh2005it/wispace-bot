@@ -672,6 +672,10 @@ export class PlatformAgentService {
 
     const ports: LlmAgentPorts<PlatformAgentToolContext> = {
       platform: this.options.platform,
+      // #704 — persisted compaction summaries (same backend/TTL/scope as history).
+      // Optional call: test doubles of the history service predate this seam;
+      // absent means uncached legacy behavior, never a crash.
+      compactionCache: this.historyService.getCompactionCache?.(),
       // ponytail: shared retry helper from llm-agent (was 3 local copies of sleep+backoff)
       llmExecution:
         this.options.llmExecution ?? this.buildEnvLlmExecutionPort(),

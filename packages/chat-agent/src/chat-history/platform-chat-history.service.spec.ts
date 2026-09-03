@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { computeCompactionCoverage } from '@wispace/chat-history';
 import { PlatformChatHistoryService } from './platform-chat-history.service';
 
 function buildService(envPrefix: string, keyPrefix: string) {
@@ -122,5 +123,54 @@ describe('PlatformChatHistoryService', () => {
       role: 'assistant',
       content: 'a14',
     });
+    service.onModuleDestroy();
+  });
+
+  it('clear() removes the compaction summary too (memory, #704)', async () => {
+    const service = buildService('CHAT_HISTORY_', 'chat-history:discord:');
+    await service.appendTurn('user-1', 'hello', 'hi there');
+    const cache = service.getCompactionCache();
+    const coverage = computeCompactionCoverage([{ content: 'old' }])!;
+    await cache.set('user-1', { text: 'summary', coverage });
+    await expect(cache.get('user-1')).resolves.toEqual({
+      text: 'summary',
+      coverage,
+    });
+
+    await service.clear('user-1');
+
+    await expect(service.getHistory('user-1')).resolves.toEqual([]);
+    await expect(cache.get('user-1')).resolves.toBeNull();
+    service.onModuleDestroy();
+  });
+
+  it('clear() deletes both history and compaction keys (Redis, #704)', async () => {
+    const nativeClient = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue('OK'),
+      del: jest.fn().mockResolvedValue(1),
+      eval: jest.fn().mockResolvedValue(1),
+    };
+    const configService = {
+      get: (key: string) =>
+        key === 'CHAT_HISTORY_STORE' ? 'redis' : undefined,
+    } as unknown as ConfigService;
+    const service = new PlatformChatHistoryService(
+      configService,
+      { envPrefix: 'CHAT_HISTORY_', keyPrefix: 'chat-history:discord:' },
+      { getNativeClient: () => nativeClient },
+    );
+
+    const cache = service.getCompactionCache();
+    const coverage = computeCompactionCoverage([{ content: 'old' }])!;
+    await cache.set('user-1', { text: 'summary', coverage });
+    await service.clear('user-1');
+
+    const deletedKeys = nativeClient.del.mock.calls.map(
+      (call: string[]) => call[0],
+    );
+    expect(deletedKeys).toContain('chat-history:discord:user-1');
+    expect(deletedKeys).toContain('chat-history:discord:compaction:user-1');
+    service.onModuleDestroy();
   });
 });

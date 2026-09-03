@@ -116,7 +116,9 @@ export interface AgentMetricsPort {
   /** Time the entire agent loop (all rounds). Optional — noop if not provided. */
   timeAgentLoop?<T>(feature: string, fn: () => Promise<T>): Promise<T>;
   /** #413: Record compaction outcome. Optional — noop if not provided. */
-  compactionOutcomeInc?(outcome: 'compacted' | 'fallback' | 'skipped'): void;
+  compactionOutcomeInc?(
+    outcome: 'compacted' | 'reused' | 'fallback' | 'skipped',
+  ): void;
   /** #414: Record bounded in-run tool-observation outcomes. */
   observationOutcomeInc?(
     toolName: string,

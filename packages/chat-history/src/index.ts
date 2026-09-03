@@ -9,3 +9,13 @@ export {
   type RedisChatHistoryStoreConfig,
   type RedisChatHistoryClient,
 } from './redis-chat-history-store';
+export {
+  MemoryCompactionCache,
+  RedisCompactionCache,
+  computeCompactionCoverage,
+  type CompactionCachePort,
+  type CompactionCoverage,
+  type CompactionSummary,
+  type MemoryCompactionCacheConfig,
+  type RedisCompactionCacheConfig,
+} from './compaction-cache';

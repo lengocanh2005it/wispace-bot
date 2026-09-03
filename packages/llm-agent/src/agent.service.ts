@@ -54,6 +54,11 @@ import {
   ToolExecutorPort,
 } from './ports';
 import type { ToolObservationOutcome } from './utils/tool-observation';
+import {
+  computeCompactionCoverage,
+  type CompactionCachePort,
+  type CompactionCoverage,
+} from '@wispace/chat-history';
 import type {
   ChatHistoryMessage,
   LlmAgentConfig,
@@ -122,6 +127,13 @@ export interface LlmAgentPorts<TToolContext> {
   safetyEvents: LlmSafetyEventPort;
   toolExecutor: ToolExecutorPort<TToolContext>;
   adapter: LlmProviderAdapter;
+  /**
+   * Persisted compaction-summary cache (#704). Optional — absent means every
+   * over-budget turn re-summarizes (legacy). Cache implementations are
+   * already platform-scoped; `platform` below only gates cache use, it never
+   * keys anything (each platform owns its agent + cache instances).
+   */
+  compactionCache?: CompactionCachePort;
   metrics?: AgentMetricsPort;
   logger?: {
     warn: (message: string) => void;
@@ -193,6 +205,17 @@ function linkAbortSignal(
  * The LLM provider is injected via `LlmProviderAdapter` — no direct SDK dependency.
  */
 export class LlmAgentService<TToolContext> {
+  /**
+   * #704 — in-flight compaction generations keyed by
+   * `${externalUserId}:${count}:${hash}`. Concurrent over-budget turns for the
+   * same dropped prefix share one LLM call instead of stampeding duplicates.
+   * Entries are removed in `finally`, so the map never grows.
+   */
+  private readonly compactionInflight = new Map<
+    string,
+    Promise<ChatHistoryMessage[] | null>
+  >();
+
   constructor(
     private readonly config: LlmAgentConfig,
     private readonly ports: LlmAgentPorts<TToolContext>,
@@ -799,20 +822,27 @@ export class LlmAgentService<TToolContext> {
 
     if (shouldCompact) {
       const droppedEntries = redacted.slice(0, redacted.length - result.length);
-      const compacted = await this.compactHistory(
+      const compacted = await this.compactHistoryCached(
+        input,
         droppedEntries,
         externalUserId,
         logger,
       );
       if (compacted) {
         const recentTurns = this.getCompactionRecentTurns();
-        result.splice(0, result.length - recentTurns * 2, ...compacted);
-        this.ports.metrics?.compactionOutcomeInc?.('compacted');
+        result.splice(
+          0,
+          result.length - recentTurns * 2,
+          ...compacted.messages,
+        );
+        this.ports.metrics?.compactionOutcomeInc?.(
+          compacted.reused ? 'reused' : 'compacted',
+        );
         logger.debug(
           `History compacted externalUserId=${maskExternalId(
             externalUserId,
-          )} dropped_tokens=${droppedTokens} summary_tokens=${estimateTokens(
-            compacted[0]?.content ?? '',
+          )} dropped_tokens=${droppedTokens} reused=${compacted.reused} summary_tokens=${estimateTokens(
+            compacted.messages[0]?.content ?? '',
           )}`,
         );
       } else {
@@ -923,6 +953,127 @@ Summary:`;
       );
       return null;
     }
+  }
+
+  /**
+   * #704 — persisted compaction summary. An unchanged dropped prefix reuses
+   * the cached summary (no LLM call, `reused: true`); a changed prefix
+   * regenerates once and refreshes the cache. No cache wired or no platform
+   * → legacy uncached path. Every cache failure is fail-open.
+   */
+  private async compactHistoryCached(
+    input: LlmAgentInput,
+    entries: ChatHistoryMessage[],
+    externalUserId: string,
+    logger: {
+      warn: (message: string) => void;
+      debug: (message: string) => void;
+    },
+  ): Promise<{ messages: ChatHistoryMessage[]; reused: boolean } | null> {
+    const cache = this.ports.compactionCache;
+    const platform = this.ports.platform;
+    const coverage = computeCompactionCoverage(entries);
+    if (!cache || !platform || !coverage) {
+      const messages = await this.compactHistory(
+        entries,
+        externalUserId,
+        logger,
+      );
+      return messages ? { messages, reused: false } : null;
+    }
+
+    let cached: Awaited<ReturnType<CompactionCachePort['get']>> = null;
+    try {
+      cached = await cache.get(externalUserId);
+    } catch (error) {
+      logger.warn(
+        `Compaction cache read failed, regenerating externalUserId=${maskExternalId(
+          externalUserId,
+        )} error=${errorMessage(error)}`,
+      );
+    }
+    if (
+      cached &&
+      cached.coverage.count === coverage.count &&
+      cached.coverage.hash === coverage.hash
+    ) {
+      // Cached summaries are untrusted stored content — replay them through
+      // the same re-sanitization pipeline as any history entry (#629).
+      const clean = sanitizeUntrustedTextForLlm(cached.text, {
+        maxChars: MAX_HISTORY_ENTRY_CHARS,
+      });
+      if (isInjectionSanitizeReason(clean.reason)) {
+        logger.warn(
+          `Cached compaction summary redacted externalUserId=${maskExternalId(
+            externalUserId,
+          )} reason=${clean.reason}`,
+        );
+        this.recordInjection(
+          input,
+          'history',
+          clean.reason ?? 'unknown',
+          cached.text,
+        );
+      }
+      if (!clean.text.trim()) return null;
+      return {
+        messages: [{ role: 'tool_summary', content: clean.text }],
+        reused: true,
+      };
+    }
+
+    const inflightKey = `${externalUserId}:${coverage.count}:${coverage.hash}`;
+    let inflight = this.compactionInflight.get(inflightKey);
+    if (!inflight) {
+      inflight = this.generateAndCacheSummary(
+        cache,
+        entries,
+        externalUserId,
+        logger,
+        coverage,
+      );
+      this.compactionInflight.set(inflightKey, inflight);
+      void inflight
+        .catch(() => null)
+        .finally(() => {
+          if (this.compactionInflight.get(inflightKey) === inflight) {
+            this.compactionInflight.delete(inflightKey);
+          }
+        });
+    }
+    const messages = await inflight;
+    return messages ? { messages, reused: false } : null;
+  }
+
+  /**
+   * #704 — single shared generation for one dropped prefix: summarize via
+   * the LLM, then persist exactly the replayable message (already
+   * fact-stripped by `compactHistory`, never the raw model text).
+   * Last-writer-wins across pods; a failed write never fails the reply.
+   */
+  private async generateAndCacheSummary(
+    cache: CompactionCachePort,
+    entries: ChatHistoryMessage[],
+    externalUserId: string,
+    logger: {
+      warn: (message: string) => void;
+      debug: (message: string) => void;
+    },
+    coverage: CompactionCoverage,
+  ): Promise<ChatHistoryMessage[] | null> {
+    const messages = await this.compactHistory(entries, externalUserId, logger);
+    const content = messages?.[0]?.content;
+    if (!messages || !content) return null;
+    try {
+      await cache.set(externalUserId, { text: content, coverage });
+    } catch (error) {
+      logger.warn(
+        `Compaction cache write failed externalUserId=${maskExternalId(
+          externalUserId,
+        )} error=${errorMessage(error)}`,
+      );
+    }
+    return messages;
   }
 
   /**
