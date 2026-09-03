@@ -1,4 +1,5 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import {
   IsBoolean,
   IsNumber,
@@ -58,7 +59,7 @@ class PrivacyActionBody {
 }
 
 @Controller('messenger')
-@UseGuards(InternalApiKeyGuard)
+@UseGuards(InternalApiKeyGuard, ThrottlerGuard)
 export class SchedulerController {
   constructor(
     private readonly reportCronService: ReportCronService,

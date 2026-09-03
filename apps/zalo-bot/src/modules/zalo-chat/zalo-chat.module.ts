@@ -26,6 +26,7 @@ import {
   PLATFORM_CHAT_QUEUE_STORE,
   CLARIFICATION_STATE_STORE,
   createChatPipelineAdapters,
+  recordChatQueueReconciliationMetrics,
 } from '@wispace/chat-agent';
 import type {
   ChatQueueStorePort,
@@ -418,6 +419,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           platform: 'zalo',
           onRecoveryOutcome: (outcome) =>
             metrics.incChatFlushRecovery('zalo', outcome),
+          onReconciliation: (result) =>
+            recordChatQueueReconciliationMetrics(metrics, result),
         }),
       inject: [REDIS_CLIENT, ConfigService, BotMetricsService],
     },
@@ -432,6 +435,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
           configService,
           (limit) => queueStore.listReadyExternalUserIds(limit),
           (externalUserId) => queueService.flushReady(externalUserId),
+          queueStore.reconcile ? () => queueStore.reconcile!() : undefined,
         ),
       inject: [
         ConfigService,

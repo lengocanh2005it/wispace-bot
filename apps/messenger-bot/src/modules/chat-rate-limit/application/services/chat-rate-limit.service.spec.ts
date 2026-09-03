@@ -48,7 +48,7 @@ describe('ChatRateLimitService', () => {
     const repository: ChatQuotaRepositoryPort = {
       getDailyUsageCount: jest.fn(() => Promise.resolve(count)),
       reserveFreeFormSlotInTransaction: jest.fn(
-        ({ idempotencyKey, dailyLimit = 15 }) => {
+        ({ idempotencyKey, dailyLimit = 15, burstLimit }) => {
           reserveCallCount += 1;
           if (idempotencyKeys.has(idempotencyKey)) {
             return Promise.resolve({ status: 'idempotency_conflict' });
@@ -56,6 +56,16 @@ describe('ChatRateLimitService', () => {
 
           if (count >= dailyLimit) {
             return Promise.resolve({ status: 'daily_limit_exceeded' });
+          }
+
+          if (
+            typeof burstLimit === 'number' &&
+            (options.burstCount ?? 0) >= burstLimit
+          ) {
+            return Promise.resolve({
+              status: 'burst_limit_exceeded',
+              count: options.burstCount ?? 0,
+            });
           }
 
           idempotencyKeys.add(idempotencyKey);
@@ -83,6 +93,9 @@ describe('ChatRateLimitService', () => {
       ),
       countRecentReservations: jest.fn(() =>
         Promise.resolve(options.burstCount ?? 0),
+      ),
+      listBurstCountsForBucket: jest.fn(() =>
+        Promise.resolve({ rows: [], truncated: false }),
       ),
       recoverIdempotencyForRetry: jest.fn(() => Promise.resolve('not_found')),
       recoverAllStuckReserved: jest.fn(() => Promise.resolve([])),
@@ -176,7 +189,7 @@ describe('ChatRateLimitService', () => {
     expect(getCount()).toBe(15);
   });
 
-  it('denies reserve on burst limit before daily transaction', async () => {
+  it('lets PostgreSQL confirm an advisory burst limit before denying', async () => {
     const {
       service,
       getCount,
@@ -207,7 +220,7 @@ describe('ChatRateLimitService', () => {
       reason: 'BURST_LIMIT',
       quotaReserved: false,
     });
-    expect(getReserveCallCount()).toBe(0);
+    expect(getReserveCallCount()).toBe(1);
     expect(getCount()).toBe(0);
   });
 
@@ -243,7 +256,7 @@ describe('ChatRateLimitService', () => {
     expect(reserveInput?.burstSince).toBeInstanceOf(Date);
   });
 
-  it('does not add a DB burst check for non-transactional counters', async () => {
+  it('always adds the DB burst check for the final authority', async () => {
     const { service, repository } = createService(true);
 
     await service.reserveFreeFormSlot('psid-1', {
@@ -252,9 +265,9 @@ describe('ChatRateLimitService', () => {
 
     const [input] = (repository.reserveFreeFormSlotInTransaction as jest.Mock)
       .mock.calls[0] as [Record<string, unknown>];
-    expect(input.burstLimit).toBeUndefined();
-    expect(input.burstSince).toBeUndefined();
-    expect(input.burstCountsRefunded).toBeUndefined();
+    expect(input.burstLimit).toBe(3);
+    expect(input.burstSince).toBeInstanceOf(Date);
+    expect(input.burstCountsRefunded).toBe(false);
   });
 
   it('bypasses reserve for whitelisted psid', async () => {
@@ -293,7 +306,7 @@ describe('ChatRateLimitService', () => {
     expect(getCount()).toBe(1);
   });
 
-  it('refunds a reserved slot back to the previous count', async () => {
+  it('refunds a reserved slot without decrementing the advisory counter', async () => {
     const { service, getCount, burstCounter } = createService(true, 0);
 
     const reserved = await service.reserveFreeFormSlot('psid-1', {
@@ -307,7 +320,7 @@ describe('ChatRateLimitService', () => {
       'mid-refund',
     );
 
-    expect(burstCounter.releaseReservation).toHaveBeenCalledWith('psid-1');
+    expect(burstCounter.releaseReservation).not.toHaveBeenCalled();
     expect(getCount()).toBe(0);
   });
 

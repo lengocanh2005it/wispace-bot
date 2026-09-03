@@ -58,9 +58,14 @@ export {
 export type {
   AppendChatBufferInput,
   ChatQueueBufferSnapshot,
+  ChatQueueReconciliationResult,
   ChatQueueRecoveryOutcome,
   CompleteChatBufferInput,
 } from './chat-queue/chat-queue-store.types';
+export {
+  recordChatQueueReconciliationMetrics,
+  type ChatQueueReconciliationMetrics,
+} from './chat-queue/reconciliation-metrics';
 export {
   DEFAULT_FLUSH_MAX_RETRIES,
   DEFAULT_FLUSH_RETRY_DELAY_MS,

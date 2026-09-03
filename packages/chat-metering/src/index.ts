@@ -11,6 +11,7 @@ export { todayInTimezone as todayUsageDate } from '@wispace/date-utils';
 export {
   ChatRateLimitRepository,
   type ChatRateLimitRepositoryHooks,
+  type BurstCountRow,
 } from './chat-rate-limit/chat-rate-limit.repository';
 export { ChatRateLimitCore } from './chat-rate-limit/chat-rate-limit-core.service';
 export {
@@ -21,7 +22,15 @@ export { PostgresBurstCounter } from './chat-rate-limit/postgres-burst-counter';
 export {
   RedisBurstCounter,
   CHAT_BURST_KEY_TTL_SECONDS,
+  buildRedisBurstKey,
+  buildLegacyRedisBurstKey,
+  type RedisBurstCounterOptions,
 } from './chat-rate-limit/redis-burst-counter';
+export {
+  RedisBurstReconciler,
+  type BurstReconciliationRepository,
+  type RedisBurstReconciliationResult,
+} from './chat-rate-limit/redis-burst-reconciler';
 export { PlatformChatRateLimitService } from './chat-rate-limit/platform-chat-rate-limit.service';
 export type {
   BurstCounterPort,

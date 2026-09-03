@@ -34,3 +34,15 @@ export type ChatQueueRecoveryOutcome =
   | 'abandoned'
   | 'fenced_stale'
   | 'durable_recovery';
+
+export interface ChatQueueReconciliationResult {
+  status: 'clean' | 'drift' | 'partial' | 'unavailable' | 'locked';
+  scanned: number;
+  mismatches: number;
+  repaired: number;
+  quarantined: number;
+  unresolved: number;
+  truncated: boolean;
+  /** Bounded, masked identifiers for operator follow-up. */
+  sampleExternalIds: string[];
+}

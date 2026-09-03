@@ -465,6 +465,7 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
           configService,
           (limit) => queueStore.listPsidsReadyForFlush(limit),
           (externalUserId) => processor.flushReady(externalUserId),
+          queueStore.reconcile ? () => queueStore.reconcile!() : undefined,
         ),
       inject: [ConfigService, CHAT_QUEUE_STORE, MessengerChatProcessorService],
     },

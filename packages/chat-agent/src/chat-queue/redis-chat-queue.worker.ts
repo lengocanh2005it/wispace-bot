@@ -11,6 +11,7 @@ import { runBatched } from '@wispace/scheduler-core';
 const POLL_MS = 2000;
 const POLL_LIMIT = 25;
 const FLUSH_CONCURRENCY = 3;
+const RECONCILE_INTERVAL_MS = 60_000;
 
 @Injectable()
 export class RedisChatQueueWorkerService
@@ -20,6 +21,7 @@ export class RedisChatQueueWorkerService
   private timer?: NodeJS.Timeout;
   /** #454: one poll wave at a time — a flush contains an LLM call that outlasts the 2s tick. */
   private polling = false;
+  private lastReconciledAt = 0;
 
   constructor(
     private readonly configService: ConfigService,
@@ -27,6 +29,7 @@ export class RedisChatQueueWorkerService
       limit: number,
     ) => Promise<string[]>,
     private readonly flushReady: (externalUserId: string) => Promise<void>,
+    private readonly reconcile?: () => Promise<unknown>,
   ) {}
 
   onModuleInit(): void {
@@ -51,6 +54,19 @@ export class RedisChatQueueWorkerService
     this.polling = true;
 
     try {
+      if (
+        this.reconcile &&
+        Date.now() - this.lastReconciledAt >= RECONCILE_INTERVAL_MS
+      ) {
+        this.lastReconciledAt = Date.now();
+        try {
+          await this.reconcile();
+        } catch (error) {
+          this.logger.warn(
+            `Shared chat queue reconciliation failed: ${errorMessage(error)}`,
+          );
+        }
+      }
       const externalUserIds = await this.listReadyExternalUserIds(POLL_LIMIT);
       await runBatched(externalUserIds, FLUSH_CONCURRENCY, (externalUserId) =>
         this.flushReady(externalUserId),

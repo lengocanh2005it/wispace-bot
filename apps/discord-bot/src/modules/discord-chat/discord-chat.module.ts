@@ -38,6 +38,7 @@ import {
   PLATFORM_CHAT_QUEUE_STORE,
   CLARIFICATION_STATE_STORE,
   createChatPipelineAdapters,
+  recordChatQueueReconciliationMetrics,
 } from '@wispace/chat-agent';
 import type {
   ChatQueueStorePort,
@@ -380,6 +381,8 @@ const REGISTER_REPORT_MESSAGE =
           platform: 'discord',
           onRecoveryOutcome: (outcome) =>
             metrics.incChatFlushRecovery('discord', outcome),
+          onReconciliation: (result) =>
+            recordChatQueueReconciliationMetrics(metrics, result),
         }),
       inject: [REDIS_CLIENT, ConfigService, BotMetricsService],
     },
@@ -394,6 +397,7 @@ const REGISTER_REPORT_MESSAGE =
           configService,
           (limit) => queueStore.listReadyExternalUserIds(limit),
           (externalUserId) => queueService.flushReady(externalUserId),
+          queueStore.reconcile ? () => queueStore.reconcile!() : undefined,
         ),
       inject: [
         ConfigService,

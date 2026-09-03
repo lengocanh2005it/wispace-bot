@@ -80,6 +80,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private writeToolBudgetDenied: Counter;
   private reminderDispatch: Counter;
   private webActivityWebhookReceived: Counter;
+  private internalAuthRejected: Counter;
   private scheduledSendSuppressed: Counter;
   private dmDeliveryFailures: Counter;
   private outboundActionNeutralized: Counter;
@@ -95,6 +96,8 @@ export class BotMetricsService implements OnModuleDestroy {
   private chatIdentityStaleDetected: Counter;
   private chatRevalidationSkip: Counter;
   private chatFlushRecovery: Counter;
+  private redisConsistencyDrift: Gauge;
+  private redisConsistencyEvents: Counter;
   private platformLinkTransitions: Counter;
   private dataQualityCheckStatus: Gauge;
   private dataQualityRuns: Counter;
@@ -280,6 +283,12 @@ export class BotMetricsService implements OnModuleDestroy {
       registers: [this.registry],
     });
 
+    this.internalAuthRejected = new Counter({
+      name: `${this.prefix}_internal_auth_rejected_total`,
+      help: 'Requests rejected by InternalApiKeyGuard (missing/invalid key, 401 only)',
+      registers: [this.registry],
+    });
+
     this.scheduledSendSuppressed = new Counter({
       name: `${this.prefix}_scheduled_send_suppressed_total`,
       help: 'Scheduled sends suppressed because the learner is dormant on WISPACE web',
@@ -367,6 +376,18 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_chat_flush_recovery_total`,
       help: 'Distributed chat flush recovery outcomes',
       labelNames: ['platform', 'outcome'],
+      registers: [this.registry],
+    });
+    this.redisConsistencyDrift = new Gauge({
+      name: `${this.prefix}_redis_consistency_drift`,
+      help: 'Unresolved Postgres/Redis consistency drift by datum (#609)',
+      labelNames: ['datum'],
+      registers: [this.registry],
+    });
+    this.redisConsistencyEvents = new Counter({
+      name: `${this.prefix}_redis_consistency_events_total`,
+      help: 'Postgres/Redis consistency reconciliation outcomes (#609)',
+      labelNames: ['datum', 'outcome'],
       registers: [this.registry],
     });
     this.platformLinkTransitions = new Counter({
@@ -505,6 +526,11 @@ export class BotMetricsService implements OnModuleDestroy {
   /** WISPACE web-activity webhook received (messenger only). */
   incWebActivityWebhookReceived(): void {
     this.webActivityWebhookReceived.inc();
+  }
+
+  /** A guarded request was rejected for a missing/invalid internal API key. */
+  incInternalAuthRejected(): void {
+    this.internalAuthRejected.inc();
   }
 
   /** A scheduled send was skipped for a web-inactive learner (count defaults to 1). */
@@ -698,6 +724,27 @@ export class BotMetricsService implements OnModuleDestroy {
   /** Distributed chat flush recovery outcome (#406). */
   incChatFlushRecovery(platform: string, outcome: string): void {
     this.chatFlushRecovery.inc({ platform, outcome });
+  }
+
+  setRedisConsistencyDrift(datum: 'burst' | 'chat_queue', count: number): void {
+    this.redisConsistencyDrift.set({ datum }, Math.max(0, Math.floor(count)));
+  }
+
+  incRedisConsistencyEvent(
+    datum: 'burst' | 'chat_queue',
+    outcome:
+      | 'detected'
+      | 'repaired'
+      | 'quarantined'
+      | 'unresolved'
+      | 'unavailable'
+      | 'locked',
+    count = 1,
+  ): void {
+    const boundedCount = Math.max(0, Math.floor(count));
+    if (boundedCount > 0) {
+      this.redisConsistencyEvents.inc({ datum, outcome }, boundedCount);
+    }
   }
 
   incPlatformLinkTransition(

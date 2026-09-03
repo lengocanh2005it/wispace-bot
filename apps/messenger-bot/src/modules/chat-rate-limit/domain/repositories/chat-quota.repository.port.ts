@@ -33,6 +33,14 @@ export interface ChatQuotaRepositoryPort {
     since: Date,
     options?: { includeRefunded?: boolean },
   ): Promise<number>;
+  listBurstCountsForBucket(
+    bucketStart: Date,
+    bucketEnd: Date,
+    options?: { includeRefunded?: boolean; limit?: number },
+  ): Promise<{
+    rows: Array<{ externalUserId: string; count: number }>;
+    truncated: boolean;
+  }>;
 
   // ─── Recovery ─────────────────────────────────────────────────────────
   recoverIdempotencyForRetry(

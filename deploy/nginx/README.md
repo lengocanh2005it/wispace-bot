@@ -44,4 +44,29 @@ curl -sf --connect-timeout 3 http://$(curl -s ifconfig.me):5007/health/ready && 
 ## Rate limit
 
 - Zones: Messenger webhook 20 req/s, Zalo webhook 20 req/s, readiness 5 req/s; all are exact-match locations
+- Zone `sensitive` 10 req/s (burst 20, `nodelay`, per-IP) covers the Discord prefix, the Zalo prefix and the catch-all — i.e. every ops endpoint (`/v1/*/ops*`, send-reports, privacy, doppler-sync, llm-usage), both OAuth route pairs and the publicly proxied `/metrics`. OAuth entry/callback routes additionally carry the app-level `ThrottlerGuard` (#535)
 - Body: 256k for webhook, 1m for other paths (matches `HTTP_JSON_BODY_LIMIT` in the app)
+
+### Legitimate caller exception list (#535)
+
+No IP allowlist is configured — legit callers rely on `INTERNAL_API_KEY` plus the rate limits above:
+
+| Caller | Route | Auth path |
+| --- | --- | --- |
+| Prometheus | `/metrics` (internal Docker network `<app>-metrics` aliases, not routed via nginx) | internal key |
+| Deploy script health gates | `/health/ready`, `/health/{discord,zalo}/ready` via `curl --resolve` | none (public readiness) |
+| WISPACE backend | `POST /v1/messenger/wispace/web-activity` | internal key |
+| WISPACE portal frontend | `GET /v1/discord/link-status` | internal key |
+| Admin runbooks | ops POST endpoints (send-reports, privacy, sync, …) | internal key |
+
+### Brute-force spot check (after changing nginx config)
+
+`sensitive` = 10r/s with burst=20 nodelay → roughly the first ~21 rapid requests pass through before 429s start. 25 hits also crosses the app-level alert threshold (>20 rejections in 5m), so one loop covers both checks:
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+# 25 rapid unauthenticated hits to an ops route → expect 401 for the first ~21, then 429 at the tail
+for i in $(seq 1 25); do curl -s -o /dev/null -w '%{http_code}\n' \
+  https://aiassist.aihubproduction.com/v1/messenger/ops/llm-usage/fleet; done
+# Then confirm Alertmanager delivered the InternalAuthRejectedSpike warning to Telegram (fires after ~2m)
+```

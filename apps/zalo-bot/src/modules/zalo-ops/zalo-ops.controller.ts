@@ -1,4 +1,5 @@
 import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { IsBoolean, IsNumber, IsOptional, IsPositive } from 'class-validator';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { PlatformOpsController } from '@wispace/bot-common/health';
@@ -28,7 +29,7 @@ class SendReportsBody {
 }
 
 @Controller('zalo')
-@UseGuards(InternalApiKeyGuard)
+@UseGuards(InternalApiKeyGuard, ThrottlerGuard)
 export class ZaloOpsController extends PlatformOpsController {
   constructor(
     private readonly studyReminderSyncService: StudyReminderSyncService,

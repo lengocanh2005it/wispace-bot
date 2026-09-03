@@ -53,7 +53,7 @@ export class MessengerController {
   }
 
   @Post('messenger/profile/setup')
-  @UseGuards(InternalApiKeyGuard)
+  @UseGuards(InternalApiKeyGuard, ThrottlerGuard)
   @HttpCode(200)
   setupProfile() {
     return this.messengerProfileService.setupProfile();

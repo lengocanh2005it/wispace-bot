@@ -11,7 +11,10 @@ import {
 } from '@nestjs/common';
 import { trace, context, SpanStatusCode } from '@opentelemetry/api';
 import type { Response } from 'express';
-import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
+import {
+  InternalApiKeyGuard,
+  INTERNAL_AUTH_METRICS_PORT,
+} from '@wispace/bot-common/guard';
 import { BotMetricsService } from './bot-metrics.service';
 
 /**
@@ -69,8 +72,21 @@ export function createMetricsModule(
         provide: BotMetricsService,
         useExisting: PlatformMetricsService,
       },
+      // InternalApiKeyGuard (bot-common) reports 401 rejections through this
+      // port — bot-common cannot depend on bot-metrics directly.
+      {
+        provide: INTERNAL_AUTH_METRICS_PORT,
+        useFactory: (metrics: InstanceType<typeof PlatformMetricsService>) => ({
+          incRejected: () => metrics.incInternalAuthRejected(),
+        }),
+        inject: [PlatformMetricsService],
+      },
     ],
-    exports: [PlatformMetricsService, BotMetricsService],
+    exports: [
+      PlatformMetricsService,
+      BotMetricsService,
+      INTERNAL_AUTH_METRICS_PORT,
+    ],
   })
   class PlatformMetricsModule {}
 

@@ -64,25 +64,6 @@ export class ChatRateLimitCore {
       externalUserId,
       burstPerMinute,
     );
-    if (!burstResult.allowed) {
-      this.logQuotaDeny(
-        'BURST_LIMIT',
-        externalUserId,
-        params.idempotencyKey,
-        burstResult.count,
-        burstPerMinute,
-      );
-      return {
-        allowed: false,
-        used: burstResult.count,
-        limit: burstPerMinute,
-        remaining: 0,
-        reason: 'BURST_LIMIT',
-        usageDate,
-        quotaReserved: false,
-      };
-    }
-
     return this.reserveAndRollbackBurstOnFailure(externalUserId, {
       userId: params.userId,
       usageDate,
@@ -91,7 +72,7 @@ export class ChatRateLimitCore {
       freeFormDailyLimit,
       burstLimit: burstPerMinute,
       burstSince,
-      burstTransactional: burstResult.transactional,
+      burstReservationHeld: burstResult.allowed,
       burstCountsRefunded: this.settings.burstCountsRefunded ?? false,
     });
   }
@@ -111,10 +92,11 @@ export class ChatRateLimitCore {
     });
 
     if (refunded) {
-      if (!this.settings.burstCountsRefunded) {
-        await this.burstCounter.releaseReservation(externalUserId);
-      }
-
+      // The Redis/memory counter is advisory and has no idempotency token. Do
+      // not decrement it here: a refund can be processed by another worker,
+      // or after an advisory reject that never incremented this user's key.
+      // PostgreSQL remains authoritative; the bounded reconciler invalidates
+      // stale advisory keys and their TTL provides a natural upper bound.
       this.logger.warn(
         `CHAT_QUOTA_REFUND externalUserId=${maskExternalId(
           externalUserId,
@@ -164,7 +146,8 @@ export class ChatRateLimitCore {
       freeFormDailyLimit: number;
       burstLimit: number;
       burstSince: Date;
-      burstTransactional: boolean;
+      /** Whether the advisory counter incremented for this attempt. */
+      burstReservationHeld: boolean;
       burstCountsRefunded: boolean;
     },
   ): Promise<ChatQuotaCheckResult> {
@@ -173,15 +156,18 @@ export class ChatRateLimitCore {
       usageDate: params.usageDate,
       idempotencyKey: params.idempotencyKey,
       dailyLimit: params.dailyLimit,
-      burstLimit: params.burstTransactional ? params.burstLimit : undefined,
-      burstSince: params.burstTransactional ? params.burstSince : undefined,
-      burstCountsRefunded: params.burstTransactional
-        ? params.burstCountsRefunded
-        : undefined,
+      // PostgreSQL is the final authority even when Redis/memory is the
+      // advisory precheck. This closes the race between an advisory miss and
+      // concurrent reservations while keeping Redis useful for fast rejects.
+      burstLimit: params.burstLimit,
+      burstSince: params.burstSince,
+      burstCountsRefunded: params.burstCountsRefunded,
     });
 
     if (outcome.status === 'burst_limit_exceeded') {
-      await this.burstCounter.releaseReservation(externalUserId);
+      if (params.burstReservationHeld) {
+        await this.burstCounter.releaseReservation(externalUserId);
+      }
       this.logQuotaDeny(
         'BURST_LIMIT',
         externalUserId,
@@ -201,7 +187,9 @@ export class ChatRateLimitCore {
     }
 
     if (outcome.status === 'daily_limit_exceeded') {
-      await this.burstCounter.releaseReservation(externalUserId);
+      if (params.burstReservationHeld) {
+        await this.burstCounter.releaseReservation(externalUserId);
+      }
       const used = params.dailyLimit;
       this.logQuotaDeny(
         'DAILY_LIMIT',
@@ -222,7 +210,9 @@ export class ChatRateLimitCore {
     }
 
     if (outcome.status === 'idempotency_conflict') {
-      await this.burstCounter.releaseReservation(externalUserId);
+      if (params.burstReservationHeld) {
+        await this.burstCounter.releaseReservation(externalUserId);
+      }
       return {
         allowed: false,
         used: 0,

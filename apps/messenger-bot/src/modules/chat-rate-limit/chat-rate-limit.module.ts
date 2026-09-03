@@ -14,6 +14,7 @@ import {
   MemoryBurstCounter,
   PostgresBurstCounter,
   RedisBurstCounter,
+  RedisBurstReconciler,
   type BurstReservationResult,
 } from '@wispace/chat-metering';
 import { CleanupCronService } from '@wispace/cleanup-cron';
@@ -24,6 +25,7 @@ import { ChatQuotaStuckRecoveryCronService } from './application/services/chat-q
 import { ChatIdempotencyCleanupCronService } from './application/services/chat-idempotency-cleanup-cron.service';
 import { ChatRateLimitConfigService } from './application/services/chat-rate-limit-config.service';
 import { ChatRateLimitStartupService } from './application/services/chat-rate-limit-startup.service';
+import { ChatQuotaConsistencyCronService } from './application/services/chat-quota-consistency-cron.service';
 import { ChatRateLimitService } from './application/services/chat-rate-limit.service';
 import { ChatQuotaOpsService } from './application/services/chat-quota-ops.service';
 import { CHAT_BURST_COUNTER } from './domain/repositories/chat-burst-counter.port';
@@ -76,7 +78,10 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
         const configured = config.getBurstStore();
 
         if (configured === 'redis') {
-          const redisCounter = new RedisBurstCounter(redisClient!);
+          const redisCounter = new RedisBurstCounter(redisClient!, {
+            platform: 'messenger',
+            legacyRead: true,
+          });
           const pgFallback = (): PostgresBurstCounter =>
             new PostgresBurstCounter(
               {
@@ -135,6 +140,34 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
         { token: REDIS_CLIENT, optional: true },
       ],
     },
+    {
+      provide: RedisBurstReconciler,
+      useFactory: (
+        config: ChatRateLimitConfigService,
+        repository: ChatRateLimitRepository,
+        redisClient: RedisClientPort | null,
+        metrics: BotMetricsService,
+      ) =>
+        new RedisBurstReconciler(
+          redisClient ?? {
+            isEnabled: () => false,
+            getNativeClient: () => null,
+          },
+          repository,
+          {
+            platform: 'messenger',
+            legacyRead: true,
+            includeRefunded: config.getBurstCountsRefunded(),
+            metrics,
+          },
+        ),
+      inject: [
+        ChatRateLimitConfigService,
+        ChatRateLimitRepository,
+        { token: REDIS_CLIENT, optional: true },
+        BotMetricsService,
+      ],
+    },
     ChatQuotaEventRepository,
     {
       provide: CHAT_QUOTA_EVENT_REPOSITORY,
@@ -147,6 +180,7 @@ import { ChatRateLimitRepository } from './infrastructure/persistence/chat-rate-
     ChatQuotaOpsService,
     ChatQuotaStuckRecoveryCronService,
     ChatIdempotencyCleanupCronService,
+    ChatQuotaConsistencyCronService,
     ChatRateLimitRepository,
     {
       provide: CHAT_QUOTA_REPOSITORY,

@@ -76,7 +76,10 @@ export interface BurstCounterPort {
   /**
    * Atomically increment the burst counter and check against the limit.
    * Returns allowed=false (and does NOT increment) when already at or above limit.
-   * Callers must call releaseReservation() if the downstream DB reserve later fails.
+   * Callers must call releaseReservation() if the downstream DB reserve later
+   * fails. Refunds of an already persisted reservation do not release here:
+   * the counter has no idempotency token, so a later worker could decrement an
+   * unrelated reservation; PostgreSQL reconciliation handles stale keys.
    */
   tryReserveBurst(
     externalUserId: string,
@@ -88,7 +91,7 @@ export interface BurstCounterPort {
 export interface BurstReservationResult {
   allowed: boolean;
   count: number;
-  /** True when this attempt is backed by the Postgres reserve transaction. */
+  /** True when the counter itself is Postgres-backed (the DB still final-checks all modes). */
   transactional: boolean;
 }
 

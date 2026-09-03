@@ -57,6 +57,14 @@ attempts, 25 ms between attempts), then propagated through
 failed and its 30-second retry cron replays it after Redis recovers; the
 webhook must not mark such an event completed.
 
+Every distributed queue worker runs one bounded reconciliation pass per minute
+under a platform lock. The buffer JSON is authoritative for active/flush/stuck
+indexes; missing indexes are rebuilt, stale indexes are removed, and malformed
+or internally inconsistent states are moved to a 24-hour quarantine key and
+reported as unresolved for operator follow-up. The pass never replays text or
+creates queue state. Reports contain aggregate counts plus at most five masked
+external IDs. See [ADR-0007](../../docs/adr/0007-postgres-redis-consistency.md).
+
 ## Main files
 
 | File                                                      | Role                                                       |

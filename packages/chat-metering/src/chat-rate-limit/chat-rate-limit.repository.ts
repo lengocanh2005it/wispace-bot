@@ -26,6 +26,11 @@ class BurstLimitExceededError extends Error {
 
 type QueryRows<T> = T[] | [T[], number];
 
+export interface BurstCountRow {
+  externalUserId: string;
+  count: number;
+}
+
 function extractQueryRows<T>(result: QueryRows<T>): T[] {
   // TypeORM returns UPDATE/DELETE results as [rows, affected], unlike SELECT/INSERT.
   return Array.isArray(result[0]) ? result[0] : (result as T[]);
@@ -328,6 +333,43 @@ export class ChatRateLimitRepository {
       );
 
     return Number(rows[0]?.count ?? 0);
+  }
+
+  /**
+   * Bounded, fixed-bucket view used only by the Redis consistency audit.
+   * The reserve transaction remains the sliding-window policy authority.
+   */
+  async listBurstCountsForBucket(
+    bucketStart: Date,
+    bucketEnd: Date,
+    options: { includeRefunded?: boolean; limit?: number } = {},
+  ): Promise<{ rows: BurstCountRow[]; truncated: boolean }> {
+    const includeRefunded = options.includeRefunded ?? false;
+    const limit = Math.max(1, Math.floor(options.limit ?? 100));
+    const countExpression = includeRefunded
+      ? 'COUNT(*)'
+      : `COUNT(*) FILTER (WHERE status IN ('reserved', 'delivered', 'completed'))`;
+    const rows: Array<{ external_user_id: string; count: string }> =
+      await this.idempotencyRepo.manager.query(
+        `
+        SELECT external_user_id, ${countExpression}::text AS count
+        FROM chat_idempotency
+        WHERE platform = $1 AND reserved_at >= $2 AND reserved_at < $3
+        GROUP BY external_user_id
+        ORDER BY external_user_id
+        LIMIT $4
+      `,
+        [this.platform, bucketStart, bucketEnd, limit + 1],
+      );
+
+    const truncated = rows.length > limit;
+    return {
+      rows: rows.slice(0, limit).map((row) => ({
+        externalUserId: row.external_user_id,
+        count: Number(row.count),
+      })),
+      truncated,
+    };
   }
 
   async listStuckReserved(stuckBefore: Date): Promise<ChatIdempotencyRecord[]> {

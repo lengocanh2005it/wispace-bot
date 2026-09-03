@@ -1,9 +1,10 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { LlmUsageQueryService } from '../../application/services/llm-usage-query.service';
 
 @Controller('messenger/ops/llm-usage')
-@UseGuards(InternalApiKeyGuard)
+@UseGuards(InternalApiKeyGuard, ThrottlerGuard)
 export class LlmUsageController {
   constructor(private readonly queryService: LlmUsageQueryService) {}
 
