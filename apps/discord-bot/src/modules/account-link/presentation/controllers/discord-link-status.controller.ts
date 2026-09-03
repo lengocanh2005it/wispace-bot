@@ -7,6 +7,7 @@ import {
   Res,
   UseGuards,
 } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { errorMessage } from '@wispace/bot-common/masking';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import type { Response } from 'express';
@@ -23,7 +24,7 @@ import {
  * - linked, not joined → "Đã liên kết ✓ — Tham gia server Discord để nhận báo cáo…"
  */
 @Controller('discord')
-@UseGuards(InternalApiKeyGuard)
+@UseGuards(InternalApiKeyGuard, ThrottlerGuard)
 export class DiscordLinkStatusController {
   private readonly logger = new Logger(DiscordLinkStatusController.name);
 

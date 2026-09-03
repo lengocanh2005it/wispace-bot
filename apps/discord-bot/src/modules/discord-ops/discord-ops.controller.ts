@@ -1,4 +1,5 @@
 import { Controller, UseGuards } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { PlatformOpsController } from '@wispace/bot-common/health';
 import {
@@ -15,7 +16,7 @@ import {
 } from '@wispace/chat-agent';
 
 @Controller('discord')
-@UseGuards(InternalApiKeyGuard)
+@UseGuards(InternalApiKeyGuard, ThrottlerGuard)
 export class DiscordOpsController extends PlatformOpsController {
   constructor(
     reportCronService: DiscordReportCronService,

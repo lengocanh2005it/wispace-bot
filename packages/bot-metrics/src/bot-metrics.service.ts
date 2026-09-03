@@ -80,6 +80,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private writeToolBudgetDenied: Counter;
   private reminderDispatch: Counter;
   private webActivityWebhookReceived: Counter;
+  private internalAuthRejected: Counter;
   private scheduledSendSuppressed: Counter;
   private dmDeliveryFailures: Counter;
   private outboundActionNeutralized: Counter;
@@ -277,6 +278,12 @@ export class BotMetricsService implements OnModuleDestroy {
     this.webActivityWebhookReceived = new Counter({
       name: `${this.prefix}_web_activity_webhook_received_total`,
       help: 'WISPACE web-activity webhook deliveries received',
+      registers: [this.registry],
+    });
+
+    this.internalAuthRejected = new Counter({
+      name: `${this.prefix}_internal_auth_rejected_total`,
+      help: 'Requests rejected by InternalApiKeyGuard (missing/invalid key, 401 only)',
       registers: [this.registry],
     });
 
@@ -505,6 +512,11 @@ export class BotMetricsService implements OnModuleDestroy {
   /** WISPACE web-activity webhook received (messenger only). */
   incWebActivityWebhookReceived(): void {
     this.webActivityWebhookReceived.inc();
+  }
+
+  /** A guarded request was rejected for a missing/invalid internal API key. */
+  incInternalAuthRejected(): void {
+    this.internalAuthRejected.inc();
   }
 
   /** A scheduled send was skipped for a web-inactive learner (count defaults to 1). */
