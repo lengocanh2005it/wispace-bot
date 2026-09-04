@@ -1,3 +1,5 @@
+import { buildSafetyScanCandidates } from './utils/prompt-injection.utils';
+
 /**
  * Lightweight intent detection for WISPACE bots.
  *
@@ -13,12 +15,41 @@ export interface IntentMatch {
 }
 
 export interface IntentConfig {
-  /** Keywords that match greeting intent (case-insensitive) */
+  /** Keywords that match greeting intent (case-insensitive, canonicalized) */
   greetingKeywords: string[];
-  /** Keywords that match self-introduction intent (case-insensitive) */
+  /** Keywords that match self-introduction intent (case-insensitive, canonicalized) */
   selfIntroKeywords: string[];
   /** Max characters to check at the start of the message */
   maxPrefixLength: number;
+}
+
+type KeywordMatcher = {
+  keyword: string;
+  patterns: RegExp[];
+};
+
+const TOKEN_PATTERN = '[^\\p{L}\\p{N}]+';
+const TOKEN_REGEX = /[\p{L}\p{N}]+/gu;
+
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildPrefixPattern(keywordCandidate: string): RegExp {
+  const tokens = keywordCandidate.match(TOKEN_REGEX);
+  if (!tokens?.length) return /^\s*$/u;
+
+  const keywordPattern = tokens.map(escapeRegex).join(TOKEN_PATTERN);
+  return new RegExp(`^\\s*${keywordPattern}(?=$|[^\\p{L}\\p{N}])`, 'iu');
+}
+
+function buildKeywordMatchers(keywords: readonly string[]): KeywordMatcher[] {
+  return keywords.map((keyword) => ({
+    keyword,
+    patterns: buildSafetyScanCandidates(keyword)
+      .slice(1)
+      .map(buildPrefixPattern),
+  }));
 }
 
 const DEFAULT_CONFIG: IntentConfig = {
@@ -51,26 +82,14 @@ const DEFAULT_CONFIG: IntentConfig = {
 
 export class IntentDetector {
   private readonly config: IntentConfig;
-  private readonly greetingRegex: RegExp;
-  private readonly selfIntroRegex: RegExp;
+  private readonly greetingMatchers: KeywordMatcher[];
+  private readonly selfIntroMatchers: KeywordMatcher[];
 
   constructor(config?: Partial<IntentConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
-
-    const greetingPattern = this.config.greetingKeywords
-      .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-      .join('|');
-    this.greetingRegex = new RegExp(
-      `^\\s*(?:${greetingPattern})(?=\\s|$)`,
-      'i',
-    );
-
-    const selfIntroPattern = this.config.selfIntroKeywords
-      .map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-      .join('|');
-    this.selfIntroRegex = new RegExp(
-      `^\\s*(?:${selfIntroPattern})(?=\\s|$)`,
-      'i',
+    this.greetingMatchers = buildKeywordMatchers(this.config.greetingKeywords);
+    this.selfIntroMatchers = buildKeywordMatchers(
+      this.config.selfIntroKeywords,
     );
   }
 
@@ -81,28 +100,34 @@ export class IntentDetector {
   detect(message: string): IntentMatch {
     const prefix = message.slice(0, this.config.maxPrefixLength).trim();
 
-    if (this.selfIntroRegex.test(prefix)) {
+    const selfIntroKeyword = this.findMatch(prefix, this.selfIntroMatchers);
+    if (selfIntroKeyword !== undefined) {
       return {
         intent: 'self_intro',
-        matchedKeyword: this.findMatch(prefix, this.config.selfIntroKeywords),
+        matchedKeyword: selfIntroKeyword,
       };
     }
 
-    if (this.greetingRegex.test(prefix)) {
+    const greetingKeyword = this.findMatch(prefix, this.greetingMatchers);
+    if (greetingKeyword !== undefined) {
       return {
         intent: 'greeting',
-        matchedKeyword: this.findMatch(prefix, this.config.greetingKeywords),
+        matchedKeyword: greetingKeyword,
       };
     }
 
     return { intent: 'unknown' };
   }
 
-  private findMatch(text: string, keywords: string[]): string | undefined {
-    const lower = text.toLowerCase();
-    for (const kw of keywords) {
-      if (lower.startsWith(kw.toLowerCase())) return kw;
-    }
-    return undefined;
+  private findMatch(
+    text: string,
+    matchers: readonly KeywordMatcher[],
+  ): string | undefined {
+    const candidates = buildSafetyScanCandidates(text);
+    return matchers.find(({ patterns }) =>
+      patterns.some((pattern) =>
+        candidates.some((candidate) => pattern.test(candidate)),
+      ),
+    )?.keyword;
   }
 }

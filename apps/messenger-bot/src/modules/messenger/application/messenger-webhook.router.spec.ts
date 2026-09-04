@@ -112,6 +112,28 @@ describe('routeWebhookEvent', () => {
   });
 
   describe('text messages', () => {
+    it.each([
+      ['chao ban', 'GREETING'],
+      ['ban la ai', 'SELF_INTRO'],
+    ])(
+      'routes no-diacritic %s to the deterministic %s reply without enqueueing',
+      (text, messageType) => {
+        const actions = routeWebhookEvent(textEvent(text, 'mid-intent'), {
+          ...defaultCtx,
+          userId: 42,
+        });
+
+        expect(actions).toEqual([
+          expect.objectContaining({
+            type: 'send_text',
+            userId: 42,
+            messageType,
+            text: expect.stringContaining('WISPACE'),
+          }),
+        ]);
+      },
+    );
+
     it('routes consent commands to consent_command before chat (#596)', () => {
       const actions = routeWebhookEvent(textEvent('Tắt báo cáo', 'mid-1'), {
         ...defaultCtx,

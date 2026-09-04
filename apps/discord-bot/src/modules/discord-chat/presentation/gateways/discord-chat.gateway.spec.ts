@@ -25,12 +25,14 @@ function buildGateway(overrides: {
   outbound?: Partial<DiscordOutboundService>;
   welcome?: Partial<DiscordWelcomeService>;
   menu?: Partial<DiscordMenuService>;
+  chatQueue?: Partial<PlatformChatQueueService>;
   pendingVerify?: DiscordLinkVerifyRecordRepositoryPort['findPending'];
 }): {
   gateway: DiscordChatGateway;
   accountLinkService: DiscordAccountLinkService;
   outboundService: DiscordOutboundService;
   welcomeService: DiscordWelcomeService;
+  chatQueueService: PlatformChatQueueService;
   verifyRecordService: DiscordLinkVerifyRecordRepositoryPort;
 } {
   const accountLinkService = {
@@ -49,6 +51,7 @@ function buildGateway(overrides: {
       },
     })),
     sendMenuButtons: jest.fn().mockResolvedValue(true),
+    sendText: jest.fn().mockResolvedValue(undefined),
     sendToChannel: jest.fn().mockResolvedValue(undefined),
     ...overrides.outbound,
   } as unknown as DiscordOutboundService;
@@ -66,6 +69,10 @@ function buildGateway(overrides: {
     getLearningProgress: jest.fn().mockResolvedValue('progress'),
     ...overrides.menu,
   } as unknown as DiscordMenuService;
+  const chatQueueService = {
+    enqueue: jest.fn().mockResolvedValue(undefined),
+    ...overrides.chatQueue,
+  } as unknown as PlatformChatQueueService;
 
   const gateway = new DiscordChatGateway(
     buildConfigService(),
@@ -76,7 +83,7 @@ function buildGateway(overrides: {
     {} as RescheduleConfirmationService<string>,
     menuService,
     {} as PlatformChatHistoryService,
-    {} as PlatformChatQueueService,
+    chatQueueService,
     {
       handleIfConsentCommand: jest.fn().mockResolvedValue(false),
     } as never,
@@ -88,6 +95,7 @@ function buildGateway(overrides: {
     accountLinkService,
     outboundService,
     welcomeService,
+    chatQueueService,
     verifyRecordService,
   };
 }
@@ -378,4 +386,38 @@ describe('DiscordChatGateway non-text messages (#401)', () => {
       },
     });
   });
+});
+
+describe('DiscordChatGateway intent fast-path', () => {
+  it.each(['chao ban', 'ban la ai'])(
+    'replies directly to no-diacritic intent "%s" without queueing',
+    async (text) => {
+      const { gateway, outboundService, chatQueueService } = buildGateway({});
+      const message = {
+        author: {
+          bot: false,
+          id: 'discord-user-1',
+          displayName: 'Test User',
+        },
+        channel: {
+          type: ChannelType.DM,
+          sendTyping: jest.fn().mockResolvedValue(undefined),
+        },
+        content: text,
+        attachments: { size: 0 },
+        stickers: { size: 0 },
+        embeds: [],
+        mentions: { users: new Map() },
+        client: { user: null },
+      };
+
+      await gateway.onMessageCreate([message] as never);
+
+      expect(outboundService.sendMenuButtons).toHaveBeenCalledWith(
+        'discord-user-1',
+        expect.stringContaining('WISPACE'),
+      );
+      expect(chatQueueService.enqueue).not.toHaveBeenCalled();
+    },
+  );
 });

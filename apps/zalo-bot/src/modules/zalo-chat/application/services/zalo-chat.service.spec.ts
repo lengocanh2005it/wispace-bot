@@ -94,6 +94,33 @@ describe('ZaloChatService', () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
+  it.each(['chao ban', 'ban la ai'])(
+    'replies directly to no-diacritic intent "%s" without enqueueing',
+    async (text) => {
+      const sendText = jest.fn().mockResolvedValue(undefined);
+      const enqueue = jest.fn();
+
+      const service = new ZaloChatService(
+        buildConfig(),
+        { sendText } as unknown as ZaloOutboundService,
+        {
+          findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+        } as unknown as ZaloAccountLinkService,
+        { enqueue } as unknown as PlatformChatQueueService,
+        NO_RESCHEDULE,
+        makePrefs(),
+      );
+
+      await service.handleIncomingMessage('zalo-1', text);
+
+      expect(sendText).toHaveBeenCalledWith(
+        'zalo-1',
+        expect.stringContaining('WISPACE'),
+      );
+      expect(enqueue).not.toHaveBeenCalled();
+    },
+  );
+
   it('handles consent commands deterministically — cancels pending reminders on opt-out (#596)', async () => {
     const sendText = jest.fn().mockResolvedValue(undefined);
     const enqueue = jest.fn();
