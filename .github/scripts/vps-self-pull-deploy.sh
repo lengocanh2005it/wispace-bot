@@ -39,6 +39,10 @@ APP_FAIL_ALERT="vps_self_pull_app_failed"
 STALL_MARKER="$STATE_DIR/stall"
 # How far back to look for a commit that actually produced images.
 RESOLVE_DEPTH="${RESOLVE_DEPTH:-20}"
+# Revision whose migrations the owner has applied, and the tree the barrier
+# compares against to decide whether the schema is already current (#695).
+SCHEMA_STATE_FILE="$STATE_DIR/schema.sha"
+MIGRATIONS_PATH="${MIGRATIONS_PATH:-packages/database/src/migrations}"
 
 : "${GHCR_USER:?GHCR_USER is required}"
 : "${GHCR_PULL_TOKEN:?GHCR_PULL_TOKEN is required}"
@@ -142,7 +146,53 @@ fi
 
 NEW_SHA=$(current_sha)
 
-echo "$GHCR_PULL_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USER" --password-stdin >/dev/null 2>&1 || true
+# A failed login makes every later `manifest inspect` fail exactly like a
+# missing image, and the operator was told "not published" — pointing them at
+# CI when the fault is an expired pull token (#604). Keep `|| true` so a
+# transient blip never kills the run, but record which cause to report (#695).
+LOGIN_OK=true
+if ! echo "$GHCR_PULL_TOKEN" | docker login "$REGISTRY" -u "$GHCR_USER" --password-stdin >/dev/null 2>&1; then
+  LOGIN_OK=false
+  echo "WARN [$(date -Is)] docker login to $REGISTRY failed — image checks below may be reporting a credential problem, not a missing build (#604)" >&2
+fi
+
+# Why an image could not be verified, for logs and alert text.
+image_missing_cause() {
+  if [ "$LOGIN_OK" = "true" ]; then
+    printf 'not published yet (CI built no image for this sha)'
+  else
+    printf 'unverifiable — docker login to %s failed, check the GHCR pull token (#604)' "$REGISTRY"
+  fi
+}
+
+# The barrier's question is whether the shared schema is at the revision this
+# release expects — not whether an image happens to exist (#695). The owner
+# records the revision whose migrations it has applied; deployments that
+# predate this file fall back to the owner's own state file.
+schema_revision() {
+  if [ -s "$SCHEMA_STATE_FILE" ]; then
+    cat "$SCHEMA_STATE_FILE"
+  elif [ -s "$STATE_DIR/${APP_ORDER[0]}.sha" ]; then
+    cat "$STATE_DIR/${APP_ORDER[0]}.sha"
+  fi
+}
+
+record_schema_revision() { # run_migrations sha
+  [ "$1" = "true" ] || return 0
+  printf %s "$2" > "$SCHEMA_STATE_FILE"
+}
+
+# True when the applied revision is an ancestor of the target and no migration
+# was added between them: the schema is already where this release needs it,
+# so a missing owner image is not a reason to hold the dependent bots back.
+schema_current_for() { # target_sha
+  local applied
+  applied=$(schema_revision)
+  [ -n "$applied" ] || return 1
+  [ "$applied" = "$1" ] && return 0
+  git merge-base --is-ancestor "$applied" "$1" >/dev/null 2>&1 || return 1
+  ! git diff --name-only "$applied" "$1" -- "$MIGRATIONS_PATH" 2>/dev/null | grep -q .
+}
 
 # app -> "health_path:run_migrations"
 declare -A APPS=(
@@ -169,19 +219,17 @@ deploy_app() {
   fi
 
   if [ -f "$state_file" ] && [ "$(cat "$state_file")" = "$NEW_SHA" ]; then
+    record_schema_revision "$run_migrations" "$NEW_SHA"
     return 0
   fi
 
   if ! docker manifest inspect "$image" >/dev/null 2>&1; then
     if [ "$is_migration_owner" = "true" ]; then
-      echo "ERROR: $app (migration owner) — $image not published or unverifiable — barrier blocked" >&2
-      if [ ! -f "$fail_marker" ] || [ "$(cat "$fail_marker")" != "$NEW_SHA" ]; then
-        echo "$NEW_SHA" > "$fail_marker"
-        notify_app_failed "$app" "$NEW_SHA"
-      fi
-      return 1
+      # Not a verdict yet: the caller checks the schema state before deciding
+      # whether a missing owner image is a failure at all (#695).
+      return 2
     fi
-    echo "$app: $image not published yet — skipping (CI may not have built this commit)"
+    echo "$app: $image $(image_missing_cause) — skipping"
     return 0
   fi
 
@@ -202,6 +250,7 @@ deploy_app() {
     if [ "$running_digest" = "$image_digest" ]; then
       echo "$app: already running target image ($image_digest) — skipping deploy"
       echo "$NEW_SHA" > "$state_file"
+      record_schema_revision "$run_migrations" "$NEW_SHA"
       if [ -f "$fail_marker" ]; then
         echo "$app: previous deploy failure recovered ($(cat "$fail_marker"))"
         rm -f "$fail_marker"
@@ -244,6 +293,7 @@ deploy_app() {
     bash vps-deploy.sh
   ); then
     echo "$NEW_SHA" > "$state_file"
+    record_schema_revision "$run_migrations" "$NEW_SHA"
     if [ -f "$fail_marker" ]; then
       echo "$app: previous deploy failure recovered ($(cat "$fail_marker"))"
       rm -f "$fail_marker"
@@ -287,9 +337,36 @@ if [ -n "$RESOLVED_SHA" ] && [ "$RESOLVED_SHA" != "$NEW_SHA" ]; then
   NEW_SHA="$RESOLVED_SHA"
 fi
 
-# Messenger owns the shared schema migration. Keep it first and make its
-# successful deploy/state write the barrier for Discord and Zalo (#283).
-if deploy_app "${APP_ORDER[0]}" true; then
+# Messenger owns the shared schema migration. Keep it first and make the
+# schema state it leaves behind the barrier for Discord and Zalo (#283).
+#
+# Exit 2 means "owner has no image at this sha" — a question, not a verdict.
+# The barrier's real condition is whether the schema is at the revision this
+# release expects, so ask that before failing closed (#695): when the applied
+# revision is an ancestor of the target and no migration was added between
+# them, the dependent bots are safe to proceed. When a migration *was* added
+# and no image exists to apply it, that is a genuine failure — fail closed and
+# page, as #338 requires.
+BARRIER_RC=0
+deploy_app "${APP_ORDER[0]}" true || BARRIER_RC=$?
+
+if [ "$BARRIER_RC" = 2 ]; then
+  OWNER_IMAGE="${REGISTRY}/${REPO_LC}/${APP_ORDER[0]}:${NEW_SHA}"
+  if schema_current_for "$NEW_SHA"; then
+    echo "${APP_ORDER[0]}: $OWNER_IMAGE $(image_missing_cause), but no migration changed since $(schema_revision) — schema is current, barrier ready"
+    BARRIER_RC=0
+  else
+    echo "ERROR: ${APP_ORDER[0]} (migration owner) — $OWNER_IMAGE $(image_missing_cause); schema is not current for $NEW_SHA — barrier blocked" >&2
+    OWNER_FAIL_MARKER="$STATE_DIR/${APP_ORDER[0]}.failed"
+    if [ ! -f "$OWNER_FAIL_MARKER" ] || [ "$(cat "$OWNER_FAIL_MARKER")" != "$NEW_SHA" ]; then
+      echo "$NEW_SHA" > "$OWNER_FAIL_MARKER"
+      notify_app_failed "${APP_ORDER[0]}" "$NEW_SHA"
+    fi
+    BARRIER_RC=1
+  fi
+fi
+
+if [ "$BARRIER_RC" = 0 ]; then
   echo "Migration barrier ready — deploying dependent bots"
   for app in "${APP_ORDER[@]:1}"; do
     deploy_app "$app" || true

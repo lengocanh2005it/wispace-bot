@@ -29,7 +29,7 @@ Discord user ID, and Zalo user ID are delivery-channel identities only. The
 consistency contract is:
 
 - **Chat quota:** one shared daily FREE_FORM LLM quota per `(userId,
-  usage_date)` across active links. A user without a link keeps an anonymous
+usage_date)` across active links. A user without a link keeps an anonymous
   `(platform, external_user_id, usage_date)` bucket. The reserve transaction
   sums current-day legacy channel rows through active mappings, then writes the
   learner-owned row. The burst limiter remains per channel; the outbound
@@ -286,23 +286,23 @@ wispace-bot/                          # Turborepo root
 
 ### Tables Created (migration)
 
-| Table                         | Purpose                                                                                           |
-| ----------------------------- | ------------------------------------------------------------------------------------------------- |
-| `user_platform_mappings`      | `user_id`, `external_user_id`, `platform` (messenger/discord/zalo), `cadence`, `topic`, `status`  |
-| `message_logs`                | Metadata audit of sent / failed messages (message bodies omitted for privacy, #262)               |
-| `chat_daily_usage`            | FREE_FORM chat quota counter; learner-linked rows aggregate by `user_id`, anonymous rows stay per `(platform, external_user_id, usage_date)` |
-| `chat_idempotency`            | Idempotency `message.mid` when reserving quota (from `@wispace/chat-metering`)                    |
-| `study_reminder_jobs`         | Reminder queue (`pending` → `sent` / …)                                                           |
-| `scheduled_report_claims`     | Per-platform 08:00 report audit/compatibility claim                                               |
-| `learner_scheduled_report_claims` | Learner-level scheduled-report correctness claim, unique by `(user_id, report_date, report_type)` |
-| `report_send_jobs`            | Outbox retry for report cron 5xx (R5)                                                             |
-| `webhook_dead_letters`        | Dead-letter webhook entries + auto-retry                                                          |
-| `chat_quota_events`           | Dual-write quota audit events (C2 hybrid)                                                         |
-| `llm_usage_events`            | LLM token usage tracking (from `@wispace/chat-metering`)                                          |
-| `llm_safety_events`           | LLM hallucination/safety event tracking (from `@wispace/chat-metering`)                           |
-| `users` + view `"Users"`      | Display name / exam date cache — Redis `cache:user:display:{userId}` when R5 enabled              |
-| `discord_account_links`       | Discord ↔ WISPACE mapping (`last_welcomed_at` dedupes welcome DMs, #137)                          |
-| `discord_link_verify_records` | Durable verify-intent outbox — reconciled by the `discord-link-reconcile` cron (#137)             |
+| Table                             | Purpose                                                                                                                                      |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user_platform_mappings`          | `user_id`, `external_user_id`, `platform` (messenger/discord/zalo), `cadence`, `topic`, `status`                                             |
+| `message_logs`                    | Metadata audit of sent / failed messages (message bodies omitted for privacy, #262)                                                          |
+| `chat_daily_usage`                | FREE_FORM chat quota counter; learner-linked rows aggregate by `user_id`, anonymous rows stay per `(platform, external_user_id, usage_date)` |
+| `chat_idempotency`                | Idempotency `message.mid` when reserving quota (from `@wispace/chat-metering`)                                                               |
+| `study_reminder_jobs`             | Reminder queue (`pending` → `sent` / …)                                                                                                      |
+| `scheduled_report_claims`         | Per-platform 08:00 report audit/compatibility claim                                                                                          |
+| `learner_scheduled_report_claims` | Learner-level scheduled-report correctness claim, unique by `(user_id, report_date, report_type)`                                            |
+| `report_send_jobs`                | Outbox retry for report cron 5xx (R5)                                                                                                        |
+| `webhook_dead_letters`            | Dead-letter webhook entries + auto-retry                                                                                                     |
+| `chat_quota_events`               | Dual-write quota audit events (C2 hybrid)                                                                                                    |
+| `llm_usage_events`                | LLM token usage tracking (from `@wispace/chat-metering`)                                                                                     |
+| `llm_safety_events`               | LLM hallucination/safety event tracking (from `@wispace/chat-metering`)                                                                      |
+| `users` + view `"Users"`          | Display name / exam date cache — Redis `cache:user:display:{userId}` when R5 enabled                                                         |
+| `discord_account_links`           | Discord ↔ WISPACE mapping (`last_welcomed_at` dedupes welcome DMs, #137)                                                                     |
+| `discord_link_verify_records`     | Durable verify-intent outbox — reconciled by the `discord-link-reconcile` cron (#137)                                                        |
 
 Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 
@@ -311,14 +311,14 @@ Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 Mutating chat tools are capped per WISPACE user per day and per message, on top of
 the inbound-message chat quota:
 
-| Env | Default | Meaning |
-| --- | --- | --- |
-| `CHAT_WRITE_TOOL_BUDGET_ENABLED` | `true` | Kill-switch; only `false`/`0`/`no` disables |
-| `CHAT_WRITE_TOOL_DAILY_CAP_RESCHEDULE` | `8` | Confirmed reschedules / user / day |
-| `CHAT_WRITE_TOOL_DAILY_CAP_PRECREATE` | `15` | `precreate_next_exercise` creates / user / day |
-| `CHAT_WRITE_TOOL_PER_MESSAGE_CAP_RESCHEDULE` | `1` | Reschedule prompts staged per learner message |
-| `CHAT_WRITE_TOOL_PER_MESSAGE_CAP_PRECREATE` | `3` | Precreate calls per learner message |
-| `CHAT_TOOL_DAILY_USAGE_RETENTION_DAYS` | `7` | `chat_tool_daily_usage` prune window |
+| Env                                          | Default | Meaning                                        |
+| -------------------------------------------- | ------- | ---------------------------------------------- |
+| `CHAT_WRITE_TOOL_BUDGET_ENABLED`             | `true`  | Kill-switch; only `false`/`0`/`no` disables    |
+| `CHAT_WRITE_TOOL_DAILY_CAP_RESCHEDULE`       | `8`     | Confirmed reschedules / user / day             |
+| `CHAT_WRITE_TOOL_DAILY_CAP_PRECREATE`        | `15`    | `precreate_next_exercise` creates / user / day |
+| `CHAT_WRITE_TOOL_PER_MESSAGE_CAP_RESCHEDULE` | `1`     | Reschedule prompts staged per learner message  |
+| `CHAT_WRITE_TOOL_PER_MESSAGE_CAP_PRECREATE`  | `3`     | Precreate calls per learner message            |
+| `CHAT_TOOL_DAILY_USAGE_RETENTION_DAYS`       | `7`     | `chat_tool_daily_usage` prune window           |
 
 Whitelisted ids (`CHAT_RATE_LIMIT_WHITELIST_PSIDS`) bypass the budget. On breach the
 tool returns a Vietnamese "try again tomorrow / next message" result the model relays —
@@ -411,7 +411,7 @@ All endpoints below require header **`X-Internal-Api-Key`** (or `Authorization: 
 | POST   | `/v1/messenger/mapping/relink`                  | `{ "psid": string, "userId": number, "allowRelink"?: boolean }`        | Ops relink PSID to userId                                                                                                                             |
 | POST   | `/v1/messenger/ops/clarification/clear`         | `{ "externalUserId": string }`                                         | Clear stuck clarification state for one user without exposing contents                                                                                |
 | GET    | `/v1/messenger/ops/llm-usage/summary`           | Query: `psid` **or** `userId`; `from`/`to` (YYYY-MM-DD, default today) | Total tokens + estimated USD per feature for one student                                                                                              |
-| GET    | `/v1/messenger/ops/llm-usage/fleet`             | Query: `date` (YYYY-MM-DD, default today)                              | Total tokens + estimated USD fleet-wide by feature, incl. per-feature `cacheHitRate` (null when no prompt tokens; #553)                              |
+| GET    | `/v1/messenger/ops/llm-usage/fleet`             | Query: `date` (YYYY-MM-DD, default today)                              | Total tokens + estimated USD fleet-wide by feature, incl. per-feature `cacheHitRate` (null when no prompt tokens; #553)                               |
 | GET    | `/health`                                       | —                                                                      | **Public liveness** — generic `{ "status": "ok" }` only, never leaks dependency details                                                               |
 | GET    | `/health/ready`                                 | —                                                                      | **Public readiness** — 200 only when DB and (if configured) Redis are reachable; 503 `{ "status": "error" }` status-only (deploy gate uses this path) |
 | GET    | `/health/detail`                                | —                                                                      | **Internal** (`X-Internal-Api-Key`) — full DB/Redis connection detail for ops                                                                         |
@@ -435,9 +435,9 @@ Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP �
 | `exam-reminder-report`              | `0 8 * * *` (08:00 ICT)                       | `ReportCronService` — daily student reports                                                                                                                                                                             |
 | `weekly-cleanup-duplicate-mappings` | `0 3 * * 1` (Monday 03:00 ICT)                | `ReportCronService` — deactivate duplicate ACTIVE mappings                                                                                                                                                              |
 | `report-send-retry`                 | `*/15 * * * *`                                | `ReportSendRetryDispatchService` — outbox R5 retry                                                                                                                                                                      |
-| `report-claims-stale-reset`         | `*/30 * * * *`                                | `ReportClaimStaleResetCronService` — lease recovery for per-platform audit claims and learner-level `learner_scheduled_report_claims` (`REPORT_CLAIM_STALE_RESET_MS`=2h)                                                   |
+| `report-claims-stale-reset`         | `*/30 * * * *`                                | `ReportClaimStaleResetCronService` — lease recovery for per-platform audit claims and learner-level `learner_scheduled_report_claims` (`REPORT_CLAIM_STALE_RESET_MS`=2h)                                                |
 | `ops-health-daily`                  | `0 0 9 * * *` (09:00 ICT)                     | `OpsHealthCronService` — ops health alert                                                                                                                                                                               |
-| `data-quality-daily`               | `0 15 9 * * *` (09:15 ICT)                    | `DataQualityCronService` — bounded read-only anomaly checks (production default; `DATA_QUALITY_CRON_ENABLED=false` disables)                                                                                           |
+| `data-quality-daily`                | `0 15 9 * * *` (09:15 ICT)                    | `DataQualityCronService` — bounded read-only anomaly checks (production default; `DATA_QUALITY_CRON_ENABLED=false` disables)                                                                                            |
 | `study-reminder-sync`               | `0 */30 * * * *` (every 30 min)               | `StudyReminderWorkerService` — sync upcoming sessions                                                                                                                                                                   |
 | `study-reminder-dispatch`           | Adaptive 30s–3.5min (`STUDY_REMINDER_POLL_*`) | `StudyReminderWorkerService` — S2 adaptive dispatch                                                                                                                                                                     |
 | `study-reminder-cleanup`            | `0 0 3 * * *` (03:00)                         | `StudyReminderWorkerService` — purge old terminal jobs                                                                                                                                                                  |
@@ -514,18 +514,18 @@ passes nothing.
 
 **Inventory** — every retry path in the repo, classified:
 
-| Retry path | Current shape | In scope? |
-| --- | --- | --- |
-| Agent-loop LLM retry — `AgentService.withRetry` (`packages/llm-agent`) | exponential, `min(base·2^n, MAX_RETRY_DELAY_MS)` | ✅ jittered via the shared helper (cap applied before jitter) |
-| Execution-port LLM retry — `retryWithBackoff` (`packages/llm-agent`, used by `createEnvLlmExecutionPort` + Messenger `LlmExecutionService`) | `min(baseDelayMs * 2^(attempt-1), LLM_OPENAI_RETRY_MAX_DELAY_MS)` via `cappedExponentialBackoff`, `maxAttempts` default 3 | ✅ jittered after the cap; `rng` seam |
-| WISPACE client — `withRetry` (`packages/wispace-client`) | `baseDelayMs * 2^attempt` | ✅ was already jittered; now via the shared helper; `rng` seam |
-| Redis global slot acquire — `acquireRedisSlot` (#453) | exponential, cap 1s | already full-jitter, unchanged (herd-safe) |
-| Durable webhook inbox — `markFailed` (`packages/webhook-inbound`) | `min(base * 2^(n-1), cap)` | ✅ jittered after the cap; `InboundRetryConfig.rng` seam |
-| Durable study-reminder outbox — `StudyReminderDispatchService` | flat `retryBackoffMinutes` (Messenger) or `× 2^retryCount` | ✅ jittered; `StudyReminderDispatchServiceOptions.rng` seam |
-| Durable report-send outbox — `reportRetryAt` (`scheduler/application/utils`) | flat `retryBackoffMinutes` | ✅ jittered; `rng`/`now` params |
-| Dead-letter replay — `PlatformDeadLetterCronService.handleRetry` | 5h `@Cron`, eligibility `updated_at < now − minRetryAgeMs`, bounded batch (`RETRY_LIMIT`) processed **sequentially** — no `next_retry_at` | ❌ herd-safe by construction (coarse cron + bounded sequential drip); nothing to jitter |
-| Dead-letter save retry — `PlatformDeadLetterService.SAVE_RETRY_DELAYS_MS` `[0, 50, 100]` | in-process DB-write retry, sub-100ms | ❌ not an outbound retry; no herd shape |
-| WISPACE OA token refresh, account-link reconciliation | single-row, low-cardinality | ❌ not a batch — no alignment risk |
+| Retry path                                                                                                                                  | Current shape                                                                                                                             | In scope?                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Agent-loop LLM retry — `AgentService.withRetry` (`packages/llm-agent`)                                                                      | exponential, `min(base·2^n, MAX_RETRY_DELAY_MS)`                                                                                          | ✅ jittered via the shared helper (cap applied before jitter)                           |
+| Execution-port LLM retry — `retryWithBackoff` (`packages/llm-agent`, used by `createEnvLlmExecutionPort` + Messenger `LlmExecutionService`) | `min(baseDelayMs * 2^(attempt-1), LLM_OPENAI_RETRY_MAX_DELAY_MS)` via `cappedExponentialBackoff`, `maxAttempts` default 3                 | ✅ jittered after the cap; `rng` seam                                                   |
+| WISPACE client — `withRetry` (`packages/wispace-client`)                                                                                    | `baseDelayMs * 2^attempt`                                                                                                                 | ✅ was already jittered; now via the shared helper; `rng` seam                          |
+| Redis global slot acquire — `acquireRedisSlot` (#453)                                                                                       | exponential, cap 1s                                                                                                                       | already full-jitter, unchanged (herd-safe)                                              |
+| Durable webhook inbox — `markFailed` (`packages/webhook-inbound`)                                                                           | `min(base * 2^(n-1), cap)`                                                                                                                | ✅ jittered after the cap; `InboundRetryConfig.rng` seam                                |
+| Durable study-reminder outbox — `StudyReminderDispatchService`                                                                              | flat `retryBackoffMinutes` (Messenger) or `× 2^retryCount`                                                                                | ✅ jittered; `StudyReminderDispatchServiceOptions.rng` seam                             |
+| Durable report-send outbox — `reportRetryAt` (`scheduler/application/utils`)                                                                | flat `retryBackoffMinutes`                                                                                                                | ✅ jittered; `rng`/`now` params                                                         |
+| Dead-letter replay — `PlatformDeadLetterCronService.handleRetry`                                                                            | 5h `@Cron`, eligibility `updated_at < now − minRetryAgeMs`, bounded batch (`RETRY_LIMIT`) processed **sequentially** — no `next_retry_at` | ❌ herd-safe by construction (coarse cron + bounded sequential drip); nothing to jitter |
+| Dead-letter save retry — `PlatformDeadLetterService.SAVE_RETRY_DELAYS_MS` `[0, 50, 100]`                                                    | in-process DB-write retry, sub-100ms                                                                                                      | ❌ not an outbound retry; no herd shape                                                 |
+| WISPACE OA token refresh, account-link reconciliation                                                                                       | single-row, low-cardinality                                                                                                               | ❌ not a batch — no alignment risk                                                      |
 
 Retryable-error classification, caps, deadlines, `AbortSignal` cancellation,
 lease ownership, idempotency, and ambiguous-delivery handling are unchanged —
@@ -758,7 +758,14 @@ The `git fetch`/`reset` run **inside the script, after the deploy lock is held**
 
 **Deploy hardening (#199/#201/#203/#204/#275/#276/#278/#654/#655):** `vps-deploy.sh` fails closed before cutover when the Vault bootstrap is missing/invalid, the migration writer endpoint is unreachable/not writable, or the nginx upstream conf is missing (`SKIP_NGINX_CHECK=true` is the first-deploy escape hatch). The pre-cutover health gate allows a 4-minute cold start by default (`HEALTH_MAX_ATTEMPTS=120`, 2s interval); operators can override it for slower hosts. After `migration:run`, the new immutable release image runs `migration:show`; any pending or unverifiable migration status blocks nginx cutover. The live container is detected by the port nginx currently routes to (never removed by name); an interrupted deploy that left nginx routed to `${APP}-new` adopts it as `${APP}-old` instead of deleting it. Container start/stop honor `DOCKER_STOP_TIMEOUT` (default 60s) for the 45s app drain window. Migration fencing is implemented by the TypeORM data source on a dedicated advisory-lock session; the deploy script invokes the validated Vault runner directly, so a shell escape cannot release the fence early. Post-switch monitoring verifies the **public nginx route** (`curl --resolve …:443:127.0.0.1 https://aiassist.aihubproduction.com/health[/discord|/zalo]/ready`) instead of only the standby port. Runtime images include `postgresql-client` (psql) for endpoint preflight and dumps. Uploads exclude `.env` from `rsync --delete`; only the mode-600 Vault bootstrap is delivered. `vps-deploy.sh` atomically replaces the app `.env` from that allowlisted bootstrap and never creates a full secret-bearing runtime env file. `postgres-backup.sh` enforces `umask 077` + mode 700/600. **Metrics recovery (#278):** all bare-run blue-green containers join the external Docker network `monitoring`; Prometheus scrapes stable `<app>-metrics` aliases on fixed internal ports (`messenger=5007`, `discord=3001`, `zalo=3002`), while host active/standby ports remain nginx's cutover mechanism. The deploy script verifies protected `/metrics` returns 401/403 on the standby port and through the monitoring-network container IP after alias handoff; alias/network failures roll back nginx before the old container is stopped.
 
-**Migration barrier (#283):** self-pull deploys Messenger first because it owns the shared schema migration. Discord and Zalo are not attempted until Messenger's migration-owner deploy succeeds (or is already recorded at the target SHA), so an unordered app iteration cannot put traffic on a release whose schema barrier failed.
+**Migration barrier (#283/#695):** self-pull deploys Messenger first because it owns the shared schema migration. Discord and Zalo are not attempted until the barrier is ready, and the barrier's condition is **schema state**, not image existence:
+
+- **Target resolution.** CI builds an image only for commits touching `apps/<app>/**`, `packages/**`, `package.json`, `package-lock.json`, `turbo.json`, or the deploy inputs (`deploy/Dockerfile.bot`, `deploy/verify-runtime-image.mjs`, `.github/workflows/**`, `.github/scripts/**`). Doc-, spec- and CI-only commits therefore publish nothing, so the script targets the newest commit at or behind `HEAD` that the migration owner actually has an image for, looking back `RESOLVE_DEPTH` commits (default 20). Pinning to `HEAD` used to wedge the rollout on every tick — one `.github/scripts`-only commit blocked the barrier 1751 times, about 58 hours.
+- **Barrier ready** when the owner deploys successfully, is already recorded at the target SHA, or — when no owner image exists at the target — when the schema is already current: the applied revision (`~/.vps-deploy-state/schema.sha`, falling back to the owner's own state file) is an ancestor of the target and no file under `packages/database/src/migrations` changed between them.
+- **Barrier blocked** when an owner image is missing _and_ a migration was added since the applied revision. That is a genuine failure: it writes `~/.vps-deploy-state/messenger-bot.failed`, pages once per `(app, sha)`, and skips Discord/Zalo — the fail-closed behavior of #338 is unchanged.
+- **Cause attribution.** A failed `docker login` makes every `manifest inspect` fail exactly like a missing image. The script records the login outcome and reports either `not published yet (CI built no image for this sha)` or `unverifiable — docker login … failed, check the GHCR pull token`, so an expired pull token (#604) no longer reads as a missing build.
+
+Known gap: target resolution is fleet-wide — it resolves to the newest commit the **migration owner** has an image for, so a commit touching only `apps/discord-bot/**` (which builds a Discord image but no Messenger one) resolves the whole fleet back to an older SHA and does not ship that Discord image until a later commit rebuilds Messenger. Per-app target resolution is tracked on #695.
 
 **Postgres backup & restore (#182/#185):** nightly `pg_dump` at 02:00 ICT via `deploy/postgres-backup.sh`, encrypted at rest with GPG AES-256 (`BACKUP_ENCRYPTION_PASSPHRASE` in `.env`), 14-day retention. Production HA must additionally enable provider WAL/PITR and monitor restore points. Backups are gzip-validated before encryption and stored as `.sql.gz.gpg` in `/home/ngoc_anh/backups/ai_chat_bot_db/`. An hourly `deploy/backup-monitor.sh` checks the `.last-backup-success` timestamp and fires a `postgres_backup_stale` Alertmanager alert (→ Telegram) if no successful backup in 25h. Backup failures also fire `postgres_backup_failed` immediately. Pre-migration safety dumps (`pg_dump -Fc`) go to `pre-migrate/` with 1-day retention. Measured restore evidence belongs in the [PostgreSQL HA runbook](postgres-ha-runbook.md).
 
@@ -786,14 +793,14 @@ source ~/.ghcr-token && bash .github/scripts/vps-self-pull-deploy.sh
 
 Production bootstrap sync is separate: run the manual **Sync production env** workflow to rotate the Vault AppRole bootstrap and force a recreate. Bot containers do not mount `.env` or `/var/run/docker.sock`; this keeps production secrets and the Docker host outside the application trust boundary.
 
-| GitHub Secret                                                            | Purpose                                                                                                                                                                                   |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GHCR_PULL_TOKEN`                                                        | PAT `read:packages` — image build/push, and VPS `docker login ghcr.io` to pull                                                                                                            |
-| `VPS_HOST`, `VPS_USER`, `SSH_PRIVATE_KEY`                                | Used by [`sync-env.yml`](../.github/workflows/sync-env.yml) (`env_only=true`, manual `workflow_dispatch`) to install the Vault bootstrap and force a recreate |
-| `VAULT_ADDR` (Actions variable)                                           | HTTPS Vault endpoint used by all production deploys                                                                                                                                        |
-| `VAULT_ROLE_ID_MESSENGER`, `VAULT_SECRET_ID_MESSENGER`                    | Messenger AppRole bootstrap credentials                                                                                                                                                |
-| `VAULT_ROLE_ID_DISCORD`, `VAULT_SECRET_ID_DISCORD`                       | Discord AppRole bootstrap credentials                                                                                                                                                   |
-| `VAULT_ROLE_ID_ZALO`, `VAULT_SECRET_ID_ZALO`                             | Zalo AppRole bootstrap credentials                                                                                                                                                      |
+| GitHub Secret                                          | Purpose                                                                                                                                                       |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GHCR_PULL_TOKEN`                                      | PAT `read:packages` — image build/push, and VPS `docker login ghcr.io` to pull                                                                                |
+| `VPS_HOST`, `VPS_USER`, `SSH_PRIVATE_KEY`              | Used by [`sync-env.yml`](../.github/workflows/sync-env.yml) (`env_only=true`, manual `workflow_dispatch`) to install the Vault bootstrap and force a recreate |
+| `VAULT_ADDR` (Actions variable)                        | HTTPS Vault endpoint used by all production deploys                                                                                                           |
+| `VAULT_ROLE_ID_MESSENGER`, `VAULT_SECRET_ID_MESSENGER` | Messenger AppRole bootstrap credentials                                                                                                                       |
+| `VAULT_ROLE_ID_DISCORD`, `VAULT_SECRET_ID_DISCORD`     | Discord AppRole bootstrap credentials                                                                                                                         |
+| `VAULT_ROLE_ID_ZALO`, `VAULT_SECRET_ID_ZALO`           | Zalo AppRole bootstrap credentials                                                                                                                            |
 
 Image: `ghcr.io/lengocanh2005it/wispace-bot/<app>:<commit-sha>` (also tagged `:latest`).
 
@@ -848,7 +855,7 @@ If a local env file (`.env`, `.env.shared`, `apps/*/.env`) is believed to be exp
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | PostgreSQL               | TLS required for every non-local/private host, **independent of `NODE_ENV`** — startup + migration fail; `DB_ALLOW_INSECURE_HOSTS` is the only narrow, tested plaintext exception for non-IP hostnames                                                                                                                                |
 | WISPACE upstream URLs    | HTTPS only (dev loopback exception), no credentials/fragments, no private targets in production, optional `WISPACE_ALLOWED_HOSTS` allowlist — validated at startup for every client                                                                                                                                                   |
-| Zalo OA tokens (at rest) | AES-256-GCM with per-row IV, key `ZALO_TOKEN_ENCRYPTION_KEY` (Vault in production); legacy plaintext rows fail closed → re-bootstrap                                                                                                                                                 |
+| Zalo OA tokens (at rest) | AES-256-GCM with per-row IV, key `ZALO_TOKEN_ENCRYPTION_KEY` (Vault in production); legacy plaintext rows fail closed → re-bootstrap                                                                                                                                                                                                  |
 | Zalo OA refresh          | Single-row transaction + `SELECT … FOR UPDATE`, re-read after lock, retries use the current persisted token — no double-spend of the single-use refresh token across workers                                                                                                                                                          |
 | Discord linking          | Link commits at OAuth callback (verify → `upsertLink`), independent of guild membership — no pending state, no cookie, no join-status; `Referrer-Policy: no-referrer` on the redirect; redirect targets never carry secrets; verify-intent outbox + reconciliation cron re-commit the mapping after a crash between verify and upsert |
 

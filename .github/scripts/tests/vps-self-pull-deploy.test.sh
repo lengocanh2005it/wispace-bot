@@ -61,6 +61,15 @@ case "\$1" in
     cat "\${FAKE_REPO:?}/.git/HEAD"
     echo "$SHA_A"
     ;;
+  merge-base)
+    # --is-ancestor: applied revision is behind the target unless told otherwise.
+    [ -z "\${FAKE_NOT_ANCESTOR:-}" ] || exit 1
+    ;;
+  diff)
+    # --name-only <a> <b> -- <migrations path>: silence means no migration
+    # was added between the two revisions.
+    [ -z "\${FAKE_MIGRATION_CHANGED:-}" ] || echo "packages/database/src/migrations/1700000000000-Fake.ts"
+    ;;
   rev-parse)
     if [ "\${2:-}" = "origin/main" ]; then cat "\${FAKE_REPO:?}/.git/origin-main"; else cat "\${FAKE_REPO:?}/.git/HEAD"; fi
     ;;
@@ -366,7 +375,8 @@ FAKE
 chmod +x "$dir/bin/docker"
 code=$(run_script "$dir")
 [ "$code" -eq 0 ] || fail "barrier failure should retry next tick, got $code"
-grep -q "migration owner.*not published or unverifiable" "$dir/run.out" || fail "missing migration owner barrier error"
+grep -q "migration owner.*not published yet" "$dir/run.out" || fail "missing migration owner barrier error"
+grep -q "schema is not current" "$dir/run.out" || fail "barrier did not state the schema reason"
 [ -f "$dir/state/messenger-bot.failed" ] || fail "messenger-bot failed marker missing"
 [ "$(cat "$dir/state/messenger-bot.failed")" = "$SHA_B" ] || fail "messenger-bot failed marker sha != $SHA_B"
 grep -q 'alertname":"vps_self_pull_app_failed' "$dir/curl.body" || fail "barrier alert not posted"
@@ -393,7 +403,8 @@ FAKE
 chmod +x "$dir/bin/docker"
 code=$(run_script "$dir")
 [ "$code" -eq 0 ] || fail "auth failure should retry next tick, got $code"
-grep -q "migration owner.*not published or unverifiable" "$dir/run.out" || fail "missing migration owner barrier error"
+grep -q "migration owner.*not published yet" "$dir/run.out" || fail "missing migration owner barrier error"
+grep -q "schema is not current" "$dir/run.out" || fail "barrier did not state the schema reason"
 [ -f "$dir/state/messenger-bot.failed" ] || fail "messenger-bot failed marker missing"
 grep -q 'alertname":"vps_self_pull_app_failed' "$dir/curl.body" || fail "barrier alert not posted"
 [ ! -f "$dir/state/discord-bot.sha" ] || fail "discord-bot deployed despite blocked barrier"
@@ -464,6 +475,68 @@ for app in messenger-bot discord-bot zalo-bot; do
 done
 [ ! -s "$dir/curl.body" ] || fail "alert paged for a commit that legitimately built nothing"
 pass "no-image HEAD resolves to the newest published commit"
+
+
+# Owner has no image anywhere in the lookback window — the case resolution
+# cannot rescue. The barrier then asks the question it actually cares about:
+# is the schema already at the revision this release expects (#695)?
+make_no_owner_image_docker() { # dir
+  cat > "$1/bin/docker" <<FAKE
+#!/usr/bin/env bash
+echo "docker \$*" >> "\${DOCKER_LOG:?}"
+case "\$1" in
+  login) [ -z "\${FAKE_LOGIN_FAIL:-}" ] || exit 1; exit 0 ;;
+  manifest)
+    # messenger-bot is unpublished at every sha; the dependents are published.
+    if echo "\$*" | grep -q "messenger-bot"; then
+      echo "manifest unknown" >&2
+      exit 1
+    fi
+    printf '{"schemaVersion":2,"config":{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+'
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+FAKE
+  chmod +x "$1/bin/docker"
+}
+
+echo "Test 17: no owner image, no migration since the applied revision -> barrier ready, no page"
+dir=$(make_env schema-current)
+for app in messenger-bot discord-bot zalo-bot; do echo "$SHA_A" > "$dir/state/$app.sha"; done
+make_no_owner_image_docker "$dir"
+code=$(run_script "$dir")
+[ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
+grep -q "schema is current, barrier ready" "$dir/run.out" || fail "barrier did not fall back to schema state"
+grep -q "Migration barrier ready" "$dir/run.out" || fail "dependents were not released"
+grep -q "discord-bot" "$dir/deploy.log" || fail "discord-bot did not deploy behind a current schema"
+[ ! -f "$dir/state/messenger-bot.failed" ] || fail "owner marked failed while the schema was current"
+[ ! -s "$dir/curl.body" ] || fail "paged for a missing image that changed no migration"
+pass "missing owner image with a current schema does not block"
+
+echo "Test 18: no owner image but a migration was added -> fail closed, page once"
+dir=$(make_env schema-stale)
+for app in messenger-bot discord-bot zalo-bot; do echo "$SHA_A" > "$dir/state/$app.sha"; done
+make_no_owner_image_docker "$dir"
+code=$(run_script "$dir" FAKE_MIGRATION_CHANGED=1)
+[ "$code" -eq 0 ] || fail "script should still exit 0, got $code: $(cat "$dir/run.out")"
+grep -q "schema is not current" "$dir/run.out" || fail "missing the stale-schema reason"
+grep -q "migration barrier not ready" "$dir/run.out" || fail "barrier let dependents through with an unapplied migration"
+[ ! -f "$dir/deploy.log" ] || fail "a deploy ran behind a blocked barrier"
+[ "$(cat "$dir/state/messenger-bot.failed")" = "$SHA_B" ] || fail "owner failure marker not written for $SHA_B"
+grep -q 'alertname":"vps_self_pull_app_failed' "$dir/curl.body" || fail "no alert for an unapplied migration"
+pass "unapplied migration still fails closed"
+
+echo "Test 19: docker login failure is reported as a credential fault, not a missing build"
+dir=$(make_env login-failure)
+for app in messenger-bot discord-bot zalo-bot; do echo "$SHA_A" > "$dir/state/$app.sha"; done
+make_no_owner_image_docker "$dir"
+code=$(run_script "$dir" FAKE_LOGIN_FAIL=1)
+[ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
+grep -q "docker login to ghcr.io failed" "$dir/run.out" || fail "login failure not logged"
+grep -q "check the GHCR pull token" "$dir/run.out" || fail "cause not attributed to the credential"
+pass "login failure distinguishable from an unpublished image"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"
