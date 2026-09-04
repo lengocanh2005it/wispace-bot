@@ -37,6 +37,8 @@ ALERTMANAGER_URL="${ALERTMANAGER_URL:-http://127.0.0.1:9093}"
 STALL_ALERT="vps_self_pull_stall"
 APP_FAIL_ALERT="vps_self_pull_app_failed"
 STALL_MARKER="$STATE_DIR/stall"
+# How far back to look for a commit that actually produced images.
+RESOLVE_DEPTH="${RESOLVE_DEPTH:-20}"
 
 : "${GHCR_USER:?GHCR_USER is required}"
 : "${GHCR_PULL_TOKEN:?GHCR_PULL_TOKEN is required}"
@@ -259,6 +261,31 @@ deploy_app() {
     return 1
   fi
 }
+
+# Pinning the deploy to HEAD wedges the rollout whenever a commit produces no
+# image. Docs, specs and CI-only commits legitimately build nothing, and the
+# owner's "not published" path fails closed — 7285bd67 (a .github/scripts-only
+# commit) blocked this barrier 1751 times, about 58 hours, on its own sha.
+# Resolve the newest commit at or behind HEAD that the owner actually has an
+# image for. If that commit is already deployed, deploy_app no-ops on the
+# state file instead of paging. When nothing in the window has an image the
+# target stays at HEAD and the fail-closed path still fires (#338).
+resolve_target_sha() {
+  local owner="${APP_ORDER[0]}" sha
+  for sha in $(git rev-list -n "$RESOLVE_DEPTH" HEAD 2>/dev/null); do
+    if docker manifest inspect "${REGISTRY}/${REPO_LC}/${owner}:${sha}" >/dev/null 2>&1; then
+      printf %s "$sha"
+      return 0
+    fi
+  done
+  return 1
+}
+
+RESOLVED_SHA=$(resolve_target_sha || true)
+if [ -n "$RESOLVED_SHA" ] && [ "$RESOLVED_SHA" != "$NEW_SHA" ]; then
+  echo "No image for HEAD ($NEW_SHA) — targeting newest published commit $RESOLVED_SHA"
+  NEW_SHA="$RESOLVED_SHA"
+fi
 
 # Messenger owns the shared schema migration. Keep it first and make its
 # successful deploy/state write the barrier for Discord and Zalo (#283).

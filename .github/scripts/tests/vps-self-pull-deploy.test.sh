@@ -57,6 +57,10 @@ case "\$1" in
   reset)
     [ -n "\${FAKE_RESET_STALE:-}" ] || cat "\${FAKE_REPO:?}/.git/origin-main" > "\${FAKE_REPO:?}/.git/HEAD"
     ;;
+  rev-list)
+    cat "\${FAKE_REPO:?}/.git/HEAD"
+    echo "$SHA_A"
+    ;;
   rev-parse)
     if [ "\${2:-}" = "origin/main" ]; then cat "\${FAKE_REPO:?}/.git/origin-main"; else cat "\${FAKE_REPO:?}/.git/HEAD"; fi
     ;;
@@ -423,6 +427,43 @@ grep -q "discord-bot.*not published yet" "$dir/run.out" || fail "missing skip lo
 [ ! -f "$dir/state/discord-bot.sha" ] || fail "discord-bot deployed despite missing image"
 [ ! -f "$dir/state/discord-bot.failed" ] || fail "discord-bot should not have failed marker (just skipped)"
 pass "non-migration owner skip without barrier block"
+
+echo "Test 16: HEAD produced no image -> target the newest published commit, no barrier block"
+dir=$(make_env resolve-target-sha)
+# Already deployed at the parent commit; HEAD is a docs/spec-only commit that
+# CI deliberately built nothing for. Pinning to HEAD used to block the barrier
+# on every tick (7285bd67 did it 1751 times) and page each new sha.
+for app in messenger-bot discord-bot zalo-bot; do echo "$SHA_A" > "$dir/state/$app.sha"; done
+cat > "$dir/bin/docker" <<FAKE
+#!/usr/bin/env bash
+echo "docker \$*" >> "\${DOCKER_LOG:?}"
+case "\$1" in
+  login) exit 0 ;;
+  manifest)
+    # No image for HEAD ($SHA_B); the parent ($SHA_A) is published.
+    if echo "\$*" | grep -q "$SHA_B"; then
+      echo "manifest unknown" >&2
+      exit 1
+    fi
+    printf '{"schemaVersion":2,"config":{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}
+'
+    exit 0
+    ;;
+  *) exit 0 ;;
+esac
+FAKE
+chmod +x "$dir/bin/docker"
+code=$(run_script "$dir")
+[ "$code" -eq 0 ] || fail "resolution run should exit 0, got $code: $(cat "$dir/run.out")"
+grep -q "targeting newest published commit $SHA_A" "$dir/run.out" || fail "did not fall back to the published commit"
+grep -q "Migration barrier ready" "$dir/run.out" || fail "barrier blocked despite a resolvable target"
+[ ! -f "$dir/deploy.log" ] || fail "nothing new to deploy, but a deploy ran"
+for app in messenger-bot discord-bot zalo-bot; do
+  [ ! -f "$dir/state/$app.failed" ] || fail "$app marked failed for a commit that built nothing"
+  [ "$(cat "$dir/state/$app.sha")" = "$SHA_A" ] || fail "$app state sha moved off $SHA_A"
+done
+[ ! -s "$dir/curl.body" ] || fail "alert paged for a commit that legitimately built nothing"
+pass "no-image HEAD resolves to the newest published commit"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"
