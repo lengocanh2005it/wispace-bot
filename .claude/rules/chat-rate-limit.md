@@ -31,17 +31,29 @@ linking, return `rate_limited` without throwing, refund chat reservations, and
 never retry or send a fallback for that outcome. See
 `docs/outbound-rate-limit.md` for the first-triage procedure.
 
+## Cross-platform learner consistency (#637)
+
+- WISPACE numeric `userId` is the canonical learner identity. A linked learner
+  shares the daily FREE_FORM quota across Messenger, Discord, and Zalo; burst
+  admission remains per channel, while the outbound backstop is learner-wide.
+- A genuinely unlinked channel uses its own anonymous bucket. An active mapping
+  with a missing `userId` is broken state and must fail closed before quota/LLM.
+- `chat_quota_events.aggregate_id` hashes `userId` when linked and the external
+  channel id when anonymous; raw identifiers never enter telemetry.
+- Current-day legacy rows are adopted only while the channel is actively linked;
+  relinking to another learner does not transfer the old learner's quota.
+
 ## Config (`.env`)
 
-| Group          | Main variables                                                                                        |
-| -------------- | ----------------------------------------------------------------------------------------------------- |
-| Enable/disable | `CHAT_RATE_LIMIT_ENABLED`, `CHAT_RATE_LIMIT_WHITELIST_PSIDS`                                          |
-| Limit          | `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_BURST_STORE` (R3), `CHAT_USAGE_TIMEZONE` |
-| H2 stuck       | `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS`                                                                  |
-| H5 abuse       | `CHAT_MERGED_TEXT_MAX_CHARS`, `CHAT_BURST_COUNT_REFUNDED`                                             |
-| H6 ops         | `CHAT_IDEMPOTENCY_RETENTION_DAYS`                                                                     |
-| C2 Q0          | `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`, `chat-quota:rebuild`                 |
-| UX             | `CHAT_QUOTA_REMAINING_HINT_THRESHOLD`                                                                 |
+| Group                    | Main variables                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enable/disable           | `CHAT_RATE_LIMIT_ENABLED`, `CHAT_RATE_LIMIT_WHITELIST_PSIDS`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Limit                    | `CHAT_FREE_FORM_DAILY_LIMIT`, `CHAT_BURST_PER_MINUTE`, `CHAT_BURST_STORE` (R3), `CHAT_USAGE_TIMEZONE`                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| H2 stuck                 | `CHAT_IDEMPOTENCY_STUCK_RESERVED_MS`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| H5 abuse                 | `CHAT_MERGED_TEXT_MAX_CHARS`, `CHAT_BURST_COUNT_REFUNDED`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| H6 ops                   | `CHAT_IDEMPOTENCY_RETENTION_DAYS`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| C2 Q0                    | `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`, `chat-quota:rebuild`                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| UX                       | `CHAT_QUOTA_REMAINING_HINT_THRESHOLD`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | Write-tool budget (#626) | `CHAT_WRITE_TOOL_BUDGET_ENABLED`, `CHAT_WRITE_TOOL_DAILY_CAP_RESCHEDULE`, `CHAT_WRITE_TOOL_DAILY_CAP_PRECREATE`, `CHAT_WRITE_TOOL_PER_MESSAGE_CAP_RESCHEDULE`, `CHAT_WRITE_TOOL_PER_MESSAGE_CAP_PRECREATE`, `CHAT_TOOL_DAILY_USAGE_RETENTION_DAYS` — per-user daily + per-message caps for `reschedule_study_session` / `precreate_next_exercise` (reuses `CHAT_RATE_LIMIT_WHITELIST_PSIDS` + `CHAT_USAGE_TIMEZONE`); engine in `packages/chat-metering` (`WriteToolBudgetCore`), enforced in the tool executor + reschedule confirm handler |
 
 Adding a new variable → update `.env.example`.

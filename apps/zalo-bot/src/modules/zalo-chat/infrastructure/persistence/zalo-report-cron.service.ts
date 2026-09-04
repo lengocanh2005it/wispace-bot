@@ -172,6 +172,13 @@ export class ZaloReportCronService {
     sentUserIds: Set<number>,
     forceSend: boolean,
   ): Promise<'sent' | 'skipped' | 'error'> {
+    if (!forceSend && (link.userId === undefined || link.userId === null)) {
+      this.logger.log(
+        `Skip Zalo user ${maskExternalId(link.externalUserId)}: scheduled report requires a linked WISPACE userId`,
+      );
+      return 'skipped';
+    }
+
     if (link.userId && this.canonicalPlatformService) {
       const { isCanonical, canonicalPlatform } =
         await this.canonicalPlatformService.isCanonicalForUser(
@@ -234,7 +241,7 @@ export class ZaloReportCronService {
       const pendingNotice = link.optoutNoticeSentAt == null;
       const result = await this.orchestration.claimAndSend(mapping, {
         reportDate,
-        skipAlreadySentToday: link.userId !== undefined,
+        skipAlreadySentToday: !forceSend,
         reportText: '',
         classifyError: (error) => classifyZaloError(error, link.externalUserId),
         generateReport: async () => {

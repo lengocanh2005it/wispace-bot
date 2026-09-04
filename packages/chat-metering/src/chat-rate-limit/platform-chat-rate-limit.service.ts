@@ -6,11 +6,17 @@ import { ChatIdempotencyEntity } from '../entities/chat-idempotency.entity';
 import { ChatRateLimitCore } from './chat-rate-limit-core.service';
 import { ChatRateLimitRepository } from './chat-rate-limit.repository';
 import { PostgresBurstCounter } from './postgres-burst-counter';
-import type { ChatQuotaCheckResult, ChatRateLimitSettings } from './types';
+import type {
+  ChatQuotaCheckResult,
+  ChatRateLimitSettings,
+  LearnerUsageQueryFactory,
+} from './types';
 
 export interface PlatformChatRateLimitOptions {
   /** Platform key for `(platform, external_user_id)` DB rows. */
   platform: string;
+  /** Database-owned query factory for cross-platform learner aggregation. */
+  learnerUsageQuery?: LearnerUsageQueryFactory;
   /**
    * Strict config mode (discord): throw when `CHAT_FREE_FORM_DAILY_LIMIT` /
    * `CHAT_BURST_PER_MINUTE` / `CHAT_USAGE_TIMEZONE` are missing or invalid.
@@ -96,6 +102,8 @@ export class PlatformChatRateLimitService {
       dailyUsageRepo,
       idempotencyRepo,
       options.platform,
+      {},
+      options.learnerUsageQuery,
     );
 
     this.core = new ChatRateLimitCore(
@@ -139,15 +147,23 @@ export class PlatformChatRateLimitService {
   async reserve(
     externalUserId: string,
     idempotencyKey: string,
+    options?: { userId?: number },
   ): Promise<ChatQuotaCheckResult> {
-    return this.core.reserveFreeFormSlot(externalUserId, { idempotencyKey });
+    return this.core.reserveFreeFormSlot(externalUserId, {
+      idempotencyKey,
+      userId: options?.userId,
+    });
   }
 
   async reserveFreeFormSlot(
     externalUserId: string,
-    params: { idempotencyKey: string },
+    params: { idempotencyKey: string; userId?: number },
   ): Promise<ChatQuotaCheckResult> {
-    return this.reserve(externalUserId, params.idempotencyKey);
+    return params.userId === undefined
+      ? this.reserve(externalUserId, params.idempotencyKey)
+      : this.reserve(externalUserId, params.idempotencyKey, {
+          userId: params.userId,
+        });
   }
 
   async refund(

@@ -43,10 +43,12 @@ export function createMessengerChatPipelineAdapters(
       idempotencyKey: string,
       context?: Record<string, unknown>,
     ): Promise<ReserveResult> {
+      const userId =
+        typeof context?.userId === 'number' ? context.userId : undefined;
       const result = await chatRateLimitService.reserveFreeFormSlot(
         externalUserId,
         {
-          userId: context?.userId as number | undefined,
+          userId,
           idempotencyKey,
         },
       );
@@ -126,7 +128,8 @@ export function createMessengerChatPipelineAdapters(
       text: string,
       context?: Record<string, unknown>,
     ): Promise<SendResult> {
-      const userId = context?.userId as number | undefined;
+      const userId =
+        typeof context?.userId === 'number' ? context.userId : undefined;
       const limits = readMessengerBubbleLimits(configService);
       try {
         const bubblesSent = await outboundService.sendTextBubblesViaPsid({

@@ -29,6 +29,27 @@ export interface ChatRateLimitSettings {
   burstCountsRefunded?: boolean;
 }
 
+/**
+ * Persistence-owned SQL scope for aggregating one learner's daily usage.
+ * The framework-agnostic quota core receives this query from the app/database
+ * boundary so it never knows platform mapping table names.
+ */
+export interface LearnerUsageQueryInput {
+  externalUserId: string;
+  platform: string;
+  usageDate: string;
+  userId: number;
+}
+
+export interface LearnerUsageQuery {
+  sql: string;
+  params: unknown[];
+}
+
+export type LearnerUsageQueryFactory = (
+  input: LearnerUsageQueryInput,
+) => LearnerUsageQuery;
+
 export interface ChatIdempotencyRecord {
   idempotencyKey: string;
   externalUserId: string;
@@ -104,6 +125,7 @@ export interface ChatRateLimitRepositoryPort {
   getDailyUsageCount(
     externalUserId: string,
     usageDate: string,
+    userId?: number,
   ): Promise<number>;
   reserveFreeFormSlotInTransaction(
     input: ReserveFreeFormSlotInput,

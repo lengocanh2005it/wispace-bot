@@ -14,6 +14,10 @@ import type {
 
 const PLATFORM = 'messenger' as const;
 
+function quotaAggregateId(psid: string, userId?: number): string {
+  return hashExternalId(userId === undefined ? psid : String(userId));
+}
+
 const chatQuotaRetentionDeletedTotal = new Counter({
   name: 'chat_quota_retention_deleted_total',
   help: 'Total rows deleted by chat-quota retention cleanup',
@@ -46,7 +50,7 @@ export class ChatQuotaEventRepository implements ChatQuotaEventRepositoryPort {
       `,
       [
         PLATFORM,
-        hashExternalId(input.psid),
+        quotaAggregateId(input.psid, input.userId),
         JSON.stringify(input.payload),
         input.usageDate,
         input.userId ?? null,
@@ -75,7 +79,7 @@ export class ChatQuotaEventRepository implements ChatQuotaEventRepositoryPort {
       `,
       [
         PLATFORM,
-        hashExternalId(input.psid),
+        quotaAggregateId(input.psid, input.userId),
         JSON.stringify(input.payload),
         input.usageDate,
         input.userId ?? null,
@@ -101,7 +105,7 @@ export class ChatQuotaEventRepository implements ChatQuotaEventRepositoryPort {
       `,
       [
         PLATFORM,
-        hashExternalId(input.psid),
+        quotaAggregateId(input.psid, input.userId),
         JSON.stringify(input.payload),
         input.usageDate,
         input.userId ?? null,

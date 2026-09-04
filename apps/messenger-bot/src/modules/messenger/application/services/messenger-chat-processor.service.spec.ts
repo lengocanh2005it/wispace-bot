@@ -628,6 +628,26 @@ describe('MessengerChatProcessorService', () => {
       expect(reserveFreeFormSlot).not.toHaveBeenCalled();
     });
 
+    it('fails closed when an active mapping has no learner userId', async () => {
+      const mappingRepository = {
+        findActiveMappingByPsid: jest.fn().mockResolvedValue({
+          userId: undefined,
+        }),
+      };
+      const { service, reply, reserveFreeFormSlot } = createService({
+        mappingRepository,
+      });
+
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'hello',
+        idempotencyKey: 'mid-missing-user',
+      });
+
+      expect(reply).not.toHaveBeenCalled();
+      expect(reserveFreeFormSlot).not.toHaveBeenCalled();
+    });
+
     it('keeps linkContext when userId matches fresh mapping', async () => {
       const mappingRepository = {
         findActiveMappingByPsid: jest.fn().mockResolvedValue({ userId: 99 }),

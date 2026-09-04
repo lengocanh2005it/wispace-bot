@@ -11,6 +11,7 @@ import type {
   ReserveFreeFormSlotInput,
   ReserveFreeFormSlotOutcome,
 } from '../../domain/entities/chat-idempotency.types';
+import { buildLearnerUsageQuery } from '@wispace/database';
 import { ChatQuotaEventRecorderService } from '../../application/services/chat-quota-event-recorder.service';
 import type { ChatQuotaRepositoryPort } from '../../domain/repositories/chat-quota.repository.port';
 
@@ -52,11 +53,16 @@ export class ChatRateLimitRepository implements ChatQuotaRepositoryPort {
             usedAfter: params.usedAfter,
           }),
       },
+      buildLearnerUsageQuery,
     );
   }
 
-  getDailyUsageCount(psid: string, usageDate: string): Promise<number> {
-    return this.core.getDailyUsageCount(psid, usageDate);
+  getDailyUsageCount(
+    psid: string,
+    usageDate: string,
+    userId?: number,
+  ): Promise<number> {
+    return this.core.getDailyUsageCount(psid, usageDate, userId);
   }
 
   reserveFreeFormSlotInTransaction(

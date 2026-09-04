@@ -37,6 +37,21 @@ describe('ChatRateLimitRepository', () => {
   const usageKey = (externalUserId: string, usageDate: string) =>
     `${externalUserId}:${usageDate}`;
 
+  const learnerUsageQuery = (input: {
+    externalUserId: string;
+    platform: string;
+    usageDate: string;
+    userId: number;
+  }) => ({
+    sql: 'SELECT COALESCE(SUM(free_form_count), 0)::int AS used',
+    params: [
+      input.usageDate,
+      input.userId,
+      input.platform,
+      input.externalUserId,
+    ],
+  });
+
   const createManager = (): EntityManager => {
     let transactionTail: Promise<void> = Promise.resolve();
     const advisoryLockTails = new Map<string, Promise<void>>();
@@ -67,6 +82,22 @@ describe('ChatRateLimitRepository', () => {
           return [];
         }
 
+        if (normalized.includes('COALESCE(SUM(')) {
+          const usageDate = params[0] as string;
+          const userId = params[1] as number;
+          const scopedExternalUserId = params[3] as string | undefined;
+          const used = [...dailyUsageStore.values()]
+            .filter(
+              (row) =>
+                row.usageDate === usageDate &&
+                (row.userId === userId ||
+                  (row.userId === null &&
+                    row.externalUserId === scopedExternalUserId)),
+            )
+            .reduce((sum, row) => sum + row.freeFormCount, 0);
+          return [{ used: String(used) }];
+        }
+
         if (
           normalized.startsWith(
             'INSERT INTO chat_daily_usage (platform, external_user_id, user_id, usage_date, free_form_count)',
@@ -81,6 +112,7 @@ describe('ChatRateLimitRepository', () => {
           const hasHardCap =
             typeof dailyLimit === 'number' &&
             normalized.includes('free_form_count <');
+          const isAnonymous = normalized.includes('user_id = NULL');
 
           if (!existing) {
             dailyUsageStore.set(key, {
@@ -92,12 +124,29 @@ describe('ChatRateLimitRepository', () => {
             return [{ free_form_count: 1 }];
           }
 
-          if (hasHardCap && existing.freeFormCount >= dailyLimit) {
+          if (
+            hasHardCap &&
+            existing.freeFormCount >= dailyLimit &&
+            (!isAnonymous || existing.userId === null)
+          ) {
             return [];
           }
 
-          existing.freeFormCount += 1;
-          existing.userId = userId ?? existing.userId;
+          if (normalized.includes('user_id = NULL')) {
+            existing.freeFormCount =
+              existing.userId === null ? existing.freeFormCount + 1 : 1;
+            existing.userId = null;
+          } else if (
+            normalized.includes('CASE') &&
+            existing.userId !== null &&
+            existing.userId !== userId
+          ) {
+            existing.freeFormCount = 1;
+            existing.userId = userId;
+          } else {
+            existing.freeFormCount += 1;
+            existing.userId = userId ?? existing.userId;
+          }
           return [{ free_form_count: existing.freeFormCount }];
         }
 
@@ -106,15 +155,19 @@ describe('ChatRateLimitRepository', () => {
             'UPDATE chat_daily_usage SET free_form_count = GREATEST(free_form_count - 1, 0)',
           )
         ) {
-          const [, externalUserId, usageDate] = params as [
+          const [, externalUserId, usageDate, ownerUserId] = params as [
             string,
             string,
             string,
+            number | undefined,
           ];
           const existing = dailyUsageStore.get(
             usageKey(externalUserId, usageDate),
           );
-          if (!existing) {
+          if (
+            !existing ||
+            (ownerUserId !== undefined && existing.userId !== ownerUserId)
+          ) {
             return updateResult([]);
           }
 
@@ -476,6 +529,7 @@ describe('ChatRateLimitRepository', () => {
       idempotencyRepo,
       PLATFORM,
       hooks,
+      learnerUsageQuery,
     );
   });
 
@@ -483,6 +537,31 @@ describe('ChatRateLimitRepository', () => {
     await expect(
       repository.getDailyUsageCount('ext-1', '2026-06-15'),
     ).resolves.toBe(0);
+  });
+
+  it("aggregates current-day usage across a learner's linked channels", async () => {
+    dailyUsageStore.set('ext-1:2026-06-15', {
+      externalUserId: 'ext-1',
+      userId: 143,
+      usageDate: '2026-06-15',
+      freeFormCount: 2,
+    });
+    dailyUsageStore.set('ext-2:2026-06-15', {
+      externalUserId: 'ext-2',
+      userId: 143,
+      usageDate: '2026-06-15',
+      freeFormCount: 3,
+    });
+
+    await expect(
+      repository.getDailyUsageCount('ext-1', '2026-06-15', 143),
+    ).resolves.toBe(5);
+
+    await expect(
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({ idempotencyKey: 'mid-aggregate' }),
+      ),
+    ).resolves.toEqual({ status: 'reserved', freeFormCount: 6 });
   });
 
   it('inserts idempotency once and rejects duplicate key', async () => {
@@ -511,7 +590,7 @@ describe('ChatRateLimitRepository', () => {
     overrides: Partial<{
       idempotencyKey: string;
       externalUserId: string;
-      userId: number;
+      userId?: number;
       usageDate: string;
       dailyLimit: number;
       burstLimit?: number;
@@ -549,6 +628,44 @@ describe('ChatRateLimitRepository', () => {
         limit: 15,
       }),
     );
+  });
+
+  it('starts a fresh anonymous bucket instead of inheriting a learner row', async () => {
+    await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({ idempotencyKey: 'mid-linked' }),
+    );
+
+    const outcome = await repository.reserveFreeFormSlotInTransaction(
+      reserveInput({ idempotencyKey: 'mid-anonymous', userId: undefined }),
+    );
+
+    expect(outcome).toEqual({ status: 'reserved', freeFormCount: 1 });
+    expect(dailyUsageStore.get('ext-1:2026-06-15')).toMatchObject({
+      userId: null,
+      freeFormCount: 1,
+    });
+  });
+
+  it('starts a fresh anonymous bucket even when the former learner row hit its cap', async () => {
+    dailyUsageStore.set('ext-1:2026-06-15', {
+      externalUserId: 'ext-1',
+      userId: 143,
+      usageDate: '2026-06-15',
+      freeFormCount: 15,
+    });
+
+    await expect(
+      repository.reserveFreeFormSlotInTransaction(
+        reserveInput({
+          idempotencyKey: 'mid-anonymous-cap',
+          userId: undefined,
+        }),
+      ),
+    ).resolves.toEqual({ status: 'reserved', freeFormCount: 1 });
+    expect(dailyUsageStore.get('ext-1:2026-06-15')).toMatchObject({
+      userId: null,
+      freeFormCount: 1,
+    });
   });
 
   it('returns idempotency conflict without incrementing usage', async () => {

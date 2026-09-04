@@ -143,8 +143,12 @@ try {
           WHERE platform = 'messenger'
             AND external_user_id = $1
             AND usage_date = $2::date
+            AND (
+              ($3::int IS NULL AND user_id IS NULL)
+              OR ($3::int IS NOT NULL AND user_id = $3::int)
+            )
         `,
-        [row.external_user_id, row.usage_date],
+        [row.external_user_id, row.usage_date, row.user_id],
       );
 
       await client.query(

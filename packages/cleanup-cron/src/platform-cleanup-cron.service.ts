@@ -35,7 +35,7 @@ export interface CleanupCronJobsConfig {
   idempotencyRepo: Repository<ChatIdempotencyEntity>;
   /** Optional oauth state cleanup repo. */
   oauthStateRepo?: Repository<{ createdAt: Date }>;
-  /** Report claims (scheduled_report_claims) retention cleanup repo. */
+  /** Report claims retention cleanup repo (legacy per-platform table). */
   reportClaimRepo?: Repository<{ createdAt: Date }>;
   rateLimitService: {
     isEnabled(): boolean;
@@ -245,7 +245,7 @@ export class PlatformCleanupCronService
   }
 
   /**
-   * scheduled_report_claims grows one row per user per day (all platforms) —
+   * Both report-claim tables grow one row per learner/platform per day —
    * delete rows older than the retention window. Runs in all bots; the
    * advisory lock makes it a single effective execution per run.
    */
@@ -264,10 +264,19 @@ export class PlatformCleanupCronService
         retentionDaysConfigKey: `${envPrefix}REPORT_CLAIMS_RETENTION_DAYS`,
         defaultRetentionDays: 90,
       },
-      (cutoff) =>
-        this.deleteBatched('scheduled_report_claims', `"created_at" < $1`, [
-          cutoff,
-        ]),
+      async (cutoff) => {
+        const legacyDeleted = await this.deleteBatched(
+          'scheduled_report_claims',
+          `"created_at" < $1`,
+          [cutoff],
+        );
+        const learnerDeleted = await this.deleteBatched(
+          'learner_scheduled_report_claims',
+          `"created_at" < $1`,
+          [cutoff],
+        );
+        return legacyDeleted + learnerDeleted;
+      },
       this.parseEnabled(`${envPrefix}REPORT_CLAIMS_CLEANUP_ENABLED`),
       () => retentionDays,
     );

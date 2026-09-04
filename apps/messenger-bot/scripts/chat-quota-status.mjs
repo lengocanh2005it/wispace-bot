@@ -229,19 +229,46 @@ try {
   } else {
     const dailyUsageResult = await pool.query(
       `
+      WITH active_links AS (
+        SELECT 'messenger' AS platform, external_user_id, user_id
+        FROM user_platform_mappings
+        WHERE status = 'ACTIVE' AND link_state = 'active'
+        UNION ALL
+        SELECT 'discord', external_user_id, user_id
+        FROM discord_account_links
+        WHERE link_state = 'active'
+        UNION ALL
+        SELECT 'zalo', external_user_id, user_id
+        FROM zalo_account_links
+        WHERE link_state = 'active'
+      )
       SELECT
-        id,
-        external_user_id AS psid,
-        user_id,
-        usage_date,
-        free_form_count,
-        created_at,
-        updated_at
-      FROM chat_daily_usage
-      WHERE ($1::varchar IS NULL OR external_user_id = $1)
-        AND ($2::int IS NULL OR user_id = $2)
-        AND usage_date = $3::date
-      ORDER BY external_user_id ASC
+        usage.id,
+        usage.external_user_id AS psid,
+        usage.user_id,
+        usage.usage_date,
+        usage.free_form_count,
+        usage.created_at,
+        usage.updated_at,
+        CASE WHEN $2::int IS NULL THEN usage.free_form_count
+             ELSE SUM(usage.free_form_count) OVER () END AS learner_used
+      FROM chat_daily_usage usage
+      WHERE ($1::varchar IS NULL OR usage.external_user_id = $1)
+        AND usage.usage_date = $3::date
+        AND (
+          $2::int IS NULL
+          OR usage.user_id = $2
+          OR (
+            usage.user_id IS NULL
+            AND EXISTS (
+              SELECT 1 FROM active_links link
+              WHERE link.platform = usage.platform
+                AND link.external_user_id = usage.external_user_id
+                AND link.user_id = $2
+            )
+          )
+        )
+      ORDER BY usage.external_user_id ASC
     `,
       [args.psid, args.userId, usageDate],
     );
@@ -351,9 +378,12 @@ try {
       psid: row.psid,
       userId: row.user_id,
       usageDate: row.usage_date,
-      used: row.free_form_count,
+      used: row.learner_used ?? row.free_form_count,
       limit: dailyLimit,
-      remaining: Math.max(dailyLimit - row.free_form_count, 0),
+      remaining: Math.max(
+        dailyLimit - (row.learner_used ?? row.free_form_count),
+        0,
+      ),
       whitelisted: readWhitelist().includes(row.psid),
     }));
 

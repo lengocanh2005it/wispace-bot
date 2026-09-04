@@ -1,5 +1,6 @@
 import { Repository } from 'typeorm';
 import { ScheduledReportClaimEntity } from '../entities/scheduled-report-claim.entity';
+import { LearnerScheduledReportClaimEntity } from '../entities/learner-scheduled-report-claim.entity';
 import type { Platform } from '@wispace/contracts';
 import { PlatformReportClaimRepository } from './platform-report-claim.repository';
 
@@ -136,6 +137,86 @@ describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
     expect(claimed).toEqual({ claimed: true, leaseToken: 'lease-1' });
     expect(claimStore.get(claimKey('zalo-1', '2026-08-14'))?.status).toBe(
       'claimed',
+    );
+  });
+
+  it('uses one atomic learner/date claim for linked multi-platform reports', async () => {
+    const learnerQuery = jest
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          lease_token: 'learner-lease-1',
+          delivery_record: null,
+          delivery_key: null,
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    const learnerRepo = {
+      manager: { query: learnerQuery },
+    } as unknown as Repository<LearnerScheduledReportClaimEntity>;
+    const claimRepo = {
+      manager: { query: jest.fn() },
+    } as unknown as Repository<ScheduledReportClaimEntity>;
+    const linkedRepository = new PlatformReportClaimRepository(
+      PLATFORM,
+      claimRepo,
+      learnerRepo,
+    );
+
+    const [first, second] = await Promise.all([
+      linkedRepository.tryClaimScheduledReport(
+        { externalUserId: 'zalo-1', userId: 143, reportDate: '2026-08-14' },
+        120_000,
+      ),
+      linkedRepository.tryClaimScheduledReport(
+        {
+          externalUserId: 'discord-1',
+          userId: 143,
+          reportDate: '2026-08-14',
+        },
+        120_000,
+      ),
+    ]);
+
+    expect(first.claimed).toBe(true);
+    expect(second.claimed).toBe(false);
+    expect(learnerQuery.mock.calls[0][0]).toContain(
+      'ON CONFLICT (user_id, report_date, report_type)',
+    );
+    expect(learnerQuery.mock.calls[0][1]).toEqual([
+      143,
+      '2026-08-14',
+      'zalo',
+      'zalo-1',
+      120_000,
+    ]);
+  });
+
+  it('checks a learner claim regardless of which platform owns delivery', async () => {
+    const learnerFindOne = jest.fn().mockResolvedValue({ userId: 143 });
+    const learnerRepo = {
+      findOne: learnerFindOne,
+      manager: { query: jest.fn() },
+    } as unknown as Repository<LearnerScheduledReportClaimEntity>;
+    const linkedRepository = new PlatformReportClaimRepository(
+      PLATFORM,
+      {} as Repository<ScheduledReportClaimEntity>,
+      learnerRepo,
+    );
+
+    await expect(
+      linkedRepository.hasSentScheduledReportToday('zalo-1', 143),
+    ).resolves.toBe(true);
+
+    expect(learnerFindOne).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        userId: 143,
+        reportType: 'scheduled',
+        status: 'sent',
+      }),
+    });
+    expect(learnerFindOne.mock.calls[0][0].where).not.toHaveProperty(
+      'platform',
     );
   });
 

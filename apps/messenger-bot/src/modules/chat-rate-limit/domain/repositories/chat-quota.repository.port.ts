@@ -13,7 +13,11 @@ export const CHAT_QUOTA_REPOSITORY = Symbol('CHAT_QUOTA_REPOSITORY');
  */
 export interface ChatQuotaRepositoryPort {
   // ─── Daily usage ──────────────────────────────────────────────────────
-  getDailyUsageCount(psid: string, usageDate: string): Promise<number>;
+  getDailyUsageCount(
+    psid: string,
+    usageDate: string,
+    userId?: number,
+  ): Promise<number>;
 
   // ─── Idempotency / reservation ────────────────────────────────────────
   reserveFreeFormSlotInTransaction(

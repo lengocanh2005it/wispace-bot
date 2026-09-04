@@ -4,6 +4,7 @@ export {
 } from './entities/webhook-dead-letter.entity';
 export { WebhookInboundEventEntity } from './entities/webhook-inbound-event.entity';
 export { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
+export { LearnerScheduledReportClaimEntity } from './entities/learner-scheduled-report-claim.entity';
 export { ReportSendJobEntity } from './entities/report-send-job.entity';
 export { RescheduleConfirmationEntity } from './entities/reschedule-confirmation.entity';
 export { CronLeaderLeaseEntity } from './entities/cron-leader-lease.entity';
@@ -73,6 +74,7 @@ export { TypeormRescheduleStore } from './services/typeorm-reschedule-store';
 export { RescheduleRecoveryCronService } from './services/reschedule-recovery-cron.service';
 export { CronLeaderLeaseService } from './services/cron-leader-lease.service';
 export { listUserIdsWithSentReport } from './services/list-user-ids-with-sent-report';
+export { buildLearnerUsageQuery } from './services/learner-usage-query';
 export {
   PrivacyDataService,
   type PrivacyEntityRegistry,

@@ -287,7 +287,7 @@ type ChatEventType =
 ```sql
 CREATE TABLE chat_quota_events (
   id              BIGSERIAL PRIMARY KEY,
-  aggregate_id    VARCHAR(64) NOT NULL,   -- sha256(psid) since #640
+  aggregate_id    VARCHAR(64) NOT NULL,   -- sha256(userId when linked; platform id when anonymous) (#637/#640)
   aggregate_type  VARCHAR(32) NOT NULL DEFAULT 'chat_quota',
   event_type      VARCHAR(64) NOT NULL,
   payload         JSONB NOT NULL,
@@ -576,7 +576,7 @@ Students typically message the bot from **computer** (Messenger web / desktop) a
 | **Queue** (`MessengerChatProcessorService`) | One `Map` entry **per PSID** — no device source distinction. `processing` flag ensures **at most one flush** (one reserve + LLM) runs for that PSID on the **same instance**.                        |
 | **Debounce**                                | Messages from PC + phone arriving **within** `CHAT_DEBOUNCE_MS` (before flush) → merge `texts[]` → **one** bot reply → **deducts 1 turn**.                                                           |
 | **Pending while processing**                | Message arrives **while** bot is calling LLM (`processing = true`) → enters `pendingWhileProcessing` → after flush completes, **flushes again** → **deducts 1 more turn** (two legitimate messages). |
-| **Quota DB**                                | Reserve by `idempotency_key` = `mid` of last message in flush batch; counter `free_form_count` by PSID + ICT day.                                                                                    |
+| **Quota DB**                                | Reserve by `idempotency_key` = `mid` of last message in flush batch; unlinked rows are per PSID + ICT day, while linked rows roll up by canonical WISPACE `userId`.                                  |
 | **Burst**                                   | Counts `chat_idempotency` records with `reserved_at` in last 60 seconds — **all devices** combined for same PSID.                                                                                    |
 
 **Illustrative scenario:**
@@ -613,10 +613,26 @@ sequenceDiagram
 - **Multiple instances:** Enable **`CHAT_QUEUE_SHARED=true`** (H7) — debounce/history via Redis (`REDIS_ENABLED=true` required); claim buffer `FOR UPDATE`. Daily cap: **H3** hard cap in transaction — doesn't exceed limit on concurrent reserve.
 - **Postgres burst mode:** The DB transaction is authoritative after the fast pre-check; refunded rows follow `CHAT_BURST_COUNT_REFUNDED` consistently.
 
-**Not done in V1:**
+Per-device / per-session quota remains intentionally unsupported — Meta does not
+expose stable device IDs for this use case.
 
-- Per-device / per-session quota — Meta doesn't expose stable device IDs for this use case.
-- Merging quota by `user_id` instead of PSID — PSID↔user mapping exists but counter hot path still keyed by PSID (correct per webhook).
+#### Multi-platform learner quota (#637)
+
+WISPACE `userId` is the canonical learner identity; PSID, Discord ID, and Zalo
+ID are channel identities. For a linked learner, the daily FREE_FORM LLM quota
+is the sum of all current-day `chat_daily_usage` rows owned by that `user_id`
+plus legacy anonymous rows whose active mapping now points to that learner.
+The reserve transaction takes a learner/date advisory lock, checks that
+aggregate, and writes the current channel row with `user_id`; concurrent
+Messenger/Discord/Zalo reservations therefore cannot overshoot the shared cap.
+An unlinked channel remains an independent `(platform, external_user_id,
+usage_date)` bucket. Burst protection stays per channel, while the outbound
+rate-limit backstop uses the learner bucket when `userId` is known.
+
+The migration adds only the learner/date read index; there is no historical
+backfill. Current-day legacy rows are hydrated by the aggregate query. On a
+relink to a different WISPACE user, the channel row starts a new learner-owned
+counter and no quota state is transferred. See [issue #637](https://github.com/lengocanh2005it/wispace-bot/issues/637).
 
 ### 5.4. Internal API Service (Suggestion)
 
@@ -685,11 +701,11 @@ class ChatRateLimitService {
 | Phase              | Work                                                | Status                                                                                  |
 | ------------------ | --------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | **V2 UX**          | Hint "X remaining" when `remaining ≤ threshold`     | ✓ Phase 6 (code)                                                                        |
-| **V3 Tier**        | Limit by `user_id` / WISPACE package                | Not yet                                                                                 |
+| **V3 Tier**        | Tiered limits by WISPACE package                    | Not yet (the shared learner identity/quota boundary is now #637)                        |
 | **V4 Event store** | `chat_quota_events` + replay / billing              | ✓ `chat_quota_events` table + `ChatQuotaEventRecorderService` dual-write + cleanup cron |
 | **H1–H7**          | Operational edge case hardening (§5.10, after §5.9) | H1 ✓; H2 ✓; H4 ✓; H5 ✓; **H3 ✓**; **H6 ✓**; **H7 ✓**                                    |
 
-**V4 details:** `chat_quota_events` entity (from `@wispace/chat-metering`) dual-writes events alongside the counter. `ChatQuotaEventCleanupCronService` runs monthly cleanup (`CHAT_QUOTA_EVENTS_CLEANUP_ENABLED`). Env: `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`. `aggregate_id` stores `sha256(psid)` since #640 — see `docs/data-minimization-audit.md`; `chat-quota:rebuild` joins daily-usage rows to events by hashing the PSID.
+**V4 details:** `chat_quota_events` entity (from `@wispace/chat-metering`) dual-writes events alongside the counter. `ChatQuotaEventCleanupCronService` runs monthly cleanup (`CHAT_QUOTA_EVENTS_CLEANUP_ENABLED`). Env: `CHAT_QUOTA_EVENTS_ENABLED`, `CHAT_QUOTA_EVENTS_RETENTION_DAYS`. `aggregate_id` stores `sha256(userId)` for linked learners and `sha256(platform external id)` for anonymous turns (#637/#640) — see `docs/data-minimization-audit.md`; `chat-quota:rebuild` hashes the matching identity.
 
 ### 5.9. Phased Implementation Plan (full rate limit)
 

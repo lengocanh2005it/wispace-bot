@@ -16,6 +16,7 @@ import {
   DiscordAccountLinkEntity,
   ZaloAccountLinkEntity,
   LearnerProfileEntity,
+  LearnerScheduledReportClaimEntity as CanonicalLearnerScheduledReportClaimEntity,
 } from '@wispace/database';
 import {
   ChatDailyUsageEntity,
@@ -23,6 +24,7 @@ import {
   LlmUsageEventEntity,
   MessageLogEntity,
   ScheduledReportClaimEntity,
+  LearnerScheduledReportClaimEntity,
   ReportSendJobEntity,
   StudyReminderJobEntity,
   UserEntity,
@@ -48,6 +50,7 @@ export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
       learnerProfile: LearnerProfileEntity,
       studyReminderJob: StudyReminderJobEntity,
       scheduledReportClaim: ScheduledReportClaimEntity,
+      learnerScheduledReportClaim: CanonicalLearnerScheduledReportClaimEntity,
       reportSendJob: ReportSendJobEntity,
       chatDailyUsage: ChatDailyUsageEntity,
       llmUsageEvent: LlmUsageEventEntity,
@@ -71,6 +74,7 @@ export function buildPrivacyEntityRegistry(): PrivacyEntityRegistry {
       UserPlatformMappingEntity,
       MessageLogEntity,
       ScheduledReportClaimEntity,
+      LearnerScheduledReportClaimEntity,
       ReportSendJobEntity,
       ChatDailyUsageEntity,
       ChatIdempotencyEntity,

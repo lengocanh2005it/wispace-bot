@@ -17,6 +17,15 @@ POST /messenger/study-calendar/sync { userId }
 
 Wispace **must** call sync after POST/DELETE `UserCalendar`. The 30-minute cron is only a fallback.
 
+## Cross-platform learner consistency (#637)
+
+WISPACE numeric `userId` is the canonical owner. Sync resolves one preferred
+platform (`preferred_platform`, then `zalo > discord > messenger`) and keeps one
+active reminder job for that learner; a platform switch cancels the old pending
+owner and converges on the new one. An active mapping without `userId` is not an
+anonymous reminder recipient and is skipped fail-closed. Unlinking a channel
+does not erase learner-level state; explicit privacy deletion by `userId` does.
+
 ## Canonical platform gate (#718)
 
 Every Messenger, Discord, and Zalo full-sync provider must inject the shared

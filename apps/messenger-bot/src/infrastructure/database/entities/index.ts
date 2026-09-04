@@ -8,6 +8,7 @@ export { ChatQuotaEventEntity } from './chat-quota-event.entity';
 export {
   WebhookDeadLetterEntity,
   ScheduledReportClaimEntity,
+  LearnerScheduledReportClaimEntity,
   ReportSendJobEntity,
 } from '@wispace/database';
 export { MessageLogEntity } from './message-log.entity';

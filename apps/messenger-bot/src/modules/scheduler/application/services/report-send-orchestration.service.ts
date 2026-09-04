@@ -81,10 +81,24 @@ export class ReportSendOrchestrationService {
       return { ...ZERO, skipped: 1 };
     }
 
+    if (skipAlreadySentToday && mapping.userId === undefined) {
+      this.logger.log(
+        `Skip PSID ${maskExternalId(mapping.psid)}: scheduled report requires a linked WISPACE userId`,
+      );
+      return { ...ZERO, skipped: 1 };
+    }
+
+    const claimParams = {
+      externalUserId: mapping.psid,
+      userId: mapping.userId,
+      reportDate,
+    };
+
     if (skipAlreadySentToday) {
       const alreadySentToday =
         await this.messengerRepository.hasSentScheduledReportToday(
           mapping.psid,
+          mapping.userId,
         );
       if (alreadySentToday) {
         this.logger.log(
@@ -139,7 +153,7 @@ export class ReportSendOrchestrationService {
     // without re-sending.
     if (claimedForSend && claimDeliveryRecord) {
       await this.messengerRepository.markScheduledReportClaimSent(
-        { externalUserId: mapping.psid, reportDate },
+        claimParams,
         claimLeaseToken,
       );
       return { ...ZERO, sent: 1 };
@@ -154,10 +168,7 @@ export class ReportSendOrchestrationService {
       if (result && result !== 'rate_limited') {
         if (claimedForSend) {
           await this.messengerRepository.markScheduledReportClaimSent(
-            {
-              externalUserId: mapping.psid,
-              reportDate,
-            },
+            claimParams,
             claimLeaseToken,
             'sent',
             deliveryKey,
@@ -175,7 +186,7 @@ export class ReportSendOrchestrationService {
       if (result === 'rate_limited') {
         if (claimedForSend) {
           await this.messengerRepository.markScheduledReportClaimSent(
-            { externalUserId: mapping.psid, reportDate },
+            claimParams,
             claimLeaseToken,
             undefined,
             `messenger-report:${mapping.psid}:${reportDate}`,
@@ -195,10 +206,7 @@ export class ReportSendOrchestrationService {
 
       if (claimedForSend) {
         await this.messengerRepository.releaseScheduledReportClaim(
-          {
-            externalUserId: mapping.psid,
-            reportDate,
-          },
+          claimParams,
           claimLeaseToken,
         );
       }
@@ -217,10 +225,7 @@ export class ReportSendOrchestrationService {
         if (claimedForSend) {
           if (isMessengerAmbiguousDeliveryError(error)) {
             await this.messengerRepository.markScheduledReportClaimSent(
-              {
-                externalUserId: mapping.psid,
-                reportDate,
-              },
+              claimParams,
               claimLeaseToken,
               'sent',
               deliveryKey,
@@ -228,10 +233,7 @@ export class ReportSendOrchestrationService {
             );
           } else {
             await this.messengerRepository.markScheduledReportClaimSent(
-              {
-                externalUserId: mapping.psid,
-                reportDate,
-              },
+              claimParams,
               claimLeaseToken,
               'sent',
               deliveryKey,
@@ -253,10 +255,7 @@ export class ReportSendOrchestrationService {
         const deliveryKey = `messenger-report:${mapping.psid}:${reportDate}`;
         if (claimedForSend) {
           await this.messengerRepository.markScheduledReportClaimSent(
-            {
-              externalUserId: mapping.psid,
-              reportDate,
-            },
+            claimParams,
             claimLeaseToken,
             'sent',
             deliveryKey,
@@ -276,10 +275,7 @@ export class ReportSendOrchestrationService {
       // block same-day re-sends and burn the day's slot.
       if (claimedForSend) {
         await this.messengerRepository.releaseScheduledReportClaim(
-          {
-            externalUserId: mapping.psid,
-            reportDate,
-          },
+          claimParams,
           claimLeaseToken,
         );
       }

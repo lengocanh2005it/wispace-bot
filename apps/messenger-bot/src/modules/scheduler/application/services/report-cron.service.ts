@@ -226,6 +226,13 @@ export class ReportCronService {
       return { ...ZERO, skipped: 1 };
     }
 
+    if (!forceSend && mapping.userId === undefined) {
+      this.logger.log(
+        `Skip Messenger PSID ${maskExternalId(mapping.psid)}: scheduled report requires a linked WISPACE userId`,
+      );
+      return { ...ZERO, skipped: 1 };
+    }
+
     if (mapping.userId && this.canonicalPlatformService) {
       const { isCanonical, canonicalPlatform } =
         await this.canonicalPlatformService.isCanonicalForUser(

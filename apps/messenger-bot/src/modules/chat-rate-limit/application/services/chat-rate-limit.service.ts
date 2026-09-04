@@ -42,8 +42,8 @@ export class ChatRateLimitService {
     const settings = this.configService.getSettings();
     this.core = new ChatRateLimitCore(
       {
-        getDailyUsageCount: (id, date) =>
-          this.repository.getDailyUsageCount(id, date),
+        getDailyUsageCount: (id, date, userId) =>
+          this.repository.getDailyUsageCount(id, date, userId),
         reserveFreeFormSlotInTransaction: (input) =>
           this.repository.reserveFreeFormSlotInTransaction({
             psid: input.externalUserId,
@@ -95,7 +95,11 @@ export class ChatRateLimitService {
       const { freeFormDailyLimit, timezone } = this.configService.getSettings();
       const usageDate = todayUsageDate(timezone);
       const used = this.configService.isEnabled()
-        ? await this.repository.getDailyUsageCount(psid, usageDate)
+        ? await this.repository.getDailyUsageCount(
+            psid,
+            usageDate,
+            params.userId,
+          )
         : 0;
       return {
         allowed: true,
@@ -165,14 +169,17 @@ export class ChatRateLimitService {
   }
 
   /** Get remaining daily quota for hint display (no side effects). */
-  async getRemainingQuota(psid: string): Promise<{
+  async getRemainingQuota(
+    psid: string,
+    userId?: number,
+  ): Promise<{
     remaining: number;
     limit: number;
   }> {
     const { freeFormDailyLimit, timezone } = this.configService.getSettings();
     const usageDate = todayUsageDate(timezone);
     const used = this.configService.isEnabled()
-      ? await this.repository.getDailyUsageCount(psid, usageDate)
+      ? await this.repository.getDailyUsageCount(psid, usageDate, userId)
       : 0;
     return {
       remaining: Math.max(freeFormDailyLimit - used, 0),

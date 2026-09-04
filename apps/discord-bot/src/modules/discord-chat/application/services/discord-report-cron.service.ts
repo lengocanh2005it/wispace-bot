@@ -202,6 +202,13 @@ export class DiscordReportCronService {
       appendOptOutFooter: boolean;
     },
   ): Promise<ClaimAndSendResult> {
+    if (!opts.forceSend && mapping.userId === undefined) {
+      this.logger.log(
+        `Skip Discord user ${maskExternalId(mapping.externalUserId)}: scheduled report requires a linked WISPACE userId`,
+      );
+      return { ...ZERO, skipped: 1 };
+    }
+
     // Window gate: only auto-send inside the days-before-exam window
     // (same as Messenger). forceSend bypasses the window but still
     // respects already-sent-today unless the caller clears it.

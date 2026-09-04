@@ -14,6 +14,7 @@ import {
   PlatformChatRateLimitService,
   type PlatformChatRateLimitOptions,
 } from './chat-rate-limit/platform-chat-rate-limit.service';
+import type { LearnerUsageQueryFactory } from './chat-rate-limit/types';
 import { LlmUsageConfigService } from './llm-usage/llm-usage-config.service';
 import { PlatformLlmUsageRecorderAdapter } from './llm-usage/platform-llm-usage-recorder.adapter';
 import { PlatformLlmSafetyEventAdapter } from './llm-safety/platform-llm-safety-event.adapter';
@@ -29,9 +30,16 @@ import { PlatformWriteToolBudgetService } from './write-tool-budget/platform-wri
 export class ChatMeteringModule {
   static forPlatform(
     platform: Platform,
-    options?: { requireEnv?: boolean; lenientEnabledCheck?: boolean },
+    options?: {
+      requireEnv?: boolean;
+      lenientEnabledCheck?: boolean;
+      learnerUsageQuery?: LearnerUsageQueryFactory;
+    },
   ): DynamicModule {
     const rateLimitOptions: PlatformChatRateLimitOptions = { platform };
+    if (options?.learnerUsageQuery) {
+      rateLimitOptions.learnerUsageQuery = options.learnerUsageQuery;
+    }
     if (options?.requireEnv !== undefined) {
       rateLimitOptions.requireEnv = options.requireEnv;
     }

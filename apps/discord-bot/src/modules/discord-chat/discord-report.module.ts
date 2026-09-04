@@ -26,6 +26,8 @@ import {
 import {
   ReportSendJobEntity,
   ScheduledReportClaimEntity,
+  LearnerScheduledReportClaimEntity,
+  buildLearnerUsageQuery,
   PlatformReportClaimRepository,
   CronLeaderLeaseEntity,
   CronLeaderLeaseService,
@@ -59,6 +61,7 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
     TypeOrmModule.forFeature([
       ReportSendJobEntity,
       ScheduledReportClaimEntity,
+      LearnerScheduledReportClaimEntity,
       DiscordAccountLinkEntity,
       CronLeaderLeaseEntity,
     ]),
@@ -70,6 +73,7 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
     ChatMeteringModule.forPlatform('discord', {
       requireEnv: true,
       lenientEnabledCheck: true,
+      learnerUsageQuery: buildLearnerUsageQuery,
     }),
   ],
   providers: [
@@ -102,9 +106,14 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
     },
     {
       provide: REPORT_CLAIM_REPOSITORY,
-      useFactory: (repo: Repository<ScheduledReportClaimEntity>) =>
-        new PlatformReportClaimRepository('discord', repo),
-      inject: [getRepositoryToken(ScheduledReportClaimEntity)],
+      useFactory: (
+        repo: Repository<ScheduledReportClaimEntity>,
+        learnerRepo: Repository<LearnerScheduledReportClaimEntity>,
+      ) => new PlatformReportClaimRepository('discord', repo, learnerRepo),
+      inject: [
+        getRepositoryToken(ScheduledReportClaimEntity),
+        getRepositoryToken(LearnerScheduledReportClaimEntity),
+      ],
     },
     {
       provide: ReportClaimStaleResetCronService,

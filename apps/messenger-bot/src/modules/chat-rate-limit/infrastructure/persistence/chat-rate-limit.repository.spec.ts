@@ -41,6 +41,22 @@ describe('ChatRateLimitRepository (messenger-bot wrapper)', () => {
         const normalized = sql.replace(/\s+/g, ' ').trim();
 
         if (
+          normalized === 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))'
+        ) {
+          return [];
+        }
+
+        if (normalized.startsWith('WITH active_links(platform,')) {
+          const [usageDate, userId] = params as [string, number];
+          const used = [...dailyUsageStore.values()]
+            .filter(
+              (row) => row.usageDate === usageDate && row.userId === userId,
+            )
+            .reduce((total, row) => total + row.freeFormCount, 0);
+          return [{ used }];
+        }
+
+        if (
           normalized.startsWith(
             'INSERT INTO chat_daily_usage (platform, external_user_id, user_id, usage_date, free_form_count)',
           )

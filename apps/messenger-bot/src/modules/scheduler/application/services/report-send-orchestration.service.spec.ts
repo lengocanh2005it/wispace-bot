@@ -81,6 +81,28 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     };
   };
 
+  it('skips scheduled reports without a canonical learner id', async () => {
+    const { service, messengerRepository, messengerReportDeliveryService } =
+      buildService();
+
+    const result = await service.claimAndSend(
+      { ...mapping, userId: undefined },
+      {
+        reportDate: '2026-07-11',
+        skipAlreadySentToday: true,
+      },
+    );
+
+    expect(result.skipped).toBe(1);
+    expect(
+      messengerRepository.hasSentScheduledReportToday,
+    ).not.toHaveBeenCalled();
+    expect(messengerRepository.tryClaimScheduledReport).not.toHaveBeenCalled();
+    expect(
+      messengerReportDeliveryService.sendReportForMapping,
+    ).not.toHaveBeenCalled();
+  });
+
   it('happy path: claim → send → mark sent', async () => {
     const { service, messengerRepository, messengerReportDeliveryService } =
       buildService({ sendResult: 'report text' });
@@ -109,6 +131,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     ).toHaveBeenCalledWith(
       {
         externalUserId: 'psid-1',
+        userId: 10,
         reportDate: '2026-07-11',
       },
       'lease-1',
@@ -169,6 +192,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     ).toHaveBeenCalledWith(
       {
         externalUserId: 'psid-1',
+        userId: 10,
         reportDate: '2026-07-11',
       },
       'lease-1',
@@ -198,7 +222,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     expect(
       messengerRepository.markScheduledReportClaimSent,
     ).toHaveBeenCalledWith(
-      { externalUserId: 'psid-1', reportDate: '2026-07-11' },
+      { externalUserId: 'psid-1', userId: 10, reportDate: '2026-07-11' },
       'lease-1',
       undefined,
       'messenger-report:psid-1:2026-07-11',
@@ -228,6 +252,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     ).toHaveBeenCalledWith(
       {
         externalUserId: 'psid-1',
+        userId: 10,
         reportDate: '2026-07-11',
       },
       'lease-1',
@@ -258,6 +283,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     ).toHaveBeenCalledWith(
       {
         externalUserId: 'psid-1',
+        userId: 10,
         reportDate: '2026-07-11',
       },
       'lease-1',
@@ -282,6 +308,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     ).toHaveBeenCalledWith(
       {
         externalUserId: 'psid-1',
+        userId: 10,
         reportDate: '2026-07-11',
       },
       'lease-1',
@@ -308,6 +335,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     ).toHaveBeenCalledWith(
       {
         externalUserId: 'psid-1',
+        userId: 10,
         reportDate: '2026-07-11',
       },
       'lease-1',
@@ -338,6 +366,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     ).toHaveBeenCalledWith(
       {
         externalUserId: 'psid-1',
+        userId: 10,
         reportDate: '2026-07-11',
       },
       'lease-1',
@@ -376,6 +405,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     ).toHaveBeenCalledWith(
       {
         externalUserId: 'psid-1',
+        userId: 10,
         reportDate: '2026-07-11',
       },
       'lease-1',
@@ -412,6 +442,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     ).toHaveBeenCalledWith(
       {
         externalUserId: 'psid-1',
+        userId: 10,
         reportDate: '2026-07-11',
       },
       'lease-1',
@@ -447,6 +478,7 @@ describe('ReportSendOrchestrationService.claimAndSend', () => {
     ).toHaveBeenCalledWith(
       {
         externalUserId: 'psid-1',
+        userId: 10,
         reportDate: '2026-07-11',
       },
       'lease-1',

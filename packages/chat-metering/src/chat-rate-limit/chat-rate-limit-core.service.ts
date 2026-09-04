@@ -41,12 +41,16 @@ export class ChatRateLimitCore {
     private readonly stuckReservedMs = DEFAULT_STUCK_RESERVED_MS,
   ) {}
 
-  async checkQuota(externalUserId: string): Promise<ChatQuotaCheckResult> {
+  async checkQuota(
+    externalUserId: string,
+    userId?: number,
+  ): Promise<ChatQuotaCheckResult> {
     const { freeFormDailyLimit, timezone } = this.settings;
     const usageDate = todayUsageDate(timezone);
     const used = await this.repository.getDailyUsageCount(
       externalUserId,
       usageDate,
+      userId,
     );
 
     return this.buildQuotaResult(used, freeFormDailyLimit, usageDate);

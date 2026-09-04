@@ -271,6 +271,20 @@ export class MessengerChatProcessorService {
         );
         return;
       }
+      if (freshMapping.userId === undefined) {
+        await this.clearClarificationState(psid);
+        this.logger.warn(
+          `Dropping queued messages for psid=${maskExternalId(
+            psid,
+          )}: active mapping has no learner userId`,
+        );
+        await this.getChatQueueStore().completeChatBuffer({
+          psid,
+          debounceMs: this.getDebounceMs(),
+          leaseToken: snapshot.leaseToken,
+        });
+        return;
+      }
       if (
         snapshot.userId !== undefined &&
         snapshot.userId !== freshMapping.userId
@@ -402,25 +416,41 @@ export class MessengerChatProcessorService {
     let { userId, linkContext } = input;
     let reservedUsageDate: string | undefined;
 
-    // #383: revalidate linkContext against the fresh mapping — if the mapping
-    // was updated (relinked/unlinked) during the debounce window, a stale
-    // context could disagree with the active identity.
-    if (linkContext && this.mappingRepository) {
+    // #383/#637: revalidate a linked context (or an identity-less batch)
+    // against the fresh mapping. An active mapping without a WISPACE userId
+    // is a broken link, not an anonymous learner, and must fail closed.
+    if (
+      this.mappingRepository &&
+      (linkContext !== undefined || userId === undefined)
+    ) {
       const freshMapping =
         await this.mappingRepository.findActiveMappingByPsid(psid);
       if (!freshMapping) {
+        if (linkContext) {
+          await this.clearClarificationState(psid);
+          this.logger.warn(
+            `Dropping batch for psid=${maskExternalId(psid)}: no active mapping after revalidation`,
+          );
+          return true;
+        }
+        // No mapping is the genuine anonymous case; continue with the
+        // per-link quota bucket.
+      } else if (freshMapping.userId === undefined) {
         await this.clearClarificationState(psid);
         this.logger.warn(
-          `Dropping batch for psid=${maskExternalId(psid)}: no active mapping after revalidation`,
+          `Dropping batch for psid=${maskExternalId(
+            psid,
+          )}: active mapping has no learner userId`,
         );
         return true;
-      }
-      if (freshMapping.userId !== linkContext.userId) {
-        await this.clearClarificationState(psid);
-        this.logger.warn(
-          `Discarding stale linkContext for psid=${maskExternalId(psid)}: context userId=${maskExternalId(String(linkContext.userId))} vs mapping userId=${maskExternalId(String(freshMapping.userId))}`,
-        );
-        linkContext = undefined;
+      } else {
+        if (linkContext && freshMapping.userId !== linkContext.userId) {
+          await this.clearClarificationState(psid);
+          this.logger.warn(
+            `Discarding stale linkContext for psid=${maskExternalId(psid)}: context userId=${maskExternalId(String(linkContext.userId))} vs mapping userId=${maskExternalId(String(freshMapping.userId))}`,
+          );
+          linkContext = undefined;
+        }
         userId = freshMapping.userId;
       }
     }
@@ -689,6 +719,7 @@ export class MessengerChatProcessorService {
       const { remainingHintThreshold } = this.chatRateLimitConfig.getSettings();
       const quota = await this.chatRateLimitService.getRemainingQuota(
         params.psid,
+        params.userId,
       );
       if (
         shouldShowQuotaRemainingHint(quota.remaining, remainingHintThreshold)

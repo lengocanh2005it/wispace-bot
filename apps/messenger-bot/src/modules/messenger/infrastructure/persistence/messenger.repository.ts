@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Not, Repository } from 'typeorm';
 import { truncatePersistedError } from '@wispace/bot-common/masking';
@@ -9,9 +9,11 @@ import {
 import {
   MessageLogEntity,
   ScheduledReportClaimEntity,
+  LearnerScheduledReportClaimEntity,
   UserPlatformMappingEntity,
 } from '@messenger/infrastructure/database/entities';
 import { listUserIdsWithSentReport } from '@wispace/database';
+import { todayReportDate } from '@wispace/scheduler-core';
 import { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
@@ -44,6 +46,9 @@ export class MessengerRepository
     private readonly logRepo: Repository<MessageLogEntity>,
     @InjectRepository(ScheduledReportClaimEntity)
     private readonly reportClaimRepo: Repository<ScheduledReportClaimEntity>,
+    @Optional()
+    @InjectRepository(LearnerScheduledReportClaimEntity)
+    private readonly learnerReportClaimRepo?: Repository<LearnerScheduledReportClaimEntity>,
   ) {}
 
   async findActiveMappingByPsid(
@@ -441,7 +446,24 @@ export class MessengerRepository
     );
   }
 
-  async hasSentScheduledReportToday(externalUserId: string): Promise<boolean> {
+  async hasSentScheduledReportToday(
+    externalUserId: string,
+    userId?: number,
+  ): Promise<boolean> {
+    if (this.learnerReportClaimRepo) {
+      const learnerClaim = await this.learnerReportClaimRepo.findOne({
+        where: {
+          ...(userId !== undefined
+            ? { userId }
+            : { platform: PLATFORM, externalUserId }),
+          reportDate: todayReportDate(),
+          reportType: 'scheduled',
+          status: 'sent',
+        },
+      });
+      if (learnerClaim) return true;
+    }
+
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
@@ -462,6 +484,12 @@ export class MessengerRepository
           legacyPartType: 'SCHEDULED_LEARNING_REPORT_PSID_FALLBACK%',
         },
       )
+      .andWhere(
+        userId !== undefined
+          ? '(log.user_id = :userId OR log.user_id IS NULL)'
+          : 'TRUE',
+        userId !== undefined ? { userId } : {},
+      )
       .andWhere('log.created_at >= :startOfDay', { startOfDay })
       .getCount();
 
@@ -475,11 +503,27 @@ export class MessengerRepository
     const claim = await this.reportClaimRepo.findOne({
       where: { userId, reportDate, status: 'sent' },
     });
-    return !!claim;
+    if (claim) return true;
+    if (!this.learnerReportClaimRepo) return false;
+    const learnerClaim = await this.learnerReportClaimRepo.findOne({
+      where: { userId, reportDate, reportType: 'scheduled', status: 'sent' },
+    });
+    return !!learnerClaim;
   }
 
   async listUserIdsWithSentReportToday(reportDate: string): Promise<number[]> {
-    return listUserIdsWithSentReport(this.reportClaimRepo, reportDate);
+    const ids = await listUserIdsWithSentReport(
+      this.reportClaimRepo,
+      reportDate,
+    );
+    if (!this.learnerReportClaimRepo) return ids;
+    const learnerClaims = await this.learnerReportClaimRepo.find({
+      where: { reportDate, reportType: 'scheduled', status: 'sent' },
+      select: { userId: true },
+    });
+    return [
+      ...new Set([...ids, ...learnerClaims.map((claim) => claim.userId)]),
+    ];
   }
 
   async countMessageLogsByTypeSince(
@@ -537,6 +581,56 @@ export class MessengerRepository
     deliveryRecord?: string;
     deliveryKey?: string;
   }> {
+    if (params.userId !== undefined && this.learnerReportClaimRepo) {
+      const rows: Array<{
+        lease_token: string;
+        delivery_record: string | null;
+        delivery_key: string | null;
+      }> = await this.learnerReportClaimRepo.manager.query(
+        `
+          INSERT INTO learner_scheduled_report_claims
+            (user_id, report_date, report_type, platform, external_user_id,
+             status, lease_token, lease_expires_at)
+          SELECT $1, $2::date, 'scheduled', $3, $4, 'claimed', gen_random_uuid(),
+                 now() + ($5::int * interval '1 millisecond')
+          WHERE NOT EXISTS (
+            SELECT 1 FROM scheduled_report_claims legacy
+            WHERE legacy.platform = $3
+              AND legacy.external_user_id = $4
+              AND legacy.report_date = $2::date
+              AND (legacy.user_id = $1 OR legacy.user_id IS NULL)
+              AND legacy.status IN ('claimed', 'sent')
+          )
+          ON CONFLICT (user_id, report_date, report_type)
+          DO UPDATE SET
+            platform = EXCLUDED.platform,
+            external_user_id = EXCLUDED.external_user_id,
+            status = 'claimed',
+            lease_token = EXCLUDED.lease_token,
+            lease_expires_at = EXCLUDED.lease_expires_at,
+            updated_at = now()
+          WHERE learner_scheduled_report_claims.status = 'released'
+          RETURNING lease_token, delivery_record, delivery_key
+        `,
+        [
+          params.userId,
+          params.reportDate,
+          PLATFORM,
+          params.externalUserId,
+          leaseMs,
+        ],
+      );
+
+      return rows.length > 0
+        ? {
+            claimed: true,
+            leaseToken: rows[0].lease_token,
+            deliveryRecord: rows[0].delivery_record ?? undefined,
+            deliveryKey: rows[0].delivery_key ?? undefined,
+          }
+        : { claimed: false };
+    }
+
     // ON CONFLICT DO UPDATE ... WHERE status = 'released': reclaims a claim
     // released after a transient failure, while an active `claimed` row is
     // never stolen by a concurrent worker and a `sent` claim stays
@@ -602,12 +696,35 @@ export class MessengerRepository
     params: {
       externalUserId: string;
       reportDate: string;
+      userId?: number;
     },
     leaseToken: string,
     deliveryRecord?: string,
     deliveryKey?: string,
     deliveryStatus?: OutboundDeliveryOutcome,
   ): Promise<boolean> {
+    if (params.userId !== undefined && this.learnerReportClaimRepo) {
+      const result = await this.learnerReportClaimRepo
+        .createQueryBuilder()
+        .update()
+        .set({
+          status: 'sent',
+          ...(deliveryRecord !== undefined ? { deliveryRecord } : {}),
+          ...(deliveryKey !== undefined ? { deliveryKey } : {}),
+          ...(deliveryStatus !== undefined ? { deliveryStatus } : {}),
+        })
+        .where('user_id = :userId', { userId: params.userId })
+        .andWhere('report_date = :reportDate', {
+          reportDate: params.reportDate,
+        })
+        .andWhere('report_type = :reportType', { reportType: 'scheduled' })
+        .andWhere('status = :status', { status: 'claimed' })
+        .andWhere('lease_token = :leaseToken', { leaseToken })
+        .execute();
+
+      if ((result.affected ?? 0) > 0) return true;
+    }
+
     const result = await this.reportClaimRepo
       .createQueryBuilder()
       .update()
@@ -621,6 +738,10 @@ export class MessengerRepository
       .andWhere('external_user_id = :externalUserId', {
         externalUserId: params.externalUserId,
       })
+      .andWhere(
+        params.userId !== undefined ? 'user_id = :userId' : 'TRUE',
+        params.userId !== undefined ? { userId: params.userId } : {},
+      )
       .andWhere('report_date = :reportDate', { reportDate: params.reportDate })
       .andWhere('status = :status', { status: 'claimed' })
       .andWhere('lease_token = :leaseToken', { leaseToken })
@@ -633,9 +754,26 @@ export class MessengerRepository
     params: {
       externalUserId: string;
       reportDate: string;
+      userId?: number;
     },
     leaseToken: string,
   ): Promise<boolean> {
+    if (params.userId !== undefined && this.learnerReportClaimRepo) {
+      const result = await this.learnerReportClaimRepo
+        .createQueryBuilder()
+        .update()
+        .set({ status: 'released' })
+        .where('user_id = :userId', { userId: params.userId })
+        .andWhere('report_date = :reportDate', {
+          reportDate: params.reportDate,
+        })
+        .andWhere('report_type = :reportType', { reportType: 'scheduled' })
+        .andWhere('status = :status', { status: 'claimed' })
+        .andWhere('lease_token = :leaseToken', { leaseToken })
+        .execute();
+      if ((result.affected ?? 0) > 0) return true;
+    }
+
     const result = await this.reportClaimRepo
       .createQueryBuilder()
       .update()
@@ -644,6 +782,10 @@ export class MessengerRepository
       .andWhere('external_user_id = :externalUserId', {
         externalUserId: params.externalUserId,
       })
+      .andWhere(
+        params.userId !== undefined ? 'user_id = :userId' : 'TRUE',
+        params.userId !== undefined ? { userId: params.userId } : {},
+      )
       .andWhere('report_date = :reportDate', { reportDate: params.reportDate })
       .andWhere('status = :status', { status: 'claimed' })
       .andWhere('lease_token = :leaseToken', { leaseToken })
@@ -668,7 +810,21 @@ export class MessengerRepository
       )
       .execute();
 
-    return result.affected ?? 0;
+    let released = result.affected ?? 0;
+    if (this.learnerReportClaimRepo) {
+      const learnerResult = await this.learnerReportClaimRepo
+        .createQueryBuilder()
+        .update()
+        .set({ status: 'released', updatedAt: now })
+        .where('status = :status', { status: 'claimed' })
+        .andWhere(
+          '(lease_expires_at < :now OR (lease_expires_at IS NULL AND updated_at < :olderThan))',
+          { now, olderThan },
+        )
+        .execute();
+      released += learnerResult.affected ?? 0;
+    }
+    return released;
   }
 
   async logMessage(params: {

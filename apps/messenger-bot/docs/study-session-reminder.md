@@ -72,6 +72,18 @@ For each synced user:
 
 **Cross-platform ownership (#718):** Messenger, Discord, and Zalo full-sync providers resolve each mapping through the required `CanonicalPlatformService`. An active mapping is preferred; otherwise the fallback order is `zalo > discord > messenger`. A noncanonical provider never upserts new jobs and cancels only its `pending` / `failed` jobs; `processing` jobs are left untouched. An undefined result may cancel those actionable jobs without an upsert, while a resolver error leaves rows unchanged and marks that sync as failed. The next full sync converges jobs after ownership changes.
 
+**Learner consistency (#637):** `userId` is the canonical owner and each
+`session_key` has at most one actionable job across platforms. When the
+canonical platform changes, the old platform's `pending` / `failed` owner is
+cancelled and the new canonical provider creates or retains one job. A send
+failure retries that same canonical job; the dispatcher does not immediately
+fan out to another linked channel. A mapping without a WISPACE `userId` is
+not eligible for automatic scheduled work. Unlinking one channel cancels only
+that channel's local jobs; learner-level report claims are not channel-local,
+and explicit user erasure is cross-platform. See
+[issue #637](https://github.com/lengocanh2005it/wispace-bot/issues/637) and
+[project-overview.md](../../../docs/project-overview.md#111-cross-platform-learner-consistency-637).
+
 **First-time bootstrap** (empty jobs table but DB has old schedules):
 
 ```bash

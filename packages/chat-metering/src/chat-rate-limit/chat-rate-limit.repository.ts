@@ -8,6 +8,7 @@ import type {
   ReserveFreeFormSlotInput,
   ReserveFreeFormSlotOutcome,
   ReserveIdempotencyInput,
+  LearnerUsageQueryFactory,
 } from './types';
 
 class DailyLimitExceededError extends Error {
@@ -72,12 +73,23 @@ export class ChatRateLimitRepository {
     private readonly idempotencyRepo: Repository<ChatIdempotencyEntity>,
     private readonly platform: string,
     private readonly hooks: ChatRateLimitRepositoryHooks = {},
+    private readonly learnerUsageQuery?: LearnerUsageQueryFactory,
   ) {}
 
   async getDailyUsageCount(
     externalUserId: string,
     usageDate: string,
+    userId?: number,
   ): Promise<number> {
+    if (userId !== undefined) {
+      return this.getLearnerUsageCount(this.dailyUsageRepo.manager, {
+        usageDate,
+        userId,
+        platform: this.platform,
+        externalUserId,
+      });
+    }
+
     const row = await this.dailyUsageRepo.findOne({
       where: { platform: this.platform, externalUserId, usageDate },
       select: { freeFormCount: true },
@@ -139,6 +151,13 @@ export class ChatRateLimitRepository {
   ): Promise<ReserveFreeFormSlotOutcome> {
     try {
       return await this.dailyUsageRepo.manager.transaction(async (manager) => {
+        if (input.userId !== undefined) {
+          await manager.query(
+            'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+            [`chat-quota:user:${input.userId}:${input.usageDate}`],
+          );
+        }
+
         if (input.burstLimit !== undefined && input.burstSince) {
           await manager.query(
             'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
@@ -171,32 +190,87 @@ export class ChatRateLimitRepository {
           }
         }
 
-        const rows: Array<{ free_form_count: number }> = await manager.query(
-          `
-            INSERT INTO chat_daily_usage (platform, external_user_id, user_id, usage_date, free_form_count)
-            VALUES ($1, $2, $3, $4::date, 1)
-            ON CONFLICT (platform, external_user_id, usage_date)
-            DO UPDATE SET
-              free_form_count = chat_daily_usage.free_form_count + 1,
-              user_id = COALESCE(EXCLUDED.user_id, chat_daily_usage.user_id),
-              updated_at = now()
-            WHERE chat_daily_usage.free_form_count < $5
-            RETURNING free_form_count
-          `,
-          [
-            this.platform,
-            input.externalUserId,
-            input.userId ?? null,
-            input.usageDate,
-            input.dailyLimit,
-          ],
-        );
+        let rows: Array<{ free_form_count: number }>;
+        if (input.userId !== undefined) {
+          // The user lock makes the aggregate check and the channel-row
+          // increment one learner-scoped critical section. Legacy anonymous
+          // usage on this channel is included once, then adopted by the link.
+          const usedBefore = await this.getLearnerUsageCount(manager, {
+            usageDate: input.usageDate,
+            userId: input.userId,
+            platform: this.platform,
+            externalUserId: input.externalUserId,
+          });
+          if (usedBefore >= input.dailyLimit) {
+            throw new DailyLimitExceededError();
+          }
+
+          rows = await manager.query(
+            `
+              INSERT INTO chat_daily_usage (platform, external_user_id, user_id, usage_date, free_form_count)
+              VALUES ($1, $2, $3, $4::date, 1)
+              ON CONFLICT (platform, external_user_id, usage_date)
+              DO UPDATE SET
+                free_form_count = CASE
+                  WHEN chat_daily_usage.user_id IS NOT NULL
+                    AND chat_daily_usage.user_id IS DISTINCT FROM EXCLUDED.user_id
+                  THEN 1
+                  ELSE chat_daily_usage.free_form_count + 1
+                END,
+                user_id = EXCLUDED.user_id,
+                updated_at = now()
+              RETURNING free_form_count
+            `,
+            [
+              this.platform,
+              input.externalUserId,
+              input.userId,
+              input.usageDate,
+            ],
+          );
+        } else {
+          rows = await manager.query(
+            `
+              INSERT INTO chat_daily_usage (platform, external_user_id, user_id, usage_date, free_form_count)
+              VALUES ($1, $2, $3, $4::date, 1)
+              ON CONFLICT (platform, external_user_id, usage_date)
+              DO UPDATE SET
+                -- An unlinked channel starts a fresh anonymous bucket instead
+                -- of inheriting a prior learner-owned counter after unlink.
+                free_form_count = CASE
+                  WHEN chat_daily_usage.user_id IS NULL
+                  THEN chat_daily_usage.free_form_count + 1
+                  ELSE 1
+                END,
+                user_id = NULL,
+                updated_at = now()
+              WHERE chat_daily_usage.user_id IS NOT NULL
+                OR chat_daily_usage.free_form_count < $5
+              RETURNING free_form_count
+            `,
+            [
+              this.platform,
+              input.externalUserId,
+              null,
+              input.usageDate,
+              input.dailyLimit,
+            ],
+          );
+        }
 
         if (!rows[0]) {
           throw new DailyLimitExceededError();
         }
 
-        const freeFormCount = rows[0]?.free_form_count ?? 0;
+        let freeFormCount = rows[0]?.free_form_count ?? 0;
+        if (input.userId !== undefined) {
+          freeFormCount = await this.getLearnerUsageCount(manager, {
+            usageDate: input.usageDate,
+            userId: input.userId,
+            platform: this.platform,
+            externalUserId: input.externalUserId,
+          });
+        }
         await this.hooks.onReserved?.(manager, {
           externalUserId: input.externalUserId,
           userId: input.userId,
@@ -234,13 +308,18 @@ export class ChatRateLimitRepository {
     const releaseReason = params.releaseReason ?? 'send_failed';
 
     return this.dailyUsageRepo.manager.transaction(async (manager) => {
-      const refundedRows = extractQueryRows<{ idempotency_key: string }>(
+      const refundedRows = extractQueryRows<{
+        idempotency_key: string;
+        external_user_id?: string;
+        usage_date?: string;
+        user_id?: number | null;
+      }>(
         await manager.query(
           `
             UPDATE chat_idempotency
             SET status = 'refunded'
             WHERE platform = $1 AND idempotency_key = $2 AND status = 'reserved'
-            RETURNING idempotency_key
+            RETURNING idempotency_key, external_user_id, usage_date, user_id
           `,
           [this.platform, params.idempotencyKey],
         ),
@@ -250,25 +329,54 @@ export class ChatRateLimitRepository {
         return false;
       }
 
+      // The persisted idempotency owner is authoritative. Only old test/DB
+      // drivers that omit the returned column may fall back to the caller.
+      const ownerUserId =
+        refundedRows[0].user_id === undefined
+          ? params.userId
+          : (refundedRows[0].user_id ?? undefined);
+      const externalUserId =
+        refundedRows[0].external_user_id ?? params.externalUserId;
+      const usageDate = refundedRows[0].usage_date ?? params.usageDate;
       const usageRows = extractQueryRows<{ free_form_count: number }>(
         await manager.query(
-          `
-          UPDATE chat_daily_usage
-          SET
-            free_form_count = GREATEST(free_form_count - 1, 0),
-            updated_at = now()
-          WHERE platform = $1 AND external_user_id = $2 AND usage_date = $3::date
-          RETURNING free_form_count
-        `,
-          [this.platform, params.externalUserId, params.usageDate],
+          ownerUserId !== undefined
+            ? `
+              UPDATE chat_daily_usage
+              SET
+                free_form_count = GREATEST(free_form_count - 1, 0),
+                updated_at = now()
+              WHERE platform = $1 AND external_user_id = $2
+                AND usage_date = $3::date AND user_id = $4
+              RETURNING free_form_count
+            `
+            : `
+              UPDATE chat_daily_usage
+              SET
+                free_form_count = GREATEST(free_form_count - 1, 0),
+                updated_at = now()
+              WHERE platform = $1 AND external_user_id = $2 AND usage_date = $3::date
+              RETURNING free_form_count
+            `,
+          ownerUserId !== undefined
+            ? [this.platform, externalUserId, usageDate, ownerUserId]
+            : [this.platform, externalUserId, usageDate],
         ),
       );
 
-      const usedAfter = usageRows[0]?.free_form_count ?? 0;
+      let usedAfter = usageRows[0]?.free_form_count ?? 0;
+      if (ownerUserId !== undefined) {
+        usedAfter = await this.getLearnerUsageCount(manager, {
+          usageDate,
+          userId: ownerUserId,
+          platform: this.platform,
+          externalUserId,
+        });
+      }
       await this.hooks.onReleased?.(manager, {
-        externalUserId: params.externalUserId,
-        userId: params.userId,
-        usageDate: params.usageDate,
+        externalUserId,
+        userId: ownerUserId,
+        usageDate,
         idempotencyKey: params.idempotencyKey,
         reason: releaseReason,
         usedAfter,
@@ -462,24 +570,50 @@ export class ChatRateLimitRepository {
           return 'not_found';
         }
 
+        const ownerUserId = row.user_id ?? undefined;
         const usageRows = extractQueryRows<{ free_form_count: number }>(
           await manager.query(
-            `
-            UPDATE chat_daily_usage
-            SET
-              free_form_count = GREATEST(free_form_count - 1, 0),
-              updated_at = now()
-            WHERE platform = $1 AND external_user_id = $2 AND usage_date = $3::date
-            RETURNING free_form_count
-            `,
-            [this.platform, row.external_user_id, row.usage_date],
+            ownerUserId !== undefined
+              ? `
+                UPDATE chat_daily_usage
+                SET
+                  free_form_count = GREATEST(free_form_count - 1, 0),
+                  updated_at = now()
+                WHERE platform = $1 AND external_user_id = $2
+                  AND usage_date = $3::date AND user_id = $4
+                RETURNING free_form_count
+              `
+              : `
+                UPDATE chat_daily_usage
+                SET
+                  free_form_count = GREATEST(free_form_count - 1, 0),
+                  updated_at = now()
+                WHERE platform = $1 AND external_user_id = $2 AND usage_date = $3::date
+                RETURNING free_form_count
+              `,
+            ownerUserId !== undefined
+              ? [
+                  this.platform,
+                  row.external_user_id,
+                  row.usage_date,
+                  ownerUserId,
+                ]
+              : [this.platform, row.external_user_id, row.usage_date],
           ),
         );
 
-        const usedAfter = usageRows[0]?.free_form_count ?? 0;
+        let usedAfter = usageRows[0]?.free_form_count ?? 0;
+        if (ownerUserId !== undefined) {
+          usedAfter = await this.getLearnerUsageCount(manager, {
+            usageDate: row.usage_date,
+            userId: ownerUserId,
+            platform: this.platform,
+            externalUserId: row.external_user_id,
+          });
+        }
         await this.hooks.onReleased?.(manager, {
           externalUserId: row.external_user_id,
-          userId: row.user_id ?? undefined,
+          userId: ownerUserId,
           usageDate: row.usage_date,
           idempotencyKey,
           reason: 'stuck_recover',
@@ -534,6 +668,7 @@ export class ChatRateLimitRepository {
       const rows = extractQueryRows<{
         idempotency_key: string;
         external_user_id: string;
+        user_id: number | null;
         usage_date: string;
       }>(
         await manager.query(
@@ -543,7 +678,7 @@ export class ChatRateLimitRepository {
             WHERE platform = $1
               AND status = 'reserved'
               AND reserved_at < $2
-            RETURNING idempotency_key, external_user_id, usage_date
+            RETURNING idempotency_key, external_user_id, user_id, usage_date
           `,
           [this.platform, stuckBefore],
         ),
@@ -561,7 +696,8 @@ export class ChatRateLimitRepository {
 
       for (let offset = 0; offset < rows.length; offset += PAGE_SIZE) {
         const page = rows.slice(offset, offset + PAGE_SIZE);
-        const usageDecrement = new Map<string, number>();
+        const anonymousUsageDecrement = new Map<string, number>();
+        const learnerUsageDecrement = new Map<string, number>();
 
         for (const row of page) {
           const rawUsageDate = row.usage_date as unknown;
@@ -569,38 +705,92 @@ export class ChatRateLimitRepository {
             rawUsageDate instanceof Date
               ? rawUsageDate.toISOString().slice(0, 10)
               : String(row.usage_date ?? '').slice(0, 10);
-          const key = `${usageDate}:${row.external_user_id}`;
-          usageDecrement.set(key, (usageDecrement.get(key) ?? 0) + 1);
+          if (row.user_id !== null && row.user_id !== undefined) {
+            const key = `${usageDate}:${row.user_id}:${row.external_user_id}`;
+            learnerUsageDecrement.set(
+              key,
+              (learnerUsageDecrement.get(key) ?? 0) + 1,
+            );
+          } else {
+            const key = `${usageDate}:${row.external_user_id}`;
+            anonymousUsageDecrement.set(
+              key,
+              (anonymousUsageDecrement.get(key) ?? 0) + 1,
+            );
+          }
         }
 
-        if (usageDecrement.size === 0) continue;
+        if (
+          anonymousUsageDecrement.size === 0 &&
+          learnerUsageDecrement.size === 0
+        ) {
+          continue;
+        }
 
-        const entries = [...usageDecrement.entries()];
-        const valuesClauses: string[] = [];
-        const params: unknown[] = [];
-        let paramIndex = 1;
+        if (anonymousUsageDecrement.size > 0) {
+          const entries = [...anonymousUsageDecrement.entries()];
+          const valuesClauses: string[] = [];
+          const params: unknown[] = [];
+          let paramIndex = 1;
 
-        for (const [key, count] of entries) {
-          const [usageDateRaw, externalUserId] = key.split(':');
-          const usageDate = String(usageDateRaw ?? '').slice(0, 10);
-          valuesClauses.push(
-            `($${paramIndex}::varchar, $${paramIndex + 1}::date, $${paramIndex + 2}::varchar, $${paramIndex + 3}::int)`,
+          for (const [key, count] of entries) {
+            const [usageDateRaw, externalUserId] = key.split(':');
+            const usageDate = String(usageDateRaw ?? '').slice(0, 10);
+            valuesClauses.push(
+              `($${paramIndex}::varchar, $${paramIndex + 1}::date, $${paramIndex + 2}::varchar, $${paramIndex + 3}::int)`,
+            );
+            params.push(this.platform, usageDate, externalUserId, count);
+            paramIndex += 4;
+          }
+
+          await manager.query(
+            `
+              UPDATE chat_daily_usage
+              SET free_form_count = GREATEST(0, free_form_count - v.delta)
+              FROM (VALUES ${valuesClauses.join(', ')}) AS v(platform, usage_date, external_user_id, delta)
+              WHERE chat_daily_usage.platform = v.platform
+                AND chat_daily_usage.usage_date = v.usage_date
+                AND chat_daily_usage.external_user_id = v.external_user_id
+            `,
+            params,
           );
-          params.push(this.platform, usageDate, externalUserId, count);
-          paramIndex += 4;
         }
 
-        await manager.query(
-          `
-            UPDATE chat_daily_usage
-            SET free_form_count = GREATEST(0, free_form_count - v.delta)
-            FROM (VALUES ${valuesClauses.join(', ')}) AS v(platform, usage_date, external_user_id, delta)
-            WHERE chat_daily_usage.platform = v.platform
-              AND chat_daily_usage.usage_date = v.usage_date
-              AND chat_daily_usage.external_user_id = v.external_user_id
-          `,
-          params,
-        );
+        if (learnerUsageDecrement.size > 0) {
+          const entries = [...learnerUsageDecrement.entries()];
+          const valuesClauses: string[] = [];
+          const params: unknown[] = [];
+          let paramIndex = 1;
+
+          for (const [key, count] of entries) {
+            const [usageDateRaw, userIdRaw, externalUserId] = key.split(':');
+            const usageDate = String(usageDateRaw ?? '').slice(0, 10);
+            valuesClauses.push(
+              `($${paramIndex}::varchar, $${paramIndex + 1}::date, $${paramIndex + 2}::int, $${paramIndex + 3}::varchar, $${paramIndex + 4}::int)`,
+            );
+            params.push(
+              this.platform,
+              usageDate,
+              Number(userIdRaw),
+              externalUserId,
+              count,
+            );
+            paramIndex += 5;
+          }
+
+          await manager.query(
+            `
+              UPDATE chat_daily_usage
+              SET free_form_count = GREATEST(0, free_form_count - v.delta)
+              FROM (VALUES ${valuesClauses.join(', ')}) AS v(platform, usage_date, user_id, external_user_id, delta)
+              WHERE chat_daily_usage.platform = v.platform
+                AND chat_daily_usage.user_id = v.user_id
+                AND chat_daily_usage.usage_date = v.usage_date
+                AND chat_daily_usage.external_user_id = v.external_user_id
+            `,
+            params,
+          );
+        }
       }
 
       return [
@@ -608,6 +798,21 @@ export class ChatRateLimitRepository {
         ...rows.map((r) => r.idempotency_key),
       ];
     });
+  }
+
+  private async getLearnerUsageCount(
+    manager: EntityManager,
+    input: Parameters<NonNullable<LearnerUsageQueryFactory>>[0],
+  ): Promise<number> {
+    if (!this.learnerUsageQuery) {
+      throw new Error('Learner usage query is not configured');
+    }
+    const query = this.learnerUsageQuery(input);
+    const rows: Array<{ used: string | number }> = await manager.query(
+      query.sql,
+      query.params,
+    );
+    return Number(rows[0]?.used ?? 0);
   }
 
   private mapIdempotency(row: {

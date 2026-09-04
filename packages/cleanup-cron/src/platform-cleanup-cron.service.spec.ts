@@ -260,4 +260,26 @@ describe('PlatformCleanupCronService', () => {
     expect(prune[0]).toMatch(/"usage_date" < /);
     expect(prune[1]).toEqual(expect.arrayContaining(['discord']));
   });
+
+  it('report-claim cleanup prunes legacy and learner claim tables', async () => {
+    const { service, cleanupService, dataSource } = buildService(
+      buildConfig({
+        reportClaimRepo: {} as never,
+        lockIds: { reportClaim: 884_200_940 },
+      }),
+    );
+    await service.handleReportClaimsCleanup();
+    const deleteFn = cleanupService.execute.mock.calls[0]?.[1];
+    dataSource.query.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+
+    await deleteFn?.(new Date('2026-08-18T00:00:00.000Z'));
+
+    expect(dataSource.query.mock.calls).toHaveLength(2);
+    expect(dataSource.query.mock.calls[0]?.[0]).toContain(
+      'scheduled_report_claims',
+    );
+    expect(dataSource.query.mock.calls[1]?.[0]).toContain(
+      'learner_scheduled_report_claims',
+    );
+  });
 });

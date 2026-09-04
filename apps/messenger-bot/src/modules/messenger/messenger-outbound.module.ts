@@ -4,6 +4,7 @@ import type { Repository } from 'typeorm';
 import {
   MessageLogEntity,
   ScheduledReportClaimEntity,
+  LearnerScheduledReportClaimEntity,
   UserPlatformMappingEntity,
   WebhookDeadLetterEntity,
 } from '../../infrastructure/database/entities';
@@ -20,6 +21,7 @@ import { MessengerRepository } from './infrastructure/persistence/messenger.repo
       UserPlatformMappingEntity,
       MessageLogEntity,
       ScheduledReportClaimEntity,
+      LearnerScheduledReportClaimEntity,
       WebhookDeadLetterEntity,
     ]),
   ],

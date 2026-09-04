@@ -9,6 +9,7 @@ import {
 import { WebhookDeadLetterEntity } from './entities/webhook-dead-letter.entity';
 import { WebhookInboundEventEntity } from './entities/webhook-inbound-event.entity';
 import { ScheduledReportClaimEntity } from './entities/scheduled-report-claim.entity';
+import { LearnerScheduledReportClaimEntity } from './entities/learner-scheduled-report-claim.entity';
 import { ReportSendJobEntity } from './entities/report-send-job.entity';
 import { RescheduleConfirmationEntity } from './entities/reschedule-confirmation.entity';
 import { CronLeaderLeaseEntity } from './entities/cron-leader-lease.entity';
@@ -80,6 +81,7 @@ export const SHARED_ENTITIES: EntityClass[] = [
   WebhookDeadLetterEntity,
   WebhookInboundEventEntity,
   ScheduledReportClaimEntity,
+  LearnerScheduledReportClaimEntity,
   ReportSendJobEntity,
   RescheduleConfirmationEntity,
   CronLeaderLeaseEntity,

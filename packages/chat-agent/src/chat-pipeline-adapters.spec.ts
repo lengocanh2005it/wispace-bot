@@ -78,4 +78,28 @@ describe('createChatPipelineAdapters', () => {
       outcome: 'rate_limited',
     });
   });
+  it('forwards the learner userId to the shared quota service', async () => {
+    const rateLimitService = {
+      reserve: jest.fn().mockResolvedValue({
+        allowed: true,
+        usageDate: '2026-06-15',
+      }),
+    };
+    const adapters = createChatPipelineAdapters(
+      rateLimitService as never,
+      {} as unknown as PlatformChatHistoryService,
+      {} as never,
+      {} as never,
+    );
+
+    await adapters.rateLimiter.reserve('discord-user-1', 'mid-1', {
+      userId: 143,
+    });
+
+    expect(rateLimitService.reserve).toHaveBeenCalledWith(
+      'discord-user-1',
+      'mid-1',
+      { userId: 143 },
+    );
+  });
 });

@@ -13,6 +13,9 @@ import {
   ['platform', 'externalUserId', 'usageDate'],
   { unique: true },
 )
+@Index('idx_chat_daily_usage_user_date', ['userId', 'usageDate'], {
+  where: '"user_id" IS NOT NULL',
+})
 export class ChatDailyUsageEntity {
   @PrimaryGeneratedColumn()
   id: number;

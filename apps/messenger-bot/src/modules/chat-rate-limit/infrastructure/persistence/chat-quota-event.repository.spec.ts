@@ -30,7 +30,7 @@ describe('ChatQuotaEventRepository', () => {
         expect.stringContaining('CHAT_QUOTA_RESERVED'),
         [
           'messenger',
-          sha256('psid-1'),
+          sha256('42'),
           JSON.stringify({ used: 5, limit: 15, reason: 'CHAT' }),
           '2026-08-08',
           42,
@@ -106,7 +106,7 @@ describe('ChatQuotaEventRepository', () => {
         expect.stringContaining('CHAT_QUOTA_DENIED'),
         [
           'messenger',
-          sha256('psid-3'),
+          sha256('99'),
           JSON.stringify({ used: 15, limit: 15, reason: 'DAILY_LIMIT' }),
           '2026-08-08',
           99,

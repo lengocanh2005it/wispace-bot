@@ -101,23 +101,44 @@ async function main() {
   await client.connect();
 
   try {
-    // aggregate_id is a SHA-256 hex of the PSID (#640), so raw user ids are
-    // taken from chat_daily_usage (which stores the raw id for quota logic)
-    // and joined to the events by hashing. Users whose events are missing
+    // aggregate_id is a SHA-256 hex of the learner userId when linked, or the
+    // platform id when anonymous (#637/#640). Raw ids are taken from
+    // chat_daily_usage (the quota table) and joined by hashing. Users whose
+    // events are missing
     // (quota events disabled that day, or older than the events retention)
     // are SKIPPED — rebuilding from an empty event stream would zero their
     // live counter.
     const pairs = await client.query(
       `
-        SELECT du.external_user_id, du.usage_date::text AS usage_date
+        SELECT du.external_user_id, du.user_id, du.usage_date::text AS usage_date
         FROM chat_daily_usage du
         WHERE du.platform = 'messenger'
           AND du.usage_date >= $1::date AND du.usage_date <= $2::date
           AND EXISTS (
-            SELECT 1 FROM chat_quota_events e
+            SELECT 1
+            FROM chat_quota_events e
+            JOIN chat_idempotency i
+              ON i.platform = 'messenger'
+             AND i.usage_date = e.usage_date
+             AND i.external_user_id = du.external_user_id
+             AND (
+               i.idempotency_key = e.idempotency_key
+               OR i.idempotency_key || ':released' = e.idempotency_key
+             )
             WHERE e.platform = 'messenger'
-              AND e.aggregate_id = encode(sha256(convert_to(du.external_user_id, 'UTF8')), 'hex')
               AND e.usage_date = du.usage_date
+              AND (
+                (du.user_id IS NOT NULL
+                 AND e.user_id = du.user_id
+                 AND e.aggregate_id IN (
+                   encode(sha256(convert_to(du.user_id::text, 'UTF8')), 'hex'),
+                   encode(sha256(convert_to(du.external_user_id, 'UTF8')), 'hex')
+                 ))
+                OR
+                (du.user_id IS NULL
+                 AND e.user_id IS NULL
+                 AND e.aggregate_id = encode(sha256(convert_to(du.external_user_id, 'UTF8')), 'hex'))
+              )
           )
         ORDER BY du.usage_date, du.external_user_id
       `,
@@ -128,14 +149,33 @@ async function main() {
     for (const pair of pairs.rows) {
       const eventsResult = await client.query(
         `
-          SELECT event_type
-          FROM chat_quota_events
-          WHERE platform = 'messenger'
-            AND aggregate_id = encode(sha256(convert_to($1, 'UTF8')), 'hex')
-            AND usage_date = $2::date
-          ORDER BY occurred_at ASC, id ASC
-        `,
-        [pair.external_user_id, pair.usage_date],
+          SELECT e.event_type
+          FROM chat_quota_events e
+          JOIN chat_idempotency i
+            ON i.platform = 'messenger'
+           AND i.usage_date = e.usage_date
+           AND i.external_user_id = $1
+           AND (
+             i.idempotency_key = e.idempotency_key
+             OR i.idempotency_key || ':released' = e.idempotency_key
+           )
+          WHERE e.platform = 'messenger'
+            AND e.usage_date = $3::date
+            AND (
+              ($2::int IS NOT NULL
+               AND e.user_id = $2::int
+               AND e.aggregate_id IN (
+                 encode(sha256(convert_to($2::text, 'UTF8')), 'hex'),
+                 encode(sha256(convert_to($1, 'UTF8')), 'hex')
+               ))
+              OR
+              ($2::int IS NULL
+               AND e.user_id IS NULL
+               AND e.aggregate_id = encode(sha256(convert_to($1, 'UTF8')), 'hex'))
+            )
+          ORDER BY e.occurred_at ASC, e.id ASC
+          `,
+        [pair.external_user_id, pair.user_id, pair.usage_date],
       );
 
       const used = replayEvents(eventsResult.rows);
@@ -162,14 +202,17 @@ async function main() {
       if (!args.dryRun) {
         await client.query(
           `
-            INSERT INTO chat_daily_usage (platform, external_user_id, usage_date, free_form_count)
-            VALUES ('messenger', $1, $2::date, $3)
+            INSERT INTO chat_daily_usage (
+              platform, external_user_id, user_id, usage_date, free_form_count
+            )
+            VALUES ('messenger', $1, $2, $3::date, $4)
             ON CONFLICT (platform, external_user_id, usage_date)
             DO UPDATE SET
               free_form_count = EXCLUDED.free_form_count,
+              user_id = EXCLUDED.user_id,
               updated_at = now()
           `,
-          [pair.external_user_id, pair.usage_date, capped],
+          [pair.external_user_id, pair.user_id, pair.usage_date, capped],
         );
       }
 

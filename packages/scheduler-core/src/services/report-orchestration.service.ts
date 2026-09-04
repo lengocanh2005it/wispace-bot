@@ -81,11 +81,23 @@ export class ReportOrchestrationService {
     const classifyError = opts.classifyError ?? defaultClassifyError;
     const platform = mapping.platform;
     const deliveryKey = `${platform}-report:${mapping.externalUserId}:${reportDate}`;
+    const claimParams = {
+      externalUserId: mapping.externalUserId,
+      userId: mapping.userId,
+      reportDate,
+    };
+
+    // Scheduled reports require the canonical WISPACE learner identity. A
+    // userId-less link cannot participate in cross-platform dedupe safely.
+    if (skipAlreadySentToday && mapping.userId === undefined) {
+      return { ...ZERO, skipped: 1 };
+    }
 
     // ── Step 1: has-sent-today guard ────────────────────────────────────
     if (skipAlreadySentToday) {
       const alreadySent = await this.claimRepo.hasSentScheduledReportToday(
         mapping.externalUserId,
+        mapping.userId,
       );
       if (alreadySent) {
         if (examDateForOutbox && this.jobRepo) {
@@ -135,7 +147,7 @@ export class ReportOrchestrationService {
     // ── Step 3: crash-recovery shortcircuit (#181) ──────────────────────
     if (claimedForSend && claimDeliveryRecord) {
       await this.claimRepo.markScheduledReportClaimSent(
-        { externalUserId: mapping.externalUserId, reportDate },
+        claimParams,
         claimLeaseToken,
       );
       return { ...ZERO, sent: 1 };
@@ -151,10 +163,7 @@ export class ReportOrchestrationService {
         // durable retry versus a terminal/window-closed outcome.
         if (claimedForSend) {
           await this.claimRepo.releaseScheduledReportClaim(
-            {
-              externalUserId: mapping.externalUserId,
-              reportDate,
-            },
+            claimParams,
             claimLeaseToken,
           );
         }
@@ -208,10 +217,7 @@ export class ReportOrchestrationService {
       if (result.ok) {
         if (claimedForSend) {
           await this.claimRepo.markScheduledReportClaimSent(
-            {
-              externalUserId: mapping.externalUserId,
-              reportDate,
-            },
+            claimParams,
             claimLeaseToken,
             'sent',
             deliveryKey,
@@ -233,10 +239,7 @@ export class ReportOrchestrationService {
         // and outbox cannot immediately replay the same report.
         if (claimedForSend) {
           await this.claimRepo.markScheduledReportClaimSent(
-            {
-              externalUserId: mapping.externalUserId,
-              reportDate,
-            },
+            claimParams,
             claimLeaseToken,
             undefined,
             deliveryKey,
@@ -257,10 +260,7 @@ export class ReportOrchestrationService {
       // ── Step 6: delivery failed — release + classify ──────────────────
       if (claimedForSend) {
         await this.claimRepo.releaseScheduledReportClaim(
-          {
-            externalUserId: mapping.externalUserId,
-            reportDate,
-          },
+          claimParams,
           claimLeaseToken,
         );
       }
@@ -303,10 +303,7 @@ export class ReportOrchestrationService {
       // ── Step 7: exception — release + classify ────────────────────────
       if (claimedForSend) {
         await this.claimRepo.releaseScheduledReportClaim(
-          {
-            externalUserId: mapping.externalUserId,
-            reportDate,
-          },
+          claimParams,
           claimLeaseToken,
         );
       }

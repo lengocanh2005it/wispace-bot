@@ -3,7 +3,10 @@ import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 export const REPORT_CLAIM_REPOSITORY = Symbol('REPORT_CLAIM_REPOSITORY');
 
 export interface ReportClaimRepositoryPort {
-  hasSentScheduledReportToday(externalUserId: string): Promise<boolean>;
+  hasSentScheduledReportToday(
+    externalUserId: string,
+    userId?: number,
+  ): Promise<boolean>;
   hasAnyPlatformSentReportToday(
     userId: number,
     reportDate: string,
@@ -27,6 +30,7 @@ export interface ReportClaimRepositoryPort {
     params: {
       externalUserId: string;
       reportDate: string;
+      userId?: number;
     },
     leaseToken: string,
     deliveryRecord?: string,
@@ -37,6 +41,7 @@ export interface ReportClaimRepositoryPort {
     params: {
       externalUserId: string;
       reportDate: string;
+      userId?: number;
     },
     leaseToken: string,
   ): Promise<boolean>;

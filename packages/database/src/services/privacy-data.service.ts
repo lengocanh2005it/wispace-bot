@@ -30,6 +30,7 @@ export interface PrivacyScopedEntities {
   learnerProfile: PrivacyEntityTarget;
   studyReminderJob: PrivacyEntityTarget;
   scheduledReportClaim: PrivacyEntityTarget;
+  learnerScheduledReportClaim: PrivacyEntityTarget;
   reportSendJob: PrivacyEntityTarget;
   chatDailyUsage: PrivacyEntityTarget;
   llmUsageEvent: PrivacyEntityTarget;
@@ -124,6 +125,7 @@ const SCOPED_ENTITY_NAMES = [
   'learnerProfile',
   'studyReminderJob',
   'scheduledReportClaim',
+  'learnerScheduledReportClaim',
   'reportSendJob',
   'chatDailyUsage',
   'llmUsageEvent',
@@ -382,6 +384,7 @@ export class PrivacyDataService {
       await deleteByUser(this.registry.scoped.learnerProfile, uid);
       await deleteByUser(this.registry.scoped.studyReminderJob, uid);
       await deleteByUser(this.registry.scoped.scheduledReportClaim, uid);
+      await deleteByUser(this.registry.scoped.learnerScheduledReportClaim, uid);
       await deleteByUser(this.registry.scoped.reportSendJob, uid);
       if (uid) {
         // web_activity is keyed by userId only — no (platform, externalUserId) fallback.

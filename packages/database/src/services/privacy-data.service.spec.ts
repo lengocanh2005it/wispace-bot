@@ -11,6 +11,7 @@ class ZaloMappingTarget {}
 class LearnerProfileTarget {}
 class StudyReminderTarget {}
 class ScheduledReportClaimTarget {}
+class LearnerScheduledReportClaimTarget {}
 class ReportSendJobTarget {}
 class ChatDailyUsageTarget {}
 class LlmUsageEventTarget {}
@@ -27,6 +28,7 @@ describe('PrivacyDataService', () => {
   let mockLearnerRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockReminderRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockClaimRepo: jest.Mocked<Repository<ObjectLiteral>>;
+  let mockLearnerClaimRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockReportRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockLogRepo: jest.Mocked<Repository<ObjectLiteral>>;
   let mockDailyUsageRepo: jest.Mocked<Repository<ObjectLiteral>>;
@@ -45,6 +47,7 @@ describe('PrivacyDataService', () => {
     learnerProfile: LearnerProfileTarget,
     studyReminderJob: StudyReminderTarget,
     scheduledReportClaim: ScheduledReportClaimTarget,
+    learnerScheduledReportClaim: LearnerScheduledReportClaimTarget,
     reportSendJob: ReportSendJobTarget,
     chatDailyUsage: ChatDailyUsageTarget,
     llmUsageEvent: LlmUsageEventTarget,
@@ -68,6 +71,7 @@ describe('PrivacyDataService', () => {
       learnerProfile: targets.learnerProfile,
       studyReminderJob: targets.studyReminderJob,
       scheduledReportClaim: targets.scheduledReportClaim,
+      learnerScheduledReportClaim: targets.learnerScheduledReportClaim,
       reportSendJob: targets.reportSendJob,
       chatDailyUsage: targets.chatDailyUsage,
       llmUsageEvent: targets.llmUsageEvent,
@@ -96,6 +100,7 @@ describe('PrivacyDataService', () => {
     mockLearnerRepo = makeRepo();
     mockReminderRepo = makeRepo();
     mockClaimRepo = makeRepo();
+    mockLearnerClaimRepo = makeRepo();
     mockReportRepo = makeRepo();
     mockLogRepo = makeRepo();
     mockDailyUsageRepo = makeRepo();
@@ -114,6 +119,7 @@ describe('PrivacyDataService', () => {
       [targets.learnerProfile, mockLearnerRepo],
       [targets.studyReminderJob, mockReminderRepo],
       [targets.scheduledReportClaim, mockClaimRepo],
+      [targets.learnerScheduledReportClaim, mockLearnerClaimRepo],
       [targets.reportSendJob, mockReportRepo],
       [targets.chatDailyUsage, mockDailyUsageRepo],
       [targets.llmUsageEvent, mockLlmUsageRepo],
@@ -214,6 +220,10 @@ describe('PrivacyDataService', () => {
       expect(mockManagerQuery).toHaveBeenCalledWith(
         expect.stringContaining('discord_link_verify_records'),
         ['discord-1'],
+      );
+      expect(mockManagerQuery).not.toHaveBeenCalledWith(
+        expect.stringContaining('learner_scheduled_report_claims'),
+        expect.anything(),
       );
       expect(mockMappingRepo.remove).not.toHaveBeenCalled();
     });
@@ -318,6 +328,7 @@ describe('PrivacyDataService', () => {
       expect(mockLearnerRepo.delete).toHaveBeenCalledWith({ userId: 42 });
       expect(mockReminderRepo.delete).toHaveBeenCalledWith({ userId: 42 });
       expect(mockClaimRepo.delete).toHaveBeenCalledWith({ userId: 42 });
+      expect(mockLearnerClaimRepo.delete).toHaveBeenCalledWith({ userId: 42 });
       expect(mockReportRepo.delete).toHaveBeenCalledWith({ userId: 42 });
       expect(mockDailyUsageRepo.delete).toHaveBeenCalledWith({ userId: 42 });
       expect(mockLlmUsageRepo.delete).toHaveBeenCalledWith({ userId: 42 });

@@ -67,6 +67,79 @@ function buildScheduleService() {
 }
 
 describe('ReportOrchestrationService', () => {
+  it('sends one report when two channel mappings share a learner claim', async () => {
+    let learnerClaimed = false;
+    const claimRepo = buildClaimRepo({
+      tryClaimScheduledReport: jest.fn().mockImplementation(async () => {
+        if (learnerClaimed) return { claimed: false };
+        learnerClaimed = true;
+        return { claimed: true, leaseToken: 'learner-lease' };
+      }),
+    });
+    const delivery = buildDelivery(true);
+    const generateReport = jest.fn().mockResolvedValue('one learner report');
+    const service = new ReportOrchestrationService(
+      claimRepo,
+      delivery,
+      buildJobRepo(),
+      buildScheduleService(),
+      buildConfig(),
+    );
+    const opts = {
+      reportDate: '2026-08-07',
+      skipAlreadySentToday: true,
+      reportText: '',
+      generateReport,
+    };
+
+    const first = await service.claimAndSend(MAPPING, opts);
+    const second = await service.claimAndSend(
+      {
+        ...MAPPING,
+        id: '2',
+        platform: 'zalo',
+        externalUserId: 'zalo-1',
+      },
+      opts,
+    );
+
+    expect(first.sent).toBe(1);
+    expect(second.claimSkipped).toBe(1);
+    expect(generateReport).toHaveBeenCalledTimes(1);
+    expect(delivery.sendReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips a scheduled report when the mapping has no canonical learner id', async () => {
+    const claimRepo = buildClaimRepo();
+    const delivery = buildDelivery(true);
+    const generateReport = jest
+      .fn()
+      .mockResolvedValue('should not be generated');
+    const service = new ReportOrchestrationService(
+      claimRepo,
+      delivery,
+      buildJobRepo(),
+      buildScheduleService(),
+      buildConfig(),
+    );
+
+    const result = await service.claimAndSend(
+      { ...MAPPING, userId: undefined },
+      {
+        reportDate: '2026-08-07',
+        skipAlreadySentToday: true,
+        reportText: '',
+        generateReport,
+      },
+    );
+
+    expect(result).toEqual(expect.objectContaining({ skipped: 1 }));
+    expect(claimRepo.hasSentScheduledReportToday).not.toHaveBeenCalled();
+    expect(claimRepo.tryClaimScheduledReport).not.toHaveBeenCalled();
+    expect(generateReport).not.toHaveBeenCalled();
+    expect(delivery.sendReport).not.toHaveBeenCalled();
+  });
+
   describe('generateReport callback', () => {
     it('generates report inside claim window and sends successfully', async () => {
       const claimRepo = buildClaimRepo();
@@ -184,7 +257,7 @@ describe('ReportOrchestrationService', () => {
 
       expect(result.sent).toBe(1);
       expect(claimRepo.markScheduledReportClaimSent).toHaveBeenCalledWith(
-        { externalUserId: 'discord-1', reportDate: '2026-08-07' },
+        { externalUserId: 'discord-1', userId: 10, reportDate: '2026-08-07' },
         'token-1',
         'sent',
         expect.any(String),
@@ -252,7 +325,7 @@ describe('ReportOrchestrationService', () => {
       expect(jobRepo.recordRetryableFailure).not.toHaveBeenCalled();
       expect(claimRepo.releaseScheduledReportClaim).not.toHaveBeenCalled();
       expect(claimRepo.markScheduledReportClaimSent).toHaveBeenCalledWith(
-        { externalUserId: 'discord-1', reportDate: '2026-08-07' },
+        { externalUserId: 'discord-1', userId: 10, reportDate: '2026-08-07' },
         'token-1',
         undefined,
         expect.any(String),

@@ -78,6 +78,7 @@ import {
   RescheduleConfirmationEntity,
   RescheduleRecoveryCronService,
   LearnerProfileEntity,
+  buildLearnerUsageQuery,
   TypeormRescheduleStore,
 } from '@wispace/database';
 import {
@@ -113,7 +114,9 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     DatabaseModule,
     ZaloOauthModule,
     ZaloWispaceModule,
-    ChatMeteringModule.forPlatform('zalo'),
+    ChatMeteringModule.forPlatform('zalo', {
+      learnerUsageQuery: buildLearnerUsageQuery,
+    }),
     TypeOrmModule.forFeature([
       ChatIdempotencyEntity,
       ZaloMessageLogEntity,

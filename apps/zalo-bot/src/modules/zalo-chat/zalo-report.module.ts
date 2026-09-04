@@ -30,6 +30,8 @@ import {
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import {
   ScheduledReportClaimEntity,
+  LearnerScheduledReportClaimEntity,
+  buildLearnerUsageQuery,
   PlatformReportClaimRepository,
   ReportClaimStaleResetCronService,
 } from '@wispace/database';
@@ -48,13 +50,16 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
     TypeOrmModule.forFeature([
       ZaloAccountLinkEntity,
       ScheduledReportClaimEntity,
+      LearnerScheduledReportClaimEntity,
       LlmUsageEventEntity,
     ]),
     ZaloChatModule,
     ZaloOauthModule,
     ZaloWispaceModule,
     BotCommonModule,
-    ChatMeteringModule.forPlatform('zalo'),
+    ChatMeteringModule.forPlatform('zalo', {
+      learnerUsageQuery: buildLearnerUsageQuery,
+    }),
   ],
   providers: [
     ZaloReportCronService,
@@ -91,9 +96,14 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
     ReportScheduleService,
     {
       provide: REPORT_CLAIM_REPOSITORY,
-      useFactory: (repo: Repository<ScheduledReportClaimEntity>) =>
-        new PlatformReportClaimRepository('zalo', repo),
-      inject: [getRepositoryToken(ScheduledReportClaimEntity)],
+      useFactory: (
+        repo: Repository<ScheduledReportClaimEntity>,
+        learnerRepo: Repository<LearnerScheduledReportClaimEntity>,
+      ) => new PlatformReportClaimRepository('zalo', repo, learnerRepo),
+      inject: [
+        getRepositoryToken(ScheduledReportClaimEntity),
+        getRepositoryToken(LearnerScheduledReportClaimEntity),
+      ],
     },
     {
       provide: ReportClaimStaleResetCronService,

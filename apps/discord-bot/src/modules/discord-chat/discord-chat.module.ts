@@ -79,6 +79,7 @@ import { DiscordChatGateway } from './presentation/gateways/discord-chat.gateway
 import {
   PlatformDeadLetterCronService,
   PlatformDeadLetterService,
+  buildLearnerUsageQuery,
   WebhookDeadLetterEntity,
   ReportSendJobEntity,
   ScheduledReportClaimEntity,
@@ -110,6 +111,7 @@ const REGISTER_REPORT_MESSAGE =
     ChatMeteringModule.forPlatform('discord', {
       requireEnv: true,
       lenientEnabledCheck: true,
+      learnerUsageQuery: buildLearnerUsageQuery,
     }),
     DiscordOutboundModule,
     DiscordSharedModule,

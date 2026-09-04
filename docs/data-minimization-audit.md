@@ -13,7 +13,7 @@ Last updated: 2026-08-31 (#640).
 
 | Field | Verdict | Notes |
 | --- | --- | --- |
-| `aggregate_id` | **hash** | Stored raw PSID (#541). Now SHA-256 hex (`hashExternalId` from `@wispace/bot-common/masking`), backfilled by migration `HashChatQuotaAggregateId1786937000000`. Equality queries keep working: hash the raw id before filtering (see `chat-quota-rebuild.mjs`). |
+| `aggregate_id` | **hash** | Stored raw PSID (#541). Now SHA-256 hex (`hashExternalId` from `@wispace/bot-common/masking`): linked events hash the canonical WISPACE `userId`; anonymous events hash the platform external id. Legacy rows may still contain PSID hashes until replay; equality queries hash the matching identity before filtering (see `chat-quota-rebuild.mjs`). |
 | `payload.idempotency_key` | **keep** | Message id, not a user id; needed to correlate quota events with `chat_idempotency` during ops recovery. |
 | `user_id` | **keep** | WISPACE numeric id — key for joins, erased by `PrivacyDataService` in linked tables; not enough on its own to identify a platform user. |
 
@@ -68,7 +68,7 @@ Last updated: 2026-08-31 (#640).
 
 1. `hashExternalId` + `truncatePersistedError` helpers in `packages/bot-common/src/masking/`.
 2. Hash `chat_quota_events.aggregate_id` at write (3 INSERT sites) + backfill migration.
-3. `chat-quota-rebuild.mjs` joins by hash instead of raw id; days without quota events are skipped, never rebuilt to 0.
+3. `chat-quota-rebuild.mjs` joins by the learner hash (or anonymous platform hash); days without quota events are skipped, never rebuilt to 0.
 4. `truncatePersistedError` applied at all `last_error` / `error_message` write sites listed above (Messenger + Discord report outboxes, shared study-reminder repository incl. the raw-SQL cancel path, dead letters, inbound events, message logs).
 
 Env: `PERSISTED_ERROR_MAX_CHARS` (default 2000) — persisted error text cap; documented in `apps/messenger-bot/.env.example`.

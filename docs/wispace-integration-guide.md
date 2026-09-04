@@ -267,6 +267,24 @@ X-Internal-Api-Key: <INTERNAL_API_KEY>
 - **Idempotent & order-independent:** The bot merges timestamps with `GREATEST(last_active_at, incoming)`. Duplicate or out-of-order deliveries are completely harmless.
 - **No retry worker needed on WISPACE:** Since missed pings self-heal on the learner's next visit, fire-and-forget delivery from WISPACE is recommended.
 
+## Part 8 — Multi-platform consistency contract (#637)
+
+WISPACE `userId` is the canonical learner identity. Platform IDs are channel
+identities and must not be treated as separate learners when the same
+`userId` is linked to Messenger, Discord, and/or Zalo.
+
+| Feature | Contract |
+| --- | --- |
+| Daily chat LLM quota | One daily FREE_FORM quota per learner (`userId`, ICT usage date) across active links. An unlinked channel uses its own anonymous `(platform, external_user_id)` bucket. Burst protection remains per channel. |
+| Study reminders | One canonical delivery platform using the existing preference/priority (`zalo > discord > messenger`). A platform switch cancels the old pending/failed owner and converges to one new job; a failed send retries that job without same-tick fan-out. |
+| 08:00 scheduled report | One atomic DB claim per `(userId, reportDate, reportType='scheduled')` before generation/delivery. Delivery audit and retry outbox remain channel-scoped, but no scheduled-report fan-out occurs. Links with no `userId` are skipped by the automatic cron. |
+| Privacy | Unlink removes only the requested channel's ownership/work (the learner-level report claim remains intact). An explicit delete is userId-scoped and removes local data for all linked channels. Relinking to a different `userId` does not transfer quota or notification state. |
+
+The bot performs current-day compatibility hydration by summing legacy
+per-channel usage rows through active mappings; WISPACE does not need a data
+backfill. Keep the `userId` in the verify-token response stable and numeric so
+all three bots can enforce the same learner scope. See [issue #637](https://github.com/lengocanh2005it/wispace-bot/issues/637) and the related contracts [#512](https://github.com/lengocanh2005it/wispace-bot/issues/512), [#458](https://github.com/lengocanh2005it/wispace-bot/issues/458), [#510](https://github.com/lengocanh2005it/wispace-bot/issues/510), and [#461](https://github.com/lengocanh2005it/wispace-bot/issues/461).
+
 ---
 
 ## Summary of tasks

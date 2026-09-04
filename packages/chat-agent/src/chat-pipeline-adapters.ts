@@ -49,11 +49,14 @@ export function createChatPipelineAdapters(
     async reserve(
       externalUserId: string,
       idempotencyKey: string,
+      context?: Record<string, unknown>,
     ): Promise<ReserveResult> {
-      const result = await rateLimitService.reserve(
-        externalUserId,
-        idempotencyKey,
-      );
+      const result =
+        typeof context?.userId === 'number'
+          ? await rateLimitService.reserve(externalUserId, idempotencyKey, {
+              userId: context.userId,
+            })
+          : await rateLimitService.reserve(externalUserId, idempotencyKey);
       return {
         allowed: result.allowed,
         usageDate: result.usageDate,

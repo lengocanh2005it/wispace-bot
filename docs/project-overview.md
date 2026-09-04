@@ -22,6 +22,41 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 - Webhook/OAuth receives the event → saves `user_id` ↔ `external_user_id` + `platform` to `user_platform_mappings`.
 - Bot menu (Messenger persistent menu, Discord slash commands): register reports, view progress, preview study reminders.
 
+### 1.1.1. Cross-platform learner consistency (#637)
+
+`userId` from WISPACE is the canonical learner identity; Messenger PSID,
+Discord user ID, and Zalo user ID are delivery-channel identities only. The
+consistency contract is:
+
+- **Chat quota:** one shared daily FREE_FORM LLM quota per `(userId,
+  usage_date)` across active links. A user without a link keeps an anonymous
+  `(platform, external_user_id, usage_date)` bucket. The reserve transaction
+  sums current-day legacy channel rows through active mappings, then writes the
+  learner-owned row. The burst limiter remains per channel; the outbound
+  backstop remains learner-wide when `userId` is known.
+- **Study reminders:** one canonical owner platform (existing preference,
+  then `zalo > discord > messenger`). Noncanonical sync cancels only pending /
+  failed jobs; an owner switch cancels the old pending owner and creates the
+  new canonical job. A failed send retries that same job and does not fan out
+  in the same tick.
+- **Scheduled reports:** the database unique claim
+  `(user_id, report_date, report_type='scheduled')` is the correctness boundary
+  before generation/delivery. Existing per-platform claims are migrated as
+  sent/active state; delivery audit/outbox rows remain per platform. A
+  userId-less link is skipped by the automatic cron (operator `forceSend` is
+  unchanged), and a learner receives at most one scheduled report per day.
+- **Privacy/relink:** unlink invalidates only the requested channel and its
+  local work; the learner-level scheduled-report claim remains intact. Explicit
+  delete resolves the WISPACE `userId` and erases local
+  user-scoped data across all three platforms. Relinking to another WISPACE
+  identity never transfers quota, report, or reminder state.
+
+See [issue #637](https://github.com/lengocanh2005it/wispace-bot/issues/637),
+[link ownership #512](https://github.com/lengocanh2005it/wispace-bot/issues/512),
+[reminder ownership #458](https://github.com/lengocanh2005it/wispace-bot/issues/458),
+[report dedupe #510](https://github.com/lengocanh2005it/wispace-bot/issues/510),
+and [privacy scope #461](https://github.com/lengocanh2005it/wispace-bot/issues/461).
+
 ### 1.2. Study Reports (Exam Reminder Report)
 
 - **Automatic:** cron **08:00** daily — sends reports to registered users within a **2–3 day** window before the exam (`WISPACE_REPORT_DAYS_BEFORE_EXAM_*`).
@@ -40,7 +75,7 @@ This project prioritizes fast shipping, with a **dedicated** PostgreSQL DB (`ai_
 ### 1.4. Free-form Chat + Rate Limit (FREE_FORM)
 
 - WISPACE-linked users can **send text messages** → bot replies via LLM agent (`MessengerChatEnqueueService` debounce → `MessengerChatProcessorService` → `MessengerAgentService`).
-- **Daily quota** per `(platform, external_user_id, usage_date)` ICT — `chat_daily_usage`; idempotency `message.mid` — `chat_idempotency`.
+- **Daily quota:** linked learners share one ICT-day bucket by WISPACE `userId`; anonymous users remain per `(platform, external_user_id, usage_date)` — `chat_daily_usage`; idempotency `message.mid` — `chat_idempotency`.
 - **Burst** `CHAT_BURST_PER_MINUTE`/min; **hard cap** concurrent (H3); **hint** "X remaining" (Phase 6).
 - **Postgres/Redis consistency (#609):** Postgres remains the final quota/burst authority; Redis burst is a fixed-minute advisory cache and divergent present keys are invalidated by the bounded Messenger audit once per minute. Queue Redis buffer JSON is authoritative for queued text; each bot's worker repairs missing/stale indexes and quarantines malformed payloads. Unresolved drift is exported as `<prefix>_redis_consistency_drift{datum}` and alerts after 2 minutes. See [ADR-0007](adr/0007-postgres-redis-consistency.md).
 - Menu postback, reminder cron, proactive reports — **no** quota deduction.
@@ -255,10 +290,11 @@ wispace-bot/                          # Turborepo root
 | ----------------------------- | ------------------------------------------------------------------------------------------------- |
 | `user_platform_mappings`      | `user_id`, `external_user_id`, `platform` (messenger/discord/zalo), `cadence`, `topic`, `status`  |
 | `message_logs`                | Metadata audit of sent / failed messages (message bodies omitted for privacy, #262)               |
-| `chat_daily_usage`            | FREE_FORM chat quota counter per `(external_user_id, usage_date)` (from `@wispace/chat-metering`) |
+| `chat_daily_usage`            | FREE_FORM chat quota counter; learner-linked rows aggregate by `user_id`, anonymous rows stay per `(platform, external_user_id, usage_date)` |
 | `chat_idempotency`            | Idempotency `message.mid` when reserving quota (from `@wispace/chat-metering`)                    |
 | `study_reminder_jobs`         | Reminder queue (`pending` → `sent` / …)                                                           |
-| `scheduled_report_claims`     | Multi-pod 08:00 report cron claim + advisory lock                                                 |
+| `scheduled_report_claims`     | Per-platform 08:00 report audit/compatibility claim                                               |
+| `learner_scheduled_report_claims` | Learner-level scheduled-report correctness claim, unique by `(user_id, report_date, report_type)` |
 | `report_send_jobs`            | Outbox retry for report cron 5xx (R5)                                                             |
 | `webhook_dead_letters`        | Dead-letter webhook entries + auto-retry                                                          |
 | `chat_quota_events`           | Dual-write quota audit events (C2 hybrid)                                                         |
@@ -399,7 +435,7 @@ Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP �
 | `exam-reminder-report`              | `0 8 * * *` (08:00 ICT)                       | `ReportCronService` — daily student reports                                                                                                                                                                             |
 | `weekly-cleanup-duplicate-mappings` | `0 3 * * 1` (Monday 03:00 ICT)                | `ReportCronService` — deactivate duplicate ACTIVE mappings                                                                                                                                                              |
 | `report-send-retry`                 | `*/15 * * * *`                                | `ReportSendRetryDispatchService` — outbox R5 retry                                                                                                                                                                      |
-| `report-claims-stale-reset`         | `*/30 * * * *`                                | `ReportClaimStaleResetCronService` — per-platform lease recovery for `scheduled_report_claims` (`REPORT_CLAIM_STALE_RESET_MS`=2h)                                                                                       |
+| `report-claims-stale-reset`         | `*/30 * * * *`                                | `ReportClaimStaleResetCronService` — lease recovery for per-platform audit claims and learner-level `learner_scheduled_report_claims` (`REPORT_CLAIM_STALE_RESET_MS`=2h)                                                   |
 | `ops-health-daily`                  | `0 0 9 * * *` (09:00 ICT)                     | `OpsHealthCronService` — ops health alert                                                                                                                                                                               |
 | `data-quality-daily`               | `0 15 9 * * *` (09:15 ICT)                    | `DataQualityCronService` — bounded read-only anomaly checks (production default; `DATA_QUALITY_CRON_ENABLED=false` disables)                                                                                           |
 | `study-reminder-sync`               | `0 */30 * * * *` (every 30 min)               | `StudyReminderWorkerService` — sync upcoming sessions                                                                                                                                                                   |
