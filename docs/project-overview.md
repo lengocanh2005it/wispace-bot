@@ -819,7 +819,9 @@ Measured locally on 2026-08-13 for messenger-bot with docker image inspect: pre-
   - False positives go in `.gitleaks.toml` under `[allowlist]` — a **single table**. gitleaks 8.24.3 silently ignores a top-level `[[allowlists]]` array (no parse error, the entries just never apply), which is how the nightly scan stayed red.
   - Prefer allowlisting the literal dummy value over the file path: it still catches a real secret in the same file, and it survives the file being moved (fingerprint-pinning does not).
   - `.gitleaksignore` holds `commit:path:rule:line` fingerprints for false positives in files that no longer exist at HEAD.
-- Production image hygiene is verified by `deploy/verify-runtime-image.mjs` (no TypeScript toolchain in the runtime image).
+- Production image hygiene is verified by `deploy/verify-runtime-image.mjs`: no TypeScript toolchain, required artifacts present, and every `@wispace/*` package in the image actually `require()`s.
+  - The load check exists because existence checks alone shipped a broken image. npm keeps a dependency nested under its workspace when the hoisted slot holds an incompatible version — `messenger-bot` and `wispace-client` want `undici@^7` while `discord.js` pins `^6`, so `undici@7` only ever lives in `apps/<app>/node_modules` and `packages/<pkg>/node_modules`. `deploy/Dockerfile.bot` used to copy only the root `node_modules`, so those nested trees were dropped and `data-source.js` failed with `Cannot find module 'undici'`.
+  - When adding a stage to `Dockerfile.bot`, keep the nested `node_modules` stash/restore around the packages flatten — the flatten replaces `node_modules/@wispace/<pkg>` with a plain directory and would otherwise discard them.
 
 ### DB port exposure
 

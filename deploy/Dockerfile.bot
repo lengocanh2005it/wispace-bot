@@ -51,6 +51,20 @@ RUN --mount=type=cache,target=/root/.npm HUSKY=0 npm ci --omit=dev --ignore-scri
 # TypeORM's CLI peer dependencies are not needed by the compiled app.
 RUN rm -rf node_modules/typescript node_modules/ts-node
 
+# npm leaves a dependency nested under its workspace when the hoisted slot
+# is already taken by an incompatible version: messenger-bot and
+# wispace-client want undici ^7 while discord.js pins ^6, so undici 7 only
+# ever exists under apps/<app>/node_modules and packages/<pkg>/node_modules.
+# Those nested trees are real runtime dependencies, and the COPY below
+# overlays packages/ with the build stage's devDependency install — stash
+# them first, restore them after the flatten.
+RUN set -eu; \
+    for dir in apps/*/ packages/*/; do \
+      [ -d "${dir}node_modules" ] || continue; \
+      mkdir -p "/nested/${dir}"; \
+      cp -a "${dir}node_modules" "/nested/${dir}node_modules"; \
+    done
+
 COPY --from=build /app/packages ./packages
 
 # Flatten only the pruned dependency closure and keep runtime artifacts only.
@@ -61,8 +75,20 @@ RUN for pkg in packages/*/; do \
         mkdir -p "node_modules/$name"; \
         cp "$pkg/package.json" "node_modules/$name/package.json"; \
         cp -r "$pkg/dist" "node_modules/$name/dist"; \
+        if [ -d "/nested/${pkg}node_modules" ]; then \
+          cp -a "/nested/${pkg}node_modules" "node_modules/$name/node_modules"; \
+        fi; \
       fi; \
     done
+
+# The app's own nested dependencies, at the path Node resolves from
+# apps/<app>/dist/main.js. The directory is always created so the
+# production stage's COPY has a source even for a bot with nothing nested.
+RUN set -eu; \
+    mkdir -p "apps/${APP_NAME}/node_modules"; \
+    if [ -d "/nested/apps/${APP_NAME}/node_modules" ]; then \
+      cp -a "/nested/apps/${APP_NAME}/node_modules/." "apps/${APP_NAME}/node_modules/"; \
+    fi
 
 FROM node:22.23.2-alpine@sha256:76789712cd1ae89a1225eac9077010d68987a423588042dac30446f502f1858c AS production
 WORKDIR /app
@@ -83,6 +109,7 @@ RUN addgroup -g 1001 -S app \
 
 COPY --from=build --chown=app:app /app/apps/$APP_NAME/dist ./apps/$APP_NAME/dist
 COPY --from=production-deps --chown=app:app /app/node_modules ./node_modules
+COPY --from=production-deps --chown=app:app /app/apps/$APP_NAME/node_modules ./apps/$APP_NAME/node_modules
 
 USER app
 

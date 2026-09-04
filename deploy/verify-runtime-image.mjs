@@ -55,7 +55,23 @@ const runtimeCheck = [
   '}',
   "walk('/app/node_modules');",
   "if (forbidden.length) throw new Error('Dev-only packages in runtime image: ' + forbidden.join(', '));",
-  "console.log('runtime artifacts present; dev-only toolchain absent');",
+  // Existence checks alone passed a broken image: npm nests a dependency
+  // when the hoisted slot holds an incompatible version, and the runtime
+  // image used to drop those nested trees, so @wispace/wispace-client shipped
+  // without undici. Actually loading each package catches that class.
+  "const scopeDir = '/app/node_modules/@wispace';",
+  "const unloadable = [];",
+  'for (const name of fs.readdirSync(scopeDir)) {',
+  "  const entry = path.join(scopeDir, name, 'dist/index.js');",
+  '  if (!fs.existsSync(entry)) continue;',
+  '  try {',
+  '    require(entry);',
+  '  } catch (err) {',
+  "    unloadable.push(name + ': ' + String(err.message).split(String.fromCharCode(10))[0]);",
+  '  }',
+  '}',
+  "if (unloadable.length) throw new Error('Unloadable workspace packages in runtime image: ' + unloadable.join(' | '));",
+  "console.log('runtime artifacts present, workspace packages loadable, dev-only toolchain absent');",
 ].join('\n');
 
 run([
