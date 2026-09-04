@@ -83,6 +83,13 @@ function buildService(overrides: {
     { generateReport: jest.fn() } as never,
     reportScheduleService,
     { get: jest.fn() } as never,
+    {
+      shouldRunScheduledReportCron: jest.fn().mockResolvedValue(true),
+    } as never,
+    {
+      tryAcquireDailyLock: jest.fn().mockResolvedValue(true),
+      releaseDailyLock: jest.fn(),
+    } as never,
   );
 
   return {
@@ -179,6 +186,13 @@ describe('ZaloReportCronService', () => {
       { generateReport: jest.fn() } as unknown as never,
       {} as unknown as never,
       { get: jest.fn() } as unknown as never,
+      {
+        shouldRunScheduledReportCron: jest.fn().mockResolvedValue(true),
+      } as never,
+      {
+        tryAcquireDailyLock: jest.fn().mockResolvedValue(true),
+        releaseDailyLock: jest.fn(),
+      } as never,
     );
     await service.sendDailyReports();
 
@@ -217,6 +231,13 @@ describe('ZaloReportCronService', () => {
       { generateReport: jest.fn() } as unknown as never,
       {} as unknown as never,
       { get: jest.fn() } as unknown as never,
+      {
+        shouldRunScheduledReportCron: jest.fn().mockResolvedValue(true),
+      } as never,
+      {
+        tryAcquireDailyLock: jest.fn().mockResolvedValue(true),
+        releaseDailyLock: jest.fn(),
+      } as never,
     );
     await service.sendDailyReports({ forceSend: true });
 
@@ -262,6 +283,13 @@ describe('ZaloReportCronService', () => {
       reportService as unknown as never,
       reportScheduleService as unknown as never,
       configService as unknown as never,
+      {
+        shouldRunScheduledReportCron: jest.fn().mockResolvedValue(true),
+      } as never,
+      {
+        tryAcquireDailyLock: jest.fn().mockResolvedValue(true),
+        releaseDailyLock: jest.fn(),
+      } as never,
       canonicalService as unknown as never,
     );
 
@@ -343,6 +371,13 @@ describe('ZaloReportCronService', () => {
       reportService as unknown as never,
       reportScheduleService as unknown as never,
       configService as unknown as never,
+      {
+        shouldRunScheduledReportCron: jest.fn().mockResolvedValue(true),
+      } as never,
+      {
+        tryAcquireDailyLock: jest.fn().mockResolvedValue(true),
+        releaseDailyLock: jest.fn(),
+      } as never,
       undefined,
       webActivityService as never,
       metrics as never,
@@ -429,6 +464,13 @@ describe('ZaloReportCronService', () => {
       reportService as unknown as never,
       reportScheduleService as unknown as never,
       configService as unknown as never,
+      {
+        shouldRunScheduledReportCron: jest.fn().mockResolvedValue(true),
+      } as never,
+      {
+        tryAcquireDailyLock: jest.fn().mockResolvedValue(true),
+        releaseDailyLock: jest.fn(),
+      } as never,
       undefined,
       webActivityService as never,
       metrics as never,

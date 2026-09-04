@@ -88,11 +88,17 @@ import { DisplayNameModule } from '../display-name/display-name.module';
       useFactory: (
         configService: ConfigService,
         leaseService: CronLeaderLeaseService,
-      ) => new ReportCronLeaderService(configService, leaseService),
+      ) =>
+        new ReportCronLeaderService(configService, leaseService, 'messenger'),
       inject: [ConfigService, CronLeaderLeaseService],
     },
     CronLeaderHeartbeatService,
-    ReportCronLockService,
+    {
+      provide: ReportCronLockService,
+      useFactory: (pgLock: PgAdvisoryLockService) =>
+        new ReportCronLockService(pgLock, 'messenger'),
+      inject: [PgAdvisoryLockService],
+    },
     ReportSendOrchestrationService,
     ReportCronService,
     ReportSendScheduleService,

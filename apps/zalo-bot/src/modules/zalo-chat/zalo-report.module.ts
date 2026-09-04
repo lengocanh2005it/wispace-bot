@@ -27,8 +27,15 @@ import {
   parseExamDateToIso,
   type ReportClaimRepositoryPort,
 } from '@wispace/scheduler-core';
+import {
+  CronLeaderHeartbeatService,
+  ReportCronLeaderService,
+  ReportCronLockService,
+} from '@wispace/scheduler-core';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import {
+  CronLeaderLeaseEntity,
+  CronLeaderLeaseService,
   ScheduledReportClaimEntity,
   LearnerScheduledReportClaimEntity,
   buildLearnerUsageQuery,
@@ -52,6 +59,7 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
       ScheduledReportClaimEntity,
       LearnerScheduledReportClaimEntity,
       LlmUsageEventEntity,
+      CronLeaderLeaseEntity,
     ]),
     ZaloChatModule,
     ZaloOauthModule,
@@ -94,6 +102,24 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
       inject: [MemoizedWispaceGoalsService],
     },
     ReportScheduleService,
+    // #510: platform-scoped report-cron coordination — Zalo previously ran
+    // the 08:00 batch with no advisory lock or leader lease at all.
+    CronLeaderLeaseService,
+    {
+      provide: ReportCronLeaderService,
+      useFactory: (
+        configService: ConfigService,
+        leaseService: CronLeaderLeaseService,
+      ) => new ReportCronLeaderService(configService, leaseService, 'zalo'),
+      inject: [ConfigService, CronLeaderLeaseService],
+    },
+    CronLeaderHeartbeatService,
+    {
+      provide: ReportCronLockService,
+      useFactory: (pgLock: PgAdvisoryLockService) =>
+        new ReportCronLockService(pgLock, 'zalo'),
+      inject: [PgAdvisoryLockService],
+    },
     {
       provide: REPORT_CLAIM_REPOSITORY,
       useFactory: (

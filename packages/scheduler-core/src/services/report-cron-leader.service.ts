@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { CronLeaderLeasePort } from '../ports/cron-leader-lease.port';
+import type { Platform } from '@wispace/contracts';
 
 @Injectable()
 export class ReportCronLeaderService {
@@ -9,13 +10,17 @@ export class ReportCronLeaderService {
   constructor(
     private readonly configService: ConfigService,
     leaseService?: CronLeaderLeasePort,
+    private readonly platform: Platform = 'messenger',
   ) {
     this.leaseService = leaseService ?? null;
   }
-
   private readonly leaseService: CronLeaderLeasePort | null;
 
-  /** The cron leader (name) this instance participates in, or null when disabled. */
+  /**
+   * The cron leader (name) this instance participates in, or null when
+   * disabled. Platform-scoped (#510): each bot elects its own leader for its
+   * own batch — one heartbeat-holder can no longer starve the other platform.
+   */
   getLeaderName(): string | null {
     const raw = this.configService
       .get<string>('CRON_LEADER_ENABLED')
@@ -25,7 +30,7 @@ export class ReportCronLeaderService {
     if (!raw || raw === 'false' || raw === '0' || raw === 'no') {
       return null;
     }
-    return 'report';
+    return `report:${this.platform}`;
   }
 
   /**

@@ -14,6 +14,8 @@ import { buildReportOptOutFooter } from '@wispace/bot-common/messages';
 import type { ReportClaimRepositoryPort } from '@wispace/scheduler-core';
 import {
   REPORT_CLAIM_REPOSITORY,
+  ReportCronLeaderService,
+  ReportCronLockService,
   ReportOrchestrationService,
   ReportScheduleService,
   evaluateExamWindow,
@@ -43,6 +45,8 @@ export class ZaloReportCronService {
     private readonly reportService: PlatformStudentReportService,
     private readonly reportScheduleService: ReportScheduleService,
     private readonly configService: ConfigService,
+    private readonly reportCronLeaderService: ReportCronLeaderService,
+    private readonly reportCronLockService: ReportCronLockService,
     @Optional()
     @Inject(CanonicalPlatformService)
     private readonly canonicalPlatformService?: CanonicalPlatformService,
@@ -59,6 +63,24 @@ export class ZaloReportCronService {
     timeZone: 'Asia/Ho_Chi_Minh',
   })
   async sendDailyReports(opts: { forceSend?: boolean } = {}): Promise<void> {
+    // #510: platform-scoped coordination — Zalo elects its own leader and
+    // holds its own advisory lock, so it can no longer lose a fleet-wide
+    // race (it previously had none at all, and 2 pods could double-run).
+    if (!(await this.reportCronLeaderService.shouldRunScheduledReportCron())) {
+      return;
+    }
+
+    const acquired = await this.reportCronLockService.tryAcquireDailyLock();
+    if (!acquired) return;
+
+    try {
+      await this.sendReportsBatch(opts);
+    } finally {
+      await this.reportCronLockService.releaseDailyLock();
+    }
+  }
+
+  async sendReportsBatch(opts: { forceSend?: boolean } = {}): Promise<void> {
     const reportDate = todayReportDate();
     const forceSend = opts.forceSend === true;
 

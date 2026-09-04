@@ -169,11 +169,16 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
       useFactory: (
         configService: ConfigService,
         leaseService: CronLeaderLeaseService,
-      ) => new ReportCronLeaderService(configService, leaseService),
+      ) => new ReportCronLeaderService(configService, leaseService, 'discord'),
       inject: [ConfigService, CronLeaderLeaseService],
     },
     CronLeaderHeartbeatService,
-    ReportCronLockService,
+    {
+      provide: ReportCronLockService,
+      useFactory: (pgLock: PgAdvisoryLockService) =>
+        new ReportCronLockService(pgLock, 'discord'),
+      inject: [PgAdvisoryLockService],
+    },
     ReportOrchestrationService,
     DiscordReportDeliveryService,
     DiscordReportSendJobRepository,

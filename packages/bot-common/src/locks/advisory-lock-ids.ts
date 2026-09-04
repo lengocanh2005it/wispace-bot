@@ -6,6 +6,12 @@
  * Never reuse, renumber, or change existing values.
  */
 export const ADVISORY_LOCKS = {
+  /** Messenger: daily report cron batch — managed by ReportCronLockService (R4). */
+  MESSENGER_REPORT_CRON_DAILY: 884_200_801,
+  /** Discord: daily report cron batch — managed by ReportCronLockService (#510). */
+  DISCORD_REPORT_CRON_DAILY: 884_200_802,
+  /** Zalo: daily report cron batch — managed by ReportCronLockService (#510). */
+  ZALO_REPORT_CRON_DAILY: 884_200_803,
   /** Discord: dead-letter retry cron (every 5 min). */
   DISCORD_DEAD_LETTER_RETRY: 884_200_930,
   /** Zalo: dead-letter retry cron (every 5 min). */

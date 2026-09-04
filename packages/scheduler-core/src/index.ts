@@ -31,7 +31,4 @@ export {
 } from './services/report-orchestration.service';
 export { ReportCronLeaderService } from './services/report-cron-leader.service';
 export { CronLeaderHeartbeatService } from './services/cron-leader-heartbeat.service';
-export {
-  ReportCronLockService,
-  REPORT_CRON_ADVISORY_LOCK_ID,
-} from './services/report-cron-lock.service';
+export { ReportCronLockService } from './services/report-cron-lock.service';
