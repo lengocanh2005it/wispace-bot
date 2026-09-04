@@ -4,6 +4,26 @@ on:
   push:
     branches:
       - main
+    # GitHub evaluates these in order, last match wins, so the trailing
+    # negations really do exclude. dorny/paths-filter cannot express this:
+    # it compiles each list entry as its own picomatch and ORs them, so a
+    # `!` entry there matches every file it does not name and the filter
+    # ends up always true. Keep the exclusions here, not in the `changes`
+    # job. Specs, docs and markdown never reach the runtime image.
+    paths:
+      - 'apps/**'
+      - 'packages/**'
+      - 'deploy/**'
+      - '.github/workflows/**'
+      - '.github/scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'turbo.json'
+      - '!**/*.spec.ts'
+      - '!**/*.test.ts'
+      - '!**/__tests__/**'
+      - '!**/docs/**'
+      - '!**/*.md'
   workflow_dispatch:
     inputs:
       force_build:
