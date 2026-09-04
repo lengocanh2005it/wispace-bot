@@ -1,0 +1,16 @@
+# Fingerprints for confirmed false positives in git HISTORY. The nightly /
+# push scan walks all 997 commits (fetch-depth: 0), unlike the PR scan which
+# only sees the PR's own commits — so these old commits kept it red.
+# Each was inspected: all are documentation placeholders, and the files no
+# longer exist at HEAD. Pinned by commit:path:rule:line, so a *new* finding
+# in the same file still fails the scan.
+
+# docs/doppler-secrets.md — `-H "x-internal-api-key: YOUR_INTERNAL_API_KEY"`
+afe4e6f23939db4d5cd8a4e5f1633059e670e1e8:docs/doppler-secrets.md:curl-auth-header:87
+
+# docs/messenger-link-integration.md — sample link token a1b2c3d4-e5f6-7890-abcd-ef1234567890
+e45deb0834bc0775816695ed272d0be8a0cd6109:docs/messenger-link-integration.md:generic-api-key:303
+e45deb0834bc0775816695ed272d0be8a0cd6109:docs/messenger-link-integration.md:generic-api-key:339
+
+# README.md — the upstream NestJS coveralls badge URL (?token=)
+c5a4bad329d04bf021228e7defab9c077587c710:README.md:generic-api-key:5

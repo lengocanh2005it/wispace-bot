@@ -1,10 +1,30 @@
 # Gitleaks config for wispace-bot.
 # Extends the default rule set; only repository-specific allowlist entries
 # live here (test fixtures that pattern-match API keys but are not secrets).
+#
+# NOTE: the key must be `[allowlist]` (a single table). gitleaks 8.24.3
+# silently ignores a top-level `[[allowlists]]` array — no parse error, the
+# entries just never apply. Verified against the pinned CI binary.
 
 [extend]
 useDefault = true
 
-[[allowlists]]
-description = "Test fixture idempotency keys in chat-rate-limit.repository.spec.ts (never a real key)"
-regexes = ['''idempotencyKey:\s*'mid-stuck-ext1' ''', '''mid-stuck-ext1''']
+[allowlist]
+description = "Known dummy credentials in specs and docs"
+# Matched on the literal value rather than the file path, so a real secret in
+# the same file is still caught, and an entry survives the file being moved
+# (docs/messenger-link-integration.md has already moved once).
+regexes = [
+  # apps/messenger-bot/src/.../chat-rate-limit.repository.spec.ts
+  '''mid-stuck-ext1''',
+  # packages/llm-agent/src/utils/secret-*.utils.spec.ts — fixtures for the
+  # redaction utils (#632); these files exist to hold credential shapes.
+  '''sk-1234567890abcdef1234567890abcdef''',
+  '''sk-collect-1234567890''',
+  '''internal-ops-key-9876''',
+  '''duplicate-secret-1''',
+  # The canonical jwt.io example token (llm-agent + bot-common specs).
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiIxMjM0NTY3ODkwIn0\.''',
+  # docs/messenger-link-integration.md — sample account-link token.
+  '''a1b2c3d4-e5f6-7890-abcd-ef1234567890''',
+]

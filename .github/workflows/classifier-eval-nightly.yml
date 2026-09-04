@@ -32,7 +32,7 @@ jobs:
         run: npm ci
 
       - name: Build llm-agent
-        run: npx turbo run build --filter=@wispace/llm-agent
+        run: npx --no-install turbo run build --filter=@wispace/llm-agent
 
       - name: Run classifier label-accuracy eval (#649, #505)
         env:

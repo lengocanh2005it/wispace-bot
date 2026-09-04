@@ -1,0 +1,29 @@
+# The repo Actions cache sits at the 10 GB ceiling, so buildx blobs and npm
+# caches from merged branches evict the ones main still needs. Delete a
+# branch's caches when its PR closes.
+name: Cleanup PR caches
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  cleanup:
+    # Fork PRs get a read-only token — actions: write is not granted there.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete caches for refs/pull/${{ github.event.number }}/merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          REF: refs/pull/${{ github.event.number }}/merge
+        run: |
+          set -euo pipefail
+          gh cache list --ref "$REF" --limit 100 --json id --jq '.[].id' \
+            | xargs -r -n1 gh cache delete

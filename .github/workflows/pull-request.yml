@@ -11,6 +11,12 @@ on:
     - cron: '17 2 * * *'
   workflow_dispatch:
 
+# Superseded PR runs are cancelled; push/schedule runs on main are never
+# cancelled (they populate the Turbo remote cache and gate the deploy).
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -165,60 +171,23 @@ jobs:
       - name: Run real PrivacyDataService cross-platform smoke test (Postgres + Redis)
         run: npm run database:privacy-smoke
 
-  database-migration-compatibility:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:16-alpine@sha256:7a396fd264a2067788b6551122b50f162bf6136312c7fc9d74381cb92c648382
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: ai_chat_bot_db
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-    env:
-      DB_HOST: 127.0.0.1
-      DB_PORT: '5432'
-      DB_NAME: ai_chat_bot_db
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      NODE_ENV: test
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build database migration dependencies
-        run: npx --no-install turbo run build --filter=@wispace/messenger-bot... --filter=@wispace/discord-bot... --filter=@wispace/zalo-bot...
-        env:
-          TURBO_CONCURRENCY: 2
-          NODE_OPTIONS: '--max-old-space-size=4096'
-
+      # Folded in from the former database-migration-compatibility job: it
+      # needed the identical npm ci + 3-bot turbo build, and every mode of
+      # database-bootstrap-smoke.mjs drops the schema before it starts, so
+      # the two share one Postgres safely. Runs last to leave the database
+      # in the migrated state.
       - name: Run TypeORM migration compatibility test
+        if: '!cancelled()'
         run: npm run database:migration-compatibility
 
   di-bootstrap-smoke:
+    # One job rather than a discord/zalo matrix: the two bots share almost
+    # their whole package dependency chain, so the matrix paid for a second
+    # npm ci and a near-identical turbo build. `!cancelled()` keeps the old
+    # fail-fast: false behaviour — zalo still reports if discord fails.
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        bot: [discord, zalo]
+    timeout-minutes: 15
     env:
       NODE_ENV: test
       REDIS_ENABLED: 'false'
@@ -235,14 +204,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build ${{ matrix.bot }} bot dependencies
-        run: npx --no-install turbo run build --filter=@wispace/${{ matrix.bot }}-bot...
+      - name: Build discord + zalo bot dependencies
+        run: npx --no-install turbo run build --filter=@wispace/discord-bot... --filter=@wispace/zalo-bot...
         env:
           TURBO_CONCURRENCY: 2
           NODE_OPTIONS: '--max-old-space-size=4096'
 
-      - name: Run ${{ matrix.bot }} NestJS DI bootstrap smoke test
-        run: npm test --workspace=@wispace/${{ matrix.bot }}-bot -- app.boot.spec.ts
+      - name: Run discord NestJS DI bootstrap smoke test
+        run: npm test --workspace=@wispace/discord-bot -- app.boot.spec.ts
+
+      - name: Run zalo NestJS DI bootstrap smoke test
+        if: '!cancelled()'
+        run: npm test --workspace=@wispace/zalo-bot -- app.boot.spec.ts
 
   deploy-scripts-test:
     runs-on: ubuntu-latest

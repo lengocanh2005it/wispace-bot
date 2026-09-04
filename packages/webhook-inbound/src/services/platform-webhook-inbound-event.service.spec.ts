@@ -284,12 +284,11 @@ describe('PlatformWebhookInboundEventService', () => {
       });
 
       const patch = claimSetMock.mock.calls[0][0];
-      expect(
-        (patch['nextRetryAt'] as Date).getTime() - now,
-      ).toBeGreaterThanOrEqual(30_000 - 50);
-      expect(
-        (patch['nextRetryAt'] as Date).getTime() - now,
-      ).toBeLessThanOrEqual(30_000);
+      // `now` is read before the call, so the service's own Date.now() is
+      // always >= it — the window must be symmetric or a 1ms tick fails this.
+      const delay = (patch['nextRetryAt'] as Date).getTime() - now;
+      expect(delay).toBeGreaterThanOrEqual(30_000 - 50);
+      expect(delay).toBeLessThanOrEqual(30_000 + 50);
     });
 
     it('caps the backoff at the cap (before jitter)', async () => {

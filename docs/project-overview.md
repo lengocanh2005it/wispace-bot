@@ -815,7 +815,10 @@ Measured locally on 2026-08-13 for messenger-bot with docker image inspect: pre-
 ### Secrets & local env files
 
 - Local `.env` / `.env.shared` (and `apps/*/.env`) are git-ignored and excluded from Docker build contexts (`.dockerignore`), deployment bundles (built from the git checkout), and backups. Runtime startup loads secrets from Vault; production delivery is Vault-only (#654). Containers never mount `.env`.
-- **CI secret scanning:** the PR workflow runs [Gitleaks](https://github.com/gitleaks/gitleaks-action) on every push and pull request — a new secret fails the build.
+- **CI secret scanning:** the PR workflow runs [Gitleaks](https://github.com/gitleaks/gitleaks-action) on every push and pull request — a new secret fails the build. A `pull_request` run only scans the PR's own commits; `push` and the nightly `schedule` walk the whole history, so a false positive in an old commit only ever shows up on those.
+  - False positives go in `.gitleaks.toml` under `[allowlist]` — a **single table**. gitleaks 8.24.3 silently ignores a top-level `[[allowlists]]` array (no parse error, the entries just never apply), which is how the nightly scan stayed red.
+  - Prefer allowlisting the literal dummy value over the file path: it still catches a real secret in the same file, and it survives the file being moved (fingerprint-pinning does not).
+  - `.gitleaksignore` holds `commit:path:rule:line` fingerprints for false positives in files that no longer exist at HEAD.
 - Production image hygiene is verified by `deploy/verify-runtime-image.mjs` (no TypeScript toolchain in the runtime image).
 
 ### DB port exposure
