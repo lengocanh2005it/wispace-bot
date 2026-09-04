@@ -80,10 +80,16 @@ jobs:
               - '.github/scripts/**'
 
   build-image:
+    # `deploy` covers Dockerfile.bot, verify-runtime-image.mjs and the CI
+    # scripts: a change to how the image is built has to rebuild it, or a
+    # Dockerfile fix sits unbuilt until someone happens to touch app code.
+    # Doc- and spec-only pushes never get here — deploy-bots.yml's `paths:`
+    # already filtered them out.
     needs: changes
     if: |
       inputs.env_only != true &&
       (needs.changes.outputs.app == 'true' ||
+        needs.changes.outputs.deploy == 'true' ||
         inputs.force_build)
     runs-on: ubuntu-latest
     timeout-minutes: 20
