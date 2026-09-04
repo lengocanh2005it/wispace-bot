@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { Counter } from 'prom-client';
 import { hashExternalId } from '@wispace/bot-common/masking';
+import { extractQueryRows } from '@wispace/bot-common/utils';
 import { ChatQuotaEventEntity } from '@messenger/infrastructure/database/entities/chat-quota-event.entity';
 import type {
   ChatQuotaEventRepositoryPort,
@@ -118,8 +119,9 @@ export class ChatQuotaEventRepository implements ChatQuotaEventRepositoryPort {
     let totalDeleted = 0;
 
     for (;;) {
-      const deleted: Array<{ id: string }> = await this.eventRepo.manager.query(
-        `
+      const deleted = extractQueryRows<{ id: string }>(
+        await this.eventRepo.manager.query(
+          `
             DELETE FROM chat_quota_events
             WHERE id IN (
               SELECT id FROM chat_quota_events
@@ -128,7 +130,8 @@ export class ChatQuotaEventRepository implements ChatQuotaEventRepositoryPort {
             )
             RETURNING id
           `,
-        [cutoff, BATCH_SIZE],
+          [cutoff, BATCH_SIZE],
+        ),
       );
 
       totalDeleted += deleted.length;

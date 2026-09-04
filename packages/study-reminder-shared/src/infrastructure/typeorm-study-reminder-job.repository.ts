@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { truncatePersistedError } from '@wispace/bot-common/masking';
+import { extractQueryRows } from '@wispace/bot-common/utils';
 import type {
   StudyReminderJobRepositoryPort,
   StudyReminderJob,
@@ -248,14 +249,16 @@ export class TypeormStudyReminderJobRepository
     // expired leases) and stale owners (whose token no longer matches) can
     // never double-send or overwrite a newer owner's result. The claim is
     // scoped to the worker's platform (#180).
-    const rows: Array<Record<string, unknown>> = await this.repo.query(
-      `UPDATE study_reminder_jobs
+    const rows = extractQueryRows<Record<string, unknown>>(
+      await this.repo.query(
+        `UPDATE study_reminder_jobs
        SET status = 'processing',
            lease_token = gen_random_uuid(),
            lease_expires_at = now() + ($2::int * interval '1 millisecond')
        WHERE id = $1 AND platform = $3 AND status IN ('pending', 'failed')
        RETURNING *`,
-      [jobId, leaseMs, platform],
+        [jobId, leaseMs, platform],
+      ),
     );
     if (!rows.length) return null;
     return this.mapEntity(rows[0] as unknown as StudyReminderJobEntity);

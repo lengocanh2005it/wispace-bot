@@ -2,7 +2,7 @@ import { TypeormRescheduleStore } from './typeorm-reschedule-store';
 
 function mockRepo() {
   return {
-    query: jest.fn().mockResolvedValue([]),
+    query: jest.fn().mockResolvedValue([[], 0]),
     find: jest.fn().mockResolvedValue([]),
     findOne: jest.fn().mockResolvedValue(null),
     delete: jest.fn(),
@@ -13,19 +13,23 @@ describe('TypeormRescheduleStore', () => {
   describe('takeValid', () => {
     it('sets lease_token and processing_started_at alongside processing status', async () => {
       const repo = mockRepo();
+      // Real driver shape: UPDATE … RETURNING returns [rows, rowCount].
       repo.query.mockResolvedValue([
-        {
-          external_id: 'messenger:psid1',
-          user_id: 1,
-          calendar_id: 10,
-          scheduling_mode: 'explicit',
-          new_local_date: '2026-08-22',
-          new_time: '14:00',
-          session_label: 'Hôm nay 14:00',
-          status: 'processing',
-          expires_at: new Date(),
-          lease_token: 'lease-uuid',
-        },
+        [
+          {
+            external_id: 'messenger:psid1',
+            user_id: 1,
+            calendar_id: 10,
+            scheduling_mode: 'explicit',
+            new_local_date: '2026-08-22',
+            new_time: '14:00',
+            session_label: 'Hôm nay 14:00',
+            status: 'processing',
+            expires_at: new Date(),
+            lease_token: 'lease-uuid',
+          },
+        ],
+        1,
       ]);
       const store = new TypeormRescheduleStore('messenger', repo as never);
 
@@ -40,9 +44,9 @@ describe('TypeormRescheduleStore', () => {
       expect(result?.leaseToken).toBe('lease-uuid');
     });
 
-    it('returns null when no pending row matches', async () => {
+    it('returns null when no pending row matches (real [[], 0] tuple shape)', async () => {
       const repo = mockRepo();
-      repo.query.mockResolvedValue([]);
+      repo.query.mockResolvedValue([[], 0]);
       const store = new TypeormRescheduleStore('messenger', repo as never);
 
       const result = await store.takeValid('psid1');
@@ -130,9 +134,9 @@ describe('TypeormRescheduleStore', () => {
   });
 
   describe('recoverStaleProcessing', () => {
-    it('resets expired processing rows to pending', async () => {
+    it('counts RETURNING 1 rows as the recovery count', async () => {
       const repo = mockRepo();
-      repo.query.mockResolvedValue([{ affected: 2 }]);
+      repo.query.mockResolvedValue([[{ 1: 1 }, { 1: 1 }], 2]);
       const store = new TypeormRescheduleStore('messenger', repo as never);
 
       const recovered = await store.recoverStaleProcessing(300_000);
@@ -141,12 +145,13 @@ describe('TypeormRescheduleStore', () => {
       expect(sql).toContain("status = 'pending'");
       expect(sql).toContain('processing_started_at <');
       expect(sql).toContain('lease_token IS NOT NULL');
+      expect(sql).toContain('RETURNING 1');
       expect(recovered).toBe(2);
     });
 
-    it('does not touch fresh processing rows', async () => {
+    it('reports 0 when no stale processing rows matched ([[], 0] tuple)', async () => {
       const repo = mockRepo();
-      repo.query.mockResolvedValue([{ affected: 0 }]);
+      repo.query.mockResolvedValue([[], 0]);
       const store = new TypeormRescheduleStore('messenger', repo as never);
 
       const recovered = await store.recoverStaleProcessing(300_000);

@@ -168,7 +168,14 @@ jobs:
       - name: Run real TypeORM database bootstrap smoke test
         run: npm run database:bootstrap-smoke
 
+      # #754: pins the UPDATE/DELETE tuple vs INSERT flat `query()` shapes the
+      # shared extractQueryRows helper relies on, against the real Postgres 16.
+      - name: Run raw query RETURNING shape smoke test
+        if: '!cancelled()'
+        run: npm run database:query-returning-shape-smoke
+
       - name: Run real PrivacyDataService cross-platform smoke test (Postgres + Redis)
+        if: '!cancelled()'
         run: npm run database:privacy-smoke
 
       # Folded in from the former database-migration-compatibility job: it

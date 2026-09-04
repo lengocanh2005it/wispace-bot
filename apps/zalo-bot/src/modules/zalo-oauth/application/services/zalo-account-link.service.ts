@@ -6,6 +6,7 @@ import { Repository } from 'typeorm';
 import { maskExternalId, errorMessage } from '@wispace/bot-common/masking';
 import { buildConsentExplainerMessage } from '@wispace/bot-common/messages';
 import { readBoundedJson } from '@wispace/bot-common/utils';
+import { extractQueryRows } from '@wispace/bot-common/utils';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 
 const PLATFORM = 'zalo' as const;
@@ -301,13 +302,15 @@ export class ZaloAccountLinkService {
   }
 
   private async claimConsentPrompt(zaloUserId: string): Promise<boolean> {
-    const rows = await this.repo.query<Array<{ id: string }>>(
-      `UPDATE zalo_account_links
+    const rows = extractQueryRows<{ id: string }>(
+      await this.repo.query(
+        `UPDATE zalo_account_links
        SET optin_prompt_sent_at = now(), updated_at = now()
        WHERE platform = $1 AND external_user_id = $2
          AND optin_prompt_sent_at IS NULL
        RETURNING id`,
-      [PLATFORM, zaloUserId],
+        [PLATFORM, zaloUserId],
+      ),
     );
     return rows.length > 0;
   }

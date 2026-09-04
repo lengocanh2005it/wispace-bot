@@ -375,26 +375,29 @@ describe('TypeormStudyReminderJobRepository', () => {
   describe('claimJob', () => {
     it('assigns a fresh lease token and expiry from the claim deadline', async () => {
       const query = jest.fn().mockResolvedValue([
-        {
-          id: 9,
-          platform: 'messenger',
-          external_user_id: 'psid-1',
-          user_id: 143,
-          session_key: 'calendar:5',
-          scheduled_at: new Date('2026-06-12T10:30:00+07:00'),
-          remind_at: new Date('2026-06-12T10:00:00+07:00'),
-          topic: 'IELTS Writing',
-          status: 'processing',
-          retry_count: 1,
-          max_retries: 3,
-          next_retry_at: null,
-          last_error: null,
-          sent_at: null,
-          lease_token: 'lease-abc',
-          lease_expires_at: new Date(),
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
+        [
+          {
+            id: 9,
+            platform: 'messenger',
+            external_user_id: 'psid-1',
+            user_id: 143,
+            session_key: 'calendar:5',
+            scheduled_at: new Date('2026-06-12T10:30:00+07:00'),
+            remind_at: new Date('2026-06-12T10:00:00+07:00'),
+            topic: 'IELTS Writing',
+            status: 'processing',
+            retry_count: 1,
+            max_retries: 3,
+            next_retry_at: null,
+            last_error: null,
+            sent_at: null,
+            lease_token: 'lease-abc',
+            lease_expires_at: new Date(),
+            created_at: new Date(),
+            updated_at: new Date(),
+          },
+        ],
+        1,
       ]);
       const jobRepo = {
         query,
@@ -423,8 +426,8 @@ describe('TypeormStudyReminderJobRepository', () => {
       expect(job?.status).toBe('processing');
     });
 
-    it('returns null when the job is not pending/failed', async () => {
-      const query = jest.fn().mockResolvedValue([]);
+    it('returns null when the job is not pending/failed (real [[], 0] tuple shape)', async () => {
+      const query = jest.fn().mockResolvedValue([[], 0]);
       const jobRepo = {
         query,
         update: jest.fn(),

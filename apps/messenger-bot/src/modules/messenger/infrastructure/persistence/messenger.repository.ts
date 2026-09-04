@@ -2,6 +2,7 @@ import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Not, Repository } from 'typeorm';
 import { truncatePersistedError } from '@wispace/bot-common/masking';
+import { extractQueryRows } from '@wispace/bot-common/utils';
 import {
   buildPocPsidToken,
   DEFAULT_TOPIC,
@@ -98,7 +99,7 @@ export class MessengerRepository
     // 1. Re-activate a previously deactivated mapping (keeps its id) — the
     //    INSERT below can only conflict with ACTIVE rows, so an INACTIVE row
     //    would otherwise be left behind while a duplicate ACTIVE row is created.
-    const reactivatedRows: Array<Record<string, unknown>> =
+    const reactivatedRows = extractQueryRows<Record<string, unknown>>(
       await this.mappingRepo.manager.query(
         `
       UPDATE user_platform_mappings
@@ -128,7 +129,8 @@ export class MessengerRepository
           params.cadence ?? null,
           params.expectedGeneration ?? null,
         ],
-      );
+      ),
+    );
 
     if (
       params.expectedGeneration !== undefined &&
@@ -351,8 +353,9 @@ export class MessengerRepository
   }
 
   async cleanupActiveDuplicateMappings(): Promise<number> {
-    const result = await this.mappingRepo.manager.query<Array<{ id: number }>>(
-      `
+    const byPsid = extractQueryRows<{ id: number }>(
+      await this.mappingRepo.manager.query(
+        `
       WITH keepers AS (
         SELECT DISTINCT ON (platform, external_user_id) id
         FROM user_platform_mappings
@@ -368,11 +371,12 @@ export class MessengerRepository
         AND id NOT IN (SELECT id FROM keepers)
       RETURNING id
       `,
-    );
-    const byPsid = result.length;
+      ),
+    ).length;
 
-    const byUser = await this.mappingRepo.manager.query<Array<{ id: number }>>(
-      `
+    const byUser = extractQueryRows<{ id: number }>(
+      await this.mappingRepo.manager.query(
+        `
       WITH keepers AS (
         SELECT DISTINCT ON (user_id) id
         FROM user_platform_mappings
@@ -388,9 +392,10 @@ export class MessengerRepository
         AND id NOT IN (SELECT id FROM keepers)
       RETURNING id
       `,
-    );
+      ),
+    ).length;
 
-    return byPsid + byUser.length;
+    return byPsid + byUser;
   }
 
   async deactivateConflictingActiveMappings(params: {

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { extractQueryRows } from '@wispace/bot-common/utils';
 import { DiscordOauthStateEntity } from '@discord/infrastructure/database/entities/discord-oauth-state.entity';
 import type { DiscordOauthStateRepositoryPort } from '../../domain/ports/discord-oauth-state.repository.port';
 
@@ -29,13 +30,13 @@ export class TypeormDiscordOauthStateRepository implements DiscordOauthStateRepo
   async deleteByState(
     state: string,
   ): Promise<{ linkToken: string; createdAt: Date } | undefined> {
-    const rows = await this.repo.query<
-      Array<{ link_token: string; created_at: Date }>
-    >(
-      `DELETE FROM "discord_oauth_states"
+    const rows = extractQueryRows<{ link_token: string; created_at: Date }>(
+      await this.repo.query(
+        `DELETE FROM "discord_oauth_states"
        WHERE "state" = $1
        RETURNING "link_token", "created_at"`,
-      [state],
+        [state],
+      ),
     );
     const row = rows[0];
     if (!row) return undefined;

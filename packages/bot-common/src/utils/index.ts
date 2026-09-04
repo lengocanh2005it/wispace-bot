@@ -1,4 +1,5 @@
 export { isAbortError, sleep } from './abort.utils';
+export { extractQueryRows } from './query-rows.utils';
 export { jitteredDelayMs } from './jitter.utils';
 export { parseCookieHeader } from './cookie-header';
 export { readHttpsUrl } from './https-url';

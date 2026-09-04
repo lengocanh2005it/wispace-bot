@@ -36,8 +36,10 @@ describe('TypeormDiscordOauthStateRepository (#428)', () => {
 
   it('deleteByState consumes via a single atomic DELETE..RETURNING (no read-then-delete race)', async () => {
     const repo = makeRepo();
+    // Real driver shape: DELETE … RETURNING returns [rows, rowCount].
     repo.query.mockResolvedValue([
-      { link_token: 'v1.iv.tag.cipher', created_at: '2026-08-30T00:00:00Z' },
+      [{ link_token: 'v1.iv.tag.cipher', created_at: '2026-08-30T00:00:00Z' }],
+      1,
     ]);
     const repository = new TypeormDiscordOauthStateRepository(repo);
 
@@ -55,9 +57,9 @@ describe('TypeormDiscordOauthStateRepository (#428)', () => {
     });
   });
 
-  it('deleteByState returns undefined when the state does not exist', async () => {
+  it('deleteByState returns undefined when the state does not exist (real [[], 0] tuple shape)', async () => {
     const repo = makeRepo();
-    repo.query.mockResolvedValue([]);
+    repo.query.mockResolvedValue([[], 0]);
     const repository = new TypeormDiscordOauthStateRepository(repo);
 
     await expect(repository.deleteByState('unknown')).resolves.toBeUndefined();

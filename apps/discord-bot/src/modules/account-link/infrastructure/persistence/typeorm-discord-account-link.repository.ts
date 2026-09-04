@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { extractQueryRows } from '@wispace/bot-common/utils';
 import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
 import type { DiscordAccountLinkRepositoryPort } from '../../domain/ports/discord-account-link.repository.port';
 
@@ -155,13 +156,15 @@ export class TypeormDiscordAccountLinkRepository implements DiscordAccountLinkRe
   }
 
   async claimConsentPrompt(discordUserId: string): Promise<boolean> {
-    const rows = await this.repo.query<Array<{ id: string }>>(
-      `UPDATE discord_account_links
+    const rows = extractQueryRows<{ id: string }>(
+      await this.repo.query(
+        `UPDATE discord_account_links
        SET optin_prompt_sent_at = now(), updated_at = now()
        WHERE platform = $1 AND external_user_id = $2
          AND optin_prompt_sent_at IS NULL
        RETURNING id`,
-      [PLATFORM, discordUserId],
+        [PLATFORM, discordUserId],
+      ),
     );
     return rows.length > 0;
   }

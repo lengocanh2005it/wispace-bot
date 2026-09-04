@@ -27,7 +27,7 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
   it('reactivates an INACTIVE row, then upserts atomically via ON CONFLICT', async () => {
     const { repo, managerQuery } = buildRepo();
     managerQuery
-      .mockResolvedValueOnce([]) // UPDATE INACTIVE (no-op)
+      .mockResolvedValueOnce([[], 0]) // UPDATE INACTIVE (no-op)
       .mockResolvedValueOnce([
         {
           id: 7,
@@ -38,10 +38,10 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
           topic: 'ielts',
           cadence: 'weekly',
           status: 'ACTIVE',
-          created_at: new Date('2026-01-01T00:00:00.000Z'),
-          updated_at: new Date('2026-01-01T00:00:00.000Z'),
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
         },
-      ]);
+      ]); // INSERT ON CONFLICT — flat rows (tag stays INSERT)
 
     const result = await repo.upsertPsidUserLink({
       psid: 'psid-1',
@@ -67,11 +67,11 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
     );
   });
 
-  it('returns null when CAS guard blocks the update (#383)', async () => {
+  it('returns null when CAS guard blocks the update (#383, real [[], 0] tuple shape)', async () => {
     const { repo, managerQuery } = buildRepo();
     managerQuery
-      .mockResolvedValueOnce([]) // UPDATE INACTIVE (no-op)
-      .mockResolvedValueOnce([]); // CAS guard blocked — RETURNING empty
+      .mockResolvedValueOnce([[], 0]) // UPDATE INACTIVE (no-op)
+      .mockResolvedValueOnce([]); // CAS guard blocked — INSERT ON CONFLICT yields no flat rows
 
     const result = await repo.upsertPsidUserLink({
       psid: 'psid-1',

@@ -7,6 +7,7 @@ import {
   truncatePersistedError,
 } from '@wispace/bot-common/masking';
 import { sleep } from '@wispace/bot-common/utils';
+import { extractQueryRows } from '@wispace/bot-common/utils';
 import {
   WebhookDeadLetterEntity,
   type WebhookDeadLetterEntry,
@@ -146,13 +147,13 @@ export class PlatformDeadLetterService {
       [id, leaseMs],
     );
 
-    // TypeORM returns `[rows, affectedCount]` for `UPDATE … RETURNING`; older
-    // drivers hand back just `rows`. Normalize both to the row array.
-    const rows: Array<{
+    // Shared normalizer: TypeORM returns `[rows, affectedCount]` for
+    // `UPDATE … RETURNING`; older drivers hand back just `rows` (#754).
+    const rows = extractQueryRows<{
       id: number;
       lease_token: string;
       delivery_key: string;
-    }> = Array.isArray(raw?.[0]) ? raw[0] : (raw ?? []);
+    }>(raw);
 
     return rows.length > 0
       ? {

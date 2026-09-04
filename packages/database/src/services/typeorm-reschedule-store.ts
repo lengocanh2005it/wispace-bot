@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
+import { extractQueryRows } from '@wispace/bot-common/utils';
 import type {
   PendingRescheduleRecord,
   RescheduleStorePort,
@@ -98,8 +99,9 @@ export class TypeormRescheduleStore<
       ...(userId != null ? [userId] : []),
       ...bindingParams,
     ];
-    const rows: Array<Record<string, unknown>> = await this.repo.query(
-      `
+    const rows = extractQueryRows<Record<string, unknown>>(
+      await this.repo.query(
+        `
       UPDATE reschedule_confirmations
       SET status = 'processing',
           lease_token = $2,
@@ -112,15 +114,15 @@ export class TypeormRescheduleStore<
         ${bindingConditions.length ? `AND ${bindingConditions.join(' AND ')}` : ''}
       RETURNING *
     `,
-      params,
+        params,
+      ),
     );
 
     if (rows.length === 0) {
       return null;
     }
 
-    const row = rows[0];
-    return this.mapRow(row);
+    return this.mapRow(rows[0]);
   }
 
   async revertToPending(
@@ -175,8 +177,9 @@ export class TypeormRescheduleStore<
    * Called by the recovery cron to handle crash-stranded confirmations.
    */
   async recoverStaleProcessing(staleAfterMs: number): Promise<number> {
-    const result: Array<{ affected: number }> = await this.repo.query(
-      `
+    const rows = extractQueryRows(
+      await this.repo.query(
+        `
       UPDATE reschedule_confirmations
       SET status = 'pending',
           lease_token = NULL,
@@ -186,10 +189,12 @@ export class TypeormRescheduleStore<
       WHERE status = 'processing'
         AND processing_started_at < now() - ($1::int * interval '1 millisecond')
         AND lease_token IS NOT NULL
+      RETURNING 1
     `,
-      [staleAfterMs],
+        [staleAfterMs],
+      ),
     );
-    return result[0]?.affected ?? 0;
+    return rows.length;
   }
 
   async hasPending(externalId: TExternalId): Promise<boolean> {

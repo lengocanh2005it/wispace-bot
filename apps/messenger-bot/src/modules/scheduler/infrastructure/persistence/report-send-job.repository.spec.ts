@@ -65,24 +65,27 @@ describe('ReportSendJobRepository (R5)', () => {
   it('claims a job with a fresh lease token and expiry', async () => {
     const jobRepo = {
       query: jest.fn().mockResolvedValue([
-        {
-          id: 7,
-          platform: 'messenger',
-          external_user_id: 'psid-1',
-          user_id: null,
-          exam_date: '2026-06-15',
-          first_attempt_date: '2026-06-12',
-          status: 'processing',
-          retry_count: 1,
-          max_retries: 3,
-          next_retry_at: null,
-          last_error: null,
-          sent_at: null,
-          lease_token: 'abc-lease',
-          lease_expires_at: new Date(),
-          created_at: new Date(),
-          updated_at: new Date(),
-        },
+        [
+          {
+            id: 7,
+            platform: 'messenger',
+            external_user_id: 'psid-1',
+            user_id: null,
+            exam_date: '2026-06-15',
+            first_attempt_date: '2026-06-12',
+            status: 'processing',
+            retry_count: 1,
+            max_retries: 3,
+            next_retry_at: null,
+            last_error: null,
+            sent_at: null,
+            lease_token: 'abc-lease',
+            lease_expires_at: new Date(),
+            created_at: new Date(),
+            updated_at: new Date(),
+          },
+        ],
+        1,
       ]),
       createQueryBuilder: jest.fn(),
     } as unknown as Repository<ReportSendJobEntity>;
@@ -91,6 +94,7 @@ describe('ReportSendJobRepository (R5)', () => {
     const job = await localRepo.claimJob(7, 600_000);
 
     expect(job?.leaseToken).toBe('abc-lease');
+    expect(job?.externalUserId).toBe('psid-1');
     const [sql, params] = (jobRepo.query as jest.Mock).mock.calls[0] as [
       string,
       unknown[],
@@ -98,6 +102,16 @@ describe('ReportSendJobRepository (R5)', () => {
     expect(sql).toContain('lease_token = gen_random_uuid()');
     expect(sql).toContain('lease_expires_at = now() + ($2::int');
     expect(params[1]).toBe(600_000);
+  });
+
+  it('returns null when the claim matches no row (real [[], 0] tuple shape)', async () => {
+    const jobRepo = {
+      query: jest.fn().mockResolvedValue([[], 0]),
+      createQueryBuilder: jest.fn(),
+    } as unknown as Repository<ReportSendJobEntity>;
+    const localRepo = new ReportSendJobRepository(jobRepo);
+
+    await expect(localRepo.claimJob(7, 600_000)).resolves.toBeNull();
   });
 
   it('markSent requires the lease token (stale owners no-op)', async () => {

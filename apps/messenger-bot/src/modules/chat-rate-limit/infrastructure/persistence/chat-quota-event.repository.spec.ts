@@ -118,15 +118,18 @@ describe('ChatQuotaEventRepository', () => {
   describe('deleteOlderThan', () => {
     it('deletes in batches of 1000 until exhausted (multi-batch backlog)', async () => {
       queryFn
-        .mockResolvedValueOnce(
+        .mockResolvedValueOnce([
           Array.from({ length: 1000 }, (_, i) => ({ id: String(i) })),
-        )
-        .mockResolvedValueOnce(
+          1000,
+        ])
+        .mockResolvedValueOnce([
           Array.from({ length: 1000 }, (_, i) => ({ id: String(i + 1000) })),
-        )
-        .mockResolvedValueOnce(
+          1000,
+        ])
+        .mockResolvedValueOnce([
           Array.from({ length: 200 }, (_, i) => ({ id: String(i + 2000) })),
-        );
+          200,
+        ]);
 
       const result = await repo.deleteOlderThan(new Date('2026-01-01'));
 
@@ -139,8 +142,8 @@ describe('ChatQuotaEventRepository', () => {
       );
     });
 
-    it('returns 0 when no rows match (empty backlog)', async () => {
-      queryFn.mockResolvedValueOnce([]);
+    it('returns 0 when no rows match (real [[], 0] tuple shape, empty backlog)', async () => {
+      queryFn.mockResolvedValueOnce([[], 0]);
 
       const result = await repo.deleteOlderThan(new Date('2026-08-08'));
 
@@ -150,10 +153,11 @@ describe('ChatQuotaEventRepository', () => {
 
     it('handles exactly-full batch (1000 rows) then empty', async () => {
       queryFn
-        .mockResolvedValueOnce(
+        .mockResolvedValueOnce([
           Array.from({ length: 1000 }, (_, i) => ({ id: String(i) })),
-        )
-        .mockResolvedValueOnce([]);
+          1000,
+        ])
+        .mockResolvedValueOnce([[], 0]);
 
       const result = await repo.deleteOlderThan(new Date('2026-01-01'));
 
@@ -163,9 +167,10 @@ describe('ChatQuotaEventRepository', () => {
     });
 
     it('stops after a partial batch', async () => {
-      queryFn.mockResolvedValueOnce(
+      queryFn.mockResolvedValueOnce([
         Array.from({ length: 50 }, (_, i) => ({ id: String(i) })),
-      );
+        50,
+      ]);
 
       const result = await repo.deleteOlderThan(new Date('2026-01-01'));
 
@@ -176,9 +181,10 @@ describe('ChatQuotaEventRepository', () => {
     it('propagates error on batch failure (retry resumes from next cron tick)', async () => {
       queryFn
         .mockRejectedValueOnce(new Error('connection timeout'))
-        .mockResolvedValueOnce(
+        .mockResolvedValueOnce([
           Array.from({ length: 300 }, (_, i) => ({ id: String(i) })),
-        );
+          300,
+        ]);
 
       // First call fails on first batch
       await expect(

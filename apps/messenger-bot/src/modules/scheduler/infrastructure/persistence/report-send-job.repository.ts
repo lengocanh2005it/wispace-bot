@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { truncatePersistedError } from '@wispace/bot-common/masking';
+import { extractQueryRows } from '@wispace/bot-common/utils';
 import type {
   ReportSendJobRepositoryPort,
   ReportSendJob,
@@ -93,14 +94,16 @@ export class ReportSendJobRepository implements ReportSendJobRepositoryPort {
     // Assign a fresh lease token + expiry so recovery (which reopens only
     // expired leases) and stale owners (whose token no longer matches) can
     // never double-send or overwrite a newer owner's result.
-    const rows: Array<Record<string, unknown>> = await this.jobRepo.query(
-      `UPDATE report_send_jobs
+    const rows = extractQueryRows<Record<string, unknown>>(
+      await this.jobRepo.query(
+        `UPDATE report_send_jobs
        SET status = 'processing',
            lease_token = gen_random_uuid(),
            lease_expires_at = now() + ($2::int * interval '1 millisecond')
        WHERE id = $1 AND status = 'failed'
        RETURNING *`,
-      [jobId, leaseMs],
+        [jobId, leaseMs],
+      ),
     );
 
     if (!rows.length) {

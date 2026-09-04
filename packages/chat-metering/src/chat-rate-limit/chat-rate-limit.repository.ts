@@ -1,4 +1,5 @@
 import type { EntityManager, Repository } from 'typeorm';
+import { extractQueryRows } from '@wispace/bot-common/utils';
 import type { ChatDailyUsageEntity } from '../entities/chat-daily-usage.entity';
 import type { ChatIdempotencyEntity } from '../entities/chat-idempotency.entity';
 import type {
@@ -25,16 +26,9 @@ class BurstLimitExceededError extends Error {
   }
 }
 
-type QueryRows<T> = T[] | [T[], number];
-
 export interface BurstCountRow {
   externalUserId: string;
   count: number;
-}
-
-function extractQueryRows<T>(result: QueryRows<T>): T[] {
-  // TypeORM returns UPDATE/DELETE results as [rows, affected], unlike SELECT/INSERT.
-  return Array.isArray(result[0]) ? result[0] : (result as T[]);
 }
 
 /**

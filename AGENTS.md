@@ -98,6 +98,7 @@ Database CI checks (root, disposable PostgreSQL only):
 
 ```bash
 npm run database:bootstrap-smoke          # entity metadata + OAuth cleanup
+npm run database:query-returning-shape-smoke  # #754 pins raw query() UPDATE/DELETE tuple vs INSERT flat shapes (extractQueryRows contract)
 npm run database:privacy-smoke            # real cross-platform privacy unlink/delete/export
 npm run database:migration-compatibility  # canonical migration chain + bot tables
 ```

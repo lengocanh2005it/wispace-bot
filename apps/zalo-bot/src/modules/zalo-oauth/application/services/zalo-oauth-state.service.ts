@@ -9,6 +9,7 @@ import {
   parseEncryptionKey,
 } from '@wispace/bot-common/utils';
 import { errorMessage } from '@wispace/bot-common/masking';
+import { extractQueryRows } from '@wispace/bot-common/utils';
 import { ZaloOauthStateEntity } from '@zalo/infrastructure/database/entities/zalo-oauth-state.entity';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -87,17 +88,17 @@ export class ZaloOauthStateService {
 
   /** Deletes the row regardless of outcome (single-use, even if expired). */
   async consume(state: string): Promise<ConsumedZaloOauthState | undefined> {
-    const rows = await this.repo.query<
-      Array<{
-        code_verifier: string;
-        link_token: string;
-        created_at: Date;
-      }>
-    >(
-      `DELETE FROM "zalo_oauth_states"
+    const rows = extractQueryRows<{
+      code_verifier: string;
+      link_token: string;
+      created_at: Date;
+    }>(
+      await this.repo.query(
+        `DELETE FROM "zalo_oauth_states"
        WHERE "state" = $1
        RETURNING "code_verifier", "link_token", "created_at"`,
-      [state],
+        [state],
+      ),
     );
     const row = rows[0];
     if (!row) {

@@ -85,11 +85,14 @@ describe('ZaloOauthStateService', () => {
     const encryptedLinkToken = encryptAesGcm('link-token-123', TEST_KEY);
 
     const query = jest.fn().mockResolvedValue([
-      {
-        code_verifier: encryptedVerifier,
-        link_token: encryptedLinkToken,
-        created_at: new Date(),
-      },
+      [
+        {
+          code_verifier: encryptedVerifier,
+          link_token: encryptedLinkToken,
+          created_at: new Date(),
+        },
+      ],
+      1,
     ]);
     const service = new ZaloOauthStateService(buildRepo({ query }));
 
@@ -110,11 +113,14 @@ describe('ZaloOauthStateService', () => {
     const encryptedLinkToken = encryptAesGcm('link-token-123', TEST_KEY);
 
     const query = jest.fn().mockResolvedValue([
-      {
-        code_verifier: encryptedVerifier,
-        link_token: encryptedLinkToken,
-        created_at: new Date(Date.now() - 11 * 60 * 1000),
-      },
+      [
+        {
+          code_verifier: encryptedVerifier,
+          link_token: encryptedLinkToken,
+          created_at: new Date(Date.now() - 11 * 60 * 1000),
+        },
+      ],
+      1,
     ]);
     const service = new ZaloOauthStateService(buildRepo({ query }));
 
@@ -123,8 +129,8 @@ describe('ZaloOauthStateService', () => {
     expect(codeVerifier).toBeUndefined();
   });
 
-  it('returns undefined when the state does not exist', async () => {
-    const query = jest.fn().mockResolvedValue([]);
+  it('returns undefined when the state does not exist (real [[], 0] tuple shape)', async () => {
+    const query = jest.fn().mockResolvedValue([[], 0]);
     const service = new ZaloOauthStateService(buildRepo({ query }));
 
     await expect(service.consume('missing')).resolves.toBeUndefined();
@@ -132,11 +138,14 @@ describe('ZaloOauthStateService', () => {
 
   it('fails closed when state values are legacy plaintext without v1 prefix', async () => {
     const query = jest.fn().mockResolvedValue([
-      {
-        code_verifier: 'legacy-verifier',
-        link_token: 'legacy-token',
-        created_at: new Date(),
-      },
+      [
+        {
+          code_verifier: 'legacy-verifier',
+          link_token: 'legacy-token',
+          created_at: new Date(),
+        },
+      ],
+      1,
     ]);
     const service = new ZaloOauthStateService(buildRepo({ query }));
 
@@ -150,11 +159,14 @@ describe('ZaloOauthStateService', () => {
     const encryptedLinkToken = encryptAesGcm('link-token-123', wrongKey);
 
     const query = jest.fn().mockResolvedValue([
-      {
-        code_verifier: encryptedVerifier,
-        link_token: encryptedLinkToken,
-        created_at: new Date(),
-      },
+      [
+        {
+          code_verifier: encryptedVerifier,
+          link_token: encryptedLinkToken,
+          created_at: new Date(),
+        },
+      ],
+      1,
     ]);
     const service = new ZaloOauthStateService(buildRepo({ query }));
 
@@ -167,11 +179,14 @@ describe('ZaloOauthStateService', () => {
       .spyOn(Logger.prototype, 'warn')
       .mockImplementation(() => undefined);
     const query = jest.fn().mockResolvedValue([
-      {
-        code_verifier: 'legacy-verifier',
-        link_token: 'legacy-token',
-        created_at: new Date(),
-      },
+      [
+        {
+          code_verifier: 'legacy-verifier',
+          link_token: 'legacy-token',
+          created_at: new Date(),
+        },
+      ],
+      1,
     ]);
     const service = new ZaloOauthStateService(buildRepo({ query }));
 

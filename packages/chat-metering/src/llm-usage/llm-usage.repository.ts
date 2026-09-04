@@ -1,5 +1,6 @@
 import type { Repository } from 'typeorm';
 import { Counter } from 'prom-client';
+import { extractQueryRows } from '@wispace/bot-common/utils';
 import type { LlmUsageEventEntity } from '../entities/llm-usage-event.entity';
 import type {
   LlmUsageAggregateRow,
@@ -89,8 +90,9 @@ export class LlmUsageRepository {
     // removes exactly those rows. Loop exits when a partial batch signals
     // no more rows remain.
     for (;;) {
-      const deleted: Array<{ id: string }> = await this.usageRepo.manager.query(
-        `
+      const deleted = extractQueryRows<{ id: string }>(
+        await this.usageRepo.manager.query(
+          `
             DELETE FROM llm_usage_events
             WHERE id IN (
               SELECT id FROM llm_usage_events
@@ -99,7 +101,8 @@ export class LlmUsageRepository {
             )
             RETURNING id
           `,
-        [this.platform, cutoff, BATCH_SIZE],
+          [this.platform, cutoff, BATCH_SIZE],
+        ),
       );
 
       totalDeleted += deleted.length;
