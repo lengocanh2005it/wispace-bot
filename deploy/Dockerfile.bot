@@ -7,7 +7,7 @@ ARG APP_NAME=messenger-bot
 # Fixed internal listener port; vps-deploy.sh alternates only the host port.
 ARG APP_PORT=5007
 
-FROM node:22.23.2-alpine@sha256:76789712cd1ae89a1225eac9077010d68987a423588042dac30446f502f1858c AS pruner
+FROM node:26.8.1-alpine@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS pruner
 WORKDIR /src
 ARG APP_NAME
 
@@ -27,7 +27,7 @@ RUN --mount=type=bind,source=.,target=/context,ro \
 COPY . .
 RUN npx --no-install turbo prune @wispace/${APP_NAME} --docker --out-dir /tmp/pruned
 
-FROM node:22.23.2-alpine@sha256:76789712cd1ae89a1225eac9077010d68987a423588042dac30446f502f1858c AS build
+FROM node:26.8.1-alpine@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS build
 WORKDIR /app
 ARG APP_NAME
 
@@ -41,7 +41,7 @@ COPY --from=pruner /tmp/pruned/full/ ./
 RUN npx --no-install turbo run build --filter=@wispace/${APP_NAME}...
 
 # Install the runtime dependency graph in a clean workspace after the build.
-FROM node:22.23.2-alpine@sha256:76789712cd1ae89a1225eac9077010d68987a423588042dac30446f502f1858c AS production-deps
+FROM node:26.8.1-alpine@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS production-deps
 WORKDIR /app
 ARG APP_NAME
 
@@ -90,7 +90,7 @@ RUN set -eu; \
       cp -a "/nested/apps/${APP_NAME}/node_modules/." "apps/${APP_NAME}/node_modules/"; \
     fi
 
-FROM node:22.23.2-alpine@sha256:76789712cd1ae89a1225eac9077010d68987a423588042dac30446f502f1858c AS production
+FROM node:26.8.1-alpine@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS production
 WORKDIR /app
 
 # Global ARGs are out of scope after FROM — redeclare per stage that uses them.
