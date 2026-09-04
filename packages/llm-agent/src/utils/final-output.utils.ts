@@ -1,4 +1,5 @@
 import { CREDENTIAL_SHAPES } from './secret-patterns.utils';
+import { buildSafetyScanCandidates } from './prompt-injection.utils';
 
 /**
  * Final-output safety guardrail (#165): the last thing an LLM-generated
@@ -30,7 +31,7 @@ export const SYSTEM_PROMPT_LEAK_MARKERS = [
  * ponytail: manual denylist, extend only when a real bypass is observed (#336).
  */
 const VENDOR_MODEL_PATTERNS: Array<RegExp> = [
-  /\b(openai|anthropic|openrouter|together\s+ai|groq|mistral\s+ai|deepseek|minimax|azure\s+openai|aws\s+bedrock|vertex\s+ai|google\s+ai)\b/i,
+  /\b(open\s*ai|anthropic|openrouter|together\s+ai|groq|mistral\s+ai|deepseek|minimax|azure\s+openai|aws\s+bedrock|vertex\s+ai|google\s+ai)\b/i,
   /\b(chatgpt|claude|gemini|llama|mixtral|qwen|grok)\b/i,
   /\bgpt\b/i,
   /\bgpt[-_\s]?\d/i,
@@ -48,11 +49,33 @@ export interface FinalOutputSafetyResult {
   reason?: 'prompt_leak' | 'credential_leak' | 'vendor_leak';
 }
 
+function compactCanonicalText(text: string): string {
+  // ponytail: compact only long allowlisted markers; add short-token spacing
+  // rules only after a reproduced bypass to avoid false positives.
+  return text.replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function containsPromptLeakMarker(outputCandidates: string[]): boolean {
+  const canonicalOutputCandidates = outputCandidates.slice(1);
+
+  return SYSTEM_PROMPT_LEAK_MARKERS.some((marker) => {
+    const markerCandidates = buildSafetyScanCandidates(marker).slice(1);
+    return markerCandidates.some((markerCandidate) => {
+      const compactMarker = compactCanonicalText(markerCandidate);
+      return canonicalOutputCandidates.some(
+        (candidate) =>
+          candidate.includes(markerCandidate) ||
+          compactCanonicalText(candidate).includes(compactMarker),
+      );
+    });
+  });
+}
+
 export function checkFinalOutputSafety(text: string): FinalOutputSafetyResult {
-  for (const marker of SYSTEM_PROMPT_LEAK_MARKERS) {
-    if (text.includes(marker)) {
-      return { unsafe: true, reason: 'prompt_leak' };
-    }
+  const outputCandidates = buildSafetyScanCandidates(text);
+
+  if (containsPromptLeakMarker(outputCandidates)) {
+    return { unsafe: true, reason: 'prompt_leak' };
   }
   for (const pattern of CREDENTIAL_SHAPES) {
     if (pattern.test(text)) {
@@ -60,7 +83,7 @@ export function checkFinalOutputSafety(text: string): FinalOutputSafetyResult {
     }
   }
   for (const pattern of VENDOR_MODEL_PATTERNS) {
-    if (pattern.test(text)) {
+    if (outputCandidates.some((candidate) => pattern.test(candidate))) {
       return { unsafe: true, reason: 'vendor_leak' };
     }
   }

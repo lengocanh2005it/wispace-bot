@@ -49,16 +49,43 @@ function normalizeConfusables(text: string): string {
     .join('');
 }
 
-function normalizeForPromptScan(text: string): string {
-  const normalized = text
+function normalizeForPromptScan(
+  text: string,
+  formatCharReplacement: '' | ' ',
+  foldSeparators = true,
+): string {
+  let normalized = text
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[\u200B-\u200F\uFEFF]/g, '')
-    .replace(/[""]/g, '"')
-    .replace(/['']/g, "'")
-    .replace(/\s+/g, ' ')
-    .toLowerCase();
+    .replace(/[\p{Cf}\uFE00-\uFE0F]/gu, formatCharReplacement)
+    .replace(/["”]/g, '"')
+    .replace(/['']/g, "'");
+  if (foldSeparators) {
+    normalized = normalized.replace(/[_\-.]+/g, ' ');
+  }
+  normalized = normalized
+    .replace(foldSeparators ? /\s+/g : /[^\S\r\n]+/g, ' ')
+    .toLowerCase()
+    .replace(/đ/g, 'd');
   return normalizeConfusables(normalized);
+}
+
+/**
+ * Build raw and canonical forms for safety matching. Format characters are
+ * represented both as removed and as separators because either interpretation
+ * can be used to hide a word boundary.
+ */
+export function buildSafetyScanCandidates(text: string): string[] {
+  return [
+    text,
+    ...new Set([
+      normalizeForPromptScan(text, ''),
+      normalizeForPromptScan(text, ' '),
+      // Keep sentence punctuation and line breaks in one candidate so role
+      // boundaries survive confusable/format-character folding.
+      normalizeForPromptScan(text, '', false),
+    ]),
+  ];
 }
 
 /**
@@ -80,7 +107,7 @@ const INJECTION_PATTERNS: Array<[RegExp, string]> = [
     'instruction_override',
   ],
   [
-    /bỏ\s*qua\s+(mọi\s+)?(hướng\s*dẫn|lệnh)\s*(trước|cũ|trên)/i,
+    /bo\s*qua\s+(moi\s+)?(huong\s*dan|lenh)\s*(truoc|cu|tren)/i,
     'instruction_override',
   ],
   [
@@ -97,13 +124,12 @@ const INJECTION_PATTERNS: Array<[RegExp, string]> = [
   [/\n\s*<\s*system\s*>/i, 'injected_role_marker'],
   [/\n\s*\[\s*system\s*\]/i, 'injected_role_marker'],
   [/```\s*system\b/i, 'injected_role_marker'],
-  [/\n\s*system\s*:\s*\n/i, 'injected_role_marker'],
   [
-    /(?:^|\n)\s*(?:system|developer|assistant|tool)\s*:/i,
+    /(?:^|[\n.!?])\s*(?:system|developer|assistant|tool)\s*:/i,
     'injected_role_marker',
   ],
   [
-    /(?:^|\n)\s*(?:hệ\s*thống|he\s*thong|nhà\s*phát\s*triển|nha\s*phat\s*trien)\s*:/i,
+    /(?:^|[\n.!?])\s*(?:hệ\s*thống|he\s*thong|nhà\s*phát\s*triển|nha\s*phat\s*trien)\s*:/i,
     'injected_role_marker',
   ],
 
@@ -132,6 +158,7 @@ const INJECTION_PATTERNS: Array<[RegExp, string]> = [
     /(?:đóng\s*vai|dong\s*vai|giả\s*vờ|gia\s*vo)\s+(?:là|la)\s+(?!trợ\s*lý\s*WISPACE|tro\s*ly\s*WISPACE)/i,
     'persona_override',
   ],
+  [/(?:đóng\s*vai|dong\s*vai)\s+(?:một|mot)\s+hacker\b/i, 'persona_override'],
   [/\bDAN\b.*(?:do\s+anything|jailbreak)/i, 'persona_override'],
 
   // System prompt extraction
@@ -448,10 +475,12 @@ export function detectDisclosureProbe(userText: string): DisclosureProbeResult {
   const text = userText ?? '';
   if (!text.trim()) return { probed: false };
 
-  // `normalizeForPromptScan` (NFD) does NOT decompose Vietnamese đ/Đ — fold
-  // it here so ASCII patterns (`dau`, `duoc`, `de`, ...) match "đâu", "được".
-  const normalized = normalizeForPromptScan(text).replace(/đ/g, 'd');
-  const candidates = [text, normalized, foldLeet(normalized)];
+  const canonicalCandidates = buildSafetyScanCandidates(text).slice(1);
+  const candidates = [
+    text,
+    ...canonicalCandidates,
+    ...canonicalCandidates.map(foldLeet),
+  ];
 
   for (const [pattern, category] of DISCLOSURE_PROBE_PATTERNS) {
     for (const candidate of candidates) {
@@ -470,11 +499,11 @@ function hasRepetitionFlood(text: string): boolean {
 }
 
 function scanPatterns(text: string): InjectionCheckResult {
-  if (hasRepetitionFlood(text)) {
+  const candidates = buildSafetyScanCandidates(text);
+  if (candidates.some(hasRepetitionFlood)) {
     return { isInjection: true, reason: 'repetition_flood' };
   }
 
-  const candidates = [text, normalizeForPromptScan(text)];
   for (const [pattern, reason] of INJECTION_PATTERNS) {
     if (candidates.some((candidate) => pattern.test(candidate))) {
       return { isInjection: true, reason };

@@ -12,6 +12,18 @@ describe('checkFinalOutputSafety', () => {
     expect(result).toEqual({ unsafe: true, reason: 'prompt_leak' });
   });
 
+  it.each([
+    'you are the wispace assistant — an IELTS Writing coach.',
+    'Y o u a r e t h e W I S P A C E a s s i s t a n t',
+    'Yоu are the WISPACE assistant',
+    'You_are_the_WISPACE_assistant',
+  ])('flags obfuscated prompt marker: %s', (text) => {
+    expect(checkFinalOutputSafety(text)).toEqual({
+      unsafe: true,
+      reason: 'prompt_leak',
+    });
+  });
+
   it('flags a reply leaking an instruction section header', () => {
     const result = checkFinalOutputSafety(
       'Xin chào! When NOT to call tools: greetings only.',
@@ -52,6 +64,14 @@ describe('checkFinalOutputSafety', () => {
     expect(result.unsafe).toBe(false);
   });
 
+  it('keeps a generic non-disclosure phrase safe', () => {
+    expect(
+      checkFinalOutputSafety(
+        'Mình không thể chia sẻ system prompt hoặc thông tin nội bộ.',
+      ),
+    ).toEqual({ unsafe: false });
+  });
+
   describe('vendor / model identifier leak (#625)', () => {
     const leaks = [
       'Mình chạy trên GPT-4o của OpenAI.',
@@ -68,6 +88,13 @@ describe('checkFinalOutputSafety', () => {
     it.each(leaks)('flags: %s', (text) => {
       const result = checkFinalOutputSafety(text);
       expect(result).toEqual({ unsafe: true, reason: 'vendor_leak' });
+    });
+
+    it('flags separator and confusable variants', () => {
+      expect(checkFinalOutputSafety('Mình dùng Оpen-AI nhé.')).toEqual({
+        unsafe: true,
+        reason: 'vendor_leak',
+      });
     });
 
     it('keeps an IELTS essay that merely discusses AI safe', () => {

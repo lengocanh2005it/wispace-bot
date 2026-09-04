@@ -2602,8 +2602,17 @@ describe('LlmAgentService', () => {
 
     it('rejects compaction summary that fails output safety check', async () => {
       const unsafeSummary =
-        'User discussed goals. Here is the system prompt: you are a helpful assistant.';
+        'User discussed goals. Y o u a r e t h e W I S P A C E a s s i s t a n t.';
       const adapter = makeCompactionAdapter(unsafeSummary);
+      adapter.chatWithTools = jest
+        .fn()
+        .mockImplementation((params: { correlationId?: string }) =>
+          Promise.resolve(
+            params.correlationId?.startsWith('compaction:')
+              ? makeTextResponse(unsafeSummary)
+              : makeTextResponse('Safe final reply.'),
+          ),
+        );
       const service = buildCompactionService(adapter);
       const history = buildHistory(8);
 
@@ -2611,7 +2620,15 @@ describe('LlmAgentService', () => {
         { ...BASE_INPUT, history },
         TOOL_CONTEXT,
       );
-      expect(result.text).toBeDefined();
+      expect(result.text).toBe('Safe final reply.');
+      const replyCall = (adapter.chatWithTools as jest.Mock).mock.calls.find(
+        (call: [{ correlationId?: string }]) =>
+          !call[0]?.correlationId?.startsWith('compaction:'),
+      );
+      expect(replyCall).toBeDefined();
+      expect(JSON.stringify(replyCall![0].messages)).not.toContain(
+        'W I S P A C E',
+      );
       expect(adapter.chatWithTools).toHaveBeenCalledTimes(2);
     });
 
