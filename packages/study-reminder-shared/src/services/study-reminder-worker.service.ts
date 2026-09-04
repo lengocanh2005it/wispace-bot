@@ -8,7 +8,11 @@ import {
 } from '@nestjs/common';
 import { Cron, SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
-import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import { Counter } from 'prom-client';
+import {
+  ADVISORY_LOCKS,
+  PgAdvisoryLockService,
+} from '@wispace/bot-common/locks';
 import { errorMessage } from '@wispace/bot-common/masking';
 import { StudyReminderSyncService } from './study-reminder-sync.service';
 import { StudyReminderDispatchService } from './study-reminder-dispatch.service';
@@ -27,6 +31,39 @@ import type { StudyReminderDispatchResult } from './study-reminder-dispatch.serv
 
 const ADVISORY_LOCK_SYNC = 884_200_901;
 const ADVISORY_LOCK_CLEANUP = 884_200_902;
+const ADVISORY_LOCK_ROLLOVER = 884_200_903;
+
+/**
+ * Per-platform worker lock ids (#777) — each bot owns sync/cleanup/rollover
+ * ids of its own, so the fleet's half-hourly syncs never contend. The
+ * messenger ids are the historical 901/902/903; Discord and Zalo come from
+ * the shared ADVISORY_LOCKS registry. `createStudyReminderProviders` still
+ * requires explicit ids in production wiring (fail-closed).
+ */
+const DEFAULT_LOCK_IDS: Record<Platform, StudyReminderWorkerLockIds> = {
+  messenger: {
+    sync: ADVISORY_LOCK_SYNC,
+    cleanup: ADVISORY_LOCK_CLEANUP,
+    rollover: ADVISORY_LOCK_ROLLOVER,
+  },
+  discord: {
+    sync: ADVISORY_LOCKS.DISCORD_STUDY_REMINDER_SYNC,
+    cleanup: ADVISORY_LOCKS.DISCORD_STUDY_REMINDER_CLEANUP,
+    rollover: ADVISORY_LOCKS.DISCORD_STUDY_REMINDER_ROLLOVER,
+  },
+  zalo: {
+    sync: ADVISORY_LOCKS.ZALO_STUDY_REMINDER_SYNC,
+    cleanup: ADVISORY_LOCKS.ZALO_STUDY_REMINDER_CLEANUP,
+    rollover: ADVISORY_LOCKS.ZALO_STUDY_REMINDER_ROLLOVER,
+  },
+};
+
+/** #777: a lock skip is distinguishable from "synced, nothing to do". */
+export const studyReminderLockSkipsTotal = new Counter({
+  name: 'study_reminder_lock_skips_total',
+  help: 'Study-reminder worker cron/startup runs skipped because another holder owns the advisory lock',
+  labelNames: ['platform', 'scope'] as const,
+});
 
 export interface StudyReminderWorkerLockIds {
   sync: number;
@@ -77,9 +114,9 @@ export class StudyReminderWorkerService
     this.platform = platform;
     this.getSessions = getSessions;
     this.lockIds = {
-      sync: lockIds?.sync ?? ADVISORY_LOCK_SYNC,
-      cleanup: lockIds?.cleanup ?? ADVISORY_LOCK_CLEANUP,
-      rollover: lockIds?.rollover ?? ADVISORY_LOCK_CLEANUP,
+      sync: lockIds?.sync ?? DEFAULT_LOCK_IDS[platform].sync,
+      cleanup: lockIds?.cleanup ?? DEFAULT_LOCK_IDS[platform].cleanup,
+      rollover: lockIds?.rollover ?? DEFAULT_LOCK_IDS[platform].rollover,
     };
     this.options = options ?? {};
   }
@@ -171,7 +208,19 @@ export class StudyReminderWorkerService
     timeZone: 'Asia/Ho_Chi_Minh',
   })
   async handleSyncCron(): Promise<void> {
-    await this.runSyncLocked(false);
+    // Periodic sync: a skip here means a DIFFERENT platform's bot holds this
+    // bot's lock id (same-platform rolling deploys overlap the startup sync,
+    // not this one). That is a configuration defect — always warn + count.
+    // `logLockSkip: false` — no "Startup…" info line on the periodic path.
+    const result = await this.runSyncLocked(false);
+    if (result === null) {
+      this.logger.warn(
+        `Periodic study-reminder sync skipped — another holder owns the sync lock (platform=${this.platform})`,
+      );
+      studyReminderLockSkipsTotal
+        .labels({ platform: this.platform, scope: 'sync' })
+        .inc();
+    }
   }
 
   private async runSyncLocked(
@@ -218,10 +267,15 @@ export class StudyReminderWorkerService
       },
     );
 
-    if (result === null && this.options.logLockSkips) {
-      this.logger.debug(
-        'study-reminder-cleanup skipped — lock held by another pod',
-      );
+    if (result === null) {
+      studyReminderLockSkipsTotal
+        .labels({ platform: this.platform, scope: 'cleanup' })
+        .inc();
+      if (this.options.logLockSkips) {
+        this.logger.debug(
+          'study-reminder-cleanup skipped — lock held by another pod',
+        );
+      }
     }
   }
 
@@ -272,10 +326,15 @@ export class StudyReminderWorkerService
       },
     );
 
-    if (result === null && this.options.logLockSkips) {
-      this.logger.debug(
-        'study-reminder-evening-rollover skipped — lock held by another pod',
-      );
+    if (result === null) {
+      studyReminderLockSkipsTotal
+        .labels({ platform: this.platform, scope: 'rollover' })
+        .inc();
+      if (this.options.logLockSkips) {
+        this.logger.debug(
+          'study-reminder-evening-rollover skipped — lock held by another pod',
+        );
+      }
     }
   }
 

@@ -17,6 +17,21 @@ POST /messenger/study-calendar/sync { userId }
 
 Wispace **must** call sync after POST/DELETE `UserCalendar`. The 30-minute cron is only a fallback.
 
+## Advisory lock ids (#777)
+
+The shared worker's sync/cleanup/rollover runs are guarded by Postgres advisory
+locks. Ids are **per platform** (work is per-platform — sharing one id made two
+of three bots silently skip every half-hourly sync): Messenger keeps its
+historical `884_200_901/902/903`, Discord uses `884_200_944/945/946`, Zalo uses
+`884_200_947/948/949` (registered in `ADVISORY_LOCKS`, `@wispace/bot-common`).
+`createStudyReminderProviders` **fails closed** without explicit
+`workerLockIds`. A skipped cron is observable: `study_reminder_lock_skips_total`
+counter (platform+scope labels) and a warn log on the periodic sync — a skip
+there after per-platform ids means a misconfiguration, not a rolling deploy
+(the startup sync skip stays info-level, gated by `logLockSkips`). The
+deliberately fleet-wide `DATA_QUALITY_CHECK` id (`884_200_943`, #688) is
+unrelated and stays shared.
+
 ## Cross-platform learner consistency (#637)
 
 WISPACE numeric `userId` is the canonical owner. Sync resolves one preferred

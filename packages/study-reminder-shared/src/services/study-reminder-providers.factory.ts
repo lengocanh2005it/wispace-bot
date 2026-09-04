@@ -183,6 +183,14 @@ export function createStudyReminderProviders(
       'createStudyReminderProviders requires canonicalPlatformService',
     );
   }
+  // #777: per-platform advisory lock ids are mandatory — inheriting the
+  // package defaults is exactly how all three bots ended up contending on
+  // one sync lock id. Fail at boot, not at the first skipped sync.
+  if (!options.workerLockIds) {
+    throw new Error(
+      'createStudyReminderProviders requires workerLockIds (per-platform advisory lock ids, see ADVISORY_LOCKS)',
+    );
+  }
 
   return [
     {

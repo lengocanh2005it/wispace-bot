@@ -27,6 +27,12 @@ class FakeCanonicalPlatformService {
 
 const fakeGetSessions: GetSessionsFn = () => Promise.resolve([]);
 
+const DEFAULT_LOCK_IDS = {
+  sync: 884_200_944,
+  cleanup: 884_200_945,
+  rollover: 884_200_946,
+};
+
 describe('createStudyReminderProviders', () => {
   const providers = createStudyReminderProviders({
     platform: 'discord',
@@ -34,6 +40,7 @@ describe('createStudyReminderProviders', () => {
     mappingEntity: FakeMappingEntity,
     outboundService: FakeOutbound,
     canonicalPlatformService: FakeCanonicalPlatformService,
+    workerLockIds: DEFAULT_LOCK_IDS,
   });
   const p = providers as unknown as Array<{
     provide?: unknown;
@@ -120,6 +127,11 @@ describe('createStudyReminderProviders', () => {
       platform: 'messenger',
       outboundService: FakeOutbound,
       mappingReader: customReader,
+      workerLockIds: {
+        sync: 884_200_901,
+        cleanup: 884_200_902,
+        rollover: 884_200_903,
+      },
       canonicalPlatformService: FakeCanonicalPlatformService,
     });
 
@@ -173,6 +185,7 @@ describe('createStudyReminderProviders', () => {
       dormancyGate: FakeGate,
       dormancySuppressionMetric: FakeMetric,
       canonicalPlatformService: FakeCanonicalPlatformService,
+      workerLockIds: DEFAULT_LOCK_IDS,
     });
     const dispatchProvider = withGate[5] as unknown as {
       inject: unknown[];
@@ -249,5 +262,17 @@ describe('createStudyReminderProviders', () => {
         outboundService: FakeOutbound,
       } as never),
     ).toThrow('canonicalPlatformService');
+  });
+
+  it('rejects factory construction without explicit worker lock ids (fail-closed, #777)', () => {
+    expect(() =>
+      createStudyReminderProviders({
+        platform: 'discord',
+        mappingTable: 'discord_account_links',
+        mappingEntity: FakeMappingEntity,
+        outboundService: FakeOutbound,
+        canonicalPlatformService: FakeCanonicalPlatformService,
+      } as never),
+    ).toThrow('workerLockIds');
   });
 });

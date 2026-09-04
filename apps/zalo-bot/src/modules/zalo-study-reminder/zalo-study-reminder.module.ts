@@ -12,6 +12,7 @@ import {
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 import { BotCommonModule } from '@wispace/bot-common/guard';
+import { ADVISORY_LOCKS } from '@wispace/bot-common/locks';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloOutboundService } from '../zalo-chat/application/services/zalo-outbound.service';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
@@ -52,6 +53,13 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
       canonicalPlatformService: CanonicalPlatformService,
       dormancyGate: WebActivityService,
       dormancySuppressionMetric: BotMetricsService,
+      // #777: per-platform lock ids — Zalo no longer contends with the
+      // fleet on the shared sync lock.
+      workerLockIds: {
+        sync: ADVISORY_LOCKS.ZALO_STUDY_REMINDER_SYNC,
+        cleanup: ADVISORY_LOCKS.ZALO_STUDY_REMINDER_CLEANUP,
+        rollover: ADVISORY_LOCKS.ZALO_STUDY_REMINDER_ROLLOVER,
+      },
     }),
   ],
   exports: [

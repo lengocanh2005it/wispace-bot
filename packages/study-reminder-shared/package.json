@@ -15,17 +15,18 @@
     "test": "jest --forceExit --maxWorkers=50%"
   },
   "dependencies": {
-    "@wispace/bot-common": "*",
-    "@wispace/contracts": "*",
-    "@wispace/date-utils": "*",
-    "date-fns": "^4.4.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/schedule": "^6.0.0",
     "@nestjs/typeorm": "^11.0.1",
-    "@wispace/wispace-client": "*",
+    "@wispace/bot-common": "*",
+    "@wispace/contracts": "*",
+    "@wispace/date-utils": "*",
     "@wispace/reschedule-confirm": "*",
+    "@wispace/wispace-client": "*",
     "cron": "^4.4.0",
+    "date-fns": "^4.4.0",
+    "prom-client": "^15.1.3",
     "typeorm": "^1.1.0"
   },
   "devDependencies": {
