@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Failure-path + crash-safety tests for vps-deploy.sh (#199/#201/#203/#204/#275/#278).
+# Failure-path + crash-safety tests for vps-deploy.sh (#199/#201/#203/#204/#275/#278/#694).
 #
 # Self-contained: fakes docker/curl/sudo via PATH; uses a fake upstream conf
 # and a fake container/port map to simulate blue-green state.
+# The #694 self-pull CI gate must not weaken any of these cutover checks.
 # Run: bash .github/scripts/tests/vps-deploy.test.sh
 set -euo pipefail
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Concurrency + failure-path tests for vps-self-pull-deploy.sh (#144/#172/#283/#408).
+# Concurrency + failure-path tests for vps-self-pull-deploy.sh (#144/#172/#283/#408/#694).
 #
 # Self-contained: fakes git/docker/curl via PATH (fake repo with .git refs);
 # requires only bash + flock. Run: bash .github/scripts/tests/vps-self-pull-deploy.test.sh
@@ -21,7 +21,8 @@ make_env() { # name -> creates fake repo/PATH-fakes/state dirs; prints dir
   local dir="$TEST_ROOT/$1"
   mkdir -p "$dir/repo/.git" "$dir/repo/apps/messenger-bot" "$dir/repo/apps/discord-bot" \
     "$dir/repo/apps/zalo-bot" "$dir/repo/.github/scripts" \
-    "$dir/repo/deploy/nginx/upstreams" "$dir/bin" "$dir/state" "$dir/target" "$dir/upstreams"
+    "$dir/repo/deploy/nginx/upstreams" "$dir/bin" "$dir/state" "$dir/state/ci-gate" \
+    "$dir/target" "$dir/upstreams"
   for app in messenger-bot discord-bot zalo-bot; do
     mkdir -p "$dir/target/$app"
     printf 'VAULT_REQUIRED=true\nVAULT_ADDR=https://vault.test\nVAULT_ROLE_ID=role-%s\nVAULT_SECRET_ID=secret-%s\n' "$app" "$app" > "$dir/target/$app/.env"
@@ -81,7 +82,7 @@ FAKE
 #!/usr/bin/env bash
 echo "docker $1" >> "${DOCKER_LOG:?}"
 case "$1" in
-  login) exit 0 ;;
+  login) [ -z "${FAKE_LOGIN_FAIL:-}" ] || exit 1; exit 0 ;;
   manifest)
     # Return JSON with sha256 digest for digest extraction (#196)
     printf '{"schemaVersion":2,"config":{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}\n'
@@ -94,11 +95,143 @@ FAKE
 
   cat > "$dir/bin/curl" <<'FAKE'
 #!/usr/bin/env bash
+set -euo pipefail
 echo "curl $*" >> "${CURL_LOG:?}"
+
+out=""
+previous=""
+url=""
+for arg in "$@"; do
+  if [ "$previous" = "-o" ]; then out="$arg"; previous=""; continue; fi
+  [ "$arg" = "-o" ] && { previous="-o"; continue; }
+  case "$arg" in
+    http://*|https://*) url="$arg" ;;
+  esac
+done
+
+if [[ "$url" == *"api.github.com"* ]]; then
+  scenario="${FAKE_CI_SCENARIO:-success}"
+  case "$scenario" in
+    api-auth) code=401 ;;
+    api-rate-limit) code=403 ;;
+    api-network) exit 7 ;;
+    api-5xx) code=500 ;;
+    malformed|*) code=200 ;;
+  esac
+  if [ -n "$out" ]; then
+    if [ "$scenario" = "malformed" ]; then
+      printf 'not-json' > "$out"
+    elif [ "$scenario" = "api-rate-limit" ]; then
+      printf '{"message":"API rate limit exceeded"}' > "$out"
+    else
+      printf '{"workflow_runs":[],"jobs":[]}' > "$out"
+    fi
+  fi
+  printf '%s' "$code"
+  exit 0
+fi
+
 printf '%s' "$*" > "${CURL_BODY:?}"
 exit 0
 FAKE
   chmod +x "$dir/bin/curl"
+
+  cat > "$dir/bin/jq" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+
+filter=""
+input=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --arg|--argjson|--slurpfile) shift 3 ;;
+    -r|-e|-c|-M|-S) shift ;;
+    -*) shift ;;
+    *)
+      if [ -z "$filter" ]; then filter="$1"; else input="$1"; fi
+      shift
+      ;;
+  esac
+done
+
+scenario="${FAKE_CI_SCENARIO:-success}"
+
+if [[ "$filter" == *"type =="* || "$filter" == *"type == 'object'"* ]]; then
+  [ "$scenario" != "malformed" ]
+  exit
+fi
+
+if [[ "$filter" == *"workflow_runs"* ]]; then
+  workflow="verify"
+  [[ "$input" == *"deploy"* ]] && workflow="deploy"
+  case "$scenario:$workflow" in
+    no-run:*) exit 0 ;;
+    pending:*) printf '101\tin_progress\t\n' ;;
+    verify-fail:verify) printf '201\tcompleted\tfailure\n' ;;
+    deploy-fail:deploy|runtime-discord-fail:deploy|runtime-zalo-fail:deploy) printf '101\tcompleted\tfailure\n' ;;
+    owner-skipped:deploy|all-skipped:deploy|discord-skipped:deploy) printf '101\tcompleted\tsuccess\n' ;;
+    *) printf '%s\tcompleted\tsuccess\n' "$([ "$workflow" = verify ] && echo 201 || echo 101)" ;;
+  esac
+  exit 0
+fi
+
+if [[ "$filter" == *".jobs"* ]]; then
+  workflow="verify"
+  [[ "$input" == *"deploy"* ]] && workflow="deploy"
+  if [ "$workflow" = "verify" ]; then
+    if [ "$scenario" = "verify-fail" ]; then
+      printf 'verify\tcompleted\tfailure\n'
+    else
+      printf 'verify\tcompleted\tsuccess\n'
+    fi
+    exit 0
+  fi
+
+  messenger_build="success"
+  discord_build="success"
+  zalo_build="success"
+  messenger_runtime="success"
+  discord_runtime="success"
+  zalo_runtime="success"
+  messenger_timestamps="success"
+  messenger_migrations="success"
+  case "$scenario" in
+    owner-skipped|all-skipped|discord-skipped)
+      messenger_build="skipped"
+      messenger_runtime="skipped"
+      messenger_timestamps="skipped"
+      messenger_migrations="skipped"
+      [ "$scenario" = "all-skipped" ] && discord_build="skipped" && zalo_build="skipped"
+      [ "$scenario" = "discord-skipped" ] && discord_build="skipped" && discord_runtime="skipped"
+      ;;
+    deploy-fail)
+      messenger_migrations="failure"
+      ;;
+    runtime-discord-fail)
+      discord_runtime="failure"
+      ;;
+    runtime-zalo-fail)
+      zalo_runtime="failure"
+      ;;
+  esac
+  printf '%b\n' \
+    'deploy-messenger-bot / changes\tcompleted\tsuccess' \
+    'deploy-discord-bot / changes\tcompleted\tsuccess' \
+    'deploy-zalo-bot / changes\tcompleted\tsuccess' \
+    "deploy-messenger-bot / build-image\tcompleted\t$messenger_build" \
+    "deploy-discord-bot / build-image\tcompleted\t$discord_build" \
+    "deploy-zalo-bot / build-image\tcompleted\t$zalo_build" \
+    "deploy-messenger-bot / migration-timestamps\tcompleted\t$messenger_timestamps" \
+    "deploy-messenger-bot / migrations-check\tcompleted\t$messenger_migrations" \
+    "deploy-messenger-bot / runtime-image-check\tcompleted\t$messenger_runtime" \
+    "deploy-discord-bot / runtime-image-check\tcompleted\t$discord_runtime" \
+    "deploy-zalo-bot / runtime-image-check\tcompleted\t$zalo_runtime"
+  exit 0
+fi
+
+exit 0
+FAKE
+  chmod +x "$dir/bin/jq"
 
   echo "$dir"
 }
@@ -109,12 +242,18 @@ run_script() { # dir [EXTRA_ENV=..]... -> runs the script, echoes exit code
     export REPO_DIR="$dir/repo" STATE_DIR="$dir/state" LOCK_FILE="$dir/lock" \
       TARGET_BASE_DIR="$dir/target" NGINX_UPSTREAM_DIR="$dir/upstreams" \
       ALERTMANAGER_URL="http://fake-alertmanager" GHCR_USER="u" GHCR_PULL_TOKEN="t" \
+      GITHUB_API_READ_TOKEN="github-read-token" CI_GATE_WAIT_TIMEOUT_SECONDS="1800" \
       GIT_LOG="$dir/git.log" DOCKER_LOG="$dir/docker.log" CURL_LOG="$dir/curl.log" \
       CURL_BODY="$dir/curl.body" FAKE_REPO="$dir/repo" FAKE_DEPLOY_LOG="$dir/deploy.log" \
       FAKE_DEPLOY_NETWORK_LOG="$dir/deploy-network.log" \
       FAKE_DEPLOY_STARTED="$dir/deploy.started" \
       PATH="$dir/bin:$PATH"
-    for extra in "$@"; do export "$extra"; done
+    for extra in "$@"; do
+      # shellcheck disable=SC2163
+      # export accepts NAME=value test overrides.
+      export "$extra"
+    done
+    [ -z "${FAKE_JQ_MISSING:-}" ] || mv "$dir/bin/jq" "$dir/bin/jq.disabled"
     bash "$SCRIPT"
   ) > "$dir/run.out" 2>&1
   echo $?
@@ -154,7 +293,7 @@ order=$(sed -E 's/^FAKE vps-deploy ([^ ]+).*/\1/' "$dir/deploy.log" | tr '\n' ' 
 for app in messenger-bot discord-bot zalo-bot; do
   [ "$(cat "$dir/state/$app.sha")" = "$SHA_B" ] || fail "$app state sha != $SHA_B"
 done
-[ ! -f "$dir/curl.log" ] || fail "alert should not be posted on success"
+if grep -q 'api/v2/alerts' "$dir/curl.log" 2>/dev/null; then fail "alert should not be posted on success"; fi
 pass "success path"
 
 echo "Test 3b: self-pull passes the shared app network to each deploy"
@@ -164,6 +303,131 @@ pass "self-pull passes app network"
 echo "Test 3c: self-pull passes the migration lock contract to the owner"
 grep -q '^FAKE migration lock 4242424242$' "$dir/deploy-network.log" || fail "migration lock id was not passed to deploys"
 pass "self-pull passes migration lock id"
+
+echo "Test 3d: pending CI -> no deploy, bounded retry marker, no alert"
+dir=$(make_env ci-pending)
+code=$(run_script "$dir" FAKE_CI_SCENARIO=pending)
+[ "$code" -eq 0 ] || fail "pending CI should retry with exit 0, got $code"
+[ ! -f "$dir/deploy.log" ] || fail "deploy ran while CI was pending"
+[ ! -f "$dir/docker.log" ] || ! grep -q '^docker login' "$dir/docker.log" || fail "GHCR login ran while CI was pending"
+[ -f "$dir/state/ci-gate/$SHA_B.pending" ] || fail "pending CI marker missing"
+if grep -q 'api/v2/alerts' "$dir/curl.log" 2>/dev/null; then fail "pending CI should not alert before timeout"; fi
+pass "pending CI waits without deploying"
+
+echo "Test 3e: Verify Pull Request failure -> global gate blocks all apps"
+dir=$(make_env ci-verify-fail)
+code=$(run_script "$dir" FAKE_CI_SCENARIO=verify-fail)
+[ "$code" -ne 0 ] || fail "verify failure must fail closed"
+[ ! -f "$dir/deploy.log" ] || fail "deploy ran after verify failure"
+grep -q "Verify Pull Request concluded failure" "$dir/run.out" || fail "verify failure reason missing"
+[ -f "$dir/state/stall" ] || fail "global CI failure stall marker missing"
+pass "verify failure blocks fleet"
+
+echo "Test 3f: migration check failure -> global gate blocks all apps"
+dir=$(make_env ci-migration-fail)
+code=$(run_script "$dir" FAKE_CI_SCENARIO=deploy-fail)
+[ "$code" -ne 0 ] || fail "migration check failure must fail closed"
+[ ! -f "$dir/deploy.log" ] || fail "deploy ran after migration check failure"
+grep -q "migrations-check is failed" "$dir/run.out" || fail "migration failure reason missing"
+pass "migration check failure blocks fleet"
+
+echo "Test 3g: Discord runtime check failure -> only Discord is blocked"
+dir=$(make_env ci-discord-fail)
+code=$(run_script "$dir" FAKE_CI_SCENARIO=runtime-discord-fail)
+[ "$code" -eq 0 ] || fail "Discord app-local CI failure should not fail fleet, got $code"
+grep -q '^FAKE vps-deploy messenger-bot' "$dir/deploy.log" || fail "messenger was not deployed"
+grep -q '^FAKE vps-deploy zalo-bot' "$dir/deploy.log" || fail "zalo was not deployed"
+! grep -q '^FAKE vps-deploy discord-bot' "$dir/deploy.log" || fail "discord deployed despite runtime check failure"
+[ -f "$dir/state/ci-gate/discord-bot.failed" ] || fail "Discord CI failure marker missing"
+pass "Discord failure stays app-local"
+
+code=$(run_script "$dir")
+[ "$code" -eq 0 ] || fail "recovered Discord CI should deploy, got $code"
+[ ! -f "$dir/state/ci-gate/discord-bot.failed" ] || fail "Discord CI failure marker not cleared"
+grep -q "endsAt" "$dir/curl.body" || fail "Discord CI recovery alert was not resolved"
+pass "Discord CI failure recovers on a later passing run"
+
+echo "Test 3h: Zalo runtime check failure -> only Zalo is blocked"
+dir=$(make_env ci-zalo-fail)
+code=$(run_script "$dir" FAKE_CI_SCENARIO=runtime-zalo-fail)
+[ "$code" -eq 0 ] || fail "Zalo app-local CI failure should not fail fleet, got $code"
+grep -q '^FAKE vps-deploy messenger-bot' "$dir/deploy.log" || fail "messenger was not deployed"
+grep -q '^FAKE vps-deploy discord-bot' "$dir/deploy.log" || fail "discord was not deployed"
+! grep -q '^FAKE vps-deploy zalo-bot' "$dir/deploy.log" || fail "zalo deployed despite runtime check failure"
+[ -f "$dir/state/ci-gate/zalo-bot.failed" ] || fail "Zalo CI failure marker missing"
+pass "Zalo failure stays app-local"
+
+echo "Test 3i: successful build with a missing GHCR image -> no fallback deploy"
+dir=$(make_env ci-image-missing)
+cat > "$dir/bin/docker" <<'FAKE'
+#!/usr/bin/env bash
+echo "docker $*" >> "${DOCKER_LOG:?}"
+case "$1" in
+  login) exit 0 ;;
+  manifest) exit 1 ;;
+  *) exit 0 ;;
+esac
+FAKE
+chmod +x "$dir/bin/docker"
+code=$(run_script "$dir")
+[ "$code" -ne 0 ] || fail "missing image after successful build must fail closed"
+[ ! -f "$dir/deploy.log" ] || fail "deploy ran after successful-build image loss"
+grep -q "build-image passed but its GHCR image is missing" "$dir/run.out" || fail "missing-image reason not logged"
+pass "successful-build image loss fails closed"
+
+echo "Test 3k: GitHub API authorization failure -> global gate fails closed"
+dir=$(make_env ci-api-auth)
+code=$(run_script "$dir" FAKE_CI_SCENARIO=api-auth)
+[ "$code" -ne 0 ] || fail "API authorization failure must fail closed"
+[ ! -f "$dir/deploy.log" ] || fail "deploy ran after API authorization failure"
+grep -q "API authorization failed" "$dir/run.out" || fail "API authorization reason missing"
+pass "API authorization failure blocks fleet"
+
+echo "Test 3k1: missing GitHub API token -> global gate fails closed"
+dir=$(make_env ci-no-api-token)
+code=$(run_script "$dir" GITHUB_API_READ_TOKEN=)
+[ "$code" -ne 0 ] || fail "missing API token must fail closed"
+[ ! -f "$dir/deploy.log" ] || fail "deploy ran without an API token"
+grep -q "GITHUB_API_READ_TOKEN is required" "$dir/run.out" || fail "missing-token reason missing"
+pass "missing API token blocks fleet"
+
+echo "Test 3k1b: missing jq -> global gate fails closed"
+dir=$(make_env ci-no-jq)
+code=$(run_script "$dir" FAKE_JQ_MISSING=1)
+[ "$code" -ne 0 ] || fail "missing jq must fail closed"
+[ ! -f "$dir/deploy.log" ] || fail "deploy ran without jq"
+grep -q "jq is required" "$dir/run.out" || fail "missing-jq reason missing"
+pass "missing jq blocks fleet"
+
+echo "Test 3k2: GitHub API rate limit -> bounded pending state"
+dir=$(make_env ci-api-rate-limit)
+code=$(run_script "$dir" FAKE_CI_SCENARIO=api-rate-limit)
+[ "$code" -eq 0 ] || fail "API rate limit should wait, got $code"
+[ -f "$dir/state/ci-gate/$SHA_B.pending" ] || fail "rate-limit pending marker missing"
+[ ! -f "$dir/deploy.log" ] || fail "deploy ran during API rate limit"
+if grep -q 'api/v2/alerts' "$dir/curl.log" 2>/dev/null; then fail "rate limit should not alert before timeout"; fi
+pass "API rate limit waits safely"
+
+echo "Test 3l: malformed GitHub API response -> bounded pending state"
+dir=$(make_env ci-malformed)
+code=$(run_script "$dir" FAKE_CI_SCENARIO=malformed)
+[ "$code" -eq 0 ] || fail "malformed API response should wait, got $code"
+[ -f "$dir/state/ci-gate/$SHA_B.pending" ] || fail "malformed-response pending marker missing"
+[ ! -f "$dir/deploy.log" ] || fail "deploy ran with malformed CI response"
+pass "malformed API response waits safely"
+
+echo "Test 3j: absent workflow run -> pending, then timeout alert"
+dir=$(make_env ci-no-run)
+code=$(run_script "$dir" FAKE_CI_SCENARIO=no-run)
+[ "$code" -eq 0 ] || fail "missing workflow run should wait, got $code"
+[ -f "$dir/state/ci-gate/$SHA_B.pending" ] || fail "missing-run pending marker missing"
+old_now=$(( $(date +%s) - 2 ))
+printf '%s\nmissing workflow run\n' "$old_now" > "$dir/state/ci-gate/$SHA_B.pending"
+code=$(run_script "$dir" FAKE_CI_SCENARIO=no-run CI_GATE_WAIT_TIMEOUT_SECONDS=1)
+[ "$code" -ne 0 ] || fail "missing workflow run should fail after timeout"
+[ -f "$dir/state/ci-gate/$SHA_B.stalled" ] || fail "CI timeout marker missing"
+grep -q 'alertname":"vps_self_pull_stall' "$dir/curl.body" || fail "CI timeout alert missing"
+pass "missing workflow run times out and alerts"
 
 echo "Test 4: concurrency -> second run skips, no second fetch/reset mid-deploy"
 dir=$(make_env concurrency)
@@ -242,7 +506,7 @@ cat > "$dir/bin/docker" <<'FAKE'
 #!/usr/bin/env bash
 echo "docker $*" >> "${DOCKER_LOG:?}"
 case "$1" in
-  login) exit 0 ;;
+  login) [ -z "${FAKE_LOGIN_FAIL:-}" ] || exit 1; exit 0 ;;
   manifest)
     # Return JSON with sha256 digest
     printf '{"schemaVersion":2,"config":{"digest":"sha256:fedcba9876543210"}}\n'
@@ -266,7 +530,7 @@ cat > "$dir/bin/docker" <<'FAKE'
 #!/usr/bin/env bash
 echo "docker $*" >> "${DOCKER_LOG:?}"
 case "$1" in
-  login) exit 0 ;;
+  login) [ -z "${FAKE_LOGIN_FAIL:-}" ] || exit 1; exit 0 ;;
   manifest)
     # Return empty JSON (no digest)
     printf '{}\n'
@@ -293,7 +557,7 @@ cat > "$dir/bin/docker" <<'FAKE'
 #!/usr/bin/env bash
 echo "docker $*" >> "${DOCKER_LOG:?}"
 case "$1" in
-  login) exit 0 ;;
+  login) [ -z "${FAKE_LOGIN_FAIL:-}" ] || exit 1; exit 0 ;;
   manifest)
     printf '{"schemaVersion":2,"config":{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}\n'
     exit 0
@@ -332,7 +596,7 @@ cat > "$dir/bin/docker" <<'FAKE'
 #!/usr/bin/env bash
 echo "docker $*" >> "${DOCKER_LOG:?}"
 case "$1" in
-  login) exit 0 ;;
+  login) [ -z "${FAKE_LOGIN_FAIL:-}" ] || exit 1; exit 0 ;;
   manifest)
     printf '{"schemaVersion":2,"config":{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}\n'
     exit 0
@@ -363,7 +627,7 @@ cat > "$dir/bin/docker" <<'FAKE'
 #!/usr/bin/env bash
 echo "docker $*" >> "${DOCKER_LOG:?}"
 case "$1" in
-  login) exit 0 ;;
+  login) [ -z "${FAKE_LOGIN_FAIL:-}" ] || exit 1; exit 0 ;;
   manifest)
     # Simulate image not published — manifest inspect fails
     printf '' >&2
@@ -373,7 +637,7 @@ case "$1" in
 esac
 FAKE
 chmod +x "$dir/bin/docker"
-code=$(run_script "$dir")
+code=$(run_script "$dir" FAKE_CI_SCENARIO=owner-skipped)
 [ "$code" -eq 0 ] || fail "barrier failure should retry next tick, got $code"
 grep -q "migration owner.*not published yet" "$dir/run.out" || fail "missing migration owner barrier error"
 grep -q "schema is not current" "$dir/run.out" || fail "barrier did not state the schema reason"
@@ -391,7 +655,7 @@ cat > "$dir/bin/docker" <<'FAKE'
 #!/usr/bin/env bash
 echo "docker $*" >> "${DOCKER_LOG:?}"
 case "$1" in
-  login) exit 0 ;;
+  login) [ -z "${FAKE_LOGIN_FAIL:-}" ] || exit 1; exit 0 ;;
   manifest)
     # Simulate auth failure
     echo "unauthorized: authentication required" >&2
@@ -401,7 +665,7 @@ case "$1" in
 esac
 FAKE
 chmod +x "$dir/bin/docker"
-code=$(run_script "$dir")
+code=$(run_script "$dir" FAKE_CI_SCENARIO=owner-skipped)
 [ "$code" -eq 0 ] || fail "auth failure should retry next tick, got $code"
 grep -q "migration owner.*not published yet" "$dir/run.out" || fail "missing migration owner barrier error"
 grep -q "schema is not current" "$dir/run.out" || fail "barrier did not state the schema reason"
@@ -417,7 +681,7 @@ cat > "$dir/bin/docker" <<'FAKE'
 #!/usr/bin/env bash
 echo "docker $*" >> "${DOCKER_LOG:?}"
 case "$1" in
-  login) exit 0 ;;
+  login) [ -z "${FAKE_LOGIN_FAIL:-}" ] || exit 1; exit 0 ;;
   manifest)
     # Messenger succeeds, discord fails
     if echo "$*" | grep -q "discord-bot"; then
@@ -431,7 +695,7 @@ case "$1" in
 esac
 FAKE
 chmod +x "$dir/bin/docker"
-code=$(run_script "$dir")
+code=$(run_script "$dir" FAKE_CI_SCENARIO=discord-skipped)
 [ "$code" -eq 0 ] || fail "non-owner skip should not fail, got $code"
 grep -q "discord-bot.*not published yet" "$dir/run.out" || fail "missing skip log for discord"
 [ "$(cat "$dir/state/messenger-bot.sha")" = "$SHA_B" ] || fail "messenger-bot not deployed"
@@ -449,7 +713,7 @@ cat > "$dir/bin/docker" <<FAKE
 #!/usr/bin/env bash
 echo "docker \$*" >> "\${DOCKER_LOG:?}"
 case "\$1" in
-  login) exit 0 ;;
+  login) [ -z "${FAKE_LOGIN_FAIL:-}" ] || exit 1; exit 0 ;;
   manifest)
     # No image for HEAD ($SHA_B); the parent ($SHA_A) is published.
     if echo "\$*" | grep -q "$SHA_B"; then
@@ -464,7 +728,7 @@ case "\$1" in
 esac
 FAKE
 chmod +x "$dir/bin/docker"
-code=$(run_script "$dir")
+code=$(run_script "$dir" FAKE_CI_SCENARIO=owner-skipped)
 [ "$code" -eq 0 ] || fail "resolution run should exit 0, got $code: $(cat "$dir/run.out")"
 grep -q "targeting newest published commit $SHA_A" "$dir/run.out" || fail "did not fall back to the published commit"
 grep -q "Migration barrier ready" "$dir/run.out" || fail "barrier blocked despite a resolvable target"
@@ -506,7 +770,7 @@ echo "Test 17: no owner image, no migration since the applied revision -> barrie
 dir=$(make_env schema-current)
 for app in messenger-bot discord-bot zalo-bot; do echo "$SHA_A" > "$dir/state/$app.sha"; done
 make_no_owner_image_docker "$dir"
-code=$(run_script "$dir")
+code=$(run_script "$dir" FAKE_CI_SCENARIO=owner-skipped)
 [ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
 grep -q "schema is current, barrier ready" "$dir/run.out" || fail "barrier did not fall back to schema state"
 grep -q "Migration barrier ready" "$dir/run.out" || fail "dependents were not released"
@@ -519,7 +783,7 @@ echo "Test 18: no owner image but a migration was added -> fail closed, page onc
 dir=$(make_env schema-stale)
 for app in messenger-bot discord-bot zalo-bot; do echo "$SHA_A" > "$dir/state/$app.sha"; done
 make_no_owner_image_docker "$dir"
-code=$(run_script "$dir" FAKE_MIGRATION_CHANGED=1)
+code=$(run_script "$dir" FAKE_CI_SCENARIO=owner-skipped FAKE_MIGRATION_CHANGED=1)
 [ "$code" -eq 0 ] || fail "script should still exit 0, got $code: $(cat "$dir/run.out")"
 grep -q "schema is not current" "$dir/run.out" || fail "missing the stale-schema reason"
 grep -q "migration barrier not ready" "$dir/run.out" || fail "barrier let dependents through with an unapplied migration"
@@ -533,10 +797,11 @@ dir=$(make_env login-failure)
 for app in messenger-bot discord-bot zalo-bot; do echo "$SHA_A" > "$dir/state/$app.sha"; done
 make_no_owner_image_docker "$dir"
 code=$(run_script "$dir" FAKE_LOGIN_FAIL=1)
-[ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
+[ "$code" -ne 0 ] || fail "expected non-zero exit, got $code: $(cat "$dir/run.out")"
 grep -q "docker login to ghcr.io failed" "$dir/run.out" || fail "login failure not logged"
-grep -q "check the GHCR pull token" "$dir/run.out" || fail "cause not attributed to the credential"
-pass "login failure distinguishable from an unpublished image"
+grep -q "refusing to deploy" "$dir/run.out" || fail "login failure did not fail closed"
+[ ! -f "$dir/deploy.log" ] || fail "deploy ran after login failure"
+pass "login failure fails closed before CI/image fallback"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"

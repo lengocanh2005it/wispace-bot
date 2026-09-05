@@ -515,6 +515,8 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 
 Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global skills `~/.cursor/skills-cursor/` + `.claude/skills/`.
 
+Self-pull CI gate (#694): `deploy-bots.yml` runs for every `main` SHA so the VPS can query exact `Verify Pull Request` and `Deploy bots` results with a separate read-only `GITHUB_API_READ_TOKEN`; pending/unknown results wait boundedly, global failures fail closed, and Discord/Zalo runtime failures remain app-local. See `docs/project-overview.md` §12 and the script header for the mode-600 `~/.ghcr-token` bootstrap.
+
 ---
 
 ## Integration gaps (do not assume these are done)
@@ -566,6 +568,7 @@ Cursor uses `AGENTS.md` + `.cursor/rules/` (rule `change-workflow`) + global ski
 | Learner profile (#207 item 3)                                                       | ✓ `learner_profiles` table (target_score, exam_date + per-field fetched_at) — v1 source `get_user_goals`, injected via `systemPromptSuffix` with 24h freshness; weakAreas deferred (no server-derived source yet)                                                                                                                                                                        |
 | Project-wide gaps (link, reports, reminders, ops)                                   | Roadmap — [edge-cases-roadmap.md](docs/edge-cases-roadmap.md)                                                                                                                                                                                                                                                                                                                            |
 | Vault runtime secret contract (#653/#654)                                           | Shared/per-bot KV v2 bootstrap plus Vault-only production delivery — [vault-secrets.md](docs/vault-secrets.md)                                                                                                                                                                                                                                                                           |
+| VPS self-pull CI gate (#694)                                                        | ✓ Exact-SHA GitHub Actions gate (`Verify Pull Request` + `Deploy bots`), bounded pending wait, fail-closed image contradiction, and app-local Discord/Zalo failures — `docs/project-overview.md` §12 |
 
 When closing a gap: update the feature runbook (`apps/messenger-bot/docs/chat-rate-limit-quota.md` or `apps/messenger-bot/docs/study-session-reminder.md`), `docs/project-overview.md`, `docs/edge-cases-roadmap.md`, and the table above.
 

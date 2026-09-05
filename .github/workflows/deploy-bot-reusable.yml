@@ -83,8 +83,9 @@ jobs:
     # `deploy` covers Dockerfile.bot, verify-runtime-image.mjs and the CI
     # scripts: a change to how the image is built has to rebuild it, or a
     # Dockerfile fix sits unbuilt until someone happens to touch app code.
-    # Doc- and spec-only pushes never get here — deploy-bots.yml's `paths:`
-    # already filtered them out.
+    # Doc- and spec-only pushes never get here — the `changes` job leaves the
+    # image build skipped while the top-level workflow still records the SHA
+    # for the VPS CI gate.
     needs: changes
     if: |
       inputs.env_only != true &&
@@ -154,9 +155,9 @@ jobs:
         run: bash .github/scripts/check-migration-timestamps.sh packages/database/src/migrations
 
   migrations-check:
-    # Gate the deploy: apply the migration chain against a real Postgres
-    # inside the freshly built image. A broken migration must stop the
-    # deploy here, not crash the bot on the VPS.
+    # Gate the self-pull deploy: apply the migration chain against a real
+    # Postgres inside the freshly built image. The VPS reads this job's result
+    # before deploying; vps-deploy.sh remains the final runtime defense.
     # Only messenger-bot has a data-source CLI entry; all 3 bots share one
     # DB + one migration set, so this job runs for messenger only.
     needs: build-image
