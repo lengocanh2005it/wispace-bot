@@ -13,6 +13,7 @@ import {
   readInboundRetryConfig,
   type InboundEventRow,
 } from './platform-webhook-inbound-event.service';
+import { webhookInboundDispatchLagSeconds } from './inline-webhook-inbound-dispatcher';
 
 const DEFAULT_RETRY_LIMIT = 20;
 const DEFAULT_RETRY_CONCURRENCY = 5;
@@ -169,6 +170,12 @@ export class PlatformWebhookInboundRetryCronService {
       stats.skipped += 1;
       return;
     }
+
+    const lagSeconds = (Date.now() - row.createdAt.getTime()) / 1000;
+    webhookInboundDispatchLagSeconds.observe(
+      { platform: row.platform, trigger: 'cron' },
+      lagSeconds,
+    );
 
     try {
       await this.options.processEvent(row.rawPayload as object);

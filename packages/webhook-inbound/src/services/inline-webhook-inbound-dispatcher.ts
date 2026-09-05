@@ -15,7 +15,7 @@ const webhookInboundInlineAttemptsTotal = new Counter({
   help: 'Inline processing attempts after ingest',
   labelNames: ['platform', 'outcome'] as const,
 });
-const webhookInboundDispatchLagSeconds = new Histogram({
+export const webhookInboundDispatchLagSeconds = new Histogram({
   name: 'webhook_inbound_dispatch_lag_seconds',
   help: 'Seconds from event ingest to first processing attempt',
   labelNames: ['platform', 'trigger'] as const,
