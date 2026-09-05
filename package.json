@@ -20,6 +20,7 @@
     "database:bootstrap-smoke": "node scripts/database-bootstrap-smoke.mjs",
     "database:query-returning-shape-smoke": "node scripts/query-returning-shape-smoke.mjs",
     "database:privacy-smoke": "node scripts/database-privacy-smoke.mjs",
+    "study-reminder:delivery-smoke": "node scripts/study-reminder-delivery-smoke.mjs",
     "database:migration-compatibility": "node scripts/database-bootstrap-smoke.mjs --migrations",
     "database:entity-discovery:test": "node --test scripts/database-entity-discovery.test.mjs",
     "verify:affected": "turbo run format:check lint typecheck test build --affected",

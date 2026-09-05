@@ -9,8 +9,16 @@ export interface OutboundMessageSender {
   sendText(
     externalUserId: string,
     text: string,
-    input?: SendMessageInput,
-  ): Promise<OutboundDeliveryOutcome | void>;
+    input?: SendMessageInput & {
+      /** Scheduler owns reminder retries; disable transport retries at this boundary. */
+      retryOn?: 'all' | 'none';
+      /** Reminder failures are persisted on the reminder job, not dead-lettered. */
+      skipDeadLetter?: boolean;
+      deadLetterOn?: 'all' | 'ambiguous' | 'none';
+    },
+  ): Promise<OutboundDeliveryOutcome>;
+  /** Provider-specific classifier for errors with no delivery verdict. */
+  isAmbiguousDeliveryError?(error: unknown): boolean;
 }
 
 /**
@@ -20,8 +28,10 @@ export interface OutboundMessageSender {
  * forwarded as an optional 3rd arg so messenger can keep messageType/userId
  * in its message log; discord/zalo ignore it.
  *
- * The wrapped sender always returns `'sent'` on success (the caller owns
- * outcome classification for ambiguous/not_sent via catch blocks).
+ * The wrapper is the reminder boundary: explicit provider outcomes pass
+ * through unchanged, while provider errors are normalized into the same
+ * authoritative outcome contract. Transport retries/dead letters are
+ * disabled so the shared job owns retry and recovery semantics.
  */
 export function wrapMessageSender(
   outbound: OutboundMessageSender,
@@ -34,15 +44,35 @@ export function wrapMessageSender(
         const outcome = await outbound.sendText(
           input.externalUserId,
           input.text,
-          input,
+          {
+            ...input,
+            retryOn: 'none',
+            skipDeadLetter: true,
+            deadLetterOn: 'none',
+          },
         );
-        return outcome === 'rate_limited' ? outcome : 'sent';
+        if (
+          outcome === 'sent' ||
+          outcome === 'ambiguous' ||
+          outcome === 'not_sent' ||
+          outcome === 'rate_limited'
+        ) {
+          return outcome;
+        }
+        // An omitted outcome is not an acknowledgement. Keep the reminder
+        // retryable instead of silently recording a successful delivery.
+        return 'not_sent';
       } catch (error) {
+        const ambiguous = outbound.isAmbiguousDeliveryError?.(error) === true;
         logger.warn(
-          `Failed to send study reminder to externalUserId=${maskExternalId(
-            input.externalUserId,
-          )}: ${errorMessage(error)}`,
+          `Study reminder send outcome=${
+            ambiguous ? 'ambiguous' : 'not_sent'
+          } externalUserId=${maskExternalId(input.externalUserId)}: ${errorMessage(error)}`,
         );
+        // Keep the original error for Messenger's 24h/non-retryable
+        // classifier. A thrown error is the authoritative not_sent signal;
+        // only a provider classifier can safely turn it into ambiguous here.
+        if (ambiguous) return 'ambiguous';
         throw error;
       }
     },

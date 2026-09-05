@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { isPostgresWriter } from '@wispace/bot-common/health';
+import { studyReminderTerminalFailurePredicateSql } from '@wispace/study-reminder-shared';
 import { subHours, subMilliseconds } from 'date-fns';
 import type {
   OpsHealthRepositoryPort,
@@ -170,7 +171,7 @@ export class TypeormOpsHealthRepository implements OpsHealthRepositoryPort {
   private async countTerminalFailedSince(hours: number): Promise<number> {
     const since = subHours(new Date(), hours);
     const rows = await this.execQuery<CountRow>(
-      `SELECT COUNT(*)::int AS count FROM study_reminder_jobs WHERE platform = $1 AND status = 'failed' AND updated_at > $2`,
+      `SELECT COUNT(*)::int AS count FROM study_reminder_jobs WHERE platform = $1 AND ${studyReminderTerminalFailurePredicateSql()} AND updated_at > $2`,
       [this.platform, since],
     );
     return rows[0]?.count ?? 0;

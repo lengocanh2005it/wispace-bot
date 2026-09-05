@@ -48,6 +48,10 @@ describe('TypeormStudyReminderJobRepository', () => {
       sentAt: null,
       leaseToken: null,
       leaseExpiresAt: null,
+      deliveryRecord: null,
+      deliveryKey: null,
+      deliveryStatus: null,
+      processingStartedAt: null,
       createdAt: new Date('2026-06-10T08:00:00+07:00'),
       updatedAt: new Date('2026-06-10T08:00:00+07:00'),
       ...overrides,
@@ -196,6 +200,12 @@ describe('TypeormStudyReminderJobRepository', () => {
         seedJob({
           status: 'sent',
           sentAt: new Date('2026-06-12T10:00:00+07:00'),
+          deliveryRecord: 'provider-1',
+          deliveryKey: 'old-key',
+          deliveryStatus: 'sent',
+          leaseToken: 'old-lease',
+          leaseExpiresAt: new Date('2026-06-12T11:00:00+07:00'),
+          processingStartedAt: new Date('2026-06-12T10:00:00+07:00'),
         });
 
         const result = await repository.upsertPendingJob(
@@ -212,6 +222,12 @@ describe('TypeormStudyReminderJobRepository', () => {
           new Date('2026-06-12T14:30:00+07:00').toISOString(),
         );
         expect(result.retryCount).toBe(0);
+        expect(result.deliveryRecord).toBeUndefined();
+        expect(result.deliveryKey).toBeUndefined();
+        expect(result.deliveryStatus).toBeUndefined();
+        expect(result.leaseToken).toBeUndefined();
+        expect(result.leaseExpiresAt).toBeUndefined();
+        expect(result.processingStartedAt).toBeUndefined();
       });
 
       it('reopens cancelled job when session returns in sync', async () => {
@@ -233,7 +249,14 @@ describe('TypeormStudyReminderJobRepository', () => {
       });
 
       it('reopens processing job to pending when schedule changes', async () => {
-        seedJob({ status: 'processing' });
+        seedJob({
+          status: 'processing',
+          deliveryKey: 'old-key',
+          deliveryStatus: 'not_sent',
+          leaseToken: 'old-lease',
+          leaseExpiresAt: new Date('2026-06-12T11:00:00+07:00'),
+          processingStartedAt: new Date('2026-06-12T10:00:00+07:00'),
+        });
 
         const result = await repository.upsertPendingJob(
           baseInput({
@@ -245,9 +268,14 @@ describe('TypeormStudyReminderJobRepository', () => {
 
         expect(result.status).toBe('pending');
         expect(result.retryCount).toBe(0);
+        expect(result.deliveryKey).toBeUndefined();
+        expect(result.deliveryStatus).toBeUndefined();
+        expect(result.leaseToken).toBeUndefined();
+        expect(result.leaseExpiresAt).toBeUndefined();
+        expect(result.processingStartedAt).toBeUndefined();
       });
 
-      it('updates pending job schedule in place and keeps retryCount', async () => {
+      it('reopens pending job when the schedule changes and resets retry state', async () => {
         seedJob({ status: 'pending', retryCount: 2 });
 
         const result = await repository.upsertPendingJob(
@@ -262,12 +290,12 @@ describe('TypeormStudyReminderJobRepository', () => {
         expect(result.scheduledAt.toISOString()).toBe(
           new Date('2026-06-12T11:00:00+07:00').toISOString(),
         );
-        expect(result.retryCount).toBe(2);
+        expect(result.retryCount).toBe(0);
       });
     });
 
     describe('default behavior (Discord/Zalo)', () => {
-      it('keeps sent job even when schedule changes', async () => {
+      it('reopens sent job when schedule changes', async () => {
         seedJob({ status: 'sent' });
 
         const result = await repository.upsertPendingJob(
@@ -277,7 +305,7 @@ describe('TypeormStudyReminderJobRepository', () => {
           }),
         );
 
-        expect(result.status).toBe('sent');
+        expect(result.status).toBe('pending');
       });
 
       it('force-reopens processing job even when schedule is unchanged', async () => {
@@ -296,6 +324,63 @@ describe('TypeormStudyReminderJobRepository', () => {
         expect(result.status).toBe('pending');
         expect(result.retryCount).toBe(0);
       });
+
+      it('keeps an ambiguous terminal outcome out of the retry state machine', async () => {
+        seedJob({
+          status: 'failed',
+          retryCount: 1,
+          deliveryStatus: 'ambiguous',
+          lastError: 'ambiguous delivery',
+        });
+
+        const result = await repository.upsertPendingJob(baseInput(), {
+          reopenOnlyOnScheduleChange: true,
+        });
+
+        expect(result.status).toBe('failed');
+        expect(result.deliveryStatus).toBe('ambiguous');
+        expect(result.retryCount).toBe(1);
+      });
+
+      it('keeps a terminal classified not_sent failure out of periodic sync', async () => {
+        seedJob({
+          status: 'failed',
+          retryCount: 3,
+          deliveryStatus: 'not_sent',
+          lastError: 'Messenger 24h messaging window closed',
+        });
+
+        const result = await repository.upsertPendingJob(baseInput(), {
+          reopenOnlyOnScheduleChange: true,
+        });
+
+        expect(result.status).toBe('failed');
+        expect(result.deliveryStatus).toBe('not_sent');
+        expect(result.retryCount).toBe(3);
+      });
+
+      it('reopens a failed terminal job when the schedule changes', async () => {
+        seedJob({
+          status: 'failed',
+          retryCount: 1,
+          deliveryStatus: 'ambiguous',
+          deliveryKey: 'old-key',
+        });
+
+        const result = await repository.upsertPendingJob(
+          baseInput({
+            scheduledAt: new Date('2026-06-13T10:30:00+07:00'),
+          }),
+          { reopenOnlyOnScheduleChange: true },
+        );
+
+        expect(result.status).toBe('pending');
+        expect(result.scheduledAt.toISOString()).toBe(
+          new Date('2026-06-13T10:30:00+07:00').toISOString(),
+        );
+        expect(result.deliveryStatus).toBeUndefined();
+        expect(result.deliveryKey).toBeUndefined();
+      });
     });
 
     describe('advisory lock (Messenger multi-pod sync)', () => {
@@ -308,10 +393,10 @@ describe('TypeormStudyReminderJobRepository', () => {
         expect(transactionMock).toHaveBeenCalledTimes(1);
       });
 
-      it('does not open a transaction without a lockKey', async () => {
+      it('uses a transaction even without an explicit lockKey', async () => {
         await repository.upsertPendingJob(baseInput());
 
-        expect(transactionMock).not.toHaveBeenCalled();
+        expect(transactionMock).toHaveBeenCalledTimes(1);
       });
     });
   });
@@ -393,6 +478,10 @@ describe('TypeormStudyReminderJobRepository', () => {
             sent_at: null,
             lease_token: 'lease-abc',
             lease_expires_at: new Date(),
+            delivery_record: null,
+            delivery_key: 'delivery-key-1',
+            delivery_status: 'ambiguous',
+            processing_started_at: new Date(),
             created_at: new Date(),
             updated_at: new Date(),
           },
@@ -412,7 +501,12 @@ describe('TypeormStudyReminderJobRepository', () => {
       expect(sql).toContain("status = 'processing'");
       expect(sql).toContain('lease_token = gen_random_uuid()');
       expect(sql).toContain('lease_expires_at = now() + ($2::int');
-      expect(sql).toContain("status IN ('pending', 'failed')");
+      expect(sql).toContain(
+        "status = 'pending' OR (status = 'failed' AND retry_count < max_retries)",
+      );
+      expect(sql).toContain(
+        "delivery_status = 'not_sent' AND retry_count < max_retries",
+      );
       // The claim is scoped to the worker's platform (#180).
       expect(sql).toContain('platform = $3');
       expect(params[0]).toBe(9);
@@ -424,6 +518,9 @@ describe('TypeormStudyReminderJobRepository', () => {
       expect(job?.retryCount).toBe(1);
       expect(job?.leaseToken).toBe('lease-abc');
       expect(job?.status).toBe('processing');
+      expect(job?.deliveryKey).toBe('delivery-key-1');
+      expect(job?.deliveryStatus).toBe('ambiguous');
+      expect(job?.processingStartedAt).toBeInstanceOf(Date);
     });
 
     it('returns null when the job is not pending/failed (real [[], 0] tuple shape)', async () => {
@@ -443,13 +540,42 @@ describe('TypeormStudyReminderJobRepository', () => {
 
   describe('markSent / markFailed', () => {
     it('markSent requires the lease token (stale owners no-op)', async () => {
-      await repository.markSent(1, 'lease-abc');
+      const result = await repository.markSent(1, 'lease-abc');
 
+      expect(result).toBe(true);
       const leaseCondition = queryLog.find(
         (entry) => entry.method === 'andWhere',
       );
       expect(leaseCondition?.args[0]).toContain('lease_token = :leaseToken');
       expect(leaseCondition?.args[1]).toEqual({ leaseToken: 'lease-abc' });
+      expect(
+        queryLog.some(
+          (entry) =>
+            entry.method === 'andWhere' &&
+            String(entry.args[0]).includes("status = 'processing'"),
+        ),
+      ).toBe(true);
+      const setCall = queryLog.find((entry) => entry.method === 'set');
+      expect(setCall?.args[0]).toEqual(
+        expect.objectContaining({
+          deliveryStatus: 'sent',
+          leaseToken: null,
+          leaseExpiresAt: null,
+          processingStartedAt: null,
+        }),
+      );
+    });
+
+    it('reports a lost lease when markSent affects no row', async () => {
+      createQueryBuilderMock.mockImplementationOnce(() => {
+        const qb = buildQb();
+        qb.execute.mockResolvedValue({ affected: 0 });
+        return qb;
+      });
+
+      const result = await repository.markSent(1, 'stale-lease');
+
+      expect(result).toBe(false);
     });
 
     it('markFailed requires the lease token (stale owners no-op)', async () => {
@@ -459,6 +585,7 @@ describe('TypeormStudyReminderJobRepository', () => {
         errorMessage: 'boom',
         retryCount: 1,
         terminal: false,
+        deliveryStatus: 'not_sent',
       });
 
       const leaseCondition = queryLog.find(
@@ -466,6 +593,54 @@ describe('TypeormStudyReminderJobRepository', () => {
       );
       expect(leaseCondition?.args[0]).toContain('lease_token = :leaseToken');
       expect(leaseCondition?.args[1]).toEqual({ leaseToken: 'lease-abc' });
+      const setCall = queryLog.find((entry) => entry.method === 'set');
+      expect(setCall?.args[0]).toEqual(
+        expect.objectContaining({
+          deliveryStatus: 'not_sent',
+          leaseToken: null,
+          leaseExpiresAt: null,
+          processingStartedAt: null,
+        }),
+      );
+    });
+
+    it('requires the current lease when persisting the delivery key', async () => {
+      const result = await repository.markDeliveryKey(
+        1,
+        'lease-abc',
+        'delivery-key-1',
+      );
+
+      expect(result).toBe(true);
+      const leaseCondition = queryLog.find(
+        (entry) =>
+          entry.method === 'andWhere' &&
+          String(entry.args[0]).includes('lease_token = :leaseToken'),
+      );
+      expect(leaseCondition?.args[1]).toEqual({ leaseToken: 'lease-abc' });
+      expect(
+        queryLog.some(
+          (entry) =>
+            entry.method === 'andWhere' &&
+            String(entry.args[0]).includes("status = 'processing'"),
+        ),
+      ).toBe(true);
+    });
+
+    it('reports a lost lease when delivery-key persistence affects no row', async () => {
+      createQueryBuilderMock.mockImplementationOnce(() => {
+        const qb = buildQb();
+        qb.execute.mockResolvedValue({ affected: 0 });
+        return qb;
+      });
+
+      const result = await repository.markDeliveryKey(
+        1,
+        'stale-lease',
+        'delivery-key-1',
+      );
+
+      expect(result).toBe(false);
     });
   });
 
@@ -478,6 +653,12 @@ describe('TypeormStudyReminderJobRepository', () => {
         status: 'cancelled',
         lastError: 'session already started',
         nextRetryAt: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        processingStartedAt: null,
+        deliveryRecord: null,
+        deliveryKey: null,
+        deliveryStatus: null,
       });
       const leaseCondition = queryLog.find(
         (entry) => entry.method === 'andWhere',
@@ -489,7 +670,17 @@ describe('TypeormStudyReminderJobRepository', () => {
       await repository.markCancelled(1, 'lease-abc');
 
       const setCall = queryLog.find((entry) => entry.method === 'set');
-      expect(setCall?.args[0]).toEqual({ status: 'cancelled' });
+      expect(setCall?.args[0]).toEqual(
+        expect.objectContaining({
+          status: 'cancelled',
+          leaseToken: null,
+          leaseExpiresAt: null,
+          processingStartedAt: null,
+          deliveryRecord: null,
+          deliveryKey: null,
+          deliveryStatus: null,
+        }),
+      );
     });
   });
 
@@ -503,6 +694,13 @@ describe('TypeormStudyReminderJobRepository', () => {
           String(entry.args[0]).includes('job.platform = :platform'),
       );
       expect(platformCondition?.args[1]).toEqual({ platform: 'messenger' });
+      expect(
+        queryLog.some(
+          (entry) =>
+            (entry.method === 'where' || entry.method === 'andWhere') &&
+            String(entry.args[0]).includes('delivery_status'),
+        ),
+      ).toBe(true);
     });
 
     it('never returns another platform job even when the query matched it (mixed-platform)', async () => {
@@ -579,6 +777,10 @@ describe('TypeormStudyReminderJobRepository', () => {
       expect(setCall?.args[0]).toEqual({
         status: 'failed',
         deliveryStatus: 'ambiguous',
+        nextRetryAt: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        processingStartedAt: null,
       });
       const platformCondition = queryLog.find(
         (entry) =>
@@ -610,6 +812,10 @@ describe('TypeormStudyReminderJobRepository', () => {
       expect(setCall?.args[0]).toEqual({
         status: 'pending',
         deliveryStatus: 'ambiguous',
+        nextRetryAt: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        processingStartedAt: null,
       });
     });
   });
@@ -681,6 +887,14 @@ describe('TypeormStudyReminderJobRepository', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0]?.lastError).toBe('boom');
+      const terminalCondition = queryLog.find(
+        (entry) =>
+          entry.method === 'where' &&
+          String(entry.args[0]).includes('delivery_status IN'),
+      );
+      expect(String(terminalCondition?.args[0])).toContain(
+        "status IN ('pending', 'failed')",
+      );
       const takeCall = queryLog.find((entry) => entry.method === 'take');
       expect(takeCall?.args[0]).toBe(20);
     });
@@ -807,26 +1021,19 @@ describe('TypeormStudyReminderJobRepository', () => {
   });
 
   describe('deleteTerminalJobsOlderThan', () => {
-    it('deletes cancelled and failed jobs with retry_count >= max_retries', async () => {
+    it('deletes exhausted jobs and terminal delivery outcomes', async () => {
       await repository.deleteTerminalJobsOlderThan(
         new Date('2026-06-12T00:00:00+07:00'),
       );
 
       expect(queryLog.some((entry) => entry.method === 'delete')).toBe(true);
-      const statusCondition = queryLog.find(
+      const terminalCondition = queryLog.find(
         (entry) =>
           entry.method === 'where' &&
-          String(entry.args[0]).includes('status IN'),
+          String(entry.args[0]).includes('retry_count >= max_retries') &&
+          String(entry.args[0]).includes('delivery_status IN'),
       );
-      expect(statusCondition?.args[1]).toEqual({
-        statuses: ['cancelled', 'failed'],
-      });
-      const retryCondition = queryLog.find(
-        (entry) =>
-          entry.method === 'andWhere' &&
-          String(entry.args[0]).includes('retry_count >= max_retries'),
-      );
-      expect(retryCondition).toBeDefined();
+      expect(terminalCondition).toBeDefined();
     });
   });
 

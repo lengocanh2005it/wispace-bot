@@ -77,6 +77,14 @@ describe('TypeormOpsHealthRepository', () => {
     expect(summary.countsByStatus).toEqual({ pending: 2, sent: 5 });
     expect(summary.terminalFailedSince).toBe(1);
     expect(summary.stuckProcessing).toBe(1);
+    const calls = query.mock.calls as unknown as QueryCall[];
+    expect(
+      calls.some(
+        ([sql]) =>
+          sql.includes('delivery_status IN') &&
+          sql.includes('retry_count >= max_retries'),
+      ),
+    ).toBe(true);
   });
 
   it('queries webhook inbound summary correctly', async () => {

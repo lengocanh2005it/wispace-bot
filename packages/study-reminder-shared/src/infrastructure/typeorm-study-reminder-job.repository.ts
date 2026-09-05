@@ -14,12 +14,37 @@ import type { SyncJobRepository } from '../ports/study-reminder-sync-job.reposit
 import type { DispatchJobRepository } from '../ports/study-reminder-dispatch-job.repository.port';
 import type { OpsJobRepository } from '../ports/study-reminder-ops-job.repository.port';
 import { StudyReminderJobEntity } from '../entities/study-reminder-job.entity';
-import type { Platform } from '@wispace/contracts';
+import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
+import {
+  studyReminderDispatchPredicateSql,
+  studyReminderTerminalFailurePredicateSql,
+  studyReminderTerminalRetentionPredicateSql,
+} from '../utils/job-predicates';
 
 const DEFAULT_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
   'pending',
   'failed',
 ];
+
+const TERMINAL_DELIVERY_OUTCOMES: OutboundDeliveryOutcome[] = [
+  'sent',
+  'ambiguous',
+  'rate_limited',
+];
+
+function isTerminalDeliveryOutcome(
+  outcome: OutboundDeliveryOutcome | null | undefined,
+): boolean {
+  return outcome != null && TERMINAL_DELIVERY_OUTCOMES.includes(outcome);
+}
+
+function isTerminalStoredFailure(entity: StudyReminderJobEntity): boolean {
+  return (
+    isTerminalDeliveryOutcome(entity.deliveryStatus) ||
+    (entity.deliveryStatus === 'not_sent' &&
+      entity.retryCount >= entity.maxRetries)
+  );
+}
 
 /**
  * TypeORM implementation of StudyReminderJobRepositoryPort.
@@ -46,16 +71,11 @@ export class TypeormStudyReminderJobRepository
     input: UpsertStudyReminderJobInput,
     options?: UpsertStudyReminderJobOptions,
   ): Promise<StudyReminderJob> {
-    if (!options?.lockKey) {
-      return this.doUpsert(this.repo.manager, input, options);
-    }
-
-    // Serialize concurrent upserts for the same (platform, externalUserId, sessionKey).
-    // pg_advisory_xact_lock is transaction-scoped — auto-released on commit/rollback.
     return this.repo.manager.transaction(async (manager) => {
-      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
-        options.lockKey,
-      ]);
+      // Serialize both existing-row updates and concurrent inserts. The
+      // transaction-scoped advisory lock also covers the no-row-yet case;
+      // the row lock in doUpsert protects an existing job from claim races.
+      await this.acquireUpsertLocks(manager, [input], options);
       return this.doUpsert(manager, input, options);
     });
   }
@@ -68,39 +88,35 @@ export class TypeormStudyReminderJobRepository
       return [];
     }
 
-    const manager = this.repo.manager;
-    const existingRows = await manager.findBy(
-      StudyReminderJobEntity,
-      inputs.map((input) => ({
-        platform: input.platform,
-        externalUserId: input.externalUserId,
-        sessionKey: input.sessionKey,
-      })),
-    );
-    const existingByKey = new Map(
-      existingRows.map((row) => [this.entityKey(row), row]),
-    );
+    return this.repo.manager.transaction(async (manager) => {
+      await this.acquireUpsertLocks(manager, inputs, options);
 
-    const toCreate: StudyReminderJobEntity[] = [];
-    const toUpdate: StudyReminderJobEntity[] = [];
-    for (const input of inputs) {
-      const existing = existingByKey.get(this.inputKey(input));
-      if (!existing) {
-        toCreate.push(this.buildNewEntity(manager, input));
-      } else {
+      // Lock rows before reading them. This prevents a sync snapshot from
+      // overwriting a concurrent claim or cancellation after its SELECT.
+      const existingRows = await this.lockedExistingRows(manager, inputs);
+      const existingByKey = new Map(
+        existingRows.map((row) => [this.entityKey(row), row]),
+      );
+
+      const saved: StudyReminderJobEntity[] = [];
+      for (const input of inputs) {
+        const existing = existingByKey.get(this.inputKey(input));
+        if (!existing) {
+          saved.push(
+            await manager.save(
+              StudyReminderJobEntity,
+              this.buildNewEntity(manager, input),
+            ),
+          );
+          continue;
+        }
+
         this.applyExisting(existing, input, options);
-        toUpdate.push(existing);
+        saved.push(await manager.save(StudyReminderJobEntity, existing));
       }
-    }
 
-    const saved: StudyReminderJobEntity[] = [];
-    if (toCreate.length > 0) {
-      saved.push(...(await manager.save(StudyReminderJobEntity, toCreate)));
-    }
-    if (toUpdate.length > 0) {
-      saved.push(...(await manager.save(StudyReminderJobEntity, toUpdate)));
-    }
-    return saved.map((entity) => this.mapEntity(entity));
+      return saved.map((entity) => this.mapEntity(entity));
+    });
   }
 
   private async doUpsert(
@@ -108,6 +124,12 @@ export class TypeormStudyReminderJobRepository
     input: UpsertStudyReminderJobInput,
     options?: UpsertStudyReminderJobOptions,
   ): Promise<StudyReminderJob> {
+    await manager.query(
+      `SELECT id FROM study_reminder_jobs
+       WHERE platform = $1 AND external_user_id = $2 AND session_key = $3
+       FOR UPDATE`,
+      [input.platform, input.externalUserId, input.sessionKey],
+    );
     const existing = await manager.findOne(StudyReminderJobEntity, {
       where: {
         platform: input.platform,
@@ -129,6 +151,55 @@ export class TypeormStudyReminderJobRepository
     return this.mapEntity(saved);
   }
 
+  private async acquireUpsertLocks(
+    manager: EntityManager,
+    inputs: UpsertStudyReminderJobInput[],
+    options?: UpsertStudyReminderJobOptions,
+  ): Promise<void> {
+    const lockKeys = new Set(
+      [...inputs]
+        .sort((a, b) => this.inputKey(a).localeCompare(this.inputKey(b)))
+        .map((input) => options?.lockKey ?? this.inputKey(input)),
+    );
+    for (const lockKey of lockKeys) {
+      await manager.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        lockKey,
+      ]);
+    }
+  }
+
+  private async lockedExistingRows(
+    manager: EntityManager,
+    inputs: UpsertStudyReminderJobInput[],
+  ): Promise<StudyReminderJobEntity[]> {
+    const sorted = [...inputs].sort((a, b) =>
+      this.inputKey(a).localeCompare(this.inputKey(b)),
+    );
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    for (const input of sorted) {
+      const offset = params.length + 1;
+      clauses.push(
+        `(platform = $${offset} AND external_user_id = $${offset + 1} AND session_key = $${offset + 2})`,
+      );
+      params.push(input.platform, input.externalUserId, input.sessionKey);
+    }
+    await manager.query(
+      `SELECT id FROM study_reminder_jobs
+       WHERE ${clauses.join(' OR ')}
+       FOR UPDATE`,
+      params,
+    );
+    return manager.findBy(
+      StudyReminderJobEntity,
+      inputs.map((input) => ({
+        platform: input.platform,
+        externalUserId: input.externalUserId,
+        sessionKey: input.sessionKey,
+      })),
+    );
+  }
+
   private buildNewEntity(
     manager: EntityManager,
     input: UpsertStudyReminderJobInput,
@@ -147,6 +218,12 @@ export class TypeormStudyReminderJobRepository
       nextRetryAt: null,
       lastError: null,
       sentAt: null,
+      leaseToken: null,
+      leaseExpiresAt: null,
+      deliveryRecord: null,
+      deliveryKey: null,
+      deliveryStatus: null,
+      processingStartedAt: null,
     });
   }
 
@@ -157,12 +234,10 @@ export class TypeormStudyReminderJobRepository
   ): void {
     const reopenOnlyOnScheduleChange =
       options?.reopenOnlyOnScheduleChange ?? false;
+    const scheduleChanged = this.hasScheduleChanged(existing, input);
 
     if (existing.status === 'sent') {
-      if (
-        !reopenOnlyOnScheduleChange ||
-        !this.hasScheduleChanged(existing, input)
-      ) {
+      if (!scheduleChanged) {
         return;
       }
       this.reopenToPending(existing, input);
@@ -170,10 +245,7 @@ export class TypeormStudyReminderJobRepository
     }
 
     if (existing.status === 'processing') {
-      if (
-        reopenOnlyOnScheduleChange &&
-        !this.hasScheduleChanged(existing, input)
-      ) {
+      if (reopenOnlyOnScheduleChange && !scheduleChanged) {
         return;
       }
       this.reopenToPending(existing, input);
@@ -182,6 +254,25 @@ export class TypeormStudyReminderJobRepository
 
     if (existing.status === 'cancelled') {
       this.reopenToPending(existing, input);
+      return;
+    }
+
+    // Any schedule mutation is a new delivery generation, including pending
+    // and failed rows. Clear the previous attempt before the next claim.
+    if (scheduleChanged) {
+      this.reopenToPending(existing, input);
+      return;
+    }
+
+    // Ambiguous/rate-limited/sent are terminal outcomes. A periodic sync must
+    // not turn one into a fresh due attempt unless the schedule is a new
+    // generation (handled above by reopenToPending).
+    if (isTerminalStoredFailure(existing)) {
+      existing.userId = input.userId ?? existing.userId;
+      existing.maxRetries = input.maxRetries;
+      if (existing.deliveryStatus === 'not_sent') {
+        existing.status = 'failed';
+      }
       return;
     }
 
@@ -222,18 +313,13 @@ export class TypeormStudyReminderJobRepository
     const minLeadAt = new Date(now.getTime() + minLeadMinutes * 60 * 1000);
     const rows = await this.repo
       .createQueryBuilder('job')
-      .where('job.status IN (:...statuses)', {
-        statuses: ['pending', 'failed'],
-      })
+      .where(studyReminderDispatchPredicateSql('job'))
       .andWhere('job.platform = :platform', { platform })
       .andWhere('job.remind_at <= :now', { now })
       .andWhere('job.scheduled_at > :minLeadAt', { minLeadAt })
       .andWhere('(job.next_retry_at IS NULL OR job.next_retry_at <= :now)', {
         now,
       })
-      .andWhere(
-        `(job.status = 'pending' OR (job.status = 'failed' AND job.retry_count < job.max_retries))`,
-      )
       .orderBy('job.remind_at', 'ASC')
       .limit(50)
       .getMany();
@@ -254,8 +340,11 @@ export class TypeormStudyReminderJobRepository
         `UPDATE study_reminder_jobs
        SET status = 'processing',
            lease_token = gen_random_uuid(),
-           lease_expires_at = now() + ($2::int * interval '1 millisecond')
-       WHERE id = $1 AND platform = $3 AND status IN ('pending', 'failed')
+           lease_expires_at = now() + ($2::int * interval '1 millisecond'),
+           processing_started_at = now(),
+           delivery_status = NULL
+       WHERE id = $1 AND platform = $3
+         AND ${studyReminderDispatchPredicateSql()}
        RETURNING *`,
         [jobId, leaseMs, platform],
       ),
@@ -269,7 +358,7 @@ export class TypeormStudyReminderJobRepository
     leaseToken: string,
     deliveryRecord?: string,
     deliveryKey?: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const result = await this.repo
       .createQueryBuilder()
       .update(StudyReminderJobEntity)
@@ -278,26 +367,46 @@ export class TypeormStudyReminderJobRepository
         sentAt: new Date(),
         nextRetryAt: null,
         lastError: null,
+        deliveryStatus: 'sent',
+        leaseToken: null,
+        leaseExpiresAt: null,
+        processingStartedAt: null,
         ...(deliveryRecord !== undefined ? { deliveryRecord } : {}),
         ...(deliveryKey !== undefined ? { deliveryKey } : {}),
       })
       .where('id = :id', { id: jobId })
       .andWhere('lease_token = :leaseToken', { leaseToken })
+      .andWhere("status = 'processing'")
       .execute();
     if (!result.affected) {
       this.logger.warn(
         `markSent ignored for jobId=${jobId}: lease token mismatch (stale owner)`,
       );
+      return false;
     }
+    return true;
   }
 
-  async markDeliveryKey(jobId: number, deliveryKey: string): Promise<void> {
-    await this.repo
+  async markDeliveryKey(
+    jobId: number,
+    leaseToken: string,
+    deliveryKey: string,
+  ): Promise<boolean> {
+    const result = await this.repo
       .createQueryBuilder()
       .update(StudyReminderJobEntity)
       .set({ deliveryKey })
       .where('id = :id', { id: jobId })
+      .andWhere('lease_token = :leaseToken', { leaseToken })
+      .andWhere("status = 'processing'")
       .execute();
+    if (!result.affected) {
+      this.logger.warn(
+        `markDeliveryKey ignored for jobId=${jobId}: lease token mismatch (stale owner)`,
+      );
+      return false;
+    }
+    return true;
   }
 
   async markFailed(params: {
@@ -307,6 +416,7 @@ export class TypeormStudyReminderJobRepository
     retryCount: number;
     nextRetryAt?: Date;
     terminal: boolean;
+    deliveryStatus: OutboundDeliveryOutcome;
   }): Promise<void> {
     const result = await this.repo
       .createQueryBuilder()
@@ -316,9 +426,14 @@ export class TypeormStudyReminderJobRepository
         retryCount: params.retryCount,
         lastError: truncatePersistedError(params.errorMessage),
         nextRetryAt: params.terminal ? null : (params.nextRetryAt ?? null),
+        deliveryStatus: params.deliveryStatus,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        processingStartedAt: null,
       })
       .where('id = :id', { id: params.jobId })
       .andWhere('lease_token = :leaseToken', { leaseToken: params.leaseToken })
+      .andWhere("status = 'processing'")
       .execute();
     if (!result.affected) {
       this.logger.warn(
@@ -332,10 +447,18 @@ export class TypeormStudyReminderJobRepository
     leaseToken: string,
     reason?: string,
   ): Promise<void> {
-    const patch: Partial<StudyReminderJobEntity> = { status: 'cancelled' };
+    const patch: Partial<StudyReminderJobEntity> = {
+      status: 'cancelled',
+      nextRetryAt: null,
+      leaseToken: null,
+      leaseExpiresAt: null,
+      processingStartedAt: null,
+      deliveryRecord: null,
+      deliveryKey: null,
+      deliveryStatus: null,
+    };
     if (reason) {
       patch.lastError = truncatePersistedError(reason);
-      patch.nextRetryAt = null;
     }
     const result = await this.repo
       .createQueryBuilder()
@@ -343,6 +466,7 @@ export class TypeormStudyReminderJobRepository
       .set(patch)
       .where('id = :id', { id: jobId })
       .andWhere('lease_token = :leaseToken', { leaseToken })
+      .andWhere("status = 'processing'")
       .execute();
     if (!result.affected) {
       this.logger.warn(
@@ -361,7 +485,16 @@ export class TypeormStudyReminderJobRepository
     const qb = this.repo
       .createQueryBuilder()
       .update(StudyReminderJobEntity)
-      .set({ status: 'cancelled' })
+      .set({
+        status: 'cancelled',
+        nextRetryAt: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        processingStartedAt: null,
+        deliveryRecord: null,
+        deliveryKey: null,
+        deliveryStatus: null,
+      })
       .where('platform = :platform', { platform })
       .andWhere('externalUserId = :externalUserId', { externalUserId })
       .andWhere('status IN (:...statuses)', {
@@ -387,6 +520,8 @@ export class TypeormStudyReminderJobRepository
     const result = await this.repo.manager.query<{ rowCount: number }>(
       `UPDATE study_reminder_jobs
        SET status = 'cancelled', lease_token = NULL, lease_expires_at = NULL,
+           processing_started_at = NULL, delivery_record = NULL,
+           delivery_key = NULL, delivery_status = NULL, next_retry_at = NULL,
            last_error = $3, updated_at = now()
        WHERE platform = $1 AND external_user_id = $2
          AND status IN ('pending', 'processing', 'failed')`,
@@ -406,7 +541,16 @@ export class TypeormStudyReminderJobRepository
     const result = await this.repo
       .createQueryBuilder()
       .update(StudyReminderJobEntity)
-      .set({ status: 'cancelled' })
+      .set({
+        status: 'cancelled',
+        nextRetryAt: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        processingStartedAt: null,
+        deliveryRecord: null,
+        deliveryKey: null,
+        deliveryStatus: null,
+      })
       .where('userId = :userId', { userId })
       .andWhere('platform != :platform', { platform: currentPlatform })
       .andWhere('status IN (:...statuses)', {
@@ -420,7 +564,7 @@ export class TypeormStudyReminderJobRepository
     // Earliest moment any pending/retryable job becomes actionable — accounts
     // for next_retry_at (Messenger semantics; shared by all platforms).
     // Optional platform filter avoids cross-platform full-table scan (#265).
-    const conditions = ["status IN ('pending', 'failed')"];
+    const conditions = [studyReminderDispatchPredicateSql()];
     const params: unknown[] = [now];
     if (platform) {
       conditions.push('platform = $2');
@@ -459,11 +603,15 @@ export class TypeormStudyReminderJobRepository
       .set({
         status: targetStatus,
         deliveryStatus: 'ambiguous',
+        nextRetryAt: null,
+        leaseToken: null,
+        leaseExpiresAt: null,
+        processingStartedAt: null,
       })
       .where('status = :status', { status: 'processing' })
       .andWhere('platform = :platform', { platform })
       .andWhere(
-        '(lease_expires_at < :now OR (lease_expires_at IS NULL AND updated_at <= :olderThan))',
+        '(lease_expires_at < :now OR (lease_expires_at IS NULL AND COALESCE(processing_started_at, updated_at) <= :olderThan))',
         { now: new Date(), olderThan },
       )
       .execute();
@@ -486,10 +634,7 @@ export class TypeormStudyReminderJobRepository
     const result = await this.repo
       .createQueryBuilder()
       .delete()
-      .where('status IN (:...statuses)', {
-        statuses: ['cancelled', 'failed'],
-      })
-      .andWhere('retry_count >= max_retries')
+      .where(studyReminderTerminalRetentionPredicateSql())
       .andWhere('updated_at < :olderThan', { olderThan })
       .execute();
     return result.affected ?? 0;
@@ -515,8 +660,7 @@ export class TypeormStudyReminderJobRepository
   async countTerminalFailedSince(since: Date): Promise<number> {
     return this.repo
       .createQueryBuilder('job')
-      .where('job.status = :status', { status: 'failed' })
-      .andWhere('job.retry_count >= job.max_retries')
+      .where(studyReminderTerminalFailurePredicateSql('job'))
       .andWhere('job.updated_at >= :since', { since })
       .getCount();
   }
@@ -535,8 +679,7 @@ export class TypeormStudyReminderJobRepository
   ): Promise<StudyReminderJob[]> {
     const entities = await this.repo
       .createQueryBuilder('job')
-      .where('job.status = :status', { status: 'failed' })
-      .andWhere('job.retry_count >= job.max_retries')
+      .where(studyReminderTerminalFailurePredicateSql('job'))
       .andWhere('job.updated_at >= :since', { since })
       .orderBy('job.updated_at', 'DESC')
       .take(limit)
@@ -585,6 +728,12 @@ export class TypeormStudyReminderJobRepository
     existing.sentAt = null;
     existing.lastError = null;
     existing.nextRetryAt = null;
+    existing.leaseToken = null;
+    existing.leaseExpiresAt = null;
+    existing.deliveryRecord = null;
+    existing.deliveryKey = null;
+    existing.deliveryStatus = null;
+    existing.processingStartedAt = null;
   }
 
   private mapEntity(entity: StudyReminderJobEntity): StudyReminderJob {
@@ -620,6 +769,15 @@ export class TypeormStudyReminderJobRepository
       deliveryRecord: (row.deliveryRecord ??
         row.delivery_record ??
         undefined) as string | undefined,
+      deliveryKey: (row.deliveryKey ?? row.delivery_key ?? undefined) as
+        | string
+        | undefined,
+      deliveryStatus: (row.deliveryStatus ??
+        row.delivery_status ??
+        undefined) as OutboundDeliveryOutcome | undefined,
+      processingStartedAt: (row.processingStartedAt ??
+        row.processing_started_at ??
+        undefined) as Date | undefined,
       createdAt: row.createdAt ?? row.created_at,
       updatedAt: row.updatedAt ?? row.updated_at,
     };

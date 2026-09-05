@@ -8,6 +8,11 @@ export {
   getMinutesUntilSession,
   isSessionStarted,
 } from './utils/schedule';
+export {
+  studyReminderDispatchPredicateSql,
+  studyReminderTerminalFailurePredicateSql,
+  studyReminderTerminalRetentionPredicateSql,
+} from './utils/job-predicates';
 
 // Ports
 export * from './ports/message-sender.port';

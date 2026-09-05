@@ -14,8 +14,8 @@ import type { UpsertStudyReminderJobOptions } from './study-reminder-job.reposit
  */
 export interface SyncJobRepository {
   /**
-   * Batch upsert — one SELECT for all keys, then in-memory reopen logic and
-   * batched save. Same per-row semantics as `upsertPendingJob` (no lockKey).
+   * Batch upsert — transaction-scoped advisory/row locks protect the snapshot
+   * while applying the same per-row reopen semantics as `upsertPendingJob`.
    */
   upsertPendingJobs(
     inputs: UpsertStudyReminderJobInput[],

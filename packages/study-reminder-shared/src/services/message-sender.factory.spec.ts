@@ -8,11 +8,20 @@ describe('wrapMessageSender', () => {
     const input = { externalUserId: 'u1', text: 'hello' };
     const result = await sender.sendText(input);
 
-    expect(sendText).toHaveBeenCalledWith('u1', 'hello', input);
-    expect(result).toBe('sent');
+    expect(sendText).toHaveBeenCalledWith(
+      'u1',
+      'hello',
+      expect.objectContaining({
+        ...input,
+        retryOn: 'none',
+        skipDeadLetter: true,
+        deadLetterOn: 'none',
+      }),
+    );
+    expect(result).toBe('not_sent');
   });
 
-  it('returns "sent" outcome on success', async () => {
+  it('fails closed when a provider omits its delivery outcome', async () => {
     const sendText = jest.fn().mockResolvedValue(undefined);
     const sender = wrapMessageSender({ sendText });
 
@@ -20,7 +29,7 @@ describe('wrapMessageSender', () => {
       externalUserId: 'u1',
       text: 'hello',
     });
-    expect(result).toBe('sent');
+    expect(result).toBe('not_sent');
   });
 
   it('forwards a rate-limit outcome without converting it to success', async () => {
@@ -32,7 +41,31 @@ describe('wrapMessageSender', () => {
     ).resolves.toBe('rate_limited');
   });
 
-  it('logs warning and re-throws on failure', async () => {
+  it.each(['ambiguous', 'not_sent'] as const)(
+    'forwards an explicit %s outcome unchanged',
+    async (outcome) => {
+      const sendText = jest.fn().mockResolvedValue(outcome);
+      const sender = wrapMessageSender({ sendText });
+
+      await expect(
+        sender.sendText({ externalUserId: 'u1', text: 'hello' }),
+      ).resolves.toBe(outcome);
+    },
+  );
+
+  it('normalizes a provider ambiguity classifier to ambiguous', async () => {
+    const sendText = jest.fn().mockRejectedValue(new Error('send failed'));
+    const sender = wrapMessageSender({
+      sendText,
+      isAmbiguousDeliveryError: () => true,
+    });
+
+    await expect(
+      sender.sendText({ externalUserId: 'u1', text: 'hello' }),
+    ).resolves.toBe('ambiguous');
+  });
+
+  it('preserves an unclassified provider failure for dispatcher classification', async () => {
     const sendText = jest.fn().mockRejectedValue(new Error('send failed'));
     const sender = wrapMessageSender({ sendText });
 

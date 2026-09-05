@@ -43,7 +43,7 @@ export interface StudyReminderJob {
    * calling the provider (#294).
    */
   deliveryKey?: string;
-  /** Explicit delivery outcome: sent | ambiguous | not_sent (#294). */
+  /** Explicit delivery outcome: sent | ambiguous | not_sent | rate_limited. */
   deliveryStatus?: OutboundDeliveryOutcome;
   /** Timestamp when the current processing attempt started (#294). */
   processingStartedAt?: Date;

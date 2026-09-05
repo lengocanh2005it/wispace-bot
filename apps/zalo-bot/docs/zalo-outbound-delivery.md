@@ -17,6 +17,12 @@ A send is **ambiguous** when the request times out or fails at the network
 level with **no HTTP status received** (`httpStatus === 0`). The bot cannot
 know whether Zalo accepted the message:
 
+For study reminders, `@wispace/study-reminder-shared` calls this sender with
+`retryOn: 'none'` and `skipDeadLetter: true`. The shared reminder job is the
+sole retry/recovery owner: an ambiguous result is persisted as terminal and
+is surfaced for operator review. The general chat/report policy below remains
+unchanged.
+
 - The current policy retries an ambiguous outcome **once** (`maxRetries: 1`),
   then marks the delivery as `FAILED` and persists an outbound dead-letter.
 - The `dm_send_ambiguous` metric (`${prefix}_dm_delivery_failures_total{reason="dm_send_ambiguous"}`)

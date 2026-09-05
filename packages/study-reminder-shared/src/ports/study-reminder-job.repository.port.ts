@@ -3,7 +3,7 @@ import type {
   StudyReminderJobStatus,
   UpsertStudyReminderJobInput,
 } from '../types/study-reminder.types';
-import type { Platform } from '@wispace/contracts';
+import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
 
 export type {
   StudyReminderJob,
@@ -24,10 +24,10 @@ export interface UpsertStudyReminderJobOptions {
    */
   lockKey?: string;
   /**
-   * Messenger semantics: `sent`/`processing` jobs are reopened to `pending`
-   * only when the schedule (scheduledAt/remindAt/topic) changed; `cancelled`
-   * jobs are always reopened. Off (default): `sent` is kept as-is,
-   * `cancelled`/`processing` are force-reopened.
+   * Production sync semantics: `sent`/`processing`/terminal-outcome jobs are
+   * reopened only when the schedule (scheduledAt/remindAt/topic) changed;
+   * `cancelled` jobs are always reopened. Pending/failed retryable jobs keep
+   * their retry state on an unchanged schedule.
    */
   reopenOnlyOnScheduleChange?: boolean;
 }
@@ -38,8 +38,8 @@ export interface StudyReminderJobRepositoryPort {
     options?: UpsertStudyReminderJobOptions,
   ): Promise<StudyReminderJob>;
   /**
-   * Batch upsert — one SELECT for all keys, then in-memory reopen logic and
-   * batched save. Same per-row semantics as `upsertPendingJob` (no lockKey).
+   * Batch upsert — transaction-scoped locks protect the snapshot while
+   * applying the same per-row semantics as `upsertPendingJob`.
    */
   upsertPendingJobs(
     inputs: UpsertStudyReminderJobInput[],
@@ -64,15 +64,19 @@ export interface StudyReminderJobRepositoryPort {
     jobId: number,
     leaseMs: number,
   ): Promise<StudyReminderJob | null>;
-  /** Marks sent — requires the current lease token (stale owners no-op). */
+  /** Marks sent — requires the current lease token; false means stale owner. */
   markSent(
     jobId: number,
     leaseToken: string,
     deliveryRecord?: string,
     deliveryKey?: string,
-  ): Promise<void>;
-  /** Persists a stable delivery key before calling the provider (#294). */
-  markDeliveryKey(jobId: number, deliveryKey: string): Promise<void>;
+  ): Promise<boolean>;
+  /** Persists a stable delivery key; false means the lease was lost (#294). */
+  markDeliveryKey(
+    jobId: number,
+    leaseToken: string,
+    deliveryKey: string,
+  ): Promise<boolean>;
   markFailed(params: {
     jobId: number;
     leaseToken: string;
@@ -80,6 +84,7 @@ export interface StudyReminderJobRepositoryPort {
     retryCount: number;
     nextRetryAt?: Date;
     terminal: boolean;
+    deliveryStatus: OutboundDeliveryOutcome;
   }): Promise<void>;
   /** Marks cancelled — requires the current lease token (stale owners no-op). */
   markCancelled(
@@ -113,8 +118,8 @@ export interface StudyReminderJobRepositoryPort {
   /**
    * Resets jobs stuck in `processing` for THIS platform only — a worker must
    * never reopen another platform's processing job (#180). Target status
-   * defaults to `failed` (Discord/Zalo); Messenger passes `pending` so stuck
-   * jobs retry the same day.
+   * defaults to `failed`; callers may retain `pending` for compatibility, but
+   * the persisted `ambiguous` outcome always suppresses a blind retry.
    */
   resetStuckProcessingJobs(
     platform: Platform,

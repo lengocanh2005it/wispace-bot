@@ -58,9 +58,9 @@ describe('StudyReminderDispatchService', () => {
       findDueJobs: jest.fn().mockResolvedValue([]),
       claimJob: jest.fn().mockResolvedValue(null),
       markCancelled: jest.fn().mockResolvedValue(undefined),
-      markSent: jest.fn().mockResolvedValue(undefined),
+      markSent: jest.fn().mockResolvedValue(true),
       markFailed: jest.fn().mockResolvedValue(undefined),
-      markDeliveryKey: jest.fn().mockResolvedValue(undefined),
+      markDeliveryKey: jest.fn().mockResolvedValue(true),
       findNextDueTime: jest.fn().mockResolvedValue(null),
       upsertPendingJob: jest.fn(),
       cancelStaleJobsForExternalUserId: jest.fn(),
@@ -87,6 +87,7 @@ describe('StudyReminderDispatchService', () => {
 
     hooks = {
       generateReminder: jest.fn().mockResolvedValue('Nhắc nhở học toán!'),
+      onSent: jest.fn(),
     };
 
     options = {
@@ -138,7 +139,7 @@ describe('StudyReminderDispatchService', () => {
       text: 'Nhắc nhở học toán!',
       messageType: 'STUDY_REMINDER',
       userId: 42,
-      deliveryKey: 'reminder:1:calendar:99',
+      deliveryKey: expect.stringMatching(/^reminder:1:/),
     });
     expect(result).toMatchObject({ claimed: 1, sent: 1, cancelled: 0 });
   });
@@ -157,6 +158,7 @@ describe('StudyReminderDispatchService', () => {
         terminal: true,
         retryCount: 1,
         errorMessage: 'outbound_rate_limited',
+        deliveryStatus: 'rate_limited',
       }),
     );
     expect(result).toMatchObject({ claimed: 1, failed: 1, retried: 0 });
@@ -164,6 +166,156 @@ describe('StudyReminderDispatchService', () => {
       expect.objectContaining({ error: 'outbound_rate_limited' }),
     ]);
   });
+
+  it('persists an explicit ambiguous outcome and never schedules a retry', async () => {
+    const job = makeJob();
+    jobRepo.findDueJobs.mockResolvedValue([job]);
+    jobRepo.claimJob.mockResolvedValue(job);
+    messageSender.sendText.mockResolvedValue('ambiguous');
+    build();
+
+    const result = await service.dispatchDueReminders();
+
+    expect(jobRepo.markFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        terminal: true,
+        deliveryStatus: 'ambiguous',
+        retryCount: 1,
+      }),
+    );
+    expect(result).toMatchObject({ claimed: 1, failed: 1, retried: 0 });
+    expect(result.failures).toEqual([
+      expect.objectContaining({
+        error: 'ambiguous delivery — not auto-retried',
+      }),
+    ]);
+  });
+
+  it('persists an explicit not_sent outcome and applies normal retry policy', async () => {
+    const job = makeJob();
+    jobRepo.findDueJobs.mockResolvedValue([job]);
+    jobRepo.claimJob.mockResolvedValue(job);
+    messageSender.sendText.mockResolvedValue('not_sent');
+    build();
+
+    const result = await service.dispatchDueReminders();
+
+    expect(jobRepo.markFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        terminal: false,
+        deliveryStatus: 'not_sent',
+        retryCount: 1,
+      }),
+    );
+    expect(result).toMatchObject({ claimed: 1, failed: 0, retried: 1 });
+  });
+
+  it('defensively surfaces a terminal row returned by a repository', async () => {
+    const job = makeJob({ deliveryStatus: 'ambiguous' });
+    jobRepo.findDueJobs.mockResolvedValue([job]);
+    jobRepo.claimJob.mockResolvedValue(job);
+    build();
+
+    const result = await service.dispatchDueReminders();
+
+    expect(messageSender.sendText).not.toHaveBeenCalled();
+    expect(jobRepo.markFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        terminal: true,
+        deliveryStatus: 'ambiguous',
+      }),
+    );
+    expect(result).toMatchObject({ claimed: 1, failed: 1, retried: 0 });
+    expect(result.failures).toEqual([
+      expect.objectContaining({
+        error: 'ambiguous delivery — not auto-retried',
+      }),
+    ]);
+  });
+
+  it('does not retry after provider success when finalization fails', async () => {
+    const job = makeJob();
+    jobRepo.findDueJobs.mockResolvedValue([job]);
+    jobRepo.claimJob.mockResolvedValue(job);
+    jobRepo.markSent.mockRejectedValue(new Error('database unavailable'));
+    build();
+
+    const result = await service.dispatchDueReminders();
+
+    expect(jobRepo.markFailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        terminal: true,
+        deliveryStatus: 'ambiguous',
+      }),
+    );
+    expect(result.retried).toBe(0);
+    expect(result.failed).toBe(1);
+  });
+
+  it('does not call the provider when the delivery-key lease is lost', async () => {
+    const job = makeJob();
+    jobRepo.findDueJobs.mockResolvedValue([job]);
+    jobRepo.claimJob.mockResolvedValue(job);
+    jobRepo.markDeliveryKey.mockResolvedValue(false);
+    build();
+
+    const result = await service.dispatchDueReminders();
+
+    expect(messageSender.sendText).not.toHaveBeenCalled();
+    expect(jobRepo.markFailed).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      claimed: 1,
+      sent: 0,
+      failed: 0,
+      retried: 0,
+    });
+  });
+
+  it('does not report sent when finalization loses the lease', async () => {
+    const job = makeJob();
+    jobRepo.findDueJobs.mockResolvedValue([job]);
+    jobRepo.claimJob.mockResolvedValue(job);
+    jobRepo.markSent.mockResolvedValue(false);
+    build();
+
+    const result = await service.dispatchDueReminders();
+
+    expect(result).toMatchObject({
+      claimed: 1,
+      sent: 0,
+      failed: 0,
+      retried: 0,
+    });
+    expect(hooks.onSent).not.toHaveBeenCalled();
+  });
+
+  it.each(['ambiguous', 'rate_limited'] as const)(
+    'does not downgrade %s when terminal persistence fails',
+    async (outcome) => {
+      const job = makeJob();
+      jobRepo.findDueJobs.mockResolvedValue([job]);
+      jobRepo.claimJob.mockResolvedValue(job);
+      messageSender.sendText.mockResolvedValue(outcome);
+      jobRepo.markFailed.mockRejectedValue(new Error('database unavailable'));
+      build();
+
+      const result = await service.dispatchDueReminders();
+
+      expect(jobRepo.markFailed).toHaveBeenCalledTimes(1);
+      expect(jobRepo.markFailed).toHaveBeenCalledWith(
+        expect.objectContaining({ deliveryStatus: outcome, terminal: true }),
+      );
+      expect(result).toMatchObject({ claimed: 1, failed: 1, retried: 0 });
+      expect(result.failures).toEqual([
+        expect.objectContaining({
+          error:
+            outcome === 'ambiguous'
+              ? 'ambiguous delivery — not auto-retried'
+              : 'outbound_rate_limited',
+        }),
+      ]);
+    },
+  );
 
   it('does not send a claimed reminder after revoke and retries unknown state', async () => {
     const job = makeJob({ leaseToken: 'lease-1' });
@@ -346,7 +498,9 @@ describe('StudyReminderDispatchService', () => {
       };
       const delay = (markFailedCall.nextRetryAt?.getTime() ?? 0) - now;
       expect(delay).toBeGreaterThanOrEqual(60_000 - 50);
-      expect(delay).toBeLessThanOrEqual(60_000);
+      // The service captures `now` after the test's timestamp; allow the
+      // sub-millisecond scheduling gap without weakening the jitter contract.
+      expect(delay).toBeLessThanOrEqual(60_100);
     });
   });
 
@@ -369,6 +523,7 @@ describe('StudyReminderDispatchService', () => {
         expect.objectContaining({
           terminal: true,
           errorMessage: 'Messenger 24h messaging window closed',
+          retryCount: 3,
         }),
       );
       expect(result).toMatchObject({ failed: 1, retried: 0 });
@@ -462,18 +617,21 @@ describe('StudyReminderDispatchService', () => {
         1,
         'lease-a',
         'sent',
-        'reminder:1:calendar:99',
+        expect.stringMatching(/^reminder:1:/),
       );
     });
 
-    it('reopens only an expired lease and delivers exactly once per owner', async () => {
+    it('reopens an expired lease as ambiguous and never blind-resends', async () => {
       let resolveSlowSend!: () => void;
       const slowSendGate = new Promise<void>((resolve) => {
         resolveSlowSend = resolve;
       });
       let sendCalls = 0;
       const firstClaim = { ...makeJob({ id: 1 }), leaseToken: 'lease-a' };
-      const secondClaim = { ...makeJob({ id: 1 }), leaseToken: 'lease-b' };
+      const secondClaim = {
+        ...makeJob({ id: 1, deliveryStatus: 'ambiguous' }),
+        leaseToken: 'lease-b',
+      };
 
       jobRepo.resetStuckProcessingJobs.mockResolvedValue(0);
       jobRepo.findDueJobs
@@ -498,23 +656,18 @@ describe('StudyReminderDispatchService', () => {
       resolveSlowSend();
       await first;
 
-      // Exactly one delivery per owner — recovery never duplicates a send
-      // while the previous lease was live.
-      expect(sendCalls).toBe(2);
+      // The first worker may have sent before its lease expired; the reclaimed
+      // ambiguous row must never issue a second provider call.
+      expect(sendCalls).toBe(1);
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(jobRepo.markSent).toHaveBeenCalledWith(
         1,
         'lease-a',
         'sent',
-        'reminder:1:calendar:99',
+        expect.stringMatching(/^reminder:1:/),
       );
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.markSent).toHaveBeenCalledWith(
-        1,
-        'lease-b',
-        'sent',
-        'reminder:1:calendar:99',
-      );
+      expect(jobRepo.markSent).toHaveBeenCalledTimes(1);
     });
 
     describe('dormancy gate', () => {

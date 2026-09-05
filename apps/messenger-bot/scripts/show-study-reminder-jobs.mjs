@@ -1,11 +1,17 @@
 import { createPool } from './_db.mjs';
 import { parseArgs } from './_args.mjs';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const {
+  studyReminderTerminalFailurePredicateSql,
+} = require('@wispace/study-reminder-shared');
 
 const HELP = `Usage: npm run study-reminder:jobs -- [options]
 
 Options:
   --status=<status>       Filter by status (pending|processing|sent|failed|cancelled)
-  --failed                Terminal failed only (retry_count >= max_retries)
+  --failed                Terminal failed/outcome-terminal only
   --stuck                 Processing jobs older than --stuck-minutes (default 10)
   --summary               JSON summary counts only (S1 ops)
   --hours=<n>             Lookback for --failed (default 24)
@@ -100,7 +106,7 @@ try {
   };
 
   if (args.psid) {
-    addFilter('psid = $?::varchar', args.psid);
+    addFilter('external_user_id = $?::varchar', args.psid);
   }
 
   if (args.userId) {
@@ -112,8 +118,7 @@ try {
   }
 
   if (args.failed) {
-    filters.push(`status = 'failed'`);
-    filters.push('retry_count >= max_retries');
+    filters.push(studyReminderTerminalFailurePredicateSql());
     addFilter('updated_at >= $?::timestamptz', since);
   }
 
@@ -140,10 +145,9 @@ try {
       `
         SELECT COUNT(*)::int AS count
         FROM study_reminder_jobs
-        WHERE status = 'failed'
-          AND retry_count >= max_retries
+        WHERE ${studyReminderTerminalFailurePredicateSql()}
           AND updated_at >= $1::timestamptz
-          AND ($2::varchar IS NULL OR psid = $2)
+          AND ($2::varchar IS NULL OR external_user_id = $2)
           AND ($3::int IS NULL OR user_id = $3)
       `,
       [since, args.psid, args.userId],
@@ -155,7 +159,7 @@ try {
         FROM study_reminder_jobs
         WHERE status = 'processing'
           AND updated_at <= $1::timestamptz
-          AND ($2::varchar IS NULL OR psid = $2)
+          AND ($2::varchar IS NULL OR external_user_id = $2)
           AND ($3::int IS NULL OR user_id = $3)
       `,
       [stuckBefore, args.psid, args.userId],
@@ -190,7 +194,7 @@ try {
       `
         SELECT
           id,
-          psid,
+          external_user_id AS psid,
           user_id,
           session_key,
           scheduled_at,
@@ -202,6 +206,8 @@ try {
           next_retry_at,
           last_error,
           sent_at,
+          delivery_key,
+          delivery_status,
           updated_at
         FROM study_reminder_jobs
         ${whereClause}

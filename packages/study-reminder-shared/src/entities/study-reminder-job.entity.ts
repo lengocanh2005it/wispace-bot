@@ -91,7 +91,7 @@ export class StudyReminderJobEntity {
   @Column({ name: 'delivery_key', type: 'text', nullable: true })
   deliveryKey: string | null;
 
-  /** Explicit delivery outcome: sent | ambiguous | not_sent (#294). */
+  /** Explicit delivery outcome: sent | ambiguous | not_sent | rate_limited. */
   @Column({
     name: 'delivery_status',
     type: 'varchar',

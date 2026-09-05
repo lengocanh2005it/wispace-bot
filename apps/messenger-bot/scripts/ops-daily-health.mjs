@@ -1,5 +1,11 @@
 import { createPool } from './_db.mjs';
 import { parseArgs } from './_args.mjs';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const {
+  studyReminderTerminalFailurePredicateSql,
+} = require('@wispace/study-reminder-shared');
 
 const HELP = `Usage: npm run ops:health -- [options]
 
@@ -127,8 +133,7 @@ try {
       `
         SELECT COUNT(*)::int AS count
         FROM study_reminder_jobs
-        WHERE status = 'failed'
-          AND retry_count >= max_retries
+        WHERE ${studyReminderTerminalFailurePredicateSql()}
           AND updated_at >= $1::timestamptz
       `,
       [failedSince],
@@ -144,10 +149,9 @@ try {
     ),
     pool.query(
       `
-        SELECT id, external_user_id AS psid, user_id, session_key, remind_at, status, retry_count, max_retries, last_error, updated_at
+        SELECT id, external_user_id AS psid, user_id, session_key, remind_at, status, retry_count, max_retries, last_error, delivery_key, delivery_status, updated_at
         FROM study_reminder_jobs
-        WHERE status = 'failed'
-          AND retry_count >= max_retries
+        WHERE ${studyReminderTerminalFailurePredicateSql()}
           AND updated_at >= $1::timestamptz
         ORDER BY updated_at DESC
         LIMIT 20

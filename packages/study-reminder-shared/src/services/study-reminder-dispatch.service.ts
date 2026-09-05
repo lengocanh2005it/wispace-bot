@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { jitteredDelayMs } from '@wispace/bot-common/utils';
 import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
@@ -193,27 +194,67 @@ export class StudyReminderDispatchService {
         throw new Error(`link status unavailable (${state ?? 'missing'})`);
       };
 
-      // Skip re-send if already delivered (#181) — crash between send and
-      // markSent left a delivery_record; re-claim sees it and marks sent
-      // without re-sending.
-      if (claimedJob.deliveryRecord) {
-        await this.jobRepository.markSent(claimedJob.id, leaseToken);
+      // Defensive guard for alternate/legacy repositories: the TypeORM claim
+      // predicate already excludes these outcomes, but a claimed terminal row
+      // must never reach the provider (#294).
+      if (
+        claimedJob.deliveryStatus === 'ambiguous' ||
+        claimedJob.deliveryStatus === 'rate_limited'
+      ) {
+        const outcomeError =
+          claimedJob.deliveryStatus === 'ambiguous'
+            ? 'ambiguous delivery — not auto-retried'
+            : 'outbound_rate_limited';
+        this.logger.warn(
+          `Study reminder job re-claimed with terminal delivery status=${claimedJob.deliveryStatus} jobId=${claimedJob.id} externalUserId=${maskExternalId(
+            claimedJob.externalUserId,
+          )} — skipping, ops review needed`,
+        );
+        try {
+          await this.jobRepository.markFailed({
+            jobId: claimedJob.id,
+            leaseToken,
+            errorMessage: outcomeError,
+            retryCount: Math.max(
+              claimedJob.retryCount + 1,
+              claimedJob.maxRetries,
+            ),
+            terminal: true,
+            deliveryStatus: claimedJob.deliveryStatus,
+          });
+        } catch (error) {
+          this.logger.error(
+            `Failed to close reclaimed terminal reminder jobId=${claimedJob.id}: ${this.toErrorMessage(error)}`,
+          );
+        }
+        this.hooks?.onFailed?.({
+          jobId: claimedJob.id,
+          externalUserId: claimedJob.externalUserId,
+          error: outcomeError,
+        });
+        failures.push({
+          jobId: claimedJob.id,
+          externalUserId: claimedJob.externalUserId,
+          error: outcomeError,
+        });
+        failed += 1;
+        return;
+      }
+
+      // Defensive guard for alternate/legacy repositories. The TypeORM claim
+      // predicate excludes these rows, but a claimed delivery marker is still
+      // authoritative and must never be sent twice (#181).
+      if (claimedJob.deliveryStatus === 'sent' || claimedJob.deliveryRecord) {
+        const finalized = await this.jobRepository.markSent(
+          claimedJob.id,
+          leaseToken,
+        );
+        if (!finalized) return;
         this.hooks?.onSent?.({
           jobId: claimedJob.id,
           externalUserId: claimedJob.externalUserId,
         });
         sent += 1;
-        return;
-      }
-
-      // Stuck processing was reset to ambiguous — provider may have accepted
-      // the message, do not auto-resend (#294).
-      if (claimedJob.deliveryStatus === 'ambiguous') {
-        this.logger.warn(
-          `Study reminder job re-claimed with ambiguous status jobId=${claimedJob.id} externalUserId=${maskExternalId(
-            claimedJob.externalUserId,
-          )} — skipping, ops review needed`,
-        );
         return;
       }
 
@@ -269,16 +310,22 @@ export class StudyReminderDispatchService {
           minutesUntil,
         );
 
+        // Do not persist a key for a revoked mapping. This check is immediately
+        // before the lease-gated key write, minimizing the stale-send window.
+        if (!(await checkMappingBeforeSend())) return;
+
         // Stable delivery key — persisted before calling the provider so that
         // a crash after send but before markSent leaves a recoverable record
         // (#294).
-        const deliveryKey = `reminder:${claimedJob.id}:${claimedJob.sessionKey}`;
+        const deliveryKey =
+          claimedJob.deliveryKey ?? `reminder:${claimedJob.id}:${randomUUID()}`;
 
-        await this.jobRepository.markDeliveryKey(claimedJob.id, deliveryKey);
-
-        // The ownership check is repeated immediately before the provider
-        // call so a revoke during LLM/text generation cannot leak the reply.
-        if (!(await checkMappingBeforeSend())) return;
+        const ownsDeliveryLease = await this.jobRepository.markDeliveryKey(
+          claimedJob.id,
+          leaseToken,
+          deliveryKey,
+        );
+        if (!ownsDeliveryLease) return;
 
         let outcome: OutboundDeliveryOutcome;
         let sendError: unknown;
@@ -296,60 +343,94 @@ export class StudyReminderDispatchService {
         }
 
         if (outcome === 'sent') {
-          await this.jobRepository.markSent(
-            claimedJob.id,
-            leaseToken,
-            'sent',
-            deliveryKey,
-          );
+          try {
+            const finalized = await this.jobRepository.markSent(
+              claimedJob.id,
+              leaseToken,
+              'sent',
+              deliveryKey,
+            );
+            if (!finalized) return;
+          } catch (error) {
+            // The provider has acknowledged the message; a DB finalization
+            // failure is ambiguous and must never become a blind retry.
+            const finalizationError = `delivery acknowledged but finalization failed: ${this.toErrorMessage(error)}`;
+            try {
+              await this.jobRepository.markFailed({
+                jobId: claimedJob.id,
+                leaseToken,
+                errorMessage: finalizationError,
+                retryCount: claimedJob.retryCount + 1,
+                terminal: true,
+                deliveryStatus: 'ambiguous',
+              });
+            } catch (markError) {
+              this.logger.error(
+                `Failed to persist ambiguous reminder finalization jobId=${claimedJob.id}: ${this.toErrorMessage(markError)}`,
+              );
+            }
+            this.hooks?.onFailed?.({
+              jobId: claimedJob.id,
+              externalUserId: claimedJob.externalUserId,
+              error: finalizationError,
+            });
+            failures.push({
+              jobId: claimedJob.id,
+              externalUserId: claimedJob.externalUserId,
+              error: finalizationError,
+            });
+            failed += 1;
+            return;
+          }
           this.hooks?.onSent?.({
             jobId: claimedJob.id,
             externalUserId: claimedJob.externalUserId,
           });
           sent += 1;
-        } else if (outcome === 'rate_limited') {
-          const rateLimitError = 'outbound_rate_limited';
-          await this.jobRepository.markFailed({
-            jobId: claimedJob.id,
-            leaseToken,
-            errorMessage: rateLimitError,
-            retryCount: claimedJob.retryCount + 1,
-            terminal: true,
-          });
+        } else if (outcome === 'rate_limited' || outcome === 'ambiguous') {
+          // Both outcomes are terminal. Keep persistence failures out of the
+          // normal not_sent retry path: recovery will fail closed as ambiguous
+          // if this worker cannot clear the processing lease.
+          const terminalError =
+            outcome === 'ambiguous'
+              ? 'ambiguous delivery — not auto-retried'
+              : 'outbound_rate_limited';
+          try {
+            await this.jobRepository.markFailed({
+              jobId: claimedJob.id,
+              leaseToken,
+              errorMessage: terminalError,
+              retryCount: claimedJob.retryCount + 1,
+              terminal: true,
+              deliveryStatus: outcome,
+            });
+          } catch (error) {
+            this.logger.error(
+              `Failed to persist terminal reminder outcome=${outcome} jobId=${claimedJob.id}: ${this.toErrorMessage(error)}`,
+            );
+          }
           this.hooks?.onFailed?.({
             jobId: claimedJob.id,
             externalUserId: claimedJob.externalUserId,
-            error: rateLimitError,
+            error: terminalError,
           });
           failures.push({
             jobId: claimedJob.id,
             externalUserId: claimedJob.externalUserId,
-            error: rateLimitError,
+            error: terminalError,
           });
-          failed += 1;
-        } else if (outcome === 'ambiguous') {
-          // Messenger/Zalo: provider may have accepted — no auto-resend (#294).
-          await this.jobRepository.markFailed({
-            jobId: claimedJob.id,
-            leaseToken,
-            errorMessage: 'ambiguous delivery — not auto-retried',
-            retryCount: claimedJob.retryCount + 1,
-            terminal: true,
-          });
-          this.hooks?.onFailed?.({
-            jobId: claimedJob.id,
-            externalUserId: claimedJob.externalUserId,
-            error: 'ambiguous delivery — not auto-retried',
-          });
-          this.logger.warn(
-            `Study reminder job ambiguous delivery jobId=${claimedJob.id} externalUserId=${maskExternalId(
-              claimedJob.externalUserId,
-            )} — terminal, not auto-retried`,
-          );
+          if (outcome === 'ambiguous') {
+            this.logger.warn(
+              `Study reminder job ambiguous delivery jobId=${claimedJob.id} externalUserId=${maskExternalId(
+                claimedJob.externalUserId,
+              )} — terminal, not auto-retried`,
+            );
+          }
           failed += 1;
         } else {
-          // not_sent — throw so the outer catch block applies existing classification
-          throw sendError ?? new Error('send failed');
+          // not_sent — throw so the outer catch block applies existing
+          // classification while persisting the explicit outcome.
+          throw sendError ?? new Error('outbound not_sent');
         }
       } catch (error) {
         const errorMsg = this.toErrorMessage(error);
@@ -381,9 +462,15 @@ export class StudyReminderDispatchService {
           jobId: claimedJob.id,
           leaseToken,
           errorMessage,
-          retryCount: nextRetryCount,
+          // A terminal known failure must be fenced out of both direct
+          // claims and the next periodic sync; retry exhaustion is the
+          // existing durable terminal marker for `not_sent`.
+          retryCount: terminal
+            ? Math.max(nextRetryCount, claimedJob.maxRetries)
+            : nextRetryCount,
           nextRetryAt,
           terminal,
+          deliveryStatus: 'not_sent',
         });
         failures.push({
           jobId: claimedJob.id,
