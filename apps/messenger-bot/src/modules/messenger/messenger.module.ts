@@ -16,6 +16,8 @@ import {
   PlatformWebhookInboundCleanupService,
   PlatformWebhookInboundEventService,
   PlatformWebhookInboundRetryCronService,
+  InlineWebhookInboundDispatcher,
+  readInboundRetryConfig,
 } from '@wispace/webhook-inbound';
 import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
@@ -84,6 +86,43 @@ import { BotMetricsService } from '@wispace/bot-metrics';
         ingest: (input) => inboundEvents.ingest(input),
       }),
       inject: [PlatformWebhookInboundEventService],
+    },
+    {
+      provide: InlineWebhookInboundDispatcher,
+      useFactory: (
+        inboundEvents: PlatformWebhookInboundEventService,
+        messengerService: MessengerService,
+        configService: ConfigService,
+      ) => {
+        const retryConfig = readInboundRetryConfig((key) =>
+          configService.get<string>(key),
+        );
+        return new InlineWebhookInboundDispatcher(inboundEvents, 'messenger', {
+          processEvent: async (rawPayload) => {
+            await messengerService.processEvent(
+              await validateAndMapMessengerEvent(rawPayload),
+            );
+          },
+          retryConfig,
+        });
+      },
+      inject: [
+        PlatformWebhookInboundEventService,
+        MessengerService,
+        ConfigService,
+      ],
+    },
+    {
+      provide: 'TRY_INLINE_DISPATCHER',
+      useFactory:
+        (dispatcher: InlineWebhookInboundDispatcher) =>
+        (
+          id: number,
+          rawPayload: object,
+          meta: { ingestedAt: Date; eventId: string; externalUserId: string },
+        ) =>
+          dispatcher.tryInline(id, rawPayload, meta),
+      inject: [InlineWebhookInboundDispatcher],
     },
     {
       provide: PlatformWebhookInboundRetryCronService,

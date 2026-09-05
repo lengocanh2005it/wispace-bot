@@ -76,6 +76,7 @@ function row(overrides: Partial<InboundEventRow> = {}): InboundEventRow {
     status: 'failed',
     retryCount: 0,
     nextRetryAt: new Date(),
+    createdAt: new Date(),
     ...overrides,
   };
 }

@@ -8,11 +8,15 @@ export {
 // Services
 export {
   PlatformWebhookInboundEventService,
+  InlineWebhookInboundDispatcher,
   readInboundRetryConfig,
+  processClaimedInboundRow,
   type IngestInboundEventInput,
   type IngestInboundEventResult,
   type InboundEventRow,
   type InboundRetryConfig,
+  type InboundDispatchOutcome,
+  type InlineWebhookInboundDispatcherOptions,
 } from './services/platform-webhook-inbound-event.service';
 export {
   PlatformWebhookInboundRetryCronService,

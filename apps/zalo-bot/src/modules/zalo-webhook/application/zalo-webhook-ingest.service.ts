@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { maskEventId } from '@wispace/bot-common/masking';
 import {
@@ -35,12 +35,21 @@ export class ZaloWebhookIngestService implements WebhookInboundIngressPort {
 
   constructor(
     private readonly inboundEvents: PlatformWebhookInboundEventService,
+    @Optional()
+    @Inject('TRY_INLINE_DISPATCHER')
+    private readonly tryInlineDispatcher?:
+      | ((
+          id: number,
+          rawPayload: object,
+          meta: { ingestedAt: Date; eventId: string; externalUserId: string },
+        ) => void)
+      | null,
   ) {}
 
   async ingestEvent(body: ZaloWebhookEvent): Promise<boolean> {
     const eventId = buildZaloEventId(body);
     const externalUserId = body.sender?.id ?? body.follower?.id ?? null;
-    const { inserted } = await this.inboundEvents.ingest({
+    const { inserted, id } = await this.inboundEvents.ingest({
       eventId,
       externalUserId,
       eventType: body.event_name,
@@ -55,6 +64,14 @@ export class ZaloWebhookIngestService implements WebhookInboundIngressPort {
         )}`,
       );
       return false;
+    }
+
+    if (this.tryInlineDispatcher && id) {
+      this.tryInlineDispatcher(id, body as unknown as object, {
+        ingestedAt: new Date(),
+        eventId,
+        externalUserId: externalUserId ?? '',
+      });
     }
 
     return true;

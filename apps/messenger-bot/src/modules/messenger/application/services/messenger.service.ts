@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
   PayloadTooLargeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -121,6 +122,15 @@ export class MessengerService {
     private readonly actionExecutor: WebhookActionExecutorService,
     @Inject(WEBHOOK_INBOUND_EVENTS_PORT)
     private readonly inboundEvents: WebhookInboundEventsPort,
+    @Optional()
+    @Inject('TRY_INLINE_DISPATCHER')
+    private readonly tryInlineDispatcher?:
+      | ((
+          id: number,
+          rawPayload: object,
+          meta: { ingestedAt: Date; eventId: string; externalUserId: string },
+        ) => void)
+      | null,
   ) {}
 
   verifyWebhook(token?: string, challenge?: string): string {
@@ -194,7 +204,11 @@ export class MessengerService {
               eventType: buildEventType(event),
               rawPayload: event,
             })
-            .then((result) => ({ eventId, ...result })),
+            .then((result) => ({
+              eventId,
+              rawPayload: event,
+              ...result,
+            })),
         ),
       ),
     );
@@ -219,6 +233,20 @@ export class MessengerService {
         continue;
       }
       accepted += 1;
+
+      if (this.tryInlineDispatcher) {
+        this.tryInlineDispatcher(
+          result.value.id!,
+          result.value.rawPayload as object,
+          {
+            ingestedAt: new Date(),
+            eventId: result.value.eventId,
+            externalUserId:
+              (result.value.rawPayload as { sender?: { id?: string } })?.sender
+                ?.id ?? '',
+          },
+        );
+      }
     }
 
     if (failures.length > 0) {
