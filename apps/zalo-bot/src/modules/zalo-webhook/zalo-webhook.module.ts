@@ -15,6 +15,7 @@ import {
   PlatformWebhookInboundRetryCronService,
   InlineWebhookInboundDispatcher,
   readInboundRetryConfig,
+  TRY_INLINE_DISPATCHER,
 } from '@wispace/webhook-inbound';
 import { ZaloChatModule } from '../zalo-chat/zalo-chat.module';
 import { ZaloWebhookController } from './presentation/controllers/zalo-webhook.controller';
@@ -100,7 +101,7 @@ import { validateAndMapZaloEvent } from './presentation/mappers/zalo-webhook.map
       ],
     },
     {
-      provide: 'TRY_INLINE_DISPATCHER',
+      provide: TRY_INLINE_DISPATCHER,
       useFactory:
         (dispatcher: InlineWebhookInboundDispatcher) =>
         (

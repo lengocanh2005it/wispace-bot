@@ -10,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import pLimit from 'p-limit';
 import { maskEventId, maskExternalId } from '@wispace/bot-common/masking';
+import { TRY_INLINE_DISPATCHER } from '@wispace/webhook-inbound';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import { MESSENGER_REPOSITORY } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
@@ -123,7 +124,7 @@ export class MessengerService {
     @Inject(WEBHOOK_INBOUND_EVENTS_PORT)
     private readonly inboundEvents: WebhookInboundEventsPort,
     @Optional()
-    @Inject('TRY_INLINE_DISPATCHER')
+    @Inject(TRY_INLINE_DISPATCHER)
     private readonly tryInlineDispatcher?:
       | ((
           id: number,
@@ -235,17 +236,12 @@ export class MessengerService {
       accepted += 1;
 
       if (this.tryInlineDispatcher) {
-        this.tryInlineDispatcher(
-          result.value.id!,
-          result.value.rawPayload as object,
-          {
-            ingestedAt: new Date(),
-            eventId: result.value.eventId,
-            externalUserId:
-              (result.value.rawPayload as { sender?: { id?: string } })?.sender
-                ?.id ?? '',
-          },
-        );
+        const raw = result.value.rawPayload as MessengerWebhookEvent;
+        this.tryInlineDispatcher(result.value.id!, raw as object, {
+          ingestedAt: new Date(),
+          eventId: result.value.eventId,
+          externalUserId: raw.sender?.id ?? '',
+        });
       }
     }
 

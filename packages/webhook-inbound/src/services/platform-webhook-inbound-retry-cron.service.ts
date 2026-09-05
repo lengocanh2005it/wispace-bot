@@ -1,13 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
-import { maskEventId } from '@wispace/bot-common/masking';
+import {
+  errorMessage,
+  maskEventId,
+  maskExternalIdInText,
+} from '@wispace/bot-common/masking';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { runBatched } from '@wispace/scheduler-core';
 import {
   PlatformWebhookInboundEventService,
   readInboundRetryConfig,
-  processClaimedInboundRow,
   type InboundEventRow,
 } from './platform-webhook-inbound-event.service';
 
@@ -157,48 +160,88 @@ export class PlatformWebhookInboundRetryCronService {
       return;
     }
 
+    // The retry worker claims before processing, so one row is handled by
+    // only one retry worker at a time (parallel batches claim disjoint rows).
+    // The lease token returned by the claim must accompany every state
+    // transition — a stale worker whose lease was recovered no-ops (#149).
     const leaseToken = await this.inboundEvents.claim(row.id);
     if (!leaseToken) {
       stats.skipped += 1;
       return;
     }
 
-    const maskedEventId = maskEventId(row.eventId, row.externalUserId);
-
-    const outcome = await processClaimedInboundRow(
-      row.id,
-      leaseToken,
-      row.rawPayload,
-      this.inboundEvents,
-      this.options.processEvent,
-      retryConfig,
-    );
-
-    if (outcome === 'completed') {
-      stats.completed += 1;
-      this.logger.log(
-        `Inbound event id=${row.id} eventId=${maskedEventId} processed successfully`,
+    try {
+      await this.options.processEvent(row.rawPayload as object);
+    } catch (error) {
+      const errorMsg = maskExternalIdInText(
+        errorMessage(error),
+        row.externalUserId,
       );
-    } else if (outcome === 'failed') {
       const nextRetryCount = row.retryCount + 1;
+      const maskedEventId = maskEventId(row.eventId, row.externalUserId);
+
+      const marked = await this.inboundEvents.markFailed(
+        row.id,
+        leaseToken,
+        errorMsg,
+        retryConfig,
+      );
+      if (!marked) {
+        stats.skipped += 1;
+        return;
+      }
+
       if (nextRetryCount >= retryConfig.maxRetries) {
         stats.abandoned += 1;
         this.logger.warn(
-          `Inbound event id=${row.id} eventId=${maskedEventId} abandoned after ${retryConfig.maxRetries} attempts`,
+          `Inbound event id=${row.id} eventId=${maskedEventId} abandoned after ${retryConfig.maxRetries} attempts: ${errorMsg}`,
         );
       } else {
         stats.failed += 1;
         this.logger.warn(
-          `Inbound event id=${row.id} eventId=${maskedEventId} retry ${nextRetryCount}/${retryConfig.maxRetries} failed`,
+          `Inbound event id=${row.id} eventId=${maskedEventId} retry ${nextRetryCount}/${retryConfig.maxRetries} failed: ${errorMsg}`,
         );
       }
-    } else if (outcome === 'abandoned') {
-      stats.abandoned += 1;
-      this.logger.error(
-        `Inbound event id=${row.id} eventId=${maskedEventId} completion failed; automatic replay skipped`,
+      return;
+    }
+
+    try {
+      const completed = await this.inboundEvents.markCompleted(
+        row.id,
+        leaseToken,
       );
-    } else {
-      stats.skipped += 1;
+      if (!completed) {
+        stats.skipped += 1;
+        return;
+      }
+      stats.completed += 1;
+      this.logger.log(
+        `Inbound event id=${row.id} eventId=${maskEventId(
+          row.eventId,
+          row.externalUserId,
+        )} processed successfully`,
+      );
+    } catch (error) {
+      const completionError = maskExternalIdInText(
+        errorMessage(error),
+        row.externalUserId,
+      );
+      const terminalized = await this.inboundEvents.markProcessingAbandoned(
+        row.id,
+        leaseToken,
+        completionError,
+      );
+      if (terminalized) {
+        stats.abandoned += 1;
+      } else {
+        stats.skipped += 1;
+      }
+      this.logger.error(
+        `Inbound event id=${row.id} eventId=${maskEventId(
+          row.eventId,
+          row.externalUserId,
+        )} completion failed; automatic replay skipped: ${completionError}`,
+      );
     }
   }
 

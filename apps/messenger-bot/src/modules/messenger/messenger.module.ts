@@ -18,6 +18,7 @@ import {
   PlatformWebhookInboundRetryCronService,
   InlineWebhookInboundDispatcher,
   readInboundRetryConfig,
+  TRY_INLINE_DISPATCHER,
 } from '@wispace/webhook-inbound';
 import { WebhookDeadLetterEntity } from '../../infrastructure/database/entities';
 import { DatabaseModule } from '../../infrastructure/database/database.module';
@@ -113,7 +114,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       ],
     },
     {
-      provide: 'TRY_INLINE_DISPATCHER',
+      provide: TRY_INLINE_DISPATCHER,
       useFactory:
         (dispatcher: InlineWebhookInboundDispatcher) =>
         (

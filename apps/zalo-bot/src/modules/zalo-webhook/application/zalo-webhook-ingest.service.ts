@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import { maskEventId } from '@wispace/bot-common/masking';
 import {
   PlatformWebhookInboundEventService,
+  TRY_INLINE_DISPATCHER,
   type WebhookInboundIngressPort,
 } from '@wispace/webhook-inbound';
 import type { ZaloWebhookEvent } from '../domain/entities/zalo-webhook-event.types';
@@ -36,7 +37,7 @@ export class ZaloWebhookIngestService implements WebhookInboundIngressPort {
   constructor(
     private readonly inboundEvents: PlatformWebhookInboundEventService,
     @Optional()
-    @Inject('TRY_INLINE_DISPATCHER')
+    @Inject(TRY_INLINE_DISPATCHER)
     private readonly tryInlineDispatcher?:
       | ((
           id: number,
