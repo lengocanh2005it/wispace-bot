@@ -36,6 +36,7 @@ import type { Platform } from '@wispace/contracts';
 import type {
   StudyReminderWorkerLockIds,
   StudyReminderWorkerOptions,
+  StudyReminderWorkerMetrics,
 } from './study-reminder-worker.service';
 
 /** Constructor usable as a NestJS injection token, typed to its instance. */
@@ -57,6 +58,8 @@ export interface CreateStudyReminderProvidersOptions {
   workerLockIds?: StudyReminderWorkerLockIds;
   /** Messenger: worker options (logLockSkips, startupSyncSwallowErrors). */
   workerOptions?: StudyReminderWorkerOptions;
+  /** Optional per-bot metrics adapter for cron heartbeats and lock skips. */
+  workerMetrics?: ClassOf<StudyReminderWorkerMetrics>;
   /** Required canonical-platform service used by every production sync worker. */
   canonicalPlatformService: ClassOf<{
     getCanonicalPlatformForUser(userId: number): Promise<Platform | undefined>;
@@ -311,6 +314,7 @@ export function createStudyReminderProviders(
         pgLock: PgAdvisoryLockService,
         jobRepository: StudyReminderJobRepositoryPort | undefined,
         getSessions: GetSessionsFn,
+        workerMetrics?: StudyReminderWorkerMetrics,
       ) =>
         createStudyReminderWorker(
           {
@@ -325,7 +329,10 @@ export function createStudyReminderProviders(
           {
             platform: options.platform,
             lockIds: options.workerLockIds,
-            options: options.workerOptions,
+            options:
+              options.workerOptions || workerMetrics
+                ? { ...options.workerOptions, metrics: workerMetrics }
+                : undefined,
           },
         ),
       inject: [
@@ -336,6 +343,9 @@ export function createStudyReminderProviders(
         PgAdvisoryLockService,
         { token: STUDY_REMINDER_JOB_REPOSITORY, optional: true },
         GET_SESSIONS,
+        ...(options.workerMetrics
+          ? [{ token: options.workerMetrics, optional: true }]
+          : []),
       ],
     },
     TypeormStudyReminderJobRepository,

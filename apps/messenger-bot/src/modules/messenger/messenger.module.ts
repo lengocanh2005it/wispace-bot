@@ -140,6 +140,8 @@ import { BotMetricsService } from '@wispace/bot-metrics';
           pgLock,
           {
             lockId: ADVISORY_LOCK.MESSENGER_WEBHOOK_INBOUND_RETRY,
+            cronName: 'messenger-webhook-inbound-retry',
+            metrics,
             processEvent: async (rawPayload) => {
               // Re-validate stored payloads before dispatch — replay must
               // never trust the persisted raw shape (#436).
@@ -202,6 +204,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
         configService: ConfigService,
         outboundService: MessengerOutboundService,
         pgLock: PgAdvisoryLockService,
+        metrics: BotMetricsService,
       ) =>
         new PlatformDeadLetterCronService(
           deadLetterService,
@@ -215,6 +218,8 @@ import { BotMetricsService } from '@wispace/bot-metrics';
             }),
             abandonReason: 'Missing psid or text in payload',
             retryAmbiguous: false,
+            cronName: 'messenger-dead-letter-retry',
+            metrics,
             sendText: (externalUserId, text, opts) =>
               outboundService.sendTextForRetry(
                 externalUserId,
@@ -228,6 +233,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
         ConfigService,
         MessengerOutboundService,
         PgAdvisoryLockService,
+        BotMetricsService,
       ],
     },
     MessengerReminderDeliveryService,

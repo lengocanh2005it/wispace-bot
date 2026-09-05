@@ -4,6 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import {
   TaskScoreAverageApiClient,
   type TaskScoreAverageRecord,
@@ -31,6 +32,7 @@ export class TaskScoreAverageApiService {
   constructor(
     private readonly configService: ConfigService,
     private readonly memoizedGoals: MemoizedWispaceGoalsService,
+    private readonly metrics?: BotMetricsService,
   ) {}
 
   async getCapacityData(
@@ -58,6 +60,7 @@ export class TaskScoreAverageApiService {
           this.configService,
           'WISPACE_API_TASK_SCORE_URL',
           'https://backend.aihubproduction.com/api/TaskScoreAverage',
+          this.metrics,
         ),
         {
           warn: (m) => this.logger.warn(m),

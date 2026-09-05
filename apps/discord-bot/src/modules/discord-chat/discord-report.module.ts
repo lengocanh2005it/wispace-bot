@@ -121,6 +121,7 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
         configService: ConfigService,
         claimRepository: ReportClaimRepositoryPort,
         pgLock: PgAdvisoryLockService,
+        metrics: BotMetricsService,
       ) =>
         new ReportClaimStaleResetCronService(
           configService,
@@ -129,9 +130,15 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
           {
             platform: 'discord',
             lockId: DISCORD_REPORT_CLAIM_STALE_RESET_LOCK,
+            metrics,
           },
         ),
-      inject: [ConfigService, REPORT_CLAIM_REPOSITORY, PgAdvisoryLockService],
+      inject: [
+        ConfigService,
+        REPORT_CLAIM_REPOSITORY,
+        PgAdvisoryLockService,
+        BotMetricsService,
+      ],
     },
     {
       provide: PlatformStudentReportService,
@@ -172,7 +179,14 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
       ) => new ReportCronLeaderService(configService, leaseService, 'discord'),
       inject: [ConfigService, CronLeaderLeaseService],
     },
-    CronLeaderHeartbeatService,
+    {
+      provide: CronLeaderHeartbeatService,
+      useFactory: (
+        leaderService: ReportCronLeaderService,
+        metrics: BotMetricsService,
+      ) => new CronLeaderHeartbeatService(leaderService, metrics),
+      inject: [ReportCronLeaderService, BotMetricsService],
+    },
     {
       provide: ReportCronLockService,
       useFactory: (pgLock: PgAdvisoryLockService) =>

@@ -10,6 +10,16 @@ export interface WispaceApiClientConfig {
    * shared per-host agent — first creator wins when endpoints share a host.
    */
   poolSize?: number;
+  /** Optional adapter for recording the complete upstream operation latency. */
+  metrics?: WispaceClientMetrics;
+}
+
+export interface WispaceClientMetrics {
+  timeWispaceCall<T>(
+    service: string,
+    operation: string,
+    fn: () => Promise<T>,
+  ): Promise<T>;
 }
 
 export interface WispaceClientLogger {

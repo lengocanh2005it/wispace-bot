@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { RedisBurstReconciler } from '@wispace/chat-metering';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { ChatRateLimitConfigService } from './chat-rate-limit-config.service';
 
 @Injectable()
@@ -10,7 +11,12 @@ export class ChatQuotaConsistencyCronService {
   constructor(
     private readonly config: ChatRateLimitConfigService,
     private readonly reconciler: RedisBurstReconciler,
-  ) {}
+    @Optional() private readonly metrics?: BotMetricsService,
+  ) {
+    if (this.config.getBurstStore() === 'redis') {
+      this.metrics?.registerCron?.('chat-quota-redis-consistency', 60 * 1000);
+    }
+  }
 
   /** Audit the current Redis advisory bucket once per minute when enabled. */
   @Cron('*/60 * * * * *', {
@@ -26,6 +32,7 @@ export class ChatQuotaConsistencyCronService {
           `chat-quota-redis-consistency status=${result.status} scanned=${result.scanned} mismatches=${result.mismatches} repaired=${result.repaired} unresolved=${result.unresolved} sampleExternalIds=${result.sampleExternalIds.join(',')}`,
         );
       }
+      this.metrics?.recordCronSuccess?.('chat-quota-redis-consistency');
     } catch (error) {
       // ponytail: one bounded pass per minute; the next tick retries after a
       // transient DB/Redis error and the metric/alert carries the signal.

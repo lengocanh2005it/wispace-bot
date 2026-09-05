@@ -31,6 +31,7 @@ import { WispaceApiError } from '@wispace/wispace-client';
 const CONCURRENCY = 3;
 const PAGE_SIZE = 200;
 const MAX_REPORTED_ERRORS = 50;
+const REPORT_CRON_EXPECTED_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class ZaloReportCronService {
@@ -56,7 +57,12 @@ export class ZaloReportCronService {
     @Optional()
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
-  ) {}
+  ) {
+    this.metrics?.registerCron?.(
+      'zalo-report-cron',
+      REPORT_CRON_EXPECTED_INTERVAL_MS,
+    );
+  }
 
   @Cron('0 8 * * *', {
     name: 'zalo-report-cron',
@@ -75,6 +81,7 @@ export class ZaloReportCronService {
 
     try {
       await this.sendReportsBatch(opts);
+      this.metrics?.recordCronSuccess?.('zalo-report-cron');
     } finally {
       await this.reportCronLockService.releaseDailyLock();
     }

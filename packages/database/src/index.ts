@@ -58,6 +58,7 @@ export { PlatformDeadLetterService } from './services/platform-dead-letter.servi
 export {
   PlatformDeadLetterCronService,
   type DeadLetterCronOptions,
+  type CronHeartbeatMetricsPort,
 } from './services/platform-dead-letter-cron.service';
 export {
   DeliveryLogService,

@@ -14,6 +14,12 @@ const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_MIN_RETRY_AGE_MS = 60_000;
 const DEFAULT_RETRY_LIMIT = 10;
 const DEFAULT_LEASE_MS = 600_000;
+const DEFAULT_CRON_NAME = 'platform-dead-letter-retry';
+
+export interface CronHeartbeatMetricsPort {
+  registerCron(name: string, expectedIntervalMs: number): void;
+  recordCronSuccess(name: string): void;
+}
 
 export interface DeadLetterCronOptions {
   /** Advisory lock id — only one pod retries the dead letter per tick. */
@@ -42,6 +48,10 @@ export interface DeadLetterCronOptions {
    * message, so auto-resend would risk a duplicate (#291).
    */
   retryAmbiguous?: boolean;
+  /** Optional per-bot heartbeat metrics. */
+  metrics?: CronHeartbeatMetricsPort;
+  /** Metric cron name; defaults to the shared dead-letter name. */
+  cronName?: string;
 }
 
 /**
@@ -66,7 +76,12 @@ export class PlatformDeadLetterCronService {
     private readonly configService: ConfigService,
     private readonly pgLock: PgAdvisoryLockService,
     private readonly options: DeadLetterCronOptions,
-  ) {}
+  ) {
+    this.options.metrics?.registerCron(
+      this.options.cronName ?? DEFAULT_CRON_NAME,
+      5 * 60 * 1000,
+    );
+  }
 
   @Cron('0 */5 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async handleRetry(): Promise<void> {
@@ -77,6 +92,10 @@ export class PlatformDeadLetterCronService {
     if (result === null) {
       this.logger.debug(
         'webhook-dead-letter-retry skipped — lock held by another pod',
+      );
+    } else {
+      this.options.metrics?.recordCronSuccess(
+        this.options.cronName ?? DEFAULT_CRON_NAME,
       );
     }
   }

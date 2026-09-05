@@ -32,6 +32,7 @@ const DEFAULT_RECONCILE_AGE_MS = 60_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 3_600_000;
 const RECONCILE_MAX_ATTEMPTS = 3;
 const RECONCILE_BASE_BACKOFF_MS = 1_000;
+const LINK_RECONCILE_EXPECTED_INTERVAL_MS = 5 * 60 * 1000;
 
 const reconcileRecordsTotal = new Counter({
   name: 'discord_link_reconcile_records_total',
@@ -69,7 +70,12 @@ export class DiscordLinkReconcileCronService {
     @Inject(REDIS_CLIENT)
     private readonly redisClient?: RedisClientPort,
     @Optional() private readonly metrics?: BotMetricsService,
-  ) {}
+  ) {
+    this.metrics?.registerCron?.(
+      'discord-link-reconcile',
+      LINK_RECONCILE_EXPECTED_INTERVAL_MS,
+    );
+  }
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async handleReconcile(): Promise<void> {
@@ -85,6 +91,8 @@ export class DiscordLinkReconcileCronService {
       this.logger.debug(
         'discord-link-reconcile skipped — lock held by another pod',
       );
+    } else {
+      this.metrics?.recordCronSuccess?.('discord-link-reconcile');
     }
   }
 

@@ -47,6 +47,16 @@ export class WispaceLinkStatusClient {
     if (!this.enabled)
       return { kind: 'unknown', reason: 'status_check_disabled' };
 
+    const call = () => this.getStatusUnmeasured(externalUserId, options);
+    return (
+      this.config.metrics?.timeWispaceCall('LinkStatus', 'get', call) ?? call()
+    );
+  }
+
+  private async getStatusUnmeasured(
+    externalUserId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<WispaceLinkStatusResult> {
     try {
       return await withRetry(
         () => this.fetchStatus(externalUserId, options?.signal),

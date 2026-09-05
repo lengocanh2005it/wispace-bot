@@ -34,6 +34,32 @@ describe('UserGoalsApiClient', () => {
     );
   });
 
+  it('records the complete retrying upstream operation through the metrics adapter', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ targetScore: '7', examDate: '2026-08-01' }),
+    });
+    global.fetch = fetchMock;
+    const timeWispaceCall = jest.fn(
+      async <T>(_service: string, _operation: string, fn: () => Promise<T>) =>
+        fn(),
+    );
+
+    const client = new UserGoalsApiClient({
+      url: 'https://backend.example.com/api/User/goals',
+      internalKey: 'internal-key',
+      metrics: { timeWispaceCall },
+    });
+
+    await client.getUserGoals('x-discordid', 'discord-1');
+
+    expect(timeWispaceCall).toHaveBeenCalledWith(
+      'UserGoals',
+      'get',
+      expect.any(Function),
+    );
+  });
+
   it('retries on 5xx then succeeds', async () => {
     const fetchMock = jest
       .fn()

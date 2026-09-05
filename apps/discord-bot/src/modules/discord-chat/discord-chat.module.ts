@@ -470,7 +470,14 @@ const REGISTER_REPORT_MESSAGE =
         new TypeormRescheduleStore<string>('discord', repo),
       inject: [getRepositoryToken(RescheduleConfirmationEntity)],
     },
-    RescheduleRecoveryCronService,
+    {
+      provide: RescheduleRecoveryCronService,
+      useFactory: (
+        store: TypeormRescheduleStore<string>,
+        metrics: BotMetricsService,
+      ) => new RescheduleRecoveryCronService(store, metrics),
+      inject: [TypeormRescheduleStore, BotMetricsService],
+    },
     {
       provide: RescheduleConfirmationService,
       useFactory: (
@@ -540,6 +547,7 @@ const REGISTER_REPORT_MESSAGE =
         configService: ConfigService,
         outboundService: DiscordOutboundService,
         pgLock: PgAdvisoryLockService,
+        metrics: BotMetricsService,
       ) =>
         new PlatformDeadLetterCronService(
           deadLetterService,
@@ -553,6 +561,8 @@ const REGISTER_REPORT_MESSAGE =
             }),
             abandonReason: 'Missing discordUserId or text in payload',
             retryAmbiguous: true,
+            cronName: 'discord-dead-letter-retry',
+            metrics,
             sendText: (externalUserId, text, opts) =>
               outboundService.sendTextForRetry(
                 externalUserId,
@@ -566,6 +576,7 @@ const REGISTER_REPORT_MESSAGE =
         ConfigService,
         DiscordOutboundService,
         PgAdvisoryLockService,
+        BotMetricsService,
       ],
     },
     {
@@ -580,6 +591,7 @@ const REGISTER_REPORT_MESSAGE =
         reportClaimRepo: Repository<ScheduledReportClaimEntity>,
         rateLimitService: PlatformChatRateLimitService,
         oauthStateRepo: Repository<DiscordOauthStateEntity>,
+        metrics: BotMetricsService,
       ) =>
         new PlatformCleanupCronService(
           cleanupService,
@@ -602,6 +614,7 @@ const REGISTER_REPORT_MESSAGE =
             reportClaimRepo,
             rateLimitService,
             oauthStateRepo,
+            metrics,
           },
         ),
       inject: [
@@ -614,6 +627,7 @@ const REGISTER_REPORT_MESSAGE =
         getRepositoryToken(ScheduledReportClaimEntity),
         PlatformChatRateLimitService,
         getRepositoryToken(DiscordOauthStateEntity),
+        BotMetricsService,
       ],
     },
   ],

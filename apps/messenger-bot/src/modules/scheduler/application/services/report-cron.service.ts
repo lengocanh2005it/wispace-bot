@@ -30,6 +30,8 @@ import type { ClaimAndSendResult } from '@wispace/scheduler-core';
 import { readEnvPositiveInt } from '@messenger/shared/config/env-helpers';
 import { ZERO } from './report-send-orchestration.service';
 
+const REPORT_CRON_EXPECTED_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
 @Injectable()
 export class ReportCronService {
   private readonly logger = new Logger(ReportCronService.name);
@@ -51,7 +53,16 @@ export class ReportCronService {
     @Optional()
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
-  ) {}
+  ) {
+    this.metrics?.registerCron?.(
+      'weekly-cleanup-duplicate-mappings',
+      7 * 24 * 60 * 60 * 1000,
+    );
+    this.metrics?.registerCron?.(
+      'exam-reminder-report',
+      REPORT_CRON_EXPECTED_INTERVAL_MS,
+    );
+  }
 
   @Cron('0 3 * * 1', {
     name: 'weekly-cleanup-duplicate-mappings',
@@ -66,6 +77,7 @@ export class ReportCronService {
         `Weekly cleanup: deactivated ${count} duplicate mappings`,
       );
     }
+    this.metrics?.recordCronSuccess?.('weekly-cleanup-duplicate-mappings');
   }
 
   @Cron('0 8 * * *', {
@@ -84,6 +96,7 @@ export class ReportCronService {
 
     try {
       await this.sendScheduledReports();
+      this.metrics?.recordCronSuccess?.('exam-reminder-report');
     } finally {
       await this.reportCronLockService.releaseDailyLock();
     }

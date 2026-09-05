@@ -27,6 +27,12 @@ envsubst '$TELEGRAM_BOT_TOKEN $TELEGRAM_CHAT_ID' \
   < /etc/alertmanager/alertmanager.tmpl \
   > /etc/alertmanager/alertmanager.yml
 
+if grep -Eq '__[A-Z0-9_]+__|\$\{?(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID)\}?' \
+  /etc/alertmanager/alertmanager.yml; then
+  echo "FATAL: unresolved Alertmanager credential placeholder" >&2
+  exit 1
+fi
+
 exec /bin/alertmanager \
   --config.file=/etc/alertmanager/alertmanager.yml \
   --storage.path=/alertmanager \

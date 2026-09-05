@@ -7,7 +7,7 @@ global:
 # `<app>-metrics` alias; the deploy script moves that alias at cutover (#278).
 # Metrics endpoints sit behind InternalApiKeyGuard, which accepts
 # `Authorization: Bearer <INTERNAL_API_KEY>` — the key is injected from the
-# monitoring .env (Prometheus expands ${VAR} at startup).
+# monitoring .env by prometheus-entrypoint.sh.
 scrape_configs:
   - job_name: messenger_bot
     static_configs:
@@ -17,7 +17,7 @@ scrape_configs:
     scheme: http
     authorization:
       type: Bearer
-      credentials: __INTERNAL_API_KEY_MESSENGER__
+      credentials: ${INTERNAL_API_KEY_MESSENGER}
 
   - job_name: discord_bot
     static_configs:
@@ -27,7 +27,7 @@ scrape_configs:
     scheme: http
     authorization:
       type: Bearer
-      credentials: __INTERNAL_API_KEY_DISCORD__
+      credentials: ${INTERNAL_API_KEY_DISCORD}
 
   - job_name: zalo_bot
     static_configs:
@@ -37,7 +37,7 @@ scrape_configs:
     scheme: http
     authorization:
       type: Bearer
-      credentials: __INTERNAL_API_KEY_ZALO__
+      credentials: ${INTERNAL_API_KEY_ZALO}
 
 rule_files:
   - /etc/prometheus/alert.rules.yml

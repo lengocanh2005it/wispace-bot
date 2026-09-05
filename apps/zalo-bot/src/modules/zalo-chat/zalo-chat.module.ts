@@ -502,7 +502,14 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         new TypeormRescheduleStore<string>('zalo', repo),
       inject: [getRepositoryToken(RescheduleConfirmationEntity)],
     },
-    RescheduleRecoveryCronService,
+    {
+      provide: RescheduleRecoveryCronService,
+      useFactory: (
+        store: TypeormRescheduleStore<string>,
+        metrics: BotMetricsService,
+      ) => new RescheduleRecoveryCronService(store, metrics),
+      inject: [TypeormRescheduleStore, BotMetricsService],
+    },
     {
       provide: RescheduleConfirmationService,
       useFactory: (
@@ -572,6 +579,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         configService: ConfigService,
         outboundService: ZaloOutboundService,
         pgLock: PgAdvisoryLockService,
+        metrics: BotMetricsService,
       ) =>
         new PlatformDeadLetterCronService(
           deadLetterService,
@@ -585,6 +593,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             }),
             abandonReason: 'Missing zaloUserId or text in payload',
             retryAmbiguous: false,
+            cronName: 'zalo-dead-letter-retry',
+            metrics,
             sendText: (externalUserId, text, opts) =>
               outboundService.sendTextForRetry(
                 externalUserId,
@@ -598,6 +608,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         ConfigService,
         ZaloOutboundService,
         PgAdvisoryLockService,
+        BotMetricsService,
       ],
     },
     {
@@ -612,6 +623,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         idempotencyRepo: Repository<ChatIdempotencyEntity>,
         reportClaimRepo: Repository<ScheduledReportClaimEntity>,
         rateLimitService: PlatformChatRateLimitService,
+        metrics: BotMetricsService,
       ) =>
         new PlatformCleanupCronService(
           cleanupService,
@@ -634,6 +646,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             oauthStateRepo,
             reportClaimRepo,
             rateLimitService,
+            metrics,
           },
         ),
       inject: [
@@ -646,6 +659,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         getRepositoryToken(ChatIdempotencyEntity),
         getRepositoryToken(ScheduledReportClaimEntity),
         PlatformChatRateLimitService,
+        BotMetricsService,
       ],
     },
   ],

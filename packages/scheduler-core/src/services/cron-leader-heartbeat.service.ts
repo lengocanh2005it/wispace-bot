@@ -2,6 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ReportCronLeaderService } from './report-cron-leader.service';
 
+export interface CronLeaderHeartbeatMetricsPort {
+  registerCron(name: string, expectedIntervalMs: number): void;
+  recordCronSuccess(name: string): void;
+}
+
 /**
  * Refreshes the cron-leader lease every minute so a live leader keeps it —
  * without this, the 08:00 cron leader would expire between daily runs and
@@ -13,12 +18,16 @@ export class CronLeaderHeartbeatService {
 
   constructor(
     private readonly reportCronLeaderService: ReportCronLeaderService,
-  ) {}
+    private readonly metrics?: CronLeaderHeartbeatMetricsPort,
+  ) {
+    this.metrics?.registerCron('cron-leader-heartbeat', 60 * 1000);
+  }
 
   @Cron('*/1 * * * *', {
     name: 'cron-leader-heartbeat',
   })
   async handleHeartbeat(): Promise<void> {
     await this.reportCronLeaderService.heartbeat();
+    this.metrics?.recordCronSuccess('cron-leader-heartbeat');
   }
 }

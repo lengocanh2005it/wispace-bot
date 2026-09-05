@@ -63,15 +63,19 @@ import { BotMetricsService } from '@wispace/bot-metrics';
     PlatformLinkStateService,
     {
       provide: WispaceLinkStatusClient,
-      useFactory: (configService: ConfigService) => {
-        const wispace = new WispaceConfigService((key) =>
-          configService.get<string>(key),
+      useFactory: (
+        configService: ConfigService,
+        metrics: BotMetricsService,
+      ) => {
+        const wispace = new WispaceConfigService(
+          (key) => configService.get<string>(key),
+          metrics,
         );
         return new WispaceLinkStatusClient(
           wispace.buildLinkStatusClientConfig('x-zaloid'),
         );
       },
-      inject: [ConfigService],
+      inject: [ConfigService, BotMetricsService],
     },
     {
       provide: ZALO_LINK_VERIFY_RECORD_REPOSITORY,
@@ -79,9 +83,9 @@ import { BotMetricsService } from '@wispace/bot-metrics';
     },
     {
       provide: WispaceTokenVerifyService,
-      useFactory: (configService: ConfigService) =>
-        new WispaceTokenVerifyService(configService, 'zalo'),
-      inject: [ConfigService],
+      useFactory: (configService: ConfigService, metrics: BotMetricsService) =>
+        new WispaceTokenVerifyService(configService, 'zalo', metrics),
+      inject: [ConfigService, BotMetricsService],
     },
     {
       provide: CLARIFICATION_STATE_STORE,

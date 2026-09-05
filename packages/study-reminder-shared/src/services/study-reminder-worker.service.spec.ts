@@ -30,6 +30,11 @@ describe('StudyReminderWorkerService', () => {
   let scheduleService: jest.Mocked<StudyReminderScheduleService>;
   let schedulerRegistry: jest.Mocked<SchedulerRegistry>;
   let pgLock: jest.Mocked<PgAdvisoryLockService>;
+  let workerMetrics: {
+    registerCron: jest.Mock;
+    recordCronSuccess: jest.Mock;
+    incStudyReminderLockSkip: jest.Mock;
+  };
 
   const defaultSettings = {
     syncHorizonHours: 168,
@@ -114,11 +119,20 @@ describe('StudyReminderWorkerService', () => {
         .fn()
         .mockImplementation((_id: number, fn: () => Promise<unknown>) => fn()),
     } as unknown as jest.Mocked<PgAdvisoryLockService>;
+    workerMetrics = {
+      registerCron: jest.fn(),
+      recordCronSuccess: jest.fn(),
+      incStudyReminderLockSkip: jest.fn(),
+    };
   });
 
   function build(
     lockIds?: { sync: number; cleanup: number; rollover: number },
-    options?: { logLockSkips?: boolean; startupSyncSwallowErrors?: boolean },
+    options?: {
+      logLockSkips?: boolean;
+      startupSyncSwallowErrors?: boolean;
+      metrics?: typeof workerMetrics;
+    },
   ): void {
     service = new StudyReminderWorkerService(
       syncService,
@@ -146,6 +160,48 @@ describe('StudyReminderWorkerService', () => {
       );
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(syncService.syncUpcomingSessions).toHaveBeenCalled();
+    });
+
+    it('registers heartbeat gauges and records successful cron runs', async () => {
+      build(undefined, { metrics: workerMetrics });
+      await service.onModuleInit();
+      await service.handleSyncCron();
+      await service.handleCleanupCron();
+      await service.handleEveningRolloverCron();
+
+      expect(workerMetrics.registerCron).toHaveBeenCalledWith(
+        'study-reminder-sync',
+        30 * 60 * 1000,
+      );
+      expect(workerMetrics.registerCron).toHaveBeenCalledWith(
+        'study-reminder-cleanup',
+        24 * 60 * 60 * 1000,
+      );
+      expect(workerMetrics.registerCron).toHaveBeenCalledWith(
+        'study-reminder-evening-rollover',
+        24 * 60 * 60 * 1000,
+      );
+      expect(workerMetrics.recordCronSuccess).toHaveBeenCalledWith(
+        'study-reminder-sync',
+      );
+      expect(workerMetrics.recordCronSuccess).toHaveBeenCalledWith(
+        'study-reminder-cleanup',
+      );
+      expect(workerMetrics.recordCronSuccess).toHaveBeenCalledWith(
+        'study-reminder-evening-rollover',
+      );
+    });
+
+    it('records a lock skip in the prefixed metrics adapter', async () => {
+      pgLock.withLock.mockResolvedValue(null);
+      build(undefined, { metrics: workerMetrics });
+      await service.handleSyncCron();
+
+      expect(workerMetrics.incStudyReminderLockSkip).toHaveBeenCalledWith(
+        'messenger',
+        'sync',
+      );
+      expect(workerMetrics.recordCronSuccess).not.toHaveBeenCalled();
     });
 
     it('registers the rollover cron at the configured hour', async () => {

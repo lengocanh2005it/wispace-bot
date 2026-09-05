@@ -10,6 +10,7 @@ import {
   WispaceGoalsService,
   PrecreateExerciseApiClient,
 } from '@wispace/wispace-client';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 /**
  * Cross-pod WISPACE cache coordination (#568): when Redis is enabled and
@@ -46,6 +47,7 @@ const cacheLogger = new Logger(WispaceDataCache.name);
   providers: [
     ...createWispaceProviders({
       header: 'x-psid',
+      metrics: BotMetricsService,
       cacheProvider: createRedisCacheProvider(),
     }),
     {

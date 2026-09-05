@@ -24,6 +24,7 @@ import {
   WispaceConfigService,
   WispaceLinkStatusClient,
 } from '@wispace/wispace-client';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 /**
  * Self-contained module for user linking flow:
@@ -48,15 +49,19 @@ import {
     PlatformLinkStateService,
     {
       provide: WispaceLinkStatusClient,
-      useFactory: (configService: ConfigService) => {
-        const wispace = new WispaceConfigService((key) =>
-          configService.get<string>(key),
+      useFactory: (
+        configService: ConfigService,
+        metrics: BotMetricsService,
+      ) => {
+        const wispace = new WispaceConfigService(
+          (key) => configService.get<string>(key),
+          metrics,
         );
         return new WispaceLinkStatusClient(
           wispace.buildLinkStatusClientConfig('x-psid'),
         );
       },
-      inject: [ConfigService],
+      inject: [ConfigService, BotMetricsService],
     },
     {
       provide: MESSENGER_LINK_VERIFY_RECORD_REPOSITORY,

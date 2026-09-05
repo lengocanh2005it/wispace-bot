@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import {
   REPORT_SEND_JOB_REPOSITORY,
@@ -16,6 +16,9 @@ import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { subMilliseconds } from 'date-fns';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 import { reportRetryAt } from '../utils/report-retry-at';
+import { BotMetricsService } from '@wispace/bot-metrics';
+
+const REPORT_RETRY_EXPECTED_INTERVAL_MS = 15 * 60 * 1000;
 
 @Injectable()
 export class ReportSendRetryDispatchService {
@@ -31,7 +34,13 @@ export class ReportSendRetryDispatchService {
     private readonly reportCronLeaderService: ReportCronLeaderService,
     private readonly reportSendOrchestrationService: ReportSendOrchestrationService,
     private readonly pgLock: PgAdvisoryLockService,
-  ) {}
+    @Optional() private readonly metrics?: BotMetricsService,
+  ) {
+    this.metrics?.registerCron?.(
+      'report-send-retry',
+      REPORT_RETRY_EXPECTED_INTERVAL_MS,
+    );
+  }
 
   /** R5: poll outbox — default 15 phút (khớp REPORT_SEND_RETRY_POLL_MINUTES). */
   @Cron('*/15 * * * *', {
@@ -43,9 +52,13 @@ export class ReportSendRetryDispatchService {
       return;
     }
 
-    await this.pgLock.withLock(ADVISORY_LOCK.REPORT_SEND_RETRY_DISPATCH, () =>
-      this.dispatchDueReportRetries(),
+    const result = await this.pgLock.withLock(
+      ADVISORY_LOCK.REPORT_SEND_RETRY_DISPATCH,
+      () => this.dispatchDueReportRetries(),
     );
+    if (result !== null) {
+      this.metrics?.recordCronSuccess?.('report-send-retry');
+    }
   }
 
   async dispatchDueReportRetries(): Promise<{

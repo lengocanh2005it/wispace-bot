@@ -10,6 +10,7 @@ import {
   PrecreateExerciseApiClient,
 } from '@wispace/wispace-client';
 import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 /**
  * Cross-pod WISPACE cache coordination (#568): when Redis is enabled and
@@ -41,6 +42,7 @@ const cacheLogger = new Logger(WispaceDataCache.name);
   providers: [
     ...createWispaceProviders({
       header: 'x-discordid',
+      metrics: BotMetricsService,
       horizonHours: (configService) => () =>
         configService.getSyncHorizonHours(),
       cacheProvider: createRedisCacheProvider(),

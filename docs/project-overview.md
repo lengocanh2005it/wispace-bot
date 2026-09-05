@@ -419,6 +419,22 @@ All endpoints below require header **`X-Internal-Api-Key`** (or `Authorization: 
 
 Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP — no API key needed.
 
+### Prometheus alert coverage (#684)
+
+Prometheus rules and response procedures live in
+[`docs/monitoring-alerts.md`](monitoring-alerts.md). Each bot registers
+heartbeat gauges for report/retry, link-reconcile, token-refresh,
+study-reminder, webhook-retry, dead-letter retry, reschedule recovery,
+report-claim recovery, report-leader heartbeat, and Messenger ops/data-quality
+quota recovery/consistency, and ops/data-quality crons; a cron is stale after
+2.5 expected intervals without a successful run.
+The same rules
+cover token-refresh failures, provider circuits/exhaustion/degraded mode,
+usage-cost telemetry loss, prompt-injection rises, chat recovery, WISPACE
+p95 latency, and Node event-loop p99 lag. Metrics keep the platform prefix
+(`messenger_`, `discord_`, `zalo_`) and are scraped through the protected
+`/metrics` endpoint.
+
 ### WISPACE web-activity dormancy gate
 
 - `POST /v1/messenger/wispace/web-activity` — auth `X-Internal-Api-Key` / `Authorization: Bearer` = `INTERNAL_API_KEY`. Body `{ userId: number (positive int), activeAt?: ISO 8601 }`. `activeAt` defaults to `now()`, a future value is clamped, offset-less strings are read as UTC. Idempotent `GREATEST` upsert into `web_activity`; no idempotency key / inbox / retry — a missed delivery self-heals on the next visit. WISPACE should debounce (≈1 ping / learner / 5–15 min), not send per pageview.
@@ -455,6 +471,10 @@ Internal cron (30-minute sync, adaptive dispatch) does **not** go through HTTP �
 | `discord-link-reconcile`            | `*/5 * * * *`                                 | `DiscordLinkReconcileCronService` — re-commit missing Discord mappings from `discord_link_verify_records` (advisory lock `DISCORD_LINK_RECONCILE`; `DISCORD_LINK_RECONCILE_AGE_MS`/`DISCORD_LINK_RECONCILE_MAX_AGE_MS`) |
 
 Study reminder sync also runs **on server start** (`onModuleInit`).
+
+Only business-critical crons are heartbeat-alerted; retention/cleanup jobs
+remain dashboard/log signals. See the metric classification and runbook in
+[`monitoring-alerts.md`](monitoring-alerts.md).
 
 ---
 

@@ -128,6 +128,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         rollover: ADVISORY_LOCK.STUDY_REMINDER_ROLLOVER,
       },
       workerOptions: { logLockSkips: true, startupSyncSwallowErrors: true },
+      workerMetrics: BotMetricsService,
     }),
 
     {

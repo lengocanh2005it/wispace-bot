@@ -1,4 +1,5 @@
 import type { WispaceIdHeader } from '../utils/wispace-headers';
+import type { WispaceClientMetrics } from '../clients/wispace-client-types';
 
 export type WispaceLinkStatus = 'active' | 'revoked';
 
@@ -28,4 +29,5 @@ export interface WispaceLinkStatusClientConfig {
   enabled?: boolean;
   /** Keep-alive connections per host (#567). Default: 6. */
   poolSize?: number;
+  metrics?: WispaceClientMetrics;
 }

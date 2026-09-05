@@ -37,6 +37,13 @@ export interface WebhookInboundRetryCronOptions {
   processEvent: (rawPayload: object) => Promise<void>;
   /** Optional per-tick stats hook — e.g. a Prometheus backlog gauge. */
   onTickComplete?: (stats: InboundRetryStats) => void;
+  /** Optional Prometheus heartbeat adapter, kept structural to avoid a package cycle. */
+  metrics?: {
+    registerCron(name: string, expectedIntervalMs: number): void;
+    recordCronSuccess(name: string): void;
+  };
+  /** Stable per-platform metric label/name for the retry cron. */
+  cronName?: string;
 }
 
 /**
@@ -62,7 +69,11 @@ export class PlatformWebhookInboundRetryCronService {
     private readonly configService: ConfigService,
     private readonly pgLock: PgAdvisoryLockService,
     private readonly options: WebhookInboundRetryCronOptions,
-  ) {}
+  ) {
+    if (options.metrics && options.cronName) {
+      options.metrics.registerCron(options.cronName, 30 * 1000);
+    }
+  }
 
   @Cron('*/30 * * * * *')
   async handleRetry(): Promise<void> {
@@ -74,6 +85,8 @@ export class PlatformWebhookInboundRetryCronService {
       this.logger.debug(
         'webhook-inbound-retry skipped — lock held by another pod',
       );
+    } else if (this.options.metrics && this.options.cronName) {
+      this.options.metrics.recordCronSuccess(this.options.cronName);
     }
   }
 

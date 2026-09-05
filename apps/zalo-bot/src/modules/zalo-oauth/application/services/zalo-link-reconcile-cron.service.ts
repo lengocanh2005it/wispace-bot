@@ -21,6 +21,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 const DEFAULT_RECONCILE_AGE_MS = 120_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 10 * 60_000;
 const ZALO_LINK_RECONCILE_LOCK = 884_200_937;
+const LINK_RECONCILE_EXPECTED_INTERVAL_MS = 5 * 60 * 1000;
 
 const reconcileRecordsTotal = new Counter({
   name: 'zalo_link_reconcile_records_total',
@@ -52,7 +53,12 @@ export class ZaloLinkReconcileCronService {
     @Inject(REDIS_CLIENT)
     private readonly redisClient?: RedisClientPort,
     @Optional() private readonly metrics?: BotMetricsService,
-  ) {}
+  ) {
+    this.metrics?.registerCron?.(
+      'zalo-link-reconcile',
+      LINK_RECONCILE_EXPECTED_INTERVAL_MS,
+    );
+  }
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async handleReconcile(): Promise<void> {
@@ -64,6 +70,8 @@ export class ZaloLinkReconcileCronService {
       this.logger.debug(
         'zalo-link-reconcile skipped — lock held by another pod',
       );
+    } else {
+      this.metrics?.recordCronSuccess?.('zalo-link-reconcile');
     }
   }
 

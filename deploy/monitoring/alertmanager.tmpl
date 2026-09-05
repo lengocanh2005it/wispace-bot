@@ -1,6 +1,6 @@
-# Telegram receiver. __TELEGRAM_BOT_TOKEN__ / __TELEGRAM_CHAT_ID__ are
-# replaced from the compose .env by alertmanager-entrypoint.sh (Alertmanager
-# has no built-in env substitution).
+# Telegram receiver. ${TELEGRAM_BOT_TOKEN} / ${TELEGRAM_CHAT_ID} are replaced
+# from the compose .env by alertmanager-entrypoint.sh (Alertmanager has no
+# built-in env substitution).
 route:
   receiver: telegram
   group_by: [alertname, job]
@@ -11,8 +11,8 @@ route:
 receivers:
   - name: telegram
     telegram_configs:
-      - bot_token: "__TELEGRAM_BOT_TOKEN__"
+      - bot_token: "${TELEGRAM_BOT_TOKEN}"
         # unquoted on purpose — chat_id is an int64 in Alertmanager
-        chat_id: __TELEGRAM_CHAT_ID__
+        chat_id: ${TELEGRAM_CHAT_ID}
         parse_mode: HTML
         send_resolved: true

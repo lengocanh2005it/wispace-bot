@@ -113,7 +113,14 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
       ) => new ReportCronLeaderService(configService, leaseService, 'zalo'),
       inject: [ConfigService, CronLeaderLeaseService],
     },
-    CronLeaderHeartbeatService,
+    {
+      provide: CronLeaderHeartbeatService,
+      useFactory: (
+        leaderService: ReportCronLeaderService,
+        metrics: BotMetricsService,
+      ) => new CronLeaderHeartbeatService(leaderService, metrics),
+      inject: [ReportCronLeaderService, BotMetricsService],
+    },
     {
       provide: ReportCronLockService,
       useFactory: (pgLock: PgAdvisoryLockService) =>
@@ -137,14 +144,24 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
         configService: ConfigService,
         claimRepository: ReportClaimRepositoryPort,
         pgLock: PgAdvisoryLockService,
+        metrics: BotMetricsService,
       ) =>
         new ReportClaimStaleResetCronService(
           configService,
           claimRepository,
           pgLock,
-          { platform: 'zalo', lockId: ZALO_REPORT_CLAIM_STALE_RESET_LOCK },
+          {
+            platform: 'zalo',
+            lockId: ZALO_REPORT_CLAIM_STALE_RESET_LOCK,
+            metrics,
+          },
         ),
-      inject: [ConfigService, REPORT_CLAIM_REPOSITORY, PgAdvisoryLockService],
+      inject: [
+        ConfigService,
+        REPORT_CLAIM_REPOSITORY,
+        PgAdvisoryLockService,
+        BotMetricsService,
+      ],
     },
     {
       provide: PlatformStudentReportService,

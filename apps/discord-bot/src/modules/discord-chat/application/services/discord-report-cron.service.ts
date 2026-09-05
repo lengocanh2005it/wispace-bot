@@ -30,6 +30,7 @@ const PLATFORM = 'discord' as const;
 const DEFAULT_SEND_CONCURRENCY = 3;
 const PAGE_SIZE = 200;
 const MAX_REPORTED_FAILURES = 50;
+const REPORT_CRON_EXPECTED_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 const ZERO: ClaimAndSendResult = {
   sent: 0,
@@ -62,7 +63,12 @@ export class DiscordReportCronService {
     @Optional()
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
-  ) {}
+  ) {
+    this.metrics?.registerCron?.(
+      'discord-exam-reminder-report',
+      REPORT_CRON_EXPECTED_INTERVAL_MS,
+    );
+  }
 
   @Cron('0 8 * * *', {
     name: 'discord-exam-reminder-report',
@@ -78,6 +84,7 @@ export class DiscordReportCronService {
 
     try {
       await this.sendScheduledReports();
+      this.metrics?.recordCronSuccess?.('discord-exam-reminder-report');
     } finally {
       await this.reportCronLockService.releaseDailyLock();
     }

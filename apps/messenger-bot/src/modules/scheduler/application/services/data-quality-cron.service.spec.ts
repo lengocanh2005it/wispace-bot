@@ -33,25 +33,34 @@ function result(
 describe('DataQualityCronService', () => {
   it('skips when disabled', async () => {
     const dataQualityService = { run: jest.fn() };
+    const metrics = { registerCron: jest.fn() };
     const service = new DataQualityCronService(
       dataQualityService as never,
       config({ DATA_QUALITY_CRON_ENABLED: 'false' }),
+      metrics as never,
     );
 
     await service.handleDailyDataQualityCron();
 
     expect(dataQualityService.run).not.toHaveBeenCalled();
+    expect(metrics.registerCron).not.toHaveBeenCalled();
   });
 
   it('logs a clean run and executes the shared runner', async () => {
     const dataQualityService = { run: jest.fn().mockResolvedValue(result()) };
+    const metrics = { registerCron: jest.fn() };
     const service = new DataQualityCronService(
       dataQualityService as never,
       config({ DATA_QUALITY_CRON_ENABLED: 'true' }),
+      metrics as never,
     );
 
     await expect(service.handleDailyDataQualityCron()).resolves.toBeUndefined();
     expect(dataQualityService.run).toHaveBeenCalledTimes(1);
+    expect(metrics.registerCron).toHaveBeenCalledWith(
+      'data-quality-daily',
+      24 * 60 * 60 * 1000,
+    );
   });
 
   it('handles lock skip and failed checks without throwing', async () => {

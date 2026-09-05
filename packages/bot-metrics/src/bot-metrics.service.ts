@@ -29,6 +29,14 @@ export interface MetricsConfig {
   traceApi?: TraceAPI;
 }
 
+export type TokenRefreshFailureReason =
+  | 'timeout'
+  | 'consumed'
+  | 'network'
+  | 'rejected'
+  | 'invalid_response'
+  | 'missing';
+
 type LlmConcurrencyOutcome =
   | 'acquired'
   | 'rejected'
@@ -87,6 +95,10 @@ export class BotMetricsService implements OnModuleDestroy {
   private outboundActionNeutralized: Counter;
   private welcomeAttempts: Counter;
   private tokenRefreshFailures: Counter;
+  private cronLastSuccessTimestamp: Gauge<string>;
+  private cronExpectedInterval: Gauge<string>;
+  private cronRegisteredTimestamp: Gauge<string>;
+  private studyReminderLockSkips: Counter<string>;
   private webhookInboundBacklog: Gauge;
   private wispaceCallDuration: Histogram;
   private llmUsageInsertFailures: Counter;
@@ -108,6 +120,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private platformConnectivityReady: Gauge<string>;
   private platformConnectivityState: Gauge<string>;
   private platformConnectivityTransitions: Counter<string>;
+  private readonly registeredCrons = new Set<string>();
 
   constructor(config: MetricsConfig) {
     this.prefix = config.prefix;
@@ -323,8 +336,36 @@ export class BotMetricsService implements OnModuleDestroy {
 
     this.tokenRefreshFailures = new Counter({
       name: `${this.prefix}_token_refresh_failures_total`,
-      help: 'OAuth token refresh failures (timeout, consumed token, network error)',
+      help: 'OAuth token refresh failures (missing, timeout, consumed, network, rejected, invalid response)',
       labelNames: ['reason'],
+      registers: [this.registry],
+    });
+
+    this.cronLastSuccessTimestamp = new Gauge({
+      name: `${this.prefix}_cron_last_success_timestamp_seconds`,
+      help: 'Unix timestamp of the last successful business-critical cron run',
+      labelNames: ['cron'],
+      registers: [this.registry],
+    });
+
+    this.cronExpectedInterval = new Gauge({
+      name: `${this.prefix}_cron_expected_interval_seconds`,
+      help: 'Expected interval between successful business-critical cron runs',
+      labelNames: ['cron'],
+      registers: [this.registry],
+    });
+
+    this.cronRegisteredTimestamp = new Gauge({
+      name: `${this.prefix}_cron_registered_timestamp_seconds`,
+      help: 'Unix timestamp when a business-critical cron heartbeat was registered',
+      labelNames: ['cron'],
+      registers: [this.registry],
+    });
+
+    this.studyReminderLockSkips = new Counter({
+      name: `${this.prefix}_study_reminder_lock_skips_total`,
+      help: 'Study-reminder runs skipped because another holder owns the advisory lock',
+      labelNames: ['platform', 'scope'],
       registers: [this.registry],
     });
 
@@ -581,9 +622,31 @@ export class BotMetricsService implements OnModuleDestroy {
     this.welcomeAttempts.inc({ outcome });
   }
 
-  /** OAuth token refresh failure — timeout, consumed token, network error (#154). */
-  incTokenRefreshFailure(reason: string): void {
+  /** OAuth token refresh failure with bounded operational reasons (#154/#684). */
+  incTokenRefreshFailure(reason: TokenRefreshFailureReason): void {
     this.tokenRefreshFailures.inc({ reason });
+  }
+
+  /** Register a business-critical cron for Prometheus staleness alerts. */
+  registerCron(name: string, expectedIntervalMs: number): void {
+    const expectedSeconds = Math.max(1, expectedIntervalMs) / 1000;
+    this.cronExpectedInterval.set({ cron: name }, expectedSeconds);
+    if (this.registeredCrons.has(name)) return;
+
+    const now = Date.now() / 1000;
+    this.registeredCrons.add(name);
+    this.cronRegisteredTimestamp.set({ cron: name }, now);
+    this.cronLastSuccessTimestamp.set({ cron: name }, 0);
+  }
+
+  /** Record a successful business-critical cron run. */
+  recordCronSuccess(name: string): void {
+    this.cronLastSuccessTimestamp.set({ cron: name }, Date.now() / 1000);
+  }
+
+  /** Record an advisory-lock skip for the study-reminder worker. */
+  incStudyReminderLockSkip(platform: string, scope: string): void {
+    this.studyReminderLockSkips.inc({ platform, scope });
   }
 
   /** Backlog gauge for the durable inbound retry cron — set per tick. */

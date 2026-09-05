@@ -18,6 +18,7 @@ import type {
   MessengerLinkVerifyResult,
 } from '../../domain/types/messenger-link-verify.types';
 import { keepAliveFetch } from '@messenger/shared/http/http-agent';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 const VERIFY_FAILURE_REASONS: MessengerLinkVerifyFailureReason[] = [
   'NOT_FOUND',
@@ -30,9 +31,22 @@ const VERIFY_FAILURE_REASONS: MessengerLinkVerifyFailureReason[] = [
 export class WispaceMessengerTokenVerifyService {
   private readonly logger = new Logger(WispaceMessengerTokenVerifyService.name);
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly metrics?: BotMetricsService,
+  ) {}
 
   async verifyMessengerToken(
+    psid: string,
+    token: string,
+  ): Promise<MessengerLinkVerifyResult> {
+    const call = () => this.verifyMessengerTokenUnmeasured(psid, token);
+    return (
+      this.metrics?.timeWispaceCall('TokenVerify', 'verify', call) ?? call()
+    );
+  }
+
+  private async verifyMessengerTokenUnmeasured(
     psid: string,
     token: string,
   ): Promise<MessengerLinkVerifyResult> {

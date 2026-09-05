@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -6,6 +6,7 @@ import {
   DataQualityService,
   type DataQualityCheckResult,
 } from '@wispace/ops-health';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 @Injectable()
 export class DataQualityCronService {
@@ -14,7 +15,14 @@ export class DataQualityCronService {
   constructor(
     private readonly dataQualityService: DataQualityService,
     private readonly configService: ConfigService,
-  ) {}
+    @Optional() private readonly metrics?: BotMetricsService,
+  ) {
+    if (
+      isDataQualityCronEnabled((key) => this.configService.get<string>(key))
+    ) {
+      this.metrics?.registerCron?.('data-quality-daily', 24 * 60 * 60 * 1000);
+    }
+  }
 
   @Cron('0 15 9 * * *', {
     name: 'data-quality-daily',
@@ -36,6 +44,7 @@ export class DataQualityCronService {
         this.logger.log('DATA_QUALITY_SKIPPED reason=advisory_lock_held');
         return;
       }
+      this.metrics?.recordCronSuccess?.('data-quality-daily');
 
       const failed = result.checks.filter((check) => check.status === 'fail');
       if (failed.length > 0) {

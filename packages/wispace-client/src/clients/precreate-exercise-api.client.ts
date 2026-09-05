@@ -18,38 +18,50 @@ export class PrecreateExerciseApiClient {
     externalUserId: string,
     options?: { signal?: AbortSignal },
   ): Promise<PrecreateExerciseResult> {
-    const response = await keepAliveFetch(
-      this.config.url,
-      {
-        method: 'POST',
-        headers: buildWispaceHeaders(
-          idHeader,
-          externalUserId,
-          this.config.internalKey,
-        ),
-        signal: mergeWithTimeout(options?.signal, this.config.requestTimeoutMs),
-      },
-      { poolSize: this.config.poolSize },
-    );
-
-    if (!response.ok) {
-      throw new WispaceApiError(
-        `Precreate exercise API failed: HTTP ${response.status} ${response.statusText}`,
-        response.status,
-        externalUserId,
-        'PrecreateExercise',
+    const call = async (): Promise<PrecreateExerciseResult> => {
+      const response = await keepAliveFetch(
+        this.config.url,
+        {
+          method: 'POST',
+          headers: buildWispaceHeaders(
+            idHeader,
+            externalUserId,
+            this.config.internalKey,
+          ),
+          signal: mergeWithTimeout(
+            options?.signal,
+            this.config.requestTimeoutMs,
+          ),
+        },
+        { poolSize: this.config.poolSize },
       );
-    }
 
-    const text = await readResponseText(response);
-    let payload: unknown;
-    try {
-      payload = JSON.parse(text) as unknown;
-    } catch {
-      throw new Error('Precreate exercise API returned malformed JSON');
-    }
+      if (!response.ok) {
+        throw new WispaceApiError(
+          `Precreate exercise API failed: HTTP ${response.status} ${response.statusText}`,
+          response.status,
+          externalUserId,
+          'PrecreateExercise',
+        );
+      }
 
-    return this.normalize(payload);
+      const text = await readResponseText(response);
+      let payload: unknown;
+      try {
+        payload = JSON.parse(text) as unknown;
+      } catch {
+        throw new Error('Precreate exercise API returned malformed JSON');
+      }
+
+      return this.normalize(payload);
+    };
+    return (
+      this.config.metrics?.timeWispaceCall(
+        'PrecreateExercise',
+        'create',
+        call,
+      ) ?? call()
+    );
   }
 
   private normalize(payload: unknown): PrecreateExerciseResult {

@@ -3,6 +3,31 @@ import { BotMetricsService } from './bot-metrics.service';
 import type { PlatformConnectivitySnapshot } from '@wispace/bot-common/health';
 
 describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
+  it('tracks registered cron heartbeats and study-reminder lock skips', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+
+    metrics.registerCron('study-reminder-sync', 30 * 60 * 1000);
+    metrics.recordCronSuccess('study-reminder-sync');
+    metrics.incStudyReminderLockSkip('discord', 'sync');
+
+    const output = await metrics.getMetrics();
+    expect(output).toContain(
+      'test_cron_last_success_timestamp_seconds{cron="study-reminder-sync"}',
+    );
+    expect(output).toContain(
+      'test_cron_expected_interval_seconds{cron="study-reminder-sync"} 1800',
+    );
+    expect(output).toContain(
+      'test_cron_registered_timestamp_seconds{cron="study-reminder-sync"}',
+    );
+    expect(output).toContain(
+      'test_study_reminder_lock_skips_total{platform="discord",scope="sync"} 1',
+    );
+  });
+
   it('exposes bounded platform connectivity state and transitions', async () => {
     const metrics = new BotMetricsService({
       prefix: 'test',

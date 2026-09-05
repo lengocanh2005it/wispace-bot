@@ -53,6 +53,7 @@ export {
   StudyReminderWorkerService,
   studyReminderLockSkipsTotal,
   type StudyReminderWorkerLockIds,
+  type StudyReminderWorkerMetrics,
   type StudyReminderWorkerOptions,
 } from './services/study-reminder-worker.service';
 export {

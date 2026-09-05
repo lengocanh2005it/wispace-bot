@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { TypeormRescheduleStore } from './typeorm-reschedule-store';
+import type { CronHeartbeatMetricsPort } from './platform-dead-letter-cron.service';
 
 const STALE_AFTER_MS = 5 * 60_000;
 
@@ -15,7 +16,10 @@ export class RescheduleRecoveryCronService {
   constructor(
     @Inject(TypeormRescheduleStore)
     private readonly store: TypeormRescheduleStore<unknown>,
-  ) {}
+    private readonly metrics?: CronHeartbeatMetricsPort,
+  ) {
+    this.metrics?.registerCron('reschedule-recovery', 5 * 60 * 1000);
+  }
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async handleRecovery(): Promise<void> {
@@ -26,5 +30,6 @@ export class RescheduleRecoveryCronService {
         `reschedule-recovery: reset ${recovered} stale processing row(s) to pending`,
       );
     }
+    this.metrics?.recordCronSuccess('reschedule-recovery');
   }
 }

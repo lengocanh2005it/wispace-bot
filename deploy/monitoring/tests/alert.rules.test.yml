@@ -1,0 +1,248 @@
+rule_files:
+  - ../alert.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - interval: 1m
+    input_series:
+      - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",status="ok"}'
+        values: '0 100 200 300 400 500 600 700 800 900 1000'
+      - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",status="error"}'
+        values: '0 10 20 30 40 50 60 70 80 90 100'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ChatAvailabilityLow
+        exp_alerts:
+          - exp_labels:
+              alertname: ChatAvailabilityLow
+              job: messenger_bot
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot chat availability below 99%
+              description: messenger_bot chat step errors exceeded 1% of completed pipeline steps for 5 minutes.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#chatavailabilitylow
+
+  - interval: 1m
+    input_series:
+      - series: 'zalo_token_refresh_failures_total{job="zalo_bot",reason="network"}'
+        values: '0 1 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: TokenRefreshFailure
+        exp_alerts:
+          - exp_labels:
+              alertname: TokenRefreshFailure
+              job: zalo_bot
+              reason: network
+              severity: critical
+            exp_annotations:
+              summary: zalo_bot OAuth token refresh failed (network)
+              description: zalo_bot recorded a token refresh failure; restore the platform credential before the cached token expires.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#tokenrefreshfailure
+
+  - interval: 1m
+    input_series:
+      - series: 'nodejs_eventloop_lag_p99_seconds{job="messenger_bot"}'
+        values: '0 1 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: EventLoopLagP99High
+        exp_alerts:
+          - exp_labels:
+              alertname: EventLoopLagP99High
+              job: messenger_bot
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot Node.js event-loop p99 lag is high
+              description: messenger_bot event-loop lag p99 exceeded 500ms for 5 minutes; inspect CPU, synchronous work, and queue depth.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#eventlooplagp99high
+
+  - interval: 1m
+    input_series:
+      - series: 'zalo_cron_last_success_timestamp_seconds{job="zalo_bot",cron="zalo-report-cron"}'
+        values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
+      - series: 'zalo_cron_expected_interval_seconds{job="zalo_bot",cron="zalo-report-cron"}'
+        values: '60 60 60 60 60 60 60 60 60 60 60 60 60 60 60 60 60 60 60 60 60 60'
+      - series: 'zalo_cron_registered_timestamp_seconds{job="zalo_bot",cron="zalo-report-cron"}'
+        values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: CronExecutionStale
+        exp_alerts:
+          - exp_labels:
+              alertname: CronExecutionStale
+              cron: zalo-report-cron
+              job: zalo_bot
+              severity: warning
+            exp_annotations:
+              summary: zalo_bot cron zalo-report-cron has no recent success
+              description: zalo_bot cron zalo-report-cron exceeded 2.5 expected intervals without a successful run; check the scheduler log and advisory lock.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#cronexecutionstale
+
+  - interval: 1m
+    input_series:
+      - series: 'messenger_llm_provider_circuit_events_total{job="messenger_bot",provider="openai",action="open",reason="quota"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+      - series: 'messenger_llm_providers_exhausted_total{job="messenger_bot",provider_count="2",feature="FREE_FORM_CHAT"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+      - series: 'messenger_llm_degraded_mode_total{job="messenger_bot",platform="messenger",feature="FREE_FORM_CHAT",failure_class="provider_exhausted",action="fallback"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+      - series: 'messenger_llm_usage_insert_failures_total{job="messenger_bot",reason="db_error"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+      - series: 'messenger_llm_unpriced_model_tokens_total{job="messenger_bot",model="unknown-model"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+      - series: 'messenger_llm_missing_tokens_total{job="messenger_bot",feature="FREE_FORM_CHAT"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+      - series: 'messenger_llm_injection_blocked_total{job="messenger_bot",platform="messenger",source="user_input"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+      - series: 'messenger_chat_identity_stale_detected_total{job="messenger_bot",platform="messenger",outcome="stale"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+      - series: 'messenger_chat_flush_recovery_total{job="messenger_bot",platform="messenger",outcome="abandoned"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+      - series: 'messenger_study_reminder_lock_skips_total{job="messenger_bot",platform="messenger",scope="sync"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+      - series: 'messenger_wispace_call_duration_seconds_bucket{job="messenger_bot",service="goals",operation="get",le="10"}'
+        values: '0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0'
+      - series: 'messenger_wispace_call_duration_seconds_bucket{job="messenger_bot",service="goals",operation="get",le="30"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+      - series: 'messenger_wispace_call_duration_seconds_bucket{job="messenger_bot",service="goals",operation="get",le="+Inf"}'
+        values: '0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: LlmProviderCircuitOpen
+        exp_alerts:
+          - exp_labels:
+              alertname: LlmProviderCircuitOpen
+              job: messenger_bot
+              provider: openai
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot LLM provider circuit opened
+              description: Provider openai entered cooldown on messenger_bot; verify failover capacity and upstream error rates.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmprovidercircuitopen
+      - eval_time: 20m
+        alertname: LlmProvidersExhausted
+        exp_alerts:
+          - exp_labels:
+              alertname: LlmProvidersExhausted
+              job: messenger_bot
+              feature: FREE_FORM_CHAT
+              severity: critical
+            exp_annotations:
+              summary: messenger_bot has exhausted all LLM providers
+              description: messenger_bot could not serve FREE_FORM_CHAT because every configured provider failed.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmprovidersexhausted
+      - eval_time: 20m
+        alertname: LlmDegradedModeHigh
+        exp_alerts:
+          - exp_labels:
+              alertname: LlmDegradedModeHigh
+              job: messenger_bot
+              platform: messenger
+              feature: FREE_FORM_CHAT
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot LLM degraded responses are elevated
+              description: messenger_bot emitted at least three degraded responses in the last 10 minutes; inspect provider and admission telemetry.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmdegradedmodehigh
+      - eval_time: 20m
+        alertname: LlmUsageTelemetryLoss
+        exp_alerts:
+          - exp_labels:
+              alertname: LlmUsageTelemetryLoss
+              job: messenger_bot
+              reason: db_error
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot LLM usage telemetry inserts are failing
+              description: messenger_bot is losing usage events (db_error); billing and quota evidence may be incomplete.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmusagetelemetryloss
+      - eval_time: 20m
+        alertname: LlmUnpricedTokens
+        exp_alerts:
+          - exp_labels:
+              alertname: LlmUnpricedTokens
+              job: messenger_bot
+              model: unknown-model
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot processed unpriced LLM tokens
+              description: messenger_bot cannot calculate cost for model unknown-model; update the pricing table before relying on cost reports.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmunpricedtokens
+      - eval_time: 20m
+        alertname: LlmMissingTokens
+        exp_alerts:
+          - exp_labels:
+              alertname: LlmMissingTokens
+              job: messenger_bot
+              feature: FREE_FORM_CHAT
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot received LLM responses without token usage
+              description: messenger_bot cannot account for token usage for FREE_FORM_CHAT; verify provider response usage fields.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmmissingtokens
+      - eval_time: 20m
+        alertname: LlmInjectionBlockedRise
+        exp_alerts:
+          - exp_labels:
+              alertname: LlmInjectionBlockedRise
+              job: messenger_bot
+              platform: messenger
+              source: user_input
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot prompt-injection blocks are rising
+              description: messenger_bot blocked at least five injection attempts in 15 minutes (source=user_input); review abuse telemetry without logging raw text.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llminjectionblockedrise
+      - eval_time: 20m
+        alertname: ChatIdentityStaleDetected
+        exp_alerts:
+          - exp_labels:
+              alertname: ChatIdentityStaleDetected
+              job: messenger_bot
+              platform: messenger
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot detected stale chat identity mappings
+              description: messenger_bot observed stale identity during flush revalidation; inspect link-state and queue recovery telemetry.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#chatidentitystaledetected
+      - eval_time: 20m
+        alertname: ChatFlushRecovery
+        exp_alerts:
+          - exp_labels:
+              alertname: ChatFlushRecovery
+              job: messenger_bot
+              platform: messenger
+              outcome: abandoned
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot chat flush recovery abandoned work
+              description: messenger_bot recorded abandoned chat flush recovery; check Redis/DB availability and queue leases.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#chatflushrecovery
+      - eval_time: 20m
+        alertname: StudyReminderLockSkipped
+        exp_alerts:
+          - exp_labels:
+              alertname: StudyReminderLockSkipped
+              job: messenger_bot
+              platform: messenger
+              scope: sync
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot study-reminder cron lost its advisory lock
+              description: messenger_bot skipped sync because another holder owned the platform lock; verify per-platform lock ids and pod overlap.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#studyreminderlockskipped
+      - eval_time: 20m
+        alertname: WispaceLatencyHigh
+        exp_alerts:
+          - exp_labels:
+              alertname: WispaceLatencyHigh
+              job: messenger_bot
+              service: goals
+              operation: get
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot WISPACE p95 latency is high
+              description: messenger_bot WISPACE goals/get p95 latency exceeded 10s; compare with LLM latency and upstream health.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#wispacelatencyhigh

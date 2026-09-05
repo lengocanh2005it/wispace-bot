@@ -6,6 +6,7 @@ import { PrecreateExerciseApiClient } from './clients/precreate-exercise-api.cli
 import { WispaceConfigService } from './config/wispace-config.service';
 import { WispaceDataCache } from './cache/wispace-data-cache';
 import type { WispaceIdHeader } from './utils/wispace-headers';
+import type { WispaceClientMetrics } from './clients/wispace-client-types';
 
 export interface WispaceProvidersOptions {
   /** Platform identity header. */
@@ -21,7 +22,11 @@ export interface WispaceProvidersOptions {
    * `WispaceDataCache` token.
    */
   cacheProvider?: Provider;
+  /** Optional per-bot latency metric adapter. */
+  metrics?: ClassOf<WispaceClientMetrics>;
 }
+
+type ClassOf<T> = new (...args: never[]) => T;
 
 /**
  * Creates the 4 standard Wispace DI providers parameterized by platform.
@@ -42,9 +47,20 @@ export function createWispaceProviders(
   return [
     {
       provide: WispaceConfigService,
-      useFactory: (configService: ConfigService) =>
-        new WispaceConfigService((key) => configService.get<string>(key)),
-      inject: [ConfigService],
+      useFactory: (
+        configService: ConfigService,
+        metrics?: WispaceClientMetrics,
+      ) =>
+        new WispaceConfigService(
+          (key) => configService.get<string>(key),
+          metrics,
+        ),
+      inject: [
+        ConfigService,
+        ...(options.metrics
+          ? [{ token: options.metrics, optional: true }]
+          : []),
+      ],
     },
     {
       provide: WispaceGoalsService,

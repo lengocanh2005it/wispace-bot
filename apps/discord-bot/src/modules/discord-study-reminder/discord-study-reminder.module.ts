@@ -51,6 +51,7 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
       canonicalPlatformService: CanonicalPlatformService,
       dormancyGate: WebActivityService,
       dormancySuppressionMetric: BotMetricsService,
+      workerMetrics: BotMetricsService,
       // #777: per-platform lock ids — Discord no longer contends with the
       // fleet on the shared sync lock.
       workerLockIds: {

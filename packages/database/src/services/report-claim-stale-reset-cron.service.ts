@@ -8,6 +8,7 @@ import {
   type ReportClaimRepositoryPort,
 } from '@wispace/scheduler-core';
 import type { Platform } from '@wispace/contracts';
+import type { CronHeartbeatMetricsPort } from './platform-dead-letter-cron.service';
 
 export const DEFAULT_REPORT_CLAIM_LEASE_MS = 2 * 60 * 60 * 1000;
 
@@ -22,6 +23,7 @@ export function readReportClaimLeaseMs(configService: ConfigService): number {
 export interface ReportClaimStaleResetCronOptions {
   platform: Platform;
   lockId: number;
+  metrics?: CronHeartbeatMetricsPort;
 }
 
 /** Releases expired scheduled-report claims for one platform per tick. */
@@ -35,7 +37,12 @@ export class ReportClaimStaleResetCronService {
     private readonly claimRepository: ReportClaimRepositoryPort,
     private readonly pgLock: PgAdvisoryLockService,
     private readonly options: ReportClaimStaleResetCronOptions,
-  ) {}
+  ) {
+    this.options.metrics?.registerCron(
+      'report-claims-stale-reset',
+      30 * 60 * 1000,
+    );
+  }
 
   @Cron('*/30 * * * *', { name: 'report-claims-stale-reset' })
   async handleStaleReset(): Promise<void> {
@@ -54,6 +61,8 @@ export class ReportClaimStaleResetCronService {
       );
       return;
     }
+
+    this.options.metrics?.recordCronSuccess('report-claims-stale-reset');
 
     if (result > 0) {
       this.logger.log(

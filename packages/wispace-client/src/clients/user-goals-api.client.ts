@@ -67,7 +67,10 @@ export class UserGoalsApiClient {
     externalId: string,
     options?: { signal?: AbortSignal },
   ): Promise<UserGoalsRecord> {
-    return this.breaker.fire(idHeader, externalId, options);
+    const call = () => this.breaker.fire(idHeader, externalId, options);
+    return (
+      this.config.metrics?.timeWispaceCall('UserGoals', 'get', call) ?? call()
+    );
   }
 
   private async fetchUserGoals(

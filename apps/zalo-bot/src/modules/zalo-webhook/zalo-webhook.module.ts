@@ -56,6 +56,8 @@ import { validateAndMapZaloEvent } from './presentation/mappers/zalo-webhook.map
           pgLock,
           {
             lockId: ADVISORY_LOCKS.ZALO_WEBHOOK_INBOUND_RETRY,
+            cronName: 'zalo-webhook-inbound-retry',
+            metrics,
             processEvent: async (rawPayload) => {
               // Re-validate stored payloads before dispatch — replay must
               // never trust the persisted raw shape (#436).

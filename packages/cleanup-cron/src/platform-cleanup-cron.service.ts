@@ -41,9 +41,16 @@ export interface CleanupCronJobsConfig {
     isEnabled(): boolean;
     recoverStuckReservedSlots(): Promise<{ recovered: string[] }>;
   };
+  /** Optional per-bot heartbeat metrics for quota recovery. */
+  metrics?: CleanupCronMetricsPort;
 }
 
 const CRON_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+export interface CleanupCronMetricsPort {
+  registerCron(name: string, expectedIntervalMs: number): void;
+  recordCronSuccess(name: string): void;
+}
 
 /**
  * Platform-parameterized cleanup cron jobs shared by Discord and Zalo
@@ -71,6 +78,12 @@ export class PlatformCleanupCronService
   }
 
   onModuleInit(): void {
+    if (this.config.rateLimitService.isEnabled()) {
+      this.config.metrics?.registerCron(
+        `${this.config.platform}-idempotency-recovery`,
+        30 * 60 * 1000,
+      );
+    }
     this.register(
       `${this.config.platform}-message-log-cleanup`,
       '0 0 3 * * *',
@@ -160,7 +173,7 @@ export class PlatformCleanupCronService
 
   async handleIdempotencyRecovery(): Promise<void> {
     if (!this.config.rateLimitService.isEnabled()) return;
-    await this.cleanupService.execute(
+    const result = await this.cleanupService.execute(
       {
         name: `${this.config.platform}-idempotency-recovery`,
         advisoryLockId: this.config.lockIds.idempotencyRecovery,
@@ -182,6 +195,11 @@ export class PlatformCleanupCronService
       () => true,
       () => 0,
     );
+    if (result !== null) {
+      this.config.metrics?.recordCronSuccess(
+        `${this.config.platform}-idempotency-recovery`,
+      );
+    }
   }
 
   async handleIdempotencyCleanup(): Promise<void> {

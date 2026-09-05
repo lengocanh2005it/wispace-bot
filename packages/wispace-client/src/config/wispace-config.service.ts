@@ -1,4 +1,7 @@
-import type { WispaceApiClientConfig } from '../clients/wispace-client-types';
+import type {
+  WispaceApiClientConfig,
+  WispaceClientMetrics,
+} from '../clients/wispace-client-types';
 import type { PrecreateExerciseClientConfig } from '../types/precreate-exercise.types';
 import type { WispaceLinkStatusClientConfig } from '../types/link-status.types';
 import type { WispaceIdHeader } from '../utils/wispace-headers';
@@ -16,7 +19,10 @@ export type WispaceConfigGetter = (key: string) => string | undefined;
  * study-reminder horizon/lead-time getters).
  */
 export class WispaceConfigService {
-  constructor(private readonly getConfig: WispaceConfigGetter) {}
+  constructor(
+    private readonly getConfig: WispaceConfigGetter,
+    private readonly metrics?: WispaceClientMetrics,
+  ) {}
 
   buildGoalsClientConfig(): WispaceApiClientConfig {
     return this.buildClientConfig(
@@ -45,6 +51,7 @@ export class WispaceConfigService {
         'WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS',
       ),
       poolSize: config.poolSize,
+      metrics: this.metrics,
     };
   }
 
@@ -93,6 +100,7 @@ export class WispaceConfigService {
         5_000,
       ),
       poolSize: this.getPoolSize(),
+      metrics: this.metrics,
     };
   }
 
@@ -154,6 +162,7 @@ export class WispaceConfigService {
       maxRetries: this.readPositiveInt('WISPACE_API_MAX_RETRIES', 3),
       baseDelayMs: this.readPositiveInt('WISPACE_API_RETRY_BASE_DELAY_MS', 500),
       poolSize: this.getPoolSize(),
+      metrics: this.metrics,
     };
   }
 

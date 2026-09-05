@@ -71,6 +71,13 @@ export interface StudyReminderWorkerLockIds {
   rollover: number;
 }
 
+/** Structural adapter keeps the shared worker independent of bot-metrics. */
+export interface StudyReminderWorkerMetrics {
+  registerCron(name: string, expectedIntervalMs: number): void;
+  recordCronSuccess(name: string): void;
+  incStudyReminderLockSkip(platform: string, scope: string): void;
+}
+
 export interface StudyReminderWorkerOptions {
   /**
    * Messenger: log when a cron/startup sync is skipped because another pod
@@ -82,6 +89,8 @@ export interface StudyReminderWorkerOptions {
    * failure does not kill the process at boot.
    */
   startupSyncSwallowErrors?: boolean;
+  /** Optional per-bot Prometheus heartbeat and lock-skip adapter. */
+  metrics?: StudyReminderWorkerMetrics;
 }
 
 @Injectable()
@@ -122,6 +131,7 @@ export class StudyReminderWorkerService
   }
 
   async onModuleInit(): Promise<void> {
+    this.registerCronHeartbeats();
     this.registerEveningRolloverCron();
     await this.runInitialSync();
     this.scheduleNextDispatch(0);
@@ -192,13 +202,21 @@ export class StudyReminderWorkerService
   private async runInitialSync(): Promise<StudyReminderSyncResult | null> {
     if (this.options.startupSyncSwallowErrors) {
       try {
-        return await this.runSyncLocked(this.options.logLockSkips === true);
+        const result = await this.runSyncLocked(
+          this.options.logLockSkips === true,
+        );
+        if (result === null) this.recordLockSkip('sync');
+        else this.recordCronSuccess('study-reminder-sync');
+        return result;
       } catch (error) {
         this.logger.error('Initial study reminder sync failed', error);
         return null;
       }
     }
-    return this.runSyncLocked(this.options.logLockSkips === true);
+    const result = await this.runSyncLocked(this.options.logLockSkips === true);
+    if (result === null) this.recordLockSkip('sync');
+    else this.recordCronSuccess('study-reminder-sync');
+    return result;
   }
 
   // ── Sync cron (every 30 min) ────────────────────────────────────────────
@@ -217,9 +235,9 @@ export class StudyReminderWorkerService
       this.logger.warn(
         `Periodic study-reminder sync skipped — another holder owns the sync lock (platform=${this.platform})`,
       );
-      studyReminderLockSkipsTotal
-        .labels({ platform: this.platform, scope: 'sync' })
-        .inc();
+      this.recordLockSkip('sync');
+    } else {
+      this.recordCronSuccess('study-reminder-sync');
     }
   }
 
@@ -268,14 +286,14 @@ export class StudyReminderWorkerService
     );
 
     if (result === null) {
-      studyReminderLockSkipsTotal
-        .labels({ platform: this.platform, scope: 'cleanup' })
-        .inc();
+      this.recordLockSkip('cleanup');
       if (this.options.logLockSkips) {
         this.logger.debug(
           'study-reminder-cleanup skipped — lock held by another pod',
         );
       }
+    } else {
+      this.recordCronSuccess('study-reminder-cleanup');
     }
   }
 
@@ -327,20 +345,39 @@ export class StudyReminderWorkerService
     );
 
     if (result === null) {
-      studyReminderLockSkipsTotal
-        .labels({ platform: this.platform, scope: 'rollover' })
-        .inc();
+      this.recordLockSkip('rollover');
       if (this.options.logLockSkips) {
         this.logger.debug(
           'study-reminder-evening-rollover skipped — lock held by another pod',
         );
       }
+    } else {
+      this.recordCronSuccess(this.eveningRolloverCronName);
     }
   }
 
   private async deleteSentJobsInternal(): Promise<number> {
     if (!this.jobRepository) return 0;
     return this.jobRepository.deleteSentJobs();
+  }
+
+  private registerCronHeartbeats(): void {
+    const metrics = this.options.metrics;
+    if (!metrics) return;
+    metrics.registerCron('study-reminder-sync', 30 * 60 * 1000);
+    metrics.registerCron('study-reminder-cleanup', 24 * 60 * 60 * 1000);
+    metrics.registerCron(this.eveningRolloverCronName, 24 * 60 * 60 * 1000);
+  }
+
+  private recordCronSuccess(name: string): void {
+    this.options.metrics?.recordCronSuccess(name);
+  }
+
+  private recordLockSkip(scope: 'sync' | 'cleanup' | 'rollover'): void {
+    studyReminderLockSkipsTotal
+      .labels({ platform: this.platform, scope })
+      .inc();
+    this.options.metrics?.incStudyReminderLockSkip(this.platform, scope);
   }
 
   // ── Adaptive dispatch loop ──────────────────────────────────────────────

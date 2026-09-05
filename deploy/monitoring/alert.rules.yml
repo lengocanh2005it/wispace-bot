@@ -9,6 +9,7 @@ groups:
         annotations:
           summary: '{{ $labels.job }} is down'
           description: 'Prometheus cannot scrape {{ $labels.job }} (instance {{ $labels.instance }}) for 3 minutes.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#botdown'
 
       - alert: BotRestartLoop
         expr: changes(process_start_time_seconds{job=~".*_bot"}[15m]) >= 3
@@ -18,6 +19,7 @@ groups:
         annotations:
           summary: '{{ $labels.job }} restarting repeatedly'
           description: '{{ $labels.job }} restarted {{ $value }} times in the last 15 minutes.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#botrestartloop'
 
       - alert: PrometheusJobMissing
         expr: absent(up == 1)
@@ -27,6 +29,7 @@ groups:
         annotations:
           summary: 'No bot metrics being scraped at all'
           description: 'Every scrape target is down — check the bots and Prometheus connectivity.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#prometheusjobmissing'
 
       - alert: WebhookInboundBacklogGrowing
         expr: (messenger_webhook_inbound_backlog or discord_webhook_inbound_backlog or zalo_webhook_inbound_backlog) > 20
@@ -36,6 +39,7 @@ groups:
         annotations:
           summary: '{{ $labels.job }} inbound webhook backlog growing'
           description: '{{ $labels.job }} has {{ $value }} webhook events waiting for retry for 5 minutes.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#webhookinboundbackloggrowing'
 
       - alert: DataQualityCheckFailed
         expr: (messenger_data_quality_check_status or discord_data_quality_check_status or zalo_data_quality_check_status) == 0
@@ -45,6 +49,7 @@ groups:
         annotations:
           summary: '{{ $labels.job }} data-quality check failed ({{ $labels.check }})'
           description: '{{ $labels.job }} reported a failed scheduled data-quality check; inspect OPS_HEALTH_ALERT logs and run `npm run ops:data-quality`.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#dataqualitycheckfailed'
 
       - alert: RedisConsistencyDrift
         expr: |
@@ -69,6 +74,7 @@ groups:
         annotations:
           summary: '{{ $labels.job }} Postgres/Redis consistency drift ({{ $labels.datum }})'
           description: '{{ $labels.job }} could not self-heal {{ $value }} {{ $labels.datum }} consistency mismatches for 2 minutes; inspect reconciliation metrics and quarantined queue state.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#redisconsistencydrift'
 
       - alert: LlmAdmissionSaturated
         expr: |
@@ -85,6 +91,7 @@ groups:
         annotations:
           summary: '{{ $labels.job }} LLM admission queue saturated'
           description: '{{ $labels.job }} is shedding LLM calls or admission queue depth is high (>10).'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmadmissionsaturated'
 
       - alert: InternalAuthRejectedSpike
         expr: |
@@ -99,6 +106,7 @@ groups:
         annotations:
           summary: '{{ $labels.job }} internal API key brute-force spike'
           description: '{{ $labels.job }} rejected more than 20 internal-auth requests in 5 minutes — possible brute-force of INTERNAL_API_KEY (#535).'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#internalauthrejectedspike'
 
       - alert: DbCircuitBreakerOpen
         expr: (messenger_db_circuit_breaker_state or discord_db_circuit_breaker_state or zalo_db_circuit_breaker_state) == 2
@@ -108,6 +116,7 @@ groups:
         annotations:
           summary: '{{ $labels.job }} database circuit breaker is OPEN'
           description: 'Database circuit breaker tripped to open state on {{ $labels.job }}.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#dbcircuitbreakeropen'
 
       - alert: StudyReminderFailuresHigh
         expr: |
@@ -122,6 +131,7 @@ groups:
         annotations:
           summary: '{{ $labels.job }} study reminder failure rate elevated'
           description: '{{ $labels.job }} is failing study reminder dispatches.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#studyreminderfailureshigh'
 
       - alert: PlatformLinkStatusUnknown
         expr: |
@@ -136,6 +146,205 @@ groups:
         annotations:
           summary: '{{ $labels.job }} WISPACE link ownership checks are unavailable'
           description: 'Mappings remain preserved but sensitive operations are fail-closed until the upstream status endpoint recovers.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#platformlinkstatusunknown'
+
+      - alert: TokenRefreshFailure
+        expr: |
+          sum by (job, reason) (
+            increase({__name__=~"(messenger|discord|zalo)_token_refresh_failures_total"}[15m])
+          ) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.job }} OAuth token refresh failed ({{ $labels.reason }})'
+          description: '{{ $labels.job }} recorded a token refresh failure; restore the platform credential before the cached token expires.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#tokenrefreshfailure'
+
+      - alert: LlmProviderCircuitOpen
+        expr: |
+          sum by (job, provider) (
+            increase({__name__=~"(messenger|discord|zalo)_llm_provider_circuit_events_total", action="open"}[15m])
+          ) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} LLM provider circuit opened'
+          description: 'Provider {{ $labels.provider }} entered cooldown on {{ $labels.job }}; verify failover capacity and upstream error rates.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmprovidercircuitopen'
+
+      - alert: LlmProvidersExhausted
+        expr: |
+          sum by (job, feature) (
+            increase({__name__=~"(messenger|discord|zalo)_llm_providers_exhausted_total"}[10m])
+          ) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: '{{ $labels.job }} has exhausted all LLM providers'
+          description: '{{ $labels.job }} could not serve {{ $labels.feature }} because every configured provider failed.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmprovidersexhausted'
+
+      - alert: LlmDegradedModeHigh
+        expr: |
+          sum by (job, platform, feature) (
+            increase({__name__=~"(messenger|discord|zalo)_llm_degraded_mode_total"}[10m])
+          ) >= 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} LLM degraded responses are elevated'
+          description: '{{ $labels.job }} emitted at least three degraded responses in the last 10 minutes; inspect provider and admission telemetry.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmdegradedmodehigh'
+
+      - alert: LlmUsageTelemetryLoss
+        expr: |
+          sum by (job, reason) (
+            increase({__name__=~"(messenger|discord|zalo)_llm_usage_insert_failures_total"}[15m])
+          ) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} LLM usage telemetry inserts are failing'
+          description: '{{ $labels.job }} is losing usage events ({{ $labels.reason }}); billing and quota evidence may be incomplete.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmusagetelemetryloss'
+
+      - alert: LlmUnpricedTokens
+        expr: |
+          sum by (job, model) (
+            increase({__name__=~"(messenger|discord|zalo)_llm_unpriced_model_tokens_total"}[15m])
+          ) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} processed unpriced LLM tokens'
+          description: '{{ $labels.job }} cannot calculate cost for model {{ $labels.model }}; update the pricing table before relying on cost reports.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmunpricedtokens'
+
+      - alert: LlmMissingTokens
+        expr: |
+          sum by (job, feature) (
+            increase({__name__=~"(messenger|discord|zalo)_llm_missing_tokens_total"}[15m])
+          ) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} received LLM responses without token usage'
+          description: '{{ $labels.job }} cannot account for token usage for {{ $labels.feature }}; verify provider response usage fields.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmmissingtokens'
+
+      - alert: LlmInjectionBlockedRise
+        expr: |
+          sum by (job, platform, source) (
+            increase({__name__=~"(messenger|discord|zalo)_llm_injection_blocked_total"}[15m])
+          ) >= 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} prompt-injection blocks are rising'
+          description: '{{ $labels.job }} blocked at least five injection attempts in 15 minutes (source={{ $labels.source }}); review abuse telemetry without logging raw text.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llminjectionblockedrise'
+
+      - alert: ChatIdentityStaleDetected
+        expr: |
+          sum by (job, platform) (
+            increase({__name__=~"(messenger|discord|zalo)_chat_identity_stale_detected_total"}[15m])
+          ) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} detected stale chat identity mappings'
+          description: '{{ $labels.job }} observed stale identity during flush revalidation; inspect link-state and queue recovery telemetry.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#chatidentitystaledetected'
+
+      - alert: ChatFlushRecovery
+        expr: |
+          sum by (job, platform, outcome) (
+            increase({__name__=~"(messenger|discord|zalo)_chat_flush_recovery_total", outcome=~"abandoned|fenced_stale"}[15m])
+          ) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} chat flush recovery abandoned work'
+          description: '{{ $labels.job }} recorded {{ $labels.outcome }} chat flush recovery; check Redis/DB availability and queue leases.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#chatflushrecovery'
+
+      - alert: StudyReminderLockSkipped
+        expr: |
+          sum by (job, platform, scope) (
+            increase({__name__=~"(messenger|discord|zalo)_study_reminder_lock_skips_total"}[15m])
+          ) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} study-reminder cron lost its advisory lock'
+          description: '{{ $labels.job }} skipped {{ $labels.scope }} because another holder owned the platform lock; verify per-platform lock ids and pod overlap.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#studyreminderlockskipped'
+
+      - alert: CronExecutionStale
+        expr: |
+          (
+            (
+              time() - max by (job, cron) (
+                messenger_cron_last_success_timestamp_seconds
+                or discord_cron_last_success_timestamp_seconds
+                or zalo_cron_last_success_timestamp_seconds
+              )
+              > 2.5 * max by (job, cron) (
+                messenger_cron_expected_interval_seconds
+                or discord_cron_expected_interval_seconds
+                or zalo_cron_expected_interval_seconds
+              )
+            )
+            and on (job, cron)
+            (
+              max by (job, cron) (
+                messenger_cron_last_success_timestamp_seconds
+                or discord_cron_last_success_timestamp_seconds
+                or zalo_cron_last_success_timestamp_seconds
+              ) > 0
+            )
+          )
+          or
+          (
+            (
+              max by (job, cron) (
+                messenger_cron_last_success_timestamp_seconds
+                or discord_cron_last_success_timestamp_seconds
+                or zalo_cron_last_success_timestamp_seconds
+              ) == 0
+            )
+            and on (job, cron)
+            (
+              time() - max by (job, cron) (
+                messenger_cron_registered_timestamp_seconds
+                or discord_cron_registered_timestamp_seconds
+                or zalo_cron_registered_timestamp_seconds
+              )
+              > 2.5 * max by (job, cron) (
+                messenger_cron_expected_interval_seconds
+                or discord_cron_expected_interval_seconds
+                or zalo_cron_expected_interval_seconds
+              )
+            )
+          )
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} cron {{ $labels.cron }} has no recent success'
+          description: '{{ $labels.job }} cron {{ $labels.cron }} exceeded 2.5 expected intervals without a successful run; check the scheduler log and advisory lock.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#cronexecutionstale'
 
   - name: slos
     rules:
@@ -143,9 +352,9 @@ groups:
         expr: |
           (
             1 - (
-              sum(rate(chat_step_duration_seconds{status="error"}[5m])) by (job)
+              sum(rate({__name__=~"(messenger|discord|zalo)_chat_step_duration_seconds_count",status="error"}[5m])) by (job)
               /
-              sum(rate(chat_step_duration_seconds[5m])) by (job)
+              sum(rate({__name__=~"(messenger|discord|zalo)_chat_step_duration_seconds_count"}[5m])) by (job)
             )
           ) < 0.99
         for: 5m
@@ -153,27 +362,56 @@ groups:
           severity: warning
         annotations:
           summary: '{{ $labels.job }} chat availability below 99%'
+          description: '{{ $labels.job }} chat step errors exceeded 1% of completed pipeline steps for 5 minutes.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#chatavailabilitylow'
 
       - alert: LlmLatencyHigh
         expr: |
           histogram_quantile(0.95,
-            sum(rate(llm_call_duration_seconds_bucket[5m])) by (job, le)
+            sum(rate({__name__=~"(messenger|discord|zalo)_llm_call_duration_seconds_bucket"}[5m])) by (job, le)
           ) > 30
         for: 5m
         labels:
           severity: warning
         annotations:
           summary: '{{ $labels.job }} LLM p95 latency above 30s'
+          description: '{{ $labels.job }} LLM provider calls exceeded the 30s p95 budget for 5 minutes.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmlatencyhigh'
 
       - alert: LlmErrorRateHigh
         expr: |
           (
-            sum(rate(llm_round_outcome_total{outcome="error"}[5m])) by (job)
+            sum(rate({__name__=~"(messenger|discord|zalo)_llm_round_outcome_total",outcome="error"}[5m])) by (job)
             /
-            sum(rate(llm_round_outcome_total[5m])) by (job)
+            sum(rate({__name__=~"(messenger|discord|zalo)_llm_round_outcome_total"}[5m])) by (job)
           ) > 0.05
         for: 5m
         labels:
           severity: warning
         annotations:
           summary: '{{ $labels.job }} LLM error rate above 5%'
+          description: '{{ $labels.job }} LLM agent rounds failed at more than 5% for 5 minutes.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmerrorratehigh'
+
+      - alert: EventLoopLagP99High
+        expr: max by (job) (nodejs_eventloop_lag_p99_seconds) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} Node.js event-loop p99 lag is high'
+          description: '{{ $labels.job }} event-loop lag p99 exceeded 500ms for 5 minutes; inspect CPU, synchronous work, and queue depth.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#eventlooplagp99high'
+
+      - alert: WispaceLatencyHigh
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate({__name__=~"(messenger|discord|zalo)_wispace_call_duration_seconds_bucket"}[15m])) by (job, service, operation, le)
+          ) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} WISPACE p95 latency is high'
+          description: '{{ $labels.job }} WISPACE {{ $labels.service }}/{{ $labels.operation }} p95 latency exceeded 10s; compare with LLM latency and upstream health.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#wispacelatencyhigh'

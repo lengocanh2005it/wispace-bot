@@ -150,9 +150,12 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
     },
     {
       provide: WispaceConfigService,
-      useFactory: (configService: ConfigService) =>
-        new WispaceConfigService((key) => configService.get<string>(key)),
-      inject: [ConfigService],
+      useFactory: (configService: ConfigService, metrics: BotMetricsService) =>
+        new WispaceConfigService(
+          (key) => configService.get<string>(key),
+          metrics,
+        ),
+      inject: [ConfigService, BotMetricsService],
     },
     {
       provide: PrecreateExerciseApiClient,
@@ -407,7 +410,14 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
         new TypeormRescheduleStore<string>('messenger', repo),
       inject: [getRepositoryToken(RescheduleConfirmationEntity)],
     },
-    RescheduleRecoveryCronService,
+    {
+      provide: RescheduleRecoveryCronService,
+      useFactory: (
+        store: TypeormRescheduleStore<string>,
+        metrics: BotMetricsService,
+      ) => new RescheduleRecoveryCronService(store, metrics),
+      inject: [TypeormRescheduleStore, BotMetricsService],
+    },
     MessengerAgentService,
     MessengerAgentToolsService,
     {

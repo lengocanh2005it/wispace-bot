@@ -70,7 +70,11 @@ export class UserCalendarApiClient {
     externalId: string,
     options?: { signal?: AbortSignal },
   ): Promise<UserCalendarRecord[]> {
-    return this.listBreaker.fire(idHeader, externalId, options);
+    const call = () => this.listBreaker.fire(idHeader, externalId, options);
+    return (
+      this.config.metrics?.timeWispaceCall('UserCalendar', 'list', call) ??
+      call()
+    );
   }
 
   private async doListCalendars(
@@ -123,52 +127,62 @@ export class UserCalendarApiClient {
     input: CreateUserCalendarInput,
     options?: { userId?: number; signal?: AbortSignal },
   ): Promise<UserCalendarRecord> {
-    const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
-    const fetchSignal = mergeWithTimeout(options?.signal, timeoutMs);
+    const call = async (): Promise<UserCalendarRecord> => {
+      const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
+      const fetchSignal = mergeWithTimeout(options?.signal, timeoutMs);
 
-    const response = await keepAliveFetch(
-      this.config.url,
-      {
-        method: 'POST',
-        headers: {
-          ...buildWispaceHeaders(idHeader, externalId, this.config.internalKey),
-          'Content-Type': 'application/json',
+      const response = await keepAliveFetch(
+        this.config.url,
+        {
+          method: 'POST',
+          headers: {
+            ...buildWispaceHeaders(
+              idHeader,
+              externalId,
+              this.config.internalKey,
+            ),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            eventDate: formatEventDateForApiWrite(input.eventDate),
+            time: input.time,
+          }),
+          signal: fetchSignal,
         },
-        body: JSON.stringify({
-          eventDate: formatEventDateForApiWrite(input.eventDate),
-          time: input.time,
-        }),
-        signal: fetchSignal,
-      },
-      { poolSize: this.config.poolSize, logger: this.logger },
-    );
-
-    if (!response.ok) {
-      throw new WispaceApiError(
-        `UserCalendar API create failed: HTTP ${response.status} ${response.statusText}`,
-        response.status,
-        externalId,
-        'UserCalendar',
+        { poolSize: this.config.poolSize, logger: this.logger },
       );
-    }
 
-    const payload: unknown = await fetchWispaceJson(response);
-    const created = normalizeCreatedCalendarRecord(payload, {
-      eventDate: input.eventDate,
-      time: input.time,
-      userId: options?.userId,
-    });
-    if (!created) {
-      throw new Error('UserCalendar API create returned invalid record');
-    }
+      if (!response.ok) {
+        throw new WispaceApiError(
+          `UserCalendar API create failed: HTTP ${response.status} ${response.statusText}`,
+          response.status,
+          externalId,
+          'UserCalendar',
+        );
+      }
 
-    this.logger.log(
-      `UserCalendar API created id=${created.id} (${idHeader}=${maskExternalId(
-        externalId,
-      )})`,
+      const payload: unknown = await fetchWispaceJson(response);
+      const created = normalizeCreatedCalendarRecord(payload, {
+        eventDate: input.eventDate,
+        time: input.time,
+        userId: options?.userId,
+      });
+      if (!created) {
+        throw new Error('UserCalendar API create returned invalid record');
+      }
+
+      this.logger.log(
+        `UserCalendar API created id=${created.id} (${idHeader}=${maskExternalId(
+          externalId,
+        )})`,
+      );
+
+      return created;
+    };
+    return (
+      this.config.metrics?.timeWispaceCall('UserCalendar', 'create', call) ??
+      call()
     );
-
-    return created;
   }
 
   async deleteCalendar(
@@ -177,30 +191,36 @@ export class UserCalendarApiClient {
     calendarId: number,
     options?: { signal?: AbortSignal },
   ): Promise<void> {
-    const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
-    const fetchSignal = mergeWithTimeout(options?.signal, timeoutMs);
+    const call = async (): Promise<void> => {
+      const timeoutMs = this.config.requestTimeoutMs ?? 10_000;
+      const fetchSignal = mergeWithTimeout(options?.signal, timeoutMs);
 
-    const response = await keepAliveFetch(
-      `${this.config.url}/${calendarId}`,
-      {
-        method: 'DELETE',
-        headers: buildWispaceHeaders(
-          idHeader,
-          externalId,
-          this.config.internalKey,
-        ),
-        signal: fetchSignal,
-      },
-      { poolSize: this.config.poolSize, logger: this.logger },
-    );
-
-    if (!response.ok) {
-      throw new WispaceApiError(
-        `UserCalendar API delete failed: HTTP ${response.status} ${response.statusText}`,
-        response.status,
-        externalId,
-        'UserCalendar',
+      const response = await keepAliveFetch(
+        `${this.config.url}/${calendarId}`,
+        {
+          method: 'DELETE',
+          headers: buildWispaceHeaders(
+            idHeader,
+            externalId,
+            this.config.internalKey,
+          ),
+          signal: fetchSignal,
+        },
+        { poolSize: this.config.poolSize, logger: this.logger },
       );
-    }
+
+      if (!response.ok) {
+        throw new WispaceApiError(
+          `UserCalendar API delete failed: HTTP ${response.status} ${response.statusText}`,
+          response.status,
+          externalId,
+          'UserCalendar',
+        );
+      }
+    };
+    return (
+      this.config.metrics?.timeWispaceCall('UserCalendar', 'delete', call) ??
+      call()
+    );
   }
 }

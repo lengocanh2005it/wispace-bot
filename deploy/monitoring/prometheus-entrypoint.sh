@@ -25,4 +25,10 @@ envsubst '$INTERNAL_API_KEY_MESSENGER $INTERNAL_API_KEY_DISCORD $INTERNAL_API_KE
   < /etc/prometheus/prometheus.tmpl \
   > /etc/prometheus/prometheus.yml
 
+if grep -Eq '__[A-Z0-9_]+__|\$\{?(INTERNAL_API_KEY_MESSENGER|INTERNAL_API_KEY_DISCORD|INTERNAL_API_KEY_ZALO)\}?' \
+  /etc/prometheus/prometheus.yml; then
+  echo "FATAL: unresolved Prometheus credential placeholder" >&2
+  exit 1
+fi
+
 exec /bin/prometheus "$@"

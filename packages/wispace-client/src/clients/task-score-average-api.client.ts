@@ -69,7 +69,11 @@ export class TaskScoreAverageApiClient {
     externalId: string,
     options?: { signal?: AbortSignal },
   ): Promise<TaskScoreAverageRecord[]> {
-    return this.breaker.fire(idHeader, externalId, options);
+    const call = () => this.breaker.fire(idHeader, externalId, options);
+    return (
+      this.config.metrics?.timeWispaceCall('TaskScoreAverage', 'get', call) ??
+      call()
+    );
   }
 
   private async fetchTaskScoreAverages(

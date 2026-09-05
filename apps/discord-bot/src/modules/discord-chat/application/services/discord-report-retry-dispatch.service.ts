@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -13,8 +13,10 @@ import {
 import type { ReportMapping } from '@wispace/scheduler-core';
 import { todayReportDate } from '@wispace/scheduler-core';
 import { subMilliseconds, addMinutes } from 'date-fns';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 const PLATFORM = 'discord' as const;
+const REPORT_RETRY_EXPECTED_INTERVAL_MS = 15 * 60 * 1000;
 
 @Injectable()
 export class DiscordReportRetryDispatchService {
@@ -27,7 +29,13 @@ export class DiscordReportRetryDispatchService {
     private readonly orchestrationService: DiscordReportOrchestrationService,
     @Inject(DISCORD_REPORT_ACCOUNT_READER)
     private readonly accountLinkReader: DiscordReportAccountPageReaderPort,
-  ) {}
+    @Optional() private readonly metrics?: BotMetricsService,
+  ) {
+    this.metrics?.registerCron?.(
+      'discord-report-retry-dispatch',
+      REPORT_RETRY_EXPECTED_INTERVAL_MS,
+    );
+  }
 
   @Cron('*/15 * * * *', {
     name: 'discord-report-retry-dispatch',
@@ -35,6 +43,7 @@ export class DiscordReportRetryDispatchService {
   })
   async handleRetryDispatch(): Promise<void> {
     await this.dispatchDueReportRetries();
+    this.metrics?.recordCronSuccess?.('discord-report-retry-dispatch');
   }
 
   async dispatchDueReportRetries() {

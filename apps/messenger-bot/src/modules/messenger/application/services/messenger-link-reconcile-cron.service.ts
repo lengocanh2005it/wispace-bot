@@ -22,6 +22,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
 
 const DEFAULT_RECONCILE_AGE_MS = 60_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 3_600_000;
+const LINK_RECONCILE_EXPECTED_INTERVAL_MS = 5 * 60 * 1000;
 
 const reconcileRecordsTotal = new Counter({
   name: 'messenger_link_reconcile_records_total',
@@ -57,7 +58,12 @@ export class MessengerLinkReconcileCronService {
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore?: ClarificationStateStore,
     @Optional() private readonly metrics?: BotMetricsService,
-  ) {}
+  ) {
+    this.metrics?.registerCron?.(
+      'messenger-link-reconcile',
+      LINK_RECONCILE_EXPECTED_INTERVAL_MS,
+    );
+  }
 
   @Cron('*/5 * * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
   async handleReconcile(): Promise<void> {
@@ -73,6 +79,8 @@ export class MessengerLinkReconcileCronService {
       this.logger.debug(
         'messenger-link-reconcile skipped — lock held by another pod',
       );
+    } else {
+      this.metrics?.recordCronSuccess?.('messenger-link-reconcile');
     }
   }
 

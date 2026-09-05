@@ -9,7 +9,10 @@ import {
 import { errorMessage } from '@wispace/bot-common/masking';
 import { readBoundedJson } from '@wispace/bot-common/utils';
 import { PlatformConnectivityState } from '@wispace/bot-common/health';
-import { BotMetricsService } from '@wispace/bot-metrics';
+import {
+  BotMetricsService,
+  type TokenRefreshFailureReason,
+} from '@wispace/bot-metrics';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
@@ -30,6 +33,15 @@ interface ZaloAccessTokenResponse {
 class ZaloOaTokenRowMissingError extends InternalServerErrorException {
   constructor() {
     super('zalo_oa_tokens is empty — run the OA token bootstrap step first');
+  }
+}
+
+class ZaloTokenRefreshError extends InternalServerErrorException {
+  constructor(
+    message: string,
+    readonly failureReason: Exclude<TokenRefreshFailureReason, 'missing'>,
+  ) {
+    super(message);
   }
 }
 
@@ -77,7 +89,7 @@ export class ZaloTokenService implements OnModuleInit {
 
     const row = await this.repo.findOne({ where: {}, order: { id: 'DESC' } });
     if (!row) {
-      this.markUnavailable('token_missing');
+      this.markTokenMissing();
       throw new ZaloOaTokenRowMissingError();
     }
 
@@ -91,7 +103,16 @@ export class ZaloTokenService implements OnModuleInit {
       return row.accessToken;
     }
 
-    return this.refresh();
+    try {
+      return await this.refresh();
+    } catch (error) {
+      if (error instanceof ZaloOaTokenRowMissingError) {
+        this.markTokenMissing();
+      } else {
+        this.markRefreshFailure(error);
+      }
+      throw error;
+    }
   }
 
   /** Force a refresh regardless of current expiry — used by the cron (Task 5b). */
@@ -101,9 +122,10 @@ export class ZaloTokenService implements OnModuleInit {
     } catch (error) {
       if (error instanceof ZaloOaTokenRowMissingError) {
         this.logger.warn('refreshNow skipped — zalo_oa_tokens is empty');
-        this.markUnavailable('token_missing');
+        this.markTokenMissing();
         return;
       }
+      this.markRefreshFailure(error);
       throw error;
     }
   }
@@ -115,6 +137,8 @@ export class ZaloTokenService implements OnModuleInit {
   private async refresh(): Promise<string> {
     let lastError: unknown;
     let previousAttemptTimedOut = false;
+    let failureReason: Exclude<TokenRefreshFailureReason, 'missing'> =
+      'network';
 
     for (let attempt = 1; attempt <= REFRESH_MAX_ATTEMPTS; attempt++) {
       try {
@@ -139,7 +163,6 @@ export class ZaloTokenService implements OnModuleInit {
         );
       } catch (error) {
         if (error instanceof ZaloOaTokenRowMissingError) {
-          this.markUnavailable('token_missing');
           throw error;
         }
 
@@ -150,6 +173,8 @@ export class ZaloTokenService implements OnModuleInit {
           this.logger.warn(
             `Zalo OA token refresh: previous timeout likely consumed token, non-timeout error on retry: ${errorMessage(error)}`,
           );
+          lastError = error;
+          failureReason = 'consumed';
           break;
         }
 
@@ -158,6 +183,7 @@ export class ZaloTokenService implements OnModuleInit {
         }
 
         lastError = error;
+        failureReason = this.classifyRefreshFailure(error);
         if (attempt < REFRESH_MAX_ATTEMPTS) {
           const backoffMs = REFRESH_BASE_BACKOFF_MS * Math.pow(2, attempt - 1);
           this.logger.warn(
@@ -170,12 +196,14 @@ export class ZaloTokenService implements OnModuleInit {
       }
     }
 
-    const refreshError = new InternalServerErrorException(
+    const refreshError = new ZaloTokenRefreshError(
       `Zalo OA token refresh failed after ${REFRESH_MAX_ATTEMPTS} attempts: ${errorMessage(
         lastError,
       )}`,
+      previousAttemptTimedOut && failureReason !== 'timeout'
+        ? 'consumed'
+        : failureReason,
     );
-    this.markRefreshFailure(refreshError);
     throw refreshError;
   }
 
@@ -183,7 +211,7 @@ export class ZaloTokenService implements OnModuleInit {
     try {
       const row = await this.repo.findOne({ where: {}, order: { id: 'DESC' } });
       if (!row) {
-        this.markUnavailable('token_missing');
+        this.markTokenMissing();
         return;
       }
       if (this.isFresh(row)) {
@@ -197,7 +225,11 @@ export class ZaloTokenService implements OnModuleInit {
       }
       await this.refresh();
     } catch (error) {
-      this.markRefreshFailure(error);
+      if (error instanceof ZaloOaTokenRowMissingError) {
+        this.markTokenMissing();
+      } else {
+        this.markRefreshFailure(error);
+      }
     }
   }
 
@@ -210,6 +242,11 @@ export class ZaloTokenService implements OnModuleInit {
       lastConnectedAt: now,
       lastVerifiedAt: now,
     });
+  }
+
+  private markTokenMissing(): void {
+    this.markUnavailable('token_missing');
+    this.metrics?.incTokenRefreshFailure('missing');
   }
 
   private markUnavailable(
@@ -232,14 +269,26 @@ export class ZaloTokenService implements OnModuleInit {
   }
 
   private markRefreshFailure(error: unknown): void {
-    const message = errorMessage(error);
-    const rejected = /HTTP (400|401|403)\b/.test(message);
-    if (rejected) {
+    const reason =
+      error instanceof ZaloTokenRefreshError
+        ? error.failureReason
+        : this.classifyRefreshFailure(error);
+    if (reason === 'rejected') {
       this.markUnavailable('token_refresh_rejected');
-      return;
+    } else {
+      this.markUnavailable('token_refresh_failed');
     }
-    this.markUnavailable('token_refresh_failed');
-    this.metrics?.incTokenRefreshFailure('platform_health');
+    this.metrics?.incTokenRefreshFailure(reason);
+  }
+
+  private classifyRefreshFailure(
+    error: unknown,
+  ): Exclude<TokenRefreshFailureReason, 'missing' | 'consumed'> {
+    if (this.isTimeoutError(error)) return 'timeout';
+    const message = errorMessage(error);
+    if (/HTTP (400|401|403)\b/.test(message)) return 'rejected';
+    if (/invalid payload/i.test(message)) return 'invalid_response';
+    return 'network';
   }
 
   private isTimeoutError(error: unknown): boolean {

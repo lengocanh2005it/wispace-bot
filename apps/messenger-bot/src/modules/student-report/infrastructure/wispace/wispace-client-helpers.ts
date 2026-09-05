@@ -1,11 +1,15 @@
 import { InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { WispaceApiClientConfig } from '@wispace/wispace-client';
+import type {
+  WispaceApiClientConfig,
+  WispaceClientMetrics,
+} from '@wispace/wispace-client';
 
 export function buildWispaceClientConfig(
   configService: ConfigService,
   urlKey: string,
   fallbackUrl?: string,
+  metrics?: WispaceClientMetrics,
 ): WispaceApiClientConfig {
   const url = configService.get<string>(urlKey)?.trim() ?? fallbackUrl;
   if (!url) {
@@ -25,6 +29,7 @@ export function buildWispaceClientConfig(
       'WISPACE_API_RETRY_BASE_DELAY_MS',
       500,
     ),
+    metrics,
   };
 }
 

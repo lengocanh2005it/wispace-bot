@@ -16,6 +16,7 @@ import type {
   WispaceLinkVerifyFailureReason,
   WispaceLinkVerifyResult,
 } from '../types/token-verify.types';
+import type { WispaceClientMetrics } from './wispace-client-types';
 
 const VERIFY_FAILURE_REASONS: WispaceLinkVerifyFailureReason[] = [
   'NOT_FOUND',
@@ -39,9 +40,21 @@ export class WispaceTokenVerifyService {
   constructor(
     private readonly configService: ConfigService,
     private readonly platform: string,
+    private readonly metrics?: WispaceClientMetrics,
   ) {}
 
   async verifyToken(
+    token: string,
+    value: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<WispaceLinkVerifyResult> {
+    const call = () => this.verifyTokenUnmeasured(token, value, options);
+    return (
+      this.metrics?.timeWispaceCall('TokenVerify', 'verify', call) ?? call()
+    );
+  }
+
+  private async verifyTokenUnmeasured(
     token: string,
     value: string,
     options?: { signal?: AbortSignal },

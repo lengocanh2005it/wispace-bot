@@ -1,8 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 import { ChatRateLimitService } from './chat-rate-limit.service';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 /**
  * H2 auto-recovery: finalize delivered slots and refund + release pre-delivery
@@ -18,7 +19,10 @@ export class ChatQuotaStuckRecoveryCronService {
   constructor(
     private readonly chatRateLimitService: ChatRateLimitService,
     private readonly pgLock: PgAdvisoryLockService,
-  ) {}
+    @Optional() private readonly metrics?: BotMetricsService,
+  ) {
+    this.metrics?.registerCron?.('chat-quota-stuck-recovery', 5 * 60 * 1000);
+  }
 
   @Cron('*/5 * * * *', {
     name: 'chat-quota-stuck-recovery',
@@ -35,6 +39,8 @@ export class ChatQuotaStuckRecoveryCronService {
       );
       return;
     }
+
+    this.metrics?.recordCronSuccess?.('chat-quota-stuck-recovery');
 
     if (result.recovered.length > 0) {
       this.logger.log(

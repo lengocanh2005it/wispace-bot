@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
 import { ZaloTokenService } from './zalo-token.service';
 import { ZaloOaTokenEntity } from '@zalo/infrastructure/database/entities/zalo-oa-token.entity';
+import type { BotMetricsService } from '@wispace/bot-metrics';
 
 function buildConfig(): ConfigService {
   return {
@@ -178,6 +179,69 @@ describe('ZaloTokenService', () => {
       'zalo_oa_tokens is empty',
     );
     expect(repo.manager.transaction).not.toHaveBeenCalled();
+  });
+
+  it('records each missing-token refresh failure', async () => {
+    const repo = {
+      findOne: jest.fn().mockResolvedValue(null),
+      manager: { transaction: jest.fn() },
+    } as unknown as Repository<ZaloOaTokenEntity>;
+    const metrics = {
+      incTokenRefreshFailure: jest.fn(),
+    } as unknown as BotMetricsService;
+    const service = new ZaloTokenService(
+      buildConfig(),
+      repo,
+      undefined,
+      metrics,
+    );
+
+    await expect(service.getValidAccessToken()).rejects.toThrow(
+      'zalo_oa_tokens is empty',
+    );
+    await expect(service.getValidAccessToken()).rejects.toThrow(
+      'zalo_oa_tokens is empty',
+    );
+
+    expect(metrics.incTokenRefreshFailure).toHaveBeenCalledTimes(2);
+    expect(metrics.incTokenRefreshFailure).toHaveBeenCalledWith('missing');
+  });
+
+  it('records a rejected refresh with a bounded reason', async () => {
+    const expiredRow = buildRow({
+      accessTokenExpiresAt: new Date(Date.now() - 1000),
+    });
+    const em = {
+      findOne: jest.fn().mockResolvedValue(expiredRow),
+      update: jest.fn(),
+    };
+    const repo = {
+      findOne: jest.fn().mockResolvedValue(expiredRow),
+      manager: { transaction: buildTransactionManager(em) },
+    } as unknown as Repository<ZaloOaTokenEntity>;
+    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 401 });
+    const metrics = {
+      incTokenRefreshFailure: jest.fn(),
+    } as unknown as BotMetricsService;
+    const setTimeoutSpy = jest.spyOn(global, 'setTimeout').mockImplementation(((
+      callback: (...args: unknown[]) => void,
+    ) => {
+      callback();
+      return {} as NodeJS.Timeout;
+    }) as typeof setTimeout);
+    const service = new ZaloTokenService(
+      buildConfig(),
+      repo,
+      undefined,
+      metrics,
+    );
+
+    await expect(service.getValidAccessToken()).rejects.toThrow(
+      'refresh failed after',
+    );
+    expect(metrics.incTokenRefreshFailure).toHaveBeenCalledWith('rejected');
+    expect(em.update).not.toHaveBeenCalled();
+    setTimeoutSpy.mockRestore();
   });
 
   it('refreshNow skips (warns) when the table is empty', async () => {

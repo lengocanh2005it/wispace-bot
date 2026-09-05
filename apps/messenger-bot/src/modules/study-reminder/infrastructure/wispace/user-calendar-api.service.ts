@@ -21,9 +21,7 @@ export class UserCalendarApiService {
   ) {}
 
   async listCalendars(psid: string): Promise<UserCalendarRecord[]> {
-    return this.metrics.timeWispaceCall('UserCalendar', 'list', () =>
-      this.getClient().listCalendars(ID_HEADER, psid),
-    );
+    return this.getClient().listCalendars(ID_HEADER, psid);
   }
 
   async createCalendar(
@@ -31,15 +29,11 @@ export class UserCalendarApiService {
     input: CreateUserCalendarInput,
     options?: { userId?: number },
   ): Promise<UserCalendarRecord> {
-    return this.metrics.timeWispaceCall('UserCalendar', 'create', () =>
-      this.getClient().createCalendar(ID_HEADER, psid, input, options),
-    );
+    return this.getClient().createCalendar(ID_HEADER, psid, input, options);
   }
 
   async deleteCalendar(psid: string, calendarId: number): Promise<void> {
-    return this.metrics.timeWispaceCall('UserCalendar', 'delete', () =>
-      this.getClient().deleteCalendar(ID_HEADER, psid, calendarId),
-    );
+    return this.getClient().deleteCalendar(ID_HEADER, psid, calendarId);
   }
 
   private getClient(): UserCalendarApiClient {
@@ -48,6 +42,8 @@ export class UserCalendarApiService {
         buildWispaceClientConfig(
           this.configService,
           'WISPACE_API_USER_CALENDAR_URL',
+          undefined,
+          this.metrics,
         ),
         {
           warn: (m) => this.logger.warn(m),

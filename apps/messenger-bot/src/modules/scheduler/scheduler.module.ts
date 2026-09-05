@@ -92,7 +92,14 @@ import { DisplayNameModule } from '../display-name/display-name.module';
         new ReportCronLeaderService(configService, leaseService, 'messenger'),
       inject: [ConfigService, CronLeaderLeaseService],
     },
-    CronLeaderHeartbeatService,
+    {
+      provide: CronLeaderHeartbeatService,
+      useFactory: (
+        leaderService: ReportCronLeaderService,
+        metrics: BotMetricsService,
+      ) => new CronLeaderHeartbeatService(leaderService, metrics),
+      inject: [ReportCronLeaderService, BotMetricsService],
+    },
     {
       provide: ReportCronLockService,
       useFactory: (pgLock: PgAdvisoryLockService) =>
@@ -110,6 +117,7 @@ import { DisplayNameModule } from '../display-name/display-name.module';
         configService: ConfigService,
         claimRepository: ReportClaimRepositoryPort,
         pgLock: PgAdvisoryLockService,
+        metrics: BotMetricsService,
       ) =>
         new ReportClaimStaleResetCronService(
           configService,
@@ -118,9 +126,15 @@ import { DisplayNameModule } from '../display-name/display-name.module';
           {
             platform: 'messenger',
             lockId: ADVISORY_LOCK.REPORT_CLAIM_STALE_RESET,
+            metrics,
           },
         ),
-      inject: [ConfigService, REPORT_CLAIM_REPOSITORY, PgAdvisoryLockService],
+      inject: [
+        ConfigService,
+        REPORT_CLAIM_REPOSITORY,
+        PgAdvisoryLockService,
+        BotMetricsService,
+      ],
     },
     {
       provide: REPORT_SEND_JOB_REPOSITORY,

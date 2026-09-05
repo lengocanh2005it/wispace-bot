@@ -39,6 +39,7 @@ import { DiscordOauthController } from './presentation/controllers/discord-oauth
 import { DiscordLinkStatusController } from './presentation/controllers/discord-link-status.controller';
 import { DiscordOauthStateEntity } from '../../infrastructure/database/entities/discord-oauth-state.entity';
 import { DiscordOauthStateService } from './application/services/discord-oauth-state.service';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 @Module({
   imports: [
@@ -55,9 +56,9 @@ import { DiscordOauthStateService } from './application/services/discord-oauth-s
   providers: [
     {
       provide: WispaceTokenVerifyService,
-      useFactory: (configService: ConfigService) =>
-        new WispaceTokenVerifyService(configService, 'discord'),
-      inject: [ConfigService],
+      useFactory: (configService: ConfigService, metrics: BotMetricsService) =>
+        new WispaceTokenVerifyService(configService, 'discord', metrics),
+      inject: [ConfigService, BotMetricsService],
     },
     DiscordAccountLinkService,
     DiscordLinkCompletionService,
@@ -65,15 +66,19 @@ import { DiscordOauthStateService } from './application/services/discord-oauth-s
     PlatformLinkStateService,
     {
       provide: WispaceLinkStatusClient,
-      useFactory: (configService: ConfigService) => {
-        const wispace = new WispaceConfigService((key) =>
-          configService.get<string>(key),
+      useFactory: (
+        configService: ConfigService,
+        metrics: BotMetricsService,
+      ) => {
+        const wispace = new WispaceConfigService(
+          (key) => configService.get<string>(key),
+          metrics,
         );
         return new WispaceLinkStatusClient(
           wispace.buildLinkStatusClientConfig('x-discordid'),
         );
       },
-      inject: [ConfigService],
+      inject: [ConfigService, BotMetricsService],
     },
     DiscordRelinkNotifier,
     DiscordWelcomeService,
