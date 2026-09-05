@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule, getRepositoryToken } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import { ModuleRef } from '@nestjs/core';
 import { DataSource, type Repository } from 'typeorm';
 import {
   CleanupCronService,
@@ -92,7 +93,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       provide: InlineWebhookInboundDispatcher,
       useFactory: (
         inboundEvents: PlatformWebhookInboundEventService,
-        messengerService: MessengerService,
+        moduleRef: ModuleRef,
         configService: ConfigService,
       ) => {
         const retryConfig = readInboundRetryConfig((key) =>
@@ -100,18 +101,16 @@ import { BotMetricsService } from '@wispace/bot-metrics';
         );
         return new InlineWebhookInboundDispatcher(inboundEvents, 'messenger', {
           processEvent: async (rawPayload) => {
-            await messengerService.processEvent(
-              await validateAndMapMessengerEvent(rawPayload),
-            );
+            // Resolve lazily: MessengerService injects TRY_INLINE_DISPATCHER,
+            // while this callback routes back into MessengerService.
+            await moduleRef
+              .get(MessengerService, { strict: false })
+              .processEvent(await validateAndMapMessengerEvent(rawPayload));
           },
           retryConfig,
         });
       },
-      inject: [
-        PlatformWebhookInboundEventService,
-        MessengerService,
-        ConfigService,
-      ],
+      inject: [PlatformWebhookInboundEventService, ModuleRef, ConfigService],
     },
     {
       provide: TRY_INLINE_DISPATCHER,
