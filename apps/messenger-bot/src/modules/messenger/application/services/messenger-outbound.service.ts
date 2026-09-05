@@ -28,6 +28,7 @@ import { PlatformDeadLetterService } from '@wispace/database';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { OutboundRateLimiter } from '@wispace/bot-common/redis';
 import type { OutboundDeliveryOutcome } from '@wispace/contracts';
+import { MessengerPlatformConnectivityService } from '../../infrastructure/meta/messenger-platform-connectivity.service';
 
 export class MessengerApiError extends Error {
   constructor(
@@ -91,6 +92,9 @@ export class MessengerOutboundService {
     @Optional()
     @Inject(BotMetricsService)
     private readonly metrics?: BotMetricsService,
+    @Optional()
+    @Inject(MessengerPlatformConnectivityService)
+    private readonly platformConnectivity?: MessengerPlatformConnectivityService,
   ) {
     const raw = this.configService.get<string>('MESSENGER_SEND_API_TIMEOUT_MS');
     const parsed = raw ? Number(raw) : NaN;
@@ -508,6 +512,9 @@ export class MessengerOutboundService {
     const is24h = isMessenger24hWindowError(apiError);
     const isExpired = apiError.isTokenExpired();
 
+    if (isExpired || apiError.status === 401 || apiError.status === 403) {
+      this.platformConnectivity?.markTokenRejected();
+    }
     if (isExpired) {
       this.logger.error(
         'PAGE_ACCESS_TOKEN_EXPIRED: Meta returned OAuthException(code=190) — rotate the token immediately',
@@ -556,6 +563,7 @@ export class MessengerOutboundService {
   ): Promise<void> {
     try {
       await this.sendBreaker.fire(psid, payload);
+      this.platformConnectivity?.markOutboundSuccess();
     } catch (error) {
       if (error instanceof Error && CircuitBreaker.isOurError(error)) {
         throw new MessengerApiError(
@@ -567,7 +575,15 @@ export class MessengerOutboundService {
           '',
         );
       }
-      throw error;
+      const apiError = this.toMessengerApiError(psid, error);
+      if (
+        apiError.isTokenExpired() ||
+        apiError.status === 401 ||
+        apiError.status === 403
+      ) {
+        this.platformConnectivity?.markTokenRejected();
+      }
+      throw apiError;
     }
   }
 

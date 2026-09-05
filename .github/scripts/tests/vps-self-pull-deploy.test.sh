@@ -803,5 +803,11 @@ grep -q "refusing to deploy" "$dir/run.out" || fail "login failure did not fail 
 [ ! -f "$dir/deploy.log" ] || fail "deploy ran after login failure"
 pass "login failure fails closed before CI/image fallback"
 
+echo "Test 20: every self-pull app uses readiness for the promotion gate (#776)"
+grep -q '\[messenger-bot\]="/health/ready:true"' "$SCRIPT" || fail "Messenger self-pull readiness path changed"
+grep -q '\[discord-bot\]="/health/ready:false"' "$SCRIPT" || fail "Discord self-pull readiness path changed"
+grep -q '\[zalo-bot\]="/health/ready:false"' "$SCRIPT" || fail "Zalo self-pull readiness path changed"
+pass "self-pull deploy readiness paths remain fail-closed"
+
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"

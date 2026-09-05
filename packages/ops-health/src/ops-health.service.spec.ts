@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { OpsHealthService } from './ops-health.service';
 import type { OpsHealthRepositoryPort, RedisHealthPort } from './types';
 import { CronHeartbeatRegistry } from './cron-heartbeat-registry';
+import type { PlatformConnectivitySnapshot } from '@wispace/bot-common/health';
 
 function mockRepository(
   overrides?: Partial<OpsHealthRepositoryPort>,
@@ -46,6 +47,15 @@ function mockConfig(values: Record<string, string> = {}): ConfigService {
 
 describe('OpsHealthService', () => {
   describe('isApplicationReady', () => {
+    const connectedPlatform: PlatformConnectivitySnapshot = {
+      name: 'discord',
+      status: 'connected',
+      ready: true,
+      reason: 'connected',
+      lastConnectedAt: '2026-09-05T00:00:00.000Z',
+      lastVerifiedAt: '2026-09-05T00:00:00.000Z',
+    };
+
     it('returns ready=true when DB and Redis are reachable and queues are not stuck', async () => {
       const repo = mockRepository();
       const redis = mockRedis();
@@ -132,6 +142,52 @@ describe('OpsHealthService', () => {
       expect(result.ready).toBe(false);
       expect(result.status).toBe('error');
       expect(result.reason).toBe('webhook_inbound_stuck_age_900s');
+    });
+
+    it('fails readiness when the supplied platform snapshot is not ready', async () => {
+      const service = new OpsHealthService(mockRepository(), mockConfig());
+      const result = await service.isApplicationReady({
+        ...connectedPlatform,
+        status: 'session_invalid',
+        ready: false,
+        reason: 'gateway_invalidated',
+      });
+      expect(result).toEqual({
+        ready: false,
+        status: 'error',
+        reason: 'gateway_invalidated',
+      });
+    });
+
+    it('fails closed when production wiring requires platform state but none is available', async () => {
+      const service = new OpsHealthService(
+        mockRepository(),
+        mockConfig(),
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+      const result = await service.isApplicationReady();
+      expect(result).toEqual({
+        ready: false,
+        status: 'error',
+        reason: 'platform_state_missing',
+      });
+    });
+
+    it('keeps a reconnecting platform ready but degrades the detail snapshot', async () => {
+      const service = new OpsHealthService(mockRepository(), mockConfig());
+      const snapshot = await service.collectSnapshot({
+        ...connectedPlatform,
+        status: 'reconnecting',
+        reason: 'reconnect_grace',
+      });
+      expect(snapshot.status).toBe('degraded');
+      expect(snapshot.infrastructure.platform).toMatchObject({
+        status: 'reconnecting',
+        ready: true,
+      });
     });
   });
 

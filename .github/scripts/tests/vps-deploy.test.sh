@@ -119,6 +119,9 @@ echo "curl $*" >> "${CURL_LOG:?}"
 if [ -n "${FAKE_VAULT_STARTUP_FAIL:-}" ] && printf '%s' "$*" | grep -q '/health'; then
   exit 1
 fi
+if [ -n "${FAKE_READINESS_FAIL:-}" ] && printf '%s' "$*" | grep -q '/health/ready'; then
+  exit 1
+fi
 if printf '%s' "$*" | grep -q -- ' -w '; then
   printf '401'
 fi
@@ -659,6 +662,27 @@ code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:m
 grep -q "vault-migrations.js preflight" "$dir/docker.log" || fail "Vault preflight was not invoked"
 grep -q "vault-migrations.js run" "$dir/docker.log" || fail "Vault migration runner was not invoked"
 pass "Vault migration runner receives runtime config in-container"
+
+echo "Test 31: readiness 503 blocks promotion before nginx switch (#776)"
+dir=$(make_env platform-readiness-fail)
+write_env "$dir"
+write_upstream "$dir" 5007
+code=$(run_script "$dir" FAKE_READINESS_FAIL=1 HEALTH_MAX_ATTEMPTS=1)
+[ "$code" -eq 1 ] || fail "expected readiness failure to exit 1, got $code"
+grep -q "failed health check" "$dir/run.out" || fail "missing readiness failure message"
+! grep -q "nginx -s reload" "$dir/sudo.log" || fail "nginx switched after readiness failure"
+pass "readiness failure blocks promotion"
+
+echo "Test 32: deploy and nginx keep the dedicated Discord/Zalo readiness paths (#776)"
+grep -q 'discord-bot) echo "/health/discord/ready"' "$SCRIPT" || fail "Discord deploy path changed"
+grep -q 'zalo-bot)    echo "/health/zalo/ready"' "$SCRIPT" || fail "Zalo deploy path changed"
+grep -q 'proxy_pass http://discord_backend/health/ready' "$REPO_ROOT/deploy/nginx/aiassist.aihubproduction.com.conf" || fail "Discord nginx readiness proxy changed"
+grep -q 'proxy_pass http://zalo_backend/health/ready' "$REPO_ROOT/deploy/nginx/aiassist.aihubproduction.com.conf" || fail "Zalo nginx readiness proxy changed"
+pass "all platform readiness paths remain wired"
+
+echo "Test 33: deploy defaults to readiness, never liveness (#776)"
+grep -q ': "\${HEALTH_PATH:=/health/ready}"' "$SCRIPT" || fail "deploy default health path is not readiness"
+pass "deploy defaults to /health/ready"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"

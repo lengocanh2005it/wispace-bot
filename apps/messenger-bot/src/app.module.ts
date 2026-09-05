@@ -49,7 +49,7 @@ import { OpsHealthModule } from '@wispace/ops-health';
     ChatRateLimitModule,
     LlmUsageModule,
     createMetricsModule('messenger', 'messenger-ai-for-student'),
-    OpsHealthModule.forPlatform('messenger'),
+    OpsHealthModule.forPlatform('messenger', MessengerModule),
   ],
   controllers: [AppController, HealthController],
   providers: [

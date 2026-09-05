@@ -1,8 +1,9 @@
-import { Module, type DynamicModule, Global } from '@nestjs/common';
+import { Module, type DynamicModule, Global, type Type } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { OPS_HEALTH_SERVICE as BOT_COMMON_OPS_HEALTH_SERVICE } from '@wispace/bot-common/health';
+import { PLATFORM_CONNECTIVITY } from '@wispace/bot-common/health';
 import { CronHeartbeatRegistry } from './cron-heartbeat-registry';
 import { OpsHealthService } from './ops-health.service';
 import { TypeormOpsHealthRepository } from './typeorm-ops-health.repository';
@@ -16,10 +17,13 @@ import {
 @Global()
 @Module({})
 export class OpsHealthModule {
-  static forPlatform(platform: string): DynamicModule {
+  static forPlatform(
+    platform: string,
+    platformModule?: Type<unknown>,
+  ): DynamicModule {
     return {
       module: OpsHealthModule,
-      imports: [ConfigModule],
+      imports: [ConfigModule, ...(platformModule ? [platformModule] : [])],
       providers: [
         CronHeartbeatRegistry,
         {
@@ -39,12 +43,22 @@ export class OpsHealthModule {
             configService: ConfigService,
             registry: CronHeartbeatRegistry,
             redisClient?: RedisClientPort,
-          ) => new OpsHealthService(repo, configService, registry, redisClient),
+            platformConnectivity?: import('@wispace/bot-common/health').PlatformConnectivityPort,
+          ) =>
+            new OpsHealthService(
+              repo,
+              configService,
+              registry,
+              redisClient,
+              platformConnectivity,
+              true,
+            ),
           inject: [
             OPS_HEALTH_REPOSITORY,
             ConfigService,
             CronHeartbeatRegistry,
             { token: REDIS_CLIENT, optional: true },
+            { token: PLATFORM_CONNECTIVITY, optional: true },
           ],
         },
         {

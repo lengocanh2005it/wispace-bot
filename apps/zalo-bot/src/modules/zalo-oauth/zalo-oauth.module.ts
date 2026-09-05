@@ -25,6 +25,11 @@ import { ZaloAccountLinkService } from './application/services/zalo-account-link
 import { ZaloLinkReconcileCronService } from './application/services/zalo-link-reconcile-cron.service';
 import { TypeormZaloLinkVerifyRecordRepository } from './infrastructure/typeorm-zalo-link-verify-record.repository';
 import { ZALO_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/zalo-link-verify-record.repository.port';
+import {
+  PLATFORM_CONNECTIVITY,
+  PlatformConnectivityState,
+} from '@wispace/bot-common/health';
+import { BotMetricsService } from '@wispace/bot-metrics';
 
 @Module({
   imports: [
@@ -38,6 +43,18 @@ import { ZALO_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/zalo-link-ver
   ],
   controllers: [],
   providers: [
+    {
+      provide: PlatformConnectivityState,
+      useFactory: (metrics: BotMetricsService) =>
+        new PlatformConnectivityState('zalo', ({ previous, current }) =>
+          metrics.setPlatformConnectivity(previous, current),
+        ),
+      inject: [BotMetricsService],
+    },
+    {
+      provide: PLATFORM_CONNECTIVITY,
+      useExisting: PlatformConnectivityState,
+    },
     ZaloTokenService,
     ZaloTokenRefreshService,
     ZaloOauthStateService,
@@ -81,6 +98,8 @@ import { ZALO_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/zalo-link-ver
     },
   ],
   exports: [
+    PLATFORM_CONNECTIVITY,
+    PlatformConnectivityState,
     ZaloTokenService,
     ZaloAccountLinkService,
     PlatformLinkStateService,

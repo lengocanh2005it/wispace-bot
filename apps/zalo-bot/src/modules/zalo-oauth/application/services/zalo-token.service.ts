@@ -2,9 +2,14 @@ import {
   Injectable,
   InternalServerErrorException,
   Logger,
+  Inject,
+  OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common/masking';
 import { readBoundedJson } from '@wispace/bot-common/utils';
+import { PlatformConnectivityState } from '@wispace/bot-common/health';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
@@ -41,15 +46,25 @@ class ZaloOaTokenRowMissingError extends InternalServerErrorException {
  * Retries re-acquire the lock and re-read the row — never a stale snapshot.
  */
 @Injectable()
-export class ZaloTokenService {
+export class ZaloTokenService implements OnModuleInit {
   private readonly logger = new Logger(ZaloTokenService.name);
   private cachedToken: { accessToken: string; expiresAt: number } | null = null;
+  private lastKnownAccessTokenExpiresAt = 0;
 
   constructor(
     private readonly configService: ConfigService,
     @InjectRepository(ZaloOaTokenEntity)
     private readonly repo: Repository<ZaloOaTokenEntity>,
+    @Optional()
+    @Inject(PlatformConnectivityState)
+    private readonly platformState?: PlatformConnectivityState,
+    @Optional()
+    private readonly metrics?: BotMetricsService,
   ) {}
+
+  onModuleInit(): void {
+    void this.refreshHealthState();
+  }
 
   async getValidAccessToken(): Promise<string> {
     // ponytail: in-process cache — token valid ~1h, single-row table, ~99% hit rate
@@ -62,6 +77,7 @@ export class ZaloTokenService {
 
     const row = await this.repo.findOne({ where: {}, order: { id: 'DESC' } });
     if (!row) {
+      this.markUnavailable('token_missing');
       throw new ZaloOaTokenRowMissingError();
     }
 
@@ -70,6 +86,8 @@ export class ZaloTokenService {
         accessToken: row.accessToken,
         expiresAt: row.accessTokenExpiresAt.getTime(),
       };
+      this.lastKnownAccessTokenExpiresAt = row.accessTokenExpiresAt.getTime();
+      this.markConnected();
       return row.accessToken;
     }
 
@@ -78,12 +96,12 @@ export class ZaloTokenService {
 
   /** Force a refresh regardless of current expiry — used by the cron (Task 5b). */
   async refreshNow(): Promise<void> {
-    this.cachedToken = null;
     try {
       await this.refresh();
     } catch (error) {
       if (error instanceof ZaloOaTokenRowMissingError) {
         this.logger.warn('refreshNow skipped — zalo_oa_tokens is empty');
+        this.markUnavailable('token_missing');
         return;
       }
       throw error;
@@ -104,6 +122,13 @@ export class ZaloTokenService {
           async (em, row) => {
             if (this.isFresh(row)) {
               // Another worker refreshed while we waited for the lock — use its token.
+              this.cachedToken = {
+                accessToken: row.accessToken,
+                expiresAt: row.accessTokenExpiresAt.getTime(),
+              };
+              this.lastKnownAccessTokenExpiresAt =
+                row.accessTokenExpiresAt.getTime();
+              this.markConnected();
               return row.accessToken;
             }
             return this.doRefresh(em, row);
@@ -114,6 +139,7 @@ export class ZaloTokenService {
         );
       } catch (error) {
         if (error instanceof ZaloOaTokenRowMissingError) {
+          this.markUnavailable('token_missing');
           throw error;
         }
 
@@ -144,11 +170,76 @@ export class ZaloTokenService {
       }
     }
 
-    throw new InternalServerErrorException(
+    const refreshError = new InternalServerErrorException(
       `Zalo OA token refresh failed after ${REFRESH_MAX_ATTEMPTS} attempts: ${errorMessage(
         lastError,
       )}`,
     );
+    this.markRefreshFailure(refreshError);
+    throw refreshError;
+  }
+
+  private async refreshHealthState(): Promise<void> {
+    try {
+      const row = await this.repo.findOne({ where: {}, order: { id: 'DESC' } });
+      if (!row) {
+        this.markUnavailable('token_missing');
+        return;
+      }
+      if (this.isFresh(row)) {
+        this.cachedToken = {
+          accessToken: row.accessToken,
+          expiresAt: row.accessTokenExpiresAt.getTime(),
+        };
+        this.lastKnownAccessTokenExpiresAt = row.accessTokenExpiresAt.getTime();
+        this.markConnected();
+        return;
+      }
+      await this.refresh();
+    } catch (error) {
+      this.markRefreshFailure(error);
+    }
+  }
+
+  private markConnected(): void {
+    const now = new Date().toISOString();
+    this.platformState?.transition({
+      status: 'connected',
+      ready: true,
+      reason: 'connected',
+      lastConnectedAt: now,
+      lastVerifiedAt: now,
+    });
+  }
+
+  private markUnavailable(
+    reason: 'token_missing' | 'token_refresh_failed' | 'token_refresh_rejected',
+  ): void {
+    const current = this.platformState?.getSnapshot();
+    const cachedTokenUsable =
+      this.lastKnownAccessTokenExpiresAt - EXPIRY_BUFFER_MS > Date.now();
+    const status =
+      cachedTokenUsable && reason === 'token_refresh_failed'
+        ? 'reconnecting'
+        : 'unavailable';
+    this.platformState?.transition({
+      status,
+      ready: cachedTokenUsable,
+      reason: cachedTokenUsable ? 'reconnect_grace' : reason,
+      lastConnectedAt: current?.lastConnectedAt ?? null,
+      lastVerifiedAt: current?.lastVerifiedAt ?? null,
+    });
+  }
+
+  private markRefreshFailure(error: unknown): void {
+    const message = errorMessage(error);
+    const rejected = /HTTP (400|401|403)\b/.test(message);
+    if (rejected) {
+      this.markUnavailable('token_refresh_rejected');
+      return;
+    }
+    this.markUnavailable('token_refresh_failed');
+    this.metrics?.incTokenRefreshFailure('platform_health');
   }
 
   private isTimeoutError(error: unknown): boolean {
@@ -248,6 +339,8 @@ export class ZaloTokenService {
       accessToken,
       expiresAt: now + expiresInSeconds * 1000,
     };
+    this.lastKnownAccessTokenExpiresAt = now + expiresInSeconds * 1000;
+    this.markConnected();
     return accessToken;
   }
 }

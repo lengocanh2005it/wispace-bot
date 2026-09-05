@@ -13,19 +13,28 @@ import { InternalApiKeyGuard } from '../guard/internal-api-key.guard';
 import { REDIS_CLIENT, type RedisClientPort } from '../redis/redis.client.port';
 import { errorMessage } from '../masking/error-message';
 import { assertPostgresWriter } from './postgres-writer';
+import {
+  createUnavailablePlatformSnapshot,
+  PLATFORM_CONNECTIVITY,
+  type PlatformConnectivityPort,
+  type PlatformConnectivitySnapshot,
+} from './platform-connectivity';
 
 export interface HealthDetail {
   status: 'ok' | 'error';
   database: 'connected' | 'disconnected' | 'unknown';
   redis: 'connected' | 'disabled' | 'error' | 'unreachable' | 'unknown';
+  platform?: PlatformConnectivitySnapshot;
   [key: string]: unknown;
 }
 
 export const OPS_HEALTH_SERVICE = Symbol('OPS_HEALTH_SERVICE');
 
 export interface OpsHealthServicePort {
-  collectSnapshot(): Promise<Record<string, unknown>>;
-  isApplicationReady(): Promise<{
+  collectSnapshot(
+    platformSnapshot?: PlatformConnectivitySnapshot,
+  ): Promise<Record<string, unknown>>;
+  isApplicationReady(platformSnapshot?: PlatformConnectivitySnapshot): Promise<{
     ready: boolean;
     status: string;
     reason?: string;
@@ -41,11 +50,11 @@ export interface OpsHealthServicePort {
  * - `GET /health`        — public liveness: process is up. Returns a generic
  *   payload only; never exposes DB/Redis/config/version details to external
  *   probes or load balancers.
- * - `GET /health/ready`  — public readiness: 200 only when DB and (if
- *   configured) Redis are reachable, 503 otherwise. Status-only — no
- *   dependency details.
+ * - `GET /health/ready`  — public readiness: 200 only when DB, configured
+ *   Redis, platform connectivity, and other readiness checks pass. The
+ *   platform snapshot is cached; this route never calls a vendor API.
  * - `GET /health/detail` — internal (requires `X-Internal-Api-Key`): full
- *   DB/Redis detail for ops debugging.
+ *   DB/Redis/platform detail for ops debugging.
  */
 @Controller('health')
 export class HealthController {
@@ -57,6 +66,9 @@ export class HealthController {
     @Optional()
     @Inject(OPS_HEALTH_SERVICE)
     private readonly opsHealthService?: OpsHealthServicePort,
+    @Optional()
+    @Inject(PLATFORM_CONNECTIVITY)
+    private readonly platformConnectivity?: PlatformConnectivityPort,
   ) {}
 
   /**
@@ -76,7 +88,9 @@ export class HealthController {
   @Get('ready')
   async readiness(): Promise<{ status: 'ok' }> {
     if (this.opsHealthService) {
-      const readyResult = await this.opsHealthService.isApplicationReady();
+      const readyResult = await this.opsHealthService.isApplicationReady(
+        this.getPlatformSnapshot(),
+      );
       if (!readyResult.ready) {
         this.logger.warn(
           `Application readiness failed: ${readyResult.reason ?? 'unknown'}`,
@@ -101,9 +115,16 @@ export class HealthController {
   @UseGuards(InternalApiKeyGuard)
   async detail(): Promise<HealthDetail | Record<string, unknown>> {
     if (this.opsHealthService) {
-      return this.opsHealthService.collectSnapshot();
+      return this.opsHealthService.collectSnapshot(this.getPlatformSnapshot());
     }
     return this.checkDetail();
+  }
+
+  private getPlatformSnapshot(): PlatformConnectivitySnapshot {
+    return (
+      this.platformConnectivity?.getSnapshot() ??
+      createUnavailablePlatformSnapshot()
+    );
   }
 
   private async checkDetail(): Promise<HealthDetail> {
@@ -112,6 +133,13 @@ export class HealthController {
       database: 'unknown',
       redis: 'unknown',
     };
+
+    if (this.platformConnectivity) {
+      result.platform = this.getPlatformSnapshot();
+      if (!result.platform.ready) {
+        result.status = 'error';
+      }
+    }
 
     // DB check
     try {

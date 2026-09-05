@@ -1,7 +1,39 @@
 import { EventEmitter } from 'events';
 import { BotMetricsService } from './bot-metrics.service';
+import type { PlatformConnectivitySnapshot } from '@wispace/bot-common/health';
 
 describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
+  it('exposes bounded platform connectivity state and transitions', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+    const previous: PlatformConnectivitySnapshot = {
+      name: 'discord',
+      status: 'starting',
+      ready: false,
+      reason: 'startup_pending',
+      lastConnectedAt: null,
+      lastVerifiedAt: null,
+    };
+    const current: PlatformConnectivitySnapshot = {
+      ...previous,
+      status: 'connected',
+      ready: true,
+      reason: 'connected',
+    };
+    metrics.setPlatformConnectivity(previous, current);
+    const output = await metrics.getMetrics();
+    expect(output).toContain(
+      'test_platform_connectivity_ready{platform="discord"} 1',
+    );
+    expect(output).toContain(
+      'test_platform_connectivity_state{platform="discord",state="connected"} 1',
+    );
+    expect(output).toContain(
+      'test_platform_connectivity_transitions_total{platform="discord",from="starting",to="connected"} 1',
+    );
+  });
   it('exposes db_circuit_breaker_state and db_circuit_breaker_failures_total metrics', async () => {
     const metrics = new BotMetricsService({
       prefix: 'test',

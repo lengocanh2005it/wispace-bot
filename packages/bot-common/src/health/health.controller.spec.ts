@@ -6,6 +6,7 @@ import {
   type OpsHealthServicePort,
 } from './health.controller';
 import { POSTGRES_WRITER_CHECK_QUERY } from './postgres-writer';
+import type { PlatformConnectivityPort } from './platform-connectivity';
 
 describe('HealthController', () => {
   const build = (
@@ -13,6 +14,7 @@ describe('HealthController', () => {
       dataSource?: Partial<DataSource>;
       redisClient?: Partial<RedisClientPort>;
       opsHealthService?: Partial<OpsHealthServicePort>;
+      platformConnectivity?: PlatformConnectivityPort;
     } = {},
   ) => {
     const query = jest.fn().mockResolvedValue([{ in_recovery: false }]);
@@ -34,6 +36,7 @@ describe('HealthController', () => {
         dataSource,
         redisClient,
         opsHealthService,
+        overrides.platformConnectivity,
       ),
       query,
       redisClient,
@@ -153,6 +156,34 @@ describe('HealthController', () => {
       expect((error as { getResponse(): unknown }).getResponse()).toEqual({
         status: 'error',
       });
+    });
+
+    it('passes the cached platform snapshot to the ops health service', async () => {
+      const platformConnectivity: PlatformConnectivityPort = {
+        getSnapshot: jest.fn().mockReturnValue({
+          name: 'discord',
+          status: 'connected',
+          ready: true,
+          reason: 'connected',
+          lastConnectedAt: null,
+          lastVerifiedAt: null,
+        }),
+      };
+      const opsHealthService: OpsHealthServicePort = {
+        isApplicationReady: jest.fn().mockResolvedValue({
+          ready: true,
+          status: 'ok',
+        }),
+        collectSnapshot: jest.fn(),
+      };
+      const { controller } = build({
+        opsHealthService,
+        platformConnectivity,
+      });
+      await controller.readiness();
+      expect(opsHealthService.isApplicationReady).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'discord', ready: true }),
+      );
     });
   });
 

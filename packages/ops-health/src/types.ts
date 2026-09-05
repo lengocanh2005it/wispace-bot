@@ -1,3 +1,5 @@
+import type { PlatformConnectivitySnapshot } from '@wispace/bot-common/health';
+
 export type OpsHealthAlertSeverity = 'critical' | 'warn' | 'info';
 
 export interface OpsHealthAlert {
@@ -48,6 +50,7 @@ export interface OpsHealthSnapshot {
   infrastructure: {
     database: 'connected' | 'disconnected' | 'unknown';
     redis: 'connected' | 'disabled' | 'error' | 'unreachable' | 'unknown';
+    platform?: PlatformConnectivitySnapshot;
     dbCircuitBreaker?: 'closed' | 'half_open' | 'open' | 'unknown';
   };
   queues: {
@@ -95,7 +98,11 @@ export interface ApplicationReadinessResult {
 
 export interface OpsHealthServicePort {
   isEnabled(): boolean;
-  collectSnapshot(): Promise<OpsHealthSnapshot>;
-  isApplicationReady(): Promise<ApplicationReadinessResult>;
+  collectSnapshot(
+    platformSnapshot?: PlatformConnectivitySnapshot,
+  ): Promise<OpsHealthSnapshot>;
+  isApplicationReady(
+    platformSnapshot?: PlatformConnectivitySnapshot,
+  ): Promise<ApplicationReadinessResult>;
   logSnapshotIfNeeded(): Promise<void>;
 }

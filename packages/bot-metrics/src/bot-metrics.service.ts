@@ -12,6 +12,7 @@ import type {
   ContextAPI,
   TraceAPI,
 } from '@opentelemetry/api';
+import type { PlatformConnectivitySnapshot } from '@wispace/bot-common/health';
 
 export interface MetricsConfig {
   /** Prefix for metric names (e.g., 'messenger', 'discord', 'zalo') */
@@ -104,6 +105,9 @@ export class BotMetricsService implements OnModuleDestroy {
   private dataQualityFailures: Counter;
   private llmClassifierVerdict: Counter<string>;
   private outboundRateLimitDecisions: Counter<string>;
+  private platformConnectivityReady: Gauge<string>;
+  private platformConnectivityState: Gauge<string>;
+  private platformConnectivityTransitions: Counter<string>;
 
   constructor(config: MetricsConfig) {
     this.prefix = config.prefix;
@@ -436,6 +440,24 @@ export class BotMetricsService implements OnModuleDestroy {
       labelNames: ['platform', 'outcome'],
       registers: [this.registry],
     });
+    this.platformConnectivityReady = new Gauge({
+      name: `${this.prefix}_platform_connectivity_ready`,
+      help: 'Whether the platform connectivity adapter is ready',
+      labelNames: ['platform'],
+      registers: [this.registry],
+    });
+    this.platformConnectivityState = new Gauge({
+      name: `${this.prefix}_platform_connectivity_state`,
+      help: 'Current platform connectivity state (1=current state)',
+      labelNames: ['platform', 'state'],
+      registers: [this.registry],
+    });
+    this.platformConnectivityTransitions = new Counter({
+      name: `${this.prefix}_platform_connectivity_transitions_total`,
+      help: 'Platform connectivity state transitions',
+      labelNames: ['platform', 'from', 'to'],
+      registers: [this.registry],
+    });
   }
 
   async timeStep<T>(step: string, fn: () => Promise<T>): Promise<T> {
@@ -597,6 +619,39 @@ export class BotMetricsService implements OnModuleDestroy {
 
   incOutboundRateLimitDecision(platform: string, outcome: string): void {
     this.outboundRateLimitDecisions.inc({ platform, outcome });
+  }
+
+  setPlatformConnectivity(
+    previous: PlatformConnectivitySnapshot,
+    current: PlatformConnectivitySnapshot,
+  ): void {
+    this.platformConnectivityReady.set(
+      { platform: current.name },
+      current.ready ? 1 : 0,
+    );
+    if (
+      previous.status !== current.status ||
+      previous.ready !== current.ready
+    ) {
+      this.platformConnectivityState.set(
+        { platform: previous.name, state: previous.status },
+        0,
+      );
+    }
+    this.platformConnectivityState.set(
+      { platform: current.name, state: current.status },
+      1,
+    );
+    if (
+      previous.status !== current.status ||
+      previous.ready !== current.ready
+    ) {
+      this.platformConnectivityTransitions.inc({
+        platform: current.name,
+        from: previous.status,
+        to: current.status,
+      });
+    }
   }
 
   incClarificationOutcome(outcome: string): void {

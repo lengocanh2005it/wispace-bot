@@ -14,6 +14,12 @@ import { MESSENGER_REPOSITORY } from './domain/repositories/messenger.repository
 import { MESSENGER_MESSAGE_LOG_REPOSITORY } from './domain/repositories/messenger-message-log.repository.port';
 import { REPORT_CLAIM_REPOSITORY } from '@wispace/scheduler-core';
 import { MessengerRepository } from './infrastructure/persistence/messenger.repository';
+import {
+  PLATFORM_CONNECTIVITY,
+  PlatformConnectivityState,
+} from '@wispace/bot-common/health';
+import { BotMetricsService } from '@wispace/bot-metrics';
+import { MessengerPlatformConnectivityService } from './infrastructure/meta/messenger-platform-connectivity.service';
 
 @Module({
   imports: [
@@ -26,6 +32,19 @@ import { MessengerRepository } from './infrastructure/persistence/messenger.repo
     ]),
   ],
   providers: [
+    {
+      provide: PlatformConnectivityState,
+      useFactory: (metrics: BotMetricsService) =>
+        new PlatformConnectivityState('messenger', ({ previous, current }) =>
+          metrics.setPlatformConnectivity(previous, current),
+        ),
+      inject: [BotMetricsService],
+    },
+    {
+      provide: PLATFORM_CONNECTIVITY,
+      useExisting: PlatformConnectivityState,
+    },
+    MessengerPlatformConnectivityService,
     MessengerRepository,
     MessengerOutboundService,
     {
@@ -48,6 +67,9 @@ import { MessengerRepository } from './infrastructure/persistence/messenger.repo
     },
   ],
   exports: [
+    PLATFORM_CONNECTIVITY,
+    PlatformConnectivityState,
+    MessengerPlatformConnectivityService,
     MessengerOutboundService,
     PlatformDeadLetterService,
     MessengerRepository,

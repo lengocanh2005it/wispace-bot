@@ -9,5 +9,6 @@ import { ZaloOauthModule } from './zalo-oauth.module';
   imports: [ZaloOauthModule, ZaloChatModule],
   controllers: [ZaloOauthController],
   providers: [ZaloLinkCompletionService],
+  exports: [ZaloOauthModule],
 })
 export class ZaloOauthHttpModule {}

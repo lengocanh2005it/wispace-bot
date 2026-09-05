@@ -5,6 +5,18 @@ export {
   type HealthDetail,
 } from './health.controller';
 export {
+  PLATFORM_CONNECTIVITY,
+  PlatformConnectivityState,
+  createUnavailablePlatformSnapshot,
+  type PlatformConnectivityName,
+  type PlatformConnectivityPort,
+  type PlatformConnectivityReason,
+  type PlatformConnectivitySnapshot,
+  type PlatformConnectivityStatus,
+  type PlatformConnectivityTransition,
+  type PlatformConnectivityTransitionListener,
+} from './platform-connectivity';
+export {
   PlatformOpsController,
   PrivacyActionBody,
   type PlatformOpsHandlers,

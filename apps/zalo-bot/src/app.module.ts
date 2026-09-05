@@ -43,7 +43,7 @@ import { OpsHealthModule } from '@wispace/ops-health';
     ZaloReportModule,
     ZaloOpsModule,
     createMetricsModule('zalo', 'zalo-bot'),
-    OpsHealthModule.forPlatform('zalo'),
+    OpsHealthModule.forPlatform('zalo', ZaloOauthHttpModule),
   ],
   providers: [
     {

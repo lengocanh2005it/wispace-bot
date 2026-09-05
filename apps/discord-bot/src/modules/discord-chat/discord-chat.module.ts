@@ -76,6 +76,11 @@ import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { DiscordOutboundModule } from './discord-outbound.module';
 import { DiscordSharedModule } from './discord-shared.module';
 import { DiscordChatGateway } from './presentation/gateways/discord-chat.gateway';
+import { DiscordPlatformConnectivityService } from './application/services/discord-platform-connectivity.service';
+import {
+  PLATFORM_CONNECTIVITY,
+  PlatformConnectivityState,
+} from '@wispace/bot-common/health';
 import {
   PlatformDeadLetterCronService,
   PlatformDeadLetterService,
@@ -131,6 +136,19 @@ const REGISTER_REPORT_MESSAGE =
   ],
   providers: [
     DiscordChatGateway,
+    {
+      provide: PlatformConnectivityState,
+      useFactory: (metrics: BotMetricsService) =>
+        new PlatformConnectivityState('discord', ({ previous, current }) =>
+          metrics.setPlatformConnectivity(previous, current),
+        ),
+      inject: [BotMetricsService],
+    },
+    {
+      provide: PLATFORM_CONNECTIVITY,
+      useExisting: PlatformConnectivityState,
+    },
+    DiscordPlatformConnectivityService,
     DiscordConsentService,
     // #549 — shadows forPlatform's unwired recorder with the metrics-wired
     // one (local registration wins over the imported module's).
@@ -603,6 +621,7 @@ const REGISTER_REPORT_MESSAGE =
     PlatformAgentService,
     PlatformChatHistoryService,
     PlatformChatQueueService,
+    PLATFORM_CONNECTIVITY,
   ],
 })
 export class DiscordChatModule {}

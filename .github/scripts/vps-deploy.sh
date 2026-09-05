@@ -26,7 +26,7 @@ umask 077
 : "${FORCE_RECREATE:=false}"
 : "${GHCR_PULL_TOKEN:-}"
 : "${GHCR_USER:-}"
-: "${HEALTH_PATH:=/health}"                   # health check path (empty skips)
+: "${HEALTH_PATH:=/health/ready}"             # health check path (empty skips)
 : "${HEALTH_MAX_ATTEMPTS:=120}"               # 4-minute cold-start window before rollback
 : "${DEPLOY_HOST_DIR:=/home/ngoc_anh/${APP_NAME}}"
 : "${NGINX_UPSTREAM_DIR:=/home/ngoc_anh/infra/nginx/upstreams}"

@@ -11,6 +11,12 @@ import {
   type RedisHealthPort,
   CRON_HEARTBEAT_REGISTRY,
 } from './types';
+import {
+  createUnavailablePlatformSnapshot,
+  PLATFORM_CONNECTIVITY,
+  type PlatformConnectivityPort,
+  type PlatformConnectivitySnapshot,
+} from '@wispace/bot-common/health';
 import { CronHeartbeatRegistry } from './cron-heartbeat-registry';
 
 const DEFAULT_FAILED_JOBS_HOURS = 24;
@@ -36,6 +42,10 @@ export class OpsHealthService implements OpsHealthServicePort {
     @Optional()
     @Inject('REDIS_HEALTH_CLIENT')
     private readonly redisClient?: RedisHealthPort,
+    @Optional()
+    @Inject(PLATFORM_CONNECTIVITY)
+    private readonly platformConnectivity?: PlatformConnectivityPort,
+    private readonly requirePlatform = false,
   ) {}
 
   isEnabled(): boolean {
@@ -46,7 +56,9 @@ export class OpsHealthService implements OpsHealthServicePort {
     return raw !== 'false' && raw !== '0';
   }
 
-  async isApplicationReady(): Promise<ApplicationReadinessResult> {
+  async isApplicationReady(
+    platformSnapshot?: PlatformConnectivitySnapshot,
+  ): Promise<ApplicationReadinessResult> {
     if (this.repository.isDatabaseReachable) {
       const isDbOk = await this.repository.isDatabaseReachable();
       if (!isDbOk) {
@@ -86,6 +98,15 @@ export class OpsHealthService implements OpsHealthServicePort {
       }
     }
 
+    const platform = this.resolvePlatform(platformSnapshot);
+    if ((this.requirePlatform || platformSnapshot) && !platform.ready) {
+      return {
+        ready: false,
+        status: 'error',
+        reason: platform.reason,
+      };
+    }
+
     if (this.repository.getWebhookInboundSummary) {
       try {
         const webhook = await this.repository.getWebhookInboundSummary();
@@ -113,7 +134,9 @@ export class OpsHealthService implements OpsHealthServicePort {
     return { ready: true, status: 'ok' };
   }
 
-  async collectSnapshot(): Promise<OpsHealthSnapshot> {
+  async collectSnapshot(
+    platformSnapshot?: PlatformConnectivitySnapshot,
+  ): Promise<OpsHealthSnapshot> {
     const now = new Date();
 
     const failedHours = this.getPositiveNumber(
@@ -178,6 +201,8 @@ export class OpsHealthService implements OpsHealthServicePort {
     );
     const safetyThresholdBreached = llmSafetyWarnings >= threshold;
 
+    const platform = this.resolvePlatform(platformSnapshot);
+
     const alerts = this.buildAlerts({
       databaseStatus,
       redisStatus,
@@ -188,16 +213,22 @@ export class OpsHealthService implements OpsHealthServicePort {
       llmSafetyWarnings,
       safetyThresholdBreached,
       crons,
+      platform,
     });
 
     const hasCritical =
       alerts.some((a) => a.severity === 'critical') ||
       databaseStatus === 'disconnected' ||
       redisStatus === 'unreachable' ||
-      redisStatus === 'error';
+      redisStatus === 'error' ||
+      ((this.requirePlatform || platformSnapshot) && !platform.ready);
 
     const hasWarn =
-      alerts.some((a) => a.severity === 'warn') || safetyThresholdBreached;
+      alerts.some((a) => a.severity === 'warn') ||
+      safetyThresholdBreached ||
+      ((this.requirePlatform || platformSnapshot) &&
+        platform.ready &&
+        platform.status === 'reconnecting');
 
     const status: 'ok' | 'degraded' | 'error' = hasCritical
       ? 'error'
@@ -211,6 +242,7 @@ export class OpsHealthService implements OpsHealthServicePort {
       infrastructure: {
         database: databaseStatus,
         redis: redisStatus,
+        ...(this.requirePlatform || platformSnapshot ? { platform } : {}),
       },
       queues: {
         webhookInbound,
@@ -229,6 +261,22 @@ export class OpsHealthService implements OpsHealthServicePort {
       llmSafetyWarnings24h: llmSafetyWarnings,
       llmSafetyThresholdBreached: safetyThresholdBreached,
     };
+  }
+
+  private resolvePlatform(
+    snapshot?: PlatformConnectivitySnapshot,
+  ): PlatformConnectivitySnapshot {
+    return (
+      snapshot ??
+      this.platformConnectivity?.getSnapshot() ??
+      (this.requirePlatform
+        ? createUnavailablePlatformSnapshot()
+        : {
+            ...createUnavailablePlatformSnapshot('unknown', 'connected'),
+            status: 'connected',
+            ready: true,
+          })
+    );
   }
 
   async logSnapshotIfNeeded(): Promise<void> {
@@ -257,6 +305,7 @@ export class OpsHealthService implements OpsHealthServicePort {
     llmSafetyWarnings: number;
     safetyThresholdBreached: boolean;
     crons: Record<string, { status: string; name: string }>;
+    platform: PlatformConnectivitySnapshot;
   }): OpsHealthAlert[] {
     const alerts: OpsHealthAlert[] = [];
 
@@ -273,6 +322,17 @@ export class OpsHealthService implements OpsHealthServicePort {
         code: 'REDIS_UNREACHABLE',
         severity: 'critical',
         message: `Redis is unreachable or not connected (status: ${data.redisStatus})`,
+      });
+    }
+
+    if (
+      (this.requirePlatform || data.platform.name !== 'unknown') &&
+      !data.platform.ready
+    ) {
+      alerts.push({
+        code: 'PLATFORM_UNAVAILABLE',
+        severity: 'critical',
+        message: `Platform connectivity is not ready (${data.platform.reason})`,
       });
     }
 

@@ -53,7 +53,7 @@ import { OpsHealthModule } from '@wispace/ops-health';
     DiscordStudyReminderModule,
     DiscordOpsModule,
     createMetricsModule('discord', 'discord-bot'),
-    OpsHealthModule.forPlatform('discord'),
+    OpsHealthModule.forPlatform('discord', DiscordChatModule),
   ],
   providers: [
     {
