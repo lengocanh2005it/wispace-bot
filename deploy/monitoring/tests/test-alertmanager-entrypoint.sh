@@ -1,6 +1,6 @@
 #!/bin/sh
 # Tests for alertmanager-entrypoint.sh credential validation + rendering.
-# Needs: sh, grep, envsubst (for render tests).
+# Needs: sh, grep, awk (for render tests).
 # Run: sh deploy/monitoring/tests/test-alertmanager-entrypoint.sh
 set -e
 
@@ -64,13 +64,13 @@ grep -Fq -- 'bot_token: "110022:AA$pec'"'"'ial`tok:en_ß日"' "$TEST_DIR/t6.yml"
 ! grep -Fq -- '110022:AA$pec'"'"'ial`tok:en_ß日' "$TEST_DIR/t6.err" || fail "secret leaked to logs"
 pass "special characters render verbatim"
 
-echo "Test 7: missing envsubst binary → exit 1"
+echo "Test 7: missing awk binary → exit 1"
 mkdir -p "$TEST_DIR/t7/bin"
 SH_BIN="$(command -v sh)"
 TELEGRAM_BOT_TOKEN="x" TELEGRAM_CHAT_ID="1" PATH="$TEST_DIR/t7/bin" "$SH_BIN" "$SCRIPT" 2>"$TEST_DIR/t7.err" && code=0 || code=$?
 [ "$code" -ne 0 ] || fail "expected non-zero exit"
-grep -q "FATAL.*envsubst" "$TEST_DIR/t7.err" 2>/dev/null || fail "missing FATAL log"
-pass "missing envsubst fails closed"
+grep -q "FATAL.*awk" "$TEST_DIR/t7.err" 2>/dev/null || fail "missing FATAL log"
+pass "missing awk fails closed"
 
 echo "Test 8: surviving placeholder trips the post-render guard → exit 1"
 printf 'note: __LEAKED__\n' > "$TEST_DIR/t8.tmpl"

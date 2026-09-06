@@ -1,6 +1,6 @@
 #!/bin/sh
 # Tests for prometheus-entrypoint.sh credential validation + rendering.
-# Needs: sh, grep, envsubst (for render tests).
+# Needs: sh, grep, awk (for render tests).
 # Run: sh deploy/monitoring/tests/test-prometheus-entrypoint.sh
 set -e
 
@@ -76,14 +76,14 @@ grep -Fq -- 'credentials: zl"qu'\''ot\ed`uni-ß日本語' "$TEST_DIR/t6.yml" || 
 ! grep -Fq -- 'zl"qu'\''ot\ed`uni-ß日本語' "$TEST_DIR/t6.err" || fail "secret leaked to logs"
 pass "special characters render verbatim"
 
-echo "Test 7: missing envsubst binary → exit 1"
+echo "Test 7: missing awk binary → exit 1"
 mkdir -p "$TEST_DIR/t7/bin"
 SH_BIN="$(command -v sh)"
 INTERNAL_API_KEY_MESSENGER="ms" INTERNAL_API_KEY_DISCORD="dk" INTERNAL_API_KEY_ZALO="zl" \
   PATH="$TEST_DIR/t7/bin" "$SH_BIN" "$SCRIPT" 2>"$TEST_DIR/t7.err" && code=0 || code=$?
 [ "$code" -ne 0 ] || fail "expected non-zero exit"
-grep -q "FATAL.*envsubst" "$TEST_DIR/t7.err" 2>/dev/null || fail "missing FATAL log"
-pass "missing envsubst fails closed"
+grep -q "FATAL.*awk" "$TEST_DIR/t7.err" 2>/dev/null || fail "missing FATAL log"
+pass "missing awk fails closed"
 
 echo "Test 8: surviving placeholder trips the post-render guard → exit 1"
 printf 'credentials: __LEAKED__\n' > "$TEST_DIR/t8.tmpl"

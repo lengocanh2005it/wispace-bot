@@ -2,7 +2,10 @@
 set -e
 
 # Render the Alertmanager config from the template.
-# envsubst handles arbitrary secret characters safely (no delimiter corruption).
+# A small awk renderer substitutes only the allow-listed ${VAR} placeholders
+# byte-verbatim: values come from ENVIRON (no escape processing), so secrets
+# with $, quotes, backslashes or unicode render exactly. The runtime image
+# has no envsubst/gettext, but busybox awk is present.
 # Fail closed: missing credentials → exit 1 → container restart loop.
 # Test hooks (defaults are the container paths): SRC/DST override the
 # template/output locations, DRY_RUN=1 stops after render + guard (no exec).
@@ -18,18 +21,33 @@ if [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
   exit 1
 fi
 
-# --- Check envsubst availability ---
-if ! command -v envsubst >/dev/null 2>&1; then
-  echo "FATAL: envsubst not found — install gettext package" >&2
+# --- Check awk availability ---
+if ! command -v awk >/dev/null 2>&1; then
+  echo "FATAL: awk not found — cannot render config" >&2
   exit 1
 fi
 
 # --- Render config ---
 SRC="${SRC:-/etc/alertmanager/alertmanager.tmpl}"
 DST="${DST:-/etc/alertmanager/alertmanager.yml}"
-envsubst '$TELEGRAM_BOT_TOKEN $TELEGRAM_CHAT_ID' \
-  < "$SRC" \
-  > "$DST"
+awk '
+{
+  line = $0
+  n = split("TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID", names, " ")
+  for (i = 1; i <= n; i++) {
+    key = names[i]
+    ph = "${" key "}"
+    val = ENVIRON[key]
+    out = ""
+    rest = line
+    while ((p = index(rest, ph)) > 0) {
+      out = out substr(rest, 1, p - 1) val
+      rest = substr(rest, p + length(ph))
+    }
+    line = out rest
+  }
+  print line
+}' < "$SRC" > "$DST"
 
 if grep -Eq '__[A-Z0-9_]+__|\$\{?(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID)\}?' \
   "$DST"; then

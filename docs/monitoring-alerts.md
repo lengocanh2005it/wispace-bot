@@ -137,18 +137,30 @@ dashboard-only until a service-specific baseline exists.
 ## Credential template check
 
 `prometheus.tmpl` and `alertmanager.tmpl` use `${VAR}` placeholders, matching
-the allow-listed `envsubst` calls in their entrypoints. Both entrypoints fail
-closed if a credential placeholder survives rendering. Do not put secrets in
-the committed templates. `TELEGRAM_CHAT_ID` has no sentinel default — an
+the allow-listed substitutions in their entrypoints: a small awk renderer
+replaces only the listed names byte-verbatim (no escape processing, so
+special characters in secrets are safe). Both entrypoints fail closed if a
+credential placeholder survives rendering. Do not put secrets in the
+committed templates. `TELEGRAM_CHAT_ID` has no sentinel default — an
 unset value renders empty and trips the fail-closed check (#373).
 `SRC`/`DST`/`DRY_RUN=1` override the template/output paths and skip the final
 `exec`, so tests render with the real entrypoints without starting daemons.
 
-## Staging verification
+## Post-deploy verification
 
-Before closing render-related changes, verify against staging and record the
-results in the issue:
+There is no separate staging environment — verification happens in two layers:
 
+### Local rehearsal (pre-merge, needs Docker)
+1. Copy `deploy/monitoring/.env.example` to `.env` with dummy creds.
+2. `docker compose -f deploy/monitoring/docker-compose.yml up -d` → both
+   containers must stay up (not restart-looping — this exercises the real
+   entrypoints end to end).
+3. `curl localhost:9090/-/healthy` and `localhost:9093/-/healthy` → 200.
+   (Scrape targets will be DOWN locally — the bots aren't there; UP is
+   checked post-deploy.)
+4. `docker compose down`.
+
+### Post-deploy VPS checks (before closing the issue)
 1. `curl` each bot's `/metrics` with no credentials → expect `401`.
 2. `curl` with each `Authorization: Bearer <INTERNAL_API_KEY_*>` → expect
    `200` and a non-empty body.

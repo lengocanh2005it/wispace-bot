@@ -326,7 +326,6 @@ jobs:
 
       - name: Test monitoring entrypoints (fail-closed render, #373)
         run: |
-          command -v envsubst >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq gettext; }
           bash deploy/monitoring/tests/test-prometheus-entrypoint.sh
           bash deploy/monitoring/tests/test-alertmanager-entrypoint.sh
 

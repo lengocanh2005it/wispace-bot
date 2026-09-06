@@ -1,7 +1,7 @@
 #!/bin/sh
 # Render both monitoring templates with the real entrypoints (dummy creds)
 # and validate the output with promtool / amtool inside the pinned runtime
-# images. Needs: sh, grep, envsubst, Docker daemon.
+# images. Needs: sh, grep, awk, Docker daemon.
 # Run: sh deploy/monitoring/tests/test-rendered-config-validation.sh
 set -e
 
