@@ -53,8 +53,8 @@ services:
       - alertmanager_data:/alertmanager
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
-      # chat_id is an int64; 0 fails Alertmanager validation, so -1 = placeholder
-      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:--1}
+      # Empty default = fail closed in the entrypoint (no sentinel values per #373).
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
     entrypoint: ['/bin/sh', '/etc/alertmanager/entrypoint.sh']
     ports:
       - '127.0.0.1:9093:9093'

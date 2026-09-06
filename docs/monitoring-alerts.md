@@ -139,4 +139,22 @@ dashboard-only until a service-specific baseline exists.
 `prometheus.tmpl` and `alertmanager.tmpl` use `${VAR}` placeholders, matching
 the allow-listed `envsubst` calls in their entrypoints. Both entrypoints fail
 closed if a credential placeholder survives rendering. Do not put secrets in
-the committed templates.
+the committed templates. `TELEGRAM_CHAT_ID` has no sentinel default — an
+unset value renders empty and trips the fail-closed check (#373).
+`SRC`/`DST`/`DRY_RUN=1` override the template/output paths and skip the final
+`exec`, so tests render with the real entrypoints without starting daemons.
+
+## Staging verification
+
+Before closing render-related changes, verify against staging and record the
+results in the issue:
+
+1. `curl` each bot's `/metrics` with no credentials → expect `401`.
+2. `curl` with each `Authorization: Bearer <INTERNAL_API_KEY_*>` → expect
+   `200` and a non-empty body.
+3. Prometheus Targets page (or `/api/v1/targets`): `messenger_bot`,
+   `discord_bot`, `zalo_bot` are all UP.
+4. Send a test alert (Alertmanager `/api/v2/alerts`) → expect the Telegram
+   message to arrive; then resolve it → expect the resolved notification.
+5. Record pass/fail per step in the issue before closing it (paste redacted
+   excerpts only — never keys, tokens, or full `/metrics` bodies).

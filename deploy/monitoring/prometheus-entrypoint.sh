@@ -4,6 +4,8 @@ set -e
 # Render the Prometheus config from the template.
 # envsubst handles arbitrary secret characters safely (no delimiter corruption).
 # Fail closed: missing credentials → exit 1 → container restart loop.
+# Test hooks (defaults are the container paths): SRC/DST override the
+# template/output locations, DRY_RUN=1 stops after render + guard (no exec).
 
 # --- Validate credentials ---
 for var in INTERNAL_API_KEY_MESSENGER INTERNAL_API_KEY_DISCORD INTERNAL_API_KEY_ZALO; do
@@ -21,14 +23,20 @@ if ! command -v envsubst >/dev/null 2>&1; then
 fi
 
 # --- Render config ---
+SRC="${SRC:-/etc/prometheus/prometheus.tmpl}"
+DST="${DST:-/etc/prometheus/prometheus.yml}"
 envsubst '$INTERNAL_API_KEY_MESSENGER $INTERNAL_API_KEY_DISCORD $INTERNAL_API_KEY_ZALO' \
-  < /etc/prometheus/prometheus.tmpl \
-  > /etc/prometheus/prometheus.yml
+  < "$SRC" \
+  > "$DST"
 
 if grep -Eq '__[A-Z0-9_]+__|\$\{?(INTERNAL_API_KEY_MESSENGER|INTERNAL_API_KEY_DISCORD|INTERNAL_API_KEY_ZALO)\}?' \
-  /etc/prometheus/prometheus.yml; then
+  "$DST"; then
   echo "FATAL: unresolved Prometheus credential placeholder" >&2
   exit 1
+fi
+
+if [ "${DRY_RUN:-}" = "1" ]; then
+  exit 0
 fi
 
 exec /bin/prometheus "$@"
