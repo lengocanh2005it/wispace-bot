@@ -349,10 +349,12 @@ export class PlatformWebhookInboundEventService {
       .where('evt.platform = :platform', { platform: this.platform })
       .andWhere(
         `(
-          evt.status IN (:...statuses)
-          AND (evt.next_retry_at IS NULL OR evt.next_retry_at <= :now)
-        )
-        OR (evt.status = 'processing' AND evt.updated_at < :staleBefore)`,
+          (
+            evt.status IN (:...statuses)
+            AND (evt.next_retry_at IS NULL OR evt.next_retry_at <= :now)
+          )
+          OR (evt.status = 'processing' AND evt.updated_at < :staleBefore)
+        )`,
         { statuses: ['pending', 'failed'], now, staleBefore },
       )
       .orderBy('evt.id', 'ASC')

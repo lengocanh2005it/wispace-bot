@@ -251,6 +251,13 @@ jobs:
         if: '!cancelled()'
         run: npm run database:query-returning-shape-smoke
 
+      # #538: pins SQL/Lua semantics mocks cannot prove (lease fencing,
+      # inbox predicate isolation, burst/slot negatives, delete atomicity)
+      # against the real Postgres 16 + Redis.
+      - name: Run persistence semantics smoke test
+        if: '!cancelled()'
+        run: npm run database:persistence-semantics-smoke
+
       - name: Run real study-reminder delivery outcome smoke test
         if: '!cancelled()'
         run: npm run study-reminder:delivery-smoke
