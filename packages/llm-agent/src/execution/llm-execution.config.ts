@@ -17,6 +17,17 @@ export const LLM_EXECUTION_DEFAULTS = {
   chatAdmissionWaitMs: 8_000,
   backgroundAdmissionWaitMs: 1_500,
   globalMaxConcurrent: 10,
+  /**
+   * Attempt budget per tool round (#514). Total HTTP calls =
+   * retryMaxAttempts × failoverMaxAttempts × N_providers.
+   * With retryMaxAttempts=1, failover=2/provider, N=3: 1×2×3 = 6 ≤ 8.
+   * Bots set maxLlmRetries=0 so agent-level withRetry short-circuits.
+   *
+   * Migration: previously default was 3 (total ~18 calls). Changing to 1
+   * reduces inner-retry budget — bots now rely entirely on failover for
+   * per-provider recovery. Override via LLM_OPENAI_RETRY_MAX_ATTEMPTS
+   * if more aggressive retry is needed per provider.
+   */
   retryMaxAttempts: 1,
   retryBackoffMs: 2_000,
   retryMaxDelayMs: 10_000,

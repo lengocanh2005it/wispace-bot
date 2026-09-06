@@ -218,7 +218,7 @@ export function createEnvLlmExecutionPort(
           );
         }
         try {
-          let maxAttemptUsed = 1;
+          let attemptCount = 1;
           const result = await retryWithBackoff(
             (attemptSignal) => fn(attemptSignal ?? signal),
             {
@@ -230,7 +230,7 @@ export function createEnvLlmExecutionPort(
               ),
               isRetryable: (error) => adapter.isRetryableError(error),
               onRetry: (attempt, backoffMs, error) => {
-                maxAttemptUsed = attempt + 1;
+                attemptCount = attempt + 1;
                 logger.warn(
                   `LLM provider retry feature=${
                     meta?.feature ?? FEATURE
@@ -245,7 +245,7 @@ export function createEnvLlmExecutionPort(
               perAttemptTimeoutMs: config.perAttemptTimeoutMs,
             },
           );
-          metrics?.observeRetryAttempts?.(maxAttemptUsed, {
+          metrics?.observeRetryAttempts?.(attemptCount, {
             outcome: 'success',
           });
           recordSuccess();
