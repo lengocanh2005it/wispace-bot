@@ -1,4 +1,6 @@
-import './tracing'; // MUST be first — initialises OTel SDK before any module loads
+import './shared/common/tracing'; // MUST be first — initialises OTel SDK before any module loads
+import { shutdownTracing } from './shared/common/tracing';
+import { createShutdownHandler } from './shared/common/graceful-shutdown';
 // vps-self-pull-deploy smoke test: no-op, verifies end-to-end self-pull deploy
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
@@ -68,32 +70,17 @@ async function bootstrap() {
   await app.listen(port);
   SHUTDOWN_LOGGER.log(`Application listening on port ${port}`);
 
-  const shutdown = async (signal: string) => {
-    SHUTDOWN_LOGGER.log(`Received ${signal}, starting graceful shutdown…`);
+  // Single-owner graceful shutdown (#511): drain the app first, then flush
+  // tracing, then exit. tracing.ts registers no signal handlers of its own.
+  const shutdown = createShutdownHandler({
+    app,
+    shutdownTracing,
+    timeoutMs: GRACEFUL_SHUTDOWN_TIMEOUT_MS,
+    logger: SHUTDOWN_LOGGER,
+    exit: (code) => process.exit(code),
+  });
 
-    const forceExitTimeout = setTimeout(() => {
-      SHUTDOWN_LOGGER.error(
-        `Graceful shutdown timed out after ${GRACEFUL_SHUTDOWN_TIMEOUT_MS}ms, forcing exit`,
-      );
-      process.exit(1);
-    }, GRACEFUL_SHUTDOWN_TIMEOUT_MS);
-    forceExitTimeout.unref();
-
-    try {
-      await app.close();
-      SHUTDOWN_LOGGER.log('Graceful shutdown completed');
-    } catch (err) {
-      SHUTDOWN_LOGGER.error(
-        `Error during graceful shutdown: ${errorMessage(err)}`,
-        err instanceof Error ? sanitizeErrorStack(err.stack) : undefined,
-      );
-    } finally {
-      clearTimeout(forceExitTimeout);
-      process.exit(0);
-    }
-  };
-
-  process.on('SIGTERM', () => void shutdown('SIGTERM'));
-  process.on('SIGINT', () => void shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 void bootstrap();

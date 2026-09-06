@@ -271,8 +271,8 @@ No string interpolation or concatenation was found in any SQL query.
 ### Graceful Shutdown (GOOD)
 
 - All three apps implement signal handlers (SIGTERM, SIGINT)
-- Force-exit timeout: 25 s (Messenger), 10 s (Discord/Zalo); debounce buffers drain before exit
-- `app.close()` called before exit for cleanup
+- Force-exit timeout: 45 s on all three bots; debounce buffers drain before exit
+- `app.close()` called before exit for cleanup; messenger flushes OTel spans after the drain (#511)
 - `OnModuleDestroy` implemented by timer-owning services
 
 ---

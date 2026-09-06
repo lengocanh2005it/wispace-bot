@@ -127,6 +127,61 @@ jobs:
       - name: Run HTTP contract tests (messenger-bot)
         run: npm run test:http-contract --workspace=@wispace/messenger-bot
 
+  graceful-shutdown-verify:
+    # #511: SIGTERM mid-request must drain before exit (OTel must not race
+    # the 45s drain). Runs only when shutdown-related files changed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for shutdown-related changes
+        id: changes
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="HEAD~1"
+          fi
+          if git diff --name-only "${BASE}...HEAD" -- \
+            apps/messenger-bot/src/main.ts \
+            apps/messenger-bot/src/shared/common/tracing.ts \
+            apps/messenger-bot/src/shared/common/graceful-shutdown.ts \
+            apps/messenger-bot/src/shared/common/graceful-shutdown.spec.ts \
+            apps/messenger-bot/src/shared/common/tracing.spec.ts \
+            apps/messenger-bot/scripts/verify-graceful-shutdown.mjs \
+            | grep -q .; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.changes.outputs.run == 'true'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.changes.outputs.run == 'true'
+        run: npm ci
+
+      - name: Build messenger-bot
+        if: steps.changes.outputs.run == 'true'
+        run: npx --no-install turbo run build --filter=@wispace/messenger-bot...
+        env:
+          TURBO_CONCURRENCY: 2
+          NODE_OPTIONS: '--max-old-space-size=4096'
+
+      - name: Run graceful-shutdown verification (#511)
+        if: steps.changes.outputs.run == 'true'
+        run: npm run test:shutdown --workspace=@wispace/messenger-bot
+
   database-bootstrap-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 20

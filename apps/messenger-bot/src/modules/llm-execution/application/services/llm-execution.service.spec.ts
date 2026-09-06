@@ -445,7 +445,7 @@ describe('LlmExecutionService', () => {
       expect(capturedSignal?.aborted).toBe(true);
     });
 
-    it('reuses one deadline signal across provider retries', async () => {
+    it('composes per-attempt timeout with the shared deadline across retries (#511)', async () => {
       const config = createConfig({
         enabled: true,
         retryMaxAttempts: 2,
@@ -472,8 +472,15 @@ describe('LlmExecutionService', () => {
         { feature: 'STUDENT_REPORT' },
       );
 
+      // Each attempt gets its own composed signal (deadline + per-attempt
+      // cap) instead of one shared object — the single deadline still
+      // governs because it is part of every composition.
       expect(signals).toHaveLength(2);
-      expect(signals[1]).toBe(signals[0]);
+      expect(signals[1]).not.toBe(signals[0]);
+      for (const signal of signals) {
+        expect(signal).toBeInstanceOf(AbortSignal);
+        expect(signal.aborted).toBe(false);
+      }
     });
   });
 });
