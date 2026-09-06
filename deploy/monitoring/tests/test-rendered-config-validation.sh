@@ -23,7 +23,7 @@ AM_IMAGE="$(grep -o 'prom/alertmanager:[^ "]*' "$MON/docker-compose.yml" | head 
 
 # Exact-bytes validation needs the /etc mount layout, so this script requires
 # Docker (ubuntu CI has it). Developers without a daemon still get coverage
-# from the entrypoint unit tests, which need only sh + envsubst.
+# from the entrypoint unit tests, which need only sh + awk.
 if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
   echo "a running Docker daemon is required for rendered-config validation" >&2
   exit 1

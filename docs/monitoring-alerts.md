@@ -136,13 +136,14 @@ dashboard-only until a service-specific baseline exists.
 
 ## Credential template check
 
-`prometheus.tmpl` and `alertmanager.tmpl` use `${VAR}` placeholders, matching
-the allow-listed substitutions in their entrypoints: a small awk renderer
-replaces only the listed names byte-verbatim (no escape processing, so
-special characters in secrets are safe). Both entrypoints fail closed if a
-credential placeholder survives rendering. Do not put secrets in the
-committed templates. `TELEGRAM_CHAT_ID` has no sentinel default — an
-unset value renders empty and trips the fail-closed check (#373).
+`prometheus.tmpl` and `alertmanager.tmpl` use only `${VAR}` placeholders,
+matching the allow-listed substitutions in their entrypoints: a small awk
+renderer replaces only the listed names and YAML-escapes quotes/backslashes in
+secret values. Legacy `__VAR__`, `$VAR`, malformed, or unallow-listed markers
+are rejected before startup, and a broad post-render guard fails closed if one
+survives. Do not put secrets in the committed templates. `TELEGRAM_CHAT_ID`
+has no sentinel default and must be a valid non-zero signed 64-bit integer — an
+unset or invalid value fails closed (#373).
 `SRC`/`DST`/`DRY_RUN=1` override the template/output paths and skip the final
 `exec`, so tests render with the real entrypoints without starting daemons.
 

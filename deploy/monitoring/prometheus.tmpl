@@ -17,7 +17,7 @@ scrape_configs:
     scheme: http
     authorization:
       type: Bearer
-      credentials: ${INTERNAL_API_KEY_MESSENGER}
+      credentials: "${INTERNAL_API_KEY_MESSENGER}"
 
   - job_name: discord_bot
     static_configs:
@@ -27,7 +27,7 @@ scrape_configs:
     scheme: http
     authorization:
       type: Bearer
-      credentials: ${INTERNAL_API_KEY_DISCORD}
+      credentials: "${INTERNAL_API_KEY_DISCORD}"
 
   - job_name: zalo_bot
     static_configs:
@@ -37,7 +37,7 @@ scrape_configs:
     scheme: http
     authorization:
       type: Bearer
-      credentials: ${INTERNAL_API_KEY_ZALO}
+      credentials: "${INTERNAL_API_KEY_ZALO}"
 
 rule_files:
   - /etc/prometheus/alert.rules.yml

@@ -54,27 +54,27 @@ INTERNAL_API_KEY_MESSENGER="m3ss-k3y_01" INTERNAL_API_KEY_DISCORD="d1sc-key_02" 
   SRC="$MON/prometheus.tmpl" DST="$TEST_DIR/t5.yml" DRY_RUN=1 \
   sh "$SCRIPT" 2>"$TEST_DIR/t5.err" && code=0 || code=$?
 [ "$code" -eq 0 ] || fail "expected exit 0, got $code"
-grep -Fq "credentials: m3ss-k3y_01" "$TEST_DIR/t5.yml" || fail "messenger key not rendered"
-grep -Fq "credentials: d1sc-key_02" "$TEST_DIR/t5.yml" || fail "discord key not rendered"
-grep -Fq "credentials: zl-key_03" "$TEST_DIR/t5.yml" || fail "zalo key not rendered"
+grep -Fq 'credentials: "m3ss-k3y_01"' "$TEST_DIR/t5.yml" || fail "messenger key not rendered"
+grep -Fq 'credentials: "d1sc-key_02"' "$TEST_DIR/t5.yml" || fail "discord key not rendered"
+grep -Fq 'credentials: "zl-key_03"' "$TEST_DIR/t5.yml" || fail "zalo key not rendered"
 grep -Fq '${' "$TEST_DIR/t5.yml" && fail "unresolved placeholder remains" || true
 ! grep -Fq "m3ss-k3y_01" "$TEST_DIR/t5.err" || fail "secret leaked to logs"
 ! grep -Fq "d1sc-key_02" "$TEST_DIR/t5.err" || fail "secret leaked to logs"
 ! grep -Fq "zl-key_03" "$TEST_DIR/t5.err" || fail "secret leaked to logs"
 pass "successful render places keys, no placeholders"
 
-echo "Test 6: special characters render byte-verbatim"
+echo "Test 6: special characters render as valid YAML"
 INTERNAL_API_KEY_MESSENGER='m3ss-k3y_01' \
 INTERNAL_API_KEY_DISCORD='dk$pec!al=key:99' \
-INTERNAL_API_KEY_ZALO='zl"qu'\''ot\ed`uni-ß日本語' \
+INTERNAL_API_KEY_ZALO='zl"qu'\''ot\ed`uni-${literal}-__literal__-ß日本語' \
   SRC="$MON/prometheus.tmpl" DST="$TEST_DIR/t6.yml" DRY_RUN=1 \
   sh "$SCRIPT" 2>"$TEST_DIR/t6.err" && code=0 || code=$?
 [ "$code" -eq 0 ] || fail "expected exit 0, got $code"
-grep -Fq -- 'credentials: dk$pec!al=key:99' "$TEST_DIR/t6.yml" || fail "discord special chars mangled"
-grep -Fq -- 'credentials: zl"qu'\''ot\ed`uni-ß日本語' "$TEST_DIR/t6.yml" || fail "zalo special chars mangled"
+grep -Fq -- 'credentials: "dk$pec!al=key:99"' "$TEST_DIR/t6.yml" || fail "discord special chars mangled"
+grep -Fq -- 'credentials: "zl\"qu'\''ot\\ed`uni-${literal}-__literal__-ß日本語"' "$TEST_DIR/t6.yml" || fail "zalo special chars not YAML-escaped"
 ! grep -Fq 'dk$pec!al=key:99' "$TEST_DIR/t6.err" || fail "secret leaked to logs"
 ! grep -Fq -- 'zl"qu'\''ot\ed`uni-ß日本語' "$TEST_DIR/t6.err" || fail "secret leaked to logs"
-pass "special characters render verbatim"
+pass "special characters render as valid YAML"
 
 echo "Test 7: missing awk binary → exit 1"
 mkdir -p "$TEST_DIR/t7/bin"
@@ -93,6 +93,34 @@ INTERNAL_API_KEY_MESSENGER="ms" INTERNAL_API_KEY_DISCORD="dk" INTERNAL_API_KEY_Z
 [ "$code" -ne 0 ] || fail "expected non-zero exit"
 grep -q "FATAL.*unresolved" "$TEST_DIR/t8.err" 2>/dev/null || fail "missing FATAL log"
 pass "unresolved placeholder rejected"
+
+echo 'Test 9: unknown $VAR and malformed ${VAR} placeholders fail closed → exit 1'
+printf 'credentials: $UNLISTED_SECRET ${BAD-NAME}\n' > "$TEST_DIR/t9.tmpl"
+INTERNAL_API_KEY_MESSENGER="ms" INTERNAL_API_KEY_DISCORD="dk" INTERNAL_API_KEY_ZALO="zl" \
+  SRC="$TEST_DIR/t9.tmpl" DST="$TEST_DIR/t9.yml" DRY_RUN=1 \
+  sh "$SCRIPT" 2>"$TEST_DIR/t9.err" && code=0 || code=$?
+[ "$code" -ne 0 ] || fail "expected non-zero exit"
+grep -q "FATAL.*unresolved" "$TEST_DIR/t9.err" 2>/dev/null || fail "missing FATAL log"
+pass "unknown placeholders rejected"
+
+echo "Test 10: unclosed and malformed markers fail closed"
+for marker in '${UNFINISHED' '__FOO-BAR__'; do
+  printf 'credentials: %s\n' "$marker" > "$TEST_DIR/t10.tmpl"
+  INTERNAL_API_KEY_MESSENGER="ms" INTERNAL_API_KEY_DISCORD="dk" INTERNAL_API_KEY_ZALO="zl" \
+    SRC="$TEST_DIR/t10.tmpl" DST="$TEST_DIR/t10.yml" DRY_RUN=1 \
+    sh "$SCRIPT" 2>"$TEST_DIR/t10.err" && code=0 || code=$?
+  [ "$code" -ne 0 ] || fail "expected malformed marker $marker to fail"
+done
+pass "malformed markers rejected"
+
+echo "Test 11: control characters in credentials fail closed"
+CONTROL_KEY="$(printf 'key\twith-tab')"
+INTERNAL_API_KEY_MESSENGER="$CONTROL_KEY" INTERNAL_API_KEY_DISCORD="dk" INTERNAL_API_KEY_ZALO="zl" \
+  SRC="$MON/prometheus.tmpl" DST="$TEST_DIR/t11.yml" DRY_RUN=1 \
+  sh "$SCRIPT" 2>"$TEST_DIR/t11.err" && code=0 || code=$?
+[ "$code" -ne 0 ] || fail "expected non-zero exit"
+grep -q "FATAL.*control" "$TEST_DIR/t11.err" 2>/dev/null || fail "missing control-character log"
+pass "control characters rejected"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"

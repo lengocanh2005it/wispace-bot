@@ -1,6 +1,5 @@
-# Telegram receiver. ${TELEGRAM_BOT_TOKEN} / ${TELEGRAM_CHAT_ID} are replaced
-# from the compose .env by alertmanager-entrypoint.sh (Alertmanager has no
-# built-in env substitution).
+# Telegram receiver credentials are injected by alertmanager-entrypoint.sh.
+# Alertmanager has no built-in environment substitution.
 route:
   receiver: telegram
   group_by: [alertname, job]
