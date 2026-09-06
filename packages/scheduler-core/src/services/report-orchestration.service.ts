@@ -75,9 +75,16 @@ export class ReportOrchestrationService {
       examDateForOutbox?: string;
       classifyError?: (error: unknown) => ClassifiedError;
       generateReport?: () => Promise<string>;
+      /** Explicit operator sends may use the platform/external fallback claim. */
+      allowUserIdLess?: boolean;
     },
   ): Promise<ClaimAndSendResult> {
-    const { reportDate, skipAlreadySentToday, examDateForOutbox } = opts;
+    const {
+      reportDate,
+      skipAlreadySentToday,
+      examDateForOutbox,
+      allowUserIdLess = false,
+    } = opts;
     const classifyError = opts.classifyError ?? defaultClassifyError;
     const platform = mapping.platform;
     const deliveryKey = `${platform}-report:${mapping.externalUserId}:${reportDate}`;
@@ -89,7 +96,11 @@ export class ReportOrchestrationService {
 
     // Scheduled reports require the canonical WISPACE learner identity. A
     // userId-less link cannot participate in cross-platform dedupe safely.
-    if (skipAlreadySentToday && mapping.userId === undefined) {
+    if (
+      skipAlreadySentToday &&
+      mapping.userId === undefined &&
+      !allowUserIdLess
+    ) {
       return { ...ZERO, skipped: 1 };
     }
 

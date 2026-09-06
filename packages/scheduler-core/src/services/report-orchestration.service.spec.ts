@@ -140,6 +140,43 @@ describe('ReportOrchestrationService', () => {
     expect(delivery.sendReport).not.toHaveBeenCalled();
   });
 
+  it('uses the platform fallback claim for an explicitly allowed userId-less send', async () => {
+    const claimRepo = buildClaimRepo();
+    const delivery = buildDelivery(true);
+    const service = new ReportOrchestrationService(
+      claimRepo,
+      delivery,
+      buildJobRepo(),
+      buildScheduleService(),
+      buildConfig(),
+    );
+
+    const result = await service.claimAndSend(
+      { ...MAPPING, userId: undefined },
+      {
+        reportDate: '2026-08-07',
+        skipAlreadySentToday: true,
+        allowUserIdLess: true,
+        reportText: 'fallback report',
+      },
+    );
+
+    expect(result.sent).toBe(1);
+    expect(claimRepo.hasSentScheduledReportToday).toHaveBeenCalledWith(
+      'discord-1',
+      undefined,
+    );
+    expect(claimRepo.tryClaimScheduledReport).toHaveBeenCalledWith(
+      {
+        externalUserId: 'discord-1',
+        userId: undefined,
+        reportDate: '2026-08-07',
+      },
+      expect.any(Number),
+    );
+    expect(delivery.sendReport).toHaveBeenCalled();
+  });
+
   describe('generateReport callback', () => {
     it('generates report inside claim window and sends successfully', async () => {
       const claimRepo = buildClaimRepo();

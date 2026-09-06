@@ -218,7 +218,7 @@ export class DiscordReportCronService {
 
     // Window gate: only auto-send inside the days-before-exam window
     // (same as Messenger). forceSend bypasses the window but still
-    // respects already-sent-today unless the caller clears it.
+    // respects already-sent-today.
     if (mapping.userId && this.canonicalPlatformService) {
       const { isCanonical, canonicalPlatform } =
         await this.canonicalPlatformService.isCanonicalForUser(
@@ -253,7 +253,9 @@ export class DiscordReportCronService {
 
     return this.orchestrationService.claimAndSend(mapping, {
       reportDate: opts.reportDate,
-      skipAlreadySentToday: !opts.forceSend,
+      // forceSend bypasses the window/consent gates, not daily dedupe.
+      skipAlreadySentToday: true,
+      allowUserIdLess: opts.forceSend,
       examDateForOutbox: window.examDate,
       appendOptOutFooter: opts.appendOptOutFooter,
     });

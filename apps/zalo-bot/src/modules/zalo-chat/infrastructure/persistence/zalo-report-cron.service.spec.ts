@@ -158,7 +158,38 @@ describe('ZaloReportCronService', () => {
 
     await service.sendDailyReports({ forceSend: true });
 
-    expect(orchestrationClaimAndSend).toHaveBeenCalled();
+    expect(orchestrationClaimAndSend).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        skipAlreadySentToday: true,
+      }),
+    );
+  });
+
+  it('uses the platform fallback claim for an explicit userId-less force send', async () => {
+    const { service, orchestrationClaimAndSend } = buildService({
+      pages: [[{ ...link, userId: null }]],
+    });
+
+    await service.sendDailyReports({ forceSend: true });
+
+    expect(orchestrationClaimAndSend).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: undefined }),
+      expect.objectContaining({
+        skipAlreadySentToday: true,
+        allowUserIdLess: true,
+      }),
+    );
+  });
+
+  it('keeps userId-less links out of the automatic cron', async () => {
+    const { service, orchestrationClaimAndSend } = buildService({
+      pages: [[{ ...link, userId: null }]],
+    });
+
+    await service.sendDailyReports();
+
+    expect(orchestrationClaimAndSend).not.toHaveBeenCalled();
   });
   it('filters to report-opted-in learners (#596 AC2)', async () => {
     const andWhere = jest.fn().mockReturnThis();

@@ -228,6 +228,22 @@ describe('PlatformReportClaimRepository.tryClaimScheduledReport', () => {
     expect(second).toEqual({ claimed: false });
   });
 
+  it('allows only one concurrent userId-less platform fallback claim', async () => {
+    const [first, second] = await Promise.all([claim(), claim()]);
+
+    expect([first.claimed, second.claimed].sort()).toEqual([false, true]);
+    expect(query.mock.calls[0][0]).toContain(
+      'ON CONFLICT (platform, external_user_id, report_date)',
+    );
+    expect(query.mock.calls[0][1]).toEqual([
+      'zalo',
+      'zalo-1',
+      '2026-08-14',
+      null,
+      120_000,
+    ]);
+  });
+
   it('reclaims a released claim for the same platform/user/date', async () => {
     await claim();
     update.mockImplementation((_where: unknown, patch: { status: string }) => {

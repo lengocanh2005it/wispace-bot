@@ -31,6 +31,7 @@ export class DiscordReportOrchestrationService {
     opts: {
       reportDate: string;
       skipAlreadySentToday: boolean;
+      allowUserIdLess?: boolean;
       examDateForOutbox?: string;
       /** One-time opt-out footer for grandfathered learners (#596). */
       appendOptOutFooter?: boolean;
@@ -39,6 +40,7 @@ export class DiscordReportOrchestrationService {
     return this.orchestration.claimAndSend(mapping, {
       reportDate: opts.reportDate,
       skipAlreadySentToday: opts.skipAlreadySentToday,
+      ...(opts.allowUserIdLess ? { allowUserIdLess: true } : {}),
       reportText: '', // ignored when generateReport is provided
       examDateForOutbox: opts.examDateForOutbox,
       classifyError: (error) =>

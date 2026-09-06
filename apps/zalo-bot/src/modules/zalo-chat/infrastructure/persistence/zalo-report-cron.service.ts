@@ -270,7 +270,9 @@ export class ZaloReportCronService {
       const pendingNotice = link.optoutNoticeSentAt == null;
       const result = await this.orchestration.claimAndSend(mapping, {
         reportDate,
-        skipAlreadySentToday: !forceSend,
+        // forceSend bypasses the window/consent gates, not daily dedupe.
+        skipAlreadySentToday: true,
+        allowUserIdLess: forceSend,
         reportText: '',
         classifyError: (error) => classifyZaloError(error, link.externalUserId),
         generateReport: async () => {

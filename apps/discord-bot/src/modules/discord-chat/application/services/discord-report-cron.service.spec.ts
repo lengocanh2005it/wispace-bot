@@ -231,7 +231,8 @@ describe('DiscordReportCronService', () => {
       expect.objectContaining({
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
-        skipAlreadySentToday: false,
+        skipAlreadySentToday: true,
+        allowUserIdLess: true,
         examDateForOutbox: '2026-09-10',
       }),
     );
