@@ -20,6 +20,7 @@
     "@nestjs/schedule": "^6.0.0",
     "@nestjs/typeorm": "^11.0.1",
     "@wispace/bot-common": "*",
+    "@wispace/bot-metrics": "*",
     "@wispace/contracts": "*",
     "date-fns": "^4.4.0",
     "@wispace/reschedule-confirm": "*",

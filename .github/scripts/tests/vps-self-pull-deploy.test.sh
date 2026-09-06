@@ -6,6 +6,7 @@
 set -euo pipefail
 
 SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/vps-self-pull-deploy.sh"
+TEST_BASH="$(command -v bash)"
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
 
@@ -253,8 +254,18 @@ run_script() { # dir [EXTRA_ENV=..]... -> runs the script, echoes exit code
       # export accepts NAME=value test overrides.
       export "$extra"
     done
-    [ -z "${FAKE_JQ_MISSING:-}" ] || mv "$dir/bin/jq" "$dir/bin/jq.disabled"
-    bash "$SCRIPT"
+    if [ -n "${FAKE_JQ_MISSING:-}" ]; then
+      # Keep only the tools needed before the jq guard so a runner-installed
+      # jq cannot satisfy command -v jq.
+      for tool in bash env mkdir flock cat date head; do
+        ln -sf "$(command -v "$tool")" "$dir/bin/$tool"
+      done
+      mv "$dir/bin/jq" "$dir/bin/jq.disabled"
+      PATH="$dir/bin"
+      "$TEST_BASH" "$SCRIPT"
+    else
+      bash "$SCRIPT"
+    fi
   ) > "$dir/run.out" 2>&1
   echo $?
 }
