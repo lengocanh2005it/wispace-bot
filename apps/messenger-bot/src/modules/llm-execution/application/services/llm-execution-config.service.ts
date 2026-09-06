@@ -57,7 +57,7 @@ export class LlmExecutionConfigService {
     return readEnvPositiveInt(
       this.configService,
       'LLM_OPENAI_RETRY_MAX_ATTEMPTS',
-      3,
+      1,
     );
   }
 
@@ -82,6 +82,14 @@ export class LlmExecutionConfigService {
       this.configService,
       'LLM_REQUEST_TIMEOUT_MS',
       30_000,
+    );
+  }
+
+  getPerAttemptTimeoutMs(): number {
+    return readEnvPositiveInt(
+      this.configService,
+      'LLM_RETRY_PER_ATTEMPT_TIMEOUT_MS',
+      10_000,
     );
   }
 

@@ -33,6 +33,8 @@ export interface EnvLlmExecutionConfig {
   retryMaxDelayMs: number;
   /** `LLM_REQUEST_TIMEOUT_MS` — per-request deadline. */
   requestTimeoutMs: number;
+  /** `LLM_RETRY_PER_ATTEMPT_TIMEOUT_MS` — cap on each retry attempt. */
+  perAttemptTimeoutMs: number;
   /** `LLM_GLOBAL_CONCURRENCY_ENABLED` — enables the Redis aggregate budget. */
   globalConcurrencyEnabled: boolean;
   /** Optional native Redis client for the distributed budget. */
@@ -66,6 +68,11 @@ export interface AdmissionMetrics {
   observeQueueDepth?(depth: number): void;
   /** Optional age of the oldest queued waiter, in seconds. */
   observeQueueDrainLag?(seconds: number): void;
+  /** Observe the number of attempts used per tool round. */
+  observeRetryAttempts?(
+    attempts: number,
+    labels?: Record<string, string>,
+  ): void;
 }
 
 /**
@@ -211,29 +218,42 @@ export function createEnvLlmExecutionPort(
           );
         }
         try {
-          const result = await retryWithBackoff(() => fn(signal), {
-            maxAttempts: config.maxAttempts,
-            baseDelayMs: config.baseBackoffMs,
-            backoff: cappedExponentialBackoff(
-              config.baseBackoffMs,
-              config.retryMaxDelayMs,
-            ),
-            isRetryable: (error) => adapter.isRetryableError(error),
-            onRetry: (attempt, backoffMs, error) =>
-              logger.warn(
-                `LLM provider retry feature=${
-                  meta?.feature ?? FEATURE
-                } correlation=${
-                  meta?.correlationId ?? 'n/a'
-                } attempt=${attempt}/${config.maxAttempts} backoffMs=${backoffMs}: ${errorMessage(
-                  error,
-                )}`,
+          let maxAttemptUsed = 1;
+          const result = await retryWithBackoff(
+            (attemptSignal) => fn(attemptSignal ?? signal),
+            {
+              maxAttempts: config.maxAttempts,
+              baseDelayMs: config.baseBackoffMs,
+              backoff: cappedExponentialBackoff(
+                config.baseBackoffMs,
+                config.retryMaxDelayMs,
               ),
-            signal,
+              isRetryable: (error) => adapter.isRetryableError(error),
+              onRetry: (attempt, backoffMs, error) => {
+                maxAttemptUsed = attempt + 1;
+                logger.warn(
+                  `LLM provider retry feature=${
+                    meta?.feature ?? FEATURE
+                  } correlation=${
+                    meta?.correlationId ?? 'n/a'
+                  } attempt=${attempt}/${config.maxAttempts} backoffMs=${backoffMs}: ${errorMessage(
+                    error,
+                  )}`,
+                );
+              },
+              signal,
+              perAttemptTimeoutMs: config.perAttemptTimeoutMs,
+            },
+          );
+          metrics?.observeRetryAttempts?.(maxAttemptUsed, {
+            outcome: 'success',
           });
           recordSuccess();
           return result;
         } catch (error) {
+          metrics?.observeRetryAttempts?.(config.maxAttempts, {
+            outcome: 'exhausted',
+          });
           recordFailure(error);
           throw error;
         }

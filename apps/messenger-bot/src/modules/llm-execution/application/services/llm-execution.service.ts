@@ -201,7 +201,10 @@ export class LlmExecutionService {
 
     // ponytail: shared retry helper from llm-agent (was a local sleep+backoff copy)
     return retryWithBackoff(
-      () => this.metrics.timeLlmExecution(feature, () => fn(signal)),
+      (attemptSignal) =>
+        this.metrics.timeLlmExecution(feature, () =>
+          fn(attemptSignal ?? signal),
+        ),
       {
         maxAttempts,
         baseDelayMs: baseBackoffMs,
@@ -214,6 +217,7 @@ export class LlmExecutionService {
             )}`,
           ),
         signal,
+        perAttemptTimeoutMs: this.config.getPerAttemptTimeoutMs(),
       },
     );
   }

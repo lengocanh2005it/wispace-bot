@@ -15,6 +15,7 @@ describe('buildLlmExecutionConfig', () => {
     delete process.env.LLM_OPENAI_RETRY_BACKOFF_MS;
     delete process.env.LLM_OPENAI_RETRY_MAX_DELAY_MS;
     delete process.env.LLM_REQUEST_TIMEOUT_MS;
+    delete process.env.LLM_RETRY_PER_ATTEMPT_TIMEOUT_MS;
     delete process.env.LLM_GLOBAL_CONCURRENCY_ENABLED;
   });
 
@@ -36,6 +37,7 @@ describe('buildLlmExecutionConfig', () => {
       baseBackoffMs: LLM_EXECUTION_DEFAULTS.retryBackoffMs,
       retryMaxDelayMs: LLM_EXECUTION_DEFAULTS.retryMaxDelayMs,
       requestTimeoutMs: LLM_EXECUTION_DEFAULTS.requestTimeoutMs,
+      perAttemptTimeoutMs: LLM_EXECUTION_DEFAULTS.perAttemptTimeoutMs,
       globalConcurrencyEnabled: LLM_EXECUTION_DEFAULTS.globalConcurrencyEnabled,
     });
   });

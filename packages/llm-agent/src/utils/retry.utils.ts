@@ -19,6 +19,10 @@ export interface RetryBackoffOptions {
   rng?: () => number;
   /** Optional AbortSignal to cancel retries immediately. */
   signal?: AbortSignal;
+  /** Per-attempt timeout cap in ms. When set, each attempt is bounded by
+   *  an AbortSignal.timeout composed with the global signal, so a single slow
+   *  provider cannot consume the entire retry budget. */
+  perAttemptTimeoutMs?: number;
 }
 
 /**
@@ -36,9 +40,13 @@ export function cappedExponentialBackoff(
 /**
  * Retry `fn` with backoff while errors are retryable. Throws the last error
  * when attempts run out or the error is not retryable or the signal is aborted.
+ *
+ * When `perAttemptTimeoutMs` is set, each attempt is bounded by an
+ * AbortSignal.timeout composed with the global signal — a single slow
+ * provider cannot consume the entire retry budget.
  */
 export async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
+  fn: (signal?: AbortSignal) => Promise<T>,
   options: RetryBackoffOptions,
 ): Promise<T> {
   let lastError: unknown;
@@ -48,8 +56,18 @@ export async function retryWithBackoff<T>(
       throw options.signal.reason ?? new Error('Aborted');
     }
 
+    // Compose per-attempt timeout with global signal so a single slow
+    // provider call is capped and does not consume the full retry budget.
+    let attemptSignal = options.signal;
+    if (options.perAttemptTimeoutMs && options.perAttemptTimeoutMs > 0) {
+      const perAttempt = AbortSignal.timeout(options.perAttemptTimeoutMs);
+      attemptSignal = options.signal
+        ? AbortSignal.any([options.signal, perAttempt])
+        : perAttempt;
+    }
+
     try {
-      return await fn();
+      return await fn(attemptSignal);
     } catch (error) {
       lastError = error;
       if (

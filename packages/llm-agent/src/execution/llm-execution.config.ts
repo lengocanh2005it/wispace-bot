@@ -17,10 +17,11 @@ export const LLM_EXECUTION_DEFAULTS = {
   chatAdmissionWaitMs: 8_000,
   backgroundAdmissionWaitMs: 1_500,
   globalMaxConcurrent: 10,
-  retryMaxAttempts: 3,
+  retryMaxAttempts: 1,
   retryBackoffMs: 2_000,
   retryMaxDelayMs: 10_000,
   requestTimeoutMs: 30_000,
+  perAttemptTimeoutMs: 10_000,
   globalConcurrencyEnabled: false,
 } as const;
 
@@ -59,6 +60,7 @@ export function buildLlmExecutionConfig(
   baseBackoffMs: number;
   retryMaxDelayMs: number;
   requestTimeoutMs: number;
+  perAttemptTimeoutMs: number;
   globalConcurrencyEnabled: boolean;
 } {
   const get = (key: string) => env?.[key] ?? process.env[key];
@@ -103,6 +105,10 @@ export function buildLlmExecutionConfig(
     requestTimeoutMs: readPositiveInt(
       get('LLM_REQUEST_TIMEOUT_MS'),
       LLM_EXECUTION_DEFAULTS.requestTimeoutMs,
+    ),
+    perAttemptTimeoutMs: readPositiveInt(
+      get('LLM_RETRY_PER_ATTEMPT_TIMEOUT_MS'),
+      LLM_EXECUTION_DEFAULTS.perAttemptTimeoutMs,
     ),
     globalConcurrencyEnabled: readBoolean(
       get('LLM_GLOBAL_CONCURRENCY_ENABLED'),

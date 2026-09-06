@@ -197,5 +197,85 @@ describe('retry.utils', () => {
 
       expect(fn).toHaveBeenCalledTimes(1);
     });
+
+    it('per-attempt timeout: fn receives an AbortSignal when perAttemptTimeoutMs is set', async () => {
+      const fn = jest.fn().mockResolvedValue('ok');
+
+      await retryWithBackoff(fn, {
+        maxAttempts: 1,
+        baseDelayMs: 10,
+        isRetryable: () => true,
+        perAttemptTimeoutMs: 10_000,
+      });
+
+      // fn should receive an AbortSignal (the composed per-attempt signal)
+      const receivedSignal = fn.mock.calls[0][0];
+      expect(receivedSignal).toBeInstanceOf(AbortSignal);
+      expect(receivedSignal.aborted).toBe(false);
+    });
+
+    it('per-attempt timeout: fn receives undefined signal when perAttemptTimeoutMs is not set', async () => {
+      const fn = jest.fn().mockResolvedValue('ok');
+
+      await retryWithBackoff(fn, {
+        maxAttempts: 1,
+        baseDelayMs: 10,
+        isRetryable: () => true,
+      });
+
+      const receivedSignal = fn.mock.calls[0][0];
+      expect(receivedSignal).toBeUndefined();
+    });
+
+    it('per-attempt timeout: aborts hung attempt after timeout (real timers)', async () => {
+      const fn = jest.fn().mockImplementation(
+        (signal?: AbortSignal) =>
+          new Promise<never>((_, reject) => {
+            signal?.addEventListener('abort', () =>
+              reject(
+                new DOMException('The operation was aborted.', 'AbortError'),
+              ),
+            );
+          }),
+      );
+
+      await expect(
+        retryWithBackoff(fn, {
+          maxAttempts: 1,
+          baseDelayMs: 10,
+          isRetryable: () => true,
+          perAttemptTimeoutMs: 50,
+        }),
+      ).rejects.toThrow('aborted');
+
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
+
+    it('per-attempt timeout: global signal abort overrides per-attempt', async () => {
+      const controller = new AbortController();
+      const fn = jest.fn().mockImplementation(
+        (signal?: AbortSignal) =>
+          new Promise<never>((_, reject) => {
+            signal?.addEventListener('abort', () =>
+              reject(
+                new DOMException('The operation was aborted.', 'AbortError'),
+              ),
+            );
+          }),
+      );
+
+      const promise = retryWithBackoff(fn, {
+        maxAttempts: 3,
+        baseDelayMs: 10,
+        isRetryable: () => true,
+        perAttemptTimeoutMs: 60_000, // generous per-attempt
+        signal: controller.signal,
+      });
+
+      controller.abort();
+
+      await expect(promise).rejects.toThrow();
+      expect(fn).toHaveBeenCalledTimes(1);
+    });
   });
 });
