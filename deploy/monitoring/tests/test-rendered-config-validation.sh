@@ -30,14 +30,14 @@ if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
 fi
 
 run_promtool() {
-  docker run --rm --entrypoint promtool \
+  docker run --rm --user 0:0 --entrypoint promtool \
     -v "$TEST_DIR:/tmp/render:ro" \
     -v "$MON/alert.rules.yml:/etc/prometheus/alert.rules.yml:ro" \
     "$PROM_IMAGE" "$@"
 }
 
 run_amtool() {
-  docker run --rm --entrypoint amtool \
+  docker run --rm --user 0:0 --entrypoint amtool \
     -v "$TEST_DIR:/tmp/render:ro" \
     "$AM_IMAGE" "$@"
 }
