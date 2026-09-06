@@ -1,11 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { LlmUsageController } from '@messenger/modules/llm-usage/presentation/controllers/llm-usage.controller';
 import { LlmUsageQueryService } from '@messenger/modules/llm-usage/application/services/llm-usage-query.service';
-import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { createContractApp } from './helpers';
 
 function buildMockQueryService() {
   return {
@@ -29,26 +27,17 @@ describe('LLM usage endpoints (HTTP contract)', () => {
   beforeEach(async () => {
     queryService = buildMockQueryService();
 
-    const moduleFixture: TestingModule = await Test.createTestingModule({
+    app = await createContractApp({
       controllers: [LlmUsageController],
       providers: [{ provide: LlmUsageQueryService, useValue: queryService }],
-    })
-      .overrideGuard(InternalApiKeyGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ThrottlerGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
-
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('v1');
-    await app.init();
+    });
   });
 
   afterEach(async () => {
     await app?.close();
   });
 
-  describe('GET /messenger/ops/llm-usage/summary', () => {
+  describe('GET /v1/messenger/ops/llm-usage/summary', () => {
     it('returns user summary with default params', async () => {
       await request(app.getHttpServer())
         .get('/v1/messenger/ops/llm-usage/summary')

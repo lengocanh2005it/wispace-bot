@@ -1,18 +1,12 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import {
-  INestApplication,
-  ValidationPipe,
-  ForbiddenException,
-} from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { MessengerController } from '@messenger/modules/messenger/presentation/controllers/messenger.controller';
 import { MessengerService } from '@messenger/modules/messenger/application/services/messenger.service';
 import { MessengerProfileService } from '@messenger/modules/messenger/infrastructure/meta/messenger-profile.service';
-import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
-import { ThrottlerGuard } from '@nestjs/throttler';
 import { MessengerWebhookSignatureGuard } from '@messenger/shared/common/guards/messenger-webhook-signature.guard';
 import { ConfigService } from '@nestjs/config';
+import { createContractApp } from './helpers';
 
 describe('Messenger webhook (HTTP contract)', () => {
   let app: INestApplication<App>;
@@ -27,7 +21,7 @@ describe('Messenger webhook (HTTP contract)', () => {
   };
 
   beforeEach(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
+    app = await createContractApp({
       controllers: [MessengerController],
       providers: [
         { provide: MessengerService, useValue: mockMessengerService },
@@ -37,21 +31,8 @@ describe('Messenger webhook (HTTP contract)', () => {
           useValue: { get: (key: string, fallback?: unknown) => fallback },
         },
       ],
-    })
-      .overrideGuard(InternalApiKeyGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ThrottlerGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(MessengerWebhookSignatureGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
-
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('v1');
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
-    );
-    await app.init();
+      overrideGuards: [MessengerWebhookSignatureGuard],
+    });
   });
 
   afterEach(async () => {
@@ -75,6 +56,7 @@ describe('Messenger webhook (HTTP contract)', () => {
     });
 
     it('returns 403 when verify token is wrong', async () => {
+      const { ForbiddenException } = await import('@nestjs/common');
       mockMessengerService.verifyWebhook.mockImplementation(() => {
         throw new ForbiddenException('Invalid verify token');
       });
@@ -86,6 +68,7 @@ describe('Messenger webhook (HTTP contract)', () => {
     });
 
     it('returns 403 when verify token is missing', async () => {
+      const { ForbiddenException } = await import('@nestjs/common');
       mockMessengerService.verifyWebhook.mockImplementation(() => {
         throw new ForbiddenException('Invalid verify token');
       });
@@ -158,8 +141,6 @@ describe('Messenger webhook (HTTP contract)', () => {
     });
 
     it('rejects oversized batch via ValidationPipe (@ArrayMaxSize)', async () => {
-      // MessengerWebhookPayloadDto has @ArrayMaxSize(50) on entry array.
-      // Sending 51 entries triggers DTO validation failure (400).
       const oversized = {
         object: 'page',
         entry: Array.from({ length: 51 }, (_, i) => ({
@@ -199,6 +180,17 @@ describe('Messenger webhook (HTTP contract)', () => {
           expect(body.ok).toBe(true);
           expect(body.accepted).toBe(0);
         });
+    });
+
+    it('returns 500 when ingestion throws (durable-ingest failure)', async () => {
+      mockMessengerService.handleWebhook.mockRejectedValue(
+        new Error('DB persistence failed'),
+      );
+
+      await request(app.getHttpServer())
+        .post('/v1/webhook')
+        .send(validPayload)
+        .expect(500);
     });
   });
 });

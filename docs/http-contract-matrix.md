@@ -4,19 +4,19 @@ Request-level HTTP contract tests for Messenger bot endpoints. Tests boot a part
 
 ## Coverage
 
-| Endpoint | Method | Auth | Success | Validation | Error | File |
-|---|---|---|---|---|---|---|
-| `/v1/webhook` | GET | ThrottlerGuard | 200 + challenge string | — | 403 (wrong/missing token) | messenger-webhook.contract.ts |
-| `/v1/webhook` | POST | SignatureGuard + ThrottlerGuard | 200 `{ok, accepted, duplicates}` | 400 (missing object), 400 (DTO @ArrayMaxSize) | 404 (non-page object) | messenger-webhook.contract.ts |
-| `/v1/messenger/profile/setup` | POST | InternalApiKeyGuard + ThrottlerGuard | 200 `{ok:true}` | — | — | messenger-ops.contract.ts |
-| `/v1/messenger/privacy/unlink` | POST | InternalApiKeyGuard + ThrottlerGuard | 200 `{unlinked:true}` | 400 (missing externalUserId), 400 (wrong type) | — | messenger-privacy.contract.ts |
-| `/v1/messenger/privacy/delete` | POST | InternalApiKeyGuard + ThrottlerGuard | 200 `{deleted:true}` | 400 (missing externalUserId) | — | messenger-privacy.contract.ts |
-| `/v1/messenger/ops/clarification/clear` | POST | InternalApiKeyGuard + ThrottlerGuard | 204 no-content | — | — | messenger-privacy.contract.ts |
-| `/v1/messenger/ops/llm-usage/summary` | GET | InternalApiKeyGuard + ThrottlerGuard | 200 `{psid, totalTokens, byFeature}` | userId parsed/ignored | — | messenger-llm-usage.contract.ts |
-| `/v1/messenger/ops/llm-usage/fleet` | GET | InternalApiKeyGuard + ThrottlerGuard | 200 `{totalTokens, byFeature}` | date param passed | — | messenger-llm-usage.contract.ts |
-| `/health` | GET | None (public) | 200 `{status:"ok"}` | — | Never 503 | shared-health.contract.ts |
-| `/health/ready` | GET | None (public) | 200 `{status:"ok"}` | — | 503 (DB down, Redis unreachable, OpsHealth not ready) | shared-health.contract.ts |
-| `/health/detail` | GET | InternalApiKeyGuard | 200 `{status, database, redis}` | — | status:"error" with detail | shared-health.contract.ts |
+| Endpoint | Method | Auth | Success | Validation | Error | Response Schema | File |
+|---|---|---|---|---|---|---|---|
+| `/v1/webhook` | GET | ThrottlerGuard | 200 + challenge string | — | 403 (wrong/missing token) | `string` (challenge) | messenger-webhook.contract.ts |
+| `/v1/webhook` | POST | SignatureGuard + ThrottlerGuard | 200 `{ok, accepted, duplicates}` | 400 (missing object), 400 (DTO @ArrayMaxSize) | 404 (non-page), 500 (ingestion failure) | `{ok: boolean, accepted: number, duplicates: number}` | messenger-webhook.contract.ts |
+| `/v1/messenger/profile/setup` | POST | InternalApiKeyGuard + ThrottlerGuard | 200 `{ok:true}` | — | 401 (no API key, when configured) | `{ok: boolean}` | messenger-ops.contract.ts |
+| `/v1/messenger/privacy/unlink` | POST | InternalApiKeyGuard + ThrottlerGuard | 200 `{unlinked:true}` | 400 (missing externalUserId), 400 (wrong type) | — | `{unlinked: boolean}` | messenger-privacy.contract.ts |
+| `/v1/messenger/privacy/delete` | POST | InternalApiKeyGuard + ThrottlerGuard | 200 `{deleted:true}` | 400 (missing externalUserId) | — | `{deleted: boolean}` | messenger-privacy.contract.ts |
+| `/v1/messenger/ops/clarification/clear` | POST | InternalApiKeyGuard + ThrottlerGuard | 204 no-content | — | — | _(empty)_ | messenger-privacy.contract.ts |
+| `/v1/messenger/ops/llm-usage/summary` | GET | InternalApiKeyGuard + ThrottlerGuard | 200 `{psid, totalTokens, byFeature}` | userId parsed/ignored | — | `{psid: string, totalTokens: number, byFeature: Array<{feature: string, tokens: number}>}` | messenger-llm-usage.contract.ts |
+| `/v1/messenger/ops/llm-usage/fleet` | GET | InternalApiKeyGuard + ThrottlerGuard | 200 `{totalTokens, byFeature}` | date param passed | — | `{date: string, totalTokens: number, byFeature: Array<{feature: string, tokens: number}>}` | messenger-llm-usage.contract.ts |
+| `/health` | GET | None (public) | 200 `{status:"ok"}` | — | Never 503 | `{status: "ok"}` | shared-health.contract.ts |
+| `/health/ready` | GET | None (public) | 200 `{status:"ok"}` | — | 503 (DB down, Redis unreachable, OpsHealth not ready) | `{status: "ok" \| "error"}` | shared-health.contract.ts |
+| `/health/detail` | GET | InternalApiKeyGuard | 200 `{status, database, redis}` | — | status:"error" with detail | `{status: string, database: string, redis: string, platform?: object}` | shared-health.contract.ts |
 
 ## Running
 
@@ -31,11 +31,10 @@ npx turbo run test:http-contract --filter=@wispace/messenger-bot...
 ## Adding new endpoints
 
 1. Create or extend a `.contract.ts` file in `test/http-contract/`
-2. Use partial module with `Test.createTestingModule` + mocked deps
-3. Override `ThrottlerGuard`, `InternalApiKeyGuard`, and platform-specific guards
-4. Set `app.setGlobalPrefix('v1')` to match production route prefix
-5. Test: success, auth failure, validation failure, error mapping
-6. Update this matrix
+2. Use `createContractApp()` from `helpers.ts` — passes overrides `InternalApiKeyGuard`, `ThrottlerGuard`, and any additional guards you specify
+3. Add extra guard overrides via `overrideGuerts` option (e.g. `MessengerWebhookSignatureGuard`)
+4. Test: success, auth failure (when guard is real), validation failure, error mapping
+5. Update this matrix with the new endpoint row and response schema
 
 ## Scope boundaries
 

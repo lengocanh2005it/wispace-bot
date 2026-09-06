@@ -1,13 +1,11 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { MessengerController } from '@messenger/modules/messenger/presentation/controllers/messenger.controller';
 import { MessengerService } from '@messenger/modules/messenger/application/services/messenger.service';
 import { MessengerProfileService } from '@messenger/modules/messenger/infrastructure/meta/messenger-profile.service';
-import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
-import { ThrottlerGuard } from '@nestjs/throttler';
 import { MessengerWebhookSignatureGuard } from '@messenger/shared/common/guards/messenger-webhook-signature.guard';
+import { createContractApp } from './helpers';
 
 describe('Messenger ops endpoints (HTTP contract)', () => {
   let app: INestApplication<App>;
@@ -22,31 +20,21 @@ describe('Messenger ops endpoints (HTTP contract)', () => {
   };
 
   beforeEach(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
+    app = await createContractApp({
       controllers: [MessengerController],
       providers: [
         { provide: MessengerService, useValue: mockMessengerService },
         { provide: MessengerProfileService, useValue: mockProfileService },
       ],
-    })
-      .overrideGuard(InternalApiKeyGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ThrottlerGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(MessengerWebhookSignatureGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
-
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('v1');
-    await app.init();
+      overrideGuards: [MessengerWebhookSignatureGuard],
+    });
   });
 
   afterEach(async () => {
     await app?.close();
   });
 
-  describe('POST /messenger/profile/setup', () => {
+  describe('POST /v1/messenger/profile/setup', () => {
     it('returns 200 with ok:true', async () => {
       await request(app.getHttpServer())
         .post('/v1/messenger/profile/setup')

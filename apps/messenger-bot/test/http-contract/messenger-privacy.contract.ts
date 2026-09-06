@@ -1,10 +1,7 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import { SchedulerController } from '@messenger/modules/scheduler/presentation/controllers/scheduler.controller';
-import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
-import { ThrottlerGuard } from '@nestjs/throttler';
 import { ReportCronService } from '@messenger/modules/scheduler/application/services/report-cron.service';
 import { StudyReminderSyncService } from '@wispace/study-reminder-shared';
 import { StudyReminderWorkerService } from '@wispace/study-reminder-shared';
@@ -16,111 +13,72 @@ import { MessengerAgentService } from '@messenger/modules/messenger/application/
 import { PlatformChatHistoryService } from '@wispace/chat-agent';
 import { MessengerChatEnqueueService } from '@messenger/modules/messenger/application/services/messenger-chat-enqueue.service';
 import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
+import { createContractApp } from './helpers';
 
-function buildMockDeps() {
-  return {
-    reportCronService: {
-      sendScheduledReports: jest
-        .fn()
-        .mockResolvedValue({ sent: 1, skipped: 0 }),
+/** Minimal mocks for SchedulerController — only what the DI container needs. */
+function buildControllerProviders() {
+  const noop = jest.fn();
+  return [
+    { provide: ReportCronService, useValue: { sendScheduledReports: noop } },
+    {
+      provide: StudyReminderSyncService,
+      useValue: { syncUpcomingSessions: noop },
     },
-    studyReminderSyncService: {
-      syncUpcomingSessions: jest.fn().mockResolvedValue({
-        synced: 1,
-        cancelled: 0,
-        created: 1,
-        failures: [],
-      }),
+    {
+      provide: StudyReminderWorkerService,
+      useValue: { runSyncAndDispatch: noop, runEveningRollover: noop },
     },
-    studyReminderWorkerService: {
-      runSyncAndDispatch: jest.fn().mockResolvedValue({
-        sync: { synced: 0, cancelled: 0, created: 0, failures: [] },
-        dispatch: { sent: 0, failed: 0, failures: [] },
-      }),
-      runEveningRollover: jest.fn().mockResolvedValue({
-        deletedSent: 0,
-        sync: { synced: 0, cancelled: 0, created: 0, failures: [] },
-      }),
+    { provide: StudySessionSourceService, useValue: {} },
+    {
+      provide: MessengerMappingService,
+      useValue: { relinkPsidToUserId: noop },
     },
-    sessionSourceService: {},
-    messengerMappingService: {
-      relinkPsidToUserId: jest.fn().mockResolvedValue({ success: true }),
+    {
+      provide: ReportSendRetryDispatchService,
+      useValue: { dispatchDueReportRetries: noop },
     },
-    reportSendRetryDispatchService: {
-      dispatchDueReportRetries: jest.fn().mockResolvedValue({ dispatched: 0 }),
+    {
+      provide: PrivacyDataService,
+      useValue: {
+        unlink: jest.fn().mockResolvedValue({ unlinked: true }),
+        delete: jest.fn().mockResolvedValue({ deleted: true }),
+        export: jest.fn().mockResolvedValue({ data: {} }),
+      },
     },
-    privacyService: {
-      unlink: jest.fn().mockResolvedValue({ unlinked: true }),
-      delete: jest.fn().mockResolvedValue({ deleted: true }),
-      export: jest.fn().mockResolvedValue({ data: {} }),
+    {
+      provide: MessengerAgentService,
+      useValue: { clearClarificationState: noop },
     },
-    clarificationAgent: { clearClarificationState: jest.fn() },
-    historyService: { clear: jest.fn() },
-    chatEnqueueService: { clear: jest.fn() },
-    displayNameCache: { del: jest.fn() },
-  };
+    { provide: PlatformChatHistoryService, useValue: { clear: noop } },
+    { provide: MessengerChatEnqueueService, useValue: { clear: noop } },
+    { provide: RedisUserDisplayNameCache, useValue: { del: noop } },
+  ];
 }
 
 describe('Messenger privacy endpoints (HTTP contract)', () => {
   let app: INestApplication<App>;
-  let deps: ReturnType<typeof buildMockDeps>;
+  let privacyService: {
+    unlink: jest.Mock;
+    delete: jest.Mock;
+    export: jest.Mock;
+  };
 
   beforeEach(async () => {
-    deps = buildMockDeps();
+    const providers = buildControllerProviders();
+    privacyService = providers.find((p) => p.provide === PrivacyDataService)!
+      .useValue as typeof privacyService;
 
-    const moduleFixture: TestingModule = await Test.createTestingModule({
+    app = await createContractApp({
       controllers: [SchedulerController],
-      providers: [
-        { provide: ReportCronService, useValue: deps.reportCronService },
-        {
-          provide: StudyReminderSyncService,
-          useValue: deps.studyReminderSyncService,
-        },
-        {
-          provide: StudyReminderWorkerService,
-          useValue: deps.studyReminderWorkerService,
-        },
-        {
-          provide: StudySessionSourceService,
-          useValue: deps.sessionSourceService,
-        },
-        {
-          provide: MessengerMappingService,
-          useValue: deps.messengerMappingService,
-        },
-        {
-          provide: ReportSendRetryDispatchService,
-          useValue: deps.reportSendRetryDispatchService,
-        },
-        { provide: PrivacyDataService, useValue: deps.privacyService },
-        { provide: MessengerAgentService, useValue: deps.clarificationAgent },
-        { provide: PlatformChatHistoryService, useValue: deps.historyService },
-        {
-          provide: MessengerChatEnqueueService,
-          useValue: deps.chatEnqueueService,
-        },
-        { provide: RedisUserDisplayNameCache, useValue: deps.displayNameCache },
-      ],
-    })
-      .overrideGuard(InternalApiKeyGuard)
-      .useValue({ canActivate: () => true })
-      .overrideGuard(ThrottlerGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
-
-    app = moduleFixture.createNestApplication();
-    app.setGlobalPrefix('v1');
-    app.useGlobalPipes(
-      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }),
-    );
-    await app.init();
+      providers,
+    });
   });
 
   afterEach(async () => {
     await app?.close();
   });
 
-  describe('POST /messenger/privacy/unlink', () => {
+  describe('POST /v1/messenger/privacy/unlink', () => {
     it('calls unlink with externalUserId and returns result', async () => {
       await request(app.getHttpServer())
         .post('/v1/messenger/privacy/unlink')
@@ -130,7 +88,7 @@ describe('Messenger privacy endpoints (HTTP contract)', () => {
           expect(body).toEqual({ unlinked: true });
         });
 
-      expect(deps.privacyService.unlink).toHaveBeenCalledWith(
+      expect(privacyService.unlink).toHaveBeenCalledWith(
         'messenger',
         'psid-123',
         expect.any(Object),
@@ -162,7 +120,7 @@ describe('Messenger privacy endpoints (HTTP contract)', () => {
           expect(body).toEqual({ deleted: true });
         });
 
-      expect(deps.privacyService.delete).toHaveBeenCalledWith(
+      expect(privacyService.delete).toHaveBeenCalledWith(
         'messenger',
         'psid-456',
         expect.any(Object),

@@ -1,4 +1,3 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
@@ -6,9 +5,9 @@ import {
   HealthController,
   OPS_HEALTH_SERVICE,
 } from '@wispace/bot-common/health';
-import { InternalApiKeyGuard } from '@wispace/bot-common/guard';
 import { REDIS_CLIENT } from '@wispace/bot-common/redis';
 import { DataSource } from 'typeorm';
+import { createContractApp } from './helpers';
 
 function mockDataSource(connected = true) {
   return {
@@ -52,7 +51,7 @@ describe('Health endpoints (HTTP contract)', () => {
       ping: deps.redisPing,
     });
 
-    const providers: unknown[] = [
+    const providers: Array<{ provide: unknown; useValue: unknown }> = [
       { provide: DataSource, useValue: ds },
       { provide: REDIS_CLIENT, useValue: redis },
     ];
@@ -75,16 +74,11 @@ describe('Health endpoints (HTTP contract)', () => {
       });
     }
 
-    const moduleFixture: TestingModule = await Test.createTestingModule({
+    app = await createContractApp({
       controllers: [HealthController],
       providers,
-    })
-      .overrideGuard(InternalApiKeyGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
-
-    app = moduleFixture.createNestApplication();
-    await app.init();
+      skipPrefix: true,
+    });
     return ds;
   }
 
@@ -134,7 +128,6 @@ describe('Health endpoints (HTTP contract)', () => {
 
     it('returns 503 with status-only body when DB is down', async () => {
       const ds = await bootApp({ dsConnected: true, redisConfigured: false });
-      // Override DS to fail after boot
       (ds.query as jest.Mock).mockRejectedValue(
         new Error('connection refused'),
       );
@@ -215,7 +208,7 @@ describe('Health endpoints (HTTP contract)', () => {
         database: 'disconnected',
       });
 
-      // Readiness stays generic
+      // Readiness stays generic — no DB detail leaked
       await request(app.getHttpServer())
         .get('/health/ready')
         .expect(503)
