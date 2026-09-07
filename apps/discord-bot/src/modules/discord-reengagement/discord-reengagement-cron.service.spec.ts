@@ -20,7 +20,12 @@ type Stubs = {
   orchestrator: { runOnce: jest.Mock };
   preferences: { findReportOptedInUserIds: jest.Mock };
   pgLock: { withLock: jest.Mock };
-  metrics: { incReengagementSend: jest.Mock };
+  metrics: {
+    incReengagementSend: jest.Mock;
+    registerCron: jest.Mock;
+    recordCronSuccess: jest.Mock;
+    setReengagementBatchDuration: jest.Mock;
+  };
 };
 
 function buildStubs(): Stubs {
@@ -41,7 +46,12 @@ function buildStubs(): Stubs {
     pgLock: {
       withLock: jest.fn((_id: number, fn: () => Promise<unknown>) => fn()),
     },
-    metrics: { incReengagementSend: jest.fn() },
+    metrics: {
+      incReengagementSend: jest.fn(),
+      registerCron: jest.fn(),
+      recordCronSuccess: jest.fn(),
+      setReengagementBatchDuration: jest.fn(),
+    },
   };
 }
 
@@ -130,6 +140,9 @@ describe('DiscordReengagementCronService.handleDailyBatch', () => {
     await service.handleDailyBatch();
 
     expect(stubs.client.getCandidates).not.toHaveBeenCalled();
+    // Contention means nothing ran — no heartbeat, no duration.
+    expect(stubs.metrics.recordCronSuccess).not.toHaveBeenCalled();
+    expect(stubs.metrics.setReengagementBatchDuration).not.toHaveBeenCalled();
   });
 
   it('skips candidates that have not opted in to reports (#596)', async () => {
@@ -302,5 +315,68 @@ describe('DiscordReengagementCronService cron registration', () => {
     service.onModuleInit();
 
     expect(registry.addCronJob).not.toHaveBeenCalled();
+  });
+});
+
+describe('DiscordReengagementCronService heartbeat + duration (#855)', () => {
+  let stubs: Stubs;
+  let logSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    stubs = buildStubs();
+    logSpy = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+    jest.restoreAllMocks();
+  });
+
+  it('registers a 24h heartbeat on init when enabled', () => {
+    const service = buildService(stubs, { REENGAGEMENT_ENABLED: 'true' });
+
+    service.onModuleInit();
+
+    expect(stubs.metrics.registerCron).toHaveBeenCalledWith(
+      'discord-reengagement-batch',
+      24 * 60 * 60 * 1000,
+    );
+  });
+
+  it('does not register the heartbeat when disabled', () => {
+    const service = buildService(stubs, { REENGAGEMENT_ENABLED: 'false' });
+
+    service.onModuleInit();
+
+    expect(stubs.metrics.registerCron).not.toHaveBeenCalled();
+  });
+
+  it('records cron success + duration after a real batch', async () => {
+    const service = buildService(stubs);
+
+    await service.handleDailyBatch();
+
+    expect(stubs.metrics.recordCronSuccess).toHaveBeenCalledWith(
+      'discord-reengagement-batch',
+    );
+    expect(stubs.metrics.setReengagementBatchDuration).toHaveBeenCalledWith(
+      expect.any(Number),
+    );
+  });
+
+  it('records heartbeat + duration on a dry-run batch too', async () => {
+    const service = buildService(stubs, {
+      REENGAGEMENT_ENABLED: 'true',
+      REENGAGEMENT_DRY_RUN: 'true',
+    });
+
+    await service.handleDailyBatch();
+
+    expect(stubs.metrics.recordCronSuccess).toHaveBeenCalledWith(
+      'discord-reengagement-batch',
+    );
+    expect(stubs.metrics.setReengagementBatchDuration).toHaveBeenCalledWith(
+      expect.any(Number),
+    );
   });
 });

@@ -503,6 +503,7 @@ Wispace **must** call the sync API after POST/DELETE `/api/UserCalendar`. The 30
 | 5        | [docs/vault-secrets.md](docs/vault-secrets.md)                                                         | Vault runtime secret contract and bootstrap                 |
 | 6        | `.env.example`                                                                                         | Required environment variables                              |
 | 7        | `apps/messenger-bot/src/shared/config/poc.constants.ts`                                                | `m.me` links, parse `userId` from `ref`                     |
+| —        | [apps/discord-bot/docs/discord-reengagement.md](apps/discord-bot/docs/discord-reengagement.md)         | Editing re-engagement cron/orchestration, env, ops runbook  |
 | —        | `.claude/rules/clean-architecture.md`                                                                  | Editing/adding code in `apps/messenger-bot/src/modules/`    |
 | —        | `.claude/rules/chat-rate-limit.md`                                                                     | Editing `apps/messenger-bot/src/modules/chat-rate-limit/**` |
 | —        | `.claude/rules/messenger-chat.md`                                                                      | Editing chat queue/history/worker                           |

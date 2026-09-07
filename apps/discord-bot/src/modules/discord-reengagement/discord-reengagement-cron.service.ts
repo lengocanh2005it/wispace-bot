@@ -28,6 +28,8 @@ const DEFAULT_DAYS = 11;
 const DEFAULT_LIMIT = 50;
 const DEFAULT_MAX_PER_BATCH = 100;
 const DEFAULT_SEND_GAP_MS = 500;
+/** Heartbeat expected cadence — the batch runs at most once per day. */
+const DAILY_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 export interface ReengagementBatchSummary {
   fetched: number;
@@ -86,6 +88,9 @@ export class DiscordReengagementCronService
     );
     this.schedulerRegistry.addCronJob(CRON_NAME, job);
     job.start();
+    // Staleness heartbeat — feeds the existing CronExecutionStale alert so a
+    // silently dead batch cron is observable after prod enablement (#855).
+    this.metrics?.registerCron(CRON_NAME, DAILY_INTERVAL_MS);
     this.logger.log(
       `Re-engagement batch cron registered (${expression}, ${timezone})`,
     );
@@ -126,6 +131,7 @@ export class DiscordReengagementCronService
   }
 
   private async runBatch(): Promise<ReengagementBatchSummary> {
+    const startedAt = Date.now();
     const dryRun =
       this.configService.get<string>('REENGAGEMENT_DRY_RUN') === 'true';
     const days = this.readNumber('REENGAGEMENT_DAYS', DEFAULT_DAYS);
@@ -207,6 +213,11 @@ export class DiscordReengagementCronService
       }
     }
 
+    // A completed batch (dry-run included, empty included) is a successful
+    // cron execution for the staleness heartbeat (#855); lock contention
+    // never reaches this line, so it records nothing.
+    this.metrics?.recordCronSuccess(CRON_NAME);
+    this.metrics?.setReengagementBatchDuration((Date.now() - startedAt) / 1000);
     this.logger.log(
       `Re-engagement batch done: fetched=${summary.fetched} sent=${summary.sent} failed=${summary.failed} skipped=${summary.skipped}${dryRun ? ' (dry-run)' : ''} candidates=[${eligible.map((c) => maskExternalId(String(c.userId))).join(', ')}]`,
     );

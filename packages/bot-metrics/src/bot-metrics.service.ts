@@ -95,6 +95,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private outboundActionNeutralized: Counter;
   private welcomeAttempts: Counter;
   private reengagementSends: Counter;
+  private reengagementBatchDuration: Gauge;
   private tokenRefreshFailures: Counter;
   private cronLastSuccessTimestamp: Gauge<string>;
   private cronExpectedInterval: Gauge<string>;
@@ -339,6 +340,12 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_reengagement_send_total`,
       help: 'Re-engagement outcomes (#850: sent/ambiguous/rate_limited/failed/mark_sent_error/fetched/skipped)',
       labelNames: ['outcome'],
+      registers: [this.registry],
+    });
+
+    this.reengagementBatchDuration = new Gauge({
+      name: `${this.prefix}_reengagement_batch_duration_seconds`,
+      help: 'Wall-clock duration of the last re-engagement batch run (#855)',
       registers: [this.registry],
     });
 
@@ -633,6 +640,11 @@ export class BotMetricsService implements OnModuleDestroy {
   /** Re-engagement orchestration outcome (#850): sent | ambiguous | rate_limited | failed | mark_sent_error | fetched | skipped. */
   incReengagementSend(outcome: string, count = 1): void {
     this.reengagementSends.inc({ outcome }, count);
+  }
+
+  /** Wall-clock duration of the last re-engagement batch run, in seconds (#855). */
+  setReengagementBatchDuration(seconds: number): void {
+    this.reengagementBatchDuration.set(seconds);
   }
 
   /** OAuth token refresh failure with bounded operational reasons (#154/#684). */
