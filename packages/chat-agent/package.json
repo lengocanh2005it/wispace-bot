@@ -15,8 +15,8 @@
     "test": "jest --maxWorkers=50%"
   },
   "dependencies": {
-    "@nestjs/common": "^11.0.1",
-    "@nestjs/config": "^4.0.4",
+    "@nestjs/common": "^12.0.1",
+    "@nestjs/config": "^12.0.0",
     "@wispace/bot-common": "*",
     "@wispace/chat-history": "*",
     "@wispace/chat-metering": "*",
