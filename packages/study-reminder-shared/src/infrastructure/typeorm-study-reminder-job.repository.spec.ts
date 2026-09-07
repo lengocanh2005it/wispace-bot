@@ -821,19 +821,39 @@ describe('TypeormStudyReminderJobRepository', () => {
   });
 
   describe('deleteSentJobs', () => {
-    it('deletes all sent jobs without a cutoff (Messenger rollover)', async () => {
-      await repository.deleteSentJobs();
+    it('scopes the delete to the owning platform (#443)', async () => {
+      await repository.deleteSentJobs('discord');
 
       expect(queryLog.some((entry) => entry.method === 'delete')).toBe(true);
-      expect(queryLog.some((entry) => entry.method === 'andWhere')).toBe(false);
+      const platformCondition = queryLog.find(
+        (entry) => entry.method === 'andWhere',
+      );
+      expect(String(platformCondition?.args[0])).toContain('platform');
+      expect(platformCondition?.args[1]).toEqual({ platform: 'discord' });
+    });
+
+    it('does not add a sent_at clause without a cutoff', async () => {
+      await repository.deleteSentJobs('messenger');
+
+      expect(
+        queryLog.every(
+          (entry) =>
+            entry.method !== 'andWhere' ||
+            !String(entry.args[0]).includes('sent_at'),
+        ),
+      ).toBe(true);
     });
 
     it('filters by sent_at when a cutoff is given', async () => {
       const cutoff = new Date();
-      await repository.deleteSentJobs(cutoff);
+      await repository.deleteSentJobs('messenger', cutoff);
 
-      const andWhere = queryLog.find((entry) => entry.method === 'andWhere');
-      expect(andWhere?.args[0]).toContain('sent_at');
+      const sentAtCondition = queryLog.find(
+        (entry) =>
+          entry.method === 'andWhere' &&
+          String(entry.args[0]).includes('sent_at'),
+      );
+      expect(sentAtCondition).toBeDefined();
     });
   });
 
@@ -1021,8 +1041,9 @@ describe('TypeormStudyReminderJobRepository', () => {
   });
 
   describe('deleteTerminalJobsOlderThan', () => {
-    it('deletes exhausted jobs and terminal delivery outcomes', async () => {
+    it('scopes terminal deletes to the owning platform (#443)', async () => {
       await repository.deleteTerminalJobsOlderThan(
+        'discord',
         new Date('2026-06-12T00:00:00+07:00'),
       );
 
@@ -1034,6 +1055,12 @@ describe('TypeormStudyReminderJobRepository', () => {
           String(entry.args[0]).includes('delivery_status IN'),
       );
       expect(terminalCondition).toBeDefined();
+      const platformCondition = queryLog.find(
+        (entry) =>
+          entry.method === 'andWhere' &&
+          String(entry.args[0]).includes('platform'),
+      );
+      expect(platformCondition?.args[1]).toEqual({ platform: 'discord' });
     });
   });
 

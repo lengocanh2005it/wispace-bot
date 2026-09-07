@@ -618,11 +618,15 @@ export class TypeormStudyReminderJobRepository
     return result.affected ?? 0;
   }
 
-  async deleteSentJobs(olderThan?: Date): Promise<number> {
+  async deleteSentJobs(platform: Platform, olderThan?: Date): Promise<number> {
     const qb = this.repo
       .createQueryBuilder()
       .delete()
-      .where('status = :status', { status: 'sent' });
+      .where('status = :status', { status: 'sent' })
+      // Retention is per-platform on the shared table — an unscoped delete
+      // would purge other bots' sent rows and resurrect them as new pending
+      // jobs with fresh delivery keys (#443, scope family #180).
+      .andWhere('platform = :platform', { platform });
     if (olderThan) {
       qb.andWhere('sent_at < :olderThan', { olderThan });
     }
@@ -630,12 +634,17 @@ export class TypeormStudyReminderJobRepository
     return result.affected ?? 0;
   }
 
-  async deleteTerminalJobsOlderThan(olderThan: Date): Promise<number> {
+  async deleteTerminalJobsOlderThan(
+    platform: Platform,
+    olderThan: Date,
+  ): Promise<number> {
     const result = await this.repo
       .createQueryBuilder()
       .delete()
       .where(studyReminderTerminalRetentionPredicateSql())
       .andWhere('updated_at < :olderThan', { olderThan })
+      // Same per-platform scoping as deleteSentJobs (#443).
+      .andWhere('platform = :platform', { platform })
       .execute();
     return result.affected ?? 0;
   }

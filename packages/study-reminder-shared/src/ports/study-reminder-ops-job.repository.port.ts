@@ -1,3 +1,4 @@
+import type { Platform } from '@wispace/contracts';
 import type { StudyReminderJob } from '../types/study-reminder.types';
 
 /**
@@ -9,10 +10,13 @@ import type { StudyReminderJob } from '../types/study-reminder.types';
  *          deleteSentJobs, deleteTerminalJobsOlderThan
  */
 export interface OpsJobRepository {
-  /** Deletes all `sent` jobs when no cutoff is given (Messenger rollover). */
-  deleteSentJobs(olderThan?: Date): Promise<number>;
+  /** Deletes this platform's `sent` jobs (no cutoff = all of them) (#443). */
+  deleteSentJobs(platform: Platform, olderThan?: Date): Promise<number>;
 
-  deleteTerminalJobsOlderThan(olderThan: Date): Promise<number>;
+  deleteTerminalJobsOlderThan(
+    platform: Platform,
+    olderThan: Date,
+  ): Promise<number>;
 
   /** Counts by status; no platform filter when omitted (Messenger ops-health). */
   countJobsByStatus(platform?: string): Promise<Record<string, number>>;

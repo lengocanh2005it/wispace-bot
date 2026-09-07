@@ -273,8 +273,10 @@ export class StudyReminderWorkerService
         if (this.jobRepository) {
           const settings = this.scheduleService.getOutboxSettings();
           const cutoff = subDays(new Date(), settings.jobRetentionDays);
-          const deleted =
-            await this.jobRepository.deleteTerminalJobsOlderThan(cutoff);
+          const deleted = await this.jobRepository.deleteTerminalJobsOlderThan(
+            this.platform,
+            cutoff,
+          );
           if (deleted > 0) {
             this.logger.log(
               `Cleanup: deleted ${deleted} terminal jobs older than ${settings.jobRetentionDays} days`,
@@ -358,7 +360,8 @@ export class StudyReminderWorkerService
 
   private async deleteSentJobsInternal(): Promise<number> {
     if (!this.jobRepository) return 0;
-    return this.jobRepository.deleteSentJobs();
+    // Retention deletes are scoped to this worker's platform (#443).
+    return this.jobRepository.deleteSentJobs(this.platform);
   }
 
   private registerCronHeartbeats(): void {

@@ -258,18 +258,31 @@ describe('StudyReminderWorkerService', () => {
   });
 
   describe('runEveningRollover', () => {
-    it('purges sent jobs and syncs', async () => {
+    it('purges this platform’s sent jobs and syncs (#443)', async () => {
       jobRepo.deleteSentJobs.mockResolvedValue(5);
       build();
 
       const result = await service.runEveningRollover();
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
-      expect(jobRepo.deleteSentJobs).toHaveBeenCalledWith();
+      expect(jobRepo.deleteSentJobs).toHaveBeenCalledWith('messenger');
       expect(result).toMatchObject({ deletedSent: 5 });
       expect(result.sync).toHaveProperty('upserted');
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(syncService.syncUpcomingSessions).toHaveBeenCalled();
+    });
+
+    it('scopes the cleanup-cron terminal delete to the platform (#443)', async () => {
+      jobRepo.deleteTerminalJobsOlderThan.mockResolvedValue(3);
+      build();
+
+      await service.handleCleanupCron();
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(jobRepo.deleteTerminalJobsOlderThan).toHaveBeenCalledWith(
+        'messenger',
+        expect.any(Date),
+      );
     });
   });
 

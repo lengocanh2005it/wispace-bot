@@ -126,9 +126,12 @@ export interface StudyReminderJobRepositoryPort {
     olderThan: Date,
     targetStatus?: 'pending' | 'failed',
   ): Promise<number>;
-  /** Deletes all `sent` jobs when no cutoff is given (Messenger rollover). */
-  deleteSentJobs(olderThan?: Date): Promise<number>;
-  deleteTerminalJobsOlderThan(olderThan: Date): Promise<number>;
+  /** Deletes this platform's `sent` jobs (no cutoff = all of them) (#443). */
+  deleteSentJobs(platform: Platform, olderThan?: Date): Promise<number>;
+  deleteTerminalJobsOlderThan(
+    platform: Platform,
+    olderThan: Date,
+  ): Promise<number>;
   /** Counts by status; no platform filter when omitted (Messenger ops-health). */
   countJobsByStatus(platform?: string): Promise<Record<string, number>>;
   countTerminalFailedSince(since: Date): Promise<number>;
