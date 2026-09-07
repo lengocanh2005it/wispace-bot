@@ -139,7 +139,9 @@ export class ReengagementApiClient {
     const body = JSON.stringify({
       user_id: trimmed,
       platform: input.platform ?? DEFAULT_PLATFORM,
-      days_inactive: input.daysInactive,
+      ...(input.daysInactive !== undefined
+        ? { days_inactive: input.daysInactive }
+        : {}),
       variant: input.variant,
       status: input.status,
       ...(input.messageId !== undefined ? { message_id: input.messageId } : {}),

@@ -45,7 +45,8 @@ export type ReengagementSendStatus = 'SUCCESS' | 'FAILED';
 export interface ReengagementMarkSentInput {
   userId: string;
   platform: ReengagementPlatform;
-  daysInactive: number;
+  /** Inactive days at scan time; unknown for manual single-user triggers (#853). */
+  daysInactive?: number;
   variant: ReengagementVariant;
   status: ReengagementSendStatus;
   messageId?: string;

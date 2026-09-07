@@ -94,6 +94,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private dmDeliveryFailures: Counter;
   private outboundActionNeutralized: Counter;
   private welcomeAttempts: Counter;
+  private reengagementSends: Counter;
   private tokenRefreshFailures: Counter;
   private cronLastSuccessTimestamp: Gauge<string>;
   private cronExpectedInterval: Gauge<string>;
@@ -330,6 +331,13 @@ export class BotMetricsService implements OnModuleDestroy {
     this.welcomeAttempts = new Counter({
       name: `${this.prefix}_welcome_attempts_total`,
       help: 'Welcome DM delivery outcomes (skipped = deduped within the re-welcome window)',
+      labelNames: ['outcome'],
+      registers: [this.registry],
+    });
+
+    this.reengagementSends = new Counter({
+      name: `${this.prefix}_reengagement_send_total`,
+      help: 'Re-engagement orchestration outcomes per learner (#850: sent/ambiguous/rate_limited/failed/mark_sent_error)',
       labelNames: ['outcome'],
       registers: [this.registry],
     });
@@ -620,6 +628,11 @@ export class BotMetricsService implements OnModuleDestroy {
   /** Welcome-DM attempt outcome — success | error | skipped (#232/#234). */
   incWelcomeAttempt(outcome: string): void {
     this.welcomeAttempts.inc({ outcome });
+  }
+
+  /** Re-engagement orchestration outcome (#850): sent | ambiguous | rate_limited | failed | mark_sent_error. */
+  incReengagementSend(outcome: string): void {
+    this.reengagementSends.inc({ outcome });
   }
 
   /** OAuth token refresh failure with bounded operational reasons (#154/#684). */

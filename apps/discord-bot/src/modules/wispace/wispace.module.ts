@@ -8,6 +8,7 @@ import {
   WispaceDataCache,
   WispaceGoalsService,
   PrecreateExerciseApiClient,
+  ReengagementApiClient,
 } from '@wispace/wispace-client';
 import { PlatformStudyCalendarCommandService } from '@wispace/study-reminder-shared';
 import { BotMetricsService } from '@wispace/bot-metrics';
@@ -65,6 +66,7 @@ const cacheLogger = new Logger(WispaceDataCache.name);
     WispaceGoalsService,
     WispaceCalendarService,
     PrecreateExerciseApiClient,
+    ReengagementApiClient,
     WispaceConfigService,
     WispaceDataCache,
     PlatformStudyCalendarCommandService,
