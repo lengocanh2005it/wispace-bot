@@ -29,6 +29,22 @@ export class NotificationPreferenceService {
     await this.setEnabled('reminder_enabled', userId, enabled);
   }
 
+  /**
+   * Batch consent read for backend-driven scans (#854): the WISPACE candidate
+   * list cannot be filtered server-side (the preference table lives in the
+   * bot DB), so the batch filters it here — one `IN`-style query, no
+   * per-user round trips.
+   */
+  async findReportOptedInUserIds(userIds: number[]): Promise<Set<number>> {
+    if (userIds.length === 0) return new Set();
+    const rows = (await this.dataSource.query(
+      `SELECT user_id FROM user_notification_preferences
+       WHERE user_id = ANY($1) AND COALESCE(report_enabled, false) = true`,
+      [userIds],
+    )) as Array<{ user_id: number }>;
+    return new Set(rows.map((row) => Number(row.user_id)));
+  }
+
   private async setEnabled(
     column: 'report_enabled' | 'reminder_enabled',
     userId: number,

@@ -28,6 +28,8 @@ export const ADVISORY_LOCKS = {
   DISCORD_STUDY_REMINDER_CLEANUP: 884_200_945,
   /** Discord: study-reminder evening rollover lock (per-platform #777). */
   DISCORD_STUDY_REMINDER_ROLLOVER: 884_200_946,
+  /** Discord: re-engagement daily batch lock (#854). */
+  DISCORD_REENGAGEMENT: 884_200_950,
   /** Zalo: study-reminder worker sync lock (30 min, per-platform #777). */
   ZALO_STUDY_REMINDER_SYNC: 884_200_947,
   /** Zalo: study-reminder terminal-job cleanup lock (03:00 ICT, per-platform #777). */

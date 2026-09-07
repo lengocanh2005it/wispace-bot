@@ -337,7 +337,7 @@ export class BotMetricsService implements OnModuleDestroy {
 
     this.reengagementSends = new Counter({
       name: `${this.prefix}_reengagement_send_total`,
-      help: 'Re-engagement orchestration outcomes per learner (#850: sent/ambiguous/rate_limited/failed/mark_sent_error)',
+      help: 'Re-engagement outcomes (#850: sent/ambiguous/rate_limited/failed/mark_sent_error/fetched/skipped)',
       labelNames: ['outcome'],
       registers: [this.registry],
     });
@@ -630,9 +630,9 @@ export class BotMetricsService implements OnModuleDestroy {
     this.welcomeAttempts.inc({ outcome });
   }
 
-  /** Re-engagement orchestration outcome (#850): sent | ambiguous | rate_limited | failed | mark_sent_error. */
-  incReengagementSend(outcome: string): void {
-    this.reengagementSends.inc({ outcome });
+  /** Re-engagement orchestration outcome (#850): sent | ambiguous | rate_limited | failed | mark_sent_error | fetched | skipped. */
+  incReengagementSend(outcome: string, count = 1): void {
+    this.reengagementSends.inc({ outcome }, count);
   }
 
   /** OAuth token refresh failure with bounded operational reasons (#154/#684). */

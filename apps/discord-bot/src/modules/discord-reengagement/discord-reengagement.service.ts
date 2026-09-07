@@ -50,7 +50,10 @@ export class DiscordReengagementService {
     private readonly metrics?: BotMetricsService,
   ) {}
 
-  async runOnce(userId: number): Promise<ReengagementRunOnceResult> {
+  async runOnce(
+    userId: number,
+    options?: { daysInactive?: number },
+  ): Promise<ReengagementRunOnceResult> {
     const discordUserId = await this.accountLink.findDiscordIdByUserId(userId);
     if (!discordUserId) {
       this.metrics?.incReengagementSend('failed');
@@ -87,6 +90,7 @@ export class DiscordReengagementService {
         payload.variant,
         'SUCCESS',
         delivery.messageId,
+        options?.daysInactive,
       );
       const messageId = delivery.messageId
         ? { messageId: delivery.messageId }
@@ -113,6 +117,7 @@ export class DiscordReengagementService {
       payload.variant,
       'FAILED',
       undefined,
+      options?.daysInactive,
     );
     if (delivery.outcome === 'not_sent') {
       this.metrics?.incReengagementSend('failed');
@@ -127,6 +132,7 @@ export class DiscordReengagementService {
     variant: ReengagementPayload['variant'],
     status: ReengagementSendStatus,
     messageId: string | undefined,
+    daysInactive?: number,
   ): Promise<MarkSentAttempt> {
     try {
       const result = await this.reengagementClient.markSent({
@@ -135,6 +141,7 @@ export class DiscordReengagementService {
         variant,
         status,
         ...(messageId !== undefined ? { messageId } : {}),
+        ...(daysInactive !== undefined ? { daysInactive } : {}),
       });
       return { success: result.success, logId: result.logId };
     } catch (error) {
