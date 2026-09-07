@@ -399,6 +399,8 @@ const RESCHEDULE_CONFIRM_SUFFIX =
               ),
             clarificationOutcomeInc: (outcome) =>
               metrics.incClarificationOutcome(outcome),
+            // #371: `chat_total` step timing feeds the chat-availability SLO.
+            timeStep: (step, fn) => metrics.timeStep(step, fn),
           },
           queueStore,
         );

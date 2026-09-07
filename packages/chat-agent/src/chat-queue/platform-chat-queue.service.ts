@@ -421,18 +421,25 @@ export class PlatformChatQueueService implements OnModuleInit, OnModuleDestroy {
     try {
       const context = batch.context as QueueCtx | undefined;
       const sharedSnapshot = 'lastIdempotencyKey' in batch;
-      const delivered = await this.pipeline.flush({
-        externalUserId: batch.externalUserId,
-        userId: sharedSnapshot ? batch.userId : context?.userId,
-        texts: batch.texts,
-        idempotencyKey: sharedSnapshot
-          ? batch.lastIdempotencyKey
-          : (batch as ChatQueueBatch<QueueCtx>).idempotencyKey,
-        context:
-          this.options.propagateServerChannel === true
-            ? { isServerChannel: context?.isServerChannel === true }
-            : undefined,
-      });
+      const flush = () =>
+        this.pipeline.flush({
+          externalUserId: batch.externalUserId,
+          userId: sharedSnapshot ? batch.userId : context?.userId,
+          texts: batch.texts,
+          idempotencyKey: sharedSnapshot
+            ? batch.lastIdempotencyKey
+            : (batch as ChatQueueBatch<QueueCtx>).idempotencyKey,
+          context:
+            this.options.propagateServerChannel === true
+              ? { isServerChannel: context?.isServerChannel === true }
+              : undefined,
+        });
+      // `chat_total` is the platform's chat-availability SLO series (#371) —
+      // timed only when the app wired the closure, ok/error recorded by the
+      // metrics helper itself.
+      const delivered = await (this.options.timeStep
+        ? this.options.timeStep('chat_total', flush)
+        : flush());
 
       if (!delivered) {
         if (rateLimitedFlushThisCycle.has(batch.externalUserId)) {

@@ -379,18 +379,23 @@ groups:
           runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmlatencyhigh'
 
       - alert: LlmErrorRateHigh
+        # #371: the round-outcome counter never emits an `error` value (the
+        # error path records `_llm_degraded_mode_total` instead), so the old
+        # numerator matched zero series and the alert could never fire. The
+        # LLM call histogram carries `status` on every agent round for all
+        # three bots — use its error/total ratio instead.
         expr: |
           (
-            sum(rate({__name__=~"(messenger|discord|zalo)_llm_round_outcome_total",outcome="error"}[5m])) by (job)
+            sum(rate({__name__=~"(messenger|discord|zalo)_llm_call_duration_seconds_count",status="error"}[5m])) by (job)
             /
-            sum(rate({__name__=~"(messenger|discord|zalo)_llm_round_outcome_total"}[5m])) by (job)
+            sum(rate({__name__=~"(messenger|discord|zalo)_llm_call_duration_seconds_count"}[5m])) by (job)
           ) > 0.05
         for: 5m
         labels:
           severity: warning
         annotations:
           summary: '{{ $labels.job }} LLM error rate above 5%'
-          description: '{{ $labels.job }} LLM agent rounds failed at more than 5% for 5 minutes.'
+          description: '{{ $labels.job }} LLM provider calls failed at more than 5% for 5 minutes.'
           runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#llmerrorratehigh'
 
       - alert: EventLoopLagP99High

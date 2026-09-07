@@ -323,4 +323,11 @@ export interface PlatformChatQueueOptions {
   ) => Promise<void>;
   /** Records clarification delivery failures without user data labels. */
   clarificationOutcomeInc?: (outcome: string) => void;
+  /**
+   * Times the whole pipeline flush as the `chat_total` chat-step (#371) —
+   * the SLO availability signal for this platform. Discord/Zalo wire
+   * `metrics.timeStep('chat_total', fn)` here (Messenger wraps its own
+   * processor directly). Absent = untimed flush.
+   */
+  timeStep?: <T>(step: string, fn: () => Promise<T>) => Promise<T>;
 }

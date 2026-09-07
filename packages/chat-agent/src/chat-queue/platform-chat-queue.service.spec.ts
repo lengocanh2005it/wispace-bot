@@ -383,6 +383,44 @@ describe('PlatformChatQueueService', () => {
     });
   });
 
+  it('#371: wraps the pipeline flush in the chat-step timing closure when provided', async () => {
+    const timeStep = jest
+      .fn()
+      .mockImplementation(async (_step: string, fn: () => Promise<unknown>) =>
+        fn(),
+      );
+    const service = buildService(undefined, { timeStep });
+    const pipeline = getPipelineMock(service);
+    pipeline.flush.mockResolvedValue(true);
+    const flushCb = getFlushCallback();
+
+    await flushCb({
+      externalUserId: 'discord-1',
+      texts: ['hi'],
+      context: { userId: 42 },
+      idempotencyKey: 'key-1',
+    });
+
+    expect(timeStep).toHaveBeenCalledWith('chat_total', expect.any(Function));
+    expect(pipeline.flush).toHaveBeenCalledTimes(1);
+  });
+
+  it('#371: still flushes when the timing closure is absent (no-op seam)', async () => {
+    const service = buildService();
+    const pipeline = getPipelineMock(service);
+    pipeline.flush.mockResolvedValue(true);
+    const flushCb = getFlushCallback();
+
+    await flushCb({
+      externalUserId: 'zalo-1',
+      texts: ['hi'],
+      context: { userId: 42 },
+      idempotencyKey: 'key-1',
+    });
+
+    expect(pipeline.flush).toHaveBeenCalledTimes(1);
+  });
+
   it('handleFlush delegates to pipeline.flush without context (zalo)', async () => {
     const service = buildService();
     const pipeline = getPipelineMock(service);
