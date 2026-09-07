@@ -15,6 +15,11 @@ import { dirname, resolve } from 'node:path';
  * - cron-leader-lease: first-wins, rival-loses-while-unexpired, takeover
  *   after expiry, owner/non-owner heartbeat, fail-open on DB outage, and a
  *   two-worker claim race (exactly one winner).
+ * - report/reminder claims (#849): PlatformReportClaimRepository lease
+ *   fencing on both paths (duplicate-claim race, stale-token no-ops after
+ *   expired-lease reclaim, sent-not-reclaimable / released-reclaimable) and
+ *   the study-reminder two-worker claimJob race (fencing sequence itself is
+ *   pinned by the study-reminder delivery smoke).
  * - webhook inbox listDue/countDue: platform isolation (#445 shape — an
  *   unparenthesized OR would leak cross-platform rows), due-state matrix
  *   (pending / failed-due / failed-future / failed-null-backoff / stale vs
@@ -41,7 +46,14 @@ const {
   WebhookInboundEventEntity,
   PlatformLinkAuditEventEntity,
   PrivacyDataService,
+  PlatformReportClaimRepository,
+  ScheduledReportClaimEntity,
+  LearnerScheduledReportClaimEntity,
 } = require('@wispace/database');
+const {
+  TypeormStudyReminderJobRepository,
+  StudyReminderJobEntity,
+} = require('@wispace/study-reminder-shared');
 const { PlatformWebhookInboundEventService } = require('@wispace/webhook-inbound');
 const { RedisBurstCounter } = require('@wispace/chat-metering');
 const { ChatRateLimitRepository } = require('@wispace/chat-metering');
@@ -130,6 +142,9 @@ const ENTITIES = [
   CronLeaderLeaseEntity,
   WebhookInboundEventEntity,
   PlatformLinkAuditEventEntity,
+  ScheduledReportClaimEntity,
+  LearnerScheduledReportClaimEntity,
+  StudyReminderJobEntity,
   ...Object.values(registry.mappings),
   ...Object.values(registry.scoped),
   registry.messageLog,
@@ -607,12 +622,230 @@ async function privacyRollbackSuite() {
   }
 }
 
+/**
+ * Scheduled-report claim fencing (#849) — pins ADR-0008's claim semantics on
+ * the real `PlatformReportClaimRepository` SQL for both paths (platform row
+ * for Messenger-style callers, learner row for Discord/Zalo): duplicate-claim
+ * race (exactly one winner), stale-worker fencing after an expired lease is
+ * reclaimed (superseded tokens no-op on every terminal transition), and
+ * reclaim-ability (released rows are reclaimable, sent rows are not).
+ */
+async function reportClaimSuite() {
+  console.log(
+    'report claims: lease fencing + duplicate claim race (platform + learner paths)',
+  );
+  const repo = dataSource.getRepository(ScheduledReportClaimEntity);
+  const learnerRepo = dataSource.getRepository(LearnerScheduledReportClaimEntity);
+  const svc = new PlatformReportClaimRepository('discord', repo, learnerRepo);
+  const readPlatform = (externalUserId) =>
+    repo.findOne({ where: { platform: 'discord', externalUserId } });
+  const readLearner = (userId) =>
+    learnerRepo.findOne({ where: { userId, reportType: 'scheduled' } });
+
+  // --- learner path (learner_scheduled_report_claims, Discord/Zalo) ---
+  // 1. Two-worker race: exactly one winner, row owned by the winner.
+  const [l1, l2] = await Promise.all([
+    svc.tryClaimScheduledReport(
+      { externalUserId: 'smoke-rc-l', userId: 4242501, reportDate: '2099-01-01' },
+      60_000,
+    ),
+    svc.tryClaimScheduledReport(
+      { externalUserId: 'smoke-rc-l', userId: 4242501, reportDate: '2099-01-01' },
+      60_000,
+    ),
+  ]);
+  assert.equal(
+    [l1.claimed, l2.claimed].filter(Boolean).length,
+    1,
+    `learner race expected exactly one winner, got ${l1.claimed}/${l2.claimed}`,
+  );
+  const learnerWinner = l1.claimed ? l1 : l2;
+  const learnerRow = await readLearner(4242501);
+  assert.equal(learnerRow.status, 'claimed');
+  assert.equal(learnerRow.leaseToken, learnerWinner.leaseToken);
+  console.log('  ok: learner duplicate claim race has exactly one winner');
+
+  // 2. Stale-worker fencing: A claims with a short lease, the lease expires,
+  // the expired-lease recovery releases the row, B reclaims with a fresh
+  // token — every terminal transition from A's superseded token is a no-op,
+  // B's mark wins.
+  const learnerA = await svc.tryClaimScheduledReport(
+    { externalUserId: 'smoke-rc-l2', userId: 4242502, reportDate: '2099-01-01' },
+    50,
+  );
+  assert.equal(learnerA.claimed, true);
+  await sleep(120);
+  const released = await svc.releaseExpiredScheduledReportClaims(
+    new Date(),
+    new Date(Date.now() - 3_600_000),
+  );
+  assert.ok(released >= 1, 'expired learner lease was not released');
+  const staleLearner = learnerA.leaseToken;
+  const learnerB = await svc.tryClaimScheduledReport(
+    { externalUserId: 'smoke-rc-l2', userId: 4242502, reportDate: '2099-01-01' },
+    60_000,
+  );
+  assert.equal(learnerB.claimed, true, 'B could not reclaim the released row');
+  assert.notEqual(learnerB.leaseToken, staleLearner);
+  assert.equal(
+    await svc.markScheduledReportClaimSent(
+      { externalUserId: 'smoke-rc-l2', userId: 4242502, reportDate: '2099-01-01' },
+      staleLearner,
+    ),
+    false,
+    'stale markScheduledReportClaimSent overwrote the reclaimed row',
+  );
+  assert.equal(
+    await svc.releaseScheduledReportClaim(
+      { externalUserId: 'smoke-rc-l2', userId: 4242502, reportDate: '2099-01-01' },
+      staleLearner,
+    ),
+    false,
+    'stale release overwrote the reclaimed row',
+  );
+  assert.equal(
+    await svc.markScheduledReportClaimSent(
+      { externalUserId: 'smoke-rc-l2', userId: 4242502, reportDate: '2099-01-01' },
+      learnerB.leaseToken,
+    ),
+    true,
+    'current owner failed to mark sent',
+  );
+  assert.equal((await readLearner(4242502)).status, 'sent');
+  console.log('  ok: stale learner token no-ops after reclaim, new owner wins');
+
+  // 3. A `sent` claim is never reclaimable (WHERE status='released').
+  const afterSent = await svc.tryClaimScheduledReport(
+    { externalUserId: 'smoke-rc-l2', userId: 4242502, reportDate: '2099-01-01' },
+    60_000,
+  );
+  assert.equal(afterSent.claimed, false, 'sent learner claim was reclaimed');
+  console.log('  ok: sent learner claim is not reclaimable');
+
+  // --- platform path (scheduled_report_claims, Messenger SQL copy) ---
+  // 4. Reclaim-ability the other way: a released row is reclaimable.
+  const p1 = await svc.tryClaimScheduledReport(
+    { externalUserId: 'smoke-rc-p', reportDate: '2099-01-01' },
+    60_000,
+  );
+  assert.equal(p1.claimed, true);
+  assert.equal(
+    await svc.releaseScheduledReportClaim(
+      { externalUserId: 'smoke-rc-p', reportDate: '2099-01-01' },
+      p1.leaseToken,
+    ),
+    true,
+  );
+  const p2 = await svc.tryClaimScheduledReport(
+    { externalUserId: 'smoke-rc-p', reportDate: '2099-01-01' },
+    60_000,
+  );
+  assert.equal(p2.claimed, true, 'released platform claim was not reclaimable');
+  console.log('  ok: released platform claim is reclaimable');
+
+  // 5. Two-worker race + stale fencing on the platform path.
+  const [w1, w2] = await Promise.all([
+    svc.tryClaimScheduledReport(
+      { externalUserId: 'smoke-rc-p2', reportDate: '2099-01-02' },
+      60_000,
+    ),
+    svc.tryClaimScheduledReport(
+      { externalUserId: 'smoke-rc-p2', reportDate: '2099-01-02' },
+      60_000,
+    ),
+  ]);
+  assert.equal(
+    [w1.claimed, w2.claimed].filter(Boolean).length,
+    1,
+    `platform race expected exactly one winner, got ${w1.claimed}/${w2.claimed}`,
+  );
+  const platformWinner = w1.claimed ? w1 : w2;
+  // Fresh row with a short lease for the expiry sequence.
+  const platformA = await svc.tryClaimScheduledReport(
+    { externalUserId: 'smoke-rc-p3', reportDate: '2099-01-02' },
+    50,
+  );
+  assert.equal(platformA.claimed, true);
+  await sleep(120);
+  await svc.releaseExpiredScheduledReportClaims(
+    new Date(),
+    new Date(Date.now() - 3_600_000),
+  );
+  const platformB = await svc.tryClaimScheduledReport(
+    { externalUserId: 'smoke-rc-p3', reportDate: '2099-01-02' },
+    60_000,
+  );
+  assert.equal(platformB.claimed, true);
+  assert.equal(
+    await svc.markScheduledReportClaimSent(
+      { externalUserId: 'smoke-rc-p3', reportDate: '2099-01-02' },
+      platformA.leaseToken,
+    ),
+    false,
+    'stale platform mark overwrote the reclaimed row',
+  );
+  assert.equal(
+    await svc.markScheduledReportClaimSent(
+      { externalUserId: 'smoke-rc-p3', reportDate: '2099-01-02' },
+      platformB.leaseToken,
+    ),
+    true,
+  );
+  console.log('  ok: platform race + stale-token fencing pinned');
+}
+
+/**
+ * Study-reminder job duplicate-claim race (#849) — the fencing sequence
+ * (expired-lease recovery → stale markSent no-op) is pinned by the
+ * study-reminder delivery smoke; here we pin the concurrent claim race on
+ * the real claimJob SQL (platform-scoped dispatch predicate + lease grant).
+ */
+async function reminderJobSuite() {
+  console.log('reminder jobs: two-worker claimJob race');
+  const repo = dataSource.getRepository(StudyReminderJobEntity);
+  const svc = new TypeormStudyReminderJobRepository(repo);
+  const saved = await svc.upsertPendingJob({
+    platform: 'discord',
+    externalUserId: 'smoke-rj',
+    sessionKey: 'smoke-rj-session',
+    scheduledAt: new Date(Date.now() - 60_000),
+    remindAt: new Date(Date.now() - 30_000),
+    maxRetries: 3,
+  });
+
+  const [w1, w2] = await Promise.all([
+    svc.claimJob('discord', saved.id, 60_000),
+    svc.claimJob('discord', saved.id, 60_000),
+  ]);
+  assert.equal(
+    [w1, w2].filter(Boolean).length,
+    1,
+    `reminder claim race expected exactly one winner`,
+  );
+  const winner = w1 ?? w2;
+  assert.equal(winner.status, 'processing');
+  assert.ok(winner.leaseToken, 'winner has no lease token');
+  const row = await repo.findOne({ where: { id: saved.id } });
+  assert.equal(row.status, 'processing');
+  assert.equal(row.leaseToken, winner.leaseToken);
+  console.log('  ok: reminder duplicate claim race has exactly one winner');
+}
+
 async function cleanup() {
   await dataSource.query(
     `DELETE FROM cron_leader_leases WHERE name LIKE 'smoke-%'`,
   );
   await dataSource.query(
     `DELETE FROM webhook_inbound_events WHERE event_id LIKE 'smoke-%'`,
+  );
+  await dataSource.query(
+    `DELETE FROM scheduled_report_claims WHERE external_user_id LIKE 'smoke-%'`,
+  );
+  await dataSource.query(
+    `DELETE FROM learner_scheduled_report_claims WHERE external_user_id LIKE 'smoke-%'`,
+  );
+  await dataSource.query(
+    `DELETE FROM study_reminder_jobs WHERE external_user_id LIKE 'smoke-%'`,
   );
   const EXT = 'smoke-rollback-1';
   const UID = 4242442;
@@ -646,6 +879,8 @@ try {
   await inboxSuite();
   await quotaSuite();
   await luaSuite();
+  await reportClaimSuite();
+  await reminderJobSuite();
   await privacyRollbackSuite();
   console.log('persistence semantics smoke: all suites pinned');
 } finally {

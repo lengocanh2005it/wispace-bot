@@ -102,7 +102,7 @@ Database CI checks (root, disposable PostgreSQL only):
 npm run database:bootstrap-smoke          # entity metadata + OAuth cleanup
 npm run database:query-returning-shape-smoke  # #754 pins raw query() UPDATE/DELETE tuple vs INSERT flat shapes (extractQueryRows contract)
 npm run database:privacy-smoke            # real cross-platform privacy unlink/delete/export
-npm run database:persistence-semantics-smoke  # #538 pins real-SQL/Lua semantics: lease fencing, inbox isolation, quota idempotency, delete atomicity
+npm run database:persistence-semantics-smoke  # #538/#849 pins real-SQL/Lua semantics: lease fencing (cron leader + report/reminder claims), inbox isolation, quota idempotency, delete atomicity
 npm run database:migration-compatibility  # canonical migration chain + bot tables
 ```
 

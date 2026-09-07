@@ -596,7 +596,7 @@ export class MessengerRepository
           INSERT INTO learner_scheduled_report_claims
             (user_id, report_date, report_type, platform, external_user_id,
              status, lease_token, lease_expires_at)
-          SELECT $1, $2::date, 'scheduled', $3, $4, 'claimed', gen_random_uuid(),
+          SELECT $1::int, $2::date, 'scheduled', $3::varchar, $4::varchar, 'claimed', gen_random_uuid(),
                  now() + ($5::int * interval '1 millisecond')
           WHERE NOT EXISTS (
             SELECT 1 FROM scheduled_report_claims legacy
