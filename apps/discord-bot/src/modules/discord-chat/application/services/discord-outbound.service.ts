@@ -14,6 +14,7 @@ import {
   Client,
   TextChannel,
 } from 'discord.js';
+import type { MessageCreateOptions } from 'discord.js';
 import {
   RESCHEDULE_CANCEL_CUSTOM_ID,
   RESCHEDULE_CONFIRM_CUSTOM_ID,
@@ -38,6 +39,8 @@ import type { OutboundDeliveryOutcome } from '@wispace/contracts';
 const DM_FAILURE_REASON_SEND = 'dm_send_error';
 const DM_FAILURE_REASON_MENU = 'menu_send_error';
 const DM_FAILURE_REASON_RESCHEDULE = 'reschedule_send_error';
+/** Proactive (no-inbound-event) payload DM failures (#851). */
+const DM_FAILURE_REASON_PROACTIVE = 'proactive_send_error';
 /** Network/unknown delivery outcome — the provider may have accepted the message (#156). */
 const DM_FAILURE_REASON_AMBIGUOUS = 'dm_send_ambiguous';
 const NETWORK_ERROR_CODES = new Set([
@@ -97,6 +100,17 @@ export class DiscordDeliveryFailureError extends Error {
     super(message);
     this.name = 'DiscordDeliveryFailureError';
   }
+}
+
+export interface ProactiveSendResult {
+  outcome: OutboundDeliveryOutcome;
+  /** Discord message id when the send was acknowledged ('sent'). */
+  messageId?: string;
+}
+
+export interface DiscordProactivePayload {
+  embeds?: Array<Record<string, unknown>>;
+  components?: Array<Record<string, unknown>>;
 }
 
 class DiscordRateLimitError extends Error {
@@ -203,6 +217,129 @@ export class DiscordOutboundService {
       await channel.sendTyping();
     } catch {
       // typing indicator is best-effort — swallow errors
+    }
+  }
+
+  /**
+   * Proactive DM of a caller-supplied embeds+components payload (#851) — no
+   * inbound event to reply to (re-engagement #850, future proactive dispatch).
+   * Payload passes through untouched (trusted WISPACE backend); every mention
+   * inside it renders as text because allowedMentions is locked to empty.
+   * Never throws — a batch dispatcher iterates candidates, so every failure
+   * resolves an outcome; no dead-letter (the text replay path cannot replay
+   * payloads — the caller reports FAILED via the backend mark-sent API).
+   */
+  async sendProactivePayload(
+    discordUserId: string,
+    payload: DiscordProactivePayload,
+    options?: { userId?: number; units?: number },
+  ): Promise<ProactiveSendResult> {
+    const nonce = randomUUID().replaceAll('-', '').slice(0, 25);
+    let ambiguousDeliveryRecorded = false;
+    let providerAttempt = 0;
+    try {
+      const msg = await withRetry(
+        async () => {
+          const units = providerAttempt === 0 ? (options?.units ?? 1) : 1;
+          providerAttempt += 1;
+          const admission = await this.admitOutbound(
+            discordUserId,
+            options?.userId,
+            units,
+          );
+          if (!admission) throw new DiscordRateLimitError();
+          const user = await this.client.users.fetch(discordUserId);
+          // Payload structs are backend-owned (validated upstream) — cast
+          // through unknown to MessageCreateOptions instead of re-shaping.
+          const message = {
+            ...(payload.embeds !== undefined ? { embeds: payload.embeds } : {}),
+            ...(payload.components !== undefined
+              ? { components: payload.components }
+              : {}),
+            nonce,
+            enforceNonce: true,
+            // Locked empty — the payload is pre-rendered by the backend, so
+            // no mention token inside embeds/components may ever resolve.
+            allowedMentions: {
+              parse: [],
+              roles: [],
+              users: [],
+              repliedUser: false,
+            },
+          } as unknown as MessageCreateOptions;
+          return user.send(message);
+        },
+        {
+          maxRetries: 1,
+          baseDelayMs: 1_000,
+          shouldRetry: isDiscordRetryableError,
+          onRetry: (attempt, maxRetries, error) => {
+            if (isAmbiguousDeliveryError(error)) {
+              this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
+              ambiguousDeliveryRecorded = true;
+            }
+            const errorMsg = maskExternalIdInText(
+              errorMessage(error),
+              discordUserId,
+            );
+            this.logger.warn(
+              `Proactive payload send attempt ${attempt}/${maxRetries + 1} failed for discordUserId=${maskExternalId(discordUserId)}, retrying: ${errorMsg}`,
+            );
+          },
+        },
+      );
+      // Audit log is best-effort — a logging failure must never flip a
+      // delivered message to not_sent (duplicate-DM risk in the batch
+      // dispatcher) nor break the never-throws contract of this method.
+      try {
+        await this.deliveryLog?.logDelivery({
+          externalUserId: discordUserId,
+          status: 'SENT',
+          messageType: 'chat',
+        });
+      } catch (logError) {
+        this.logger.warn(
+          `Proactive payload delivery log (SENT) failed for discordUserId=${maskExternalId(
+            discordUserId,
+          )}: ${errorMessage(logError)}`,
+        );
+      }
+      return { outcome: 'sent', messageId: msg.id };
+    } catch (error) {
+      if (error instanceof DiscordRateLimitError) {
+        if (ambiguousDeliveryRecorded) {
+          return { outcome: 'ambiguous' };
+        }
+        return { outcome: 'rate_limited' };
+      }
+      const errorMsg = maskExternalIdInText(errorMessage(error), discordUserId);
+      const ambiguous =
+        ambiguousDeliveryRecorded || isAmbiguousDeliveryError(error);
+      this.logger.warn(
+        `Proactive payload send failed for discordUserId=${maskExternalId(
+          discordUserId,
+        )}: ${errorMsg}`,
+      );
+      try {
+        await this.deliveryLog?.logDelivery({
+          externalUserId: discordUserId,
+          status: 'FAILED',
+          error: errorMsg,
+          messageType: 'chat',
+        });
+      } catch (logError) {
+        this.logger.warn(
+          `Proactive payload delivery log (FAILED) failed for discordUserId=${maskExternalId(
+            discordUserId,
+          )}: ${errorMessage(logError)}`,
+        );
+      }
+      if (ambiguous) {
+        this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_AMBIGUOUS);
+        return { outcome: 'ambiguous' };
+      }
+      this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_PROACTIVE);
+      return { outcome: 'not_sent' };
     }
   }
 

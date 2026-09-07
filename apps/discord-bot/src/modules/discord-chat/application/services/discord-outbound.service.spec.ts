@@ -30,6 +30,244 @@ type DiscordTextPayload = {
   };
 };
 
+describe('DiscordOutboundService.sendProactivePayload', () => {
+  type ProactivePayload = {
+    embeds?: Array<Record<string, unknown>>;
+    components?: Array<Record<string, unknown>>;
+    nonce: string;
+    enforceNonce: boolean;
+    allowedMentions: unknown;
+  };
+
+  const buildDeliveryLogStub = (): { logDelivery: jest.Mock } => ({
+    logDelivery: jest.fn().mockResolvedValue(undefined),
+  });
+
+  it('sends embeds+components to the DM and returns the message id', async () => {
+    const send = jest
+      .fn<Promise<{ id: string; channelId: string }>, [ProactivePayload]>()
+      .mockResolvedValue({ id: 'msg-1', channelId: 'dm-1' });
+    const fetch = jest.fn().mockResolvedValue({ send });
+    const deliveryLog = buildDeliveryLogStub();
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      deliveryLog as never,
+    );
+    const result = await service.sendProactivePayload('discord-1', {
+      embeds: [{ title: 'Báo cáo học tập' }],
+      components: [{ type: 1, components: [{ type: 2, label: 'Mở WISPACE' }] }],
+    });
+
+    expect(result).toEqual({ outcome: 'sent', messageId: 'msg-1' });
+    expect(fetch).toHaveBeenCalledWith('discord-1');
+    const payload = send.mock.calls[0][0];
+    expect(payload.embeds).toEqual([{ title: 'Báo cáo học tập' }]);
+    expect(payload.components).toEqual([
+      { type: 1, components: [{ type: 2, label: 'Mở WISPACE' }] },
+    ]);
+    expect(payload.enforceNonce).toBe(true);
+    expect(payload.nonce).toHaveLength(25);
+    expect(payload.allowedMentions).toEqual({
+      parse: [],
+      roles: [],
+      users: [],
+      repliedUser: false,
+    });
+    expect(deliveryLog.logDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'SENT', messageType: 'chat' }),
+    );
+  });
+
+  it('surfaces privacy-blocked DM (50007) as not_sent without throwing', async () => {
+    const fetch = jest.fn().mockRejectedValue(
+      Object.assign(new Error('Cannot send messages to this user'), {
+        status: 403,
+        code: 50007,
+      }),
+    );
+    const deliveryLog = buildDeliveryLogStub();
+    const metrics = buildMetricsStub();
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      deliveryLog as never,
+      undefined,
+      metrics,
+    );
+
+    await expect(
+      service.sendProactivePayload('discord-1', {
+        embeds: [{ title: 'Báo cáo' }],
+      }),
+    ).resolves.toEqual({ outcome: 'not_sent' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(deliveryLog.logDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'FAILED' }),
+    );
+    expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
+      'proactive_send_error',
+    );
+  });
+
+  it('retries 5xx then resolves not_sent', async () => {
+    const send = jest
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error('server error'), { status: 503 }),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error('server error'), { status: 503 }),
+      );
+    const fetch = jest.fn().mockResolvedValue({ send });
+
+    const service = new DiscordOutboundService(buildClientStub(fetch));
+
+    await expect(
+      service.sendProactivePayload('discord-1', { embeds: [] }),
+    ).resolves.toEqual({ outcome: 'not_sent' });
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries 429 then resolves not_sent', async () => {
+    const send = jest
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error('rate limited'), { status: 429 }),
+      )
+      .mockRejectedValueOnce(
+        Object.assign(new Error('rate limited'), { status: 429 }),
+      );
+    const fetch = jest.fn().mockResolvedValue({ send });
+
+    const service = new DiscordOutboundService(buildClientStub(fetch));
+
+    await expect(
+      service.sendProactivePayload('discord-1', { embeds: [] }),
+    ).resolves.toEqual({ outcome: 'not_sent' });
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps outcome sent when the SENT delivery log write fails', async () => {
+    const send = jest
+      .fn<Promise<{ id: string }>, [ProactivePayload]>()
+      .mockResolvedValue({ id: 'msg-3' });
+    const fetch = jest.fn().mockResolvedValue({ send });
+    const deliveryLog = {
+      logDelivery: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('db down'))
+        .mockResolvedValue(undefined),
+    };
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      deliveryLog as never,
+    );
+
+    await expect(
+      service.sendProactivePayload('discord-1', { embeds: [] }),
+    ).resolves.toEqual({ outcome: 'sent', messageId: 'msg-3' });
+    expect(deliveryLog.logDelivery).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps never-throws when the FAILED delivery log write fails', async () => {
+    const fetch = jest
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new Error('blocked'), { status: 403, code: 50007 }),
+      );
+    const deliveryLog = {
+      logDelivery: jest.fn().mockRejectedValue(new Error('db down')),
+    };
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      deliveryLog as never,
+    );
+
+    await expect(
+      service.sendProactivePayload('discord-1', { embeds: [] }),
+    ).resolves.toEqual({ outcome: 'not_sent' });
+  });
+
+  it('resolves ambiguous on network failure with no delivery verdict', async () => {
+    const send = jest
+      .fn()
+      .mockRejectedValue(
+        Object.assign(new TypeError('fetch failed'), { code: 'ECONNRESET' }),
+      );
+    const fetch = jest.fn().mockResolvedValue({ send });
+    const metrics = buildMetricsStub();
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      undefined,
+      metrics,
+    );
+
+    await expect(
+      service.sendProactivePayload('discord-1', { embeds: [] }),
+    ).resolves.toEqual({ outcome: 'ambiguous' });
+    expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
+      'dm_send_ambiguous',
+    );
+  });
+
+  it('resolves rate_limited without touching Discord', async () => {
+    const fetch = jest.fn();
+    const limiter = {
+      admit: jest.fn().mockResolvedValue({
+        allowed: false,
+        outcome: 'limited',
+        reason: 'cap_exceeded',
+      }),
+    };
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      undefined,
+      undefined,
+      limiter as never,
+    );
+
+    await expect(
+      service.sendProactivePayload('discord-1', { embeds: [] }),
+    ).resolves.toEqual({ outcome: 'rate_limited' });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it('passes payload through untouched — no mention neutralization of embeds', async () => {
+    const send = jest
+      .fn<Promise<{ id: string }>, [ProactivePayload]>()
+      .mockResolvedValue({ id: 'msg-2' });
+    const fetch = jest.fn().mockResolvedValue({ send });
+    const metrics = buildMetricsStub();
+
+    const service = new DiscordOutboundService(
+      buildClientStub(fetch),
+      undefined,
+      undefined,
+      metrics,
+    );
+    await service.sendProactivePayload('discord-1', {
+      embeds: [
+        {
+          title: '@everyone <@123>',
+          description: 'Xin chào @here',
+        },
+      ],
+    });
+
+    expect(send.mock.calls[0][0].embeds).toEqual([
+      { title: '@everyone <@123>', description: 'Xin chào @here' },
+    ]);
+    expect(metrics.incOutboundActionNeutralized).not.toHaveBeenCalled();
+  });
+});
+
 describe('DiscordOutboundService', () => {
   it('returns rate_limited without touching Discord', async () => {
     const fetch = jest.fn();
