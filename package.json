@@ -34,7 +34,7 @@
     "fast-check": "^4.9.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
-    "oxfmt": "^0.64.0",
+    "oxfmt": "^0.66.0",
     "oxlint": "^1.79.0",
     "oxlint-tsgolint": "^7.0.2001",
     "turbo": "^2.3.0",
