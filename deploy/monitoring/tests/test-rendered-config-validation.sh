@@ -54,8 +54,11 @@ run_promtool check config /tmp/render/prometheus.yml 2>"$TEST_DIR/promtool.err" 
   || { cat "$TEST_DIR/promtool.err" >&2; fail "promtool check config failed"; }
 pass "rendered prometheus config is valid"
 
-echo "Test 3: render alertmanager template with dummy creds"
+echo "Test 3: render alertmanager template with dummy creds (#683 full credential set)"
 TELEGRAM_BOT_TOKEN='110022:AA$pec'"'"'ial`tok:en_ß日' TELEGRAM_CHAT_ID="123456789" \
+  DISCORD_ALERT_WEBHOOK_CRITICAL_URL='https://discord.com/api/webhooks/123/AA$pec'"'"'ial' \
+  DISCORD_ALERT_WEBHOOK_WARNING_URL='https://discord.com/api/webhooks/456/BB$pec'"'"'ial' \
+  PUSHOVER_USER_KEY='uQ9wCkrJMBvL1YyR3LSSDpAz123456' PUSHOVER_API_TOKEN='aQ9wCkrJMBvL1YyR3LSSDpAz123456' \
   SRC="$MON/alertmanager.tmpl" DST="$TEST_DIR/alertmanager.yml" DRY_RUN=1 \
   sh "$MON/alertmanager-entrypoint.sh" || fail "alertmanager render failed"
 [ -f "$TEST_DIR/alertmanager.yml" ] || fail "rendered alertmanager.yml missing"
@@ -65,6 +68,14 @@ echo "Test 4: amtool check-config on rendered alertmanager.yml"
 run_amtool check-config /tmp/render/alertmanager.yml 2>"$TEST_DIR/amtool.err" \
   || { cat "$TEST_DIR/amtool.err" >&2; fail "amtool check-config failed"; }
 pass "rendered alertmanager config is valid"
+
+echo "Test 5: rendered routing branches on severity (#683)"
+grep -q 'severity="critical"' "$TEST_DIR/alertmanager.yml" || fail "critical matcher missing"
+grep -q 'severity="warning"' "$TEST_DIR/alertmanager.yml" || fail "warning matcher missing"
+grep -q 'pushover_configs:' "$TEST_DIR/alertmanager.yml" || fail "pushover receiver missing"
+grep -q 'discord_configs:' "$TEST_DIR/alertmanager.yml" || fail "discord receivers missing"
+grep -q 'repeat_interval: 30m' "$TEST_DIR/alertmanager.yml" || fail "critical short repeat missing"
+pass "severity routing present in rendered config"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"

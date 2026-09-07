@@ -55,6 +55,11 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       # Empty default = fail closed in the entrypoint (no sentinel values per #373).
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      # #683 severity routing channels, same fail-closed contract.
+      DISCORD_ALERT_WEBHOOK_CRITICAL_URL: ${DISCORD_ALERT_WEBHOOK_CRITICAL_URL:-}
+      DISCORD_ALERT_WEBHOOK_WARNING_URL: ${DISCORD_ALERT_WEBHOOK_WARNING_URL:-}
+      PUSHOVER_USER_KEY: ${PUSHOVER_USER_KEY:-}
+      PUSHOVER_API_TOKEN: ${PUSHOVER_API_TOKEN:-}
     entrypoint: ['/bin/sh', '/etc/alertmanager/entrypoint.sh']
     ports:
       - '127.0.0.1:9093:9093'

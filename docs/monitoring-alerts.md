@@ -30,10 +30,11 @@ existing p95 >30 s rule, making the two upstream budgets comparable.
 
 ## Alert response
 
-<span id="botdown"></span><span id="botrestartloop"></span><span id="prometheusjobmissing"></span><span id="webhookinboundbackloggrowing"></span><span id="dataqualitycheckfailed"></span><span id="redisconsistencydrift"></span><span id="llmadmissionsaturated"></span><span id="internalauthrejectedspike"></span><span id="dbcircuitbreakeropen"></span><span id="studyreminderfailureshigh"></span><span id="platformlinkstatusunknown"></span><span id="tokenrefreshfailure"></span><span id="llmprovidercircuitopen"></span><span id="llmprovidersexhausted"></span><span id="llmdegradedmodehigh"></span><span id="llmusagetelemetryloss"></span><span id="llmunpricedtokens"></span><span id="llmmissingtokens"></span><span id="llminjectionblockedrise"></span><span id="chatidentitystaledetected"></span><span id="chatflushrecovery"></span><span id="studyreminderlockskipped"></span><span id="cronexecutionstale"></span><span id="chatavailabilitylow"></span><span id="llmlatencyhigh"></span><span id="llmerrorratehigh"></span><span id="eventlooplagp99high"></span><span id="wispacelatencyhigh"></span>
+<span id="botdown"></span><span id="alertdeliveryfailed"></span><span id="botrestartloop"></span><span id="prometheusjobmissing"></span><span id="webhookinboundbackloggrowing"></span><span id="dataqualitycheckfailed"></span><span id="redisconsistencydrift"></span><span id="llmadmissionsaturated"></span><span id="internalauthrejectedspike"></span><span id="dbcircuitbreakeropen"></span><span id="studyreminderfailureshigh"></span><span id="platformlinkstatusunknown"></span><span id="tokenrefreshfailure"></span><span id="llmprovidercircuitopen"></span><span id="llmprovidersexhausted"></span><span id="llmdegradedmodehigh"></span><span id="llmusagetelemetryloss"></span><span id="llmunpricedtokens"></span><span id="llmmissingtokens"></span><span id="llminjectionblockedrise"></span><span id="chatidentitystaledetected"></span><span id="chatflushrecovery"></span><span id="studyreminderlockskipped"></span><span id="cronexecutionstale"></span><span id="chatavailabilitylow"></span><span id="llmlatencyhigh"></span><span id="llmerrorratehigh"></span><span id="eventlooplagp99high"></span><span id="wispacelatencyhigh"></span>
 
 | Alert                        | Severity | First response                                                                                                                            |
 | ---------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| AlertDeliveryFailed          | critical | A receiver integration is failing (check `integration`/`reason` labels): verify the webhook URL, Pushover credential, or Telegram token; routing silence may otherwise go unnoticed (#683). |
 | BotDown                      | critical | Check `/health/ready`, container logs, and the last deploy; roll back only after preserving the failing image digest.                     |
 | BotRestartLoop               | warning  | Inspect container exit reason, memory/CPU pressure, and startup configuration.                                                            |
 | PrometheusJobMissing         | warning  | Check Prometheus target discovery, the stable `*-bot-metrics` aliases, and `/metrics` authorization.                                      |
@@ -66,6 +67,69 @@ existing p95 >30 s rule, making the two upstream budgets comparable.
 Every rule carries a `runbook_url` back to this document. Severity labels are
 deliberately `warning` or `critical` so the Alertmanager routing work can map
 them to independent channels without changing the recording rules.
+
+## Alert routing (#683)
+
+Alertmanager routes on the `severity` label to channels of matching urgency —
+see [`deploy/monitoring/alertmanager.tmpl`](../deploy/monitoring/alertmanager.tmpl):
+
+| Severity | Receivers (fan-out)                                      | Urgency semantics                                            |
+| -------- | -------------------------------------------------------- | ------------------------------------------------------------ |
+| critical | `discord-critical` (@here marker) + `pushover` + `telegram` | Interrupt-grade via Pushover emergency; repeat 30m at Alertmanager level |
+| warning  | `discord-warning` (no ping)                              | Read during working hours; repeat 4h                          |
+
+Design decisions:
+
+- **Three independent-by-platform legs for critical.** Pushover emergency
+  priority is the true interrupt — it hard-pushes the phone, repeats every 5
+  minutes until acknowledged, and gives up after 1 hour (the escalation
+  window). Discord critical is the visual/high-context leg: the AM 0.27
+  Discord receiver posts embeds only (no `content` field), so its `@here`
+  marker renders in the message body but does not hard-ping. Telegram is kept
+  as a third leg. No single platform outage silences critical paging. Discord
+  is a *correlated* failure mode for the Discord bot itself — that is why it
+  must never be the only critical path.
+- **Warnings never wake anyone.** They go to a no-ping Discord channel only.
+- **Independence is per-platform, not per-host.** All in-band channels run on
+  the VPS, so total host death is the scope of #515 (external deadman), not
+  this routing.
+- All receiver credentials are fail-closed (#536 renderer): missing/invalid
+  `DISCORD_ALERT_WEBHOOK_CRITICAL_URL`, `DISCORD_ALERT_WEBHOOK_WARNING_URL`,
+  `PUSHOVER_USER_KEY`, or `PUSHOVER_API_TOKEN` aborts the Alertmanager
+  container. Discord URLs must be HTTPS on `discord.com`/`discordapp.com`;
+  Pushover keys must be alphanumeric.
+- The root route defaults to `discord-warning`, so an alert with a missing
+  severity label degrades to low urgency instead of vanishing.
+
+### Channel setup (one-time)
+
+1. Discord server: create `#alerts-critical` and `#alerts-warnings`; create
+   one webhook per channel (`Channel settings → Integrations → Webhooks`) and
+   copy the URLs into `DISCORD_ALERT_WEBHOOK_*_URL`.
+2. Pushover: create a user account, purchase the (one-off) license, create an
+   application, and copy `User Key`/`API Token` into `PUSHOVER_USER_KEY` /
+   `PUSHOVER_API_TOKEN`. Install the phone app and allow emergency-priority
+   notifications.
+3. Secrets reach the VPS through the Vault workflow (see
+   `docs/vault-secrets.md`), never committed.
+
+### Synthetic path probe
+
+`deploy/monitoring/synthetic-alert.sh` exercises the full path in-band:
+
+- **Daily 09:07 ICT** (02:07 UTC cron): `severity=warning` → exercises the
+  `#alerts-warnings` leg only, no human interrupt.
+- **Monday 09:02 ICT** (02:02 UTC cron): `severity=critical` → exercises all
+  three critical legs including a Pushover hard ping. Weekly, not daily, so
+  the probe does not erode the interrupt value of the channels.
+
+The script posts `SyntheticRoutingCheck` to the Alertmanager API, waits for
+evaluation + fan-out, verifies the alert is pending, posts the resolve, and
+verifies it clears — exit 0/1, logged as evidence. The alert carries a 5-minute
+`endsAt`, so a crashed probe auto-expires instead of leaving a firing alert.
+Delivery *failures* are detected continuously by the `AlertDeliveryFailed`
+rule on `alertmanager_notifications_failed_total` (Prometheus now scrapes the
+Alertmanager job itself). Out-of-band host-death detection remains #515.
 
 ## Metric classification
 
@@ -144,7 +208,10 @@ secret values. Legacy `__VAR__`, `$VAR`, malformed, or unallow-listed markers
 are rejected before startup, and a broad post-render guard fails closed if one
 survives. Do not put secrets in the committed templates. `TELEGRAM_CHAT_ID`
 has no sentinel default and must be a valid non-zero signed 64-bit integer — an
-unset or invalid value fails closed (#373).
+unset or invalid value fails closed (#373). The #683 receivers add four more
+fail-closed credentials to the allow-list: both Discord webhook URLs must be
+HTTPS on `discord.com`/`discordapp.com`, and both Pushover keys must be
+alphanumeric.
 `SRC`/`DST`/`DRY_RUN=1` override the template/output paths and skip the final
 `exec`, so tests render with the real entrypoints without starting daemons.
 
@@ -168,7 +235,11 @@ There is no separate staging environment — verification happens in two layers:
    `200` and a non-empty body.
 3. Prometheus Targets page (or `/api/v1/targets`): `messenger_bot`,
    `discord_bot`, `zalo_bot` are all UP.
-4. Send a test alert (Alertmanager `/api/v2/alerts`) → expect the Telegram
-   message to arrive; then resolve it → expect the resolved notification.
+4. Send a test alert (Alertmanager `/api/v2/alerts`):
+   - `severity=warning` → expect a message in `#alerts-warnings` only.
+   - `severity=critical` → expect messages in `#alerts-critical` (with
+     @here), the Pushover app (emergency priority), and Telegram; resolve it
+     → expect resolved notifications on all legs.
+   - Or run `SYNTHETIC_SEVERITY=critical deploy/monitoring/synthetic-alert.sh`.
 5. Record pass/fail per step in the issue before closing it (paste redacted
    excerpts only — never keys, tokens, or full `/metrics` bodies).

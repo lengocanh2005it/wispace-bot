@@ -1,6 +1,19 @@
 groups:
   - name: bots
     rules:
+      - alert: AlertDeliveryFailed
+        # #683: a broken notification path must be detected by the pipeline
+        # itself, not only by the synthetic-alert self-check. AM emits this
+        # counter per receiver integration with a bounded `reason` label.
+        expr: increase(alertmanager_notifications_failed_total[1h]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Alertmanager failed to deliver notifications'
+          description: 'Alertmanager failed notification attempts (integration={{ $labels.integration }}, reason={{ $labels.reason }}) in the last hour; an alert path may be silently broken.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#alertdeliveryfailed'
+
       - alert: BotDown
         expr: up == 0
         for: 3m

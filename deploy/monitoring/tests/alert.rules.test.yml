@@ -6,6 +6,34 @@ evaluation_interval: 1m
 tests:
   - interval: 1m
     input_series:
+      - series: 'alertmanager_notifications_failed_total{job="alertmanager",integration="discord",reason="clientError"}'
+        values: '0 0 0 0 0 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AlertDeliveryFailed
+        exp_alerts:
+          - exp_labels:
+              alertname: AlertDeliveryFailed
+              integration: discord
+              job: alertmanager
+              reason: clientError
+              severity: critical
+            exp_annotations:
+              summary: Alertmanager failed to deliver notifications
+              description: 'Alertmanager failed notification attempts (integration=discord, reason=clientError) in the last hour; an alert path may be silently broken.'
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#alertdeliveryfailed
+
+  - interval: 1m
+    input_series:
+      - series: 'alertmanager_notifications_failed_total{job="alertmanager",integration="pushover",reason="clientError"}'
+        values: '0 0 0 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: AlertDeliveryFailed
+        exp_alerts: []
+
+  - interval: 1m
+    input_series:
       - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",status="ok"}'
         values: '0 100 200 300 400 500 600 700 800 900 1000'
       - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",status="error"}'

@@ -21,6 +21,42 @@ if [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
   exit 1
 fi
 
+# #683: severity routing adds Discord + Pushover channels, all fail-closed.
+if [ -z "${DISCORD_ALERT_WEBHOOK_CRITICAL_URL:-}" ]; then
+  echo "FATAL: DISCORD_ALERT_WEBHOOK_CRITICAL_URL is not set — cannot start Alertmanager" >&2
+  exit 1
+fi
+
+if [ -z "${DISCORD_ALERT_WEBHOOK_WARNING_URL:-}" ]; then
+  echo "FATAL: DISCORD_ALERT_WEBHOOK_WARNING_URL is not set — cannot start Alertmanager" >&2
+  exit 1
+fi
+
+for webhook in DISCORD_ALERT_WEBHOOK_CRITICAL_URL DISCORD_ALERT_WEBHOOK_WARNING_URL; do
+  eval "value=\${$webhook}"
+  case "$value" in
+    https://discord.com/api/webhooks/*|https://discordapp.com/api/webhooks/*) ;;
+    *)
+      echo "FATAL: $webhook must be an HTTPS Discord webhook URL (https://discord.com/api/webhooks/...)" >&2
+      exit 1
+      ;;
+  esac
+done
+
+for pushover_key in PUSHOVER_USER_KEY PUSHOVER_API_TOKEN; do
+  eval "value=\${$pushover_key}"
+  if [ -z "$value" ]; then
+    echo "FATAL: $pushover_key is not set — cannot start Alertmanager" >&2
+    exit 1
+  fi
+  case "$value" in
+    *[!A-Za-z0-9]*|'')
+      echo "FATAL: $pushover_key must be an alphanumeric Pushover key" >&2
+      exit 1
+      ;;
+  esac
+done
+
 case "$TELEGRAM_CHAT_ID" in
   ''|*[!0-9-]*|0|-1|0[0-9]*|-0|-0[0-9]*)
     echo "FATAL: TELEGRAM_CHAT_ID must be a valid non-zero integer" >&2
@@ -68,7 +104,7 @@ SRC="${SRC:-/etc/alertmanager/alertmanager.tmpl}"
 DST="${DST:-/etc/alertmanager/alertmanager.yml}"
 if ! awk '
 BEGIN {
-  n = split("TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID", names, " ")
+  n = split("TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID DISCORD_ALERT_WEBHOOK_CRITICAL_URL DISCORD_ALERT_WEBHOOK_WARNING_URL PUSHOVER_USER_KEY PUSHOVER_API_TOKEN", names, " ")
   for (i = 1; i <= n; i++) {
     if (ENVIRON[names[i]] ~ /[[:cntrl:]]/) exit 1
   }
@@ -78,7 +114,9 @@ BEGIN {
 fi
 if ! awk '
 function allowed(name) {
-  return name == "TELEGRAM_BOT_TOKEN" || name == "TELEGRAM_CHAT_ID"
+  return name == "TELEGRAM_BOT_TOKEN" || name == "TELEGRAM_CHAT_ID" ||
+         name == "DISCORD_ALERT_WEBHOOK_CRITICAL_URL" || name == "DISCORD_ALERT_WEBHOOK_WARNING_URL" ||
+         name == "PUSHOVER_USER_KEY" || name == "PUSHOVER_API_TOKEN"
 }
 {
   rest = $0
@@ -97,7 +135,9 @@ function allowed(name) {
 fi
 awk '
 function allowed(name) {
-  return name == "TELEGRAM_BOT_TOKEN" || name == "TELEGRAM_CHAT_ID"
+  return name == "TELEGRAM_BOT_TOKEN" || name == "TELEGRAM_CHAT_ID" ||
+         name == "DISCORD_ALERT_WEBHOOK_CRITICAL_URL" || name == "DISCORD_ALERT_WEBHOOK_WARNING_URL" ||
+         name == "PUSHOVER_USER_KEY" || name == "PUSHOVER_API_TOKEN"
 }
 function yaml_escape(value, result, i, ch) {
   result = ""
@@ -140,6 +180,9 @@ function strip_field(line, field, start, value_start, i, escaped, ch) {
 }
 {
   line = strip_field($0, "bot_token: \"")
+  line = strip_field(line, "webhook_url: \"")
+  line = strip_field(line, "user_key: \"")
+  line = strip_field(line, "token: \"")
   if (line ~ /__[^[:space:]]+__/ ||
       line ~ /\$\{[^}]*\}/ ||
       line ~ /\$[A-Za-z_][A-Za-z0-9_]*/ ||

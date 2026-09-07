@@ -1,13 +1,64 @@
-# Telegram receiver credentials are injected by alertmanager-entrypoint.sh.
+# Receiver credentials are injected by alertmanager-entrypoint.sh (#536/#683).
 # Alertmanager has no built-in environment substitution.
+# Routing (#683): severity=critical fans out to three independent channels —
+# Discord @here (primary), Pushover emergency priority (retry 5m until ack,
+# stops after 1h — the escalation semantics), Telegram (existing leg).
+# Everything else goes to the no-ping Discord warning channel; the root
+# receiver is that same low-urgency fallback so an unlabeled alert stays
+# visible instead of being dropped silently.
 route:
-  receiver: telegram
+  receiver: discord-warning
   group_by: [alertname, job]
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
+  routes:
+    # Flat fan-out: `continue: true` lets each sibling also dispatch, so one
+    # critical alert reaches all three independent legs. A route whose
+    # children match would NOT use its own receiver — hence siblings, not
+    # nesting.
+    - matchers: [ 'severity="critical"' ]
+      receiver: discord-critical
+      repeat_interval: 30m
+      continue: true
+    - matchers: [ 'severity="critical"' ]
+      receiver: pushover
+      repeat_interval: 30m
+      continue: true
+    - matchers: [ 'severity="critical"' ]
+      receiver: telegram
+      repeat_interval: 30m
+    - matchers: [ 'severity="warning"' ]
+      receiver: discord-warning
 
 receivers:
+  - name: discord-critical
+    discord_configs:
+      - webhook_url: "${DISCORD_ALERT_WEBHOOK_CRITICAL_URL}"
+        send_resolved: true
+        # AM 0.27 Discord receiver posts embeds only (no `content` field), so
+        # a webhook payload cannot hard-ping @here — Pushover is the true
+        # interrupt leg for critical. The @here marker still renders visually
+        # in the embed text; enable mention permissions on the webhook so
+        # clients that do render it also highlight.
+        title: '{{ if eq .Status "firing" }}[FIRING]{{ else }}[RESOLVED]{{ end }} {{ .CommonLabels.alertname }}'
+        message: '@here {{ template "discord.default.message" . }}'
+  - name: discord-warning
+    discord_configs:
+      - webhook_url: "${DISCORD_ALERT_WEBHOOK_WARNING_URL}"
+        send_resolved: true
+        title: '{{ if eq .Status "firing" }}[FIRING]{{ else }}[RESOLVED]{{ end }} {{ .CommonLabels.alertname }}'
+        message: '{{ template "discord.default.message" . }}'
+  - name: pushover
+    pushover_configs:
+      - user_key: "${PUSHOVER_USER_KEY}"
+        token: "${PUSHOVER_API_TOKEN}"
+        send_resolved: true
+        # Priority defaults to emergency (2) while firing and normal (0) on
+        # resolve. Emergency repeats every `retry` until acknowledged, gives
+        # up after `expire` — that is the escalation window.
+        retry: 5m
+        expire: 1h
   - name: telegram
     telegram_configs:
       - bot_token: "${TELEGRAM_BOT_TOKEN}"
