@@ -36,6 +36,33 @@ describe('WispaceConfigService precreate exercise config', () => {
   );
 });
 
+describe('WispaceConfigService re-engagement config', () => {
+  it('requires WISPACE_API_REENGAGEMENT_URL', () => {
+    expect(() => buildService().buildReEngagementClientConfig()).toThrow(
+      'WISPACE_API_REENGAGEMENT_URL must be set in .env',
+    );
+  });
+
+  it('builds the client config from the configured base URL', () => {
+    const config = buildService({
+      WISPACE_API_REENGAGEMENT_URL:
+        'https://backend.example.com/api/bot/reengagement',
+    }).buildReEngagementClientConfig();
+
+    expect(config.url).toBe('https://backend.example.com/api/bot/reengagement');
+    expect(config.internalKey).toBe('internal-key');
+  });
+
+  it('rejects an unsafe re-engagement upstream URL at config time', () => {
+    expect(() =>
+      buildService({
+        WISPACE_API_REENGAGEMENT_URL:
+          'http://backend.example.com/api/bot/reengagement',
+      }).buildReEngagementClientConfig(),
+    ).toThrow('WISPACE_API_REENGAGEMENT_URL');
+  });
+});
+
 describe('WispaceConfigService upstream URL fail-closed', () => {
   it('accepts the default HTTPS fallback URLs', () => {
     const service = buildService();

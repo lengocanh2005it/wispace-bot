@@ -38,6 +38,8 @@ describe('AppModule boot smoke', () => {
     process.env.WISPACE_API_PRECREATE_EXERCISE_URL =
       'https://testbackend.example.com/precreate-exercise';
     process.env.WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS = '30000';
+    process.env.WISPACE_API_REENGAGEMENT_URL =
+      'https://testbackend.example.com/api/bot/reengagement';
     process.env.INTERNAL_API_KEY = 'test-internal-key';
 
     const stubRepo = {} as Repository<unknown>;

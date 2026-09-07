@@ -93,6 +93,19 @@ export type { WispaceCacheSharedStore } from './cache/wispace-cache-shared-store
 export { WispaceCalendarService } from './clients/wispace-calendar.service';
 export { WispaceTokenVerifyService } from './clients/wispace-token-verify.service';
 export { PrecreateExerciseApiClient } from './clients/precreate-exercise-api.client';
+export { ReengagementApiClient } from './clients/reengagement-api.client';
+export type {
+  ReengagementClientConfig,
+  ReengagementPlatform,
+  ReengagementVariant,
+  ReengagementCandidate,
+  ReengagementCandidatesResult,
+  ReengagementPayload,
+  ReengagementDiscordPayload,
+  ReengagementSendStatus,
+  ReengagementMarkSentInput,
+  ReengagementMarkSentResult,
+} from './types/reengagement.types';
 export type {
   WispaceLinkVerifyFailureReason,
   WispaceLinkVerifyResult,

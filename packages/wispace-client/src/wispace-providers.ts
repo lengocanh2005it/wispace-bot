@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { WispaceCalendarService } from './clients/wispace-calendar.service';
 import { WispaceGoalsService } from './clients/wispace-goals.service';
 import { PrecreateExerciseApiClient } from './clients/precreate-exercise-api.client';
+import { ReengagementApiClient } from './clients/reengagement-api.client';
 import { WispaceConfigService } from './config/wispace-config.service';
 import { WispaceDataCache } from './cache/wispace-data-cache';
 import type { WispaceIdHeader } from './utils/wispace-headers';
@@ -83,6 +84,14 @@ export function createWispaceProviders(
       useFactory: (configService: WispaceConfigService) =>
         new PrecreateExerciseApiClient(
           configService.buildPrecreateExerciseClientConfig(),
+        ),
+      inject: [WispaceConfigService],
+    },
+    {
+      provide: ReengagementApiClient,
+      useFactory: (configService: WispaceConfigService) =>
+        new ReengagementApiClient(
+          configService.buildReEngagementClientConfig(),
         ),
       inject: [WispaceConfigService],
     },

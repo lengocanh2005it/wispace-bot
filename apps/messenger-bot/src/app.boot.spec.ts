@@ -27,6 +27,8 @@ describe('AppModule boot smoke', () => {
     process.env.WISPACE_API_PRECREATE_EXERCISE_URL =
       'https://testbackend.example.com/precreate-exercise';
     process.env.WISPACE_API_PRECREATE_EXERCISE_TIMEOUT_MS = '30000';
+    process.env.WISPACE_API_REENGAGEMENT_URL =
+      'https://testbackend.example.com/api/bot/reengagement';
     process.env.CHAT_FREE_FORM_DAILY_LIMIT = '15';
     process.env.CHAT_BURST_PER_MINUTE = '3';
     process.env.CHAT_QUOTA_REMAINING_HINT_THRESHOLD = '3';

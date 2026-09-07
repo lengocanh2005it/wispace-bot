@@ -55,6 +55,10 @@ export class WispaceConfigService {
     };
   }
 
+  buildReEngagementClientConfig(): WispaceApiClientConfig {
+    return this.buildClientConfig('WISPACE_API_REENGAGEMENT_URL');
+  }
+
   buildLinkStatusClientConfig(
     header: WispaceIdHeader,
   ): WispaceLinkStatusClientConfig {
