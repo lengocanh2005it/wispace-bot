@@ -67,6 +67,37 @@ function buildScheduleService() {
 }
 
 describe('ReportOrchestrationService', () => {
+  it('#829: records report delivery outcomes for the SLO counter', async () => {
+    const metrics = { incReportDelivery: jest.fn() };
+    const delivery = buildDelivery(true);
+    const service = new ReportOrchestrationService(
+      buildClaimRepo(),
+      delivery,
+      buildJobRepo(),
+      buildScheduleService(),
+      buildConfig(),
+      metrics,
+    );
+
+    await service.claimAndSend(MAPPING, {
+      reportDate: '2026-08-07',
+      skipAlreadySentToday: true,
+      reportText: 'r',
+    });
+    expect(metrics.incReportDelivery).toHaveBeenCalledWith('sent');
+
+    (delivery.sendReport as jest.Mock).mockResolvedValue({
+      ok: false,
+      reason: 'PERMANENT',
+    });
+    await service.claimAndSend(MAPPING, {
+      reportDate: '2026-08-08',
+      skipAlreadySentToday: true,
+      reportText: 'r',
+    });
+    expect(metrics.incReportDelivery).toHaveBeenCalledWith('failed');
+  });
+
   it('sends one report when two channel mappings share a learner claim', async () => {
     let learnerClaimed = false;
     const claimRepo = buildClaimRepo({

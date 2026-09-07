@@ -21,6 +21,7 @@ import {
   GOALS_DATA_PORT,
   REPORT_CLAIM_REPOSITORY,
   REPORT_DELIVERY_PORT,
+  REPORT_DELIVERY_METRICS,
   ReportScheduleService,
   ReportSendScheduleService,
   ReportOrchestrationService,
@@ -80,6 +81,12 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
     },
     ReportSendScheduleService,
     ReportOrchestrationService,
+    {
+      // Report-delivery SLO outcomes (#829) — BotMetricsService satisfies the
+      // structural port; the orchestration counts sent/failed per send.
+      provide: REPORT_DELIVERY_METRICS,
+      useExisting: BotMetricsService,
+    },
     // Request-scoped goals memoization: exam-window check and report
     // generation both fetch goals within one execution — one upstream call
     // (TTL from the central #636 policy).

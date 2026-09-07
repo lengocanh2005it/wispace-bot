@@ -74,6 +74,8 @@ export interface CreateStudyReminderProvidersOptions {
       feature: 'reminder' | 'report',
       count?: number,
     ): void;
+    /** Delivery outcomes for the reminder-delivery SLO (#829). */
+    incReminderDispatch?(status: string): void;
   }>;
 }
 
@@ -255,6 +257,8 @@ export function createStudyReminderProviders(
             f: 'reminder' | 'report',
             count?: number,
           ): void;
+          /** Delivery outcomes for the reminder-delivery SLO (#829). */
+          incReminderDispatch?(status: string): void;
         },
       ) =>
         new StudyReminderDispatchService(
@@ -269,6 +273,11 @@ export function createStudyReminderProviders(
                     suppressionMetric.incScheduledSendSuppressed('reminder');
                   }
                 },
+                // Reminder-delivery SLO outcomes (#829) — sent/failed on all
+                // platforms, not just Messenger's hook wiring.
+                onSent: () => suppressionMetric.incReminderDispatch?.('sent'),
+                onFailed: () =>
+                  suppressionMetric.incReminderDispatch?.('failed'),
               }
             : undefined,
           {

@@ -2,10 +2,16 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { errorMessage } from '@wispace/bot-common/masking';
 import type { ReportClaimRepositoryPort } from '../ports/report-claim.repository.port';
-import type { ReportDeliveryPort } from '../ports/report-delivery.port';
+import type {
+  ReportDeliveryPort,
+  ReportDeliveryMetrics,
+} from '../ports/report-delivery.port';
 import type { ReportSendJobRepositoryPort } from '../ports/report-send-job.repository.port';
 import { REPORT_CLAIM_REPOSITORY } from '../ports/report-claim.repository.port';
-import { REPORT_DELIVERY_PORT } from '../ports/report-delivery.port';
+import {
+  REPORT_DELIVERY_PORT,
+  REPORT_DELIVERY_METRICS,
+} from '../ports/report-delivery.port';
 import { REPORT_SEND_JOB_REPOSITORY } from '../ports/report-send-job.repository.port';
 import type {
   ClaimAndSendResult,
@@ -59,11 +65,15 @@ export class ReportOrchestrationService {
     private readonly claimRepo: ReportClaimRepositoryPort,
     @Inject(REPORT_DELIVERY_PORT)
     private readonly delivery: ReportDeliveryPort,
-    @Optional()
     @Inject(REPORT_SEND_JOB_REPOSITORY)
+    @Optional()
     private readonly jobRepo: ReportSendJobRepositoryPort | null,
     private readonly reportSendScheduleService: ReportSendScheduleService,
     private readonly configService: ConfigService,
+    /** Report-delivery SLO outcomes (#829) — optional to keep tests light. */
+    @Optional()
+    @Inject(REPORT_DELIVERY_METRICS)
+    private readonly metrics?: ReportDeliveryMetrics,
   ) {}
 
   async claimAndSend(
@@ -161,6 +171,9 @@ export class ReportOrchestrationService {
         claimParams,
         claimLeaseToken,
       );
+      // The delivery record proves the report reached the learner — the SLO
+      // counts delivered, not API attempts (#829).
+      this.metrics?.incReportDelivery('sent');
       return { ...ZERO, sent: 1 };
     }
 
@@ -241,6 +254,7 @@ export class ReportOrchestrationService {
             examDateForOutbox,
           );
         }
+        this.metrics?.incReportDelivery('sent');
         return { ...ZERO, sent: 1 };
       }
 
@@ -257,6 +271,7 @@ export class ReportOrchestrationService {
             'rate_limited',
           );
         }
+        this.metrics?.incReportDelivery('failed');
         return {
           ...ZERO,
           failures: [
@@ -301,6 +316,7 @@ export class ReportOrchestrationService {
         return { ...ZERO, skipped: 1 };
       }
 
+      this.metrics?.incReportDelivery('failed');
       return {
         ...ZERO,
         failures: [
@@ -346,6 +362,7 @@ export class ReportOrchestrationService {
         return { ...ZERO, skipped: 1 };
       }
 
+      this.metrics?.incReportDelivery('failed');
       return {
         ...ZERO,
         failures: [

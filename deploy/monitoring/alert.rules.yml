@@ -420,3 +420,149 @@ groups:
           summary: '{{ $labels.job }} WISPACE p95 latency is high'
           description: '{{ $labels.job }} WISPACE {{ $labels.service }}/{{ $labels.operation }} p95 latency exceeded 10s; compare with LLM latency and upstream health.'
           runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#wispacelatencyhigh'
+
+  # ── #829: SLO burn-rate recording rules + alerts ─────────────────────────
+  # Google SRE multi-window burn-rate approach: a fast burn (14.4x/1h,
+  # confirmed 5m) exhausts the 28d budget in ~1.9 days; a slow burn
+  # (3x/6h, confirmed 30m) exhausts it in ~9.3 days.
+  # Thresholds: burn_rate = error_ratio / (1 − SLO); SLO = 99% for all
+  # three journeys → denominator 0.01. Recording rules precompute the
+  # error ratio over each window so alerts stay concise.
+  - name: slo-burn
+    interval: 1m
+    rules:
+      # ── Chat reply (99% availability) ──────────────────────────────────
+      - record: sli:chat_reply:error_ratio_5m
+        expr: |
+          1 - (
+            sum(rate({__name__=~"(messenger|discord|zalo)_chat_step_duration_seconds_count",step="chat_total",status="ok"}[5m]))
+            /
+            sum(rate({__name__=~"(messenger|discord|zalo)_chat_step_duration_seconds_count",step="chat_total"}[5m]))
+          )
+      - record: sli:chat_reply:error_ratio_30m
+        expr: |
+          1 - (
+            sum(rate({__name__=~"(messenger|discord|zalo)_chat_step_duration_seconds_count",step="chat_total",status="ok"}[30m]))
+            /
+            sum(rate({__name__=~"(messenger|discord|zalo)_chat_step_duration_seconds_count",step="chat_total"}[30m]))
+          )
+      - record: sli:chat_reply:error_ratio_1h
+        expr: |
+          1 - (
+            sum(rate({__name__=~"(messenger|discord|zalo)_chat_step_duration_seconds_count",step="chat_total",status="ok"}[1h]))
+            /
+            sum(rate({__name__=~"(messenger|discord|zalo)_chat_step_duration_seconds_count",step="chat_total"}[1h]))
+          )
+      - record: sli:chat_reply:error_ratio_6h
+        expr: |
+          1 - (
+            sum(rate({__name__=~"(messenger|discord|zalo)_chat_step_duration_seconds_count",step="chat_total",status="ok"}[6h]))
+            /
+            sum(rate({__name__=~"(messenger|discord|zalo)_chat_step_duration_seconds_count",step="chat_total"}[6h]))
+          )
+
+      # ── Report delivery (99% delivered) ────────────────────────────────
+      - record: sli:report_delivery:error_ratio_5m
+        expr: |
+          sum(rate({__name__=~"(messenger|discord|zalo)_report_delivery_total",status="failed"}[5m]))
+          /
+          sum(rate({__name__=~"(messenger|discord|zalo)_report_delivery_total"}[5m]))
+      - record: sli:report_delivery:error_ratio_30m
+        expr: |
+          sum(rate({__name__=~"(messenger|discord|zalo)_report_delivery_total",status="failed"}[30m]))
+          /
+          sum(rate({__name__=~"(messenger|discord|zalo)_report_delivery_total"}[30m]))
+      - record: sli:report_delivery:error_ratio_1h
+        expr: |
+          sum(rate({__name__=~"(messenger|discord|zalo)_report_delivery_total",status="failed"}[1h]))
+          /
+          sum(rate({__name__=~"(messenger|discord|zalo)_report_delivery_total"}[1h]))
+      - record: sli:report_delivery:error_ratio_6h
+        expr: |
+          sum(rate({__name__=~"(messenger|discord|zalo)_report_delivery_total",status="failed"}[6h]))
+          /
+          sum(rate({__name__=~"(messenger|discord|zalo)_report_delivery_total"}[6h]))
+
+      # ── Reminder delivery (99% delivered) ──────────────────────────────
+      - record: sli:reminder_delivery:error_ratio_5m
+        expr: |
+          sum(rate({__name__=~"(messenger|discord|zalo)_reminder_dispatch_total",status="failed"}[5m]))
+          /
+          sum(rate({__name__=~"(messenger|discord|zalo)_reminder_dispatch_total"}[5m]))
+      - record: sli:reminder_delivery:error_ratio_30m
+        expr: |
+          sum(rate({__name__=~"(messenger|discord|zalo)_reminder_dispatch_total",status="failed"}[30m]))
+          /
+          sum(rate({__name__=~"(messenger|discord|zalo)_reminder_dispatch_total"}[30m]))
+      - record: sli:reminder_delivery:error_ratio_1h
+        expr: |
+          sum(rate({__name__=~"(messenger|discord|zalo)_reminder_dispatch_total",status="failed"}[1h]))
+          /
+          sum(rate({__name__=~"(messenger|discord|zalo)_reminder_dispatch_total"}[1h]))
+      - record: sli:reminder_delivery:error_ratio_6h
+        expr: |
+          sum(rate({__name__=~"(messenger|discord|zalo)_reminder_dispatch_total",status="failed"}[6h]))
+          /
+          sum(rate({__name__=~"(messenger|discord|zalo)_reminder_dispatch_total"}[6h]))
+
+      # ── Fast burn alerts (page — budget depleted in ~2 days) ───────────
+      - alert: SloBurnFastChatReply
+        expr: sli:chat_reply:error_ratio_1h > 0.144 and sli:chat_reply:error_ratio_5m > 0.144
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Chat reply SLO fast burn (14.4x/1h confirmed 5m)'
+          description: 'Chat reply error ratio exceeded 14.4x the budget rate over 1h (confirmed 5m); 28d budget would be exhausted in ~2 days.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/slo-catalog.md'
+
+      - alert: SloBurnFastReportDelivery
+        expr: sli:report_delivery:error_ratio_1h > 0.144 and sli:report_delivery:error_ratio_5m > 0.144
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Report delivery SLO fast burn (14.4x/1h confirmed 5m)'
+          description: 'Report delivery error ratio exceeded 14.4x the budget rate over 1h (confirmed 5m); 28d budget would be exhausted in ~2 days.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/slo-catalog.md'
+
+      - alert: SloBurnFastReminderDelivery
+        expr: sli:reminder_delivery:error_ratio_1h > 0.144 and sli:reminder_delivery:error_ratio_5m > 0.144
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Reminder delivery SLO fast burn (14.4x/1h confirmed 5m)'
+          description: 'Reminder delivery error ratio exceeded 14.4x the budget rate over 1h (confirmed 5m); 28d budget would be exhausted in ~2 days.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/slo-catalog.md'
+
+      # ── Slow burn alerts (ticket — budget depleted in ~9 days) ─────────
+      - alert: SloBurnSlowChatReply
+        expr: sli:chat_reply:error_ratio_6h > 0.03 and sli:chat_reply:error_ratio_30m > 0.03
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Chat reply SLO slow burn (3x/6h confirmed 30m)'
+          description: 'Chat reply error ratio exceeded 3x the budget rate over 6h (confirmed 30m); 28d budget would be exhausted in ~9 days.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/slo-catalog.md'
+
+      - alert: SloBurnSlowReportDelivery
+        expr: sli:report_delivery:error_ratio_6h > 0.03 and sli:report_delivery:error_ratio_30m > 0.03
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Report delivery SLO slow burn (3x/6h confirmed 30m)'
+          description: 'Report delivery error ratio exceeded 3x the budget rate over 6h (confirmed 30m); 28d budget would be exhausted in ~9 days.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/slo-catalog.md'
+
+      - alert: SloBurnSlowReminderDelivery
+        expr: sli:reminder_delivery:error_ratio_6h > 0.03 and sli:reminder_delivery:error_ratio_30m > 0.03
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Reminder delivery SLO slow burn (3x/6h confirmed 30m)'
+          description: 'Reminder delivery error ratio exceeded 3x the budget rate over 6h (confirmed 30m); 28d budget would be exhausted in ~9 days.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/slo-catalog.md'

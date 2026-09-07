@@ -1,5 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BotMetricsService } from '@wispace/bot-metrics';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { readReportClaimLeaseMs } from '@wispace/database';
 import {
@@ -59,6 +60,8 @@ export class ReportSendOrchestrationService {
     private readonly reportSendJobRepository: ReportSendJobRepositoryPort,
     private readonly reportSendScheduleService: ReportSendScheduleService,
     private readonly configService: ConfigService,
+    /** Report-delivery SLO outcomes (#829). */
+    @Optional() private readonly metrics?: BotMetricsService,
   ) {}
 
   /**
@@ -67,6 +70,28 @@ export class ReportSendOrchestrationService {
    * @param examDateForOutbox - exam date to record in outbox (undefined = skip outbox tracking)
    */
   async claimAndSend(
+    mapping: UserMessengerMapping,
+    opts: {
+      reportDate: string;
+      skipAlreadySentToday: boolean;
+      examDateForOutbox?: string;
+    },
+  ): Promise<ClaimAndSendResult> {
+    const result = await this.claimAndSendInner(mapping, opts);
+    // Report-delivery SLO outcomes (#829): sent counts delivered reports
+    // (incl. the crash-recovery shortcircuit — the delivery record proves
+    // arrival); failures.length counts terminal delivery failures only
+    // (rate-limited or permanent) — deferred/window-closed/skipped are not
+    // delivery outcomes.
+    if (result.sent > 0) {
+      this.metrics?.incReportDelivery('sent');
+    } else if (result.failures.length > 0) {
+      this.metrics?.incReportDelivery('failed');
+    }
+    return result;
+  }
+
+  private async claimAndSendInner(
     mapping: UserMessengerMapping,
     opts: {
       reportDate: string;

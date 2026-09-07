@@ -14,3 +14,10 @@ export interface ReportDeliveryPort {
     deliveryKey?: string;
   }): Promise<ReportDeliveryResult>;
 }
+
+export const REPORT_DELIVERY_METRICS = Symbol('REPORT_DELIVERY_METRICS');
+
+/** Report-delivery SLO outcomes (#829) — satisfied by BotMetricsService. */
+export interface ReportDeliveryMetrics {
+  incReportDelivery(status: string): void;
+}

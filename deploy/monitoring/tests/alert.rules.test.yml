@@ -375,3 +375,152 @@ tests:
       - eval_time: 8m
         alertname: LlmLatencyHigh
         exp_alerts: []
+
+  # --- #829: SLO burn-rate alerts ──────────────────────────────────────────
+  # Fast burn breach: 20% error rate → burn rate 20x > 14.4x threshold.
+  # All three journeys breach simultaneously; recording rules compute
+  # error_ratio from the raw counters, then alerts branch on it.
+  - interval: 1m
+    input_series:
+      - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",step="chat_total",status="ok"}'
+        values: '0+8x60'
+      - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",step="chat_total",status="error"}'
+        values: '0+2x60'
+      - series: 'messenger_report_delivery_total{status="sent"}'
+        values: '0+8x60'
+      - series: 'messenger_report_delivery_total{status="failed"}'
+        values: '0+2x60'
+      - series: 'messenger_reminder_dispatch_total{status="sent"}'
+        values: '0+8x60'
+      - series: 'messenger_reminder_dispatch_total{status="failed"}'
+        values: '0+2x60'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: SloBurnFastChatReply
+        exp_alerts:
+          - exp_labels:
+              alertname: SloBurnFastChatReply
+              severity: critical
+            exp_annotations:
+              summary: 'Chat reply SLO fast burn (14.4x/1h confirmed 5m)'
+              description: 'Chat reply error ratio exceeded 14.4x the budget rate over 1h (confirmed 5m); 28d budget would be exhausted in ~2 days.'
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/slo-catalog.md
+      - eval_time: 60m
+        alertname: SloBurnFastReportDelivery
+        exp_alerts:
+          - exp_labels:
+              alertname: SloBurnFastReportDelivery
+              severity: critical
+            exp_annotations:
+              summary: 'Report delivery SLO fast burn (14.4x/1h confirmed 5m)'
+              description: 'Report delivery error ratio exceeded 14.4x the budget rate over 1h (confirmed 5m); 28d budget would be exhausted in ~2 days.'
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/slo-catalog.md
+      - eval_time: 60m
+        alertname: SloBurnFastReminderDelivery
+        exp_alerts:
+          - exp_labels:
+              alertname: SloBurnFastReminderDelivery
+              severity: critical
+            exp_annotations:
+              summary: 'Reminder delivery SLO fast burn (14.4x/1h confirmed 5m)'
+              description: 'Reminder delivery error ratio exceeded 14.4x the budget rate over 1h (confirmed 5m); 28d budget would be exhausted in ~2 days.'
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/slo-catalog.md
+
+  # Fast burn healthy: 2% error rate → burn rate 2x < 14.4x → no fire.
+  - interval: 1m
+    input_series:
+      - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",step="chat_total",status="ok"}'
+        values: '0+98x60'
+      - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",step="chat_total",status="error"}'
+        values: '0+2x60'
+      - series: 'messenger_report_delivery_total{status="sent"}'
+        values: '0+98x60'
+      - series: 'messenger_report_delivery_total{status="failed"}'
+        values: '0+2x60'
+      - series: 'messenger_reminder_dispatch_total{status="sent"}'
+        values: '0+98x60'
+      - series: 'messenger_reminder_dispatch_total{status="failed"}'
+        values: '0+2x60'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: SloBurnFastChatReply
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: SloBurnFastReportDelivery
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: SloBurnFastReminderDelivery
+        exp_alerts: []
+
+  # Slow burn breach: 4% error rate → burn rate 4x > 3x threshold.
+  - interval: 1m
+    input_series:
+      - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",step="chat_total",status="ok"}'
+        values: '0+96x360'
+      - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",step="chat_total",status="error"}'
+        values: '0+4x360'
+      - series: 'messenger_report_delivery_total{status="sent"}'
+        values: '0+96x360'
+      - series: 'messenger_report_delivery_total{status="failed"}'
+        values: '0+4x360'
+      - series: 'messenger_reminder_dispatch_total{status="sent"}'
+        values: '0+96x360'
+      - series: 'messenger_reminder_dispatch_total{status="failed"}'
+        values: '0+4x360'
+    alert_rule_test:
+      - eval_time: 360m
+        alertname: SloBurnSlowChatReply
+        exp_alerts:
+          - exp_labels:
+              alertname: SloBurnSlowChatReply
+              severity: warning
+            exp_annotations:
+              summary: 'Chat reply SLO slow burn (3x/6h confirmed 30m)'
+              description: 'Chat reply error ratio exceeded 3x the budget rate over 6h (confirmed 30m); 28d budget would be exhausted in ~9 days.'
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/slo-catalog.md
+      - eval_time: 360m
+        alertname: SloBurnSlowReportDelivery
+        exp_alerts:
+          - exp_labels:
+              alertname: SloBurnSlowReportDelivery
+              severity: warning
+            exp_annotations:
+              summary: 'Report delivery SLO slow burn (3x/6h confirmed 30m)'
+              description: 'Report delivery error ratio exceeded 3x the budget rate over 6h (confirmed 30m); 28d budget would be exhausted in ~9 days.'
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/slo-catalog.md
+      - eval_time: 360m
+        alertname: SloBurnSlowReminderDelivery
+        exp_alerts:
+          - exp_labels:
+              alertname: SloBurnSlowReminderDelivery
+              severity: warning
+            exp_annotations:
+              summary: 'Reminder delivery SLO slow burn (3x/6h confirmed 30m)'
+              description: 'Reminder delivery error ratio exceeded 3x the budget rate over 6h (confirmed 30m); 28d budget would be exhausted in ~9 days.'
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/slo-catalog.md
+
+  # Slow burn healthy: 2% error rate → burn rate 2x < 3x → no fire.
+  - interval: 1m
+    input_series:
+      - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",step="chat_total",status="ok"}'
+        values: '0+98x360'
+      - series: 'messenger_chat_step_duration_seconds_count{job="messenger_bot",step="chat_total",status="error"}'
+        values: '0+2x360'
+      - series: 'messenger_report_delivery_total{status="sent"}'
+        values: '0+98x360'
+      - series: 'messenger_report_delivery_total{status="failed"}'
+        values: '0+2x360'
+      - series: 'messenger_reminder_dispatch_total{status="sent"}'
+        values: '0+98x360'
+      - series: 'messenger_reminder_dispatch_total{status="failed"}'
+        values: '0+2x360'
+    alert_rule_test:
+      - eval_time: 360m
+        alertname: SloBurnSlowChatReply
+        exp_alerts: []
+      - eval_time: 360m
+        alertname: SloBurnSlowReportDelivery
+        exp_alerts: []
+      - eval_time: 360m
+        alertname: SloBurnSlowReminderDelivery
+        exp_alerts: []

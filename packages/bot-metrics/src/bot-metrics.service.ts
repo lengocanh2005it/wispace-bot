@@ -91,6 +91,7 @@ export class BotMetricsService implements OnModuleDestroy {
   private webActivityWebhookReceived: Counter;
   private internalAuthRejected: Counter;
   private scheduledSendSuppressed: Counter;
+  private reportDelivery: Counter;
   private dmDeliveryFailures: Counter;
   private outboundActionNeutralized: Counter;
   private welcomeAttempts: Counter;
@@ -312,6 +313,13 @@ export class BotMetricsService implements OnModuleDestroy {
       name: `${this.prefix}_scheduled_send_suppressed_total`,
       help: 'Scheduled sends suppressed because the learner is dormant on WISPACE web',
       labelNames: ['feature'],
+      registers: [this.registry],
+    });
+
+    this.reportDelivery = new Counter({
+      name: `${this.prefix}_report_delivery_total`,
+      help: 'Scheduled morning-report delivery outcomes (#829: sent/failed)',
+      labelNames: ['status'],
       registers: [this.registry],
     });
 
@@ -614,6 +622,11 @@ export class BotMetricsService implements OnModuleDestroy {
   /** A scheduled send was skipped for a web-inactive learner (count defaults to 1). */
   incScheduledSendSuppressed(feature: 'report' | 'reminder', count = 1): void {
     this.scheduledSendSuppressed.inc({ feature }, count);
+  }
+
+  /** Scheduled morning-report delivery outcome (#829): sent | failed. */
+  incReportDelivery(status: string): void {
+    this.reportDelivery.inc({ status });
   }
 
   /** DM delivery failure (e.g. user privacy settings block DMs) — ops signal. */

@@ -19,6 +19,7 @@ import {
   ReportOrchestrationService,
   REPORT_SEND_JOB_REPOSITORY,
   REPORT_CLAIM_REPOSITORY,
+  REPORT_DELIVERY_METRICS,
   GOALS_DATA_PORT,
   parseExamDateToIso,
   type ReportClaimRepositoryPort,
@@ -194,6 +195,12 @@ const DISCORD_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_935;
       inject: [PgAdvisoryLockService],
     },
     ReportOrchestrationService,
+    {
+      // Report-delivery SLO outcomes (#829) — BotMetricsService satisfies the
+      // structural port; the orchestration counts sent/failed per send.
+      provide: REPORT_DELIVERY_METRICS,
+      useExisting: BotMetricsService,
+    },
     DiscordReportDeliveryService,
     DiscordReportSendJobRepository,
     TypeormDiscordReportAccountReader,
