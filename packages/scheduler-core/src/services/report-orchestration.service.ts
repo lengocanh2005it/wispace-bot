@@ -218,6 +218,7 @@ export class ReportOrchestrationService {
         if (classified.kind === 'skipped') {
           return { ...ZERO, skipped: 1 };
         }
+        this.metrics?.incReportDelivery('failed');
         return {
           ...ZERO,
           failures: [

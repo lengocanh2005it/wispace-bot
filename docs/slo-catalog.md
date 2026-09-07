@@ -51,7 +51,7 @@ two-sided (a fast burn must be confirmed by its short window to page).
   journey (chat / report / reminder), not the whole fleet.
 - **What freezes:** new feature work touching that journey's code paths.
   Reliability work, bug fixes, and the alerting plane itself take priority.
-- **Lift:** when the 28d burn is back under budget, or the maintainer
+- **Lift:** when the 28d burn is back under 50% of the budget consumed, or the maintainer
   overrides with a written reason in the incident thread (an override is
   allowed — the budget is a forcing function, not a suicide pact).
 - **Authority today:** single-maintainer fleet — the maintainer is the only
@@ -69,8 +69,11 @@ no-traffic silence for each.
 ## Ops commands
 
 ```bash
-# current 28d error ratios (run against prod Prometheus)
-promtool query instant ... 'sli:chat_reply:error_ratio_28d'   # via API: /api/v1/query
+# current 28d error ratios (query raw counters in Prometheus — the burn-rate
+# recording rules cover 5m/30m/1h/6h windows only; true 28d accounting
+# requires ad-hoc PromQL or an external SLO platform like Google Cloud
+# Monitoring / Datadog SLO tracking).
+promtool query instant ... 'sli:chat_reply:error_ratio_6h'
 ```
 
 Or query the Prometheus UI at the VPS: `sli:*` series are recorded every
