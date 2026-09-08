@@ -2,6 +2,8 @@ import { ConfigService } from '@nestjs/config';
 import type { WebhookDeadLetterEntry } from '../entities/webhook-dead-letter.entity';
 import type { DeadLetterClaim } from './platform-dead-letter.service';
 import {
+  DEAD_LETTER_RETRY_CRON,
+  DEAD_LETTER_RETRY_EXPECTED_INTERVAL_MS,
   PlatformDeadLetterCronService,
   type DeadLetterCronOptions,
 } from './platform-dead-letter-cron.service';
@@ -311,5 +313,15 @@ describe('PlatformDeadLetterCronService', () => {
     expect(maxRetries).toBe(3);
     expect(limit).toBe(10);
     expect(Number.isNaN(olderThan.getTime())).toBe(false);
+  });
+});
+
+describe('PlatformDeadLetterCronService schedule contract (#862)', () => {
+  it('declares a 5-minute cron matching the registered expected interval', () => {
+    // The @Cron expression and the registerCron expected interval must agree:
+    // a mismatch makes CronExecutionStale fire a permanent false positive
+    // between real runs (the old 0 */5 * * * was every 5 HOURS, not minutes).
+    expect(DEAD_LETTER_RETRY_CRON).toBe('*/5 * * * *');
+    expect(DEAD_LETTER_RETRY_EXPECTED_INTERVAL_MS).toBe(5 * 60 * 1000);
   });
 });

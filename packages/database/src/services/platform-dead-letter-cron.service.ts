@@ -16,6 +16,18 @@ const DEFAULT_RETRY_LIMIT = 10;
 const DEFAULT_LEASE_MS = 600_000;
 const DEFAULT_CRON_NAME = 'platform-dead-letter-retry';
 
+/**
+ * The dead-letter replay evaluates eligibility every 5 minutes. The actual
+ * replay drip is gated by WEBHOOK_DEAD_LETTER_MIN_RETRY_AGE_MS, so tick
+ * frequency only bounds detection latency. Keep this expression and the
+ * registerCron expected interval in agreement — a mismatch makes
+ * CronExecutionStale fire a permanent false positive (#862): the previous
+ * expression fired every 5 HOURS while the registered expectation was
+ * 5 minutes.
+ */
+export const DEAD_LETTER_RETRY_CRON = '*/5 * * * *';
+export const DEAD_LETTER_RETRY_EXPECTED_INTERVAL_MS = 5 * 60 * 1000;
+
 export interface CronHeartbeatMetricsPort {
   registerCron(name: string, expectedIntervalMs: number): void;
   recordCronSuccess(name: string): void;
@@ -79,11 +91,11 @@ export class PlatformDeadLetterCronService {
   ) {
     this.options.metrics?.registerCron(
       this.options.cronName ?? DEFAULT_CRON_NAME,
-      5 * 60 * 1000,
+      DEAD_LETTER_RETRY_EXPECTED_INTERVAL_MS,
     );
   }
 
-  @Cron('0 */5 * * *', { timeZone: 'Asia/Ho_Chi_Minh' })
+  @Cron(DEAD_LETTER_RETRY_CRON, { timeZone: 'Asia/Ho_Chi_Minh' })
   async handleRetry(): Promise<void> {
     const result = await this.pgLock.withLock(this.options.lockId, () =>
       this.runRetryBatch(),
