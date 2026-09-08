@@ -23,6 +23,8 @@ import {
 const PLATFORM = 'discord' as const;
 const REPORT_RETRY_EXPECTED_INTERVAL_MS = 15 * 60 * 1000;
 const DEFAULT_LEASE_MS = 600_000;
+const RETRY_BACKOFF_MINUTES = 15;
+const DEFERRED_ERROR = 'Report generation deferred (upstream retryable)';
 
 @Injectable()
 export class DiscordReportRetryDispatchService {
@@ -101,7 +103,7 @@ export class DiscordReportRetryDispatchService {
             leaseToken,
             errorMessage: 'WISPACE link status temporarily unknown',
             retryCount: nextRetryCount,
-            nextRetryAt: addMinutes(new Date(), 15),
+            nextRetryAt: addMinutes(new Date(), RETRY_BACKOFF_MINUTES),
             terminal: nextRetryCount >= job.maxRetries,
           });
           if (nextRetryCount < job.maxRetries) retryQueued += 1;
@@ -150,7 +152,7 @@ export class DiscordReportRetryDispatchService {
           leaseToken,
           errorMessage: 'Report claim exists for today',
           retryCount: job.retryCount,
-          nextRetryAt: addMinutes(new Date(), 15),
+          nextRetryAt: addMinutes(new Date(), RETRY_BACKOFF_MINUTES),
           terminal: false,
         });
         retryQueued += 1;
@@ -162,16 +164,18 @@ export class DiscordReportRetryDispatchService {
         await this.jobRepository.markFailed({
           jobId: job.id,
           leaseToken,
-          errorMessage: 'Report generation deferred (upstream retryable)',
+          errorMessage: DEFERRED_ERROR,
           retryCount: nextRetryCount,
-          nextRetryAt: terminal ? undefined : addMinutes(new Date(), 15),
+          nextRetryAt: terminal
+            ? undefined
+            : addMinutes(new Date(), RETRY_BACKOFF_MINUTES),
           terminal,
         });
         if (terminal) {
           failed += 1;
           failures.push({
             externalUserId: job.externalUserId,
-            error: 'Report generation deferred (upstream retryable)',
+            error: DEFERRED_ERROR,
           });
         } else {
           retryQueued += 1;

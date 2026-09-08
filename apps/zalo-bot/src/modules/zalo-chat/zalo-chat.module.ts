@@ -511,12 +511,10 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         metrics: BotMetricsService,
         pgLock: PgAdvisoryLockService,
       ) =>
-        new RescheduleRecoveryCronService(
-          store,
-          metrics,
+        new RescheduleRecoveryCronService(store, metrics, {
           pgLock,
-          ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
-        ),
+          lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
+        }),
       inject: [
         TypeormRescheduleStore,
         BotMetricsService,

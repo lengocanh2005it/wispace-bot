@@ -421,12 +421,10 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
         metrics: BotMetricsService,
         pgLock: PgAdvisoryLockService,
       ) =>
-        new RescheduleRecoveryCronService(
-          store,
-          metrics,
+        new RescheduleRecoveryCronService(store, metrics, {
           pgLock,
-          ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
-        ),
+          lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
+        }),
       inject: [
         TypeormRescheduleStore,
         BotMetricsService,

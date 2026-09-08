@@ -132,7 +132,6 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
     expect(orchestrationService.claimAndSend).toHaveBeenCalledWith(
       expect.objectContaining({ externalUserId: 'discord-1' }),
       {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         reportDate: expect.any(String),
         skipAlreadySentToday: true,
         examDateForOutbox: '2026-08-20',
@@ -191,7 +190,6 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
         errorMessage: 'delivery down',
         retryCount: 1,
         terminal: false,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         nextRetryAt: expect.any(Date),
       }),
     );
@@ -257,7 +255,6 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
         leaseToken: 'lease-1',
         retryCount: 1,
         terminal: false,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         nextRetryAt: expect.any(Date),
       }),
     );
@@ -311,7 +308,6 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
         leaseToken: 'lease-1',
         retryCount: 0,
         terminal: false,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         nextRetryAt: expect.any(Date),
       }),
     );
@@ -356,37 +352,25 @@ describe('DiscordReportRetryDispatchService.dispatchDueReportRetries', () => {
     let claimAndSendCalls = 0;
     const firstClaim = { ...JOB, leaseToken: 'lease-a' };
 
-    const jobRepository = {
-      resetStuckProcessingJobs: jest.fn().mockResolvedValue(0),
-      findDueJobs: jest
-        .fn()
-        .mockResolvedValueOnce([firstClaim])
-        .mockResolvedValueOnce([]), // nothing reset → not due again
-      claimJob: jest.fn().mockResolvedValueOnce(firstClaim),
-      markSent: jest.fn().mockResolvedValue(undefined),
-      markFailed: jest.fn().mockResolvedValue(undefined),
-    };
-
-    const orchestrationService = {
-      claimAndSend: jest.fn().mockImplementation(async () => {
+    const built = buildService({ dueJobs: [] });
+    const jobRepository = built.jobRepository;
+    const orchestrationService = built.orchestrationService;
+    // Script the slow send + tick-scoped due jobs on the shared mocks.
+    jobRepository.findDueJobs = jest
+      .fn()
+      .mockResolvedValueOnce([firstClaim])
+      .mockResolvedValueOnce([]); // nothing reset → not due again
+    jobRepository.claimJob = jest.fn().mockResolvedValueOnce(firstClaim);
+    orchestrationService.claimAndSend = jest
+      .fn()
+      .mockImplementation(async () => {
         claimAndSendCalls += 1;
         if (claimAndSendCalls === 1) {
           await slowSendGate;
         }
         return SENT_RESULT;
-      }),
-    };
-
-    const { service: _ignored, ...deps } = buildService({ dueJobs: [] });
-    void _ignored;
-    const service = new DiscordReportRetryDispatchService(
-      { get: jest.fn() } as never,
-      jobRepository as never,
-      orchestrationService as never,
-      deps.accountLinkReader as never,
-      deps.reportCronLeaderService as never,
-      deps.pgLock as never,
-    );
+      });
+    const service = built.service;
 
     const first = service.dispatchDueReportRetries();
     await service.dispatchDueReportRetries();

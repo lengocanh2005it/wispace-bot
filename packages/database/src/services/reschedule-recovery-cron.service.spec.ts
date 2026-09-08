@@ -32,8 +32,10 @@ describe('RescheduleRecoveryCronService', () => {
     const service = new RescheduleRecoveryCronService(
       store as never,
       undefined,
-      pgLock as never,
-      ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
+      {
+        pgLock: pgLock as never,
+        lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
+      },
     );
 
     await service.handleRecovery();
@@ -54,8 +56,10 @@ describe('RescheduleRecoveryCronService', () => {
     const service = new RescheduleRecoveryCronService(
       store as never,
       undefined,
-      pgLock as never,
-      ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
+      {
+        pgLock: pgLock as never,
+        lockId: ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
+      },
     );
 
     await expect(service.handleRecovery()).resolves.not.toThrow();
