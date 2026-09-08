@@ -56,6 +56,11 @@ STAMP=$(date +%Y%m%d-%H%M%S)
 OUT="$BACKUP_DIR/${DB_NAME}-${STAMP}.sql.gz.gpg"
 TMP="$OUT.tmp"
 GPG_TMP="$OUT.gpg.tmp"
+# Passphrase handoff file — fd 3 for GPG, mode 600, removed on exit (#865).
+PASSPHRASE_FD_FILE="$BACKUP_DIR/.backup-passphrase.$$"
+printf '%s' "$BACKUP_PASSPHRASE" > "$PASSPHRASE_FD_FILE"
+chmod 600 "$PASSPHRASE_FD_FILE"
+trap 'rm -f "$PASSPHRASE_FD_FILE"' EXIT INT TERM
 FAILURE_MARKER="$BACKUP_DIR/.last-backup-failed"
 SUCCESS_MARKER="$BACKUP_DIR/.last-backup-success"
 
@@ -110,39 +115,57 @@ fi
 # not leave a silent half-written gzip on disk.
 if run_db_client pg_dump -U "$DB_USER" -d "$DB_NAME" -h "$DB_HOST" -p "$DB_PORT" \
   --no-owner 2>"$BACKUP_DIR/.pgdump.err" | gzip > "$TMP"; then
-  # Validate the archive is a complete gzip before promoting it.
-  if gzip -t "$TMP" 2>/dev/null && [ -s "$TMP" ]; then
-    # Encrypt at rest with GPG symmetric AES-256 (#185).
-    if gpg --batch --yes --symmetric --cipher-algo AES256 \
-      --passphrase "$BACKUP_PASSPHRASE" --output "$GPG_TMP" "$TMP"; then
-      if [ -s "$GPG_TMP" ]; then
-        mv "$GPG_TMP" "$OUT"
-        rm -f "$TMP"
-        rm -f "$FAILURE_MARKER"
-        date +%s > "$SUCCESS_MARKER"
-        resolve_backup
-        echo "Backup written: $OUT ($(du -h "$OUT" | cut -f1))"
-      else
-        echo "ERROR: GPG encryption produced empty file — backup discarded" >&2
-        rm -f "$TMP" "$GPG_TMP"
-        touch "$FAILURE_MARKER"
-        notify_backup_failed "Postgres backup failed" "GPG encryption produced empty file at $(date -Is)"
-        exit 1
-      fi
-    else
-      echo "ERROR: GPG encryption failed — see stderr" >&2
-      rm -f "$TMP" "$GPG_TMP"
-      touch "$FAILURE_MARKER"
-      notify_backup_failed "Postgres backup failed" "GPG encryption failed at $(date -Is)"
-      exit 1
-    fi
-  else
+  if ! gzip -t "$TMP" 2>/dev/null || [ ! -s "$TMP" ]; then
     echo "ERROR: gzip validation failed for $TMP — backup discarded" >&2
     rm -f "$TMP"
     touch "$FAILURE_MARKER"
     notify_backup_failed "Postgres backup failed" "gzip validation failed at $(date -Is)"
     exit 1
   fi
+
+  # Roles/tablespace globals are captured alongside the logical dump (#865) —
+  # the restore verifier needs them to rebuild users before schema restore.
+  GLOBALS_OUT="$BACKUP_DIR/${DB_NAME}-${STAMP}.globals.sql.gz.gpg"
+  GLOBALS_TMP="$GLOBALS_OUT.tmp"
+  GLOBALS_GPG_TMP="$GLOBALS_OUT.gpg.tmp"
+  if ! run_db_client pg_dumpall -U "$DB_USER" -h "$DB_HOST" -p "$DB_PORT" \
+      --globals-only 2>"$BACKUP_DIR/.pgdumpall.err" | gzip > "$GLOBALS_TMP" \
+    || ! gzip -t "$GLOBALS_TMP" 2>/dev/null || [ ! -s "$GLOBALS_TMP" ]; then
+    echo "ERROR: globals capture (pg_dumpall) failed — see $BACKUP_DIR/.pgdumpall.err" >&2
+    rm -f "$GLOBALS_TMP"
+    touch "$FAILURE_MARKER"
+    notify_backup_failed "Postgres backup failed" "pg_dumpall globals capture failed at $(date -Is)"
+    exit 1
+  fi
+
+  # Encrypt at rest with GPG symmetric AES-256 (#185). The passphrase is
+  # handed over fd 3 — never in argv (#865; argv is visible in ps output).
+  if ! gpg --batch --yes --symmetric --cipher-algo AES256 \
+      --passphrase-fd 3 --output "$GPG_TMP" 3< "$PASSPHRASE_FD_FILE" "$TMP" \
+    || [ ! -s "$GPG_TMP" ]; then
+    echo "ERROR: GPG encryption failed — see stderr" >&2
+    rm -f "$TMP" "$GPG_TMP"
+    touch "$FAILURE_MARKER"
+    notify_backup_failed "Postgres backup failed" "GPG encryption failed at $(date -Is)"
+    exit 1
+  fi
+  if ! gpg --batch --yes --symmetric --cipher-algo AES256 \
+      --passphrase-fd 3 --output "$GLOBALS_GPG_TMP" 3< "$PASSPHRASE_FD_FILE" "$GLOBALS_TMP" \
+    || [ ! -s "$GLOBALS_GPG_TMP" ]; then
+    echo "ERROR: GPG encryption failed for globals — see stderr" >&2
+    rm -f "$TMP" "$GPG_TMP" "$GLOBALS_TMP" "$GLOBALS_GPG_TMP"
+    touch "$FAILURE_MARKER"
+    notify_backup_failed "Postgres backup failed" "globals GPG encryption failed at $(date -Is)"
+    exit 1
+  fi
+  mv "$GPG_TMP" "$OUT"
+  mv "$GLOBALS_GPG_TMP" "$GLOBALS_OUT"
+  rm -f "$TMP" "$GLOBALS_TMP"
+  rm -f "$FAILURE_MARKER"
+  date +%s > "$SUCCESS_MARKER"
+  resolve_backup
+  echo "Backup written: $OUT ($(du -h "$OUT" | cut -f1))"
+  echo "Globals written: $GLOBALS_OUT ($(du -h "$GLOBALS_OUT" | cut -f1))"
 else
   echo "ERROR: pg_dump failed — see $BACKUP_DIR/.pgdump.err" >&2
   rm -f "$TMP"
@@ -152,6 +175,7 @@ else
 fi
 
 find "$BACKUP_DIR" -name "${DB_NAME}-*.sql.gz.gpg" -mtime +"$KEEP_DAYS" -delete
+find "$BACKUP_DIR" -name "${DB_NAME}-*.globals.sql.gz.gpg" -mtime +"$KEEP_DAYS" -delete
 find "$BACKUP_DIR" -name "${DB_NAME}-*.sql.gz" -mtime +"$KEEP_DAYS" -delete
 echo "Old backups (older than ${KEEP_DAYS}d) pruned"
 

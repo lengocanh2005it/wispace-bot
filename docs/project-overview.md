@@ -791,22 +791,38 @@ The `git fetch`/`reset` run **inside the script, after the deploy lock is held**
 
 Known gap: target resolution is fleet-wide — it resolves to the newest commit the **migration owner** has an image for, so a commit touching only `apps/discord-bot/**` (which builds a Discord image but no Messenger one) resolves the whole fleet back to an older SHA and does not ship that Discord image until a later commit rebuilds Messenger. Per-app target resolution is tracked on #695.
 
-**Postgres backup & restore (#182/#185):** nightly `pg_dump` at 02:00 ICT via `deploy/postgres-backup.sh`, encrypted at rest with GPG AES-256 (`BACKUP_ENCRYPTION_PASSPHRASE` in `.env`), 14-day retention. Production HA must additionally enable provider WAL/PITR and monitor restore points. Backups are gzip-validated before encryption and stored as `.sql.gz.gpg` in `/home/ngoc_anh/backups/ai_chat_bot_db/`. An hourly `deploy/backup-monitor.sh` checks the `.last-backup-success` timestamp and fires a `postgres_backup_stale` Alertmanager alert (→ Telegram) if no successful backup in 25h. Backup failures also fire `postgres_backup_failed` immediately. Pre-migration safety dumps (`pg_dump -Fc`) go to `pre-migrate/` with 1-day retention. Measured restore evidence belongs in the [PostgreSQL HA runbook](postgres-ha-runbook.md).
+**Postgres backup & restore (#182/#185/#865):** nightly `pg_dump` at 02:00 ICT via `deploy/postgres-backup.sh`, encrypted at rest with GPG AES-256 (`BACKUP_ENCRYPTION_PASSPHRASE` in `.env`), 14-day retention. Each run also captures PostgreSQL globals (`pg_dumpall --globals-only` → `.globals.sql.gz.gpg`) so the restore verifier can rebuild roles, and hands the passphrase to GPG over fd 3 (never argv). Production HA must additionally enable provider WAL/PITR and monitor restore points. Backups are gzip-validated before encryption and stored as `.sql.gz.gpg` in `/home/ngoc_anh/backups/ai_chat_bot_db/`. An hourly `deploy/backup-monitor.sh` checks the `.last-backup-success` timestamp and fires a `postgres_backup_stale` Alertmanager alert (→ Telegram) if no successful backup in 25h. Backup failures also fire `postgres_backup_failed` immediately. Pre-migration safety dumps (`pg_dump -Fc`) go to `pre-migrate/` with 1-day retention. Measured restore evidence belongs in the [PostgreSQL HA runbook](postgres-ha-runbook.md). Restore protection/recovery policy: the guarded verifier (`deploy/postgres-restore-verify.sh`) is the only supported restore path; artifacts from before the globals-capture deploy cannot be fully verified (fail closed on the missing `.globals.sql.gz.gpg`).
 
 **Deploy failure policy (#271/#284):** `vps-deploy.sh` also fails closed when the image cannot be pulled, `RUN_MIGRATIONS=true` has no validated `MIGRATION_CMD`, or the pre-migration `pg_dump` fails/is empty. `SKIP_NGINX_CHECK=true` is only valid when no active container is detected; it cannot bypass a live traffic route.
 
-**Restore from backup:**
+**Restore from backup (guarded, #865):** the copy-paste restore snippet is
+retired. Use `deploy/postgres-restore-verify.sh` — it fail-closes on prod
+targets, hands the passphrase over a file descriptor (never argv/logs),
+validates gzip + decryption, restores globals then schema/data into a
+disposable PostgreSQL container (default) or an allowlisted staging target,
+checks migration state + table inventory, and writes one JSON evidence file
+per run. The production `DB_HOST`/`DB_NAME` from the operator env file are
+read only to be rejected as targets.
 
 ```bash
-# List available backups
-ls -lt /home/ngoc_anh/backups/ai_chat_bot_db/*.sql.gz.gpg
+# Verify the latest encrypted backup against a throwaway PostgreSQL container
+bash deploy/postgres-restore-verify.sh \
+  --artifact /home/ngoc_anh/backups/ai_chat_bot_db/ai_chat_bot_db-TIMESTAMP.sql.gz.gpg \
+  --globals-artifact /home/ngoc_anh/backups/ai_chat_bot_db/ai_chat_bot_db-TIMESTAMP.globals.sql.gz.gpg \
+  --env-file /home/ngoc_anh/messenger-bot/.env \
+  --evidence-dir /home/ngoc_anh/backups/restore-verify
 
-# Decrypt + decompress + restore (replace TIMESTAMP accordingly)
-source /home/ngoc_anh/messenger-bot/.env
-gpg --batch --yes --decrypt --passphrase "$BACKUP_ENCRYPTION_PASSPHRASE" \
-  /home/ngoc_anh/backups/ai_chat_bot_db/ai_chat_bot_db-TIMESTAMP.sql.gz.gpg \
-  | gunzip | PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" --single-transaction
+# Or an allowlisted staging target (RESTORE_VERIFY_ALLOWLIST="host:5432:db",
+# RESTORE_TARGET_PASSWORD must be set; prod DB_HOST/DB_NAME always rejected)
+RESTORE_VERIFY_ALLOWLIST="staging-db.internal:5432:restore_drill" \
+RESTORE_TARGET_PASSWORD=... \
+bash deploy/postgres-restore-verify.sh ... \
+  --target staging --target-host staging-db.internal --target-port 5432 \
+  --target-db restore_drill --target-user restorer
 ```
+
+The verifier never restores over production; promoting a verified restore
+into production is a database-owner decision made outside this script.
 
 **Recovery when the self-pull stalls** (bots N commits behind, `git fetch` failing silently in the past): run manually on the VPS —
 

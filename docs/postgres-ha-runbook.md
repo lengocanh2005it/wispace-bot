@@ -45,6 +45,20 @@ standby. Run it with native `psql`/`pg_dump` on the backup host, or explicitly
 set `DB_CONTAINER` to a network-attached client image; it no longer assumes the
 database is on `localhost`.
 
+**Backup and restore policy (#865).** The nightly backup is GPG-encrypted at
+rest, retained on the VPS, and paired with a globals capture so roles can be
+rebuilt (pre-migration dumps are encrypted snapshots; the guarded verifier
+covers the nightly artifacts). The only supported restore path is
+`deploy/postgres-restore-verify.sh`: it rejects production targets before any
+secret use, hands the passphrase over a file descriptor, validates the
+archives, restores into a disposable container (default) or an allowlisted
+staging target, and records one machine-readable evidence file per run.
+Artifacts without a paired `.globals.sql.gz.gpg` fail closed. Promoting a
+verified restore into production is a separate database-owner decision; if a
+restore must be aborted midway, drop the disposable/staging target and rerun
+the verifier with a fresh evidence run — the production database is never
+touched by this path.
+
 Run in staging at least quarterly and after provider topology changes:
 
 1. Start a webhook burst, chat quota reservations, a reminder claim, and a
@@ -57,9 +71,11 @@ Run in staging at least quarterly and after provider topology changes:
 4. Repeat one ambiguous outbound request and verify it is not blindly replayed;
    inspect dead-letter/attempt metrics for operator action.
 5. Restore the latest PITR point and the latest encrypted logical dump into an
-   isolated staging database. Record measured RTO/RPO and attach the logs,
-   provider failover event, restore verification, and dashboard screenshots to
-   issue #408 (and backup/restore issue #273).
+   isolated staging database via `deploy/postgres-restore-verify.sh`
+   (`--target staging`, allowlisted). The script's JSON evidence retains the
+   measured duration and per-check outcomes — attach it with the logs,
+   provider failover event, and dashboard screenshots to issue #408 (and
+   backup/restore issue #273).
 
 ## Monitoring and emergency actions
 
