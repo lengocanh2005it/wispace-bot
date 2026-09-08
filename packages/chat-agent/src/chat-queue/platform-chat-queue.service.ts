@@ -42,6 +42,19 @@ const PENDING_MESSAGE =
 const DROPPED_MESSAGE =
   'Bạn gửi hơi nhiều tin quá, mình chỉ xử lý được phần đầu thôi nhé';
 
+// All three are module-level, not instance fields — deliberate but worth
+// knowing before you reuse them. Messenger's equivalent gate is a per-instance
+// `private readonly` Set (messenger-chat-processor.service.ts). These are safe
+// as module state only because one process runs exactly one platform; two
+// platforms sharing a process would collide on `externalUserId`.
+//
+// Entries are keyed per user and `handleFlush` clears all three on entry, so a
+// stale entry can never affect another learner. One path does outlive the
+// flush: when `onRateLimited` and `onError` both fire, the rate-limited branch
+// returns early and only the `finally` clears — which covers the other two but
+// not `fallbackSentThisCycle`. That entry survives until the same user's next
+// flush clears it on entry, i.e. it self-heals and stays user-scoped. Move to
+// instance fields if a process ever hosts more than one platform.
 /** Users who received a fallback in the current processing cycle. Prevents duplicate fallbacks on retry. Exported for testing. */
 export const fallbackSentThisCycle = new Set<string>();
 /** Distinguishes a delivery failure from a normal quota-denied false result. */
