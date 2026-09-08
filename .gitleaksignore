@@ -14,3 +14,12 @@ e45deb0834bc0775816695ed272d0be8a0cd6109:docs/messenger-link-integration.md:gene
 
 # README.md — the upstream NestJS coveralls badge URL (?token=)
 c5a4bad329d04bf021228e7defab9c077587c710:README.md:generic-api-key:5
+# #683: synthetic dummy credentials in monitoring tests — introduced in
+# b4246b4a, replaced by low-entropy eval-prefixed markers in 30932766; the
+# introduction commits still appear in the CI gitleaks scan range.
+b4246b4a6a8f097575f73e9752b8e232b85465ca:deploy/monitoring/tests/test-rendered-config-validation.sh:generic-api-key:61
+b4246b4a6a8f097575f73e9752b8e232b85465ca:deploy/monitoring/tests/test-rendered-config-validation.sh:generic-api-key:61
+b4246b4a6a8f097575f73e9752b8e232b85465ca:deploy/monitoring/tests/test-alertmanager-entrypoint.sh:generic-api-key:19
+b4246b4a6a8f097575f73e9752b8e232b85465ca:deploy/monitoring/tests/test-alertmanager-entrypoint.sh:generic-api-key:19
+b4246b4a6a8f097575f73e9752b8e232b85465ca:deploy/monitoring/tests/test-alertmanager-entrypoint.sh:generic-api-key:187
+b4246b4a6a8f097575f73e9752b8e232b85465ca:deploy/monitoring/tests/test-alertmanager-entrypoint.sh:generic-api-key:188

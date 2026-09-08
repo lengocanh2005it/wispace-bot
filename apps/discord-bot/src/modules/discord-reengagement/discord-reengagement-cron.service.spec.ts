@@ -4,7 +4,6 @@ import type { SchedulerRegistry } from '@nestjs/schedule';
 import { Logger } from '@nestjs/common';
 import type { BotMetricsService } from '@wispace/bot-metrics';
 import type { PgAdvisoryLockService } from '@wispace/bot-common/locks';
-import type { NotificationPreferenceService } from '@wispace/database';
 import type { ReengagementApiClient } from '@wispace/wispace-client';
 import type { DiscordReengagementService } from './discord-reengagement.service';
 import { DiscordReengagementCronService } from './discord-reengagement-cron.service';
@@ -15,10 +14,18 @@ const CANDIDATES = [
   { userId: 33, daysInactive: 13, variant: 'a' as const },
 ];
 
+/** Structural stub type — the real service lives in @wispace/database,
+ * and apps must not type-import from it (#423). */
+type NotificationPreferencesPort = {
+  findReportOptedInUserIds: (...args: unknown[]) => Promise<number[]>;
+};
+
 type Stubs = {
   client: { getCandidates: jest.Mock };
   orchestrator: { runOnce: jest.Mock };
-  preferences: { findReportOptedInUserIds: jest.Mock };
+  preferences: NotificationPreferencesPort & {
+    findReportOptedInUserIds: jest.Mock;
+  };
   pgLock: { withLock: jest.Mock };
   metrics: {
     incReengagementSend: jest.Mock;
