@@ -242,3 +242,85 @@ describe('MessengerOutboundService rich follow-up rate-limit admission (#622)', 
     expect(globalFetch).not.toHaveBeenCalled();
   });
 });
+
+function buildHttpFailure(status: number): Response {
+  return {
+    ok: false,
+    status,
+    statusText: String(status),
+    text: () => Promise.resolve(''),
+  } as unknown as Response;
+}
+
+function buildLoggingService(): MessengerOutboundService {
+  return new MessengerOutboundService(
+    {
+      get: (key: string) =>
+        key === 'PAGE_ACCESS_TOKEN' ? 'page-token' : undefined,
+    } as never,
+    { logMessage: jest.fn().mockResolvedValue({}) } as never,
+  );
+}
+
+describe('MessengerOutboundService Send-API breaker accounting (#517)', () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('keeps the breaker closed when a proactive wave hits deterministic 4xx users', async () => {
+    const globalFetch = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(buildHttpFailure(400));
+    const service = buildLoggingService();
+
+    // More per-user 4xx failures than the breaker volume threshold (5)
+    for (let i = 0; i < 7; i += 1) {
+      await expect(
+        service.sendTextViaPsid({
+          psid: `expired-psid-${i}`,
+          text: 'Reminder',
+          messageType: 'STUDY_REMINDER',
+        }),
+      ).rejects.toThrow(/HTTP 400/);
+    }
+
+    // A healthy user rides through the same wave — the breaker never opened
+    globalFetch.mockResolvedValue(OK_RESPONSE);
+    await expect(
+      service.sendTextViaPsid({
+        psid: 'healthy-psid',
+        text: 'Reminder',
+        messageType: 'STUDY_REMINDER',
+      }),
+    ).resolves.toBe('sent');
+  });
+
+  it('trips the breaker on transport/5xx waves and fails fast with the 503 surface', async () => {
+    const globalFetch = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(buildHttpFailure(500));
+    const service = buildLoggingService();
+
+    // The first `volumeThreshold` calls reach the API and get HTTP 500
+    for (let i = 0; i < 5; i += 1) {
+      await expect(
+        service.sendTextViaPsid({
+          psid: `psid-${i}`,
+          text: 'Reminder',
+          messageType: 'STUDY_REMINDER',
+        }),
+      ).rejects.toThrow(/HTTP 500/);
+    }
+
+    // Circuit is now open — no further fetch attempts, 503 fail-fast surface
+    globalFetch.mockClear();
+    await expect(
+      service.sendTextViaPsid({
+        psid: 'healthy-psid',
+        text: 'Reminder',
+        messageType: 'STUDY_REMINDER',
+      }),
+    ).rejects.toThrow(/circuit breaker is OPEN/);
+    expect(globalFetch).not.toHaveBeenCalled();
+  });
+});

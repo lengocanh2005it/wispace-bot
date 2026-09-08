@@ -4,6 +4,7 @@ import {
   jitteredDelayMs,
   sleep,
 } from '@wispace/bot-common/utils';
+import { WispaceApiError } from '../errors/wispace-api.error';
 
 export { isAbortError, sleep } from '@wispace/bot-common/utils';
 
@@ -115,6 +116,11 @@ export function createCircuitBreaker<T>(
     errorThresholdPercentage: 50,
     resetTimeout: opts.cooldown ?? 60_000,
     volumeThreshold: opts.threshold ?? 5,
+    // Deterministic 4xx and caller aborts are not upstream-health signals —
+    // they must not trip the breaker (#517). Return true = exclude.
+    errorFilter: (error: unknown) =>
+      isAbortError(error) ||
+      (error instanceof WispaceApiError && !error.isRetryable()),
   });
 
   return breaker;

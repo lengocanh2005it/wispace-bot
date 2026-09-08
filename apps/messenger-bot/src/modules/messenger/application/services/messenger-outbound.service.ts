@@ -68,10 +68,47 @@ export class MessengerPartialSendError extends MessengerApiError {
 
 export type MessengerSenderAction = 'mark_seen' | 'typing_on' | 'typing_off';
 
+/** Error-class label for the Send-API breaker failure metric (#517). */
+export type MessengerSendApiErrorClass =
+  | 'deterministic_4xx'
+  | 'rate_limited'
+  | 'server_error'
+  | 'timeout'
+  | 'network'
+  | 'unknown';
+
+/**
+ * Classify a Send API failure for breaker accounting and metrics (#517).
+ * Deterministic per-recipient 4xx outcomes (expired windows, token errors,
+ * invalid recipients) never trip the fleet-wide breaker — only transport,
+ * 5xx, ambiguity (408), and Meta rate limiting (429) do.
+ */
+export function classifyMessengerSendApiError(
+  error: unknown,
+): MessengerSendApiErrorClass {
+  if (!(error instanceof MessengerApiError)) {
+    if (error instanceof Error && error.name === 'TypeError') return 'network';
+    return 'unknown';
+  }
+  if (error.status === 408) return 'timeout';
+  if (error.status === 429) return 'rate_limited';
+  if (error.status >= 500) return 'server_error';
+  if (error.status >= 400) return 'deterministic_4xx';
+  if (error.status === 0) return 'network';
+  return 'unknown';
+}
+
+/** True when the failure must trip the fleet-wide Send API breaker (#517). */
+export function shouldTripMessengerBreaker(error: unknown): boolean {
+  return classifyMessengerSendApiError(error) !== 'deterministic_4xx';
+}
+
 @Injectable()
 export class MessengerOutboundService {
   private readonly logger = new Logger(MessengerOutboundService.name);
   private readonly sendBreaker: CircuitBreaker;
+  /** Last non-deterministic error class seen — trip cause for metrics (#517). */
+  private lastBreakerTripCause: MessengerSendApiErrorClass = 'unknown';
   /**
    * Single timeout budget shared by the circuit breaker and the Send API
    * fetch — the breaker can never fire while the fetch keeps running, so a
@@ -110,11 +147,22 @@ export class MessengerOutboundService {
         errorThresholdPercentage: 50,
         resetTimeout: 60_000,
         volumeThreshold: 5,
+        // Deterministic per-user 4xx never trip the fleet-wide breaker (#517)
+        errorFilter: (error) => {
+          const errorClass = classifyMessengerSendApiError(error);
+          const excluded = errorClass === 'deterministic_4xx';
+          if (!excluded) {
+            this.lastBreakerTripCause = errorClass;
+          }
+          this.metrics?.incSendApiCircuitFailure(errorClass);
+          return excluded;
+        },
       },
     );
 
     this.sendBreaker.on('open', () => {
       this.logger.warn('Meta Send API circuit breaker OPEN — failing fast');
+      this.metrics?.incSendApiCircuitEvent('open', this.lastBreakerTripCause);
     });
     this.sendBreaker.on('halfOpen', () => {
       this.logger.log('Meta Send API circuit breaker half-open — testing');
@@ -122,6 +170,7 @@ export class MessengerOutboundService {
     this.sendBreaker.on('close', () => {
       this.logger.log('Meta Send API circuit breaker closed — recovered');
     });
+    this.metrics?.registerSendApiCircuitBreaker(this.sendBreaker);
   }
 
   async sendSenderAction(

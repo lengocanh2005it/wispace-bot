@@ -5,6 +5,7 @@ import {
   createCircuitBreaker,
   computeCircuitBreakerTimeout,
 } from './with-retry';
+import { WispaceApiError } from '../errors/wispace-api.error';
 
 describe('wispace-client/with-retry', () => {
   describe('isAbortError', () => {
@@ -242,6 +243,67 @@ describe('wispace-client/with-retry', () => {
       );
 
       await expect(breaker.fire()).rejects.toThrow('Timed out after 30ms');
+    });
+  });
+
+  describe('createCircuitBreaker error accounting (#517)', () => {
+    it('does not trip the breaker on deterministic 4xx WispaceApiError', async () => {
+      let healthyCalls = 0;
+      const breaker = createCircuitBreaker(
+        async (healthy?: boolean) => {
+          if (healthy) {
+            healthyCalls += 1;
+            return 'ok';
+          }
+          throw new WispaceApiError(
+            'User goals API failed: HTTP 404 NotFound',
+            404,
+            'external-id',
+            'User/goals',
+          );
+        },
+        { threshold: 1, cooldown: 1_000 },
+      );
+
+      // 400-heavy wave — more calls than the volume threshold (1)
+      for (let i = 0; i < 7; i += 1) {
+        await expect(breaker.fire()).rejects.toThrow('HTTP 404');
+      }
+      expect(breaker.opened).toBe(false);
+
+      // Healthy traffic rides through the same wave
+      await expect(breaker.fire(true)).resolves.toBe('ok');
+      expect(healthyCalls).toBe(1);
+    });
+
+    it('trips the breaker on transport (TypeError) failures', async () => {
+      const breaker = createCircuitBreaker(
+        async () => {
+          throw new TypeError('fetch failed');
+        },
+        { threshold: 1, cooldown: 1_000 },
+      );
+
+      // volumeThreshold=1 — a single transport failure trips the breaker
+      await expect(breaker.fire()).rejects.toThrow('fetch failed');
+      expect(breaker.opened).toBe(true);
+    });
+
+    it('does not count caller-abort errors against the breaker', async () => {
+      const abortError = new Error('The operation was aborted');
+      abortError.name = 'AbortError';
+      const breaker = createCircuitBreaker(
+        async () => {
+          throw abortError;
+        },
+        { threshold: 1, cooldown: 1_000 },
+      );
+
+      for (let i = 0; i < 7; i += 1) {
+        await expect(breaker.fire()).rejects.toThrow('aborted');
+      }
+
+      expect(breaker.opened).toBe(false);
     });
   });
 });

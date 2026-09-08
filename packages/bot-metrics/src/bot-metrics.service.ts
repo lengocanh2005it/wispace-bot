@@ -109,6 +109,9 @@ export class BotMetricsService implements OnModuleDestroy {
   private llmUnpricedModelTokens: Counter;
   private dbCircuitBreakerState: Gauge;
   private dbCircuitBreakerFailures: Counter;
+  private sendApiCircuitState: Gauge;
+  private sendApiCircuitFailures: Counter;
+  private sendApiCircuitEvents: Counter;
   private chatIdentityStaleDetected: Counter;
   private chatRevalidationSkip: Counter;
   private chatFlushRecovery: Counter;
@@ -490,6 +493,23 @@ export class BotMetricsService implements OnModuleDestroy {
     this.dbCircuitBreakerFailures = new Counter({
       name: `${this.prefix}_db_circuit_breaker_failures_total`,
       help: 'Database circuit breaker failure events',
+      registers: [this.registry],
+    });
+    this.sendApiCircuitState = new Gauge({
+      name: `${this.prefix}_send_api_circuit_breaker_state`,
+      help: 'Send API circuit breaker state (0=closed, 1=half-open, 2=open) (#517)',
+      registers: [this.registry],
+    });
+    this.sendApiCircuitFailures = new Counter({
+      name: `${this.prefix}_send_api_circuit_failures_total`,
+      help: 'Send API failures by error class; deterministic 4xx never trips the breaker (#517)',
+      labelNames: ['error_class'],
+      registers: [this.registry],
+    });
+    this.sendApiCircuitEvents = new Counter({
+      name: `${this.prefix}_send_api_circuit_events_total`,
+      help: 'Send API circuit breaker state-change events with trip cause (#517)',
+      labelNames: ['action', 'cause'],
       registers: [this.registry],
     });
     this.llmClassifierVerdict = new Counter({
@@ -951,6 +971,35 @@ export class BotMetricsService implements OnModuleDestroy {
     breaker.on('timeout', () => {
       this.dbCircuitBreakerFailures.inc();
     });
+  }
+
+  /** Send API breaker state + failure classes + trip-cause events (#517). */
+  registerSendApiCircuitBreaker(breaker: {
+    opened?: boolean;
+    halfOpen?: boolean;
+    on(event: 'open', listener: () => void): unknown;
+    on(event: 'halfOpen', listener: (resetTimeout: number) => void): unknown;
+    on(event: 'close', listener: () => void): unknown;
+  }): void {
+    const currentState = breaker.opened ? 2 : breaker.halfOpen ? 1 : 0;
+    this.sendApiCircuitState.set(currentState);
+    breaker.on('open', () => {
+      this.sendApiCircuitState.set(2);
+    });
+    breaker.on('halfOpen', () => {
+      this.sendApiCircuitState.set(1);
+    });
+    breaker.on('close', () => {
+      this.sendApiCircuitState.set(0);
+    });
+  }
+
+  incSendApiCircuitFailure(errorClass: string): void {
+    this.sendApiCircuitFailures.inc({ error_class: errorClass });
+  }
+
+  incSendApiCircuitEvent(action: string, cause: string): void {
+    this.sendApiCircuitEvents.inc({ action, cause });
   }
 
   async getMetrics(): Promise<string> {

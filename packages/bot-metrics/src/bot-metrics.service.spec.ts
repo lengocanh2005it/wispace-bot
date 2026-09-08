@@ -99,6 +99,46 @@ describe('BotMetricsService - Database Circuit Breaker Metrics', () => {
     expect(output).toContain('test_db_circuit_breaker_failures_total 2');
   });
 
+  it('exposes send_api_circuit_breaker state, failure classes and trip-cause events (#517)', async () => {
+    const metrics = new BotMetricsService({
+      prefix: 'test',
+      collectDefaults: false,
+    });
+    const emitter = new EventEmitter() as unknown as EventEmitter & {
+      opened?: boolean;
+      halfOpen?: boolean;
+    };
+    emitter.opened = false;
+    emitter.halfOpen = false;
+
+    metrics.registerSendApiCircuitBreaker(emitter);
+    metrics.incSendApiCircuitFailure('deterministic_4xx');
+    metrics.incSendApiCircuitFailure('deterministic_4xx');
+    metrics.incSendApiCircuitFailure('server_error');
+    metrics.incSendApiCircuitEvent('open', 'server_error');
+
+    let output = await metrics.getMetrics();
+    expect(output).toContain('test_send_api_circuit_breaker_state 0');
+    expect(output).toContain(
+      'test_send_api_circuit_failures_total{error_class="deterministic_4xx"} 2',
+    );
+    expect(output).toContain(
+      'test_send_api_circuit_failures_total{error_class="server_error"} 1',
+    );
+    expect(output).toContain(
+      'test_send_api_circuit_events_total{action="open",cause="server_error"} 1',
+    );
+
+    emitter.emit('open');
+    output = await metrics.getMetrics();
+    expect(output).toContain('test_send_api_circuit_breaker_state 2');
+
+    emitter.emit('halfOpen');
+    emitter.emit('close');
+    output = await metrics.getMetrics();
+    expect(output).toContain('test_send_api_circuit_breaker_state 0');
+  });
+
   it('exposes bounded clarification lifecycle outcomes without user labels', async () => {
     const metrics = new BotMetricsService({
       prefix: 'test',
