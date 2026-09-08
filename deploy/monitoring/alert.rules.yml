@@ -1,6 +1,18 @@
 groups:
   - name: bots
     rules:
+      - alert: Watchdog
+        # #515: always firing by design. Alertmanager intercepts this alert
+        # (alertname="Watchdog" route) and pings healthchecks.io every 2m;
+        # when the pings stop, the external service pages — that is how the
+        # world learns this alerting plane died. Never acknowledge/delete it.
+        expr: vector(1)
+        labels:
+          severity: none
+        annotations:
+          summary: 'Alerting pipeline heartbeat'
+          description: 'Always-firing watchdog; Alertmanager pings healthchecks.io on its schedule (#515). Do not acknowledge or delete.'
+
       - alert: AlertDeliveryFailed
         # #683: a broken notification path must be detected by the pipeline
         # itself, not only by the synthetic-alert self-check. AM emits this

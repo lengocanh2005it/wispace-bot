@@ -54,11 +54,12 @@ run_promtool check config /tmp/render/prometheus.yml 2>"$TEST_DIR/promtool.err" 
   || { cat "$TEST_DIR/promtool.err" >&2; fail "promtool check config failed"; }
 pass "rendered prometheus config is valid"
 
-echo "Test 3: render alertmanager template with dummy creds (#683 full credential set)"
+echo "Test 3: render alertmanager template with dummy creds (#683 full credential set + #515 deadman)"
 TELEGRAM_BOT_TOKEN='110022:AA$pec'"'"'ial`tok:en_ß日' TELEGRAM_CHAT_ID="123456789" \
   DISCORD_ALERT_WEBHOOK_CRITICAL_URL='https://discord.com/api/webhooks/123/AA$pec'"'"'ial' \
   DISCORD_ALERT_WEBHOOK_WARNING_URL='https://discord.com/api/webhooks/456/BB$pec'"'"'ial' \
   PUSHOVER_USER_KEY='evalPUSHOVERUSERKEY00' PUSHOVER_API_TOKEN='evalPUSHOVERTOKEN0000' \
+  HEALTHCHECKS_PING_URL='https://hc-ping.com/eval-deadman-uuid' \
   SRC="$MON/alertmanager.tmpl" DST="$TEST_DIR/alertmanager.yml" DRY_RUN=1 \
   sh "$MON/alertmanager-entrypoint.sh" || fail "alertmanager render failed"
 [ -f "$TEST_DIR/alertmanager.yml" ] || fail "rendered alertmanager.yml missing"
@@ -76,6 +77,12 @@ grep -q 'pushover_configs:' "$TEST_DIR/alertmanager.yml" || fail "pushover recei
 grep -q 'discord_configs:' "$TEST_DIR/alertmanager.yml" || fail "discord receivers missing"
 grep -q 'repeat_interval: 30m' "$TEST_DIR/alertmanager.yml" || fail "critical short repeat missing"
 pass "severity routing present in rendered config"
+
+echo "Test 6: watchdog intercept route + deadman webhook (#515)"
+grep -q 'alertname="Watchdog"' "$TEST_DIR/alertmanager.yml" || fail "watchdog intercept missing"
+grep -q 'send_resolved: false' "$TEST_DIR/alertmanager.yml" || fail "deadman must not send resolved"
+grep -q 'webhook_configs:' "$TEST_DIR/alertmanager.yml" || fail "deadman webhook receiver missing"
+pass "deadman watchdog routing present in rendered config"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"

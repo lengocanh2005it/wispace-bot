@@ -13,6 +13,16 @@ route:
   group_interval: 5m
   repeat_interval: 4h
   routes:
+    # Deadman intercept (#515) — must stay FIRST and must not `continue`: the
+    # Watchdog alert fires forever and only feeds the external heartbeat.
+    # Routing it into the critical fan-out would ping Discord/Pushover/Telegram
+    # every 2 minutes. send_resolved is false on the receiver: a resolved
+    # notification when Prometheus dies must not fake-alive the heartbeat.
+    - matchers: [ 'alertname="Watchdog"' ]
+      receiver: healthchecks-heartbeat
+      group_wait: 0s
+      group_interval: 2m
+      repeat_interval: 2m
     # Flat fan-out: `continue: true` lets each sibling also dispatch, so one
     # critical alert reaches all three independent legs. A route whose
     # children match would NOT use its own receiver — hence siblings, not
@@ -32,6 +42,12 @@ route:
       receiver: discord-warning
 
 receivers:
+  - name: healthchecks-heartbeat
+    # #515 deadman: ping the external heartbeat service. Missing this ping is
+    # the only signal the outside world gets when this whole host dies.
+    webhook_configs:
+      - url: "${HEALTHCHECKS_PING_URL}"
+        send_resolved: false
   - name: discord-critical
     discord_configs:
       - webhook_url: "${DISCORD_ALERT_WEBHOOK_CRITICAL_URL}"

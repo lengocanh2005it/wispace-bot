@@ -131,6 +131,57 @@ Delivery *failures* are detected continuously by the `AlertDeliveryFailed`
 rule on `alertmanager_notifications_failed_total` (Prometheus now scrapes the
 Alertmanager job itself). Out-of-band host-death detection remains #515.
 
+## Blackout watchdog (#515)
+
+Everything above runs on the production VPS. If the host itself dies, every
+in-band channel goes silent together — the external watchdog is the only
+signal that survives:
+
+1. **Always-firing `Watchdog` alert** (`alert.rules.yml`, `severity: none`).
+   Alertmanager intercepts it (`alertname="Watchdog"` route, first in the
+   tree, no fan-out into the critical channels) and pings the healthchecks.io
+   check every 2 minutes via a webhook receiver. `send_resolved: false` — a
+   resolved notification when Prometheus dies must not fake-alive the
+   heartbeat.
+2. **healthchecks.io** (external, free tier) hosts two checks:
+   - `alertmanager-watchdog`: period 10m, grace 5m — the heartbeat stops when
+     Prometheus, the rules, Alertmanager, nginx, or the host itself dies;
+     the missing ping pages within ~15 minutes.
+   - `public-health-probe`: period 30m, grace 15m — fed by cron-job.org
+     (every 5 minutes, GET `https://aiassist.aihubproduction.com/health/ready`;
+     success → ping, failure → `/fail` ping) so a broken public route is also
+     seen from outside the VPS.
+3. Both checks notify through healthchecks.io's own integrations — **Pushover
+   (emergency priority) + email** — independent of the dead VPS.
+
+`HEALTHCHECKS_PING_URL` is a fail-closed credential like the rest: the
+Alertmanager entrypoint refuses to start without a valid
+`https://hc-ping.com/<uuid>` URL. The probe check's ping URL lives only in
+the cron-job.org dashboard, never in the repo.
+
+### Blackout scenario (runbook)
+
+Symptom: **Pushover push "alertmanager-watchdog is DOWN" (or
+"public-health-probe") + email** from healthchecks.io, while Discord/Telegram
+are silent (nothing on the VPS is alive to send them).
+
+Recovery order:
+
+1. **Confirm the host** — VPS provider console / ping; OOM, kernel panic, or
+   provider outage are the usual causes.
+2. **Boot the host**; docker restarts via `restart: unless-stopped`.
+3. **Verify the pipeline refilled**: healthchecks.io check flips back to
+   "up" within ~2 minutes (Watchdog pings resume), Prometheus targets
+   (`/api/v1/targets`) all `up`, `docker ps` shows the three bots healthy.
+4. **Post-mortem**: check `~/infra/monitoring` config survived (backup:
+   `~/infra/monitoring.bak-683`), review `/var/log/syslog`/dmesg for the
+   crash cause, and record the downtime against the error budget.
+
+The webhook route and the `Watchdog` rule are deliberately the first entries
+in their respective files — removing or reordering them silently disables the
+external deadman; the routing tests (`test-rendered-config-validation.sh`,
+`test-alertmanager-entrypoint.sh`) fail if that happens.
+
 ## Metric classification
 
 All custom families emitted by `BotMetricsService` are classified below. The

@@ -51,6 +51,19 @@ for pushover_key in PUSHOVER_USER_KEY PUSHOVER_API_TOKEN; do
   esac
 done
 
+# #515: the deadman heartbeat must be usable or the whole point is lost.
+if [ -z "${HEALTHCHECKS_PING_URL:-}" ]; then
+  echo "FATAL: HEALTHCHECKS_PING_URL is not set — cannot start Alertmanager" >&2
+  exit 1
+fi
+case "$HEALTHCHECKS_PING_URL" in
+  https://hc-ping.com/*) ;;
+  *)
+    echo "FATAL: HEALTHCHECKS_PING_URL must be an https://hc-ping.com/<uuid> URL" >&2
+    exit 1
+    ;;
+esac
+
 case "$TELEGRAM_CHAT_ID" in
   ''|*[!0-9-]*|0|-1|0[0-9]*|-0|-0[0-9]*)
     echo "FATAL: TELEGRAM_CHAT_ID must be a valid non-zero integer" >&2
@@ -98,7 +111,7 @@ SRC="${SRC:-/etc/alertmanager/alertmanager.tmpl}"
 DST="${DST:-/etc/alertmanager/alertmanager.yml}"
 if ! awk '
 BEGIN {
-  n = split("TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID DISCORD_ALERT_WEBHOOK_CRITICAL_URL DISCORD_ALERT_WEBHOOK_WARNING_URL PUSHOVER_USER_KEY PUSHOVER_API_TOKEN", names, " ")
+  n = split("TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID DISCORD_ALERT_WEBHOOK_CRITICAL_URL DISCORD_ALERT_WEBHOOK_WARNING_URL PUSHOVER_USER_KEY PUSHOVER_API_TOKEN HEALTHCHECKS_PING_URL", names, " ")
   for (i = 1; i <= n; i++) {
     if (ENVIRON[names[i]] ~ /[[:cntrl:]]/) exit 1
   }
@@ -110,7 +123,8 @@ if ! awk '
 function allowed(name) {
   return name == "TELEGRAM_BOT_TOKEN" || name == "TELEGRAM_CHAT_ID" ||
          name == "DISCORD_ALERT_WEBHOOK_CRITICAL_URL" || name == "DISCORD_ALERT_WEBHOOK_WARNING_URL" ||
-         name == "PUSHOVER_USER_KEY" || name == "PUSHOVER_API_TOKEN"
+         name == "PUSHOVER_USER_KEY" || name == "PUSHOVER_API_TOKEN" ||
+         name == "HEALTHCHECKS_PING_URL"
 }
 {
   rest = $0
@@ -131,7 +145,8 @@ awk '
 function allowed(name) {
   return name == "TELEGRAM_BOT_TOKEN" || name == "TELEGRAM_CHAT_ID" ||
          name == "DISCORD_ALERT_WEBHOOK_CRITICAL_URL" || name == "DISCORD_ALERT_WEBHOOK_WARNING_URL" ||
-         name == "PUSHOVER_USER_KEY" || name == "PUSHOVER_API_TOKEN"
+         name == "PUSHOVER_USER_KEY" || name == "PUSHOVER_API_TOKEN" ||
+         name == "HEALTHCHECKS_PING_URL"
 }
 function yaml_escape(value, result, i, ch) {
   result = ""
@@ -177,6 +192,7 @@ function strip_field(line, field, start, value_start, i, escaped, ch) {
   line = strip_field(line, "webhook_url: \"")
   line = strip_field(line, "user_key: \"")
   line = strip_field(line, "token: \"")
+  line = strip_field(line, "url: \"")
   if (line ~ /__[^[:space:]]+__/ ||
       line ~ /\$\{[^}]*\}/ ||
       line ~ /\$[A-Za-z_][A-Za-z0-9_]*/ ||

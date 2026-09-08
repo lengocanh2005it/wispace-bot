@@ -60,6 +60,8 @@ services:
       DISCORD_ALERT_WEBHOOK_WARNING_URL: ${DISCORD_ALERT_WEBHOOK_WARNING_URL:-}
       PUSHOVER_USER_KEY: ${PUSHOVER_USER_KEY:-}
       PUSHOVER_API_TOKEN: ${PUSHOVER_API_TOKEN:-}
+      # #515 deadman heartbeat, fail-closed like the rest.
+      HEALTHCHECKS_PING_URL: ${HEALTHCHECKS_PING_URL:-}
     entrypoint: ['/bin/sh', '/etc/alertmanager/entrypoint.sh']
     ports:
       - '127.0.0.1:9093:9093'

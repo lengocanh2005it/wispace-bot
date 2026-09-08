@@ -6,6 +6,21 @@ evaluation_interval: 1m
 tests:
   - interval: 1m
     input_series:
+      - series: 'up{job="anything"}'
+        values: '1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: Watchdog
+        exp_alerts:
+          - exp_labels:
+              alertname: Watchdog
+              severity: none
+            exp_annotations:
+              summary: Alerting pipeline heartbeat
+              description: Always-firing watchdog; Alertmanager pings healthchecks.io on its schedule (#515). Do not acknowledge or delete.
+
+  - interval: 1m
+    input_series:
       - series: 'alertmanager_notifications_failed_total{job="alertmanager",integration="discord",reason="clientError"}'
         values: '0 0 0 0 0 1 1 1 1 1 1'
     alert_rule_test:

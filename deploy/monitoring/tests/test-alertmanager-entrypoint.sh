@@ -16,7 +16,7 @@ pass() { echo "  ok: $1"; }
 
 # --- #683: severity routing adds four more fail-closed credentials ---
 
-FULL_CREDS="TELEGRAM_BOT_TOKEN=110022:AA-test TELEGRAM_CHAT_ID=123456789 DISCORD_ALERT_WEBHOOK_CRITICAL_URL=https://discord.com/api/webhooks/1/AAAA DISCORD_ALERT_WEBHOOK_WARNING_URL=https://discord.com/api/webhooks/2/BBBB PUSHOVER_USER_KEY=evalPUSHOVERUSERKEY00 PUSHOVER_API_TOKEN=evalPUSHOVERTOKEN0000"
+FULL_CREDS="TELEGRAM_BOT_TOKEN=110022:AA-test TELEGRAM_CHAT_ID=123456789 DISCORD_ALERT_WEBHOOK_CRITICAL_URL=https://discord.com/api/webhooks/1/AAAA DISCORD_ALERT_WEBHOOK_WARNING_URL=https://discord.com/api/webhooks/2/BBBB PUSHOVER_USER_KEY=evalPUSHOVERUSERKEY00 PUSHOVER_API_TOKEN=evalPUSHOVERTOKEN0000 HEALTHCHECKS_PING_URL=https://hc-ping.com/eval-deadman-uuid"
 
 run_render() { # dst [VAR=value overrides...]
   local dst="$1"; shift
@@ -199,6 +199,28 @@ for var in DISCORD_ALERT_WEBHOOK_CRITICAL_URL DISCORD_ALERT_WEBHOOK_WARNING_URL 
   grep -q "$var: \${$var:-}" "$MON/docker-compose.yml" || fail "compose missing $var passthrough"
 done
 pass "compose passthrough fail-closed for #683 credentials"
+
+echo "Test 23: empty HEALTHCHECKS_PING_URL → exit 1 (#515 deadman)"
+run_render "$TEST_DIR/t23.yml" HEALTHCHECKS_PING_URL= && code=0 || code=$?
+[ "$code" -ne 0 ] || fail "expected non-zero exit"
+grep -q "FATAL.*HEALTHCHECKS_PING_URL" "$TEST_DIR/t23.yml.err" 2>/dev/null || fail "missing FATAL log"
+pass "missing deadman ping URL fails closed"
+
+echo "Test 24: non-hc-ping HEALTHCHECKS_PING_URL → exit 1"
+run_render "$TEST_DIR/t24.yml" HEALTHCHECKS_PING_URL='https://evil.example/ping/uuid' && code=0 || code=$?
+[ "$code" -ne 0 ] || fail "expected non-zero exit"
+grep -q "FATAL.*HEALTHCHECKS_PING_URL" "$TEST_DIR/t24.yml.err" 2>/dev/null || fail "missing FATAL log"
+pass "non-healthchecks ping URL fails closed"
+
+echo "Test 25: deadman ping URL rendered into webhook receiver"
+run_render "$TEST_DIR/t25.yml" && code=0 || code=$?
+[ "$code" -eq 0 ] || { cat "$TEST_DIR/t25.yml.err" >&2; fail "expected exit 0"; }
+grep -Fq 'url: "https://hc-ping.com/eval-deadman-uuid"' "$TEST_DIR/t25.yml" || fail "deadman URL not rendered"
+grep -Fq 'send_resolved: false' "$TEST_DIR/t25.yml" || fail "deadman webhook must not send resolved"
+grep -Fq 'alertname="Watchdog"' "$TEST_DIR/t25.yml" || fail "watchdog intercept route missing"
+! grep -Fq '${' "$TEST_DIR/t25.yml" || fail "unresolved placeholder remains"
+! grep -Fq "eval-deadman-uuid" "$TEST_DIR/t25.yml.err" || fail "secret leaked to logs"
+pass "deadman webhook rendered, resolved disabled, intercept route present"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"
