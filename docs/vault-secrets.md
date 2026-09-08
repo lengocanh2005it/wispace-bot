@@ -47,6 +47,26 @@ bot's path only, with no list, write, or delete capability. The AppRole client
 token is held only for the bootstrap requests, and `VAULT_ROLE_ID`/
 `VAULT_SECRET_ID` are removed from the process environment after the attempt.
 
+## Backup offsite credentials and key escrow (#866)
+
+The shared Vault path also stores the backup secrets so they survive VPS loss:
+
+- `BACKUP_ENCRYPTION_PASSPHRASE` — GPG passphrase for nightly backups,
+  pre-migration dumps, and restore verification. Escrowed here because the
+  VPS-local copy is destroyed with the VPS; this KV entry is the recovery
+  copy (keep a second operator copy per the DR runbook). Rotation requires
+  re-encrypting the retained window — align changes with the 14-day
+  retention so old artifacts stay readable, or re-upload the window after
+  rotating.
+- `OFFSITE_S3_ENDPOINT` / `OFFSITE_S3_BUCKET` / `OFFSITE_S3_ACCESS_KEY` /
+  `OFFSITE_S3_SECRET_KEY` / `OFFSITE_S3_REGION` (optional) — least-privilege
+  object-store credentials used by `deploy/postgres-offsite-sync.sh`; the
+  access key must allow put/list on the backup bucket only.
+
+The deploy env-allowlist accepts `BACKUP_ENCRYPTION_PASSPHRASE` in the Vault
+bootstrap; the offsite sync reads `OFFSITE_S3_*` from the same file and builds
+a mode-600 temp rclone config (never argv, never logged).
+
 ## Loading and failure behavior
 
 The loader authenticates once, fetches shared and per-bot data sequentially,

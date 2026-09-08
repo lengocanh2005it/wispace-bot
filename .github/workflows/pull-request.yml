@@ -348,6 +348,12 @@ jobs:
       - name: Test guarded restore-verify path (#865)
         run: bash .github/scripts/tests/postgres-restore-verify.test.sh
 
+      - name: Test offsite backup sync (#866)
+        run: bash .github/scripts/tests/postgres-offsite-sync.test.sh
+
+      - name: Test backup monitor offsite + decryptability checks (#866)
+        run: bash .github/scripts/tests/backup-monitor.test.sh
+
       - name: Check retired secret-manager references (#655)
         run: bash .github/scripts/check-secret-manager-references.sh
 

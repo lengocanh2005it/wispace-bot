@@ -72,7 +72,7 @@ validate_bootstrap_env() {
     key="${line%%=*}"
     value="${line#*=}"
     case "$key" in
-      VAULT_REQUIRED|VAULT_ADDR|VAULT_ROLE_ID|VAULT_SECRET_ID|HOME|DEPLOY_UID|DEPLOY_GID|CHAT_RATE_LIMIT_ENABLED|ENFORCE_PROD_CHAT_QUOTA) ;;
+      VAULT_REQUIRED|VAULT_ADDR|VAULT_ROLE_ID|VAULT_SECRET_ID|HOME|DEPLOY_UID|DEPLOY_GID|CHAT_RATE_LIMIT_ENABLED|ENFORCE_PROD_CHAT_QUOTA|BACKUP_ENCRYPTION_PASSPHRASE) ;;
       *) echo "ERROR: Vault bootstrap contains an unsupported setting" >&2; return 1 ;;
     esac
     if [ -n "${seen[$key]+present}" ]; then
@@ -573,19 +573,49 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
     "$VAULT_MIGRATION_STATUS_CMD") ;;
     *) echo "ERROR: unsupported migration status command" >&2; exit 1 ;;
   esac
-  # Safety net: quick pg_dump before migrations
+  # Safety net: quick pg_dump before migrations — encrypted with the same
+  # passphrase as the nightly backup (#866: pre-migrate dumps follow the
+  # nightly protection policy; plaintext only lives inside the dump pipe).
   PRE_MIGRATE_DIR="${PRE_MIGRATE_DIR:-/home/ngoc_anh/backups/ai_chat_bot_db/pre-migrate}"
   mkdir -p "$PRE_MIGRATE_DIR"
-  PRE_MIGRATE_DUMP="$PRE_MIGRATE_DIR/pre-migrate-$(date +%Y%m%d-%H%M%S).dump"
+  chmod 700 "$PRE_MIGRATE_DIR" 2>/dev/null || true
+  PRE_MIGRATE_STAMP=$(date +%Y%m%d-%H%M%S)
+  PRE_MIGRATE_DUMP="$PRE_MIGRATE_DIR/pre-migrate-$PRE_MIGRATE_STAMP.dump.gpg"
+  PRE_MIGRATE_TMP=$(mktemp "$PRE_MIGRATE_DIR/.pre-migrate.XXXXXX")
+  cleanup_pre_migrate() {
+    rm -f "$PRE_MIGRATE_TMP" "${PRE_MIGRATE_TMP:-}.pgpass" 2>/dev/null || true
+  }
+  trap cleanup_pre_migrate EXIT INT TERM
+  umask 077
   echo "Pre-migration safety dump → $PRE_MIGRATE_DUMP"
   if ! docker exec -e MIGRATION_LOCK_ID="$MIGRATION_LOCK_ID" "$NEW_CONTAINER" \
-    sh -c "$MIGRATION_PREFLIGHT_CMD" > "$PRE_MIGRATE_DUMP" 2>/dev/null || [ ! -s "$PRE_MIGRATE_DUMP" ]; then
+    sh -c "$MIGRATION_PREFLIGHT_CMD" > "$PRE_MIGRATE_TMP" 2>/dev/null || [ ! -s "$PRE_MIGRATE_TMP" ]; then
     echo "ERROR: pre-migration dump failed or was empty — refusing to deploy (#271)" >&2
-    rm -f "$PRE_MIGRATE_DUMP"
+    rm -f "$PRE_MIGRATE_TMP"
     docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
     exit 1
   fi
-  find "$PRE_MIGRATE_DIR" -name 'pre-migrate-*.dump' -mtime +1 -delete 2>/dev/null || true
+  BACKUP_PASSPHRASE=$(grep -E '^BACKUP_ENCRYPTION_PASSPHRASE=' .env 2>/dev/null \
+    | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
+  if [ -z "$BACKUP_PASSPHRASE" ]; then
+    echo "ERROR: BACKUP_ENCRYPTION_PASSPHRASE missing in .env (Vault bootstrap) — cannot encrypt the pre-migration dump" >&2
+    rm -f "$PRE_MIGRATE_TMP"
+    docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+    exit 1
+  fi
+  printf '%s' "$BACKUP_PASSPHRASE" > "$PRE_MIGRATE_TMP.pgpass"
+  chmod 600 "$PRE_MIGRATE_TMP.pgpass"
+  if ! gpg --batch --yes --symmetric --cipher-algo AES256 \
+      --passphrase-fd 3 --output "$PRE_MIGRATE_DUMP" \
+      3< "$PRE_MIGRATE_TMP.pgpass" "$PRE_MIGRATE_TMP" \
+    || [ ! -s "$PRE_MIGRATE_DUMP" ]; then
+    echo "ERROR: pre-migration dump encryption failed — refusing to deploy" >&2
+    rm -f "$PRE_MIGRATE_TMP" "$PRE_MIGRATE_TMP.pgpass" "$PRE_MIGRATE_DUMP"
+    docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+    exit 1
+  fi
+  rm -f "$PRE_MIGRATE_TMP" "$PRE_MIGRATE_TMP.pgpass"
+  find "$PRE_MIGRATE_DIR" -name 'pre-migrate-*.dump.gpg' -mtime +1 -delete 2>/dev/null || true
 
   echo "Applying migrations (advisory lock $MIGRATION_LOCK_ID held by the migration data source): $MIGRATION_CMD"
   if ! docker exec -e MIGRATION_LOCK_ID="$MIGRATION_LOCK_ID" "$NEW_CONTAINER" \

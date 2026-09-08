@@ -20,6 +20,21 @@ pass() { echo "  ok: $1"; }
 
 make_fake_bin() { # dir
   local dir="$1"
+  # Fake gpg (#866): reads the passphrase on fd 3, copies input to output.
+  cat > "$dir/gpg" <<'FAKEGPG'
+#!/usr/bin/env bash
+OUTFILE=""; INFILE=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --output) shift; OUTFILE="$1"; shift;;
+    --*) shift;;
+    *) INFILE="$1"; shift;;
+  esac
+done
+cat <&3 >/dev/null 2>&1 || true
+cp "$INFILE" "$OUTFILE"
+FAKEGPG
+  chmod +x "$dir/gpg"
   cat > "$dir/docker" <<'FAKE'
 #!/usr/bin/env bash
 echo "docker $*" >> "${DOCKER_LOG:?}"
@@ -167,7 +182,7 @@ run_script() { # dir [EXTRA_ENV=..].. -> echoes exit code
 }
 
 write_env() { # dir -> minimal .env
-  printf 'VAULT_REQUIRED=true\nVAULT_ADDR=https://vault.test\nVAULT_ROLE_ID=role-test\nVAULT_SECRET_ID=secret-test\n' > "$dir/deploy/.env"
+  printf 'VAULT_REQUIRED=true\nVAULT_ADDR=https://vault.test\nVAULT_ROLE_ID=role-test\nVAULT_SECRET_ID=secret-test\nBACKUP_ENCRYPTION_PASSPHRASE=test-passphrase\n' > "$dir/deploy/.env"
   chmod 600 "$dir/deploy/.env"
 }
 
@@ -292,6 +307,21 @@ code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1 FAKE_DUMP_EMPTY=1 PRE_
 grep -q "pre-migration dump failed" "$dir/run.out" || fail "missing empty dump failure message"
 ! grep -q "pg_advisory_lock" "$dir/docker.log" || fail "migration started after empty dump"
 pass "empty pre-migration dump stops before migration"
+
+echo "Test 8b: pre-migration dump is encrypted and leaves no plaintext (#866)"
+dir=$(make_env pre-migrate-encryption)
+write_env "$dir"
+write_upstream "$dir" 5007
+code=$(run_script "$dir" RUN_MIGRATIONS=true FAKE_DB_UP=1 PRE_MIGRATE_DIR="$dir/pre-migrate" \
+  MIGRATION_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js run')
+[ "$code" -eq 0 ] || fail "deploy failed, exit $code: $(cat "$dir/run.out")"
+dump_enc=$(find "$dir/pre-migrate" -name 'pre-migrate-*.dump.gpg' 2>/dev/null | head -1)
+[ -n "$dump_enc" ] || fail "no encrypted pre-migration dump produced"
+dump_plain=$(find "$dir/pre-migrate" -name 'pre-migrate-*.dump' 2>/dev/null | head -1)
+[ -z "$dump_plain" ] || fail "plaintext pre-migration dump left behind: $dump_plain"
+leftover=$(find "$dir/pre-migrate" -name '.pre-migrate.*' 2>/dev/null | head -1)
+[ -z "$leftover" ] || fail "interrupted-run temp material left behind: $leftover"
+pass "pre-migration dump encrypted, plaintext + temp removed"
 
 echo "Test 9: pending image migrations -> fail closed before nginx switch (#275)"
 dir=$(make_env migration-pending)
