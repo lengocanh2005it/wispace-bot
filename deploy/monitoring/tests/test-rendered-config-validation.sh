@@ -82,7 +82,11 @@ echo "Test 6: watchdog intercept route + deadman webhook (#515)"
 grep -q 'alertname="Watchdog"' "$TEST_DIR/alertmanager.yml" || fail "watchdog intercept missing"
 grep -q 'send_resolved: false' "$TEST_DIR/alertmanager.yml" || fail "deadman must not send resolved"
 grep -q 'webhook_configs:' "$TEST_DIR/alertmanager.yml" || fail "deadman webhook receiver missing"
-pass "deadman watchdog routing present in rendered config"
+# The intercept must sit BEFORE the severity routes: defense-in-depth against
+# someone later giving the Watchdog a critical severity and fanning it out.
+awk '/alertname="Watchdog"/ { if (!w) w = NR } /severity="critical"/ { if (!c) c = NR } END { exit !(w && c && w < c) }' \
+  "$TEST_DIR/alertmanager.yml" || fail "watchdog route is not before the severity routes"
+pass "deadman watchdog routing present and ordered first in rendered config"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"

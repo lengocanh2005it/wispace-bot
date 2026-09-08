@@ -4,10 +4,9 @@ rule_files:
 evaluation_interval: 1m
 
 tests:
+  # vector(1) is input-independent — no input series needed; the Watchdog
+  # must fire at every evaluation, forever.
   - interval: 1m
-    input_series:
-      - series: 'up{job="anything"}'
-        values: '1 1 1 1 1 1'
     alert_rule_test:
       - eval_time: 5m
         alertname: Watchdog

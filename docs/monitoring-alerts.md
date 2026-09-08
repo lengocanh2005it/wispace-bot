@@ -179,8 +179,9 @@ Recovery order:
 
 The webhook route and the `Watchdog` rule are deliberately the first entries
 in their respective files — removing or reordering them silently disables the
-external deadman; the routing tests (`test-rendered-config-validation.sh`,
-`test-alertmanager-entrypoint.sh`) fail if that happens.
+external deadman; the routing tests fail on removal and assert the intercept
+sits before the severity routes (`test-rendered-config-validation.sh`,
+`test-alertmanager-entrypoint.sh`).
 
 ## Metric classification
 
