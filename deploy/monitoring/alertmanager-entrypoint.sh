@@ -22,18 +22,12 @@ if [ -z "${TELEGRAM_CHAT_ID:-}" ]; then
 fi
 
 # #683: severity routing adds Discord + Pushover channels, all fail-closed.
-if [ -z "${DISCORD_ALERT_WEBHOOK_CRITICAL_URL:-}" ]; then
-  echo "FATAL: DISCORD_ALERT_WEBHOOK_CRITICAL_URL is not set — cannot start Alertmanager" >&2
-  exit 1
-fi
-
-if [ -z "${DISCORD_ALERT_WEBHOOK_WARNING_URL:-}" ]; then
-  echo "FATAL: DISCORD_ALERT_WEBHOOK_WARNING_URL is not set — cannot start Alertmanager" >&2
-  exit 1
-fi
-
 for webhook in DISCORD_ALERT_WEBHOOK_CRITICAL_URL DISCORD_ALERT_WEBHOOK_WARNING_URL; do
   eval "value=\${$webhook}"
+  if [ -z "$value" ]; then
+    echo "FATAL: $webhook is not set — cannot start Alertmanager" >&2
+    exit 1
+  fi
   case "$value" in
     https://discord.com/api/webhooks/*|https://discordapp.com/api/webhooks/*) ;;
     *)

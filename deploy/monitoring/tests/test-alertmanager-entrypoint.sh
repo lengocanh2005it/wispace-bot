@@ -16,7 +16,7 @@ pass() { echo "  ok: $1"; }
 
 # --- #683: severity routing adds four more fail-closed credentials ---
 
-FULL_CREDS="TELEGRAM_BOT_TOKEN=110022:AA-test TELEGRAM_CHAT_ID=123456789 DISCORD_ALERT_WEBHOOK_CRITICAL_URL=https://discord.com/api/webhooks/1/AAAA DISCORD_ALERT_WEBHOOK_WARNING_URL=https://discord.com/api/webhooks/2/BBBB PUSHOVER_USER_KEY=uQ9wCkrJMBvL1YyR3LSSDpAz123456 PUSHOVER_API_TOKEN=aQ9wCkrJMBvL1YyR3LSSDpAz123456"
+FULL_CREDS="TELEGRAM_BOT_TOKEN=110022:AA-test TELEGRAM_CHAT_ID=123456789 DISCORD_ALERT_WEBHOOK_CRITICAL_URL=https://discord.com/api/webhooks/1/AAAA DISCORD_ALERT_WEBHOOK_WARNING_URL=https://discord.com/api/webhooks/2/BBBB PUSHOVER_USER_KEY=evalPUSHOVERUSERKEY00 PUSHOVER_API_TOKEN=evalPUSHOVERTOKEN0000"
 
 run_render() { # dst [VAR=value overrides...]
   local dst="$1"; shift
@@ -171,6 +171,7 @@ echo "Test 19: http:// webhook URL (no TLS) → exit 1"
 run_render "$TEST_DIR/t19.yml" DISCORD_ALERT_WEBHOOK_CRITICAL_URL='http://discord.com/api/webhooks/1/AAAA' \
   && code=0 || code=$?
 [ "$code" -ne 0 ] || fail "expected non-zero exit"
+grep -q "FATAL.*DISCORD_ALERT_WEBHOOK_CRITICAL_URL" "$TEST_DIR/t19.yml.err" 2>/dev/null || fail "missing FATAL log"
 pass "plaintext webhook URL fails closed"
 
 echo "Test 20: non-alphanumeric pushover key → exit 1"
@@ -184,11 +185,11 @@ run_render "$TEST_DIR/t21.yml" && code=0 || code=$?
 [ "$code" -eq 0 ] || { cat "$TEST_DIR/t21.yml.err" >&2; fail "expected exit 0"; }
 grep -Fq 'webhook_url: "https://discord.com/api/webhooks/1/AAAA"' "$TEST_DIR/t21.yml" || fail "critical webhook not rendered"
 grep -Fq 'webhook_url: "https://discord.com/api/webhooks/2/BBBB"' "$TEST_DIR/t21.yml" || fail "warning webhook not rendered"
-grep -Fq 'user_key: "uQ9wCkrJMBvL1YyR3LSSDpAz123456"' "$TEST_DIR/t21.yml" || fail "pushover user_key not rendered"
-grep -Fq 'token: "aQ9wCkrJMBvL1YyR3LSSDpAz123456"' "$TEST_DIR/t21.yml" || fail "pushover token not rendered"
+grep -Fq 'user_key: "evalPUSHOVERUSERKEY00"' "$TEST_DIR/t21.yml" || fail "pushover user_key not rendered"
+grep -Fq 'token: "evalPUSHOVERTOKEN0000"' "$TEST_DIR/t21.yml" || fail "pushover token not rendered"
 grep -Fq 'severity="critical"' "$TEST_DIR/t21.yml" || fail "critical matcher missing"
 ! grep -Fq '${' "$TEST_DIR/t21.yml" || fail "unresolved placeholder remains"
-for secret in 'AAAA' 'BBBB' 'uQ9wCkrJMBvL1YyR3LSSDpAz123456' 'aQ9wCkrJMBvL1YyR3LSSDpAz123456'; do
+for secret in 'AAAA' 'BBBB' 'evalPUSHOVERUSERKEY00' 'evalPUSHOVERTOKEN0000'; do
   ! grep -Fq "$secret" "$TEST_DIR/t21.yml.err" || fail "secret leaked to logs"
 done
 pass "all credentials rendered, severity matchers present, no placeholders, no leaks"

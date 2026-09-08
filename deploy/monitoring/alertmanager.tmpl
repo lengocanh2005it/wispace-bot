@@ -54,9 +54,11 @@ receivers:
       - user_key: "${PUSHOVER_USER_KEY}"
         token: "${PUSHOVER_API_TOKEN}"
         send_resolved: true
-        # Priority defaults to emergency (2) while firing and normal (0) on
-        # resolve. Emergency repeats every `retry` until acknowledged, gives
-        # up after `expire` — that is the escalation window.
+        # Emergency priority (2) while firing = repeat every `retry` until
+        # acknowledged, gives up after `expire` (the escalation window).
+        # Resolved alerts drop to normal priority (0). This mirrors the AM
+        # 0.27 default, spelled out so the escalation contract is visible.
+        priority: '{{ if eq .Status "firing" }}2{{ else }}0{{ end }}'
         retry: 5m
         expire: 1h
   - name: telegram

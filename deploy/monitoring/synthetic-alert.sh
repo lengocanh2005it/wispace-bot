@@ -5,19 +5,21 @@ set -euo pipefail
 # fire an alert into the local Alertmanager, wait for evaluation/delivery,
 # resolve it, then self-check that the alert left the pending queue.
 #
-# Cadence (install both crons):
+# Cadence (install both crons — see the install block below):
 #   Daily 09:07 ICT  → severity=warning  (exercises discord-warning only)
 #   Monday 09:02 ICT → severity=critical (exercises all three critical legs)
-#
-#   crontab -e:
-#     7 2 * * *  SYNTHETIC_SEVERITY=warning  /home/ngoc_anh/scripts/synthetic-alert.sh >> /home/ngoc_anh/logs/synthetic-alert.log 2>&1
-#     2 2 * * 1  SYNTHETIC_SEVERITY=critical /home/ngoc_anh/scripts/synthetic-alert.sh >> /home/ngoc_anh/logs/synthetic-alert.log 2>&1
-# (cron runs UTC; 02:07 UTC = 09:07 ICT)
 #
 # The script posts with endsAt so the alert auto-expires in Alertmanager even
 # if the resolve step fails — a crashed probe must not leave a firing alert.
 # Delivery failure is also detected out-of-band by the AlertDeliveryFailed
 # rule (alertmanager_notifications_failed_total).
+#
+# Install (adjust the home path to the actual deploy user):
+#   mkdir -p ~/logs && cp deploy/monitoring/synthetic-alert.sh ~/scripts/
+#   chmod +x ~/scripts/synthetic-alert.sh
+#   crontab -e:  (cron runs UTC; 02:07/02:02 UTC = 09:07/09:02 ICT)
+#     7 2 * * *  SYNTHETIC_SEVERITY=warning  $HOME/scripts/synthetic-alert.sh >> $HOME/logs/synthetic-alert.log 2>&1
+#     2 2 * * 1  SYNTHETIC_SEVERITY=critical $HOME/scripts/synthetic-alert.sh >> $HOME/logs/synthetic-alert.log 2>&1
 
 ALERTMANAGER_URL="${ALERTMANAGER_URL:-http://127.0.0.1:9093}"
 SEVERITY="${SYNTHETIC_SEVERITY:-warning}"
@@ -43,9 +45,15 @@ post_alert() { # status firing|resolved
 }
 
 # List of alert instances currently pending/firing in Alertmanager.
+# Fails closed: an API query error aborts the probe (never report OK on a
+# broken check) — same contract as backup-monitor.sh.
 alerts_pending() {
-  curl -sf "$ALERTMANAGER_URL/api/v2/alerts?active=true&silenced=false&inhibited=false" \
-    | grep -c "\"alertname\":\"$ALERTNAME\"" || true
+  local response
+  if ! response=$(curl -sf "$ALERTMANAGER_URL/api/v2/alerts?active=true&silenced=false&inhibited=false"); then
+    echo "ERROR: cannot query $ALERTMANAGER_URL/api/v2/alerts" >&2
+    return 1
+  fi
+  printf '%s' "$response" | grep -c "\"alertname\":\"$ALERTNAME\"" || true
 }
 
 echo "[synthetic] firing $ALERTNAME severity=$SEVERITY at $(date -Is)"

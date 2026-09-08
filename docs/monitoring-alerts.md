@@ -34,7 +34,7 @@ existing p95 >30 s rule, making the two upstream budgets comparable.
 
 | Alert                        | Severity | First response                                                                                                                            |
 | ---------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| AlertDeliveryFailed          | critical | A receiver integration is failing (check `integration`/`reason` labels): verify the webhook URL, Pushover credential, or Telegram token; routing silence may otherwise go unnoticed (#683). |
+| AlertDeliveryFailed          | critical | A receiver integration is failing (check `integration`/`reason` labels): verify the webhook URL, Pushover credential, or Telegram token; routing silence may otherwise go unnoticed (#683). Note: a failing warning-channel delivery still pages critical by design — the routing must be observable. |
 | BotDown                      | critical | Check `/health/ready`, container logs, and the last deploy; roll back only after preserving the failing image digest.                     |
 | BotRestartLoop               | warning  | Inspect container exit reason, memory/CPU pressure, and startup configuration.                                                            |
 | PrometheusJobMissing         | warning  | Check Prometheus target discovery, the stable `*-bot-metrics` aliases, and `/metrics` authorization.                                      |
@@ -234,7 +234,7 @@ There is no separate staging environment — verification happens in two layers:
 2. `curl` with each `Authorization: Bearer <INTERNAL_API_KEY_*>` → expect
    `200` and a non-empty body.
 3. Prometheus Targets page (or `/api/v1/targets`): `messenger_bot`,
-   `discord_bot`, `zalo_bot` are all UP.
+   `discord_bot`, `zalo_bot`, and `alertmanager` are all UP.
 4. Send a test alert (Alertmanager `/api/v2/alerts`):
    - `severity=warning` → expect a message in `#alerts-warnings` only.
    - `severity=critical` → expect messages in `#alerts-critical` (with

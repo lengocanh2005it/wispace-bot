@@ -58,7 +58,7 @@ echo "Test 3: render alertmanager template with dummy creds (#683 full credentia
 TELEGRAM_BOT_TOKEN='110022:AA$pec'"'"'ial`tok:en_ß日' TELEGRAM_CHAT_ID="123456789" \
   DISCORD_ALERT_WEBHOOK_CRITICAL_URL='https://discord.com/api/webhooks/123/AA$pec'"'"'ial' \
   DISCORD_ALERT_WEBHOOK_WARNING_URL='https://discord.com/api/webhooks/456/BB$pec'"'"'ial' \
-  PUSHOVER_USER_KEY='uQ9wCkrJMBvL1YyR3LSSDpAz123456' PUSHOVER_API_TOKEN='aQ9wCkrJMBvL1YyR3LSSDpAz123456' \
+  PUSHOVER_USER_KEY='evalPUSHOVERUSERKEY00' PUSHOVER_API_TOKEN='evalPUSHOVERTOKEN0000' \
   SRC="$MON/alertmanager.tmpl" DST="$TEST_DIR/alertmanager.yml" DRY_RUN=1 \
   sh "$MON/alertmanager-entrypoint.sh" || fail "alertmanager render failed"
 [ -f "$TEST_DIR/alertmanager.yml" ] || fail "rendered alertmanager.yml missing"
