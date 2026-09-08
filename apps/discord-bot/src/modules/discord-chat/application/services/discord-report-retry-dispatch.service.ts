@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import {
   REPORT_SEND_JOB_REPOSITORY,
+  ReportCronLeaderService,
   type ReportSendJobRepositoryPort,
 } from '@wispace/scheduler-core';
 import { DiscordReportOrchestrationService } from './discord-report-orchestration.service';
@@ -14,9 +15,14 @@ import type { ReportMapping } from '@wispace/scheduler-core';
 import { todayReportDate } from '@wispace/scheduler-core';
 import { subMilliseconds, addMinutes } from 'date-fns';
 import { BotMetricsService } from '@wispace/bot-metrics';
+import {
+  PgAdvisoryLockService,
+  ADVISORY_LOCKS,
+} from '@wispace/bot-common/locks';
 
 const PLATFORM = 'discord' as const;
 const REPORT_RETRY_EXPECTED_INTERVAL_MS = 15 * 60 * 1000;
+const DEFAULT_LEASE_MS = 600_000;
 
 @Injectable()
 export class DiscordReportRetryDispatchService {
@@ -29,6 +35,8 @@ export class DiscordReportRetryDispatchService {
     private readonly orchestrationService: DiscordReportOrchestrationService,
     @Inject(DISCORD_REPORT_ACCOUNT_READER)
     private readonly accountLinkReader: DiscordReportAccountPageReaderPort,
+    private readonly reportCronLeaderService: ReportCronLeaderService,
+    private readonly pgLock: PgAdvisoryLockService,
     @Optional() private readonly metrics?: BotMetricsService,
   ) {
     this.metrics?.registerCron?.(
@@ -42,20 +50,37 @@ export class DiscordReportRetryDispatchService {
     timeZone: 'Asia/Ho_Chi_Minh',
   })
   async handleRetryDispatch(): Promise<void> {
-    await this.dispatchDueReportRetries();
+    if (!(await this.reportCronLeaderService.shouldRunScheduledReportCron())) {
+      return;
+    }
+
+    const result = await this.pgLock.withLock(
+      ADVISORY_LOCKS.DISCORD_REPORT_RETRY_DISPATCH,
+      () => this.dispatchDueReportRetries(),
+    );
+    if (result === null) {
+      this.logger.debug(
+        'discord-report-retry-dispatch skipped — lock held by another pod',
+      );
+      return;
+    }
     this.metrics?.recordCronSuccess?.('discord-report-retry-dispatch');
   }
 
   async dispatchDueReportRetries() {
     const now = new Date();
+    // Invariant (#521): the stuck threshold must exceed the claim lease
+    // (2x) so a slow send is never reclaimed while its owner still holds a
+    // valid lease — the late markSent can then never hit a token mismatch.
     const resetStuck = await this.jobRepository.resetStuckProcessingJobs(
-      subMilliseconds(now, 10 * 60 * 1000),
+      subMilliseconds(now, 2 * this.leaseMs),
     );
 
     const dueJobs = await this.jobRepository.findDueJobs(now);
     let sent = 0;
     let retryQueued = 0;
     let failed = 0;
+    let windowClosed = 0;
     const failures: Array<{ externalUserId: string; error: string }> = [];
 
     for (const job of dueJobs) {
@@ -117,6 +142,50 @@ export class DiscordReportRetryDispatchService {
         // Report already delivered today by another path — outbox job is done.
         await this.jobRepository.markSent(job.id, leaseToken);
         sent += 1;
+      } else if (result.claimSkipped > 0) {
+        // Another worker holds a live claim for this learner's report —
+        // requeue without consuming a retry; it will resolve on a later tick.
+        await this.jobRepository.markFailed({
+          jobId: job.id,
+          leaseToken,
+          errorMessage: 'Report claim exists for today',
+          retryCount: job.retryCount,
+          nextRetryAt: addMinutes(new Date(), 15),
+          terminal: false,
+        });
+        retryQueued += 1;
+      } else if (result.deferred > 0) {
+        // Upstream deferred (retryable generation/delivery) — park the job
+        // with a future next_retry_at instead of leaving it processing.
+        const nextRetryCount = job.retryCount + 1;
+        const terminal = nextRetryCount >= job.maxRetries;
+        await this.jobRepository.markFailed({
+          jobId: job.id,
+          leaseToken,
+          errorMessage: 'Report generation deferred (upstream retryable)',
+          retryCount: nextRetryCount,
+          nextRetryAt: terminal ? undefined : addMinutes(new Date(), 15),
+          terminal,
+        });
+        if (terminal) {
+          failed += 1;
+          failures.push({
+            externalUserId: job.externalUserId,
+            error: 'Report generation deferred (upstream retryable)',
+          });
+        } else {
+          retryQueued += 1;
+        }
+      } else if (result.windowClosed > 0) {
+        // Exam window closed — the report would be noise; expire the job.
+        await this.jobRepository.markFailed({
+          jobId: job.id,
+          leaseToken,
+          errorMessage: 'Exam window closed',
+          retryCount: job.maxRetries,
+          terminal: true,
+        });
+        windowClosed += 1;
       } else if (result.failures.length > 0) {
         const error = result.failures[0].error;
         const rateLimited = error === 'outbound_rate_limited';
@@ -143,17 +212,17 @@ export class DiscordReportRetryDispatchService {
 
     if (dueJobs.length > 0 || resetStuck > 0) {
       this.logger.log(
-        `Discord report retry dispatch: sent=${sent} retryQueued=${retryQueued} failed=${failed} resetStuck=${resetStuck}`,
+        `Discord report retry dispatch: sent=${sent} retryQueued=${retryQueued} failed=${failed} windowClosed=${windowClosed} resetStuck=${resetStuck}`,
       );
     }
 
-    return { sent, retryQueued, failed, failures };
+    return { sent, retryQueued, failed, windowClosed, failures };
   }
 
   private get leaseMs(): number {
     const raw = this.configService.get<string>('REPORT_SEND_LEASE_MS')?.trim();
-    if (!raw) return 600_000;
+    if (!raw) return DEFAULT_LEASE_MS;
     const value = Number(raw);
-    return Number.isFinite(value) && value > 0 ? value : 600_000;
+    return Number.isFinite(value) && value > 0 ? value : DEFAULT_LEASE_MS;
   }
 }

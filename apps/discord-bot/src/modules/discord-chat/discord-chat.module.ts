@@ -477,8 +477,19 @@ const REGISTER_REPORT_MESSAGE =
       useFactory: (
         store: TypeormRescheduleStore<string>,
         metrics: BotMetricsService,
-      ) => new RescheduleRecoveryCronService(store, metrics),
-      inject: [TypeormRescheduleStore, BotMetricsService],
+        pgLock: PgAdvisoryLockService,
+      ) =>
+        new RescheduleRecoveryCronService(
+          store,
+          metrics,
+          pgLock,
+          ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
+        ),
+      inject: [
+        TypeormRescheduleStore,
+        BotMetricsService,
+        PgAdvisoryLockService,
+      ],
     },
     {
       provide: RescheduleConfirmationService,

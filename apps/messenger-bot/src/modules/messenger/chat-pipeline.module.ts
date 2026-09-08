@@ -29,6 +29,10 @@ import {
 } from '@wispace/llm-agent';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import {
+  ADVISORY_LOCKS,
+  PgAdvisoryLockService,
+} from '@wispace/bot-common/locks';
+import {
   WispaceConfigService,
   PrecreateExerciseApiClient,
 } from '@wispace/wispace-client';
@@ -415,8 +419,19 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
       useFactory: (
         store: TypeormRescheduleStore<string>,
         metrics: BotMetricsService,
-      ) => new RescheduleRecoveryCronService(store, metrics),
-      inject: [TypeormRescheduleStore, BotMetricsService],
+        pgLock: PgAdvisoryLockService,
+      ) =>
+        new RescheduleRecoveryCronService(
+          store,
+          metrics,
+          pgLock,
+          ADVISORY_LOCKS.RESCHEDULE_RECOVERY,
+        ),
+      inject: [
+        TypeormRescheduleStore,
+        BotMetricsService,
+        PgAdvisoryLockService,
+      ],
     },
     MessengerAgentService,
     MessengerAgentToolsService,

@@ -30,6 +30,10 @@ export const ADVISORY_LOCKS = {
   DISCORD_STUDY_REMINDER_ROLLOVER: 884_200_946,
   /** Discord: re-engagement daily batch lock (#854). */
   DISCORD_REENGAGEMENT: 884_200_950,
+  /** Discord: report retry-dispatch cron (every 15 min, `report_send_jobs`) (#521). */
+  DISCORD_REPORT_RETRY_DISPATCH: 884_200_951,
+  /** Shared: reschedule-recovery cron across all bots (every 5 min, `reschedule_confirmations`) (#464). */
+  RESCHEDULE_RECOVERY: 884_200_952,
   /** Zalo: study-reminder worker sync lock (30 min, per-platform #777). */
   ZALO_STUDY_REMINDER_SYNC: 884_200_947,
   /** Zalo: study-reminder terminal-job cleanup lock (03:00 ICT, per-platform #777). */
