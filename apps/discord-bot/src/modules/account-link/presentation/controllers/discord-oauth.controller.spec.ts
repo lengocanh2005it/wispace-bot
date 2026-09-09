@@ -91,7 +91,7 @@ describe('DiscordOauthController', () => {
       );
     });
 
-    it('returns empty url when linkToken is missing', async () => {
+    it('rejects a missing link token with 400 and the shared error body (#948)', async () => {
       const deps = mockDeps();
       const controller = new DiscordOauthController(
         deps.configService as never,
@@ -99,11 +99,30 @@ describe('DiscordOauthController', () => {
         deps.stateService as never,
       );
 
-      const res = { json: jest.fn() } as never;
-      await controller.getOAuthUrl(undefined, res);
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await controller.getOAuthUrl(undefined, res as never);
 
       expect(deps.stateService.create).not.toHaveBeenCalled();
-      expect(res.json).toHaveBeenCalledWith({ url: '' });
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        message: 'Thiếu hoặc không hợp lệ link token.',
+      });
+    });
+
+    it('rejects an oversized link token with 400 (#948)', async () => {
+      const deps = mockDeps();
+      const controller = new DiscordOauthController(
+        deps.configService as never,
+        deps.completionService as never,
+        deps.stateService as never,
+      );
+
+      const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+      await controller.getOAuthUrl('a'.repeat(513), res as never);
+
+      expect(deps.stateService.create).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(400);
     });
   });
 

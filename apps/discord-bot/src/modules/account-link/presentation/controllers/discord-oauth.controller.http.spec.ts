@@ -99,13 +99,47 @@ describe('DiscordOauthController HTTP binding (#388)', () => {
     expect(completionService.completeLink).not.toHaveBeenCalled();
   });
 
-  it('rejects an oversized link token like a missing one (indistinguishable)', async () => {
+  // #948 — invalid link tokens must be an explicit 4xx with the shared
+  // error body (mirroring the Zalo authorize endpoint), never a silent
+  // 200 with an empty URL.
+  it('rejects a missing link token with 400 and the shared error body', async () => {
+    const response = await fetch(`${baseUrl}/discord/oauth/url`);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: 'Thiếu hoặc không hợp lệ link token.',
+    });
+    expect(stateService.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects an oversized link token with 400 and the shared error body', async () => {
     const response = await fetch(
       `${baseUrl}/discord/oauth/url?state=${'a'.repeat(513)}`,
     );
 
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ url: '' });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      success: false,
+      message: 'Thiếu hoặc không hợp lệ link token.',
+    });
     expect(stateService.create).not.toHaveBeenCalled();
+  });
+
+  it('keeps the valid-token path byte-identical: 200 {url}, no-store, cookie set', async () => {
+    stateService.create.mockResolvedValueOnce('state-nonce');
+
+    const response = await fetch(
+      `${baseUrl}/discord/oauth/url?state=link-token-123`,
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { url: string };
+    expect(body.url).toContain('https://discord.com/oauth2/authorize');
+    expect(body.url).toContain('state=state-nonce');
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const setCookie = response.headers.get('set-cookie') ?? '';
+    expect(setCookie).toContain('__Host-discord_oauth_state=state-nonce');
+    expect(stateService.create).toHaveBeenCalledWith('link-token-123');
   });
 });

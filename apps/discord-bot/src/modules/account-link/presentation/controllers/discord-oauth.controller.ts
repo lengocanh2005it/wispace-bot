@@ -49,10 +49,16 @@ export class DiscordOauthController {
       'DISCORD_OAUTH_REDIRECT_URI',
     );
 
-    // Oversized tokens get the same empty response as a missing one — no
-    // validity signal (mirrors the Zalo authorize 512-char cap).
+    // Invalid link tokens are an explicit 4xx (#948) — the FE must be able
+    // to distinguish "invalid link token" from "service degraded". The body
+    // shape and message mirror the Zalo authorize endpoint, so both
+    // platforms reject identical invalid input identically (per #825's
+    // audit; a unified shape lands there).
     if (!linkToken?.trim() || linkToken.trim().length > 512) {
-      res.json({ url: '' });
+      res.status(400).json({
+        success: false,
+        message: 'Thiếu hoặc không hợp lệ link token.',
+      });
       return;
     }
 
