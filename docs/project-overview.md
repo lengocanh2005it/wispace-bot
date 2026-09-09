@@ -791,33 +791,47 @@ The `git fetch`/`reset` run **inside the script, after the deploy lock is held**
 
 Known gap: target resolution is fleet-wide — it resolves to the newest commit the **migration owner** has an image for, so a commit touching only `apps/discord-bot/**` (which builds a Discord image but no Messenger one) resolves the whole fleet back to an older SHA and does not ship that Discord image until a later commit rebuilds Messenger. Per-app target resolution is tracked on #695.
 
-**Postgres backup & restore (#182/#185/#865/#866):** nightly `pg_dump` at 02:00 ICT via `deploy/postgres-backup.sh`, encrypted at rest with GPG AES-256 (`BACKUP_ENCRYPTION_PASSPHRASE` in the host-only Vault-rendered `backup.env`), 14-day retention. Each run also captures PostgreSQL globals (`pg_dumpall --globals-only` → `.globals.sql.gz.gpg`) so the restore verifier can rebuild roles, and hands the passphrase to GPG over fd 3 (never argv). Production HA must additionally enable provider WAL/PITR and monitor restore points. Backups are gzip-validated before encryption and stored as `.sql.gz.gpg` in `/home/ngoc_anh/backups/ai_chat_bot_db/`. **Offsite replication (#866):** `deploy/postgres-offsite-sync.sh` (cron 03:30 ICT) copies the latest dump + globals + restore-verify evidence to an S3-compatible bucket (`OFFSITE_S3_*` from the host-only `backup.env`, rclone config mode-600 temp) — upload goes to a temp name, is checksum-verified after transfer, then promoted atomically; remote retention is the bucket lifecycle rule and remote deletion is never performed by the sync. **Monitoring:** hourly `deploy/backup-monitor.sh` checks the local `.last-backup-success` and offsite `.last-offsite-success` markers (`postgres_backup_stale` / `postgres_offsite_stale` Alertmanager alerts → Telegram, bounded + resolved with `ends_at`); a weekly `RUN_RESTORE_VERIFY=1` cron runs the guarded restore verifier so decryptability is checked end-to-end. Backup failures also fire `postgres_backup_failed` immediately. Pre-migration safety dumps (`pg_dump -Fc`) are **encrypted with the same passphrase** into `pre-migrate/*.dump.gpg` with 1-day retention and interrupted-run cleanup. Measured restore evidence belongs in the [PostgreSQL HA runbook](postgres-ha-runbook.md). Restore protection/recovery policy: the guarded verifier (`deploy/postgres-restore-verify.sh`) is the only supported restore path; artifacts from before the globals-capture deploy cannot be fully verified (fail closed on the missing `.globals.sql.gz.gpg`). Key escrow: `BACKUP_ENCRYPTION_PASSPHRASE` lives in Vault KV (failure domain independent of the VPS) — see [vault-secrets.md](vault-secrets.md); rotation requires re-encrypting retained artifacts, so keep passphrase changes aligned with the retention window.
+**Postgres backup & restore (#182/#185/#865/#866/#879):** nightly `pg_dump` at 02:00 ICT via `deploy/postgres-backup.sh`, encrypted at rest with GPG AES-256 (`BACKUP_ENCRYPTION_PASSPHRASE` in the host-only Vault-rendered `backup.env`), 14-day retention. Each run also captures PostgreSQL globals (`pg_dumpall --globals-only` → `.globals.sql.gz.gpg`) so the restore verifier can rebuild roles, hands the passphrase to GPG over fd 3 (never argv), and captures a **state sidecar** before the dump (`.state.json.gz.gpg`, #879: migration names + public-table inventory — the verifier's versioned expectation, never derived from the restored DB; a backup of a database with no migrations is refused). Production HA must additionally enable provider WAL/PITR and monitor restore points. Backups are gzip-validated before encryption and stored as `.sql.gz.gpg` in `/home/ngoc_anh/backups/ai_chat_bot_db/`. **Offsite replication (#866):** `deploy/postgres-offsite-sync.sh` (cron 03:30 ICT) copies the latest dump + globals + state sidecar + restore-verify evidence to an S3-compatible bucket (`OFFSITE_S3_*` from the host-only `backup.env`, rclone config mode-600 temp) — upload goes to a temp name, is checksum-verified after transfer, then promoted atomically; the manifest is version 2 and carries `state_name`/`state_sha256`; remote retention is the bucket lifecycle rule and remote deletion is never performed by the sync. **Monitoring:** hourly `deploy/backup-monitor.sh` checks the local `.last-backup-success` and offsite `.last-offsite-success` markers (`postgres_backup_stale` / `postgres_offsite_stale` Alertmanager alerts → Telegram, bounded + resolved with `ends_at`); a weekly `RUN_RESTORE_VERIFY=1` cron downloads the remote dump + globals + state sidecar (all checksum-verified; a v1 manifest without the state sidecar fails closed) and runs the guarded restore verifier so decryptability is checked end-to-end. Backup failures also fire `postgres_backup_failed` immediately. Pre-migration safety dumps (`pg_dump -Fc`) are **encrypted with the same passphrase** into `pre-migrate/*.dump.gpg` with 1-day retention and interrupted-run cleanup. Measured restore evidence belongs in the [PostgreSQL HA runbook](postgres-ha-runbook.md). Restore protection/recovery policy: the guarded verifier (`deploy/postgres-restore-verify.sh`) is the only supported restore path; artifacts from before the globals-capture deploy cannot be fully verified (fail closed on the missing `.globals.sql.gz.gpg` or state sidecar). Key escrow: `BACKUP_ENCRYPTION_PASSPHRASE` lives in Vault KV (failure domain independent of the VPS) — see [vault-secrets.md](vault-secrets.md); rotation requires re-encrypting retained artifacts, so keep passphrase changes aligned with the retention window.
 
 **Host backup delivery correction (#866):** backup/offsite cron jobs read the separate Vault-rendered `/home/ngoc_anh/backups/ai_chat_bot_db/backup.env`, not the bot's AppRole-only `.env`; the deployment workflow installs it only on the host and never passes it to `docker run`. This supersedes older wording in the backup paragraph that described the source secret as the bot bootstrap. The offsite sync also carries encrypted pre-migration dumps under the same retention/lifecycle policy. The offsite monitor verifies the remote manifest and checksum sidecars hourly, and weekly restore verification downloads and decrypts the remote pair.
 
 **Deploy failure policy (#271/#284):** `vps-deploy.sh` also fails closed when the image cannot be pulled, `RUN_MIGRATIONS=true` has no validated `MIGRATION_CMD`, or the pre-migration `pg_dump` fails/is empty. `SKIP_NGINX_CHECK=true` is only valid when no active container is detected; it cannot bypass a live traffic route.
 
-**Restore from backup (guarded, #865):** the copy-paste restore snippet is
+**Restore from backup (guarded, #865/#879):** the copy-paste restore snippet is
 retired. Use `deploy/postgres-restore-verify.sh` — it fail-closes on prod
-targets, hands the passphrase over a file descriptor (never argv/logs),
-validates gzip + decryption, restores globals then schema/data into a
-disposable PostgreSQL container (default) or an allowlisted staging target,
-checks migration state + table inventory, and writes one JSON evidence file
-per run. The production `DB_HOST`/`DB_NAME` from the operator env file are
-read only to be rejected as targets.
+targets (hostname **and** resolved-IP alias, #879), hands the passphrase over
+a file descriptor (never argv/logs), validates gzip + decryption, restores
+globals then schema/data into a disposable PostgreSQL container (default) or
+an allowlisted staging target, and checks the restored database against the
+backup-time state sidecar (#879: every sidecar migration/table must be
+present — an empty or partial restore fails; extra restored entries only
+warn) plus non-PII row floors (`RESTORE_VERIFY_MIN_ROWS`, default
+`user_platform_mappings:1`). Staging targets additionally require TLS
+(`sslmode=verify-full` + `RESTORE_TARGET_CA`), a fresh/empty database
+(the verifier creates it if missing, refuses a non-empty one), and receive a
+**sanitized** globals copy — only allowlisted roles, no passwords,
+SUPERUSER/REPLICATION/CREATEROLE or ACL statements (disposable targets get
+the full globals, they are isolated). Evidence is one collision-resistant
+JSON file per run (random hex suffix) pruned after
+`RESTORE_VERIFY_EVIDENCE_RETENTION_DAYS` (default 30). The production
+`DB_HOST`/`DB_NAME` from the operator env file are read only to be rejected
+as targets.
 
 ```bash
 # Verify the latest encrypted backup against a throwaway PostgreSQL container
 bash deploy/postgres-restore-verify.sh \
   --artifact /home/ngoc_anh/backups/ai_chat_bot_db/ai_chat_bot_db-TIMESTAMP.sql.gz.gpg \
   --globals-artifact /home/ngoc_anh/backups/ai_chat_bot_db/ai_chat_bot_db-TIMESTAMP.globals.sql.gz.gpg \
+  --state-artifact /home/ngoc_anh/backups/ai_chat_bot_db/ai_chat_bot_db-TIMESTAMP.state.json.gz.gpg \
   --env-file /home/ngoc_anh/backups/ai_chat_bot_db/backup.env \
   --evidence-dir /home/ngoc_anh/backups/restore-verify
 
 # Or an allowlisted staging target (RESTORE_VERIFY_ALLOWLIST="host:5432:db",
-# RESTORE_TARGET_PASSWORD must be set; prod DB_HOST/DB_NAME always rejected)
+# RESTORE_TARGET_PASSWORD + RESTORE_TARGET_CA must be set; prod DB_HOST/DB_NAME
+# and any staging host that resolves to a production IP are always rejected)
 RESTORE_VERIFY_ALLOWLIST="staging-db.internal:5432:restore_drill" \
 RESTORE_TARGET_PASSWORD=... \
+RESTORE_TARGET_CA=/path/to/ca.pem \
 bash deploy/postgres-restore-verify.sh ... \
   --target staging --target-host staging-db.internal --target-port 5432 \
   --target-db restore_drill --target-user restorer
@@ -825,6 +839,10 @@ bash deploy/postgres-restore-verify.sh ... \
 
 The verifier never restores over production; promoting a verified restore
 into production is a database-owner decision made outside this script.
+**Staging drill (#879):** run the staging command above once against the
+staging Postgres and retain the success evidence JSON — the next offsite
+sync copies the newest `restore-verify-*.json` to the bucket, where it is
+kept permanently (remote deletion is never performed).
 
 **Recovery when the self-pull stalls** (bots N commits behind, `git fetch` failing silently in the past): run manually on the VPS —
 

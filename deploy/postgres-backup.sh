@@ -57,6 +57,9 @@ STAMP=$(date +%Y%m%d-%H%M%S)
 OUT="$BACKUP_DIR/${DB_NAME}-${STAMP}.sql.gz.gpg"
 TMP="$OUT.tmp"
 GPG_TMP="$OUT.gpg.tmp"
+STATE_OUT="$BACKUP_DIR/${DB_NAME}-${STAMP}.state.json.gz.gpg"
+STATE_TMP="$STATE_OUT.tmp"
+STATE_GPG_TMP="$STATE_OUT.gpg.tmp"
 # Passphrase handoff file — fd 3 for GPG, mode 600, removed on exit (#865).
 PASSPHRASE_FD_FILE="$BACKUP_DIR/.backup-passphrase.$$"
 printf '%s' "$BACKUP_PASSPHRASE" > "$PASSPHRASE_FD_FILE"
@@ -112,6 +115,39 @@ if [ "$writer_status" != "t" ]; then
   exit 1
 fi
 
+# State sidecar (#879): capture the migration + table inventory BEFORE the
+# dump. The restore verifier compares the restored database against this
+# independent backup-time expectation — it never derives the expected set
+# from the restored database itself.
+json_lines_to_array() {
+  awk 'BEGIN { ORS = ""; printf "[" }
+    { if (NR > 1) printf ", "; printf "\"%s\"", $0 }
+    END { printf "]" }'
+}
+MIGS_RAW=$(run_db_client psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -p "$DB_PORT" \
+  -U "$DB_USER" -d "$DB_NAME" \
+  -tAc 'SELECT name FROM public.migrations ORDER BY name' 2>>"$BACKUP_DIR/.pgstate.err") || {
+  echo "ERROR: state sidecar migration capture failed — see $BACKUP_DIR/.pgstate.err" >&2
+  touch "$FAILURE_MARKER"
+  notify_backup_failed "Postgres backup failed" "state sidecar migration capture failed at $(date -Is)"
+  exit 1
+}
+[ -n "$MIGS_RAW" ] || {
+  echo "ERROR: no migrations recorded on the source database — refusing to back up the wrong DB" >&2
+  touch "$FAILURE_MARKER"
+  notify_backup_failed "Postgres backup failed" "state sidecar found no migrations at $(date -Is)"
+  exit 1
+}
+TABLES_RAW=$(run_db_client psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -p "$DB_PORT" \
+  -U "$DB_USER" -d "$DB_NAME" \
+  -tAc "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE' ORDER BY table_name" \
+  2>>"$BACKUP_DIR/.pgstate.err") || {
+  echo "ERROR: state sidecar table capture failed — see $BACKUP_DIR/.pgstate.err" >&2
+  touch "$FAILURE_MARKER"
+  notify_backup_failed "Postgres backup failed" "state sidecar table capture failed at $(date -Is)"
+  exit 1
+}
+
 # Keep stderr for failure detection (no 2>/dev/null) — a failed pg_dump must
 # not leave a silent half-written gzip on disk.
 if run_db_client pg_dump -U "$DB_USER" -d "$DB_NAME" -h "$DB_HOST" -p "$DB_PORT" \
@@ -139,13 +175,28 @@ if run_db_client pg_dump -U "$DB_USER" -d "$DB_NAME" -h "$DB_HOST" -p "$DB_PORT"
     exit 1
   fi
 
+  # State sidecar JSON (schema only — names/counts, no PII) is encrypted with
+  # the same key and travels with the dump pair (#879).
+  STATE_JSON_CONTENT=$(printf '{"captured_at": "%s", "migrations": %s, "tables": %s}\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "$(printf '%s\n' "$MIGS_RAW" | json_lines_to_array)" \
+    "$(printf '%s\n' "$TABLES_RAW" | json_lines_to_array)")
+  printf '%s' "$STATE_JSON_CONTENT" | gzip > "$STATE_TMP"
+  if ! gzip -t "$STATE_TMP" 2>/dev/null || [ ! -s "$STATE_TMP" ]; then
+    echo "ERROR: state sidecar gzip validation failed — backup discarded" >&2
+    rm -f "$TMP" "$GLOBALS_TMP" "$STATE_TMP"
+    touch "$FAILURE_MARKER"
+    notify_backup_failed "Postgres backup failed" "state sidecar gzip validation failed at $(date -Is)"
+    exit 1
+  fi
+
   # Encrypt at rest with GPG symmetric AES-256 (#185). The passphrase is
   # handed over fd 3 — never in argv (#865; argv is visible in ps output).
   if ! gpg --batch --yes --symmetric --cipher-algo AES256 \
       --passphrase-fd 3 --output "$GPG_TMP" 3< "$PASSPHRASE_FD_FILE" "$TMP" \
     || [ ! -s "$GPG_TMP" ]; then
     echo "ERROR: GPG encryption failed — see stderr" >&2
-    rm -f "$TMP" "$GPG_TMP"
+    rm -f "$TMP" "$GLOBALS_TMP" "$STATE_TMP" "$GPG_TMP"
     touch "$FAILURE_MARKER"
     notify_backup_failed "Postgres backup failed" "GPG encryption failed at $(date -Is)"
     exit 1
@@ -154,19 +205,30 @@ if run_db_client pg_dump -U "$DB_USER" -d "$DB_NAME" -h "$DB_HOST" -p "$DB_PORT"
       --passphrase-fd 3 --output "$GLOBALS_GPG_TMP" 3< "$PASSPHRASE_FD_FILE" "$GLOBALS_TMP" \
     || [ ! -s "$GLOBALS_GPG_TMP" ]; then
     echo "ERROR: GPG encryption failed for globals — see stderr" >&2
-    rm -f "$TMP" "$GPG_TMP" "$GLOBALS_TMP" "$GLOBALS_GPG_TMP"
+    rm -f "$TMP" "$GLOBALS_TMP" "$STATE_TMP" "$GPG_TMP" "$GLOBALS_GPG_TMP"
     touch "$FAILURE_MARKER"
     notify_backup_failed "Postgres backup failed" "globals GPG encryption failed at $(date -Is)"
     exit 1
   fi
+  if ! gpg --batch --yes --symmetric --cipher-algo AES256 \
+      --passphrase-fd 3 --output "$STATE_GPG_TMP" 3< "$PASSPHRASE_FD_FILE" "$STATE_TMP" \
+    || [ ! -s "$STATE_GPG_TMP" ]; then
+    echo "ERROR: GPG encryption failed for state sidecar — see stderr" >&2
+    rm -f "$TMP" "$GLOBALS_TMP" "$STATE_TMP" "$GPG_TMP" "$GLOBALS_GPG_TMP" "$STATE_GPG_TMP"
+    touch "$FAILURE_MARKER"
+    notify_backup_failed "Postgres backup failed" "state sidecar GPG encryption failed at $(date -Is)"
+    exit 1
+  fi
   mv "$GPG_TMP" "$OUT"
   mv "$GLOBALS_GPG_TMP" "$GLOBALS_OUT"
-  rm -f "$TMP" "$GLOBALS_TMP"
+  mv "$STATE_GPG_TMP" "$STATE_OUT"
+  rm -f "$TMP" "$GLOBALS_TMP" "$STATE_TMP"
   rm -f "$FAILURE_MARKER"
   date +%s > "$SUCCESS_MARKER"
-  resolve_backup
+  resolve_alert
   echo "Backup written: $OUT ($(du -h "$OUT" | cut -f1))"
   echo "Globals written: $GLOBALS_OUT ($(du -h "$GLOBALS_OUT" | cut -f1))"
+  echo "State sidecar written: $STATE_OUT ($(du -h "$STATE_OUT" | cut -f1))"
 else
   echo "ERROR: pg_dump failed — see $BACKUP_DIR/.pgdump.err" >&2
   rm -f "$TMP"
@@ -177,6 +239,7 @@ fi
 
 find "$BACKUP_DIR" -name "${DB_NAME}-*.sql.gz.gpg" -mtime +"$KEEP_DAYS" -delete
 find "$BACKUP_DIR" -name "${DB_NAME}-*.globals.sql.gz.gpg" -mtime +"$KEEP_DAYS" -delete
+find "$BACKUP_DIR" -name "${DB_NAME}-*.state.json.gz.gpg" -mtime +"$KEEP_DAYS" -delete
 find "$BACKUP_DIR" -name "${DB_NAME}-*.sql.gz" -mtime +"$KEEP_DAYS" -delete
 echo "Old backups (older than ${KEEP_DAYS}d) pruned"
 

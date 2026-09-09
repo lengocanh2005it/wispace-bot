@@ -78,12 +78,15 @@ REMOTE_DIR="$TEST_ROOT/store/wispacedr/latest"
 mkdir -p "$REMOTE_DIR"
 printf remote-dump > "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.sql.gz.gpg"
 printf remote-globals > "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.globals.sql.gz.gpg"
+printf remote-state > "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.state.json.gz.gpg"
 dump_sha=$(sha256sum "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.sql.gz.gpg" | cut -d' ' -f1)
 globals_sha=$(sha256sum "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.globals.sql.gz.gpg" | cut -d' ' -f1)
+state_sha=$(sha256sum "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.state.json.gz.gpg" | cut -d' ' -f1)
 printf '%s  %s\n' "$dump_sha" 'ai_chat_bot_db-20260908-020000.sql.gz.gpg' > "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.sql.gz.gpg.sha256"
 printf '%s  %s\n' "$globals_sha" 'ai_chat_bot_db-20260908-020000.globals.sql.gz.gpg' > "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.globals.sql.gz.gpg.sha256"
+printf '%s  %s\n' "$state_sha" 'ai_chat_bot_db-20260908-020000.state.json.gz.gpg' > "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.state.json.gz.gpg.sha256"
 cat > "$REMOTE_DIR/manifest.tsv" <<MANIFEST
-manifest_version=1
+manifest_version=2
 backup_prefix=ai_chat_bot_db-20260908-020000
 created_at=2026-09-08T03:00:00Z
 dump_name=ai_chat_bot_db-20260908-020000.sql.gz.gpg
@@ -92,6 +95,9 @@ dump_size=11
 globals_name=ai_chat_bot_db-20260908-020000.globals.sql.gz.gpg
 globals_sha256=$globals_sha
 globals_size=14
+state_name=ai_chat_bot_db-20260908-020000.state.json.gz.gpg
+state_sha256=$state_sha
+state_size=12
 evidence_name=
 evidence_sha256=
 evidence_size=
@@ -147,6 +153,7 @@ pass "recovery resolves the offsite alert"
 # --- 5. RUN_RESTORE_VERIFY=1 invokes the verifier; failure alerts ------------------
 printf enc > "$BACKUP_DIR/ai_chat_bot_db-20260908-020000.sql.gz.gpg"
 printf enc > "$BACKUP_DIR/ai_chat_bot_db-20260908-020000.globals.sql.gz.gpg"
+printf enc > "$BACKUP_DIR/ai_chat_bot_db-20260908-020000.state.json.gz.gpg"
 
 RESTORE_VERIFY_LOG="$TEST_ROOT/verify.log" \
   run_monitor RUN_RESTORE_VERIFY=1 RESTORE_VERIFY_LOG="$TEST_ROOT/verify.log" >/dev/null 2>&1 \
@@ -155,6 +162,8 @@ grep -q 'restore-verify' "$TEST_ROOT/verify.log" \
   || fail "RUN_RESTORE_VERIFY=1 must invoke the restore verifier"
 grep -q 'globals.sql.gz.gpg' "$TEST_ROOT/verify.log" \
   || fail "verifier must receive the paired globals artifact"
+grep -q -- '--state-artifact' "$TEST_ROOT/verify.log" \
+  || fail "verifier must receive the state sidecar (#879)"
 
 CURL_LOG="$TEST_ROOT/curl.log" RESTORE_VERIFY_LOG="$TEST_ROOT/verify.log" \
   run_monitor RUN_RESTORE_VERIFY=1 RESTORE_VERIFY_LOG="$TEST_ROOT/verify.log" FAKE_VERIFY_FAIL=1 \
@@ -174,6 +183,14 @@ printf remote-dump > "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.sql.gz.gpg"
 printf 'bad  ai_chat_bot_db-20260908-020000.sql.gz.gpg\n' > "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.sql.gz.gpg.sha256"
 run_monitor >/dev/null 2>&1 && fail "remote checksum failure must exit non-zero" || true
 pass "remote loss and checksum failure stay unhealthy"
+
+# --- 7. #879: missing remote state sidecar → fail closed ---------------------------
+printf '%s  %s\n' "$dump_sha" 'ai_chat_bot_db-20260908-020000.sql.gz.gpg' > "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.sql.gz.gpg.sha256"
+rm -f "$REMOTE_DIR/ai_chat_bot_db-20260908-020000.state.json.gz.gpg"
+run_monitor >/dev/null 2>&1 && fail "missing remote state sidecar must exit non-zero (#879)" || true
+grep -q 'postgres_offsite_stale' "$TEST_ROOT/curl.log" \
+  || fail "missing state sidecar must fire the offsite alert"
+pass "missing remote state sidecar fails closed"
 
 if [ "$FAILED" -ne 0 ]; then
   echo "TESTS FAILED" >&2

@@ -34,6 +34,8 @@ REMOTE_EVIDENCE_NAME=""
 REMOTE_EVIDENCE_SHA=""
 REMOTE_PRE_MIGRATE_NAME=""
 REMOTE_PRE_MIGRATE_SHA=""
+REMOTE_STATE_NAME=""
+REMOTE_STATE_SHA=""
 
 cleanup() {
   [ -z "$TMP_DIR" ] || rm -rf "$TMP_DIR"
@@ -155,7 +157,7 @@ verify_remote_manifest() {
   local manifest="$TMP_DIR/remote-manifest.tsv"
   RCLONE cat "$REMOTE_LATEST/manifest.tsv" > "$manifest" 2>/dev/null || return 1
   [ -s "$manifest" ] || return 1
-  [ "$(manifest_value manifest_version "$manifest")" = 1 ] || return 1
+  [ "$(manifest_value manifest_version "$manifest")" = 2 ] || return 1
 
   REMOTE_DUMP_NAME=$(manifest_value dump_name "$manifest")
   REMOTE_DUMP_SHA=$(manifest_value dump_sha256 "$manifest")
@@ -165,9 +167,14 @@ verify_remote_manifest() {
   REMOTE_EVIDENCE_SHA=$(manifest_value evidence_sha256 "$manifest")
   REMOTE_PRE_MIGRATE_NAME=$(manifest_value pre_migrate_name "$manifest")
   REMOTE_PRE_MIGRATE_SHA=$(manifest_value pre_migrate_sha256 "$manifest")
+  REMOTE_STATE_NAME=$(manifest_value state_name "$manifest")
+  REMOTE_STATE_SHA=$(manifest_value state_sha256 "$manifest")
 
   verify_remote_artifact "$REMOTE_DUMP_NAME" "$REMOTE_DUMP_SHA" || return 1
   verify_remote_artifact "$REMOTE_GLOBALS_NAME" "$REMOTE_GLOBALS_SHA" || return 1
+  # The state sidecar is mandatory for the verifier's versioned expectation
+  # (#879) — a v1-style remote set without it must fail closed.
+  verify_remote_artifact "$REMOTE_STATE_NAME" "$REMOTE_STATE_SHA" || return 1
   if [ -n "$REMOTE_EVIDENCE_NAME" ]; then
     verify_remote_artifact "$REMOTE_EVIDENCE_NAME" "$REMOTE_EVIDENCE_SHA" || return 1
   fi
@@ -179,7 +186,7 @@ verify_remote_manifest() {
 }
 
 download_and_verify_remote() {
-  local remote_dir="$TMP_DIR/remote-restore" dump globals dump_sha globals_sha name sha path actual
+  local remote_dir="$TMP_DIR/remote-restore" dump globals state dump_sha globals_sha state_sha name sha path
   mkdir -p "$remote_dir"
   dump="$remote_dir/$REMOTE_DUMP_NAME"
   globals="$remote_dir/$REMOTE_GLOBALS_NAME"
@@ -189,6 +196,10 @@ download_and_verify_remote() {
   globals_sha=$(sha256sum "$globals" | cut -d' ' -f1)
   [ "$dump_sha" = "$REMOTE_DUMP_SHA" ] || return 1
   [ "$globals_sha" = "$REMOTE_GLOBALS_SHA" ] || return 1
+  state="$remote_dir/$REMOTE_STATE_NAME"
+  RCLONE copyto "$REMOTE_LATEST/$REMOTE_STATE_NAME" "$state" >/dev/null 2>&1 || return 1
+  state_sha=$(sha256sum "$state" | cut -d' ' -f1)
+  [ "$state_sha" = "$REMOTE_STATE_SHA" ] || return 1
   for name in "$REMOTE_EVIDENCE_NAME" "$REMOTE_PRE_MIGRATE_NAME"; do
     [ -n "$name" ] || continue
     case "$name" in
@@ -203,6 +214,7 @@ download_and_verify_remote() {
   bash "$RESTORE_VERIFY_SCRIPT" \
     --artifact "$dump" \
     --globals-artifact "$globals" \
+    --state-artifact "$state" \
     --passphrase-file "$ENV_FILE" \
     --env-file "$ENV_FILE" \
     --evidence-dir "$BACKUP_DIR/restore-verify" \

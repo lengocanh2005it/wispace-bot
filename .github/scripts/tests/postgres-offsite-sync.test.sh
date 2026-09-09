@@ -72,8 +72,10 @@ BACKUP_DIR="$TEST_ROOT/backups"
 mkdir -p "$BACKUP_DIR"
 DUMP="$BACKUP_DIR/ai_chat_bot_db-20260908-020000.sql.gz.gpg"
 GLOBALS="$BACKUP_DIR/ai_chat_bot_db-20260908-020000.globals.sql.gz.gpg"
+STATE="$BACKUP_DIR/ai_chat_bot_db-20260908-020000.state.json.gz.gpg"
 printf 'enc-dump' > "$DUMP"
 printf 'enc-globals' > "$GLOBALS"
+printf 'enc-state' > "$STATE"
 EVIDENCE_DIR="$BACKUP_DIR/restore-verify"
 mkdir -p "$EVIDENCE_DIR"
 printf '{"result": "success"}' > "$EVIDENCE_DIR/restore-verify-20260908-030000.json"
@@ -133,12 +135,18 @@ grep -q 'ai_chat_bot_db-20260908-020000.sql.gz.gpg' "$TEST_ROOT/rclone.log" \
   || fail "latest dump must be uploaded"
 grep -q 'globals.sql.gz.gpg' "$TEST_ROOT/rclone.log" \
   || fail "latest globals artifact must be uploaded"
+grep -q 'state.json.gz.gpg' "$TEST_ROOT/rclone.log" \
+  || fail "state sidecar must be uploaded (#879)"
 grep -q 'restore-verify-20260908-030000.json' "$TEST_ROOT/rclone.log" \
   || fail "verification metadata (evidence) must be uploaded"
 grep -q 'manifest.tsv' "$TEST_ROOT/rclone.log" \
   || fail "manifest must be uploaded and promoted"
 grep -q 'pre-migrate-pre-migrate-20260908-020500.dump.gpg' "$TEST_ROOT/rclone.log" \
   || fail "pre-migration dump must be uploaded"
+grep -q 'manifest_version=2' "$TEST_ROOT/store/wispacedr/latest/manifest.tsv" \
+  || fail "manifest must be version 2 (with the state sidecar, #879)"
+grep -q 'state_sha256' "$TEST_ROOT/store/wispacedr/latest/manifest.tsv" \
+  || fail "manifest must record the state sidecar sha256 (#879)"
 ! grep -qE 'rclone (delete|purge|deletefile)' "$TEST_ROOT/rclone.log" \
   || fail "sync must never delete remote objects"
 [ -f "$BACKUP_DIR/.last-offsite-success" ] || fail "success marker must be written"
@@ -186,6 +194,21 @@ RCLONE_LOG="$TEST_ROOT/rclone.log" PATH="$FAKE_BIN:$PATH" \
   && fail "no local artifacts must exit non-zero" \
   || pass "no local artifacts exits non-zero"
 grep -qi 'no.*artifact' "$TEST_ROOT/err7" || fail "error must explain no artifacts found"
+
+# --- 7b. Missing state sidecar → fail closed (#879) -------------------------------
+rm -f "$BACKUP_DIR/.last-offsite-success"
+NOSTATE_DIR="$TEST_ROOT/nostate"
+mkdir -p "$NOSTATE_DIR"
+cp "$DUMP" "$GLOBALS" "$NOSTATE_DIR/"
+date +%s > "$NOSTATE_DIR/.last-backup-success"
+RCLONE_LOG="$TEST_ROOT/rclone.log" CURL_LOG="$TEST_ROOT/curl7b.log" PATH="$FAKE_BIN:$PATH" \
+  bash "$SCRIPT" --backup-dir "$NOSTATE_DIR" --env-file "$ENV_FILE" >/dev/null 2>"$TEST_ROOT/err7b" \
+  && fail "missing state sidecar must fail closed (#879)" \
+  || pass "missing state sidecar fails closed"
+grep -qi 'state sidecar' "$TEST_ROOT/err7b" \
+  || fail "error must name the missing state sidecar"
+[ -f "$NOSTATE_DIR/.last-offsite-success" ] \
+  && fail "missing-state run must not write the success marker"
 
 # --- 8. Monitor contract: offsite checks in backup-monitor.sh -------------------
 MONITOR="$ROOT/deploy/backup-monitor.sh"

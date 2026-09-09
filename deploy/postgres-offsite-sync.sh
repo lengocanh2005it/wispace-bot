@@ -166,6 +166,9 @@ DB_PREFIX=${STAMP%%.sql.gz.gpg}
 LATEST_GLOBALS="$BACKUP_DIR/${DB_PREFIX}.globals.sql.gz.gpg"
 [ -s "$LATEST_GLOBALS" ] \
   || sync_fail "Missing paired globals artifact for $(basename "$LATEST_DUMP") (#865 contract)"
+LATEST_STATE="$BACKUP_DIR/${DB_PREFIX}.state.json.gz.gpg"
+[ -s "$LATEST_STATE" ] \
+  || sync_fail "Missing state sidecar for $(basename "$LATEST_DUMP") (#879 contract)"
 
 LATEST_EVIDENCE=""
 [ -d "$EVIDENCE_DIR" ] && LATEST_EVIDENCE=$(ls -1t "$EVIDENCE_DIR"/restore-verify-*.json 2>/dev/null | head -1 || true)
@@ -175,10 +178,13 @@ LATEST_PRE_MIGRATE=""
 
 DUMP_NAME=$(basename "$LATEST_DUMP")
 GLOBALS_NAME=$(basename "$LATEST_GLOBALS")
+STATE_NAME=$(basename "$LATEST_STATE")
 DUMP_SHA=$(sha256sum "$LATEST_DUMP" | cut -d' ' -f1)
 GLOBALS_SHA=$(sha256sum "$LATEST_GLOBALS" | cut -d' ' -f1)
+STATE_SHA=$(sha256sum "$LATEST_STATE" | cut -d' ' -f1)
 DUMP_SIZE=$(wc -c < "$LATEST_DUMP" | tr -d '[:space:]')
 GLOBALS_SIZE=$(wc -c < "$LATEST_GLOBALS" | tr -d '[:space:]')
+STATE_SIZE=$(wc -c < "$LATEST_STATE" | tr -d '[:space:]')
 MANIFEST_TMP="$WORK_DIR/manifest.tsv"
 
 sync_artifact() { # src remote-dest name
@@ -201,6 +207,7 @@ sync_artifact() { # src remote-dest name
 
 sync_artifact "$LATEST_DUMP" "$REMOTE_LATEST/$DUMP_NAME" "$DUMP_NAME"
 sync_artifact "$LATEST_GLOBALS" "$REMOTE_LATEST/$GLOBALS_NAME" "$GLOBALS_NAME"
+sync_artifact "$LATEST_STATE" "$REMOTE_LATEST/$STATE_NAME" "$STATE_NAME"
 EVIDENCE_NAME=""
 EVIDENCE_SHA=""
 EVIDENCE_SIZE=""
@@ -221,7 +228,7 @@ if [ -n "$LATEST_PRE_MIGRATE" ]; then
 fi
 
 {
-  printf 'manifest_version=1\n'
+  printf 'manifest_version=2\n'
   printf 'backup_prefix=%s\n' "$DB_PREFIX"
   printf 'created_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   printf 'dump_name=%s\n' "$DUMP_NAME"
@@ -230,6 +237,9 @@ fi
   printf 'globals_name=%s\n' "$GLOBALS_NAME"
   printf 'globals_sha256=%s\n' "$GLOBALS_SHA"
   printf 'globals_size=%s\n' "$GLOBALS_SIZE"
+  printf 'state_name=%s\n' "$STATE_NAME"
+  printf 'state_sha256=%s\n' "$STATE_SHA"
+  printf 'state_size=%s\n' "$STATE_SIZE"
   printf 'evidence_name=%s\n' "$EVIDENCE_NAME"
   printf 'evidence_sha256=%s\n' "$EVIDENCE_SHA"
   printf 'evidence_size=%s\n' "$EVIDENCE_SIZE"
@@ -247,4 +257,4 @@ RCLONE cat "$REMOTE_LATEST/manifest.tsv" | cmp - "$MANIFEST_TMP" \
 date +%s > "$SUCCESS_MARKER" \
   || sync_fail "could not write offsite success marker: $SUCCESS_MARKER"
 resolve_alert
-log "offsite sync OK — $DUMP_NAME + globals + evidence + manifest promoted to $REMOTE_LATEST"
+log "offsite sync OK — $DUMP_NAME + globals + state sidecar + evidence + manifest promoted to $REMOTE_LATEST"
