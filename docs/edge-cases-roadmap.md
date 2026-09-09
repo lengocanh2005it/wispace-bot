@@ -4,6 +4,18 @@ Document recording **weaknesses / unhandled items** in the WISPACE bots (all fun
 
 **Baseline status:** Chat rate limit **V1 + H1–H7 ✓**. DB **separated** to `ai_chat_bot_db` (✓). LLM Provider Abstraction **done** (PR #32). Generic tool capability/approval policy **done** (#416). Shared packages **extracted** (20 packages). Discord/Zalo bots **functional** (chat + quota + 7/7 real tool handlers incl. `precreate_next_exercise`). Items below are remaining gaps or scale-dependent improvements.
 
+**Scope of this document — read before concluding an area is covered.** Every
+entry here is a **system** edge case: multi-pod scheduling, webhook retry and
+dedupe, the Meta 24h window, Redis unavailability, provider failover, deploy
+races. The list is close to fully `Done ✓`, which makes it read as broad
+coverage. It is not — **input and data edge cases are out of scope here and are
+tracked only as GitHub issues**: malformed or non-existent dates, boundary-length
+and Unicode text handling, argument type coercion and silent clamping, empty or
+whitespace-only payloads. That class had never been audited when this note was
+added (2026-09-09) precisely because this document looked like the catalogue for
+it. Add a pointer here when a new class of edge case gets its own pass, rather
+than letting the omission look like a clean bill of health.
+
 Related: [project-overview.md](./project-overview.md), [study-session-reminder.md](../apps/messenger-bot/docs/study-session-reminder.md), [chat-rate-limit-quota.md](../apps/messenger-bot/docs/chat-rate-limit-quota.md), [AGENTS.md](../AGENTS.md) (Integration gaps table).
 
 ---
