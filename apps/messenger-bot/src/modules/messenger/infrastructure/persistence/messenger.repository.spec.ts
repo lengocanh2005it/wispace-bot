@@ -372,13 +372,25 @@ describe('MessengerRepository platform-scoped user lookups (#191)', () => {
   });
 
   const buildRepoWithQueryBuilder = () => {
-    const where = jest.fn().mockReturnThis();
-    const andWhere = jest.fn().mockReturnThis();
+    // Call sequence is shared across where/andWhere so the test can prove
+    // the generated WHERE tree contains the consent predicate (#955).
+    const whereCalls: Array<{
+      kind: 'where' | 'andWhere';
+      expression: string;
+    }> = [];
+    const builder: Record<string, unknown> = {};
+    const track = (kind: 'where' | 'andWhere') =>
+      jest.fn((expression: string) => {
+        whereCalls.push({ kind, expression });
+        return builder;
+      });
+    const where = track('where');
+    const andWhere = track('andWhere');
     const orderBy = jest.fn().mockReturnThis();
     const take = jest.fn().mockReturnThis();
     const getMany = jest.fn().mockResolvedValue([]);
     const leftJoin = jest.fn().mockReturnThis();
-    const createQueryBuilder = jest.fn().mockReturnValue({
+    Object.assign(builder, {
       select: jest.fn().mockReturnThis(),
       leftJoin,
       where,
@@ -387,6 +399,7 @@ describe('MessengerRepository platform-scoped user lookups (#191)', () => {
       take,
       getMany,
     });
+    const createQueryBuilder = jest.fn().mockReturnValue(builder);
     const mappingRepo = {
       createQueryBuilder,
       findOne: jest.fn(),
@@ -395,7 +408,7 @@ describe('MessengerRepository platform-scoped user lookups (#191)', () => {
     const logRepo = {} as unknown as Repository<MessageLogEntity>;
     const claimRepo = {} as unknown as Repository<ScheduledReportClaimEntity>;
     const repo = new MessengerRepository(mappingRepo, logRepo, claimRepo);
-    return { repo, andWhere, leftJoin };
+    return { repo, where, andWhere, leftJoin, whereCalls };
   };
 
   it('scopes findActiveSubscribedMappings to the messenger platform', async () => {
@@ -432,7 +445,7 @@ describe('MessengerRepository platform-scoped user lookups (#191)', () => {
   });
 
   it('filters reminders by consent — opt-out default keeps everyone (#596)', async () => {
-    const { repo, andWhere, leftJoin } = buildRepoWithQueryBuilder();
+    const { repo, where, leftJoin, whereCalls } = buildRepoWithQueryBuilder();
 
     await repo.findActiveMappingsPage(0, 100);
 
@@ -441,9 +454,48 @@ describe('MessengerRepository platform-scoped user lookups (#191)', () => {
       'pref',
       'pref.user_id = mapping.user_id',
     );
-    expect(andWhere).toHaveBeenCalledWith(
+    // The consent predicate opens the WHERE tree (#955 — where(), not
+    // andWhere(), so no later call can replace it).
+    expect(where).toHaveBeenCalledWith(
       'COALESCE(pref.reminder_enabled, true) = true',
     );
+    expect(whereCalls[0]).toEqual({
+      kind: 'where',
+      expression: 'COALESCE(pref.reminder_enabled, true) = true',
+    });
+  });
+
+  // #955 — the consent predicate must live inside the final WHERE tree.
+  // TypeORM's `.where()` REPLACES any expression built so far, so the
+  // consent filter is the `.where()` call and every other filter chains
+  // with `.andWhere()` — exactly one `.where()` total, nothing replaces
+  // the tree.
+  it('keeps the reminder consent predicate inside the WHERE tree (#955)', async () => {
+    const { repo, where, whereCalls } = buildRepoWithQueryBuilder();
+
+    await repo.findActiveMappingsPage(0, 100);
+
+    // Exactly one `.where()` — a second one would have replaced the tree.
+    expect(where).toHaveBeenCalledTimes(1);
+    expect(whereCalls.filter((call) => call.kind === 'where')).toHaveLength(1);
+
+    // The consent predicate opens the tree.
+    expect(whereCalls[0].kind).toBe('where');
+    expect(whereCalls[0].expression).toContain('reminder_enabled');
+
+    // The surviving tree keeps the active/platform/keyset filters too.
+    for (const fragment of [
+      'mapping.status',
+      'mapping.platform',
+      'mapping.id > :afterId',
+    ]) {
+      expect(
+        whereCalls.some(
+          (call) =>
+            call.kind === 'andWhere' && call.expression.includes(fragment),
+        ),
+      ).toBe(true);
+    }
   });
 });
 

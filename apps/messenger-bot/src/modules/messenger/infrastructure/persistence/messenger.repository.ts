@@ -435,8 +435,11 @@ export class MessengerRepository
         'pref.user_id = mapping.user_id',
       )
       // Reminders are opt-out (#596): no consent row still receives them.
-      .andWhere('COALESCE(pref.reminder_enabled, true) = true')
-      .where('mapping.status = :status', { status: 'ACTIVE' })
+      // The consent predicate must stay inside this single WHERE tree —
+      // a later `.where()` call replaces the whole expression (#955), so
+      // every filter below chains with `.andWhere()`.
+      .where('COALESCE(pref.reminder_enabled, true) = true')
+      .andWhere('mapping.status = :status', { status: 'ACTIVE' })
       .andWhere('mapping.platform = :platform', { platform: PLATFORM })
       .andWhere('mapping.external_user_id IS NOT NULL')
       .andWhere('mapping.id > :afterId', { afterId })
