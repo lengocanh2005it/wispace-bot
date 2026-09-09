@@ -150,6 +150,7 @@ export type {
   DisclosureProbeResult,
   DisclosureProbeCategory,
   LlmGroundingResult,
+  PrivacyAction,
   PrivacyIntent,
   ReducedToolObservation,
   ToolObservationOutcome,

@@ -228,6 +228,31 @@ describe('PrivacyDataService', () => {
       expect(mockMappingRepo.remove).not.toHaveBeenCalled();
     });
 
+    it('does not unlink after the expected mapping changes before the transaction', async () => {
+      mockMappingRepo.findOne
+        .mockResolvedValueOnce({
+          userId: 42,
+          platform: 'messenger',
+          externalUserId: 'psid-123',
+          mappingGeneration: '3',
+        })
+        .mockResolvedValueOnce({
+          userId: 43,
+          platform: 'messenger',
+          externalUserId: 'psid-123',
+          mappingGeneration: '4',
+        });
+
+      const result = await service.unlink('messenger', 'psid-123', undefined, {
+        exists: true,
+        userId: 42,
+        mappingGeneration: '3',
+      });
+
+      expect(result).toEqual({ deleted: false, conflict: true });
+      expect(mockManagerQuery).not.toHaveBeenCalled();
+    });
+
     it('clears user cache via per-call cleanup when mapping has a userId', async () => {
       const mockMapping = {
         id: 1,
@@ -296,6 +321,25 @@ describe('PrivacyDataService', () => {
   });
 
   describe('delete', () => {
+    it('does not delete when the expected mapping no longer matches', async () => {
+      mockMappingRepo.findOne.mockResolvedValue({
+        userId: 43,
+        platform: 'messenger',
+        externalUserId: 'psid-123',
+        mappingGeneration: '4',
+      });
+
+      const result = await service.delete('messenger', 'psid-123', undefined, {
+        exists: true,
+        userId: 42,
+        mappingGeneration: '3',
+      });
+
+      expect(result).toBe(false);
+      expect(mockMappingRepo.remove).not.toHaveBeenCalled();
+      expect(mockLearnerRepo.delete).not.toHaveBeenCalled();
+    });
+
     it('cascades delete across all related tables in a transaction', async () => {
       const mockMapping = { id: 1, userId: 42, platform: 'messenger' };
       mockMappingRepo.findOne.mockResolvedValue(mockMapping);
@@ -496,6 +540,24 @@ describe('PrivacyDataService', () => {
   });
 
   describe('export', () => {
+    it('does not export after the expected mapping changes', async () => {
+      mockMappingRepo.findOne.mockResolvedValue({
+        userId: 43,
+        platform: 'messenger',
+        externalUserId: 'psid-123',
+        mappingGeneration: '4',
+      });
+
+      const result = await service.export('messenger', 'psid-123', {
+        exists: true,
+        userId: 42,
+        mappingGeneration: '3',
+      });
+
+      expect(result).toBeNull();
+      expect(mockLearnerRepo.findOne).not.toHaveBeenCalled();
+    });
+
     it('returns empty data when no mapping exists', async () => {
       mockMappingRepo.findOne.mockResolvedValue(null);
       mockLearnerRepo.findOne.mockResolvedValue(null);

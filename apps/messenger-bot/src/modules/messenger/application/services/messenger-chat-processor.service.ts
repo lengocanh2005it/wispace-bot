@@ -42,7 +42,10 @@ import {
   mergeChatUserTexts,
 } from '@messenger/shared/utils/messenger-text.utils';
 import { PrivacyStateService } from '@wispace/llm-agent';
-import { PrivacyDataService } from '@wispace/database';
+import {
+  PrivacyDataService,
+  type PrivacyExpectedMapping,
+} from '@wispace/database';
 import { createMessengerChatPipelineAdapters } from '../../infrastructure/adapters/messenger-chat-pipeline-adapters';
 import {
   PlatformChatHistoryService,
@@ -414,17 +417,35 @@ export class MessengerChatProcessorService {
   private async processChatBatchInner(input: ChatBatchInput): Promise<boolean> {
     const { psid, mergedText, idempotencyKey } = input;
     let { userId, linkContext } = input;
+    let pendingAction: PrivacyIntent = null;
+    let expectedMapping: PrivacyExpectedMapping | undefined;
+    const privacyIntent =
+      this.privacyState && this.privacyService
+        ? detectPrivacyIntent(mergedText)
+        : null;
     let reservedUsageDate: string | undefined;
+
+    if (this.privacyState && this.privacyService) {
+      pendingAction = this.privacyState.getPendingAction(psid, 'messenger');
+    }
 
     // #383/#637: revalidate a linked context (or an identity-less batch)
     // against the fresh mapping. An active mapping without a WISPACE userId
     // is a broken link, not an anonymous learner, and must fail closed.
     if (
       this.mappingRepository &&
-      (linkContext !== undefined || userId === undefined)
+      (linkContext !== undefined ||
+        userId === undefined ||
+        pendingAction !== null ||
+        privacyIntent !== null)
     ) {
       const freshMapping =
         await this.mappingRepository.findActiveMappingByPsid(psid);
+      expectedMapping = {
+        exists: freshMapping !== null,
+        userId: freshMapping?.userId,
+        mappingGeneration: freshMapping?.mappingGeneration,
+      };
       if (!freshMapping) {
         if (linkContext) {
           await this.clearClarificationState(psid);
@@ -435,6 +456,7 @@ export class MessengerChatProcessorService {
         }
         // No mapping is the genuine anonymous case; continue with the
         // per-link quota bucket.
+        userId = undefined;
       } else if (freshMapping.userId === undefined) {
         await this.clearClarificationState(psid);
         this.logger.warn(
@@ -457,26 +479,26 @@ export class MessengerChatProcessorService {
 
     // ── Pre-pipeline checks ──────────────────────────────────────────
 
-    // Privacy intercept — runs before the quota block so a bare "Có"/"Không"
-    // reply (or a keyword request) never reserves a free-form slot or reaches
-    // the LLM. While a privacy action is pending, EVERY message routes to the
-    // privacy handler until the user confirms/cancels or the pending TTL
-    // expires (#660).
+    // Privacy intercept — runs before the quota block so explicit privacy
+    // requests and valid confirmations/cancellations never reach the LLM.
     if (this.privacyState && this.privacyService) {
-      const pendingAction = this.privacyState.getPendingAction(
-        psid,
-        'messenger',
-      );
-      const privacyIntent = detectPrivacyIntent(mergedText);
+      // Identity check: the pending action only survives while the mapping
+      // still matches the snapshot taken when it was armed — a relink
+      // invalidates it (getPendingAction clears on mismatch).
+      pendingAction = this.privacyState.getPendingAction(psid, 'messenger', {
+        userId: expectedMapping?.userId,
+        mappingGeneration: expectedMapping?.mappingGeneration,
+      });
       if (pendingAction || privacyIntent) {
-        await this.handlePrivacyIntent(
+        const handled = await this.handlePrivacyIntent(
           psid,
           userId,
           mergedText,
           privacyIntent,
           pendingAction,
+          expectedMapping,
         );
-        return true;
+        if (handled) return true;
       }
     }
 
@@ -553,15 +575,17 @@ export class MessengerChatProcessorService {
     mergedText: string,
     privacyIntent: PrivacyIntent,
     pendingAction: PrivacyIntent,
-  ): Promise<void> {
-    if (!pendingAction) {
-      // Caller only routes here when pendingAction || privacyIntent, so this
-      // branch always has a fresh intent.
-      if (!privacyIntent) return;
+    expectedMapping?: PrivacyExpectedMapping,
+  ): Promise<boolean> {
+    if (privacyIntent) {
       const confirmMessage = this.privacyState!.setPendingAction(
         psid,
         'messenger',
         privacyIntent,
+        {
+          userId: expectedMapping?.userId,
+          mappingGeneration: expectedMapping?.mappingGeneration,
+        },
       );
       await this.outbound.sendTextViaPsid({
         psid,
@@ -569,10 +593,12 @@ export class MessengerChatProcessorService {
         text: confirmMessage,
         messageType: 'PRIVACY_CONFIRM',
       });
-      return;
+      return true;
     }
 
-    if (isConfirmationResponse(mergedText)) {
+    if (!pendingAction) return false;
+
+    if (isConfirmationResponse(mergedText, pendingAction)) {
       // Durable record of the consent before the irreversible action runs.
       await this.logPrivacyInbound(psid, userId, 'PRIVACY_CONFIRM_IN');
       // ponytail: pending is cleared before execute; in distributed mode a
@@ -582,32 +608,53 @@ export class MessengerChatProcessorService {
       let resultMessage: string;
       switch (pendingAction) {
         case 'unlink': {
-          const result = await this.privacyService!.unlink('messenger', psid, {
-            clearHistory: (id) => this.historyService.clear(id),
-            clearQueuedWork: (id) => this.clearQueuedWork(id),
-            clearClarification: (id) => this.clearClarificationState(id),
-            clearUserCache: (userId) =>
-              this.displayNameCache?.del(userId) ?? Promise.resolve(),
-          });
-          resultMessage = result.deleted
-            ? 'Đã ngắt kết nối tài khoản thành công.'
-            : 'Tài khoản chưa được liên kết.';
+          const result = await this.privacyService!.unlink(
+            'messenger',
+            psid,
+            {
+              clearHistory: (id) => this.historyService.clear(id),
+              clearQueuedWork: (id) => this.clearQueuedWork(id),
+              clearClarification: (id) => this.clearClarificationState(id),
+              clearUserCache: (userId) =>
+                this.displayNameCache?.del(userId) ?? Promise.resolve(),
+            },
+            expectedMapping,
+          );
+          resultMessage = result.conflict
+            ? 'Liên kết đã thay đổi. Vui lòng gửi lại yêu cầu.'
+            : result.deleted
+              ? 'Đã ngắt kết nối tài khoản thành công.'
+              : 'Tài khoản chưa được liên kết.';
           break;
         }
         case 'delete': {
-          await this.privacyService!.delete('messenger', psid, {
-            clearHistory: (id) => this.historyService.clear(id),
-            clearQueuedWork: (id) => this.clearQueuedWork(id),
-            clearClarification: (id) => this.clearClarificationState(id),
-            clearUserCache: (userId) =>
-              this.displayNameCache?.del(userId) ?? Promise.resolve(),
-          });
-          resultMessage = 'Đã xóa toàn bộ dữ liệu thành công.';
+          const deleted = await this.privacyService!.delete(
+            'messenger',
+            psid,
+            {
+              clearHistory: (id) => this.historyService.clear(id),
+              clearQueuedWork: (id) => this.clearQueuedWork(id),
+              clearClarification: (id) => this.clearClarificationState(id),
+              clearUserCache: (userId) =>
+                this.displayNameCache?.del(userId) ?? Promise.resolve(),
+            },
+            expectedMapping,
+          );
+          resultMessage =
+            deleted === false
+              ? 'Liên kết đã thay đổi. Vui lòng gửi lại yêu cầu.'
+              : 'Đã xóa toàn bộ dữ liệu thành công.';
           break;
         }
         case 'export': {
-          const data = await this.privacyService!.export('messenger', psid);
-          resultMessage = `Dữ liệu của bạn:\n${JSON.stringify(data, null, 2)}`;
+          const data = await this.privacyService!.export(
+            'messenger',
+            psid,
+            expectedMapping,
+          );
+          resultMessage = data
+            ? `Dữ liệu của bạn:\n${JSON.stringify(data, null, 2)}`
+            : 'Liên kết đã thay đổi. Vui lòng gửi lại yêu cầu.';
           break;
         }
         default:
@@ -620,7 +667,7 @@ export class MessengerChatProcessorService {
         text: resultMessage,
         messageType: 'PRIVACY_RESULT',
       });
-      return;
+      return true;
     }
 
     if (isCancellationResponse(mergedText)) {
@@ -632,15 +679,12 @@ export class MessengerChatProcessorService {
         text: 'Đã hủy thao tác.',
         messageType: 'PRIVACY_CANCELLED',
       });
-      return;
+      return true;
     }
 
-    await this.outbound.sendTextViaPsid({
-      psid,
-      userId,
-      text: 'Reply "Có" để xác nhận hoặc "Không" để hủy.',
-      messageType: 'PRIVACY_REMIND',
-    });
+    // An ambiguous reply must not keep intercepting future chat messages.
+    this.privacyState!.clearPendingAction(psid, 'messenger');
+    return false;
   }
 
   /** Audit trail for an in-chat privacy consent/cancellation (compliance). */

@@ -1,27 +1,39 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { maskExternalId } from '@wispace/bot-common/masking';
-import type { PrivacyIntent } from './privacy-intent.utils';
+import type { PrivacyAction, PrivacyIntent } from './privacy-intent.utils';
 
 /**
  * In-memory state for pending privacy actions.
  * Tracks users who have initiated but not yet confirmed a privacy action.
  *
  * TTL: `ttlMs` (default 30 minutes) — if the user doesn't confirm/cancel
- * within this window, the pending action is cleared automatically. A reply
- * that arrives after expiry falls through to the normal chat pipeline.
+ * within this window, the next reply clears the pending action and falls
+ * through to the normal chat pipeline.
  *
  * ponytail: in-memory, pod-local. A wider grace window is enough for the
  * current single-instance deployment; durable + cross-pod persistence is #542.
  */
 
+/**
+ * Identity snapshot taken when the action was armed. A pending action can
+ * only be confirmed while the mapping still matches this snapshot — a
+ * relink (same or different learner) invalidates it.
+ */
+export interface PrivacyIdentity {
+  userId?: number;
+  mappingGeneration?: string;
+}
+
 interface PendingPrivacyAction {
-  intent: PrivacyIntent;
+  intent: PrivacyAction;
   psid: string;
   platform: string;
+  identityKey: string;
   createdAt: number;
 }
 
 const DEFAULT_PENDING_ACTION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const MAX_PENDING_ACTIONS = 10_000;
 
 @Injectable()
 export class PrivacyStateService {
@@ -43,13 +55,25 @@ export class PrivacyStateService {
   setPendingAction(
     psid: string,
     platform: string,
-    intent: PrivacyIntent,
+    intent: PrivacyAction,
+    identity?: PrivacyIdentity,
   ): string {
     const key = this.getKey(psid, platform);
+    if (
+      !this.pendingActions.has(key) &&
+      this.pendingActions.size >= MAX_PENDING_ACTIONS
+    ) {
+      const oldestKey = this.pendingActions.keys().next().value;
+      if (oldestKey !== undefined) {
+        this.pendingActions.delete(oldestKey);
+      }
+    }
+
     this.pendingActions.set(key, {
       intent,
       psid,
       platform,
+      identityKey: PrivacyStateService.identityKeyOf(identity),
       createdAt: Date.now(),
     });
 
@@ -58,13 +82,27 @@ export class PrivacyStateService {
 
   /**
    * Get the pending privacy action for a user.
-   * Returns null if no action is pending or if it has expired.
+   * Returns null if no action is pending, the mapping identity changed
+   * since the action was armed, or the action has expired.
+   * Calling without `identity` peeks without the identity check.
    */
-  getPendingAction(psid: string, platform: string): PrivacyIntent | null {
+  getPendingAction(
+    psid: string,
+    platform: string,
+    identity?: PrivacyIdentity,
+  ): PrivacyIntent | null {
     const key = this.getKey(psid, platform);
     const action = this.pendingActions.get(key);
 
     if (!action) {
+      return null;
+    }
+
+    if (
+      identity !== undefined &&
+      action.identityKey !== PrivacyStateService.identityKeyOf(identity)
+    ) {
+      this.pendingActions.delete(key);
       return null;
     }
 
@@ -93,7 +131,14 @@ export class PrivacyStateService {
     return `${platform}:${psid}`;
   }
 
-  private getConfirmMessage(intent: PrivacyIntent): string {
+  private static identityKeyOf(identity?: PrivacyIdentity): string {
+    const userId = identity?.userId;
+    const generation = identity?.mappingGeneration;
+    if (userId === undefined && generation === undefined) return '-';
+    return `${userId ?? '-'}:${generation ?? '-'}`;
+  }
+
+  private getConfirmMessage(intent: PrivacyAction): string {
     switch (intent) {
       case 'unlink':
         return (
@@ -102,7 +147,7 @@ export class PrivacyStateService {
           '- Xóa liên kết giữa Messenger và WISPACE\n' +
           '- Hủy tất cả nhắc lịch học\n' +
           '- Xóa dữ liệu học tập cá nhân\n\n' +
-          'Reply "Có" để xác nhận hoặc "Không" để hủy.'
+          'Reply "Đồng ý ngắt kết nối" để xác nhận hoặc "Không" để hủy.'
         );
       case 'delete':
         return (
@@ -112,7 +157,7 @@ export class PrivacyStateService {
           '- Xóa tất cả dữ liệu học tập\n' +
           '- Xóa lịch sử chat\n' +
           '- Không thể hoàn tác\n\n' +
-          'Reply "Có" để xác nhận hoặc "Không" để hủy.'
+          'Reply "Đồng ý xóa dữ liệu" để xác nhận hoặc "Không" để hủy.'
         );
       case 'export':
         return (
@@ -121,10 +166,10 @@ export class PrivacyStateService {
           '- Thông tin liên kết tài khoản\n' +
           '- Dữ liệu học tập\n' +
           '- Thống kê sử dụng\n\n' +
-          'Reply "Có" để xác nhận hoặc "Không" để hủy.'
+          'Reply "Đồng ý tải dữ liệu" để xác nhận hoặc "Không" để hủy.'
         );
       default:
-        return 'Bạn muốn thực hiện thao tác nào? Reply "Có" để xác nhận.';
+        throw new Error(`Unsupported privacy intent: ${intent}`);
     }
   }
 }

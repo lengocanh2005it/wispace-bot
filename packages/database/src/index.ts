@@ -83,6 +83,7 @@ export {
   type PrivacyScopedEntities,
   type PrivacyStateCleanup,
   type PrivacyExportData,
+  type PrivacyExpectedMapping,
   type PrivacyUnlinkResult,
 } from './services/privacy-data.service';
 export {

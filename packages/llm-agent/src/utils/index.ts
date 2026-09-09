@@ -41,6 +41,7 @@ export {
   detectPrivacyIntent,
   isConfirmationResponse,
   isCancellationResponse,
+  type PrivacyAction,
   type PrivacyIntent,
 } from './privacy-intent.utils';
 export { PrivacyStateService } from './privacy-state.service';

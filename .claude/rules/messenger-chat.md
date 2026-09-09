@@ -99,8 +99,8 @@ Queue port: `CHAT_QUEUE_STORE`. History port: `CHAT_HISTORY_STORE`.
 
 ## In-chat privacy confirm (#660)
 
-- `MessengerChatProcessorService.processChatBatchInner` checks privacy **before** the quota block: `privacyState.getPendingAction(psid, 'messenger')` + `detectPrivacyIntent(mergedText)`. If either is truthy → `handlePrivacyIntent` → `return true` (no quota slot, no `pipeline.flush`).
-- **Intercept-all while pending:** once a pending action exists, every message routes to the handler — bare `Có`/synonym executes, bare `Không`/synonym cancels, anything else re-sends the `Có/Không` reminder. `isConfirmationResponse` / `isCancellationResponse` are anchored (`^…$`); a merged/multi-line reply is treated as "neither" → reminder.
+- `MessengerChatProcessorService.processChatBatchInner` checks privacy **before** the quota block: `privacyState.getPendingAction(psid, 'messenger')` + the anchored, short-request `detectPrivacyIntent(mergedText)`. Explicit requests and valid confirm/cancel responses return handled with no quota slot and no `pipeline.flush`.
+- **Safe pending flow:** confirmation uses an action-specific phrase (`Đồng ý xóa dữ liệu`, `Đồng ý ngắt kết nối`, or `Đồng ý tải dữ liệu`) and never accepts a bare `ok`, `Có`, or `y`. Confirmation/cancellation matching normalizes diacritics, punctuation, and polite suffixes. An unrelated or ambiguous reply clears pending state and falls through to the normal pipeline; a new explicit privacy request replaces the pending intent.
 - Inbound consent/cancel is logged to `message_logs` as `PRIVACY_CONFIRM_IN` / `PRIVACY_CANCEL_IN` before the irreversible step (`logPrivacyInbound`, best-effort).
 - `PrivacyStateService` TTL is `PRIVACY_CONFIRM_TTL_MS` (default 30 min), read via `MessengerChatSharedConfigService.getPrivacyConfirmTtlMs()` and passed to the constructor by the `useFactory` in `chat-pipeline.module.ts`. In-memory + pod-local — durable/cross-pod persistence is #542.
 

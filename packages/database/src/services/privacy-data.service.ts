@@ -2,6 +2,7 @@ import { Logger } from '@nestjs/common';
 import type {
   DataSource,
   EntityTarget,
+  EntityManager,
   ObjectLiteral,
   Repository,
 } from 'typeorm';
@@ -86,6 +87,15 @@ export interface PrivacyUnlinkResult {
   deleted: boolean;
   /** The WISPACE userId that was unlinked (for logging/audit). */
   userId?: number;
+  /** True when the mapping changed since it was captured — action refused. */
+  conflict?: boolean;
+}
+
+/** Identity snapshot captured before a chat privacy confirmation. */
+export interface PrivacyExpectedMapping {
+  exists: boolean;
+  userId?: number;
+  mappingGeneration?: string;
 }
 
 export interface PrivacyExportData {
@@ -218,15 +228,51 @@ export class PrivacyDataService {
     platform: string,
     externalUserId: string,
     cleanup?: PrivacyStateCleanup,
+    expectedMapping?: PrivacyExpectedMapping,
   ): Promise<PrivacyUnlinkResult> {
     const currentPlatform = this.assertCurrentPlatform(platform);
     const repo = this.getMappingRepo(currentPlatform);
-    const mapping = await repo.findOne({
+    const initialMapping = await repo.findOne({
       where: { platform: currentPlatform, externalUserId },
     });
+    if (
+      expectedMapping &&
+      !mappingMatchesExpected(initialMapping, expectedMapping)
+    ) {
+      return { deleted: false };
+    }
+    if (!expectedMapping && initialMapping) {
+      const userId = readMappingUserId(initialMapping);
+      const currentState = (initialMapping as { linkState?: string }).linkState;
+      if (
+        currentState === 'locally-unlinked' ||
+        currentState === 'confirmed-revoked'
+      ) {
+        await this.runCleanup(externalUserId, cleanup, userId);
+        return { deleted: false, userId };
+      }
+    }
 
-    if (!mapping) {
-      await this.dataSource.transaction(async (manager) => {
+    let mapping = initialMapping;
+    let conflict = false;
+    let deleted = false;
+    let userId: number | undefined;
+
+    await this.dataSource.transaction(async (manager) => {
+      if (expectedMapping) {
+        mapping = await lockPrivacyMapping(
+          manager,
+          this.registry.mappings[currentPlatform],
+          currentPlatform,
+          externalUserId,
+        );
+        if (!mappingMatchesExpected(mapping, expectedMapping)) {
+          conflict = true;
+          return;
+        }
+      }
+
+      if (!mapping) {
         await writeLocalUnlinkAudit(
           manager,
           currentPlatform,
@@ -240,28 +286,24 @@ export class PrivacyDataService {
           [currentPlatform, externalUserId],
         );
         await deleteVerifyIntent(manager, currentPlatform, externalUserId);
-      });
-      await this.runCleanup(externalUserId, cleanup);
-      return { deleted: false };
-    }
+        return;
+      }
 
-    const userId = (mapping as unknown as { userId?: number }).userId;
-    const currentState = (mapping as unknown as { linkState?: string })
-      .linkState;
-    if (
-      currentState === 'locally-unlinked' ||
-      currentState === 'confirmed-revoked'
-    ) {
-      await this.runCleanup(externalUserId, cleanup, userId);
-      return { deleted: false, userId };
-    }
-    const generation = String(
-      BigInt(
-        (mapping as unknown as { mappingGeneration?: string })
-          .mappingGeneration ?? '1',
-      ) + 1n,
-    );
-    await this.dataSource.transaction(async (manager) => {
+      userId = readMappingUserId(mapping);
+      const currentState = (mapping as unknown as { linkState?: string })
+        .linkState;
+      if (
+        currentState === 'locally-unlinked' ||
+        currentState === 'confirmed-revoked'
+      ) {
+        return;
+      }
+      const generation = String(
+        BigInt(
+          (mapping as unknown as { mappingGeneration?: string })
+            .mappingGeneration ?? '1',
+        ) + 1n,
+      );
       await writeLocalUnlinkAudit(
         manager,
         currentPlatform,
@@ -287,10 +329,13 @@ export class PrivacyDataService {
         [currentPlatform, externalUserId],
       );
       await deleteVerifyIntent(manager, currentPlatform, externalUserId);
+      deleted = true;
     });
+
+    if (conflict) return { deleted: false, conflict: true };
     await this.runCleanup(externalUserId, cleanup, userId);
 
-    return { deleted: true, userId };
+    return { deleted, userId };
   }
 
   /**
@@ -309,10 +354,12 @@ export class PrivacyDataService {
     platform: string,
     externalUserId: string,
     cleanup?: PrivacyStateCleanup,
-  ): Promise<void> {
+    expectedMapping?: PrivacyExpectedMapping,
+  ): Promise<boolean | void> {
     const currentPlatform = this.assertCurrentPlatform(platform);
     // 1. Atomic transaction: mapping removal + all userId-scoped deletes
     let userId: number | undefined;
+    let conflict = false;
     const cleanupExternalIds = new Set<string>([externalUserId]);
 
     await this.dataSource.transaction(async (manager) => {
@@ -320,9 +367,23 @@ export class PrivacyDataService {
       const mappingRepo = manager.getRepository(
         this.registry.mappings[currentPlatform],
       );
-      const mapping = await mappingRepo.findOne({
-        where: { platform: currentPlatform, externalUserId },
-      });
+      const mapping = expectedMapping
+        ? await lockPrivacyMapping(
+            manager,
+            this.registry.mappings[currentPlatform],
+            currentPlatform,
+            externalUserId,
+          )
+        : await mappingRepo.findOne({
+            where: { platform: currentPlatform, externalUserId },
+          });
+      if (
+        expectedMapping &&
+        !mappingMatchesExpected(mapping, expectedMapping)
+      ) {
+        conflict = true;
+        return;
+      }
       if (mapping) {
         userId = (mapping as unknown as { userId?: number }).userId;
         await writeLocalUnlinkAudit(
@@ -407,12 +468,15 @@ export class PrivacyDataService {
       await deleteVerifyIntent(manager, currentPlatform, externalUserId);
     });
 
+    if (conflict) return false;
+
     // 2. Redis cleanup — outside transaction, best-effort, idempotent.
     //    Each bot clears its own platform's keys via per-call callbacks.
     //    Cross-platform Redis erasure requires calling each bot's endpoint.
     await Promise.all(
       [...cleanupExternalIds].map((id) => this.runCleanup(id, cleanup, userId)),
     );
+    return expectedMapping ? true : undefined;
   }
 
   /**
@@ -422,74 +486,90 @@ export class PrivacyDataService {
   async export(
     platform: string,
     externalUserId: string,
-  ): Promise<PrivacyExportData> {
+  ): Promise<PrivacyExportData>;
+  async export(
+    platform: string,
+    externalUserId: string,
+    expectedMapping?: PrivacyExpectedMapping,
+  ): Promise<PrivacyExportData | null>;
+  async export(
+    platform: string,
+    externalUserId: string,
+    expectedMapping?: PrivacyExpectedMapping,
+  ): Promise<PrivacyExportData | null> {
     const currentPlatform = this.assertCurrentPlatform(platform);
-    // 1. Mapping info
-    const repo = this.getMappingRepo(currentPlatform);
-    const mapping = await repo.findOne({
-      where: { platform: currentPlatform, externalUserId },
-    });
+    const readExport = async (
+      manager?: EntityManager,
+    ): Promise<PrivacyExportData | null> => {
+      const mapping = expectedMapping
+        ? await lockPrivacyMapping(
+            manager!,
+            this.registry.mappings[currentPlatform],
+            currentPlatform,
+            externalUserId,
+          )
+        : await (
+            manager?.getRepository(this.registry.mappings[currentPlatform]) ??
+            this.getMappingRepo(currentPlatform)
+          ).findOne({
+            where: { platform: currentPlatform, externalUserId },
+          });
+      if (
+        expectedMapping &&
+        !mappingMatchesExpected(mapping, expectedMapping)
+      ) {
+        return null;
+      }
 
-    const result: PrivacyExportData = {
-      platform: currentPlatform,
-      externalUserId,
-      linkedAt: mapping
-        ? (mapping as unknown as { createdAt?: Date }).createdAt
-        : undefined,
-      studyReminderJobs: 0,
-      scheduledReportClaims: 0,
-      reportSendJobs: 0,
-      messageLogs: 0,
+      const getRepository = (target: PrivacyEntityTarget) =>
+        manager?.getRepository(target) ?? this.dataSource.getRepository(target);
+      const result: PrivacyExportData = {
+        platform: currentPlatform,
+        externalUserId,
+        linkedAt: mapping
+          ? (mapping as unknown as { createdAt?: Date }).createdAt
+          : undefined,
+        studyReminderJobs: 0,
+        scheduledReportClaims: 0,
+        reportSendJobs: 0,
+        messageLogs: 0,
+      };
+
+      const profile = await getRepository(
+        this.registry.scoped.learnerProfile,
+      ).findOne({ where: { platform: currentPlatform, externalUserId } });
+      if (profile) {
+        const p = profile as unknown as {
+          targetScore?: string;
+          examDate?: string;
+          fetchedAt?: Date;
+        };
+        result.learnerProfile = {
+          targetScore: p.targetScore,
+          examDate: p.examDate,
+          fetchedAt: p.fetchedAt,
+        };
+      }
+
+      result.studyReminderJobs = await getRepository(
+        this.registry.scoped.studyReminderJob,
+      ).count({ where: { platform: currentPlatform, externalUserId } });
+      result.scheduledReportClaims = await getRepository(
+        this.registry.scoped.scheduledReportClaim,
+      ).count({ where: { platform: currentPlatform, externalUserId } });
+      result.reportSendJobs = await getRepository(
+        this.registry.scoped.reportSendJob,
+      ).count({ where: { platform: currentPlatform, externalUserId } });
+      result.messageLogs = await getRepository(this.registry.messageLog).count({
+        where: { platform: currentPlatform, externalUserId },
+      });
+
+      return result;
     };
 
-    // 2. Learner profile
-    const learnerRepo = this.dataSource.getRepository(
-      this.registry.scoped.learnerProfile,
-    );
-    const profile = await learnerRepo.findOne({
-      where: { platform: currentPlatform, externalUserId },
-    });
-    if (profile) {
-      const p = profile as unknown as {
-        targetScore?: string;
-        examDate?: string;
-        fetchedAt?: Date;
-      };
-      result.learnerProfile = {
-        targetScore: p.targetScore,
-        examDate: p.examDate,
-        fetchedAt: p.fetchedAt,
-      };
-    }
-
-    // 3. Count related data
-    const reminderRepo = this.dataSource.getRepository(
-      this.registry.scoped.studyReminderJob,
-    );
-    result.studyReminderJobs = await reminderRepo.count({
-      where: { platform: currentPlatform, externalUserId },
-    });
-
-    const claimRepo = this.dataSource.getRepository(
-      this.registry.scoped.scheduledReportClaim,
-    );
-    result.scheduledReportClaims = await claimRepo.count({
-      where: { platform: currentPlatform, externalUserId },
-    });
-
-    const reportRepo = this.dataSource.getRepository(
-      this.registry.scoped.reportSendJob,
-    );
-    result.reportSendJobs = await reportRepo.count({
-      where: { platform: currentPlatform, externalUserId },
-    });
-
-    const logRepo = this.dataSource.getRepository(this.registry.messageLog);
-    result.messageLogs = await logRepo.count({
-      where: { platform: currentPlatform, externalUserId },
-    });
-
-    return result;
+    return expectedMapping
+      ? this.dataSource.transaction(readExport)
+      : readExport();
   }
 
   private async runCleanup(
@@ -525,6 +605,42 @@ export class PrivacyDataService {
       }),
     );
   }
+}
+
+function readMappingUserId(
+  mapping: ObjectLiteral | null | undefined,
+): number | undefined {
+  const userId = (mapping as { userId?: number | null } | null | undefined)
+    ?.userId;
+  return typeof userId === 'number' ? userId : undefined;
+}
+
+function mappingMatchesExpected(
+  mapping: ObjectLiteral | null | undefined,
+  expected: PrivacyExpectedMapping,
+): boolean {
+  if (Boolean(mapping) !== expected.exists) return false;
+  if (!mapping) return true;
+
+  return (
+    readMappingUserId(mapping) === expected.userId &&
+    String(
+      (mapping as { mappingGeneration?: string | number | null })
+        .mappingGeneration ?? '1',
+    ) === String(expected.mappingGeneration ?? '1')
+  );
+}
+
+async function lockPrivacyMapping(
+  manager: EntityManager,
+  target: PrivacyEntityTarget,
+  platform: Platform,
+  externalUserId: string,
+): Promise<ObjectLiteral | null> {
+  return manager.getRepository(target).findOne({
+    where: { platform, externalUserId },
+    lock: { mode: 'pessimistic_write' },
+  });
 }
 
 async function writeLocalUnlinkAudit(

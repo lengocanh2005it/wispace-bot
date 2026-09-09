@@ -693,7 +693,7 @@ describe('MessengerChatProcessorService', () => {
       expect(reply).not.toHaveBeenCalled();
     });
 
-    it('bare "Có" executes the pending action and sends the result', async () => {
+    it('deliberate delete confirmation executes the pending action and sends the result', async () => {
       const {
         service,
         sendTextViaPsid,
@@ -706,7 +706,7 @@ describe('MessengerChatProcessorService', () => {
       await prompt(service);
       await service.process({
         psid: 'psid-1',
-        mergedText: 'Có',
+        mergedText: 'dong y xoa du lieu nhe!',
         userId: 143,
         idempotencyKey: 'mid-privacy-confirm',
       });
@@ -715,6 +715,7 @@ describe('MessengerChatProcessorService', () => {
         'messenger',
         'psid-1',
         expect.any(Object),
+        undefined,
       );
       expect(sendTextViaPsid).toHaveBeenCalledWith(
         expect.objectContaining({ messageType: 'PRIVACY_RESULT' }),
@@ -726,7 +727,88 @@ describe('MessengerChatProcessorService', () => {
       expect(reply).not.toHaveBeenCalled();
     });
 
-    it('bare "Không" cancels the pending action and runs no erasure', async () => {
+    it('a linked learner with an unchanged mapping can still confirm', async () => {
+      const mappingRepository = {
+        findActiveMappingByPsid: jest
+          .fn()
+          .mockResolvedValue({ userId: 143, mappingGeneration: '3' }),
+      };
+      const { service, privacyDelete, sendTextViaPsid, reply } = createService({
+        mappingRepository,
+        withPrivacy: true,
+      });
+
+      await prompt(service);
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'dong y xoa du lieu',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-confirm-linked',
+      });
+
+      expect(privacyDelete).toHaveBeenCalledWith(
+        'messenger',
+        'psid-1',
+        expect.any(Object),
+        { exists: true, userId: 143, mappingGeneration: '3' },
+      );
+      expect(sendTextViaPsid).toHaveBeenCalledWith(
+        expect.objectContaining({ messageType: 'PRIVACY_RESULT' }),
+      );
+      expect(reply).not.toHaveBeenCalled();
+    });
+
+    it('does not confirm a pending action after the mapping changes', async () => {
+      const mappingRepository = {
+        findActiveMappingByPsid: jest
+          .fn()
+          .mockResolvedValueOnce({ userId: 143 })
+          .mockResolvedValueOnce({ userId: 144 }),
+      };
+      const { service, privacyDelete, reply } = createService({
+        mappingRepository,
+        withPrivacy: true,
+      });
+
+      await prompt(service);
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'dong y xoa du lieu',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-remapped',
+      });
+
+      expect(privacyDelete).not.toHaveBeenCalled();
+      expect(reply).toHaveBeenCalled();
+    });
+
+    it('does not confirm a pending action after a relink bumps the mapping generation', async () => {
+      // Same learner relinks: userId stays 143, generation 3 → 4 between
+      // arm and confirm.
+      const mappingRepository = {
+        findActiveMappingByPsid: jest
+          .fn()
+          .mockResolvedValueOnce({ userId: 143, mappingGeneration: '3' })
+          .mockResolvedValueOnce({ userId: 143, mappingGeneration: '4' }),
+      };
+      const { service, privacyDelete, reply } = createService({
+        mappingRepository,
+        withPrivacy: true,
+      });
+
+      await prompt(service);
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'dong y xoa du lieu',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-regen',
+      });
+
+      expect(privacyDelete).not.toHaveBeenCalled();
+      expect(reply).toHaveBeenCalled();
+    });
+
+    it('diacritic-free cancellation with a particle cancels the pending action', async () => {
       const {
         service,
         sendTextViaPsid,
@@ -739,7 +821,7 @@ describe('MessengerChatProcessorService', () => {
       await prompt(service);
       await service.process({
         psid: 'psid-1',
-        mergedText: 'Không',
+        mergedText: 'khong nhe!',
         userId: 143,
         idempotencyKey: 'mid-privacy-cancel',
       });
@@ -755,13 +837,13 @@ describe('MessengerChatProcessorService', () => {
       expect(reply).not.toHaveBeenCalled();
     });
 
-    it('an unrelated reply while pending gets the reminder, not the LLM', async () => {
+    it('an unrelated reply clears pending state and reaches the chat pipeline', async () => {
       const {
         service,
-        sendTextViaPsid,
         reserveFreeFormSlot,
         reply,
         privacyDelete,
+        privacyState,
       } = createService({ withPrivacy: true });
 
       await prompt(service);
@@ -772,15 +854,13 @@ describe('MessengerChatProcessorService', () => {
         idempotencyKey: 'mid-privacy-unrelated',
       });
 
-      expect(sendTextViaPsid).toHaveBeenCalledWith(
-        expect.objectContaining({ messageType: 'PRIVACY_REMIND' }),
-      );
+      expect(reply).toHaveBeenCalled();
       expect(privacyDelete).not.toHaveBeenCalled();
-      expect(reserveFreeFormSlot).not.toHaveBeenCalled();
-      expect(reply).not.toHaveBeenCalled();
+      expect(reserveFreeFormSlot).toHaveBeenCalled();
+      expect(privacyState!.getPendingAction('psid-1', 'messenger')).toBeNull();
     });
 
-    it('a different privacy keyword while pending re-sends the reminder without swapping the intent', async () => {
+    it('a different explicit privacy request replaces the pending intent', async () => {
       const {
         service,
         sendTextViaPsid,
@@ -798,17 +878,17 @@ describe('MessengerChatProcessorService', () => {
       });
 
       expect(sendTextViaPsid).toHaveBeenCalledWith(
-        expect.objectContaining({ messageType: 'PRIVACY_REMIND' }),
+        expect.objectContaining({ messageType: 'PRIVACY_CONFIRM' }),
       );
       expect(privacyDelete).not.toHaveBeenCalled();
       expect(privacyUnlink).not.toHaveBeenCalled();
       expect(privacyState!.getPendingAction('psid-1', 'messenger')).toBe(
-        'delete',
+        'unlink',
       );
     });
 
-    it('a merged multi-line reply starting with "Có" is treated as neither → reminder', async () => {
-      const { service, sendTextViaPsid, privacyDelete } = createService({
+    it('a merged multi-line acknowledgement does not execute and reaches the pipeline', async () => {
+      const { service, privacyDelete, privacyState, reply } = createService({
         withPrivacy: true,
       });
 
@@ -820,10 +900,44 @@ describe('MessengerChatProcessorService', () => {
         idempotencyKey: 'mid-privacy-multiline',
       });
 
-      expect(sendTextViaPsid).toHaveBeenCalledWith(
-        expect.objectContaining({ messageType: 'PRIVACY_REMIND' }),
-      );
       expect(privacyDelete).not.toHaveBeenCalled();
+      expect(reply).toHaveBeenCalled();
+      expect(privacyState!.getPendingAction('psid-1', 'messenger')).toBeNull();
+    });
+
+    it('bare "ok" does not execute deletion and reaches the pipeline', async () => {
+      const { service, privacyDelete, privacyState, reply } = createService({
+        withPrivacy: true,
+      });
+
+      await prompt(service);
+      await service.process({
+        psid: 'psid-1',
+        mergedText: 'ok',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-ok',
+      });
+
+      expect(privacyDelete).not.toHaveBeenCalled();
+      expect(reply).toHaveBeenCalled();
+      expect(privacyState!.getPendingAction('psid-1', 'messenger')).toBeNull();
+    });
+
+    it('an IELTS essay containing privacy terms reaches the chat pipeline', async () => {
+      const { service, privacyDelete, reply } = createService({
+        withPrivacy: true,
+      });
+
+      await service.process({
+        psid: 'psid-1',
+        mergedText:
+          'Task 2: Some people believe governments should delete data collected from citizens after five years. Discuss.',
+        userId: 143,
+        idempotencyKey: 'mid-privacy-essay',
+      });
+
+      expect(privacyDelete).not.toHaveBeenCalled();
+      expect(reply).toHaveBeenCalled();
     });
 
     it('after the pending action expires, a bare "Có" falls through to the pipeline', async () => {
