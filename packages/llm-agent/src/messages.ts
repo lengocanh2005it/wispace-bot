@@ -47,6 +47,19 @@ export function buildClarificationCancelledMessage(): string {
   return 'Đã hủy phần làm rõ. Khi cần, bạn cứ gửi câu hỏi mới nhé.';
 }
 
+/**
+ * Honest stop acknowledgement (#959): the learner asked to stop — until
+ * in-flight cancellation exists (#960), say that plainly instead of a
+ * clarification menu that implies the message was not understood. Shared
+ * by all three bots.
+ */
+export function buildStopAcknowledgedMessage(): string {
+  return (
+    'Mình đã nhận được yêu cầu dừng của bạn.\n' +
+    'Câu trả lời đang được tạo không thể dừng giữa chừng, nhưng bạn cứ nhắn "tiếp" khi muốn mình làm tiếp nhé.'
+  );
+}
+
 export function buildClarificationUnavailableMessage(): string {
   return 'Mình chưa thể xử lý lựa chọn lúc này. Bạn thử lại sau ít phút nhé.';
 }

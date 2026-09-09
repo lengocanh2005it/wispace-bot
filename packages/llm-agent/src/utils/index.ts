@@ -7,6 +7,7 @@ export {
   buildWispaceScopeRedirectMessage,
   buildClarificationMessage,
   buildClarificationCancelledMessage,
+  buildStopAcknowledgedMessage,
   buildClarificationUnavailableMessage,
   buildGroundingBlockedMessage,
   buildPrecreateExerciseUnavailableMessage,
@@ -34,6 +35,7 @@ export {
   isObviouslyOffTopic,
   isGreetingOnly,
   isAmbiguousMessage,
+  isStopIntent,
   normalizeScopeText,
   isDistressExpression,
 } from './scope.utils';

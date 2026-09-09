@@ -18,7 +18,11 @@ import {
   observationMarker,
   reduceToolObservation,
 } from './utils/tool-observation';
-import { isObviouslyOffTopic, isAmbiguousMessage } from './utils/scope.utils';
+import {
+  isObviouslyOffTopic,
+  isAmbiguousMessage,
+  isStopIntent,
+} from './utils/scope.utils';
 import { sanitizeReplyText } from './utils/text.utils';
 import { checkFinalOutputSafety } from './utils/final-output.utils';
 import { sleep, isAbortError } from './utils/retry.utils';
@@ -35,6 +39,7 @@ import {
   buildWispaceScopeRedirectMessage,
   buildGroundingBlockedMessage,
   buildClarificationMessage,
+  buildStopAcknowledgedMessage,
 } from './messages';
 import {
   errorMessage,
@@ -1586,6 +1591,15 @@ Summary:`;
       return {
         blocked: true,
         reply: { text: buildWispaceScopeRedirectMessage() },
+      };
+    }
+
+    // #959: a stop request is a clear intent — answer it honestly instead of
+    // the clarification menu.
+    if (isStopIntent(input.userText)) {
+      return {
+        blocked: true,
+        reply: { text: buildStopAcknowledgedMessage() },
       };
     }
 

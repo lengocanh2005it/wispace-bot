@@ -13,10 +13,12 @@ import {
   loadSystemPromptFile,
   IntentDetector,
   isAmbiguousMessage,
+  isStopIntent,
   isGreetingOnly,
   isObviouslyOffTopic,
   isDistressExpression,
   buildClarificationCancelledMessage,
+  buildStopAcknowledgedMessage,
   buildClarificationUnavailableMessage,
   buildClarificationMessage,
   buildWispaceScopeRedirectMessage,
@@ -429,7 +431,14 @@ export class PlatformAgentService {
         }
         this.recordClarificationOutcome('cancelled');
         return {
-          reply: this.staticReply(buildClarificationCancelledMessage(), input),
+          reply: this.staticReply(
+            // #959: the same words double as a stop request outside menu
+            // context — the acknowledgement covers both honestly.
+            isStopIntent(input.userText)
+              ? buildStopAcknowledgedMessage()
+              : buildClarificationCancelledMessage(),
+            input,
+          ),
         };
       }
 
@@ -460,9 +469,28 @@ export class PlatformAgentService {
       }
 
       const offTopic = isObviouslyOffTopic(input.userText);
+      const stop = isStopIntent(input.userText);
       const ambiguous =
         isAmbiguousMessage(input.userText) ||
         this.clarificationMachine.isContradictory(input.userText);
+
+      // #959: a stop request is a clear intent — clear any pending menu and
+      // answer honestly instead of re-showing the clarification menu.
+      if (stop) {
+        if (state) {
+          const cleared = await this.clarificationStore.clear(
+            key,
+            state.version,
+          );
+          if (cleared === false) {
+            throw new Error('Clarification state version conflict');
+          }
+        }
+        this.recordClarificationOutcome('stop_acknowledged');
+        return {
+          reply: this.staticReply(buildStopAcknowledgedMessage(), input),
+        };
+      }
 
       if (state && !offTopic && !ambiguous) {
         // Retain a tombstone so delayed choices from the superseded menu cannot

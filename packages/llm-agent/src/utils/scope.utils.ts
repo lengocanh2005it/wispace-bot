@@ -96,6 +96,30 @@ const SHORT_ACK =
   /^(?:ok|oke|okay|u|vang|da|a|o|ha|nhe|di|ok\s+nhe|ok\s+nha)$/i;
 
 /**
+ * Stop/resume intent vocabulary (#959). A learner typing `dừng` / `thôi` /
+ * `stop` stated an intent clearly — answering with the clarification menu
+ * would be dishonest, and `tiếp` is the resume half of the same interaction.
+ * Normalized (no-diacritic) exact match; polite trailing punctuation is
+ * already stripped by `normalizeScopeText`.
+ */
+const STOP_INTENT =
+  /^(?:dung|dung lai|stop|thoi|thoi khoi|thoi di|huy|huy di|huy bo|khoan|khoan da|khong can|khong can nua|bo qua|nevermind|never mind)$/i;
+const RESUME_INTENT = /^(?:tiep|tiep tuc|continue|go on)$/i;
+/**
+ * Short but meaningful scores/band references — `7.0`, `6.5?`, `band`.
+ * Checked against the raw text: `normalizeScopeText` would turn `7.0` into
+ * two bare numbers and lose the decimal.
+ */
+const SHORT_MEANINGFUL =
+  /^(?:band(?:\s+\d+(?:[.,]\d+)?)?|\d+(?:[.,]\d+)?)[\s?!.]*$/i;
+
+/** True when the message is a stop request (#959) — gets an honest reply, not a menu. */
+export function isStopIntent(userText: string): boolean {
+  const text = normalizeScopeText(userText.trim());
+  return text.length > 0 && STOP_INTENT.test(text);
+}
+
+/**
  * True when the message is too vague to identify intent safely.
  * Ambiguous messages get a clarification reply instead of tool execution.
  */
@@ -108,6 +132,11 @@ export function isAmbiguousMessage(userText: string): boolean {
   if (matchesDistress(text)) {
     return false;
   }
+  // #959: a score/band reference like `6.5?` is meaningful — the
+  // punctuation-share check below must not eat it.
+  if (SHORT_MEANINGFUL.test(rawText)) {
+    return false;
+  }
   // Random/accidental: non-alphanumeric chars dominate (>=50% of length)
   const nonAlpha = rawText.replace(/[\p{L}\p{N}]/gu, '');
   if (nonAlpha.length >= rawText.length / 2 && rawText.length <= 20)
@@ -115,7 +144,12 @@ export function isAmbiguousMessage(userText: string): boolean {
   if (
     rawText.length <= SHORT_FRAGMENT_THRESHOLD &&
     !SHORT_ACK.test(text) &&
-    !GREETING_ONLY.test(text)
+    !GREETING_ONLY.test(text) &&
+    // #959: known short intents are meaningful, not vague — a stop word, a
+    // resume word, or a score reference must never hit the length gate.
+    !STOP_INTENT.test(text) &&
+    !RESUME_INTENT.test(text) &&
+    !SHORT_MEANINGFUL.test(rawText)
   ) {
     return true;
   }

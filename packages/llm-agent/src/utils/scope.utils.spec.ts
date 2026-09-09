@@ -2,6 +2,7 @@ import {
   isObviouslyOffTopic,
   isGreetingOnly,
   isAmbiguousMessage,
+  isStopIntent,
   isDistressExpression,
 } from './scope.utils';
 
@@ -133,6 +134,79 @@ describe('isAmbiguousMessage', () => {
       expect(isAmbiguousMessage(text)).toBe(false);
     },
   );
+
+  // #959 — the four-character length gate must not catch meaningful short
+  // input: stop words, resume words, and score/band references.
+  it.each([
+    'dừng',
+    'thôi',
+    'stop',
+    'hủy',
+    'khoan',
+    'không cần nữa',
+    'thôi khỏi',
+    'dung',
+    'thoi khoi',
+    'huy!',
+  ])('does not treat stop intent "%s" as ambiguous', (text) => {
+    expect(isAmbiguousMessage(text)).toBe(false);
+    expect(isStopIntent(text)).toBe(true);
+  });
+
+  it.each(['tiếp', 'tiếp tục', 'continue'])(
+    'does not treat resume word "%s" as ambiguous',
+    (text) => {
+      expect(isAmbiguousMessage(text)).toBe(false);
+    },
+  );
+
+  it.each(['7.0', 'band', '6.5?'])(
+    'does not treat short score reference "%s" as ambiguous',
+    (text) => {
+      expect(isAmbiguousMessage(text)).toBe(false);
+    },
+  );
+
+  it.each(['xyz', 'jjj', '😀', '!!', '...'])(
+    'still treats genuinely vague input "%s" as ambiguous',
+    (text) => {
+      expect(isAmbiguousMessage(text)).toBe(true);
+    },
+  );
+});
+
+describe('isStopIntent (#959 stop acknowledgement)', () => {
+  it.each([
+    'dừng',
+    'dừng lại',
+    'thôi',
+    'thôi khỏi',
+    'thôi đi',
+    'stop',
+    'hủy',
+    'hủy đi',
+    'khoan',
+    'khoan đã',
+    'không cần',
+    'không cần nữa',
+    'bỏ qua',
+  ])('recognizes "%s" as a stop request', (text) => {
+    expect(isStopIntent(text)).toBe(true);
+  });
+
+  it.each([
+    'tiếp',
+    'tiếp tục',
+    'xem lịch học',
+    'band của mình là 7.0',
+    'không cần thiết lắm nhưng thôi cứ xem',
+  ])('does not treat "%s" as a stop request', (text) => {
+    expect(isStopIntent(text)).toBe(false);
+  });
+
+  it('requires an exact match, not a substring', () => {
+    expect(isStopIntent('dừng thử xem sao')).toBe(false);
+  });
 });
 
 describe('isDistressExpression (#598 study-stress rescue)', () => {

@@ -193,8 +193,51 @@ describe('ChatPipeline', () => {
 
     expect(outbound.sendText).not.toHaveBeenCalled();
     expect(history.appendTurn).not.toHaveBeenCalled();
-    expect(rateLimiter.markDelivered).toHaveBeenCalledWith('event-1');
-    expect(rateLimiter.markCompleted).toHaveBeenCalledWith('event-1');
+    // The replayed canned reply also releases the slot instead of charging
+    // it (#959).
+    expect(rateLimiter.refund).toHaveBeenCalledWith(
+      'user-1',
+      '2026-07-29',
+      'event-1',
+    );
+    expect(rateLimiter.markDelivered).not.toHaveBeenCalled();
+    expect(rateLimiter.markCompleted).not.toHaveBeenCalled();
+  });
+
+  // #959/#661 — a clarification-only turn delivers no answer, so it must
+  // not consume a quota turn.
+  it('refunds the reserved slot for a delivered clarification reply', async () => {
+    const rateLimiter = mockRateLimiter();
+    const history = mockHistory();
+    const pipeline = new ChatPipeline(
+      rateLimiter,
+      history,
+      mockAgent({
+        reply: jest.fn().mockResolvedValue({
+          text: 'Bạn chọn 1, 2 hoặc 3 nhé.',
+          skipHistory: true,
+          clarification: true,
+        }),
+      }),
+      mockOutbound(),
+    );
+
+    await expect(
+      pipeline.flush({
+        externalUserId: 'user-1',
+        texts: ['dừng'],
+        idempotencyKey: 'event-clarify',
+      }),
+    ).resolves.toBe(true);
+
+    expect(rateLimiter.refund).toHaveBeenCalledWith(
+      'user-1',
+      '2026-07-29',
+      'event-clarify',
+    );
+    expect(rateLimiter.markDelivered).not.toHaveBeenCalled();
+    expect(rateLimiter.markCompleted).not.toHaveBeenCalled();
+    expect(history.appendTurn).not.toHaveBeenCalled();
   });
 
   it('marks ambiguous clarification delivery so retry logic cannot resend blindly', async () => {

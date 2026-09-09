@@ -237,7 +237,7 @@ describe('PlatformAgentService', () => {
 
     const first = await service.reply({
       externalUserId: 'zalo-user-1',
-      userText: '1',
+      userText: 'abc???',
     });
 
     expect(first.text).toContain('Tiến độ học');
@@ -437,7 +437,7 @@ describe('PlatformAgentService', () => {
     });
     const cancelled = await service.reply({
       externalUserId: 'zalo-user-1',
-      userText: 'bỏ qua',
+      userText: 'thoát',
       correlationId: 'event-401-cancel',
     });
 
@@ -462,7 +462,7 @@ describe('PlatformAgentService', () => {
 
     const result = await service.reply({
       externalUserId: 'zalo-user-1',
-      userText: 'cancel',
+      userText: 'thoat',
     });
 
     expect(result.text).toContain('Đã hủy');
@@ -875,6 +875,90 @@ describe('PlatformAgentService', () => {
     // The static clarification/off-topic replies never fire; both messages
     // produce an LLM reply round.
     expect(mockLlmReply).toHaveBeenCalledTimes(2);
+  });
+
+  describe('stop intent acknowledgement (#959)', () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+
+    const stopWords = [
+      'dừng',
+      'thôi',
+      'stop',
+      'hủy',
+      'khoan',
+      'không cần nữa',
+      'thôi khỏi',
+    ];
+
+    it.each(stopWords)(
+      'answers "%s" with the stop acknowledgement instead of the menu',
+      async (userText) => {
+        const service = buildService(historyService);
+        const reply = await service.reply({
+          externalUserId: 'psid-stop-1',
+          userText,
+        });
+
+        expect(reply.text).toContain('yêu cầu dừng');
+        expect(reply.text).not.toContain('Mình chưa rõ');
+        expect(mockLlmReply).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(stopWords)(
+      'behaves identically regardless of platform for "%s"',
+      async (userText) => {
+        for (const platform of ['messenger', 'discord', 'zalo'] as const) {
+          const service = buildService(historyService, { platform });
+          const reply = await service.reply({
+            externalUserId: 'psid-stop-platform',
+            userText,
+          });
+          expect(reply.text).toContain('yêu cầu dừng');
+        }
+      },
+    );
+
+    it('clears a pending clarification state when the learner asks to stop', async () => {
+      const store = {
+        get: jest
+          .fn()
+          .mockResolvedValueOnce({
+            phase: 'awaiting_choice',
+            attempts: 1,
+            menuResets: 0,
+            version: 3,
+            createdAt: Date.now(),
+            expiresAt: Date.now() + 60_000,
+          })
+          .mockResolvedValue(null),
+        set: jest.fn(),
+        clear: jest.fn().mockResolvedValue(true),
+      };
+      const service = buildService(historyService, {
+        clarificationStore: store,
+      });
+
+      const reply = await service.reply({
+        externalUserId: 'psid-stop-state',
+        userText: 'dừng',
+      });
+
+      expect(reply.text).toContain('yêu cầu dừng');
+      expect(store.clear).toHaveBeenCalledWith('default:psid-stop-state', 3);
+    });
+
+    it('does not confuse a message containing a stop word with a stop request', async () => {
+      const service = buildService(historyService);
+      await service.reply({
+        externalUserId: 'psid-stop-2',
+        userText: 'mình không cần dừng lại, cứ tiếp tục đi',
+      });
+      expect(mockLlmReply).toHaveBeenCalled();
+    });
   });
 
   describe('input classifier (#649)', () => {

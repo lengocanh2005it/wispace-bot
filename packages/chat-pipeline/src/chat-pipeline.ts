@@ -168,6 +168,27 @@ export class ChatPipeline {
         return false;
       }
 
+      // ── Canned clarification turns never consume quota (#959/#661) ────────
+      // The reply delivered, but it answers nothing — release the reserved
+      // slot and leave the idempotency row refunded. The markDelivered /
+      // markCompleted bookkeeping below is skipped: the row is terminal.
+      if (reply.clarification === true) {
+        if (input.idempotencyKey && usageDate && !refundAttempted) {
+          refundAttempted = true;
+          try {
+            await this.rateLimiter.refund(
+              input.externalUserId,
+              usageDate,
+              input.idempotencyKey,
+            );
+          } catch (refundError) {
+            ctx.refundError = refundError;
+          }
+        }
+        await this.hooks.onStep?.('after_send', ctx);
+        return true;
+      }
+
       // ── Persist delivery before history/quota finalization ───────────────
       if (input.idempotencyKey) {
         await this.rateLimiter.markDelivered(input.idempotencyKey);
