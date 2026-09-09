@@ -45,13 +45,49 @@ packages/date-utils/            Timezone-aware date helpers (date-fns)
 **Discord:** DMs and `@mentions`, OAuth2 account linking (committed at callback), link-status endpoint, report/study quick actions
 **Zalo:** OA account linking, OAuth2 (PKCE), webhook signature verification, OA token at-rest encryption, reports/reminders
 
+## Architecture
+
+Each app is a NestJS Clean Architecture service; every shared package is framework-agnostic (no NestJS/TypeORM imports) and is wired into an app through ports at the composition root.
+
+**Layers inside `apps/*/src/modules/<feature>/`:**
+
+```
+presentation/    controllers, gateways, webhooks — delegate only
+      ↓
+application/     use cases, services, ports (interface + DI token)
+      ↓
+domain/          pure types, entities, repository interfaces
+      ↑
+infrastructure/  TypeORM repositories, HTTP clients, platform SDKs
+```
+
+Dependencies point inward: `presentation → application → domain ← infrastructure`. Domain imports nothing from NestJS, TypeORM, or other modules.
+
+**Chat request flow (all platforms):**
+
+```
+platform inbound (webhook / gateway)
+  → durable inbox (webhook-inbound)     idempotent ingest before ack
+  → debounce queue (chat-queue-core)    merge bursts per user
+  → quota reserve (chat-metering)       daily quota + burst + idempotency
+  → agent (llm-agent + chat-agent)      function calling, provider failover
+  → tool handlers (wispace-client)      goals, scores, calendar, precreate
+  → outbound send                       platform-specific, then refund on failure
+```
+
+**Scheduled flow:** `scheduler-core` (cron + leader election) → `student-report` / `study-reminder-shared` → outbox tables (`report_send_jobs`, `study_reminder_jobs`) → retry dispatch → outbound send.
+
+**Package rules:** shared packages hold logic common to all bots; anything platform-specific (prompt overlays, menus, OAuth flows, identity headers) stays in the app. Each app implements the package's ports with real NestJS services. Full boundary rules per package: `.claude/rules/clean-architecture.md`.
+
+Full diagram, module map, and DB tables: [docs/project-overview.md § Architecture](docs/project-overview.md#2-architecture).
+
 ## Documentation
 
 | File                                                                                                   | Description                                                |
 | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
 | [docs/turborepo-migration-plan.md](docs/turborepo-migration-plan.md)                                   | Monorepo roadmap: cross-platform DB, independent CI/CD     |
 | [docs/project-overview.md](docs/project-overview.md)                                                   | Architecture, code structure, DB, API, cron, quota runbook |
-| [docs/vault-secrets.md](docs/vault-secrets.md)                                                         | Vault runtime secret contract and bootstrap runbook         |
+| [docs/vault-secrets.md](docs/vault-secrets.md)                                                         | Vault runtime secret contract and bootstrap runbook        |
 | [apps/messenger-bot/docs/chat-rate-limit-quota.md](apps/messenger-bot/docs/chat-rate-limit-quota.md)   | Chat rate limit V1 + H1–H7                                 |
 | [docs/edge-cases-roadmap.md](docs/edge-cases-roadmap.md)                                               | Project-wide gaps + QA checklist + remediation phases      |
 | [apps/messenger-bot/docs/study-session-reminder.md](apps/messenger-bot/docs/study-session-reminder.md) | Study session reminders (detailed)                         |
