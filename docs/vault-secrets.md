@@ -63,9 +63,13 @@ The shared Vault path also stores the backup secrets so they survive VPS loss:
   object-store credentials used by `deploy/postgres-offsite-sync.sh`; the
   access key must allow put/list on the backup bucket only.
 
-The deploy env-allowlist accepts `BACKUP_ENCRYPTION_PASSPHRASE` in the Vault
-bootstrap; the offsite sync reads `OFFSITE_S3_*` from the same file and builds
-a mode-600 temp rclone config (never argv, never logged).
+The deployment workflow authenticates to the shared Vault path with the same
+AppRole and creates a separate mode-600 `backup-bootstrap.env` for the host.
+It contains only the database backup and offsite keys above. `vps-deploy.sh`
+installs it at `/home/ngoc_anh/backups/ai_chat_bot_db/backup.env`, never passes
+it to `docker run`, and removes the uploaded copy after installation. The
+backup and offsite cron jobs read this host-only file. The bot's
+`vault-bootstrap.env` remains AppRole-only.
 
 ## Loading and failure behavior
 
@@ -88,8 +92,9 @@ before a later restart.
 
 ## Production delivery (#654/#655)
 
-Production deploys deliver only a short-lived `vault-bootstrap.env`; a full
-secret-bearing runtime env file is not created, uploaded, or retained. The
+Production deploys deliver a short-lived `vault-bootstrap.env` plus, for the
+Messenger deploy only, a dedicated host-only `backup-bootstrap.env`; a full
+secret-bearing bot runtime env file is not created, uploaded, or retained. The
 reusable workflow requires the repository/environment variable `VAULT_ADDR` and
 these per-bot GitHub Actions secrets:
 
@@ -99,10 +104,12 @@ VAULT_ROLE_ID_DISCORD  / VAULT_SECRET_ID_DISCORD
 VAULT_ROLE_ID_ZALO     / VAULT_SECRET_ID_ZALO
 ```
 
-The workflow writes the bootstrap atomically with mode `600`, uploads it with
-the release, and the VPS replaces the app's `.env` atomically after validating
-the allowlist. The file contains only Vault bootstrap and deploy-owned flags;
-the bot loads the actual runtime secrets from Vault inside the container.
+The workflow writes both files with mode `600`, uploads them with the release,
+and the VPS replaces the app's `.env` and host backup env atomically after
+validating their separate allowlists. The app file contains only Vault
+bootstrap and deploy-owned flags; the bot loads the actual runtime secrets
+from Vault inside the container. The host backup file contains only the
+database backup/offsite contract and is never included in the container env.
 Missing credentials, invalid bootstrap content, Vault startup failure, failed
 migrations, health/readiness failure, or metrics/nginx verification failure
 stops before cutover and leaves the healthy container serving traffic.

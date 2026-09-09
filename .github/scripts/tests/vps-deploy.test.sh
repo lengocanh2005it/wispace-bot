@@ -173,6 +173,7 @@ run_script() { # dir [EXTRA_ENV=..].. -> echoes exit code
       POST_SWITCH_MONITOR_INTERVAL=0 RUN_MIGRATIONS=false \
       MIGRATION_PREFLIGHT_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js preflight' \
       MIGRATION_STATUS_CMD='node apps/messenger-bot/dist/infrastructure/database/vault-migrations.js show' \
+      BACKUP_ENV_FILE="$dir/deploy/backup.env" \
       DOCKER_LOG="$dir/docker.log" CURL_LOG="$dir/curl.log" SUDO_LOG="$dir/sudo.log" \
       PATH="$dir/bin:$PATH"
     for extra in "$@"; do export "$extra"; done
@@ -182,8 +183,10 @@ run_script() { # dir [EXTRA_ENV=..].. -> echoes exit code
 }
 
 write_env() { # dir -> minimal .env
-  printf 'VAULT_REQUIRED=true\nVAULT_ADDR=https://vault.test\nVAULT_ROLE_ID=role-test\nVAULT_SECRET_ID=secret-test\nBACKUP_ENCRYPTION_PASSPHRASE=test-passphrase\n' > "$dir/deploy/.env"
+  printf 'VAULT_REQUIRED=true\nVAULT_ADDR=https://vault.test\nVAULT_ROLE_ID=role-test\nVAULT_SECRET_ID=secret-test\n' > "$dir/deploy/.env"
   chmod 600 "$dir/deploy/.env"
+  printf 'DB_HOST=postgres_n8n_db\nDB_PORT=5432\nDB_NAME=ai_chat_bot_db\nDB_USER=postgres\nDB_PASSWORD=test-password\nBACKUP_ENCRYPTION_PASSPHRASE=test-passphrase\nOFFSITE_S3_ENDPOINT=https://s3.example.test\nOFFSITE_S3_BUCKET=wispacedr\nOFFSITE_S3_ACCESS_KEY=test-access\nOFFSITE_S3_SECRET_KEY=test-secret\n' > "$dir/deploy/backup.env"
+  chmod 600 "$dir/deploy/backup.env"
 }
 
 write_upstream() { # dir port
@@ -242,6 +245,20 @@ code=$(run_script "$dir")
 grep -q "No Vault bootstrap env found" "$dir/run.out" || fail "missing ERROR message"
 [ ! -f "$dir/docker.log" ] || fail "docker must not run without env"
 pass "missing .env fails closed"
+
+echo "Test 2b: host-only backup bootstrap is installed outside the container env (#866)"
+dir=$(make_env backup-bootstrap)
+write_env "$dir"
+mv "$dir/deploy/backup.env" "$dir/deploy/backup-bootstrap.env"
+write_upstream "$dir" 5007
+code=$(run_script "$dir" FAKE_EXISTING= FAKE_PORT_MAP= SKIP_NGINX_CHECK=true)
+[ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
+[ -f "$dir/deploy/backup.env" ] || fail "backup bootstrap was not installed"
+grep -q 'BACKUP_ENCRYPTION_PASSPHRASE=test-passphrase' "$dir/deploy/backup.env" \
+  || fail "installed backup env is incomplete"
+! grep -q 'test-passphrase' "$dir/docker.log" \
+  || fail "host-only backup secret reached docker arguments"
+pass "host-only backup bootstrap is installed separately"
 
 echo "Test 2: upstream conf missing -> fail closed (exit 1) unless SKIP_NGINX_CHECK (#199)"
 dir=$(make_env upstream-missing)

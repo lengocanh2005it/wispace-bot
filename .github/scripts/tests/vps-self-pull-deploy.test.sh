@@ -5,7 +5,13 @@
 # requires only bash + flock. Run: bash .github/scripts/tests/vps-self-pull-deploy.test.sh
 set -euo pipefail
 
+if ! command -v flock >/dev/null 2>&1; then
+  echo "ERROR: vps-self-pull-deploy.test.sh requires flock (util-linux)" >&2
+  exit 2
+fi
+
 SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/vps-self-pull-deploy.sh"
+ROOT="$(cd "$(dirname "$SCRIPT")/../.." && pwd)"
 TEST_BASH="$(command -v bash)"
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
@@ -819,6 +825,13 @@ grep -q '\[messenger-bot\]="/health/ready:true"' "$SCRIPT" || fail "Messenger se
 grep -q '\[discord-bot\]="/health/ready:false"' "$SCRIPT" || fail "Discord self-pull readiness path changed"
 grep -q '\[zalo-bot\]="/health/ready:false"' "$SCRIPT" || fail "Zalo self-pull readiness path changed"
 pass "self-pull deploy readiness paths remain fail-closed"
+
+echo "Test 21: migration deploy keeps backup credentials host-only (#866)"
+VPS_DEPLOY="$ROOT/.github/scripts/vps-deploy.sh"
+grep -q 'BACKUP_ENV_FILE=' "$VPS_DEPLOY" || fail "deploy has no host backup env contract"
+grep -q 'validate_backup_env' "$VPS_DEPLOY" || fail "backup env is not validated"
+grep -q -- '--passphrase-fd 3' "$VPS_DEPLOY" || fail "pre-migration passphrase is not fd-only"
+pass "self-pull keeps backup credentials out of container bootstrap"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"

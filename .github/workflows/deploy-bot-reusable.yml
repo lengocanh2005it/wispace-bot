@@ -286,6 +286,10 @@ jobs:
           [ -n "$VAULT_ROLE_ID" ] || { echo "ERROR: Vault role credential is required" >&2; exit 1; }
           [ -n "$VAULT_SECRET_ID" ] || { echo "ERROR: Vault secret credential is required" >&2; exit 1; }
           case "$VAULT_ADDR" in
+            *$'\n'*|*$'\r'*|https://*@*|https://*\?*|https://*\#*)
+              echo "ERROR: VAULT_ADDR must not contain credentials, query parameters, fragments, or newlines" >&2
+              exit 1
+              ;;
             https://*) ;;
             *) echo "ERROR: VAULT_ADDR must use HTTPS" >&2; exit 1 ;;
           esac
@@ -302,12 +306,70 @@ jobs:
           mv -f -- "$bootstrap_tmp" vault-bootstrap.env
           bootstrap_tmp=
 
+      - name: Prepare host backup bootstrap
+        if: ${{ inputs.app == 'messenger-bot' }}
+        env:
+          VAULT_ADDR: ${{ inputs.vault_addr }}
+          VAULT_ROLE_ID: ${{ secrets.vault_role_id }}
+          VAULT_SECRET_ID: ${{ secrets.vault_secret_id }}
+        run: |
+          set -euo pipefail
+          command -v jq >/dev/null || { echo "ERROR: jq is required" >&2; exit 1; }
+          umask 077
+          work_dir=$(mktemp -d)
+          trap 'rm -rf -- "$work_dir"' EXIT
+          jq -n --arg role "$VAULT_ROLE_ID" --arg secret "$VAULT_SECRET_ID" \
+            '{role_id:$role,secret_id:$secret}' > "$work_dir/login.json"
+          cat > "$work_dir/login.conf" <<EOF
+          silent
+          show-error
+          fail
+          request = POST
+          url = "$VAULT_ADDR/v1/auth/approle/login"
+          header = "X-Vault-Request:"
+          header = "Content-Type: application/json"
+          data-binary = "@$work_dir/login.json"
+          EOF
+          curl --config "$work_dir/login.conf" > "$work_dir/login-response.json"
+          vault_token=$(jq -er '.auth.client_token | strings' "$work_dir/login-response.json")
+          cat > "$work_dir/shared.conf" <<EOF
+          silent
+          show-error
+          fail
+          url = "$VAULT_ADDR/v1/secret/data/wispace-bots/shared/prd"
+          header = "X-Vault-Request:"
+          header = "X-Vault-Token: $vault_token"
+          EOF
+          curl --config "$work_dir/shared.conf" > "$work_dir/shared-response.json"
+          backup_tmp=$(mktemp "$work_dir/backup-bootstrap.XXXXXX")
+          chmod 600 "$backup_tmp"
+          for key in DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD BACKUP_ENCRYPTION_PASSPHRASE OFFSITE_S3_ENDPOINT OFFSITE_S3_BUCKET OFFSITE_S3_ACCESS_KEY OFFSITE_S3_SECRET_KEY; do
+            value=$(jq -er --arg key "$key" '.data.data[$key] | strings' "$work_dir/shared-response.json") || {
+              echo "ERROR: Vault shared backup key is missing: $key" >&2
+              exit 1
+            }
+            case "$value" in
+              *$'\n'*|*$'\r'*) echo "ERROR: Vault backup key contains a newline: $key" >&2; exit 1 ;;
+            esac
+            printf '%s=%s\n' "$key" "$value" >> "$backup_tmp"
+          done
+          if jq -e '.data.data.OFFSITE_S3_REGION | strings' "$work_dir/shared-response.json" >/dev/null; then
+            value=$(jq -er '.data.data.OFFSITE_S3_REGION | strings' "$work_dir/shared-response.json")
+            printf 'OFFSITE_S3_REGION=%s\n' "$value" >> "$backup_tmp"
+          fi
+          chmod 600 "$backup_tmp"
+          mv -f -- "$backup_tmp" backup-bootstrap.env
+
       - name: Prepare VPS upload bundle
         run: |
           set -euo pipefail
           [ -f vault-bootstrap.env ] || { echo "ERROR: Vault bootstrap is missing" >&2; exit 1; }
           mkdir -p upload-bundle
           cp .github/scripts/vps-deploy.sh upload-bundle/
+          if [ "${{ inputs.app }}" = "messenger-bot" ]; then
+            [ -f backup-bootstrap.env ] || { echo "ERROR: host backup bootstrap is missing" >&2; exit 1; }
+            cp backup-bootstrap.env upload-bundle/
+          fi
           # Copy nginx upstream config for zero-downtime deploy
           mkdir -p upload-bundle/upstreams
           cp deploy/nginx/upstreams/${{ inputs.app }}.conf upload-bundle/upstreams/ 2>/dev/null || true
@@ -324,7 +386,7 @@ jobs:
             echo "ERROR: Required bundle artifact missing: vault-bootstrap.env"
             exit 1
           fi
-          if find upload-bundle -maxdepth 1 -type f -name '*.env' ! -name 'vault-bootstrap.env' -print -quit | grep -q .; then
+          if find upload-bundle -maxdepth 1 -type f -name '*.env' ! -name 'vault-bootstrap.env' ! -name 'backup-bootstrap.env' -print -quit | grep -q .; then
             echo "ERROR: full runtime env artifacts are forbidden in the upload bundle"
             exit 1
           fi
@@ -356,4 +418,4 @@ jobs:
 
       - name: Remove Vault bootstrap workspace files
         if: always()
-        run: rm -rf -- vault-bootstrap.env upload-bundle
+        run: rm -rf -- vault-bootstrap.env backup-bootstrap.env upload-bundle

@@ -77,6 +77,9 @@ printf 'enc-globals' > "$GLOBALS"
 EVIDENCE_DIR="$BACKUP_DIR/restore-verify"
 mkdir -p "$EVIDENCE_DIR"
 printf '{"result": "success"}' > "$EVIDENCE_DIR/restore-verify-20260908-030000.json"
+mkdir -p "$BACKUP_DIR/pre-migrate"
+printf encrypted-pre-migration-dump > "$BACKUP_DIR/pre-migrate/pre-migrate-20260908-020500.dump.gpg"
+date +%s > "$BACKUP_DIR/.last-backup-success"
 
 run_sync() { # <args...>
   RCLONE_LOG="$TEST_ROOT/rclone.log" \
@@ -88,10 +91,12 @@ assert_no_secret_in_logs() {
 }
 
 # --- 1. Missing credentials fail closed --------------------------------------
-PATH="$FAKE_BIN:$PATH" bash "$SCRIPT" --backup-dir "$BACKUP_DIR" \
+CURL_LOG="$TEST_ROOT/curl.log" PATH="$FAKE_BIN:$PATH" bash "$SCRIPT" --backup-dir "$BACKUP_DIR" \
   --env-file "$TEST_ROOT/no-such.env" > /dev/null 2>"$TEST_ROOT/err" \
   && fail "missing env file must fail closed" \
   || pass "missing env file fails closed"
+grep -q 'postgres_offsite_failed' "$TEST_ROOT/curl.log" \
+  || fail "missing env file must fire the offsite alert"
 
 printf 'OFFSITE_S3_ENDPOINT=https://s3.b2.example.com\n' > "$TEST_ROOT/partial.env"
 PATH="$FAKE_BIN:$PATH" bash "$SCRIPT" --backup-dir "$BACKUP_DIR" \
@@ -106,6 +111,14 @@ RCLONE_LOG="$TEST_ROOT/rclone.log" PATH="$FAKE_BIN:$PATH" bash "$SCRIPT" \
   || fail "self-check must pass with valid creds"
 grep -q 'rclone lsl' "$TEST_ROOT/rclone.log" || fail "self-check must list the remote bucket"
 pass "fresh-host self-check passes without uploading"
+
+CURL_LOG="$TEST_ROOT/curl.log" RCLONE_LOG="$TEST_ROOT/rclone.log" \
+  PATH="$FAKE_BIN:$PATH" FAKE_RCLONE_FAIL=1 bash "$SCRIPT" \
+  --backup-dir "$BACKUP_DIR" --env-file "$ENV_FILE" --self-check >/dev/null 2>&1 \
+  && fail "self-check failure must exit non-zero" \
+  || pass "self-check failure exits non-zero"
+grep -q 'postgres_offsite_failed' "$TEST_ROOT/curl.log" \
+  || fail "self-check failure must fire the offsite alert"
 
 # --- 3. Successful sync: atomic promote + checksum sidecar verify -------------
 RCLONE_LOG="$TEST_ROOT/rclone.log" RCLONE_STORE="$TEST_ROOT/store" \
@@ -122,6 +135,10 @@ grep -q 'globals.sql.gz.gpg' "$TEST_ROOT/rclone.log" \
   || fail "latest globals artifact must be uploaded"
 grep -q 'restore-verify-20260908-030000.json' "$TEST_ROOT/rclone.log" \
   || fail "verification metadata (evidence) must be uploaded"
+grep -q 'manifest.tsv' "$TEST_ROOT/rclone.log" \
+  || fail "manifest must be uploaded and promoted"
+grep -q 'pre-migrate-pre-migrate-20260908-020500.dump.gpg' "$TEST_ROOT/rclone.log" \
+  || fail "pre-migration dump must be uploaded"
 ! grep -qE 'rclone (delete|purge|deletefile)' "$TEST_ROOT/rclone.log" \
   || fail "sync must never delete remote objects"
 [ -f "$BACKUP_DIR/.last-offsite-success" ] || fail "success marker must be written"
@@ -163,6 +180,7 @@ grep -qi 'checksum' "$TEST_ROOT/err6" || fail "error must name the checksum mism
 # --- 7. No local artifacts → fail with alert ------------------------------------
 EMPTY_DIR="$TEST_ROOT/empty"
 mkdir -p "$EMPTY_DIR"
+date +%s > "$EMPTY_DIR/.last-backup-success"
 RCLONE_LOG="$TEST_ROOT/rclone.log" PATH="$FAKE_BIN:$PATH" \
   bash "$SCRIPT" --backup-dir "$EMPTY_DIR" --env-file "$ENV_FILE" >/dev/null 2>"$TEST_ROOT/err7" \
   && fail "no local artifacts must exit non-zero" \

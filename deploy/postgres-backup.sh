@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Nightly pg_dump of the shared bot database (all 3 bots use ai_chat_bot_db).
-# Run on the VPS host; credentials come from the messenger-bot .env.
+# Run on the VPS host; credentials come from the host-only Vault-rendered
+# backup env, never from a bot container env.
 # Backups are encrypted at rest with GPG symmetric AES-256 (#185).
 #
 # Install:
@@ -11,7 +12,7 @@ set -euo pipefail
 #   crontab -e  # add:
 #   0 2 * * * /home/ngoc_anh/scripts/postgres-backup.sh >> /home/ngoc_anh/backups/backup.log 2>&1
 
-ENV_FILE="${ENV_FILE:-/home/ngoc_anh/messenger-bot/.env}"
+ENV_FILE="${ENV_FILE:-/home/ngoc_anh/backups/ai_chat_bot_db/backup.env}"
 BACKUP_DIR="${BACKUP_DIR:-/home/ngoc_anh/backups/ai_chat_bot_db}"
 KEEP_DAYS="${KEEP_DAYS:-14}"
 # Optional legacy client container. Managed HA deployments should install

@@ -40,17 +40,28 @@ MONITORING_NETWORK="monitoring"
 APP_NETWORK="${APP_NETWORK:-app_n8n_db_network}"
 METRICS_PATH="/metrics"
 BOOTSTRAP_ENV="vault-bootstrap.env"
+BACKUP_BOOTSTRAP_ENV="backup-bootstrap.env"
+BACKUP_ENV_FILE="${BACKUP_ENV_FILE:-/home/ngoc_anh/backups/ai_chat_bot_db/backup.env}"
 
 ENV_INSTALL_TMP=""
 ENV_FILE=""
+BACKUP_ENV_INSTALL_TMP=""
+PRE_MIGRATE_TMP=""
+PRE_MIGRATE_GPG_TMP=""
 BOOTSTRAP_ENV_PRESENT=false
+BACKUP_BOOTSTRAP_PRESENT=false
 cleanup_env_install() {
   [ -z "$ENV_INSTALL_TMP" ] || rm -f -- "$ENV_INSTALL_TMP"
   [ -z "$ENV_FILE" ] || rm -f -- "$ENV_FILE"
-  [ "$BOOTSTRAP_ENV_PRESENT" = true ] || return 0
-  rm -f -- "$BOOTSTRAP_ENV"
+  [ -z "$BACKUP_ENV_INSTALL_TMP" ] || rm -f -- "$BACKUP_ENV_INSTALL_TMP"
+  [ -z "$PRE_MIGRATE_TMP" ] || rm -f -- "$PRE_MIGRATE_TMP" "${PRE_MIGRATE_TMP}.pgpass"
+  [ -z "$PRE_MIGRATE_GPG_TMP" ] || rm -f -- "$PRE_MIGRATE_GPG_TMP"
+  [ "$BOOTSTRAP_ENV_PRESENT" = true ] && rm -f -- "$BOOTSTRAP_ENV"
+  [ "$BACKUP_BOOTSTRAP_PRESENT" = true ] && rm -f -- "$BACKUP_BOOTSTRAP_ENV"
+  return 0
 }
 trap cleanup_env_install EXIT
+trap 'exit 143' INT TERM
 
 # Lock down env files before any grep/sed can read them.
 if [ -f .env ] && ! chmod 600 .env; then
@@ -72,7 +83,7 @@ validate_bootstrap_env() {
     key="${line%%=*}"
     value="${line#*=}"
     case "$key" in
-      VAULT_REQUIRED|VAULT_ADDR|VAULT_ROLE_ID|VAULT_SECRET_ID|HOME|DEPLOY_UID|DEPLOY_GID|CHAT_RATE_LIMIT_ENABLED|ENFORCE_PROD_CHAT_QUOTA|BACKUP_ENCRYPTION_PASSPHRASE) ;;
+      VAULT_REQUIRED|VAULT_ADDR|VAULT_ROLE_ID|VAULT_SECRET_ID|HOME|DEPLOY_UID|DEPLOY_GID|CHAT_RATE_LIMIT_ENABLED|ENFORCE_PROD_CHAT_QUOTA) ;;
       *) echo "ERROR: Vault bootstrap contains an unsupported setting" >&2; return 1 ;;
     esac
     if [ -n "${seen[$key]+present}" ]; then
@@ -115,6 +126,41 @@ validate_bootstrap_env() {
   for key in VAULT_REQUIRED VAULT_ADDR VAULT_ROLE_ID VAULT_SECRET_ID; do
     if [ -z "${seen[$key]+present}" ]; then
       echo "ERROR: Vault bootstrap is incomplete" >&2
+      return 1
+    fi
+  done
+}
+
+validate_backup_env() {
+  local file="$1" line key value
+  declare -A seen=()
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -z "$line" ] && continue
+    case "$line" in
+      \#*) continue ;;
+      *=*) ;;
+      *) echo "ERROR: backup bootstrap contains an invalid line" >&2; return 1 ;;
+    esac
+    key="${line%%=*}"
+    value="${line#*=}"
+    case "$key" in
+      DB_HOST|DB_PORT|DB_NAME|DB_USER|DB_PASSWORD|BACKUP_ENCRYPTION_PASSPHRASE|OFFSITE_S3_ENDPOINT|OFFSITE_S3_BUCKET|OFFSITE_S3_ACCESS_KEY|OFFSITE_S3_SECRET_KEY|OFFSITE_S3_REGION) ;;
+      *) echo "ERROR: backup bootstrap contains an unsupported setting" >&2; return 1 ;;
+    esac
+    if [ -n "${seen[$key]+present}" ]; then
+      echo "ERROR: backup bootstrap contains a duplicate setting" >&2
+      return 1
+    fi
+    seen[$key]=1
+    case "$value" in
+      *$'\r'*) echo "ERROR: backup bootstrap contains an invalid value" >&2; return 1 ;;
+    esac
+  done < "$file"
+
+  for key in DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD BACKUP_ENCRYPTION_PASSPHRASE OFFSITE_S3_ENDPOINT OFFSITE_S3_BUCKET OFFSITE_S3_ACCESS_KEY OFFSITE_S3_SECRET_KEY; do
+    if [ -z "${seen[$key]+present}" ]; then
+      echo "ERROR: backup bootstrap is missing $key" >&2
       return 1
     fi
   done
@@ -321,6 +367,42 @@ if [ -f "$BOOTSTRAP_ENV" ]; then
   echo "Vault bootstrap installed"
 fi
 
+# Host-only backup credentials are fetched from Vault by the deployment
+# workflow. They must never be copied into the bot container's runtime env.
+if [ -f "$BACKUP_BOOTSTRAP_ENV" ]; then
+  BACKUP_BOOTSTRAP_PRESENT=true
+  if ! chmod 600 "$BACKUP_BOOTSTRAP_ENV" || ! validate_backup_env "$BACKUP_BOOTSTRAP_ENV"; then
+    echo "ERROR: invalid backup bootstrap — refusing to deploy" >&2
+    exit 1
+  fi
+  backup_env_dir=$(dirname "$BACKUP_ENV_FILE")
+  if ! mkdir -p "$backup_env_dir" || ! chmod 700 "$backup_env_dir"; then
+    echo "ERROR: could not prepare backup env directory — refusing to deploy" >&2
+    exit 1
+  fi
+  BACKUP_ENV_INSTALL_TMP=$(mktemp "${BACKUP_ENV_FILE}.install.XXXXXX") || {
+    echo "ERROR: could not create temporary backup env — refusing to deploy" >&2
+    exit 1
+  }
+  if ! chmod 600 "$BACKUP_ENV_INSTALL_TMP" || ! cp "$BACKUP_BOOTSTRAP_ENV" "$BACKUP_ENV_INSTALL_TMP" || ! mv -f "$BACKUP_ENV_INSTALL_TMP" "$BACKUP_ENV_FILE"; then
+    echo "ERROR: could not install backup bootstrap — refusing to deploy" >&2
+    exit 1
+  fi
+  BACKUP_ENV_INSTALL_TMP=""
+  chmod 600 "$BACKUP_ENV_FILE" || {
+    echo "ERROR: could not lock down backup env — refusing to deploy" >&2
+    exit 1
+  }
+  echo "Host backup bootstrap installed"
+fi
+
+if [ -f "$BACKUP_ENV_FILE" ]; then
+  if ! chmod 600 "$BACKUP_ENV_FILE" || ! validate_backup_env "$BACKUP_ENV_FILE"; then
+    echo "ERROR: invalid host backup env — refusing to deploy" >&2
+    exit 1
+  fi
+fi
+
 # A self-pull/retry uses the already-installed bootstrap. Never accept a
 # legacy full runtime env: all application secrets must come from Vault.
 if [ ! -f ".env" ]; then
@@ -371,8 +453,10 @@ fi
 # mktemp (predictable-path removal) + chmod 600 + EXIT trap: never leave
 # credentials on disk after the deploy (#204).
 ENV_FILE="$(mktemp "${TMPDIR:-/tmp}/${APP_NAME}.docker-env.XXXXXX")"
-chmod 600 "$ENV_FILE"
-trap cleanup_env_install EXIT
+chmod 600 "$ENV_FILE" || {
+  echo "ERROR: could not chmod docker env to 600 — refusing to deploy" >&2
+  exit 1
+}
 sed 's/^\([A-Za-z_][A-Za-z0-9_]*\)="\(.*\)"$/\1=\2/' .env > "$ENV_FILE"
 # Security check (#204): refuse to run if the env file is world/group-readable.
 env_mode=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo 000)
@@ -578,14 +662,14 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
   # nightly protection policy; plaintext only lives inside the dump pipe).
   PRE_MIGRATE_DIR="${PRE_MIGRATE_DIR:-/home/ngoc_anh/backups/ai_chat_bot_db/pre-migrate}"
   mkdir -p "$PRE_MIGRATE_DIR"
-  chmod 700 "$PRE_MIGRATE_DIR" 2>/dev/null || true
+  chmod 700 "$PRE_MIGRATE_DIR" || {
+    echo "ERROR: could not chmod pre-migration directory to 700 — refusing to deploy" >&2
+    exit 1
+  }
   PRE_MIGRATE_STAMP=$(date +%Y%m%d-%H%M%S)
   PRE_MIGRATE_DUMP="$PRE_MIGRATE_DIR/pre-migrate-$PRE_MIGRATE_STAMP.dump.gpg"
+  PRE_MIGRATE_GPG_TMP="$PRE_MIGRATE_DUMP.tmp"
   PRE_MIGRATE_TMP=$(mktemp "$PRE_MIGRATE_DIR/.pre-migrate.XXXXXX")
-  cleanup_pre_migrate() {
-    rm -f "$PRE_MIGRATE_TMP" "${PRE_MIGRATE_TMP:-}.pgpass" 2>/dev/null || true
-  }
-  trap cleanup_pre_migrate EXIT INT TERM
   umask 077
   echo "Pre-migration safety dump → $PRE_MIGRATE_DUMP"
   if ! docker exec -e MIGRATION_LOCK_ID="$MIGRATION_LOCK_ID" "$NEW_CONTAINER" \
@@ -595,10 +679,16 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
     docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
     exit 1
   fi
-  BACKUP_PASSPHRASE=$(grep -E '^BACKUP_ENCRYPTION_PASSPHRASE=' .env 2>/dev/null \
-    | tail -1 | cut -d= -f2- | tr -d '"' | tr -d "'" || true)
+  if [ ! -f "$BACKUP_ENV_FILE" ]; then
+    echo "ERROR: host backup env is missing at $BACKUP_ENV_FILE — cannot encrypt the pre-migration dump" >&2
+    rm -f "$PRE_MIGRATE_TMP"
+    docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
+    exit 1
+  fi
+  BACKUP_PASSPHRASE=$(awk -F= '$1 == "BACKUP_ENCRYPTION_PASSPHRASE" { sub(/^[^=]*=/, ""); print; exit }' \
+    "$BACKUP_ENV_FILE" 2>/dev/null || true)
   if [ -z "$BACKUP_PASSPHRASE" ]; then
-    echo "ERROR: BACKUP_ENCRYPTION_PASSPHRASE missing in .env (Vault bootstrap) — cannot encrypt the pre-migration dump" >&2
+    echo "ERROR: BACKUP_ENCRYPTION_PASSPHRASE missing in $BACKUP_ENV_FILE — cannot encrypt the pre-migration dump" >&2
     rm -f "$PRE_MIGRATE_TMP"
     docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
     exit 1
@@ -606,14 +696,16 @@ if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
   printf '%s' "$BACKUP_PASSPHRASE" > "$PRE_MIGRATE_TMP.pgpass"
   chmod 600 "$PRE_MIGRATE_TMP.pgpass"
   if ! gpg --batch --yes --symmetric --cipher-algo AES256 \
-      --passphrase-fd 3 --output "$PRE_MIGRATE_DUMP" \
+      --passphrase-fd 3 --output "$PRE_MIGRATE_GPG_TMP" \
       3< "$PRE_MIGRATE_TMP.pgpass" "$PRE_MIGRATE_TMP" \
-    || [ ! -s "$PRE_MIGRATE_DUMP" ]; then
+    || [ ! -s "$PRE_MIGRATE_GPG_TMP" ]; then
     echo "ERROR: pre-migration dump encryption failed — refusing to deploy" >&2
-    rm -f "$PRE_MIGRATE_TMP" "$PRE_MIGRATE_TMP.pgpass" "$PRE_MIGRATE_DUMP"
+    rm -f "$PRE_MIGRATE_TMP" "$PRE_MIGRATE_TMP.pgpass" "$PRE_MIGRATE_GPG_TMP"
     docker rm -f "$NEW_CONTAINER" >/dev/null 2>&1 || true
     exit 1
   fi
+  mv -f "$PRE_MIGRATE_GPG_TMP" "$PRE_MIGRATE_DUMP"
+  PRE_MIGRATE_GPG_TMP=""
   rm -f "$PRE_MIGRATE_TMP" "$PRE_MIGRATE_TMP.pgpass"
   find "$PRE_MIGRATE_DIR" -name 'pre-migrate-*.dump.gpg' -mtime +1 -delete 2>/dev/null || true
 
