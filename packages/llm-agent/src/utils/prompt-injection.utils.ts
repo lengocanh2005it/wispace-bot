@@ -120,9 +120,23 @@ const INJECTION_PATTERNS: Array<[RegExp, string]> = [
   ],
 
   // Injected role markers — checked before persona_override to get correct reason
-  [/\n\s*#{1,3}\s*system\b/i, 'injected_role_marker'],
-  [/\n\s*<\s*system\s*>/i, 'injected_role_marker'],
-  [/\n\s*\[\s*system\s*\]/i, 'injected_role_marker'],
+  // (?:^|\n) so a marker at the start of a JSON string field is caught (#961):
+  // a tool result value never has a leading newline. Closing/inverted forms
+  // (`</system>`, `[/system]`) are breakout attempts, not openings (#961).
+  // Heading form requires a space after the hashes — Markdown ATX headings
+  // always have one, so a hashtag topic stays benign.
+  [
+    /(?:^|\n)\s*#{1,3}\s+(?:system|instructions|assistant)\b/i,
+    'injected_role_marker',
+  ],
+  [
+    /(?:^|\n)\s*<\s*\/?\s*(?:system|instructions|assistant)\s*>/i,
+    'injected_role_marker',
+  ],
+  [
+    /(?:^|\n)\s*\[\s*\/?\s*(?:system|instructions|assistant)\s*\]/i,
+    'injected_role_marker',
+  ],
   [/```\s*system\b/i, 'injected_role_marker'],
   [
     /(?:^|[\n.!?])\s*(?:system|developer|assistant|tool)\s*:/i,
