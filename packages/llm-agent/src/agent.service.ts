@@ -74,6 +74,21 @@ import type {
 
 const DEFAULT_MAX_TOOL_ROUNDS = 6;
 const DEFAULT_MAX_TOOL_CALLS_PER_ROUND = 4;
+/**
+ * #962 — a turn's tool executions accumulate across rounds (6 rounds × 4
+ * unique calls = 24 unbounded before this). 8 covers the largest legitimate
+ * multi-intent turn with headroom and bounds the upstream WISPACE requests
+ * a single quota unit can drive (≤ 16, at 2 requests per
+ * `get_learning_progress_report`) — the per-turn multiplier #791 multiplies.
+ */
+const DEFAULT_MAX_TOOL_EXECUTIONS_PER_TURN = 8;
+/**
+ * #962 — loop detection keyed on identical (name, args) is defeated by one
+ * changed digit (`pastDays:30` → `pastDays:31`). Counting runs per tool
+ * name catches the varied-argument probe without touching legitimate
+ * distinct lookups of the same tool in different rounds.
+ */
+const DEFAULT_MAX_TOOL_RUNS_PER_NAME_PER_TURN = 3;
 const DEFAULT_MAX_CONTEXT_CHARS = 24_000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 1024;
 const DEFAULT_TOOL_EXECUTION_TIMEOUT_MS = 10_000;
@@ -429,7 +444,11 @@ export class LlmAgentService<TToolContext> {
 
     const toolsCalledThisTurn = new Set<string>();
     const groundedToolsThisTurn = new Set<string>();
+    const toolRunsPerName = new Map<string, number>();
+    let toolExecutionsThisTurn = 0;
     const maxToolRounds = this.getMaxToolRounds();
+    const maxToolExecutionsPerTurn = this.getMaxToolExecutionsPerTurn();
+    const maxToolRunsPerName = this.getMaxToolRunsPerNamePerTurn();
     let previousToolCallSignature: string | null = null;
     // Loop-generated assistant/tool messages start here — trimming below only
     // drops these, never the system prompt, history or user turn.
@@ -626,6 +645,62 @@ export class LlmAgentService<TToolContext> {
         }
         previousToolCallSignature = signature;
 
+        // #962 — varied-argument loop detection: the same tool asked for in
+        // round after round with a tweaked argument is the same stuck loop,
+        // but identical-signature detection cannot see it. Only runs from
+        // EARLIER rounds count — a single round legitimately fanning out
+        // several distinct lookups of one tool (compare past/current/next
+        // week) is a multi-intent turn, not a loop.
+        const loopingTool = [...toolRunsPerName.entries()].find(
+          ([, runs]) => runs >= maxToolRunsPerName,
+        );
+        if (loopingTool) {
+          metrics.llmRoundOutcomeInc(FEATURE, 'duplicate_tool_calls');
+          this.recordDegraded(
+            input,
+            metrics,
+            logger,
+            'tool_failure',
+            'block_response',
+          );
+          logger.warn(
+            `LLM agent detected varied-argument tool loop tool=${loopingTool[0]} runs=${loopingTool[1]} round=${round} externalUserId=${maskExternalId(
+              input.externalUserId,
+            )}`,
+          );
+          break;
+        }
+
+        // #962 — per-turn execution budget, accumulated across rounds. The
+        // round executes at most the remaining allowance; anything beyond it
+        // is refused before execution (a tool error is fed back so the model
+        // can still answer from grounded data).
+        const remainingExecutions =
+          maxToolExecutionsPerTurn - toolExecutionsThisTurn;
+        if (remainingExecutions <= 0) {
+          metrics.llmRoundOutcomeInc(FEATURE, 'duplicate_tool_calls');
+          this.recordDegraded(
+            input,
+            metrics,
+            logger,
+            'tool_round_exhausted',
+            'partial_answer',
+          );
+          logger.warn(
+            `LLM agent hit per-turn tool budget executions=${toolExecutionsThisTurn} cap=${maxToolExecutionsPerTurn} round=${round} externalUserId=${maskExternalId(
+              input.externalUserId,
+            )}`,
+          );
+          break;
+        }
+        if (uniqueCallCount > remainingExecutions) {
+          logger.warn(
+            `LLM agent trimming tool round to remaining per-turn budget: unique=${uniqueCallCount} remaining=${remainingExecutions} externalUserId=${maskExternalId(
+              input.externalUserId,
+            )}`,
+          );
+        }
+
         metrics.llmRoundOutcomeInc(FEATURE, 'tool_call');
         messages.push(response.message);
 
@@ -648,9 +723,26 @@ export class LlmAgentService<TToolContext> {
           toolsCalledThisTurn,
           observationBudget,
           signal,
+          {
+            maxExecutions: remainingExecutions,
+            onExecuted: () => {
+              toolExecutionsThisTurn += 1;
+            },
+          },
         );
 
         previousRoundFailed = toolResults.some((result) => !result.succeeded);
+
+        // Track executed runs per tool name for the varied-argument loop
+        // check on the next round (#962).
+        for (const result of toolResults) {
+          if (result.succeeded) {
+            toolRunsPerName.set(
+              result.toolName,
+              (toolRunsPerName.get(result.toolName) ?? 0) + 1,
+            );
+          }
+        }
 
         for (const result of toolResults) {
           if (result.succeeded) {
@@ -1445,6 +1537,22 @@ Summary:`;
       : DEFAULT_MAX_TOOL_CALLS_PER_ROUND;
   }
 
+  private getMaxToolExecutionsPerTurn(): number {
+    return this.config.maxToolExecutionsPerTurn &&
+      Number.isFinite(this.config.maxToolExecutionsPerTurn) &&
+      this.config.maxToolExecutionsPerTurn > 0
+      ? Math.floor(this.config.maxToolExecutionsPerTurn)
+      : DEFAULT_MAX_TOOL_EXECUTIONS_PER_TURN;
+  }
+
+  private getMaxToolRunsPerNamePerTurn(): number {
+    return this.config.maxToolRunsPerNamePerTurn &&
+      Number.isFinite(this.config.maxToolRunsPerNamePerTurn) &&
+      this.config.maxToolRunsPerNamePerTurn > 0
+      ? Math.floor(this.config.maxToolRunsPerNamePerTurn)
+      : DEFAULT_MAX_TOOL_RUNS_PER_NAME_PER_TURN;
+  }
+
   private getMaxOutputTokens(): number {
     return this.config.maxOutputTokens &&
       Number.isFinite(this.config.maxOutputTokens) &&
@@ -1648,6 +1756,11 @@ Summary:`;
    * broadcast to every duplicate call id — repeated side-effectful calls
    * (e.g. `precreate_next_exercise`) can never run twice in one round, while
    * the message list stays valid (every tool_calls id gets a tool result).
+   *
+   * #962: `budget` bounds how many of the deduped calls may execute THIS
+   * round (the per-turn allowance left). Calls beyond it receive a refused
+   * tool result instead of executing — the model can still answer from the
+   * grounded data, and the per-turn accumulator is exact.
    */
   private async executeToolCalls(
     toolCalls: Array<{ id: string; name: string; arguments: string }>,
@@ -1656,6 +1769,10 @@ Summary:`;
     toolsCalledThisTurn: Set<string>,
     observationBudget: number,
     parentSignal?: AbortSignal,
+    budget?: {
+      maxExecutions: number;
+      onExecuted: () => void;
+    },
   ): Promise<
     Array<{
       toolCallId: string;
@@ -1693,6 +1810,7 @@ Summary:`;
         succeeded: boolean;
       }
     >();
+    let executedInRound = 0;
 
     const executeCall = async (toolCall: (typeof uniqueCalls)[number]) => {
       const toolName = toolCall.name;
@@ -1738,6 +1856,27 @@ Summary:`;
           succeeded: false,
         });
         return;
+      }
+
+      // #962 — refuse execution when the per-turn budget for this round is
+      // used up. The refusal is a tool result, not an exception, so the
+      // model still sees it and can answer from grounded data.
+      if (budget && executedInRound >= budget.maxExecutions) {
+        metrics.toolPolicyDeniedInc?.(toolName, 'turn_budget_exhausted');
+        resultsByKey.set(this.toolCallKey(toolCall), {
+          observation: reduceToolObservation({
+            toolName,
+            error: 'Đã đạt giới hạn tra cứu trong lượt này',
+            ok: false,
+            maxChars: 8_000,
+          }),
+          succeeded: false,
+        });
+        return;
+      }
+      if (budget) {
+        executedInRound += 1;
+        budget.onExecuted();
       }
 
       toolsCalledThisTurn.add(toolName);

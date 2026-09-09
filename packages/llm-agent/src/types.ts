@@ -10,6 +10,18 @@ export interface LlmAgentConfig {
    * round is blocked fail-closed (#162). Default: 4.
    */
   maxToolCallsPerRound?: number;
+  /**
+   * Max total tool executions in one turn, accumulated across rounds (#962).
+   * Exhausting it ends the turn with the exhaustion partial answer instead
+   * of another LLM round. Default: 8.
+   */
+  maxToolExecutionsPerTurn?: number;
+  /**
+   * Times one tool may run in a single turn before varied-argument looping
+   * is declared (#962) — identical-argument loop detection cannot catch
+   * `pastDays:30` → `pastDays:31` probes. Default: 3.
+   */
+  maxToolRunsPerNamePerTurn?: number;
   maxContextChars?: number;
   /** Max LLM call retries on retryable errors. Default: 3. */
   maxLlmRetries?: number;

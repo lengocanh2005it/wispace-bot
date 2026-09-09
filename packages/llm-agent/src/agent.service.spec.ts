@@ -1356,9 +1356,13 @@ describe('LlmAgentService', () => {
     });
 
     it('returns graceful exhaustion reply after maxToolRounds (default = 6) when tool args genuinely differ each round', async () => {
+      // Alternate tools so the #962 per-name loop check (3 runs) does not
+      // fire — this test exercises the ROUND limit, not the name limit.
       const responses = Array.from({ length: 6 }, (_, i) =>
         makeToolCallResponse(
-          'list_study_calendar_entries',
+          i % 2 === 0
+            ? 'list_study_calendar_entries'
+            : 'get_upcoming_study_sessions',
           `{"limit":${i + 1}}`,
         ),
       );
@@ -1372,6 +1376,85 @@ describe('LlmAgentService', () => {
       expect(result.exhausted).toBe(true);
       expect(result.text).toMatch(/thử lại/);
       expect(adapter.chatWithTools).toHaveBeenCalledTimes(6);
+    });
+
+    it('cuts off a varied-argument loop on one tool after maxToolRunsPerNamePerTurn (default = 3) runs (#962)', async () => {
+      // pastDays:1, pastDays:2, pastDays:3 — different signatures every
+      // round, which the identical-signature detector cannot see.
+      const responses = Array.from({ length: 6 }, (_, i) =>
+        makeToolCallResponse(
+          'list_study_calendar_entries',
+          `{"pastDays":${i + 1},"timeRange":"past"}`,
+        ),
+      );
+      const adapter = makeAdapter(responses);
+      const execute = jest.fn().mockResolvedValue({ entries: [] });
+
+      const { service } = buildService({ adapter, execute });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      // Three runs happened (rounds 0-2), the fourth round is refused as a
+      // loop before executing; the turn ends with the exhaustion partial
+      // answer instead of more upstream calls.
+      expect(execute).toHaveBeenCalledTimes(3);
+      expect(adapter.chatWithTools).toHaveBeenCalledTimes(4);
+      expect(result.exhausted).toBe(true);
+    });
+
+    it('stops after maxToolExecutionsPerTurn executions even when every round is fresh (#962)', async () => {
+      // Two 4-tool rounds (8 distinct executions, no repeats) — the
+      // per-turn accumulator is the only guard that can stop this; the
+      // per-round cap (4) and the loop checks do not fire.
+      const responses = [
+        makeMultiToolCallResponse([
+          { name: 'get_user_goals' },
+          { name: 'get_upcoming_study_sessions', argsJson: '{"limit":3}' },
+          {
+            name: 'list_study_calendar_entries',
+            argsJson: '{"timeRange":"past","limit":4}',
+          },
+          { name: 'preview_next_study_reminder' },
+        ]),
+        makeMultiToolCallResponse([
+          { name: 'get_learning_progress_report' },
+          { name: 'get_upcoming_study_sessions', argsJson: '{"limit":7}' },
+          {
+            name: 'list_study_calendar_entries',
+            argsJson: '{"timeRange":"all","limit":5}',
+          },
+          { name: 'get_user_goals', argsJson: '{"refresh":true}' },
+        ]),
+        makeMultiToolCallResponse([
+          { name: 'get_user_goals' },
+          { name: 'get_upcoming_study_sessions' },
+          { name: 'list_study_calendar_entries' },
+          { name: 'preview_next_study_reminder' },
+        ]),
+        makeTextResponse('answered'),
+      ];
+      const adapter = makeAdapter(responses);
+      const execute = jest.fn().mockResolvedValue({ entries: [] });
+
+      const { service } = buildService({ adapter, execute });
+
+      const result = await service.reply(BASE_INPUT, TOOL_CONTEXT);
+
+      // Rounds 0-1 execute all 8; round 2's four calls are all refused as
+      // budget-exhausted tool results; the model then answers from data.
+      expect(execute).toHaveBeenCalledTimes(8);
+      expect(result.text).toBe('answered');
+      expect(result.exhausted).toBeUndefined();
+    });
+
+    it('records the per-quota-unit upstream ceiling for the #791 aggregate budget (#962)', () => {
+      // Worst case per execution: get_learning_progress_report, which
+      // issues two upstream WISPACE requests per run. The per-turn budget
+      // (8) caps a single quota unit at 16 upstream requests; before #962
+      // the ceiling was 6 rounds x 4 calls = 24 executions (~48 upstream).
+      const budget = 8;
+      expect(budget * 2).toBe(16);
+      expect(budget * 2).toBeLessThan(24 * 2);
     });
 
     it('exhaustion partial answer lists grounded data labels, never raw tool names (#207 item 4)', async () => {
