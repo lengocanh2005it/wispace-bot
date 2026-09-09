@@ -373,31 +373,11 @@ describe('FailoverLlmProviderAdapter', () => {
     });
   });
 
-  describe('QUICK_RETRY — rate_limit / server_error / unknown', () => {
-    it('rate_limit: retries once on same provider before failover', async () => {
-      let callCount = 0;
-      const candidateA = makeCandidate({
-        name: 'a',
-        generateJson: () => {
-          callCount++;
-          if (callCount === 1) {
-            throw Object.assign(new Error('rate limit'), { status: 429 });
-          }
-          return {
-            content: 'ok',
-            metadata: { provider: 'a', model: 'model-a' },
-          };
-        },
-        normalizeError: () => rateLimitError(),
-      });
-
-      const adapter = new FailoverLlmProviderAdapter([candidateA]);
-      const result = await adapter.generateJson(makeJsonRequest());
-      expect(callCount).toBe(2);
-      expect(result.content).toBe('ok');
-    });
-
-    it('rate_limit: both retries fail → failover to next', async () => {
+  describe('QUICK_RETRY — server_error / unknown', () => {
+    // #953: rate_limit moved to the long-cooldown family (AC: a rate-limit
+    // error opens the long cooldown, preserving #870's 429 degraded
+    // semantics) — it no longer quick-retries on the same provider.
+    it('rate_limit: single attempt, then failover without quick retry', async () => {
       let callCountA = 0;
       const candidateA = makeCandidate({
         name: 'a',
@@ -418,7 +398,7 @@ describe('FailoverLlmProviderAdapter', () => {
 
       const adapter = new FailoverLlmProviderAdapter([candidateA, candidateB]);
       const result = await adapter.generateJson(makeJsonRequest());
-      expect(callCountA).toBe(2);
+      expect(callCountA).toBe(1);
       expect(result.content).toBe('from-b');
     });
 
@@ -548,14 +528,14 @@ describe('FailoverLlmProviderAdapter', () => {
         generateJson: () => {
           callCount++;
           if (callCount === 1) {
-            throw Object.assign(new Error('rate limit'), { status: 429 });
+            throw Object.assign(new Error('server error'), { status: 500 });
           }
           return {
             content: 'ok',
             metadata: { provider: 'a', model: 'model-a' },
           };
         },
-        normalizeError: () => rateLimitError(),
+        normalizeError: () => serverError(),
       });
 
       const adapter = new FailoverLlmProviderAdapter(
@@ -758,6 +738,282 @@ describe('FailoverLlmProviderAdapter', () => {
       expect(warns[0]).toContain(
         'LLM_FAILOVER provider=a reason=quota_exceeded',
       );
+    });
+  });
+
+  describe('#953 total-outage degraded mode', () => {
+    const failingCandidate = (
+      name: string,
+      generateJson: jest.Mock,
+    ): LlmProviderAdapter =>
+      makeCandidate({
+        name,
+        generateJson,
+        normalizeError: () => serverError(),
+      });
+
+    it('spends one attempt per provider per request while everything is cooling down', async () => {
+      const clockValues = [0];
+      const clock = () => clockValues[0];
+      const callsA = jest.fn().mockRejectedValue(new Error('server'));
+      const callsB = jest.fn().mockRejectedValue(new Error('server'));
+      const adapter = new FailoverLlmProviderAdapter(
+        [failingCandidate('a', callsA), failingCandidate('b', callsB)],
+        undefined,
+        clock,
+        undefined,
+        // Long short-cooldown keeps the total-outage window in the test.
+        60_000,
+        0,
+        undefined,
+        undefined,
+        undefined,
+        4,
+      );
+
+      // Request 1 — nothing is cooling: full budget per provider.
+      await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+        LlmAllProvidersExhaustedError,
+      );
+      expect(callsA).toHaveBeenCalledTimes(4);
+      expect(callsB).toHaveBeenCalledTimes(4);
+
+      // Request 2 — both are cooling: degraded mode, one attempt each.
+      clockValues[0] += 1_000;
+      await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+        LlmAllProvidersExhaustedError,
+      );
+      expect(callsA).toHaveBeenCalledTimes(5);
+      expect(callsB).toHaveBeenCalledTimes(5);
+
+      // Request 3 — still cooling, still one attempt each.
+      clockValues[0] += 1_000;
+      await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+        LlmAllProvidersExhaustedError,
+      );
+      expect(callsA).toHaveBeenCalledTimes(6);
+      expect(callsB).toHaveBeenCalledTimes(6);
+    });
+
+    it('emits no skip events during the degraded full-list fallback and calls every provider', async () => {
+      const clockValues = [0];
+      const clock = () => clockValues[0];
+      const events: Array<{ provider: string; action: string }> = [];
+      const attempts: string[] = [];
+      const callsA = jest.fn().mockRejectedValue(new Error('server'));
+      const callsB = jest.fn().mockRejectedValue(new Error('server'));
+      const adapter = new FailoverLlmProviderAdapter(
+        [failingCandidate('a', callsA), failingCandidate('b', callsB)],
+        undefined,
+        clock,
+        undefined,
+        60_000,
+        0,
+        (event) => events.push(event),
+        (provider) => attempts.push(provider),
+        undefined,
+        2,
+      );
+
+      // Seed both circuits.
+      await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+        LlmAllProvidersExhaustedError,
+      );
+      events.length = 0;
+      attempts.length = 0;
+
+      clockValues[0] += 1_000;
+      await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+        LlmAllProvidersExhaustedError,
+      );
+
+      const skipCount = events.filter((e) => e.action === 'skip').length;
+      const called = new Set(attempts);
+      expect(called.has('a')).toBe(true);
+      expect(called.has('b')).toBe(true);
+      expect(skipCount).toBe(0);
+    });
+
+    it('emits skip events only for providers that are not subsequently called', async () => {
+      const clockValues = [0];
+      const clock = () => clockValues[0];
+      const events: Array<{ provider: string; action: string }> = [];
+      const attempts: string[] = [];
+      const callsA = jest
+        .fn()
+        .mockRejectedValue(new Error('quota'))
+        .mockName('a');
+      const adapter = new FailoverLlmProviderAdapter(
+        [
+          makeCandidate({
+            name: 'a',
+            generateJson: callsA,
+            normalizeError: () => quotaError(),
+          }),
+          makeCandidate({
+            name: 'b',
+            generateJson: () =>
+              Promise.resolve({
+                content: 'ok',
+                metadata: { provider: 'b', model: 'model-b' },
+              }),
+          }),
+        ],
+        undefined,
+        clock,
+        undefined,
+        undefined,
+        0,
+        (event) => events.push(event),
+        (provider) => attempts.push(provider),
+      );
+
+      // Request 1: a fails (quota → long circuit), b succeeds.
+      await adapter.generateJson(makeJsonRequest());
+      expect(callsA).toHaveBeenCalledTimes(1);
+      events.length = 0;
+      attempts.length = 0;
+
+      // Request 2: a is cooling and skipped; b is healthy and called.
+      clockValues[0] += 1_000;
+      await adapter.generateJson(makeJsonRequest());
+
+      expect(events).toEqual([
+        { provider: 'a', action: 'skip', reason: 'cooldown' },
+      ]);
+      expect(attempts).toEqual(['b']);
+    });
+
+    it('opens the long cooldown for a rate-limit error from a non-primary provider', async () => {
+      const clockValues = [0];
+      const clock = () => clockValues[0];
+      const events: Array<{ provider: string; action: string }> = [];
+      // a fails twice in request 1 (short budget), succeeds from request 2.
+      const callsA = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('server'))
+        .mockRejectedValueOnce(new Error('server'))
+        .mockResolvedValue({
+          content: 'from-a',
+          metadata: { provider: 'a', model: 'model-a' },
+        });
+      const callsB = jest
+        .fn()
+        .mockRejectedValue(
+          Object.assign(new Error('rate limit'), { status: 429 }),
+        );
+      const adapter = new FailoverLlmProviderAdapter(
+        [
+          makeCandidate({
+            name: 'a',
+            generateJson: callsA,
+            normalizeError: () => serverError(),
+          }),
+          makeCandidate({
+            name: 'b',
+            generateJson: callsB,
+            normalizeError: () => rateLimitError(),
+          }),
+        ],
+        undefined,
+        clock,
+        undefined,
+        undefined,
+        0,
+        (event) => events.push(event),
+      );
+
+      // Request 1: a fails (short 5s circuit), b fails rate-limit → long.
+      await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+        LlmAllProvidersExhaustedError,
+      );
+      expect(callsA).toHaveBeenCalledTimes(2);
+      expect(callsB).toHaveBeenCalledTimes(1);
+      events.length = 0;
+
+      // Request 2 at +6s: a succeeds immediately, b must still be cooling —
+      // 6s > 5s short cooldown but 6s << 600s long cooldown.
+      clockValues[0] += 6_000;
+      const result = await adapter.generateJson(makeJsonRequest());
+      expect(result.content).toBe('from-a');
+      expect(callsA).toHaveBeenCalledTimes(3);
+      expect(callsB).toHaveBeenCalledTimes(1);
+      expect(events).toContainEqual({
+        provider: 'b',
+        action: 'skip',
+        reason: 'cooldown',
+      });
+      // b was skipped, not called: no circuit open/close for b this round.
+      expect(
+        events.filter((e) => e.provider === 'b' && e.action !== 'skip'),
+      ).toEqual([]);
+    });
+
+    it('keeps the full attempt budget for a provider that follows a quota-failing candidate', async () => {
+      const callsB = jest.fn().mockRejectedValue(new Error('server'));
+      const adapter = new FailoverLlmProviderAdapter(
+        [
+          makeCandidate({
+            name: 'a',
+            generateJson: jest
+              .fn()
+              .mockRejectedValue(Object.assign(new Error('quota'))),
+            normalizeError: () => quotaError(),
+          }),
+          failingCandidate('b', callsB),
+        ],
+        undefined,
+        Date.now,
+        undefined,
+        undefined,
+        0,
+        undefined,
+        undefined,
+        undefined,
+        3,
+      );
+
+      await expect(adapter.generateJson(makeJsonRequest())).rejects.toThrow(
+        LlmAllProvidersExhaustedError,
+      );
+      // The quota candidate gets one attempt; the next candidate still gets
+      // the full configured budget (the old dead branch never reduced it).
+      expect(callsB).toHaveBeenCalledTimes(3);
+    });
+
+    describe('per-provider error classification (#953 defect 3)', () => {
+      it('passes through an already-classified provider error instead of re-classifying with the first candidate', async () => {
+        const firstNormalize = jest.fn();
+        const firstCandidate = makeCandidate({
+          name: 'a',
+          normalizeError: firstNormalize,
+        });
+        const adapter = new FailoverLlmProviderAdapter([firstCandidate]);
+
+        const classified = {
+          provider: 'b',
+          retryable: true,
+          reason: 'rate_limit' as const,
+          status: 429,
+        };
+        expect(adapter.normalizeError(classified)).toBe(classified);
+        expect(firstNormalize).not.toHaveBeenCalled();
+
+        expect(adapter.isRateLimitError(classified)).toBe(true);
+        expect(firstNormalize).not.toHaveBeenCalled();
+      });
+
+      it('falls back to the first candidate for unclassified errors', () => {
+        const firstCandidate = makeCandidate({
+          name: 'a',
+          isRateLimitError: () => true,
+          normalizeError: () => serverError(),
+        });
+        const adapter = new FailoverLlmProviderAdapter([firstCandidate]);
+        const raw = new Error('opaque');
+        expect(adapter.isRateLimitError(raw)).toBe(true);
+        expect(adapter.normalizeError(raw)).toEqual(serverError());
+      });
     });
   });
 

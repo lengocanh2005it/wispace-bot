@@ -24,6 +24,15 @@ export interface FailoverCircuitEvent {
   reason?: string;
 }
 
+function isProviderErrorShape(error: unknown): error is LlmProviderError {
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as Record<string, unknown>;
+  return (
+    typeof candidate['provider'] === 'string' &&
+    typeof candidate['reason'] === 'string'
+  );
+}
+
 export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
   readonly providerName = 'failover';
   private readonly circuit = new Map<string, CircuitState>();
@@ -80,7 +89,8 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
   async *chatStream(
     request: LlmToolChatRequest,
   ): AsyncIterable<LlmStreamEvent> {
-    const ordered = this.pickHealthy();
+    const { ordered, suppressed } = this.pickOrdered();
+    this.emitSkips(suppressed);
     let lastError: unknown;
 
     for (const candidate of ordered) {
@@ -105,11 +115,14 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
           throw err;
         }
         const { reason } = candidate.normalizeError(err);
-        const isFastFail = reason === 'quota_exceeded' || reason === 'auth';
+        const isLongCooldown =
+          reason === 'quota_exceeded' ||
+          reason === 'auth' ||
+          reason === 'rate_limit';
         this.circuit.set(candidate.providerName, {
           healthyAgainAt:
             this.clock() +
-            (isFastFail ? this.cooldownLongMs : this.cooldownShortMs),
+            (isLongCooldown ? this.cooldownLongMs : this.cooldownShortMs),
         });
         this.onCircuitEvent?.({
           provider: candidate.providerName,
@@ -132,28 +145,64 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
   }
 
   isRateLimitError(error: unknown): boolean {
+    // Errors flowing through the failover adapter were classified by the
+    // candidate that produced them — the adapters cannot assume homogeneous
+    // vendors (#953).
+    if (isProviderErrorShape(error)) {
+      return error.reason === 'rate_limit';
+    }
     return this.candidates[0].isRateLimitError(error);
   }
 
   normalizeError(error: unknown): LlmProviderError {
+    if (isProviderErrorShape(error)) {
+      return error;
+    }
     return this.candidates[0].normalizeError(error);
   }
 
-  private pickHealthy(): LlmProviderAdapter[] {
+  /**
+   * Choose the candidates to try, in order.
+   *
+   * #953: when every provider is cooling down, the full list is retried —
+   * failing instantly on a total outage would starve the learner — but the
+   * caller runs in `degraded` mode: one attempt per provider instead of the
+   * full retry budget, so a total outage costs one call per provider per
+   * request. Serialized half-open probes and a probe interval are #581.
+   */
+  private pickOrdered(): {
+    ordered: LlmProviderAdapter[];
+    suppressed: LlmProviderAdapter[];
+    degraded: boolean;
+  } {
     const now = this.clock();
     const healthy = this.candidates.filter(
       (c) => (this.circuit.get(c.providerName)?.healthyAgainAt ?? 0) <= now,
     );
-    for (const candidate of this.candidates) {
-      if (!healthy.includes(candidate)) {
-        this.onCircuitEvent?.({
-          provider: candidate.providerName,
-          action: 'skip',
-          reason: 'cooldown',
-        });
-      }
+    if (healthy.length === 0) {
+      return { ordered: this.candidates, suppressed: [], degraded: true };
     }
-    return healthy.length > 0 ? healthy : this.candidates;
+    const healthySet = new Set(healthy);
+    return {
+      ordered: healthy,
+      suppressed: this.candidates.filter((c) => !healthySet.has(c)),
+      degraded: false,
+    };
+  }
+
+  /**
+   * #953: a provider that is about to be called is not skipped. Emit `skip`
+   * only for candidates excluded from the plan; when the degraded fallback
+   * runs, nothing is skipped and no skip event is emitted.
+   */
+  private emitSkips(suppressed: LlmProviderAdapter[]): void {
+    for (const candidate of suppressed) {
+      this.onCircuitEvent?.({
+        provider: candidate.providerName,
+        action: 'skip',
+        reason: 'cooldown',
+      });
+    }
   }
 
   private async runFailover<
@@ -163,7 +212,8 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     call: (c: LlmProviderAdapter, req: Req) => Promise<Res>,
     request: Req & { model?: string },
   ): Promise<Res> {
-    const ordered = this.pickHealthy();
+    const { ordered, suppressed, degraded } = this.pickOrdered();
+    this.emitSkips(suppressed);
     let lastError: unknown;
 
     for (const candidate of ordered) {
@@ -171,7 +221,7 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
         throw request.signal.reason ?? new Error('Aborted');
       }
       const req = { ...request, model: candidate.getDefaultModel() };
-      const maxAttempts = this.maxAttemptsFor(candidate, undefined);
+      const maxAttempts = degraded ? 1 : this.maxAttemptsFor(candidate);
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         if (request.signal?.aborted) {
@@ -194,14 +244,17 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
             throw err;
           }
           const { reason } = candidate.normalizeError(err);
-          const isFastFail = reason === 'quota_exceeded' || reason === 'auth';
+          const isLongCooldown =
+            reason === 'quota_exceeded' ||
+            reason === 'auth' ||
+            reason === 'rate_limit';
           const isLastAttempt = attempt >= maxAttempts;
 
-          if (isFastFail || isLastAttempt) {
+          if (isLongCooldown || isLastAttempt) {
             this.circuit.set(candidate.providerName, {
               healthyAgainAt:
                 this.clock() +
-                (isFastFail ? this.cooldownLongMs : this.cooldownShortMs),
+                (isLongCooldown ? this.cooldownLongMs : this.cooldownShortMs),
             });
             this.onCircuitEvent?.({
               provider: candidate.providerName,
@@ -224,14 +277,12 @@ export class FailoverLlmProviderAdapter implements LlmProviderAdapter {
     throw new LlmAllProvidersExhaustedError(providers, lastError);
   }
 
-  private maxAttemptsFor(
-    _candidate: LlmProviderAdapter,
-    lastError: unknown,
-  ): number {
-    if (!lastError) return this.maxAttempts;
-    const { reason } = _candidate.normalizeError(lastError);
-    return reason === 'quota_exceeded' || reason === 'auth'
-      ? 1
-      : this.maxAttempts;
+  private maxAttemptsFor(_candidate: LlmProviderAdapter): number {
+    // #953: the previous per-candidate budget keyed a candidate's attempts
+    // on the *previous candidate's* error — dead code (always called with
+    // `undefined`) and semantically wrong: quota/auth/rate-limit errors
+    // already open a long circuit and break the inner loop after one
+    // attempt. The attempt budget is uniform per request.
+    return this.maxAttempts;
   }
 }
