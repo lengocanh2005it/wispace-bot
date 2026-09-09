@@ -89,6 +89,9 @@ done
 env | grep -E '^PGSSL' >> "${PSQL_ENV_LOG:-/dev/null}" 2>/dev/null || true
 q="$*"
 case "$q" in
+  *FROM\ pg_roles*)
+    if [ "${FAKE_ROLES+set}" = "set" ]; then printf '%s\n' "$FAKE_ROLES" | tr ',' '\n'; fi
+    exit 0 ;;
   *FROM\ public.migrations*)
     [ -n "${FAKE_PSQL_FAIL:-}" ] && exit 1
     if [ "${FAKE_MIGS+set}" = "set" ]; then printf '%s\n' "$FAKE_MIGS" | tr ':' '\n'; else printf 'mig1\nmig2\nmig3\n'; fi
@@ -147,16 +150,19 @@ printf 'enc-dump' > "$ARTIFACT"
 printf 'enc-globals' > "$GLOBALS"
 printf 'enc-state' > "$STATE"
 
-STATE_JSON_OK='{"captured_at": "2026-09-08T02:00:00Z", "migrations": ["mig1", "mig2", "mig3"], "tables": ["migrations", "user_platform_mappings", "chat_daily_usage"]}'
-STATE_JSON_EMPTY='{"captured_at": "2026-09-08T02:00:00Z", "migrations": [], "tables": ["migrations"]}'
+STATE_JSON_OK='{"sidecar_version": 1, "captured_at": "2026-09-08T02:00:00Z", "migrations": ["mig1", "mig2", "mig3"], "tables": ["migrations", "user_platform_mappings", "chat_daily_usage"]}'
+STATE_JSON_EMPTY='{"sidecar_version": 1, "captured_at": "2026-09-08T02:00:00Z", "migrations": [], "tables": ["migrations"]}'
+STATE_JSON_NOVERSION='{"captured_at": "2026-09-08T02:00:00Z", "migrations": ["mig1"], "tables": ["migrations"]}'
 GLOBALS_SQL_OK='CREATE ROLE "prod_admin" LOGIN PASSWORD '"'"'md5secret'"'"' SUPERUSER;
 CREATE ROLE "restorer" LOGIN;
 ALTER ROLE "prod_admin" WITH LOGIN SUPERUSER;
+ALTER ROLE "restorer" WITH SUPERUSER;
 GRANT ALL ON DATABASE ai_chat_bot_db TO "prod_admin";
 COMMENT ON ROLE "prod_admin" IS '"'"'prod admin'"'"';'
 
 echo "$STATE_JSON_OK" > "$TEST_ROOT/state-ok.json"
 echo "$STATE_JSON_EMPTY" > "$TEST_ROOT/state-empty.json"
+echo "$STATE_JSON_NOVERSION" > "$TEST_ROOT/state-noversion.json"
 printf '%s' "$GLOBALS_SQL_OK" > "$TEST_ROOT/globals-ok.sql"
 
 # Default fake-payload sources: fake gpg materializes these artifacts; the
@@ -336,6 +342,17 @@ DOCKER_LOG="$TEST_ROOT/docker.log" GPG_LOG="$TEST_ROOT/gpg.log" \
 grep -qi 'records no migrations' "$TEST_ROOT/err12" \
   || fail "error must name the unusable sidecar"
 
+# --- 12b. #879: sidecar without a version field fails closed ----------------------
+EVID12B="$TEST_ROOT/ev12b"
+DOCKER_LOG="$TEST_ROOT/docker.log" GPG_LOG="$TEST_ROOT/gpg.log" \
+  PATH="$FAKE_BIN:$PATH" FAKE_STATE_SRC="$TEST_ROOT/state-noversion.json" bash "$SCRIPT" \
+  "${COMMON_ARGS[@]}" --evidence-dir "$EVID12B" --target disposable \
+  >/dev/null 2>"$TEST_ROOT/err12b" \
+  && fail "unversioned sidecar must fail closed" \
+  || pass "unversioned sidecar fails closed"
+grep -qi 'unsupported version' "$TEST_ROOT/err12b" \
+  || fail "error must name the unsupported sidecar version"
+
 # --- 13. #879: staging requires TLS CA -------------------------------------------
 EVID13="$TEST_ROOT/ev13"
 DOCKER_LOG="$TEST_ROOT/docker.log" GPG_LOG="$TEST_ROOT/gpg.log" \
@@ -399,7 +416,7 @@ DOCKER17_LOG="$TEST_ROOT/docker17.log"
 PSQL_LOG="$TEST_ROOT/psql17.log" PSQL_FILE_LOG="$TEST_ROOT/psql17-files.log" \
   PSQL_ENV_LOG="$TEST_ROOT/psql17-env.log" DOCKER_LOG="$DOCKER17_LOG" \
   GPG_LOG="$TEST_ROOT/gpg17.log" \
-  PATH="$FAKE_BIN:$PATH" \
+  PATH="$FAKE_BIN:$PATH" FAKE_ROLES="restorer,postgres" \
   RESTORE_VERIFY_ALLOWLIST="staging-db.internal:staging_db" RESTORE_TARGET_CA="$TEST_ROOT/ca.pem" \
   RESTORE_TARGET_PASSWORD=stage-pass bash "$SCRIPT" "${COMMON_ARGS[@]}" --evidence-dir "$EVID17" \
   --target staging --target-host staging-db.internal --target-port 5432 \
@@ -409,10 +426,14 @@ PSQL_LOG="$TEST_ROOT/psql17.log" PSQL_FILE_LOG="$TEST_ROOT/psql17-files.log" \
 
 grep -q 'verify-full' "$TEST_ROOT/psql17-env.log" \
   || fail "staging psql calls must enforce sslmode=verify-full"
+grep -q "$TEST_ROOT/ca.pem" "$TEST_ROOT/psql17-env.log" \
+  || fail "staging psql calls must pin the CA bundle (PGSSLROOTCERT)"
 grep -q 'staging_fresh' "$EVID17"/*.json || { ls "$EVID17"; fail "evidence must include the staging_fresh check"; }
 FILTERED=$(cat "$TEST_ROOT/psql17-files.log")
 printf '%s' "$FILTERED" | grep -q 'CREATE ROLE "restorer"' \
-  || fail "sanitized globals must keep the allowlisted restorer role"
+  && fail "existing staging roles must not be re-created (idempotent globals)"
+printf '%s' "$FILTERED" | grep -Eq 'ALTER ROLE "restorer".*NOSUPERUSER' \
+  || fail "existing allowlisted roles must be normalized to NOSUPERUSER"
 printf '%s' "$FILTERED" | grep -q 'PASSWORD' \
   && fail "sanitized globals must not contain passwords"
 printf '%s' "$FILTERED" | grep -q 'prod_admin' \

@@ -157,7 +157,6 @@ verify_remote_manifest() {
   local manifest="$TMP_DIR/remote-manifest.tsv"
   RCLONE cat "$REMOTE_LATEST/manifest.tsv" > "$manifest" 2>/dev/null || return 1
   [ -s "$manifest" ] || return 1
-  [ "$(manifest_value manifest_version "$manifest")" = 2 ] || return 1
 
   REMOTE_DUMP_NAME=$(manifest_value dump_name "$manifest")
   REMOTE_DUMP_SHA=$(manifest_value dump_sha256 "$manifest")
@@ -172,9 +171,12 @@ verify_remote_manifest() {
 
   verify_remote_artifact "$REMOTE_DUMP_NAME" "$REMOTE_DUMP_SHA" || return 1
   verify_remote_artifact "$REMOTE_GLOBALS_NAME" "$REMOTE_GLOBALS_SHA" || return 1
-  # The state sidecar is mandatory for the verifier's versioned expectation
-  # (#879) — a v1-style remote set without it must fail closed.
-  verify_remote_artifact "$REMOTE_STATE_NAME" "$REMOTE_STATE_SHA" || return 1
+  # The state sidecar is mandatory for the weekly verifier run (#879); on v1
+  # remote sets (pre-#879) the hourly freshness check stays green and only the
+  # weekly restore verification fails closed.
+  if [ -n "$REMOTE_STATE_NAME" ]; then
+    verify_remote_artifact "$REMOTE_STATE_NAME" "$REMOTE_STATE_SHA" || return 1
+  fi
   if [ -n "$REMOTE_EVIDENCE_NAME" ]; then
     verify_remote_artifact "$REMOTE_EVIDENCE_NAME" "$REMOTE_EVIDENCE_SHA" || return 1
   fi
@@ -197,6 +199,11 @@ download_and_verify_remote() {
   [ "$dump_sha" = "$REMOTE_DUMP_SHA" ] || return 1
   [ "$globals_sha" = "$REMOTE_GLOBALS_SHA" ] || return 1
   state="$remote_dir/$REMOTE_STATE_NAME"
+  if [ -z "$REMOTE_STATE_NAME" ]; then
+    # v1 remote set: no state sidecar to download — the weekly verify fails
+    # closed below when the verifier is invoked without its expectation (#879).
+    return 1
+  fi
   RCLONE copyto "$REMOTE_LATEST/$REMOTE_STATE_NAME" "$state" >/dev/null 2>&1 || return 1
   state_sha=$(sha256sum "$state" | cut -d' ' -f1)
   [ "$state_sha" = "$REMOTE_STATE_SHA" ] || return 1

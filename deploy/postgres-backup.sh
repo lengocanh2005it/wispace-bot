@@ -147,6 +147,12 @@ TABLES_RAW=$(run_db_client psql -v ON_ERROR_STOP=1 -h "$DB_HOST" -p "$DB_PORT" \
   notify_backup_failed "Postgres backup failed" "state sidecar table capture failed at $(date -Is)"
   exit 1
 }
+[ -n "$TABLES_RAW" ] || {
+  echo "ERROR: no public tables recorded on the source database — refusing to back up the wrong DB" >&2
+  touch "$FAILURE_MARKER"
+  notify_backup_failed "Postgres backup failed" "state sidecar found no tables at $(date -Is)"
+  exit 1
+}
 
 # Keep stderr for failure detection (no 2>/dev/null) — a failed pg_dump must
 # not leave a silent half-written gzip on disk.
@@ -177,7 +183,7 @@ if run_db_client pg_dump -U "$DB_USER" -d "$DB_NAME" -h "$DB_HOST" -p "$DB_PORT"
 
   # State sidecar JSON (schema only — names/counts, no PII) is encrypted with
   # the same key and travels with the dump pair (#879).
-  STATE_JSON_CONTENT=$(printf '{"captured_at": "%s", "migrations": %s, "tables": %s}\n' \
+  STATE_JSON_CONTENT=$(printf '{"sidecar_version": 1, "captured_at": "%s", "migrations": %s, "tables": %s}\n' \
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     "$(printf '%s\n' "$MIGS_RAW" | json_lines_to_array)" \
     "$(printf '%s\n' "$TABLES_RAW" | json_lines_to_array)")
@@ -225,7 +231,7 @@ if run_db_client pg_dump -U "$DB_USER" -d "$DB_NAME" -h "$DB_HOST" -p "$DB_PORT"
   rm -f "$TMP" "$GLOBALS_TMP" "$STATE_TMP"
   rm -f "$FAILURE_MARKER"
   date +%s > "$SUCCESS_MARKER"
-  resolve_alert
+  resolve_backup
   echo "Backup written: $OUT ($(du -h "$OUT" | cut -f1))"
   echo "Globals written: $GLOBALS_OUT ($(du -h "$GLOBALS_OUT" | cut -f1))"
   echo "State sidecar written: $STATE_OUT ($(du -h "$STATE_OUT" | cut -f1))"

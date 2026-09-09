@@ -180,14 +180,16 @@ PROD_DB_NAME=$(env_value DB_NAME "$ENV_FILE")
 
 # ---------------------------------------------------------------------------
 # Argument validation (fail closed before any secret or network use)
+# The evidence dir exists before any validation die() so every early failure
+# still writes evidence (#879).
 # ---------------------------------------------------------------------------
+mkdir -p "$EVIDENCE_DIR"
+chmod 700 "$EVIDENCE_DIR" 2>/dev/null || true
 require_file "$ARTIFACT" "artifact"
 require_file "$GLOBALS_ARTIFACT" "globals artifact"
 require_file "$STATE_ARTIFACT" "state artifact"
 [ -f "$ENV_FILE" ] || die "missing env file: $ENV_FILE"
 [ -f "$PASSPHRASE_FILE" ] || die "missing passphrase file: $PASSPHRASE_FILE"
-mkdir -p "$EVIDENCE_DIR"
-chmod 700 "$EVIDENCE_DIR" 2>/dev/null || true
 
 for f in "$ARTIFACT" "$GLOBALS_ARTIFACT" "$STATE_ARTIFACT"; do
   case "$f" in
@@ -293,6 +295,9 @@ gzip -dc "$STATE_JSON.gz" > "$STATE_JSON"
 [ -s "$GLOBALS_SQL" ] || die "decrypted globals dump is empty"
 [ -s "$DUMP_SQL" ] || die "decrypted dump is empty"
 [ -s "$STATE_JSON" ] || die "decrypted state sidecar is empty"
+sidecar_version=$(grep -o '"sidecar_version"[[:space:]]*:[[:space:]]*[0-9]*' "$STATE_JSON" \
+  | grep -o '[0-9]*$' || true)
+[ "$sidecar_version" = "1" ] || die "state sidecar has an unsupported version (${sidecar_version:-missing}) — expectation is unusable"
 ARTIFACT_SHA256=$(sha256sum "$ARTIFACT" | cut -d' ' -f1)
 GLOBALS_SHA256=$(sha256sum "$GLOBALS_ARTIFACT" | cut -d' ' -f1)
 STATE_SHA256=$(sha256sum "$STATE_ARTIFACT" | cut -d' ' -f1)
@@ -369,10 +374,18 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$TARGET" = "staging" ]; then
   # Sanitize production globals (#879): allowlisted roles only, no passwords,
-  # no superuser/replication/createrole, no ACL statements. A staging restore
-  # never needs them; GRANTs to dropped roles would fail the load.
-  awk -v allow="$TARGET_USER_ACTUAL,postgres,${RESTORE_TARGET_ROLES:-}" '
-    BEGIN { n = split(allow, a, ","); for (i = 1; i <= n; i++) if (a[i] != "") allowed[a[i]] = 1 }
+  # no superuser/replication/createrole, no ACL statements. The staging login
+  # (and postgres) already exist, so CREATE ROLE is only emitted for roles
+  # missing on the target — ON_ERROR_STOP would otherwise abort the restore.
+  # ALTER ROLE is rewritten to a fixed safe attribute set, never verbatim.
+  existing_roles=$(PSQL postgres -tAc "SELECT rolname FROM pg_roles" | sort -u) \
+    || die "staging role inventory query failed"
+  existing_comma=$(printf '%s\n' "$existing_roles" | paste -sd, - 2>/dev/null || echo "")
+  awk -v allow="$TARGET_USER_ACTUAL,postgres,${RESTORE_TARGET_ROLES:-}" -v existing="$existing_comma" '
+    BEGIN {
+      n = split(allow, a, ","); for (i = 1; i <= n; i++) if (a[i] != "") allowed[a[i]] = 1
+      m = split(existing, e, ","); for (i = 1; i <= m; i++) if (e[i] != "") exists[e[i]] = 1
+    }
     /^[[:space:]]*CREATE ROLE/ {
       line = $0; name = ""
       if (match(line, /"[^"]+"/)) name = substr(line, RSTART + 1, RLENGTH - 2)
@@ -380,7 +393,7 @@ if [ "$TARGET" = "staging" ]; then
         name = substr(line, RSTART, RLENGTH)
         sub(/.*CREATE ROLE[[:space:]]+/, "", name)
       }
-      if (!(name in allowed)) next
+      if (!(name in allowed) || (name in exists)) next
       print "CREATE ROLE \"" name "\" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION;"
       next
     }
@@ -393,13 +406,12 @@ if [ "$TARGET" = "staging" ]; then
         sub(/.*ALTER ROLE[[:space:]]+/, "", name)
       }
       if (!(name in allowed)) next
-      print
+      print "ALTER ROLE \"" name "\" WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOREPLICATION;"
       next
     }
     /^[[:space:]]*(GRANT|REVOKE|ALTER DEFAULT PRIVILEGES|COMMENT ON ROLE)[[:space:]]/ { next }
     { print }
   ' "$GLOBALS_SQL" > "$GLOBALS_FILTERED_SQL"
-  [ -s "$GLOBALS_FILTERED_SQL" ] || die "globals sanitization produced an empty file"
   GLOBALS_TO_RESTORE="$GLOBALS_FILTERED_SQL"
 else
   GLOBALS_TO_RESTORE="$GLOBALS_SQL"
@@ -419,6 +431,9 @@ run_check restore pass
 # The expected set comes ONLY from the backup-time sidecar, never from the
 # restored database itself.
 # ---------------------------------------------------------------------------
+sidecar_version=$(grep -o '"sidecar_version"[[:space:]]*:[[:space:]]*[0-9]*' "$STATE_JSON" \
+  | grep -o '[0-9]*$' || true)
+[ "$sidecar_version" = "1" ] || die "state sidecar has an unsupported version (${sidecar_version:-missing}) — expectation is unusable"
 sidecar_migrations=$(json_array "$STATE_JSON" migrations | sort)
 sidecar_tables=$(json_array "$STATE_JSON" tables | sort)
 [ -n "$sidecar_migrations" ] || die "state sidecar records no migrations — unusable expectation"
