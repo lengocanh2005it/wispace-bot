@@ -134,6 +134,66 @@ describe('validateUpstreamUrl', () => {
     },
   );
 
+  // #963 — IPv4-compatible / IPv4-mapped IPv6 targets embed a real IPv4
+  // destination and must be classified as that destination.
+  it.each([undefined, 'production'])(
+    'rejects IPv4-compatible and IPv4-mapped IPv6 targets in production: NODE_ENV=%s',
+    (nodeEnv) => {
+      const env = nodeEnv ? { nodeEnv } : {};
+      const privateTargets = [
+        'https://[::ffff:10.0.0.1]/api', // IPv4-mapped RFC1918
+        'https://[::10.0.0.1]/api', // IPv4-compatible dotted, RFC1918
+        'https://[::127.0.0.1]/api', // IPv4-compatible dotted, loopback
+        'https://[::a00:1]/api', // hex shorthand of ::10.0.0.1
+        'https://[::ffff:169.254.169.254]/api', // mapped cloud metadata
+        'https://[::ffff:a9fe:a9fe]/api', // mapped cloud metadata, hex
+        'https://[::169.254.169.254]/api', // compatible cloud metadata
+        'https://[0:0:0:0:0:ffff:10.0.0.1]/api', // fully expanded mapped
+      ];
+      for (const target of privateTargets) {
+        expect(() =>
+          validateUpstreamUrl(target, { context: CONTEXT, ...env }),
+        ).toThrow('must not target localhost or a private network');
+      }
+    },
+  );
+
+  it('rejects URL-parser-canonicalized IPv4 hosts (#963)', () => {
+    // WHATWG URL canonicalizes decimal integer hosts to dotted IPv4 —
+    // 2130706433 is 127.0.0.1 and must be rejected like the plain form.
+    const parsed = new URL('https://2130706433/api');
+    expect(parsed.hostname).toBe('127.0.0.1');
+    expect(() =>
+      validateUpstreamUrl('https://2130706433/api', { context: CONTEXT }),
+    ).toThrow('must not target localhost or a private network');
+  });
+
+  it('still accepts public IPv4-mapped IPv6 targets in production', () => {
+    expect(
+      validateUpstreamUrl('https://[::ffff:8.8.8.8]/api', {
+        context: CONTEXT,
+      }),
+    ).toBe('https://[::ffff:8.8.8.8]/api');
+  });
+
+  it('allowlist cannot rescue a private target — the private check runs first', () => {
+    expect(() =>
+      validateUpstreamUrl('https://[::ffff:10.0.0.1]/api', {
+        context: CONTEXT,
+        allowedHosts: ['::ffff:10.0.0.1'],
+      }),
+    ).toThrow('must not target localhost or a private network');
+  });
+
+  it('allows public hosts in the allowlist, exact match (#963 unchanged)', () => {
+    expect(
+      validateUpstreamUrl('https://backend.aihubproduction.com/api', {
+        context: CONTEXT,
+        allowedHosts: ['backend.aihubproduction.com'],
+      }),
+    ).toBe('https://backend.aihubproduction.com/api');
+  });
+
   it('allows link-local targets in development', () => {
     expect(
       validateUpstreamUrl('https://169.254.169.254/api', {

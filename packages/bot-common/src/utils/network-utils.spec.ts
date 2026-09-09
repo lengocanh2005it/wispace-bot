@@ -115,6 +115,61 @@ describe('isPrivateNetworkHost', () => {
     });
   });
 
+  // #963 — IPv4-compatible and equivalent-form IPv6 targets embed a real
+  // IPv4 destination and must classify as that destination.
+  describe('IPv4-compatible and equivalent IPv6 forms (#963)', () => {
+    it('rejects ::10.0.0.1 (IPv4-compatible dotted, RFC1918)', () => {
+      expect(isPrivateNetworkHost('::10.0.0.1')).toBe(true);
+    });
+
+    it('rejects ::127.0.0.1 (IPv4-compatible dotted, loopback)', () => {
+      expect(isPrivateNetworkHost('::127.0.0.1')).toBe(true);
+    });
+
+    it('rejects ::169.254.169.254 (IPv4-compatible dotted, cloud metadata)', () => {
+      expect(isPrivateNetworkHost('::169.254.169.254')).toBe(true);
+    });
+
+    it('rejects ::a00:1 (hex shorthand of ::10.0.0.1)', () => {
+      expect(isPrivateNetworkHost('::a00:1')).toBe(true);
+    });
+
+    it('rejects ::c0a8:101 (hex shorthand of ::192.168.1.1)', () => {
+      expect(isPrivateNetworkHost('::c0a8:101')).toBe(true);
+    });
+
+    it('rejects ::a9fe:1 (hex shorthand of ::169.254.0.1)', () => {
+      expect(isPrivateNetworkHost('::a9fe:1')).toBe(true);
+    });
+
+    it('rejects ::ffff:a9fe:a9fe (mapped cloud metadata 169.254.169.254)', () => {
+      expect(isPrivateNetworkHost('::ffff:a9fe:a9fe')).toBe(true);
+    });
+
+    it('rejects the mapped dotted form of cloud metadata', () => {
+      expect(isPrivateNetworkHost('::ffff:169.254.169.254')).toBe(true);
+    });
+
+    it('rejects 0:0:0:0:0:ffff:10.0.0.1 (fully expanded mapped form)', () => {
+      expect(isPrivateNetworkHost('0:0:0:0:0:ffff:10.0.0.1')).toBe(true);
+    });
+
+    it('rejects ::ffff:0:10.0.0.1 (IPv4-translated form)', () => {
+      expect(isPrivateNetworkHost('::ffff:0:10.0.0.1')).toBe(true);
+    });
+
+    it('still allows public IPv4-compatible forms', () => {
+      expect(isPrivateNetworkHost('::8.8.8.8')).toBe(false);
+      expect(isPrivateNetworkHost('::0808:0808')).toBe(false);
+    });
+
+    it('still allows a public IPv6 whose trailing group merely looks large', () => {
+      // 2001:db8::a00:1 is a global unicast (leading 96 bits ≠ 0) — not an
+      // IPv4-compatible address, must not be classified by its tail.
+      expect(isPrivateNetworkHost('2001:db8::a00:1')).toBe(false);
+    });
+  });
+
   describe('case insensitivity', () => {
     it('handles uppercase IPv4-mapped', () => {
       expect(isPrivateNetworkHost('::FFFF:10.0.0.1')).toBe(true);
