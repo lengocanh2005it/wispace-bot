@@ -37,7 +37,10 @@ For CI schema validation, run the root `npm run database:migration-compatibility
   killed by the app query budget.
 - Reschedule confirmation rows are security-sensitive: preserve the
   platform/mapping revision, intent/argument hashes, and one-time nonce
-  binding; production confirmation must claim by the complete binding.
+  binding; production confirmation must claim by the complete binding. Keep
+  the unique `external_id` index and guard staging against `processing` rows;
+  user cancellation is external-id-scoped, while claimed cleanup requires the
+  exact lease token.
 
 ## Tách DB (ops một lần — đã hoàn thành)
 

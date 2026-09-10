@@ -47,6 +47,8 @@ const {
   PlatformLinkAuditEventEntity,
   PrivacyDataService,
   PlatformReportClaimRepository,
+  RescheduleConfirmationEntity,
+  TypeormRescheduleStore,
   ScheduledReportClaimEntity,
   LearnerScheduledReportClaimEntity,
 } = require('@wispace/database');
@@ -54,7 +56,12 @@ const {
   TypeormStudyReminderJobRepository,
   StudyReminderJobEntity,
 } = require('@wispace/study-reminder-shared');
-const { PlatformWebhookInboundEventService } = require('@wispace/webhook-inbound');
+const {
+  RescheduleConfirmationService,
+} = require('@wispace/reschedule-confirm');
+const {
+  PlatformWebhookInboundEventService,
+} = require('@wispace/webhook-inbound');
 const { RedisBurstCounter } = require('@wispace/chat-metering');
 const { ChatRateLimitRepository } = require('@wispace/chat-metering');
 const {
@@ -145,6 +152,7 @@ const ENTITIES = [
   ScheduledReportClaimEntity,
   LearnerScheduledReportClaimEntity,
   StudyReminderJobEntity,
+  RescheduleConfirmationEntity,
   ...Object.values(registry.mappings),
   ...Object.values(registry.scoped),
   registry.messageLog,
@@ -601,7 +609,11 @@ async function privacyRollbackSuite() {
       const count = await dataSource
         .getRepository(registry.scoped[name])
         .count({ where: { userId } });
-      assert.equal(count, expected, `${name}: expected ${expected}, got ${count}`);
+      assert.equal(
+        count,
+        expected,
+        `${name}: expected ${expected}, got ${count}`,
+      );
     }
     const auditRows = await dataSource.query(
       `SELECT COUNT(*)::int AS count FROM platform_link_audit_events
@@ -635,7 +647,9 @@ async function reportClaimSuite() {
     'report claims: lease fencing + duplicate claim race (platform + learner paths)',
   );
   const repo = dataSource.getRepository(ScheduledReportClaimEntity);
-  const learnerRepo = dataSource.getRepository(LearnerScheduledReportClaimEntity);
+  const learnerRepo = dataSource.getRepository(
+    LearnerScheduledReportClaimEntity,
+  );
   const svc = new PlatformReportClaimRepository('discord', repo, learnerRepo);
   const readPlatform = (externalUserId) =>
     repo.findOne({ where: { platform: 'discord', externalUserId } });
@@ -646,11 +660,19 @@ async function reportClaimSuite() {
   // 1. Two-worker race: exactly one winner, row owned by the winner.
   const [l1, l2] = await Promise.all([
     svc.tryClaimScheduledReport(
-      { externalUserId: 'smoke-rc-l', userId: 4242501, reportDate: '2099-01-01' },
+      {
+        externalUserId: 'smoke-rc-l',
+        userId: 4242501,
+        reportDate: '2099-01-01',
+      },
       60_000,
     ),
     svc.tryClaimScheduledReport(
-      { externalUserId: 'smoke-rc-l', userId: 4242501, reportDate: '2099-01-01' },
+      {
+        externalUserId: 'smoke-rc-l',
+        userId: 4242501,
+        reportDate: '2099-01-01',
+      },
       60_000,
     ),
   ]);
@@ -670,7 +692,11 @@ async function reportClaimSuite() {
   // token — every terminal transition from A's superseded token is a no-op,
   // B's mark wins.
   const learnerA = await svc.tryClaimScheduledReport(
-    { externalUserId: 'smoke-rc-l2', userId: 4242502, reportDate: '2099-01-01' },
+    {
+      externalUserId: 'smoke-rc-l2',
+      userId: 4242502,
+      reportDate: '2099-01-01',
+    },
     50,
   );
   assert.equal(learnerA.claimed, true);
@@ -682,14 +708,22 @@ async function reportClaimSuite() {
   assert.ok(released >= 1, 'expired learner lease was not released');
   const staleLearner = learnerA.leaseToken;
   const learnerB = await svc.tryClaimScheduledReport(
-    { externalUserId: 'smoke-rc-l2', userId: 4242502, reportDate: '2099-01-01' },
+    {
+      externalUserId: 'smoke-rc-l2',
+      userId: 4242502,
+      reportDate: '2099-01-01',
+    },
     60_000,
   );
   assert.equal(learnerB.claimed, true, 'B could not reclaim the released row');
   assert.notEqual(learnerB.leaseToken, staleLearner);
   assert.equal(
     await svc.markScheduledReportClaimSent(
-      { externalUserId: 'smoke-rc-l2', userId: 4242502, reportDate: '2099-01-01' },
+      {
+        externalUserId: 'smoke-rc-l2',
+        userId: 4242502,
+        reportDate: '2099-01-01',
+      },
       staleLearner,
     ),
     false,
@@ -697,7 +731,11 @@ async function reportClaimSuite() {
   );
   assert.equal(
     await svc.releaseScheduledReportClaim(
-      { externalUserId: 'smoke-rc-l2', userId: 4242502, reportDate: '2099-01-01' },
+      {
+        externalUserId: 'smoke-rc-l2',
+        userId: 4242502,
+        reportDate: '2099-01-01',
+      },
       staleLearner,
     ),
     false,
@@ -705,7 +743,11 @@ async function reportClaimSuite() {
   );
   assert.equal(
     await svc.markScheduledReportClaimSent(
-      { externalUserId: 'smoke-rc-l2', userId: 4242502, reportDate: '2099-01-01' },
+      {
+        externalUserId: 'smoke-rc-l2',
+        userId: 4242502,
+        reportDate: '2099-01-01',
+      },
       learnerB.leaseToken,
     ),
     true,
@@ -716,7 +758,11 @@ async function reportClaimSuite() {
 
   // 3. A `sent` claim is never reclaimable (WHERE status='released').
   const afterSent = await svc.tryClaimScheduledReport(
-    { externalUserId: 'smoke-rc-l2', userId: 4242502, reportDate: '2099-01-01' },
+    {
+      externalUserId: 'smoke-rc-l2',
+      userId: 4242502,
+      reportDate: '2099-01-01',
+    },
     60_000,
   );
   assert.equal(afterSent.claimed, false, 'sent learner claim was reclaimed');
@@ -831,6 +877,221 @@ async function reminderJobSuite() {
   console.log('  ok: reminder duplicate claim race has exactly one winner');
 }
 
+async function rescheduleConfirmationSuite() {
+  console.log(
+    'reschedule confirmations: scoped cancellation and lease fencing',
+  );
+  const repo = dataSource.getRepository(RescheduleConfirmationEntity);
+  const store = new TypeormRescheduleStore('messenger', repo);
+  const pending = (externalId, calendarId) => ({
+    externalId,
+    userId: 4242442,
+    calendarId,
+    schedulingMode: 'explicit',
+    sessionLabel: `smoke-${calendarId}`,
+    expiresAt: Date.now() + 600_000,
+    mappingVersion: 'smoke',
+    intentHash: 'smoke-intent',
+    argsHash: 'smoke-args',
+  });
+
+  assert.equal(await store.save(pending('smoke-reschedule-blocked', 10)), true);
+  const blockedLease = await store.takeValid('smoke-reschedule-blocked');
+  assert.ok(blockedLease?.leaseToken, 'processing row has no lease token');
+  assert.equal(
+    await store.save(pending('smoke-reschedule-blocked', 11)),
+    false,
+    'stage replaced an in-flight confirmation',
+  );
+  const blockedRow = await repo.findOne({
+    where: { externalId: 'messenger:smoke-reschedule-blocked' },
+  });
+  assert.equal(blockedRow.calendarId, 10);
+  console.log('  ok: processing confirmation blocks replacement');
+
+  await store.save(pending('smoke-reschedule-owner-a', 20));
+  await store.save(pending('smoke-reschedule-owner-b', 21));
+  await store.cancelPending('smoke-reschedule-owner-a');
+  const otherRow = await repo.findOne({
+    where: { externalId: 'messenger:smoke-reschedule-owner-b' },
+  });
+  assert.ok(otherRow, 'pending cancellation removed another external id');
+  console.log('  ok: pending cancellation stays scoped to external id');
+
+  for (const [status, suffix] of [
+    ['pending', 'pending'],
+    ['confirmed', 'confirmed'],
+    ['cancelled', 'cancelled'],
+  ]) {
+    const externalId = `smoke-reschedule-cancel-${suffix}`;
+    await store.save(pending(externalId, 22));
+    if (status !== 'pending') {
+      await dataSource.query(
+        `UPDATE reschedule_confirmations
+         SET status = $2
+         WHERE external_id = $1`,
+        [`messenger:${externalId}`, status],
+      );
+    }
+    await store.cancelPending(externalId);
+    assert.equal(
+      await repo.findOne({
+        where: { externalId: `messenger:${externalId}` },
+      }),
+      null,
+    );
+  }
+  console.log('  ok: pending cancellation covers non-processing statuses');
+
+  let releaseConfirm;
+  let confirmStartedResolve;
+  const confirmStarted = new Promise((resolve) => {
+    confirmStartedResolve = resolve;
+  });
+  let rescheduleCount = 0;
+  const service = new RescheduleConfirmationService(
+    {
+      listUpcomingEntries: async () => [
+        {
+          calendarId: 50,
+          scheduledTimeLabel: 'smoke-50',
+          ownerUserId: 4242442,
+        },
+        {
+          calendarId: 51,
+          scheduledTimeLabel: 'smoke-51',
+          ownerUserId: 4242442,
+        },
+      ],
+    },
+    {
+      rescheduleSession: async () => {
+        confirmStartedResolve();
+        await new Promise((resolve) => {
+          releaseConfirm = resolve;
+        });
+        rescheduleCount += 1;
+        return { scheduledTimeLabel: 'smoke-confirmed' };
+      },
+    },
+    store,
+  );
+  const initialStage = await service.stage({
+    externalId: 'smoke-reschedule-race',
+    userId: 4242442,
+    calendarId: 50,
+    schedulingMode: 'explicit',
+    platform: 'messenger',
+    mappingVersion: 'smoke',
+    intent: 'move the session',
+    canonicalArgs: 'race-a',
+  });
+  assert.equal(initialStage.pendingConfirmation, true);
+  assert.ok(
+    initialStage.confirmationToken,
+    'initial stage has no approval token',
+  );
+  const confirmPromise = service.confirm(
+    'smoke-reschedule-race',
+    4242442,
+    initialStage.confirmationToken,
+    { platform: 'messenger', mappingVersion: 'smoke' },
+  );
+  await confirmStarted;
+
+  const stageDuringConfirm = await service.stage({
+    externalId: 'smoke-reschedule-race',
+    userId: 4242442,
+    calendarId: 51,
+    schedulingMode: 'explicit',
+    platform: 'messenger',
+    mappingVersion: 'smoke',
+    intent: 'move the session again',
+    canonicalArgs: 'race-b',
+  });
+  assert.equal(stageDuringConfirm.pendingConfirmation, undefined);
+  assert.match(stageDuringConfirm.error ?? '', /đang được xử lý/);
+  assert.equal(rescheduleCount, 0);
+  assert.equal(typeof releaseConfirm, 'function');
+  releaseConfirm();
+  const confirmed = await confirmPromise;
+  assert.equal(confirmed.confirmed, true);
+  assert.equal(rescheduleCount, 1);
+  const retry = await service.confirm(
+    'smoke-reschedule-race',
+    4242442,
+    initialStage.confirmationToken,
+    { platform: 'messenger', mappingVersion: 'smoke' },
+  );
+  assert.equal(retry.confirmed, false);
+  assert.equal(rescheduleCount, 1);
+  console.log('  ok: concurrent stage cannot cause a second calendar mutation');
+
+  await store.save(pending('smoke-reschedule-lease', 30));
+  const leaseRow = await store.takeValid('smoke-reschedule-lease');
+  assert.ok(leaseRow?.leaseToken, 'lease row has no token');
+  await store.cancelClaimed(
+    'smoke-reschedule-lease',
+    '00000000-0000-4000-8000-000000000001',
+  );
+  assert.ok(
+    await repo.findOne({
+      where: { externalId: 'messenger:smoke-reschedule-lease' },
+    }),
+    'wrong lease deleted a processing row',
+  );
+  await store.cancelClaimed('smoke-reschedule-lease', leaseRow.leaseToken);
+  assert.equal(
+    await repo.findOne({
+      where: { externalId: 'messenger:smoke-reschedule-lease' },
+    }),
+    null,
+  );
+  console.log('  ok: claimed cancellation requires exact lease');
+
+  await store.save(pending('smoke-reschedule-revert', 35));
+  const revertLease = await store.takeValid('smoke-reschedule-revert');
+  assert.ok(revertLease?.leaseToken, 'revert row has no lease token');
+  await store.revertToPending(
+    'smoke-reschedule-revert',
+    '00000000-0000-4000-8000-000000000002',
+  );
+  const stillProcessing = await repo.findOne({
+    where: { externalId: 'messenger:smoke-reschedule-revert' },
+  });
+  assert.equal(stillProcessing.status, 'processing');
+  assert.equal(stillProcessing.leaseToken, revertLease.leaseToken);
+  await store.revertToPending(
+    'smoke-reschedule-revert',
+    revertLease.leaseToken,
+  );
+  const reverted = await repo.findOne({
+    where: { externalId: 'messenger:smoke-reschedule-revert' },
+  });
+  assert.equal(reverted.status, 'pending');
+  assert.equal(reverted.leaseToken, null);
+  console.log('  ok: reverting requires exact lease');
+
+  await store.save(pending('smoke-reschedule-stale', 40));
+  const staleLease = await store.takeValid('smoke-reschedule-stale');
+  assert.ok(staleLease?.leaseToken, 'stale row has no lease token');
+  await dataSource.query(
+    `UPDATE reschedule_confirmations
+     SET processing_started_at = now() - interval '1 hour'
+     WHERE external_id = $1`,
+    ['messenger:smoke-reschedule-stale'],
+  );
+  assert.equal(await store.recoverStaleProcessing(1_000), 1);
+  assert.equal(await store.save(pending('smoke-reschedule-stale', 41)), true);
+  await store.cancelClaimed('smoke-reschedule-stale', staleLease.leaseToken);
+  const replacement = await repo.findOne({
+    where: { externalId: 'messenger:smoke-reschedule-stale' },
+  });
+  assert.equal(replacement.calendarId, 41);
+  assert.equal(replacement.status, 'pending');
+  console.log('  ok: stale lease cannot delete replacement confirmation');
+}
+
 async function cleanup() {
   await dataSource.query(
     `DELETE FROM cron_leader_leases WHERE name LIKE 'smoke-%'`,
@@ -846,6 +1107,10 @@ async function cleanup() {
   );
   await dataSource.query(
     `DELETE FROM study_reminder_jobs WHERE external_user_id LIKE 'smoke-%'`,
+  );
+  await dataSource.query(
+    `DELETE FROM reschedule_confirmations
+     WHERE external_id LIKE 'messenger:smoke-reschedule-%'`,
   );
   const EXT = 'smoke-rollback-1';
   const UID = 4242442;
@@ -875,12 +1140,23 @@ try {
       "verified_at" timestamptz NOT NULL DEFAULT now()
     )
   `);
+  const rescheduleIndexes = await dataSource.query(
+    `SELECT indexname FROM pg_indexes
+     WHERE tablename = 'reschedule_confirmations'`,
+  );
+  assert.ok(
+    rescheduleIndexes.some(
+      ({ indexname }) => indexname === 'idx_reschedule_confirm_external_unique',
+    ),
+    'reschedule external_id unique index is missing',
+  );
   await leaseSuite();
   await inboxSuite();
   await quotaSuite();
   await luaSuite();
   await reportClaimSuite();
   await reminderJobSuite();
+  await rescheduleConfirmationSuite();
   await privacyRollbackSuite();
   console.log('persistence semantics smoke: all suites pinned');
 } finally {

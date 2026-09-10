@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import type { RescheduleSchedulingMode } from '@wispace/wispace-client';
 
 export interface PendingRescheduleRecord<TExternalId> {
@@ -36,7 +37,8 @@ export interface RescheduleApprovalBinding {
 export interface RescheduleStorePort<TExternalId> {
   /** Production stores require the opaque token carried by the UI action. */
   readonly requiresApprovalToken?: boolean;
-  save(pending: PendingRescheduleRecord<TExternalId>): Promise<void>;
+  /** Returns false when an in-flight confirmation prevents replacement. */
+  save(pending: PendingRescheduleRecord<TExternalId>): Promise<boolean>;
   /** Atomically claims a valid (unexpired) pending confirmation for the user. */
   takeValid(
     externalId: TExternalId,
@@ -44,8 +46,11 @@ export interface RescheduleStorePort<TExternalId> {
     binding?: RescheduleApprovalBinding,
   ): Promise<PendingRescheduleRecord<TExternalId> | null>;
   /** Puts a claimed record back to pending (confirm failed — user can retry). */
-  revertToPending(externalId: TExternalId, leaseToken?: string): Promise<void>;
-  cancel(externalId: TExternalId, leaseToken?: string): Promise<void>;
+  revertToPending(externalId: TExternalId, leaseToken: string): Promise<void>;
+  /** Deletes a user-cancelled row without accepting a confirmation lease token. */
+  cancelPending(externalId: TExternalId): Promise<void>;
+  /** Deletes only the row still owned by the claimed lease. */
+  cancelClaimed(externalId: TExternalId, leaseToken: string): Promise<void>;
   hasPending(externalId: TExternalId): Promise<boolean>;
 }
 
@@ -66,19 +71,25 @@ export class MemoryRescheduleStore<
     MemoryEntry<TExternalId>
   >();
 
-  save(pending: PendingRescheduleRecord<TExternalId>): Promise<void> {
+  save(pending: PendingRescheduleRecord<TExternalId>): Promise<boolean> {
     const key = String(pending.externalId);
+    if (this.pendingByExternalId.get(key)?.claimed) {
+      return Promise.resolve(false);
+    }
     if (!this.pendingByExternalId.has(key)) {
       this.prune();
       if (this.pendingByExternalId.size >= MAX_PENDING) {
-        const oldestKey = Array.from(this.pendingByExternalId.keys())[0];
-        if (oldestKey !== undefined) {
-          this.pendingByExternalId.delete(oldestKey);
+        const oldestEvictableKey = Array.from(
+          this.pendingByExternalId.entries(),
+        ).find(([, entry]) => !entry.claimed)?.[0];
+        if (oldestEvictableKey === undefined) {
+          return Promise.resolve(false);
         }
+        this.pendingByExternalId.delete(oldestEvictableKey);
       }
     }
     this.pendingByExternalId.set(key, { record: pending, claimed: false });
-    return Promise.resolve();
+    return Promise.resolve(true);
   }
 
   takeValid(
@@ -113,25 +124,36 @@ export class MemoryRescheduleStore<
       return Promise.resolve(null);
     }
 
+    entry.record.leaseToken = randomUUID();
     entry.claimed = true;
     return Promise.resolve(entry.record);
   }
 
-  revertToPending(
-    externalId: TExternalId,
-    _leaseToken?: string,
-  ): Promise<void> {
+  revertToPending(externalId: TExternalId, leaseToken: string): Promise<void> {
     const key = String(externalId);
     const entry = this.pendingByExternalId.get(key);
-    if (entry) {
+    if (entry?.claimed && entry.record.leaseToken === leaseToken) {
       entry.claimed = false;
       entry.record.expiresAt = Date.now() + PENDING_TTL_MS;
     }
     return Promise.resolve();
   }
 
-  cancel(externalId: TExternalId, _leaseToken?: string): Promise<void> {
-    this.pendingByExternalId.delete(String(externalId));
+  cancelPending(externalId: TExternalId): Promise<void> {
+    const key = String(externalId);
+    const entry = this.pendingByExternalId.get(key);
+    if (!entry?.claimed) {
+      this.pendingByExternalId.delete(key);
+    }
+    return Promise.resolve();
+  }
+
+  cancelClaimed(externalId: TExternalId, leaseToken: string): Promise<void> {
+    const key = String(externalId);
+    const entry = this.pendingByExternalId.get(key);
+    if (entry?.claimed && entry.record.leaseToken === leaseToken) {
+      this.pendingByExternalId.delete(key);
+    }
     return Promise.resolve();
   }
 
@@ -150,7 +172,7 @@ export class MemoryRescheduleStore<
   private prune(): void {
     const now = Date.now();
     for (const [key, entry] of this.pendingByExternalId) {
-      if (entry.record.expiresAt <= now || entry.claimed) {
+      if (!entry.claimed && entry.record.expiresAt <= now) {
         this.pendingByExternalId.delete(key);
       }
     }

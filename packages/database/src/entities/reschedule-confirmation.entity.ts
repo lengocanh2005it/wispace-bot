@@ -14,6 +14,9 @@ import {
  */
 @Entity('reschedule_confirmations')
 @Index('idx_reschedule_confirm_external_status', ['externalId', 'status'])
+@Index('idx_reschedule_confirm_external_unique', ['externalId'], {
+  unique: true,
+})
 export class RescheduleConfirmationEntity {
   @PrimaryGeneratedColumn()
   id!: number;

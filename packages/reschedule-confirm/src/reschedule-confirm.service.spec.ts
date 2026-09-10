@@ -8,7 +8,10 @@ import {
   type CalendarPort,
   type ReschedulePort,
 } from './reschedule-confirm.service';
-import { MemoryRescheduleStore } from './reschedule-store.port';
+import {
+  MemoryRescheduleStore,
+  type RescheduleStorePort,
+} from './reschedule-store.port';
 import { WispaceDataCache } from '@wispace/wispace-client';
 
 function mockCalendarPort(): CalendarPort<string> {
@@ -36,6 +39,18 @@ function mockReschedulePort(): ReschedulePort<string> {
   };
 }
 
+function mockStore(saveResult: boolean): RescheduleStorePort<string> {
+  return {
+    requiresApprovalToken: false,
+    save: jest.fn().mockResolvedValue(saveResult),
+    takeValid: jest.fn().mockResolvedValue(null),
+    revertToPending: jest.fn().mockResolvedValue(undefined),
+    cancelPending: jest.fn().mockResolvedValue(undefined),
+    cancelClaimed: jest.fn().mockResolvedValue(undefined),
+    hasPending: jest.fn().mockResolvedValue(false),
+  };
+}
+
 describe('RescheduleConfirmationService', () => {
   describe('stage', () => {
     it('returns pendingConfirmation with summary for valid calendarId', async () => {
@@ -56,6 +71,28 @@ describe('RescheduleConfirmationService', () => {
         pendingConfirmation: true,
         sessionLabel: 'Hôm nay 14:00',
         summary: 'Dời buổi Hôm nay 14:00 sang ngày 2026-07-29 lúc 15:00?',
+      });
+    });
+
+    it('returns a conflict error when a confirmation is already processing', async () => {
+      const calendar = mockCalendarPort();
+      const reschedule = mockReschedulePort();
+      const store = mockStore(false);
+      const service = new RescheduleConfirmationService(
+        calendar,
+        reschedule,
+        store,
+      );
+
+      const result = await service.stage({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 1,
+        schedulingMode: 'explicit',
+      });
+
+      expect(result).toEqual({
+        error: 'Yêu cầu đổi lịch trước đang được xử lý. Bạn thử lại sau nhé.',
       });
     });
 
@@ -367,6 +404,35 @@ describe('RescheduleConfirmationService', () => {
       });
     });
 
+    it('deletes a confirmed row through the claimed lease path', async () => {
+      const calendar = mockCalendarPort();
+      const reschedule = mockReschedulePort();
+      const store = mockStore(true);
+      (store.takeValid as jest.Mock).mockResolvedValue({
+        externalId: 'user-1',
+        userId: 42,
+        calendarId: 1,
+        schedulingMode: 'explicit',
+        sessionLabel: 'Hôm nay 14:00',
+        expiresAt: Date.now() + 60_000,
+        leaseToken: 'lease-1',
+      });
+      const service = new RescheduleConfirmationService(
+        calendar,
+        reschedule,
+        store,
+      );
+
+      const result = await service.confirm('user-1');
+
+      expect(result).toEqual({
+        confirmed: true,
+        scheduledTimeLabel: '29/07/2026 lúc 15:00',
+      });
+      expect(store.cancelClaimed).toHaveBeenCalledWith('user-1', 'lease-1');
+      expect(store.cancelPending).not.toHaveBeenCalled();
+    });
+
     it('returns error when no pending reschedule', async () => {
       const calendar = mockCalendarPort();
       const reschedule = mockReschedulePort();
@@ -479,6 +545,27 @@ describe('RescheduleConfirmationService', () => {
         confirmed: false,
         message: expect.any(String),
       });
+    });
+
+    it('uses pending cancellation without passing the approval nonce as a lease', async () => {
+      const calendar = mockCalendarPort();
+      const reschedule = mockReschedulePort();
+      const store = mockStore(true);
+      store.requiresApprovalToken = true;
+      const service = new RescheduleConfirmationService(
+        calendar,
+        reschedule,
+        store,
+      );
+
+      const msg = await service.cancel(
+        'user-1',
+        '00000000-0000-4000-8000-000000000000',
+      );
+
+      expect(msg).toContain('hủy');
+      expect(store.cancelPending).toHaveBeenCalledWith('user-1');
+      expect(store.cancelClaimed).not.toHaveBeenCalled();
     });
   });
 

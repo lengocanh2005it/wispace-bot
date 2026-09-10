@@ -27,6 +27,9 @@ export const PENDING_RESCHEDULE_TTL_MS = 10 * 60 * 1000;
 const RESCHEDULE_UNAVAILABLE_MESSAGE =
   'Mình chưa đổi được lịch lúc này. Bạn thử lại sau hoặc đổi trực tiếp trên app WISPACE nhé.';
 
+export const RESCHEDULE_IN_PROGRESS_MESSAGE =
+  'Yêu cầu đổi lịch trước đang được xử lý. Bạn thử lại sau nhé.';
+
 export const RESCHEDULE_SCOPE_ERROR_MESSAGE =
   'Không thể xác thực buổi học này trong lịch của bạn. Bạn chọn lại từ danh sách lịch học nhé.';
 
@@ -282,7 +285,7 @@ export class RescheduleConfirmationService<TExternalId> {
         }),
     );
 
-    await this.store.save({
+    const saved = await this.store.save({
       externalId: input.externalId,
       userId: input.userId,
       calendarId: matchedEntry.calendarId,
@@ -298,6 +301,10 @@ export class RescheduleConfirmationService<TExternalId> {
       argsHash,
       nonce,
     });
+
+    if (!saved) {
+      return { error: RESCHEDULE_IN_PROGRESS_MESSAGE };
+    }
 
     this.logger.log(
       `RESCHEDULE_PENDING externalId=${maskExternalId(
@@ -348,6 +355,14 @@ export class RescheduleConfirmationService<TExternalId> {
           'Không còn yêu cầu đổi lịch đang chờ xác nhận. Bạn nhắn lại nhu cầu đổi lịch nhé.',
       };
     }
+    const leaseToken = pending.leaseToken;
+    if (!leaseToken) {
+      return {
+        confirmed: false,
+        message:
+          'Không thể xác thực yêu cầu đổi lịch này. Bạn nhắn lại nhu cầu đổi lịch nhé.',
+      };
+    }
 
     if (
       this.store.requiresApprovalToken &&
@@ -356,7 +371,7 @@ export class RescheduleConfirmationService<TExternalId> {
         !pending.argsHash ||
         !pending.nonce)
     ) {
-      await this.store.revertToPending(externalId, pending.leaseToken);
+      await this.store.revertToPending(externalId, leaseToken);
       return {
         confirmed: false,
         message:
@@ -370,7 +385,7 @@ export class RescheduleConfirmationService<TExternalId> {
         String(pending.externalId),
       );
       if (!consumed) {
-        await this.store.revertToPending(externalId, pending.leaseToken);
+        await this.store.revertToPending(externalId, leaseToken);
         this.logger.log(
           `RESCHEDULE_BUDGET_EXCEEDED externalId=${maskExternalId(String(externalId))}`,
         );
@@ -393,7 +408,7 @@ export class RescheduleConfirmationService<TExternalId> {
         newTime: pending.newTime,
       });
 
-      await this.store.cancel(externalId, pending.leaseToken);
+      await this.store.cancelClaimed(externalId, leaseToken);
 
       await this.runOnConfirmed(externalId);
 
@@ -413,7 +428,7 @@ export class RescheduleConfirmationService<TExternalId> {
         String(pending.externalId),
       );
       if (error instanceof RescheduleScopeError) {
-        await this.store.cancel(externalId, pending.leaseToken);
+        await this.store.cancelClaimed(externalId, leaseToken);
         this.recordScopeFailure(externalId, error.reason, pending.calendarId);
         return {
           confirmed: false,
@@ -428,7 +443,7 @@ export class RescheduleConfirmationService<TExternalId> {
       );
       // Keep the confirmation pending so the user can tap confirm again —
       // a transient Wispace failure must not burn the staged request.
-      await this.store.revertToPending(externalId, pending.leaseToken);
+      await this.store.revertToPending(externalId, leaseToken);
       return {
         confirmed: false,
         message: RESCHEDULE_UNAVAILABLE_MESSAGE,
@@ -447,7 +462,7 @@ export class RescheduleConfirmationService<TExternalId> {
     ) {
       return 'Không thể xác thực yêu cầu đổi lịch này.';
     }
-    await this.store.cancel(externalId, approvalToken);
+    await this.store.cancelPending(externalId);
     this.logger.log(
       `RESCHEDULE_CANCELLED externalId=${maskExternalId(String(externalId))}`,
     );

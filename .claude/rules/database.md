@@ -18,7 +18,7 @@ paths: apps/messenger-bot/src/infrastructure/database/**, packages/database/**
 - `users` + view `"Users"` — display name / exam date cache; only `user_id` entries with Messenger mapping
 - `webhook_inbound_events` — durable authenticated Messenger/Zalo inbox; `raw_payload` is retained only for recovery and terminal rows are cleaned after `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30)
 - `webhook_dead_letters` — outbound delivery retry payloads; terminal rows are cleaned by the shared dead-letter cleanup
-- `reschedule_confirmations` — pending reschedule requests with platform/mapping, intent, argument, and one-time nonce bindings; production confirmation claims must match all bindings
+- `reschedule_confirmations` — pending reschedule requests with platform/mapping, intent, argument, and one-time nonce bindings; production confirmation claims must match all bindings; staging cannot overwrite `processing` rows, user cancellation is external-id-scoped, and claimed cleanup requires the exact lease
 - `web_activity` — one row per WISPACE `userId`, `last_active_at` merged with `GREATEST`; drives the scheduled-send dormancy gate. Self-updating, no cleanup cron; erased by `PrivacyDataService.delete()` (userId-scoped, orphan row kept when mapping has no userId).
 - `user_notification_preferences` — one row per WISPACE `userId`: `preferred_platform` + per-feature consent (`report_enabled` opt-in NULL=off, `reminder_enabled` opt-out NULL=on, #596). Read-filters live in the D/Z report crons and the study-reminder mapping readers; `NotificationPreferenceService` (packages/database) owns writes. Consent row is erased by `PrivacyDataService.delete()`.
 

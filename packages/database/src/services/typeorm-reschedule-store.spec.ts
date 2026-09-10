@@ -10,6 +10,46 @@ function mockRepo() {
 }
 
 describe('TypeormRescheduleStore', () => {
+  describe('save', () => {
+    it('returns true when a pending row is inserted or replaced', async () => {
+      const repo = mockRepo();
+      repo.query.mockResolvedValue([{ external_id: 'messenger:psid1' }]);
+      const store = new TypeormRescheduleStore('messenger', repo as never);
+
+      const saved = await store.save({
+        externalId: 'psid1',
+        userId: 1,
+        calendarId: 10,
+        schedulingMode: 'explicit',
+        sessionLabel: 'Hôm nay 14:00',
+        expiresAt: Date.now() + 60_000,
+      });
+
+      const sql = repo.query.mock.calls[0][0] as string;
+      expect(saved).toBe(true);
+      expect(sql).toContain(
+        "WHERE reschedule_confirmations.status <> 'processing'",
+      );
+      expect(sql).toContain('RETURNING external_id');
+    });
+
+    it('returns false when the guarded upsert returns no row', async () => {
+      const repo = mockRepo();
+      const store = new TypeormRescheduleStore('messenger', repo as never);
+
+      const saved = await store.save({
+        externalId: 'psid1',
+        userId: 1,
+        calendarId: 10,
+        schedulingMode: 'explicit',
+        sessionLabel: 'Hôm nay 14:00',
+        expiresAt: Date.now() + 60_000,
+      });
+
+      expect(saved).toBe(false);
+    });
+  });
+
   describe('takeValid', () => {
     it('sets lease_token and processing_started_at alongside processing status', async () => {
       const repo = mockRepo();
@@ -83,25 +123,16 @@ describe('TypeormRescheduleStore', () => {
   });
 
   describe('revertToPending', () => {
-    it('clears lease_token and processing_started_at on revert', async () => {
-      const repo = mockRepo();
-      const store = new TypeormRescheduleStore('messenger', repo as never);
-
-      await store.revertToPending('psid1');
-
-      const sql = repo.query.mock.calls[0][0] as string;
-      expect(sql).toContain('lease_token = NULL');
-      expect(sql).toContain('processing_started_at = NULL');
-      expect(sql).toContain("'pending'");
-    });
-
-    it('includes lease_token guard when leaseToken provided', async () => {
+    it('requires the exact lease when reverting a claimed row', async () => {
       const repo = mockRepo();
       const store = new TypeormRescheduleStore('messenger', repo as never);
 
       await store.revertToPending('psid1', 'my-lease');
 
       const sql = repo.query.mock.calls[0][0] as string;
+      expect(sql).toContain('lease_token = NULL');
+      expect(sql).toContain('processing_started_at = NULL');
+      expect(sql).toContain("'pending'");
       expect(sql).toContain('lease_token = $2');
       const params = repo.query.mock.calls[0][1] as unknown[];
       expect(params).toContain('my-lease');
@@ -109,25 +140,29 @@ describe('TypeormRescheduleStore', () => {
   });
 
   describe('cancel', () => {
-    it('deletes rows with null lease or non-processing status', async () => {
+    it('scopes pending cancellation to the external id and non-processing states', async () => {
       const repo = mockRepo();
       const store = new TypeormRescheduleStore('messenger', repo as never);
 
-      await store.cancel('psid1');
+      await store.cancelPending('psid1');
 
       const sql = repo.query.mock.calls[0][0] as string;
       expect(sql).toContain('DELETE FROM');
-      expect(sql).toContain('lease_token IS NULL');
+      expect(sql.replace(/\s+/g, ' ')).toContain(
+        "WHERE external_id = $1 AND status IN ('pending', 'confirmed', 'cancelled')",
+      );
     });
 
-    it('includes lease_token guard when leaseToken provided', async () => {
+    it('requires the exact lease when deleting a claimed row', async () => {
       const repo = mockRepo();
       const store = new TypeormRescheduleStore('messenger', repo as never);
 
-      await store.cancel('psid1', 'my-lease');
+      await store.cancelClaimed('psid1', 'my-lease');
 
       const sql = repo.query.mock.calls[0][0] as string;
-      expect(sql).toContain('lease_token = $2');
+      expect(sql.replace(/\s+/g, ' ')).toContain(
+        "WHERE external_id = $1 AND status = 'processing' AND lease_token = $2",
+      );
       const params = repo.query.mock.calls[0][1] as unknown[];
       expect(params).toContain('my-lease');
     });

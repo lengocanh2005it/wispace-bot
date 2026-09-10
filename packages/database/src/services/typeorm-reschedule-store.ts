@@ -27,12 +27,13 @@ export class TypeormRescheduleStore<
     private readonly repo: Repository<RescheduleConfirmationEntity>,
   ) {}
 
-  async save(pending: PendingRescheduleRecord<TExternalId>): Promise<void> {
+  async save(pending: PendingRescheduleRecord<TExternalId>): Promise<boolean> {
     const key = this.key(pending.externalId);
     // Do NOT swallow — a failed persist must not report
     // pendingConfirmation: true while nothing was stored.
-    await this.repo.query(
-      `
+    const rows = extractQueryRows<Record<string, unknown>>(
+      await this.repo.query(
+        `
         INSERT INTO reschedule_confirmations
           (external_id, tool_name, platform, user_id, mapping_version, intent_hash, args_hash, nonce, calendar_id, scheduling_mode, new_local_date, new_time, session_label, status, expires_at)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending', $14)
@@ -49,27 +50,31 @@ export class TypeormRescheduleStore<
           new_local_date = EXCLUDED.new_local_date,
           new_time = EXCLUDED.new_time,
           session_label = EXCLUDED.session_label,
-          status = 'pending',
-          expires_at = EXCLUDED.expires_at,
-          updated_at = now()
-      `,
-      [
-        key,
-        pending.toolName ?? 'reschedule_study_session',
-        pending.platform ?? this.platform,
-        pending.userId,
-        pending.mappingVersion ?? `legacy:${pending.userId}`,
-        pending.intentHash ?? '',
-        pending.argsHash ?? '',
-        pending.nonce ?? randomUUID(),
-        pending.calendarId,
-        pending.schedulingMode,
-        pending.newLocalDate ?? null,
-        pending.newTime ?? null,
-        pending.sessionLabel,
-        new Date(pending.expiresAt),
-      ],
+           status = 'pending',
+           expires_at = EXCLUDED.expires_at,
+           updated_at = now()
+         WHERE reschedule_confirmations.status <> 'processing'
+         RETURNING external_id
+        `,
+        [
+          key,
+          pending.toolName ?? 'reschedule_study_session',
+          pending.platform ?? this.platform,
+          pending.userId,
+          pending.mappingVersion ?? `legacy:${pending.userId}`,
+          pending.intentHash ?? '',
+          pending.argsHash ?? '',
+          pending.nonce ?? randomUUID(),
+          pending.calendarId,
+          pending.schedulingMode,
+          pending.newLocalDate ?? null,
+          pending.newTime ?? null,
+          pending.sessionLabel,
+          new Date(pending.expiresAt),
+        ],
+      ),
     );
+    return rows.length > 0;
   }
 
   async takeValid(
@@ -127,48 +132,47 @@ export class TypeormRescheduleStore<
 
   async revertToPending(
     externalId: TExternalId,
-    leaseToken?: string,
+    leaseToken: string,
   ): Promise<void> {
-    const conditions = ['external_id = $1', "status = 'processing'"];
-    const params: unknown[] = [this.key(externalId)];
-    if (leaseToken) {
-      conditions.push('lease_token = $2');
-      params.push(leaseToken);
-    }
     await this.repo.query(
       `
       UPDATE reschedule_confirmations
       SET status = 'pending',
           lease_token = NULL,
-          processing_started_at = NULL,
-          expires_at = now() + interval '10 minutes',
-          updated_at = now()
-      WHERE ${conditions.join(' AND ')}
+           processing_started_at = NULL,
+           expires_at = now() + interval '10 minutes',
+           updated_at = now()
+      WHERE external_id = $1
+        AND status = 'processing'
+        AND lease_token = $2
     `,
-      params,
+      [this.key(externalId), leaseToken],
     );
   }
 
-  async cancel(externalId: TExternalId, leaseToken?: string): Promise<void> {
-    const conditions = ['external_id = $1'];
-    const params: unknown[] = [this.key(externalId)];
-    if (leaseToken) {
-      // Ownership-gated: only cancel if we own the lease or row is not processing
-      conditions.push(
-        "(lease_token = $2 OR status IN ('pending', 'confirmed', 'cancelled'))",
-      );
-      params.push(leaseToken);
-    } else {
-      conditions.push(
-        "lease_token IS NULL OR status IN ('pending', 'confirmed', 'cancelled')",
-      );
-    }
+  async cancelPending(externalId: TExternalId): Promise<void> {
     await this.repo.query(
       `
       DELETE FROM reschedule_confirmations
-      WHERE ${conditions.join(' AND ')}
+      WHERE external_id = $1
+        AND status IN ('pending', 'confirmed', 'cancelled')
     `,
-      params,
+      [this.key(externalId)],
+    );
+  }
+
+  async cancelClaimed(
+    externalId: TExternalId,
+    leaseToken: string,
+  ): Promise<void> {
+    await this.repo.query(
+      `
+      DELETE FROM reschedule_confirmations
+      WHERE external_id = $1
+        AND status = 'processing'
+        AND lease_token = $2
+    `,
+      [this.key(externalId), leaseToken],
     );
   }
 
