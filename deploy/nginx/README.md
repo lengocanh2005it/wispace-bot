@@ -44,7 +44,7 @@ curl -sf --connect-timeout 3 http://$(curl -s ifconfig.me):5007/health/ready && 
 ## Rate limit
 
 - Zones: Messenger webhook 20 req/s, Zalo webhook 20 req/s, readiness 5 req/s; all are exact-match locations
-- Zone `sensitive` 10 req/s (burst 20, `nodelay`, per-IP) covers the Discord prefix, the Zalo prefix and the catch-all — i.e. every ops endpoint (`/v1/*/ops*`, send-reports, privacy, doppler-sync, llm-usage), both OAuth route pairs and the publicly proxied `/metrics`. OAuth entry/callback routes additionally carry the app-level `ThrottlerGuard` (#535)
+- Zone `sensitive` 10 req/s (burst 20, `nodelay`, per-IP) covers the Discord prefix, the Zalo prefix and the catch-all — i.e. every ops endpoint (`/v1/*/ops*`, send-reports, privacy, sync-study-reminders, llm-usage), both OAuth route pairs and the publicly proxied `/metrics`. OAuth entry/callback routes additionally carry the app-level `ThrottlerGuard` (#535)
 - Body: 256k for webhook, 1m for other paths (matches `HTTP_JSON_BODY_LIMIT` in the app)
 
 ### Legitimate caller exception list (#535)

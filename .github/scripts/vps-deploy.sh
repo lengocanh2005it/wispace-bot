@@ -50,6 +50,11 @@ PRE_MIGRATE_TMP=""
 PRE_MIGRATE_GPG_TMP=""
 BOOTSTRAP_ENV_PRESENT=false
 BACKUP_BOOTSTRAP_PRESENT=false
+# #932: snapshot of the live .env taken before a new bootstrap is installed;
+# the EXIT trap restores it on any failed/aborted exit after the install.
+ENV_PRE_DEPLOY_BACKUP=""
+ENV_PREEXISTED=false
+DEPLOY_SUCCEEDED=false
 cleanup_env_install() {
   [ -z "$ENV_INSTALL_TMP" ] || rm -f -- "$ENV_INSTALL_TMP"
   [ -z "$ENV_FILE" ] || rm -f -- "$ENV_FILE"
@@ -58,10 +63,23 @@ cleanup_env_install() {
   [ -z "$PRE_MIGRATE_GPG_TMP" ] || rm -f -- "$PRE_MIGRATE_GPG_TMP"
   [ "$BOOTSTRAP_ENV_PRESENT" = true ] && rm -f -- "$BOOTSTRAP_ENV"
   [ "$BACKUP_BOOTSTRAP_PRESENT" = true ] && rm -f -- "$BACKUP_BOOTSTRAP_ENV"
+  if [ "$DEPLOY_SUCCEEDED" != true ] && [ -n "$ENV_PRE_DEPLOY_BACKUP" ]; then
+    if [ "$ENV_PREEXISTED" = true ] && [ -f "$ENV_PRE_DEPLOY_BACKUP" ]; then
+      if mv -f -- "$ENV_PRE_DEPLOY_BACKUP" .env; then
+        echo "Restored pre-deploy Vault bootstrap (.env)" >&2
+      else
+        echo "ERROR: could not restore the pre-deploy .env — a manual copy may exist at $ENV_PRE_DEPLOY_BACKUP" >&2
+      fi
+    elif [ "$ENV_PREEXISTED" = false ]; then
+      rm -f -- .env
+      echo "Removed first-deploy .env (no pre-deploy bootstrap existed)" >&2
+    fi
+  fi
+  [ -n "$ENV_PRE_DEPLOY_BACKUP" ] && [ -f "$ENV_PRE_DEPLOY_BACKUP" ] && rm -f -- "$ENV_PRE_DEPLOY_BACKUP"
   return 0
 }
 trap cleanup_env_install EXIT
-trap 'exit 143' INT TERM
+trap 'exit 143' INT TERM HUP
 
 # Lock down env files before any grep/sed can read them.
 if [ -f .env ] && ! chmod 600 .env; then
@@ -337,6 +355,63 @@ rollback_metrics_cutover() {
 }
 
 # ─── Install and validate the Vault bootstrap environment ────────────────────
+# #932: a shape check cannot tell a good AppRole from a revoked one. Log in
+# with the bootstrap credential BEFORE the live .env is touched, so a wrong,
+# rotated or expired secret_id fails the deploy instead of arming the host.
+validate_vault_approle_login() {
+  local file="$1" addr role_id secret_id tmp token
+  addr=$(grep -E '^VAULT_ADDR=' "$file" | tail -1 | cut -d= -f2-) || true
+  role_id=$(grep -E '^VAULT_ROLE_ID=' "$file" | tail -1 | cut -d= -f2-) || true
+  secret_id=$(grep -E '^VAULT_SECRET_ID=' "$file" | tail -1 | cut -d= -f2-) || true
+  for value in "$addr" "$role_id" "$secret_id"; do
+    if [ -z "$value" ]; then
+      echo "ERROR: Vault AppRole credential is missing" >&2
+      return 1
+    fi
+    case "$value" in
+      *'"'*|*'\'*|*[[:cntrl:]]*)
+        echo "ERROR: Vault AppRole credential contains invalid characters" >&2
+        return 1
+        ;;
+    esac
+  done
+  tmp=$(mktemp "${PWD}/.vault-login.XXXXXX") || {
+    echo "ERROR: could not create a Vault login temp file — refusing to deploy" >&2
+    return 1
+  }
+  if ! chmod 600 "$tmp"; then
+    rm -f -- "$tmp"
+    echo "ERROR: could not lock down the Vault login temp file — refusing to deploy" >&2
+    return 1
+  fi
+  # curl -sf: 4xx (rejected credential) fails fast; --retry covers transient
+  # network/5xx blips. The response body is written to a 0600 temp file and
+  # deleted; the token itself is never echoed or logged.
+  if ! curl -sf --retry 2 --retry-delay 1 --max-time 10 -o "$tmp" \
+      -H 'Content-Type: application/json' \
+      --data "{\"role_id\":\"${role_id}\",\"secret_id\":\"${secret_id}\"}" \
+      "${addr}/v1/auth/approle/login"; then
+    rm -f -- "$tmp"
+    echo "ERROR: Vault AppRole login failed — refusing to install the bootstrap (#932)" >&2
+    return 1
+  fi
+  if ! grep -q '"client_token"' "$tmp"; then
+    rm -f -- "$tmp"
+    echo "ERROR: Vault AppRole login rejected — refusing to install the bootstrap (#932)" >&2
+    return 1
+  fi
+  # Best-effort revoke of the probe token; a leftover short-lived token is
+  # harmless, so failure here never blocks the deploy.
+  token=$(sed -n 's/.*"client_token":"\([^"]*\)".*/\1/p' "$tmp" | head -1)
+  if [ -n "$token" ]; then
+    curl -sf --max-time 5 -X POST \
+      -H "X-Vault-Token: ${token}" \
+      "${addr}/v1/auth/token/revoke-self" >/dev/null 2>&1 || true
+  fi
+  rm -f -- "$tmp"
+  return 0
+}
+
 if [ -f "$BOOTSTRAP_ENV" ]; then
   BOOTSTRAP_ENV_PRESENT=true
   if ! chmod 600 "$BOOTSTRAP_ENV"; then
@@ -345,6 +420,9 @@ if [ -f "$BOOTSTRAP_ENV" ]; then
   fi
   if ! strip_retired_runtime_sync_flags "$BOOTSTRAP_ENV" || ! validate_bootstrap_env "$BOOTSTRAP_ENV"; then
     echo "ERROR: invalid Vault bootstrap — refusing to deploy" >&2
+    exit 1
+  fi
+  if ! validate_vault_approle_login "$BOOTSTRAP_ENV"; then
     exit 1
   fi
   ENV_INSTALL_TMP="$(mktemp "${PWD}/.env.install.XXXXXX")" || {
@@ -358,6 +436,23 @@ if [ -f "$BOOTSTRAP_ENV" ]; then
   if ! cp "$BOOTSTRAP_ENV" "$ENV_INSTALL_TMP"; then
     echo "ERROR: could not prepare Vault bootstrap — refusing to deploy" >&2
     exit 1
+  fi
+  # #932: snapshot the live .env before it is replaced, so any failure after
+  # this point restores the bootstrap the running container was started with.
+  ENV_PRE_DEPLOY_BACKUP="${PWD}/.env.pre-deploy"
+  if [ -f .env ]; then
+    ENV_PREEXISTED=true
+    if ! cp -p .env "$ENV_PRE_DEPLOY_BACKUP" || ! chmod 600 "$ENV_PRE_DEPLOY_BACKUP"; then
+      echo "ERROR: could not back up the pre-deploy .env — refusing to deploy" >&2
+      exit 1
+    fi
+  else
+    ENV_PREEXISTED=false
+    rm -f -- "$ENV_PRE_DEPLOY_BACKUP"
+    if ! : > "$ENV_PRE_DEPLOY_BACKUP" || ! chmod 600 "$ENV_PRE_DEPLOY_BACKUP"; then
+      echo "ERROR: could not prepare the first-deploy .env marker — refusing to deploy" >&2
+      exit 1
+    fi
   fi
   if ! mv -f "$ENV_INSTALL_TMP" .env; then
     echo "ERROR: could not atomically install Vault bootstrap — refusing to deploy" >&2
@@ -845,5 +940,10 @@ fi
 if docker inspect "$NEW_CONTAINER" >/dev/null 2>&1; then
   docker rename "$NEW_CONTAINER" "${APP_NAME}-old" 2>/dev/null || true
 fi
+
+# #932: past every rollback path — keep the installed bootstrap and drop the
+# pre-deploy snapshot so a later crash cannot resurrect the old .env.
+DEPLOY_SUCCEEDED=true
+rm -f -- "$ENV_PRE_DEPLOY_BACKUP" 2>/dev/null || true
 
 echo "✓ Deploy complete: $APP_NAME ($IMAGE) on port $STANDBY_PORT"

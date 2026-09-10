@@ -15,6 +15,12 @@ while IFS= read -r -d '' file; do
     .github/scripts/check-secret-manager-references.sh|.github/scripts/tests/*|*.spec.ts|*.test.ts)
       continue
       ;;
+    # .gitleaksignore pins findings on historical commits by their original
+    # paths; it manages secret scanning of old history, not the delivery
+    # surface (#932 follow-up).
+    .gitleaksignore)
+      continue
+      ;;
   esac
 
   matches="$(rg -n -i -e "$PATTERN" -- "$ROOT/$file" || true)"

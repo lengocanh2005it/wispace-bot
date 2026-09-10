@@ -131,7 +131,24 @@ FAKE
 cat > "$dir/curl" <<'FAKE'
 #!/usr/bin/env bash
 echo "curl $*" >> "${CURL_LOG:?}"
+o_out=""
+prev=""
+for arg in "$@"; do
+  [ "$prev" = "-o" ] && o_out="$arg"
+  prev="$arg"
+done
+if printf '%s' "$*" | grep -q '/v1/auth/approle/login'; then
+  if [ -n "${FAKE_VAULT_LOGIN_REJECT:-}" ]; then
+    printf '{"errors":["invalid role or secret ID"]}' > "${o_out:-/dev/null}"
+  else
+    printf '{"auth":{"client_token":"fake-vault-token"}}' > "${o_out:-/dev/null}"
+  fi
+  exit 0
+fi
 if [ -n "${FAKE_VAULT_STARTUP_FAIL:-}" ] && printf '%s' "$*" | grep -q '/health'; then
+  exit 1
+fi
+if [ -n "${FAKE_POST_SWITCH_FAIL:-}" ] && printf '%s' "$*" | grep -q 'aiassist.aihubproduction.com'; then
   exit 1
 fi
 if [ -n "${FAKE_READINESS_FAIL:-}" ] && printf '%s' "$*" | grep -q '/health/ready'; then
@@ -728,8 +745,61 @@ grep -q 'proxy_pass http://zalo_backend/health/ready' "$REPO_ROOT/deploy/nginx/a
 pass "all platform readiness paths remain wired"
 
 echo "Test 33: deploy defaults to readiness, never liveness (#776)"
-grep -q ': "\${HEALTH_PATH:=/health/ready}"' "$SCRIPT" || fail "deploy default health path is not readiness"
+grep -q ': "${HEALTH_PATH:=/health/ready}"' "$SCRIPT" || fail "deploy default health path is not readiness"
 pass "deploy defaults to /health/ready"
+
+write_bootstrap() { # dir secret-id
+  printf 'VAULT_REQUIRED=true\nVAULT_ADDR=https://vault.test\nVAULT_ROLE_ID=role-new\nVAULT_SECRET_ID=%s\n' "$2" > "$dir/deploy/vault-bootstrap.env"
+  chmod 600 "$dir/deploy/vault-bootstrap.env"
+}
+
+echo "Test 34: rejected Vault AppRole credential refuses the deploy before .env is touched (#932)"
+dir=$(make_env vault-login-reject)
+write_env "$dir"
+write_bootstrap "$dir" secret-new
+code=$(run_script "$dir" FAKE_VAULT_LOGIN_REJECT=1)
+[ "$code" -eq 1 ] || fail "rejected AppRole should exit 1, got $code"
+grep -q "Vault AppRole login" "$dir/run.out" || fail "missing Vault login failure message"
+! grep -q "Vault bootstrap installed" "$dir/run.out" || fail "bootstrap was installed despite rejected credential"
+grep -q 'VAULT_SECRET_ID=secret-test' "$dir/deploy/.env" || fail "live .env was modified before the login check"
+[ ! -f "$dir/deploy/.env.pre-deploy" ] || fail "backup left behind on login failure"
+pass "rejected credential blocks the install"
+
+echo "Test 35: post-switch health failure restores the pre-deploy .env byte-identically (#932)"
+dir=$(make_env env-restore-monitor)
+write_env "$dir"
+write_bootstrap "$dir" secret-new
+write_upstream "$dir" 5007
+cp "$dir/deploy/.env" "$dir/deploy/.env.expected"
+code=$(run_script "$dir" FAKE_POST_SWITCH_FAIL=1 FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old")
+[ "$code" -eq 1 ] || fail "post-switch failure should exit 1, got $code"
+grep -q "Restored pre-deploy Vault bootstrap" "$dir/run.out" || fail "restore was not reported"
+cmp -s "$dir/deploy/.env" "$dir/deploy/.env.expected" || fail ".env is not byte-identical to the pre-deploy state"
+! grep -q 'secret-new' "$dir/deploy/.env" || fail "new bootstrap content leaked into the restored .env"
+[ ! -f "$dir/deploy/.env.pre-deploy" ] || fail "backup was not consumed by the restore"
+pass "failed deploy leaves .env byte-identical"
+
+echo "Test 36: first deploy removes the installed .env when it fails after install (#932)"
+dir=$(make_env first-deploy-restore)
+write_bootstrap "$dir" secret-new
+code=$(run_script "$dir" SKIP_NGINX_CHECK=true FAKE_EXISTING= FAKE_PORT_MAP= FAKE_PULL_FAIL=1)
+[ "$code" -eq 1 ] || fail "pull failure should exit 1, got $code"
+grep -q "Removed first-deploy .env" "$dir/run.out" || fail "first-deploy .env removal was not reported"
+[ ! -f "$dir/deploy/.env" ] || fail "installed .env survived a failed first deploy"
+[ ! -f "$dir/deploy/.env.pre-deploy" ] || fail "backup marker left behind"
+pass "failed first deploy returns to no-.env state"
+
+echo "Test 37: successful deploy keeps the new bootstrap and removes the backup (#932)"
+dir=$(make_env env-success-cleanup)
+write_env "$dir"
+write_bootstrap "$dir" secret-new
+write_upstream "$dir" 5007
+code=$(run_script "$dir" FAKE_EXISTING="messenger-bot-old" FAKE_PORT_MAP="5007:messenger-bot-old")
+[ "$code" -eq 0 ] || fail "expected exit 0, got $code: $(cat "$dir/run.out")"
+grep -q 'VAULT_SECRET_ID=secret-new' "$dir/deploy/.env" || fail "new bootstrap was not installed"
+! grep -q "Restored pre-deploy Vault bootstrap" "$dir/run.out" || fail "restore ran on a successful deploy"
+[ ! -f "$dir/deploy/.env.pre-deploy" ] || fail "backup survived a successful deploy"
+pass "successful deploy cleans up the backup"
 
 [ "$FAILED" -eq 0 ] && echo "ALL TESTS PASSED"
 exit "$FAILED"

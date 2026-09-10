@@ -51,4 +51,16 @@ grep -q 'validate_bootstrap_env' "$SELF_PULL" \
 bash "$SECRET_MANAGER_GUARD" || fail "active legacy secret-manager reference detected"
 pass "self-pull and tracked docs are Vault-only"
 
+# #932: the deploy proves the AppRole before touching .env and restores the
+# pre-deploy bootstrap on any failed exit after the install.
+grep -q 'validate_vault_approle_login' "$VPS_DEPLOY" \
+  || fail "deploy does not prove the Vault AppRole credential"
+grep -q 'v1/auth/approle/login' "$VPS_DEPLOY" \
+  || fail "deploy does not authenticate against Vault before install"
+grep -q '\.env\.pre-deploy' "$VPS_DEPLOY" \
+  || fail "deploy does not snapshot the pre-deploy bootstrap for rollback"
+grep -q 'Restored pre-deploy Vault bootstrap' "$VPS_DEPLOY" \
+  || fail "rollback does not report the .env restore"
+pass "deploy restores the pre-deploy bootstrap and proves the AppRole credential (#932)"
+
 echo "ALL TESTS PASSED"
