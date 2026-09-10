@@ -1,5 +1,6 @@
 import type { DataSource } from 'typeorm';
 import {
+  LEGACY_MIGRATION_NAME_ALIASES,
   guardDataSourceMigrations,
   runWithMigrationAdvisoryLock,
 } from './migration-data-source';
@@ -13,6 +14,97 @@ function buildRunner(query: jest.Mock) {
 }
 
 describe('migration data source guards', () => {
+  it('skips corrected migrations whose historical names are already applied', async () => {
+    const runnerQuery = jest
+      .fn()
+      .mockResolvedValueOnce([{ in_recovery: false }])
+      .mockResolvedValueOnce([{ acquired: true }])
+      .mockResolvedValueOnce([]);
+    const runner = buildRunner(runnerQuery);
+    const legacyName = 'AddBurstLimitReservationIndex1751029200016';
+    const currentName = LEGACY_MIGRATION_NAME_ALIASES[legacyName];
+    const currentMigration = { name: currentName };
+    const otherMigration = { name: 'OtherMigration1786920000015' };
+    const readMigrations = jest.fn().mockResolvedValue([{ name: legacyName }]);
+    const dataSource = {
+      createQueryRunner: jest.fn().mockReturnValue(runner),
+      query: readMigrations,
+      migrations: [currentMigration, otherMigration],
+      options: { migrationsTableName: 'migrations' },
+      runMigrations: jest.fn(async () => {
+        expect(dataSource.migrations).toEqual([otherMigration]);
+        return [];
+      }),
+      undoLastMigration: jest.fn(),
+      showMigrations: jest.fn(),
+    } as unknown as DataSource;
+
+    guardDataSourceMigrations(dataSource, 99);
+    await dataSource.runMigrations();
+
+    expect(readMigrations).toHaveBeenCalledWith(
+      'SELECT "name" FROM "migrations" ORDER BY "id" DESC',
+    );
+    expect(dataSource.migrations).toEqual([currentMigration, otherMigration]);
+  });
+
+  it('marks legacy names as applied for migration:show without rewriting rows', async () => {
+    const currentName =
+      LEGACY_MIGRATION_NAME_ALIASES['AddWebhookInboundStaleIndex1751029200017'];
+    const currentMigration = { name: currentName };
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ in_recovery: false }])
+      .mockResolvedValueOnce([
+        { name: 'AddWebhookInboundStaleIndex1751029200017' },
+      ]);
+    const dataSource = {
+      query,
+      migrations: [currentMigration],
+      options: { migrationsTableName: 'migrations' },
+      runMigrations: jest.fn(),
+      undoLastMigration: jest.fn(),
+      showMigrations: jest.fn(async () => {
+        expect(dataSource.migrations).toEqual([]);
+        return false;
+      }),
+    } as unknown as DataSource;
+
+    guardDataSourceMigrations(dataSource, 99);
+    await expect(dataSource.showMigrations()).resolves.toBe(false);
+
+    expect(dataSource.migrations).toEqual([currentMigration]);
+  });
+
+  it('reverts a legacy row through its corrected migration implementation', async () => {
+    const runnerQuery = jest
+      .fn()
+      .mockResolvedValueOnce([{ in_recovery: false }])
+      .mockResolvedValueOnce([{ acquired: true }])
+      .mockResolvedValueOnce([]);
+    const runner = buildRunner(runnerQuery);
+    const legacyName = 'AddZaloOaTokenVersion1751029200017';
+    const currentName = LEGACY_MIGRATION_NAME_ALIASES[legacyName];
+    const migration = { name: currentName };
+    const readMigrations = jest.fn().mockResolvedValue([{ name: legacyName }]);
+    const dataSource = {
+      createQueryRunner: jest.fn().mockReturnValue(runner),
+      query: readMigrations,
+      migrations: [migration],
+      options: { migrationsTableName: 'migrations' },
+      runMigrations: jest.fn(),
+      undoLastMigration: jest.fn(async () => {
+        expect(migration.name).toBe(legacyName);
+      }),
+      showMigrations: jest.fn(),
+    } as unknown as DataSource;
+
+    guardDataSourceMigrations(dataSource, 99);
+    await dataSource.undoLastMigration();
+
+    expect(migration.name).toBe(currentName);
+  });
+
   it('checks the writer and holds the advisory lock while migrations run', async () => {
     const query = jest
       .fn()

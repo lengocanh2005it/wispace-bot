@@ -19,9 +19,12 @@ const {
 const { PgAdvisoryLockService } = require('@wispace/bot-common/locks');
 const {
   CanonicalPlatformService,
+  DEFAULT_MIGRATION_LOCK_ID,
+  LEGACY_MIGRATION_NAME_ALIASES,
   PlatformDeadLetterService,
   UserNotificationPreferenceEntity,
   WebhookDeadLetterEntity,
+  guardDataSourceMigrations,
 } = require('@wispace/database');
 
 const requiredEnv = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
@@ -476,6 +479,73 @@ function findOAuthStateEntity(dataSource, entities, platform) {
   return candidates[0];
 }
 
+async function exerciseLegacyMigrationCompatibility(dataSource) {
+  const aliases = Object.entries(LEGACY_MIGRATION_NAME_ALIASES);
+  for (const [legacyName, currentName] of aliases) {
+    await dataSource.query(
+      'UPDATE "migrations" SET "timestamp" = $1, "name" = $2 WHERE "name" = $3',
+      [Number(legacyName.slice(-13)), legacyName, currentName],
+    );
+  }
+
+  const legacyNames = aliases.map(([legacyName]) => legacyName);
+  const legacyRows = await dataSource.query(
+    'SELECT "name" FROM "migrations" WHERE "name" = ANY($1::text[])',
+    [legacyNames],
+  );
+  if (legacyRows.length !== legacyNames.length) {
+    throw new Error(
+      'legacy migration names were not preserved in the database',
+    );
+  }
+  if (await dataSource.showMigrations()) {
+    throw new Error(
+      'legacy migration rows were not recognized by migration:show',
+    );
+  }
+
+  await dataSource.runMigrations();
+  if (await dataSource.showMigrations()) {
+    throw new Error(
+      'legacy migration rows were not recognized by migration:run',
+    );
+  }
+
+  const legacyToRevertEntry = aliases.find(([legacyName]) =>
+    legacyName.startsWith('AddZaloOauthStateCleanupIndex'),
+  );
+  if (!legacyToRevertEntry) {
+    throw new Error('legacy OAuth cleanup migration alias is missing');
+  }
+  const [legacyToRevert] = legacyToRevertEntry;
+  const currentToRevert = LEGACY_MIGRATION_NAME_ALIASES[legacyToRevert];
+  await dataSource.query('DELETE FROM "migrations" WHERE "name" = $1', [
+    legacyToRevert,
+  ]);
+  await dataSource.query(
+    'INSERT INTO "migrations" ("timestamp", "name") VALUES ($1, $2)',
+    [Number(legacyToRevert.slice(-13)), legacyToRevert],
+  );
+  await dataSource.undoLastMigration();
+
+  await dataSource.runMigrations();
+  const currentRows = await dataSource.query(
+    'SELECT "name" FROM "migrations" WHERE "name" = ANY($1::text[])',
+    [
+      [
+        ...legacyNames.filter((name) => name !== legacyToRevert),
+        currentToRevert,
+      ],
+    ],
+  );
+  if (currentRows.length !== legacyNames.length) {
+    throw new Error(
+      'corrected migration was not reapplied after legacy rollback',
+    );
+  }
+  console.log('messenger: legacy migration names preserved + rollback passed');
+}
+
 async function runCanonicalMigrations() {
   const messengerDatabase = require(
     resolve(
@@ -483,12 +553,15 @@ async function runCanonicalMigrations() {
       'apps/messenger-bot/dist/infrastructure/database/data-source.js',
     ),
   );
-  const dataSource = new DataSource({
-    ...messengerDatabase.default.options,
-    dropSchema: true,
-    synchronize: false,
-    logging: false,
-  });
+  const dataSource = guardDataSourceMigrations(
+    new DataSource({
+      ...messengerDatabase.default.options,
+      dropSchema: true,
+      synchronize: false,
+      logging: false,
+    }),
+    DEFAULT_MIGRATION_LOCK_ID,
+  );
   try {
     await dataSource.initialize();
     if (!(await dataSource.showMigrations())) {
@@ -499,6 +572,7 @@ async function runCanonicalMigrations() {
       throw new Error('migrations remain pending after run');
     }
     console.log('messenger: migration chain passed');
+    await exerciseLegacyMigrationCompatibility(dataSource);
     await assertColumns(dataSource, 'messenger');
     await exerciseDeadLetterReplay(dataSource);
     console.log(
@@ -528,6 +602,9 @@ async function runPlatform({
   const options = ephemeralOptions(builder, dropSchema);
   assertEntitiesRegistered(options, entities, platform);
   const dataSource = new DataSource(options);
+  if (migrationMode) {
+    guardDataSourceMigrations(dataSource, DEFAULT_MIGRATION_LOCK_ID);
+  }
   try {
     await dataSource.initialize();
     assertMetadata(dataSource, entities, platform);

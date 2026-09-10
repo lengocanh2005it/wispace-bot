@@ -67,7 +67,7 @@ When adding a new migration (Discord, Zalo, or new shared table):
 
 - **Platform-specific table** → platform prefix in class/file name: `Create<Platform><Feature>Table`, e.g. `CreateZaloAccountLinksTable` (consistent with existing `CreateDiscordAccountLinksTable`).
 - **Truly cross-platform table** (entity lives in `packages/*`, following `chat-metering` pattern) → name reflects the domain, **no** misleading platform prefix (don't name `CreateMessenger...` for a shared table).
-- **Do not rename existing migration files** to match this convention — TypeORM records executed migrations by **class name** in the `migrations` table in prod DB (`ai_chat_bot_db`); renaming a class = production thinks it's a new migration → re-runs/errors. Convention only applies to new files.
+- **Do not rename existing migration files** to match this convention — TypeORM records executed migrations by **class name** in the `migrations` table in prod DB (`ai_chat_bot_db`); renaming a class normally makes production treat it as a new migration. The four historical collisions fixed by #340 are the explicit exception: their runtime names now have unique timestamps, while `guardDataSourceMigrations` maps the old recorded names for run/show/revert without rewriting those rows. Do not apply this exception to any other migration.
 
 ## Ownership of 18 existing migrations (static reference, not retroactive)
 

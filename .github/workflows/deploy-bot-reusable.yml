@@ -138,7 +138,7 @@ jobs:
           cache-to: type=gha,mode=min,scope=${{ inputs.app }}
 
   migration-timestamps:
-    # Check for duplicate migration timestamps in source files.
+    # Check for duplicate migration identities in source files.
     # Runs on ubuntu-latest (not inside Docker) to avoid Alpine missing bash/find.
     needs: build-image
     if: |

@@ -482,6 +482,7 @@ POST /messenger/profile/setup
 - **Adaptive dispatch poll** (S2 ✓) — details: section [11.6](#116-worker-dispatch-polling--db-load-concerns--risk-mitigation).
 - Evening rollover 23:00 — delete `sent` jobs + re-sync horizon.
 - Cleanup cron 03:00 daily — delete terminal jobs older than `JOB_RETENTION_DAYS`.
+- **Migration check (#340):** before cutover, CI and the deploy barrier verify unique runtime TypeORM timestamps. Historical migration rows keep their recorded names and are recognized by the guarded data-source compatibility map.
 
 ---
 

@@ -7,8 +7,8 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * only, so the stale scan fell back to a sequential read of the platform's
  * events.
  */
-export class AddWebhookInboundStaleIndex1751029200017 implements MigrationInterface {
-  name = 'AddWebhookInboundStaleIndex1751029200017';
+export class AddWebhookInboundStaleIndex1786920000006 implements MigrationInterface {
+  name = 'AddWebhookInboundStaleIndex1786920000006';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

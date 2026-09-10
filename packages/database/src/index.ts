@@ -24,6 +24,7 @@ export {
 } from './typeorm-options';
 export {
   DEFAULT_MIGRATION_LOCK_ID,
+  LEGACY_MIGRATION_NAME_ALIASES,
   guardDataSourceMigrations,
   runWithMigrationAdvisoryLock,
 } from './migration-data-source';

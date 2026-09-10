@@ -1,8 +1,8 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
 /** Supports the recurring delete of expired Zalo OAuth PKCE state rows. */
-export class AddZaloOauthStateCleanupIndex1751029200016 implements MigrationInterface {
-  name = 'AddZaloOauthStateCleanupIndex1751029200016';
+export class AddZaloOauthStateCleanupIndex1786920000005 implements MigrationInterface {
+  name = 'AddZaloOauthStateCleanupIndex1786920000005';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

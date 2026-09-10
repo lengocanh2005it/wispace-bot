@@ -7,18 +7,18 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * must match `WHERE id = ? AND version = ?`; a stale version means another
  * worker already persisted a new pair and the caller retries.
  */
-export class AddZaloOaTokenVersion1751029200017 implements MigrationInterface {
-  name = 'AddZaloOaTokenVersion1751029200017';
+export class AddZaloOaTokenVersion1786920000014 implements MigrationInterface {
+  name = 'AddZaloOaTokenVersion1786920000014';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `ALTER TABLE "zalo_oa_tokens" ADD COLUMN "version" integer NOT NULL DEFAULT 0`,
+      `ALTER TABLE "zalo_oa_tokens" ADD COLUMN IF NOT EXISTS "version" integer NOT NULL DEFAULT 0`,
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `ALTER TABLE "zalo_oa_tokens" DROP COLUMN "version"`,
+      `ALTER TABLE "zalo_oa_tokens" DROP COLUMN IF EXISTS "version"`,
     );
   }
 }

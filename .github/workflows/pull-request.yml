@@ -331,6 +331,9 @@ jobs:
       - name: Test VPS deploy script (fail-closed + crash-safety + migration lock, #199/#201/#203/#204)
         run: bash .github/scripts/tests/vps-deploy.test.sh
 
+      - name: Test migration timestamp guard (#340)
+        run: bash .github/scripts/tests/check-migration-timestamps.test.sh
+
       - name: Test monitoring entrypoints (fail-closed render, #373)
         run: |
           bash deploy/monitoring/tests/test-prometheus-entrypoint.sh

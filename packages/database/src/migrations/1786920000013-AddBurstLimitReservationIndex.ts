@@ -7,8 +7,8 @@ import type { MigrationInterface, QueryRunner } from 'typeorm';
  * indexes lead with platform/status or usage_date, so the time-window count
  * scanned growing historical data inside the reservation transaction.
  */
-export class AddBurstLimitReservationIndex1751029200016 implements MigrationInterface {
-  name = 'AddBurstLimitReservationIndex1751029200016';
+export class AddBurstLimitReservationIndex1786920000013 implements MigrationInterface {
+  name = 'AddBurstLimitReservationIndex1786920000013';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
