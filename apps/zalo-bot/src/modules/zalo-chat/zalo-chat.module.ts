@@ -59,6 +59,12 @@ import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
 import { ZaloChatService } from './application/services/zalo-chat.service';
 import {
+  ZALO_OUTBOUND,
+  type ZaloOutboundPort,
+} from './application/ports/zalo-outbound.port';
+import { ZALO_OUTBOUND_TRANSPORT } from './application/ports/zalo-outbound-transport.port';
+import { ZaloSendApiAdapter } from './infrastructure/adapters/zalo-send-api.adapter';
+import {
   RescheduleConfirmationService,
   type CalendarPort,
   type ReschedulePort,
@@ -193,7 +199,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         calendarService: WispaceCalendarService,
         exerciseClient: PrecreateExerciseApiClient,
         rescheduleConfirmationService: RescheduleConfirmationService<string>,
-        outboundService: ZaloOutboundService,
+        outboundService: ZaloOutboundPort,
         accountLinkService: ZaloAccountLinkService,
         metrics: BotMetricsService,
         cache: WispaceDataCache,
@@ -265,7 +271,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         WispaceCalendarService,
         PrecreateExerciseApiClient,
         RescheduleConfirmationService,
-        ZaloOutboundService,
+        ZALO_OUTBOUND,
         ZaloAccountLinkService,
         BotMetricsService,
         WispaceDataCache,
@@ -360,7 +366,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         rateLimitService: PlatformChatRateLimitService,
         historyService: PlatformChatHistoryService,
         agentService: PlatformAgentService,
-        outboundService: ZaloOutboundService,
+        outboundService: ZaloOutboundPort,
         queueStore: ChatQueueStorePort,
         accountLinkService: ZaloAccountLinkService,
         metrics: BotMetricsService,
@@ -410,7 +416,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         PlatformChatRateLimitService,
         PlatformChatHistoryService,
         PlatformAgentService,
-        ZaloOutboundService,
+        ZALO_OUTBOUND,
         PLATFORM_CHAT_QUEUE_STORE,
         ZaloAccountLinkService,
         BotMetricsService,
@@ -565,7 +571,16 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         BotMetricsService,
       ],
     },
+    ZaloSendApiAdapter,
+    {
+      provide: ZALO_OUTBOUND_TRANSPORT,
+      useExisting: ZaloSendApiAdapter,
+    },
     ZaloOutboundService,
+    {
+      provide: ZALO_OUTBOUND,
+      useExisting: ZaloOutboundService,
+    },
     CleanupCronService,
     {
       provide: PlatformLinkAuditCleanupService,
@@ -588,7 +603,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       useFactory: (
         deadLetterService: PlatformDeadLetterService,
         configService: ConfigService,
-        outboundService: ZaloOutboundService,
+        outboundService: ZaloOutboundPort,
         pgLock: PgAdvisoryLockService,
         metrics: BotMetricsService,
       ) =>
@@ -617,7 +632,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
       inject: [
         PlatformDeadLetterService,
         ConfigService,
-        ZaloOutboundService,
+        ZALO_OUTBOUND,
         PgAdvisoryLockService,
         BotMetricsService,
       ],
@@ -680,6 +695,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     PlatformChatHistoryService,
     PlatformChatQueueService,
     ZaloChatService,
+    ZALO_OUTBOUND,
     ZaloOutboundService,
     PlatformDeadLetterService,
   ],

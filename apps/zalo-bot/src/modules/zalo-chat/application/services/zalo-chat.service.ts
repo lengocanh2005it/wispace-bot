@@ -20,7 +20,6 @@ import {
   STUDY_REMINDER_JOB_REPOSITORY,
   type StudyReminderJobRepositoryPort,
 } from '@wispace/study-reminder-shared';
-import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { PlatformChatQueueService } from '@wispace/chat-agent';
 import {
@@ -36,6 +35,10 @@ import {
   IntentDetector,
   detectDisclosureProbe,
 } from '@wispace/llm-agent';
+import {
+  ZALO_OUTBOUND,
+  type ZaloOutboundPort,
+} from '../ports/zalo-outbound.port';
 
 @Injectable()
 export class ZaloChatService {
@@ -45,7 +48,8 @@ export class ZaloChatService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly outboundService: ZaloOutboundService,
+    @Inject(ZALO_OUTBOUND)
+    private readonly outboundService: ZaloOutboundPort,
     private readonly accountLinkService: ZaloAccountLinkService,
     private readonly chatQueueService: PlatformChatQueueService,
     private readonly rescheduleConfirmationService: RescheduleConfirmationService<string>,

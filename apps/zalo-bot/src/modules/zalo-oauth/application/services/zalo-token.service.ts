@@ -7,28 +7,23 @@ import {
   Optional,
 } from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common/masking';
-import { readBoundedJson } from '@wispace/bot-common/utils';
 import { PlatformConnectivityState } from '@wispace/bot-common/health';
 import {
   BotMetricsService,
   type TokenRefreshFailureReason,
 } from '@wispace/bot-metrics';
-import { ConfigService } from '@nestjs/config';
-import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
-import { ZaloOaTokenEntity } from '@zalo/infrastructure/database/entities/zalo-oa-token.entity';
-
-const ZALO_TOKEN_ENDPOINT = 'https://oauth.zaloapp.com/v4/access_token';
+import {
+  ZALO_OAUTH_CLIENT,
+  type ZaloOAuthClientPort,
+} from '../ports/zalo-oauth-client.port';
+import {
+  ZALO_OA_TOKEN_STORE,
+  type ZaloOaTokenSnapshot,
+  type ZaloOaTokenStorePort,
+} from '../ports/zalo-oa-token-store.port';
 const EXPIRY_BUFFER_MS = 10 * 60 * 1000;
 const REFRESH_MAX_ATTEMPTS = 3;
 const REFRESH_BASE_BACKOFF_MS = 1_000;
-
-interface ZaloAccessTokenResponse {
-  access_token: string;
-  refresh_token: string;
-  expires_in: string;
-  refresh_token_expires_in: string;
-}
 
 class ZaloOaTokenRowMissingError extends InternalServerErrorException {
   constructor() {
@@ -64,9 +59,10 @@ export class ZaloTokenService implements OnModuleInit {
   private lastKnownAccessTokenExpiresAt = 0;
 
   constructor(
-    private readonly configService: ConfigService,
-    @InjectRepository(ZaloOaTokenEntity)
-    private readonly repo: Repository<ZaloOaTokenEntity>,
+    @Inject(ZALO_OA_TOKEN_STORE)
+    private readonly tokenStore: ZaloOaTokenStorePort,
+    @Inject(ZALO_OAUTH_CLIENT)
+    private readonly oauthClient: ZaloOAuthClientPort,
     @Optional()
     @Inject(PlatformConnectivityState)
     private readonly platformState?: PlatformConnectivityState,
@@ -87,7 +83,7 @@ export class ZaloTokenService implements OnModuleInit {
       return this.cachedToken.accessToken;
     }
 
-    const row = await this.repo.findOne({ where: {}, order: { id: 'DESC' } });
+    const row = await this.tokenStore.readCurrent();
     if (!row) {
       this.markTokenMissing();
       throw new ZaloOaTokenRowMissingError();
@@ -130,7 +126,7 @@ export class ZaloTokenService implements OnModuleInit {
     }
   }
 
-  private isFresh(row: ZaloOaTokenEntity): boolean {
+  private isFresh(row: ZaloOaTokenSnapshot): boolean {
     return row.accessTokenExpiresAt.getTime() - EXPIRY_BUFFER_MS > Date.now();
   }
 
@@ -139,28 +135,26 @@ export class ZaloTokenService implements OnModuleInit {
     let previousAttemptTimedOut = false;
     let failureReason: Exclude<TokenRefreshFailureReason, 'missing'> =
       'network';
+    let submittedRefresh = false;
 
     for (let attempt = 1; attempt <= REFRESH_MAX_ATTEMPTS; attempt++) {
+      submittedRefresh = false;
       try {
-        return await this.withTokenLock(
-          async (em, row) => {
-            if (this.isFresh(row)) {
-              // Another worker refreshed while we waited for the lock — use its token.
-              this.cachedToken = {
-                accessToken: row.accessToken,
-                expiresAt: row.accessTokenExpiresAt.getTime(),
-              };
-              this.lastKnownAccessTokenExpiresAt =
-                row.accessTokenExpiresAt.getTime();
-              this.markConnected();
-              return row.accessToken;
-            }
-            return this.doRefresh(em, row);
-          },
-          () => {
-            throw new ZaloOaTokenRowMissingError();
-          },
-        );
+        const row = await this.tokenStore.refreshWithLock(async (current) => {
+          if (this.isFresh(current)) {
+            // Another worker refreshed while we waited for the lock — keep its token.
+            return undefined;
+          }
+          submittedRefresh = true;
+          return this.oauthClient.refreshOaToken(current.refreshToken);
+        });
+        if (!row) throw new ZaloOaTokenRowMissingError();
+        this.cacheToken(row);
+        if (submittedRefresh) {
+          this.logger.log('Zalo OA access_token refreshed');
+        }
+        this.markConnected();
+        return row.accessToken;
       } catch (error) {
         if (error instanceof ZaloOaTokenRowMissingError) {
           throw error;
@@ -209,17 +203,13 @@ export class ZaloTokenService implements OnModuleInit {
 
   private async refreshHealthState(): Promise<void> {
     try {
-      const row = await this.repo.findOne({ where: {}, order: { id: 'DESC' } });
+      const row = await this.tokenStore.readCurrent();
       if (!row) {
         this.markTokenMissing();
         return;
       }
       if (this.isFresh(row)) {
-        this.cachedToken = {
-          accessToken: row.accessToken,
-          expiresAt: row.accessTokenExpiresAt.getTime(),
-        };
-        this.lastKnownAccessTokenExpiresAt = row.accessTokenExpiresAt.getTime();
+        this.cacheToken(row);
         this.markConnected();
         return;
       }
@@ -298,98 +288,9 @@ export class ZaloTokenService implements OnModuleInit {
     );
   }
 
-  /** Single-row transaction + FOR UPDATE; state is re-read after the lock. */
-  private withTokenLock<T>(
-    fn: (em: EntityManager, row: ZaloOaTokenEntity) => Promise<T>,
-    onEmpty: () => T,
-  ): Promise<T> {
-    return this.repo.manager.transaction(async (em) => {
-      const row = await em.findOne(ZaloOaTokenEntity, {
-        where: {},
-        order: { id: 'DESC' },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!row) {
-        return onEmpty();
-      }
-      return fn(em, row);
-    });
-  }
-
-  private async doRefresh(
-    em: EntityManager,
-    row: ZaloOaTokenEntity,
-  ): Promise<string> {
-    const appId = this.configService.getOrThrow<string>('ZALO_APP_ID');
-    const secretKey = this.configService.getOrThrow<string>(
-      'ZALO_APP_SECRET_KEY',
-    );
-
-    const response = await fetch(ZALO_TOKEN_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        secret_key: secretKey,
-      },
-      body: new URLSearchParams({
-        refresh_token: row.refreshToken,
-        app_id: appId,
-        grant_type: 'refresh_token',
-      }),
-      signal: AbortSignal.timeout(10_000),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Zalo OA token refresh failed: HTTP ${response.status}`);
-    }
-
-    const payload = await readBoundedJson<ZaloAccessTokenResponse>(response);
-
-    const accessToken = payload.access_token;
-    const refreshToken = payload.refresh_token;
-    const expiresInSeconds = Number(payload.expires_in);
-    const refreshExpiresInSeconds = Number(payload.refresh_token_expires_in);
-
-    // Validate before persisting: a 200 response with an unexpected body
-    // (e.g. an error payload without expires_in) must not write NaN dates
-    // into the DB — fail this refresh attempt instead.
-    if (
-      typeof accessToken !== 'string' ||
-      accessToken.trim() === '' ||
-      typeof refreshToken !== 'string' ||
-      refreshToken.trim() === '' ||
-      !Number.isFinite(expiresInSeconds) ||
-      expiresInSeconds <= 0 ||
-      !Number.isFinite(refreshExpiresInSeconds) ||
-      refreshExpiresInSeconds <= 0
-    ) {
-      throw new Error(
-        'Zalo OA token refresh returned an invalid payload (missing access_token/refresh_token/expires_in)',
-      );
-    }
-
-    const now = Date.now();
-
-    await em.update(
-      ZaloOaTokenEntity,
-      { id: row.id, version: row.version },
-      {
-        accessToken,
-        refreshToken,
-        accessTokenExpiresAt: new Date(now + expiresInSeconds * 1000),
-        refreshTokenExpiresAt: new Date(now + refreshExpiresInSeconds * 1000),
-        updatedAt: new Date(now),
-        version: row.version + 1,
-      },
-    );
-
-    this.logger.log('Zalo OA access_token refreshed');
-    this.cachedToken = {
-      accessToken,
-      expiresAt: now + expiresInSeconds * 1000,
-    };
-    this.lastKnownAccessTokenExpiresAt = now + expiresInSeconds * 1000;
-    this.markConnected();
-    return accessToken;
+  private cacheToken(row: ZaloOaTokenSnapshot): void {
+    const expiresAt = row.accessTokenExpiresAt.getTime();
+    this.cachedToken = { accessToken: row.accessToken, expiresAt };
+    this.lastKnownAccessTokenExpiresAt = expiresAt;
   }
 }

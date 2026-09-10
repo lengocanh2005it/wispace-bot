@@ -4,20 +4,27 @@ import {
   maskExternalId,
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
-import { isAbortError, readResponseText } from '@wispace/bot-common/utils';
+import { isAbortError } from '@wispace/bot-common/utils';
 import { BotMetricsService } from '@wispace/bot-metrics';
-import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
+import {
+  ZALO_OA_ACCESS_TOKEN,
+  type ZaloOaAccessTokenPort,
+} from '@zalo/modules/zalo-oauth/application/ports/zalo-oa-token-store.port';
 import {
   DeliveryLogService,
   PlatformDeadLetterService,
 } from '@wispace/database';
 import { withRetry } from '@wispace/wispace-client';
-import { keepAliveFetch } from '@wispace/wispace-client';
 import { OutboundRateLimiter } from '@wispace/bot-common/redis';
 import type { OutboundDeliveryOutcome } from '@wispace/contracts';
-
-const SEND_TEXT_ENDPOINT = 'https://openapi.zalo.me/v3.0/oa/message/cs';
-const SEND_TIMEOUT_MS = 10_000;
+import {
+  ZALO_OUTBOUND_TRANSPORT,
+  type ZaloOutboundTransportPort,
+} from '../ports/zalo-outbound-transport.port';
+import type {
+  ZaloOutboundOptions,
+  ZaloOutboundPort,
+} from '../ports/zalo-outbound.port';
 const SEND_FAILURE_REASON_AMBIGUOUS = 'dm_send_ambiguous';
 
 export class ZaloSendError extends Error {
@@ -90,11 +97,14 @@ export function isZaloAmbiguousDeliveryError(error: unknown): boolean {
  * future work, see spec §11.4).
  */
 @Injectable()
-export class ZaloOutboundService {
+export class ZaloOutboundService implements ZaloOutboundPort {
   private readonly logger = new Logger(ZaloOutboundService.name);
 
   constructor(
-    private readonly tokenService: ZaloTokenService,
+    @Inject(ZALO_OA_ACCESS_TOKEN)
+    private readonly tokenService: ZaloOaAccessTokenPort,
+    @Inject(ZALO_OUTBOUND_TRANSPORT)
+    private readonly transport: ZaloOutboundTransportPort,
     private readonly deliveryLogService: DeliveryLogService,
     @Optional()
     @Inject(PlatformDeadLetterService)
@@ -114,16 +124,7 @@ export class ZaloOutboundService {
   async sendText(
     zaloUserId: string,
     text: string,
-    options?: {
-      skipDeadLetter?: boolean;
-      deliveryKey?: string;
-      clarification?: boolean;
-      deadLetterOn?: 'all' | 'ambiguous' | 'none';
-      retryOn?: 'all' | 'none';
-      userId?: number;
-      units?: number;
-      skipRateLimit?: boolean;
-    },
+    options?: ZaloOutboundOptions,
   ): Promise<OutboundDeliveryOutcome> {
     let ambiguousDeliveryRecorded = false;
     let providerAttempt = 0;
@@ -136,6 +137,7 @@ export class ZaloOutboundService {
             userId: options?.userId,
             units,
             skipRateLimit: options?.skipRateLimit,
+            signal: options?.signal,
           });
         },
         {
@@ -235,10 +237,11 @@ export class ZaloOutboundService {
     zaloUserId: string,
     text: string,
     _deliveryKey: string,
+    signal?: AbortSignal,
   ): Promise<OutboundDeliveryOutcome> {
     let ambiguousDeliveryRecorded = false;
     try {
-      await withRetry(() => this.sendTextOnce(zaloUserId, text), {
+      await withRetry(() => this.sendTextOnce(zaloUserId, text, { signal }), {
         maxRetries: 1,
         baseDelayMs: 1_000,
         shouldRetry: isZaloRetryableError,
@@ -280,7 +283,12 @@ export class ZaloOutboundService {
   private async sendTextOnce(
     zaloUserId: string,
     text: string,
-    options?: { userId?: number; units?: number; skipRateLimit?: boolean },
+    options?: {
+      userId?: number;
+      units?: number;
+      skipRateLimit?: boolean;
+      signal?: AbortSignal;
+    },
   ): Promise<void> {
     if (
       options?.skipRateLimit !== true &&
@@ -294,25 +302,30 @@ export class ZaloOutboundService {
     }
     const accessToken = await this.tokenService.getValidAccessToken();
 
-    let response: Response;
     try {
-      response = await keepAliveFetch(
-        SEND_TEXT_ENDPOINT,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            access_token: accessToken,
-          },
-          body: JSON.stringify({
-            recipient: { user_id: zaloUserId },
-            message: { text },
-          }),
-          signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
-        },
-        { logger: this.logger },
-      );
+      const result = await this.transport.sendText({
+        recipientId: zaloUserId,
+        text,
+        accessToken,
+        signal: options?.signal,
+      });
+      const safeBody = maskExternalIdInText(result.responseBody, zaloUserId);
+      if (!result.ok || result.applicationError !== 0) {
+        this.logger.warn(
+          `Zalo send message failed HTTP ${result.status} for zaloUserId=${maskExternalId(zaloUserId)}: ${safeBody}`,
+        );
+        throw new ZaloSendError(
+          `Zalo Send API failed for ${maskExternalId(
+            zaloUserId,
+          )}: HTTP ${result.status} ${result.statusText} - ${safeBody}`,
+          result.applicationError || result.status,
+          result.statusText,
+          safeBody,
+          result.status,
+        );
+      }
     } catch (error) {
+      if (error instanceof ZaloSendError) throw error;
       const msg = maskExternalIdInText(errorMessage(error), zaloUserId);
       this.logger.warn(
         `Zalo send network error for zaloUserId=${maskExternalId(
@@ -326,37 +339,6 @@ export class ZaloOutboundService {
         msg,
         0,
         error,
-      );
-    }
-
-    const body = await readResponseText(response);
-    let payload: unknown;
-    try {
-      payload = body ? (JSON.parse(body) as unknown) : undefined;
-    } catch {
-      payload = undefined;
-    }
-    const safeBody = maskExternalIdInText(body, zaloUserId);
-    const applicationError =
-      payload && typeof payload === 'object' && 'error' in payload
-        ? Number((payload as { error?: unknown }).error)
-        : 0;
-
-    if (
-      !response.ok ||
-      (Number.isFinite(applicationError) && applicationError !== 0)
-    ) {
-      this.logger.warn(
-        `Zalo send message failed HTTP ${response.status} for zaloUserId=${maskExternalId(zaloUserId)}: ${safeBody}`,
-      );
-      throw new ZaloSendError(
-        `Zalo Send API failed for ${maskExternalId(
-          zaloUserId,
-        )}: HTTP ${response.status} ${response.statusText} - ${safeBody}`,
-        applicationError || response.status,
-        response.statusText,
-        safeBody,
-        response.status,
       );
     }
   }

@@ -1,19 +1,71 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
-import { ZaloOutboundService, ZaloSendError } from './zalo-outbound.service';
-import { ZaloTokenService } from '@zalo/modules/zalo-oauth/application/services/zalo-token.service';
 import type { BotMetricsService } from '@wispace/bot-metrics';
+import type { ZaloOaAccessTokenPort } from '@zalo/modules/zalo-oauth/application/ports/zalo-oa-token-store.port';
+import type {
+  ZaloOutboundTransportPort,
+  ZaloOutboundTransportResult,
+} from '../ports/zalo-outbound-transport.port';
+import { ZaloOutboundService, ZaloSendError } from './zalo-outbound.service';
+
+const deliveryLog = {
+  logDelivery: jest.fn().mockResolvedValue(undefined),
+};
+
+function successResult(): ZaloOutboundTransportResult {
+  return {
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    responseBody: JSON.stringify({ error: 0, message: 'Success', data: {} }),
+    applicationError: 0,
+  };
+}
+
+function failureResult(
+  status: number,
+  body: unknown,
+): ZaloOutboundTransportResult {
+  return {
+    ok: false,
+    status,
+    statusText: status >= 500 ? 'Server Error' : 'Bad Request',
+    responseBody: JSON.stringify(body),
+    applicationError:
+      body && typeof body === 'object' && 'error' in body
+        ? Number((body as { error: unknown }).error)
+        : 0,
+  };
+}
+
+function buildTokenService(): ZaloOaAccessTokenPort {
+  return {
+    getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
+    refreshNow: jest.fn(),
+  };
+}
+
+function buildTransport(
+  implementation: ZaloOutboundTransportPort['sendText'] = jest
+    .fn()
+    .mockResolvedValue(successResult()),
+): ZaloOutboundTransportPort {
+  return { sendText: implementation };
+}
+
+function buildMetricsStub(): BotMetricsService {
+  return {
+    incDmDeliveryFailure: jest.fn(),
+  } as unknown as BotMetricsService;
+}
 
 describe('ZaloOutboundService', () => {
-  const deliveryLog = {
-    logDelivery: jest.fn().mockResolvedValue(undefined),
-  };
-
   beforeEach(() => {
     deliveryLog.logDelivery.mockClear();
   });
 
-  it('returns rate_limited before token or HTTP work', async () => {
-    const tokenService = { getValidAccessToken: jest.fn() };
+  it('returns rate_limited before token or transport work', async () => {
+    const tokenService = buildTokenService();
+    const transport = buildTransport();
     const limiter = {
       admit: jest.fn().mockResolvedValue({
         allowed: false,
@@ -22,7 +74,8 @@ describe('ZaloOutboundService', () => {
       }),
     };
     const service = new ZaloOutboundService(
-      tokenService as never,
+      tokenService,
+      transport,
       deliveryLog as never,
       undefined,
       undefined,
@@ -33,147 +86,85 @@ describe('ZaloOutboundService', () => {
       'rate_limited',
     );
     expect(tokenService.getValidAccessToken).not.toHaveBeenCalled();
+    expect(transport.sendText).not.toHaveBeenCalled();
   });
 
-  function buildMetricsStub(): BotMetricsService {
-    return {
-      incDmDeliveryFailure: jest.fn(),
-    } as unknown as BotMetricsService;
-  }
-
-  it('sends a text consultation message with the current access token', async () => {
-    const getValidAccessToken = jest.fn().mockResolvedValue('token-abc');
-    const tokenService = { getValidAccessToken } as unknown as ZaloTokenService;
-    const fetchMock = jest.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ error: 0, message: 'Success', data: {} }),
-    });
-
-    global.fetch = fetchMock;
-
-    const service = new ZaloOutboundService(tokenService, deliveryLog as never);
-    await service.sendText('zalo-1', 'hello');
-
-    expect(getValidAccessToken).toHaveBeenCalled();
-    const calls = fetchMock.mock.calls as unknown as Array<
-      [string, RequestInit]
-    >;
-    expect(calls[0]?.[0]).toBe('https://openapi.zalo.me/v3.0/oa/message/cs');
-    expect(calls[0]?.[1].method).toBe('POST');
-    const headers = calls[0]?.[1].headers as Record<string, string>;
-    expect(headers['access_token']).toBe('token-abc');
-
-    const bodyText = calls[0]?.[1].body;
-    if (typeof bodyText !== 'string') {
-      throw new Error('expected fetch body to be a string');
-    }
-    expect(JSON.parse(bodyText)).toEqual({
-      recipient: { user_id: 'zalo-1' },
-      message: { text: 'hello' },
-    });
-    // #567 — sends go through the shared keep-alive agent.
-    expect(calls[0]?.[1] as Record<string, unknown>).toEqual(
-      expect.objectContaining({ dispatcher: expect.anything() }),
+  it('sends a text message through the transport with the current access token', async () => {
+    const tokenService = buildTokenService();
+    const sendText = jest.fn().mockResolvedValue(successResult());
+    const service = new ZaloOutboundService(
+      tokenService,
+      buildTransport(sendText),
+      deliveryLog as never,
     );
 
-    delete global.fetch;
+    await expect(service.sendText('zalo-1', 'hello')).resolves.toBe('sent');
+    expect(sendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipientId: 'zalo-1',
+        text: 'hello',
+        accessToken: 'token-abc',
+      }),
+    );
+    expect(deliveryLog.logDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'SENT' }),
+    );
   });
 
-  it('throws ZaloSendError on network failure instead of swallowing', async () => {
-    const tokenService = {
-      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
-    } as unknown as ZaloTokenService;
-    const fetchMock = jest.fn().mockRejectedValue(new Error('network down'));
-
-    global.fetch = fetchMock;
-
-    const service = new ZaloOutboundService(tokenService, deliveryLog as never);
+  it('throws an ambiguous ZaloSendError on a network failure', async () => {
+    const transport = buildTransport(
+      jest.fn().mockRejectedValue(new Error('network down')),
+    );
+    const service = new ZaloOutboundService(
+      buildTokenService(),
+      transport,
+      deliveryLog as never,
+    );
 
     await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow(
       'Zalo Send API network error',
     );
-
-    delete global.fetch;
+    expect(deliveryLog.logDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'FAILED' }),
+    );
   });
 
   it('redacts error strings while retaining raw payload for replay', async () => {
-    const tokenService = {
-      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
-    } as unknown as ZaloTokenService;
-    global.fetch = jest.fn().mockRejectedValue(new Error('network down'));
     const deadLetter = {
-      save: jest
-        .fn<Promise<void>, [{ errorMessage: string; rawPayload: unknown }]>()
-        .mockResolvedValue(undefined),
+      save: jest.fn().mockResolvedValue(undefined),
     };
     const service = new ZaloOutboundService(
-      tokenService,
+      buildTokenService(),
+      buildTransport(jest.fn().mockRejectedValue(new Error('network down'))),
       deliveryLog as never,
       deadLetter as never,
     );
 
-    await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow(
-      ZaloSendError,
-    );
-    const err = await service
+    const error = await service
       .sendText('zalo-1', 'hello')
-      .catch((e: unknown) => e);
-    expect((err as Error).message).not.toContain('zalo-1');
-    const saved = deadLetter.save.mock.calls[0]?.[0];
-    expect(saved?.errorMessage).not.toContain('zalo-1');
-    expect(saved?.rawPayload).toEqual({ zaloUserId: 'zalo-1', text: 'hello' });
-
-    delete global.fetch;
-  });
-
-  it('redacts external ids echoed by the Zalo API error body', async () => {
-    const tokenService = {
-      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
-    } as unknown as ZaloTokenService;
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      statusText: 'Server Error',
-      json: () =>
-        Promise.resolve({
-          error: 500,
-          message: 'failed for zalo-1234567890',
-        }),
-    });
-    const deadLetter = {
-      save: jest
-        .fn<Promise<void>, [{ errorMessage: string; rawPayload: unknown }]>()
-        .mockResolvedValue(undefined),
-    };
-    const service = new ZaloOutboundService(
-      tokenService,
-      deliveryLog as never,
-      deadLetter as never,
+      .catch((value: unknown) => value);
+    expect(error).toBeInstanceOf(ZaloSendError);
+    expect((error as Error).message).not.toContain('zalo-1');
+    expect(deadLetter.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        errorMessage: expect.not.stringContaining('zalo-1'),
+        rawPayload: { zaloUserId: 'zalo-1', text: 'hello' },
+      }),
     );
-
-    await expect(service.sendText('zalo-1234567890', 'hello')).rejects.toThrow(
-      'zalo…7890',
-    );
-    const saved = deadLetter.save.mock.calls[0]?.[0];
-    expect(saved.errorMessage).not.toContain('zalo-1234567890');
-    expect(saved.rawPayload).toEqual({
-      zaloUserId: 'zalo-1234567890',
-      text: 'hello',
-    });
-
-    delete global.fetch;
   });
 
   it('does not mark a 2xx application error as delivered', async () => {
-    const tokenService = {
-      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
-    } as unknown as ZaloTokenService;
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ error: 4001, message: 'Invalid user id' }),
-    });
-
-    const service = new ZaloOutboundService(tokenService, deliveryLog as never);
+    const service = new ZaloOutboundService(
+      buildTokenService(),
+      buildTransport(
+        jest
+          .fn()
+          .mockResolvedValue(
+            failureResult(200, { error: 4001, message: 'Invalid user id' }),
+          ),
+      ),
+      deliveryLog as never,
+    );
 
     await expect(service.sendText('zalo-1', 'hello')).rejects.toMatchObject({
       status: 4001,
@@ -181,77 +172,56 @@ describe('ZaloOutboundService', () => {
     expect(deliveryLog.logDelivery).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'FAILED' }),
     );
-
-    delete global.fetch;
   });
 
-  it('#156: does not retry known 4xx API errors', async () => {
-    const tokenService = {
-      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
-    } as unknown as ZaloTokenService;
-    const fetchMock = jest.fn().mockResolvedValue({
-      ok: false,
-      status: 400,
-      statusText: 'Bad Request',
-      json: () => Promise.resolve({ error: 4001, message: 'Invalid user id' }),
-    });
+  it('does not retry known 4xx API errors', async () => {
+    const sendText = jest
+      .fn()
+      .mockResolvedValue(
+        failureResult(400, { error: 4001, message: 'Invalid user id' }),
+      );
     const metrics = buildMetricsStub();
-
-    global.fetch = fetchMock;
-
     const service = new ZaloOutboundService(
-      tokenService,
+      buildTokenService(),
+      buildTransport(sendText),
       deliveryLog as never,
       undefined,
       metrics,
     );
 
     await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sendText).toHaveBeenCalledTimes(1);
     expect(metrics.incDmDeliveryFailure).not.toHaveBeenCalledWith(
       'dm_send_ambiguous',
     );
-
-    delete global.fetch;
   });
 
-  it('#156: retries 5xx provider errors', async () => {
-    const tokenService = {
-      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
-    } as unknown as ZaloTokenService;
-    const fetchMock = jest.fn().mockResolvedValue({
-      ok: false,
-      status: 503,
-      statusText: 'Service Unavailable',
-      json: () => Promise.resolve({ error: 503, message: 'temporary outage' }),
-    });
-
-    global.fetch = fetchMock;
-
-    const service = new ZaloOutboundService(tokenService, deliveryLog as never);
+  it('retries 5xx provider errors', async () => {
+    const sendText = jest
+      .fn()
+      .mockResolvedValue(
+        failureResult(503, { error: 503, message: 'temporary outage' }),
+      );
+    const service = new ZaloOutboundService(
+      buildTokenService(),
+      buildTransport(sendText),
+      deliveryLog as never,
+    );
 
     await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-
-    delete global.fetch;
+    expect(sendText).toHaveBeenCalledTimes(2);
   });
 
   it('lets the report outbox own retryable delivery without a second local send', async () => {
-    const tokenService = {
-      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
-    } as unknown as ZaloTokenService;
-    const fetchMock = jest.fn().mockResolvedValue({
-      ok: false,
-      status: 503,
-      statusText: 'Service Unavailable',
-      json: () => Promise.resolve({ error: 503, message: 'temporary outage' }),
-    });
+    const sendText = jest
+      .fn()
+      .mockResolvedValue(
+        failureResult(503, { error: 503, message: 'temporary outage' }),
+      );
     const deadLetter = { save: jest.fn().mockResolvedValue(true) };
-
-    global.fetch = fetchMock;
-
     const service = new ZaloOutboundService(
-      tokenService,
+      buildTokenService(),
+      buildTransport(sendText),
       deliveryLog as never,
       deadLetter as never,
     );
@@ -263,53 +233,34 @@ describe('ZaloOutboundService', () => {
         retryOn: 'none',
       }),
     ).rejects.toBeInstanceOf(ZaloSendError);
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sendText).toHaveBeenCalledTimes(1);
     expect(deadLetter.save).not.toHaveBeenCalled();
-
-    delete global.fetch;
   });
 
-  it('#156: retries network errors and records ambiguous delivery', async () => {
-    const tokenService = {
-      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
-    } as unknown as ZaloTokenService;
-    const fetchMock = jest
-      .fn()
-      .mockRejectedValue(new TypeError('fetch failed'));
+  it('retries network errors and records ambiguous delivery', async () => {
+    const sendText = jest.fn().mockRejectedValue(new TypeError('fetch failed'));
     const metrics = buildMetricsStub();
-
-    global.fetch = fetchMock;
-
     const service = new ZaloOutboundService(
-      tokenService,
+      buildTokenService(),
+      buildTransport(sendText),
       deliveryLog as never,
       undefined,
       metrics,
     );
 
     await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(sendText).toHaveBeenCalledTimes(2);
     expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
       'dm_send_ambiguous',
     );
-
-    delete global.fetch;
   });
 
   it('does not retry or dead-letter an ambiguous clarification delivery', async () => {
-    const tokenService = {
-      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
-    } as unknown as ZaloTokenService;
-    const fetchMock = jest
-      .fn()
-      .mockRejectedValue(new TypeError('fetch failed'));
+    const sendText = jest.fn().mockRejectedValue(new TypeError('fetch failed'));
     const deadLetter = { save: jest.fn().mockResolvedValue(true) };
-
-    global.fetch = fetchMock;
-
     const service = new ZaloOutboundService(
-      tokenService,
+      buildTokenService(),
+      buildTransport(sendText),
       deliveryLog as never,
       deadLetter as never,
     );
@@ -320,27 +271,21 @@ describe('ZaloOutboundService', () => {
         clarification: true,
       }),
     ).rejects.toThrow();
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sendText).toHaveBeenCalledTimes(1);
     expect(deadLetter.save).not.toHaveBeenCalled();
-
-    delete global.fetch;
   });
 
   it('persists a definitive clarification failure for outbound replay', async () => {
-    const tokenService = {
-      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
-    } as unknown as ZaloTokenService;
     const deadLetter = { save: jest.fn().mockResolvedValue(true) };
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: false,
-      status: 400,
-      statusText: 'Bad Request',
-      json: () => Promise.resolve({ error: 4001, message: 'Invalid user id' }),
-    });
-
     const service = new ZaloOutboundService(
-      tokenService,
+      buildTokenService(),
+      buildTransport(
+        jest
+          .fn()
+          .mockResolvedValue(
+            failureResult(400, { error: 4001, message: 'Invalid user id' }),
+          ),
+      ),
       deliveryLog as never,
       deadLetter as never,
     );
@@ -351,41 +296,32 @@ describe('ZaloOutboundService', () => {
         clarification: true,
       }),
     ).rejects.toThrow();
-
     expect(deadLetter.save).toHaveBeenCalledWith(
       expect.objectContaining({
         direction: 'outbound',
         deliveryKey: 'clarification:zalo:event-401',
       }),
     );
-    delete global.fetch;
   });
 
-  it('#156: does not retry a timeout after acceptance and records ambiguity', async () => {
-    const tokenService = {
-      getValidAccessToken: jest.fn().mockResolvedValue('token-abc'),
-    } as unknown as ZaloTokenService;
+  it('does not retry a timeout after acceptance and records ambiguity', async () => {
     const timeout = Object.assign(new Error('request timed out'), {
       name: 'TimeoutError',
     });
-    const fetchMock = jest.fn().mockRejectedValue(timeout);
+    const sendText = jest.fn().mockRejectedValue(timeout);
     const metrics = buildMetricsStub();
-
-    global.fetch = fetchMock;
-
     const service = new ZaloOutboundService(
-      tokenService,
+      buildTokenService(),
+      buildTransport(sendText),
       deliveryLog as never,
       undefined,
       metrics,
     );
 
     await expect(service.sendText('zalo-1', 'hello')).rejects.toThrow();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sendText).toHaveBeenCalledTimes(1);
     expect(metrics.incDmDeliveryFailure).toHaveBeenCalledWith(
       'dm_send_ambiguous',
     );
-
-    delete global.fetch;
   });
 });

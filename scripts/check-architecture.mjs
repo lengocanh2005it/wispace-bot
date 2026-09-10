@@ -108,12 +108,6 @@ const LEGACY_APPLICATION_IMPORTS = new Set([
   'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-reconcile-cron.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
   'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-reconcile-cron.service.ts|@wispace/database|PlatformLinkStateService',
   'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-reconcile-cron.service.ts|@wispace/wispace-client|WispaceLinkStatusClient',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-oauth-state.service.ts|@nestjs/typeorm|InjectRepository',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-oauth-state.service.ts|typeorm|Repository',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-oauth-state.service.ts|@zalo/infrastructure/database/entities/zalo-oauth-state.entity|ZaloOauthStateEntity',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-token.service.ts|@nestjs/typeorm|InjectRepository',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-token.service.ts|typeorm|EntityManager,Repository',
-  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-token.service.ts|@zalo/infrastructure/database/entities/zalo-oa-token.entity|ZaloOaTokenEntity',
 ]);
 
 const CORE_RULES = [

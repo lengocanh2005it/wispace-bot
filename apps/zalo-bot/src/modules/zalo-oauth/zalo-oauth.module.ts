@@ -25,6 +25,15 @@ import { ZaloAccountLinkService } from './application/services/zalo-account-link
 import { ZaloLinkReconcileCronService } from './application/services/zalo-link-reconcile-cron.service';
 import { TypeormZaloLinkVerifyRecordRepository } from './infrastructure/typeorm-zalo-link-verify-record.repository';
 import { ZALO_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/zalo-link-verify-record.repository.port';
+import { ZALO_OAUTH_CLIENT } from './application/ports/zalo-oauth-client.port';
+import {
+  ZALO_OA_ACCESS_TOKEN,
+  ZALO_OA_TOKEN_STORE,
+} from './application/ports/zalo-oa-token-store.port';
+import { ZALO_OAUTH_STATE_STORE } from './application/ports/zalo-oauth-state-store.port';
+import { ZaloOAuthHttpAdapter } from './infrastructure/adapters/zalo-oauth-http.adapter';
+import { TypeormZaloOaTokenStoreAdapter } from './infrastructure/adapters/typeorm-zalo-oa-token-store.adapter';
+import { TypeormZaloOauthStateStoreAdapter } from './infrastructure/adapters/typeorm-zalo-oauth-state-store.adapter';
 import {
   PLATFORM_CONNECTIVITY,
   PlatformConnectivityState,
@@ -60,6 +69,25 @@ import { BotMetricsService } from '@wispace/bot-metrics';
     ZaloOauthStateService,
     ZaloAccountLinkService,
     ZaloLinkReconcileCronService,
+    ZaloOAuthHttpAdapter,
+    TypeormZaloOaTokenStoreAdapter,
+    TypeormZaloOauthStateStoreAdapter,
+    {
+      provide: ZALO_OAUTH_CLIENT,
+      useExisting: ZaloOAuthHttpAdapter,
+    },
+    {
+      provide: ZALO_OA_TOKEN_STORE,
+      useExisting: TypeormZaloOaTokenStoreAdapter,
+    },
+    {
+      provide: ZALO_OAUTH_STATE_STORE,
+      useExisting: TypeormZaloOauthStateStoreAdapter,
+    },
+    {
+      provide: ZALO_OA_ACCESS_TOKEN,
+      useExisting: ZaloTokenService,
+    },
     PlatformLinkStateService,
     {
       provide: WispaceLinkStatusClient,
@@ -105,6 +133,8 @@ import { BotMetricsService } from '@wispace/bot-metrics';
     PLATFORM_CONNECTIVITY,
     PlatformConnectivityState,
     ZaloTokenService,
+    ZALO_OA_ACCESS_TOKEN,
+    ZALO_OAUTH_CLIENT,
     ZaloAccountLinkService,
     PlatformLinkStateService,
     ZaloOauthStateService,

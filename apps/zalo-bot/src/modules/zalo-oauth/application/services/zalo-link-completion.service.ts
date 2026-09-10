@@ -3,7 +3,10 @@ import { buildLinkSuccessMessage } from '@wispace/bot-common/messages';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { sleep } from '@wispace/bot-common/utils';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
-import { ZaloOutboundService } from '@zalo/modules/zalo-chat/application/services/zalo-outbound.service';
+import {
+  ZALO_OUTBOUND,
+  type ZaloOutboundPort,
+} from '@zalo/modules/zalo-chat/application/ports/zalo-outbound.port';
 import {
   ZALO_LINK_VERIFY_RECORD_REPOSITORY,
   type ZaloLinkVerifyRecordRepositoryPort,
@@ -40,7 +43,8 @@ export class ZaloLinkCompletionService {
     private readonly tokenVerifyService: WispaceTokenVerifyService,
     @Inject(ZALO_LINK_VERIFY_RECORD_REPOSITORY)
     private readonly verifyRecordService: ZaloLinkVerifyRecordRepositoryPort,
-    private readonly outboundService: ZaloOutboundService,
+    @Inject(ZALO_OUTBOUND)
+    private readonly outboundService: ZaloOutboundPort,
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,
     @Optional() private readonly linkState?: PlatformLinkStateService,

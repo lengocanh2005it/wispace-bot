@@ -1,13 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import type { ReportDeliveryPort } from '@wispace/scheduler-core';
 import type { ReportDeliveryResult } from '@wispace/scheduler-core';
 import {
-  ZaloOutboundService,
   ZaloSendError,
   isZaloAmbiguousDeliveryError,
   isZaloRetryableError,
 } from './zalo-outbound.service';
+import {
+  ZALO_OUTBOUND,
+  type ZaloOutboundPort,
+} from '../ports/zalo-outbound.port';
 import { WispaceApiError } from '@wispace/wispace-client';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 
@@ -20,7 +23,8 @@ export class ZaloReportDeliveryService implements ReportDeliveryPort {
   private readonly logger = new Logger(ZaloReportDeliveryService.name);
 
   constructor(
-    private readonly outbound: ZaloOutboundService,
+    @Inject(ZALO_OUTBOUND)
+    private readonly outbound: ZaloOutboundPort,
     private readonly accountLinkService: ZaloAccountLinkService,
   ) {}
 

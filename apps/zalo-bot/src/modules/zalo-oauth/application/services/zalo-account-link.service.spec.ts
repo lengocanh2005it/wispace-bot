@@ -1,20 +1,26 @@
 import { createHash } from 'crypto';
-import { ConfigService } from '@nestjs/config';
 import type { Repository } from 'typeorm';
 import { ZaloAccountLinkService } from './zalo-account-link.service';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
+import type { ZaloOAuthClientPort } from '../ports/zalo-oauth-client.port';
 
-function buildConfig(): ConfigService {
+function buildOAuth(
+  overrides: Partial<ZaloOAuthClientPort> = {},
+): ZaloOAuthClientPort {
   return {
-    getOrThrow: (key: string) =>
-      ({ ZALO_APP_ID: 'app-1', ZALO_APP_SECRET_KEY: 'secret-1' })[key],
-  } as unknown as ConfigService;
+    exchangeCodeForUser: jest.fn().mockResolvedValue({
+      id: 'zalo-user-1',
+      name: 'Nguyen Van A',
+    }),
+    refreshOaToken: jest.fn(),
+    ...overrides,
+  };
 }
 
 describe('ZaloAccountLinkService', () => {
   it('builds a PKCE pair where code_challenge = base64url(sha256(code_verifier))', () => {
     const service = new ZaloAccountLinkService(
-      buildConfig(),
+      buildOAuth(),
       {} as unknown as Repository<ZaloAccountLinkEntity>,
     );
 
@@ -28,26 +34,13 @@ describe('ZaloAccountLinkService', () => {
   });
 
   it('exchanges an authorization code for the Zalo user id/name', async () => {
-    const fetchMock = jest
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () => Promise.resolve({ access_token: 'user-token-1' }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: () =>
-          Promise.resolve({
-            error: 0,
-            id: 'zalo-user-1',
-            name: 'Nguyen Van A',
-          }),
-      });
-
-    global.fetch = fetchMock;
+    const exchangeCodeForUser = jest.fn().mockResolvedValue({
+      id: 'zalo-user-1',
+      name: 'Nguyen Van A',
+    });
 
     const service = new ZaloAccountLinkService(
-      buildConfig(),
+      buildOAuth({ exchangeCodeForUser }),
       {} as unknown as Repository<ZaloAccountLinkEntity>,
     );
 
@@ -57,16 +50,7 @@ describe('ZaloAccountLinkService', () => {
     );
 
     expect(user).toEqual({ id: 'zalo-user-1', name: 'Nguyen Van A' });
-    const calls = fetchMock.mock.calls as unknown as Array<
-      [string, RequestInit]
-    >;
-    expect(calls[0]?.[0]).toBe('https://oauth.zaloapp.com/v4/access_token');
-    expect(calls[0]?.[1].method).toBe('POST');
-    expect(calls[1]?.[0]).toContain('https://graph.zalo.me/v2.0/me');
-    const meHeaders = calls[1]?.[1].headers as Record<string, string>;
-    expect(meHeaders['access_token']).toBe('user-token-1');
-
-    delete global.fetch;
+    expect(exchangeCodeForUser).toHaveBeenCalledWith('auth-code', 'verifier-1');
   });
 
   it('upserts a link and looks it up by zaloUserId', async () => {
@@ -92,7 +76,7 @@ describe('ZaloAccountLinkService', () => {
       findOne: jest.fn().mockResolvedValue({ userId: 42 }),
     } as unknown as Repository<ZaloAccountLinkEntity>;
 
-    const service = new ZaloAccountLinkService(buildConfig(), repo);
+    const service = new ZaloAccountLinkService(buildOAuth(), repo);
 
     await service.upsertLink(42, 'zalo-user-1');
     expect(executeFn).toHaveBeenCalledTimes(2);
@@ -118,7 +102,7 @@ describe('ZaloAccountLinkService', () => {
         query,
         createQueryBuilder: jest.fn().mockReturnValue(releaseQb),
       } as unknown as Repository<ZaloAccountLinkEntity>;
-      const service = new ZaloAccountLinkService(buildConfig(), repo);
+      const service = new ZaloAccountLinkService(buildOAuth(), repo);
       const send = jest.fn().mockResolvedValue(undefined);
 
       const first = await service.sendConsentExplainerIfDue('zalo-1', send);
@@ -145,7 +129,7 @@ describe('ZaloAccountLinkService', () => {
         query,
         createQueryBuilder: jest.fn().mockReturnValue(qb),
       } as unknown as Repository<ZaloAccountLinkEntity>;
-      const service = new ZaloAccountLinkService(buildConfig(), repo);
+      const service = new ZaloAccountLinkService(buildOAuth(), repo);
       const send = jest.fn().mockRejectedValue(new Error('Zalo down'));
 
       const result = await service.sendConsentExplainerIfDue('zalo-1', send);

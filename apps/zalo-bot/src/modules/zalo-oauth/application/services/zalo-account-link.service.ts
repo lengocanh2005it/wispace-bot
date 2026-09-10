@@ -1,18 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
 import { maskExternalId, errorMessage } from '@wispace/bot-common/masking';
 import { buildConsentExplainerMessage } from '@wispace/bot-common/messages';
-import { readBoundedJson } from '@wispace/bot-common/utils';
 import { extractQueryRows } from '@wispace/bot-common/utils';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
+import {
+  ZALO_OAUTH_CLIENT,
+  type ZaloOAuthClientPort,
+} from '../ports/zalo-oauth-client.port';
 
 const PLATFORM = 'zalo' as const;
-const ZALO_TOKEN_ENDPOINT = 'https://oauth.zaloapp.com/v4/access_token';
-const ZALO_ME_ENDPOINT = 'https://graph.zalo.me/v2.0/me';
-const OAUTH_TIMEOUT_MS = 10_000;
 
 export class ZaloLinkOwnershipConflictError extends Error {
   constructor() {
@@ -20,8 +19,6 @@ export class ZaloLinkOwnershipConflictError extends Error {
     this.name = 'ZaloLinkOwnershipConflictError';
   }
 }
-
-class ZaloOauthError extends Error {}
 
 /**
  * Zalo Login OAuth (PKCE) + account-linking to WISPACE userId — Zalo
@@ -33,7 +30,8 @@ export class ZaloAccountLinkService {
   private readonly logger = new Logger(ZaloAccountLinkService.name);
 
   constructor(
-    private readonly configService: ConfigService,
+    @Inject(ZALO_OAUTH_CLIENT)
+    private readonly oauthClient: ZaloOAuthClientPort,
     @InjectRepository(ZaloAccountLinkEntity)
     private readonly repo: Repository<ZaloAccountLinkEntity>,
   ) {}
@@ -51,52 +49,7 @@ export class ZaloAccountLinkService {
     code: string,
     codeVerifier: string,
   ): Promise<{ id: string; name: string }> {
-    const appId = this.configService.getOrThrow<string>('ZALO_APP_ID');
-    const secretKey = this.configService.getOrThrow<string>(
-      'ZALO_APP_SECRET_KEY',
-    );
-
-    const tokenResponse = await fetch(ZALO_TOKEN_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        secret_key: secretKey,
-      },
-      body: new URLSearchParams({
-        code,
-        app_id: appId,
-        grant_type: 'authorization_code',
-        code_verifier: codeVerifier,
-      }),
-      signal: AbortSignal.timeout(OAUTH_TIMEOUT_MS),
-    });
-
-    if (!tokenResponse.ok) {
-      throw new ZaloOauthError(
-        `Zalo token exchange failed: ${tokenResponse.status}`,
-      );
-    }
-
-    const tokenJson = await readBoundedJson<{ access_token: string }>(
-      tokenResponse,
-    );
-
-    const userResponse = await fetch(`${ZALO_ME_ENDPOINT}?fields=id,name`, {
-      headers: { access_token: tokenJson.access_token },
-      signal: AbortSignal.timeout(OAUTH_TIMEOUT_MS),
-    });
-
-    if (!userResponse.ok) {
-      throw new ZaloOauthError(
-        `Zalo user fetch failed: ${userResponse.status}`,
-      );
-    }
-
-    const userJson = await readBoundedJson<{
-      id: string;
-      name: string;
-    }>(userResponse);
-    return { id: userJson.id, name: userJson.name };
+    return this.oauthClient.exchangeCodeForUser(code, codeVerifier);
   }
 
   async upsertLink(

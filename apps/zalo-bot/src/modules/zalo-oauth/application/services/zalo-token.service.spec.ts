@@ -1,24 +1,16 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
-import { ConfigService } from '@nestjs/config';
-import type { Repository } from 'typeorm';
-import { ZaloTokenService } from './zalo-token.service';
-import { ZaloOaTokenEntity } from '@zalo/infrastructure/database/entities/zalo-oa-token.entity';
 import type { BotMetricsService } from '@wispace/bot-metrics';
+import type { ZaloOAuthClientPort } from '../ports/zalo-oauth-client.port';
+import type {
+  ZaloOaTokenPair,
+  ZaloOaTokenSnapshot,
+  ZaloOaTokenStorePort,
+} from '../ports/zalo-oa-token-store.port';
+import { ZaloTokenService } from './zalo-token.service';
 
-function buildConfig(): ConfigService {
-  return {
-    getOrThrow: (key: string) =>
-      ({ ZALO_APP_ID: 'app-1', ZALO_APP_SECRET_KEY: 'secret-1' })[key],
-  } as unknown as ConfigService;
-}
-
-interface RowOverrides {
-  accessToken?: string;
-  refreshToken?: string;
-  accessTokenExpiresAt?: Date;
-}
-
-function buildRow(overrides: RowOverrides = {}): ZaloOaTokenEntity {
+function buildRow(
+  overrides: Partial<ZaloOaTokenSnapshot> = {},
+): ZaloOaTokenSnapshot {
   return {
     id: '1',
     accessToken: 'valid-token',
@@ -31,108 +23,89 @@ function buildRow(overrides: RowOverrides = {}): ZaloOaTokenEntity {
   };
 }
 
-function buildFetchMock(ok = true): jest.Mock {
-  return jest.fn().mockResolvedValue({
-    ok,
-    json: () =>
-      Promise.resolve({
-        access_token: 'new-access-token',
-        refresh_token: 'new-refresh-token',
-        expires_in: '3600',
-        refresh_token_expires_in: '2592000',
-      }),
-  });
+function buildPair(): ZaloOaTokenPair {
+  return {
+    accessToken: 'new-access-token',
+    refreshToken: 'new-refresh-token',
+    accessTokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    refreshTokenExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+  };
 }
 
-function buildTransactionManager(em: {
-  findOne: jest.Mock;
-  update: jest.Mock;
-}) {
-  return jest.fn((fn: (manager: typeof em) => unknown) => fn(em));
+function buildStore(
+  overrides: Partial<ZaloOaTokenStorePort> = {},
+): ZaloOaTokenStorePort {
+  return {
+    readCurrent: jest.fn().mockResolvedValue(buildRow()),
+    refreshWithLock: jest
+      .fn()
+      .mockImplementation(async (refresh) => refresh(buildRow())),
+    ...overrides,
+  };
+}
+
+function buildOAuth(
+  overrides: Partial<ZaloOAuthClientPort> = {},
+): ZaloOAuthClientPort {
+  return {
+    exchangeCodeForUser: jest.fn(),
+    refreshOaToken: jest.fn().mockResolvedValue(buildPair()),
+    ...overrides,
+  };
 }
 
 describe('ZaloTokenService', () => {
-  afterEach(() => {
-    delete (global as { fetch?: unknown }).fetch;
-  });
-
   it('returns the stored access_token when still valid (no lock, no refresh)', async () => {
-    const repo = {
-      findOne: jest.fn().mockResolvedValue(buildRow()),
-      manager: { transaction: jest.fn() },
-    } as unknown as Repository<ZaloOaTokenEntity>;
-
-    const service = new ZaloTokenService(buildConfig(), repo);
+    const tokenStore = buildStore();
+    const oauth = buildOAuth();
+    const service = new ZaloTokenService(tokenStore, oauth);
 
     await expect(service.getValidAccessToken()).resolves.toBe('valid-token');
-    expect(repo.manager.transaction).not.toHaveBeenCalled();
+    expect(tokenStore.refreshWithLock).not.toHaveBeenCalled();
+    expect(oauth.refreshOaToken).not.toHaveBeenCalled();
   });
 
-  it('refreshes under a pessimistic row lock and persists the new pair', async () => {
+  it('refreshes through the serialized store and persists the new pair', async () => {
     const expiredRow = buildRow({
       accessToken: 'stale-token',
       accessTokenExpiresAt: new Date(Date.now() - 1000),
     });
-    const em = {
-      findOne: jest.fn().mockResolvedValue(expiredRow),
-      update: jest.fn().mockResolvedValue(undefined),
-    };
-    const repo = {
-      findOne: jest.fn().mockResolvedValue(expiredRow),
-      manager: { transaction: buildTransactionManager(em) },
-    } as unknown as Repository<ZaloOaTokenEntity>;
-
-    const fetchMock = buildFetchMock();
-    global.fetch = fetchMock;
-
-    const service = new ZaloTokenService(buildConfig(), repo);
-
-    const token = await service.getValidAccessToken();
-
-    expect(token).toBe('new-access-token');
-    expect(em.findOne).toHaveBeenCalledWith(
-      ZaloOaTokenEntity,
-      expect.objectContaining({
-        lock: { mode: 'pessimistic_write' },
+    const refreshed = buildRow({ ...buildPair(), version: 1 });
+    const tokenStore = buildStore({
+      readCurrent: jest.fn().mockResolvedValue(expiredRow),
+      refreshWithLock: jest.fn().mockImplementation(async (refresh) => {
+        await refresh(expiredRow);
+        return refreshed;
       }),
+    });
+    const oauth = buildOAuth();
+    const service = new ZaloTokenService(tokenStore, oauth);
+
+    await expect(service.getValidAccessToken()).resolves.toBe(
+      'new-access-token',
     );
-    expect(fetchMock).toHaveBeenCalledWith(
-      'https://oauth.zaloapp.com/v4/access_token',
-      expect.objectContaining({ method: 'POST' }),
-    );
-    expect(em.update).toHaveBeenCalledWith(
-      ZaloOaTokenEntity,
-      { id: '1', version: 0 },
-      expect.objectContaining({
-        accessToken: 'new-access-token',
-        refreshToken: 'new-refresh-token',
-        version: 1,
-      }),
-    );
+    expect(oauth.refreshOaToken).toHaveBeenCalledWith('refresh-1');
+    expect(tokenStore.refreshWithLock).toHaveBeenCalledTimes(1);
   });
 
   it('skips the refresh when the row is already fresh after the lock (other worker won)', async () => {
-    const em = {
-      findOne: jest.fn().mockResolvedValue(buildRow()),
-      update: jest.fn(),
-    };
-    const repo = {
-      findOne: jest
+    const freshRow = buildRow();
+    const tokenStore = buildStore({
+      readCurrent: jest
         .fn()
         .mockResolvedValue(
           buildRow({ accessTokenExpiresAt: new Date(Date.now() - 1000) }),
         ),
-      manager: { transaction: buildTransactionManager(em) },
-    } as unknown as Repository<ZaloOaTokenEntity>;
-
-    const fetchMock = buildFetchMock();
-    global.fetch = fetchMock;
-
-    const service = new ZaloTokenService(buildConfig(), repo);
+      refreshWithLock: jest.fn().mockImplementation(async (refresh) => {
+        await refresh(freshRow);
+        return freshRow;
+      }),
+    });
+    const oauth = buildOAuth();
+    const service = new ZaloTokenService(tokenStore, oauth);
 
     await expect(service.getValidAccessToken()).resolves.toBe('valid-token');
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(em.update).not.toHaveBeenCalled();
+    expect(oauth.refreshOaToken).not.toHaveBeenCalled();
   });
 
   it('re-reads the persisted row between retries instead of a stale snapshot', async () => {
@@ -141,57 +114,60 @@ describe('ZaloTokenService', () => {
       accessTokenExpiresAt: new Date(Date.now() - 1000),
     });
     const freshRow = buildRow({ accessToken: 'fresh-after-other-worker' });
+    let calls = 0;
+    const refreshWithLock = jest.fn().mockImplementation(async (refresh) => {
+      calls += 1;
+      if (calls === 1) {
+        await refresh(expiredRow);
+        throw new Error('persist failed');
+      }
+      return freshRow;
+    });
+    const tokenStore = buildStore({
+      readCurrent: jest.fn().mockResolvedValue(expiredRow),
+      refreshWithLock,
+    });
+    const oauth = buildOAuth();
+    const service = new ZaloTokenService(tokenStore, oauth);
+    const timeoutSpy = jest.spyOn(global, 'setTimeout').mockImplementation(((
+      callback: (...args: unknown[]) => void,
+    ) => {
+      callback();
+      return {} as NodeJS.Timeout;
+    }) as typeof setTimeout);
 
-    let findOneCalls = 0;
-    const em = {
-      findOne: jest.fn().mockImplementation(() => {
-        findOneCalls += 1;
-        return Promise.resolve(findOneCalls === 1 ? expiredRow : freshRow);
-      }),
-      update: jest.fn().mockRejectedValue(new Error('persist failed')),
-    };
-    const repo = {
-      findOne: jest.fn().mockResolvedValue(expiredRow),
-      manager: { transaction: buildTransactionManager(em) },
-    } as unknown as Repository<ZaloOaTokenEntity>;
-
-    const fetchMock = buildFetchMock();
-    global.fetch = fetchMock;
-
-    const service = new ZaloTokenService(buildConfig(), repo);
-
-    const token = await service.getValidAccessToken();
-
-    expect(token).toBe('fresh-after-other-worker');
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(repo.manager.transaction).toHaveBeenCalledTimes(2);
-  }, 15_000);
+    await expect(service.getValidAccessToken()).resolves.toBe(
+      'fresh-after-other-worker',
+    );
+    expect(oauth.refreshOaToken).toHaveBeenCalledTimes(1);
+    expect(refreshWithLock).toHaveBeenCalledTimes(2);
+    timeoutSpy.mockRestore();
+  });
 
   it('throws when no token row exists (bootstrap not done)', async () => {
-    const repo = {
-      findOne: jest.fn().mockResolvedValue(null),
-      manager: { transaction: jest.fn() },
-    } as unknown as Repository<ZaloOaTokenEntity>;
-
-    const service = new ZaloTokenService(buildConfig(), repo);
+    const tokenStore = buildStore({
+      readCurrent: jest.fn().mockResolvedValue(undefined),
+      refreshWithLock: jest.fn(),
+    });
+    const service = new ZaloTokenService(tokenStore, buildOAuth());
 
     await expect(service.getValidAccessToken()).rejects.toThrow(
       'zalo_oa_tokens is empty',
     );
-    expect(repo.manager.transaction).not.toHaveBeenCalled();
+    expect(tokenStore.refreshWithLock).not.toHaveBeenCalled();
   });
 
   it('records each missing-token refresh failure', async () => {
-    const repo = {
-      findOne: jest.fn().mockResolvedValue(null),
-      manager: { transaction: jest.fn() },
-    } as unknown as Repository<ZaloOaTokenEntity>;
+    const tokenStore = buildStore({
+      readCurrent: jest.fn().mockResolvedValue(undefined),
+      refreshWithLock: jest.fn(),
+    });
     const metrics = {
       incTokenRefreshFailure: jest.fn(),
     } as unknown as BotMetricsService;
     const service = new ZaloTokenService(
-      buildConfig(),
-      repo,
+      tokenStore,
+      buildOAuth(),
       undefined,
       metrics,
     );
@@ -202,7 +178,6 @@ describe('ZaloTokenService', () => {
     await expect(service.getValidAccessToken()).rejects.toThrow(
       'zalo_oa_tokens is empty',
     );
-
     expect(metrics.incTokenRefreshFailure).toHaveBeenCalledTimes(2);
     expect(metrics.incTokenRefreshFailure).toHaveBeenCalledWith('missing');
   });
@@ -211,15 +186,17 @@ describe('ZaloTokenService', () => {
     const expiredRow = buildRow({
       accessTokenExpiresAt: new Date(Date.now() - 1000),
     });
-    const em = {
-      findOne: jest.fn().mockResolvedValue(expiredRow),
-      update: jest.fn(),
-    };
-    const repo = {
-      findOne: jest.fn().mockResolvedValue(expiredRow),
-      manager: { transaction: buildTransactionManager(em) },
-    } as unknown as Repository<ZaloOaTokenEntity>;
-    global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 401 });
+    const tokenStore = buildStore({
+      readCurrent: jest.fn().mockResolvedValue(expiredRow),
+      refreshWithLock: jest
+        .fn()
+        .mockImplementation(async (refresh) => refresh(expiredRow)),
+    });
+    const oauth = buildOAuth({
+      refreshOaToken: jest
+        .fn()
+        .mockRejectedValue(new Error('Zalo OA token refresh failed: HTTP 401')),
+    });
     const metrics = {
       incTokenRefreshFailure: jest.fn(),
     } as unknown as BotMetricsService;
@@ -229,39 +206,23 @@ describe('ZaloTokenService', () => {
       callback();
       return {} as NodeJS.Timeout;
     }) as typeof setTimeout);
-    const service = new ZaloTokenService(
-      buildConfig(),
-      repo,
-      undefined,
-      metrics,
-    );
+    const service = new ZaloTokenService(tokenStore, oauth, undefined, metrics);
 
     await expect(service.getValidAccessToken()).rejects.toThrow(
       'refresh failed after',
     );
     expect(metrics.incTokenRefreshFailure).toHaveBeenCalledWith('rejected');
-    expect(em.update).not.toHaveBeenCalled();
     setTimeoutSpy.mockRestore();
   });
 
-  it('refreshNow skips (warns) when the table is empty', async () => {
-    const warn = jest
-      .spyOn(console, 'warn')
-      .mockImplementation(() => undefined);
-    const em = {
-      findOne: jest.fn().mockResolvedValue(null),
-      update: jest.fn(),
-    };
-    const repo = {
-      findOne: jest.fn().mockResolvedValue(null),
-      manager: { transaction: buildTransactionManager(em) },
-    } as unknown as Repository<ZaloOaTokenEntity>;
-
-    const service = new ZaloTokenService(buildConfig(), repo);
+  it('refreshNow skips when the table is empty', async () => {
+    const tokenStore = buildStore({
+      refreshWithLock: jest.fn().mockResolvedValue(undefined),
+    });
+    const service = new ZaloTokenService(tokenStore, buildOAuth());
 
     await expect(service.refreshNow()).resolves.toBeUndefined();
-    expect(repo.manager.transaction).toHaveBeenCalledTimes(1);
-    warn.mockRestore();
+    expect(tokenStore.refreshWithLock).toHaveBeenCalledTimes(1);
   });
 
   it('refreshNow refreshes the pair', async () => {
@@ -269,76 +230,17 @@ describe('ZaloTokenService', () => {
       accessToken: 'stale-token',
       accessTokenExpiresAt: new Date(Date.now() - 1000),
     });
-    const em = {
-      findOne: jest.fn().mockResolvedValue(expiredRow),
-      update: jest.fn().mockResolvedValue(undefined),
-    };
-    const repo = {
-      findOne: jest.fn().mockResolvedValue(expiredRow),
-      manager: { transaction: buildTransactionManager(em) },
-    } as unknown as Repository<ZaloOaTokenEntity>;
-
-    const fetchMock = buildFetchMock();
-    global.fetch = fetchMock;
-
-    const service = new ZaloTokenService(buildConfig(), repo);
+    const oauth = buildOAuth();
+    const tokenStore = buildStore({
+      refreshWithLock: jest.fn().mockImplementation(async (refresh) => {
+        const next = await refresh(expiredRow);
+        return { ...expiredRow, ...next, version: 1 };
+      }),
+    });
+    const service = new ZaloTokenService(tokenStore, oauth);
 
     await service.refreshNow();
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(em.update).toHaveBeenCalled();
+    expect(tokenStore.refreshWithLock).toHaveBeenCalledTimes(1);
+    expect(oauth.refreshOaToken).toHaveBeenCalledWith('refresh-1');
   });
-
-  it.each([
-    'missing expires_in (NaN dates)',
-    'missing refresh_token',
-    'empty access_token',
-  ])(
-    'rejects a 200 response with an invalid payload: %s — never persists NaN dates',
-    async (caseName) => {
-      const payloads: Record<string, unknown> = {
-        'missing expires_in (NaN dates)': {
-          access_token: 'tok',
-          refresh_token: 'ref',
-          refresh_token_expires_in: '2592000',
-        },
-        'missing refresh_token': {
-          access_token: 'tok',
-          expires_in: '3600',
-          refresh_token_expires_in: '2592000',
-        },
-        'empty access_token': {
-          access_token: '',
-          refresh_token: 'ref',
-          expires_in: '3600',
-          refresh_token_expires_in: '2592000',
-        },
-      };
-
-      const expiredRow = buildRow({
-        accessToken: 'stale-token',
-        accessTokenExpiresAt: new Date(Date.now() - 1000),
-      });
-      const em = {
-        findOne: jest.fn().mockResolvedValue(expiredRow),
-        update: jest.fn().mockResolvedValue(undefined),
-      };
-      const repo = {
-        findOne: jest.fn().mockResolvedValue(expiredRow),
-        manager: { transaction: buildTransactionManager(em) },
-      } as unknown as Repository<ZaloOaTokenEntity>;
-
-      global.fetch = jest.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(payloads[caseName]),
-      });
-
-      const service = new ZaloTokenService(buildConfig(), repo);
-
-      await expect(service.getValidAccessToken()).rejects.toThrow(
-        'invalid payload',
-      );
-      expect(em.update).not.toHaveBeenCalled();
-    },
-  );
 });
