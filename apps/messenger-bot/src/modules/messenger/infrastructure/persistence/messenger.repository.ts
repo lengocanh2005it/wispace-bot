@@ -14,7 +14,7 @@ import {
   UserPlatformMappingEntity,
 } from '@messenger/infrastructure/database/entities';
 import { listUserIdsWithSentReport } from '@wispace/database';
-import { todayReportDate } from '@wispace/scheduler-core';
+import { startOfReportDay, todayReportDate } from '@wispace/scheduler-core';
 import { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
 import type { MessengerMessageLogRepositoryPort } from '../../domain/repositories/messenger-message-log.repository.port';
@@ -472,8 +472,10 @@ export class MessengerRepository
       if (learnerClaim) return true;
     }
 
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    // #968: the same clock as the claim branch above — process-local midnight
+    // is 07:00 ICT in the containers, so a report logged before that fell
+    // outside the window and the guard reported "not sent yet".
+    const startOfDay = startOfReportDay();
 
     const count = await this.logRepo
       .createQueryBuilder('log')
