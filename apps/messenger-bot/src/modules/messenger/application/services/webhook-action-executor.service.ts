@@ -80,6 +80,7 @@ export class WebhookActionExecutorService {
           psid!,
           event,
           action.context,
+          action.intentGeneration,
         );
         if (linkAttempt.status === 'linked' && linkAttempt.context) {
           this.logger.log(
@@ -228,11 +229,16 @@ export class WebhookActionExecutorService {
     psid: string,
     event: MessengerWebhookEvent,
     verifiedContext?: MessengerLinkContext,
+    intentGeneration?: string,
   ): Promise<MessengerLinkAttemptResult> {
     // #383: when the router hands over a pre-verified context, write it
     // directly — the single-use token was already consumed during pre-resolve.
     if (verifiedContext) {
-      const linked = await this.linkPsidFromContext(psid, verifiedContext);
+      const linked = await this.linkPsidFromContext(
+        psid,
+        verifiedContext,
+        intentGeneration,
+      );
       return linked
         ? { status: 'linked', context: verifiedContext }
         : { status: 'blocked' };
@@ -259,12 +265,23 @@ export class WebhookActionExecutorService {
       );
       return { status: 'verify_failed' };
     }
+    if (outcome.handoffFailure) {
+      return { status: 'handoff_failed' };
+    }
 
     if (!outcome.context) {
       return { status: 'invalid_ref' };
     }
 
-    const linked = await this.linkPsidFromContext(psid, outcome.context);
+    if (outcome.intentState === 'committed') {
+      return { status: 'already_committed', context: outcome.context };
+    }
+
+    const linked = await this.linkPsidFromContext(
+      psid,
+      outcome.context,
+      outcome.intentGeneration,
+    );
     if (linked) {
       return { status: 'linked', context: outcome.context };
     }
@@ -288,11 +305,13 @@ export class WebhookActionExecutorService {
   private async linkPsidFromContext(
     psid: string,
     context: MessengerLinkContext,
+    intentGeneration?: string,
   ): Promise<boolean> {
-    const result = await this.messengerMappingService.linkFromContext(
-      psid,
-      context,
-    );
+    const result = intentGeneration
+      ? await this.messengerMappingService.linkFromContext(psid, context, {
+          intentGeneration,
+        })
+      : await this.messengerMappingService.linkFromContext(psid, context);
     return !result.blocked;
   }
 

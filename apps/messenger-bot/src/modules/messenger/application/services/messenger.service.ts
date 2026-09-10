@@ -341,7 +341,11 @@ export class MessengerService {
     }
 
     let linkContext: RouterContext['linkContext'];
-    if (refVerification?.status === 'verified') {
+    if (
+      (refVerification?.status === 'verified' ||
+        refVerification?.status === 'committed') &&
+      refVerification.context
+    ) {
       linkContext = refVerification.context;
     } else {
       linkContext = await this.resolveLinkContextFromMapping(
@@ -352,7 +356,8 @@ export class MessengerService {
 
     return {
       userId:
-        refVerification?.status === 'verified'
+        refVerification?.status === 'verified' ||
+        refVerification?.status === 'committed'
           ? refVerification.context?.userId
           : existingMapping?.userId,
       linkContext: linkContext ?? undefined,
@@ -379,6 +384,9 @@ export class MessengerService {
     if (outcome.verifyFailureReason) {
       return { status: 'failed', failureReason: outcome.verifyFailureReason };
     }
+    if (outcome.handoffFailure) {
+      return { status: 'handoff_failed' };
+    }
     if (!outcome.context) {
       // resolveFromRef returns a context or a failure reason; treat the
       // impossible remainder as a generic verification failure.
@@ -395,7 +403,18 @@ export class MessengerService {
       );
       return { status: 'blocked' };
     }
-    return { status: 'verified', context: outcome.context };
+    if (outcome.intentState === 'committed') {
+      const currentMapping =
+        await this.repository.findActiveMappingByPsid(psid);
+      if (currentMapping?.userId !== outcome.context.userId) {
+        return { status: 'failed', failureReason: 'USED' };
+      }
+    }
+    return {
+      status: outcome.intentState === 'committed' ? 'committed' : 'verified',
+      context: outcome.context,
+      intentGeneration: outcome.intentGeneration,
+    };
   }
 
   private async resolveLinkContextFromMapping(
@@ -424,7 +443,7 @@ export class MessengerService {
     // that outcome instead of re-submitting a single-use token.
     const rv = preResolved?.refVerification;
     if (rv) {
-      if (rv.status === 'verified') {
+      if (rv.status === 'verified' || rv.status === 'committed') {
         return rv.context ?? preResolved?.linkContext ?? undefined;
       }
       // blocked/failed → identity stays with the active mapping.

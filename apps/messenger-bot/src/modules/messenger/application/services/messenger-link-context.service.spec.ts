@@ -11,9 +11,11 @@ describe('MessengerLinkContextService', () => {
     } as WispaceMessengerTokenVerifyService;
 
     const verifyRecordRepository = {
-      recordVerify: jest.fn().mockResolvedValue(undefined),
+      findByRefFingerprint: jest.fn().mockResolvedValue(null),
+      recordVerify: jest.fn().mockResolvedValue({ intentGeneration: '1' }),
       consumeRecord: jest.fn().mockResolvedValue(undefined),
       listStaleRecords: jest.fn().mockResolvedValue([]),
+      discardRecord: jest.fn().mockResolvedValue(undefined),
       ...verifyRecordRepoOverrides,
     };
 
@@ -40,9 +42,15 @@ describe('MessengerLinkContextService', () => {
     });
 
     expect(verifyRecordRepository.recordVerify).toHaveBeenCalledWith(
-      'psid-1',
-      143,
+      expect.objectContaining({
+        psid: 'psid-1',
+        userId: 143,
+        topic: 'IELTS',
+        cadence: 'WEEKLY',
+        refFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
     );
+    expect(outcome.intentGeneration).toBe('1');
     expect(outcome.context).toEqual({
       ref: 'opaque-token',
       userId: 143,
@@ -64,8 +72,12 @@ describe('MessengerLinkContextService', () => {
     await service.resolveFromRef('psid-1', { ref: 'opaque-token' });
 
     expect(verifyRecordRepository.recordVerify).toHaveBeenCalledWith(
-      'psid-1',
-      143,
+      expect.objectContaining({
+        psid: 'psid-1',
+        userId: 143,
+        topic: 'IELTS',
+        cadence: 'WEEKLY',
+      }),
     );
   });
 
@@ -79,7 +91,34 @@ describe('MessengerLinkContextService', () => {
     expect(verifyRecordRepository.recordVerify).not.toHaveBeenCalled();
   });
 
-  it('#384: propagates intent-persistence failure so the handler fails closed', async () => {
+  it('#821: retries intent persistence before failing closed', async () => {
+    const recordVerify = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('db down'))
+      .mockResolvedValue({ intentGeneration: '2' });
+    const { service, verifyRecordRepository } = createService(
+      () =>
+        Promise.resolve({
+          valid: true as const,
+          userId: 143,
+          topic: 'IELTS',
+          cadence: 'WEEKLY' as const,
+        }),
+      {
+        recordVerify,
+      },
+    );
+
+    const outcome = await service.resolveFromRef('psid-1', {
+      ref: 'opaque-token',
+    });
+
+    expect(recordVerify).toHaveBeenCalledTimes(2);
+    expect(outcome.intentGeneration).toBe('2');
+    expect(verifyRecordRepository.findByRefFingerprint).toHaveBeenCalled();
+  });
+
+  it('#821: returns handoff failure after bounded persistence retries', async () => {
     const { service } = createService(
       () =>
         Promise.resolve({
@@ -95,7 +134,78 @@ describe('MessengerLinkContextService', () => {
 
     await expect(
       service.resolveFromRef('psid-1', { ref: 'opaque-token' }),
-    ).rejects.toThrow('db down');
+    ).resolves.toEqual({ handoffFailure: true });
+  });
+
+  it('#821: does not consume a token when intent lookup is unavailable', async () => {
+    const verify = jest.fn();
+    const { service } = createService(verify, {
+      findByRefFingerprint: jest.fn().mockRejectedValue(new Error('db down')),
+    });
+
+    await expect(
+      service.resolveFromRef('psid-1', { ref: 'opaque-token' }),
+    ).resolves.toEqual({ handoffFailure: true });
+    expect(verify).not.toHaveBeenCalled();
+  });
+
+  it('#821: reuses a pending intent without verifying the token again', async () => {
+    const verify = jest.fn();
+    const { service, verifyRecordRepository } = createService(verify, {
+      findByRefFingerprint: jest.fn().mockResolvedValue({
+        psid: 'psid-1',
+        userId: 143,
+        topic: 'IELTS Writing',
+        cadence: 'DAILY',
+        refFingerprint: 'fingerprint',
+        intentGeneration: '7',
+        status: 'pending',
+        verifiedAt: new Date(),
+      }),
+    });
+
+    const outcome = await service.resolveFromRef('psid-1', {
+      ref: 'opaque-token',
+      topic: 'ignored-topic',
+      cadence: 'MONTHLY',
+    });
+
+    expect(verify).not.toHaveBeenCalled();
+    expect(verifyRecordRepository.recordVerify).not.toHaveBeenCalled();
+    expect(outcome).toEqual({
+      context: {
+        ref: 'opaque-token',
+        userId: 143,
+        topic: 'IELTS Writing',
+        cadence: 'DAILY',
+      },
+      intentGeneration: '7',
+      intentState: 'pending',
+    });
+  });
+
+  it('#821: reports a committed matching intent without relinking', async () => {
+    const verify = jest.fn();
+    const { service } = createService(verify, {
+      findByRefFingerprint: jest.fn().mockResolvedValue({
+        psid: 'psid-1',
+        userId: 143,
+        topic: 'IELTS',
+        cadence: 'WEEKLY',
+        refFingerprint: 'fingerprint',
+        intentGeneration: '8',
+        status: 'committed',
+        verifiedAt: new Date(),
+      }),
+    });
+
+    const outcome = await service.resolveFromRef('psid-1', {
+      ref: 'opaque-token',
+    });
+
+    expect(verify).not.toHaveBeenCalled();
+    expect(outcome.intentState).toBe('committed');
+    expect(outcome.intentGeneration).toBe('8');
   });
 
   it('returns context with topic/cadence fallbacks from the event', async () => {

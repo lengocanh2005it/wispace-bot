@@ -4,6 +4,8 @@ describe('MessengerLinkReconcileCronService', () => {
   const createService = (overrides?: {
     listStaleRecords?: jest.Mock;
     consumeRecord?: jest.Mock;
+    discardRecord?: jest.Mock;
+    cleanupCommittedRecords?: jest.Mock;
     findActiveMappingByPsid?: jest.Mock;
     upsertPsidUserLink?: jest.Mock;
     withLock?: jest.Mock;
@@ -13,6 +15,10 @@ describe('MessengerLinkReconcileCronService', () => {
       recordVerify: jest.fn(),
       consumeRecord:
         overrides?.consumeRecord ?? jest.fn().mockResolvedValue(undefined),
+      discardRecord:
+        overrides?.discardRecord ?? jest.fn().mockResolvedValue(undefined),
+      cleanupCommittedRecords:
+        overrides?.cleanupCommittedRecords ?? jest.fn().mockResolvedValue(0),
       listStaleRecords:
         overrides?.listStaleRecords ?? jest.fn().mockResolvedValue([]),
     };
@@ -68,8 +74,17 @@ describe('MessengerLinkReconcileCronService', () => {
 
     await service.handleReconcile();
 
-    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith('psid-1');
-    expect(mappingRepository.upsertPsidUserLink).not.toHaveBeenCalled();
+    expect(mappingRepository.upsertPsidUserLink).toHaveBeenCalledWith({
+      psid: 'psid-1',
+      userId: 143,
+      topic: undefined,
+      cadence: undefined,
+    });
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
+      psid: 'psid-1',
+      userId: 143,
+      intentGeneration: undefined,
+    });
   });
 
   it('re-commits mapping when missing and within max age', async () => {
@@ -87,7 +102,11 @@ describe('MessengerLinkReconcileCronService', () => {
       psid: 'psid-2',
       userId: 200,
     });
-    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith('psid-2');
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
+      psid: 'psid-2',
+      userId: 200,
+      intentGeneration: undefined,
+    });
   });
 
   it('drops record when older than max age with no mapping', async () => {
@@ -102,7 +121,10 @@ describe('MessengerLinkReconcileCronService', () => {
 
     await service.handleReconcile();
 
-    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith('psid-3');
+    expect(verifyRecordService.discardRecord).toHaveBeenCalledWith(
+      'psid-3',
+      undefined,
+    );
     expect(mappingRepository.upsertPsidUserLink).not.toHaveBeenCalled();
   });
 
@@ -118,5 +140,65 @@ describe('MessengerLinkReconcileCronService', () => {
 
     await expect(service.handleReconcile()).resolves.not.toThrow();
     expect(verifyRecordService.consumeRecord).not.toHaveBeenCalled();
+  });
+
+  it('#821: keeps a fresh mismatched mapping actionable', async () => {
+    const { service, verifyRecordService, mappingRepository } = createService({
+      listStaleRecords: jest.fn().mockResolvedValue([
+        {
+          psid: 'psid-mismatch',
+          userId: 200,
+          topic: 'IELTS Writing',
+          cadence: 'DAILY',
+          refFingerprint: 'fingerprint',
+          intentGeneration: '4',
+          status: 'pending',
+          verifiedAt: new Date(),
+        },
+      ]),
+      findActiveMappingByPsid: jest
+        .fn()
+        .mockResolvedValue({ userId: 100, psid: 'psid-mismatch' }),
+    });
+
+    await service.handleReconcile();
+
+    expect(mappingRepository.upsertPsidUserLink).not.toHaveBeenCalled();
+    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalled();
+    expect(verifyRecordService.discardRecord).not.toHaveBeenCalled();
+  });
+
+  it('#821: restores metadata before consuming a matching intent', async () => {
+    const { service, verifyRecordService, mappingRepository } = createService({
+      listStaleRecords: jest.fn().mockResolvedValue([
+        {
+          psid: 'psid-metadata',
+          userId: 200,
+          topic: 'IELTS Writing',
+          cadence: 'DAILY',
+          refFingerprint: 'fingerprint',
+          intentGeneration: '5',
+          status: 'pending',
+          verifiedAt: new Date(),
+        },
+      ]),
+      findActiveMappingByPsid: jest
+        .fn()
+        .mockResolvedValue({ userId: 200, psid: 'psid-metadata' }),
+    });
+
+    await service.handleReconcile();
+
+    expect(mappingRepository.upsertPsidUserLink).toHaveBeenCalledWith({
+      psid: 'psid-metadata',
+      userId: 200,
+      topic: 'IELTS Writing',
+      cadence: 'DAILY',
+    });
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
+      psid: 'psid-metadata',
+      userId: 200,
+      intentGeneration: '5',
+    });
   });
 });

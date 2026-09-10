@@ -37,3 +37,7 @@ export function buildMessengerLinkVerifyFailedMessage(
       return 'Không xác minh được link WISPACE. Vui lòng mở lại liên kết từ app WISPACE (nút Kết nối Messenger).';
   }
 }
+
+export function buildMessengerLinkHandoffFailedMessage(): string {
+  return 'Không thể hoàn tất liên kết Messenger lúc này. Vui lòng mở lại từ app WISPACE để tạo link mới nhé.';
+}

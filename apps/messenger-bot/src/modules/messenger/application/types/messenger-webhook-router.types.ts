@@ -7,9 +7,11 @@ import type { MessengerLinkVerifyFailureReason } from '@messenger/modules/messen
  * a single-use token is never submitted twice.
  */
 export interface RefVerification {
-  status: 'verified' | 'blocked' | 'failed';
-  /** Verified link context — set only when status is 'verified'. */
+  status: 'verified' | 'committed' | 'blocked' | 'failed' | 'handoff_failed';
+  /** Link context resolved for a verified or already-committed intent. */
   context?: MessengerLinkContext;
+  /** Durable intent generation used for conditional completion. */
+  intentGeneration?: string;
   /** Why verification failed — set only when status is 'failed'. */
   failureReason?: MessengerLinkVerifyFailureReason;
 }

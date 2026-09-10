@@ -292,8 +292,8 @@ async function exerciseCanonicalPlatformBatch(dataSource) {
         (platform, external_user_id, user_id, link_state)
        VALUES
         ('zalo', $1, $2, 'active'),
-        ('zalo', $3, $4, 'revoked'),
-        ('zalo', $5, $6, 'revoked')`,
+         ('zalo', $3, $4, 'confirmed-revoked'),
+         ('zalo', $5, $6, 'confirmed-revoked')`,
       [
         `smoke-zalo-${randomUUID()}`,
         userIds[0],
@@ -309,7 +309,7 @@ async function exerciseCanonicalPlatformBatch(dataSource) {
        VALUES
         ('discord', $1, $2, 'active'),
         ('discord', $3, $4, 'active'),
-        ('discord', $5, $6, 'revoked')`,
+         ('discord', $5, $6, 'confirmed-revoked')`,
       [
         `smoke-discord-${randomUUID()}`,
         userIds[0],
@@ -326,7 +326,7 @@ async function exerciseCanonicalPlatformBatch(dataSource) {
        VALUES
         ($1, 'messenger', $2, $3, 'ACTIVE', 'active'),
         ($4, 'messenger', $5, $6, 'ACTIVE', 'active'),
-        ($7, 'messenger', $8, $9, 'INACTIVE', 'revoked')`,
+         ($7, 'messenger', $8, $9, 'INACTIVE', 'confirmed-revoked')`,
       [
         userIds[0],
         `smoke-messenger-${randomUUID()}`,

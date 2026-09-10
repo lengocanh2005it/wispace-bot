@@ -265,4 +265,45 @@ describe('MessengerMappingService', () => {
       'messenger:psid-1',
     );
   });
+
+  it('#821: consumes only the matching verify intent after mapping commit', async () => {
+    const consumeRecord = jest.fn().mockResolvedValue('committed');
+    const repository = {
+      findActiveMappingByPsid: jest.fn(() => Promise.resolve(null)),
+      findActiveMappingByUserId: jest.fn(() => Promise.resolve(null)),
+      upsertPsidUserLink: jest.fn(() =>
+        Promise.resolve({
+          id: 1,
+          userId: 200,
+          psid: 'psid-1',
+          notificationMessagesToken: 'token',
+          status: 'ACTIVE',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }),
+      ),
+    };
+    const service = new MessengerMappingService(
+      repository as never,
+      { sendTextViaPsid: jest.fn() } as never,
+      { syncUpcomingSessions: jest.fn().mockResolvedValue({}) } as never,
+      { getUpcomingSessions: jest.fn().mockResolvedValue([]) } as never,
+      { clear: jest.fn().mockResolvedValue(true) } as never,
+      makePrefs() as never,
+      undefined,
+      { consumeRecord } as never,
+    );
+
+    await service.linkFromContext(
+      'psid-1',
+      { ref: 'token', userId: 200, topic: 'IELTS', cadence: 'WEEKLY' },
+      { intentGeneration: '4' },
+    );
+
+    expect(consumeRecord).toHaveBeenCalledWith({
+      psid: 'psid-1',
+      userId: 200,
+      intentGeneration: '4',
+    });
+  });
 });

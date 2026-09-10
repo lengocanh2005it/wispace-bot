@@ -303,6 +303,7 @@ wispace-bot/                          # Turborepo root
 | `users` + view `"Users"`          | Display name / exam date cache — Redis `cache:user:display:{userId}` when R5 enabled                                                         |
 | `discord_account_links`           | Discord ↔ WISPACE mapping (`last_welcomed_at` dedupes welcome DMs, #137)                                                                     |
 | `discord_link_verify_records`     | Durable verify-intent outbox — reconciled by the `discord-link-reconcile` cron (#137)                                                        |
+| `messenger_link_verify_records`   | Durable Messenger verify-intent outbox — fingerprinted, generation-fenced, and reconciled after crashes (#821)                             |
 
 Migration: `1717747200008-CreateMessengerUsersCacheTable`.
 
@@ -399,6 +400,12 @@ Both bots use a **write-ahead inbox** (`webhook_inbound_events`, shared table in
 
 `m.me` links are only issued by the **WISPACE backend** (opaque token) — no more `GET /messenger/m-me-link`.
 
+Messenger stores only a SHA-256 fingerprint of each verified link token. The
+single active intent per PSID carries a generation, topic, cadence, and
+`pending`/`committed` state. Mapping completion consumes the matching
+generation after the mapping write; the five-minute reconcile cron recovers
+crashes and drops stale or identity-conflicting intents.
+
 ### Operations & WISPACE Integration
 
 All endpoints below require header **`X-Internal-Api-Key`** (or `Authorization: Bearer …`) matching `INTERNAL_API_KEY` in `.env`.
@@ -466,6 +473,7 @@ p95 latency, and Node event-loop p99 lag. Metrics keep the platform prefix
 | `messenger-chat-queue-flush`        | `*/2 * * * * *` (every 2 sec)                 | `MessengerChatQueueWorkerService` — flush debounced queue (distributed mode)                                                                                                                                            |
 | `webhook-inbound-retry`             | `*/30 * * * * *` (every 30 sec)               | `PlatformWebhookInboundRetryCronService` — replay `webhook_inbound_events` (bounded backoff, per-platform advisory lock)                                                                                                |
 | `webhook-inbound-cleanup`           | `0 15 3 * * *` (03:15 ICT daily)              | `PlatformWebhookInboundCleanupService` — purge terminal (`completed`/`abandoned`) raw-payload rows older than `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30; `WEBHOOK_INBOUND_CLEANUP_ENABLED=false` disables)           |
+| `messenger-link-reconcile`          | `*/5 * * * *`                                 | `MessengerLinkReconcileCronService` — recover pending verify intents and purge old committed intents (advisory lock `MESSENGER_LINK_RECONCILE`; `MESSENGER_LINK_RECONCILE_AGE_MS`/`MESSENGER_LINK_RECONCILE_MAX_AGE_MS`) |
 | `chat-quota-stuck-recovery`         | `*/5 * * * *`                                 | `ChatQuotaStuckRecoveryCronService` — H2: refund slots stuck `reserved` (`CHAT_IDEMPOTENCY_STUCK_RESERVED_MS`)                                                                                                          |
 | `chat-quota-events-cleanup`         | `0 30 3 1 * *` (1st of month 03:30 ICT)       | `ChatQuotaEventCleanupCronService` — purge old chat_quota_events                                                                                                                                                        |
 | `chat-idempotency-cleanup`          | `0 30 3 * * *` (03:30 ICT daily)              | `ChatIdempotencyCleanupCronService` — H6: purge terminal `chat_idempotency` rows (`CHAT_IDEMPOTENCY_RETENTION_DAYS`)                                                                                                    |

@@ -19,6 +19,7 @@ import {
 } from './messages/chat-delivery.messages';
 import {
   buildMappingRelinkBlockedMessage,
+  buildMessengerLinkHandoffFailedMessage,
   buildMessengerLinkVerifyFailedMessage,
 } from './messages/messenger-link.messages';
 import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
@@ -34,6 +35,8 @@ export type WebhookAction =
       cadence?: string;
       /** Pre-verified context (#383) — executor skips re-verification. */
       context?: MessengerLinkContext;
+      /** Durable verify-intent generation for conditional completion. */
+      intentGeneration?: string;
     }
   | {
       type: 'enqueue_chat';
@@ -149,6 +152,14 @@ export function routeWebhookEvent(
       ),
       messageType: 'MESSENGER_LINK_VERIFY_FAILED',
     });
+  } else if (refVerification?.status === 'handoff_failed') {
+    noticeActions.push({
+      type: 'send_text',
+      psid,
+      userId: ctx.userId,
+      text: buildMessengerLinkHandoffFailedMessage(),
+      messageType: 'MESSENGER_LINK_HANDOFF_FAILED',
+    });
   }
 
   const linkAction: WebhookAction | undefined =
@@ -160,6 +171,7 @@ export function routeWebhookEvent(
           topic: event.optin?.topic,
           cadence: event.optin?.frequency,
           context: refVerification.context,
+          intentGeneration: refVerification.intentGeneration,
         }
       : undefined;
 

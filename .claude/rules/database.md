@@ -21,6 +21,7 @@ paths: apps/messenger-bot/src/infrastructure/database/**, packages/database/**
 - `reschedule_confirmations` — pending reschedule requests with platform/mapping, intent, argument, and one-time nonce bindings; production confirmation claims must match all bindings; staging cannot overwrite `processing` rows, user cancellation is external-id-scoped, and claimed cleanup requires the exact lease
 - `web_activity` — one row per WISPACE `userId`, `last_active_at` merged with `GREATEST`; drives the scheduled-send dormancy gate. Self-updating, no cleanup cron; erased by `PrivacyDataService.delete()` (userId-scoped, orphan row kept when mapping has no userId).
 - `user_notification_preferences` — one row per WISPACE `userId`: `preferred_platform` + per-feature consent (`report_enabled` opt-in NULL=off, `reminder_enabled` opt-out NULL=on, #596). Read-filters live in the D/Z report crons and the study-reminder mapping readers; `NotificationPreferenceService` (packages/database) owns writes. Consent row is erased by `PrivacyDataService.delete()`.
+- `messenger_link_verify_records` — one durable Messenger verify intent per PSID; stores only a ref fingerprint, metadata, generation, and pending/committed state; reconciled after crashes and erased by privacy deletion.
 
 **Prod DB:** `ai_chat_bot_db`. Old hub `writing_ai_hub_db` — Tables already dropped (ops script). All tables above have been generalized to `(platform, external_user_id)` since Phase 2 — see `docs/turborepo-migration-plan.md`.
 
@@ -97,6 +98,7 @@ When adding a new migration (Discord, Zalo, or new shared table):
 | Shared (reschedule approval)         | `1786932000000-HardenRescheduleConfirmationBinding`          | binds pending reschedules to platform/mapping, intent/args hashes, and a unique approval nonce                                                                               |
 | Cross-platform (generalized)         | `1786934000000-CreateWebActivityTable`                       | `web_activity`                                                                                                                                                               |
 | Cross-platform (learner consistency) | `1786940100000-AddLearnerScheduledReportClaims`              | `learner_scheduled_report_claims` — one scheduled report claim per learner/date/type, with rollout hydration from existing sent/active claims                                |
+| Messenger linking                   | `1786940200000-HardenMessengerLinkVerifyRecords`            | `messenger_link_verify_records` — generation-fenced replay, topic/cadence metadata, bounded stale reconciliation, committed cleanup                                         |
 
 ## Notes
 

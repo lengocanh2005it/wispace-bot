@@ -1,5 +1,6 @@
 import type { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import type { NotificationCadence } from '../entities/messenger.types';
+import type { MessengerLinkIntentState } from '../ports/messenger-link-verify-record.repository.port';
 
 export type MessengerLinkVerifyFailureReason =
   | 'NOT_FOUND'
@@ -25,13 +26,18 @@ export type MessengerLinkVerifyResult =
 
 export interface MessengerLinkResolveOutcome {
   context?: MessengerLinkContext;
+  intentGeneration?: string;
+  intentState?: MessengerLinkIntentState;
   verifyFailureReason?: MessengerLinkVerifyFailureReason;
+  handoffFailure?: boolean;
 }
 
 export type MessengerLinkAttemptStatus =
   | 'no_ref'
   | 'linked'
+  | 'already_committed'
   | 'verify_failed'
+  | 'handoff_failed'
   | 'blocked'
   | 'invalid_ref';
 

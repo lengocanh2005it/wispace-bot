@@ -475,7 +475,11 @@ describe('routeWebhookEvent', () => {
     const verifiedCtx: RouterContext = {
       userId: 7,
       linkContext: verifiedContext,
-      refVerification: { status: 'verified', context: verifiedContext },
+      refVerification: {
+        status: 'verified',
+        context: verifiedContext,
+        intentGeneration: '3',
+      },
     };
     const mappedACtx: RouterContext = {
       userId: 42,
@@ -503,6 +507,7 @@ describe('routeWebhookEvent', () => {
           type: 'link_user',
           ref: '7',
           context: verifiedContext,
+          intentGeneration: '3',
         }),
         expect.objectContaining({ type: 'enqueue_chat', userId: 7 }),
       ]);
@@ -659,6 +664,32 @@ describe('routeWebhookEvent', () => {
         expect(actions).toEqual([
           expect.objectContaining({
             messageType: 'MESSENGER_LINK_VERIFY_FAILED',
+          }),
+        ]);
+      });
+
+      it('committed replay is a no-op for the link action', () => {
+        const actions = routeWebhookEvent(referralEvent('7'), {
+          ...mappedACtx,
+          refVerification: {
+            status: 'committed',
+            context: verifiedContext,
+            intentGeneration: '3',
+          },
+        });
+
+        expect(actions).toEqual([]);
+      });
+
+      it('handoff failure emits one generic recovery notice', () => {
+        const actions = routeWebhookEvent(referralEvent('7'), {
+          refVerification: { status: 'handoff_failed' },
+        });
+
+        expect(actions).toEqual([
+          expect.objectContaining({
+            type: 'send_text',
+            messageType: 'MESSENGER_LINK_HANDOFF_FAILED',
           }),
         ]);
       });

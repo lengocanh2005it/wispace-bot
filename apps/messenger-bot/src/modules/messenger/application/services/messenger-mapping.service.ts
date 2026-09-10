@@ -1,5 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common/masking';
 import { MessengerLinkContext } from '@messenger/shared/config/poc.constants';
 import {
   createSessionSourceGetSessions,
@@ -24,6 +28,10 @@ import {
   NotificationPreferenceService,
 } from '@wispace/database';
 import { buildConsentExplainerMessage } from '@wispace/bot-common/messages';
+import {
+  MESSENGER_LINK_VERIFY_RECORD_REPOSITORY,
+  type MessengerLinkVerifyRecordRepositoryPort,
+} from '../../domain/ports/messenger-link-verify-record.repository.port';
 
 @Injectable()
 export class MessengerMappingService {
@@ -39,6 +47,9 @@ export class MessengerMappingService {
     private readonly clarificationStateStore: ClarificationStateStore,
     private readonly notificationPreferences: NotificationPreferenceService,
     @Optional() private readonly linkState?: PlatformLinkStateService,
+    @Optional()
+    @Inject(MESSENGER_LINK_VERIFY_RECORD_REPOSITORY)
+    private readonly verifyRecordRepository?: MessengerLinkVerifyRecordRepositoryPort,
   ) {}
 
   async linkFromContext(
@@ -48,6 +59,7 @@ export class MessengerMappingService {
       notifyUser?: boolean;
       syncStudyReminders?: boolean;
       allowRelink?: boolean;
+      intentGeneration?: string;
     },
   ): Promise<RelinkMappingResult> {
     return this.relinkPsidToUserId({
@@ -58,6 +70,7 @@ export class MessengerMappingService {
       notifyUser: options?.notifyUser ?? true,
       syncStudyReminders: options?.syncStudyReminders ?? true,
       allowRelink: options?.allowRelink ?? false,
+      intentGeneration: options?.intentGeneration,
     });
   }
 
@@ -69,6 +82,7 @@ export class MessengerMappingService {
     notifyUser?: boolean;
     syncStudyReminders?: boolean;
     allowRelink?: boolean;
+    intentGeneration?: string;
   }): Promise<RelinkMappingResult> {
     // ponytail: CAS guard closes PSID-direction race (same PSID, different
     // users). UserId-direction race (different PSIDs → same user) still open
@@ -186,6 +200,35 @@ export class MessengerMappingService {
         previousUserId,
         syncedStudyReminders: false,
       };
+    }
+
+    if (params.intentGeneration && this.verifyRecordRepository) {
+      let consumeResult:
+        | 'committed'
+        | 'already_committed'
+        | 'not_found'
+        | undefined;
+      try {
+        consumeResult = await this.verifyRecordRepository.consumeRecord({
+          psid: params.psid,
+          userId: params.userId,
+          intentGeneration: params.intentGeneration,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Messenger link intent consume failed psid=${maskExternalId(
+            params.psid,
+          )}: ${maskExternalIdInText(errorMessage(error), params.psid)}`,
+        );
+      }
+
+      if (consumeResult === 'not_found') {
+        this.logger.warn(
+          `Messenger link intent generation no longer current psid=${maskExternalId(
+            params.psid,
+          )} userId=${maskExternalId(String(params.userId))}`,
+        );
+      }
     }
 
     await this.clearClarificationState(params.psid);

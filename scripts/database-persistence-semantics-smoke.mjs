@@ -1137,6 +1137,11 @@ try {
     CREATE TABLE IF NOT EXISTS "messenger_link_verify_records" (
       "psid" varchar(64) PRIMARY KEY,
       "user_id" integer NOT NULL,
+      "intent_generation" bigint NOT NULL DEFAULT 1,
+      "ref_fingerprint" varchar(64),
+      "topic" varchar(100) NOT NULL DEFAULT 'IELTS',
+      "cadence" varchar(10) NOT NULL DEFAULT 'WEEKLY',
+      "status" varchar(16) NOT NULL DEFAULT 'pending',
       "verified_at" timestamptz NOT NULL DEFAULT now()
     )
   `);

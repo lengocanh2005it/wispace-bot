@@ -2,7 +2,11 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { Counter } from 'prom-client';
-import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common/masking';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { ADVISORY_LOCK } from '@messenger/shared/common/advisory-lock-ids';
 import {
@@ -94,6 +98,17 @@ export class MessengerLinkReconcileCronService {
       DEFAULT_MAX_RECORD_AGE_MS,
     );
 
+    await this.verifyRecordService
+      .cleanupCommittedRecords(maxRecordAgeMs)
+      .catch((error: unknown) => {
+        this.logger.error(
+          `Messenger committed link intent cleanup failed: ${maskExternalIdInText(
+            errorMessage(error),
+            '',
+          )}`,
+        );
+      });
+
     const records = await this.verifyRecordService.listStaleRecords(staleAgeMs);
     if (records.length === 0) {
       return;
@@ -101,17 +116,75 @@ export class MessengerLinkReconcileCronService {
 
     let reconciled = 0;
     let alreadyCommitted = 0;
+    let identityMismatch = 0;
     let dropped = 0;
     let failed = 0;
 
     for (const record of records) {
       const existingMapping =
         await this.mappingRepository.findActiveMappingByPsid(record.psid);
+      const existingState = await this.linkState?.getLink(
+        'messenger',
+        record.psid,
+      );
 
       if (existingMapping) {
-        await this.verifyRecordService.consumeRecord(record.psid);
-        alreadyCommitted += 1;
-        reconcileRecordsTotal.inc({ outcome: 'already_committed' });
+        try {
+          if (existingMapping.userId !== record.userId) {
+            if (Date.now() - record.verifiedAt.getTime() >= maxRecordAgeMs) {
+              await this.verifyRecordService.discardRecord(
+                record.psid,
+                record.intentGeneration,
+              );
+              dropped += 1;
+              reconcileRecordsTotal.inc({
+                outcome: 'identity_conflict_expired',
+              });
+            } else {
+              identityMismatch += 1;
+              reconcileRecordsTotal.inc({ outcome: 'identity_mismatch' });
+            }
+            continue;
+          }
+
+          const committedMapping =
+            await this.mappingRepository.upsertPsidUserLink({
+              psid: record.psid,
+              userId: record.userId,
+              topic: record.topic,
+              cadence: record.cadence,
+              ...(existingState?.generation
+                ? { expectedGeneration: existingState.generation }
+                : {}),
+            });
+          if (!committedMapping) {
+            failed += 1;
+            reconcileRecordsTotal.inc({ outcome: 'mapping_cas_blocked' });
+            continue;
+          }
+
+          const consumeResult = await this.verifyRecordService.consumeRecord({
+            psid: record.psid,
+            userId: record.userId,
+            intentGeneration: record.intentGeneration,
+          });
+          if (consumeResult === 'not_found') {
+            failed += 1;
+            reconcileRecordsTotal.inc({ outcome: 'consume_mismatch' });
+            continue;
+          }
+
+          alreadyCommitted += 1;
+          reconcileRecordsTotal.inc({ outcome: 'already_committed' });
+        } catch (error) {
+          failed += 1;
+          reconcileRecordsTotal.inc({ outcome: 'failed' });
+          this.logger.error(
+            `Messenger link reconciliation failed for psid=${maskExternalId(
+              record.psid,
+            )}: ${maskExternalIdInText(errorMessage(error), record.psid)}`,
+          );
+        }
         continue;
       }
 
@@ -121,16 +194,15 @@ export class MessengerLinkReconcileCronService {
             record.psid,
           )} (user must retry with a fresh token)`,
         );
-        await this.verifyRecordService.consumeRecord(record.psid);
+        await this.verifyRecordService.discardRecord(
+          record.psid,
+          record.intentGeneration,
+        );
         dropped += 1;
         reconcileRecordsTotal.inc({ outcome: 'dropped' });
         continue;
       }
 
-      const existingState = await this.linkState?.getLink(
-        'messenger',
-        record.psid,
-      );
       if (
         existingState &&
         (existingState.state === 'confirmed-revoked' ||
@@ -141,24 +213,41 @@ export class MessengerLinkReconcileCronService {
               ? true
               : !(await this.isFreshRelink(record.psid, record.userId)))))
       ) {
-        await this.verifyRecordService.consumeRecord(record.psid);
+        await this.verifyRecordService.discardRecord(
+          record.psid,
+          record.intentGeneration,
+        );
         dropped += 1;
         reconcileRecordsTotal.inc({ outcome: 'stale_writer' });
         continue;
       }
 
       try {
-        // Re-commit the mapping with just psid+userId (topic/cadence
-        // will be COALESCEd to null on first commit; the user can refine
-        // via a fresh link flow).
-        await this.mappingRepository.upsertPsidUserLink({
+        const mapping = await this.mappingRepository.upsertPsidUserLink({
           psid: record.psid,
           userId: record.userId,
+          topic: record.topic,
+          cadence: record.cadence,
           ...(existingState?.generation
             ? { expectedGeneration: existingState.generation }
             : {}),
         });
-        await this.verifyRecordService.consumeRecord(record.psid);
+        if (!mapping) {
+          failed += 1;
+          reconcileRecordsTotal.inc({ outcome: 'mapping_cas_blocked' });
+          continue;
+        }
+
+        const consumeResult = await this.verifyRecordService.consumeRecord({
+          psid: record.psid,
+          userId: record.userId,
+          intentGeneration: record.intentGeneration,
+        });
+        if (consumeResult === 'not_found') {
+          failed += 1;
+          reconcileRecordsTotal.inc({ outcome: 'consume_mismatch' });
+          continue;
+        }
         this.logger.log(
           `Reconciled Messenger link psid=${maskExternalId(
             record.psid,
@@ -172,13 +261,13 @@ export class MessengerLinkReconcileCronService {
         this.logger.error(
           `Messenger link reconciliation failed for psid=${maskExternalId(
             record.psid,
-          )}: ${errorMessage(error)}`,
+          )}: ${maskExternalIdInText(errorMessage(error), record.psid)}`,
         );
       }
     }
 
     this.logger.log(
-      `Messenger link reconcile batch: records=${records.length} reconciled=${reconciled} alreadyCommitted=${alreadyCommitted} dropped=${dropped} failed=${failed}`,
+      `Messenger link reconcile batch: records=${records.length} reconciled=${reconciled} alreadyCommitted=${alreadyCommitted} identityMismatch=${identityMismatch} dropped=${dropped} failed=${failed}`,
     );
   }
 
@@ -224,7 +313,7 @@ export class MessengerLinkReconcileCronService {
   ): Promise<void> {
     if (invalidateVerifyIntent) {
       await this.verifyRecordService
-        .consumeRecord(externalUserId)
+        .discardRecord(externalUserId)
         .catch(() => undefined);
     }
     await this.clarificationStateStore

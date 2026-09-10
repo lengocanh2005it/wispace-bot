@@ -1,5 +1,11 @@
+import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
+import {
+  errorMessage,
+  maskExternalId,
+  maskExternalIdInText,
+} from '@wispace/bot-common/masking';
+import { jitteredDelayMs, sleep } from '@wispace/bot-common/utils';
 import {
   MessengerLinkContext,
   parseMessengerLinkContext,
@@ -10,6 +16,9 @@ import {
   type MessengerLinkVerifyRecordRepositoryPort,
 } from '../../domain/ports/messenger-link-verify-record.repository.port';
 import { WispaceMessengerTokenVerifyService } from '../../infrastructure/wispace/wispace-messenger-token-verify.service';
+
+const RECORD_VERIFY_MAX_ATTEMPTS = 3;
+const RECORD_VERIFY_BASE_DELAY_MS = 50;
 
 @Injectable()
 export class MessengerLinkContextService {
@@ -34,16 +43,52 @@ export class MessengerLinkContextService {
       return {};
     }
 
+    const normalizedRef = ref.trim();
+    const refFingerprint = createHash('sha256')
+      .update(normalizedRef)
+      .digest('hex');
+
+    let existingRecord;
+    try {
+      existingRecord = await this.verifyRecordRepository.findByRefFingerprint(
+        psid,
+        refFingerprint,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Messenger link intent lookup failed psid=${maskExternalId(psid)}: ${maskExternalIdInText(
+          errorMessage(error),
+          psid,
+        )}`,
+      );
+      return { handoffFailure: true };
+    }
+
+    if (existingRecord) {
+      return {
+        context: {
+          ref: normalizedRef,
+          userId: existingRecord.userId,
+          topic: existingRecord.topic,
+          cadence: existingRecord.cadence,
+        },
+        intentGeneration: existingRecord.intentGeneration,
+        intentState: existingRecord.status,
+      };
+    }
+
     let verified;
     try {
       verified = await this.wispaceTokenVerifyService.verifyMessengerToken(
         psid,
-        ref,
+        normalizedRef,
       );
     } catch (error) {
       const message = errorMessage(error);
       this.logger.error(
-        `Messenger link verify error psid=${maskExternalId(psid)}: ${message}`,
+        `Messenger link verify error psid=${maskExternalId(
+          psid,
+        )}: ${maskExternalIdInText(message, psid)}`,
       );
       return { verifyFailureReason: 'NOT_FOUND' };
     }
@@ -55,18 +100,29 @@ export class MessengerLinkContextService {
       return { verifyFailureReason: verified.reason };
     }
 
-    // #384: persist a durable verify intent BEFORE the caller commits the
-    // mapping, so a crash between WISPACE token verify and local upsert
-    // leaves a recoverable intent for the reconciliation cron.
-    await this.verifyRecordRepository.recordVerify(psid, verified.userId);
+    const topic = input.topic?.trim() || verified.topic;
+    const cadence = verified.cadence;
+    const intentGeneration = await this.recordVerifyWithRetry({
+      psid,
+      userId: verified.userId,
+      topic,
+      cadence,
+      refFingerprint,
+    });
+
+    if (!intentGeneration) {
+      return { handoffFailure: true };
+    }
 
     return {
       context: {
-        ref,
+        ref: normalizedRef,
         userId: verified.userId,
-        topic: input.topic?.trim() || verified.topic,
-        cadence: verified.cadence,
+        topic,
+        cadence,
       },
+      intentGeneration,
+      intentState: 'pending',
     };
   }
 
@@ -80,5 +136,36 @@ export class MessengerLinkContextService {
       topic: mapping.topic,
       cadence: mapping.cadence,
     });
+  }
+
+  private async recordVerifyWithRetry(input: {
+    psid: string;
+    userId: number;
+    topic: string;
+    cadence: MessengerLinkContext['cadence'];
+    refFingerprint: string;
+  }): Promise<string | undefined> {
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt < RECORD_VERIFY_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        const result = await this.verifyRecordRepository.recordVerify(input);
+        return result.intentGeneration;
+      } catch (error) {
+        lastError = error;
+        if (attempt + 1 < RECORD_VERIFY_MAX_ATTEMPTS) {
+          await sleep(
+            jitteredDelayMs(RECORD_VERIFY_BASE_DELAY_MS * 2 ** attempt),
+          );
+        }
+      }
+    }
+
+    this.logger.error(
+      `Messenger link intent persistence failed psid=${maskExternalId(
+        input.psid,
+      )}: ${maskExternalIdInText(errorMessage(lastError), input.psid)}`,
+    );
+    return undefined;
   }
 }

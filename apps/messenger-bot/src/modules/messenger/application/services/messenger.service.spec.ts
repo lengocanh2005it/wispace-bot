@@ -170,6 +170,42 @@ describe('MessengerService (durable webhook ingestion)', () => {
       expect(actions[1].userId).toBe(143);
     });
 
+    it('does not reuse a committed intent after its mapping is deleted', async () => {
+      const { service, actionExecutor, linkContext } = buildService();
+      (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
+        context: verified,
+        intentState: 'committed',
+        intentGeneration: '3',
+      });
+
+      await service.processEvent(textWithRef('mid-r5'));
+
+      const actions = executedActions(actionExecutor);
+      expect(actions).toHaveLength(1);
+      expect(actions[0].messageType).toBe('MESSENGER_LINK_VERIFY_FAILED');
+      expect(actions[0].text).toContain('được sử dụng');
+    });
+
+    it('reuses a committed intent only with a current matching mapping', async () => {
+      const { service, actionExecutor, linkContext, repository } =
+        buildService();
+      (repository.findActiveMappingByPsid as jest.Mock)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ userId: 999 });
+      (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
+        context: verified,
+        intentState: 'committed',
+        intentGeneration: '3',
+      });
+
+      await service.processEvent(textWithRef('mid-r6'));
+
+      const actions = executedActions(actionExecutor);
+      expect(actions).toEqual([
+        expect.objectContaining({ type: 'enqueue_chat', userId: 999 }),
+      ]);
+    });
+
     it('optin reuses the pre-verified context without submitting the token twice', async () => {
       const { service, actionExecutor, linkContext } = buildService();
       (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
