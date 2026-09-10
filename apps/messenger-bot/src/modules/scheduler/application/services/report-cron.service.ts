@@ -29,6 +29,7 @@ import type { UserMessengerMapping } from '@messenger/modules/messenger/domain/e
 import type { ClaimAndSendResult } from '@wispace/scheduler-core';
 import { readEnvPositiveInt } from '@messenger/shared/config/env-helpers';
 import { ZERO } from './report-send-orchestration.service';
+import type { Platform } from '@wispace/contracts';
 
 const REPORT_CRON_EXPECTED_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
@@ -176,12 +177,22 @@ export class ReportCronService {
       }
 
       totalMappings += mappings.length;
+      const canonicalPlatforms = this.canonicalPlatformService
+        ? await this.canonicalPlatformService.getCanonicalPlatformsForUsers([
+            ...new Set(
+              mappings.flatMap((mapping) =>
+                mapping.userId === undefined ? [] : [mapping.userId],
+              ),
+            ),
+          ])
+        : undefined;
 
       const settled = await runBatched(mappings, concurrency, (mapping) =>
         this.processMappingForReport(mapping, {
           forceSend,
           skipAlreadySentToday,
           reportDate,
+          canonicalPlatforms,
         }),
       );
 
@@ -230,6 +241,7 @@ export class ReportCronService {
       forceSend: boolean;
       skipAlreadySentToday: boolean;
       reportDate: string;
+      canonicalPlatforms?: ReadonlyMap<number, Platform | undefined>;
     },
   ): Promise<ClaimAndSendResult> {
     const { forceSend, skipAlreadySentToday, reportDate } = opts;
@@ -246,13 +258,9 @@ export class ReportCronService {
       return { ...ZERO, skipped: 1 };
     }
 
-    if (mapping.userId && this.canonicalPlatformService) {
-      const { isCanonical, canonicalPlatform } =
-        await this.canonicalPlatformService.isCanonicalForUser(
-          mapping.userId,
-          'messenger',
-        );
-      if (!isCanonical) {
+    if (mapping.userId && opts.canonicalPlatforms) {
+      const canonicalPlatform = opts.canonicalPlatforms.get(mapping.userId);
+      if (canonicalPlatform && canonicalPlatform !== 'messenger') {
         this.logger.log(
           `Skip Messenger PSID ${maskExternalId(
             mapping.psid,

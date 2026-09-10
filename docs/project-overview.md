@@ -337,6 +337,10 @@ consent per feature:
 
 - Discord/Zalo report crons and every study-reminder mapping reader filter on
   these columns; ops `forceSend` bypasses the report gate.
+- All three report crons resolve canonical notification ownership once per
+  keyset page through `CanonicalPlatformService.getCanonicalPlatformsForUsers`;
+  the set-based lookup deduplicates learner IDs and fails closed on incomplete
+  or invalid results. There is no per-mapping fallback query.
 - Messenger keeps its `cadence`/`topic` subscription; any link that carries
   them write-syncs `report_enabled = true` (one consent per human,
   cross-platform).

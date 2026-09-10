@@ -27,6 +27,7 @@ import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/za
 import { ZaloSendError } from '../../application/services/zalo-outbound.service';
 import { isStudentReportRetryableError } from '@wispace/student-report';
 import { WispaceApiError } from '@wispace/wispace-client';
+import type { Platform } from '@wispace/contracts';
 
 const CONCURRENCY = 3;
 const PAGE_SIZE = 200;
@@ -127,9 +128,24 @@ export class ZaloReportCronService {
       }
 
       total += page.length;
+      const canonicalPlatforms = this.canonicalPlatformService
+        ? await this.canonicalPlatformService.getCanonicalPlatformsForUsers([
+            ...new Set(
+              page.flatMap((link) =>
+                link.userId == null ? [] : [link.userId],
+              ),
+            ),
+          ])
+        : undefined;
 
       const results = await runBatched(page, CONCURRENCY, (link) =>
-        this.sendReportForUser(link, reportDate, sentUserIds, forceSend),
+        this.sendReportForUser(
+          link,
+          reportDate,
+          sentUserIds,
+          forceSend,
+          canonicalPlatforms,
+        ),
       );
       for (const r of results) {
         if (r.status === 'fulfilled') {
@@ -200,6 +216,7 @@ export class ZaloReportCronService {
     reportDate: string,
     sentUserIds: Set<number>,
     forceSend: boolean,
+    canonicalPlatforms?: ReadonlyMap<number, Platform | undefined>,
   ): Promise<'sent' | 'skipped' | 'error'> {
     if (!forceSend && (link.userId === undefined || link.userId === null)) {
       this.logger.log(
@@ -208,13 +225,9 @@ export class ZaloReportCronService {
       return 'skipped';
     }
 
-    if (link.userId && this.canonicalPlatformService) {
-      const { isCanonical, canonicalPlatform } =
-        await this.canonicalPlatformService.isCanonicalForUser(
-          link.userId,
-          'zalo',
-        );
-      if (!isCanonical) {
+    if (link.userId && canonicalPlatforms) {
+      const canonicalPlatform = canonicalPlatforms.get(link.userId);
+      if (canonicalPlatform && canonicalPlatform !== 'zalo') {
         this.logger.log(
           `Skip Zalo user ${maskExternalId(
             link.externalUserId,

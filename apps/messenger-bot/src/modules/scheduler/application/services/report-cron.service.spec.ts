@@ -195,9 +195,9 @@ describe('ReportCronService.sendScheduledReports (R5 ops)', () => {
         ]),
     };
     const canonicalService = {
-      isCanonicalForUser: jest
+      getCanonicalPlatformsForUsers: jest
         .fn()
-        .mockResolvedValue({ isCanonical: false, canonicalPlatform: 'zalo' }),
+        .mockResolvedValue(new Map([[42, 'zalo']])),
     };
     const reportSendOrchestrationService = {
       claimAndSend: jest.fn(),
@@ -223,11 +223,68 @@ describe('ReportCronService.sendScheduledReports (R5 ops)', () => {
 
     const result = await service.sendScheduledReports({ forceSend: true });
 
-    expect(canonicalService.isCanonicalForUser).toHaveBeenCalledWith(
-      42,
-      'messenger',
+    expect(canonicalService.getCanonicalPlatformsForUsers).toHaveBeenCalledWith(
+      [42],
     );
     expect(reportSendOrchestrationService.claimAndSend).not.toHaveBeenCalled();
     expect(result.skipped).toBe(1);
+  });
+
+  it('looks up duplicate learner IDs once per page before sending', async () => {
+    const mappings = [
+      { id: 1, psid: 'psid-1', userId: 42, cadence: 'daily' },
+      { id: 2, psid: 'psid-2', userId: 42, cadence: 'daily' },
+    ];
+    const messengerRepository = {
+      findActiveSubscribedMappingsPage: jest
+        .fn()
+        .mockResolvedValueOnce(mappings)
+        .mockResolvedValueOnce([]),
+    };
+    const canonicalService = {
+      getCanonicalPlatformsForUsers: jest
+        .fn()
+        .mockResolvedValue(new Map([[42, 'messenger']])),
+    };
+    const reportSendOrchestrationService = {
+      claimAndSend: jest.fn().mockResolvedValue({
+        sent: 1,
+        skipped: 0,
+        deferred: 0,
+        windowClosed: 0,
+        claimSkipped: 0,
+        retryQueued: 0,
+        failures: [],
+      }),
+    };
+    const service = new ReportCronService(
+      messengerRepository as never,
+      {
+        getExamReminderWindow: jest
+          .fn()
+          .mockReturnValue({ minDays: 2, maxDays: 3 }),
+        shouldSendReportToday: jest.fn().mockResolvedValue({
+          shouldSend: true,
+          examDate: '2026-06-15',
+        }),
+      } as never,
+      {} as never,
+      {} as never,
+      { get: jest.fn() } as never,
+      reportSendOrchestrationService as never,
+      canonicalService as never,
+    );
+
+    await service.sendScheduledReports({ forceSend: true });
+
+    expect(
+      canonicalService.getCanonicalPlatformsForUsers,
+    ).toHaveBeenCalledTimes(1);
+    expect(canonicalService.getCanonicalPlatformsForUsers).toHaveBeenCalledWith(
+      [42],
+    );
+    expect(reportSendOrchestrationService.claimAndSend).toHaveBeenCalledTimes(
+      2,
+    );
   });
 });

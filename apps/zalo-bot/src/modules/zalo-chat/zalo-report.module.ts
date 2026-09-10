@@ -45,6 +45,7 @@ import {
 } from '@wispace/database';
 import { BotCommonModule } from '@wispace/bot-common/guard';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import { DatabaseModule } from '../../infrastructure/database/database.module';
 import { ZaloChatModule } from './zalo-chat.module';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
@@ -65,6 +66,7 @@ const ZALO_REPORT_CLAIM_STALE_RESET_LOCK = 884_200_936;
     ZaloChatModule,
     ZaloOauthModule,
     ZaloWispaceModule,
+    DatabaseModule,
     BotCommonModule,
     ChatMeteringModule.forPlatform('zalo', {
       learnerUsageQuery: buildLearnerUsageQuery,

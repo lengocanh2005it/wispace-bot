@@ -9,6 +9,7 @@ import { ZaloAccountLinkService } from './modules/zalo-oauth/application/service
 import { ZaloLinkCompletionService } from './modules/zalo-oauth/application/services/zalo-link-completion.service';
 import { ZaloOauthStateService } from './modules/zalo-oauth/application/services/zalo-oauth-state.service';
 import { ZaloTokenService } from './modules/zalo-oauth/application/services/zalo-token.service';
+import { ZaloReportCronService } from './modules/zalo-chat/infrastructure/persistence/zalo-report-cron.service';
 
 const initialEnv = { ...process.env };
 
@@ -99,6 +100,10 @@ describe('AppModule boot smoke', () => {
       ).canonicalResolver;
       await expect(resolver(42)).resolves.toBe('zalo');
       expect(canonicalSpy).toHaveBeenCalledWith(42);
+      const reportCron = moduleRef.get(ZaloReportCronService) as unknown as {
+        canonicalPlatformService?: unknown;
+      };
+      expect(reportCron.canonicalPlatformService).toBe(canonicalService);
       expect(moduleRef.get(InternalApiKeyGuard)).toBeInstanceOf(
         InternalApiKeyGuard,
       );

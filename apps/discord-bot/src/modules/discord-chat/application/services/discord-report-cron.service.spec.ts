@@ -339,9 +339,9 @@ describe('DiscordReportCronService', () => {
         .mockResolvedValue([{ id: '1', externalUserId: 'disc-1', userId: 42 }]),
     };
     const canonicalService = {
-      isCanonicalForUser: jest
+      getCanonicalPlatformsForUsers: jest
         .fn()
-        .mockResolvedValue({ isCanonical: false, canonicalPlatform: 'zalo' }),
+        .mockResolvedValue(new Map([[42, 'zalo']])),
     };
     const orchestrationService = {
       claimAndSend: jest.fn(),
@@ -362,12 +362,55 @@ describe('DiscordReportCronService', () => {
 
     const result = await service.sendScheduledReports();
 
-    expect(canonicalService.isCanonicalForUser).toHaveBeenCalledWith(
-      42,
-      'discord',
+    expect(canonicalService.getCanonicalPlatformsForUsers).toHaveBeenCalledWith(
+      [42],
     );
     expect(orchestrationService.claimAndSend).not.toHaveBeenCalled();
     expect(result.skipped).toBe(1);
+  });
+
+  it('looks up duplicate learner IDs once per page before sending', async () => {
+    const links = [
+      { id: '1', externalUserId: 'discord-1', userId: 42 },
+      { id: '2', externalUserId: 'discord-2', userId: 42 },
+    ];
+    const accountReader = {
+      findActiveAccountsPage: jest
+        .fn()
+        .mockResolvedValueOnce(links)
+        .mockResolvedValueOnce([]),
+    };
+    const canonicalService = {
+      getCanonicalPlatformsForUsers: jest
+        .fn()
+        .mockResolvedValue(new Map([[42, 'discord']])),
+    };
+    const orchestrationService = {
+      claimAndSend: jest.fn().mockResolvedValue(ZERO_RESULT),
+    };
+    const service = new DiscordReportCronService(
+      { get: jest.fn().mockReturnValue(undefined) } as never,
+      { shouldRunScheduledReportCron: jest.fn() } as never,
+      { tryAcquireDailyLock: jest.fn(), releaseDailyLock: jest.fn() } as never,
+      {
+        shouldSendReportToday: jest
+          .fn()
+          .mockResolvedValue({ shouldSend: true }),
+      } as never,
+      orchestrationService as never,
+      accountReader as never,
+      canonicalService as never,
+    );
+
+    await service.sendScheduledReports();
+
+    expect(
+      canonicalService.getCanonicalPlatformsForUsers,
+    ).toHaveBeenCalledTimes(1);
+    expect(canonicalService.getCanonicalPlatformsForUsers).toHaveBeenCalledWith(
+      [42],
+    );
+    expect(orchestrationService.claimAndSend).toHaveBeenCalledTimes(2);
   });
   it('drops dormant links via partitionDormant and meters suppression by count', async () => {
     const links = [

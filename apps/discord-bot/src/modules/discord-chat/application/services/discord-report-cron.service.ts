@@ -25,6 +25,7 @@ import type {
   ReportMapping,
   ClaimAndSendResult,
 } from '@wispace/scheduler-core';
+import type { Platform } from '@wispace/contracts';
 
 const PLATFORM = 'discord' as const;
 const DEFAULT_SEND_CONCURRENCY = 3;
@@ -128,6 +129,15 @@ export class DiscordReportCronService {
       }
 
       total += page.length;
+      const canonicalPlatforms = this.canonicalPlatformService
+        ? await this.canonicalPlatformService.getCanonicalPlatformsForUsers([
+            ...new Set(
+              page.flatMap((link) =>
+                link.userId == null ? [] : [link.userId],
+              ),
+            ),
+          ])
+        : undefined;
 
       const results = await runBatched(
         page,
@@ -149,6 +159,7 @@ export class DiscordReportCronService {
             reportDate: reportDate,
             forceSend: opts.forceSend === true,
             appendOptOutFooter: pendingNotice,
+            canonicalPlatforms,
           });
           if (pendingNotice && result.sent > 0) {
             await this.accountReader
@@ -207,6 +218,7 @@ export class DiscordReportCronService {
       reportDate: string;
       forceSend: boolean;
       appendOptOutFooter: boolean;
+      canonicalPlatforms?: ReadonlyMap<number, Platform | undefined>;
     },
   ): Promise<ClaimAndSendResult> {
     if (!opts.forceSend && mapping.userId === undefined) {
@@ -219,13 +231,9 @@ export class DiscordReportCronService {
     // Window gate: only auto-send inside the days-before-exam window
     // (same as Messenger). forceSend bypasses the window but still
     // respects already-sent-today.
-    if (mapping.userId && this.canonicalPlatformService) {
-      const { isCanonical, canonicalPlatform } =
-        await this.canonicalPlatformService.isCanonicalForUser(
-          mapping.userId,
-          PLATFORM,
-        );
-      if (!isCanonical) {
+    if (mapping.userId && opts.canonicalPlatforms) {
+      const canonicalPlatform = opts.canonicalPlatforms.get(mapping.userId);
+      if (canonicalPlatform && canonicalPlatform !== PLATFORM) {
         this.logger.log(
           `Skip Discord user ${maskExternalId(
             mapping.externalUserId,

@@ -73,13 +73,109 @@ describe('CanonicalPlatformService', () => {
     );
   });
 
+  describe('getCanonicalPlatformsForUsers', () => {
+    it('resolves unique learner IDs in one query and preserves no-link semantics', async () => {
+      queryMock.mockResolvedValueOnce([
+        {
+          user_id: 42,
+          preferred_platform: 'discord',
+          active_platforms: ['zalo', 'discord', 'messenger'],
+        },
+        {
+          user_id: 7,
+          preferred_platform: null,
+          active_platforms: [],
+        },
+      ]);
+
+      const result = await service.getCanonicalPlatformsForUsers([42, 42, 7]);
+
+      expect(result).toEqual(
+        new Map<number, 'discord' | undefined>([
+          [42, 'discord'],
+          [7, undefined],
+        ]),
+      );
+      expect(queryMock).toHaveBeenCalledTimes(1);
+      expect(queryMock).toHaveBeenCalledWith(
+        expect.stringContaining('unnest($1::int[])'),
+        [[42, 7]],
+      );
+    });
+
+    it('uses preferred platform only when it is active and otherwise applies priority', async () => {
+      queryMock.mockResolvedValueOnce([
+        {
+          user_id: 1,
+          preferred_platform: 'messenger',
+          active_platforms: ['discord', 'zalo'],
+        },
+        {
+          user_id: 2,
+          preferred_platform: null,
+          active_platforms: ['messenger', 'discord'],
+        },
+        {
+          user_id: 3,
+          preferred_platform: 'discord',
+          active_platforms: ['messenger', 'discord', 'zalo'],
+        },
+      ]);
+
+      await expect(
+        service.getCanonicalPlatformsForUsers([1, 2, 3]),
+      ).resolves.toEqual(
+        new Map([
+          [1, 'zalo'],
+          [2, 'discord'],
+          [3, 'discord'],
+        ]),
+      );
+    });
+
+    it('fails closed when the database omits a requested learner', async () => {
+      queryMock.mockResolvedValueOnce([
+        {
+          user_id: 42,
+          preferred_platform: null,
+          active_platforms: ['messenger'],
+        },
+      ]);
+
+      await expect(
+        service.getCanonicalPlatformsForUsers([42, 7]),
+      ).rejects.toThrow('incomplete results');
+    });
+
+    it('fails closed when the database returns an unknown platform', async () => {
+      queryMock.mockResolvedValueOnce([
+        {
+          user_id: 42,
+          preferred_platform: null,
+          active_platforms: ['telegram'],
+        },
+      ]);
+
+      await expect(service.getCanonicalPlatformsForUsers([42])).rejects.toThrow(
+        'unknown platform',
+      );
+    });
+
+    it('does not query for an empty input', async () => {
+      await expect(service.getCanonicalPlatformsForUsers([])).resolves.toEqual(
+        new Map(),
+      );
+
+      expect(queryMock).not.toHaveBeenCalled();
+    });
+  });
+
   it('resolves canonical platform from database query with preference', async () => {
     queryMock.mockResolvedValueOnce([
       {
+        user_id: 42,
         preferred_platform: 'discord',
-        zalo_id: 'zalo-1',
-        discord_id: 'disc-1',
-        messenger_id: 'psid-1',
+        active_platforms: ['zalo', 'discord', 'messenger'],
       },
     ]);
 
@@ -90,10 +186,9 @@ describe('CanonicalPlatformService', () => {
   it('resolves deterministic fallback (zalo) when user has multiple links and no preference', async () => {
     queryMock.mockResolvedValueOnce([
       {
+        user_id: 42,
         preferred_platform: null,
-        zalo_id: 'zalo-1',
-        discord_id: 'disc-1',
-        messenger_id: 'psid-1',
+        active_platforms: ['zalo', 'discord', 'messenger'],
       },
     ]);
 
@@ -104,10 +199,9 @@ describe('CanonicalPlatformService', () => {
   it('returns undefined when user has no active links', async () => {
     queryMock.mockResolvedValueOnce([
       {
+        user_id: 42,
         preferred_platform: null,
-        zalo_id: null,
-        discord_id: null,
-        messenger_id: null,
+        active_platforms: [],
       },
     ]);
 
@@ -118,10 +212,9 @@ describe('CanonicalPlatformService', () => {
   it('checks if platform is canonical for user via isCanonicalForUser', async () => {
     queryMock.mockResolvedValue([
       {
+        user_id: 42,
         preferred_platform: 'discord',
-        zalo_id: 'zalo-1',
-        discord_id: 'disc-1',
-        messenger_id: 'psid-1',
+        active_platforms: ['zalo', 'discord', 'messenger'],
       },
     ]);
 

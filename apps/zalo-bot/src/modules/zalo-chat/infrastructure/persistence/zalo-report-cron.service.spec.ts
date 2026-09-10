@@ -32,6 +32,7 @@ function buildService(overrides: {
   listUserIdsWithSentReportToday?: jest.Mock;
   pages?: unknown[][];
   evaluateExamWindow?: { skip: boolean };
+  canonicalService?: unknown;
 }) {
   const linkRepo = {
     createQueryBuilder: jest.fn(() => ({
@@ -90,6 +91,7 @@ function buildService(overrides: {
       tryAcquireDailyLock: jest.fn().mockResolvedValue(true),
       releaseDailyLock: jest.fn(),
     } as never,
+    overrides.canonicalService as never,
   );
 
   return {
@@ -294,10 +296,9 @@ describe('ZaloReportCronService', () => {
       update: jest.fn().mockResolvedValue(undefined),
     };
     const canonicalService = {
-      isCanonicalForUser: jest.fn().mockResolvedValue({
-        isCanonical: false,
-        canonicalPlatform: 'discord',
-      }),
+      getCanonicalPlatformsForUsers: jest
+        .fn()
+        .mockResolvedValue(new Map([[42, 'discord']])),
     };
     const claimRepo = {
       listUserIdsWithSentReportToday: jest.fn().mockResolvedValue([]),
@@ -326,12 +327,33 @@ describe('ZaloReportCronService', () => {
 
     await service.sendDailyReports({ forceSend: true });
 
-    expect(canonicalService.isCanonicalForUser).toHaveBeenCalledWith(
-      42,
-      'zalo',
+    expect(canonicalService.getCanonicalPlatformsForUsers).toHaveBeenCalledWith(
+      [42],
     );
     expect(reportService.generateReport).not.toHaveBeenCalled();
     expect(orchestration.claimAndSend).not.toHaveBeenCalled();
+  });
+
+  it('looks up duplicate learner IDs once per page before sending', async () => {
+    const canonicalService = {
+      getCanonicalPlatformsForUsers: jest
+        .fn()
+        .mockResolvedValue(new Map([[42, 'zalo']])),
+    };
+    const { service, orchestrationClaimAndSend } = buildService({
+      pages: [[link, { ...link, id: '2', externalUserId: 'zalo-2' }], []],
+      canonicalService,
+    });
+
+    await service.sendReportsBatch({ forceSend: true });
+
+    expect(
+      canonicalService.getCanonicalPlatformsForUsers,
+    ).toHaveBeenCalledTimes(1);
+    expect(canonicalService.getCanonicalPlatformsForUsers).toHaveBeenCalledWith(
+      [42],
+    );
+    expect(orchestrationClaimAndSend).toHaveBeenCalledTimes(2);
   });
 
   it('filters dormant links and increments suppression metric when gate is enabled', async () => {
@@ -430,6 +452,7 @@ describe('ZaloReportCronService', () => {
       expect.anything(),
       expect.anything(),
       false,
+      undefined,
     );
     expect(metrics.incScheduledSendSuppressed).toHaveBeenCalledWith(
       'report',

@@ -17,9 +17,12 @@ const {
   PlatformCleanupCronService,
 } = require('@wispace/cleanup-cron');
 const { PgAdvisoryLockService } = require('@wispace/bot-common/locks');
-const { PlatformDeadLetterService, WebhookDeadLetterEntity } = require(
-  '@wispace/database',
-);
+const {
+  CanonicalPlatformService,
+  PlatformDeadLetterService,
+  UserNotificationPreferenceEntity,
+  WebhookDeadLetterEntity,
+} = require('@wispace/database');
 
 const requiredEnv = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
 const migrationMode = process.argv.includes('--migrations');
@@ -184,7 +187,9 @@ async function exerciseDeadLetterReplay(dataSource) {
     const id1 = await seedPendingOutbound();
     const claim1 = await service.claimForRetry(id1, LEASE_MS);
     if (!claim1?.leaseToken || !claim1?.deliveryKey) {
-      throw new Error('claimForRetry did not assign a lease token / delivery key');
+      throw new Error(
+        'claimForRetry did not assign a lease token / delivery key',
+      );
     }
     if (
       !(await service.markReplayed(id1, claim1.leaseToken, claim1.deliveryKey))
@@ -212,8 +217,13 @@ async function exerciseDeadLetterReplay(dataSource) {
     // incrementRetry: the lease owner re-opens the row and clears the lease.
     const id3 = await seedPendingOutbound();
     const claim3 = await service.claimForRetry(id3, LEASE_MS);
-    if (!claim3) throw new Error('claimForRetry for incrementRetry returned null');
-    if (await service.incrementRetry(id3, 'retry', owner, { leaseToken: randomUUID() })) {
+    if (!claim3)
+      throw new Error('claimForRetry for incrementRetry returned null');
+    if (
+      await service.incrementRetry(id3, 'retry', owner, {
+        leaseToken: randomUUID(),
+      })
+    ) {
       throw new Error('incrementRetry accepted a stale lease token');
     }
     if (
@@ -238,7 +248,8 @@ async function exerciseDeadLetterReplay(dataSource) {
     // markAbandoned: the lease owner terminalizes the row.
     const id4 = await seedPendingOutbound();
     const claim4 = await service.claimForRetry(id4, LEASE_MS);
-    if (!claim4) throw new Error('claimForRetry for markAbandoned returned null');
+    if (!claim4)
+      throw new Error('claimForRetry for markAbandoned returned null');
     if (
       await service.markAbandoned(id4, 'stale', owner, {
         leaseToken: randomUUID(),
@@ -267,6 +278,117 @@ async function exerciseDeadLetterReplay(dataSource) {
     }
   } finally {
     await repo.delete({ externalUserId: owner });
+  }
+}
+
+async function exerciseCanonicalPlatformBatch(dataSource) {
+  const baseUserId = 1_500_000_000 + Math.floor(Math.random() * 100_000);
+  const userIds = [baseUserId, baseUserId + 1, baseUserId + 2];
+  const query = dataSource.query.bind(dataSource);
+
+  try {
+    await query(
+      `INSERT INTO zalo_account_links
+        (platform, external_user_id, user_id, link_state)
+       VALUES
+        ('zalo', $1, $2, 'active'),
+        ('zalo', $3, $4, 'revoked'),
+        ('zalo', $5, $6, 'revoked')`,
+      [
+        `smoke-zalo-${randomUUID()}`,
+        userIds[0],
+        `smoke-zalo-${randomUUID()}`,
+        userIds[1],
+        `smoke-zalo-${randomUUID()}`,
+        userIds[2],
+      ],
+    );
+    await query(
+      `INSERT INTO discord_account_links
+        (platform, external_user_id, user_id, link_state)
+       VALUES
+        ('discord', $1, $2, 'active'),
+        ('discord', $3, $4, 'active'),
+        ('discord', $5, $6, 'revoked')`,
+      [
+        `smoke-discord-${randomUUID()}`,
+        userIds[0],
+        `smoke-discord-${randomUUID()}`,
+        userIds[1],
+        `smoke-discord-${randomUUID()}`,
+        userIds[2],
+      ],
+    );
+    await query(
+      `INSERT INTO user_platform_mappings
+        (user_id, platform, external_user_id, notification_messages_token,
+         status, link_state)
+       VALUES
+        ($1, 'messenger', $2, $3, 'ACTIVE', 'active'),
+        ($4, 'messenger', $5, $6, 'ACTIVE', 'active'),
+        ($7, 'messenger', $8, $9, 'INACTIVE', 'revoked')`,
+      [
+        userIds[0],
+        `smoke-messenger-${randomUUID()}`,
+        `smoke-token-${randomUUID()}`,
+        userIds[1],
+        `smoke-messenger-${randomUUID()}`,
+        `smoke-token-${randomUUID()}`,
+        userIds[2],
+        `smoke-messenger-${randomUUID()}`,
+        `smoke-token-${randomUUID()}`,
+      ],
+    );
+    await query(
+      `INSERT INTO user_notification_preferences (user_id, preferred_platform)
+       VALUES ($1, 'discord'), ($2, 'zalo')`,
+      [userIds[0], userIds[1]],
+    );
+
+    let batchQueries = 0;
+    const canonicalDataSource = {
+      query: (sql, parameters) => {
+        if (sql.includes('WITH requested_users AS')) batchQueries += 1;
+        return query(sql, parameters);
+      },
+    };
+    const service = new CanonicalPlatformService(
+      canonicalDataSource,
+      dataSource.getRepository(UserNotificationPreferenceEntity),
+    );
+    const canonical = await service.getCanonicalPlatformsForUsers([
+      userIds[0],
+      userIds[0],
+      userIds[1],
+      userIds[2],
+    ]);
+
+    if (
+      canonical.get(userIds[0]) !== 'discord' ||
+      canonical.get(userIds[1]) !== 'discord' ||
+      canonical.get(userIds[2]) !== undefined ||
+      batchQueries !== 1
+    ) {
+      throw new Error('canonical platform batch smoke assertion failed');
+    }
+    console.log('canonical platform batch: real PostgreSQL lookup passed');
+  } finally {
+    await query(
+      `DELETE FROM user_notification_preferences WHERE user_id = ANY($1::int[])`,
+      [userIds],
+    );
+    await query(
+      `DELETE FROM zalo_account_links WHERE user_id = ANY($1::int[])`,
+      [userIds],
+    );
+    await query(
+      `DELETE FROM discord_account_links WHERE user_id = ANY($1::int[])`,
+      [userIds],
+    );
+    await query(
+      `DELETE FROM user_platform_mappings WHERE user_id = ANY($1::int[])`,
+      [userIds],
+    );
   }
 }
 
@@ -409,6 +531,9 @@ async function runPlatform({
   try {
     await dataSource.initialize();
     assertMetadata(dataSource, entities, platform);
+    if (platform === 'discord') {
+      await exerciseCanonicalPlatformBatch(dataSource);
+    }
     if (migrationMode) {
       await assertNoPendingMigrations(dataSource, platform);
       await assertTables(dataSource, entities, platform);

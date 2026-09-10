@@ -10,6 +10,17 @@ export const DEFAULT_PLATFORM_PRIORITY: Platform[] = [
   'messenger',
 ];
 
+type CanonicalPlatformRow = {
+  user_id: number | string;
+  preferred_platform: string | null;
+  active_platforms: string[] | null;
+};
+
+type UserPlatformState = {
+  activePlatforms: Platform[];
+  preferredPlatform: Platform | null;
+};
+
 /**
  * Pure deterministic resolver:
  * 1. If preferredPlatform is present and currently active -> returns preferredPlatform.
@@ -50,38 +61,26 @@ export class CanonicalPlatformService {
     activePlatforms: Platform[];
     preferredPlatform: Platform | null;
   }> {
-    const rows: Array<{
-      preferred_platform: Platform | null;
-      zalo_id: string | null;
-      discord_id: string | null;
-      messenger_id: string | null;
-    }> = await this.dataSource.query(
-      `
-      SELECT
-        pref.preferred_platform,
-        (SELECT zal.external_user_id FROM zalo_account_links zal WHERE zal.user_id = $1 AND COALESCE(zal.link_state, 'active') = 'active' LIMIT 1) AS zalo_id,
-        (SELECT dal.external_user_id FROM discord_account_links dal WHERE dal.user_id = $1 AND COALESCE(dal.link_state, 'active') = 'active' LIMIT 1) AS discord_id,
-        (SELECT upm.external_user_id FROM user_platform_mappings upm WHERE upm.user_id = $1 AND upm.status = 'ACTIVE' AND COALESCE(upm.link_state, 'active') = 'active' LIMIT 1) AS messenger_id
-      FROM (SELECT $1::int AS user_id) u
-      LEFT JOIN user_notification_preferences pref ON pref.user_id = u.user_id
-      `,
-      [userId],
+    return (await this.loadUserPlatformStates([userId])).get(userId)!;
+  }
+
+  /**
+   * Resolve canonical delivery platforms for a bounded batch of WISPACE users.
+   * The report crons call this once per page to avoid one query per mapping.
+   */
+  async getCanonicalPlatformsForUsers(
+    userIds: readonly number[],
+  ): Promise<Map<number, Platform | undefined>> {
+    const states = await this.loadUserPlatformStates(userIds);
+    return new Map(
+      [...states].map(([userId, state]) => [
+        userId,
+        resolveCanonicalPlatform(
+          state.activePlatforms,
+          state.preferredPlatform,
+        ),
+      ]),
     );
-
-    if (rows.length === 0) {
-      return { activePlatforms: [], preferredPlatform: null };
-    }
-
-    const row = rows[0];
-    const activePlatforms: Platform[] = [];
-    if (row.zalo_id) activePlatforms.push('zalo');
-    if (row.discord_id) activePlatforms.push('discord');
-    if (row.messenger_id) activePlatforms.push('messenger');
-
-    return {
-      activePlatforms,
-      preferredPlatform: row.preferred_platform ?? null,
-    };
   }
 
   /**
@@ -91,9 +90,7 @@ export class CanonicalPlatformService {
   async getCanonicalPlatformForUser(
     userId: number,
   ): Promise<Platform | undefined> {
-    const { activePlatforms, preferredPlatform } =
-      await this.getActivePlatformsForUser(userId);
-    return resolveCanonicalPlatform(activePlatforms, preferredPlatform);
+    return (await this.getCanonicalPlatformsForUsers([userId])).get(userId);
   }
 
   /**
@@ -137,5 +134,105 @@ export class CanonicalPlatformService {
   async getPreferredPlatform(userId: number): Promise<Platform | null> {
     const pref = await this.preferenceRepo.findOne({ where: { userId } });
     return pref?.preferredPlatform ?? null;
+  }
+
+  private async loadUserPlatformStates(
+    userIds: readonly number[],
+  ): Promise<Map<number, UserPlatformState>> {
+    const uniqueUserIds = [...new Set(userIds)];
+    if (uniqueUserIds.length === 0) return new Map();
+
+    const rows = (await this.dataSource.query(
+      `
+      WITH requested_users AS (
+        SELECT DISTINCT user_id
+        FROM unnest($1::int[]) AS input(user_id)
+      ), active_links AS (
+        SELECT zal.user_id, 'zalo'::text AS platform
+        FROM zalo_account_links zal
+        WHERE zal.user_id = ANY($1::int[])
+          AND COALESCE(zal.link_state, 'active') = 'active'
+          AND NULLIF(zal.external_user_id, '') IS NOT NULL
+        UNION ALL
+        SELECT dal.user_id, 'discord'::text AS platform
+        FROM discord_account_links dal
+        WHERE dal.user_id = ANY($1::int[])
+          AND COALESCE(dal.link_state, 'active') = 'active'
+          AND NULLIF(dal.external_user_id, '') IS NOT NULL
+        UNION ALL
+        SELECT upm.user_id, 'messenger'::text AS platform
+        FROM user_platform_mappings upm
+        WHERE upm.user_id = ANY($1::int[])
+          AND upm.status = 'ACTIVE'
+          AND COALESCE(upm.link_state, 'active') = 'active'
+          AND NULLIF(upm.external_user_id, '') IS NOT NULL
+      )
+      SELECT requested.user_id,
+             pref.preferred_platform,
+             COALESCE(
+               ARRAY_AGG(active.platform) FILTER (WHERE active.platform IS NOT NULL),
+               ARRAY[]::text[]
+             ) AS active_platforms
+      FROM requested_users requested
+      LEFT JOIN user_notification_preferences pref
+        ON pref.user_id = requested.user_id
+      LEFT JOIN active_links active
+        ON active.user_id = requested.user_id
+      GROUP BY requested.user_id, pref.preferred_platform
+      `,
+      [uniqueUserIds],
+    )) as CanonicalPlatformRow[];
+
+    const states = new Map<number, UserPlatformState>();
+    for (const row of rows) {
+      const userId = Number(row.user_id);
+      if (!uniqueUserIds.includes(userId) || states.has(userId)) {
+        throw new Error(
+          'Canonical platform batch lookup returned invalid results',
+        );
+      }
+
+      const activePlatforms = this.parsePlatforms(row.active_platforms);
+      const preferredPlatform = this.parsePlatform(row.preferred_platform);
+      states.set(userId, { activePlatforms, preferredPlatform });
+    }
+
+    if (states.size !== uniqueUserIds.length) {
+      throw new Error(
+        'Canonical platform batch lookup returned incomplete results',
+      );
+    }
+
+    return states;
+  }
+
+  private parsePlatforms(value: string[] | null): Platform[] {
+    if (!Array.isArray(value)) {
+      throw new Error(
+        'Canonical platform batch lookup returned invalid platforms',
+      );
+    }
+    return value.map((platform) => {
+      const parsed = this.parsePlatform(platform, false);
+      if (parsed === null) {
+        throw new Error(
+          'Canonical platform batch lookup returned unknown platform',
+        );
+      }
+      return parsed;
+    });
+  }
+
+  private parsePlatform(
+    value: string | null,
+    allowNull = true,
+  ): Platform | null {
+    if (value === null && allowNull) return null;
+    if (value === 'messenger' || value === 'discord' || value === 'zalo') {
+      return value;
+    }
+    throw new Error(
+      'Canonical platform batch lookup returned unknown platform',
+    );
   }
 }
