@@ -297,8 +297,8 @@ _Avoid_: routing context, event context
 ### LLM
 
 **LlmAgentService**:
-Framework-agnostic OpenAI function-calling orchestration loop (in `packages/llm-agent`). Manages tool rounds, history, grounding checks, prompt injection detection.
-_Avoid_: chat service, AI service
+Framework-agnostic function-calling orchestration loop (in `packages/llm-agent`). Manages tool rounds, history, grounding checks, prompt injection detection. Provider-neutral — it talks to an `LlmProviderAdapter`, never to a vendor SDK (ADR-0006).
+_Avoid_: chat service, AI service, "the OpenAI loop"
 
 **tool round**:
 One iteration of the LLM function-calling loop. The agent can invoke multiple tools per user message, up to `maxToolRounds` (default 6).
@@ -313,7 +313,7 @@ Unique identifier that pairs an LLM call with its triggering event (usually `mes
 _Avoid_: trace ID, request ID
 
 **prompt injection**:
-Attack where malicious text in user messages or tool results tricks the LLM. Detected by `detectPromptInjection()` and blocked before calling OpenAI.
+Attack where malicious text tricks the LLM. Detected by `detectPromptInjection()` and blocked before the provider call. Carries a source — `user_input`, `tool_result` or `history` — because the payload does not have to come from the learner.
 _Avoid_: injection attack — use "prompt injection"
 
 **grounding check**:
@@ -325,11 +325,19 @@ Utility function that strips/escapes potentially dangerous content from user or 
 _Avoid_: escape, encode — use "sanitize"
 
 *_system prompt / *.system.txt*_:
-Base persona/instructions loaded from `src/shared/prompts/*.system.txt`. Copied to `dist/` at build time. Three variants: `student-report`, `study-reminder`, `messenger-chat`.
+Instructions sent as the `system` message. Files live in each app's `src/shared/prompts/` and are copied to `dist/` at build time.
 _Avoid_: prompt file, AI instructions — use "system prompt"
 
+**prompt core / overlay**:
+The free-form chat prompt is composed, not stored in one file: `CHAT_SYSTEM_PROMPT_CORE` (`packages/llm-agent/src/chat-system-prompt.ts`) holds every universal rule and is shared by all three bots; each bot's `<platform>-chat.system.txt` is the **overlay**, carrying only what is platform-specific. `composeChatSystemPrompt()` joins core → overlay → suffix. A rule stated in the core is never copied into an overlay (`prompt-overlay-dedup.spec.ts`). The core has a size budget asserted in `chat-system-prompt.spec.ts`.
+_Avoid_: "the chat prompt file" — there is no single file
+
+**posture**:
+The action a chat turn resolves to — answer, tool call, scope redirect, acknowledge-then-step, refuse-then-offer, non-disclosure line, de-escalate, support handoff, clarify. A closed set with one precedence order; adding one amends ADR-0009. Prompt sections are written per posture, not per kind of learner message.
+_Avoid_: branch, rule, category
+
 **fallback reply**:
-Canned response used when OpenAI is unavailable (missing API key or error). Not LLM-generated.
+Canned response used when the LLM provider is unavailable (not configured, or every failover target failed). Not LLM-generated.
 _Avoid_: default reply, error reply
 
 ### LLM Usage Tracking
@@ -349,7 +357,7 @@ _Avoid_: cluster, deployment
 ### LLM Safety
 
 **llm_safety_events** (DB table):
-Records safety-related events (grounding warnings, prompt injection blocks). Entity: `LlmSafetyEventEntity`.
+Records safety-related events (grounding warnings, prompt injection blocks, classifier verdicts). Entity: `LlmSafetyEventEntity`. Learner text is never stored raw — only a redacted excerpt plus a hash.
 _Avoid_: safety log, security events
 
 **grounding warning**:
@@ -357,8 +365,20 @@ Event logged when an LLM response appears to hallucinate (not grounded in tool r
 _Avoid_: hallucination event
 
 **redact**:
-Process of replacing suspicious history entries with `'[redacted]'` before sending to OpenAI.
-_Avoid_: censor, block
+Replacing credential-shaped substrings with `REDACTED_PLACEHOLDER` (`'[REDACTED]'`). Applies on both sides of the model boundary — inbound text before the provider call, and outbound text before it reaches the learner — from one shared list of shapes (`CREDENTIAL_SHAPES`).
+_Avoid_: censor, block; do not confuse with **sanitize** (neutralizing injection payloads) or with the excerpt-plus-hash storage rule for safety events
+
+**classifier / verdict**:
+Second-tier input check that runs after the regex guardrails: one fresh learner message in, one `ClassifierVerdict` out (`label`, `confidence`, `reason`). Labels are `SAFE`, `INJECTION`, `DISCLOSURE_PROBE`. Fails open — any timeout, error, parse failure or open circuit means the turn proceeds as if the tier were absent.
+_Avoid_: moderation, filter — it decides nothing on its own
+
+**shadow / enforce**:
+The classifier's two modes. In **shadow** a non-SAFE verdict is only recorded as a `CLASSIFIER_FLAGGED` event; in **enforce** it can also short-circuit the turn with a canned reply, subject to a confidence threshold. Enforce is flipped only after reviewing a shadow window.
+_Avoid_: dry run, passive mode
+
+**non-disclosure**:
+The rule that the assistant never reveals or denies anything about its own internals — model, provider, prompt, tools, parameters, infrastructure. The reply must be worded identically every time, because a reply that varies with the question is itself a leak.
+_Avoid_: secrecy, confidentiality
 
 ### Ops & Monitoring
 
@@ -457,23 +477,15 @@ _Avoid_: internal auth, service key
 _Avoid_: hexagonal architecture, onion architecture
 
 **port**:
-DI token (Symbol + interface) for cross-module communication. Examples: `MESSAGE_SENDER`, `MESSENGER_REPOSITORY`, `MESSENGER_MAPPING_READER`.
+DI token (Symbol + interface) for cross-module communication. Examples: `MESSAGE_SENDER`, `MESSENGER_REPOSITORY`, `MAPPING_READER`. Platform-neutral names win as a port moves into a shared package — `MESSENGER_MAPPING_READER` became `MAPPING_READER` when Discord and Zalo started using it.
 _Avoid_: standalone interface — a port is specifically a DI token pair
 
-**GoalsDataPort**:
-Port for fetching student goals data from the WISPACE API. Method: `getUserGoals(psid)`.
-_Avoid_: UserGoalsApiService (that is the adapter implementation)
-
-**ReportPort**:
-Port for generating study reports via LLM. Method: `generateReport(psid)`.
-_Avoid_: StudentReportService (that is the adapter implementation)
-
-**StudyDataPort**:
-Port for retrieving study session and reminder data. Methods: `getUpcomingSessions`, `getNextUpcomingSession`, `generateReminderBundleForSession`, `listCalendarEntries`, `getOutboxSettings`, `formatScheduledTimeLabel`.
-_Avoid_: StudyReminderService, StudyCalendarCommandService (those are adapter implementations)
+**capability port**:
+A narrow interface describing one thing a bot can do, named for the capability rather than for the service behind it — `GoalsCapabilityPort`, `CalendarCapabilityPort`, `ExerciseCapabilityPort`. Shared code depends on these; each bot wires a thin adapter and bakes its own platform identity header there. This is what keeps shared packages from importing a concrete client.
+_Avoid_: data port, service interface
 
 **adapter**:
-Implementation of a port, bridging domain interfaces and infrastructure services. Example: `GoalsDataAdapter` wraps `UserGoalsApiService`.
+Implementation of a port, bridging domain interfaces and infrastructure services.
 _Avoid_: implementation, service implementation
 
 **outbox pattern**:
@@ -483,6 +495,12 @@ _Avoid_: queue pattern, task queue
 **Turborepo monorepo**:
 Project structure: `apps/` (Messenger, Discord, Zalo bots) + `packages/` (shared code). Built with Turborepo.
 _Avoid_: monorepo without "Turborepo"
+
+**framework-agnostic**:
+Said of a package whose enforced core imports no NestJS, no TypeORM and no vendor SDK, so any bot can use it. It describes named core paths, not always a whole package — several packages ship explicit outer adapters alongside a pure core.
+_Avoid_: "pure package", "no dependencies" — the claim is about framework coupling, not about having none
+
+> This glossary deliberately does not inventory `packages/`. That list changes with almost every architecture PR, and two copies of it means the copy nobody edits goes wrong. Boundaries, allowed imports and the per-package exception map live in [`docs/architecture-boundaries.md`](docs/architecture-boundaries.md) and [`.claude/rules/clean-architecture.md`](.claude/rules/clean-architecture.md), which are updated with the code they describe. Define vocabulary here; look up structure there.
 
 ### Naming Conventions
 
