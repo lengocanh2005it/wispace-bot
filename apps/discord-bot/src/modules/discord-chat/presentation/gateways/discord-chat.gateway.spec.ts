@@ -389,7 +389,7 @@ describe('DiscordChatGateway non-text messages (#401)', () => {
 });
 
 describe('DiscordChatGateway intent fast-path', () => {
-  it.each(['chao ban', 'ban la ai'])(
+  it.each(['chao ban', 'ban la ai', 'hi', 'giới thiệu', 'bạn là ai vậy'])(
     'replies directly to no-diacritic intent "%s" without queueing',
     async (text) => {
       const { gateway, outboundService, chatQueueService } = buildGateway({});
@@ -420,4 +420,47 @@ describe('DiscordChatGateway intent fast-path', () => {
       expect(chatQueueService.enqueue).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    'Hi, cho mình hỏi cách viết Task 2 với',
+    'Chào bạn, mình muốn xem tiến độ học',
+    'Hello, can you check my essay please?',
+    'Xin chào, lịch học tuần này thế nào ạ',
+    'Hey bạn, band mục tiêu của mình là bao nhiêu',
+    'chào bạn mình bị áp lực thi quá',
+    'giới thiệu về cấu trúc Task 1 giúp mình',
+    'giới thiệu bài mẫu band 7 cho mình',
+    'bạn là ai, giúp mình kiểm tra bài viết',
+    'Cho mình hỏi cách viết Task 2',
+  ])('queues content after standalone wording: "%s"', async (text) => {
+    const { gateway, outboundService, chatQueueService } = buildGateway({});
+    const message = {
+      id: 'message-941',
+      author: {
+        bot: false,
+        id: 'discord-user-1',
+        displayName: 'Test User',
+      },
+      channel: {
+        type: ChannelType.DM,
+        sendTyping: jest.fn().mockResolvedValue(undefined),
+      },
+      content: text,
+      attachments: { size: 0 },
+      stickers: { size: 0 },
+      embeds: [],
+      mentions: { users: new Map() },
+      client: { user: null },
+    };
+
+    await gateway.onMessageCreate([message] as never);
+
+    expect(outboundService.sendMenuButtons).not.toHaveBeenCalled();
+    expect(chatQueueService.enqueue).toHaveBeenCalledWith(
+      'discord-user-1',
+      text,
+      { userId: 143, isServerChannel: false },
+      'discord:message-941',
+    );
+  });
 });

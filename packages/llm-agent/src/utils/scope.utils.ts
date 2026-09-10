@@ -1,3 +1,5 @@
+import { buildSafetyScanCandidates } from './prompt-injection.utils';
+
 export function normalizeScopeText(text: string): string {
   return text
     .normalize('NFD')
@@ -7,6 +9,85 @@ export function normalizeScopeText(text: string): string {
     .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()
     .replace(/\s+/g, ' ');
+}
+
+const TOKEN_REGEX = /[\p{L}\p{N}]+/gu;
+
+/** Default greeting vocabulary shared by the fast-path detector and scope gate. */
+export const DEFAULT_GREETING_KEYWORDS = [
+  'hi',
+  'hello',
+  'hey',
+  'chào',
+  'xin chào',
+  'good morning',
+  'good afternoon',
+  'good evening',
+  'chào buổi sáng',
+  'chào buổi tối',
+  'sup',
+  'yo',
+  'alo',
+] as const;
+
+const GREETING_SUFFIXES = new Set([
+  'ban',
+  'bot',
+  'oi',
+  'nhe',
+  'nha',
+  'a',
+  'shop',
+]);
+
+function tokenize(text: string): string[] {
+  return text.match(TOKEN_REGEX)?.map((token) => token.toLowerCase()) ?? [];
+}
+
+function sameTokens(
+  left: readonly string[],
+  right: readonly string[],
+): boolean {
+  return (
+    left.length === right.length &&
+    left.every((token, index) => token === right[index])
+  );
+}
+
+/**
+ * Match a keyword only when it is the complete message, optionally followed
+ * by the small set of established greeting suffixes.
+ */
+export function matchStandaloneKeyword(
+  userText: string,
+  keywords: readonly string[],
+  options: { allowGreetingSuffix?: boolean } = {},
+): string | undefined {
+  const inputCandidates = buildSafetyScanCandidates(userText)
+    .map(tokenize)
+    .filter((tokens) => tokens.length > 0);
+
+  return keywords.find((keyword) => {
+    const keywordCandidates = buildSafetyScanCandidates(keyword)
+      .map(tokenize)
+      .filter((tokens) => tokens.length > 0);
+
+    return inputCandidates.some((inputTokens) =>
+      keywordCandidates.some((keywordTokens) => {
+        if (sameTokens(inputTokens, keywordTokens)) return true;
+        if (
+          !options.allowGreetingSuffix ||
+          inputTokens.length <= keywordTokens.length ||
+          !keywordTokens.every((token, index) => inputTokens[index] === token)
+        ) {
+          return false;
+        }
+        return inputTokens
+          .slice(keywordTokens.length)
+          .every((token) => GREETING_SUFFIXES.has(token));
+      }),
+    );
+  });
 }
 
 const IN_SCOPE_HINTS =
@@ -55,8 +136,17 @@ function matchesDistress(normalized: string): boolean {
   return DISTRESS_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-const GREETING_ONLY =
-  /^(?:hello|hi|hey|chao|xin\s*chao|alo)(?:\s+(?:ban|bot|oi|nhe|nha|a|shop))*[\s!.,?]*$|^(?:ok|oke|okay|u|vang|da|cam\s*on|thanks|thank\s*you)[\s!.?]*$/i;
+const ACK_ONLY = new Set([
+  'ok',
+  'oke',
+  'okay',
+  'u',
+  'vang',
+  'da',
+  'cam on',
+  'thanks',
+  'thank you',
+]);
 
 const SHORT_FRAGMENT_THRESHOLD = 4;
 
@@ -64,7 +154,7 @@ const SHORT_FRAGMENT_THRESHOLD = 4;
 export function isObviouslyOffTopic(userText: string): boolean {
   const text = userText.trim();
   const normalized = normalizeScopeText(text);
-  if (!text || GREETING_ONLY.test(normalized)) {
+  if (!text || isGreetingOnly(text)) {
     return false;
   }
 
@@ -85,7 +175,12 @@ export function isObviouslyOffTopic(userText: string): boolean {
 
 /** True when the message is only a greeting/ack — safe to answer with a canned reply when the LLM is unavailable. */
 export function isGreetingOnly(userText: string): boolean {
-  return GREETING_ONLY.test(normalizeScopeText(userText.trim()));
+  const normalized = normalizeScopeText(userText.trim());
+  return (
+    matchStandaloneKeyword(userText, DEFAULT_GREETING_KEYWORDS, {
+      allowGreetingSuffix: true,
+    }) !== undefined || ACK_ONLY.has(normalized)
+  );
 }
 
 const AMBIGUOUS_FRAGMENTS =
@@ -144,7 +239,7 @@ export function isAmbiguousMessage(userText: string): boolean {
   if (
     rawText.length <= SHORT_FRAGMENT_THRESHOLD &&
     !SHORT_ACK.test(text) &&
-    !GREETING_ONLY.test(text) &&
+    !isGreetingOnly(rawText) &&
     // #959: known short intents are meaningful, not vague — a stop word, a
     // resume word, or a score reference must never hit the length gate.
     !STOP_INTENT.test(text) &&

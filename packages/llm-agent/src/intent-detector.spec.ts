@@ -54,11 +54,23 @@ describe('IntentDetector', () => {
     it('reuses format-character canonicalization between words', () => {
       expect(detector.detect('xin\u00adchao').intent).toBe('greeting');
     });
+
+    it.each([
+      'Hi, cho mình hỏi cách viết Task 2 với',
+      'Chào bạn, mình muốn xem tiến độ học',
+      'Hello, can you check my essay please?',
+      'Xin chào, lịch học tuần này thế nào ạ',
+      'Hey bạn, band mục tiêu của mình là bao nhiêu',
+      'chào bạn mình bị áp lực thi quá',
+    ])('does not swallow content after a greeting: "%s"', (input) => {
+      expect(detector.detect(input)).toEqual({ intent: 'unknown' });
+    });
   });
 
   describe('self-intro detection', () => {
     it.each([
       'bạn là ai',
+      'bạn là ai vậy',
       'bạn tên gì',
       'bạn làm gì',
       'tên bạn',
@@ -98,6 +110,14 @@ describe('IntentDetector', () => {
     it('accepts punctuation after a no-diacritic self-introduction', () => {
       expect(detector.detect('ban la ai?').intent).toBe('self_intro');
     });
+
+    it.each([
+      'giới thiệu về cấu trúc Task 1 giúp mình',
+      'giới thiệu bài mẫu band 7 cho mình',
+      'bạn là ai, giúp mình kiểm tra bài viết',
+    ])('does not swallow content after self-intro wording: "%s"', (input) => {
+      expect(detector.detect(input)).toEqual({ intent: 'unknown' });
+    });
   });
 
   describe('unknown intent', () => {
@@ -106,6 +126,7 @@ describe('IntentDetector', () => {
       'lich hoc ngay mai',
       'diem so cua minh',
       'lam the nao de viet Task 2',
+      'Cho mình hỏi cách viết Task 2',
     ])('detects "%s" as unknown', (input) => {
       expect(detector.detect(input).intent).toBe('unknown');
     });

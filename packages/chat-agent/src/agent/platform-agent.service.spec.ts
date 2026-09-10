@@ -871,10 +871,14 @@ describe('PlatformAgentService', () => {
       externalUserId: 'zalo-user-1',
       userText: 'muốn bỏ cuộc',
     });
+    await service.reply({
+      externalUserId: 'zalo-user-1',
+      userText: 'chào bạn mình bị áp lực thi quá',
+    });
 
-    // The static clarification/off-topic replies never fire; both messages
+    // The static clarification/off-topic replies never fire; all messages
     // produce an LLM reply round.
-    expect(mockLlmReply).toHaveBeenCalledTimes(2);
+    expect(mockLlmReply).toHaveBeenCalledTimes(3);
   });
 
   describe('stop intent acknowledgement (#959)', () => {

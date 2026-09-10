@@ -38,6 +38,11 @@ webhook → durable inbox (`event_id`) → enqueue (RAM or Redis buffer)
 
 Enable enforcement: `CHAT_RATE_LIMIT_ENABLED=true`. Quick disable: `false` or `CHAT_RATE_LIMIT_WHITELIST_PSIDS`.
 
+**Intent routing (#941):** The shared intent gate runs before this flow. Only a
+whole-message greeting or self-introduction takes the direct canned-response
+path; greeting-plus-content, subject-specific introductions, and distress text
+continue through the normal chat queue on Messenger, Discord, and Zalo.
+
 ### 1.3. Shared LLM resilience (#513)
 
 Messenger, Discord, and Zalo route provider calls through bounded admission,

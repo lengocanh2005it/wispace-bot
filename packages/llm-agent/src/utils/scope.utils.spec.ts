@@ -41,19 +41,39 @@ describe('isObviouslyOffTopic', () => {
 });
 
 describe('isGreetingOnly', () => {
-  it.each(['hello', 'hi', 'chào bạn', 'xin chào', 'ok', 'cảm ơn'])(
-    'returns true for "%s"',
-    (text) => {
-      expect(isGreetingOnly(text)).toBe(true);
-    },
-  );
+  it.each([
+    'hello',
+    'hi',
+    'hey',
+    'chào bạn',
+    'xin chào',
+    'good morning',
+    'good afternoon',
+    'good evening',
+    'chào buổi sáng',
+    'chào buổi tối',
+    'sup',
+    'yo',
+    'alo',
+    'ok',
+    'cảm ơn',
+  ])('returns true for "%s"', (text) => {
+    expect(isGreetingOnly(text)).toBe(true);
+  });
 
-  it.each(['', 'xem lịch học', 'tiến độ IELTS'])(
-    'returns false for "%s"',
-    (text) => {
-      expect(isGreetingOnly(text)).toBe(false);
-    },
-  );
+  it.each([
+    '',
+    'xem lịch học',
+    'tiến độ IELTS',
+    'Hi, cho mình hỏi cách viết Task 2 với',
+    'Chào bạn, mình muốn xem tiến độ học',
+    'Hello, can you check my essay please?',
+    'Xin chào, lịch học tuần này thế nào ạ',
+    'Hey bạn, band mục tiêu của mình là bao nhiêu',
+    'chào bạn mình bị áp lực thi quá',
+  ])('returns false for "%s"', (text) => {
+    expect(isGreetingOnly(text)).toBe(false);
+  });
 });
 
 describe('isAmbiguousMessage', () => {

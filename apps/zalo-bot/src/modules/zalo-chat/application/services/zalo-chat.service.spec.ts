@@ -94,7 +94,7 @@ describe('ZaloChatService', () => {
     expect(enqueue).not.toHaveBeenCalled();
   });
 
-  it.each(['chao ban', 'ban la ai'])(
+  it.each(['chao ban', 'ban la ai', 'hi', 'giới thiệu', 'bạn là ai vậy'])(
     'replies directly to no-diacritic intent "%s" without enqueueing',
     async (text) => {
       const sendText = jest.fn().mockResolvedValue(undefined);
@@ -120,6 +120,43 @@ describe('ZaloChatService', () => {
       expect(enqueue).not.toHaveBeenCalled();
     },
   );
+
+  it.each([
+    'Hi, cho mình hỏi cách viết Task 2 với',
+    'Chào bạn, mình muốn xem tiến độ học',
+    'Hello, can you check my essay please?',
+    'Xin chào, lịch học tuần này thế nào ạ',
+    'Hey bạn, band mục tiêu của mình là bao nhiêu',
+    'chào bạn mình bị áp lực thi quá',
+    'giới thiệu về cấu trúc Task 1 giúp mình',
+    'giới thiệu bài mẫu band 7 cho mình',
+    'bạn là ai, giúp mình kiểm tra bài viết',
+    'Cho mình hỏi cách viết Task 2',
+  ])('queues content after standalone wording: "%s"', async (text) => {
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const enqueue = jest.fn().mockResolvedValue(undefined);
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as PlatformChatQueueService,
+      NO_RESCHEDULE,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', text, 'message-941');
+
+    expect(sendText).not.toHaveBeenCalled();
+    expect(enqueue).toHaveBeenCalledWith(
+      'zalo-1',
+      text,
+      { userId: 42 },
+      'message-941',
+    );
+  });
 
   it('handles consent commands deterministically — cancels pending reminders on opt-out (#596)', async () => {
     const sendText = jest.fn().mockResolvedValue(undefined);

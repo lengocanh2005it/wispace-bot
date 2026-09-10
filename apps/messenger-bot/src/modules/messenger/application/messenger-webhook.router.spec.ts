@@ -115,6 +115,9 @@ describe('routeWebhookEvent', () => {
     it.each([
       ['chao ban', 'GREETING'],
       ['ban la ai', 'SELF_INTRO'],
+      ['hi', 'GREETING'],
+      ['giới thiệu', 'SELF_INTRO'],
+      ['bạn là ai vậy', 'SELF_INTRO'],
     ])(
       'routes no-diacritic %s to the deterministic %s reply without enqueueing',
       (text, messageType) => {
@@ -133,6 +136,34 @@ describe('routeWebhookEvent', () => {
         ]);
       },
     );
+
+    it.each([
+      'Hi, cho mình hỏi cách viết Task 2 với',
+      'Chào bạn, mình muốn xem tiến độ học',
+      'Hello, can you check my essay please?',
+      'Xin chào, lịch học tuần này thế nào ạ',
+      'Hey bạn, band mục tiêu của mình là bao nhiêu',
+      'chào bạn mình bị áp lực thi quá',
+      'giới thiệu về cấu trúc Task 1 giúp mình',
+      'giới thiệu bài mẫu band 7 cho mình',
+      'bạn là ai, giúp mình kiểm tra bài viết',
+      'Cho mình hỏi cách viết Task 2',
+    ])('queues content after standalone wording: "%s"', (text) => {
+      expect(
+        routeWebhookEvent(textEvent(text, 'mid-941'), {
+          ...defaultCtx,
+          userId: 42,
+        }),
+      ).toEqual([
+        {
+          type: 'enqueue_chat',
+          psid: 'psid-123',
+          userId: 42,
+          userText: text,
+          idempotencyKey: 'mid-941',
+        },
+      ]);
+    });
 
     it('routes consent commands to consent_command before chat (#596)', () => {
       const actions = routeWebhookEvent(textEvent('Tắt báo cáo', 'mid-1'), {
