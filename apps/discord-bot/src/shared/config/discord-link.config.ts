@@ -1,4 +1,5 @@
 import type { ConfigService } from '@nestjs/config';
+import { readPositiveInteger } from '@wispace/account-link-core/core';
 
 const DEFAULT_REWELCOME_WINDOW_MS = 86_400_000;
 const DEFAULT_PENDING_ORGANIC_SKIP_MS = 120_000;
@@ -11,9 +12,8 @@ const DEFAULT_WELCOME_CLAIM_MS = 60_000;
  * NaN (a NaN window would suppress re-welcomes forever).
  */
 export function readRewelcomeWindowMs(configService: ConfigService): number {
-  return readPositiveConfigMs(
-    configService,
-    'DISCORD_REWELCOME_WINDOW_MS',
+  return readPositiveInteger(
+    configService.get<string>('DISCORD_REWELCOME_WINDOW_MS'),
     DEFAULT_REWELCOME_WINDOW_MS,
   );
 }
@@ -25,9 +25,8 @@ export function readRewelcomeWindowMs(configService: ConfigService): number {
  * failed becomes claimable again after the lease expires (retryable).
  */
 export function readWelcomeClaimMs(configService: ConfigService): number {
-  return readPositiveConfigMs(
-    configService,
-    'DISCORD_WELCOME_CLAIM_MS',
+  return readPositiveInteger(
+    configService.get<string>('DISCORD_WELCOME_CLAIM_MS'),
     DEFAULT_WELCOME_CLAIM_MS,
   );
 }
@@ -40,19 +39,8 @@ export function readWelcomeClaimMs(configService: ConfigService): number {
  * organic welcome so no one is left without one.
  */
 export function readPendingOrganicSkipMs(configService: ConfigService): number {
-  return readPositiveConfigMs(
-    configService,
-    'DISCORD_LINK_PENDING_ORGANIC_SKIP_MS',
+  return readPositiveInteger(
+    configService.get<string>('DISCORD_LINK_PENDING_ORGANIC_SKIP_MS'),
     DEFAULT_PENDING_ORGANIC_SKIP_MS,
   );
-}
-
-function readPositiveConfigMs(
-  configService: ConfigService,
-  key: string,
-  fallback: number,
-): number {
-  const raw = configService.get<string>(key);
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }

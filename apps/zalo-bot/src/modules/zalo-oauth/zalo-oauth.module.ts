@@ -18,13 +18,15 @@ import { ZaloOaTokenEntity } from '../../infrastructure/database/entities/zalo-o
 import { ZaloOauthStateEntity } from '../../infrastructure/database/entities/zalo-oauth-state.entity';
 import { ZaloAccountLinkEntity } from '../../infrastructure/database/entities/zalo-account-link.entity';
 import { ZaloLinkVerifyRecordEntity } from '../../infrastructure/database/entities/zalo-link-verify-record.entity';
+import { ZaloWelcomeRecordEntity } from '../../infrastructure/database/entities/zalo-welcome-record.entity';
 import { ZaloTokenService } from './application/services/zalo-token.service';
 import { ZaloTokenRefreshService } from './application/services/zalo-token-refresh.service';
 import { ZaloOauthStateService } from './application/services/zalo-oauth-state.service';
 import { ZaloAccountLinkService } from './application/services/zalo-account-link.service';
-import { ZaloLinkReconcileCronService } from './application/services/zalo-link-reconcile-cron.service';
 import { TypeormZaloLinkVerifyRecordRepository } from './infrastructure/typeorm-zalo-link-verify-record.repository';
+import { TypeormZaloWelcomeRecordRepository } from './infrastructure/typeorm-zalo-welcome-record.repository';
 import { ZALO_LINK_VERIFY_RECORD_REPOSITORY } from './domain/ports/zalo-link-verify-record.repository.port';
+import { ZALO_WELCOME_RECORD_REPOSITORY } from './domain/ports/zalo-welcome-record.repository.port';
 import { ZALO_OAUTH_CLIENT } from './application/ports/zalo-oauth-client.port';
 import {
   ZALO_OA_ACCESS_TOKEN,
@@ -48,6 +50,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       ZaloOauthStateEntity,
       ZaloAccountLinkEntity,
       ZaloLinkVerifyRecordEntity,
+      ZaloWelcomeRecordEntity,
     ]),
   ],
   controllers: [],
@@ -68,10 +71,10 @@ import { BotMetricsService } from '@wispace/bot-metrics';
     ZaloTokenRefreshService,
     ZaloOauthStateService,
     ZaloAccountLinkService,
-    ZaloLinkReconcileCronService,
     ZaloOAuthHttpAdapter,
     TypeormZaloOaTokenStoreAdapter,
     TypeormZaloOauthStateStoreAdapter,
+    TypeormZaloWelcomeRecordRepository,
     {
       provide: ZALO_OAUTH_CLIENT,
       useExisting: ZaloOAuthHttpAdapter,
@@ -110,6 +113,10 @@ import { BotMetricsService } from '@wispace/bot-metrics';
       useClass: TypeormZaloLinkVerifyRecordRepository,
     },
     {
+      provide: ZALO_WELCOME_RECORD_REPOSITORY,
+      useExisting: TypeormZaloWelcomeRecordRepository,
+    },
+    {
       provide: WispaceTokenVerifyService,
       useFactory: (configService: ConfigService, metrics: BotMetricsService) =>
         new WispaceTokenVerifyService(configService, 'zalo', metrics),
@@ -140,6 +147,7 @@ import { BotMetricsService } from '@wispace/bot-metrics';
     ZaloOauthStateService,
     WispaceTokenVerifyService,
     ZALO_LINK_VERIFY_RECORD_REPOSITORY,
+    ZALO_WELCOME_RECORD_REPOSITORY,
     CLARIFICATION_STATE_STORE,
   ],
 })

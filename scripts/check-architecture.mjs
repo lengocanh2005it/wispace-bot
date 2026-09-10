@@ -126,6 +126,9 @@ const CORE_RULES = [
     'packages/study-reminder-shared/src/core/**',
   ]),
   coreEntryPointRule('ops-health', ['packages/ops-health/src/core/**']),
+  coreEntryPointRule('account-link-core', [
+    'packages/account-link-core/src/core/**',
+  ]),
   {
     rule: 'domain-no-framework',
     globs: ['apps/*/src/modules/*/domain/**'],
@@ -158,6 +161,9 @@ const CORE_RULES = [
     message: 'application ports must depend on inner contracts, not adapters',
   },
   frameworkFreePackageRule('chat-history', ['packages/chat-history/src/**']),
+  frameworkFreePackageRule('account-link-core', [
+    'packages/account-link-core/src/core/**',
+  ]),
   frameworkFreePackageRule('chat-queue-core', [
     'packages/chat-queue-core/src/**',
   ]),

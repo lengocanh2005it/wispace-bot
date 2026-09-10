@@ -56,16 +56,18 @@ export class ZaloAccountLinkService {
     userId: number,
     zaloUserId: string,
     options: { expectedGeneration?: string } = {},
-  ): Promise<void> {
+  ): Promise<{ relinked: boolean; previousUserId?: number }> {
+    let relinked = false;
+    let previousUserId: number | undefined;
     await this.repo.manager.transaction(async (em) => {
       // Keep the test seam's query-builder fallback; production uses one
       // atomic SQL upsert so a status worker cannot overwrite a relinked
       // generation between read and write.
       if (typeof em.query === 'function') {
         const existingRows = await em.query<
-          Array<{ mapping_generation?: string }>
+          Array<{ user_id: number; mapping_generation?: string }>
         >(
-          `SELECT mapping_generation
+          `SELECT user_id, mapping_generation
            FROM zalo_account_links
            WHERE platform = $1 AND external_user_id = $2
            FOR UPDATE`,
@@ -78,6 +80,10 @@ export class ZaloAccountLinkService {
             options.expectedGeneration
         ) {
           throw new ZaloLinkOwnershipConflictError();
+        }
+        if (existingRows[0] && existingRows[0].user_id !== userId) {
+          relinked = true;
+          previousUserId = existingRows[0].user_id;
         }
         await em.query(
           `DELETE FROM zalo_account_links
@@ -114,7 +120,7 @@ export class ZaloAccountLinkService {
 
       const existing = await this.repo.findOne({
         where: { platform: PLATFORM, externalUserId: zaloUserId },
-        select: { linkState: true, mappingGeneration: true },
+        select: { userId: true, linkState: true, mappingGeneration: true },
       });
       if (
         options.expectedGeneration !== undefined &&
@@ -123,6 +129,10 @@ export class ZaloAccountLinkService {
             options.expectedGeneration)
       ) {
         throw new ZaloLinkOwnershipConflictError();
+      }
+      if (existing && existing.userId !== userId) {
+        relinked = true;
+        previousUserId = existing.userId;
       }
       const mappingGeneration =
         existing?.linkState && existing.linkState !== 'active'
@@ -174,8 +184,14 @@ export class ZaloAccountLinkService {
     this.logger.log(
       `Linked Zalo account zaloUserId=${maskExternalId(
         zaloUserId,
-      )} userId=${maskExternalId(userId)}`,
+      )} userId=${maskExternalId(userId)}${
+        relinked && previousUserId !== undefined
+          ? ` relinked=previousUserId=${maskExternalId(previousUserId)}`
+          : ''
+      }`,
     );
+
+    return { relinked, previousUserId };
   }
 
   async findUserIdByZaloId(zaloUserId: string): Promise<number | undefined> {

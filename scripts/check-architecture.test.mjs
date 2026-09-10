@@ -288,6 +288,7 @@ test('affected packages publish explicit core/adapter entrypoints', () => {
     'scheduler-core': ['./core', './adapters'],
     'study-reminder-shared': ['./core', './adapters'],
     'ops-health': ['./core', './adapters'],
+    'account-link-core': ['./core', './adapters'],
     'cleanup-cron': ['./adapters'],
   };
 

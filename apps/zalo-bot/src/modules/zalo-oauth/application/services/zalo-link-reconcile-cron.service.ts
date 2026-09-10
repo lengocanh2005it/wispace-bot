@@ -2,6 +2,12 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { Counter } from 'prom-client';
+import {
+  LinkReconcileCronCore,
+  readPositiveInteger,
+  type LinkReconcileBatchResult,
+  type LinkReconcileContext,
+} from '@wispace/account-link-core/core';
 import { PgAdvisoryLockService } from '@wispace/bot-common/locks';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import {
@@ -17,6 +23,8 @@ import { PlatformLinkStateService } from '@wispace/database';
 import { WispaceLinkStatusClient } from '@wispace/wispace-client';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { BotMetricsService } from '@wispace/bot-metrics';
+import { ZaloRelinkNotifier } from './zalo-relink-notifier.service';
+import { ZaloWelcomeService } from './zalo-welcome.service';
 
 const DEFAULT_RECONCILE_AGE_MS = 120_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 10 * 60_000;
@@ -29,15 +37,11 @@ const reconcileRecordsTotal = new Counter({
   labelNames: ['outcome'] as const,
 });
 
-/**
- * Reconciles pending Zalo link verify-intents (#147, mirror of Discord's
- * discord-link-reconcile #137): a crash between token verification and the
- * local mapping upsert leaves WISPACE "linked" with no bot mapping — this
- * cron re-commits the mapping idempotently, then consumes the intent.
- */
+/** Thin scheduled adapter around the shared account-link reconcile runner. */
 @Injectable()
 export class ZaloLinkReconcileCronService {
   private readonly logger = new Logger(ZaloLinkReconcileCronService.name);
+  private readonly core: LinkReconcileCronCore;
 
   constructor(
     @Inject(ZALO_LINK_VERIFY_RECORD_REPOSITORY)
@@ -53,7 +57,43 @@ export class ZaloLinkReconcileCronService {
     @Inject(REDIS_CLIENT)
     private readonly redisClient?: RedisClientPort,
     @Optional() private readonly metrics?: BotMetricsService,
+    @Optional() private readonly welcomeService?: ZaloWelcomeService,
+    @Optional() private readonly relinkNotifier?: ZaloRelinkNotifier,
   ) {
+    this.core = new LinkReconcileCronCore({
+      listStaleRecords: async (olderThanMs) => {
+        const records =
+          await this.verifyRecordService.listStaleRecords(olderThanMs);
+        return records.map((record) => ({
+          externalUserId: record.zaloUserId,
+          userId: record.userId,
+          verifiedAt: record.verifiedAt,
+        }));
+      },
+      findUserId: (externalUserId) =>
+        this.accountLinkService.findUserIdByZaloId(externalUserId),
+      getLinkState: async (externalUserId) => {
+        const state = await this.linkState?.getLink('zalo', externalUserId);
+        return state
+          ? {
+              state: state.state,
+              generation: state.generation,
+              revokedAt: state.revokedAt,
+            }
+          : undefined;
+      },
+      isFreshRelink: (externalUserId, userId) =>
+        this.isFreshRelink(externalUserId, userId),
+      upsertLink: (userId, externalUserId, options) =>
+        options === undefined
+          ? this.accountLinkService.upsertLink(userId, externalUserId)
+          : this.accountLinkService.upsertLink(userId, externalUserId, options),
+      consumeRecord: (externalUserId) =>
+        this.verifyRecordService.consumeRecord(externalUserId),
+      clearClarification: (externalUserId) =>
+        this.clearClarificationState(externalUserId),
+      reconcileLinkStatus: () => this.runLinkStatusReconcile(),
+    });
     this.metrics?.registerCron?.(
       'zalo-link-reconcile',
       LINK_RECONCILE_EXPECTED_INTERVAL_MS,
@@ -75,9 +115,77 @@ export class ZaloLinkReconcileCronService {
     }
   }
 
-  private async runReconcileWithStatus(): Promise<void> {
-    await this.runLinkStatusReconcile();
-    await this.runReconcileBatch();
+  private async runReconcileWithStatus(): Promise<LinkReconcileBatchResult> {
+    return this.core.run({
+      staleAgeMs: readPositiveInteger(
+        this.configService.get<string>('ZALO_LINK_RECONCILE_AGE_MS'),
+        DEFAULT_RECONCILE_AGE_MS,
+      ),
+      maxRecordAgeMs: readPositiveInteger(
+        this.configService.get<string>('ZALO_LINK_RECONCILE_MAX_AGE_MS'),
+        DEFAULT_MAX_RECORD_AGE_MS,
+      ),
+      onOutcome: (outcome, record, error) => {
+        reconcileRecordsTotal.inc({ outcome });
+        if (error) {
+          this.logger.warn(
+            `Zalo link reconcile failed for zaloUserId=${maskExternalId(
+              record.externalUserId,
+            )}: ${errorMessage(error, record.externalUserId)}`,
+          );
+        }
+      },
+      onMismatch: (record, existingUserId) => {
+        this.logger.warn(
+          `Zalo link reconcile mismatch: verified intent for userId=${maskExternalId(
+            record.userId,
+          )} but existing mapping has userId=${maskExternalId(
+            existingUserId,
+          )} for zaloUserId=${maskExternalId(record.externalUserId)}`,
+        );
+      },
+      onDropped: (record, reason) => {
+        this.logger.error(
+          `Zalo link verify record dropped for zaloUserId=${maskExternalId(
+            record.externalUserId,
+          )}: ${reason}`,
+        );
+      },
+      onReconciled: (context) => this.afterReconciled(context),
+      onBestEffortError: (_step, error) => {
+        this.logger.warn(
+          `Zalo link reconcile side effect failed: ${errorMessage(error)}`,
+        );
+      },
+    });
+  }
+
+  private async afterReconciled({
+    record,
+    linkResult,
+  }: LinkReconcileContext): Promise<void> {
+    this.logger.log(
+      `Zalo link reconciled for zaloUserId=${maskExternalId(
+        record.externalUserId,
+      )} (crash recovery)`,
+    );
+    if (linkResult.relinked && this.relinkNotifier) {
+      try {
+        await this.relinkNotifier.notify(record.externalUserId, record.userId);
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Zalo relink notification failed for zaloUserId=${maskExternalId(
+            record.externalUserId,
+          )}: ${errorMessage(error, record.externalUserId)}`,
+        );
+      }
+    }
+    if (this.welcomeService) {
+      await this.welcomeService.welcomeIfDue(
+        record.externalUserId,
+        record.userId,
+      );
+    }
   }
 
   private async runLinkStatusReconcile(): Promise<void> {
@@ -132,130 +240,6 @@ export class ZaloLinkReconcileCronService {
     }
   }
 
-  private async runReconcileBatch(): Promise<void> {
-    const staleAgeMs = this.readPositiveInt(
-      'ZALO_LINK_RECONCILE_AGE_MS',
-      DEFAULT_RECONCILE_AGE_MS,
-    );
-    const maxRecordAgeMs = this.readPositiveInt(
-      'ZALO_LINK_RECONCILE_MAX_AGE_MS',
-      DEFAULT_MAX_RECORD_AGE_MS,
-    );
-
-    const records = await this.verifyRecordService.listStaleRecords(staleAgeMs);
-    if (records.length === 0) {
-      return;
-    }
-
-    let reconciled = 0;
-    let alreadyCommitted = 0;
-    let dropped = 0;
-    let failed = 0;
-
-    for (const record of records) {
-      const isStale =
-        Date.now() - record.verifiedAt.getTime() >= maxRecordAgeMs;
-      try {
-        const existingUserId = await this.accountLinkService.findUserIdByZaloId(
-          record.zaloUserId,
-        );
-
-        if (existingUserId === record.userId) {
-          // Mapping committed — the record is a leftover (consume raced).
-          await this.verifyRecordService.consumeRecord(record.zaloUserId);
-          alreadyCommitted += 1;
-          reconcileRecordsTotal.inc({ outcome: 'already_committed' });
-          continue;
-        }
-
-        if (existingUserId !== undefined) {
-          this.logger.warn(
-            `Zalo link reconcile mismatch: verified intent for userId=${maskExternalId(record.userId)} but existing mapping has userId=${maskExternalId(existingUserId)} for zaloUserId=${maskExternalId(record.zaloUserId)}`,
-          );
-          reconcileRecordsTotal.inc({ outcome: 'mismatched' });
-
-          if (isStale) {
-            await this.dropRecord(
-              record.zaloUserId,
-              `older than ${maxRecordAgeMs}ms with mismatched mapping`,
-            );
-            dropped += 1;
-          }
-          continue;
-        }
-
-        if (isStale) {
-          await this.dropRecord(
-            record.zaloUserId,
-            `older than ${maxRecordAgeMs}ms with no mapping (user must retry with a fresh token)`,
-          );
-          dropped += 1;
-          continue;
-        }
-
-        const existingState = await this.linkState?.getLink(
-          'zalo',
-          record.zaloUserId,
-        );
-        if (
-          existingState &&
-          (existingState.state === 'confirmed-revoked' ||
-            (existingState.state !== 'active' &&
-              (existingState.state === 'locally-unlinked' &&
-              existingState.revokedAt &&
-              record.verifiedAt <= existingState.revokedAt
-                ? true
-                : !(await this.isFreshRelink(
-                    record.zaloUserId,
-                    record.userId,
-                  )))))
-        ) {
-          await this.dropRecord(
-            record.zaloUserId,
-            `mapping state ${existingState.state} blocks stale verify intent`,
-          );
-          dropped += 1;
-          continue;
-        }
-
-        await this.accountLinkService.upsertLink(
-          record.userId,
-          record.zaloUserId,
-          ...(existingState?.generation
-            ? [{ expectedGeneration: existingState.generation }]
-            : []),
-        );
-        await this.clearClarificationState(record.zaloUserId);
-        await this.verifyRecordService.consumeRecord(record.zaloUserId);
-        reconciled += 1;
-        reconcileRecordsTotal.inc({ outcome: 'reconciled' });
-        this.logger.log(
-          `Zalo link reconciled for zaloUserId=${maskExternalId(record.zaloUserId)} (crash recovery)`,
-        );
-      } catch (error) {
-        failed += 1;
-        reconcileRecordsTotal.inc({ outcome: 'failed' });
-        this.logger.warn(
-          `Zalo link reconcile failed for zaloUserId=${maskExternalId(
-            record.zaloUserId,
-          )}: ${errorMessage(error, record.zaloUserId)}`,
-        );
-      }
-    }
-
-    this.logger.log(
-      `zalo-link-reconcile done: reconciled=${reconciled}, alreadyCommitted=${alreadyCommitted}, dropped=${dropped}, failed=${failed}`,
-    );
-  }
-
-  private async dropRecord(zaloUserId: string, reason: string): Promise<void> {
-    this.logger.error(
-      `Zalo link verify record dropped for zaloUserId=${maskExternalId(zaloUserId)}: ${reason}`,
-    );
-    await this.verifyRecordService.consumeRecord(zaloUserId);
-    reconcileRecordsTotal.inc({ outcome: 'dropped' });
-  }
-
   private async isFreshRelink(
     zaloUserId: string,
     userId: number,
@@ -263,14 +247,6 @@ export class ZaloLinkReconcileCronService {
     if (!this.linkStatusClient?.enabled) return false;
     const status = await this.linkStatusClient.getStatus(zaloUserId);
     return status.kind === 'active' && status.userId === userId;
-  }
-
-  private readPositiveInt(key: string, fallback: number): number {
-    const raw = this.configService.get<string>(key);
-    const parsed = raw ? Number(raw) : NaN;
-    return Number.isFinite(parsed) && parsed > 0
-      ? Math.floor(parsed)
-      : fallback;
   }
 
   private async clearClarificationState(zaloUserId: string): Promise<void> {

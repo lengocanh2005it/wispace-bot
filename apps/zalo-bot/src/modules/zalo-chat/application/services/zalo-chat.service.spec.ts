@@ -5,6 +5,7 @@ import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/ser
 import { PlatformChatQueueService } from '@wispace/chat-agent';
 import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
 import { NotificationPreferenceService } from '@wispace/database';
+import { ZaloWelcomeService } from '@zalo/modules/zalo-oauth/application/services/zalo-welcome.service';
 
 const NO_RESCHEDULE = {
   hasPending: jest.fn().mockResolvedValue(false),
@@ -256,6 +257,29 @@ describe('ZaloChatService', () => {
       'zalo-1',
       expect.stringContaining('WISPACE'),
     );
+  });
+
+  it('routes follow welcome through the dedupe service when available', async () => {
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const organicWelcomeIfDue = jest.fn().mockResolvedValue('sent');
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {} as unknown as ZaloAccountLinkService,
+      {} as unknown as PlatformChatQueueService,
+      NO_RESCHEDULE,
+      makePrefs(),
+      undefined,
+      { organicWelcomeIfDue } as unknown as ZaloWelcomeService,
+    );
+
+    await service.handleFollow('zalo-1');
+
+    expect(organicWelcomeIfDue).toHaveBeenCalledWith(
+      'zalo-1',
+      expect.stringContaining('WISPACE'),
+    );
+    expect(sendText).not.toHaveBeenCalled();
   });
 
   it('sends a text-only fallback message for unsupported message types', async () => {

@@ -28,6 +28,7 @@
     "@nestjs/platform-express": "^11.1.29",
     "@nestjs/schedule": "^6.1.3",
     "@nestjs/typeorm": "^11.0.1",
+    "@wispace/account-link-core": "*",
     "@wispace/bot-common": "*",
     "@wispace/bot-metrics": "*",
     "@wispace/chat-agent": "*",

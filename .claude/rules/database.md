@@ -22,8 +22,10 @@ paths: apps/messenger-bot/src/infrastructure/database/**, packages/database/**
 - `web_activity` — one row per WISPACE `userId`, `last_active_at` merged with `GREATEST`; drives the scheduled-send dormancy gate. Self-updating, no cleanup cron; erased by `PrivacyDataService.delete()` (userId-scoped, orphan row kept when mapping has no userId).
 - `user_notification_preferences` — one row per WISPACE `userId`: `preferred_platform` + per-feature consent (`report_enabled` opt-in NULL=off, `reminder_enabled` opt-out NULL=on, #596). Read-filters live in the D/Z report crons and the study-reminder mapping readers; `NotificationPreferenceService` (packages/database) owns writes. Consent row is erased by `PrivacyDataService.delete()`.
 - `messenger_link_verify_records` — one durable Messenger verify intent per PSID; stores only a ref fingerprint, metadata, generation, and pending/committed state; reconciled after crashes and erased by privacy deletion.
+- `discord_link_verify_records`, `zalo_link_verify_records` — durable platform verify intents; reconciled by their five-minute account-link cron after a callback crash.
+- `discord_welcome_records`, `zalo_welcome_records` — platform-scoped linked/organic welcome-DM dedupe state with an atomic claim lease; preserved as operational state.
 
-**Prod DB:** `ai_chat_bot_db`. Old hub `writing_ai_hub_db` — Tables already dropped (ops script). All tables above have been generalized to `(platform, external_user_id)` since Phase 2 — see `docs/turborepo-migration-plan.md`.
+**Prod DB:** `ai_chat_bot_db`. Old hub `writing_ai_hub_db` — Tables already dropped (ops script). Shared tables above have been generalized to `(platform, external_user_id)` since Phase 2; platform-specific account-link intent/welcome tables remain scoped to their bot — see `docs/turborepo-migration-plan.md`.
 
 **Production HA:** `DB_HOST` is a stable PostgreSQL writer endpoint, never a
 standby or an app-side host list. Runtime readiness and ops health require
@@ -49,8 +51,8 @@ H7 migration created `messenger_chat_queue_buffer` + `messenger_chat_history` �
 
 ## Adding a migration
 
-1. Modify/add the entity in the owning package (`packages/database/src/entities/` for shared tables, or `apps/messenger-bot/src/infrastructure/database/entities/` for Messenger-only tables).
-2. Create the migration in the owning package (`packages/database/src/migrations/` for shared tables, or `apps/messenger-bot/src/infrastructure/database/migrations/` for Messenger-only tables) with a timestamp prefix.
+1. Modify/add the entity in the owning package (`packages/database/src/entities/` for shared tables, or the owning app's `src/infrastructure/database/entities/` for platform-only tables).
+2. Create the migration in the owning package (`packages/database/src/migrations/` for shared tables, or the owning app's migration owner path for platform-only tables) with a timestamp prefix.
 3. Run `npm run migration:run` in `apps/messenger-bot/`; its TypeORM options include the shared package migrations.
 
 CLI generate (if needed): `npm run migration:generate -- src/infrastructure/database/migrations/TenMigration` (run in `apps/messenger-bot/`), then move shared-table entities/migrations to `packages/database/` when appropriate.
@@ -99,6 +101,7 @@ When adding a new migration (Discord, Zalo, or new shared table):
 | Cross-platform (generalized)         | `1786934000000-CreateWebActivityTable`                       | `web_activity`                                                                                                                                                               |
 | Cross-platform (learner consistency) | `1786940100000-AddLearnerScheduledReportClaims`              | `learner_scheduled_report_claims` — one scheduled report claim per learner/date/type, with rollout hydration from existing sent/active claims                                |
 | Messenger linking                   | `1786940200000-HardenMessengerLinkVerifyRecords`            | `messenger_link_verify_records` — generation-fenced replay, topic/cadence metadata, bounded stale reconciliation, committed cleanup                                         |
+| Zalo linking                         | `1786940300000-CreateZaloWelcomeRecords`                    | `zalo_welcome_records` — linked/organic welcome-DM dedupe with atomic claim lease                                                                                           |
 
 ## Notes
 

@@ -23,16 +23,17 @@ presentation -> application -> domain <- infrastructure
 
 The affected shared packages expose explicit public subpaths:
 
-| Package | Framework-free entrypoint | Outer adapter entrypoint |
-| --- | --- | --- |
-| `llm-agent` | `@wispace/llm-agent/core` | `@wispace/llm-agent/adapters` |
-| `wispace-client` | `@wispace/wispace-client/core` | `@wispace/wispace-client/adapters` |
-| `student-report` | `@wispace/student-report/core` | `@wispace/student-report/adapters` |
-| `chat-metering` | `@wispace/chat-metering/core` | `@wispace/chat-metering/adapters` |
-| `scheduler-core` | `@wispace/scheduler-core/core` | `@wispace/scheduler-core/adapters` |
-| `study-reminder-shared` | `@wispace/study-reminder-shared/core` | `@wispace/study-reminder-shared/adapters` |
-| `ops-health` | `@wispace/ops-health/core` | `@wispace/ops-health/adapters` |
-| `cleanup-cron` | — | `@wispace/cleanup-cron/adapters` (intentionally framework-bound) |
+| Package                 | Framework-free entrypoint             | Outer adapter entrypoint                                         |
+| ----------------------- | ------------------------------------- | ---------------------------------------------------------------- |
+| `llm-agent`             | `@wispace/llm-agent/core`             | `@wispace/llm-agent/adapters`                                    |
+| `wispace-client`        | `@wispace/wispace-client/core`        | `@wispace/wispace-client/adapters`                               |
+| `student-report`        | `@wispace/student-report/core`        | `@wispace/student-report/adapters`                               |
+| `chat-metering`         | `@wispace/chat-metering/core`         | `@wispace/chat-metering/adapters`                                |
+| `scheduler-core`        | `@wispace/scheduler-core/core`        | `@wispace/scheduler-core/adapters`                               |
+| `study-reminder-shared` | `@wispace/study-reminder-shared/core` | `@wispace/study-reminder-shared/adapters`                        |
+| `ops-health`            | `@wispace/ops-health/core`            | `@wispace/ops-health/adapters`                                   |
+| `account-link-core`     | `@wispace/account-link-core/core`     | `@wispace/account-link-core/adapters`                            |
+| `cleanup-cron`          | —                                     | `@wispace/cleanup-cron/adapters` (intentionally framework-bound) |
 
 The package root remains a backward-compatible migration façade. New code
 should import the explicit subpath: core/application code uses `/core`, while
@@ -48,13 +49,14 @@ root imports remain supported until consumers are migrated in later issues.
 | Apps                                                             | Every `domain/**` and `application/**` directory                    |
 | `contracts`                                                      | Entire package; it has zero imports                                 |
 | `chat-history`, `chat-queue-core`, `chat-pipeline`, `date-utils` | Entire package                                                      |
-| `llm-agent`                                                      | `src/core/**` plus framework-free orchestration implementations       |
-| `student-report`                                                 | `src/core/**` plus `StudentReportCore` implementations               |
+| `llm-agent`                                                      | `src/core/**` plus framework-free orchestration implementations     |
+| `student-report`                                                 | `src/core/**` plus `StudentReportCore` implementations              |
 | `wispace-client`                                                 | Types, errors, utilities, cache policy/core, and plain HTTP clients |
 | `chat-metering`                                                  | Types, policy cores, cost/safety functions, and memory counter      |
 | `scheduler-core`, `study-reminder-shared`                        | Ports, types, and pure utilities                                    |
-| `ops-health`                                                     | `src/core/**`: health/data-quality types, ports, evaluator, policy   |
-| `cleanup-cron`                                                   | Framework-bound package; no claimed core                           |
+| `ops-health`                                                     | `src/core/**`: health/data-quality types, ports, evaluator, policy  |
+| `account-link-core`                                              | Completion/reconcile/OAuth-state policies and ports                 |
+| `cleanup-cron`                                                   | Framework-bound package; no claimed core                            |
 
 Tests/specs, generated output, `dist`, and `node_modules` are excluded. Test code may import adapters to assemble a harness, but production code cannot hide a forbidden edge there.
 

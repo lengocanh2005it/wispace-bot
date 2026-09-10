@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomBytes } from 'crypto';
+import { OAuthStateCore } from '@wispace/account-link-core/core';
 import {
   decryptAesGcm,
   encryptAesGcm,
@@ -12,24 +12,46 @@ import {
   type DiscordOauthStateRepositoryPort,
 } from '../../domain/ports/discord-oauth-state.repository.port';
 
-const STATE_TTL_MS = 10 * 60_000;
-
-/**
- * Single-use OAuth link-state use case — owns state generation, TTL
- * judgment, and AES-GCM decryption. Persistence flows through
- * `DiscordOauthStateRepositoryPort` (bound to the TypeORM implementation in
- * module wiring, #428).
- */
+/** Discord edge adapter for encrypted, single-use OAuth state. */
 @Injectable()
 export class DiscordOauthStateService {
   private readonly logger = new Logger(DiscordOauthStateService.name);
+  private readonly stateCore: OAuthStateCore<{ encryptedLinkToken: string }>;
 
   constructor(
     @Inject(DISCORD_OAUTH_STATE_REPOSITORY)
     private readonly repo: DiscordOauthStateRepositoryPort,
     @Optional()
     private readonly configService?: ConfigService,
-  ) {}
+  ) {
+    this.stateCore = new OAuthStateCore(
+      {
+        save: async (state, payload, createdAt) =>
+          this.repo.saveState({
+            state,
+            encryptedLinkToken: payload.encryptedLinkToken,
+            createdAt,
+          }),
+        consume: async (state) => {
+          const row = await this.repo.deleteByState(state);
+          return row
+            ? {
+                payload: { encryptedLinkToken: row.linkToken },
+                createdAt: row.createdAt,
+              }
+            : undefined;
+        },
+        cleanupExpired: (cutoff, limit) =>
+          this.repo.deleteExpiredBefore(cutoff, limit),
+      },
+      {
+        onCleanupError: (error) =>
+          this.logger.warn(
+            `Discord OAuth state cleanup failed: ${errorMessage(error)}`,
+          ),
+      },
+    );
+  }
 
   private getEncryptionKey(): Buffer {
     const raw =
@@ -46,53 +68,26 @@ export class DiscordOauthStateService {
   }
 
   async create(linkToken: string): Promise<string> {
-    const state = randomBytes(24).toString('hex');
-    const encryptedLinkToken = encryptAesGcm(
-      linkToken,
-      this.getEncryptionKey(),
-    );
-    await this.repo.saveState({
-      state,
-      encryptedLinkToken,
-      createdAt: new Date(),
+    return this.stateCore.create({
+      encryptedLinkToken: encryptAesGcm(linkToken, this.getEncryptionKey()),
     });
-    await this.cleanupExpired();
-    return state;
-  }
-
-  // ponytail: opportunistic cleanup instead of a cron — bounded to 100 rows per
-  // create; strictly older than STATE_TTL_MS so an in-flight valid callback is
-  // never deleted.
-  private async cleanupExpired(): Promise<void> {
-    try {
-      await this.repo.deleteExpiredBefore(
-        new Date(Date.now() - STATE_TTL_MS),
-        100,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Discord OAuth state cleanup failed: ${errorMessage(error)}`,
-      );
-    }
   }
 
   async consume(state: string): Promise<{ linkToken: string } | undefined> {
-    const row = await this.repo.deleteByState(state);
-    if (!row) return undefined;
-
-    const isExpired = Date.now() - row.createdAt.getTime() > STATE_TTL_MS;
-    if (isExpired) return undefined;
+    const payload = await this.stateCore.consume(state);
+    if (!payload) return undefined;
 
     try {
-      const linkToken = decryptAesGcm(
-        row.linkToken,
-        this.getEncryptionKey(),
-        'discord_oauth_states link_token',
-      );
-      return { linkToken };
-    } catch (err) {
+      return {
+        linkToken: decryptAesGcm(
+          payload.encryptedLinkToken,
+          this.getEncryptionKey(),
+          'discord_oauth_states link_token',
+        ),
+      };
+    } catch (error) {
       this.logger.warn(
-        `Discord OAuth state decryption failed: ${errorMessage(err)}`,
+        `Discord OAuth state decryption failed: ${errorMessage(error)}`,
       );
       return undefined;
     }

@@ -1,7 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import {
+  LinkCompletionCore,
+  LinkTokenRejectedError,
+  type LinkCompletionAfterCommitContext,
+  type LinkFlowAdapter,
+} from '@wispace/account-link-core/core';
 import { buildLinkSuccessMessage } from '@wispace/bot-common/messages';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import { sleep } from '@wispace/bot-common/utils';
 import { WispaceTokenVerifyService } from '@wispace/wispace-client';
 import {
   ZALO_OUTBOUND,
@@ -17,23 +22,18 @@ import {
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
 import { PlatformLinkStateService } from '@wispace/database';
-
-const UPSERT_MAX_ATTEMPTS = 3;
-const UPSERT_BASE_BACKOFF_MS = 500;
+import { ZaloRelinkNotifier } from './zalo-relink-notifier.service';
+import { ZaloWelcomeService } from './zalo-welcome.service';
 
 /** The WISPACE link token was rejected (already used / invalid). */
 export class ZaloLinkTokenRejectedError extends Error {
   constructor() {
     super('WISPACE link token rejected');
+    this.name = 'ZaloLinkTokenRejectedError';
   }
 }
 
-/**
- * Zalo OAuth callback use case (#147, mirror of DiscordLinkCompletionService
- * #137): exchange code → verify WISPACE token → persist durable verify
- * intent → commit the mapping (retried — WISPACE already consumed the
- * single-use token) → consume intent → welcome message.
- */
+/** Zalo OAuth callback facade; lifecycle ordering lives in account-link-core. */
 @Injectable()
 export class ZaloLinkCompletionService {
   private readonly logger = new Logger(ZaloLinkCompletionService.name);
@@ -48,115 +48,101 @@ export class ZaloLinkCompletionService {
     @Inject(CLARIFICATION_STATE_STORE)
     private readonly clarificationStateStore: ClarificationStateStore,
     @Optional() private readonly linkState?: PlatformLinkStateService,
+    @Optional() private readonly welcomeService?: ZaloWelcomeService,
+    @Optional() private readonly relinkNotifier?: ZaloRelinkNotifier,
   ) {}
 
-  /**
-   * Runs the callback flow. Throws on failure — the controller maps any
-   * error to a generic retry message (the user retries with a fresh token).
-   */
   async completeLink(
     code: string,
     codeVerifier: string,
     linkToken: string,
   ): Promise<void> {
-    const zaloUser = await this.accountLinkService.exchangeCodeForZaloUser(
-      code,
-      codeVerifier,
-    );
-    const observedLink = await this.linkState?.getLink('zalo', zaloUser.id);
+    const adapter: LinkFlowAdapter<{
+      code: string;
+      codeVerifier: string;
+    }> = {
+      exchange: async () => {
+        const user = await this.accountLinkService.exchangeCodeForZaloUser(
+          code,
+          codeVerifier,
+        );
+        return { externalUserId: user.id, displayName: user.name };
+      },
+      verifyToken: async (token, externalUserId) =>
+        this.tokenVerifyService.verifyToken(token, externalUserId),
+      getObservedGeneration: async (externalUserId) =>
+        (await this.linkState?.getLink('zalo', externalUserId))?.generation,
+      recordVerify: (externalUserId, userId) =>
+        this.verifyRecordService.recordVerify(externalUserId, userId),
+      upsertLink: (userId, externalUserId, options) =>
+        options === undefined
+          ? this.accountLinkService.upsertLink(userId, externalUserId)
+          : this.accountLinkService.upsertLink(userId, externalUserId, options),
+      consumeRecord: (externalUserId) =>
+        this.verifyRecordService.consumeRecord(externalUserId),
+      clearClarification: async (externalUserId) => {
+        await this.clarificationStateStore.clear(`zalo:${externalUserId}`);
+      },
+      afterCommit: (context) => this.afterCommit(context),
+    };
+    const core = new LinkCompletionCore(adapter, {
+      onBestEffortError: (step, error) => {
+        this.logger.warn(`Zalo link ${step} failed: ${errorMessage(error)}`);
+      },
+    });
 
-    const verifyResult = await this.tokenVerifyService.verifyToken(
-      linkToken,
-      zaloUser.id,
-    );
-    if (!verifyResult.valid) {
-      throw new ZaloLinkTokenRejectedError();
+    try {
+      await core.complete({
+        input: { code, codeVerifier },
+        linkToken,
+      });
+    } catch (error) {
+      if (error instanceof LinkTokenRejectedError) {
+        throw new ZaloLinkTokenRejectedError();
+      }
+      throw error;
+    }
+  }
+
+  private async afterCommit({
+    identity,
+    userId,
+    linkResult,
+  }: LinkCompletionAfterCommitContext): Promise<void> {
+    if (linkResult.relinked && this.relinkNotifier) {
+      await this.relinkNotifier
+        .notify(identity.externalUserId, userId)
+        .catch((error: unknown) => {
+          this.logger.warn(
+            `Zalo relink notification failed for zaloUserId=${maskExternalId(
+              identity.externalUserId,
+            )}: ${errorMessage(error, identity.externalUserId)}`,
+          );
+        });
     }
 
-    // WISPACE has already consumed the link token (single-use) — the mapping
-    // MUST be committed now, or WISPACE shows "linked" while the bot has no
-    // mapping. Persist a durable verify intent BEFORE the upsert so the
-    // reconcile cron re-commits the mapping if we crash in between (#147).
-    await this.verifyRecordService.recordVerify(
-      zaloUser.id,
-      verifyResult.userId,
-    );
+    if (this.welcomeService) {
+      await this.welcomeService.welcomeIfDue(identity.externalUserId, userId);
+    } else {
+      await this.outboundService
+        .sendText(identity.externalUserId, buildLinkSuccessMessage(), {
+          userId,
+        })
+        .catch((error: unknown) => {
+          this.logger.warn(
+            `Zalo link welcome send failed for zaloUserId=${maskExternalId(
+              identity.externalUserId,
+            )}: ${errorMessage(error, identity.externalUserId)}`,
+          );
+        });
+    }
 
-    await this.retryUpsert(
-      verifyResult.userId,
-      zaloUser.id,
-      observedLink?.generation,
-    );
-    await this.clarificationStateStore
-      .clear(`zalo:${zaloUser.id}`)
-      .catch((error: unknown) => {
-        this.logger.warn(
-          `Zalo clarification state clear failed for zaloUserId=${maskExternalId(
-            zaloUser.id,
-          )}: ${errorMessage(error, zaloUser.id)}`,
-        );
-      });
-
-    // Intent consumed — the mapping is committed (fire-and-forget; a race
-    // leaves a record that the reconcile cron cleans up).
-    await this.verifyRecordService
-      .consumeRecord(zaloUser.id)
-      .catch((error: unknown) => {
-        this.logger.warn(
-          `Zalo link verify record cleanup failed for zaloUserId=${maskExternalId(
-            zaloUser.id,
-          )}: ${errorMessage(error, zaloUser.id)}`,
-        );
-      });
-
-    // Welcome comes AFTER the mapping is committed — a send failure must not
-    // make an already-committed link appear uncommitted.
-    await this.outboundService
-      .sendText(zaloUser.id, buildLinkSuccessMessage(), {
-        userId: verifyResult.userId,
-      })
-      .catch((error: unknown) => {
-        this.logger.warn(
-          `Zalo link welcome send failed for zaloUserId=${maskExternalId(
-            zaloUser.id,
-          )}: ${errorMessage(error, zaloUser.id)}`,
-        );
-      });
-
-    // One-time consent explainer after the welcome (#596); claimed
-    // atomically on the link row, released if the send fails.
     await this.accountLinkService
-      .sendConsentExplainerIfDue(zaloUser.id, async (text) => {
-        await this.outboundService.sendText(zaloUser.id, text, {
-          userId: verifyResult.userId,
+      .sendConsentExplainerIfDue(identity.externalUserId, async (text) => {
+        await this.outboundService.sendText(identity.externalUserId, text, {
+          userId,
         });
       })
       .catch(() => undefined);
-  }
-
-  private async retryUpsert(
-    userId: number,
-    zaloUserId: string,
-    expectedGeneration?: string,
-  ): Promise<void> {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= UPSERT_MAX_ATTEMPTS; attempt++) {
-      try {
-        if (expectedGeneration === undefined) {
-          await this.accountLinkService.upsertLink(userId, zaloUserId);
-        } else {
-          await this.accountLinkService.upsertLink(userId, zaloUserId, {
-            expectedGeneration,
-          });
-        }
-        return;
-      } catch (error) {
-        lastError = error;
-        if (attempt < UPSERT_MAX_ATTEMPTS) {
-          await sleep(UPSERT_BASE_BACKOFF_MS * attempt);
-        }
-      }
-    }
-    throw lastError;
   }
 }

@@ -21,6 +21,7 @@ import {
   type StudyReminderJobRepositoryPort,
 } from '@wispace/study-reminder-shared';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
+import { ZaloWelcomeService } from '@zalo/modules/zalo-oauth/application/services/zalo-welcome.service';
 import { PlatformChatQueueService } from '@wispace/chat-agent';
 import {
   isValidApprovalToken,
@@ -57,6 +58,7 @@ export class ZaloChatService {
     @Optional()
     @Inject(STUDY_REMINDER_JOB_REPOSITORY)
     private readonly studyReminderJobRepository?: StudyReminderJobRepositoryPort,
+    @Optional() private readonly welcomeService?: ZaloWelcomeService,
   ) {
     const appId = this.configService.get<string>('ZALO_APP_ID');
     const redirectUri = this.configService.get<string>(
@@ -245,6 +247,10 @@ export class ZaloChatService {
       ? `\n\nLiên kết tài khoản tại đây: ${this.oauthAuthorizeUrl}`
       : '';
     const message = `${buildGreetingMessage()}${linkPart}`;
+    if (this.welcomeService) {
+      await this.welcomeService.organicWelcomeIfDue(zaloUserId, message);
+      return;
+    }
     await this.outboundService.sendText(zaloUserId, message);
   }
 

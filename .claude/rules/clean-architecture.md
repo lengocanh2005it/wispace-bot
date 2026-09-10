@@ -4,6 +4,10 @@ The executable scope and exception map lives in [`docs/architecture-boundaries.m
 
 Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (reference: [clean-nestjs-cli](https://github.com/jheisonnovak/clean-nestjs-cli), [NestJS-DDD-DevOps](https://andrea-acampora.github.io/nestjs-ddd-devops/)), inside `apps/messenger-bot/src/`. Paths below are relative to `apps/messenger-bot/src/` unless stated otherwise.
 
+## Monorepo boundary: `packages/account-link-core`
+
+`packages/account-link-core` (`@wispace/account-link-core`) owns the framework-free account-link completion, verify-intent reconciliation, retry, and single-use OAuth-state policies shared by Discord and Zalo. Import policy from `/core`; keep OAuth crypto/PKCE, advisory locks, platform status clients, guild/OA delivery, and TypeORM adapters in the applications and `/adapters` composition edges. The package must not import NestJS, TypeORM, vendor SDKs, or app aliases.
+
 ## Monorepo boundary: `packages/contracts`
 
 `packages/contracts` (`@wispace/contracts`) is the shared kernel of cross-context contracts — `Platform`, `PlatformLinkState`, `ReportSendJobStatus`, `OutboundDeliveryOutcome`, `MessageType` (const + type) — plus the canonical owners for every type-only import that used to live in `@wispace/database`.

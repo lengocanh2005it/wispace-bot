@@ -185,6 +185,50 @@ describe('ZaloLinkReconcileCronService', () => {
     );
   });
 
+  it('continues with the welcome when a relink notification fails', async () => {
+    const verifyRecordService = {
+      listStaleRecords: jest.fn().mockResolvedValue([
+        {
+          zaloUserId: 'zalo-user-1',
+          userId: 42,
+          verifiedAt: new Date(Date.now() - 150_000),
+        },
+      ]),
+      consumeRecord: jest.fn().mockResolvedValue(undefined),
+    } as unknown as ZaloLinkVerifyRecordRepositoryPort;
+    const accountLinkService = {
+      findUserIdByZaloId: jest.fn().mockResolvedValue(undefined),
+      upsertLink: jest.fn().mockResolvedValue({
+        relinked: true,
+        previousUserId: 7,
+      }),
+    } as unknown as ZaloAccountLinkService;
+    const relinkNotifier = {
+      notify: jest.fn().mockRejectedValue(new Error('DM unavailable')),
+    };
+    const welcomeService = {
+      welcomeIfDue: jest.fn().mockResolvedValue('sent'),
+    };
+    const cron = new ZaloLinkReconcileCronService(
+      verifyRecordService,
+      accountLinkService,
+      buildConfigService(),
+      buildPgLock(884_200_937),
+      { clear: jest.fn().mockResolvedValue(true) },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      welcomeService as never,
+      relinkNotifier as never,
+    );
+
+    await expect(cron.handleReconcile()).resolves.toBeUndefined();
+
+    expect(relinkNotifier.notify).toHaveBeenCalledWith('zalo-user-1', 42);
+    expect(welcomeService.welcomeIfDue).toHaveBeenCalledWith('zalo-user-1', 42);
+  });
+
   it('does nothing when the advisory lock is held elsewhere', async () => {
     const { verifyRecordService, accountLinkService } = buildHarness({
       records: [

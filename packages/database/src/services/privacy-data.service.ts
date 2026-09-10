@@ -71,7 +71,7 @@ export interface PrivacyEntityRegistry {
  * Preserved (audit trail, auto-cleaned by retention cron):
  *   - message_logs
  *   - webhook_inbound_events, webhook_dead_letters
- *   - discord_welcome_records
+ *   - discord_welcome_records, zalo_welcome_records
  *
  * Not covered (no raw per-user identifier — aggregate_id is a SHA-256
  * pseudonym since #640, see docs/data-minimization-audit.md):

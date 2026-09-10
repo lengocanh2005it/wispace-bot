@@ -1,12 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { randomBytes } from 'crypto';
+import { OAuthStateCore } from '@wispace/account-link-core/core';
 import { errorMessage } from '@wispace/bot-common/masking';
 import {
   ZALO_OAUTH_STATE_STORE,
   type ZaloOauthStateStorePort,
 } from '../ports/zalo-oauth-state-store.port';
-
-const STATE_TTL_MS = 10 * 60 * 1000;
 
 export interface ConsumedZaloOauthState {
   codeVerifier: string;
@@ -21,51 +19,49 @@ export interface ConsumedZaloOauthState {
 @Injectable()
 export class ZaloOauthStateService {
   private readonly logger = new Logger(ZaloOauthStateService.name);
+  private readonly stateCore: OAuthStateCore<{
+    codeVerifier: string;
+    linkToken: string;
+  }>;
 
   constructor(
     @Inject(ZALO_OAUTH_STATE_STORE)
     private readonly store: ZaloOauthStateStorePort,
-  ) {}
-
-  async create(codeVerifier: string, linkToken: string): Promise<string> {
-    const state = randomBytes(24).toString('hex');
-    const createdAt = new Date();
-    await this.store.save({
-      state,
-      codeVerifier,
-      linkToken,
-      createdAt,
-    });
-    await this.cleanupExpired(createdAt);
-    return state;
+  ) {
+    this.stateCore = new OAuthStateCore(
+      {
+        save: (state, payload, createdAt) =>
+          this.store.save({ state, ...payload, createdAt }),
+        consume: async (state) => {
+          const row = await this.store.consume(state);
+          return row
+            ? {
+                payload: {
+                  codeVerifier: row.codeVerifier,
+                  linkToken: row.linkToken,
+                },
+                createdAt: row.createdAt,
+              }
+            : undefined;
+        },
+        cleanupExpired: (before, limit) =>
+          this.store.cleanupExpired(before, limit),
+      },
+      {
+        onCleanupError: (error) =>
+          this.logger.warn(
+            `Zalo OAuth state cleanup failed: ${errorMessage(error)}`,
+          ),
+      },
+    );
   }
 
-  // ponytail: opportunistic cleanup instead of a cron — bounded to 100 rows per
-  // create; strictly older than STATE_TTL_MS so an in-flight valid callback is
-  // never deleted.
-  private async cleanupExpired(now: Date): Promise<void> {
-    try {
-      await this.store.cleanupExpired(
-        new Date(now.getTime() - STATE_TTL_MS),
-        100,
-      );
-    } catch (error) {
-      this.logger.warn(
-        `Zalo OAuth state cleanup failed: ${errorMessage(error)}`,
-      );
-    }
+  async create(codeVerifier: string, linkToken: string): Promise<string> {
+    return this.stateCore.create({ codeVerifier, linkToken });
   }
 
   /** Deletes the row regardless of outcome (single-use, even if expired). */
   async consume(state: string): Promise<ConsumedZaloOauthState | undefined> {
-    const row = await this.store.consume(state);
-    if (!row) return undefined;
-
-    const createdAt = row.createdAt.getTime();
-    if (!Number.isFinite(createdAt) || Date.now() - createdAt > STATE_TTL_MS) {
-      return undefined;
-    }
-
-    return { codeVerifier: row.codeVerifier, linkToken: row.linkToken };
+    return this.stateCore.consume(state);
   }
 }

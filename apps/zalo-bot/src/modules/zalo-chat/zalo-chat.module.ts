@@ -55,6 +55,7 @@ import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { BotMetricsService } from '@wispace/bot-metrics';
 import { ZaloOauthModule } from '../zalo-oauth/zalo-oauth.module';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
+import { ZaloWelcomeService } from '@zalo/modules/zalo-oauth/application/services/zalo-welcome.service';
 import { ZaloWispaceModule } from '../wispace/zalo-wispace.module';
 import { ZaloOutboundService } from './application/services/zalo-outbound.service';
 import { ZaloChatService } from './application/services/zalo-chat.service';
@@ -136,6 +137,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
   ],
   providers: [
     ZaloChatService,
+    ZaloWelcomeService,
     TypeormStudyReminderJobRepository,
     // #549 — shadows forPlatform's unwired recorder with the metrics-wired one.
     provideWiredUsageRecorder('zalo', BotMetricsService),
@@ -695,6 +697,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
     PlatformChatHistoryService,
     PlatformChatQueueService,
     ZaloChatService,
+    ZaloWelcomeService,
     ZALO_OUTBOUND,
     ZaloOutboundService,
     PlatformDeadLetterService,
