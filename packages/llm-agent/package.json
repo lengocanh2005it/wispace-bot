@@ -13,6 +13,18 @@
       "require": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./core": {
+      "import": "./dist/core/index.js",
+      "types": "./dist/core/index.d.ts",
+      "require": "./dist/core/index.js",
+      "default": "./dist/core/index.js"
+    },
+    "./adapters": {
+      "import": "./dist/adapters/index.js",
+      "types": "./dist/adapters/index.d.ts",
+      "require": "./dist/adapters/index.js",
+      "default": "./dist/adapters/index.js"
+    },
     "./provider": {
       "import": "./dist/provider/index.js",
       "types": "./dist/provider/index.d.ts",

@@ -1,4 +1,4 @@
-import type { LlmUsage } from '@wispace/llm-agent';
+import type { LlmUsage } from '@wispace/llm-agent/core';
 import type { UsageWriterPort } from './types';
 
 export interface RecordLlmUsageFromCompletionInput {

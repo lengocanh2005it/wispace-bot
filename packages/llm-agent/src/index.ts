@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
-// Root exports — core symbols only
-// Sub-path exports: @wispace/llm-agent/{provider,tools,utils,execution}
+// Compatibility façade: preserve the historical root surface while new code
+// selects the explicit `/core` or `/adapters` entrypoint.
 // ---------------------------------------------------------------------------
 
 // Core agent

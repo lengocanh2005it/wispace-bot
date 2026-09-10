@@ -9,7 +9,7 @@ import { InjectRepository, getRepositoryToken } from '@nestjs/typeorm';
 import type { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { errorMessage } from '@wispace/bot-common/masking';
-import type { LlmUsage } from '@wispace/llm-agent';
+import type { LlmUsage } from '@wispace/llm-agent/core';
 import { LlmUsageEventEntity } from '../entities';
 import { DirectUsageWriter } from './direct-usage-writer';
 import {

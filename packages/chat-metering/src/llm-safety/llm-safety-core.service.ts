@@ -1,9 +1,9 @@
 import { errorMessage } from '@wispace/bot-common/masking';
-import type { LlmSafetyEventRepository } from './llm-safety.repository';
 import type {
   RecordGroundingWarningInput,
   RecordInjectionEventInput,
   RecordClassifierVerdictInput,
+  LlmSafetyEventRepositoryPort,
 } from './types';
 import { redactSafetyText } from './redact-safety-text';
 
@@ -20,7 +20,7 @@ const NOOP_LOGGER: LlmSafetyLogger = {
 /** Best-effort — never throws. Platform-agnostic core, shared across bots. */
 export class LlmSafetyCore {
   constructor(
-    private readonly repository: LlmSafetyEventRepository,
+    private readonly repository: LlmSafetyEventRepositoryPort,
     private readonly logger: LlmSafetyLogger = NOOP_LOGGER,
   ) {}
 

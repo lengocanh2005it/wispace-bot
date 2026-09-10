@@ -1,8 +1,11 @@
 import type { Repository } from 'typeorm';
 import type { LlmSafetyEventEntity } from '../entities/llm-safety-event.entity';
-import type { InsertLlmSafetyEvent } from './types';
+import type {
+  InsertLlmSafetyEvent,
+  LlmSafetyEventRepositoryPort,
+} from './types';
 
-export class LlmSafetyEventRepository {
+export class LlmSafetyEventRepository implements LlmSafetyEventRepositoryPort {
   constructor(
     private readonly repo: Repository<LlmSafetyEventEntity>,
     private readonly platform: string,

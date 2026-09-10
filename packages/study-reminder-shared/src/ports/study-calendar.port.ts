@@ -2,7 +2,7 @@ import type {
   CalendarSessionTimeRange,
   CreateUserCalendarInput,
   UserCalendarRecord,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 
 /**
  * Structural surface of the write-capable WISPACE calendar client, consumed

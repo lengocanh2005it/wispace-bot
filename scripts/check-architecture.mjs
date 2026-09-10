@@ -19,6 +19,8 @@ const OUTER_PATH =
   /(?:^|\/)(?:infrastructure|persistence|presentation|adapters|database)(?:\/|$)/;
 const DOMAIN_OUTER_PATH =
   /(?:^|\/)(?:application|infrastructure|persistence|presentation|adapters|database)(?:\/|$)/;
+const CORE_OUTER_PATH =
+  /(?:^|\/)(?:infrastructure|persistence|presentation|adapters|database|entities)(?:\/|$)/;
 
 /**
  * These files are adapters by design. They are intentionally outside the core
@@ -121,6 +123,15 @@ const CORE_RULES = [
     forbidden: () => true,
     message: 'the shared contracts core must remain dependency-free',
   },
+  coreEntryPointRule('llm-agent', ['packages/llm-agent/src/core/**']),
+  coreEntryPointRule('wispace-client', ['packages/wispace-client/src/core/**']),
+  coreEntryPointRule('student-report', ['packages/student-report/src/core/**']),
+  coreEntryPointRule('chat-metering', ['packages/chat-metering/src/core/**']),
+  coreEntryPointRule('scheduler-core', ['packages/scheduler-core/src/core/**']),
+  coreEntryPointRule('study-reminder-shared', [
+    'packages/study-reminder-shared/src/core/**',
+  ]),
+  coreEntryPointRule('ops-health', ['packages/ops-health/src/core/**']),
   {
     rule: 'domain-no-framework',
     globs: ['apps/*/src/modules/*/domain/**'],
@@ -176,7 +187,7 @@ const CORE_RULES = [
     'packages/ops-health/src/types.ts',
     'packages/ops-health/src/data-quality.types.ts',
     'packages/ops-health/src/data-quality.evaluator.ts',
-    'packages/ops-health/src/data-quality.config.ts',
+    'packages/ops-health/src/data-quality.service.ts',
   ]),
   frameworkFreePackageRule('wispace-client', [
     'packages/wispace-client/src/types/**',
@@ -206,6 +217,18 @@ function frameworkFreePackageRule(name, globs) {
     globs,
     forbidden: (specifier) => FRAMEWORK_IMPORT.test(specifier),
     message: `${name} core must not import framework or ORM details`,
+  };
+}
+
+function coreEntryPointRule(name, globs) {
+  return {
+    rule: `${name}-entrypoint-no-outer`,
+    globs,
+    forbidden: (specifier) =>
+      FRAMEWORK_IMPORT.test(specifier) ||
+      CONCRETE_OUTER_PACKAGE.test(specifier) ||
+      CORE_OUTER_PATH.test(specifier),
+    message: `${name} core entrypoints must not import framework, infrastructure, or adapter details`,
   };
 }
 

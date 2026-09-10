@@ -8,7 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { CronJob } from 'cron';
 import { DataSource, LessThan, Repository } from 'typeorm';
-import { ChatIdempotencyEntity } from '@wispace/chat-metering';
+import { ChatIdempotencyEntity } from '@wispace/chat-metering/adapters';
 import { WebhookDeadLetterEntity } from '@wispace/database';
 import type { Platform } from '@wispace/contracts';
 import { subMinutes } from 'date-fns';

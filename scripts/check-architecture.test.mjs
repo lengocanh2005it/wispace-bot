@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -220,6 +226,43 @@ test('framework-agnostic package cores reject NestJS imports', () => {
   }
 });
 
+test('package core entrypoints reject framework and adapter imports', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'packages/ops-health/src/core/index.ts',
+      "import { Injectable } from '@nestjs/common';\nexport { value } from '../adapters/index';\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 2);
+    assert.deepEqual(
+      result.violations.map((violation) => violation.rule),
+      ['ops-health-entrypoint-no-outer', 'ops-health-entrypoint-no-outer'],
+    );
+  } finally {
+    f.close();
+  }
+});
+
+test('package core entrypoints reject bot-common infrastructure wiring', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'packages/ops-health/src/core/index.ts',
+      "export { PgAdvisoryLockService } from '@wispace/bot-common/locks';\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].rule, 'ops-health-entrypoint-no-outer');
+  } finally {
+    f.close();
+  }
+});
+
 test('explicitly framework-bound packages remain available as outer adapters', () => {
   const f = fixture();
   try {
@@ -233,6 +276,38 @@ test('explicitly framework-bound packages remain available as outer adapters', (
     assert.deepEqual(result.violations, []);
   } finally {
     f.close();
+  }
+});
+
+test('affected packages publish explicit core/adapter entrypoints', () => {
+  const expected = {
+    'llm-agent': ['./core', './adapters'],
+    'wispace-client': ['./core', './adapters'],
+    'student-report': ['./core', './adapters'],
+    'chat-metering': ['./core', './adapters'],
+    'scheduler-core': ['./core', './adapters'],
+    'study-reminder-shared': ['./core', './adapters'],
+    'ops-health': ['./core', './adapters'],
+    'cleanup-cron': ['./adapters'],
+  };
+
+  for (const [name, subpaths] of Object.entries(expected)) {
+    const packageJson = JSON.parse(
+      readFileSync(
+        join(process.cwd(), 'packages', name, 'package.json'),
+        'utf8',
+      ),
+    );
+    assert.ok(packageJson.exports?.['.'], `${name} must preserve root export`);
+    for (const subpath of subpaths) {
+      const entry = packageJson.exports[subpath];
+      assert.ok(entry, `${name} must publish ${subpath}`);
+      const distPath =
+        subpath === '.' ? './dist' : `./dist/${subpath.slice(2)}`;
+      assert.equal(entry.import, `${distPath}/index.js`);
+      assert.equal(entry.require, `${distPath}/index.js`);
+      assert.equal(entry.types, `${distPath}/index.d.ts`);
+    }
   }
 });
 

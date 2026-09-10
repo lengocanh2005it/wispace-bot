@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { isPostgresWriter } from '@wispace/bot-common/health';
-import { studyReminderTerminalFailurePredicateSql } from '@wispace/study-reminder-shared';
+import { studyReminderTerminalFailurePredicateSql } from '@wispace/study-reminder-shared/core';
 import { subHours, subMilliseconds } from 'date-fns';
 import type {
   OpsHealthRepositoryPort,

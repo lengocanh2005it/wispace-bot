@@ -8,6 +8,13 @@ export interface InsertLlmSafetyEvent {
   payload?: Record<string, unknown>;
 }
 
+/** Persistence port consumed by the framework-free safety core. */
+export interface LlmSafetyEventRepositoryPort {
+  insert(event: InsertLlmSafetyEvent): Promise<void>;
+  countSince(since: Date): Promise<number>;
+  deleteOlderThan(before: Date): Promise<number>;
+}
+
 export interface RecordGroundingWarningInput {
   externalUserId: string;
   userId?: number;

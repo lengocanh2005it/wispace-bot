@@ -1,23 +1,23 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import {
-  PlatformLlmUsageRecorderAdapter,
-  todayUsageDate,
-} from '@wispace/chat-metering';
+import { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering/adapters';
+import { todayUsageDate } from '@wispace/chat-metering/core';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import type { Platform } from '@wispace/contracts';
 import type {
   UserGoalsRecord,
   TaskScoreAverageRecord,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 import {
   buildLlmExecutionConfig,
   createEnvLlmExecutionPort,
   type AdmissionMetrics,
+} from '@wispace/llm-agent/adapters';
+import {
   type LlmDegradedModeEvent,
   loadSystemPromptFile,
   type LlmProviderAdapter,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import {
   StudentReportCore,
   type StudentReportPorts,

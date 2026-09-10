@@ -211,7 +211,7 @@ flowchart TB
 
 ## 3. Code Structure
 
-Repo uses **Clean Architecture** — each feature in `src/modules/<name>/` has 4 layers: `domain` → `application` → `infrastructure` → `presentation`. The executable scope/exception map is [architecture-boundaries.md](architecture-boundaries.md); coding details remain in [AGENTS.md § Clean Architecture](../AGENTS.md#clean-architecture) and `.claude/rules/clean-architecture.md`. CI ratchets these edges while #429/#430 finish the remaining package-core migrations.
+Repo uses **Clean Architecture** — each feature in `src/modules/<name>/` has 4 layers: `domain` → `application` → `infrastructure` → `presentation`. The executable scope/exception map is [architecture-boundaries.md](architecture-boundaries.md); coding details remain in [AGENTS.md § Clean Architecture](../AGENTS.md#clean-architecture) and `.claude/rules/clean-architecture.md`. Shared package cores/adapters are explicit after #430; CI continues to ratchet remaining application/account-link edges owned by #429.
 
 ```
 wispace-bot/                          # Turborepo root

@@ -7,7 +7,7 @@ import {
   type CalendarSessionTimeRange,
   type RescheduleSchedulingMode,
   type UserCalendarRecord,
-} from '@wispace/wispace-client';
+} from '@wispace/wispace-client/core';
 import type {
   RescheduleConfigPort,
   StudyCalendarPort,

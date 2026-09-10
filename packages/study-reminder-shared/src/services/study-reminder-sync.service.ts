@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
-import { runBatched } from '@wispace/scheduler-core';
+import { runBatched } from '@wispace/scheduler-core/core';
 import {
   MAPPING_READER,
   type MappingReaderPort,

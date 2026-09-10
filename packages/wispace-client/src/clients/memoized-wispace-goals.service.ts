@@ -1,7 +1,18 @@
 import type { UserGoalsRecord } from '../types/user-goals.types';
 import type { TaskScoreAverageRecord } from '../types/task-score-average.types';
-import type { WispaceGoalsService } from './wispace-goals.service';
 import type { WispaceDataCache } from '../cache/wispace-data-cache';
+
+/** Core delegate contract; NestJS service wrappers satisfy it structurally. */
+export interface WispaceGoalsPort {
+  getUserGoals(
+    externalUserId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<UserGoalsRecord>;
+  getTaskScoreAverages(
+    externalUserId: string,
+    options?: { signal?: AbortSignal },
+  ): Promise<TaskScoreAverageRecord[]>;
+}
 
 /**
  * Goals-shaped facade over the shared `WispaceDataCache` (#636). The report
@@ -14,7 +25,7 @@ import type { WispaceDataCache } from '../cache/wispace-data-cache';
  */
 export class MemoizedWispaceGoalsService {
   constructor(
-    private readonly delegate: WispaceGoalsService,
+    private readonly delegate: WispaceGoalsPort,
     private readonly cache: WispaceDataCache,
   ) {}
 

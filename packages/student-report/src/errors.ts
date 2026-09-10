@@ -1,10 +1,10 @@
 import { maskExternalId } from '@wispace/bot-common/masking';
 import { isAbortError } from '@wispace/bot-common/utils';
-import { LlmAllProvidersExhaustedError } from '@wispace/llm-agent';
 import {
+  LlmAllProvidersExhaustedError,
   LlmOverloadError,
   LlmProviderCircuitOpenError,
-} from '@wispace/llm-agent/execution';
+} from '@wispace/llm-agent/core';
 
 /** Thrown by `CapacityDataPort` when the platform has no scored Writing tasks yet. */
 export class StudentReportNoScoreDataError extends Error {

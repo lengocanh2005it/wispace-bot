@@ -1,6 +1,6 @@
 # 4-layer Clean Architecture
 
-The executable boundary map is [docs/architecture-boundaries.md](../../docs/architecture-boundaries.md). The repository is migrating incrementally: the guard protects the named core scopes and app domain/application edges while #429/#430 complete the remaining mixed-package extraction.
+The executable boundary map is [docs/architecture-boundaries.md](../../docs/architecture-boundaries.md). Shared packages now publish explicit `/core` and `/adapters` entrypoints (#430); the guard continues to protect those scopes and the remaining app domain/application migration debt owned by #429.
 
 Each feature module in `apps/messenger-bot/src/modules/` follows 4 layers: `domain` → `application` ← `infrastructure` → `presentation`. Domain contains only pure types and repository interfaces, with no NestJS or TypeORM dependencies.
 

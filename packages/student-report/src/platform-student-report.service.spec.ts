@@ -1,14 +1,18 @@
 import { ConfigService } from '@nestjs/config';
 import { PlatformStudentReportService } from './platform-student-report.service';
-import { createEnvLlmExecutionPort } from '@wispace/llm-agent';
-import type { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering';
-import type { WispaceGoalsService } from '@wispace/wispace-client';
-import type { LlmProviderAdapter } from '@wispace/llm-agent';
+import { createEnvLlmExecutionPort } from '@wispace/llm-agent/adapters';
+import type { PlatformLlmUsageRecorderAdapter } from '@wispace/chat-metering/adapters';
+import type { WispaceGoalsService } from '@wispace/wispace-client/adapters';
+import type { LlmProviderAdapter } from '@wispace/llm-agent/core';
 import { StudentReportNoScoreDataError } from './errors';
 
-jest.mock('@wispace/llm-agent', () => ({
-  ...jest.requireActual('@wispace/llm-agent'),
+jest.mock('@wispace/llm-agent/core', () => ({
+  ...jest.requireActual('@wispace/llm-agent/core'),
   loadSystemPromptFile: jest.fn().mockReturnValue('system prompt'),
+}));
+
+jest.mock('@wispace/llm-agent/adapters', () => ({
+  ...jest.requireActual('@wispace/llm-agent/adapters'),
   createEnvLlmExecutionPort: jest.fn(),
 }));
 

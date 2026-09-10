@@ -2,7 +2,7 @@ import {
   LlmAllProvidersExhaustedError,
   LlmOverloadError,
   LlmProviderCircuitOpenError,
-} from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
 import type {
   LlmExecutionPort,
   LlmDegradedAction,
@@ -10,8 +10,8 @@ import type {
   LlmDegradedModeEvent,
   LlmProviderAdapter,
   LlmUsageRecorderPort,
-} from '@wispace/llm-agent';
-import { retryWithBackoff } from '@wispace/llm-agent';
+} from '@wispace/llm-agent/core';
+import { retryWithBackoff } from '@wispace/llm-agent/core';
 import {
   errorMessage,
   maskExternalId,
