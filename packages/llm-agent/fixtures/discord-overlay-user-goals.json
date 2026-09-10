@@ -1,11 +1,11 @@
 {
   "name": "discord-overlay-user-goals",
   "description": "Discord overlay contract: the request carries the Discord platform rules (DM privacy for personal data) alongside the shared core; tool args and tool choice are asserted.",
-  "coreHash": "2406849abda03274e9681b0cf9ddfa78f16680ac09722d950b53bb8b4703ad39",
+  "coreHash": "476325498115d602b088b2691cfac8e7dccd8447014aa45d995a6fd2a842dd62",
   "promptFiles": [
     {
       "path": "apps/discord-bot/src/shared/prompts/discord-chat.system.txt",
-      "hash": "7e5295bfd56b0dd52cba0896477cf1651248c6c79cdd89e063594cc2c3737dd1"
+      "hash": "155c2892b49680ba6d7683505341fc64976ac2a86eef4e351aceee706439dc5b"
     }
   ],
   "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=2001).",
@@ -40,7 +40,8 @@
       {
         "systemPromptContains": [
           "You are chatting with a learner through Discord.",
-          "delivered privately via DM"
+          "delivered privately via DM",
+          "Discord renders Markdown"
         ],
         "userMessageContains": ["xem mục tiêu band"],
         "toolsInclude": ["get_user_goals"],

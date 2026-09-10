@@ -60,6 +60,14 @@ describe('CHAT_SYSTEM_PROMPT_CORE', () => {
     expect(CHAT_SYSTEM_PROMPT_CORE).toContain('đã hoàn thành toàn bộ bài');
   });
 
+  it('leaves message formatting to the platform overlays (#991)', () => {
+    // Markdown rendering is a platform capability, not a universal rule:
+    // Messenger and the Zalo OA text message do not render it, Discord does.
+    // Each overlay states its own format; the core states none.
+    expect(CHAT_SYSTEM_PROMPT_CORE).not.toContain('Markdown');
+    expect(CHAT_SYSTEM_PROMPT_CORE).not.toContain('Plain text only');
+  });
+
   it('does not name any platform', () => {
     expect(CHAT_SYSTEM_PROMPT_CORE).not.toContain('Messenger');
     expect(CHAT_SYSTEM_PROMPT_CORE).not.toContain('Discord');

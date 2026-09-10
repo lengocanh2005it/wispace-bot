@@ -34,3 +34,30 @@ describe.each(OVERLAY_PATHS)('overlay drift guard (#648): %s', (path) => {
     },
   );
 });
+
+/**
+ * Message-format coverage (#991): the format rule moved out of the core into
+ * the overlays, so every overlay must state the format its platform renders.
+ * An overlay that says nothing leaves the model to guess.
+ */
+const OVERLAY_FORMAT_RULES: Array<[string, string]> = [
+  [
+    'apps/messenger-bot/src/shared/prompts/messenger-chat.system.txt',
+    'Plain text only',
+  ],
+  ['apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt', 'Plain text only'],
+  [
+    'apps/discord-bot/src/shared/prompts/discord-chat.system.txt',
+    'Discord renders Markdown',
+  ],
+];
+
+describe.each(OVERLAY_FORMAT_RULES)(
+  'overlay states its message format (#991): %s',
+  (path, rule) => {
+    it(`contains ${JSON.stringify(rule)}`, () => {
+      const overlay = readFileSync(resolvePromptPath(path), 'utf8');
+      expect(overlay).toContain(rule);
+    });
+  },
+);
