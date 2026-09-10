@@ -1,5 +1,7 @@
 # Clean Architecture — wispace-bots (Turborepo monorepo)
 
+The executable scope and exception map lives in [`docs/architecture-boundaries.md`](../../docs/architecture-boundaries.md). During the incremental #432 migration, “framework-agnostic package” means the named core paths; mixed packages may keep explicitly outer runtime adapters until #429/#430 move them.
+
 Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (reference: [clean-nestjs-cli](https://github.com/jheisonnovak/clean-nestjs-cli), [NestJS-DDD-DevOps](https://andrea-acampora.github.io/nestjs-ddd-devops/)), inside `apps/messenger-bot/src/`. Paths below are relative to `apps/messenger-bot/src/` unless stated otherwise.
 
 ## Monorepo boundary: `packages/contracts`
@@ -13,18 +15,18 @@ Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (re
 
 ## Monorepo boundary: `packages/llm-agent`
 
-`packages/llm-agent` (`@wispace/llm-agent`) is a **framework-agnostic** package shared across all bots (Messenger, Discord, Zalo) — contains LLM function-calling orchestration (`LlmAgentService`), provider abstraction (`LlmProviderAdapter` interface + OpenAI/OpenAI-compatible adapters), tool schema (`AGENT_TOOLS`), safety utils (prompt injection, grounding, LLM error), and WISPACE domain text/scope utils.
+`packages/llm-agent` (`@wispace/llm-agent`) has a framework-agnostic core shared across all bots (Messenger, Discord, Zalo) plus explicit provider/runtime adapters — it contains LLM function-calling orchestration (`LlmAgentService`), provider abstraction (`LlmProviderAdapter` interface + OpenAI/OpenAI-compatible adapters), tool schema (`AGENT_TOOLS`), safety utils (prompt injection, grounding, LLM error), and WISPACE domain text/scope utils.
 
-- **Do not** import NestJS/TypeORM/Express in `packages/llm-agent` — the `openai` npm package is still a dependency (used in the OpenAI adapter).
+- **Do not** import NestJS/TypeORM/Express in the enforced core of `packages/llm-agent`; the privacy-state NestJS adapter is an explicit outer exception. The `openai` npm package remains confined to the provider adapter.
 - **Do not** put Wispace API / DB business logic in this package — that belongs in tool handlers (`ToolExecutorPort`), living in each app (`apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent-tools.service.ts`).
 - Each app implements the ports (`LlmExecutionPort`, `LlmUsageRecorderPort`, `LlmSafetyEventPort`, `AgentMetricsPort`, `ToolExecutorPort<T>`) using real NestJS services, then calls `new LlmAgentService(config, ports)` — see `apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent.service.ts` for a thin adapter example.
 - Modify package → must rebuild + test all dependent apps (`npx turbo run build test --filter=@wispace/messenger-bot...`).
 
 ## Monorepo boundary: `packages/chat-metering`
 
-`packages/chat-metering` (`@wispace/chat-metering`) is the second framework-agnostic package, shared across chat quota/rate-limit (`chat_daily_usage`, `chat_idempotency`) + LLM usage/safety event tracking (`llm_usage_events`, `llm_safety_events`) — all 4 tables generalized to `(platform, external_user_id)` since Phase 2, `platform` passed via constructor instead of hardcoded.
+`packages/chat-metering` (`@wispace/chat-metering`) has framework-agnostic policy cores plus explicit NestJS/TypeORM adapters, shared across chat quota/rate-limit (`chat_daily_usage`, `chat_idempotency`) + LLM usage/safety event tracking (`llm_usage_events`, `llm_safety_events`) — all 4 tables generalized to `(platform, external_user_id)` since Phase 2, `platform` passed via constructor instead of hardcoded.
 
-- **Do not** import NestJS in the package — only dependency is `typeorm` (uses `Repository<T>`/`EntityManager` directly, not `@nestjs/typeorm` decorators) plus `@wispace/llm-agent` for the provider-neutral `LlmUsage` contract (the usage recorder seam consumes `LlmUsage` — no OpenAI SDK types in the domain, #427). Each app registers entities via `TypeOrmModule.forFeature([...])` then passes `Repository<T>` into the core class constructor (`ChatRateLimitCore`, `LlmUsageRecorderCore`, `LlmSafetyCore`) — same pattern as apps implementing ports for `@wispace/llm-agent`.
+- **Do not** import NestJS in the enforced policy cores — explicit module, entity, repository, and platform adapters remain outer code. The cores use `typeorm` (`Repository<T>`/`EntityManager`, not `@nestjs/typeorm` decorators) plus `@wispace/llm-agent` for the provider-neutral `LlmUsage` contract (the usage recorder seam consumes `LlmUsage` — no OpenAI SDK types in the domain, #427).
 - **No OpenAI SDK imports** anywhere in the package — the SDK is confined to `packages/llm-agent/src/provider/` (the adapter boundary); enforced by `.github/scripts/check-openai-sdk-imports.sh` (#427).
 - **Do not move** into the package: whitelist/hint UX, quota-event audit table (`chat_quota_events`), stuck-reserved recovery cron, ops CLI scripts, BullMQ queue wiring, Redis burst counter, `MetricsService`/prom-client — these remain in each app (currently only `apps/messenger-bot` has them all; `apps/discord-bot` uses a simplified version: `MemoryBurstCounter` + `DirectUsageWriter`, no BullMQ).
 - `apps/messenger-bot`'s `ChatRateLimitRepository`/`LlmUsageRepository`/`LlmSafetyEventRepository` (infrastructure layer) are **thin wrappers** around the package core (platform='messenger') — preserving the `*RepositoryPort` interface + all consumers unchanged. Ops-only methods (`incrementDailyUsage`, `countStuckReserved`, ...) are not in the package, remaining in the wrapper.
@@ -33,9 +35,9 @@ Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (re
 
 ## Monorepo boundary: `packages/wispace-client`
 
-`packages/wispace-client` (`@wispace/wispace-client`) is the third framework-agnostic package — HTTP client for calling Wispace API (User/goals, TaskScoreAverage, UserCalendar) + retry/error (`withRetry`, `WispaceApiError`) + date/timezone utils (`study-calendar.utils.ts`), shared by Messenger + Discord.
+`packages/wispace-client` (`@wispace/wispace-client`) has framework-agnostic HTTP clients/utilities plus explicit NestJS/Redis adapters — it calls the Wispace API (User/goals, TaskScoreAverage, UserCalendar) and provides retry/error (`withRetry`, `WispaceApiError`) + date/timezone utils (`study-calendar.utils.ts`), shared by Messenger + Discord.
 
-- **Do not** import NestJS — uses plain `fetch`. App reads `ConfigService` (URL, `WISPACE_INTERNAL_KEY`, retry settings) then passes `WispaceApiClientConfig` into the client constructor (`UserGoalsApiClient`, `TaskScoreAverageApiClient`, `UserCalendarApiClient`, `UserCalendarScheduleClient`).
+- **Core clients do not** import NestJS and use plain `fetch`; configuration/provider and Redis cache adapters are outer code. App reads `ConfigService` (URL, `WISPACE_INTERNAL_KEY`, retry settings) then passes `WispaceApiClientConfig` into the client constructor (`UserGoalsApiClient`, `TaskScoreAverageApiClient`, `UserCalendarApiClient`, `UserCalendarScheduleClient`).
 - Student identification headers are generalized via `buildWispaceHeaders(idHeader, externalId, internalKey)` — `idHeader` ∈ `x-psid` \| `x-discordid` \| `x-zaloid` (Wispace API already supports all 3, confirmed by user — no changes needed on WISPACE side, just send the correct header for the platform).
 - **Do not move** into the package: report-generation business logic (`StudentReportService`'s LLM call + capacity mapping), reschedule confirmation UI (Messenger postback button — `MessengerRescheduleConfirmationService`), notification-window subscription (`register_exam_report_notifications`) — these are platform-specific, remaining in each app.
 - `apps/messenger-bot`'s `UserGoalsApiService`/`TaskScoreAverageApiService`/`UserCalendarApiService`/`UserCalendarScheduleService` are **thin wrappers** around the package client (idHeader='x-psid') — preserving public API; report-specific mapping (`mapToCapacityInput`) remains in the wrapper.
@@ -54,9 +56,9 @@ Repo uses **feature modules + 4 layers** following NestJS Clean Architecture (re
 
 ## Monorepo boundary: `packages/student-report`
 
-`packages/student-report` (`@wispace/student-report`) is the fifth framework-agnostic package — `StudentReportCore` (fetch capacity → call LLM → parse JSON → fallback → format student competency report text), types (`StudentCapacityInput`/`StudentCapacityReport`), errors (`StudentReportNoScoreDataError`, `StudentReportRetryableError`), and messages (R1/R3 guidance) shared across all bots.
+`packages/student-report` (`@wispace/student-report`) has a framework-agnostic report core plus an explicit platform adapter — `StudentReportCore` (fetch capacity → call LLM → parse JSON → fallback → format student competency report text), types (`StudentCapacityInput`/`StudentCapacityReport`), errors (`StudentReportNoScoreDataError`, `StudentReportRetryableError`), and messages (R1/R3 guidance) shared across all bots.
 
-- **Do not** import NestJS — only dependencies are `openai` + `@wispace/llm-agent` (reusing `LlmExecutionPort`/`LlmUsageRecorderPort`). App implements `CapacityDataPort` (calls Wispace API) + real LLM ports using NestJS services, then `new StudentReportCore(config, ports)` — see `apps/messenger-bot/src/modules/student-report/application/services/student-report.service.ts` for a thin adapter.
+- **Do not** import NestJS in the enforced report core; the platform adapter is outer code. Core dependencies are `openai` + `@wispace/llm-agent` (reusing `LlmExecutionPort`/`LlmUsageRecorderPort`). App implements `CapacityDataPort` (calls Wispace API) + real LLM ports using NestJS services, then `new StudentReportCore(config, ports)` — see `apps/messenger-bot/src/modules/student-report/application/services/student-report.service.ts` for a thin adapter.
 - Markdown-stripping (Messenger doesn't render Markdown) is **platform-specific** — passed via `config.sanitizeText` (optional hook), not hardcoded in the package. Discord/Zalo can leave it empty to preserve Markdown.
 - **Do not move** into the package: `StudentCapacityService`/real Wispace API calls, scheduled report cron (`ReportCronService`), retry/outbox logic (`report-send-retry-dispatch.service.ts`) — these are app-specific, remaining in `apps/messenger-bot`.
 - App-local domain error classes (`apps/messenger-bot/src/modules/student-report/domain/errors/*.ts`) only **re-export** the package's classes — required for `instanceof` to match between throw site (`TaskScoreAverageApiService`) and catch site (`MessengerService`, `ReportCronService`, `ReportSendRetryDispatchService`); do not create duplicate class names locally.

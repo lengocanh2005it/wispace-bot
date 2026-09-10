@@ -85,6 +85,74 @@ test('application ports cannot import a concrete persistence adapter', () => {
   }
 });
 
+test('application services cannot import concrete infrastructure paths', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/services/feature.service.ts',
+      "import { FeatureRepository } from '../../infrastructure/persistence/feature.repository';\nexport class FeatureService {}\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].rule, 'application-no-outer');
+  } finally {
+    f.close();
+  }
+});
+
+test('legacy application edges are exact ratchet entries', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/discord-bot/src/modules/account-link/application/services/discord-link-completion.service.ts',
+      "import { NewWispaceService } from '@wispace/wispace-client';\nexport class CompletionService {}\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].rule, 'application-no-outer');
+  } finally {
+    f.close();
+  }
+});
+
+test('domain imports of concrete symbols from mixed packages are reported', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/domain/model.ts',
+      "import { UserGoalsApiClient } from '@wispace/wispace-client';\nexport class Model {}\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].rule, 'domain-no-framework');
+  } finally {
+    f.close();
+  }
+});
+
+test('application ports reject platform SDK imports', () => {
+  const f = fixture();
+  try {
+    f.write(
+      'apps/demo/src/modules/feature/application/ports/feature.port.ts',
+      "import { Client } from 'discord.js';\nexport interface FeaturePort {}\n",
+    );
+
+    const result = checkArchitecture(f.root);
+
+    assert.equal(result.violations.length, 1);
+    assert.equal(result.violations[0].rule, 'application-port-no-outer');
+  } finally {
+    f.close();
+  }
+});
+
 test('the shared contracts core remains dependency-free', () => {
   const f = fixture();
   try {

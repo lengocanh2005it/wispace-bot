@@ -7,12 +7,18 @@ import ts from 'typescript';
 const FRAMEWORK_IMPORT =
   /^(?:@nestjs(?:\/|$)|@nestjs\/typeorm$|typeorm$|express$)/;
 const CONCRETE_OUTER_PACKAGE =
-  /^(?:@wispace\/(?:database|wispace-client|chat-agent|student-report|chat-metering|study-reminder-shared|scheduler-core|ops-health|cleanup-cron|bot-common)(?:\/|$)|typeorm$|@nestjs\/typeorm$|ioredis$|redis$|undici$|axios$|openai$)/;
-const DOMAIN_OUTER_PACKAGE =
-  /^(?:@wispace\/database(?:\/|$)|typeorm$|@nestjs\/typeorm$|ioredis$|redis$|undici$|axios$|openai$)/;
+  /^(?:@wispace\/(?:database|wispace-client|chat-agent|student-report|chat-metering|study-reminder-shared|scheduler-core|ops-health|cleanup-cron|bot-common)(?:\/|$)|typeorm$|@nestjs\/typeorm$|ioredis$|redis$|undici$|axios$|openai$|discord\.js$|@discordjs(?:\/|$)|node:(?:http|https|net|tls)$)/;
+const HARD_OUTER_PACKAGE =
+  /^(?:@wispace\/database(?:\/|$)|typeorm$|@nestjs\/typeorm$|ioredis$|redis$|undici$|axios$|openai$|discord\.js$|@discordjs(?:\/|$)|node:(?:http|https|net|tls)$)/;
+const MIXED_PACKAGE =
+  /^@wispace\/(?:wispace-client|chat-agent|student-report|chat-metering|study-reminder-shared|scheduler-core|ops-health|cleanup-cron|bot-common)(?:\/|$)/;
+const CONCRETE_OUTER_SYMBOL =
+  /(?:Entity|Repository|Service|Controller|Gateway|Adapter|ApiClient|Client|RedisStore)$/;
 const APP_IMPORT = /^(?:@messenger\/|@discord\/|@zalo\/)/;
 const OUTER_PATH =
   /(?:^|\/)(?:infrastructure|persistence|presentation|adapters|database)(?:\/|$)/;
+const DOMAIN_OUTER_PATH =
+  /(?:^|\/)(?:application|infrastructure|persistence|presentation|adapters|database)(?:\/|$)/;
 
 /**
  * These files are adapters by design. They are intentionally outside the core
@@ -21,28 +27,92 @@ const OUTER_PATH =
 export const FRAMEWORK_BOUND_ADAPTERS = [
   'packages/llm-agent/src/utils/privacy-state.service.ts',
   'packages/student-report/src/platform-student-report.service.ts',
-  'packages/wispace-client/src/wispace-providers.ts',
-  'packages/wispace-client/src/config/**',
-  'packages/wispace-client/src/clients/*service.ts',
-  'packages/wispace-client/src/cache/redis-wispace-cache.store.ts',
-  'packages/chat-agent/src/**',
-  'packages/chat-metering/src/chat-metering.module.ts',
-  'packages/chat-metering/src/**/platform-*.ts',
-  'packages/chat-metering/src/**/*.repository.ts',
-  'packages/chat-metering/src/entities/**',
-  'packages/learner-profile/src/typeorm-learner-profile.store.ts',
-  'packages/learner-profile/src/recorder.ts',
-  'packages/learner-profile/src/suffix.ts',
-  'packages/scheduler-core/src/services/**',
-  'packages/study-reminder-shared/src/services/**',
-  'packages/study-reminder-shared/src/infrastructure/**',
-  'packages/study-reminder-shared/src/entities/**',
-  'packages/ops-health/src/ops-health.service.ts',
-  'packages/ops-health/src/typeorm-*.ts',
-  'packages/ops-health/src/data-quality.service.ts',
-  'packages/ops-health/src/cron-heartbeat-registry.ts',
-  'packages/cleanup-cron/src/**',
 ];
+
+// Ratchet baseline for existing application edges. Remove each entry as
+// #429/#430 move the adapter outward; new edges fail immediately.
+const LEGACY_APPLICATION_IMPORTS = new Set([
+  'apps/discord-bot/src/modules/account-link/application/services/discord-link-completion.service.ts|@wispace/wispace-client|WispaceTokenVerifyService',
+  'apps/discord-bot/src/modules/account-link/application/services/discord-link-completion.service.ts|@wispace/database|PlatformLinkStateService',
+  'apps/discord-bot/src/modules/account-link/application/services/discord-link-reconcile-cron.service.ts|@wispace/bot-common/locks|ADVISORY_LOCKS,PgAdvisoryLockService',
+  'apps/discord-bot/src/modules/account-link/application/services/discord-link-reconcile-cron.service.ts|@wispace/database|PlatformLinkStateService',
+  'apps/discord-bot/src/modules/account-link/application/services/discord-link-reconcile-cron.service.ts|@wispace/wispace-client|WispaceLinkStatusClient',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-consent.service.ts|@wispace/database|NotificationPreferenceService',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-menu.service.ts|@wispace/wispace-client|WispaceApiError,WispaceCalendarService,WispaceGoalsService',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-outbound.service.ts|discord.js|ActionRowBuilder,ButtonBuilder,ButtonStyle,Client,TextChannel',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-outbound.service.ts|discord.js|MessageCreateOptions',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-outbound.service.ts|@wispace/database|DeliveryLogService,PlatformDeadLetterService',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-platform-connectivity.service.ts|discord.js|Client',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-cron.service.ts|@wispace/scheduler-core|ReportCronLeaderService,ReportCronLockService,ReportScheduleService,evaluateExamWindow,todayReportDate,runBatched',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-cron.service.ts|@wispace/database|CanonicalPlatformService,WebActivityService',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-orchestration.service.ts|@wispace/scheduler-core|ReportOrchestrationService',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-orchestration.service.ts|@wispace/student-report|isStudentReportRetryableError,PlatformStudentReportService',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-retry-dispatch.service.ts|@wispace/scheduler-core|REPORT_SEND_JOB_REPOSITORY,ReportCronLeaderService,ReportSendJobRepositoryPort',
+  'apps/discord-bot/src/modules/discord-chat/application/services/discord-report-retry-dispatch.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService,ADVISORY_LOCKS',
+  'apps/discord-bot/src/modules/discord-chat/application/utils/discord-outbound-guard.ts|discord.js|MessageMentionOptions',
+  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|@nestjs/typeorm|InjectRepository',
+  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|typeorm|Repository',
+  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|@wispace/cleanup-cron|CleanupCronService,CleanupCronConfig',
+  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-idempotency-cleanup-cron.service.ts|@wispace/chat-metering|ChatIdempotencyEntity,ChatToolDailyUsageEntity',
+  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-quota-event-cleanup-cron.service.ts|@wispace/cleanup-cron|CleanupCronService,CleanupCronConfig',
+  'apps/messenger-bot/src/modules/chat-rate-limit/application/services/chat-quota-stuck-recovery-cron.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
+  'apps/messenger-bot/src/modules/display-name/application/user-display-name.service.ts|@nestjs/typeorm|InjectRepository',
+  'apps/messenger-bot/src/modules/display-name/application/user-display-name.service.ts|typeorm|In,Repository',
+  'apps/messenger-bot/src/modules/display-name/application/user-display-name.service.ts|@messenger/infrastructure/database/entities/user.entity|UserEntity',
+  'apps/messenger-bot/src/modules/llm-execution/application/services/llm-execution.service.ts|ioredis|Redis',
+  'apps/messenger-bot/src/modules/llm-usage/application/services/llm-usage-cleanup-cron.service.ts|@wispace/cleanup-cron|CleanupCronService,CleanupCronConfig',
+  'apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent-tools.service.ts|@wispace/wispace-client|MemoizedWispaceGoalsService',
+  'apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent-tools.service.ts|@wispace/wispace-client|PrecreateExerciseApiClient',
+  'apps/messenger-bot/src/modules/messenger/application/agent/messenger-agent.service.ts|@wispace/chat-agent|PlatformAgentService',
+  'apps/messenger-bot/src/modules/messenger/application/services/chat-history-store-startup.service.ts|../../infrastructure/persistence/chat-history.store.resolver|ChatHistoryStoreResolver',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|@wispace/database|PrivacyDataService,PrivacyExpectedMapping',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|../../infrastructure/adapters/messenger-chat-pipeline-adapters|createMessengerChatPipelineAdapters',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-chat-processor.service.ts|@wispace/chat-agent|PlatformChatHistoryService,readChatFlushRetrySettings',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-context.service.ts|../../infrastructure/wispace/wispace-messenger-token-verify.service|WispaceMessengerTokenVerifyService',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-reconcile-cron.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-reconcile-cron.service.ts|@wispace/database|PlatformLinkStateService',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-link-reconcile-cron.service.ts|@wispace/wispace-client|WispaceLinkStatusClient',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-mapping.service.ts|@wispace/study-reminder-shared|createSessionSourceGetSessions,StudyReminderSyncService',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-mapping.service.ts|@wispace/database|PlatformLinkStateService,NotificationPreferenceService',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-message-log-cleanup.service.ts|@wispace/cleanup-cron|CleanupCronService,CleanupCronConfig',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-outbound.service.ts|@wispace/database|PlatformDeadLetterService',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-outbound.service.ts|../../infrastructure/meta/messenger-platform-connectivity.service|MessengerPlatformConnectivityService',
+  'apps/messenger-bot/src/modules/messenger/application/services/messenger-reminder-delivery.service.ts|@wispace/study-reminder-shared|StudyReminderScheduleService',
+  'apps/messenger-bot/src/modules/messenger/application/services/webhook-action-executor.service.ts|@wispace/database|NotificationPreferenceService',
+  'apps/messenger-bot/src/modules/scheduler/application/services/data-quality-cron.service.ts|@wispace/ops-health|isDataQualityCronEnabled,DataQualityService,DataQualityCheckResult',
+  'apps/messenger-bot/src/modules/scheduler/application/services/llm-safety.service.ts|@nestjs/typeorm|InjectRepository',
+  'apps/messenger-bot/src/modules/scheduler/application/services/llm-safety.service.ts|typeorm|Repository',
+  'apps/messenger-bot/src/modules/scheduler/application/services/llm-safety.service.ts|@wispace/chat-metering|LlmSafetyCore,LlmSafetyEventEntity,LlmSafetyEventRepository',
+  'apps/messenger-bot/src/modules/scheduler/application/services/report-cron.service.ts|@wispace/database|CanonicalPlatformService,WebActivityService',
+  'apps/messenger-bot/src/modules/scheduler/application/services/report-cron.service.ts|@wispace/scheduler-core|ReportCronLeaderService,ReportCronLockService,ReportScheduleService,todayReportDate,runBatched,SendScheduledReportsOptions,SendScheduledReportsResult',
+  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-orchestration.service.ts|@wispace/database|readReportClaimLeaseMs',
+  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-orchestration.service.ts|@wispace/scheduler-core|ReportSendScheduleService',
+  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-retry-dispatch.service.ts|@wispace/scheduler-core|REPORT_SEND_JOB_REPOSITORY,ReportSendJobRepositoryPort,ReportCronLeaderService,ReportScheduleService,ReportSendScheduleService,todayReportDate',
+  'apps/messenger-bot/src/modules/scheduler/application/services/report-send-retry-dispatch.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
+  'apps/messenger-bot/src/modules/student-report/application/services/student-report.service.ts|../../infrastructure/wispace/task-score-average-api.service|TaskScoreAverageApiService',
+  'apps/messenger-bot/src/modules/study-reminder/application/services/study-calendar-command.service.ts|@wispace/study-reminder-shared|StudyReminderScheduleService',
+  'apps/messenger-bot/src/modules/study-reminder/application/services/study-calendar-command.service.ts|@wispace/study-reminder-shared|StudyReminderSyncService',
+  'apps/messenger-bot/src/modules/study-reminder/application/services/study-reminder.service.ts|@wispace/study-reminder-shared|StudyReminderScheduleService',
+  'apps/messenger-bot/src/modules/study-reminder/application/services/study-session-source.service.ts|@wispace/study-reminder-shared|StudyReminderScheduleService',
+  'apps/messenger-bot/src/modules/study-reminder/application/services/study-session-source.service.ts|../../infrastructure/wispace/user-calendar-schedule.service|UserCalendarScheduleService',
+  'apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat.service.ts|@wispace/database|NotificationPreferenceService',
+  'apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-chat.service.ts|@wispace/chat-agent|PlatformChatQueueService',
+  'apps/zalo-bot/src/modules/zalo-chat/application/services/zalo-outbound.service.ts|@wispace/database|DeliveryLogService,PlatformDeadLetterService',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.ts|@nestjs/typeorm|InjectRepository',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.ts|typeorm|Repository',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-account-link.service.ts|@zalo/infrastructure/database/entities/zalo-account-link.entity|ZaloAccountLinkEntity',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-completion.service.ts|@wispace/wispace-client|WispaceTokenVerifyService',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-completion.service.ts|@wispace/database|PlatformLinkStateService',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-reconcile-cron.service.ts|@wispace/bot-common/locks|PgAdvisoryLockService',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-reconcile-cron.service.ts|@wispace/database|PlatformLinkStateService',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-link-reconcile-cron.service.ts|@wispace/wispace-client|WispaceLinkStatusClient',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-oauth-state.service.ts|@nestjs/typeorm|InjectRepository',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-oauth-state.service.ts|typeorm|Repository',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-oauth-state.service.ts|@zalo/infrastructure/database/entities/zalo-oauth-state.entity|ZaloOauthStateEntity',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-token.service.ts|@nestjs/typeorm|InjectRepository',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-token.service.ts|typeorm|EntityManager,Repository',
+  'apps/zalo-bot/src/modules/zalo-oauth/application/services/zalo-token.service.ts|@zalo/infrastructure/database/entities/zalo-oa-token.entity|ZaloOaTokenEntity',
+]);
 
 const CORE_RULES = [
   {
@@ -54,11 +124,24 @@ const CORE_RULES = [
   {
     rule: 'domain-no-framework',
     globs: ['apps/*/src/modules/*/domain/**'],
-    forbidden: (specifier) =>
+    forbidden: (specifier, symbols) =>
       FRAMEWORK_IMPORT.test(specifier) ||
-      DOMAIN_OUTER_PACKAGE.test(specifier) ||
-      OUTER_PATH.test(specifier),
+      HARD_OUTER_PACKAGE.test(specifier) ||
+      DOMAIN_OUTER_PATH.test(specifier) ||
+      isConcreteMixedImport(specifier, symbols),
     message: 'domain must not import framework or infrastructure details',
+  },
+  {
+    rule: 'application-no-outer',
+    globs: ['apps/*/src/modules/*/application/**'],
+    excludes: ['apps/*/src/modules/*/application/ports/**'],
+    forbidden: (specifier, symbols) =>
+      HARD_OUTER_PACKAGE.test(specifier) ||
+      OUTER_PATH.test(specifier) ||
+      isConcreteMixedImport(specifier, symbols),
+    allow: isLegacyApplicationImport,
+    message:
+      'application code must depend on ports, not concrete infrastructure details',
   },
   {
     rule: 'application-port-no-outer',
@@ -124,6 +207,19 @@ function frameworkFreePackageRule(name, globs) {
     forbidden: (specifier) => FRAMEWORK_IMPORT.test(specifier),
     message: `${name} core must not import framework or ORM details`,
   };
+}
+
+function isConcreteMixedImport(specifier, symbols) {
+  return (
+    MIXED_PACKAGE.test(specifier) &&
+    (symbols ?? []).some((symbol) => CONCRETE_OUTER_SYMBOL.test(symbol))
+  );
+}
+
+function isLegacyApplicationImport(relativePath, imported) {
+  return LEGACY_APPLICATION_IMPORTS.has(
+    `${relativePath}|${imported.imported}|${imported.symbols.join(',')}`,
+  );
 }
 
 function globToRegExp(glob) {
@@ -256,8 +352,11 @@ function importedSymbols(node) {
   return ['*'];
 }
 
-function isExcluded(relativePath) {
-  return matchesAnyGlob(relativePath, FRAMEWORK_BOUND_ADAPTERS);
+function isExcluded(relativePath, rule) {
+  return (
+    matchesAnyGlob(relativePath, FRAMEWORK_BOUND_ADAPTERS) ||
+    (rule.excludes ?? []).some((glob) => matchesGlob(relativePath, glob))
+  );
 }
 
 function packageImportViolation(relativePath, imported) {
@@ -303,11 +402,12 @@ export function checkArchitecture(rootDir) {
       for (const rule of CORE_RULES) {
         if (
           !matchesAnyGlob(relativePath, rule.globs) ||
-          isExcluded(relativePath)
+          isExcluded(relativePath, rule)
         ) {
           continue;
         }
-        if (!rule.forbidden(imported.imported)) continue;
+        if (rule.allow?.(relativePath, imported)) continue;
+        if (!rule.forbidden(imported.imported, imported.symbols)) continue;
         violations.push({
           rule: rule.rule,
           package: ownerOf(relativePath),

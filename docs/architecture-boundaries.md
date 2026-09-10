@@ -13,8 +13,9 @@ presentation -> application -> domain <- infrastructure
                   composition root wires adapters
 ```
 
-- Domain code may use pure types and inner ports. It must not import NestJS, TypeORM, database packages, or presentation/infrastructure paths.
-- Application ports may use inner contracts only. Concrete repositories, SDK clients, Redis, HTTP transports, and presentation types stay outside the port.
+- Domain code may use pure types and inner ports. It must not import NestJS, TypeORM, database packages, application services, or presentation/infrastructure paths.
+- Application code may use inner contracts and framework-neutral policy packages, but concrete repositories, entities, SDK clients, Redis, HTTP transports, and presentation types stay outside the application layer.
+- Application ports are stricter: they may use inner contracts only; concrete adapters never belong in a port.
 - Composition roots (`*.module.ts`, app bootstrap) may import both sides to bind an implementation to a port.
 - Shared packages must never import app aliases (`@messenger/*`, `@discord/*`, `@zalo/*`).
 
@@ -24,7 +25,7 @@ presentation -> application -> domain <- infrastructure
 
 | Area                                                             | Framework-agnostic scope                                            |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Apps                                                             | Every `domain/**` and `application/ports/**` directory              |
+| Apps                                                             | Every `domain/**` and `application/**` directory                    |
 | `contracts`                                                      | Entire package; it has zero imports                                 |
 | `chat-history`, `chat-queue-core`, `chat-pipeline`, `date-utils` | Entire package                                                      |
 | `llm-agent`                                                      | Package core, excluding the explicit privacy-state NestJS adapter   |
@@ -37,14 +38,16 @@ presentation -> application -> domain <- infrastructure
 
 Tests/specs, generated output, `dist`, and `node_modules` are excluded. Test code may import adapters to assemble a harness, but production code cannot hide a forbidden edge there.
 
+The current application migration debt is recorded as exact file/module/symbol triplets in `LEGACY_APPLICATION_IMPORTS`. This is a ratchet, not a blanket exemption: adding a new edge or changing the imported symbol set fails CI; #429/#430 remove entries as adapters move outward.
+
 ## Explicit outer adapters
 
-The exact adapter path patterns live in `FRAMEWORK_BOUND_ADAPTERS` in [`scripts/check-architecture.mjs`](../scripts/check-architecture.mjs). They cover:
+The exact framework-bound exclusions live in `FRAMEWORK_BOUND_ADAPTERS` in [`scripts/check-architecture.mjs`](../scripts/check-architecture.mjs). They are limited to:
 
-- NestJS runtime wrappers in `llm-agent`, `student-report`, and `wispace-client`;
-- NestJS/TypeORM modules, entities, repositories, and platform adapters in `chat-metering`;
-- runtime services/infrastructure in `scheduler-core`, `study-reminder-shared`, and `ops-health`;
-- all of `cleanup-cron`, which is intentionally framework-bound and is no longer described as a core package.
+- the privacy-state NestJS adapter in `llm-agent`;
+- the platform student-report adapter in `student-report`.
+
+The other mixed packages are enforced by selecting only their framework-neutral core paths; their runtime services are outside those scopes, not hidden behind a package-wide exemption. `cleanup-cron` is intentionally framework-bound and is not labelled as a core package.
 
 Do not widen an adapter pattern merely to make CI green. A new entry needs an owner, a linked issue, and the narrowest file/path pattern that describes the adapter. #429 and #430 own the remaining migrations; the enforced scopes should expand as those adapters move outward.
 
