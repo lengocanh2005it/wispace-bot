@@ -1,7 +1,7 @@
 {
   "name": "@wispace/ops-health",
   "version": "0.0.1",
-  "description": "Platform-agnostic ops health monitoring for WISPACE bots",
+  "description": "Shared ops-health package with pure evaluation types/functions and NestJS/TypeORM adapters",
   "private": true,
   "license": "UNLICENSED",
   "main": "dist/index.js",

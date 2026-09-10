@@ -79,6 +79,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Test architecture dependency guard (#431)
+        run: npm run architecture:test
+
       - name: Verify pull request (format + lint + typecheck + test + build, affected packages only)
         if: github.event_name == 'pull_request'
         run: npm run verify:affected

@@ -1,7 +1,7 @@
 {
   "name": "@wispace/chat-metering",
   "version": "0.0.1",
-  "description": "Framework-agnostic chat quota/rate-limit + LLM usage/safety event tracking shared across WISPACE bots (Messenger, Discord, Zalo)",
+  "description": "Shared chat-metering package with framework-agnostic policy cores and explicit NestJS/TypeORM adapters",
   "private": true,
   "license": "UNLICENSED",
   "main": "dist/index.js",

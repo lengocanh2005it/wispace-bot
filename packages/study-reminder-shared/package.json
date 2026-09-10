@@ -1,7 +1,7 @@
 {
   "name": "@wispace/study-reminder-shared",
   "version": "0.0.1",
-  "description": "Platform-agnostic study reminder core for WISPACE bots",
+  "description": "Shared study-reminder package with framework-agnostic ports/types/utils and NestJS/TypeORM adapters",
   "private": true,
   "license": "UNLICENSED",
   "main": "dist/index.js",

@@ -211,7 +211,7 @@ flowchart TB
 
 ## 3. Code Structure
 
-Repo uses **Clean Architecture** — each feature in `src/modules/<name>/` has 4 layers: `domain` → `application` → `infrastructure` → `presentation`. Rule details: [AGENTS.md § Clean Architecture](../AGENTS.md#clean-architecture) and `.claude/rules/clean-architecture.md`.
+Repo uses **Clean Architecture** — each feature in `src/modules/<name>/` has 4 layers: `domain` → `application` → `infrastructure` → `presentation`. The executable scope/exception map is [architecture-boundaries.md](architecture-boundaries.md); coding details remain in [AGENTS.md § Clean Architecture](../AGENTS.md#clean-architecture) and `.claude/rules/clean-architecture.md`.
 
 ```
 wispace-bot/                          # Turborepo root

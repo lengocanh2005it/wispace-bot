@@ -1,7 +1,7 @@
 {
   "name": "@wispace/scheduler-core",
   "version": "0.0.1",
-  "description": "Platform-agnostic scheduler core for WISPACE report cron",
+  "description": "Shared report scheduling package with framework-agnostic ports/types/utils and NestJS runtime services",
   "private": true,
   "license": "UNLICENSED",
   "main": "dist/index.js",

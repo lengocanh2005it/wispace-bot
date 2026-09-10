@@ -278,7 +278,7 @@ Same PR/task as code — update **agent-facing** docs (not just lengthy `docs/`)
 
 ## Clean Architecture
 
-Repo uses **feature modules + 4 layers** (presentation → application → domain ← infrastructure). Details: `.claude/rules/clean-architecture.md`.
+Repo uses **feature modules + 4 layers** (presentation → application → domain ← infrastructure). Canonical enforcement map: `docs/architecture-boundaries.md`; coding details: `.claude/rules/clean-architecture.md`.
 
 ### Dependency flow
 

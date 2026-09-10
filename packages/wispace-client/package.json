@@ -1,7 +1,7 @@
 {
   "name": "@wispace/wispace-client",
   "version": "0.0.1",
-  "description": "Framework-agnostic Wispace API HTTP clients (goals, task scores, user calendar) shared across WISPACE bots (Messenger, Discord, Zalo)",
+  "description": "Shared WISPACE API package with framework-agnostic HTTP clients and explicit NestJS/Redis adapters",
   "private": true,
   "license": "UNLICENSED",
   "main": "dist/index.js",

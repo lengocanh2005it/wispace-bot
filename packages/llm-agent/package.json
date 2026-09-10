@@ -1,7 +1,7 @@
 {
   "name": "@wispace/llm-agent",
   "version": "0.0.1",
-  "description": "Framework-agnostic LLM function-calling orchestration shared across WISPACE bots (Messenger, Discord, Zalo)",
+  "description": "Shared LLM package with a framework-agnostic orchestration core and explicit provider/runtime adapters",
   "private": true,
   "license": "UNLICENSED",
   "main": "dist/index.js",

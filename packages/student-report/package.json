@@ -1,7 +1,7 @@
 {
   "name": "@wispace/student-report",
   "version": "0.0.1",
-  "description": "Framework-agnostic student capacity report generation (LLM call + fallback + formatting) shared across WISPACE bots (Messenger, Discord, Zalo)",
+  "description": "Shared student-report package with a port-driven core and an explicit NestJS platform adapter",
   "private": true,
   "license": "UNLICENSED",
   "main": "dist/index.js",

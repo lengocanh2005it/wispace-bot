@@ -24,8 +24,10 @@
     "study-reminder:delivery-smoke": "node scripts/study-reminder-delivery-smoke.mjs",
     "database:migration-compatibility": "node scripts/database-bootstrap-smoke.mjs --migrations",
     "database:entity-discovery:test": "node --test scripts/database-entity-discovery.test.mjs",
-    "verify:affected": "turbo run format:check lint typecheck test build --affected",
-    "verify": "turbo run format:check lint typecheck test build"
+    "architecture:check": "node scripts/check-architecture.mjs",
+    "architecture:test": "node --test scripts/check-architecture.test.mjs",
+    "verify:affected": "npm run architecture:check && turbo run format:check lint typecheck test build --affected",
+    "verify": "npm run architecture:check && turbo run format:check lint typecheck test build"
   },
   "devDependencies": {
     "@swc/cli": "^0.8.1",
