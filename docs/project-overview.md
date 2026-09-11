@@ -37,8 +37,10 @@ usage_date)` across active links. A user without a link keeps an anonymous
 - **Study reminders:** one canonical owner platform (existing preference,
   then `zalo > discord > messenger`). Noncanonical sync cancels only pending /
   failed jobs; an owner switch cancels the old pending owner and creates the
-  new canonical job. A failed send retries that same job and does not fan out
-  in the same tick.
+  new canonical job. Each job carries the mapping ownership generation; relink,
+  revoke, or local unlink cancels stale jobs, and dispatch holds a per-external
+  ownership fence through the provider call. A failed send retries that same
+  job and does not fan out in the same tick.
 - **Scheduled reports:** the database unique claim
   `(user_id, report_date, report_type='scheduled')` is the correctness boundary
   before generation/delivery. Existing per-platform claims are migrated as

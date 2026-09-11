@@ -11,6 +11,31 @@ export type {
   StudyReminderJobStatus,
 };
 
+export type OwnershipFenceFailureReason =
+  | 'lease_lost'
+  | 'mapping_ownership_changed'
+  | 'link_revoked'
+  | 'locally_unlinked'
+  | 'mapping_generation_missing'
+  | 'link_status_unknown'
+  | 'ownership_lock_timeout';
+
+export type OwnedDeliveryResult<T> =
+  | { authorized: false; reason: OwnershipFenceFailureReason }
+  | { authorized: true; value: T };
+
+export interface OwnedDeliveryParams {
+  platform: Platform;
+  jobId: number;
+  leaseToken: string;
+  externalUserId: string;
+  userId: number;
+  mappingGeneration: string;
+  deliveryKey: string;
+  /** Bounded DB lock wait; provider calls never happen after this expires. */
+  lockTimeoutMs?: number;
+}
+
 export const STUDY_REMINDER_JOB_REPOSITORY = Symbol(
   'STUDY_REMINDER_JOB_REPOSITORY',
 );
@@ -77,6 +102,14 @@ export interface StudyReminderJobRepositoryPort {
     leaseToken: string,
     deliveryKey: string,
   ): Promise<boolean>;
+  /**
+   * Atomically verifies mapping ownership, persists the delivery key, and
+   * invokes the provider callback while the mapping row lock is held.
+   */
+  withOwnedDelivery?<T>(
+    params: OwnedDeliveryParams,
+    send: () => Promise<T>,
+  ): Promise<OwnedDeliveryResult<T>>;
   markFailed(params: {
     jobId: number;
     leaseToken: string;

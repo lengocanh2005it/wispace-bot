@@ -58,6 +58,8 @@ describe('ZaloAccountLinkService', () => {
       .fn()
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ external_user_id: 'zalo-user-1' }]);
     const em = {
       query,
@@ -72,7 +74,7 @@ describe('ZaloAccountLinkService', () => {
     const service = new ZaloAccountLinkService(buildOAuth(), repo);
 
     await service.upsertLink(42, 'zalo-user-1', { kind: 'absent' });
-    expect(query).toHaveBeenCalledTimes(3);
+    expect(query).toHaveBeenCalledTimes(5);
 
     const userId = await service.findUserIdByZaloId('zalo-user-1');
     expect(userId).toBe(42);
@@ -81,6 +83,7 @@ describe('ZaloAccountLinkService', () => {
   it('rejects an absent observation when another callback inserted the mapping', async () => {
     const query = jest
       .fn()
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ user_id: 99, mapping_generation: '2' }]);
     const repo = {
       manager: {
@@ -94,12 +97,13 @@ describe('ZaloAccountLinkService', () => {
     await expect(
       service.upsertLink(143, 'zalo-user-1', { kind: 'absent' }),
     ).rejects.toThrow(/ownership changed/i);
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it('accepts an absent observation when this callback already committed', async () => {
     const query = jest
       .fn()
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         { user_id: 143, mapping_generation: '1', link_state: 'active' },
       ]);
@@ -115,7 +119,7 @@ describe('ZaloAccountLinkService', () => {
     await expect(
       service.upsertLink(143, 'zalo-user-1', { kind: 'absent' }),
     ).resolves.toEqual({ relinked: false });
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   describe('sendConsentExplainerIfDue (#596)', () => {

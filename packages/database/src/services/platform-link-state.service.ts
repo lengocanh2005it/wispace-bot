@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { createHash } from 'crypto';
+import { studyReminderOwnershipLockKey } from '@wispace/bot-common/locks';
 import { errorMessage } from '@wispace/bot-common/masking';
 import type { Platform, PlatformLinkState } from '@wispace/contracts';
 import type {
@@ -82,7 +83,7 @@ export class PlatformLinkStateService {
        FROM platform_link_audit_events
        WHERE platform = $1 AND external_user_hash = $2
          AND event_type = 'locally_unlinked'
-       ORDER BY created_at DESC LIMIT 1`,
+       ORDER BY created_at DESC, id DESC LIMIT 1`,
       [platform, hashExternalId(externalUserId)],
     );
     const tombstone = tombstones[0];
@@ -127,15 +128,23 @@ export class PlatformLinkStateService {
     const table = TABLES[platform].table;
     return this.dataSource.transaction(async (manager) => {
       const rows = await manager.query<RawLinkRow[]>(
-        `SELECT id::text AS id, platform, external_user_id AS "externalUserId",
+        `WITH ownership_lock AS (
+           SELECT pg_advisory_xact_lock(hashtext($1))
+         )
+         SELECT id::text AS id, platform, external_user_id AS "externalUserId",
                 user_id AS "userId", COALESCE(link_state, 'active') AS state,
                 COALESCE(mapping_generation, 1)::text AS generation,
                 upstream_ownership_version AS "ownershipVersion",
                 last_verified_at AS "lastVerifiedAt", revoked_at AS "revokedAt"
          FROM "${table}"
-         WHERE platform = $1 AND external_user_id = $2
+         CROSS JOIN ownership_lock
+         WHERE platform = $2 AND external_user_id = $3
          ORDER BY id DESC LIMIT 1 FOR UPDATE`,
-        [platform, externalUserId],
+        [
+          studyReminderOwnershipLockKey(platform, externalUserId),
+          platform,
+          externalUserId,
+        ],
       );
       if (!rows[0]) return { outcome: 'locally_unlinked' };
 

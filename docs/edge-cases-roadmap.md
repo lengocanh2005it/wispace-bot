@@ -235,6 +235,7 @@ Outbox `study_reminder_jobs`, retry/backoff, stuck `processing` reset, time-chan
 | **Adaptive dispatch poll**                          | **S2** ✓ — `StudyReminderWorkerService` `setTimeout` loop; `findNextDueTime`; env `STUDY_REMINDER_POLL_*`                                                                                            |
 | **Canonical platform owner (#718)**                 | **All three full-sync providers use `CanonicalPlatformService`; noncanonical providers cancel only `pending` / `failed`, leave `processing`, and converge on the next sync after ownership changes** |
 | **Learner-level cross-platform consistency (#637)** | **Done** — reminders resolve one canonical owner; scheduled reports claim one `(user_id, report_date, report_type)`; missing linked `userId` skips fail-closed                                       |
+| **Reminder ownership fence (#999)**                 | **Done** — jobs snapshot mapping generation; relink/revoke/unlink cancels stale jobs and dispatch verifies owner/generation under a per-external lock before delivery-key write/provider send |
 
 ### Gaps & Remediation
 

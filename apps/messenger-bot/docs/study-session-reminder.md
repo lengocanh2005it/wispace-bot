@@ -242,6 +242,19 @@ Sample response:
 
 Sync is **per `userId`** — does not scan all mappings. 30-min cron + `POST /messenger/sync-study-reminders` still used for fallback / ops. The full sync (cron + `sync-study-reminders`) is **keyset-paged** (100 mappings/page, cursor by id) and processed with bounded concurrency (5) — memory and duration stay flat as the account population grows; per-batch progress and total duration are logged.
 
+### Ownership fence (#999)
+
+Every reminder job records the `mapping_generation` observed with its
+`(platform, external_user_id, user_id)` snapshot. A relink, revoke, or local
+unlink advances the mapping generation and cancels pending/in-flight jobs for
+the old owner. Dispatch rechecks the owner and generation before writing the
+delivery key; the TypeORM repository holds the same per-external-id advisory
+lock through the provider call. A mismatch is terminally cancelled with
+`mapping_ownership_changed`, `link_revoked`, `locally_unlinked`, or
+`mapping_generation_missing`; an unavailable mapping is retried. Rows created
+before this fence have a nullable generation and are deliberately cancelled
+until an authoritative sync recreates them.
+
 **Example call from WISPACE (after POST/DELETE `/api/UserCalendar`):**
 
 ```bash

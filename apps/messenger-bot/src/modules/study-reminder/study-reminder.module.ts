@@ -101,6 +101,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
                     externalUserId: m.psid as string,
                     userId: m.userId,
                     platform: platform as Platform,
+                    mappingGeneration: m.mappingGeneration,
                   })),
                 nextId:
                   list.length > 0
@@ -114,11 +115,26 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
                     externalUserId: m.psid,
                     userId: m.userId,
                     platform: platform as Platform,
+                    mappingGeneration: m.mappingGeneration,
                   }
                 : null,
             ),
-          getMappingState: (_platform, externalUserId) =>
-            repository.findMappingStateByPsid(externalUserId),
+          getMappingState: async (_platform, externalUserId) => {
+            const state =
+              await repository.findMappingStateByPsid(externalUserId);
+            if (state !== 'active') {
+              return state ? { state } : null;
+            }
+            const mapping =
+              await repository.findActiveMappingByPsid(externalUserId);
+            return mapping?.userId != null && mapping.mappingGeneration
+              ? {
+                  state: 'active',
+                  userId: mapping.userId,
+                  mappingGeneration: mapping.mappingGeneration,
+                }
+              : null;
+          },
         }),
         inject: [MESSENGER_REPOSITORY],
       },
@@ -212,7 +228,15 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         onFailed: () => metrics.incReminderDispatch('failed'),
         onRetried: () => metrics.incReminderDispatch('retried'),
         onCancelled: (ctx) => {
-          metrics.incReminderDispatch('cancelled');
+          metrics.incReminderDispatch(
+            ctx.reason === 'mapping_ownership_changed'
+              ? 'cancelled_ownership_changed'
+              : ctx.reason === 'link_revoked'
+                ? 'cancelled_link_revoked'
+                : ctx.reason === 'mapping_generation_missing'
+                  ? 'cancelled_mapping_generation_missing'
+                  : 'cancelled',
+          );
           if (ctx.reason === DORMANT_REASON) {
             metrics.incScheduledSendSuppressed('reminder');
           }
@@ -228,6 +252,7 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
         jobRepository: TypeormStudyReminderJobRepository,
         scheduleService: StudyReminderScheduleService,
         canonicalPlatformService: CanonicalPlatformService,
+        messengerRepository: MessengerMappingRepositoryPort,
       ) =>
         new StudyReminderSyncService(
           mappingReader,
@@ -239,12 +264,26 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
             }),
           (userId) =>
             canonicalPlatformService.getCanonicalPlatformForUser(userId),
+          (userId) =>
+            messengerRepository
+              .findActiveMappingByUserId(userId)
+              .then((mapping) =>
+                mapping?.psid
+                  ? {
+                      externalUserId: mapping.psid,
+                      userId: mapping.userId,
+                      platform: 'messenger' as const,
+                      mappingGeneration: mapping.mappingGeneration,
+                    }
+                  : null,
+              ),
         ),
       inject: [
         MAPPING_READER,
         STUDY_REMINDER_JOB_REPOSITORY,
         StudyReminderScheduleService,
         CanonicalPlatformService,
+        MESSENGER_REPOSITORY,
       ],
     },
 
@@ -274,11 +313,17 @@ const MESSENGER_STALE_CANCEL_STATUSES: StudyReminderJobStatus[] = [
                   externalUserId,
                 );
               }
-              return (await mappingReader.findActiveMappingByExternalUserId(
-                'messenger',
-                externalUserId,
-              ))
-                ? 'active'
+              const link =
+                await mappingReader.findActiveMappingByExternalUserId(
+                  'messenger',
+                  externalUserId,
+                );
+              return link?.userId != null && link.mappingGeneration
+                ? {
+                    state: 'active',
+                    userId: link.userId,
+                    mappingGeneration: link.mappingGeneration,
+                  }
                 : null;
             },
             backoffMode: 'flat',

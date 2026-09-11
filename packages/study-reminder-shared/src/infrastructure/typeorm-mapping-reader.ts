@@ -5,8 +5,11 @@ import type {
   MappingPageQuery,
   MappingReaderPort,
 } from '../ports/mapping-reader.port';
-import type { UserLink } from '../types/study-reminder.types';
-import type { Platform, PlatformLinkState } from '@wispace/contracts';
+import type {
+  StudyReminderMappingState,
+  UserLink,
+} from '../types/study-reminder.types';
+import type { Platform } from '@wispace/contracts';
 
 /** Minimum column shape shared by the per-app account-link entities. */
 export interface AccountLinkRow {
@@ -14,6 +17,7 @@ export interface AccountLinkRow {
   platform: string;
   externalUserId: string;
   userId: number;
+  mappingGeneration?: string | number;
   linkState?:
     | 'active'
     | 'confirmed-revoked'
@@ -50,7 +54,8 @@ export class TypeormMappingReader<
     query: MappingPageQuery,
   ): Promise<MappingPage> {
     const results = await this.repo.query<AccountLinkRow[]>(
-      `SELECT m.id, m.external_user_id as "externalUserId", m.user_id as "userId", m.platform
+      `SELECT m.id, m.external_user_id as "externalUserId", m.user_id as "userId", m.platform,
+              m.mapping_generation as "mappingGeneration"
        FROM ${this.tableName} m
        ${CONSENT_JOIN}
        WHERE m.platform = $1 AND m.id > $2
@@ -65,6 +70,10 @@ export class TypeormMappingReader<
       externalUserId: row.externalUserId,
       userId: row.userId,
       platform: row.platform as Platform,
+      mappingGeneration:
+        row.mappingGeneration === undefined || row.mappingGeneration === null
+          ? undefined
+          : String(row.mappingGeneration),
     }));
 
     return {
@@ -89,6 +98,10 @@ export class TypeormMappingReader<
       externalUserId: link.externalUserId,
       userId: link.userId,
       platform: link.platform as Platform,
+      mappingGeneration:
+        link.mappingGeneration === undefined || link.mappingGeneration === null
+          ? undefined
+          : String(link.mappingGeneration),
     };
   }
 
@@ -103,14 +116,38 @@ export class TypeormMappingReader<
   async getMappingState(
     _platform: string,
     externalUserId: string,
-  ): Promise<PlatformLinkState | null> {
+  ): Promise<StudyReminderMappingState | null> {
     const link = await this.repo.findOne({
       where: {
         platform: _platform,
         externalUserId,
       } as FindOptionsWhere<Entity>,
-      select: { linkState: true } as never,
+      select: {
+        userId: true,
+        linkState: true,
+        mappingGeneration: true,
+      } as never,
     });
-    return link?.linkState ?? (link ? 'active' : null);
+    if (!link) return null;
+    const state = link.linkState ?? 'active';
+    return state === 'active'
+      ? {
+          state,
+          userId: link.userId,
+          mappingGeneration:
+            link.mappingGeneration === undefined ||
+            link.mappingGeneration === null
+              ? ''
+              : String(link.mappingGeneration),
+        }
+      : ({
+          state,
+          userId: link.userId,
+          mappingGeneration:
+            link.mappingGeneration === undefined ||
+            link.mappingGeneration === null
+              ? undefined
+              : String(link.mappingGeneration),
+        } satisfies StudyReminderMappingState);
   }
 }

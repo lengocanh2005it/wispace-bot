@@ -26,6 +26,11 @@ import type { StudyReminderJobStatus } from '../types/study-reminder.types';
   'platform',
   'leaseExpiresAt',
 ])
+@Index('idx_study_reminder_jobs_platform_external_generation', [
+  'platform',
+  'externalUserId',
+  'mappingGeneration',
+])
 export class StudyReminderJobEntity {
   @PrimaryGeneratedColumn()
   id: number;
@@ -38,6 +43,10 @@ export class StudyReminderJobEntity {
 
   @Column({ name: 'user_id', type: 'int', nullable: true })
   userId: number | null;
+
+  /** Nullable only for pre-fence rows; new sync writes always provide it. */
+  @Column({ name: 'mapping_generation', type: 'bigint', nullable: true })
+  mappingGeneration?: string | null;
 
   @Column({ name: 'session_key', type: 'varchar', length: 128 })
   sessionKey: string;

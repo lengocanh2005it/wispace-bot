@@ -8,10 +8,19 @@ import {
 import { MessengerRepository } from './messenger.repository';
 
 describe('MessengerRepository.upsertPsidUserLink', () => {
-  const buildRepo = () => {
+  const buildRepo = (transactional = false) => {
     const managerQuery = jest.fn();
+    const manager = {
+      query: managerQuery,
+      ...(transactional
+        ? {
+            transaction: async (callback: (em: unknown) => Promise<unknown>) =>
+              callback({ query: managerQuery }),
+          }
+        : {}),
+    };
     const mappingRepo = {
-      manager: { query: managerQuery },
+      manager,
       findOne: jest.fn(),
       save: jest.fn(),
       create: jest.fn((input: Partial<UserPlatformMappingEntity>) => input),
@@ -81,6 +90,29 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
     });
 
     expect(result).toBeNull();
+  });
+
+  it('rejects an absent callback observation when a newer tombstone exists', async () => {
+    const { repo, managerQuery } = buildRepo(true);
+    managerQuery
+      .mockResolvedValueOnce([]) // global ownership mutation lock
+      .mockResolvedValueOnce([]) // Messenger ownership lock
+      .mockResolvedValueOnce([[], 0]) // UPDATE INACTIVE (no-op)
+      .mockResolvedValueOnce([]) // no mapping row; use the tombstone fence
+      .mockResolvedValueOnce([{ mapping_generation: '8' }]); // latest tombstone
+
+    const result = await repo.upsertPsidUserLink({
+      psid: 'psid-1',
+      userId: 99,
+      expectedGeneration: '7',
+    });
+
+    expect(result).toBeNull();
+    expect(managerQuery).toHaveBeenCalledTimes(5);
+    expect(managerQuery).not.toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO user_platform_mappings'),
+      expect.any(Array),
+    );
   });
 });
 

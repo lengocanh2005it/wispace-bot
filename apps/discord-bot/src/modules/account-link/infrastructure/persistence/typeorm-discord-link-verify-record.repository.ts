@@ -48,9 +48,7 @@ export class TypeormDiscordLinkVerifyRecordRepository implements DiscordLinkVeri
           discordUserId,
           userId,
           mappingObservation.kind,
-          mappingObservation.kind === 'present'
-            ? mappingObservation.generation
-            : null,
+          mappingObservation.generation ?? null,
         ],
       ),
     );
@@ -104,7 +102,12 @@ export class TypeormDiscordLinkVerifyRecordRepository implements DiscordLinkVeri
               kind: 'present',
               generation: String(row.observedMappingGeneration),
             }
-          : { kind: 'absent' },
+          : {
+              kind: 'absent',
+              ...(row.observedMappingGeneration
+                ? { generation: String(row.observedMappingGeneration) }
+                : {}),
+            },
     }));
   }
 

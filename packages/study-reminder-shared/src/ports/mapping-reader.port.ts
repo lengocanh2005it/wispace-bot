@@ -1,5 +1,7 @@
-import type { UserLink } from '../types/study-reminder.types';
-import type { PlatformLinkState } from '@wispace/contracts';
+import type {
+  StudyReminderMappingState,
+  UserLink,
+} from '../types/study-reminder.types';
 
 export const MAPPING_READER = Symbol('MAPPING_READER');
 
@@ -28,5 +30,5 @@ export interface MappingReaderPort {
   getMappingState?(
     platform: string,
     externalUserId: string,
-  ): Promise<PlatformLinkState | null>;
+  ): Promise<StudyReminderMappingState | null>;
 }

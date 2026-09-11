@@ -78,6 +78,9 @@ export class StudyReminderSyncService {
   private readonly logger = new Logger(StudyReminderSyncService.name);
   private readonly onUserSync?: OnUserSyncHook;
   private readonly canonicalResolver: CanonicalPlatformResolver;
+  private readonly userIdMappingLookup?: (
+    userId: number,
+  ) => Promise<UserLink | null>;
 
   constructor(
     @Inject(MAPPING_READER)
@@ -87,6 +90,7 @@ export class StudyReminderSyncService {
     private readonly scheduleService: StudyReminderScheduleService,
     @Optional() onUserSync: OnUserSyncHook | undefined,
     canonicalResolver: CanonicalPlatformResolver,
+    userIdMappingLookup?: (userId: number) => Promise<UserLink | null>,
   ) {
     if (!canonicalResolver) {
       throw new Error(
@@ -95,6 +99,7 @@ export class StudyReminderSyncService {
     }
     this.onUserSync = onUserSync;
     this.canonicalResolver = canonicalResolver;
+    this.userIdMappingLookup = userIdMappingLookup;
   }
 
   async syncUpcomingSessions(
@@ -127,8 +132,10 @@ export class StudyReminderSyncService {
     let linked = true;
 
     if (opts?.userId) {
-      const mapping = opts.userIdMappingLookup
-        ? await opts.userIdMappingLookup(opts.userId)
+      const mappingLookup =
+        opts.userIdMappingLookup ?? this.userIdMappingLookup;
+      const mapping = mappingLookup
+        ? await mappingLookup(opts.userId)
         : await this.mappingReader.findActiveMappingByExternalUserId(
             platform,
             String(opts.userId),
@@ -233,7 +240,6 @@ export class StudyReminderSyncService {
       if (mapping.userId === undefined || mapping.userId === null) {
         throw new Error('Missing WISPACE userId for study reminder mapping');
       }
-
       const canonical = await this.canonicalResolver(mapping.userId);
       if (!canonical || canonical !== platform) {
         const cancelledCount =
@@ -285,6 +291,9 @@ export class StudyReminderSyncService {
           platform,
           externalUserId: mapping.externalUserId,
           userId: mapping.userId,
+          ...(mapping.mappingGeneration
+            ? { mappingGeneration: mapping.mappingGeneration }
+            : {}),
           sessionKey: session.sessionKey,
           scheduledAt: session.scheduledAt,
           remindAt,

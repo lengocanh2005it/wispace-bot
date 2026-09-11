@@ -1,7 +1,10 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { buildConsentExplainerMessage } from '@wispace/bot-common/messages';
-import type { LinkMappingObservation } from '@wispace/account-link-core/core';
+import type {
+  LinkMappingObservation,
+  LinkUpsertResult,
+} from '@wispace/account-link-core/core';
 import {
   DISCORD_ACCOUNT_LINK_REPOSITORY,
   type DiscordAccountLinkRepositoryPort,
@@ -39,7 +42,7 @@ export class DiscordAccountLinkService {
     userId: number,
     discordUserId: string,
     mappingObservation: LinkMappingObservation,
-  ): Promise<{ relinked: boolean; previousUserId?: number }> {
+  ): Promise<LinkUpsertResult> {
     const result = await this.repository.upsertLink(
       userId,
       discordUserId,

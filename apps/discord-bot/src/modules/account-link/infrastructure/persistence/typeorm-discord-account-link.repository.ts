@@ -1,8 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { acquireStudyReminderOwnershipMutationLock } from '@wispace/bot-common/locks';
 import { extractQueryRows } from '@wispace/bot-common/utils';
 import type { LinkMappingObservation } from '@wispace/account-link-core/core';
+import type { LinkUpsertResult } from '@wispace/account-link-core/core';
+import {
+  cancelStudyReminderJobsForOwnershipChange,
+  nextMappingGenerationAfterTombstone,
+} from '@wispace/study-reminder-shared';
 import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
 import type { DiscordAccountLinkRepositoryPort } from '../../domain/ports/discord-account-link.repository.port';
 
@@ -27,11 +33,14 @@ export class TypeormDiscordAccountLinkRepository implements DiscordAccountLinkRe
     userId: number,
     discordUserId: string,
     mappingObservation: LinkMappingObservation,
-  ): Promise<{ relinked: boolean; previousUserId?: number }> {
+  ): Promise<LinkUpsertResult> {
     let relinked = false;
     let previousUserId: number | undefined;
+    let mappingGeneration: string | undefined;
+    const displacedExternalUserIds: string[] = [];
 
     await this.repo.manager.transaction(async (em) => {
+      await acquireStudyReminderOwnershipMutationLock(em);
       // Detect relink: the Discord id was previously mapped to a different
       // WISPACE user (the displaced user silently loses the link — #137 item 5).
       const existing = await em.query<
@@ -41,8 +50,12 @@ export class TypeormDiscordAccountLinkRepository implements DiscordAccountLinkRe
           link_state?: string;
         }>
       >(
-        `SELECT user_id, mapping_generation, link_state
+        `WITH ownership_lock AS (
+           SELECT pg_advisory_xact_lock(hashtext('study-reminder:ownership:' || $1 || ':' || $2))
+         )
+         SELECT user_id, mapping_generation, link_state
          FROM discord_account_links
+         CROSS JOIN ownership_lock
          WHERE platform = $1 AND external_user_id = $2
          FOR UPDATE`,
         [PLATFORM, discordUserId],
@@ -68,17 +81,69 @@ export class TypeormDiscordAccountLinkRepository implements DiscordAccountLinkRe
         relinked = true;
         previousUserId = existing[0].user_id;
       }
+      const insertGeneration = existing[0]
+        ? '1'
+        : await nextMappingGenerationAfterTombstone(
+            em,
+            PLATFORM,
+            discordUserId,
+          );
+      if (!existing[0] && mappingObservation.kind === 'absent') {
+        const previousGeneration = BigInt(insertGeneration) - 1n;
+        if (
+          (mappingObservation.generation === undefined &&
+            previousGeneration > 0n) ||
+          (mappingObservation.generation !== undefined &&
+            previousGeneration.toString() !== mappingObservation.generation)
+        ) {
+          throw new DiscordLinkOwnershipConflictError();
+        }
+      }
 
       // Remove any existing link for this WISPACE user (re-linking with a different Discord account)
-      await em.query(
-        `DELETE FROM discord_account_links WHERE platform = $1 AND user_id = $2 AND external_user_id != $3`,
-        [PLATFORM, userId, discordUserId],
+      const displacedRows = extractQueryRows<{ external_user_id: string }>(
+        await em.query(
+          `WITH candidates AS (
+             SELECT external_user_id
+             FROM discord_account_links
+             WHERE platform = $1 AND user_id = $2 AND external_user_id != $3
+             ORDER BY external_user_id
+           ), ownership_locks AS (
+             SELECT pg_advisory_xact_lock(
+               hashtext('study-reminder:ownership:' || $1 || ':' || external_user_id)
+             )
+             FROM candidates
+           )
+           DELETE FROM discord_account_links link
+           USING candidates, ownership_locks
+           WHERE link.platform = $1
+             AND link.user_id = $2
+             AND link.external_user_id = candidates.external_user_id
+           RETURNING link.external_user_id`,
+          [PLATFORM, userId, discordUserId],
+        ),
       );
-      const rows = await em.query<Array<{ external_user_id: string }>>(
+      for (const row of displacedRows) {
+        if (row.external_user_id) {
+          displacedExternalUserIds.push(row.external_user_id);
+          await cancelStudyReminderJobsForOwnershipChange(
+            em,
+            PLATFORM,
+            row.external_user_id,
+            { reason: 'mapping_ownership_changed' },
+          );
+        }
+      }
+      const rows = await em.query<
+        Array<{
+          external_user_id: string;
+          mapping_generation?: string;
+        }>
+      >(
         `
           INSERT INTO discord_account_links
-            (platform, external_user_id, user_id, link_state, mapping_generation)
-          VALUES ($1, $2, $3, 'active', 1)
+           (platform, external_user_id, user_id, link_state, mapping_generation)
+           VALUES ($1, $2, $3, 'active', $6::bigint)
           ON CONFLICT (platform, external_user_id)
           DO UPDATE SET
             user_id = EXCLUDED.user_id,
@@ -95,7 +160,7 @@ export class TypeormDiscordAccountLinkRepository implements DiscordAccountLinkRe
             revocation_reason = NULL
           WHERE NOT $4::boolean
             AND discord_account_links.mapping_generation = COALESCE($5::bigint, discord_account_links.mapping_generation)
-          RETURNING external_user_id
+           RETURNING external_user_id, mapping_generation
         `,
         [
           PLATFORM,
@@ -103,14 +168,36 @@ export class TypeormDiscordAccountLinkRepository implements DiscordAccountLinkRe
           userId,
           mappingObservation.kind === 'absent',
           expectedGeneration ?? null,
+          insertGeneration,
         ],
       );
       if (Array.isArray(rows) && rows.length === 0) {
         throw new DiscordLinkOwnershipConflictError();
       }
+      mappingGeneration = rows[0]?.mapping_generation
+        ? String(rows[0].mapping_generation)
+        : undefined;
+      if (mappingGeneration) {
+        await cancelStudyReminderJobsForOwnershipChange(
+          em,
+          PLATFORM,
+          discordUserId,
+          {
+            generation: mappingGeneration,
+            reason: 'mapping_ownership_changed',
+          },
+        );
+      }
     });
 
-    return { relinked, previousUserId };
+    return {
+      relinked,
+      ...(previousUserId !== undefined ? { previousUserId } : {}),
+      ...(mappingGeneration ? { mappingGeneration } : {}),
+      ...(displacedExternalUserIds.length > 0
+        ? { displacedExternalUserIds }
+        : {}),
+    };
   }
 
   async findUserIdByDiscordId(

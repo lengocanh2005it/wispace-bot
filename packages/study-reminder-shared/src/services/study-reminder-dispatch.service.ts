@@ -17,7 +17,10 @@ import {
 } from '../ports/dispatch-hooks.port';
 import { StudyReminderScheduleService } from './study-reminder-schedule.service';
 import { subMilliseconds } from 'date-fns';
-import type { StudyReminderJob } from '../types/study-reminder.types';
+import type {
+  StudyReminderJob,
+  StudyReminderMappingState,
+} from '../types/study-reminder.types';
 
 /**
  * Cancellation reason for a reminder suppressed by the web-activity dormancy
@@ -48,6 +51,7 @@ export interface StudyReminderDispatchServiceOptions {
   getMappingState?: (
     externalUserId: string,
   ) => Promise<
+    | StudyReminderMappingState
     | 'active'
     | 'confirmed-revoked'
     | 'temporarily-unknown'
@@ -169,25 +173,55 @@ export class StudyReminderDispatchService {
 
       claimed += 1;
       const leaseToken = claimedJob.leaseToken ?? '';
+      const cancelForFence = async (reason: string): Promise<boolean> => {
+        await this.jobRepository.markCancelled(
+          claimedJob.id,
+          leaseToken,
+          reason,
+        );
+        this.hooks?.onCancelled?.({
+          jobId: claimedJob.id,
+          externalUserId: claimedJob.externalUserId,
+          reason,
+        });
+        cancelled += 1;
+        return false;
+      };
       const checkMappingBeforeSend = async (): Promise<boolean> => {
         if (!this.options?.getMappingState) return true;
-        const state = await this.options.getMappingState(
+        const mapping = await this.options.getMappingState(
           claimedJob.externalUserId,
         );
-        if (state === 'active') return true;
-        if (state === 'confirmed-revoked' || state === 'locally-unlinked') {
-          await this.jobRepository.markCancelled(
-            claimedJob.id,
-            leaseToken,
-            `link_${state}`,
-          );
-          this.hooks?.onCancelled?.({
-            jobId: claimedJob.id,
-            externalUserId: claimedJob.externalUserId,
-            reason: `link_${state}`,
-          });
-          cancelled += 1;
-          return false;
+        const state = typeof mapping === 'string' ? mapping : mapping?.state;
+        if (state === 'active') {
+          const owner = typeof mapping === 'string' ? undefined : mapping;
+          if (
+            claimedJob.userId == null ||
+            !claimedJob.mappingGeneration ||
+            !owner?.userId ||
+            !owner.mappingGeneration
+          ) {
+            return cancelForFence('mapping_generation_missing');
+          }
+          if (
+            owner.userId !== claimedJob.userId ||
+            owner.mappingGeneration !== claimedJob.mappingGeneration
+          ) {
+            return cancelForFence('mapping_ownership_changed');
+          }
+          return true;
+        }
+        if (state === 'confirmed-revoked') {
+          return cancelForFence('link_revoked');
+        }
+        if (state === 'locally-unlinked') {
+          return cancelForFence('locally_unlinked');
+        }
+        // A deleted mapping may have only a hash tombstone. Let the
+        // repository's authoritative fence resolve that tombstone; it also
+        // distinguishes a missing tombstone (retryable unknown).
+        if (mapping === null && this.jobRepository.withOwnedDelivery) {
+          return true;
         }
         // Unknown/no-row is retried through the normal bounded failure path;
         // never turn an upstream outage into permanent data loss.
@@ -310,8 +344,9 @@ export class StudyReminderDispatchService {
           minutesUntil,
         );
 
-        // Do not persist a key for a revoked mapping. This check is immediately
-        // before the lease-gated key write, minimizing the stale-send window.
+        // Do not persist a key for a revoked mapping. This preflight is a cheap
+        // fail-fast check; the repository fence below is authoritative and
+        // holds the mapping lock through the provider call.
         if (!(await checkMappingBeforeSend())) return;
 
         // Stable delivery key — persisted before calling the provider so that
@@ -319,27 +354,125 @@ export class StudyReminderDispatchService {
         // (#294).
         const deliveryKey =
           claimedJob.deliveryKey ?? `reminder:${claimedJob.id}:${randomUUID()}`;
-
-        const ownsDeliveryLease = await this.jobRepository.markDeliveryKey(
-          claimedJob.id,
-          leaseToken,
-          deliveryKey,
-        );
-        if (!ownsDeliveryLease) return;
-
         let outcome: OutboundDeliveryOutcome;
         let sendError: unknown;
-        try {
-          outcome = await this.messageSender.sendText({
-            externalUserId: claimedJob.externalUserId,
-            text,
-            messageType: 'STUDY_REMINDER',
-            userId: claimedJob.userId,
+        let providerOutcome: OutboundDeliveryOutcome | undefined;
+        const send = async (): Promise<{
+          outcome: OutboundDeliveryOutcome;
+          error?: unknown;
+        }> => {
+          try {
+            const result = await this.messageSender.sendText({
+              externalUserId: claimedJob.externalUserId,
+              text,
+              messageType: 'STUDY_REMINDER',
+              userId: claimedJob.userId,
+              deliveryKey,
+            });
+            providerOutcome = result;
+            return { outcome: result };
+          } catch (error) {
+            return { outcome: 'not_sent', error };
+          }
+        };
+
+        if (this.jobRepository.withOwnedDelivery) {
+          if (claimedJob.userId == null || !claimedJob.mappingGeneration) {
+            await cancelForFence('mapping_generation_missing');
+            return;
+          }
+          let fenced:
+            | { authorized: false; reason: string }
+            | {
+                authorized: true;
+                value: { outcome: OutboundDeliveryOutcome; error?: unknown };
+              };
+          try {
+            fenced = await this.jobRepository.withOwnedDelivery(
+              {
+                platform: this.platform,
+                jobId: claimedJob.id,
+                leaseToken,
+                externalUserId: claimedJob.externalUserId,
+                userId: claimedJob.userId,
+                mappingGeneration: claimedJob.mappingGeneration,
+                deliveryKey,
+                // Provider timeout is shorter than the normal lease; leave a
+                // bounded margin for finalization before recovery can reclaim.
+                lockTimeoutMs: Math.max(1, Math.floor(settings.leaseMs / 2)),
+              },
+              send,
+            );
+          } catch (error) {
+            // If the provider acknowledged inside the transaction but the
+            // ownership/key transaction could not commit, retrying is unsafe.
+            if (providerOutcome && providerOutcome !== 'not_sent') {
+              const terminalError =
+                providerOutcome === 'ambiguous'
+                  ? 'ambiguous delivery — ownership finalization failed'
+                  : providerOutcome === 'rate_limited'
+                    ? 'outbound_rate_limited'
+                    : `delivery acknowledged but ownership finalization failed: ${this.toErrorMessage(error)}`;
+              const persistedTerminalError = errorMessage(terminalError, {
+                externalUserId: claimedJob.externalUserId,
+              });
+              try {
+                await this.jobRepository.markFailed({
+                  jobId: claimedJob.id,
+                  leaseToken,
+                  errorMessage: persistedTerminalError,
+                  retryCount: Math.max(
+                    claimedJob.retryCount + 1,
+                    claimedJob.maxRetries,
+                  ),
+                  terminal: true,
+                  deliveryStatus: providerOutcome,
+                });
+              } catch (markError) {
+                this.logger.error(
+                  `Failed to persist ownership-finalization outcome jobId=${claimedJob.id}: ${this.toErrorMessage(markError)}`,
+                );
+              }
+              this.hooks?.onFailed?.({
+                jobId: claimedJob.id,
+                externalUserId: claimedJob.externalUserId,
+                error: persistedTerminalError,
+              });
+              failures.push({
+                jobId: claimedJob.id,
+                externalUserId: claimedJob.externalUserId,
+                error: persistedTerminalError,
+              });
+              failed += 1;
+              return;
+            }
+            throw error;
+          }
+          if (!fenced.authorized) {
+            if (
+              fenced.reason === 'mapping_ownership_changed' ||
+              fenced.reason === 'mapping_generation_missing' ||
+              fenced.reason === 'link_revoked' ||
+              fenced.reason === 'locally_unlinked'
+            ) {
+              await cancelForFence(fenced.reason);
+              return;
+            }
+            if (fenced.reason === 'lease_lost') return;
+            throw new Error(`mapping fence unavailable (${fenced.reason})`);
+          }
+          outcome = fenced.value.outcome;
+          sendError = fenced.value.error;
+        } else {
+          const ownsDeliveryLease = await this.jobRepository.markDeliveryKey(
+            claimedJob.id,
+            leaseToken,
             deliveryKey,
-          });
-        } catch (error) {
-          outcome = 'not_sent';
-          sendError = error;
+          );
+          if (!ownsDeliveryLease) return;
+          const sent = await send();
+          outcome = sent.outcome;
+          sendError = sent.error;
         }
 
         if (outcome === 'sent') {
@@ -355,11 +488,14 @@ export class StudyReminderDispatchService {
             // The provider has acknowledged the message; a DB finalization
             // failure is ambiguous and must never become a blind retry.
             const finalizationError = `delivery acknowledged but finalization failed: ${this.toErrorMessage(error)}`;
+            const persistedFinalizationError = errorMessage(finalizationError, {
+              externalUserId: claimedJob.externalUserId,
+            });
             try {
               await this.jobRepository.markFailed({
                 jobId: claimedJob.id,
                 leaseToken,
-                errorMessage: finalizationError,
+                errorMessage: persistedFinalizationError,
                 retryCount: claimedJob.retryCount + 1,
                 terminal: true,
                 deliveryStatus: 'ambiguous',
@@ -372,12 +508,12 @@ export class StudyReminderDispatchService {
             this.hooks?.onFailed?.({
               jobId: claimedJob.id,
               externalUserId: claimedJob.externalUserId,
-              error: finalizationError,
+              error: persistedFinalizationError,
             });
             failures.push({
               jobId: claimedJob.id,
               externalUserId: claimedJob.externalUserId,
-              error: finalizationError,
+              error: persistedFinalizationError,
             });
             failed += 1;
             return;
@@ -443,7 +579,10 @@ export class StudyReminderDispatchService {
           ? classification.terminal
           : (this.hooks?.isTerminalError?.(error) ??
             claimedJob.retryCount + 1 >= claimedJob.maxRetries);
-        const errorMessage = classification?.errorMessage ?? errorMsg;
+        const persistedErrorMessage = errorMessage(
+          classification?.errorMessage ?? errorMsg,
+          { externalUserId: claimedJob.externalUserId },
+        );
 
         const nextRetryCount = claimedJob.retryCount + 1;
         const backoffMs = settings.retryBackoffMinutes * 60 * 1000;
@@ -461,7 +600,7 @@ export class StudyReminderDispatchService {
         await this.jobRepository.markFailed({
           jobId: claimedJob.id,
           leaseToken,
-          errorMessage,
+          errorMessage: persistedErrorMessage,
           // A terminal known failure must be fenced out of both direct
           // claims and the next periodic sync; retry exhaustion is the
           // existing durable terminal marker for `not_sent`.
@@ -475,7 +614,7 @@ export class StudyReminderDispatchService {
         failures.push({
           jobId: claimedJob.id,
           externalUserId: claimedJob.externalUserId,
-          error: errorMessage,
+          error: persistedErrorMessage,
         });
 
         if (terminal) {
@@ -483,12 +622,12 @@ export class StudyReminderDispatchService {
           this.hooks?.onFailed?.({
             jobId: claimedJob.id,
             externalUserId: claimedJob.externalUserId,
-            error: errorMessage,
+            error: persistedErrorMessage,
           });
           this.logger.warn(
             `Study reminder job failed terminal jobId=${claimedJob.id} externalUserId=${maskExternalId(
               claimedJob.externalUserId,
-            )}: ${errorMessage}`,
+            )}: ${persistedErrorMessage}`,
           );
         } else {
           retried += 1;
@@ -500,7 +639,7 @@ export class StudyReminderDispatchService {
           this.logger.warn(
             `Study reminder job retry jobId=${claimedJob.id} externalUserId=${maskExternalId(
               claimedJob.externalUserId,
-            )} retry=${nextRetryCount}/${claimedJob.maxRetries}: ${errorMessage}`,
+            )} retry=${nextRetryCount}/${claimedJob.maxRetries}: ${persistedErrorMessage}`,
           );
         }
       }

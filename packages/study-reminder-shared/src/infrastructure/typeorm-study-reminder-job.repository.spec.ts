@@ -644,6 +644,70 @@ describe('TypeormStudyReminderJobRepository', () => {
     });
   });
 
+  describe('withOwnedDelivery', () => {
+    const ownedParams = {
+      platform: 'messenger' as const,
+      jobId: 1,
+      leaseToken: 'lease-1',
+      externalUserId: 'psid-1',
+      userId: 143,
+      mappingGeneration: '7',
+      deliveryKey: 'reminder:1:key',
+    };
+
+    it('holds the ownership fence through the provider callback', async () => {
+      managerQuery
+        .mockResolvedValueOnce([]) // SET LOCAL lock_timeout
+        .mockResolvedValueOnce([]) // advisory lock
+        .mockResolvedValueOnce([
+          {
+            userId: 143,
+            state: 'active',
+            mappingGeneration: '7',
+            status: 'ACTIVE',
+          },
+        ])
+        .mockResolvedValueOnce([[{ id: 1 }], 1]); // delivery key UPDATE
+      const send = jest.fn().mockResolvedValue({ outcome: 'sent' });
+
+      await expect(
+        repository.withOwnedDelivery(ownedParams, send),
+      ).resolves.toEqual({
+        authorized: true,
+        value: { outcome: 'sent' },
+      });
+
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(managerQuery.mock.calls[2][0]).toContain('mapping_generation');
+      expect(managerQuery.mock.calls[3][0]).toContain('delivery_key');
+    });
+
+    it('does not invoke the provider after a relink changes generation', async () => {
+      managerQuery
+        .mockResolvedValueOnce([]) // SET LOCAL lock_timeout
+        .mockResolvedValueOnce([]) // advisory lock
+        .mockResolvedValueOnce([
+          {
+            userId: 143,
+            state: 'active',
+            mappingGeneration: '8',
+            status: 'ACTIVE',
+          },
+        ]);
+      const send = jest.fn();
+
+      await expect(
+        repository.withOwnedDelivery(ownedParams, send),
+      ).resolves.toEqual({
+        authorized: false,
+        reason: 'mapping_ownership_changed',
+      });
+
+      expect(send).not.toHaveBeenCalled();
+      expect(managerQuery).toHaveBeenCalledTimes(3);
+    });
+  });
+
   describe('markCancelled', () => {
     it('writes lastError and clears nextRetryAt when a reason is given', async () => {
       await repository.markCancelled(1, 'lease-abc', 'session already started');

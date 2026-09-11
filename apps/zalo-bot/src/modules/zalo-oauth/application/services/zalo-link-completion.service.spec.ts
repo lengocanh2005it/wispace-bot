@@ -124,6 +124,7 @@ describe('ZaloLinkCompletionService', () => {
 
     expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1', {
       kind: 'absent',
+      generation: '8',
     });
   });
 

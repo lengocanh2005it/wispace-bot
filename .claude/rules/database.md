@@ -12,7 +12,9 @@ paths: apps/messenger-bot/src/infrastructure/database/**, packages/database/**
 - `chat_daily_usage`, `chat_idempotency` — FREE_FORM chat quota + idempotency reserve/refund (renamed from `messenger_chat_*` in Phase 2) — entity + core logic owned by `packages/chat-metering` (shared with `apps/discord-bot`), messenger-bot is now just a thin wrapper
 - `chat_tool_daily_usage` — per-user, per-day budget for mutating LLM tools (`reschedule_study_session`, `precreate_next_exercise`), #626. Keyed on `(platform, user_id, usage_date, tool_name)` unique; atomic `INSERT … ON CONFLICT DO UPDATE SET count = count + 1 WHERE count < cap RETURNING count`. Entity + `WriteToolBudgetCore` owned by `packages/chat-metering` (all 3 bots); pruned weekly by the chat idempotency-cleanup cron (`CHAT_TOOL_DAILY_USAGE_RETENTION_DAYS`, default 7)
 - `llm_usage_events`, `llm_safety_events` — token/cost + grounding-warning tracking — also owned by `packages/chat-metering`
-- `study_reminder_jobs` — reminder outbox
+- `study_reminder_jobs` — reminder outbox; `mapping_generation` snapshots the
+  mapping owner at sync time, and legacy NULL generations are rejected by the
+  dispatch fence until an authoritative sync rewrites them (#999)
 - `scheduled_report_claims` — legacy per-platform scheduled-report audit/compatibility claims
 - `learner_scheduled_report_claims` — learner-scoped scheduled-report claim, unique on `(user_id, report_date, report_type)`; the atomic no-fanout correctness boundary for #637
 - `users` + view `"Users"` — display name / exam date cache; only `user_id` entries with Messenger mapping
@@ -77,6 +79,7 @@ When adding a new migration (Discord, Zalo, or new shared table):
 | ------------------------------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Messenger-only                       | `1717747200000-CreateMessengerTables`                        | `user_messenger_mappings`, `messenger_message_logs`                                                                                                                          |
 | Messenger-only                       | `1717747200001-CreateStudyReminderJobs`                      | `study_reminder_jobs`                                                                                                                                                        |
+| Shared (ownership fencing)            | `1789093500000-FenceStudyReminderJobOwnership`               | nullable `study_reminder_jobs.mapping_generation` + delivery lookup index                                                                                                  |
 | Messenger-only                       | `1717747200002-CreateMessengerChatRateLimitTables`           | `messenger_chat_daily_usage`, `messenger_chat_idempotency` (pre-rename generic names)                                                                                        |
 | Messenger-only                       | `1717747200003-CreateMessengerChatSharedQueueTables`         | `messenger_chat_queue_buffer`, `messenger_chat_history`, `messenger_chat_webhook_seen`                                                                                       |
 | Messenger-only                       | `1717747200004-CreateMessengerScheduledReportClaims`         | `messenger_scheduled_report_claims`                                                                                                                                          |

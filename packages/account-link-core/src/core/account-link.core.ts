@@ -13,6 +13,10 @@ export interface LinkVerificationResult {
 export interface LinkUpsertResult {
   relinked: boolean;
   previousUserId?: number;
+  /** Generation committed by the mapping upsert, when available. */
+  mappingGeneration?: string;
+  /** External ids displaced while enforcing one active mapping per learner. */
+  displacedExternalUserIds?: string[];
 }
 
 export interface LinkStateSnapshot {
@@ -22,7 +26,7 @@ export interface LinkStateSnapshot {
 }
 
 export type LinkMappingObservation =
-  | { kind: 'absent' }
+  | { kind: 'absent'; generation?: string }
   | { kind: 'present'; generation: string };
 
 export interface VerifyIntentIdentity {
@@ -363,6 +367,22 @@ export class LinkReconcileCronCore {
         if (existingUserId === record.userId) {
           await this.clearClarification(record.externalUserId, options);
           await this.ports.consumeRecord(record);
+          try {
+            const state = await this.ports.getLinkState?.(
+              record.externalUserId,
+            );
+            await options.onReconciled?.({
+              record,
+              linkResult: {
+                relinked: false,
+                ...(state?.generation
+                  ? { mappingGeneration: state.generation }
+                  : {}),
+              },
+            });
+          } catch (error) {
+            options.onBestEffortError?.('side-effect', error);
+          }
           result.alreadyCommitted += 1;
           options.onOutcome?.('already_committed', record);
           continue;

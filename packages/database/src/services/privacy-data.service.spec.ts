@@ -250,7 +250,10 @@ describe('PrivacyDataService', () => {
       });
 
       expect(result).toEqual({ deleted: false, conflict: true });
-      expect(mockManagerQuery).not.toHaveBeenCalled();
+      expect(mockManagerQuery).toHaveBeenCalledWith(
+        expect.stringContaining('pg_advisory_xact_lock'),
+        [expect.stringContaining('study-reminder:ownership:messenger:')],
+      );
     });
 
     it('clears user cache via per-call cleanup when mapping has a userId', async () => {
@@ -286,7 +289,9 @@ describe('PrivacyDataService', () => {
       const mockMapping = { id: 1, userId: 42, platform: 'messenger' };
       mockMappingRepo.findOne
         .mockResolvedValueOnce(mockMapping)
+        .mockResolvedValueOnce(mockMapping)
         .mockResolvedValueOnce(null);
+      mockMappingRepo.findOne.mockResolvedValueOnce(null);
       mockMappingRepo.remove.mockResolvedValue(mockMapping);
 
       const first = await service.unlink('messenger', 'psid-123');

@@ -1,7 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
-import { truncatePersistedError } from '@wispace/bot-common/masking';
+import {
+  hashExternalId,
+  truncatePersistedError,
+} from '@wispace/bot-common/masking';
 import { extractQueryRows } from '@wispace/bot-common/utils';
 import type {
   StudyReminderJobRepositoryPort,
@@ -9,12 +12,18 @@ import type {
   StudyReminderJobStatus,
   UpsertStudyReminderJobInput,
   UpsertStudyReminderJobOptions,
+  OwnedDeliveryParams,
+  OwnedDeliveryResult,
 } from '../ports/study-reminder-job.repository.port';
 import type { SyncJobRepository } from '../ports/study-reminder-sync-job.repository.port';
 import type { DispatchJobRepository } from '../ports/study-reminder-dispatch-job.repository.port';
 import type { OpsJobRepository } from '../ports/study-reminder-ops-job.repository.port';
 import { StudyReminderJobEntity } from '../entities/study-reminder-job.entity';
 import type { OutboundDeliveryOutcome, Platform } from '@wispace/contracts';
+import {
+  acquireStudyReminderOwnershipLock,
+  studyReminderMappingTable,
+} from './study-reminder-ownership';
 import {
   studyReminderDispatchPredicateSql,
   studyReminderTerminalFailurePredicateSql,
@@ -208,6 +217,7 @@ export class TypeormStudyReminderJobRepository
       platform: input.platform,
       externalUserId: input.externalUserId,
       userId: input.userId ?? null,
+      mappingGeneration: input.mappingGeneration,
       sessionKey: input.sessionKey,
       scheduledAt: input.scheduledAt,
       remindAt: input.remindAt,
@@ -235,6 +245,18 @@ export class TypeormStudyReminderJobRepository
     const reopenOnlyOnScheduleChange =
       options?.reopenOnlyOnScheduleChange ?? false;
     const scheduleChanged = this.hasScheduleChanged(existing, input);
+    if (
+      this.isOlderGeneration(
+        existing.mappingGeneration,
+        input.mappingGeneration,
+      )
+    ) {
+      return;
+    }
+    const ownerChanged =
+      (input.mappingGeneration !== undefined &&
+        existing.mappingGeneration !== input.mappingGeneration) ||
+      (input.userId !== undefined && existing.userId !== input.userId);
 
     if (existing.status === 'sent') {
       if (!scheduleChanged) {
@@ -245,6 +267,11 @@ export class TypeormStudyReminderJobRepository
     }
 
     if (existing.status === 'processing') {
+      // Never rewrite an in-flight job's owner while a sender may still hold
+      // the claim. The delivery fence will cancel it against the new mapping.
+      if (ownerChanged) {
+        return;
+      }
       if (reopenOnlyOnScheduleChange && !scheduleChanged) {
         return;
       }
@@ -278,6 +305,9 @@ export class TypeormStudyReminderJobRepository
 
     // pending / failed — update in place
     existing.userId = input.userId ?? existing.userId;
+    if (input.mappingGeneration !== undefined) {
+      existing.mappingGeneration = input.mappingGeneration;
+    }
     existing.scheduledAt = input.scheduledAt;
     existing.remindAt = input.remindAt;
     existing.topic = input.topic ?? existing.topic;
@@ -299,6 +329,19 @@ export class TypeormStudyReminderJobRepository
 
   private inputKey(input: UpsertStudyReminderJobInput): string {
     return `${input.platform}|${input.externalUserId}|${input.sessionKey}`;
+  }
+
+  private isOlderGeneration(
+    existingGeneration: string | null | undefined,
+    incomingGeneration: string | undefined,
+  ): boolean {
+    if (!existingGeneration || incomingGeneration === undefined) return false;
+    try {
+      return BigInt(incomingGeneration) < BigInt(existingGeneration);
+    } catch {
+      // Invalid generations are never allowed to overwrite a known value.
+      return true;
+    }
   }
 
   private entityKey(entity: StudyReminderJobEntity): string {
@@ -407,6 +450,110 @@ export class TypeormStudyReminderJobRepository
       return false;
     }
     return true;
+  }
+
+  async withOwnedDelivery<T>(
+    params: OwnedDeliveryParams,
+    send: () => Promise<T>,
+  ): Promise<OwnedDeliveryResult<T>> {
+    try {
+      return await this.repo.manager.transaction(async (manager) => {
+        const timeoutMs = Math.max(
+          1,
+          Math.min(Math.trunc(params.lockTimeoutMs ?? 5_000), 10_000),
+        );
+        await manager.query(`SET LOCAL lock_timeout = '${timeoutMs}ms'`);
+        await acquireStudyReminderOwnershipLock(
+          manager,
+          params.platform,
+          params.externalUserId,
+        );
+
+        const table = studyReminderMappingTable(params.platform);
+        const statusSelect = params.platform === 'messenger' ? ', status' : '';
+        const rows = extractQueryRows<{
+          userId: number | null;
+          state: string;
+          mappingGeneration: string | null;
+          status?: string;
+        }>(
+          await manager.query(
+            `SELECT user_id AS "userId",
+                    COALESCE(link_state, 'active') AS state,
+                    mapping_generation AS "mappingGeneration"${statusSelect}
+             FROM "${table}"
+             WHERE platform = $1 AND external_user_id = $2
+             ORDER BY id DESC LIMIT 1
+             FOR UPDATE`,
+            [params.platform, params.externalUserId],
+          ),
+        );
+        const mapping = rows[0];
+        if (!mapping) {
+          const tombstone = extractQueryRows<{ exists: boolean }>(
+            await manager.query(
+              `SELECT EXISTS (
+                 SELECT 1 FROM platform_link_audit_events
+                 WHERE platform = $1 AND external_user_hash = $2
+                   AND event_type = 'locally_unlinked'
+               ) AS exists`,
+              [params.platform, hashExternalId(params.externalUserId)],
+            ),
+          )[0]?.exists;
+          return {
+            authorized: false,
+            reason: tombstone ? 'locally_unlinked' : 'link_status_unknown',
+          };
+        }
+        if (params.platform === 'messenger' && mapping.status !== 'ACTIVE') {
+          return { authorized: false, reason: 'locally_unlinked' };
+        }
+        if (mapping.state === 'confirmed-revoked') {
+          return { authorized: false, reason: 'link_revoked' };
+        }
+        if (mapping.state === 'locally-unlinked') {
+          return { authorized: false, reason: 'locally_unlinked' };
+        }
+        if (mapping.state !== 'active') {
+          return { authorized: false, reason: 'link_status_unknown' };
+        }
+        if (!mapping.mappingGeneration) {
+          return { authorized: false, reason: 'mapping_generation_missing' };
+        }
+        if (
+          Number(mapping.userId) !== params.userId ||
+          String(mapping.mappingGeneration) !== params.mappingGeneration
+        ) {
+          return { authorized: false, reason: 'mapping_ownership_changed' };
+        }
+
+        const deliveryRows = extractQueryRows<{ id: number }>(
+          await manager.query(
+            `UPDATE study_reminder_jobs
+             SET delivery_key = COALESCE(delivery_key, $3), updated_at = now()
+             WHERE id = $1 AND platform = $2
+               AND lease_token = $4 AND status = 'processing'
+             RETURNING id`,
+            [
+              params.jobId,
+              params.platform,
+              params.deliveryKey,
+              params.leaseToken,
+            ],
+          ),
+        );
+        if (deliveryRows.length === 0) {
+          return { authorized: false, reason: 'lease_lost' };
+        }
+
+        return { authorized: true, value: await send() };
+      });
+    } catch (error) {
+      if ((error as { code?: string })?.code === '55P03') {
+        return { authorized: false, reason: 'ownership_lock_timeout' };
+      }
+      throw error;
+    }
   }
 
   async markFailed(params: {
@@ -728,6 +875,9 @@ export class TypeormStudyReminderJobRepository
     input: UpsertStudyReminderJobInput,
   ): void {
     existing.userId = input.userId ?? existing.userId;
+    if (input.mappingGeneration !== undefined) {
+      existing.mappingGeneration = input.mappingGeneration;
+    }
     existing.scheduledAt = input.scheduledAt;
     existing.remindAt = input.remindAt;
     existing.topic = input.topic ?? existing.topic;
@@ -755,6 +905,9 @@ export class TypeormStudyReminderJobRepository
       externalUserId: row.externalUserId ?? row.external_user_id,
       userId:
         row.userId ?? (row.user_id as number | null | undefined) ?? undefined,
+      mappingGeneration: (row.mappingGeneration ??
+        row.mapping_generation ??
+        undefined) as string | undefined,
       sessionKey: row.sessionKey ?? row.session_key,
       scheduledAt: row.scheduledAt ?? row.scheduled_at,
       remindAt: row.remindAt ?? row.remind_at,

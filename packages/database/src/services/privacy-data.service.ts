@@ -7,6 +7,10 @@ import type {
   Repository,
 } from 'typeorm';
 import { createHash } from 'crypto';
+import {
+  acquireStudyReminderOwnershipLock,
+  acquireStudyReminderOwnershipMutationLock,
+} from '@wispace/bot-common/locks';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import type { Platform } from '@wispace/contracts';
 
@@ -259,13 +263,21 @@ export class PrivacyDataService {
     let userId: number | undefined;
 
     await this.dataSource.transaction(async (manager) => {
+      await acquireStudyReminderOwnershipMutationLock(manager);
+      await acquireStudyReminderOwnershipLock(
+        manager,
+        currentPlatform,
+        externalUserId,
+      );
+      // Re-read under the ownership lock. The initial read only supports the
+      // cheap expected-mapping conflict/terminal fast paths above.
+      mapping = await lockPrivacyMapping(
+        manager,
+        this.registry.mappings[currentPlatform],
+        currentPlatform,
+        externalUserId,
+      );
       if (expectedMapping) {
-        mapping = await lockPrivacyMapping(
-          manager,
-          this.registry.mappings[currentPlatform],
-          currentPlatform,
-          externalUserId,
-        );
         if (!mappingMatchesExpected(mapping, expectedMapping)) {
           conflict = true;
           return;
@@ -273,11 +285,16 @@ export class PrivacyDataService {
       }
 
       if (!mapping) {
+        const generation = await nextLocalUnlinkGeneration(
+          manager,
+          currentPlatform,
+          externalUserId,
+        );
         await writeLocalUnlinkAudit(
           manager,
           currentPlatform,
           externalUserId,
-          '1',
+          generation,
         );
         await cancelLocalUnlinkWork(manager, currentPlatform, externalUserId);
         await manager.query(
@@ -363,20 +380,22 @@ export class PrivacyDataService {
     const cleanupExternalIds = new Set<string>([externalUserId]);
 
     await this.dataSource.transaction(async (manager) => {
+      await acquireStudyReminderOwnershipMutationLock(manager);
+      await acquireStudyReminderOwnershipLock(
+        manager,
+        currentPlatform,
+        externalUserId,
+      );
       // 1a. Look up and remove the platform mapping INSIDE the transaction
       const mappingRepo = manager.getRepository(
         this.registry.mappings[currentPlatform],
       );
-      const mapping = expectedMapping
-        ? await lockPrivacyMapping(
-            manager,
-            this.registry.mappings[currentPlatform],
-            currentPlatform,
-            externalUserId,
-          )
-        : await mappingRepo.findOne({
-            where: { platform: currentPlatform, externalUserId },
-          });
+      const mapping = await lockPrivacyMapping(
+        manager,
+        this.registry.mappings[currentPlatform],
+        currentPlatform,
+        externalUserId,
+      );
       if (
         expectedMapping &&
         !mappingMatchesExpected(mapping, expectedMapping)
@@ -399,6 +418,11 @@ export class PrivacyDataService {
 
       // 1b. Delete mappings for OTHER platforms if userId is known
       if (userId) {
+        const otherMappings: Array<{
+          platform: Platform;
+          externalUserId: string;
+          mapping: ObjectLiteral;
+        }> = [];
         for (const p of PLATFORMS) {
           if (p === currentPlatform) continue;
           const repo = manager.getRepository(this.registry.mappings[p]);
@@ -407,18 +431,45 @@ export class PrivacyDataService {
             const externalId = (otherMapping as { externalUserId?: string })
               .externalUserId;
             if (externalId) {
-              cleanupExternalIds.add(externalId);
-              await writeLocalUnlinkAudit(
-                manager,
-                p,
-                externalId,
-                (otherMapping as { mappingGeneration?: string })
-                  .mappingGeneration,
-              );
-              await cancelLocalUnlinkWork(manager, p, externalId);
-              await deleteVerifyIntent(manager, p, externalId);
+              otherMappings.push({
+                platform: p,
+                externalUserId: externalId,
+                mapping: otherMapping,
+              });
             }
           }
+        }
+        for (const other of otherMappings.sort((a, b) =>
+          `${a.platform}:${a.externalUserId}`.localeCompare(
+            `${b.platform}:${b.externalUserId}`,
+          ),
+        )) {
+          await acquireStudyReminderOwnershipLock(
+            manager,
+            other.platform,
+            other.externalUserId,
+          );
+          cleanupExternalIds.add(other.externalUserId);
+          await writeLocalUnlinkAudit(
+            manager,
+            other.platform,
+            other.externalUserId,
+            (other.mapping as { mappingGeneration?: string }).mappingGeneration,
+          );
+          await cancelLocalUnlinkWork(
+            manager,
+            other.platform,
+            other.externalUserId,
+          );
+          await deleteVerifyIntent(
+            manager,
+            other.platform,
+            other.externalUserId,
+          );
+        }
+        for (const p of PLATFORMS) {
+          if (p === currentPlatform) continue;
+          const repo = manager.getRepository(this.registry.mappings[p]);
           await repo.delete({ userId });
         }
       }
@@ -661,6 +712,30 @@ async function writeLocalUnlinkAudit(
       mappingGeneration ?? '1',
     ],
   );
+}
+
+async function nextLocalUnlinkGeneration(
+  manager: unknown,
+  platform: Platform,
+  externalUserId: string,
+): Promise<string> {
+  const queryManager = manager as QueryManager | undefined;
+  if (!queryManager?.query) return '1';
+  const rows = (await queryManager.query(
+    `SELECT mapping_generation
+       FROM platform_link_audit_events
+      WHERE platform = $1 AND external_user_hash = $2
+        AND event_type = 'locally_unlinked'
+      ORDER BY created_at DESC, id DESC LIMIT 1`,
+    [platform, createHash('sha256').update(externalUserId).digest('hex')],
+  )) as Array<{ mapping_generation?: string | null }>;
+  const previous = rows[0]?.mapping_generation;
+  if (!previous) return '1';
+  try {
+    return String(BigInt(previous) + 1n);
+  } catch {
+    throw new Error('invalid mapping generation tombstone');
+  }
 }
 
 async function cancelLocalUnlinkWork(

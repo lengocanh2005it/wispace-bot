@@ -173,6 +173,30 @@ describe('StudyReminderSyncService', () => {
       expect(result).toMatchObject({ mappings: 1, upserted: 1, cancelled: 2 });
     });
 
+    it('carries the mapping generation into the stable session-key job', async () => {
+      const session = makeSession();
+      mappingReader.findActiveMappingsPage.mockResolvedValue({
+        items: [
+          {
+            externalUserId: 'ext-1',
+            userId: 1,
+            platform: 'messenger',
+            mappingGeneration: '7',
+          },
+        ],
+        nextId: undefined,
+      });
+
+      await service.syncUpcomingSessions({
+        getSessions: jest.fn().mockResolvedValue([session]),
+      });
+
+      expect(jobRepo.upsertPendingJobs).toHaveBeenCalledWith(
+        [expect.objectContaining({ mappingGeneration: '7' })],
+        { reopenOnlyOnScheduleChange: true },
+      );
+    });
+
     it('skips mappings without an external id', async () => {
       mappingReader.findActiveMappingsPage.mockResolvedValue({
         items: [{ externalUserId: '', userId: 5, platform: 'messenger' }],

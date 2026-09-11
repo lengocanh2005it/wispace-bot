@@ -8,6 +8,8 @@ describe('TypeormDiscordAccountLinkRepository', () => {
       .fn()
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ external_user_id: 'discord-user-1' }]);
     const repo = {
       manager: {
@@ -22,23 +24,35 @@ describe('TypeormDiscordAccountLinkRepository', () => {
       kind: 'absent',
     });
 
-    // First call: SELECT existing mapping for the Discord id (relink detection)
+    // First call: serialize ownership mutations
     expect(query).toHaveBeenNthCalledWith(
       1,
+      expect.stringContaining('pg_advisory_xact_lock'),
+      [expect.any(String)],
+    );
+    // Second call: SELECT existing mapping for the Discord id (relink detection)
+    expect(query).toHaveBeenNthCalledWith(
+      2,
       expect.stringContaining('SELECT user_id, mapping_generation'),
       ['discord', 'discord-user-1'],
     );
-    // Second call: DELETE old link for userId
+    // Third call: read a privacy-unlink tombstone generation
     expect(query).toHaveBeenNthCalledWith(
-      2,
+      3,
+      expect.stringContaining('platform_link_audit_events'),
+      ['discord', expect.any(String)],
+    );
+    // Fourth call: DELETE old link for userId
+    expect(query).toHaveBeenNthCalledWith(
+      4,
       expect.stringContaining('DELETE FROM discord_account_links'),
       ['discord', 143, 'discord-user-1'],
     );
-    // Third call: INSERT new link
+    // Fifth call: INSERT new link
     expect(query).toHaveBeenNthCalledWith(
-      3,
+      5,
       expect.stringContaining('INSERT INTO discord_account_links'),
-      ['discord', 'discord-user-1', 143, true, null],
+      ['discord', 'discord-user-1', 143, true, null, '1'],
     );
     expect(result).toEqual({ relinked: false });
   });
@@ -46,6 +60,7 @@ describe('TypeormDiscordAccountLinkRepository', () => {
   it('#137: reports relinked + the displaced userId when the Discord id moves to another WISPACE user', async () => {
     const query = jest
       .fn()
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ user_id: 99, mapping_generation: '1' }])
       .mockResolvedValueOnce([])
       .mockResolvedValue([{ external_user_id: 'discord-user-1' }]);
@@ -95,6 +110,7 @@ describe('TypeormDiscordAccountLinkRepository', () => {
   it('checks the generation before removing another link for the user', async () => {
     const query = jest
       .fn()
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         { user_id: 99, mapping_generation: '5', link_state: 'active' },
       ]);
@@ -113,12 +129,13 @@ describe('TypeormDiscordAccountLinkRepository', () => {
         generation: '4',
       }),
     ).rejects.toThrow(/stale|revoked/i);
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it('rejects an absent observation when another callback inserted the mapping', async () => {
     const query = jest
       .fn()
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         { user_id: 99, mapping_generation: '2', link_state: 'active' },
       ]);
@@ -134,12 +151,13 @@ describe('TypeormDiscordAccountLinkRepository', () => {
     await expect(
       service.upsertLink(143, 'discord-user-1', { kind: 'absent' }),
     ).rejects.toThrow(/ownership changed/i);
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it('accepts an absent observation when this callback already committed', async () => {
     const query = jest
       .fn()
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([
         { user_id: 143, mapping_generation: '1', link_state: 'active' },
       ]);
@@ -155,7 +173,7 @@ describe('TypeormDiscordAccountLinkRepository', () => {
     await expect(
       service.upsertLink(143, 'discord-user-1', { kind: 'absent' }),
     ).resolves.toEqual({ relinked: false });
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   describe('consent prompt claim (#596 AC5)', () => {

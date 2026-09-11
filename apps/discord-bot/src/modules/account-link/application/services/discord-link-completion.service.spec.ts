@@ -143,7 +143,7 @@ describe('DiscordLinkCompletionService', () => {
     expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
       143,
       'discord-user-1',
-      { kind: 'absent' },
+      { kind: 'absent', generation: '8' },
     );
   });
 

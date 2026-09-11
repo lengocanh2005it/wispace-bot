@@ -52,6 +52,17 @@ may cancel actionable jobs without upserting, while resolver errors leave jobs
 untouched and surface a sync failure. A later full sync reconciles jobs when
 the canonical platform changes.
 
+## Ownership fence (#999)
+
+`study_reminder_jobs.mapping_generation` must match the active mapping's
+`user_id` and generation before a delivery key is persisted. Relink/revoke/
+privacy-unlink paths advance the mapping generation and cancel old pending or
+processing jobs. The TypeORM delivery path takes the per-platform external-id
+advisory lock, verifies the snapshot, persists the key, and keeps the lock
+through the provider call. Mismatches are terminal cancellation reasons;
+temporarily unknown mapping state is retryable. Legacy jobs with a null
+generation fail closed and are recreated by sync.
+
 Reminder delivery uses the shared outbound learner-message backstop (#622).
 Treat `rate_limited` as terminal (`outbound_rate_limited`), do not retry it,
 and use `docs/outbound-rate-limit.md` for first triage. A normal reminder must

@@ -340,7 +340,7 @@ describe('StudyReminderDispatchService', () => {
     expect(jobRepo.markCancelled).toHaveBeenCalledWith(
       1,
       'lease-1',
-      'link_confirmed-revoked',
+      'link_revoked',
     );
 
     jobRepo.findDueJobs.mockResolvedValue([job]);
@@ -350,6 +350,137 @@ describe('StudyReminderDispatchService', () => {
     expect(jobRepo.markFailed).toHaveBeenCalledWith(
       expect.objectContaining({ terminal: false }),
     );
+  });
+
+  it('cancels a claimed job when the active mapping owner generation changed', async () => {
+    const job = makeJob({ leaseToken: 'lease-1', mappingGeneration: '4' });
+    jobRepo.findDueJobs.mockResolvedValue([job]);
+    jobRepo.claimJob.mockResolvedValue(job);
+    service = new StudyReminderDispatchService(
+      jobRepo,
+      messageSender,
+      scheduleService,
+      'messenger',
+      hooks,
+      {
+        getMappingState: jest.fn().mockResolvedValue({
+          state: 'active',
+          userId: 99,
+          mappingGeneration: '5',
+        }),
+      },
+    );
+
+    const result = await service.dispatchDueReminders();
+
+    expect(messageSender.sendText).not.toHaveBeenCalled();
+    expect(jobRepo.markCancelled).toHaveBeenCalledWith(
+      1,
+      'lease-1',
+      'mapping_ownership_changed',
+    );
+    expect(result).toMatchObject({ claimed: 1, cancelled: 1, sent: 0 });
+  });
+
+  it('cancels legacy jobs that have no mapping generation', async () => {
+    const job = makeJob({ leaseToken: 'lease-1' });
+    jobRepo.findDueJobs.mockResolvedValue([job]);
+    jobRepo.claimJob.mockResolvedValue(job);
+    service = new StudyReminderDispatchService(
+      jobRepo,
+      messageSender,
+      scheduleService,
+      'messenger',
+      hooks,
+      {
+        getMappingState: jest.fn().mockResolvedValue({
+          state: 'active',
+          userId: 42,
+          mappingGeneration: '1',
+        }),
+      },
+    );
+
+    const result = await service.dispatchDueReminders();
+
+    expect(messageSender.sendText).not.toHaveBeenCalled();
+    expect(jobRepo.markCancelled).toHaveBeenCalledWith(
+      1,
+      'lease-1',
+      'mapping_generation_missing',
+    );
+    expect(result.cancelled).toBe(1);
+  });
+
+  it.each(['messenger', 'discord', 'zalo'] as const)(
+    'holds the ownership fence through the send on %s',
+    async (platform) => {
+      const job = makeJob({
+        platform,
+        leaseToken: 'lease-1',
+        mappingGeneration: '7',
+      });
+      jobRepo.findDueJobs.mockResolvedValue([job]);
+      jobRepo.claimJob.mockResolvedValue(job);
+      jobRepo.withOwnedDelivery = jest
+        .fn()
+        .mockImplementation(async (_params, send) => ({
+          authorized: true,
+          value: await send(),
+        }));
+      service = new StudyReminderDispatchService(
+        jobRepo,
+        messageSender,
+        scheduleService,
+        platform,
+        hooks,
+        {
+          getMappingState: jest.fn().mockResolvedValue({
+            state: 'active',
+            userId: 42,
+            mappingGeneration: '7',
+          }),
+        },
+      );
+
+      const result = await service.dispatchDueReminders();
+
+      expect(jobRepo.withOwnedDelivery).toHaveBeenCalledWith(
+        expect.objectContaining({
+          platform,
+          userId: 42,
+          mappingGeneration: '7',
+        }),
+        expect.any(Function),
+      );
+      expect(messageSender.sendText).toHaveBeenCalled();
+      expect(jobRepo.markSent).toHaveBeenCalled();
+      expect(result).toMatchObject({ claimed: 1, sent: 1 });
+    },
+  );
+
+  it('does not send when relink wins the ownership fence after claim', async () => {
+    const job = makeJob({
+      leaseToken: 'lease-1',
+      mappingGeneration: '1',
+    });
+    jobRepo.findDueJobs.mockResolvedValue([job]);
+    jobRepo.claimJob.mockResolvedValue(job);
+    jobRepo.withOwnedDelivery = jest.fn().mockResolvedValue({
+      authorized: false,
+      reason: 'mapping_ownership_changed',
+    });
+    build();
+
+    const result = await service.dispatchDueReminders();
+
+    expect(messageSender.sendText).not.toHaveBeenCalled();
+    expect(jobRepo.markCancelled).toHaveBeenCalledWith(
+      1,
+      'lease-1',
+      'mapping_ownership_changed',
+    );
+    expect(result).toMatchObject({ claimed: 1, cancelled: 1, sent: 0 });
   });
 
   it('scopes every due/claim/reset query to its own platform (#180)', async () => {

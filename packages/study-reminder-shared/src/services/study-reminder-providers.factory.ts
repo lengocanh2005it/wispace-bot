@@ -272,6 +272,15 @@ export function createStudyReminderProviders(
                   if (ctx.reason === DORMANT_REASON) {
                     suppressionMetric.incScheduledSendSuppressed('reminder');
                   }
+                  suppressionMetric.incReminderDispatch?.(
+                    ctx.reason === 'mapping_ownership_changed'
+                      ? 'cancelled_ownership_changed'
+                      : ctx.reason === 'link_revoked'
+                        ? 'cancelled_link_revoked'
+                        : ctx.reason === 'mapping_generation_missing'
+                          ? 'cancelled_mapping_generation_missing'
+                          : 'cancelled',
+                  );
                 },
                 // Reminder-delivery SLO outcomes (#829) — sent/failed on all
                 // platforms, not just Messenger's hook wiring.
@@ -293,7 +302,13 @@ export function createStudyReminderProviders(
                   options.platform,
                   externalUserId,
                 );
-              return link ? 'active' : null;
+              return link && link.userId != null && link.mappingGeneration
+                ? {
+                    state: 'active',
+                    userId: link.userId,
+                    mappingGeneration: link.mappingGeneration,
+                  }
+                : null;
             },
             filterDormantUserIds: dormancyGate
               ? (ids) => dormancyGate.filterDormant(ids)

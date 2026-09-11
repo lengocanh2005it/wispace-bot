@@ -2,6 +2,7 @@ import type {
   MessageType,
   OutboundDeliveryOutcome,
   Platform,
+  PlatformLinkState,
 } from '@wispace/contracts';
 
 /** Study reminder job status. */
@@ -19,6 +20,8 @@ export interface StudyReminderJob {
   platform: Platform;
   externalUserId: string;
   userId?: number;
+  /** Mapping ownership generation captured when the job was scheduled. */
+  mappingGeneration?: string;
   sessionKey: string;
   scheduledAt: Date;
   remindAt: Date;
@@ -55,6 +58,8 @@ export interface UpsertStudyReminderJobInput {
   platform: Platform;
   externalUserId: string;
   userId?: number;
+  /** Present for new sync snapshots; omitted only by pre-fence callers. */
+  mappingGeneration?: string;
   sessionKey: string;
   scheduledAt: Date;
   remindAt: Date;
@@ -97,7 +102,26 @@ export interface UserLink {
   externalUserId: string;
   userId?: number;
   platform: Platform;
+  /** Mapping ownership generation used to fence reminder jobs. */
+  mappingGeneration?: string;
 }
+
+/**
+ * Snapshot returned by mapping readers for the dispatch ownership fence.
+ * Active snapshots always carry both the WISPACE owner and generation;
+ * terminal/unknown snapshots deliberately carry no inferred owner.
+ */
+export type StudyReminderMappingState =
+  | {
+      state: 'active';
+      userId: number;
+      mappingGeneration: string;
+    }
+  | {
+      state: Exclude<PlatformLinkState, 'active'>;
+      userId?: number;
+      mappingGeneration?: string;
+    };
 
 export interface SendMessageInput {
   externalUserId: string;

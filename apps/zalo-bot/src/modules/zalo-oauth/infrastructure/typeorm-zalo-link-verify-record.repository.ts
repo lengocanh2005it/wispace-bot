@@ -39,9 +39,7 @@ export class TypeormZaloLinkVerifyRecordRepository implements ZaloLinkVerifyReco
           zaloUserId,
           userId,
           mappingObservation.kind,
-          mappingObservation.kind === 'present'
-            ? mappingObservation.generation
-            : null,
+          mappingObservation.generation ?? null,
         ],
       ),
     );
@@ -92,7 +90,12 @@ export class TypeormZaloLinkVerifyRecordRepository implements ZaloLinkVerifyReco
               kind: 'present',
               generation: String(row.observedMappingGeneration),
             }
-          : { kind: 'absent' },
+          : {
+              kind: 'absent',
+              ...(row.observedMappingGeneration
+                ? { generation: String(row.observedMappingGeneration) }
+                : {}),
+            },
     }));
   }
 

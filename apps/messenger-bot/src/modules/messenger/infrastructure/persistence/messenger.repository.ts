@@ -1,6 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Not, Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { truncatePersistedError } from '@wispace/bot-common/masking';
 import { extractQueryRows } from '@wispace/bot-common/utils';
 import {
@@ -14,6 +14,12 @@ import {
   UserPlatformMappingEntity,
 } from '@messenger/infrastructure/database/entities';
 import { listUserIdsWithSentReport } from '@wispace/database';
+import {
+  acquireStudyReminderOwnershipLock,
+  acquireStudyReminderOwnershipMutationLock,
+  cancelStudyReminderJobsForOwnershipChange,
+  nextMappingGenerationAfterTombstone,
+} from '@wispace/study-reminder-shared';
 import { startOfReportDay, todayReportDate } from '@wispace/scheduler-core';
 import { MessengerRepositoryPort } from '../../domain/repositories/messenger.repository.port';
 import type { MessengerMappingRepositoryPort } from '../../domain/repositories/messenger-mapping.repository.port';
@@ -94,13 +100,37 @@ export class MessengerRepository
     cadence?: NotificationCadence;
     expectedGeneration?: string;
   }): Promise<UserMessengerMapping | null> {
+    const manager = this.mappingRepo.manager as EntityManager;
+    if (manager.transaction) {
+      return manager.transaction(async (em) => {
+        await acquireStudyReminderOwnershipMutationLock(em);
+        await acquireStudyReminderOwnershipLock(em, PLATFORM, params.psid);
+        return this.upsertPsidUserLinkWithManager(em, params, true);
+      });
+    }
+    // Test/fallback repositories may expose only query(); production TypeORM
+    // always takes the transaction path above.
+    return this.upsertPsidUserLinkWithManager(manager, params, false);
+  }
+
+  private async upsertPsidUserLinkWithManager(
+    manager: Pick<EntityManager, 'query'>,
+    params: {
+      psid: string;
+      userId: number;
+      topic?: string;
+      cadence?: NotificationCadence;
+      expectedGeneration?: string;
+    },
+    ownershipLockHeld: boolean,
+  ): Promise<UserMessengerMapping | null> {
     const token = buildPocPsidToken(params.psid);
 
     // 1. Re-activate a previously deactivated mapping (keeps its id) — the
     //    INSERT below can only conflict with ACTIVE rows, so an INACTIVE row
     //    would otherwise be left behind while a duplicate ACTIVE row is created.
     const reactivatedRows = extractQueryRows<Record<string, unknown>>(
-      await this.mappingRepo.manager.query(
+      await manager.query(
         `
       UPDATE user_platform_mappings
       SET
@@ -136,12 +166,11 @@ export class MessengerRepository
       params.expectedGeneration !== undefined &&
       reactivatedRows.length === 0
     ) {
-      const existingRows: Array<Record<string, unknown>> =
-        await this.mappingRepo.manager.query(
-          `SELECT id, mapping_generation FROM user_platform_mappings
+      const existingRows: Array<Record<string, unknown>> = await manager.query(
+        `SELECT id, mapping_generation FROM user_platform_mappings
            WHERE platform = $1 AND external_user_id = $2`,
-          [PLATFORM, params.psid],
-        );
+        [PLATFORM, params.psid],
+      );
       if (
         existingRows.length > 0 &&
         String(existingRows[0].mapping_generation ?? '1') !==
@@ -156,12 +185,27 @@ export class MessengerRepository
     //    events (opt-ins have no mid, so dedupe never filters them) can no
     //    longer race findOne→save into a unique-violation 500. The conflict
     //    target must match the index columns exactly or Postgres raises 42P10.
-    const rows: Array<Record<string, unknown>> =
-      await this.mappingRepo.manager.query(
-        `
+    const insertGeneration =
+      ownershipLockHeld && reactivatedRows.length === 0
+        ? await nextMappingGenerationAfterTombstone(
+            manager,
+            PLATFORM,
+            params.psid,
+          )
+        : '1';
+    if (
+      ownershipLockHeld &&
+      reactivatedRows.length === 0 &&
+      params.expectedGeneration !== undefined &&
+      (BigInt(insertGeneration) - 1n).toString() !== params.expectedGeneration
+    ) {
+      return null;
+    }
+    const rows: Array<Record<string, unknown>> = await manager.query(
+      `
         INSERT INTO user_platform_mappings
-          (platform, external_user_id, user_id, notification_messages_token, topic, cadence, status, link_state)
-        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', 'active')
+          (platform, external_user_id, user_id, notification_messages_token, topic, cadence, status, link_state, mapping_generation)
+        VALUES ($1, $2, $3, $4, $5, $6, 'ACTIVE', 'active', $8::bigint)
         ON CONFLICT (platform, external_user_id)
           WHERE status = 'ACTIVE' AND external_user_id IS NOT NULL
         DO UPDATE SET
@@ -187,21 +231,37 @@ export class MessengerRepository
           AND user_platform_mappings.mapping_generation = COALESCE($7::bigint, user_platform_mappings.mapping_generation)
         RETURNING *
       `,
-        [
-          PLATFORM,
-          params.psid,
-          params.userId,
-          token,
-          params.topic ?? null,
-          params.cadence ?? null,
-          params.expectedGeneration ?? null,
-        ],
-      );
+      [
+        PLATFORM,
+        params.psid,
+        params.userId,
+        token,
+        params.topic ?? null,
+        params.cadence ?? null,
+        reactivatedRows.length > 0 ? null : (params.expectedGeneration ?? null),
+        insertGeneration,
+      ],
+    );
 
     // #383: CAS guard may have blocked the update when a concurrent write
     // changed the userId — RETURNING yields no rows.
     if (rows.length === 0) {
       return null;
+    }
+
+    if (ownershipLockHeld) {
+      const generation = rows[0].mapping_generation;
+      await cancelStudyReminderJobsForOwnershipChange(
+        manager,
+        PLATFORM,
+        params.psid,
+        generation === undefined || generation === null
+          ? {}
+          : {
+              generation: String(generation),
+              reason: 'mapping_ownership_changed',
+            },
+      );
     }
 
     return this.mapEntity(this.mapRawRow(rows[0]));
@@ -402,25 +462,69 @@ export class MessengerRepository
     psid: string;
     userId: number;
   }): Promise<void> {
-    await this.mappingRepo.update(
-      {
-        userId: params.userId,
-        platform: PLATFORM,
-        externalUserId: Not(params.psid),
-        status: 'ACTIVE',
-      },
-      { status: 'INACTIVE' },
-    );
-
-    await this.mappingRepo.update(
-      {
-        platform: PLATFORM,
-        externalUserId: params.psid,
-        userId: Not(params.userId),
-        status: 'ACTIVE',
-      },
-      { status: 'INACTIVE' },
-    );
+    const manager = this.mappingRepo.manager as EntityManager;
+    const deactivate = async (
+      queryManager: Pick<EntityManager, 'query'>,
+    ): Promise<void> => {
+      await acquireStudyReminderOwnershipMutationLock(queryManager);
+      await acquireStudyReminderOwnershipLock(
+        queryManager,
+        PLATFORM,
+        params.psid,
+      );
+      const first = extractQueryRows<{ external_user_id: string }>(
+        await queryManager.query(
+          `WITH candidates AS (
+             SELECT external_user_id
+             FROM user_platform_mappings
+             WHERE platform = $1 AND status = 'ACTIVE'
+               AND user_id = $2 AND external_user_id <> $3
+             ORDER BY external_user_id
+           ), ownership_locks AS (
+             SELECT pg_advisory_xact_lock(
+               hashtext('study-reminder:ownership:' || $1 || ':' || external_user_id)
+             )
+             FROM candidates
+           )
+           UPDATE user_platform_mappings AS mapping
+           SET status = 'INACTIVE', link_state = 'locally-unlinked',
+               mapping_generation = mapping_generation + 1,
+               updated_at = now()
+           FROM candidates, ownership_locks
+           WHERE mapping.platform = $1
+             AND mapping.status = 'ACTIVE'
+             AND mapping.user_id = $2
+             AND mapping.external_user_id = candidates.external_user_id
+           RETURNING mapping.external_user_id`,
+          [PLATFORM, params.userId, params.psid],
+        ),
+      );
+      const second = extractQueryRows<{ external_user_id: string }>(
+        await queryManager.query(
+          `UPDATE user_platform_mappings
+           SET status = 'INACTIVE', link_state = 'locally-unlinked',
+               mapping_generation = mapping_generation + 1,
+               updated_at = now()
+           WHERE platform = $1 AND status = 'ACTIVE'
+             AND external_user_id = $2 AND user_id <> $3
+           RETURNING external_user_id`,
+          [PLATFORM, params.psid, params.userId],
+        ),
+      );
+      for (const row of [...first, ...second]) {
+        await cancelStudyReminderJobsForOwnershipChange(
+          queryManager,
+          PLATFORM,
+          row.external_user_id,
+          { reason: 'mapping_ownership_changed' },
+        );
+      }
+    };
+    if (manager.transaction) {
+      await manager.transaction((em) => deactivate(em));
+    } else {
+      await deactivate(manager);
+    }
   }
 
   async findActiveMappingsPage(

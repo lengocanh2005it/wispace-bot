@@ -84,10 +84,11 @@ export class ZaloLinkCompletionService {
           throw new Error('Zalo link state service is required');
         }
         const state = await this.linkState.getLink('zalo', externalUserId);
-        return !state ||
-          (state.state === 'locally-unlinked' && state.userId === undefined)
+        return !state
           ? { kind: 'absent' }
-          : { kind: 'present', generation: state.generation };
+          : state.state === 'locally-unlinked' && state.userId === undefined
+            ? { kind: 'absent', generation: state.generation }
+            : { kind: 'present', generation: state.generation };
       },
       recordVerify: (externalUserId, userId, mappingObservation) =>
         this.verifyRecordService.recordVerify(

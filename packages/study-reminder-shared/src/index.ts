@@ -28,6 +28,15 @@ export { StudyReminderJobEntity } from './entities/study-reminder-job.entity';
 // Infrastructure
 export { TypeormStudyReminderJobRepository } from './infrastructure/typeorm-study-reminder-job.repository';
 export { TypeormMappingReader } from './infrastructure/typeorm-mapping-reader';
+export {
+  acquireStudyReminderOwnershipLock,
+  acquireStudyReminderOwnershipMutationLock,
+  cancelStudyReminderJobsForOwnershipChange,
+  nextMappingGenerationAfterTombstone,
+  studyReminderMappingTable,
+  studyReminderOwnershipLockKey,
+  type StudyReminderOwnershipCancellationReason,
+} from './infrastructure/study-reminder-ownership';
 
 // Services
 export { StudyReminderScheduleService } from './services/study-reminder-schedule.service';

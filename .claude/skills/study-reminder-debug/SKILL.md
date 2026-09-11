@@ -51,6 +51,12 @@ POST /messenger/send-study-reminders
       jobs may be cancelled, while `processing` stays untouched.
 - [ ] If canonical resolution errors, are jobs unchanged and the sync failure
       visible? An undefined result may cancel actionable jobs without upsert.
+- [ ] Does `study_reminder_jobs.mapping_generation` match the active mapping's
+      owner? A relink/revoke/unlink cancels stale jobs; a null generation is
+      fail-closed until sync recreates the job.
+- [ ] For a send race, check `mapping_ownership_changed` versus
+      `link_revoked`/`locally_unlinked` in `last_error` and reminder metrics;
+      unknown mapping state should retry, not send.
 - [ ] Chat reschedule used `list_study_calendar_entries` first and a caller-scoped entry?
 - [ ] Check `RESCHEDULE_SCOPE_BLOCKED` and `*_llm_tool_policy_denied_total` for
       `scope_mismatch`/`scope_unverified`; these denials are deterministic and
@@ -62,6 +68,7 @@ POST /messenger/send-study-reminders
 
 - Schedule logic → `study-reminder-schedule.service.ts` + spec
 - Sync → `study-reminder-sync.service.ts` (including the canonical platform gate)
-- Dispatch → `study-reminder-dispatch.service.ts`
+- Dispatch/ownership fence → `study-reminder-dispatch.service.ts`,
+  `typeorm-study-reminder-job.repository.ts`, and mapping-link upserts
 
 After changes: `npm run build && npm run test`
