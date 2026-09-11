@@ -80,6 +80,42 @@ describe('ZaloAccountLinkService', () => {
     expect(userId).toBe(42);
   });
 
+  it('cancels old-owner reminders when a Zalo id is relinked', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([]) // ownership mutation lock
+      .mockResolvedValueOnce([{ user_id: 99, mapping_generation: '1' }])
+      .mockResolvedValueOnce([]) // displaced links
+      .mockResolvedValueOnce([
+        { external_user_id: 'zalo-user-1', mapping_generation: '2' },
+      ])
+      .mockResolvedValueOnce([{ id: 17 }]); // cancelled reminder job
+    const repo = {
+      manager: {
+        transaction: jest.fn((fn: (em: unknown) => Promise<unknown>) =>
+          fn({ query }),
+        ),
+      },
+    } as unknown as Repository<ZaloAccountLinkEntity>;
+    const service = new ZaloAccountLinkService(buildOAuth(), repo);
+
+    const result = await service.upsertLink(143, 'zalo-user-1', {
+      kind: 'present',
+      generation: '1',
+    });
+
+    expect(result).toMatchObject({
+      relinked: true,
+      previousUserId: 99,
+      mappingGeneration: '2',
+    });
+    expect(query).toHaveBeenNthCalledWith(
+      5,
+      expect.stringContaining('UPDATE study_reminder_jobs'),
+      ['zalo', 'zalo-user-1', '2', 'mapping_ownership_changed'],
+    );
+  });
+
   it('rejects an absent observation when another callback inserted the mapping', async () => {
     const query = jest
       .fn()

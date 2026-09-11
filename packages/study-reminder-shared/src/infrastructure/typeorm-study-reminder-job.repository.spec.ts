@@ -181,6 +181,41 @@ describe('TypeormStudyReminderJobRepository', () => {
       expect(result.sessionKey).toBe('calendar:5');
     });
 
+    it.each(['messenger', 'discord', 'zalo'] as const)(
+      'reopens a relink-cancelled job with the same session key for the new owner on %s',
+      async (platform) => {
+        const externalUserId = `${platform}-user-1`;
+        seedJob({
+          platform,
+          externalUserId,
+          userId: 99,
+          mappingGeneration: '1',
+          status: 'cancelled',
+        });
+
+        const result = await repository.upsertPendingJob(
+          baseInput({
+            platform,
+            externalUserId,
+            userId: 143,
+            mappingGeneration: '2',
+          }),
+          platform === 'messenger'
+            ? { reopenOnlyOnScheduleChange: true }
+            : undefined,
+        );
+
+        expect(result).toMatchObject({
+          platform,
+          externalUserId,
+          userId: 143,
+          mappingGeneration: '2',
+          sessionKey: 'calendar:5',
+          status: 'pending',
+        });
+      },
+    );
+
     describe('reopenOnlyOnScheduleChange (Messenger)', () => {
       const options = { reopenOnlyOnScheduleChange: true };
 

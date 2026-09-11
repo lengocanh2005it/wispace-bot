@@ -114,6 +114,47 @@ describe('MessengerRepository.upsertPsidUserLink', () => {
       expect.any(Array),
     );
   });
+
+  it('cancels old-owner reminders when a PSID is relinked', async () => {
+    const { repo, managerQuery } = buildRepo(true);
+    managerQuery
+      .mockResolvedValueOnce([]) // global ownership mutation lock
+      .mockResolvedValueOnce([]) // Messenger ownership lock
+      .mockResolvedValueOnce([[], 0]) // UPDATE INACTIVE (no-op)
+      .mockResolvedValueOnce([]) // no privacy tombstone
+      .mockResolvedValueOnce([
+        {
+          id: 7,
+          user_id: 200,
+          platform: 'messenger',
+          external_user_id: 'psid-1',
+          notification_messages_token: buildPocPsidToken('psid-1'),
+          topic: 'ielts',
+          cadence: 'weekly',
+          status: 'ACTIVE',
+          link_state: 'active',
+          mapping_generation: '2',
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+        },
+      ]) // relinked mapping
+      .mockResolvedValueOnce([{ id: 17 }]); // cancelled reminder job
+
+    const result = await repo.upsertPsidUserLink({
+      psid: 'psid-1',
+      userId: 200,
+    });
+
+    expect(result).toMatchObject({
+      psid: 'psid-1',
+      mappingGeneration: '2',
+    });
+    expect(managerQuery).toHaveBeenNthCalledWith(
+      6,
+      expect.stringContaining('UPDATE study_reminder_jobs'),
+      ['messenger', 'psid-1', '2', 'mapping_ownership_changed'],
+    );
+  });
 });
 
 describe('MessengerRepository.tryClaimScheduledReport', () => {

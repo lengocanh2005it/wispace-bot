@@ -63,7 +63,10 @@ describe('TypeormDiscordAccountLinkRepository', () => {
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ user_id: 99, mapping_generation: '1' }])
       .mockResolvedValueOnce([])
-      .mockResolvedValue([{ external_user_id: 'discord-user-1' }]);
+      .mockResolvedValueOnce([
+        { external_user_id: 'discord-user-1', mapping_generation: '2' },
+      ])
+      .mockResolvedValueOnce([{ id: 17 }]);
     const repo = {
       manager: {
         transaction: jest.fn((fn: (em: unknown) => Promise<void>) =>
@@ -78,7 +81,16 @@ describe('TypeormDiscordAccountLinkRepository', () => {
       generation: '1',
     });
 
-    expect(result).toEqual({ relinked: true, previousUserId: 99 });
+    expect(result).toEqual({
+      relinked: true,
+      previousUserId: 99,
+      mappingGeneration: '2',
+    });
+    expect(query).toHaveBeenNthCalledWith(
+      5,
+      expect.stringContaining('UPDATE study_reminder_jobs'),
+      ['discord', 'discord-user-1', '2', 'mapping_ownership_changed'],
+    );
   });
 
   it('rejects a fenced upsert when the mapping generation changed', async () => {
