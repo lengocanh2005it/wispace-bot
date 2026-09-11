@@ -503,12 +503,17 @@ exec docker exec -e PGPASSWORD="${PGPASSWORD:-}" postgres_n8n_db pg_dump "$@"
 FAKEPGDUMP
   chmod +x "$dir/bin/docker" "$dir/bin/gpg" "$dir/bin/psql" "$dir/bin/pg_dump"
   printf 'DB_HOST=postgres_n8n_db\nDB_PORT=5432\nDB_USER=postgres\nDB_NAME=ai_chat_bot_db\nDB_PASSWORD=secret\nBACKUP_ENCRYPTION_PASSPHRASE=test-passphrase\n' > "$dir/deploy/.env"
+  # set -e from the harness would abort on the subshell's non-zero exit before
+  # the failure message could print backup.out — capture the code explicitly.
+  set +e
   (
     export ENV_FILE="$dir/deploy/.env" BACKUP_DIR="$dir/backups" DB_CONTAINER=postgres_n8n_db \
       PATH="$dir/bin:$PATH"
     bash "$BACKUP_SCRIPT"
   ) > "$dir/backup.out" 2>&1
-  [ $? -eq 0 ] || fail "backup failed: $(cat "$dir/backup.out")"
+  backup_rc=$?
+  set -e
+  [ "$backup_rc" -eq 0 ] || fail "backup failed (rc=$backup_rc): $(cat "$dir/backup.out")"
   dir_mode=$(stat -c '%a' "$dir/backups")
   [ "$dir_mode" = "700" ] || fail "backup dir mode $dir_mode != 700"
   dump=$(find "$dir/backups" -name '*.sql.gz.gpg' | head -1)
