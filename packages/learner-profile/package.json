@@ -15,8 +15,8 @@
     "test": "jest --maxWorkers=50%"
   },
   "dependencies": {
-    "@nestjs/common": "^11.0.1",
-    "@nestjs/typeorm": "^11.0.0",
+    "@nestjs/common": "^12.0.1",
+    "@nestjs/typeorm": "^12.0.1",
     "@wispace/bot-common": "*",
     "@wispace/database": "*",
     "typeorm": "^0.3.20"
