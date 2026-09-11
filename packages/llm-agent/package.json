@@ -71,6 +71,9 @@
     "transform": {
       "^.+\\.(t|j)s$": "@swc/jest"
     },
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(\\.pnpm|@nestjs|necord)/)"
+    ]
   }
 }

@@ -84,6 +84,9 @@
     "testEnvironment": "node",
     "moduleNameMapper": {
       "^@zalo/(.*)$": "<rootDir>/$1"
-    }
+    },
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(\\.pnpm|@nestjs|necord)/)"
+    ]
   }
 }

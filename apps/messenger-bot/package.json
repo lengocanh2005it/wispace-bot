@@ -119,6 +119,9 @@
     "testEnvironment": "node",
     "moduleNameMapper": {
       "^@messenger/(.*)$": "<rootDir>/$1"
-    }
+    },
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(\\.pnpm|@nestjs|necord)/)"
+    ]
   }
 }
