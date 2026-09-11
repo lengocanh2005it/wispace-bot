@@ -15,11 +15,11 @@
     "test": "jest --maxWorkers=50%"
   },
   "dependencies": {
-    "@wispace/contracts": "*",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.4",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^11.0.1",
+    "@wispace/contracts": "*",
     "class-validator": "^0.15.1",
     "ioredis": "^5.11.1",
     "typeorm": "^1.1.0"
@@ -27,8 +27,8 @@
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^22.10.0",
-    "jest": "^30.0.0",
-    "ts-jest": "^29.2.5"
+    "jest": "^30.5.1",
+    "ts-jest": "^29.4.12"
   },
   "jest": {
     "moduleFileExtensions": [

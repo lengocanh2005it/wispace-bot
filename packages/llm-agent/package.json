@@ -57,7 +57,7 @@
   "devDependencies": {
     "@swc/jest": "^0.2.39",
     "@types/jest": "^30.0.0",
-    "jest": "^30.0.0"
+    "jest": "^30.5.1"
   },
   "jest": {
     "moduleFileExtensions": [
