@@ -20,6 +20,7 @@
     "@wispace/bot-common": "*",
     "@wispace/date-utils": "*",
     "date-fns": "^4.4.0",
+    "opossum": "^10.0.0",
     "undici": "^7.0.0"
   },
   "devDependencies": {

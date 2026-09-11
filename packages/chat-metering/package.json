@@ -23,6 +23,7 @@
     "@wispace/date-utils": "*",
     "@wispace/llm-agent": "*",
     "date-fns": "^4.4.0",
+    "ioredis": "^6.0.0",
     "typeorm": "^1.1.0"
   },
   "devDependencies": {

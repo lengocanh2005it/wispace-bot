@@ -26,6 +26,7 @@
     "@wispace/llm-agent": "*",
     "@wispace/reschedule-confirm": "*",
     "@wispace/scheduler-core": "*",
+    "ioredis": "^6.0.0",
     "p-limit": "^3.1.0"
   },
   "devDependencies": {
