@@ -333,7 +333,7 @@ async function exerciseMessengerReminderConsent(jobRepository) {
     );
     await dataSource.query(
       `UPDATE study_reminder_jobs
-          SET next_retry_at = NOW()
+          SET next_retry_at = NOW() - INTERVAL '1 second'
         WHERE external_user_id = $1`,
       [learners[1].externalUserId],
     );
