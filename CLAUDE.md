@@ -65,7 +65,7 @@ Path-scoped rules auto-load when editing matching files — see Rules table belo
 ### Rules
 
 - `project-conventions.md` — always loaded (general conventions)
-- `clean-architecture.md` — **read when editing `apps/*/src/modules/`** (4 layers, ports, DI) — includes `packages/llm-agent` boundaries (framework-agnostic, no Nest imports)
+- `clean-architecture.md` — **read when editing `apps/*/src/modules/`** (4 layers, ports, DI) — includes `packages/llm-agent` boundaries (framework-agnostic, no Nest imports) and the zod validation policy ([ADR 0010](./docs/adr/0010-adopt-zod-at-trust-boundaries.md))
 - `chat-rate-limit.md` — `apps/messenger-bot/src/modules/chat-rate-limit/**`
 - `messenger-chat.md` — `apps/messenger-bot/src/modules/messenger/application/services/messenger-chat*`
 - `study-reminder.md` — `apps/messenger-bot/src/modules/study-reminder/**`
