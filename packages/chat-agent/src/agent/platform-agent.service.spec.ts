@@ -965,6 +965,101 @@ describe('PlatformAgentService', () => {
     });
   });
 
+  describe('stale cross-day clarification state', () => {
+    const historyService = {
+      getHistory: jest.fn().mockResolvedValue([]),
+      appendTurn: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PlatformChatHistoryService;
+
+    /**
+     * Cross-day abandonment scenario: the learner never answered the menu.
+     * In production the Redis-backed state carries a short TTL
+     * (`chat:clarification:*`, default 10 min, capped at 24h) so it is gone
+     * by the next day; this preloaded store mimics the residual edge — a
+     * state that survived in-process — already past its `expiresAt`. The
+     * service must clear it and treat the next message as a fresh turn.
+     */
+    function buildExpiredClarificationStore() {
+      const expiredState: ClarificationState = {
+        phase: 'awaiting_choice',
+        attempts: 1,
+        menuResets: 0,
+        version: 4,
+        createdAt: Date.now() - 2 * 24 * 60 * 60 * 1000,
+        expiresAt: Date.now() - 24 * 60 * 60 * 1000,
+      };
+      return {
+        get: jest.fn().mockResolvedValue(expiredState),
+        set: jest.fn().mockResolvedValue(true),
+        clear: jest.fn().mockResolvedValue(true),
+      };
+    }
+
+    it('clears an expired clarification and lets a bare numbered reply reach the LLM as a normal question', async () => {
+      const store = buildExpiredClarificationStore();
+      const outcomes: string[] = [];
+      const service = buildService(historyService, {
+        clarificationStore: store,
+        clarificationOutcomeInc: (outcome) => outcomes.push(outcome),
+      });
+
+      const reply = await service.reply({
+        externalUserId: 'cross-day-1',
+        userText: '2',
+      });
+
+      expect(store.clear).toHaveBeenCalledWith('default:cross-day-1', 4);
+      expect(outcomes).toContain('expired');
+      expect(outcomes).not.toContain('choice');
+      expect(outcomes).not.toContain('irrelevant_clarify');
+      // No zombie compare-and-set against the expired state — it is dead.
+      expect(store.set).not.toHaveBeenCalled();
+      expect(mockLlmReply).toHaveBeenCalledWith(
+        expect.objectContaining({ userText: '2' }),
+        expect.anything(),
+      );
+      expect(reply.text).toBe('next answer');
+    });
+
+    it('does not let a stale clarification menu hijack a clear next-day question', async () => {
+      const store = buildExpiredClarificationStore();
+      const service = buildService(historyService, {
+        clarificationStore: store,
+      });
+
+      await service.reply({
+        externalUserId: 'cross-day-2',
+        userText: 'Xem tiến độ học của mình',
+      });
+
+      expect(store.clear).toHaveBeenCalledWith('default:cross-day-2', 4);
+      expect(mockLlmReply).toHaveBeenCalledWith(
+        expect.objectContaining({ userText: 'Xem tiến độ học của mình' }),
+        expect.anything(),
+      );
+    });
+
+    it('starts a fresh clarification for a new ambiguous message instead of being trapped by the expired state', async () => {
+      const store = buildExpiredClarificationStore();
+      const service = buildService(historyService, {
+        clarificationStore: store,
+      });
+
+      const reply = await service.reply({
+        externalUserId: 'cross-day-3',
+        userText: 'abc???',
+      });
+
+      expect(reply.text).toContain('Tiến độ học');
+      expect(mockLlmReply).not.toHaveBeenCalled();
+      expect(store.set).toHaveBeenCalledWith(
+        'default:cross-day-3',
+        expect.objectContaining({ phase: 'awaiting_choice', version: 1 }),
+        0,
+      );
+    });
+  });
+
   describe('input classifier (#649)', () => {
     function classifierStub(result: any) {
       return { classify: jest.fn(async () => result) };
