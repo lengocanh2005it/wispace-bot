@@ -110,7 +110,25 @@ run_explain \
    WHERE mapping.status = 'ACTIVE' AND mapping.platform = 'messenger'
    AND mapping.cadence IS NOT NULL AND mapping.topic IS NOT NULL
    AND mapping.id > 0 ORDER BY mapping.id ASC LIMIT 500;" \
-  "primary key + filtered scan"
+  "idx_platform_mappings_platform_status_id"
+
+# --- 7. Reminder cron keyset page (#942 opt-out join) ---
+# Same keyset shape as check 6, plus the opt-out LEFT JOIN. Both pages filter
+# on (platform, status) and order by id; idx_platform_mappings_platform_status_id
+# (#1008) is the index that serves them. A Seq Scan check alone is not enough
+# here - the pre-#1008 plan was a primary-key scan, which is also not a Seq
+# Scan, so read the plan text and confirm the index name appears and no Sort
+# node does.
+run_explain \
+  "7. Reminder cron keyset page" \
+  "SELECT mapping.id, mapping.platform, mapping.external_user_id, mapping.user_id
+   FROM user_platform_mappings mapping
+   LEFT JOIN user_notification_preferences pref ON pref.user_id = mapping.user_id
+   WHERE COALESCE(pref.reminder_enabled, true) = true
+   AND mapping.status = 'ACTIVE' AND mapping.platform = 'messenger'
+   AND mapping.external_user_id IS NOT NULL
+   AND mapping.id > 0 ORDER BY mapping.id ASC LIMIT 500;" \
+  "idx_platform_mappings_platform_status_id"
 
 echo "=== Verification complete ==="
 echo ""

@@ -14,6 +14,10 @@ import type { PlatformLinkState } from '@wispace/contracts';
   'status',
 ])
 @Index('idx_mapping_user_status', ['userId', 'status'])
+// Keyset pagination for the scheduled fan-out crons (#1008): equality on
+// platform + status, then id as the pagination column. Without the trailing
+// id the planner still has to sort. Do not reorder the columns.
+@Index('idx_platform_mappings_platform_status_id', ['platform', 'status', 'id'])
 @Entity('user_platform_mappings')
 export class UserPlatformMappingEntity {
   @PrimaryGeneratedColumn()

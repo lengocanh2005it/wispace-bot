@@ -99,6 +99,18 @@ check_indexes "webhook_dead_letters" \
 check_indexes "webhook_inbound_events" \
   "idx_webhook_inbound_events_stale"
 
+# Expectations below are the indexes the migration chain actually creates.
+# The @Index decorators on this entity are NOT a reliable source here:
+# `idx_mapping_user_status` is declared on the entity but no migration ever
+# creates it (#716), so deriving expectations from decorators would fail CI
+# on a known-open drift instead of catching a new one.
+check_indexes "user_platform_mappings" \
+  "idx_platform_mappings_active_external_unique" \
+  "idx_platform_mappings_external_status" \
+  "idx_user_messenger_mappings_token" \
+  "idx_user_messenger_mappings_cadence_status" \
+  "idx_platform_mappings_platform_status_id"
+
 if [ "$DRIFT" -eq 1 ]; then
   echo "✗ DRIFT DETECTED — entity decorators and migration indexes are out of sync."
   echo "  Run 'npm run migration:run' and update entity decorators or migrations."
