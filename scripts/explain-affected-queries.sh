@@ -115,10 +115,22 @@ run_explain \
 # --- 7. Reminder cron keyset page (#942 opt-out join) ---
 # Same keyset shape as check 6, plus the opt-out LEFT JOIN. Both pages filter
 # on (platform, status) and order by id; idx_platform_mappings_platform_status_id
-# (#1008) is the index that serves them. A Seq Scan check alone is not enough
-# here - the pre-#1008 plan was a primary-key scan, which is also not a Seq
-# Scan, so read the plan text and confirm the index name appears and no Sort
-# node does.
+# (#1008) is the index that serves them.
+#
+# The Seq Scan check below proves nothing on this table - the pre-#1008 plan
+# was a primary-key scan, which is also not a Seq Scan, and neither plan ever
+# produces a Sort node because both indexes already yield id order. Read the
+# plan text for two things instead:
+#   1. the scan node names idx_platform_mappings_platform_status_id, not
+#      PK_user_messenger_mappings
+#   2. "Rows Removed by Filter" is on the order of the page size, not tens of
+#      thousands - that number is the discarded INACTIVE and other-platform
+#      rows, and it is the whole point of the index
+#
+# Measured on 200k synthetic rows (2026-09-11): at 85% INACTIVE the planner
+# picks the new index and Rows Removed drops from 24409 to 249 on check 6.
+# At 40% INACTIVE it still prefers the primary key and the new index is
+# unused - expect no gain until inactive rows accumulate.
 run_explain \
   "7. Reminder cron keyset page" \
   "SELECT mapping.id, mapping.platform, mapping.external_user_id, mapping.user_id

@@ -104,9 +104,13 @@ check_indexes "webhook_inbound_events" \
 # `idx_mapping_user_status` is declared on the entity but no migration ever
 # creates it (#716), so deriving expectations from decorators would fail CI
 # on a known-open drift instead of catching a new one.
+# The list below is the full set pg_indexes reports after the chain runs
+# against a fresh database, minus the primary key.
 check_indexes "user_platform_mappings" \
   "idx_platform_mappings_active_external_unique" \
   "idx_platform_mappings_external_status" \
+  "idx_mappings_active_user_id_unique" \
+  "idx_user_platform_mappings_link_state" \
   "idx_user_messenger_mappings_token" \
   "idx_user_messenger_mappings_cadence_status" \
   "idx_platform_mappings_platform_status_id"
