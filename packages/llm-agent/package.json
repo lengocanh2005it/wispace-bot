@@ -52,6 +52,7 @@
   "dependencies": {
     "@wispace/bot-common": "*",
     "@wispace/chat-history": "*",
+    "ioredis": "^6.0.0",
     "openai": "^6.42.0"
   },
   "devDependencies": {
@@ -70,6 +71,9 @@
     "transform": {
       "^.+\\.(t|j)s$": "@swc/jest"
     },
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(\\.pnpm|@nestjs|necord)/)"
+    ]
   }
 }

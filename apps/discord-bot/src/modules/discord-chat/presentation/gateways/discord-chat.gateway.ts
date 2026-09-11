@@ -12,7 +12,11 @@ import {
   sanitizeLogValue,
 } from '@wispace/bot-common/masking';
 import { ConfigService } from '@nestjs/config';
-import { ChannelType, type Message } from 'discord.js';
+import {
+  ChannelType,
+  type Message,
+  type OmitPartialGroupDMChannel,
+} from 'discord.js';
 import { Button, Context, On, Once } from 'necord';
 import type { ButtonContext, ContextOf } from 'necord';
 import {
@@ -93,7 +97,7 @@ export class DiscordChatGateway {
    * inline in a server channel, or via DM menu buttons otherwise.
    */
   private async sendDirectReply(
-    message: Message,
+    message: OmitPartialGroupDMChannel<Message<boolean>>,
     discordUserId: string,
     isServerChannel: boolean,
     text: string,
@@ -278,7 +282,7 @@ export class DiscordChatGateway {
     // non-disclosure line, before intent detection.
     if (detectDisclosureProbe(resolvedText).probed) {
       await this.sendDirectReply(
-        message,
+        message as unknown as OmitPartialGroupDMChannel<Message<boolean>>,
         discordUserId,
         isServerChannel,
         buildNonDisclosureReply(),
@@ -292,7 +296,7 @@ export class DiscordChatGateway {
       const displayName =
         message.member?.displayName ?? message.author.displayName;
       await this.sendDirectReply(
-        message,
+        message as unknown as OmitPartialGroupDMChannel<Message<boolean>>,
         discordUserId,
         isServerChannel,
         buildGreetingMessage(displayName),
@@ -301,7 +305,7 @@ export class DiscordChatGateway {
     }
     if (intent.intent === 'self_intro') {
       await this.sendDirectReply(
-        message,
+        message as unknown as OmitPartialGroupDMChannel<Message<boolean>>,
         discordUserId,
         isServerChannel,
         buildSelfIntroMessage(),
