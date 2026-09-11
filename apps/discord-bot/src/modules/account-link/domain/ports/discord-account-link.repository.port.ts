@@ -4,6 +4,7 @@
  * implementation lives in `infrastructure/persistence/`.
  */
 import type { PlatformLinkState } from '@wispace/contracts';
+import type { LinkMappingObservation } from '@wispace/account-link-core/core';
 
 export interface DiscordAccountLinkRepositoryPort {
   /**
@@ -14,7 +15,7 @@ export interface DiscordAccountLinkRepositoryPort {
   upsertLink(
     userId: number,
     discordUserId: string,
-    options?: { expectedGeneration?: string },
+    mappingObservation: LinkMappingObservation,
   ): Promise<{ relinked: boolean; previousUserId?: number }>;
   findUserIdByDiscordId(discordUserId: string): Promise<number | undefined>;
   findMappingStateByDiscordId?(discordUserId: string): Promise<{

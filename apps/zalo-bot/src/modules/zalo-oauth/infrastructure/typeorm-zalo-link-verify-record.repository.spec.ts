@@ -8,10 +8,35 @@ function mockRepo() {
     upsert: jest.fn(),
     delete: jest.fn(),
     findOne: jest.fn(),
+    query: jest.fn(),
   };
 }
 
 describe('TypeormZaloLinkVerifyRecordRepository', () => {
+  it('returns a new intent generation for the original mapping observation', async () => {
+    const repo = mockRepo();
+    repo.query.mockResolvedValue([{ intent_generation: '3' }]);
+    const repository = new TypeormZaloLinkVerifyRecordRepository(repo as never);
+
+    await expect(
+      repository.recordVerify('zalo-1', 42, { kind: 'absent' }),
+    ).resolves.toEqual({ intentGeneration: '3' });
+  });
+
+  it('only consumes the matching intent generation and user', async () => {
+    const repo = mockRepo();
+    repo.query.mockResolvedValue([{ zalo_user_id: 'zalo-1' }]);
+    const repository = new TypeormZaloLinkVerifyRecordRepository(repo as never);
+
+    await expect(
+      repository.consumeRecord({
+        zaloUserId: 'zalo-1',
+        userId: 42,
+        intentGeneration: '3',
+      }),
+    ).resolves.toBe(true);
+  });
+
   describe('listStaleRecords', () => {
     it('selects records older than cutoff (LessThan)', async () => {
       const repo = mockRepo();
@@ -56,7 +81,14 @@ describe('TypeormZaloLinkVerifyRecordRepository', () => {
       const repo = mockRepo();
       const now = new Date();
       repo.find.mockResolvedValue([
-        { zaloUserId: 'z1', userId: 1, verifiedAt: now },
+        {
+          zaloUserId: 'z1',
+          userId: 1,
+          intentGeneration: '4',
+          verifiedAt: now,
+          observedMappingKind: 'present',
+          observedMappingGeneration: '9',
+        },
       ]);
       const repository = new TypeormZaloLinkVerifyRecordRepository(
         repo as never,
@@ -64,23 +96,14 @@ describe('TypeormZaloLinkVerifyRecordRepository', () => {
 
       const result = await repository.listStaleRecords(120_000);
       expect(result).toEqual([
-        { zaloUserId: 'z1', userId: 1, verifiedAt: now },
+        {
+          zaloUserId: 'z1',
+          userId: 1,
+          intentGeneration: '4',
+          verifiedAt: now,
+          mappingObservation: { kind: 'present', generation: '9' },
+        },
       ]);
-    });
-  });
-  describe('recordVerify', () => {
-    it('upserts verify intent idempotently by zaloUserId', async () => {
-      const repo = mockRepo();
-      const repository = new TypeormZaloLinkVerifyRecordRepository(
-        repo as never,
-      );
-
-      await repository.recordVerify('zalo-1', 42);
-
-      expect(repo.upsert).toHaveBeenCalledWith(
-        expect.objectContaining({ zaloUserId: 'zalo-1', userId: 42 }),
-        ['zaloUserId'],
-      );
     });
   });
 });

@@ -14,6 +14,7 @@ describe('ZaloLinkCompletionService', () => {
       upsertError?: Error;
       upsertFailures?: number;
       clearClarificationState?: jest.Mock;
+      mappingState?: object | null;
     } = {},
   ) => {
     const exchangeCodeForZaloUser = jest
@@ -37,11 +38,12 @@ describe('ZaloLinkCompletionService', () => {
     const tokenVerifyService = {
       verifyToken,
     } as unknown as WispaceTokenVerifyService;
-    const recordVerify = jest.fn().mockResolvedValue(undefined);
+    const recordVerify = jest.fn().mockResolvedValue({ intentGeneration: '1' });
     const consumeRecord = jest.fn().mockResolvedValue(undefined);
     const verifyRecordService = {
       recordVerify,
       consumeRecord,
+      discardRecord: jest.fn().mockResolvedValue(undefined),
       listStaleRecords: jest.fn(),
       findPending: jest.fn(),
     } as unknown as ZaloLinkVerifyRecordRepositoryPort;
@@ -51,6 +53,9 @@ describe('ZaloLinkCompletionService', () => {
       clear:
         overrides.clearClarificationState ?? jest.fn().mockResolvedValue(true),
     };
+    const linkState = {
+      getLink: jest.fn().mockResolvedValue(overrides.mappingState ?? null),
+    };
 
     const service = new ZaloLinkCompletionService(
       accountLinkService,
@@ -58,6 +63,7 @@ describe('ZaloLinkCompletionService', () => {
       verifyRecordService,
       outboundService,
       clarificationStateStore,
+      linkState as never,
     );
     return {
       service,
@@ -89,9 +95,17 @@ describe('ZaloLinkCompletionService', () => {
     expect(recordVerify.mock.invocationCallOrder[0]).toBeLessThan(
       upsertLink.mock.invocationCallOrder[0],
     );
-    expect(recordVerify).toHaveBeenCalledWith('zalo-user-1', 42);
-    expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1');
-    expect(consumeRecord).toHaveBeenCalledWith('zalo-user-1');
+    expect(recordVerify).toHaveBeenCalledWith('zalo-user-1', 42, {
+      kind: 'absent',
+    });
+    expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1', {
+      kind: 'absent',
+    });
+    expect(consumeRecord).toHaveBeenCalledWith({
+      zaloUserId: 'zalo-user-1',
+      userId: 42,
+      intentGeneration: '1',
+    });
     // Welcome AFTER the mapping is committed.
     expect(sendText.mock.invocationCallOrder[0]).toBeGreaterThan(
       upsertLink.mock.invocationCallOrder[0],
@@ -99,6 +113,18 @@ describe('ZaloLinkCompletionService', () => {
     expect(clarificationStateStore.clear).toHaveBeenCalledWith(
       'zalo:zalo-user-1',
     );
+  });
+
+  it('treats a deleted mapping tombstone as absent for a fresh link', async () => {
+    const { service, upsertLink } = buildService({
+      mappingState: { state: 'locally-unlinked', generation: '8' },
+    });
+
+    await service.completeLink('code-1', 'verifier-1', 'link-token');
+
+    expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1', {
+      kind: 'absent',
+    });
   });
 
   it('retries the upsert on transient failure (token already consumed — must commit)', async () => {
@@ -112,8 +138,9 @@ describe('ZaloLinkCompletionService', () => {
       sendConsentExplainerIfDue: jest.fn().mockResolvedValue(true),
     } as unknown as ZaloAccountLinkService;
     const verifyRecordService = {
-      recordVerify: jest.fn().mockResolvedValue(undefined),
+      recordVerify: jest.fn().mockResolvedValue({ intentGeneration: '1' }),
       consumeRecord: jest.fn().mockResolvedValue(undefined),
+      discardRecord: jest.fn().mockResolvedValue(undefined),
     } as unknown as ZaloLinkVerifyRecordRepositoryPort;
 
     const service = new ZaloLinkCompletionService(
@@ -124,11 +151,48 @@ describe('ZaloLinkCompletionService', () => {
       verifyRecordService,
       { sendText: jest.fn().mockResolvedValue(undefined) } as never,
       { clear: jest.fn().mockResolvedValue(true) },
+      { getLink: jest.fn().mockResolvedValue(null) } as never,
     );
 
     await service.completeLink('code-1', 'verifier-1', 'token');
 
     expect(upsertLink).toHaveBeenCalledTimes(2);
+  });
+
+  it('notifies and welcomes after a direct callback relink', async () => {
+    const upsertLink = jest
+      .fn()
+      .mockResolvedValue({ relinked: true, previousUserId: 7 });
+    const relinkNotifier = { notify: jest.fn().mockResolvedValue(undefined) };
+    const welcomeService = {
+      welcomeIfDue: jest.fn().mockResolvedValue('sent'),
+    };
+    const service = new ZaloLinkCompletionService(
+      {
+        exchangeCodeForZaloUser: jest
+          .fn()
+          .mockResolvedValue({ id: 'zalo-user-1' }),
+        upsertLink,
+        sendConsentExplainerIfDue: jest.fn().mockResolvedValue(true),
+      } as never,
+      {
+        verifyToken: jest.fn().mockResolvedValue({ valid: true, userId: 42 }),
+      } as never,
+      {
+        recordVerify: jest.fn().mockResolvedValue({ intentGeneration: '1' }),
+        consumeRecord: jest.fn().mockResolvedValue(undefined),
+      } as never,
+      { sendText: jest.fn().mockResolvedValue(undefined) } as never,
+      { clear: jest.fn().mockResolvedValue(true) },
+      { getLink: jest.fn().mockResolvedValue(null) } as never,
+      welcomeService as never,
+      relinkNotifier as never,
+    );
+
+    await service.completeLink('code-1', 'verifier-1', 'token');
+
+    expect(relinkNotifier.notify).toHaveBeenCalledWith('zalo-user-1', 42);
+    expect(welcomeService.welcomeIfDue).toHaveBeenCalledWith('zalo-user-1', 42);
   });
 
   it('throws ZaloLinkTokenRejectedError when the token is invalid — no intent recorded', async () => {
@@ -150,7 +214,9 @@ describe('ZaloLinkCompletionService', () => {
       service.completeLink('code-1', 'verifier-1', 'link-token'),
     ).resolves.toBeUndefined();
 
-    expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1');
+    expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1', {
+      kind: 'absent',
+    });
     expect(sendText).toHaveBeenCalled();
   });
   it('completes successfully and does not throw when outbound welcome times out', async () => {
@@ -161,7 +227,9 @@ describe('ZaloLinkCompletionService', () => {
       service.completeLink('code-1', 'verifier-1', 'link-token'),
     ).resolves.toBeUndefined();
 
-    expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1');
+    expect(upsertLink).toHaveBeenCalledWith(42, 'zalo-user-1', {
+      kind: 'absent',
+    });
   });
 
   it('attempts the consent explainer after the link commits (#596)', async () => {

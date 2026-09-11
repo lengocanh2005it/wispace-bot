@@ -13,11 +13,43 @@ function buildMockRepo() {
     upsert: jest.fn(),
     delete: jest.fn(),
     findOne: jest.fn(),
+    query: jest.fn(),
   };
   return { repo, qb };
 }
 
 describe('TypeormDiscordLinkVerifyRecordRepository', () => {
+  it('returns a new intent generation for the original mapping observation', async () => {
+    const { repo } = buildMockRepo();
+    repo.query.mockResolvedValue([{ intent_generation: '2' }]);
+    const repository = new TypeormDiscordLinkVerifyRecordRepository(
+      repo as never,
+    );
+
+    await expect(
+      repository.recordVerify('discord-1', 42, {
+        kind: 'present',
+        generation: '7',
+      }),
+    ).resolves.toEqual({ intentGeneration: '2' });
+  });
+
+  it('only consumes the matching intent generation and user', async () => {
+    const { repo } = buildMockRepo();
+    repo.query.mockResolvedValue([{ discord_user_id: 'discord-1' }]);
+    const repository = new TypeormDiscordLinkVerifyRecordRepository(
+      repo as never,
+    );
+
+    await expect(
+      repository.consumeRecord({
+        discordUserId: 'discord-1',
+        userId: 42,
+        intentGeneration: '2',
+      }),
+    ).resolves.toBe(true);
+  });
+
   describe('listStaleRecords', () => {
     it('applies take(100) to bound query results', async () => {
       const { repo, qb } = buildMockRepo();

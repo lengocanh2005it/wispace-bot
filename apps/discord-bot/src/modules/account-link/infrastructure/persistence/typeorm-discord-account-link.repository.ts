@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { extractQueryRows } from '@wispace/bot-common/utils';
+import type { LinkMappingObservation } from '@wispace/account-link-core/core';
 import { DiscordAccountLinkEntity } from '@discord/infrastructure/database/entities/discord-account-link.entity';
 import type { DiscordAccountLinkRepositoryPort } from '../../domain/ports/discord-account-link.repository.port';
 
@@ -25,7 +26,7 @@ export class TypeormDiscordAccountLinkRepository implements DiscordAccountLinkRe
   async upsertLink(
     userId: number,
     discordUserId: string,
-    options: { expectedGeneration?: string } = {},
+    mappingObservation: LinkMappingObservation,
   ): Promise<{ relinked: boolean; previousUserId?: number }> {
     let relinked = false;
     let previousUserId: number | undefined;
@@ -46,11 +47,20 @@ export class TypeormDiscordAccountLinkRepository implements DiscordAccountLinkRe
          FOR UPDATE`,
         [PLATFORM, discordUserId],
       );
+      const expectedGeneration =
+        mappingObservation.kind === 'present'
+          ? mappingObservation.generation
+          : undefined;
+      const alreadyCommitted =
+        existing[0]?.user_id === userId &&
+        (!existing[0]?.link_state || existing[0].link_state === 'active');
+      if (alreadyCommitted) return;
       if (
-        options.expectedGeneration !== undefined &&
-        existing[0] &&
-        String(existing[0].mapping_generation ?? '1') !==
-          options.expectedGeneration
+        (mappingObservation.kind === 'present' &&
+          (!existing[0] ||
+            String(existing[0].mapping_generation ?? '1') !==
+              expectedGeneration)) ||
+        (mappingObservation.kind === 'absent' && existing[0])
       ) {
         throw new DiscordLinkOwnershipConflictError();
       }
@@ -83,10 +93,17 @@ export class TypeormDiscordAccountLinkRepository implements DiscordAccountLinkRe
             END,
             revoked_at = NULL,
             revocation_reason = NULL
-          WHERE discord_account_links.mapping_generation = COALESCE($4::bigint, discord_account_links.mapping_generation)
+          WHERE NOT $4::boolean
+            AND discord_account_links.mapping_generation = COALESCE($5::bigint, discord_account_links.mapping_generation)
           RETURNING external_user_id
         `,
-        [PLATFORM, discordUserId, userId, options.expectedGeneration ?? null],
+        [
+          PLATFORM,
+          discordUserId,
+          userId,
+          mappingObservation.kind === 'absent',
+          expectedGeneration ?? null,
+        ],
       );
       if (Array.isArray(rows) && rows.length === 0) {
         throw new DiscordLinkOwnershipConflictError();

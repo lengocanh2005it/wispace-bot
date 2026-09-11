@@ -18,7 +18,9 @@ describe('TypeormDiscordAccountLinkRepository', () => {
     } as unknown as Repository<DiscordAccountLinkEntity>;
     const service = new TypeormDiscordAccountLinkRepository(repo);
 
-    const result = await service.upsertLink(143, 'discord-user-1');
+    const result = await service.upsertLink(143, 'discord-user-1', {
+      kind: 'absent',
+    });
 
     // First call: SELECT existing mapping for the Discord id (relink detection)
     expect(query).toHaveBeenNthCalledWith(
@@ -36,7 +38,7 @@ describe('TypeormDiscordAccountLinkRepository', () => {
     expect(query).toHaveBeenNthCalledWith(
       3,
       expect.stringContaining('INSERT INTO discord_account_links'),
-      ['discord', 'discord-user-1', 143, null],
+      ['discord', 'discord-user-1', 143, true, null],
     );
     expect(result).toEqual({ relinked: false });
   });
@@ -44,7 +46,7 @@ describe('TypeormDiscordAccountLinkRepository', () => {
   it('#137: reports relinked + the displaced userId when the Discord id moves to another WISPACE user', async () => {
     const query = jest
       .fn()
-      .mockResolvedValueOnce([{ user_id: 99 }])
+      .mockResolvedValueOnce([{ user_id: 99, mapping_generation: '1' }])
       .mockResolvedValueOnce([])
       .mockResolvedValue([{ external_user_id: 'discord-user-1' }]);
     const repo = {
@@ -56,7 +58,10 @@ describe('TypeormDiscordAccountLinkRepository', () => {
     } as unknown as Repository<DiscordAccountLinkEntity>;
     const service = new TypeormDiscordAccountLinkRepository(repo);
 
-    const result = await service.upsertLink(143, 'discord-user-1');
+    const result = await service.upsertLink(143, 'discord-user-1', {
+      kind: 'present',
+      generation: '1',
+    });
 
     expect(result).toEqual({ relinked: true, previousUserId: 99 });
   });
@@ -77,7 +82,10 @@ describe('TypeormDiscordAccountLinkRepository', () => {
     const service = new TypeormDiscordAccountLinkRepository(repo);
 
     await expect(
-      service.upsertLink(143, 'discord-user-1', { expectedGeneration: '4' }),
+      service.upsertLink(143, 'discord-user-1', {
+        kind: 'present',
+        generation: '4',
+      }),
     ).rejects.toThrow(/stale|revoked/i);
     const lastCall = query.mock.calls[query.mock.calls.length - 1];
     expect(lastCall?.[0]).toContain('mapping_generation');
@@ -88,7 +96,7 @@ describe('TypeormDiscordAccountLinkRepository', () => {
     const query = jest
       .fn()
       .mockResolvedValueOnce([
-        { user_id: 143, mapping_generation: '5', link_state: 'active' },
+        { user_id: 99, mapping_generation: '5', link_state: 'active' },
       ]);
     const repo = {
       manager: {
@@ -100,8 +108,53 @@ describe('TypeormDiscordAccountLinkRepository', () => {
     const service = new TypeormDiscordAccountLinkRepository(repo);
 
     await expect(
-      service.upsertLink(143, 'discord-user-1', { expectedGeneration: '4' }),
+      service.upsertLink(143, 'discord-user-1', {
+        kind: 'present',
+        generation: '4',
+      }),
     ).rejects.toThrow(/stale|revoked/i);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an absent observation when another callback inserted the mapping', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([
+        { user_id: 99, mapping_generation: '2', link_state: 'active' },
+      ]);
+    const repo = {
+      manager: {
+        transaction: jest.fn((fn: (em: unknown) => Promise<void>) =>
+          fn({ query }),
+        ),
+      },
+    } as unknown as Repository<DiscordAccountLinkEntity>;
+    const service = new TypeormDiscordAccountLinkRepository(repo);
+
+    await expect(
+      service.upsertLink(143, 'discord-user-1', { kind: 'absent' }),
+    ).rejects.toThrow(/ownership changed/i);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts an absent observation when this callback already committed', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([
+        { user_id: 143, mapping_generation: '1', link_state: 'active' },
+      ]);
+    const repo = {
+      manager: {
+        transaction: jest.fn((fn: (em: unknown) => Promise<void>) =>
+          fn({ query }),
+        ),
+      },
+    } as unknown as Repository<DiscordAccountLinkEntity>;
+    const service = new TypeormDiscordAccountLinkRepository(repo);
+
+    await expect(
+      service.upsertLink(143, 'discord-user-1', { kind: 'absent' }),
+    ).resolves.toEqual({ relinked: false });
     expect(query).toHaveBeenCalledTimes(1);
   });
 

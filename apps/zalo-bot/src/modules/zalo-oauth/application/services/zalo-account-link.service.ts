@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { maskExternalId, errorMessage } from '@wispace/bot-common/masking';
 import { buildConsentExplainerMessage } from '@wispace/bot-common/messages';
 import { extractQueryRows } from '@wispace/bot-common/utils';
+import type { LinkMappingObservation } from '@wispace/account-link-core/core';
 import { ZaloAccountLinkEntity } from '@zalo/infrastructure/database/entities/zalo-account-link.entity';
 import {
   ZALO_OAUTH_CLIENT,
@@ -55,130 +56,83 @@ export class ZaloAccountLinkService {
   async upsertLink(
     userId: number,
     zaloUserId: string,
-    options: { expectedGeneration?: string } = {},
+    mappingObservation: LinkMappingObservation,
   ): Promise<{ relinked: boolean; previousUserId?: number }> {
     let relinked = false;
     let previousUserId: number | undefined;
     await this.repo.manager.transaction(async (em) => {
-      // Keep the test seam's query-builder fallback; production uses one
-      // atomic SQL upsert so a status worker cannot overwrite a relinked
-      // generation between read and write.
-      if (typeof em.query === 'function') {
-        const existingRows = await em.query<
-          Array<{ user_id: number; mapping_generation?: string }>
-        >(
-          `SELECT user_id, mapping_generation
-           FROM zalo_account_links
-           WHERE platform = $1 AND external_user_id = $2
-           FOR UPDATE`,
-          [PLATFORM, zaloUserId],
-        );
-        if (
-          options.expectedGeneration !== undefined &&
-          existingRows[0] &&
-          String(existingRows[0].mapping_generation ?? '1') !==
-            options.expectedGeneration
-        ) {
-          throw new ZaloLinkOwnershipConflictError();
-        }
-        if (existingRows[0] && existingRows[0].user_id !== userId) {
-          relinked = true;
-          previousUserId = existingRows[0].user_id;
-        }
-        await em.query(
-          `DELETE FROM zalo_account_links
-           WHERE platform = $1 AND user_id = $2 AND external_user_id != $3`,
-          [PLATFORM, userId, zaloUserId],
-        );
-        const rows = await em.query<Array<{ external_user_id: string }>>(
-          `INSERT INTO zalo_account_links
-             (platform, external_user_id, user_id, link_state, mapping_generation)
-           VALUES ($1, $2, $3, 'active', 1)
-           ON CONFLICT (platform, external_user_id)
-           DO UPDATE SET
-             user_id = EXCLUDED.user_id,
-             linked_at = now(),
-             updated_at = now(),
-             link_state = 'active',
-             mapping_generation = CASE
-               WHEN zalo_account_links.link_state <> 'active'
-                 OR zalo_account_links.user_id <> EXCLUDED.user_id
-                 THEN zalo_account_links.mapping_generation + 1
-               ELSE zalo_account_links.mapping_generation
-             END,
-             revoked_at = NULL,
-             revocation_reason = NULL
-           WHERE zalo_account_links.mapping_generation = COALESCE($4::bigint, zalo_account_links.mapping_generation)
-           RETURNING external_user_id`,
-          [PLATFORM, zaloUserId, userId, options.expectedGeneration ?? null],
-        );
-        if (Array.isArray(rows) && rows.length === 0) {
-          throw new ZaloLinkOwnershipConflictError();
-        }
-        return;
-      }
-
-      const existing = await this.repo.findOne({
-        where: { platform: PLATFORM, externalUserId: zaloUserId },
-        select: { userId: true, linkState: true, mappingGeneration: true },
-      });
+      const existingRows = await em.query<
+        Array<{
+          user_id: number;
+          mapping_generation?: string;
+          link_state?: string;
+        }>
+      >(
+        `SELECT user_id, mapping_generation, link_state
+         FROM zalo_account_links
+         WHERE platform = $1 AND external_user_id = $2
+         FOR UPDATE`,
+        [PLATFORM, zaloUserId],
+      );
+      const expectedGeneration =
+        mappingObservation.kind === 'present'
+          ? mappingObservation.generation
+          : undefined;
+      const alreadyCommitted =
+        existingRows[0]?.user_id === userId &&
+        (!existingRows[0]?.link_state ||
+          existingRows[0].link_state === 'active');
+      if (alreadyCommitted) return;
       if (
-        options.expectedGeneration !== undefined &&
-        (!existing ||
-          String(existing.mappingGeneration ?? '1') !==
-            options.expectedGeneration)
+        (mappingObservation.kind === 'present' &&
+          (!existingRows[0] ||
+            String(existingRows[0].mapping_generation ?? '1') !==
+              expectedGeneration)) ||
+        (mappingObservation.kind === 'absent' && existingRows[0])
       ) {
         throw new ZaloLinkOwnershipConflictError();
       }
-      if (existing && existing.userId !== userId) {
+      if (existingRows[0] && existingRows[0].user_id !== userId) {
         relinked = true;
-        previousUserId = existing.userId;
+        previousUserId = existingRows[0].user_id;
       }
-      const mappingGeneration =
-        existing?.linkState && existing.linkState !== 'active'
-          ? String(BigInt(existing.mappingGeneration ?? '1') + 1n)
-          : (existing?.mappingGeneration ?? '1');
-
-      await em
-        .createQueryBuilder()
-        .delete()
-        .from(ZaloAccountLinkEntity)
-        .where(
-          'platform = :platform AND userId = :userId AND externalUserId != :externalUserId',
-          {
-            platform: PLATFORM,
-            userId,
-            externalUserId: zaloUserId,
-          },
-        )
-        .execute();
-
-      await em
-        .createQueryBuilder()
-        .insert()
-        .into(ZaloAccountLinkEntity)
-        .values({
-          platform: PLATFORM,
-          externalUserId: zaloUserId,
+      await em.query(
+        `DELETE FROM zalo_account_links
+         WHERE platform = $1 AND user_id = $2 AND external_user_id != $3`,
+        [PLATFORM, userId, zaloUserId],
+      );
+      const rows = await em.query<Array<{ external_user_id: string }>>(
+        `INSERT INTO zalo_account_links
+           (platform, external_user_id, user_id, link_state, mapping_generation)
+         VALUES ($1, $2, $3, 'active', 1)
+         ON CONFLICT (platform, external_user_id)
+         DO UPDATE SET
+           user_id = EXCLUDED.user_id,
+           linked_at = now(),
+           updated_at = now(),
+           link_state = 'active',
+           mapping_generation = CASE
+             WHEN zalo_account_links.link_state <> 'active'
+               OR zalo_account_links.user_id <> EXCLUDED.user_id
+               THEN zalo_account_links.mapping_generation + 1
+             ELSE zalo_account_links.mapping_generation
+           END,
+           revoked_at = NULL,
+           revocation_reason = NULL
+         WHERE NOT $4::boolean
+           AND zalo_account_links.mapping_generation = COALESCE($5::bigint, zalo_account_links.mapping_generation)
+         RETURNING external_user_id`,
+        [
+          PLATFORM,
+          zaloUserId,
           userId,
-          linkState: 'active',
-          mappingGeneration,
-          revokedAt: null,
-          revocationReason: null,
-        })
-        .orUpdate(
-          [
-            'userId',
-            'linkedAt',
-            'updatedAt',
-            'linkState',
-            'mappingGeneration',
-            'revokedAt',
-            'revocationReason',
-          ],
-          ['platform', 'externalUserId'],
-        )
-        .execute();
+          mappingObservation.kind === 'absent',
+          expectedGeneration ?? null,
+        ],
+      );
+      if (Array.isArray(rows) && rows.length === 0) {
+        throw new ZaloLinkOwnershipConflictError();
+      }
     });
 
     this.logger.log(

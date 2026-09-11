@@ -1,4 +1,5 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
+import type { LinkMappingObservation } from '@wispace/account-link-core/core';
 
 /**
  * Durable verify-intent outbox for the Zalo OAuth callback (#147, mirror of
@@ -17,4 +18,17 @@ export class ZaloLinkVerifyRecordEntity {
 
   @Column({ name: 'verified_at', type: 'timestamptz' })
   verifiedAt: Date;
+
+  @Column({ name: 'intent_generation', type: 'bigint' })
+  intentGeneration: string;
+
+  @Column({ name: 'observed_mapping_kind', type: 'varchar', length: 8 })
+  observedMappingKind: LinkMappingObservation['kind'];
+
+  @Column({
+    name: 'observed_mapping_generation',
+    type: 'bigint',
+    nullable: true,
+  })
+  observedMappingGeneration: string | null;
 }

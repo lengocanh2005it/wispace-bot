@@ -54,35 +54,68 @@ describe('ZaloAccountLinkService', () => {
   });
 
   it('upserts a link and looks it up by zaloUserId', async () => {
-    const executeFn = jest.fn().mockResolvedValue(undefined);
-    const queryBuilder = {
-      delete: jest.fn().mockReturnThis(),
-      from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-      insert: jest.fn().mockReturnThis(),
-      into: jest.fn().mockReturnThis(),
-      values: jest.fn().mockReturnThis(),
-      orUpdate: jest.fn().mockReturnThis(),
-      execute: executeFn,
-    };
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ external_user_id: 'zalo-user-1' }]);
     const em = {
-      createQueryBuilder: jest.fn().mockReturnValue(queryBuilder),
-      execute: executeFn,
+      query,
     };
     const repo = {
       manager: {
         transaction: (fn: (em: typeof em) => unknown) => fn(em),
       },
-      findOne: jest.fn().mockResolvedValue({ userId: 42 }),
+      findOne: jest.fn().mockResolvedValueOnce({ userId: 42 }),
     } as unknown as Repository<ZaloAccountLinkEntity>;
 
     const service = new ZaloAccountLinkService(buildOAuth(), repo);
 
-    await service.upsertLink(42, 'zalo-user-1');
-    expect(executeFn).toHaveBeenCalledTimes(2);
+    await service.upsertLink(42, 'zalo-user-1', { kind: 'absent' });
+    expect(query).toHaveBeenCalledTimes(3);
 
     const userId = await service.findUserIdByZaloId('zalo-user-1');
     expect(userId).toBe(42);
+  });
+
+  it('rejects an absent observation when another callback inserted the mapping', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ user_id: 99, mapping_generation: '2' }]);
+    const repo = {
+      manager: {
+        transaction: jest.fn((fn: (em: unknown) => Promise<void>) =>
+          fn({ query }),
+        ),
+      },
+    } as unknown as Repository<ZaloAccountLinkEntity>;
+    const service = new ZaloAccountLinkService(buildOAuth(), repo);
+
+    await expect(
+      service.upsertLink(143, 'zalo-user-1', { kind: 'absent' }),
+    ).rejects.toThrow(/ownership changed/i);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts an absent observation when this callback already committed', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([
+        { user_id: 143, mapping_generation: '1', link_state: 'active' },
+      ]);
+    const repo = {
+      manager: {
+        transaction: jest.fn((fn: (em: unknown) => Promise<void>) =>
+          fn({ query }),
+        ),
+      },
+    } as unknown as Repository<ZaloAccountLinkEntity>;
+    const service = new ZaloAccountLinkService(buildOAuth(), repo);
+
+    await expect(
+      service.upsertLink(143, 'zalo-user-1', { kind: 'absent' }),
+    ).resolves.toEqual({ relinked: false });
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   describe('sendConsentExplainerIfDue (#596)', () => {

@@ -1,5 +1,6 @@
 import type { ConfigService } from '@nestjs/config';
 import type { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import type { LinkMappingObservation } from '@wispace/account-link-core/core';
 import type { ZaloAccountLinkService } from './zalo-account-link.service';
 import type { ZaloLinkVerifyRecordRepositoryPort } from '../../domain/ports/zalo-link-verify-record.repository.port';
 import { ZaloLinkReconcileCronService } from './zalo-link-reconcile-cron.service';
@@ -30,12 +31,20 @@ function buildHarness(options: {
     zaloUserId: string;
     userId: number;
     verifiedAt: Date;
+    intentGeneration?: string;
+    mappingObservation?: LinkMappingObservation;
   }>;
   findUserId?: (zaloUserId: string) => number | undefined;
   upsertError?: Error;
 }) {
   const verifyRecordService = {
-    listStaleRecords: jest.fn().mockResolvedValue(options.records ?? []),
+    listStaleRecords: jest.fn().mockResolvedValue(
+      (options.records ?? []).map((record) => ({
+        intentGeneration: '1',
+        mappingObservation: { kind: 'absent' as const },
+        ...record,
+      })),
+    ),
     consumeRecord: jest.fn().mockResolvedValue(undefined),
   } as unknown as ZaloLinkVerifyRecordRepositoryPort;
 
@@ -75,10 +84,13 @@ describe('ZaloLinkReconcileCronService', () => {
     expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
       42,
       'zalo-user-1',
+      { kind: 'absent' },
     );
-    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith(
-      'zalo-user-1',
-    );
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
+      zaloUserId: 'zalo-user-1',
+      userId: 42,
+      intentGeneration: '1',
+    });
   });
 
   it('consumes records whose mapping is already committed with same userId', async () => {
@@ -103,12 +115,16 @@ describe('ZaloLinkReconcileCronService', () => {
     await cron.handleReconcile();
 
     expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
-    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith(
-      'zalo-user-1',
-    );
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
+      zaloUserId: 'zalo-user-1',
+      userId: 42,
+      intentGeneration: '1',
+    });
   });
 
-  it('does not consume verify record when existing mapping has a mismatched userId', async () => {
+  it('retires a verify record when the mapping owner changed before reconcile', async () => {
+    const ownershipConflict = new Error('mapping owner changed');
+    ownershipConflict.name = 'ZaloMappingOwnershipConflictError';
     const { verifyRecordService, accountLinkService } = buildHarness({
       records: [
         {
@@ -118,6 +134,7 @@ describe('ZaloLinkReconcileCronService', () => {
         },
       ],
       findUserId: () => 999,
+      upsertError: ownershipConflict,
     });
     const cron = new ZaloLinkReconcileCronService(
       verifyRecordService,
@@ -129,8 +146,16 @@ describe('ZaloLinkReconcileCronService', () => {
 
     await cron.handleReconcile();
 
-    expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
-    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalled();
+    expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
+      42,
+      'zalo-user-1',
+      { kind: 'absent' },
+    );
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
+      zaloUserId: 'zalo-user-1',
+      userId: 42,
+      intentGeneration: '1',
+    });
   });
 
   it('drops records older than the max age when the mapping is missing', async () => {
@@ -154,9 +179,11 @@ describe('ZaloLinkReconcileCronService', () => {
     await cron.handleReconcile();
 
     expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
-    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith(
-      'zalo-user-1',
-    );
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
+      zaloUserId: 'zalo-user-1',
+      userId: 42,
+      intentGeneration: '1',
+    });
   });
 
   it('keeps the record when reconciliation upsert fails', async () => {

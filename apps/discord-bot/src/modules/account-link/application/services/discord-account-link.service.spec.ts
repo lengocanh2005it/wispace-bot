@@ -48,9 +48,17 @@ describe('DiscordAccountLinkService', () => {
         repository,
       );
 
-      const result = await service.upsertLink(143, 'discord-user-1');
+      const result = await service.upsertLink(143, 'discord-user-1', {
+        kind: 'absent',
+      });
 
-      expect(repository.upsertLink).toHaveBeenCalledWith(143, 'discord-user-1');
+      expect(repository.upsertLink).toHaveBeenCalledWith(
+        143,
+        'discord-user-1',
+        {
+          kind: 'absent',
+        },
+      );
       expect(result).toEqual({ relinked: false });
     });
 

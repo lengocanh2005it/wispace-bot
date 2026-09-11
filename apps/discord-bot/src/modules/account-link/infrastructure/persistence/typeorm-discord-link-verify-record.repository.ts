@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { subMilliseconds } from 'date-fns';
+import { extractQueryRows } from '@wispace/bot-common/utils';
+import type { LinkMappingObservation } from '@wispace/account-link-core/core';
 import { DiscordLinkVerifyRecordEntity } from '@discord/infrastructure/database/entities/discord-link-verify-record.entity';
 import type {
   DiscordLinkVerifyRecordRepositoryPort,
@@ -23,15 +25,59 @@ export class TypeormDiscordLinkVerifyRecordRepository implements DiscordLinkVeri
     private readonly repo: Repository<DiscordLinkVerifyRecordEntity>,
   ) {}
 
-  /** Upsert the verify intent (idempotent — a retried callback overwrites). */
-  async recordVerify(discordUserId: string, userId: number): Promise<void> {
-    await this.repo.upsert({ discordUserId, userId, verifiedAt: new Date() }, [
-      'discordUserId',
-    ]);
+  /** Upsert the latest intent and fence older callbacks with a generation. */
+  async recordVerify(
+    discordUserId: string,
+    userId: number,
+    mappingObservation: LinkMappingObservation,
+  ): Promise<{ intentGeneration: string }> {
+    const rows = extractQueryRows<{ intent_generation: string }>(
+      await this.repo.query(
+        `INSERT INTO discord_link_verify_records
+           (discord_user_id, user_id, verified_at, intent_generation,
+            observed_mapping_kind, observed_mapping_generation)
+         VALUES ($1, $2, now(), 1, $3, $4)
+         ON CONFLICT (discord_user_id) DO UPDATE SET
+           user_id = EXCLUDED.user_id,
+           verified_at = EXCLUDED.verified_at,
+           intent_generation = discord_link_verify_records.intent_generation + 1,
+           observed_mapping_kind = EXCLUDED.observed_mapping_kind,
+           observed_mapping_generation = EXCLUDED.observed_mapping_generation
+         RETURNING intent_generation`,
+        [
+          discordUserId,
+          userId,
+          mappingObservation.kind,
+          mappingObservation.kind === 'present'
+            ? mappingObservation.generation
+            : null,
+        ],
+      ),
+    );
+    const intentGeneration = rows[0]?.intent_generation;
+    if (intentGeneration === undefined) {
+      throw new Error('Discord link intent upsert returned no generation');
+    }
+    return { intentGeneration: String(intentGeneration) };
   }
 
-  /** Delete the intent once the mapping is committed (fire-and-forget safe). */
-  async consumeRecord(discordUserId: string): Promise<void> {
+  async consumeRecord(input: {
+    discordUserId: string;
+    userId: number;
+    intentGeneration: string;
+  }): Promise<boolean> {
+    const rows = extractQueryRows<{ discord_user_id: string }>(
+      await this.repo.query(
+        `DELETE FROM discord_link_verify_records
+         WHERE discord_user_id = $1 AND user_id = $2 AND intent_generation = $3::bigint
+         RETURNING discord_user_id`,
+        [input.discordUserId, input.userId, input.intentGeneration],
+      ),
+    );
+    return rows.length > 0;
+  }
+
+  async discardRecord(discordUserId: string): Promise<void> {
     await this.repo.delete({ discordUserId });
   }
 
@@ -50,7 +96,15 @@ export class TypeormDiscordLinkVerifyRecordRepository implements DiscordLinkVeri
     return rows.map((row) => ({
       discordUserId: row.discordUserId,
       userId: row.userId,
+      intentGeneration: String(row.intentGeneration),
       verifiedAt: row.verifiedAt,
+      mappingObservation:
+        row.observedMappingKind === 'present'
+          ? {
+              kind: 'present',
+              generation: String(row.observedMappingGeneration),
+            }
+          : { kind: 'absent' },
     }));
   }
 

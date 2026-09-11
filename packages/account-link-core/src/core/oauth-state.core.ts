@@ -23,6 +23,8 @@ export interface OAuthStateCoreOptions {
 
 const DEFAULT_TTL_MS = 10 * 60_000;
 const DEFAULT_CLEANUP_LIMIT = 100;
+// Fixed security bound: allowing an env override would weaken callback trust.
+const MAX_FUTURE_SKEW_MS = 60_000;
 
 export class OAuthStateCore<TPayload> {
   private readonly ttlMs: number;
@@ -60,9 +62,11 @@ export class OAuthStateCore<TPayload> {
     const record = await this.store.consume(state);
     if (!record) return undefined;
     const createdAt = record.createdAt.getTime();
+    const ageMs = this.now().getTime() - createdAt;
     if (
       !Number.isFinite(createdAt) ||
-      this.now().getTime() - createdAt > this.ttlMs
+      ageMs > this.ttlMs ||
+      ageMs < -MAX_FUTURE_SKEW_MS
     ) {
       return undefined;
     }

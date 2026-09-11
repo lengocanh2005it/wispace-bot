@@ -1,6 +1,10 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Counter } from 'prom-client';
 import {
   LinkCompletionCore,
+  LinkConflictError,
+  LinkPersistenceExhaustedError,
+  LinkTokenRejectedError,
   type LinkCompletionAfterCommitContext,
   type LinkFlowAdapter,
 } from '@wispace/account-link-core/core';
@@ -23,6 +27,12 @@ import {
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
 import { PlatformLinkStateService } from '@wispace/database';
+
+const linkCompletionFailuresTotal = new Counter({
+  name: 'discord_link_completion_failures_total',
+  help: 'Discord account-link completion failures',
+  labelNames: ['reason'] as const,
+});
 
 /** Result of completing the Discord OAuth link — maps to the landing redirect. */
 export type DiscordLinkCompletionOutcome = 'success' | 'not-in-guild';
@@ -62,16 +72,34 @@ export class DiscordLinkCompletionService {
       },
       verifyToken: async (linkToken, externalUserId) =>
         this.tokenVerifyService.verifyToken(linkToken, externalUserId),
-      getObservedGeneration: async (externalUserId) =>
-        (await this.linkState?.getLink('discord', externalUserId))?.generation,
-      recordVerify: (externalUserId, userId) =>
-        this.verifyRecordService.recordVerify(externalUserId, userId),
-      upsertLink: (userId, externalUserId, options) =>
-        options === undefined
-          ? this.accountLinkService.upsertLink(userId, externalUserId)
-          : this.accountLinkService.upsertLink(userId, externalUserId, options),
-      consumeRecord: (externalUserId) =>
-        this.verifyRecordService.consumeRecord(externalUserId),
+      getMappingObservation: async (externalUserId) => {
+        if (!this.linkState) {
+          throw new Error('Discord link state service is required');
+        }
+        const state = await this.linkState.getLink('discord', externalUserId);
+        return !state ||
+          (state.state === 'locally-unlinked' && state.userId === undefined)
+          ? { kind: 'absent' }
+          : { kind: 'present', generation: state.generation };
+      },
+      recordVerify: (externalUserId, userId, mappingObservation) =>
+        this.verifyRecordService.recordVerify(
+          externalUserId,
+          userId,
+          mappingObservation,
+        ),
+      upsertLink: (userId, externalUserId, mappingObservation) =>
+        this.accountLinkService.upsertLink(
+          userId,
+          externalUserId,
+          mappingObservation,
+        ),
+      consumeRecord: (intent) =>
+        this.verifyRecordService.consumeRecord({
+          discordUserId: intent.externalUserId,
+          userId: intent.userId,
+          intentGeneration: intent.intentGeneration,
+        }),
       clearClarification: async (externalUserId) => {
         await this.clarificationStateStore.clear(`discord:${externalUserId}`);
       },
@@ -83,8 +111,27 @@ export class DiscordLinkCompletionService {
       },
     });
 
-    const result = await core.complete({ input: undefined, linkToken: token });
-    return result.nextAction === 'join-community' ? 'not-in-guild' : 'success';
+    try {
+      const result = await core.complete({
+        input: undefined,
+        linkToken: token,
+      });
+      return result.nextAction === 'join-community'
+        ? 'not-in-guild'
+        : 'success';
+    } catch (error) {
+      if (!(error instanceof LinkTokenRejectedError)) {
+        linkCompletionFailuresTotal.inc({
+          reason:
+            error instanceof LinkPersistenceExhaustedError
+              ? 'persistence_exhausted'
+              : error instanceof LinkConflictError
+                ? 'conflict'
+                : 'unexpected',
+        });
+      }
+      throw error;
+    }
   }
 
   private async afterCommit({

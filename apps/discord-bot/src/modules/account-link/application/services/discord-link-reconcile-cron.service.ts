@@ -75,7 +75,9 @@ export class DiscordLinkReconcileCronService {
         return records.map((record) => ({
           externalUserId: record.discordUserId,
           userId: record.userId,
+          intentGeneration: record.intentGeneration,
           verifiedAt: record.verifiedAt,
+          mappingObservation: record.mappingObservation,
         }));
       },
       findUserId: (externalUserId) =>
@@ -92,12 +94,18 @@ export class DiscordLinkReconcileCronService {
       },
       isFreshRelink: (externalUserId, userId) =>
         this.isFreshRelink(externalUserId, userId),
-      upsertLink: (userId, externalUserId, options) =>
-        options === undefined
-          ? this.accountLinkService.upsertLink(userId, externalUserId)
-          : this.accountLinkService.upsertLink(userId, externalUserId, options),
-      consumeRecord: (externalUserId) =>
-        this.verifyRecordService.consumeRecord(externalUserId),
+      upsertLink: (userId, externalUserId, mappingObservation) =>
+        this.accountLinkService.upsertLink(
+          userId,
+          externalUserId,
+          mappingObservation,
+        ),
+      consumeRecord: (intent) =>
+        this.verifyRecordService.consumeRecord({
+          discordUserId: intent.externalUserId,
+          userId: intent.userId,
+          intentGeneration: intent.intentGeneration,
+        }),
       clearClarification: (externalUserId) =>
         this.clearClarificationState(externalUserId),
       reconcileLinkStatus: () => this.runLinkStatusReconcile(),
@@ -246,7 +254,7 @@ export class DiscordLinkReconcileCronService {
   ): Promise<void> {
     if (invalidateVerifyIntent) {
       await this.verifyRecordService
-        .consumeRecord(externalUserId)
+        .discardRecord(externalUserId)
         .catch(() => undefined);
     }
     await this.clarificationStateStore

@@ -3,7 +3,7 @@ import { DiscordRelinkNotifier } from './discord-relink-notifier.service';
 
 describe('DiscordRelinkNotifier (#137 item 5)', () => {
   it('sends the relink notice DM to the Discord account', async () => {
-    const sendText = jest.fn().mockResolvedValue(undefined);
+    const sendText = jest.fn().mockResolvedValue('sent');
     const notifier = new DiscordRelinkNotifier({
       sendText,
     } as unknown as DiscordOutboundService);
@@ -15,6 +15,17 @@ describe('DiscordRelinkNotifier (#137 item 5)', () => {
       expect.stringContaining('WISPACE khác'),
       { userId: 143 },
     );
+  });
+
+  it('logs but swallows a non-sent delivery outcome', async () => {
+    const sendText = jest.fn().mockResolvedValue('rate_limited');
+    const notifier = new DiscordRelinkNotifier({
+      sendText,
+    } as unknown as DiscordOutboundService);
+
+    await expect(
+      notifier.notify('discord-user-1', undefined),
+    ).resolves.toBeUndefined();
   });
 
   it('swallows DM failures (best-effort notice)', async () => {

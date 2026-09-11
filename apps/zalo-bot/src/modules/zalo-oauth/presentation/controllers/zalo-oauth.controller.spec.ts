@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import { LinkPersistenceExhaustedError } from '@wispace/account-link-core/core';
 import { ZaloOauthController } from './zalo-oauth.controller';
 import { ZaloAccountLinkService } from '../../application/services/zalo-account-link.service';
 import { ZaloOauthStateService } from '../../application/services/zalo-oauth-state.service';
@@ -250,6 +251,41 @@ describe('ZaloOauthController', () => {
       | undefined;
     expect(payload?.success).toBe(false);
     expect(payload?.message).toContain('hết hạn');
+  });
+
+  it('GET /callback asks for a fresh token when local persistence is exhausted', async () => {
+    const consume = jest.fn().mockResolvedValue({
+      codeVerifier: 'verifier-1',
+      linkToken: 'stored-link-token',
+    });
+    const completeLink = jest
+      .fn()
+      .mockRejectedValue(
+        new LinkPersistenceExhaustedError(new Error('db down')),
+      );
+
+    const controller = new ZaloOauthController(
+      buildConfig(),
+      {
+        buildPkcePair: jest.fn(),
+        exchangeCodeForZaloUser: jest.fn(),
+        upsertLink: jest.fn(),
+        findUserIdByZaloId: jest.fn(),
+      } as unknown as ZaloAccountLinkService,
+      { create: jest.fn(), consume } as unknown as ZaloOauthStateService,
+      { completeLink } as unknown as ZaloLinkCompletionService,
+    );
+
+    const res = buildRes();
+    const req = {
+      headers: { cookie: '__Host-zalo_oauth_state=state-1' },
+    };
+    await controller.callback('auth-code', 'state-1', res, req);
+
+    expect(res.json).toHaveBeenLastCalledWith({
+      success: false,
+      message: expect.stringContaining('token mới'),
+    });
   });
 
   it('GET /callback returns an error when the PKCE state is missing/expired', async () => {

@@ -33,4 +33,36 @@ describe('OAuthStateCore', () => {
     now = new Date('2026-01-01T00:00:01.001Z');
     await expect(core.consume('state-1')).resolves.toBeUndefined();
   });
+
+  it('rejects state timestamps more than 60 seconds in the future', async () => {
+    const store: OAuthStateStore<string> = {
+      save: async () => undefined,
+      consume: async () => ({
+        payload: 'payload',
+        createdAt: new Date('2026-01-01T00:01:00.001Z'),
+      }),
+      cleanupExpired: async () => undefined,
+    };
+    const core = new OAuthStateCore(store, {
+      now: () => new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    await expect(core.consume('future-state')).resolves.toBeUndefined();
+  });
+
+  it('accepts the exact 60-second future-skew boundary', async () => {
+    const store: OAuthStateStore<string> = {
+      save: async () => undefined,
+      consume: async () => ({
+        payload: 'payload',
+        createdAt: new Date('2026-01-01T00:01:00.000Z'),
+      }),
+      cleanupExpired: async () => undefined,
+    };
+    const core = new OAuthStateCore(store, {
+      now: () => new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    await expect(core.consume('future-state')).resolves.toBe('payload');
+  });
 });

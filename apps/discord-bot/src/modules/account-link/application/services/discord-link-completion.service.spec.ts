@@ -14,6 +14,7 @@ function buildHarness(overrides: {
   upsertFailsFirst?: boolean;
   welcomeOutcome?: 'sent' | 'skipped' | 'error';
   clearClarificationState?: jest.Mock;
+  mappingState?: object | null;
 }) {
   const accountLinkService = {
     exchangeCodeForDiscordUser: jest
@@ -41,8 +42,9 @@ function buildHarness(overrides: {
   } as unknown as WispaceTokenVerifyService;
 
   const verifyRecordService = {
-    recordVerify: jest.fn().mockResolvedValue(undefined),
+    recordVerify: jest.fn().mockResolvedValue({ intentGeneration: '1' }),
     consumeRecord: jest.fn().mockResolvedValue(undefined),
+    discardRecord: jest.fn().mockResolvedValue(undefined),
   } as unknown as DiscordLinkVerifyRecordRepositoryPort;
 
   const guildMembershipService = {
@@ -68,6 +70,9 @@ function buildHarness(overrides: {
   const clarificationStateStore = {
     clear: clearClarificationState,
   };
+  const linkState = {
+    getLink: jest.fn().mockResolvedValue(overrides.mappingState ?? null),
+  };
 
   const service = new DiscordLinkCompletionService(
     accountLinkService,
@@ -78,6 +83,7 @@ function buildHarness(overrides: {
     outboundService,
     welcomeService,
     clarificationStateStore as never,
+    linkState as never,
   );
 
   return {
@@ -112,15 +118,33 @@ describe('DiscordLinkCompletionService', () => {
     expect(verifyRecordService.recordVerify).toHaveBeenCalledWith(
       'discord-user-1',
       143,
+      { kind: 'absent' },
     );
     expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
       143,
       'discord-user-1',
+      { kind: 'absent' },
     );
-    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith(
-      'discord-user-1',
-    );
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
+      discordUserId: 'discord-user-1',
+      userId: 143,
+      intentGeneration: '1',
+    });
     expect(outcome).toBe('success');
+  });
+
+  it('treats a deleted mapping tombstone as absent for a fresh link', async () => {
+    const { service, accountLinkService } = buildHarness({
+      mappingState: { state: 'locally-unlinked', generation: '8' },
+    });
+
+    await service.completeLink('code', 'good-token');
+
+    expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
+      143,
+      'discord-user-1',
+      { kind: 'absent' },
+    );
   });
 
   it('retries the upsert on transient DB failure (token already consumed)', async () => {
@@ -208,6 +232,7 @@ describe('DiscordLinkCompletionService', () => {
     expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
       143,
       'discord-user-1',
+      { kind: 'absent' },
     );
     expect(welcomeService.welcomeIfDue).toHaveBeenCalledTimes(1);
     expect(outcome).toBe('success');
@@ -226,6 +251,7 @@ describe('DiscordLinkCompletionService', () => {
     expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
       143,
       'discord-user-1',
+      { kind: 'absent' },
     );
     expect(outcome).toBe('success');
   });

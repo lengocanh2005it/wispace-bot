@@ -26,18 +26,25 @@ export class DiscordRelinkNotifier {
       )} for discordUserId=${maskExternalId(discordUserId)}`,
     );
 
-    await this.outboundService
-      .sendText(
+    try {
+      const outcome = await this.outboundService.sendText(
         discordUserId,
         buildDiscordRelinkNoticeMessage(),
         userId === undefined ? undefined : { userId },
-      )
-      .catch((error: unknown) => {
+      );
+      if (outcome !== 'sent') {
         this.logger.warn(
-          `Discord relink notice DM failed for discordUserId=${maskExternalId(
+          `Discord relink notice DM not sent for discordUserId=${maskExternalId(
             discordUserId,
-          )}: ${errorMessage(error)}`,
+          )}: outcome=${outcome}`,
         );
-      });
+      }
+    } catch (error: unknown) {
+      this.logger.warn(
+        `Discord relink notice DM failed for discordUserId=${maskExternalId(
+          discordUserId,
+        )}: ${errorMessage(error)}`,
+      );
+    }
   }
 }

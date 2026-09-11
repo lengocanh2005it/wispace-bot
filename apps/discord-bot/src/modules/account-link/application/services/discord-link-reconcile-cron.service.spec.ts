@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/unbound-method -- Jest mock method assertions */
 import type { ConfigService } from '@nestjs/config';
 import type { PgAdvisoryLockService } from '@wispace/bot-common/locks';
+import type { LinkMappingObservation } from '@wispace/account-link-core/core';
 import type { DiscordAccountLinkService } from './discord-account-link.service';
 import type { DiscordLinkVerifyRecordRepositoryPort } from '../../domain/ports/discord-link-verify-record.repository.port';
 import { DiscordLinkReconcileCronService } from './discord-link-reconcile-cron.service';
@@ -31,12 +32,20 @@ function buildHarness(options: {
     discordUserId: string;
     userId: number;
     verifiedAt: Date;
+    intentGeneration?: string;
+    mappingObservation?: LinkMappingObservation;
   }>;
   findUserId?: (discordUserId: string) => number | undefined;
   upsertError?: Error;
 }) {
   const verifyRecordService = {
-    listStaleRecords: jest.fn().mockResolvedValue(options.records ?? []),
+    listStaleRecords: jest.fn().mockResolvedValue(
+      (options.records ?? []).map((record) => ({
+        intentGeneration: '1',
+        mappingObservation: { kind: 'absent' as const },
+        ...record,
+      })),
+    ),
     consumeRecord: jest.fn().mockResolvedValue(undefined),
   } as unknown as DiscordLinkVerifyRecordRepositoryPort;
 
@@ -79,10 +88,13 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
     expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
       143,
       'discord-user-1',
+      { kind: 'absent' },
     );
-    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith(
-      'discord-user-1',
-    );
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
+      discordUserId: 'discord-user-1',
+      userId: 143,
+      intentGeneration: '1',
+    });
   });
 
   it('consumes records whose mapping is already committed (leftover consume race)', async () => {
@@ -110,9 +122,11 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
     await cron.handleReconcile();
 
     expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
-    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith(
-      'discord-user-1',
-    );
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
+      discordUserId: 'discord-user-1',
+      userId: 143,
+      intentGeneration: '1',
+    });
   });
 
   it('drops records older than the max age when the mapping still missing', async () => {
@@ -139,9 +153,11 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
     await cron.handleReconcile();
 
     expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
-    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith(
-      'discord-user-1',
-    );
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
+      discordUserId: 'discord-user-1',
+      userId: 143,
+      intentGeneration: '1',
+    });
   });
 
   it('keeps the record when reconciliation upsert fails', async () => {
@@ -168,9 +184,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
 
     await cron.handleReconcile();
 
-    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalledWith(
-      'discord-user-1',
-    );
+    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalled();
   });
 
   it('does nothing when the advisory lock is held elsewhere', async () => {
@@ -300,7 +314,9 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
     expect(accountLinkService.upsertLink).toHaveBeenCalledTimes(50);
     expect(verifyRecordService.consumeRecord).toHaveBeenCalledTimes(50);
   });
-  it('does not consume verify record when existing mapping has a mismatched userId', async () => {
+  it('retires a verify record when the mapping owner changed before reconcile', async () => {
+    const ownershipConflict = new Error('mapping owner changed');
+    ownershipConflict.name = 'DiscordMappingOwnershipConflictError';
     const { verifyRecordService, accountLinkService } = buildHarness({
       records: [
         {
@@ -310,6 +326,7 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
         },
       ],
       findUserId: () => 999,
+      upsertError: ownershipConflict,
     });
     const cron = new DiscordLinkReconcileCronService(
       verifyRecordService,
@@ -324,7 +341,15 @@ describe('DiscordLinkReconcileCronService (#137 item 1)', () => {
 
     await cron.handleReconcile();
 
-    expect(accountLinkService.upsertLink).not.toHaveBeenCalled();
-    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalled();
+    expect(accountLinkService.upsertLink).toHaveBeenCalledWith(
+      143,
+      'discord-user-1',
+      { kind: 'absent' },
+    );
+    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
+      discordUserId: 'discord-user-1',
+      userId: 143,
+      intentGeneration: '1',
+    });
   });
 });

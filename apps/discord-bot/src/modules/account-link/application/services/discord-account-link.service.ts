@@ -1,6 +1,7 @@
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { errorMessage, maskExternalId } from '@wispace/bot-common/masking';
 import { buildConsentExplainerMessage } from '@wispace/bot-common/messages';
+import type { LinkMappingObservation } from '@wispace/account-link-core/core';
 import {
   DISCORD_ACCOUNT_LINK_REPOSITORY,
   type DiscordAccountLinkRepositoryPort,
@@ -37,12 +38,13 @@ export class DiscordAccountLinkService {
   async upsertLink(
     userId: number,
     discordUserId: string,
-    options: { expectedGeneration?: string } = {},
+    mappingObservation: LinkMappingObservation,
   ): Promise<{ relinked: boolean; previousUserId?: number }> {
-    const result =
-      options.expectedGeneration === undefined
-        ? await this.repository.upsertLink(userId, discordUserId)
-        : await this.repository.upsertLink(userId, discordUserId, options);
+    const result = await this.repository.upsertLink(
+      userId,
+      discordUserId,
+      mappingObservation,
+    );
 
     this.logger.log(
       `Linked Discord account discordUserId=${maskExternalId(

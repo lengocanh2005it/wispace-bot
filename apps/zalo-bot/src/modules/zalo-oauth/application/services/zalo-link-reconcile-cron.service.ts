@@ -67,7 +67,9 @@ export class ZaloLinkReconcileCronService {
         return records.map((record) => ({
           externalUserId: record.zaloUserId,
           userId: record.userId,
+          intentGeneration: record.intentGeneration,
           verifiedAt: record.verifiedAt,
+          mappingObservation: record.mappingObservation,
         }));
       },
       findUserId: (externalUserId) =>
@@ -84,12 +86,18 @@ export class ZaloLinkReconcileCronService {
       },
       isFreshRelink: (externalUserId, userId) =>
         this.isFreshRelink(externalUserId, userId),
-      upsertLink: (userId, externalUserId, options) =>
-        options === undefined
-          ? this.accountLinkService.upsertLink(userId, externalUserId)
-          : this.accountLinkService.upsertLink(userId, externalUserId, options),
-      consumeRecord: (externalUserId) =>
-        this.verifyRecordService.consumeRecord(externalUserId),
+      upsertLink: (userId, externalUserId, mappingObservation) =>
+        this.accountLinkService.upsertLink(
+          userId,
+          externalUserId,
+          mappingObservation,
+        ),
+      consumeRecord: (intent) =>
+        this.verifyRecordService.consumeRecord({
+          zaloUserId: intent.externalUserId,
+          userId: intent.userId,
+          intentGeneration: intent.intentGeneration,
+        }),
       clearClarification: (externalUserId) =>
         this.clearClarificationState(externalUserId),
       reconcileLinkStatus: () => this.runLinkStatusReconcile(),
@@ -220,7 +228,7 @@ export class ZaloLinkReconcileCronService {
   ): Promise<void> {
     if (invalidateVerifyIntent) {
       await this.verifyRecordService
-        .consumeRecord(externalUserId)
+        .discardRecord(externalUserId)
         .catch(() => undefined);
     }
     await this.clarificationStateStore

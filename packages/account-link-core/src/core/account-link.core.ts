@@ -21,22 +21,35 @@ export interface LinkStateSnapshot {
   revokedAt?: Date;
 }
 
-export interface VerifyIntentRecord {
+export type LinkMappingObservation =
+  | { kind: 'absent' }
+  | { kind: 'present'; generation: string };
+
+export interface VerifyIntentIdentity {
   externalUserId: string;
   userId: number;
+  intentGeneration: string;
+}
+
+export interface VerifyIntentRecord extends VerifyIntentIdentity {
   verifiedAt: Date;
+  mappingObservation: LinkMappingObservation;
 }
 
 /** Durable handoff between upstream token verification and local mapping. */
 export interface VerifyIntentStore {
-  recordVerify(externalUserId: string, userId: number): Promise<void>;
-  consumeRecord(externalUserId: string): Promise<void>;
+  recordVerify(
+    externalUserId: string,
+    userId: number,
+    mappingObservation: LinkMappingObservation,
+  ): Promise<{ intentGeneration: string }>;
+  consumeRecord(intent: VerifyIntentIdentity): Promise<boolean | void>;
 }
 
 /** Reconcile-specific read/cleanup seam for durable verify intents. */
 export interface VerifyIntentReconcileStore {
   listStaleRecords(olderThanMs: number): Promise<VerifyIntentRecord[]>;
-  consumeRecord(externalUserId: string): Promise<void>;
+  consumeRecord(intent: VerifyIntentIdentity): Promise<boolean | void>;
 }
 
 export interface LinkExchangePort<P> {
@@ -50,12 +63,17 @@ export interface LinkTokenVerifierPort {
   ): Promise<LinkVerificationResult>;
 }
 
+export interface LinkMappingObservationPort {
+  getMappingObservation(
+    externalUserId: string,
+  ): Promise<LinkMappingObservation>;
+}
+
 export interface LinkMappingPort {
-  getObservedGeneration?(externalUserId: string): Promise<string | undefined>;
   upsertLink(
     userId: number,
     externalUserId: string,
-    options?: { expectedGeneration?: string },
+    mappingObservation: LinkMappingObservation,
   ): Promise<LinkUpsertResult | void>;
   findUserId?(externalUserId: string): Promise<number | undefined>;
 }
@@ -95,6 +113,7 @@ export interface LinkFlowAdapter<P>
     LinkExchangePort<P>,
     LinkTokenVerifierPort,
     VerifyIntentStore,
+    LinkMappingObservationPort,
     LinkMappingPort,
     LinkClarificationPort,
     LinkCompletionHooks {}
@@ -132,6 +151,22 @@ export class LinkTokenRejectedError extends Error {
   }
 }
 
+export class LinkPersistenceExhaustedError extends Error {
+  constructor(cause: unknown) {
+    super('Account link persistence exhausted after token verification', {
+      cause,
+    });
+    this.name = 'LinkPersistenceExhaustedError';
+  }
+}
+
+export class LinkConflictError extends Error {
+  constructor(cause: unknown) {
+    super('Account link ownership changed during completion', { cause });
+    this.name = 'LinkConflictError';
+  }
+}
+
 const DEFAULT_COMPLETION_RETRY: Required<
   Pick<LinkRetryOptions, 'maxAttempts' | 'baseDelayMs'>
 > = {
@@ -147,7 +182,7 @@ export class LinkCompletionCore<P> {
 
   async complete(input: LinkCompletionInput<P>): Promise<LinkCompletionResult> {
     const identity = await this.ports.exchange(input.input);
-    const observedGeneration = await this.ports.getObservedGeneration?.(
+    const mappingObservation = await this.ports.getMappingObservation(
       identity.externalUserId,
     );
     const verification = await this.ports.verifyToken(
@@ -159,23 +194,45 @@ export class LinkCompletionCore<P> {
     }
     const userId = verification.userId;
 
-    await retry(
-      () => this.ports.recordVerify(identity.externalUserId, userId),
-      this.options.retry,
-    );
-    const linkResult = (await retry(
-      () =>
-        observedGeneration === undefined
-          ? this.ports.upsertLink(userId, identity.externalUserId)
-          : this.ports.upsertLink(userId, identity.externalUserId, {
-              expectedGeneration: observedGeneration,
-            }),
-      this.options.retry,
-    )) ?? { relinked: false };
+    let intentGeneration: string;
+    try {
+      ({ intentGeneration } = await retry(
+        () =>
+          this.ports.recordVerify(
+            identity.externalUserId,
+            userId,
+            mappingObservation,
+          ),
+        this.options.retry,
+      ));
+    } catch (error) {
+      throw new LinkPersistenceExhaustedError(error);
+    }
+    const intent = {
+      externalUserId: identity.externalUserId,
+      userId,
+      intentGeneration,
+    };
+    let linkResult: LinkUpsertResult;
+    try {
+      linkResult = (await retry(
+        () =>
+          this.ports.upsertLink(
+            userId,
+            identity.externalUserId,
+            mappingObservation,
+          ),
+        this.options.retry,
+      )) ?? { relinked: false };
+    } catch (error) {
+      if (!isOwnershipConflict(error)) {
+        throw new LinkPersistenceExhaustedError(error);
+      }
+      await this.bestEffort('consume', () => this.ports.consumeRecord(intent));
+      throw new LinkConflictError(error);
+    }
 
-    await this.bestEffort('consume', () =>
-      this.ports.consumeRecord(identity.externalUserId),
-    );
+    await this.bestEffort('consume', () => this.ports.consumeRecord(intent));
     await this.bestEffort('clarification', () =>
       this.ports.clearClarification?.(identity.externalUserId),
     );
@@ -197,7 +254,7 @@ export class LinkCompletionCore<P> {
 
   private async bestEffort(
     step: 'consume' | 'clarification',
-    operation: () => Promise<void> | Promise<undefined> | undefined,
+    operation: () => Promise<unknown> | undefined,
   ): Promise<void> {
     try {
       await operation();
@@ -305,7 +362,7 @@ export class LinkReconcileCronCore {
         );
         if (existingUserId === record.userId) {
           await this.clearClarification(record.externalUserId, options);
-          await this.ports.consumeRecord(record.externalUserId);
+          await this.ports.consumeRecord(record);
           result.alreadyCommitted += 1;
           options.onOutcome?.('already_committed', record);
           continue;
@@ -314,21 +371,6 @@ export class LinkReconcileCronCore {
         const stale =
           now().getTime() - record.verifiedAt.getTime() >=
           options.maxRecordAgeMs;
-        if (existingUserId !== undefined) {
-          result.mismatched += 1;
-          options.onMismatch?.(record, existingUserId);
-          options.onOutcome?.('mismatched', record);
-          if (stale) {
-            await this.dropRecord(
-              record,
-              `older than ${options.maxRecordAgeMs}ms with mismatched mapping`,
-              options,
-            );
-            result.dropped += 1;
-          }
-          continue;
-        }
-
         if (stale) {
           await this.dropRecord(
             record,
@@ -350,17 +392,29 @@ export class LinkReconcileCronCore {
           continue;
         }
 
-        const linkResult = (await retry(
-          () =>
-            state?.generation === undefined
-              ? this.ports.upsertLink(record.userId, record.externalUserId)
-              : this.ports.upsertLink(record.userId, record.externalUserId, {
-                  expectedGeneration: state.generation,
-                }),
-          { ...DEFAULT_RECONCILE_RETRY, ...options.retry },
-        )) ?? { relinked: false };
+        let linkResult: LinkUpsertResult;
+        try {
+          linkResult = (await retry(
+            () =>
+              this.ports.upsertLink(
+                record.userId,
+                record.externalUserId,
+                record.mappingObservation,
+              ),
+            { ...DEFAULT_RECONCILE_RETRY, ...options.retry },
+          )) ?? { relinked: false };
+        } catch (error) {
+          if (!isOwnershipConflict(error)) throw error;
+          if (existingUserId !== undefined) {
+            options.onMismatch?.(record, existingUserId);
+          }
+          await this.ports.consumeRecord(record);
+          result.mismatched += 1;
+          options.onOutcome?.('mismatched', record);
+          continue;
+        }
         await this.clearClarification(record.externalUserId, options);
-        await this.ports.consumeRecord(record.externalUserId);
+        await this.ports.consumeRecord(record);
         result.reconciled += 1;
         options.onOutcome?.('reconciled', record);
         try {
@@ -406,7 +460,7 @@ export class LinkReconcileCronCore {
     },
   ): Promise<void> {
     options.onDropped?.(record, reason);
-    await this.ports.consumeRecord(record.externalUserId);
+    await this.ports.consumeRecord(record);
     options.onOutcome?.('dropped', record);
   }
 
@@ -461,8 +515,14 @@ async function retry<T>(
 }
 
 function defaultShouldRetry(error: unknown): boolean {
-  const name = error instanceof Error ? error.name : '';
-  return name !== 'AbortError' && !name.includes('OwnershipConflict');
+  return (
+    !(error instanceof Error && error.name === 'AbortError') &&
+    !isOwnershipConflict(error)
+  );
+}
+
+function isOwnershipConflict(error: unknown): boolean {
+  return error instanceof Error && error.name.includes('OwnershipConflict');
 }
 
 function jitteredDelayMs(nominalMs: number, rng: () => number): number {

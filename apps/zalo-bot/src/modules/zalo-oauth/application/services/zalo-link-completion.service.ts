@@ -1,6 +1,9 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { Counter } from 'prom-client';
 import {
+  LinkConflictError,
   LinkCompletionCore,
+  LinkPersistenceExhaustedError,
   LinkTokenRejectedError,
   type LinkCompletionAfterCommitContext,
   type LinkFlowAdapter,
@@ -24,6 +27,12 @@ import {
 import { PlatformLinkStateService } from '@wispace/database';
 import { ZaloRelinkNotifier } from './zalo-relink-notifier.service';
 import { ZaloWelcomeService } from './zalo-welcome.service';
+
+const linkCompletionFailuresTotal = new Counter({
+  name: 'zalo_link_completion_failures_total',
+  help: 'Zalo account-link completion failures',
+  labelNames: ['reason'] as const,
+});
 
 /** The WISPACE link token was rejected (already used / invalid). */
 export class ZaloLinkTokenRejectedError extends Error {
@@ -70,16 +79,34 @@ export class ZaloLinkCompletionService {
       },
       verifyToken: async (token, externalUserId) =>
         this.tokenVerifyService.verifyToken(token, externalUserId),
-      getObservedGeneration: async (externalUserId) =>
-        (await this.linkState?.getLink('zalo', externalUserId))?.generation,
-      recordVerify: (externalUserId, userId) =>
-        this.verifyRecordService.recordVerify(externalUserId, userId),
-      upsertLink: (userId, externalUserId, options) =>
-        options === undefined
-          ? this.accountLinkService.upsertLink(userId, externalUserId)
-          : this.accountLinkService.upsertLink(userId, externalUserId, options),
-      consumeRecord: (externalUserId) =>
-        this.verifyRecordService.consumeRecord(externalUserId),
+      getMappingObservation: async (externalUserId) => {
+        if (!this.linkState) {
+          throw new Error('Zalo link state service is required');
+        }
+        const state = await this.linkState.getLink('zalo', externalUserId);
+        return !state ||
+          (state.state === 'locally-unlinked' && state.userId === undefined)
+          ? { kind: 'absent' }
+          : { kind: 'present', generation: state.generation };
+      },
+      recordVerify: (externalUserId, userId, mappingObservation) =>
+        this.verifyRecordService.recordVerify(
+          externalUserId,
+          userId,
+          mappingObservation,
+        ),
+      upsertLink: (userId, externalUserId, mappingObservation) =>
+        this.accountLinkService.upsertLink(
+          userId,
+          externalUserId,
+          mappingObservation,
+        ),
+      consumeRecord: (intent) =>
+        this.verifyRecordService.consumeRecord({
+          zaloUserId: intent.externalUserId,
+          userId: intent.userId,
+          intentGeneration: intent.intentGeneration,
+        }),
       clearClarification: async (externalUserId) => {
         await this.clarificationStateStore.clear(`zalo:${externalUserId}`);
       },
@@ -100,6 +127,14 @@ export class ZaloLinkCompletionService {
       if (error instanceof LinkTokenRejectedError) {
         throw new ZaloLinkTokenRejectedError();
       }
+      linkCompletionFailuresTotal.inc({
+        reason:
+          error instanceof LinkPersistenceExhaustedError
+            ? 'persistence_exhausted'
+            : error instanceof LinkConflictError
+              ? 'conflict'
+              : 'unexpected',
+      });
       throw error;
     }
   }

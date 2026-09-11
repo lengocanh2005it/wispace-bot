@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { errorMessage } from '@wispace/bot-common/masking';
 import { parseCookieHeader } from '@wispace/bot-common/utils';
+import { LinkPersistenceExhaustedError } from '@wispace/account-link-core/core';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
@@ -132,6 +133,17 @@ export class ZaloOauthController {
         res.json({
           success: false,
           message: 'Link đã hết hạn hoặc không hợp lệ, vui lòng thử lại.',
+        });
+        return;
+      }
+      if (error instanceof LinkPersistenceExhaustedError) {
+        this.logger.error(
+          `Zalo OAuth callback persistence exhausted: ${errorMessage(error)}`,
+        );
+        res.json({
+          success: false,
+          message:
+            'Liên kết chưa được lưu, vui lòng lấy link token mới và thử lại.',
         });
         return;
       }

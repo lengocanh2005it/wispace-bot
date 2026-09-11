@@ -14,11 +14,14 @@ export class ZaloRelinkNotifier {
   ) {}
 
   async notify(zaloUserId: string, userId: number): Promise<void> {
-    await this.outbound.sendText(
+    const outcome = await this.outbound.sendText(
       zaloUserId,
       'Tài khoản Zalo của bạn vừa được liên kết lại với WISPACE thành công nhé! 🎉',
       { userId },
     );
+    if (outcome !== 'sent') {
+      throw new Error(`Zalo relink notice was not sent: ${outcome}`);
+    }
     this.logger.debug(
       `Zalo relink notice sent for zaloUserId=${maskExternalId(zaloUserId)}`,
     );
