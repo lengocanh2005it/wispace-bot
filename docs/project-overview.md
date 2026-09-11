@@ -345,6 +345,10 @@ consent per feature:
 
 - Discord/Zalo report crons and every study-reminder mapping reader filter on
   these columns; ops `forceSend` bypasses the report gate.
+- Messenger reminder full-sync selection preserves the opt-out predicate
+  (`false` excluded; `true`/`NULL` or no row included); the real PostgreSQL
+  selection + sync/dispatch regression is covered by
+  `npm run study-reminder:delivery-smoke` (#942/#955).
 - All three report crons resolve canonical notification ownership once per
   keyset page through `CanonicalPlatformService.getCanonicalPlatformsForUsers`;
   the set-based lookup deduplicates learner IDs and fails closed on incomplete
@@ -372,6 +376,10 @@ metadata, tables, and OAuth-state cleanup; migration compatibility checks use
 the same discovered entity set after the canonical Messenger migrations run.
 Both commands remain restricted to `NODE_ENV=test` and loopback database
 hosts.
+
+The delivery smoke also runs the Messenger reminder consent selection and
+sync/dispatch path against real PostgreSQL (#942), alongside the existing
+outbox lease and delivery-race checks.
 
 ### WISPACE (HTTP API — no local tables except `users` cache)
 

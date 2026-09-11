@@ -72,6 +72,13 @@ For each synced user:
 
 **Cross-platform ownership (#718):** Messenger, Discord, and Zalo full-sync providers resolve each mapping through the required `CanonicalPlatformService`. An active mapping is preferred; otherwise the fallback order is `zalo > discord > messenger`. A noncanonical provider never upserts new jobs and cancels only its `pending` / `failed` jobs; `processing` jobs are left untouched. An undefined result may cancel those actionable jobs without an upsert, while a resolver error leaves rows unchanged and marks that sync as failed. The next full sync converges jobs after ownership changes. Scheduled report crons use the same resolver with one set-based lookup per keyset page, without an O(n) per-mapping fallback.
 
+**Reminder consent (#942/#955):** Messenger full-sync selection joins
+`user_notification_preferences` and keeps `reminder_enabled = false` out of
+the population; `true`, `NULL`, and a missing preference remain eligible.
+`npm run study-reminder:delivery-smoke` exercises that SQL plus the sync →
+dispatch path against real PostgreSQL and asserts that an opted-out learner
+creates no job or outbound attempt.
+
 **Learner consistency (#637):** `userId` is the canonical owner and each
 `session_key` has at most one actionable job across platforms. When the
 canonical platform changes, the old platform's `pending` / `failed` owner is

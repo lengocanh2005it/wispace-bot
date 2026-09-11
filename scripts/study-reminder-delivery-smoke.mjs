@@ -3,7 +3,8 @@ import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
 
 /**
- * Real-Postgres regression smoke for study-reminder delivery outcomes (#797).
+ * Real-Postgres regression smoke for study-reminder delivery outcomes (#797)
+ * and Messenger reminder consent selection/suppression (#942).
  * The fake sender proves the adapter contract; the repository exercises the
  * lease, terminal-outcome, and schedule-generation races against PostgreSQL.
  *
@@ -18,8 +19,16 @@ const {
   StudyReminderJobEntity,
   TypeormStudyReminderJobRepository,
   StudyReminderDispatchService,
+  StudyReminderSyncService,
   wrapMessageSender,
 } = require('@wispace/study-reminder-shared');
+const {
+  UserNotificationPreferenceEntity,
+  UserPlatformMappingEntity,
+} = require('@wispace/database');
+const {
+  MessengerRepository,
+} = require('../apps/messenger-bot/dist/modules/messenger/infrastructure/persistence/messenger.repository.js');
 
 for (const key of ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME']) {
   if (!process.env[key]?.trim()) {
@@ -46,7 +55,11 @@ const dataSource = new DataSource({
   database: process.env.DB_NAME,
   ssl: false,
   logging: false,
-  entities: [StudyReminderJobEntity],
+  entities: [
+    StudyReminderJobEntity,
+    UserPlatformMappingEntity,
+    UserNotificationPreferenceEntity,
+  ],
 });
 
 function assert(condition, message) {
@@ -58,6 +71,7 @@ function input(externalUserId, sessionKey, scheduledAt, remindAt) {
     platform: 'messenger',
     externalUserId,
     userId: 7,
+    mappingGeneration: '1',
     sessionKey,
     scheduledAt,
     remindAt,
@@ -106,6 +120,253 @@ function dispatchSchedule() {
   };
 }
 
+async function exerciseMessengerReminderConsent(jobRepository) {
+  const suffix = randomUUID().replaceAll('-', '');
+  const prefix = `consent-${suffix}`;
+  const baseUserId = 1_800_000_000 + Math.floor(Math.random() * 100_000);
+  const learners = [
+    {
+      userId: baseUserId,
+      externalUserId: `${prefix}-false`,
+      reminderEnabled: false,
+    },
+    {
+      userId: baseUserId + 1,
+      externalUserId: `${prefix}-true`,
+      reminderEnabled: true,
+    },
+    {
+      userId: baseUserId + 2,
+      externalUserId: `${prefix}-null`,
+      reminderEnabled: null,
+    },
+  ];
+  const userIds = learners.map(({ userId }) => userId);
+  const externalUserIds = learners.map(({ externalUserId }) => externalUserId);
+  const mappingRepo = dataSource.getRepository(UserPlatformMappingEntity);
+  const messengerRepository = new MessengerRepository(mappingRepo, {}, {});
+  const [{ max_id: mappingStartId }] = await dataSource.query(
+    'SELECT COALESCE(MAX(id), 0) AS max_id FROM user_platform_mappings',
+  );
+
+  try {
+    await dataSource.query(
+      `INSERT INTO user_platform_mappings
+        (user_id, platform, external_user_id, notification_messages_token,
+         status, link_state, mapping_generation)
+       VALUES
+        ($1, 'messenger', $2, $3, 'ACTIVE', 'active', '1'),
+        ($4, 'messenger', $5, $6, 'ACTIVE', 'active', '1'),
+        ($7, 'messenger', $8, $9, 'ACTIVE', 'active', '1')`,
+      [
+        learners[0].userId,
+        learners[0].externalUserId,
+        `${prefix}-token-false`,
+        learners[1].userId,
+        learners[1].externalUserId,
+        `${prefix}-token-true`,
+        learners[2].userId,
+        learners[2].externalUserId,
+        `${prefix}-token-null`,
+      ],
+    );
+    await dataSource.query(
+      `INSERT INTO user_notification_preferences (user_id, reminder_enabled)
+       VALUES ($1, $2), ($3, $4), ($5, $6)`,
+      [
+        learners[0].userId,
+        learners[0].reminderEnabled,
+        learners[1].userId,
+        learners[1].reminderEnabled,
+        learners[2].userId,
+        learners[2].reminderEnabled,
+      ],
+    );
+
+    // Real QueryBuilder execution: false is excluded, true and NULL remain.
+    const selected = await messengerRepository.findActiveMappingsPage(
+      Number(mappingStartId),
+      100,
+    );
+    const selectedIds = new Set(
+      selected.map((mapping) => mapping.psid).filter(Boolean),
+    );
+    assert(
+      !selectedIds.has(learners[0].externalUserId),
+      'real PostgreSQL selection included reminder opt-out',
+    );
+    assert(
+      selectedIds.has(learners[1].externalUserId),
+      'real PostgreSQL selection excluded explicit reminder opt-in',
+    );
+    assert(
+      selectedIds.has(learners[2].externalUserId),
+      'real PostgreSQL selection excluded NULL reminder preference',
+    );
+
+    const mappingReader = {
+      findActiveMappingsPage: async (platform, query) => {
+        const mappings = await messengerRepository.findActiveMappingsPage(
+          Number(query.afterId ?? mappingStartId),
+          query.limit,
+        );
+        return {
+          items: mappings
+            .filter((mapping) => mapping.psid && mapping.userId != null)
+            .map((mapping) => ({
+              externalUserId: mapping.psid,
+              userId: mapping.userId,
+              platform,
+              mappingGeneration: mapping.mappingGeneration,
+            })),
+          nextId:
+            mappings.length > 0
+              ? String(mappings[mappings.length - 1].id)
+              : undefined,
+        };
+      },
+      findActiveMappingByExternalUserId: async (_platform, externalUserId) => {
+        const mapping =
+          await messengerRepository.findActiveMappingByPsid(externalUserId);
+        return mapping?.psid && mapping.userId != null
+          ? {
+              externalUserId: mapping.psid,
+              userId: mapping.userId,
+              platform: 'messenger',
+              mappingGeneration: mapping.mappingGeneration,
+            }
+          : null;
+      },
+      getMappingState: async (_platform, externalUserId) => {
+        const mapping =
+          await messengerRepository.findActiveMappingByPsid(externalUserId);
+        return mapping?.psid && mapping.userId != null
+          ? {
+              state: 'active',
+              userId: mapping.userId,
+              mappingGeneration: mapping.mappingGeneration,
+            }
+          : null;
+      },
+    };
+    const schedule = {
+      ...dispatchSchedule(),
+      computeRemindAt: () => new Date(Date.now() - 60_000),
+    };
+    const syncService = new StudyReminderSyncService(
+      mappingReader,
+      jobRepository,
+      schedule,
+      undefined,
+      async () => 'messenger',
+    );
+    const scheduledAt = new Date(Date.now() + 60 * 60 * 1000);
+    const syncResult = await syncService.syncUpcomingSessions({
+      platform: 'messenger',
+      getSessions: async (_externalUserId, userId) => [
+        {
+          sessionKey: `${prefix}-session-${userId}`,
+          scheduledAt,
+          topic: 'consent smoke',
+        },
+      ],
+    });
+    assert(
+      syncResult.mappings === 2 && syncResult.upserted === 2,
+      `sync admitted the wrong reminder population: ${JSON.stringify(syncResult)}`,
+    );
+
+    const jobs = await dataSource.query(
+      `SELECT external_user_id, status
+         FROM study_reminder_jobs
+        WHERE external_user_id = ANY($1::text[])`,
+      [externalUserIds],
+    );
+    assert(
+      jobs.length === 2 &&
+        jobs.every(({ external_user_id }) =>
+          externalUserIds.slice(1).includes(external_user_id),
+        ),
+      'opted-out learner created a reminder job during sync',
+    );
+
+    const outboundAttempts = [];
+    const sendAttempts = new Map();
+    const dispatchService = new StudyReminderDispatchService(
+      jobRepository,
+      {
+        sendText: async ({ externalUserId }) => {
+          outboundAttempts.push(externalUserId);
+          const attempt = (sendAttempts.get(externalUserId) ?? 0) + 1;
+          sendAttempts.set(externalUserId, attempt);
+          return externalUserId === learners[1].externalUserId && attempt === 1
+            ? 'not_sent'
+            : 'sent';
+        },
+      },
+      schedule,
+      'messenger',
+      { generateReminder: async () => 'consent smoke reminder' },
+      {
+        getMappingState: (externalUserId) =>
+          mappingReader.getMappingState('messenger', externalUserId),
+        backoffMode: 'flat',
+      },
+    );
+    const dispatchResult = await dispatchService.dispatchDueReminders();
+    assert(
+      dispatchResult.sent === 1 &&
+        dispatchResult.retried === 1 &&
+        new Set(outboundAttempts).size === 2 &&
+        outboundAttempts.every((id) => externalUserIds.slice(1).includes(id)),
+      `dispatch did not preserve the eligible send path: ${JSON.stringify({ dispatchResult, outboundAttempts })}`,
+    );
+    const failedRetry = await dataSource.query(
+      `SELECT status
+         FROM study_reminder_jobs
+        WHERE external_user_id = $1`,
+      [learners[1].externalUserId],
+    );
+    assert(
+      failedRetry[0]?.status === 'failed',
+      'eligible learner did not enter the normal retry path',
+    );
+    await dataSource.query(
+      `UPDATE study_reminder_jobs
+          SET next_retry_at = NOW()
+        WHERE external_user_id = $1`,
+      [learners[1].externalUserId],
+    );
+    const retryResult = await dispatchService.dispatchDueReminders();
+    assert(
+      retryResult.sent === 1 &&
+        sendAttempts.get(learners[1].externalUserId) === 2 &&
+        sendAttempts.get(learners[2].externalUserId) === 1,
+      `eligible learner retry did not send normally: ${JSON.stringify({ retryResult, sendAttempts: [...sendAttempts] })}`,
+    );
+    assert(
+      !outboundAttempts.includes(learners[0].externalUserId),
+      'opted-out learner reached the outbound sender',
+    );
+    console.log(
+      'messenger reminder consent: real PostgreSQL selection + sync/dispatch passed (#942)',
+    );
+  } finally {
+    await dataSource.query(
+      `DELETE FROM study_reminder_jobs WHERE external_user_id = ANY($1::text[])`,
+      [externalUserIds],
+    );
+    await dataSource.query(
+      `DELETE FROM user_notification_preferences WHERE user_id = ANY($1::int[])`,
+      [userIds],
+    );
+    await dataSource.query(
+      `DELETE FROM user_platform_mappings WHERE external_user_id = ANY($1::text[])`,
+      [externalUserIds],
+    );
+  }
+}
+
 const owner = `smoke-${randomUUID().replaceAll('-', '')}`;
 const now = Date.now();
 const future = new Date(now + 60 * 60 * 1000);
@@ -115,6 +376,16 @@ try {
   await dataSource.initialize();
   const jobRepository = new TypeormStudyReminderJobRepository(
     dataSource.getRepository(StudyReminderJobEntity),
+  );
+
+  await exerciseMessengerReminderConsent(jobRepository);
+
+  await dataSource.query(
+    `INSERT INTO user_platform_mappings
+      (user_id, platform, external_user_id, notification_messages_token,
+       status, link_state, mapping_generation)
+     VALUES (7, 'messenger', $1, $2, 'ACTIVE', 'active', '1')`,
+    [owner, `${owner}-token`],
   );
 
   // Sender adapter: explicit outcomes survive unchanged and typed provider
@@ -410,6 +681,10 @@ try {
   try {
     await dataSource.query(
       'DELETE FROM study_reminder_jobs WHERE external_user_id = $1',
+      [owner],
+    );
+    await dataSource.query(
+      'DELETE FROM user_platform_mappings WHERE external_user_id = $1',
       [owner],
     );
   } catch {
