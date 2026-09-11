@@ -8,5 +8,6 @@
   },
   "moduleNameMapper": {
     "^@messenger/(.*)$": "<rootDir>/../../src/$1"
-  }
+  },
+  "transformIgnorePatterns": ["/node_modules/(?!(@nestjs|necord)/)"]
 }
