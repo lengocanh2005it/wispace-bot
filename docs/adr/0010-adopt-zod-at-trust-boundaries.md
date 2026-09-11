@@ -61,7 +61,7 @@ zod is declared per-package in `packages/llm-agent`, `packages/student-report`, 
 - **Positive**: 4 uncovered WISPACE clients gain response validation.
 - **Negative**: a new dependency in three framework-agnostic packages (`llm-agent` core stays framework-free but now transitively ships zod to consumers via the tool schema module; the OpenAI SDK already pulls zod into the tree when its peer is installed).
 - **Negative**: two validation libraries co-exist until a trigger fires — deliberate, bounded by the trigger wording above.
-- **Enforcement**: this ADR adds the ratchet — **no new hand-rolled schemas or parsers at the three in-scope boundaries**; existing hand-rolled code migrates only through the implementation issues below, not opportunistically. A CI guard blocking zod imports in `contracts`/`chat-metering` is a follow-up issue, not part of #678.
+- **Enforcement**: this ADR adds the ratchet — **no new hand-rolled schemas or parsers at the three in-scope boundaries**; existing hand-rolled code migrates only through the implementation issues below, not opportunistically. The CI guard blocking zod in `contracts`/`chat-metering` is `.github/scripts/check-zod-boundary-imports.sh` (#1053).
 
 ## Scope
 
