@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "module": "node16",
+    "module": "nodenext",
     "esModuleInterop": true,
     "isolatedModules": true,
     "declaration": true,

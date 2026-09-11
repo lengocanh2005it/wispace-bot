@@ -466,8 +466,8 @@ export class RedisChatQueueStore implements ChatQueueStorePort {
           String(maxCandidates + 1),
         ),
         client.sscan(this.activeSet, '0', 'COUNT', String(maxCandidates + 1)),
-        client.zrange(this.flushSet, 0, maxCandidates),
-        client.zrange(this.stuckSet, 0, maxCandidates),
+        client.zrange(this.flushSet, String(0), String(maxCandidates)),
+        client.zrange(this.stuckSet, String(0), String(maxCandidates)),
       ]);
       const [scanCursor, bufferKeys] = scanResult;
       const [activeCursor, activeIds] = activeResult;

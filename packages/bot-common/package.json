@@ -15,13 +15,19 @@
     "test": "jest --maxWorkers=50%"
   },
   "dependencies": {
-    "@nestjs/common": "^11.0.1",
-    "@nestjs/config": "^4.0.4",
+    "@nestjs/cli": "^12.0.0",
+    "@nestjs/common": "^12.0.1",
+    "@nestjs/config": "^12.0.0",
+    "@nestjs/core": "^12.0.1",
+    "@nestjs/platform-express": "^12.0.1",
+    "@nestjs/schedule": "^12.0.1",
+    "@nestjs/schematics": "^12.0.0",
+    "@nestjs/testing": "^12.0.1",
     "@nestjs/throttler": "^6.5.0",
-    "@nestjs/typeorm": "^11.0.1",
+    "@nestjs/typeorm": "^12.0.1",
     "@wispace/contracts": "*",
     "class-validator": "^0.15.1",
-    "ioredis": "^5.11.1",
+    "ioredis": "^6.0.0",
     "typeorm": "^1.1.0"
   },
   "devDependencies": {
@@ -39,9 +45,13 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.ts$": "ts-jest",
+      "^.+\\.js$": "@swc/jest"
     },
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(\\.pnpm|@nestjs|necord)/)"
+    ]
   },
   "exports": {
     ".": {
