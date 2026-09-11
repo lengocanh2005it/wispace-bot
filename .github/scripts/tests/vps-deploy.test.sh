@@ -491,8 +491,9 @@ while [ $# -gt 0 ]; do
 done
 cp "$INFILE" "$OUTFILE"
 FAKEGPG
-  # Fake psql/pg_dump: run_db_client() tries native before docker — route
-  # them through the fake docker so the writer preflight + dump succeed.
+  # Fake psql/pg_dump/pg_dumpall: run_db_client() tries native before docker —
+  # route them through the fake docker so the writer preflight + dump succeed
+  # even on runner images that ship a real postgres client in PATH.
   cat > "$dir/bin/psql" <<'FAKEPSQL'
 #!/usr/bin/env bash
 exec docker exec -e PGPASSWORD="${PGPASSWORD:-}" postgres_n8n_db psql "$@"
@@ -501,7 +502,12 @@ FAKEPSQL
 #!/usr/bin/env bash
 exec docker exec -e PGPASSWORD="${PGPASSWORD:-}" postgres_n8n_db pg_dump "$@"
 FAKEPGDUMP
-  chmod +x "$dir/bin/docker" "$dir/bin/gpg" "$dir/bin/psql" "$dir/bin/pg_dump"
+  cat > "$dir/bin/pg_dumpall" <<'FAKEPGDUMPALL'
+#!/usr/bin/env bash
+exec docker exec -e PGPASSWORD="${PGPASSWORD:-}" postgres_n8n_db pg_dumpall "$@"
+FAKEPGDUMPALL
+  chmod +x "$dir/bin/docker" "$dir/bin/gpg" "$dir/bin/psql" "$dir/bin/pg_dump" \
+    "$dir/bin/pg_dumpall"
   printf 'DB_HOST=postgres_n8n_db\nDB_PORT=5432\nDB_USER=postgres\nDB_NAME=ai_chat_bot_db\nDB_PASSWORD=secret\nBACKUP_ENCRYPTION_PASSPHRASE=test-passphrase\n' > "$dir/deploy/.env"
   # set -e from the harness would abort on the subshell's non-zero exit before
   # the failure message could print backup.out — capture the code explicitly.
