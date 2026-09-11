@@ -23,6 +23,7 @@ import {
   type ClarificationStateStore,
 } from '@wispace/chat-agent';
 import { BotMetricsService } from '@wispace/bot-metrics';
+import { MessengerMappingService } from './messenger-mapping.service';
 
 const DEFAULT_RECONCILE_AGE_MS = 60_000;
 const DEFAULT_MAX_RECORD_AGE_MS = 3_600_000;
@@ -37,8 +38,9 @@ const reconcileRecordsTotal = new Counter({
 /**
  * Reconciliation for the crash window between WISPACE token verify and the
  * local mapping upsert (#384). Every 5 minutes (advisory-locked):
- * - mapping already committed → consume the verify record;
- * - mapping missing → re-commit it from the stored userId, then consume;
+ * - mapping already committed → restore metadata and complete the verify record;
+ * - mapping missing → claim the intent, re-commit it from the stored userId,
+ *   restore metadata, then complete;
  * - record older than the max age with no mapping → error + drop (the
  *   user retries the flow with a fresh token next time).
  */
@@ -51,6 +53,7 @@ export class MessengerLinkReconcileCronService {
     private readonly verifyRecordService: MessengerLinkVerifyRecordRepositoryPort,
     @Inject(MESSENGER_REPOSITORY)
     private readonly mappingRepository: MessengerMappingRepositoryPort,
+    private readonly mappingService: MessengerMappingService,
     private readonly configService: ConfigService,
     private readonly pgLock: PgAdvisoryLockService,
     @Optional() private readonly linkState?: PlatformLinkStateService,
@@ -147,30 +150,24 @@ export class MessengerLinkReconcileCronService {
             continue;
           }
 
-          const committedMapping =
-            await this.mappingRepository.upsertPsidUserLink({
-              psid: record.psid,
+          const completion = await this.mappingService.linkFromContext(
+            record.psid,
+            {
+              ref: record.refFingerprint ?? '',
               userId: record.userId,
               topic: record.topic,
               cadence: record.cadence,
-              ...(existingState?.generation
-                ? { expectedGeneration: existingState.generation }
-                : {}),
+            },
+            {
+              notifyUser: false,
+              intentGeneration: record.intentGeneration,
+            },
+          );
+          if (completion.blocked) {
+            failed += 1;
+            reconcileRecordsTotal.inc({
+              outcome: this.reconcileOutcomeForCompletion(completion),
             });
-          if (!committedMapping) {
-            failed += 1;
-            reconcileRecordsTotal.inc({ outcome: 'mapping_cas_blocked' });
-            continue;
-          }
-
-          const consumeResult = await this.verifyRecordService.consumeRecord({
-            psid: record.psid,
-            userId: record.userId,
-            intentGeneration: record.intentGeneration,
-          });
-          if (consumeResult === 'not_found') {
-            failed += 1;
-            reconcileRecordsTotal.inc({ outcome: 'consume_mismatch' });
             continue;
           }
 
@@ -223,29 +220,24 @@ export class MessengerLinkReconcileCronService {
       }
 
       try {
-        const mapping = await this.mappingRepository.upsertPsidUserLink({
-          psid: record.psid,
-          userId: record.userId,
-          topic: record.topic,
-          cadence: record.cadence,
-          ...(existingState?.generation
-            ? { expectedGeneration: existingState.generation }
-            : {}),
-        });
-        if (!mapping) {
+        const completion = await this.mappingService.linkFromContext(
+          record.psid,
+          {
+            ref: record.refFingerprint ?? '',
+            userId: record.userId,
+            topic: record.topic,
+            cadence: record.cadence,
+          },
+          {
+            notifyUser: false,
+            intentGeneration: record.intentGeneration,
+          },
+        );
+        if (completion.blocked) {
           failed += 1;
-          reconcileRecordsTotal.inc({ outcome: 'mapping_cas_blocked' });
-          continue;
-        }
-
-        const consumeResult = await this.verifyRecordService.consumeRecord({
-          psid: record.psid,
-          userId: record.userId,
-          intentGeneration: record.intentGeneration,
-        });
-        if (consumeResult === 'not_found') {
-          failed += 1;
-          reconcileRecordsTotal.inc({ outcome: 'consume_mismatch' });
+          reconcileRecordsTotal.inc({
+            outcome: this.reconcileOutcomeForCompletion(completion),
+          });
           continue;
         }
         this.logger.log(
@@ -338,6 +330,27 @@ export class MessengerLinkReconcileCronService {
     if (!this.linkStatusClient?.enabled) return false;
     const status = await this.linkStatusClient.getStatus(psid);
     return status.kind === 'active' && status.userId === userId;
+  }
+
+  private reconcileOutcomeForCompletion(completion: {
+    intentOutcome?:
+      | 'claimed'
+      | 'committed'
+      | 'already_processing'
+      | 'already_committed'
+      | 'stale'
+      | 'claim_failed'
+      | 'complete_failed';
+  }): 'mapping_cas_blocked' | 'consume_mismatch' | 'failed' {
+    switch (completion.intentOutcome) {
+      case 'stale':
+        return 'consume_mismatch';
+      case 'claim_failed':
+      case 'complete_failed':
+        return 'failed';
+      default:
+        return 'mapping_cas_blocked';
+    }
   }
 
   private readPositiveInt(key: string, fallback: number): number {

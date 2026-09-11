@@ -307,7 +307,7 @@ wispace-bot/                          # Turborepo root
 | `zalo_account_links`              | Zalo ↔ WISPACE mapping                                                                                                                       |
 | `zalo_link_verify_records`        | Durable generation/observation-fenced verify-intent outbox — reconciled by the `zalo-link-reconcile` cron (#147, #467)                    |
 | `zalo_welcome_records`            | Atomic linked/organic welcome-DM dedupe state (#467)                                                                                         |
-| `messenger_link_verify_records`   | Durable Messenger verify-intent outbox — fingerprinted, generation-fenced, and reconciled after crashes (#821)                               |
+| `messenger_link_verify_records`   | Durable Messenger verify-intent outbox — fingerprinted, generation-fenced, leased before side effects, and reconciled after crashes (#821) |
 
 Migrations include `1717747200008-CreateMessengerUsersCacheTable` and
 `1786940300000-CreateZaloWelcomeRecordsTable`.
@@ -407,9 +407,13 @@ Both bots use a **write-ahead inbox** (`webhook_inbound_events`, shared table in
 
 Messenger stores only a SHA-256 fingerprint of each verified link token. The
 single active intent per PSID carries a generation, topic, cadence, and
-`pending`/`committed` state. Mapping completion consumes the matching
-generation after the mapping write; the five-minute reconcile cron recovers
-crashes and drops stale or identity-conflicting intents.
+`pending`/`processing`/`committed` state. Persistence reserves a short owner
+lease for the callback that just verified the token; mapping confirms that
+exact lease before the mapping and idempotent data side effects, then completes
+the matching generation. Callbacks that lose the lease do no side effects, and
+a concurrent verification cannot replace an in-flight generation. The
+five-minute reconcile cron reclaims expired processing leases, recovers crashes,
+and drops stale or identity-conflicting intents.
 
 ### Operations & WISPACE Integration
 
@@ -478,7 +482,7 @@ p95 latency, and Node event-loop p99 lag. Metrics keep the platform prefix
 | `messenger-chat-queue-flush`        | `*/2 * * * * *` (every 2 sec)                 | `MessengerChatQueueWorkerService` — flush debounced queue (distributed mode)                                                                                                                                             |
 | `webhook-inbound-retry`             | `*/30 * * * * *` (every 30 sec)               | `PlatformWebhookInboundRetryCronService` — replay `webhook_inbound_events` (bounded backoff, per-platform advisory lock)                                                                                                 |
 | `webhook-inbound-cleanup`           | `0 15 3 * * *` (03:15 ICT daily)              | `PlatformWebhookInboundCleanupService` — purge terminal (`completed`/`abandoned`) raw-payload rows older than `WEBHOOK_INBOUND_RETENTION_DAYS` (default 30; `WEBHOOK_INBOUND_CLEANUP_ENABLED=false` disables)            |
-| `messenger-link-reconcile`          | `*/5 * * * *`                                 | `MessengerLinkReconcileCronService` — recover pending verify intents and purge old committed intents (advisory lock `MESSENGER_LINK_RECONCILE`; `MESSENGER_LINK_RECONCILE_AGE_MS`/`MESSENGER_LINK_RECONCILE_MAX_AGE_MS`) |
+| `messenger-link-reconcile`          | `*/5 * * * *`                                 | `MessengerLinkReconcileCronService` — recover stale pending/expired-processing verify intents and purge old committed intents (advisory lock `MESSENGER_LINK_RECONCILE`; `MESSENGER_LINK_RECONCILE_AGE_MS`/`MESSENGER_LINK_RECONCILE_MAX_AGE_MS`) |
 | `chat-quota-stuck-recovery`         | `*/5 * * * *`                                 | `ChatQuotaStuckRecoveryCronService` — H2: refund slots stuck `reserved` (`CHAT_IDEMPOTENCY_STUCK_RESERVED_MS`)                                                                                                           |
 | `chat-quota-events-cleanup`         | `0 30 3 1 * *` (1st of month 03:30 ICT)       | `ChatQuotaEventCleanupCronService` — purge old chat_quota_events                                                                                                                                                         |
 | `chat-idempotency-cleanup`          | `0 30 3 * * *` (03:30 ICT daily)              | `ChatIdempotencyCleanupCronService` — H6: purge terminal `chat_idempotency` rows (`CHAT_IDEMPOTENCY_RETENTION_DAYS`)                                                                                                     |

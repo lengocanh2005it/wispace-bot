@@ -12,6 +12,8 @@ export interface RefVerification {
   context?: MessengerLinkContext;
   /** Durable intent generation used for conditional completion. */
   intentGeneration?: string;
+  /** Owner lease returned to the callback that persisted the processing intent. */
+  intentLeaseToken?: string;
   /** Why verification failed — set only when status is 'failed'. */
   failureReason?: MessengerLinkVerifyFailureReason;
 }

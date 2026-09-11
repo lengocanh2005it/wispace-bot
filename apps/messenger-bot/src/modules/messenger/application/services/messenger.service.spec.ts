@@ -118,6 +118,26 @@ describe('MessengerService (durable webhook ingestion)', () => {
       expect(actions[1].idempotencyKey).toBe('mid-r1');
     });
 
+    it('#821 forwards the processing lease from verification to link_user', async () => {
+      const { service, actionExecutor, linkContext } = buildService();
+      (linkContext.resolveFromRef as jest.Mock).mockResolvedValue({
+        context: verified,
+        intentGeneration: '9',
+        intentState: 'processing',
+        intentLeaseToken: 'lease-owner',
+      });
+
+      await service.processEvent(textWithRef('mid-r1-lease'));
+
+      expect(executedActions(actionExecutor)[0]).toEqual(
+        expect.objectContaining({
+          type: 'link_user',
+          intentGeneration: '9',
+          intentLeaseToken: 'lease-owner',
+        }),
+      );
+    });
+
     it('blocks a relink attempt: notice first, no link_user, chat keeps the old identity', async () => {
       const { service, actionExecutor, linkContext, repository } =
         buildService();

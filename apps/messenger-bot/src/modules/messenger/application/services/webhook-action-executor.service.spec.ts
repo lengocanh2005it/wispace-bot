@@ -131,6 +131,35 @@ describe('WebhookActionExecutorService.link_user (#383)', () => {
     expect(linkContextService.resolveFromRef).not.toHaveBeenCalled();
   });
 
+  it('#821: forwards the persisted intent lease to the mapping owner', async () => {
+    const context: MessengerLinkContext = {
+      ref: '999',
+      topic: 'IELTS',
+      cadence: 'WEEKLY',
+      userId: 7,
+    };
+    const { service, mappingService } = buildDeps();
+
+    await service.executeAction(
+      {
+        type: 'link_user',
+        psid: 'psid-1',
+        ref: '999',
+        context,
+        intentGeneration: '9',
+        intentLeaseToken: 'lease-owner',
+      },
+      event,
+      jest.fn().mockResolvedValue(undefined),
+    );
+
+    expect(mappingService.linkFromContext).toHaveBeenCalledWith(
+      'psid-1',
+      context,
+      { intentGeneration: '9', intentLeaseToken: 'lease-owner' },
+    );
+  });
+
   it('reports blocked when the mapping service rejects the link', async () => {
     const context: MessengerLinkContext = {
       ref: '999',
@@ -151,5 +180,29 @@ describe('WebhookActionExecutorService.link_user (#383)', () => {
     );
 
     expect(mappingService.linkFromContext).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies the learner when the fallback link handoff cannot persist', async () => {
+    const contextService = {
+      resolveFromRef: jest.fn().mockResolvedValue({ handoffFailure: true }),
+    };
+    const { service, outbound } = buildDeps({
+      linkContextService: contextService,
+    });
+
+    await service.executeAction(
+      { type: 'link_user', psid: 'psid-1', ref: 'token' },
+      {
+        sender: { id: 'psid-1' },
+        referral: { ref: 'token' },
+      } as MessengerWebhookEvent,
+      jest.fn().mockResolvedValue(undefined),
+    );
+
+    expect(outbound.sendTextViaPsid).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messageType: 'MESSENGER_LINK_HANDOFF_FAILED',
+      }),
+    );
   });
 });

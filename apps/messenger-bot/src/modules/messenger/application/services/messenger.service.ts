@@ -414,6 +414,9 @@ export class MessengerService {
       status: outcome.intentState === 'committed' ? 'committed' : 'verified',
       context: outcome.context,
       intentGeneration: outcome.intentGeneration,
+      ...(outcome.intentLeaseToken
+        ? { intentLeaseToken: outcome.intentLeaseToken }
+        : {}),
     };
   }
 

@@ -173,6 +173,19 @@ groups:
           description: 'Mappings remain preserved but sensitive operations are fail-closed until the upstream status endpoint recovers.'
           runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#platformlinkstatusunknown'
 
+      - alert: MessengerLinkHandoffFailure
+        expr: |
+          sum by (job, reason) (
+            increase(messenger_link_handoff_failures_total[15m])
+          ) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: '{{ $labels.job }} Messenger link handoff failed ({{ $labels.reason }})'
+          description: 'Messenger verified a link token but could not durably hand it off to the local mapping flow; inspect database availability and retry the learner flow.'
+          runbook_url: 'https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#messengerlinkhandofffailure'
+
       - alert: TokenRefreshFailure
         expr: |
           sum by (job, reason) (

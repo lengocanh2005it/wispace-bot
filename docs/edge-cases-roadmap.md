@@ -133,7 +133,7 @@ flowchart LR
 | **POST webhook signature**                      | `MessengerWebhookSignatureGuard` + `MESSENGER_APP_SECRET` / `X-Hub-Signature-256`                            |
 | Chat without link                               | `MISSING_USER_REF`                                                                                           |
 | **Link token-only (L4)**                        | `MessengerLinkContextService` verifies WISPACE; startup fails if config missing; legacy `ref=userId` removed |
-| **Verify-intent recovery and identity fencing (#821)** | Fingerprinted one-row-per-PSID intent; generation-matched consume after mapping commit; bounded retry, stale reconciliation, committed cleanup |
+| **Verify-intent recovery and identity fencing (#821)** | Fingerprinted one-row-per-PSID intent; processing lease reserved at persistence and generation-fenced before mapping/side effects; bounded retry, stale reconciliation, committed cleanup |
 | **Non-text messages** (stickers, images, files) | **L1** — `UNSUPPORTED_MESSAGE_TYPE`, `isUnsupportedUserMessage`                                              |
 | **User blocks bot** / **Meta 24h window**       | **L2** ✓ — `*_MESSENGER_24H` log, reminder terminal fail, report cron skip                                   |
 

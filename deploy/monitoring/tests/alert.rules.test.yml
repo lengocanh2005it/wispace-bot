@@ -85,6 +85,24 @@ tests:
 
   - interval: 1m
     input_series:
+      - series: 'messenger_link_handoff_failures_total{job="messenger_bot",reason="intent_persist_failed"}'
+        values: '0 0 0 0 0 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: MessengerLinkHandoffFailure
+        exp_alerts:
+          - exp_labels:
+              alertname: MessengerLinkHandoffFailure
+              job: messenger_bot
+              reason: intent_persist_failed
+              severity: warning
+            exp_annotations:
+              summary: messenger_bot Messenger link handoff failed (intent_persist_failed)
+              description: Messenger verified a link token but could not durably hand it off to the local mapping flow; inspect database availability and retry the learner flow.
+              runbook_url: https://github.com/lengocanh2005it/wispace-bot/blob/main/docs/monitoring-alerts.md#messengerlinkhandofffailure
+
+  - interval: 1m
+    input_series:
       - series: 'nodejs_eventloop_lag_p99_seconds{job="messenger_bot"}'
         values: '0 1 1 1 1 1 1 1 1 1 1'
     alert_rule_test:

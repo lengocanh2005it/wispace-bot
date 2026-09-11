@@ -19,7 +19,10 @@ import { MessengerMappingService } from './messenger-mapping.service';
 import { MessengerLinkContextService } from './messenger-link-context.service';
 import { MessengerOutboundService } from './messenger-outbound.service';
 import { MessengerRescheduleConfirmationService } from './messenger-reschedule-confirmation.service';
-import { buildMessengerLinkVerifyFailedMessage } from '../messages/messenger-link.messages';
+import {
+  buildMessengerLinkHandoffFailedMessage,
+  buildMessengerLinkVerifyFailedMessage,
+} from '../messages/messenger-link.messages';
 import { buildRescheduleSuccessRichFollowUp } from '../formatters/messenger-rich-message.builder';
 import type {
   MessengerLinkAttemptResult,
@@ -81,6 +84,7 @@ export class WebhookActionExecutorService {
           event,
           action.context,
           action.intentGeneration,
+          action.intentLeaseToken,
         );
         if (linkAttempt.status === 'linked' && linkAttempt.context) {
           this.logger.log(
@@ -230,6 +234,7 @@ export class WebhookActionExecutorService {
     event: MessengerWebhookEvent,
     verifiedContext?: MessengerLinkContext,
     intentGeneration?: string,
+    intentLeaseToken?: string,
   ): Promise<MessengerLinkAttemptResult> {
     // #383: when the router hands over a pre-verified context, write it
     // directly — the single-use token was already consumed during pre-resolve.
@@ -238,6 +243,7 @@ export class WebhookActionExecutorService {
         psid,
         verifiedContext,
         intentGeneration,
+        intentLeaseToken,
       );
       return linked
         ? { status: 'linked', context: verifiedContext }
@@ -266,6 +272,13 @@ export class WebhookActionExecutorService {
       return { status: 'verify_failed' };
     }
     if (outcome.handoffFailure) {
+      await this.outbound
+        .sendTextViaPsid({
+          psid,
+          text: buildMessengerLinkHandoffFailedMessage(),
+          messageType: 'MESSENGER_LINK_HANDOFF_FAILED',
+        })
+        .catch(() => undefined);
       return { status: 'handoff_failed' };
     }
 
@@ -281,6 +294,7 @@ export class WebhookActionExecutorService {
       psid,
       outcome.context,
       outcome.intentGeneration,
+      outcome.intentLeaseToken,
     );
     if (linked) {
       return { status: 'linked', context: outcome.context };
@@ -306,10 +320,12 @@ export class WebhookActionExecutorService {
     psid: string,
     context: MessengerLinkContext,
     intentGeneration?: string,
+    intentLeaseToken?: string,
   ): Promise<boolean> {
     const result = intentGeneration
       ? await this.messengerMappingService.linkFromContext(psid, context, {
           intentGeneration,
+          ...(intentLeaseToken ? { intentLeaseToken } : {}),
         })
       : await this.messengerMappingService.linkFromContext(psid, context);
     return !result.blocked;

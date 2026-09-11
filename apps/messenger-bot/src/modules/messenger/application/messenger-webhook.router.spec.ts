@@ -510,6 +510,7 @@ describe('routeWebhookEvent', () => {
         status: 'verified',
         context: verifiedContext,
         intentGeneration: '3',
+        intentLeaseToken: 'lease-owner',
       },
     };
     const mappedACtx: RouterContext = {
@@ -539,6 +540,7 @@ describe('routeWebhookEvent', () => {
           ref: '7',
           context: verifiedContext,
           intentGeneration: '3',
+          intentLeaseToken: 'lease-owner',
         }),
         expect.objectContaining({ type: 'enqueue_chat', userId: 7 }),
       ]);

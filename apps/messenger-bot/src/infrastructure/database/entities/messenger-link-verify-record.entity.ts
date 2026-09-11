@@ -3,11 +3,12 @@ import type { NotificationCadence } from '@messenger/modules/messenger/domain/en
 import type { MessengerLinkIntentState } from '@messenger/modules/messenger/domain/ports/messenger-link-verify-record.repository.port';
 
 /**
- * Durable verify-intent outbox for the Messenger link flow (#384).
+ * Durable verify-intent outbox for the Messenger link flow (#384/#821).
  * Inserted AFTER WISPACE consumes the single-use link token and BEFORE the
- * local mapping upsert; the reconciliation cron re-commits the mapping when
- * the bot crashes in between, so WISPACE "linked" never drifts from the bot
- * mapping.
+ * local mapping upsert. The callback owns a short processing lease from the
+ * moment the verified intent is persisted; the reconciliation cron reclaims
+ * expired leases when the bot crashes in between, so concurrent callbacks do
+ * not overwrite the owner or duplicate post-link side effects.
  */
 @Entity('messenger_link_verify_records')
 export class MessengerLinkVerifyRecordEntity {
@@ -39,4 +40,10 @@ export class MessengerLinkVerifyRecordEntity {
 
   @Column({ name: 'verified_at', type: 'timestamptz' })
   verifiedAt: Date;
+
+  @Column({ name: 'lease_token', type: 'uuid', nullable: true })
+  leaseToken: string | null;
+
+  @Column({ name: 'lease_expires_at', type: 'timestamptz', nullable: true })
+  leaseExpiresAt: Date | null;
 }

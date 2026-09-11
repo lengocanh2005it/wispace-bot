@@ -12,8 +12,8 @@ describe('MessengerLinkContextService', () => {
 
     const verifyRecordRepository = {
       findByRefFingerprint: jest.fn().mockResolvedValue(null),
+      findByPsid: jest.fn().mockResolvedValue(null),
       recordVerify: jest.fn().mockResolvedValue({ intentGeneration: '1' }),
-      consumeRecord: jest.fn().mockResolvedValue(undefined),
       listStaleRecords: jest.fn().mockResolvedValue([]),
       discardRecord: jest.fn().mockResolvedValue(undefined),
       ...verifyRecordRepoOverrides,
@@ -135,6 +135,107 @@ describe('MessengerLinkContextService', () => {
     await expect(
       service.resolveFromRef('psid-1', { ref: 'opaque-token' }),
     ).resolves.toEqual({ handoffFailure: true });
+  });
+
+  it('#821: fails closed when another verify is already processing for the PSID', async () => {
+    const { service, verifyRecordRepository } = createService(
+      () =>
+        Promise.resolve({
+          valid: true as const,
+          userId: 200,
+          topic: 'IELTS',
+          cadence: 'WEEKLY' as const,
+        }),
+      {
+        recordVerify: jest.fn().mockResolvedValue({
+          intentGeneration: '1',
+          intentState: 'processing',
+        }),
+      },
+    );
+
+    await expect(
+      service.resolveFromRef('psid-1', { ref: 'new-token' }),
+    ).resolves.toEqual({ handoffFailure: true });
+    expect(verifyRecordRepository.recordVerify).toHaveBeenCalledTimes(1);
+  });
+
+  it('#821: returns the owner lease from a freshly persisted verification', async () => {
+    const { service } = createService(
+      () =>
+        Promise.resolve({
+          valid: true as const,
+          userId: 200,
+          topic: 'IELTS',
+          cadence: 'WEEKLY' as const,
+        }),
+      {
+        recordVerify: jest.fn().mockResolvedValue({
+          intentGeneration: '9',
+          intentState: 'processing',
+          leaseToken: 'lease-owner',
+        }),
+      },
+    );
+
+    await expect(
+      service.resolveFromRef('psid-1', { ref: 'new-token' }),
+    ).resolves.toEqual({
+      context: {
+        ref: 'new-token',
+        userId: 200,
+        topic: 'IELTS',
+        cadence: 'WEEKLY',
+      },
+      intentGeneration: '9',
+      intentState: 'processing',
+      intentLeaseToken: 'lease-owner',
+    });
+  });
+
+  it('#821: does not consume a new token while another intent is processing', async () => {
+    const verify = jest.fn();
+    const { service, verifyRecordRepository } = createService(verify, {
+      findByPsid: jest.fn().mockResolvedValue({ status: 'processing' }),
+    });
+
+    await expect(
+      service.resolveFromRef('psid-1', { ref: 'new-token' }),
+    ).resolves.toEqual({ handoffFailure: true });
+    expect(verify).not.toHaveBeenCalled();
+    expect(verifyRecordRepository.recordVerify).not.toHaveBeenCalled();
+  });
+
+  it('#821: replays an expired processing intent without verifying the token again', async () => {
+    const verify = jest.fn();
+    const { service } = createService(verify, {
+      findByRefFingerprint: jest.fn().mockResolvedValue({
+        psid: 'psid-1',
+        userId: 143,
+        topic: 'IELTS',
+        cadence: 'DAILY',
+        refFingerprint: 'fingerprint',
+        intentGeneration: '7',
+        status: 'processing',
+        verifiedAt: new Date(),
+        leaseToken: 'expired-lease',
+        leaseExpiresAt: new Date(Date.now() - 1_000),
+      }),
+    });
+
+    await expect(
+      service.resolveFromRef('psid-1', { ref: 'opaque-token' }),
+    ).resolves.toEqual({
+      context: {
+        ref: 'opaque-token',
+        userId: 143,
+        topic: 'IELTS',
+        cadence: 'DAILY',
+      },
+      intentGeneration: '7',
+      intentState: 'processing',
+    });
+    expect(verify).not.toHaveBeenCalled();
   });
 
   it('#821: does not consume a token when intent lookup is unavailable', async () => {

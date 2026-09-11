@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Counter } from 'prom-client';
 import {
   errorMessage,
   maskExternalId,
@@ -13,12 +14,19 @@ import {
 import type { MessengerLinkResolveOutcome } from '../../domain/types/messenger-link-verify.types';
 import {
   MESSENGER_LINK_VERIFY_RECORD_REPOSITORY,
+  MESSENGER_LINK_INTENT_LEASE_MS,
   type MessengerLinkVerifyRecordRepositoryPort,
 } from '../../domain/ports/messenger-link-verify-record.repository.port';
 import { WispaceMessengerTokenVerifyService } from '../../infrastructure/wispace/wispace-messenger-token-verify.service';
 
 const RECORD_VERIFY_MAX_ATTEMPTS = 3;
 const RECORD_VERIFY_BASE_DELAY_MS = 50;
+
+const handoffFailuresTotal = new Counter({
+  name: 'messenger_link_handoff_failures_total',
+  help: 'Messenger link handoff failures after external verification',
+  labelNames: ['reason'] as const,
+});
 
 @Injectable()
 export class MessengerLinkContextService {
@@ -49,12 +57,17 @@ export class MessengerLinkContextService {
       .digest('hex');
 
     let existingRecord;
+    let currentRecord;
     try {
       existingRecord = await this.verifyRecordRepository.findByRefFingerprint(
         psid,
         refFingerprint,
       );
+      if (!existingRecord) {
+        currentRecord = await this.verifyRecordRepository.findByPsid(psid);
+      }
     } catch (error) {
+      handoffFailuresTotal.inc({ reason: 'intent_lookup_failed' });
       this.logger.error(
         `Messenger link intent lookup failed psid=${maskExternalId(psid)}: ${maskExternalIdInText(
           errorMessage(error),
@@ -65,6 +78,17 @@ export class MessengerLinkContextService {
     }
 
     if (existingRecord) {
+      if (
+        existingRecord.status === 'processing' &&
+        this.hasActiveLease(existingRecord.leaseExpiresAt)
+      ) {
+        handoffFailuresTotal.inc({ reason: 'intent_busy' });
+        this.logger.warn(
+          `Messenger link intent already processing psid=${maskExternalId(psid)}`,
+        );
+        return { handoffFailure: true };
+      }
+
       return {
         context: {
           ref: normalizedRef,
@@ -75,6 +99,17 @@ export class MessengerLinkContextService {
         intentGeneration: existingRecord.intentGeneration,
         intentState: existingRecord.status,
       };
+    }
+
+    if (
+      currentRecord?.status === 'processing' &&
+      this.hasActiveLease(currentRecord.leaseExpiresAt)
+    ) {
+      handoffFailuresTotal.inc({ reason: 'intent_busy' });
+      this.logger.warn(
+        `Messenger link intent already processing psid=${maskExternalId(psid)}`,
+      );
+      return { handoffFailure: true };
     }
 
     let verified;
@@ -102,15 +137,25 @@ export class MessengerLinkContextService {
 
     const topic = input.topic?.trim() || verified.topic;
     const cadence = verified.cadence;
-    const intentGeneration = await this.recordVerifyWithRetry({
+    const recordedIntent = await this.recordVerifyWithRetry({
       psid,
       userId: verified.userId,
       topic,
       cadence,
       refFingerprint,
+      leaseMs: MESSENGER_LINK_INTENT_LEASE_MS,
     });
 
-    if (!intentGeneration) {
+    if (!recordedIntent) {
+      return { handoffFailure: true };
+    }
+
+    const intentState = recordedIntent.intentState ?? 'pending';
+    if (intentState === 'processing' && !recordedIntent.leaseToken) {
+      handoffFailuresTotal.inc({ reason: 'intent_busy' });
+      this.logger.warn(
+        `Messenger link intent already processing psid=${maskExternalId(psid)}`,
+      );
       return { handoffFailure: true };
     }
 
@@ -121,8 +166,11 @@ export class MessengerLinkContextService {
         topic,
         cadence,
       },
-      intentGeneration,
-      intentState: 'pending',
+      intentGeneration: recordedIntent.intentGeneration,
+      intentState,
+      ...(recordedIntent.leaseToken
+        ? { intentLeaseToken: recordedIntent.leaseToken }
+        : {}),
     };
   }
 
@@ -144,13 +192,20 @@ export class MessengerLinkContextService {
     topic: string;
     cadence: MessengerLinkContext['cadence'];
     refFingerprint: string;
-  }): Promise<string | undefined> {
+    leaseMs: number;
+  }): Promise<
+    | {
+        intentGeneration: string;
+        intentState: 'pending' | 'processing' | 'committed';
+        leaseToken?: string;
+      }
+    | undefined
+  > {
     let lastError: unknown;
 
     for (let attempt = 0; attempt < RECORD_VERIFY_MAX_ATTEMPTS; attempt += 1) {
       try {
-        const result = await this.verifyRecordRepository.recordVerify(input);
-        return result.intentGeneration;
+        return await this.verifyRecordRepository.recordVerify(input);
       } catch (error) {
         lastError = error;
         if (attempt + 1 < RECORD_VERIFY_MAX_ATTEMPTS) {
@@ -166,6 +221,13 @@ export class MessengerLinkContextService {
         input.psid,
       )}: ${maskExternalIdInText(errorMessage(lastError), input.psid)}`,
     );
+    handoffFailuresTotal.inc({ reason: 'intent_persist_failed' });
     return undefined;
+  }
+
+  private hasActiveLease(leaseExpiresAt: Date | null): boolean {
+    // Missing expiry is treated as active so an unknown owner is never
+    // bypassed into a second provider verification.
+    return leaseExpiresAt == null || leaseExpiresAt.getTime() > Date.now();
   }
 }

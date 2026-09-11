@@ -3,18 +3,15 @@ import { MessengerLinkReconcileCronService } from './messenger-link-reconcile-cr
 describe('MessengerLinkReconcileCronService', () => {
   const createService = (overrides?: {
     listStaleRecords?: jest.Mock;
-    consumeRecord?: jest.Mock;
     discardRecord?: jest.Mock;
     cleanupCommittedRecords?: jest.Mock;
     findActiveMappingByPsid?: jest.Mock;
-    upsertPsidUserLink?: jest.Mock;
+    linkFromContext?: jest.Mock;
     withLock?: jest.Mock;
     get?: jest.Mock;
   }) => {
     const verifyRecordService = {
       recordVerify: jest.fn(),
-      consumeRecord:
-        overrides?.consumeRecord ?? jest.fn().mockResolvedValue(undefined),
       discardRecord:
         overrides?.discardRecord ?? jest.fn().mockResolvedValue(undefined),
       cleanupCommittedRecords:
@@ -26,8 +23,12 @@ describe('MessengerLinkReconcileCronService', () => {
     const mappingRepository = {
       findActiveMappingByPsid:
         overrides?.findActiveMappingByPsid ?? jest.fn().mockResolvedValue(null),
-      upsertPsidUserLink:
-        overrides?.upsertPsidUserLink ?? jest.fn().mockResolvedValue({}),
+    };
+
+    const mappingService = {
+      linkFromContext:
+        overrides?.linkFromContext ??
+        jest.fn().mockResolvedValue({ blocked: false }),
     };
 
     const configService = {
@@ -47,11 +48,18 @@ describe('MessengerLinkReconcileCronService', () => {
     const service = new MessengerLinkReconcileCronService(
       verifyRecordService as never,
       mappingRepository as never,
+      mappingService as never,
       configService as never,
       pgLock as never,
     );
 
-    return { service, verifyRecordService, mappingRepository, pgLock };
+    return {
+      service,
+      verifyRecordService,
+      mappingRepository,
+      mappingService,
+      pgLock,
+    };
   };
 
   it('skips when no stale records', async () => {
@@ -60,8 +68,8 @@ describe('MessengerLinkReconcileCronService', () => {
     expect(mappingRepository.findActiveMappingByPsid).not.toHaveBeenCalled();
   });
 
-  it('consumes record when mapping already committed', async () => {
-    const { service, verifyRecordService, mappingRepository } = createService({
+  it('replays an already committed mapping through the lease-aware completion service', async () => {
+    const { service, mappingService, mappingRepository } = createService({
       listStaleRecords: jest
         .fn()
         .mockResolvedValue([
@@ -74,21 +82,18 @@ describe('MessengerLinkReconcileCronService', () => {
 
     await service.handleReconcile();
 
-    expect(mappingRepository.upsertPsidUserLink).toHaveBeenCalledWith({
-      psid: 'psid-1',
-      userId: 143,
-      topic: undefined,
-      cadence: undefined,
-    });
-    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
-      psid: 'psid-1',
-      userId: 143,
-      intentGeneration: undefined,
-    });
+    expect(mappingService.linkFromContext).toHaveBeenCalledWith(
+      'psid-1',
+      { ref: '', userId: 143, topic: undefined, cadence: undefined },
+      { notifyUser: false, intentGeneration: undefined },
+    );
+    expect(mappingRepository.findActiveMappingByPsid).toHaveBeenCalledWith(
+      'psid-1',
+    );
   });
 
   it('re-commits mapping when missing and within max age', async () => {
-    const { service, verifyRecordService, mappingRepository } = createService({
+    const { service, mappingService } = createService({
       listStaleRecords: jest
         .fn()
         .mockResolvedValue([
@@ -98,20 +103,39 @@ describe('MessengerLinkReconcileCronService', () => {
 
     await service.handleReconcile();
 
-    expect(mappingRepository.upsertPsidUserLink).toHaveBeenCalledWith({
-      psid: 'psid-2',
-      userId: 200,
+    expect(mappingService.linkFromContext).toHaveBeenCalledWith(
+      'psid-2',
+      { ref: '', userId: 200, topic: undefined, cadence: undefined },
+      { notifyUser: false, intentGeneration: undefined },
+    );
+  });
+
+  it('reclaims an expired processing lease through the same completion path', async () => {
+    const { service, mappingService } = createService({
+      listStaleRecords: jest.fn().mockResolvedValue([
+        {
+          psid: 'psid-processing',
+          userId: 201,
+          status: 'processing',
+          intentGeneration: '8',
+          leaseExpiresAt: new Date(Date.now() - 1_000),
+          verifiedAt: new Date(),
+        },
+      ]),
     });
-    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
-      psid: 'psid-2',
-      userId: 200,
-      intentGeneration: undefined,
-    });
+
+    await service.handleReconcile();
+
+    expect(mappingService.linkFromContext).toHaveBeenCalledWith(
+      'psid-processing',
+      { ref: '', userId: 201, topic: undefined, cadence: undefined },
+      { notifyUser: false, intentGeneration: '8' },
+    );
   });
 
   it('drops record when older than max age with no mapping', async () => {
     const oldTime = new Date(Date.now() - 4_000_000); // > 3,600,000 default
-    const { service, verifyRecordService, mappingRepository } = createService({
+    const { service, verifyRecordService, mappingService } = createService({
       listStaleRecords: jest
         .fn()
         .mockResolvedValue([
@@ -125,25 +149,25 @@ describe('MessengerLinkReconcileCronService', () => {
       'psid-3',
       undefined,
     );
-    expect(mappingRepository.upsertPsidUserLink).not.toHaveBeenCalled();
+    expect(mappingService.linkFromContext).not.toHaveBeenCalled();
   });
 
-  it('handles upsert failure without crashing', async () => {
-    const { service, verifyRecordService } = createService({
+  it('handles completion failure without crashing', async () => {
+    const { service, mappingService } = createService({
       listStaleRecords: jest
         .fn()
         .mockResolvedValue([
           { psid: 'psid-4', userId: 400, verifiedAt: new Date() },
         ]),
-      upsertPsidUserLink: jest.fn().mockRejectedValue(new Error('db down')),
+      linkFromContext: jest.fn().mockRejectedValue(new Error('db down')),
     });
 
     await expect(service.handleReconcile()).resolves.not.toThrow();
-    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalled();
+    expect(mappingService.linkFromContext).toHaveBeenCalled();
   });
 
   it('#821: keeps a fresh mismatched mapping actionable', async () => {
-    const { service, verifyRecordService, mappingRepository } = createService({
+    const { service, mappingService, verifyRecordService } = createService({
       listStaleRecords: jest.fn().mockResolvedValue([
         {
           psid: 'psid-mismatch',
@@ -163,13 +187,12 @@ describe('MessengerLinkReconcileCronService', () => {
 
     await service.handleReconcile();
 
-    expect(mappingRepository.upsertPsidUserLink).not.toHaveBeenCalled();
-    expect(verifyRecordService.consumeRecord).not.toHaveBeenCalled();
+    expect(mappingService.linkFromContext).not.toHaveBeenCalled();
     expect(verifyRecordService.discardRecord).not.toHaveBeenCalled();
   });
 
-  it('#821: restores metadata before consuming a matching intent', async () => {
-    const { service, verifyRecordService, mappingRepository } = createService({
+  it('#821: restores metadata before completing a matching intent', async () => {
+    const { service, mappingService } = createService({
       listStaleRecords: jest.fn().mockResolvedValue([
         {
           psid: 'psid-metadata',
@@ -189,16 +212,25 @@ describe('MessengerLinkReconcileCronService', () => {
 
     await service.handleReconcile();
 
-    expect(mappingRepository.upsertPsidUserLink).toHaveBeenCalledWith({
-      psid: 'psid-metadata',
-      userId: 200,
-      topic: 'IELTS Writing',
-      cadence: 'DAILY',
-    });
-    expect(verifyRecordService.consumeRecord).toHaveBeenCalledWith({
-      psid: 'psid-metadata',
-      userId: 200,
-      intentGeneration: '5',
-    });
+    expect(mappingService.linkFromContext).toHaveBeenCalledWith(
+      'psid-metadata',
+      {
+        ref: 'fingerprint',
+        userId: 200,
+        topic: 'IELTS Writing',
+        cadence: 'DAILY',
+      },
+      { notifyUser: false, intentGeneration: '5' },
+    );
+  });
+
+  it('does not run a second batch while another pod owns the advisory lock', async () => {
+    const withLock = jest.fn().mockResolvedValue(null);
+    const { service, verifyRecordService } = createService({ withLock });
+
+    await service.handleReconcile();
+
+    expect(withLock).toHaveBeenCalled();
+    expect(verifyRecordService.listStaleRecords).not.toHaveBeenCalled();
   });
 });

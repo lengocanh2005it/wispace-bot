@@ -28,6 +28,8 @@ export interface MessengerLinkResolveOutcome {
   context?: MessengerLinkContext;
   intentGeneration?: string;
   intentState?: MessengerLinkIntentState;
+  /** Owner lease returned only to the callback that persisted the intent. */
+  intentLeaseToken?: string;
   verifyFailureReason?: MessengerLinkVerifyFailureReason;
   handoffFailure?: boolean;
 }

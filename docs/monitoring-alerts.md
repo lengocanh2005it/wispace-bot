@@ -30,7 +30,7 @@ existing p95 >30 s rule, making the two upstream budgets comparable.
 
 ## Alert response
 
-<span id="botdown"></span><span id="alertdeliveryfailed"></span><span id="botrestartloop"></span><span id="prometheusjobmissing"></span><span id="webhookinboundbackloggrowing"></span><span id="dataqualitycheckfailed"></span><span id="redisconsistencydrift"></span><span id="llmadmissionsaturated"></span><span id="internalauthrejectedspike"></span><span id="dbcircuitbreakeropen"></span><span id="studyreminderfailureshigh"></span><span id="platformlinkstatusunknown"></span><span id="tokenrefreshfailure"></span><span id="llmprovidercircuitopen"></span><span id="llmprovidersexhausted"></span><span id="llmdegradedmodehigh"></span><span id="llmusagetelemetryloss"></span><span id="llmunpricedtokens"></span><span id="llmmissingtokens"></span><span id="llminjectionblockedrise"></span><span id="chatidentitystaledetected"></span><span id="chatflushrecovery"></span><span id="studyreminderlockskipped"></span><span id="cronexecutionstale"></span><span id="chatavailabilitylow"></span><span id="llmlatencyhigh"></span><span id="llmerrorratehigh"></span><span id="eventlooplagp99high"></span><span id="wispacelatencyhigh"></span>
+<span id="botdown"></span><span id="alertdeliveryfailed"></span><span id="botrestartloop"></span><span id="prometheusjobmissing"></span><span id="webhookinboundbackloggrowing"></span><span id="dataqualitycheckfailed"></span><span id="redisconsistencydrift"></span><span id="llmadmissionsaturated"></span><span id="internalauthrejectedspike"></span><span id="dbcircuitbreakeropen"></span><span id="studyreminderfailureshigh"></span><span id="platformlinkstatusunknown"></span><span id="messengerlinkhandofffailure"></span><span id="tokenrefreshfailure"></span><span id="llmprovidercircuitopen"></span><span id="llmprovidersexhausted"></span><span id="llmdegradedmodehigh"></span><span id="llmusagetelemetryloss"></span><span id="llmunpricedtokens"></span><span id="llmmissingtokens"></span><span id="llminjectionblockedrise"></span><span id="chatidentitystaledetected"></span><span id="chatflushrecovery"></span><span id="studyreminderlockskipped"></span><span id="cronexecutionstale"></span><span id="chatavailabilitylow"></span><span id="llmlatencyhigh"></span><span id="llmerrorratehigh"></span><span id="eventlooplagp99high"></span><span id="wispacelatencyhigh"></span>
 
 | Alert                        | Severity | First response                                                                                                                            |
 | ---------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -46,6 +46,7 @@ existing p95 >30 s rule, making the two upstream budgets comparable.
 | DbCircuitBreakerOpen         | critical | Verify the database writer, TLS/CA settings, and pool saturation before restarting a bot.                                                 |
 | StudyReminderFailuresHigh    | warning  | Inspect reminder delivery outcome and the platform sender; replay only after confirming idempotency state.                                |
 | PlatformLinkStatusUnknown    | warning  | Check the WISPACE link-status endpoint and preserve mappings while the status check is unavailable.                                       |
+| MessengerLinkHandoffFailure  | warning  | Check Messenger intent lookup/persistence and ask the learner to retry only after the database path is healthy.                          |
 | TokenRefreshFailure          | critical | Check the platform OAuth/OA credential and expiry; bootstrap/re-authorize before the cached token expires. The `reason` label is bounded. |
 | LlmProviderCircuitOpen       | warning  | Check the named provider's error/quota telemetry and confirm another provider can serve traffic.                                          |
 | LlmProvidersExhausted        | critical | Treat as a user-visible outage: inspect all provider keys, circuit state, and upstream status.                                            |
@@ -220,6 +221,7 @@ All custom families emitted by `BotMetricsService` are classified below. The
 | `db_circuit_breaker_state`            | DbCircuitBreakerOpen         |
 | `reminder_dispatch_total`             | StudyReminderFailuresHigh    |
 | `platform_link_transition_total`      | PlatformLinkStatusUnknown    |
+| `messenger_link_handoff_failures_total` | MessengerLinkHandoffFailure  |
 
 ### Deliberate no-alert families
 
@@ -233,6 +235,7 @@ an actionable parent signal above.
 | `webhook_inbound_inline_attempts_total`, `webhook_inbound_dispatch_lag_seconds`, `webhook_inbound_retention_deleted_total` | Transport, latency, and retention diagnostics; the backlog and bot availability rules are the actionable signals. |
 | `retention_rows_deleted_total`, `retention_cleanup_errors_total`, `llm_usage_retention_deleted_total`, `chat_quota_retention_deleted_total` | Retention-only maintenance outcomes; investigate from cleanup logs unless retention becomes an explicit SLO. |
 | `messenger_link_reconcile_records_total`, `discord_link_reconcile_records_total`, `zalo_link_reconcile_records_total` | Reconciliation volume/outcomes are diagnostic; link-status and bot availability alerts cover user impact. |
+| `messenger_link_completion_total` | Completion claim/lease outcomes are diagnostic; `MessengerLinkHandoffFailure` covers durable handoff failures. |
 | Unprefixed compatibility `study_reminder_lock_skips_total` | Kept for existing in-process consumers; the prefixed registry family is the alert source. |
 | `llm_execution_duration_seconds`, `llm_admission_wait_seconds`, `llm_admission_drain_lag_seconds`                                                                                                                   | Covered by provider/chat latency and queue depth; useful for diagnosis without a second page.                                                |
 | `llm_provider_attempts_total`, `llm_tool_calls_total`, `llm_tool_duration_seconds`, `llm_observation_outcome_total`, `llm_tool_policy_denied_total`, `llm_classifier_verdict_total`, `clarification_outcomes_total` | Volume, policy, and model-loop diagnostics have no universal incident threshold.                                                             |

@@ -37,6 +37,8 @@ export type WebhookAction =
       context?: MessengerLinkContext;
       /** Durable verify-intent generation for conditional completion. */
       intentGeneration?: string;
+      /** Owner lease for the processing intent returned by verification. */
+      intentLeaseToken?: string;
     }
   | {
       type: 'enqueue_chat';
@@ -172,6 +174,9 @@ export function routeWebhookEvent(
           cadence: event.optin?.frequency,
           context: refVerification.context,
           intentGeneration: refVerification.intentGeneration,
+          ...(refVerification.intentLeaseToken
+            ? { intentLeaseToken: refVerification.intentLeaseToken }
+            : {}),
         }
       : undefined;
 
