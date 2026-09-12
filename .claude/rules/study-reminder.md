@@ -80,6 +80,16 @@ not trip the default cap.
 - Before release, record WISPACE's per-endpoint confirmation that resource IDs
   are authorized against the identity header in the issue conversation.
 
+## Shared staging cancellation (#1062)
+
+The Discord/Zalo `reschedule_study_session` executor forwards its optional
+caller `AbortSignal` through calendar lookup and staged-record save. Before the
+confirmation boundary, an internal abort must not send a prompt or produce an
+ordinary tool observation; cleanup is conditional on the exact approval token/
+nonce and retries once at most. A successful shared stage without that token
+fails closed. Once outbound confirmation begins, keep existing delivery
+semantics.
+
 ## Required config
 
 `STUDY_REMINDER_*` variables in `.env` — use `readRequiredPositiveNumber`, **no** hardcoded fallback values in code.

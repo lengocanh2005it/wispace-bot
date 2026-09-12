@@ -14,7 +14,10 @@ import type {
   PlatformAgentToolContext,
   PlatformAgentToolsOptions,
 } from './platform-agent.types';
-import { RESCHEDULE_SCOPE_ERROR_MESSAGE } from '@wispace/reschedule-confirm';
+import {
+  RESCHEDULE_INVALID_TOKEN_MESSAGE,
+  RESCHEDULE_SCOPE_ERROR_MESSAGE,
+} from '@wispace/reschedule-confirm';
 
 const DISCORD_NOT_LINKED_MESSAGE =
   'Bạn chưa liên kết tài khoản WISPACE với Discord. Vào WISPACE để lấy link "Kết nối Discord" rồi thử lại nhé.';
@@ -551,6 +554,7 @@ describe('PlatformAgentToolsService', () => {
           pendingConfirmation: true,
           sessionLabel: 'Ngày mai lúc 19:00',
           summary: 'Dời buổi Ngày mai lúc 19:00 sang ngày kế tiếp cùng giờ?',
+          confirmationToken: '00000000-0000-4000-8000-000000000000',
         });
 
         const result = await service.execute(
@@ -578,7 +582,7 @@ describe('PlatformAgentToolsService', () => {
         expect(confirmSender).toHaveBeenCalledWith(
           'discord-1',
           'Dời buổi Ngày mai lúc 19:00 sang ngày kế tiếp cùng giờ?',
-          undefined,
+          '00000000-0000-4000-8000-000000000000',
           143,
         );
         expect(result).toEqual({
@@ -664,6 +668,86 @@ describe('PlatformAgentToolsService', () => {
           'nonce-1',
         );
         expect(confirmSender).not.toHaveBeenCalled();
+      });
+
+      it('preserves the abort outcome when conditional cleanup fails', async () => {
+        const controller = new AbortController();
+        stagePort.stage.mockImplementation(async () => {
+          controller.abort();
+          return {
+            pendingConfirmation: true,
+            sessionLabel: 'Ngày mai lúc 19:00',
+            summary: 'Dời buổi học?',
+            confirmationToken: 'nonce-1',
+          };
+        });
+        stagePort.cancelPending.mockRejectedValue(new Error('store down'));
+
+        await expect(
+          service.execute(
+            'reschedule_study_session',
+            JSON.stringify({
+              calendarId: 42,
+              schedulingMode: 'default_next_day_same_time',
+            }),
+            { externalUserId: 'discord-1', userId: 143 },
+            controller.signal,
+          ),
+        ).rejects.toMatchObject({ name: 'AbortError' });
+
+        expect(confirmSender).not.toHaveBeenCalled();
+      });
+
+      it('fails closed when a successful stage has no approval token', async () => {
+        stagePort.stage.mockResolvedValue({
+          pendingConfirmation: true,
+          sessionLabel: 'Ngày mai lúc 19:00',
+          summary: 'Dời buổi học?',
+        });
+
+        await expect(
+          service.execute(
+            'reschedule_study_session',
+            JSON.stringify({
+              calendarId: 42,
+              schedulingMode: 'default_next_day_same_time',
+            }),
+            { externalUserId: 'discord-1', userId: 143 },
+          ),
+        ).resolves.toEqual({ error: RESCHEDULE_INVALID_TOKEN_MESSAGE });
+
+        expect(confirmSender).not.toHaveBeenCalled();
+        expect(stagePort.cancelPending).not.toHaveBeenCalled();
+      });
+
+      it('keeps the outbound confirmation semantics once the sender starts', async () => {
+        const controller = new AbortController();
+        stagePort.stage.mockResolvedValue({
+          pendingConfirmation: true,
+          sessionLabel: 'Ngày mai lúc 19:00',
+          summary: 'Dời buổi học?',
+          confirmationToken: '00000000-0000-4000-8000-000000000000',
+        });
+        confirmSender.mockImplementation(async () => {
+          controller.abort();
+        });
+
+        await expect(
+          service.execute(
+            'reschedule_study_session',
+            JSON.stringify({
+              calendarId: 42,
+              schedulingMode: 'default_next_day_same_time',
+            }),
+            { externalUserId: 'discord-1', userId: 143 },
+            controller.signal,
+          ),
+        ).resolves.toEqual({
+          pendingConfirmation: true,
+          sessionLabel: 'Ngày mai lúc 19:00',
+        });
+
+        expect(stagePort.cancelPending).not.toHaveBeenCalled();
       });
 
       it('does not start staging when the tool signal is already aborted', async () => {
@@ -792,6 +876,7 @@ describe('PlatformAgentToolsService', () => {
         pendingConfirmation: true,
         sessionLabel: 'Ngày mai lúc 19:00',
         summary: 'Dời buổi Ngày mai lúc 19:00 sang ngày kế tiếp cùng giờ?',
+        confirmationToken: '00000000-0000-4000-8000-000000000000',
       });
 
       const result = await service.execute(
@@ -821,7 +906,7 @@ describe('PlatformAgentToolsService', () => {
       expect(confirmSender).toHaveBeenCalledWith(
         'zalo-1',
         'Dời buổi Ngày mai lúc 19:00 sang ngày kế tiếp cùng giờ?',
-        undefined,
+        '00000000-0000-4000-8000-000000000000',
         42,
       );
       expect(result).toEqual({
@@ -886,6 +971,7 @@ describe('PlatformAgentToolsService', () => {
         pendingConfirmation: true,
         sessionLabel: 'Ngày mai lúc 19:00',
         summary: 'Dời buổi Ngày mai lúc 19:00 sang ngày kế tiếp cùng giờ?',
+        confirmationToken: '00000000-0000-4000-8000-000000000000',
       });
 
       const result = await serviceWithProvider.execute(

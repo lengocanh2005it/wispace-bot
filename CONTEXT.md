@@ -129,7 +129,7 @@ Point at which the bot commits to delivering the reschedule confirmation prompt.
 _Avoid_: confirmation complete, send completion
 
 **approval token**:
-One-time opaque token shown with a staged reschedule and required for text approval. It binds approval to the offered proposal; a token-less, mismatched, or superseded confirmation is not consent.
+One-time opaque token shown with a staged reschedule and required for text approval. It binds approval to the offered proposal; a token-less, mismatched, or superseded confirmation is not consent. The same value is the internal staging nonce used to conditionally remove that proposal before the confirmation boundary.
 _Avoid_: confirmation code, approval code
 
 **stop request**:
@@ -139,6 +139,10 @@ _Avoid_: ambiguous cancel, undo
 **reschedule cancellation**:
 Disarming a staged reschedule before it is claimed for the calendar write. It cannot undo a calendar write that has already started.
 _Avoid_: rollback, reverse
+
+**internal staging abort**:
+Abandoning a reschedule staging attempt because its caller or tool deadline no longer waits for the result. It is distinct from a learner's stop request: it does not produce a prompt or recovery message, never mutates the calendar, and may remove only the matching staged proposal before the confirmation boundary.
+_Avoid_: stop request, user cancellation
 
 **staged reschedule expiry**:
 The end of the ten-minute validity window after which a staged reschedule cannot be confirmed. Expiry is reported on the next related interaction rather than through a background message.

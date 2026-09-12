@@ -26,7 +26,10 @@ import {
   maskExternalIdInText,
 } from '@wispace/bot-common/masking';
 import { isAbortError } from '@wispace/bot-common/utils';
-import { RescheduleStageAbortedError } from '@wispace/reschedule-confirm';
+import {
+  RESCHEDULE_INVALID_TOKEN_MESSAGE,
+  RescheduleStageAbortedError,
+} from '@wispace/reschedule-confirm';
 import type {
   CalendarCapabilityPort,
   ExerciseCapabilityPort,
@@ -503,7 +506,7 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
 
     if (signal?.aborted) {
       if (staged.confirmationToken) {
-        await this.stagePort.cancelPending?.(
+        await this.cleanupStagedReschedule(
           ctx.externalUserId,
           staged.confirmationToken,
         );
@@ -511,25 +514,27 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
       throw new RescheduleStageAbortedError(signal.reason);
     }
 
+    if (!staged.confirmationToken) {
+      this.logger.error(
+        `RESCHEDULE_STAGE_CONTRACT_VIOLATION externalUserId=${maskExternalId(
+          ctx.externalUserId,
+        )} missing approval token`,
+      );
+      return { error: RESCHEDULE_INVALID_TOKEN_MESSAGE };
+    }
+
+    this.throwIfAborted(signal);
+
     try {
-      if (staged.confirmationToken) {
-        await this.options.reschedule.confirmSender(
-          ctx.externalUserId,
-          staged.summary,
-          staged.confirmationToken,
-          ctx.userId,
-        );
-      } else {
-        await this.options.reschedule.confirmSender(
-          ctx.externalUserId,
-          staged.summary,
-          undefined,
-          ctx.userId,
-        );
-      }
+      await this.options.reschedule.confirmSender(
+        ctx.externalUserId,
+        staged.summary,
+        staged.confirmationToken,
+        ctx.userId,
+      );
     } catch (error) {
       if (staged.confirmationToken) {
-        await this.stagePort.cancelPending?.(
+        await this.cleanupStagedReschedule(
           ctx.externalUserId,
           staged.confirmationToken,
         );
@@ -546,6 +551,21 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
   private throwIfAborted(signal?: AbortSignal): void {
     if (signal?.aborted) {
       throw new RescheduleStageAbortedError(signal.reason);
+    }
+  }
+
+  private async cleanupStagedReschedule(
+    externalUserId: string,
+    confirmationToken: string,
+  ): Promise<void> {
+    try {
+      await this.stagePort.cancelPending?.(externalUserId, confirmationToken);
+    } catch (error) {
+      this.logger.warn(
+        `RESCHEDULE_ABORT_CLEANUP_FAILED externalUserId=${maskExternalId(
+          externalUserId,
+        )}: ${this.safeErrorMessage(error, externalUserId)}`,
+      );
     }
   }
 }

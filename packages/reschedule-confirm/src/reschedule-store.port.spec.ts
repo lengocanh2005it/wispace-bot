@@ -133,6 +133,34 @@ describe('MemoryRescheduleStore', () => {
     expect(await store.cancelPending('u-processing')).toBe('processing');
   });
 
+  it('preserves a newer proposal when an older nonce is cleaned up', async () => {
+    const store = new MemoryRescheduleStore<string>();
+    await store.save({
+      externalId: 'u-race',
+      userId: 4,
+      calendarId: 40,
+      schedulingMode: 'explicit',
+      sessionLabel: 'Thu 16:00',
+      expiresAt: future,
+      nonce: 'older-nonce',
+    });
+    await store.save({
+      externalId: 'u-race',
+      userId: 4,
+      calendarId: 41,
+      schedulingMode: 'explicit',
+      sessionLabel: 'Thu 17:00',
+      expiresAt: future,
+      nonce: 'newer-nonce',
+    });
+
+    expect(await store.cancelPending('u-race', 'older-nonce')).toBe('none');
+    const current = await store.takeValid('u-race', 4, {
+      nonce: 'newer-nonce',
+    });
+    expect(current?.calendarId).toBe(41);
+  });
+
   it('reports expiry once while removing the expired record', async () => {
     const store = new MemoryRescheduleStore<string>();
     await store.save({

@@ -228,6 +228,16 @@ pipeline. If the confirmation proposal cannot be delivered, the staged row is
 removed so an unseen token cannot authorize a later write. No expiry cron,
 read-receipt state, or migration is required.
 
+### 3.5.3. Shared staging cancellation safety (#1062)
+
+Discord and Zalo pass the tool caller's optional `AbortSignal` through calendar
+lookup and pending-record persistence. An internal staging abort before the
+confirmation boundary performs no prompt delivery; a late save is removed only
+when its approval token/nonce still owns the staged row. Cleanup retries once
+at most and logs a masked, bounded warning on failure. A shared stage result
+without an approval token fails closed, and an abort after outbound delivery
+starts keeps the existing delivery semantics.
+
 ### 3.6. Sync API on Schedule Change
 
 `study_reminder_jobs` reflects the schedule **snapshot** at sync time. When schedule changes without timely sync, old jobs remain `pending` → wrong-time reminders or reminders for cancelled classes.
