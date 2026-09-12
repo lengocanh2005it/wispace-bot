@@ -587,6 +587,31 @@ describe('PlatformAgentToolsService', () => {
         });
       });
 
+      it('cleans the staged request when confirmation delivery fails', async () => {
+        stagePort.stage.mockResolvedValue({
+          pendingConfirmation: true,
+          sessionLabel: 'Ngày mai lúc 19:00',
+          summary: 'Dời buổi học?',
+          confirmationToken: '00000000-0000-4000-8000-000000000000',
+        });
+        confirmSender.mockRejectedValueOnce(new Error('DM unavailable'));
+
+        await expect(
+          service.execute(
+            'reschedule_study_session',
+            JSON.stringify({
+              calendarId: 42,
+              schedulingMode: 'default_next_day_same_time',
+            }),
+            { externalUserId: 'discord-1', userId: 143 },
+          ),
+        ).resolves.toEqual({ error: 'DM unavailable' });
+        expect(stagePort.cancelPending).toHaveBeenCalledWith(
+          'discord-1',
+          '00000000-0000-4000-8000-000000000000',
+        );
+      });
+
       it('returns the staging error without sending a confirmation', async () => {
         stagePort.stage.mockResolvedValue({
           error: RESCHEDULE_SCOPE_ERROR_MESSAGE,

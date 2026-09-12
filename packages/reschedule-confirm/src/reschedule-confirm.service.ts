@@ -14,6 +14,8 @@ import {
   MemoryRescheduleStore,
   type RescheduleStorePort,
   type RescheduleApprovalBinding,
+  type RescheduleCancellationOutcome,
+  type ReschedulePendingState,
 } from './reschedule-store.port';
 
 export const PENDING_RESCHEDULE_TTL_MS = 10 * 60 * 1000;
@@ -33,6 +35,19 @@ export const RESCHEDULE_IN_PROGRESS_MESSAGE =
 
 export const RESCHEDULE_SCOPE_ERROR_MESSAGE =
   'Không thể xác thực buổi học này trong lịch của bạn. Bạn chọn lại từ danh sách lịch học nhé.';
+
+export const RESCHEDULE_CANCELLED_MESSAGE =
+  'Đã hủy yêu cầu đổi lịch. Lịch học giữ nguyên nhé.';
+export const RESCHEDULE_CANCEL_PROCESSING_MESSAGE =
+  'Yêu cầu đổi lịch đã bắt đầu xử lý nên mình không thể dừng giữa chừng. Mình sẽ báo kết quả khi xong nhé.';
+export const RESCHEDULE_CANCEL_NONE_MESSAGE =
+  'Mình không thấy yêu cầu đổi lịch nào đang chờ xác nhận.';
+export const RESCHEDULE_EXPIRED_MESSAGE =
+  'Yêu cầu đổi lịch đã hết hạn. Bạn nhắn lại nhu cầu đổi lịch để tạo yêu cầu mới nhé.';
+export const RESCHEDULE_CONFIRM_TOKEN_REQUIRED_MESSAGE =
+  'Bạn hãy bấm đúng nút xác nhận hoặc nhắn "xác nhận <mã>" để mình thực hiện đổi lịch nhé.';
+export const RESCHEDULE_INVALID_TOKEN_MESSAGE =
+  'Không thể xác thực yêu cầu đổi lịch này. Bạn nhắn lại nhu cầu đổi lịch nhé.';
 
 export type RescheduleScopeFailureReason =
   | 'scope_mismatch'
@@ -401,11 +416,30 @@ export class RescheduleConfirmationService<TExternalId> {
           'Không thể xác thực yêu cầu đổi lịch này. Bạn nhắn lại nhu cầu đổi lịch nhé.',
       };
     }
+    if ((await this.getPendingState(externalId)) === 'expired') {
+      return {
+        confirmed: false,
+        message: RESCHEDULE_EXPIRED_MESSAGE,
+      };
+    }
     const pending = await this.store.takeValid(externalId, userId, {
       ...binding,
       ...(approvalToken ? { nonce: approvalToken } : {}),
     });
     if (!pending) {
+      const state = await this.getPendingState(externalId);
+      if (state === 'expired') {
+        return {
+          confirmed: false,
+          message: RESCHEDULE_EXPIRED_MESSAGE,
+        };
+      }
+      if (state === 'processing') {
+        return {
+          confirmed: false,
+          message: RESCHEDULE_IN_PROGRESS_MESSAGE,
+        };
+      }
       return {
         confirmed: false,
         message:
@@ -517,13 +551,43 @@ export class RescheduleConfirmationService<TExternalId> {
       approvalToken !== undefined &&
       !isValidApprovalToken(approvalToken)
     ) {
-      return 'Không thể xác thực yêu cầu đổi lịch này.';
+      return RESCHEDULE_INVALID_TOKEN_MESSAGE;
     }
-    await this.store.cancelPending(externalId);
-    this.logger.log(
-      `RESCHEDULE_CANCELLED externalId=${maskExternalId(String(externalId))}`,
-    );
-    return 'Đã hủy yêu cầu đổi lịch. Lịch học giữ nguyên nhé.';
+    const outcome = await this.cancelForUser(externalId, approvalToken);
+    switch (outcome) {
+      case 'cancelled':
+        return RESCHEDULE_CANCELLED_MESSAGE;
+      case 'processing':
+        return RESCHEDULE_CANCEL_PROCESSING_MESSAGE;
+      case 'expired':
+        return RESCHEDULE_EXPIRED_MESSAGE;
+      default:
+        return RESCHEDULE_CANCEL_NONE_MESSAGE;
+    }
+  }
+
+  async cancelForUser(
+    externalId: TExternalId,
+    approvalToken?: string,
+  ): Promise<RescheduleCancellationOutcome> {
+    if (
+      this.store.requiresApprovalToken &&
+      approvalToken !== undefined &&
+      !isValidApprovalToken(approvalToken)
+    ) {
+      return 'none';
+    }
+    const state = await this.getPendingState(externalId);
+    if (state === 'expired') {
+      return 'expired';
+    }
+    const outcome = await this.cancelPendingOnce(externalId, approvalToken);
+    if (outcome === 'cancelled') {
+      this.logger.log(
+        `RESCHEDULE_CANCELLED externalId=${maskExternalId(String(externalId))}`,
+      );
+    }
+    return outcome;
   }
 
   /** Removes only the staged request owned by the optional nonce. */
@@ -545,15 +609,27 @@ export class RescheduleConfirmationService<TExternalId> {
     }
   }
 
+  /** Current proposal state, with expiry removed on the first related read. */
+  async getPendingState(
+    externalId: TExternalId,
+  ): Promise<ReschedulePendingState> {
+    if (this.store.getPendingState) {
+      return this.store.getPendingState(externalId);
+    }
+    return (await this.store.hasPending(externalId)) ? 'pending' : 'none';
+  }
+
   /** Whether a valid (unexpired) pending reschedule exists for this user. */
   hasPending(externalId: TExternalId): Promise<boolean> {
-    return this.store.hasPending(externalId);
+    return this.getPendingState(externalId).then(
+      (state) => state === 'pending',
+    );
   }
 
   private cancelPendingOnce(
     externalId: TExternalId,
     nonce?: string,
-  ): Promise<void> {
+  ): Promise<RescheduleCancellationOutcome> {
     return nonce === undefined
       ? this.store.cancelPending(externalId)
       : this.store.cancelPending(externalId, nonce);

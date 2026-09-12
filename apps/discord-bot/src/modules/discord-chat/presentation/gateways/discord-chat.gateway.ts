@@ -26,7 +26,10 @@ import {
 } from '@wispace/chat-agent';
 import { DiscordOutboundService } from '../../application/services/discord-outbound.service';
 import { DiscordConsentService } from '../../application/services/discord-consent.service';
-import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
+import {
+  RESCHEDULE_INVALID_TOKEN_MESSAGE,
+  RescheduleConfirmationService,
+} from '@wispace/reschedule-confirm';
 import {
   RESCHEDULE_CANCEL_CUSTOM_ID,
   RESCHEDULE_CONFIRM_CUSTOM_ID,
@@ -466,7 +469,7 @@ export class DiscordChatGateway {
 
     let content: string;
     try {
-      content = await this.rescheduleConfirmationService.cancel(discordUserId);
+      content = RESCHEDULE_INVALID_TOKEN_MESSAGE;
     } catch (error) {
       this.logger.error(
         `Reschedule cancel failed for discordUserId=${maskExternalId(

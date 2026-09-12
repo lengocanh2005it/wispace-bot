@@ -2,7 +2,10 @@ import type { ConfigService } from '@nestjs/config';
 import { ZaloChatService } from './zalo-chat.service';
 import { ZaloOutboundService } from './zalo-outbound.service';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
-import { PlatformChatQueueService } from '@wispace/chat-agent';
+import {
+  type PlatformAgentService,
+  PlatformChatQueueService,
+} from '@wispace/chat-agent';
 import { RescheduleConfirmationService } from '@wispace/reschedule-confirm';
 import { NotificationPreferenceService } from '@wispace/database';
 import { ZaloWelcomeService } from '@zalo/modules/zalo-oauth/application/services/zalo-welcome.service';
@@ -50,6 +53,270 @@ describe('ZaloChatService', () => {
       'xem lich hoc cua minh',
       { userId: 42 },
       expect.any(String),
+    );
+  });
+
+  it('does not let bare ok confirm a pending reschedule', async () => {
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const enqueue = jest.fn();
+    const reschedule = {
+      hasPending: jest.fn().mockResolvedValue(true),
+      getPendingState: jest.fn().mockResolvedValue('pending'),
+      confirm: jest.fn(),
+      cancel: jest.fn(),
+    } as unknown as RescheduleConfirmationService<string>;
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as PlatformChatQueueService,
+      reschedule,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', 'ok');
+
+    expect((reschedule.confirm as jest.Mock).mock.calls).toHaveLength(0);
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(sendText).toHaveBeenCalledWith(
+      'zalo-1',
+      expect.stringContaining('mã'),
+      { userId: 42 },
+    );
+  });
+
+  it('confirms only an exact tokenized Zalo approval', async () => {
+    const token = '00000000-0000-4000-8000-000000000000';
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const enqueue = jest.fn();
+    const confirm = jest.fn().mockResolvedValue({
+      confirmed: true,
+      scheduledTimeLabel: 'Ngày mai lúc 19:00',
+    });
+    const reschedule = {
+      getPendingState: jest.fn().mockResolvedValue('pending'),
+      confirm,
+      cancel: jest.fn(),
+    } as unknown as RescheduleConfirmationService<string>;
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findCurrentIdentity: jest.fn().mockResolvedValue({
+          userId: 42,
+          mappingVersion: 'mapping-1',
+        }),
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as PlatformChatQueueService,
+      reschedule,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', `xác nhận ${token}`);
+
+    expect(confirm).toHaveBeenCalledWith('zalo-1', 42, token, {
+      platform: 'zalo',
+      mappingVersion: 'mapping-1',
+    });
+    expect(sendText).toHaveBeenCalledWith(
+      'zalo-1',
+      expect.stringContaining('Ngày mai lúc 19:00'),
+      { userId: 42 },
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stale token when no proposal is pending', async () => {
+    const token = '00000000-0000-4000-8000-000000000000';
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const enqueue = jest.fn();
+    const reschedule = {
+      getPendingState: jest.fn().mockResolvedValue('none'),
+      confirm: jest.fn(),
+    } as unknown as RescheduleConfirmationService<string>;
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as PlatformChatQueueService,
+      reschedule,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', token);
+
+    expect(reschedule.confirm).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(sendText).toHaveBeenCalledWith(
+      'zalo-1',
+      expect.stringContaining('xác thực'),
+      { userId: 42 },
+    );
+  });
+
+  it('rejects a token followed by trailing prose', async () => {
+    const token = '00000000-0000-4000-8000-000000000000';
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const enqueue = jest.fn();
+    const reschedule = {
+      getPendingState: jest.fn().mockResolvedValue('pending'),
+      confirm: jest.fn(),
+    } as unknown as RescheduleConfirmationService<string>;
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as PlatformChatQueueService,
+      reschedule,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', `${token} nhé`);
+
+    expect(reschedule.confirm).not.toHaveBeenCalled();
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(sendText).toHaveBeenCalledWith(
+      'zalo-1',
+      expect.stringContaining('mã'),
+      { userId: 42 },
+    );
+  });
+
+  it('rejects a copied Mã prefix as an invalid confirmation', async () => {
+    const token = '00000000-0000-4000-8000-000000000000';
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const enqueue = jest.fn();
+    const reschedule = {
+      getPendingState: jest.fn().mockResolvedValue('pending'),
+      confirm: jest.fn(),
+      cancel: jest.fn(),
+    } as unknown as RescheduleConfirmationService<string>;
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as PlatformChatQueueService,
+      reschedule,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', `Mã: ${token}`);
+
+    expect((reschedule.confirm as jest.Mock).mock.calls).toHaveLength(0);
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(sendText).toHaveBeenCalledWith(
+      'zalo-1',
+      expect.stringContaining('mã'),
+      { userId: 42 },
+    );
+  });
+
+  it('clears clarification state when a pending reschedule is cancelled', async () => {
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const enqueue = jest.fn();
+    const cancel = jest.fn().mockResolvedValue('Đã hủy yêu cầu đổi lịch.');
+    const clearClarificationState = jest.fn().mockResolvedValue(undefined);
+    const reschedule = {
+      getPendingState: jest.fn().mockResolvedValue('pending'),
+      cancel,
+    } as unknown as RescheduleConfirmationService<string>;
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as PlatformChatQueueService,
+      reschedule,
+      makePrefs(),
+      undefined,
+      undefined,
+      { clearClarificationState } as unknown as PlatformAgentService,
+    );
+
+    await service.handleIncomingMessage('zalo-1', 'hủy');
+
+    expect(cancel).toHaveBeenCalledWith('zalo-1');
+    expect(clearClarificationState).toHaveBeenCalledWith('zalo-1');
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('reports expiry for a related confirmation after the TTL', async () => {
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const enqueue = jest.fn();
+    const reschedule = {
+      getPendingState: jest.fn().mockResolvedValue('expired'),
+      confirm: jest.fn(),
+      cancel: jest.fn(),
+    } as unknown as RescheduleConfirmationService<string>;
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as PlatformChatQueueService,
+      reschedule,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', 'ok');
+
+    expect(sendText).toHaveBeenCalledWith(
+      'zalo-1',
+      expect.stringContaining('hết hạn'),
+      { userId: 42 },
+    );
+    expect(enqueue).not.toHaveBeenCalled();
+  });
+
+  it('keeps an expired proposal for the next related interaction after unrelated chat', async () => {
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const enqueue = jest.fn().mockResolvedValue(undefined);
+    const getPendingState = jest.fn().mockResolvedValue('expired');
+    const reschedule = {
+      getPendingState,
+      confirm: jest.fn(),
+      cancel: jest.fn(),
+    } as unknown as RescheduleConfirmationService<string>;
+
+    const service = new ZaloChatService(
+      buildConfig(),
+      { sendText } as unknown as ZaloOutboundService,
+      {
+        findUserIdByZaloId: jest.fn().mockResolvedValue(42),
+      } as unknown as ZaloAccountLinkService,
+      { enqueue } as unknown as PlatformChatQueueService,
+      reschedule,
+      makePrefs(),
+    );
+
+    await service.handleIncomingMessage('zalo-1', 'hỏi mình bài tập nhé');
+    expect(getPendingState).not.toHaveBeenCalled();
+    expect(enqueue).toHaveBeenCalled();
+
+    await service.handleIncomingMessage('zalo-1', 'ok');
+    expect(getPendingState).toHaveBeenCalledWith('zalo-1');
+    expect(sendText).toHaveBeenCalledWith(
+      'zalo-1',
+      expect.stringContaining('hết hạn'),
+      { userId: 42 },
     );
   });
 

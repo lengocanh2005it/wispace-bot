@@ -220,12 +220,16 @@ const REGISTER_REPORT_MESSAGE =
                 confirmationToken,
                 userId,
               ) => {
-                await outboundService.sendRescheduleConfirmation(
-                  externalUserId,
-                  summary,
-                  confirmationToken,
-                  userId,
-                );
+                const outcome =
+                  await outboundService.sendRescheduleConfirmation(
+                    externalUserId,
+                    summary,
+                    confirmationToken,
+                    userId,
+                  );
+                if (outcome !== undefined) {
+                  throw new Error('Reschedule confirmation delivery failed');
+                }
               },
             },
           },
@@ -261,6 +265,7 @@ const REGISTER_REPORT_MESSAGE =
         redisClient: RedisClientPort,
         clarificationStore: ClarificationStateStore,
         accountLinkService: DiscordAccountLinkService,
+        rescheduleConfirmationService: RescheduleConfirmationService<string>,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -277,6 +282,11 @@ const REGISTER_REPORT_MESSAGE =
             platform: 'discord',
             currentIdentityProvider: (externalUserId) =>
               accountLinkService.findCurrentIdentity(externalUserId),
+            cancelPendingReschedule: (externalUserId, approvalToken) =>
+              rescheduleConfirmationService.cancelForUser(
+                externalUserId,
+                approvalToken,
+              ),
             clarificationStore,
             promptDir: join(__dirname, '../../shared/prompts'),
             promptFile: 'discord-chat.system.txt',
@@ -322,6 +332,7 @@ const REGISTER_REPORT_MESSAGE =
         REDIS_CLIENT,
         CLARIFICATION_STATE_STORE,
         DiscordAccountLinkService,
+        RescheduleConfirmationService,
       ],
     },
     {

@@ -1,5 +1,9 @@
 import type { WriteToolBudgetPort } from './write-tool-budget';
-import type { StageInput, StageResult } from '@wispace/reschedule-confirm';
+import type {
+  RescheduleCancellationOutcome,
+  StageInput,
+  StageResult,
+} from '@wispace/reschedule-confirm';
 import type {
   AdmissionMetrics,
   AgentMetricsPort,
@@ -143,6 +147,11 @@ export interface PlatformAgentOptions {
     userText: string,
     signal?: AbortSignal,
   ) => Promise<PlatformAgentReply | null>;
+  /** Cancels the platform-scoped staged reschedule on an explicit stop. */
+  cancelPendingReschedule?: (
+    externalUserId: string,
+    approvalToken?: string,
+  ) => Promise<RescheduleCancellationOutcome>;
   /** Prometheus/OTel agent metrics (default: no-op). */
   metrics?: AgentMetricsPort;
   /** Bounded clarification lifecycle metrics; labels contain no user data. */

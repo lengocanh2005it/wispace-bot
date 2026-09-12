@@ -8,6 +8,7 @@ const buildDeps = (
     sendText?: jest.Mock;
     mappingService?: Record<string, jest.Mock>;
     linkContextService?: Record<string, jest.Mock>;
+    reschedule?: Record<string, jest.Mock>;
   } = {},
 ) => {
   const outbound = {
@@ -32,10 +33,57 @@ const buildDeps = (
     {} as never,
     {} as never,
     {} as never,
+    (overrides.reschedule ?? {}) as never,
     {},
   );
   return { service, outbound, mappingService, linkContextService };
 };
+
+describe('WebhookActionExecutorService.cancel_reschedule', () => {
+  const event = { sender: { id: 'psid-1' } } as MessengerWebhookEvent;
+  const token = '00000000-0000-4000-8000-000000000000';
+
+  it('forwards the current approval token to cancellation', async () => {
+    const cancel = jest.fn().mockResolvedValue('Đã hủy');
+    const { service } = buildDeps({ reschedule: { cancel } });
+
+    await service.executeAction(
+      {
+        type: 'cancel_reschedule',
+        psid: 'psid-1',
+        approvalToken: token,
+      },
+      event,
+      jest.fn().mockResolvedValue(undefined),
+    );
+
+    expect(cancel).toHaveBeenCalledWith('psid-1', token);
+  });
+
+  it('rejects tokenless cancellation without touching the staged proposal', async () => {
+    const cancel = jest.fn();
+    const sendText = jest.fn().mockResolvedValue(undefined);
+    const { service, outbound } = buildDeps({
+      sendText,
+      reschedule: { cancel },
+    });
+
+    await service.executeAction(
+      { type: 'cancel_reschedule', psid: 'psid-1' },
+      event,
+      jest.fn().mockResolvedValue(undefined),
+    );
+
+    expect(cancel).not.toHaveBeenCalled();
+    expect(outbound.sendTextViaPsid).toHaveBeenCalledWith(
+      expect.objectContaining({
+        psid: 'psid-1',
+        messageType: 'RESCHEDULE_CANCELLED',
+        text: expect.stringContaining('xác thực'),
+      }),
+    );
+  });
+});
 
 describe('WebhookActionExecutorService.send_text', () => {
   const buildService = (

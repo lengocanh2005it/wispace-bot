@@ -511,20 +511,30 @@ export class PlatformAgentToolsService implements PlatformToolExecutorPort {
       throw new RescheduleStageAbortedError(signal.reason);
     }
 
-    if (staged.confirmationToken) {
-      await this.options.reschedule.confirmSender(
-        ctx.externalUserId,
-        staged.summary,
-        staged.confirmationToken,
-        ctx.userId,
-      );
-    } else {
-      await this.options.reschedule.confirmSender(
-        ctx.externalUserId,
-        staged.summary,
-        undefined,
-        ctx.userId,
-      );
+    try {
+      if (staged.confirmationToken) {
+        await this.options.reschedule.confirmSender(
+          ctx.externalUserId,
+          staged.summary,
+          staged.confirmationToken,
+          ctx.userId,
+        );
+      } else {
+        await this.options.reschedule.confirmSender(
+          ctx.externalUserId,
+          staged.summary,
+          undefined,
+          ctx.userId,
+        );
+      }
+    } catch (error) {
+      if (staged.confirmationToken) {
+        await this.stagePort.cancelPending?.(
+          ctx.externalUserId,
+          staged.confirmationToken,
+        );
+      }
+      throw error;
     }
 
     return {

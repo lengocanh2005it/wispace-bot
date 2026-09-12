@@ -44,7 +44,7 @@ describe('MessengerChatProcessorService', () => {
     const sendSenderActionOptional = jest.fn(() => Promise.resolve());
     const sendTextViaPsid = jest.fn(() => Promise.resolve());
     const sendTextBubblesViaPsid = jest.fn(() => Promise.resolve(1));
-    const sendRichFollowUps = jest.fn(() => Promise.resolve());
+    const sendRichFollowUps = jest.fn(() => Promise.resolve('sent'));
     const outbound = {
       sendSenderActionOptional,
       sendTextViaPsid,
@@ -61,6 +61,7 @@ describe('MessengerChatProcessorService', () => {
     const messengerAgentService = {
       reply,
       markClarificationDeliveryFailedForEvent,
+      cancelPendingReschedule: jest.fn(() => Promise.resolve('cancelled')),
     } as unknown as MessengerAgentService;
 
     const getHistory = jest.fn(() => []);
@@ -170,10 +171,12 @@ describe('MessengerChatProcessorService', () => {
       sendSenderActionOptional,
       sendTextViaPsid,
       sendTextBubblesViaPsid,
+      sendRichFollowUps,
       appendTurn,
       appendToolSummary,
       reply,
       markClarificationDeliveryFailedForEvent,
+      cancelPendingReschedule: messengerAgentService.cancelPendingReschedule,
       reserveFreeFormSlot,
       markDelivered,
       markCompleted,
@@ -465,6 +468,172 @@ describe('MessengerChatProcessorService', () => {
 
     expect(appendTurn).not.toHaveBeenCalled();
     expect(appendToolSummary).not.toHaveBeenCalled();
+  });
+
+  it('clears a staged Messenger proposal when its rich confirmation cannot be delivered', async () => {
+    const { service, reply, sendRichFollowUps, cancelPendingReschedule } =
+      createService();
+    const token = '00000000-0000-4000-8000-000000000000';
+    reply.mockResolvedValueOnce({
+      text: 'Đã chuẩn bị',
+      richFollowUps: [
+        {
+          kind: 'button',
+          messageType: 'CHAT_RESCHEDULE_CONFIRM',
+          text: 'Dời lịch?',
+          buttons: [
+            {
+              type: 'postback',
+              title: 'Hủy',
+              payload: `CANCEL_RESCHEDULE:${token}`,
+            },
+          ],
+        },
+      ],
+    });
+    sendRichFollowUps.mockRejectedValueOnce(new Error('Meta unavailable'));
+
+    await service.process({
+      psid: 'psid-1',
+      mergedText: 'đổi lịch',
+      idempotencyKey: 'mid-rich-fail',
+    });
+
+    expect(cancelPendingReschedule).toHaveBeenCalledWith('psid-1', token);
+  });
+
+  it('clears a staged proposal when the primary reply cannot be delivered', async () => {
+    const { service, reply, sendTextBubblesViaPsid, cancelPendingReschedule } =
+      createService();
+    const token = '00000000-0000-4000-8000-000000000000';
+    reply.mockResolvedValueOnce({
+      text: 'Đã chuẩn bị',
+      richFollowUps: [
+        {
+          kind: 'button',
+          messageType: 'CHAT_RESCHEDULE_CONFIRM',
+          text: 'Dời lịch?',
+          buttons: [
+            {
+              type: 'postback',
+              title: 'Hủy',
+              payload: `CANCEL_RESCHEDULE:${token}`,
+            },
+          ],
+        },
+      ],
+    });
+    sendTextBubblesViaPsid.mockRejectedValueOnce(new Error('Meta unavailable'));
+
+    await expect(
+      service.process({
+        psid: 'psid-1',
+        mergedText: 'đổi lịch',
+        idempotencyKey: 'mid-primary-rich-fail',
+      }),
+    ).rejects.toThrow('Meta unavailable');
+
+    expect(cancelPendingReschedule).toHaveBeenCalledWith('psid-1', token);
+  });
+
+  it('does not clear a staged proposal when an unrelated rich follow-up fails', async () => {
+    const { service, reply, sendRichFollowUps, cancelPendingReschedule } =
+      createService();
+    reply.mockResolvedValueOnce({
+      text: 'Đây là thông tin thêm',
+      richFollowUps: [
+        {
+          kind: 'generic',
+          messageType: 'CHAT_REMINDER_GENERIC',
+          elements: [{ title: 'Thông tin' }],
+        },
+      ],
+    });
+    sendRichFollowUps.mockRejectedValueOnce(new Error('Meta unavailable'));
+
+    await service.process({
+      psid: 'psid-1',
+      mergedText: 'xem lịch',
+      idempotencyKey: 'mid-generic-rich-fail',
+    });
+
+    expect(cancelPendingReschedule).not.toHaveBeenCalled();
+  });
+
+  it('clears a proposal when an earlier rich follow-up fails before confirmation', async () => {
+    const { service, reply, sendRichFollowUps, cancelPendingReschedule } =
+      createService();
+    const token = '00000000-0000-4000-8000-000000000000';
+    reply.mockResolvedValueOnce({
+      text: 'Đã chuẩn bị',
+      richFollowUps: [
+        {
+          kind: 'generic',
+          messageType: 'CHAT_REMINDER_GENERIC',
+          elements: [{ title: 'Thông tin trước' }],
+        },
+        {
+          kind: 'button',
+          messageType: 'CHAT_RESCHEDULE_CONFIRM',
+          text: 'Dời lịch?',
+          buttons: [
+            {
+              type: 'postback',
+              title: 'Hủy',
+              payload: `CANCEL_RESCHEDULE:${token}`,
+            },
+          ],
+        },
+      ],
+    });
+    sendRichFollowUps.mockRejectedValueOnce(new Error('Meta unavailable'));
+
+    await service.process({
+      psid: 'psid-1',
+      mergedText: 'đổi lịch',
+      idempotencyKey: 'mid-earlier-rich-fail',
+    });
+
+    expect(cancelPendingReschedule).toHaveBeenCalledWith('psid-1', token);
+  });
+
+  it('does not clear a proposal after its confirmation was delivered but a later follow-up failed', async () => {
+    const { service, reply, sendRichFollowUps, cancelPendingReschedule } =
+      createService();
+    const token = '00000000-0000-4000-8000-000000000000';
+    reply.mockResolvedValueOnce({
+      text: 'Đã chuẩn bị',
+      richFollowUps: [
+        {
+          kind: 'button',
+          messageType: 'CHAT_RESCHEDULE_CONFIRM',
+          text: 'Dời lịch?',
+          buttons: [
+            {
+              type: 'postback',
+              title: 'Hủy',
+              payload: `CANCEL_RESCHEDULE:${token}`,
+            },
+          ],
+        },
+        {
+          kind: 'generic',
+          messageType: 'CHAT_REMINDER_GENERIC',
+          elements: [{ title: 'Thông tin thêm' }],
+        },
+      ],
+    });
+    sendRichFollowUps
+      .mockResolvedValueOnce('sent')
+      .mockRejectedValueOnce(new Error('Meta unavailable'));
+
+    await service.process({
+      psid: 'psid-1',
+      mergedText: 'đổi lịch',
+      idempotencyKey: 'mid-confirmed-generic-fail',
+    });
+
+    expect(cancelPendingReschedule).not.toHaveBeenCalled();
   });
 
   it('marks a clarification-associated event retryable when its normal answer fails', async () => {

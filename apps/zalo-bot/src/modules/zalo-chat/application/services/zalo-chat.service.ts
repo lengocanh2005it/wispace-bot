@@ -22,7 +22,10 @@ import {
 } from '@wispace/study-reminder-shared';
 import { ZaloAccountLinkService } from '@zalo/modules/zalo-oauth/application/services/zalo-account-link.service';
 import { ZaloWelcomeService } from '@zalo/modules/zalo-oauth/application/services/zalo-welcome.service';
-import { PlatformChatQueueService } from '@wispace/chat-agent';
+import {
+  PlatformAgentService,
+  PlatformChatQueueService,
+} from '@wispace/chat-agent';
 import {
   isValidApprovalToken,
   RescheduleConfirmationService,
@@ -35,7 +38,14 @@ import {
   CHAT_FAILURE_FALLBACK_MESSAGE,
   IntentDetector,
   detectDisclosureProbe,
+  isStopIntent,
 } from '@wispace/llm-agent';
+import {
+  RESCHEDULE_CONFIRM_TOKEN_REQUIRED_MESSAGE,
+  RESCHEDULE_EXPIRED_MESSAGE,
+  RESCHEDULE_INVALID_TOKEN_MESSAGE,
+  type ReschedulePendingState,
+} from '@wispace/reschedule-confirm';
 import {
   ZALO_OUTBOUND,
   type ZaloOutboundPort,
@@ -59,6 +69,7 @@ export class ZaloChatService {
     @Inject(STUDY_REMINDER_JOB_REPOSITORY)
     private readonly studyReminderJobRepository?: StudyReminderJobRepositoryPort,
     @Optional() private readonly welcomeService?: ZaloWelcomeService,
+    @Optional() private readonly clarificationAgent?: PlatformAgentService,
   ) {
     const appId = this.configService.get<string>('ZALO_APP_ID');
     const redirectUri = this.configService.get<string>(
@@ -111,52 +122,84 @@ export class ZaloChatService {
         identity?.userId ??
         (await this.accountLinkService.findUserIdByZaloId(zaloUserId));
 
-      const hasPending =
-        await this.rescheduleConfirmationService.hasPending(zaloUserId);
+      const interaction = this.parseRescheduleInteraction(text.trim());
+      if (interaction) {
+        const pendingState = await this.readPendingState(zaloUserId);
 
-      if (hasPending && this.isConfirmKeyword(text.trim())) {
-        if (!identity) {
-          await this.outboundService.sendText(
-            zaloUserId,
-            'Mình không thể xác thực liên kết WISPACE hiện tại. Bạn liên kết lại rồi thử lại nhé.',
-            { userId },
-          );
-          return;
-        }
-        const approvalToken = this.readApprovalToken(text.trim());
-        const result = approvalToken
-          ? await this.rescheduleConfirmationService.confirm(
+        if (pendingState !== 'none') {
+          if (pendingState === 'expired') {
+            if (interaction.kind === 'cancel') {
+              await this.clarificationAgent
+                ?.clearClarificationState(zaloUserId)
+                .catch(() => undefined);
+            }
+            await this.outboundService.sendText(
               zaloUserId,
-              userId,
-              approvalToken,
-              {
-                platform: 'zalo',
-                mappingVersion: identity?.mappingVersion,
-              },
-            )
-          : await this.rescheduleConfirmationService.confirm(
-              zaloUserId,
-              userId,
+              RESCHEDULE_EXPIRED_MESSAGE,
+              { userId },
             );
-        if (result.confirmed) {
+            return;
+          }
+
+          if (interaction.kind === 'cancel') {
+            const message =
+              await this.rescheduleConfirmationService.cancel(zaloUserId);
+            await this.clarificationAgent
+              ?.clearClarificationState(zaloUserId)
+              .catch(() => undefined);
+            await this.outboundService.sendText(zaloUserId, message, {
+              userId,
+            });
+            return;
+          }
+
+          if (!interaction.approvalToken) {
+            await this.outboundService.sendText(
+              zaloUserId,
+              RESCHEDULE_CONFIRM_TOKEN_REQUIRED_MESSAGE,
+              { userId },
+            );
+            return;
+          }
+          if (!identity) {
+            await this.outboundService.sendText(
+              zaloUserId,
+              'Mình không thể xác thực liên kết WISPACE hiện tại. Bạn liên kết lại rồi thử lại nhé.',
+              { userId },
+            );
+            return;
+          }
+          const result = await this.rescheduleConfirmationService.confirm(
+            zaloUserId,
+            userId,
+            interaction.approvalToken,
+            {
+              platform: 'zalo',
+              mappingVersion: identity.mappingVersion,
+            },
+          );
+          if (result.confirmed) {
+            await this.outboundService.sendText(
+              zaloUserId,
+              `Đã dời buổi học sang ${result.scheduledTimeLabel} nhé.`,
+              { userId },
+            );
+            return;
+          }
+          await this.outboundService.sendText(zaloUserId, result.message, {
+            userId,
+          });
+          return;
+        }
+
+        if (interaction.kind === 'confirm' && interaction.approvalToken) {
           await this.outboundService.sendText(
             zaloUserId,
-            `Đã dời buổi học sang ${result.scheduledTimeLabel} nhé.`,
+            RESCHEDULE_INVALID_TOKEN_MESSAGE,
             { userId },
           );
           return;
         }
-        await this.outboundService.sendText(zaloUserId, result.message, {
-          userId,
-        });
-        return;
-      }
-
-      if (hasPending && this.isCancelKeyword(text.trim())) {
-        const message =
-          await this.rescheduleConfirmationService.cancel(zaloUserId);
-        await this.outboundService.sendText(zaloUserId, message, { userId });
-        return;
       }
 
       const key = idempotencyKey ?? `zalo:${zaloUserId}:${Date.now()}`;
@@ -224,22 +267,57 @@ export class ZaloChatService {
     );
   }
 
-  private isConfirmKeyword(text: string): boolean {
+  private parseRescheduleInteraction(
+    text: string,
+  ):
+    | { kind: 'confirm'; approvalToken?: string }
+    | { kind: 'cancel' }
+    | undefined {
     const normalized = text.toLowerCase().trim();
-    return (
-      RESCHEDULE_CONFIRM_KEYWORDS.includes(normalized) ||
-      (normalized.startsWith('xác nhận ') &&
-        isValidApprovalToken(normalized.slice('xác nhận '.length)))
-    );
+    if (
+      RESCHEDULE_CANCEL_KEYWORDS.includes(normalized) ||
+      isStopIntent(normalized)
+    ) {
+      return { kind: 'cancel' };
+    }
+    if (isValidApprovalToken(normalized)) {
+      return { kind: 'confirm', approvalToken: normalized };
+    }
+    const firstToken = normalized.split(/\s+/, 1)[0];
+    if (firstToken !== normalized && isValidApprovalToken(firstToken)) {
+      return { kind: 'confirm' };
+    }
+    if (RESCHEDULE_CONFIRM_KEYWORDS.includes(normalized)) {
+      return { kind: 'confirm' };
+    }
+    for (const prefix of ['xác nhận', 'đồng ý']) {
+      if (normalized.startsWith(`${prefix} `)) {
+        const token = normalized.slice(prefix.length).trim();
+        return {
+          kind: 'confirm',
+          ...(isValidApprovalToken(token) ? { approvalToken: token } : {}),
+        };
+      }
+    }
+    if (
+      /^(?:ok|oke|okay|yes|confirm|xác nhận|đồng ý)\s+/i.test(normalized) ||
+      /^(?:mã|ma)\s*[:：]/i.test(normalized)
+    ) {
+      return { kind: 'confirm' };
+    }
+    return undefined;
   }
 
-  private readApprovalToken(text: string): string | undefined {
-    const token = text.slice('xác nhận '.length).trim();
-    return isValidApprovalToken(token) ? token : undefined;
-  }
-
-  private isCancelKeyword(text: string): boolean {
-    return RESCHEDULE_CANCEL_KEYWORDS.includes(text.toLowerCase());
+  private async readPendingState(
+    zaloUserId: string,
+  ): Promise<ReschedulePendingState> {
+    const getter = this.rescheduleConfirmationService.getPendingState;
+    if (typeof getter === 'function') {
+      return getter.call(this.rescheduleConfirmationService, zaloUserId);
+    }
+    return (await this.rescheduleConfirmationService.hasPending(zaloUserId))
+      ? 'pending'
+      : 'none';
   }
 
   async handleFollow(zaloUserId: string): Promise<void> {

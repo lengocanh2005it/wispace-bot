@@ -1,11 +1,11 @@
 {
   "name": "zalo-overlay-reschedule-confirm",
-  "description": "Zalo overlay contract: the request carries the Zalo keyword-confirmation rule; reschedule flows through calendar lookup then the reschedule call with exact args.",
+  "description": "Zalo overlay contract: the request carries the tokenized confirmation rule; reschedule flows through calendar lookup then the reschedule call with exact args.",
   "coreHash": "476325498115d602b088b2691cfac8e7dccd8447014aa45d995a6fd2a842dd62",
   "promptFiles": [
     {
       "path": "apps/zalo-bot/src/shared/prompts/zalo-chat.system.txt",
-      "hash": "52cf487d8b949d7a303d076f37d63d9422ad2e361a003ccb9a4e6839d5a528f4"
+      "hash": "d1b272c463d3c3ed96a8c8555be007409d6a5c8c910e5b2a1ac8197b4d73bce6"
     }
   ],
   "systemPromptSuffix": "Học viên đã liên kết tài khoản WISPACE (userId=3001).",
@@ -61,7 +61,7 @@
       {
         "systemPromptContains": [
           "You are chatting with a learner through the Zalo Official Account.",
-          "you do not need to call the tool again",
+          "exact tokenized text",
           "the Zalo OA text message does not render it"
         ],
         "userMessageContains": ["đổi buổi học ngày mai"],

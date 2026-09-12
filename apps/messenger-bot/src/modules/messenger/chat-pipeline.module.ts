@@ -247,6 +247,7 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
         learnerProfileStore: LearnerProfileStorePort,
         redisClient: RedisClientPort,
         clarificationStore: ClarificationStateStore,
+        rescheduleConfirmationService: MessengerRescheduleConfirmationService,
         currentIdentityProvider: (
           externalUserId: string,
         ) => Promise<{ userId: number; mappingVersion: string } | undefined>,
@@ -344,6 +345,11 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
             ),
             tryFastReschedule: (ctx, userText, signal) =>
               messengerTools.tryFastDefaultReschedule(ctx, userText, signal),
+            cancelPendingReschedule: (externalUserId, approvalToken) =>
+              rescheduleConfirmationService.cancelForUser(
+                externalUserId,
+                approvalToken,
+              ),
             contentClassifier,
           },
           redisClient,
@@ -363,6 +369,7 @@ const DEFAULT_CLASSIFIER_MODEL = 'google/gemini-2.0-flash-lite';
         LEARNER_PROFILE_STORE,
         REDIS_CLIENT,
         CLARIFICATION_STATE_STORE,
+        MessengerRescheduleConfirmationService,
         MESSENGER_TOOL_IDENTITY_PROVIDER,
       ],
     },

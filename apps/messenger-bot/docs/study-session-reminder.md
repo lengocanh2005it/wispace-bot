@@ -212,6 +212,22 @@ in the request body is authorized for the identity header (`x-psid`,
 conversation; it is an external integration prerequisite, not a runtime code
 dependency.
 
+### 3.5.2. Chat reschedule confirmation safety (#1037)
+
+The staged request is platform-scoped and remains armed only while it is
+pending. A recognized stop/cancel clears the pending proposal and any active
+clarification state; if confirmation has already claimed the row, the bot says
+that processing has started. Messenger and Discord confirmation buttons carry
+the current one-time token. Zalo accepts only the exact token, `xác nhận
+<token>`, or `đồng ý <token>`; bare `ok`, `yes`, `confirm`, `xác nhận`, and
+`đồng ý` never write to the calendar.
+
+Expiry is lazy: the next related confirmation or cancellation reports that the
+proposal expired and removes it. Unrelated chat continues through the normal
+pipeline. If the confirmation proposal cannot be delivered, the staged row is
+removed so an unseen token cannot authorize a later write. No expiry cron,
+read-receipt state, or migration is required.
+
 ### 3.6. Sync API on Schedule Change
 
 `study_reminder_jobs` reflects the schedule **snapshot** at sync time. When schedule changes without timely sync, old jobs remain `pending` → wrong-time reminders or reminders for cancelled classes.

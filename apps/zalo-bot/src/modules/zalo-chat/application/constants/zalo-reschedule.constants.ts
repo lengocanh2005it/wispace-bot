@@ -12,4 +12,9 @@ export const RESCHEDULE_CANCEL_KEYWORDS = [
   'không',
   'no',
   'stop',
+  'dừng',
+  'thôi',
+  'thôi khỏi',
+  'khoan',
+  'không cần nữa',
 ];

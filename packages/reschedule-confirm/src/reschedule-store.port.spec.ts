@@ -105,4 +105,46 @@ describe('MemoryRescheduleStore', () => {
     await store.revertToPending('u-revert', claimed!.leaseToken!);
     expect(await store.hasPending('u-revert')).toBe(true);
   });
+
+  it('reports cancellation outcome and preserves the processing race', async () => {
+    const store = new MemoryRescheduleStore<string>();
+    await store.save({
+      externalId: 'u-cancel',
+      userId: 4,
+      calendarId: 40,
+      schedulingMode: 'explicit',
+      sessionLabel: 'Thu 16:00',
+      expiresAt: future,
+      nonce: 'nonce-1',
+    });
+
+    expect(await store.cancelPending('u-cancel')).toBe('cancelled');
+    expect(await store.cancelPending('u-cancel')).toBe('none');
+
+    await store.save({
+      externalId: 'u-processing',
+      userId: 4,
+      calendarId: 40,
+      schedulingMode: 'explicit',
+      sessionLabel: 'Thu 16:00',
+      expiresAt: future,
+    });
+    await store.takeValid('u-processing');
+    expect(await store.cancelPending('u-processing')).toBe('processing');
+  });
+
+  it('reports expiry once while removing the expired record', async () => {
+    const store = new MemoryRescheduleStore<string>();
+    await store.save({
+      externalId: 'u-expired',
+      userId: 4,
+      calendarId: 40,
+      schedulingMode: 'explicit',
+      sessionLabel: 'Thu 16:00',
+      expiresAt: Date.now() - 1,
+    });
+
+    expect(await store.getPendingState('u-expired')).toBe('expired');
+    expect(await store.getPendingState('u-expired')).toBe('none');
+  });
 });

@@ -46,7 +46,7 @@ function mockStore(saveResult: boolean): RescheduleStorePort<string> {
     save: jest.fn().mockResolvedValue(saveResult),
     takeValid: jest.fn().mockResolvedValue(null),
     revertToPending: jest.fn().mockResolvedValue(undefined),
-    cancelPending: jest.fn().mockResolvedValue(undefined),
+    cancelPending: jest.fn().mockResolvedValue('cancelled'),
     cancelClaimed: jest.fn().mockResolvedValue(undefined),
     hasPending: jest.fn().mockResolvedValue(false),
   };
@@ -737,6 +737,28 @@ describe('RescheduleConfirmationService', () => {
       });
     });
 
+    it('reports expiry when cancellation is the first related interaction', async () => {
+      jest.useFakeTimers();
+      try {
+        const service = new RescheduleConfirmationService(
+          mockCalendarPort(),
+          mockReschedulePort(),
+        );
+
+        await service.stage({
+          externalId: 'user-1',
+          userId: 42,
+          calendarId: 1,
+          schedulingMode: 'explicit',
+        });
+        jest.advanceTimersByTime(11 * 60 * 1000);
+
+        await expect(service.cancel('user-1')).resolves.toContain('hết hạn');
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
     it('uses pending cancellation without passing the approval nonce as a lease', async () => {
       const calendar = mockCalendarPort();
       const reschedule = mockReschedulePort();
@@ -754,7 +776,10 @@ describe('RescheduleConfirmationService', () => {
       );
 
       expect(msg).toContain('hủy');
-      expect(store.cancelPending).toHaveBeenCalledWith('user-1');
+      expect(store.cancelPending).toHaveBeenCalledWith(
+        'user-1',
+        '00000000-0000-4000-8000-000000000000',
+      );
       expect(store.cancelClaimed).not.toHaveBeenCalled();
     });
   });
@@ -779,7 +804,7 @@ describe('RescheduleConfirmationService', () => {
         const result = await service.confirm('user-1');
         expect(result).toEqual({
           confirmed: false,
-          message: expect.any(String),
+          message: expect.stringContaining('hết hạn'),
         });
       } finally {
         jest.useRealTimers();

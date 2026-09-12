@@ -5,6 +5,8 @@ import { Repository } from 'typeorm';
 import { extractQueryRows } from '@wispace/bot-common/utils';
 import type {
   PendingRescheduleRecord,
+  RescheduleCancellationOutcome,
+  ReschedulePendingState,
   RescheduleStorePort,
 } from '@wispace/reschedule-confirm';
 import { RescheduleConfirmationEntity } from '../entities/reschedule-confirmation.entity';
@@ -153,21 +155,45 @@ export class TypeormRescheduleStore<
     );
   }
 
-  async cancelPending(externalId: TExternalId, nonce?: string): Promise<void> {
+  async cancelPending(
+    externalId: TExternalId,
+    nonce?: string,
+  ): Promise<RescheduleCancellationOutcome> {
     const nonceCondition = nonce === undefined ? '' : ' AND nonce = $2';
     const params =
       nonce === undefined
         ? [this.key(externalId)]
         : [this.key(externalId), nonce];
-    await this.repo.query(
-      `
+    const deleted = extractQueryRows<Record<string, unknown>>(
+      await this.repo.query(
+        `
       DELETE FROM reschedule_confirmations
       WHERE external_id = $1
         AND status IN ('pending', 'confirmed', 'cancelled')
         ${nonceCondition}
+      RETURNING external_id
     `,
-      params,
+        params,
+      ),
     );
+    if (deleted.length > 0) {
+      return 'cancelled';
+    }
+
+    const processingRows = extractQueryRows<Record<string, unknown>>(
+      await this.repo.query(
+        `
+        SELECT status
+        FROM reschedule_confirmations
+        WHERE external_id = $1
+          AND status = 'processing'
+          ${nonce === undefined ? '' : 'AND nonce = $2'}
+        LIMIT 1
+      `,
+        params,
+      ),
+    );
+    return processingRows.length > 0 ? 'processing' : 'none';
   }
 
   async cancelClaimed(
@@ -211,13 +237,38 @@ export class TypeormRescheduleStore<
   }
 
   async hasPending(externalId: TExternalId): Promise<boolean> {
+    return (await this.getPendingState(externalId)) === 'pending';
+  }
+
+  async getPendingState(
+    externalId: TExternalId,
+  ): Promise<ReschedulePendingState> {
+    const key = this.key(externalId);
     const row = await this.repo.findOne({
-      where: {
-        externalId: this.key(externalId),
-        status: 'pending',
-      },
+      where: { externalId: key },
     });
-    return !!row && row.expiresAt.getTime() > Date.now();
+    if (!row) {
+      return 'none';
+    }
+    if (row.status === 'processing') {
+      return 'processing';
+    }
+    if (row.status !== 'pending') {
+      return 'none';
+    }
+    if (row.expiresAt.getTime() <= Date.now()) {
+      await this.repo.query(
+        `
+        DELETE FROM reschedule_confirmations
+        WHERE external_id = $1
+          AND status = 'pending'
+          AND expires_at <= now()
+      `,
+        [key],
+      );
+      return 'expired';
+    }
+    return 'pending';
   }
 
   private key(externalId: TExternalId): string {

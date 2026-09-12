@@ -44,6 +44,12 @@ import {
 import { buildUnsupportedMessageTypeReply } from '@wispace/bot-common/messages';
 import { REDIS_CLIENT, type RedisClientPort } from '@wispace/bot-common/redis';
 import { isAbortError } from '@wispace/bot-common/utils';
+import {
+  RESCHEDULE_CANCELLED_MESSAGE,
+  RESCHEDULE_CANCEL_PROCESSING_MESSAGE,
+  RESCHEDULE_EXPIRED_MESSAGE,
+  type RescheduleCancellationOutcome,
+} from '@wispace/reschedule-confirm';
 import { PlatformChatHistoryService } from '../chat-history/platform-chat-history.service';
 import type {
   PlatformAgentInput,
@@ -125,6 +131,18 @@ export class PlatformAgentService {
 
   async clearClarificationState(externalUserId: string): Promise<void> {
     await this.clarificationStore.clear(this.clarificationKey(externalUserId));
+  }
+
+  async cancelPendingReschedule(
+    externalUserId: string,
+    approvalToken?: string,
+  ): Promise<RescheduleCancellationOutcome> {
+    return (
+      (await this.options.cancelPendingReschedule?.(
+        externalUserId,
+        approvalToken,
+      )) ?? 'none'
+    );
   }
 
   async markClarificationDeliveryFailedForEvent(
@@ -480,8 +498,13 @@ export class PlatformAgentService {
           reply: this.staticReply(
             // #959: the same words double as a stop request outside menu
             // context — the acknowledgement covers both honestly.
-            isStopIntent(input.userText)
-              ? buildStopAcknowledgedMessage()
+            this.isRescheduleCancellation(input.userText)
+              ? await this.stopReply(
+                  input.externalUserId,
+                  isStopIntent(input.userText)
+                    ? buildStopAcknowledgedMessage()
+                    : buildClarificationCancelledMessage(),
+                )
               : buildClarificationCancelledMessage(),
             input,
           ),
@@ -539,7 +562,10 @@ export class PlatformAgentService {
         }
         this.recordClarificationOutcome('stop_acknowledged');
         return {
-          reply: this.staticReply(buildStopAcknowledgedMessage(), input),
+          reply: this.staticReply(
+            await this.stopReply(input.externalUserId),
+            input,
+          ),
         };
       }
 
@@ -711,6 +737,38 @@ export class PlatformAgentService {
         : {}),
       ...(skipDelivery ? { skipDelivery: true } : {}),
     };
+  }
+
+  private async stopReply(
+    externalUserId: string,
+    fallbackMessage = buildStopAcknowledgedMessage(),
+  ): Promise<string> {
+    try {
+      const outcome =
+        await this.options.cancelPendingReschedule?.(externalUserId);
+      if (outcome === 'cancelled') {
+        return RESCHEDULE_CANCELLED_MESSAGE;
+      }
+      if (outcome === 'processing') {
+        return RESCHEDULE_CANCEL_PROCESSING_MESSAGE;
+      }
+      if (outcome === 'expired') {
+        return RESCHEDULE_EXPIRED_MESSAGE;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Reschedule stop cleanup failed externalUserId=${maskExternalId(
+          externalUserId,
+        )}: ${sanitizeLogValue(errorMessage(error), 200)}`,
+      );
+    }
+    return fallbackMessage;
+  }
+
+  private isRescheduleCancellation(userText: string): boolean {
+    return (
+      isStopIntent(userText) || this.clarificationMachine.isCancel(userText)
+    );
   }
 
   /** A cancelled turn is consumed without producing fallback or history. */

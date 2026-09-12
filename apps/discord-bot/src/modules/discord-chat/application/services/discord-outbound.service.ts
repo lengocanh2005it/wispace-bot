@@ -652,7 +652,7 @@ export class DiscordOutboundService {
     summary: string,
     confirmationToken?: string,
     userId?: number,
-  ): Promise<void | 'rate_limited'> {
+  ): Promise<void | 'rate_limited' | false> {
     try {
       if (!(await this.admitOutbound(discordUserId, userId, 1))) {
         return 'rate_limited';
@@ -687,6 +687,7 @@ export class DiscordOutboundService {
         )}: ${maskExternalIdInText(errorMessage(error), discordUserId)}`,
       );
       this.metrics?.incDmDeliveryFailure(DM_FAILURE_REASON_RESCHEDULE);
+      return false;
     }
   }
 

@@ -52,6 +52,8 @@ import {
   readChatFlushRetrySettings,
 } from '@wispace/chat-agent';
 import { RedisUserDisplayNameCache } from '@wispace/bot-common/redis';
+import { isValidApprovalToken } from '@wispace/reschedule-confirm';
+import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
 
 export interface ChatBatchInput {
   psid: string;
@@ -129,6 +131,10 @@ export class MessengerChatProcessorService {
             errorMessage(ctx.error),
             ctx.externalUserId,
           )}`,
+        );
+        await this.clearStagedRescheduleForReply(
+          ctx.externalUserId,
+          (ctx.reply?.richFollowUps ?? []) as MessengerRichFollowUp[],
         );
         try {
           if (!ctx.deliveryAmbiguous) {
@@ -742,19 +748,46 @@ export class MessengerChatProcessorService {
       ReturnType<MessengerAgentService['reply']>
     >['richFollowUps'];
   }): Promise<void> {
-    if (params.richFollowUps.length > 0) {
+    for (const [index, followUp] of params.richFollowUps.entries()) {
+      let deliveryError: unknown;
       try {
-        await this.outbound.sendRichFollowUps({
+        const outcome = await this.outbound.sendRichFollowUps({
           psid: params.psid,
           userId: params.userId,
-          followUps: params.richFollowUps,
+          followUps: [followUp],
         });
+        if (outcome !== 'sent') {
+          deliveryError = new Error(
+            `Rich follow-up delivery outcome: ${outcome}`,
+          );
+        }
       } catch (error) {
+        deliveryError = error;
+      }
+      if (deliveryError) {
+        const confirmationFollowUp = this.isRescheduleConfirmationFollowUp(
+          followUp,
+        )
+          ? followUp
+          : params.richFollowUps
+              .slice(index + 1)
+              .find((candidate) =>
+                this.isRescheduleConfirmationFollowUp(candidate),
+              );
+        if (confirmationFollowUp) {
+          await this.clearStagedRescheduleForReply(params.psid, [
+            confirmationFollowUp,
+          ]);
+        }
         this.logger.warn(
           `Rich follow-up delivery failed psid=${maskExternalId(
             params.psid,
-          )}: ${maskExternalIdInText(errorMessage(error), params.psid)}`,
+          )}: ${maskExternalIdInText(
+            errorMessage(deliveryError),
+            params.psid,
+          )}`,
         );
+        break;
       }
     }
 
@@ -782,6 +815,56 @@ export class MessengerChatProcessorService {
         )}: ${maskExternalIdInText(errorMessage(error), params.psid)}`,
       );
     }
+  }
+
+  private async clearStagedRescheduleForReply(
+    psid: string,
+    richFollowUps: MessengerRichFollowUp[],
+  ): Promise<void> {
+    if (
+      !richFollowUps.some((followUp) =>
+        this.isRescheduleConfirmationFollowUp(followUp),
+      )
+    ) {
+      return;
+    }
+    const approvalToken = this.readRescheduleApprovalToken(richFollowUps);
+    try {
+      await this.messengerAgentService.cancelPendingReschedule(
+        psid,
+        approvalToken,
+      );
+    } catch {
+      // Delivery failure is already logged; cleanup is best effort.
+    }
+  }
+
+  private readRescheduleApprovalToken(
+    followUps: MessengerRichFollowUp[],
+  ): string | undefined {
+    for (const followUp of followUps) {
+      if (
+        followUp.kind !== 'button' ||
+        followUp.messageType !== 'CHAT_RESCHEDULE_CONFIRM'
+      ) {
+        continue;
+      }
+      const payload = followUp.buttons.find((button) =>
+        button.payload.startsWith('CANCEL_RESCHEDULE:'),
+      )?.payload;
+      const token = payload?.slice('CANCEL_RESCHEDULE:'.length);
+      return token && isValidApprovalToken(token) ? token : undefined;
+    }
+    return undefined;
+  }
+
+  private isRescheduleConfirmationFollowUp(
+    followUp: MessengerRichFollowUp,
+  ): boolean {
+    return (
+      followUp.kind === 'button' &&
+      followUp.messageType === 'CHAT_RESCHEDULE_CONFIRM'
+    );
   }
 
   private getChatQueueStore(): ChatQueueStorePort {

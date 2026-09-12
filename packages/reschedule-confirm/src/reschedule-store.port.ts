@@ -29,6 +29,18 @@ export interface RescheduleApprovalBinding {
   nonce?: string;
 }
 
+export type RescheduleCancellationOutcome =
+  | 'cancelled'
+  | 'none'
+  | 'processing'
+  | 'expired';
+
+export type ReschedulePendingState =
+  | 'pending'
+  | 'processing'
+  | 'expired'
+  | 'none';
+
 /**
  * Persistence for staged reschedule confirmations. The in-memory default is
  * per-instance (a restart or a second pod loses the pending confirmation);
@@ -51,9 +63,14 @@ export interface RescheduleStorePort<TExternalId> {
   /** Puts a claimed record back to pending (confirm failed — user can retry). */
   revertToPending(externalId: TExternalId, leaseToken: string): Promise<void>;
   /** Deletes a user-cancelled row, optionally guarded by its staging nonce. */
-  cancelPending(externalId: TExternalId, nonce?: string): Promise<void>;
+  cancelPending(
+    externalId: TExternalId,
+    nonce?: string,
+  ): Promise<RescheduleCancellationOutcome>;
   /** Deletes only the row still owned by the claimed lease. */
   cancelClaimed(externalId: TExternalId, leaseToken: string): Promise<void>;
+  /** Returns and lazily removes the current proposal state. */
+  getPendingState?(externalId: TExternalId): Promise<ReschedulePendingState>;
   hasPending(externalId: TExternalId): Promise<boolean>;
 }
 
@@ -145,17 +162,27 @@ export class MemoryRescheduleStore<
     return Promise.resolve();
   }
 
-  cancelPending(externalId: TExternalId, nonce?: string): Promise<void> {
+  cancelPending(
+    externalId: TExternalId,
+    nonce?: string,
+  ): Promise<RescheduleCancellationOutcome> {
     const key = String(externalId);
     const entry = this.pendingByExternalId.get(key);
-    if (
-      entry &&
-      !entry.claimed &&
-      (nonce === undefined || entry.record.nonce === nonce)
-    ) {
-      this.pendingByExternalId.delete(key);
+    if (!entry) {
+      return Promise.resolve('none');
     }
-    return Promise.resolve();
+    if (entry.claimed) {
+      return Promise.resolve('processing');
+    }
+    if (nonce !== undefined && entry.record.nonce !== nonce) {
+      return Promise.resolve('none');
+    }
+    if (entry.record.expiresAt <= Date.now()) {
+      this.pendingByExternalId.delete(key);
+      return Promise.resolve('none');
+    }
+    this.pendingByExternalId.delete(key);
+    return Promise.resolve('cancelled');
   }
 
   cancelClaimed(externalId: TExternalId, leaseToken: string): Promise<void> {
@@ -168,15 +195,22 @@ export class MemoryRescheduleStore<
   }
 
   hasPending(externalId: TExternalId): Promise<boolean> {
-    const entry = this.pendingByExternalId.get(String(externalId));
+    return this.getPendingState(externalId).then(
+      (state) => state === 'pending',
+    );
+  }
+
+  getPendingState(externalId: TExternalId): Promise<ReschedulePendingState> {
+    const key = String(externalId);
+    const entry = this.pendingByExternalId.get(key);
     if (!entry || entry.claimed) {
-      return Promise.resolve(false);
+      return Promise.resolve(entry?.claimed ? 'processing' : 'none');
     }
     if (entry.record.expiresAt <= Date.now()) {
-      this.pendingByExternalId.delete(String(externalId));
-      return Promise.resolve(false);
+      this.pendingByExternalId.delete(key);
+      return Promise.resolve('expired');
     }
-    return Promise.resolve(true);
+    return Promise.resolve('pending');
   }
 
   private prune(): void {

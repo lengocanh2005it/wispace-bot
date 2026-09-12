@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PlatformAgentService } from '@wispace/chat-agent';
+import type { RescheduleCancellationOutcome } from '@wispace/reschedule-confirm';
 import type { MessengerRichFollowUp } from '../../domain/entities/messenger-rich-message.types';
 import type {
   MessengerAgentReply,
@@ -45,6 +46,13 @@ export class MessengerAgentService {
 
   async clearClarificationState(psid: string): Promise<void> {
     await this.platformAgent.clearClarificationState(psid);
+  }
+
+  async cancelPendingReschedule(
+    psid: string,
+    approvalToken?: string,
+  ): Promise<RescheduleCancellationOutcome> {
+    return this.platformAgent.cancelPendingReschedule(psid, approvalToken);
   }
 
   async markClarificationDeliveryFailedForEvent(

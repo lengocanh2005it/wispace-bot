@@ -37,6 +37,10 @@ import {
   WebhookAction,
 } from '../messenger-webhook.router';
 import type { ConsentCommand } from '@wispace/bot-common/messages';
+import {
+  isValidApprovalToken,
+  RESCHEDULE_INVALID_TOKEN_MESSAGE,
+} from '@wispace/reschedule-confirm';
 
 @Injectable()
 export class WebhookActionExecutorService {
@@ -151,7 +155,13 @@ export class WebhookActionExecutorService {
         break;
 
       case 'cancel_reschedule': {
-        const message = await this.rescheduleConfirmationService.cancel(psid!);
+        const message =
+          action.approvalToken && isValidApprovalToken(action.approvalToken)
+            ? await this.rescheduleConfirmationService.cancel(
+                psid!,
+                action.approvalToken,
+              )
+            : RESCHEDULE_INVALID_TOKEN_MESSAGE;
         await this.outbound.sendTextViaPsid({
           psid: psid!,
           userId: action.userId,

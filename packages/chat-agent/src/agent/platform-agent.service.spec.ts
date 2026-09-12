@@ -58,6 +58,7 @@ describe('PlatformAgentService', () => {
       systemPromptSuffix?: () => Promise<string | undefined>;
       contentClassifier?: { classify: jest.Mock };
       tryFastReschedule?: PlatformAgentOptions['tryFastReschedule'];
+      cancelPendingReschedule?: PlatformAgentOptions['cancelPendingReschedule'];
       toolExecutionTimeoutMs?: number;
       config?: Record<string, string>;
       safetyEventService?: Partial<PlatformLlmSafetyEventAdapter>;
@@ -96,6 +97,7 @@ describe('PlatformAgentService', () => {
         systemPromptSuffix: overrides.systemPromptSuffix,
         contentClassifier: overrides.contentClassifier,
         tryFastReschedule: overrides.tryFastReschedule,
+        cancelPendingReschedule: overrides.cancelPendingReschedule,
         toolExecutionTimeoutMs: overrides.toolExecutionTimeoutMs,
         ...(overrides.llmExecution
           ? {
@@ -731,7 +733,11 @@ describe('PlatformAgentService', () => {
       appendTurn: jest.fn().mockResolvedValue(undefined),
     } as unknown as PlatformChatHistoryService;
     const clarificationStore = buildClarificationStore();
-    const service = buildService(historyService, { clarificationStore });
+    const cancelPendingReschedule = jest.fn().mockResolvedValue('none');
+    const service = buildService(historyService, {
+      clarificationStore,
+      cancelPendingReschedule,
+    });
 
     await service.reply({
       externalUserId: 'zalo-user-1',
@@ -748,6 +754,7 @@ describe('PlatformAgentService', () => {
     expect(clarificationStore.get).toHaveBeenLastCalledWith(
       'default:zalo-user-1',
     );
+    expect(cancelPendingReschedule).toHaveBeenCalledWith('zalo-user-1');
     await expect(
       clarificationStore.get('default:zalo-user-1'),
     ).resolves.toBeNull();
@@ -1266,6 +1273,24 @@ describe('PlatformAgentService', () => {
         userText: 'mình không cần dừng lại, cứ tiếp tục đi',
       });
       expect(mockLlmReply).toHaveBeenCalled();
+    });
+
+    it('cancels a staged reschedule through the platform callback', async () => {
+      const cancelPendingReschedule = jest.fn().mockResolvedValue('cancelled');
+      const service = buildService(historyService, {
+        cancelPendingReschedule,
+      });
+
+      const reply = await service.reply({
+        externalUserId: 'psid-stop-reschedule',
+        userText: 'thôi',
+      });
+
+      expect(cancelPendingReschedule).toHaveBeenCalledWith(
+        'psid-stop-reschedule',
+      );
+      expect(reply.text).toContain('hủy yêu cầu đổi lịch');
+      expect(mockLlmReply).not.toHaveBeenCalled();
     });
   });
 

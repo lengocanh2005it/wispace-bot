@@ -113,7 +113,7 @@ const REGISTER_REPORT_MESSAGE =
   'Bạn đã được đăng ký nhận báo cáo học tập qua Zalo mỗi sáng lúc 08:00 (không cần đăng ký riêng).';
 
 const RESCHEDULE_CONFIRM_SUFFIX =
-  '\n\nReply "xác nhận" để đồng ý, hoặc "hủy" để hủy.';
+  '\n\nNhắn "xác nhận <mã>" để đồng ý, hoặc "hủy" để hủy.';
 
 @Module({
   imports: [
@@ -256,11 +256,14 @@ const RESCHEDULE_CONFIRM_SUFFIX =
                 confirmationToken,
                 userId,
               ) => {
-                await outboundService.sendText(
+                const outcome = await outboundService.sendText(
                   externalUserId,
                   `${summary}${RESCHEDULE_CONFIRM_SUFFIX}${confirmationToken ? ` Mã: ${confirmationToken}` : ''}`,
                   userId === undefined ? undefined : { userId },
                 );
+                if (outcome !== 'sent') {
+                  throw new Error('Reschedule confirmation delivery failed');
+                }
               },
             },
           },
@@ -298,6 +301,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         redisClient: RedisClientPort,
         clarificationStore: ClarificationStateStore,
         accountLinkService: ZaloAccountLinkService,
+        rescheduleConfirmationService: RescheduleConfirmationService<string>,
       ) => {
         const learnerProfileSuffix = createLearnerProfileSuffix(
           learnerProfileStore,
@@ -314,6 +318,11 @@ const RESCHEDULE_CONFIRM_SUFFIX =
             platform: 'zalo',
             currentIdentityProvider: (externalUserId) =>
               accountLinkService.findCurrentIdentity(externalUserId),
+            cancelPendingReschedule: (externalUserId, approvalToken) =>
+              rescheduleConfirmationService.cancelForUser(
+                externalUserId,
+                approvalToken,
+              ),
             clarificationStore,
             promptDir: join(__dirname, '../../shared/prompts'),
             promptFile: 'zalo-chat.system.txt',
@@ -359,6 +368,7 @@ const RESCHEDULE_CONFIRM_SUFFIX =
         REDIS_CLIENT,
         CLARIFICATION_STATE_STORE,
         ZaloAccountLinkService,
+        RescheduleConfirmationService,
       ],
     },
     {

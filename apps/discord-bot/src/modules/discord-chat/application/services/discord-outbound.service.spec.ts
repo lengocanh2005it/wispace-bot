@@ -462,14 +462,14 @@ describe('DiscordOutboundService', () => {
     ).resolves.toBe(false);
   });
 
-  it('swallows errors when the reschedule confirmation DM fails to send', async () => {
+  it('reports errors when the reschedule confirmation DM fails to send', async () => {
     const fetch = jest.fn().mockRejectedValue(new Error('cannot DM user'));
 
     const service = new DiscordOutboundService(buildClientStub(fetch));
 
     await expect(
       service.sendRescheduleConfirmation('discord-1', 'Dời buổi học?'),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe(false);
   });
 
   it('#137: counts DM delivery failures in metrics (privacy-blocked users)', async () => {
